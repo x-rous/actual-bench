@@ -13,7 +13,7 @@ import {
 import { cn } from "@/lib/utils";
 import { useStagedStore } from "@/store/staged";
 import { valueToString } from "../utils/rulePreview";
-import type { Rule, ConditionOrAction, RuleStage, ConditionsOp, AmountRange } from "@/types/entities";
+import type { ConditionOrAction, RuleStage, ConditionsOp, AmountRange } from "@/types/entities";
 import {
   CONDITION_FIELDS,
   ACTION_FIELDS,
@@ -39,6 +39,8 @@ function useComboboxState() {
   const containerRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
 
+  // Close on outside click (registering an event listener in useEffect is fine —
+  // the setState here is inside a callback, not synchronously in the effect body).
   useEffect(() => {
     if (!open) return;
     function handler(e: MouseEvent) {
@@ -50,14 +52,18 @@ function useComboboxState() {
     return () => document.removeEventListener("mousedown", handler);
   }, [open]);
 
-  useEffect(() => {
-    if (open) {
-      setSearch("");
-      requestAnimationFrame(() => searchRef.current?.focus());
-    }
-  }, [open]);
+  // Call this instead of setOpen(true) — resets search and focuses the input.
+  function openDropdown() {
+    setSearch("");
+    setOpen(true);
+    requestAnimationFrame(() => searchRef.current?.focus());
+  }
 
-  return { open, setOpen, search, setSearch, containerRef, searchRef };
+  function closeDropdown() {
+    setOpen(false);
+  }
+
+  return { open, openDropdown, closeDropdown, search, setSearch, containerRef, searchRef };
 }
 
 // ─── SearchableCombobox (single-select) ───────────────────────────────────────
@@ -75,20 +81,20 @@ function SearchableCombobox({
   onChange: (v: string) => void;
   placeholder?: string;
 }) {
-  const { open, setOpen, search, setSearch, containerRef, searchRef } = useComboboxState();
+  const { open, openDropdown, closeDropdown, search, setSearch, containerRef, searchRef } = useComboboxState();
 
   const selectedLabel = options.find((o) => o.id === value)?.name ?? "";
   const filtered = search.trim()
     ? options.filter((o) => o.name.toLowerCase().includes(search.toLowerCase()))
     : options;
 
-  function select(id: string) { onChange(id); setOpen(false); }
+  function select(id: string) { onChange(id); closeDropdown(); }
 
   return (
     <div ref={containerRef} className="relative flex-1">
       <button
         type="button"
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => open ? closeDropdown() : openDropdown()}
         className={cn(
           "flex h-8 w-full items-center justify-between rounded-md border border-input bg-background px-2 text-xs focus:outline-none focus:ring-2 focus:ring-ring/50",
           !selectedLabel && "text-muted-foreground"
@@ -157,7 +163,7 @@ function MultiSearchableCombobox({
   onChange: (v: string[]) => void;
   placeholder?: string;
 }) {
-  const { open, setOpen, search, setSearch, containerRef, searchRef } = useComboboxState();
+  const { open, openDropdown, closeDropdown, search, setSearch, containerRef, searchRef } = useComboboxState();
 
   const filtered = search.trim()
     ? options.filter((o) => o.name.toLowerCase().includes(search.toLowerCase()))
@@ -180,8 +186,8 @@ function MultiSearchableCombobox({
       <div
         role="button"
         tabIndex={0}
-        onClick={() => setOpen((v) => !v)}
-        onKeyDown={(e) => e.key === "Enter" && setOpen((v) => !v)}
+        onClick={() => open ? closeDropdown() : openDropdown()}
+        onKeyDown={(e) => e.key === "Enter" && (open ? closeDropdown() : openDropdown())}
         className="flex min-h-8 w-full cursor-pointer flex-wrap items-center gap-1 rounded-md border border-input bg-background px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-ring/50"
       >
         {selectedOptions.length === 0 ? (

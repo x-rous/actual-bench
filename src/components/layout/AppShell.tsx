@@ -1,11 +1,18 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
 import { TopBar } from "./TopBar";
 import { Sidebar } from "./Sidebar";
 import { DraftPanel } from "./DraftPanel";
 import { useConnectionStore, selectActiveInstance } from "@/store/connection";
+
+// useSyncExternalStore is the React-recommended way to detect client-side
+// hydration without calling setState inside useEffect.
+const emptySubscribe = () => () => {};
+function useIsHydrated(): boolean {
+  return useSyncExternalStore(emptySubscribe, () => true, () => false);
+}
 
 /**
  * The four-panel app shell:
@@ -21,12 +28,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const activeInstance = useConnectionStore(selectActiveInstance);
 
-  // Wait for Zustand to rehydrate from sessionStorage before checking.
-  // On the first render the store may still be in its initial empty state.
-  const [hydrated, setHydrated] = useState(false);
-  useEffect(() => {
-    setHydrated(true);
-  }, []);
+  // Returns false on the server, true on the client — no setState needed.
+  const hydrated = useIsHydrated();
 
   useEffect(() => {
     if (hydrated && !activeInstance) {

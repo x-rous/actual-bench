@@ -164,7 +164,7 @@ function snapshot(state: StagedStoreState): StagedStoreSnapshot {
   };
 }
 
-export const useStagedStore = create<StagedStoreState & StagedStoreActions>((set, get) => ({
+export const useStagedStore = create<StagedStoreState & StagedStoreActions>((set) => ({
   ...emptySnapshot(),
   undoStack: [],
   redoStack: [],

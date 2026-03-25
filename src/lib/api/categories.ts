@@ -4,7 +4,7 @@
 
 import { apiRequest } from "./client";
 import type { ConnectionInstance } from "@/store/connection";
-import type { ApiCategory, ApiCategoryInput } from "@/types/api";
+import type { ApiCategoryInput } from "@/types/api";
 import type { Category } from "@/types/entities";
 
 // ─── Normalization ────────────────────────────────────────────────────────────

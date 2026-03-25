@@ -33,13 +33,6 @@ export function InlineTextCell({
     }
   }, [isEditing]);
 
-  // Keep draft in sync when the external value changes (e.g. revert)
-  useEffect(() => {
-    if (!isEditing) {
-      setDraft(value);
-    }
-  }, [value, isEditing]);
-
   function commit() {
     const trimmed = draft.trim();
     if (trimmed && trimmed !== value) {
@@ -60,8 +53,8 @@ export function InlineTextCell({
       <span
         role={disabled ? undefined : "button"}
         tabIndex={disabled ? undefined : 0}
-        onClick={disabled ? undefined : () => setIsEditing(true)}
-        onKeyDown={disabled ? undefined : (e) => e.key === "Enter" && setIsEditing(true)}
+        onClick={disabled ? undefined : () => { setDraft(value); setIsEditing(true); }}
+        onKeyDown={disabled ? undefined : (e) => { if (e.key === "Enter") { setDraft(value); setIsEditing(true); } }}
         className={cn(
           "block w-full truncate rounded px-1 py-0.5",
           !disabled && "cursor-text hover:bg-muted/50",
