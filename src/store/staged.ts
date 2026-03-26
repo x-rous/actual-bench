@@ -87,9 +87,15 @@ type StagedStoreState = {
   undoStack: StagedStoreSnapshot[];
   /** Redo stack */
   redoStack: StagedStoreSnapshot[];
+  /**
+   * Merge dependency map: newRuleId → originalRuleIds[]
+   * Originals should only be deleted on the server AFTER the new rule is successfully created.
+   * Intentionally excluded from undo snapshots — it is save-order metadata, not entity state.
+   */
+  mergeDependencies: Record<string, string[]>;
 };
 
-type StagedStoreSnapshot = Omit<StagedStoreState, "undoStack" | "redoStack">;
+type StagedStoreSnapshot = Omit<StagedStoreState, "undoStack" | "redoStack" | "mergeDependencies">;
 
 type StagedStoreActions = {
   /** Load the server snapshot for an entity type, replacing any existing staged data */
@@ -130,6 +136,12 @@ type StagedStoreActions = {
 
   undo: () => void;
   redo: () => void;
+
+  /** Record that originalIds should only be deleted after newRuleId is successfully created */
+  setMergeDependency: (newRuleId: string, originalIds: string[]) => void;
+
+  /** Remove merge dependency entries for rules whose creates have been processed */
+  clearMergeDependencies: (newRuleIds: string[]) => void;
 };
 
 type EntityKey = keyof StagedStoreSnapshot;
@@ -168,6 +180,7 @@ export const useStagedStore = create<StagedStoreState & StagedStoreActions>((set
   ...emptySnapshot(),
   undoStack: [],
   redoStack: [],
+  mergeDependencies: {},
 
   loadAccounts: (accounts) =>
     set((state) => {
@@ -343,7 +356,19 @@ export const useStagedStore = create<StagedStoreState & StagedStoreActions>((set
       return { [entityType]: { ...map, [id]: { ...map[id], saveError: undefined } } };
     }),
 
-  discardAll: () => set({ ...emptySnapshot(), undoStack: [], redoStack: [] }),
+  discardAll: () => set({ ...emptySnapshot(), undoStack: [], redoStack: [], mergeDependencies: {} }),
+
+  setMergeDependency: (newRuleId, originalIds) =>
+    set((state) => ({
+      mergeDependencies: { ...state.mergeDependencies, [newRuleId]: originalIds },
+    })),
+
+  clearMergeDependencies: (newRuleIds) =>
+    set((state) => {
+      const next = { ...state.mergeDependencies };
+      for (const id of newRuleIds) delete next[id];
+      return { mergeDependencies: next };
+    }),
 
   pushUndo: () =>
     set((state) => ({

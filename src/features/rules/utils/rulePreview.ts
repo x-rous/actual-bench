@@ -28,7 +28,7 @@ export function valueToString(value: string | number | string[] | AmountRange | 
 
 function resolveValue(
   field: string,
-  value: string | string[] | AmountRange,
+  value: string | number | string[] | AmountRange,
   maps: EntityMaps,
   fieldDefs: Record<string, { entity?: string }>
 ): string {

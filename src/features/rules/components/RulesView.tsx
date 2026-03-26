@@ -12,6 +12,7 @@ import { usePayees } from "@/features/payees/hooks/usePayees";
 import { useCategoryGroups } from "@/features/categories/hooks/useCategoryGroups";
 import { RulesTable } from "./RulesTable";
 import { RuleDrawer } from "./RuleDrawer";
+import { MergeRulesDialog } from "./MergeRulesDialog";
 import { CONDITION_FIELDS, ACTION_FIELDS } from "../utils/ruleFields";
 import { valueToString } from "../utils/rulePreview";
 import type { RuleStage, ConditionsOp, ConditionOrAction } from "@/types/entities";
@@ -152,6 +153,7 @@ export function RulesView() {
 
   const [drawerOpen, setDrawerOpen]       = useState(false);
   const [editingRuleId, setEditingRuleId] = useState<string | null>(null);
+  const [mergeRuleIds, setMergeRuleIds]   = useState<string[]>([]);
 
   const ruleCount = Object.values(stagedRules).filter((s) => !s.isDeleted).length;
 
@@ -481,13 +483,25 @@ export function RulesView() {
       </div>
 
       {/* Table */}
-      <RulesTable onEdit={openEditRule} payeeId={payeeIdFilter} categoryId={categoryIdFilter} />
+      <RulesTable
+        onEdit={openEditRule}
+        onMerge={(ids) => setMergeRuleIds(ids)}
+        payeeId={payeeIdFilter}
+        categoryId={categoryIdFilter}
+      />
 
       {/* Drawer */}
       <RuleDrawer
         open={drawerOpen}
         onOpenChange={setDrawerOpen}
         ruleId={editingRuleId}
+      />
+
+      {/* Merge dialog */}
+      <MergeRulesDialog
+        open={mergeRuleIds.length >= 2}
+        onOpenChange={(open) => { if (!open) setMergeRuleIds([]); }}
+        ruleIds={mergeRuleIds}
       />
     </div>
   );

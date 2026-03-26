@@ -25,10 +25,10 @@ import {
 
 // ─── Shared input/select styles ───────────────────────────────────────────────
 
-const selectCls =
+export const selectCls =
   "h-8 rounded-md border border-input bg-background px-2 text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-ring/50";
 
-const inputCls =
+export const inputCls =
   "h-8 w-full rounded-md border border-input bg-background px-2 text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-ring/50";
 
 // ─── Shared combobox hook ─────────────────────────────────────────────────────
@@ -467,7 +467,7 @@ function ConditionValueInput({
 
 // ─── ConditionRow ─────────────────────────────────────────────────────────────
 
-function ConditionRow({
+export function ConditionRow({
   condition,
   onChange,
   onDelete,
@@ -553,7 +553,7 @@ function ConditionRow({
 
 // ─── ActionRow ────────────────────────────────────────────────────────────────
 
-function ActionRow({
+export function ActionRow({
   action,
   onChange,
   onDelete,

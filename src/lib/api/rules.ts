@@ -29,12 +29,27 @@ function normalizeAmountParts(parts: ConditionOrAction[]): ConditionOrAction[] {
   );
 }
 
+// ─── Stage conversion ─────────────────────────────────────────────────────────
+//
+// Actual stores the default stage as "" (empty string) in the database.
+// The app uses "default" internally for consistency. Convert at the boundary.
+
+import type { RuleStage } from "@/types/entities";
+
+function stageFromApi(stage: string | null | undefined): RuleStage {
+  return (stage as RuleStage) || "default";
+}
+
+function stageToApi(stage: RuleStage | null | undefined): string | null {
+  return stage === "default" ? null : (stage ?? null);
+}
+
 // ─── Normalization ────────────────────────────────────────────────────────────
 
 function normalizeRule(raw: ApiRule): Rule {
   return {
     id: raw.id!,
-    stage: raw.stage,
+    stage: stageFromApi(raw.stage),
     conditionsOp: raw.conditionsOp ?? "and",
     conditions: normalizeAmountParts(raw.conditions ?? []),
     actions: raw.actions ?? [],
@@ -56,7 +71,7 @@ export async function createRule(
     method: "POST",
     body: {
       rule: {
-        stage: input.stage,
+        stage: stageToApi(input.stage),
         conditionsOp: input.conditionsOp,
         conditions: input.conditions,
         actions: input.actions,
@@ -73,13 +88,20 @@ export async function updateRule(
 ): Promise<void> {
   await apiRequest<void>(connection, `/rules/${id}`, {
     method: "PATCH",
-    body: { rule: { id, ...patch } },
+    body: {
+      rule: {
+        id,
+        ...patch,
+        ...(patch.stage !== undefined && { stage: stageToApi(patch.stage) }),
+      },
+    },
   });
 }
 
 export async function deleteRule(
   connection: ConnectionInstance,
-  id: string
+  id: string  | { id: string }
 ): Promise<void> {
-  await apiRequest<void>(connection, `/rules/${id}`, { method: "DELETE" });
+  const ruleId = typeof id === "string" ? id : id.id;
+  await apiRequest<void>(connection, `/rules/${ruleId}`, { method: "DELETE" });
 }

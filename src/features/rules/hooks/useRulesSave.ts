@@ -79,9 +79,16 @@ export function useRulesSave() {
     setIsSaving(true);
 
     const { toCreate, toUpdate, toDelete } = computeSaveOperations(staged);
+    const mergeDeps = useStagedStore.getState().mergeDependencies;
+
+    // IDs that are only allowed to be deleted after their linked new rule is created successfully.
+    const allMergeDepIds = new Set(Object.values(mergeDeps).flat());
+
     const succeeded: SaveResult[] = [];
     const failed: SaveResult[] = [];
+    const succeededCreateIds = new Set<string>();
 
+    // ── Creates (always first) ─────────────────────────────────────────────────
     for (const raw of toCreate) {
       const rule = coerceRule(raw);
       try {
@@ -92,6 +99,7 @@ export function useRulesSave() {
           actions: rule.actions,
         });
         succeeded.push({ status: "success", id: rule.id });
+        succeededCreateIds.add(rule.id);
       } catch (err) {
         failed.push({
           status: "error",
@@ -101,6 +109,7 @@ export function useRulesSave() {
       }
     }
 
+    // ── Updates ────────────────────────────────────────────────────────────────
     for (const raw of toUpdate) {
       const rule = coerceRule(raw);
       try {
@@ -120,7 +129,27 @@ export function useRulesSave() {
       }
     }
 
+    // ── Deletes ────────────────────────────────────────────────────────────────
+    // Build the set of merge-dependent IDs that are now safe to delete
+    // (their linked new rule was created successfully).
+    const safeToDeleteFromMerge = new Set<string>();
+    for (const [newRuleId, originalIds] of Object.entries(mergeDeps)) {
+      if (succeededCreateIds.has(newRuleId)) {
+        for (const id of originalIds) safeToDeleteFromMerge.add(id);
+      }
+    }
+
+    // IDs whose linked create failed — leave them staged so they reappear in the table.
+    const skippedMergeDeps: string[] = [];
+
     for (const id of toDelete) {
+      const isMergeDep = allMergeDepIds.has(id);
+      if (isMergeDep && !safeToDeleteFromMerge.has(id)) {
+        // Linked create failed — skip the server delete and revert the staged deletion
+        // so the original rule reappears in the table for the user to retry or discard.
+        skippedMergeDeps.push(id);
+        continue;
+      }
       try {
         await deleteRule(connection, id);
         succeeded.push({ status: "success", id });
@@ -134,6 +163,18 @@ export function useRulesSave() {
     }
 
     setIsSaving(false);
+
+    // Revert staged deletions that were skipped due to their create failing.
+    if (skippedMergeDeps.length > 0) {
+      const store = useStagedStore.getState();
+      for (const id of skippedMergeDeps) store.revertEntity("rules", id);
+    }
+
+    // Clear merge dependencies whose creates succeeded.
+    const processedMergeIds = [...succeededCreateIds].filter((id) => id in mergeDeps);
+    if (processedMergeIds.length > 0) {
+      useStagedStore.getState().clearMergeDependencies(processedMergeIds);
+    }
 
     if (failed.length > 0) {
       const errors: Record<string, string> = {};
