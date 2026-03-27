@@ -57,14 +57,27 @@ export function TopBar() {
 
   async function handleSave() {
     try {
-      // Save category groups before categories (groups must exist before categories can reference them)
-      const [accountsResult, payeesResult, groupsResult, rulesResult] = await Promise.all([
+      // Step 1: Save accounts, payees, and category groups in parallel.
+      // These are independent and their server IDs are needed by later steps.
+      const [accountsResult, payeesResult, groupsResult] = await Promise.all([
         saveAccounts(),
         savePayees(),
         saveCategoryGroups(),
-        saveRules(),
       ]);
-      const categoriesResult = await saveCategories();
+
+      // Step 2: Save categories after groups. Pass the group idMap so that new
+      // categories whose groupId is a client UUID get the real server group ID.
+      const categoriesResult = await saveCategories(groupsResult.idMap);
+
+      // Step 3: Save rules last, substituting any client UUIDs that appear in
+      // conditions/actions with the server-assigned IDs from steps 1–2.
+      const entityIdMap = {
+        ...payeesResult.idMap,
+        ...accountsResult.idMap,
+        ...categoriesResult.idMap,
+      };
+      const rulesResult = await saveRules(entityIdMap);
+
       const totalSucceeded =
         accountsResult.succeeded.length +
         payeesResult.succeeded.length +

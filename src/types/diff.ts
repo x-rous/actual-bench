@@ -25,4 +25,6 @@ export type SaveResult =
 export type SaveSummary = {
   succeeded: SaveResult[];
   failed: SaveResult[];
+  /** Maps client-generated UUIDs to server-assigned IDs for newly created entities */
+  idMap: Record<string, string>;
 };

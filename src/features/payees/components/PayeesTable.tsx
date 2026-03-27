@@ -306,22 +306,23 @@ export function PayeesTable() {
     if (rulesFilter === "with_rules") result = result.filter((r) => (payeeRuleCount.get(r.entity.id) ?? 0) > 0);
     if (rulesFilter === "no_rules") result = result.filter((r) => (payeeRuleCount.get(r.entity.id) ?? 0) === 0);
 
-    if (sortCol) {
-      result = [...result].sort((a, b) => {
-        let av: string | boolean, bv: string | boolean;
-        if (sortCol === "name") {
-          av = a.entity.name.toLowerCase();
-          bv = b.entity.name.toLowerCase();
-        } else {
-          // type: transfer payees sort as "true" (1), regular as "false" (0)
-          av = !!a.entity.transferAccountId;
-          bv = !!b.entity.transferAccountId;
-        }
-        if (av < bv) return sortDir === "asc" ? -1 : 1;
-        if (av > bv) return sortDir === "asc" ? 1 : -1;
-        return 0;
-      });
-    }
+    result = [...result].sort((a, b) => {
+      // New (unsaved) rows always float to the top so they're immediately visible
+      if (a.isNew !== b.isNew) return a.isNew ? -1 : 1;
+      if (!sortCol) return 0;
+      let av: string | boolean, bv: string | boolean;
+      if (sortCol === "name") {
+        av = a.entity.name.toLowerCase();
+        bv = b.entity.name.toLowerCase();
+      } else {
+        // type: transfer payees sort as "true" (1), regular as "false" (0)
+        av = !!a.entity.transferAccountId;
+        bv = !!b.entity.transferAccountId;
+      }
+      if (av < bv) return sortDir === "asc" ? -1 : 1;
+      if (av > bv) return sortDir === "asc" ? 1 : -1;
+      return 0;
+    });
     return result;
   }, [staged, search, typeFilter, rulesFilter, payeeRuleCount, sortCol, sortDir]);
 

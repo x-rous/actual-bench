@@ -21,6 +21,7 @@ export function useRules() {
     // only. All entity data lives in the Zustand staged store (loadRules).
     // See useAccounts.ts for a full explanation of these settings.
     staleTime: Infinity,
+    gcTime: Infinity,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
   });

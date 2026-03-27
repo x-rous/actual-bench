@@ -190,18 +190,16 @@ export const useStagedStore = create<StagedStoreState & StagedStoreActions>((set
       const serverIds = new Set(accounts.map((a) => a.id));
       const newMap: StagedMap<Account> = {};
 
-      // Load server accounts, preserving save errors and edits on failed rows
+      // Load server accounts, preserving staged edits and deletions so that
+      // a background refetch never silently discards unsaved user changes.
       for (const a of accounts) {
         const existing = state.accounts[a.id];
-        const entry = makeStaged(a);
-        if (existing?.saveError) {
-          entry.saveError = existing.saveError;
-          if (existing.isUpdated) {
-            // Restore edited entity so the user can retry
-            entry.entity = existing.entity;
-            entry.isUpdated = true;
-          }
+        if (existing && (existing.isUpdated || existing.isDeleted)) {
+          newMap[a.id] = existing;
+          continue;
         }
+        const entry = makeStaged(a);
+        if (existing?.saveError) entry.saveError = existing.saveError;
         newMap[a.id] = entry;
       }
 
@@ -222,14 +220,12 @@ export const useStagedStore = create<StagedStoreState & StagedStoreActions>((set
 
       for (const p of payees) {
         const existing = state.payees[p.id];
-        const entry = makeStaged(p);
-        if (existing?.saveError) {
-          entry.saveError = existing.saveError;
-          if (existing.isUpdated) {
-            entry.entity = existing.entity;
-            entry.isUpdated = true;
-          }
+        if (existing && (existing.isUpdated || existing.isDeleted)) {
+          newMap[p.id] = existing;
+          continue;
         }
+        const entry = makeStaged(p);
+        if (existing?.saveError) entry.saveError = existing.saveError;
         newMap[p.id] = entry;
       }
 
@@ -246,11 +242,12 @@ export const useStagedStore = create<StagedStoreState & StagedStoreActions>((set
       const newGroupMap: StagedMap<CategoryGroup> = {};
       for (const g of groups) {
         const existing = state.categoryGroups[g.id];
-        const entry = makeStaged(g);
-        if (existing?.saveError) {
-          entry.saveError = existing.saveError;
-          if (existing.isUpdated) { entry.entity = existing.entity; entry.isUpdated = true; }
+        if (existing && (existing.isUpdated || existing.isDeleted)) {
+          newGroupMap[g.id] = existing;
+          continue;
         }
+        const entry = makeStaged(g);
+        if (existing?.saveError) entry.saveError = existing.saveError;
         newGroupMap[g.id] = entry;
       }
       for (const [id, entry] of Object.entries(state.categoryGroups)) {
@@ -261,11 +258,12 @@ export const useStagedStore = create<StagedStoreState & StagedStoreActions>((set
       const newCatMap: StagedMap<Category> = {};
       for (const c of categories) {
         const existing = state.categories[c.id];
-        const entry = makeStaged(c);
-        if (existing?.saveError) {
-          entry.saveError = existing.saveError;
-          if (existing.isUpdated) { entry.entity = existing.entity; entry.isUpdated = true; }
+        if (existing && (existing.isUpdated || existing.isDeleted)) {
+          newCatMap[c.id] = existing;
+          continue;
         }
+        const entry = makeStaged(c);
+        if (existing?.saveError) entry.saveError = existing.saveError;
         newCatMap[c.id] = entry;
       }
       for (const [id, entry] of Object.entries(state.categories)) {
@@ -281,11 +279,12 @@ export const useStagedStore = create<StagedStoreState & StagedStoreActions>((set
       const newMap: StagedMap<Category> = {};
       for (const c of categories) {
         const existing = state.categories[c.id];
-        const entry = makeStaged(c);
-        if (existing?.saveError) {
-          entry.saveError = existing.saveError;
-          if (existing.isUpdated) { entry.entity = existing.entity; entry.isUpdated = true; }
+        if (existing && (existing.isUpdated || existing.isDeleted)) {
+          newMap[c.id] = existing;
+          continue;
         }
+        const entry = makeStaged(c);
+        if (existing?.saveError) entry.saveError = existing.saveError;
         newMap[c.id] = entry;
       }
       for (const [id, entry] of Object.entries(state.categories)) {
@@ -300,11 +299,12 @@ export const useStagedStore = create<StagedStoreState & StagedStoreActions>((set
       const newMap: StagedMap<Rule> = {};
       for (const r of rules) {
         const existing = state.rules[r.id];
-        const entry = makeStaged(r);
-        if (existing?.saveError) {
-          entry.saveError = existing.saveError;
-          if (existing.isUpdated) { entry.entity = existing.entity; entry.isUpdated = true; }
+        if (existing && (existing.isUpdated || existing.isDeleted)) {
+          newMap[r.id] = existing;
+          continue;
         }
+        const entry = makeStaged(r);
+        if (existing?.saveError) entry.saveError = existing.saveError;
         newMap[r.id] = entry;
       }
       for (const [id, entry] of Object.entries(state.rules)) {
@@ -319,11 +319,12 @@ export const useStagedStore = create<StagedStoreState & StagedStoreActions>((set
       const newMap: StagedMap<Schedule> = {};
       for (const s of schedules) {
         const existing = state.schedules[s.id];
-        const entry = makeStaged(s);
-        if (existing?.saveError) {
-          entry.saveError = existing.saveError;
-          if (existing.isUpdated) { entry.entity = existing.entity; entry.isUpdated = true; }
+        if (existing && (existing.isUpdated || existing.isDeleted)) {
+          newMap[s.id] = existing;
+          continue;
         }
+        const entry = makeStaged(s);
+        if (existing?.saveError) entry.saveError = existing.saveError;
         newMap[s.id] = entry;
       }
       for (const [id, entry] of Object.entries(state.schedules)) {

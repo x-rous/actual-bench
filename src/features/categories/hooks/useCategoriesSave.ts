@@ -16,7 +16,7 @@ export function useCategoriesSave() {
   const staged = useStagedStore((s) => s.categories);
   const queryClient = useQueryClient();
 
-  async function save(): Promise<SaveSummary> {
+  async function save(groupIdMap: Record<string, string> = {}): Promise<SaveSummary> {
     if (!connection) throw new Error("No active connection");
 
     setIsSaving(true);
@@ -25,17 +25,25 @@ export function useCategoriesSave() {
     const succeeded: SaveResult[] = [];
     const failed: SaveResult[] = [];
     const succeededCreateIds = new Set<string>();
+    const idMap: Record<string, string> = {};
 
     // ── Creates (parallel) ────────────────────────────────────────────────────
+    // Substitute any client-UUID groupId with the server-assigned group ID so
+    // that new categories correctly reference newly created groups.
     const createResults = await Promise.allSettled(
       toCreate.map((c) =>
-        createCategory(connection, { name: c.name, groupId: c.groupId, hidden: c.hidden })
+        createCategory(connection, {
+          name: c.name,
+          groupId: groupIdMap[c.groupId] ?? c.groupId,
+          hidden: c.hidden,
+        })
       )
     );
     for (let i = 0; i < toCreate.length; i++) {
       const id = toCreate[i].id;
       const r  = createResults[i];
       if (r.status === "fulfilled") {
+        idMap[id] = r.value; // createCategory returns the server ID string
         succeeded.push({ status: "success", id });
         succeededCreateIds.add(id);
       } else {
@@ -92,7 +100,7 @@ export function useCategoriesSave() {
     // Both entity types share one query key since they're loaded together
     await queryClient.invalidateQueries({ queryKey: ["categoryGroups", connection.id] });
 
-    return { succeeded, failed };
+    return { succeeded, failed, idMap };
   }
 
   return { save, isSaving };

@@ -10,6 +10,31 @@ import { CONDITION_FIELDS, ACTION_FIELDS } from "../utils/ruleFields";
 import type { SaveResult, SaveSummary } from "@/types/diff";
 import type { Rule, ConditionOrAction, AmountRange } from "@/types/entities";
 
+/** Fields whose values are entity IDs that may need client→server substitution */
+const ENTITY_REF_FIELDS = new Set(["payee", "account", "category"]);
+
+/**
+ * Substitute any client-generated UUID in entity reference fields with the
+ * server-assigned ID, so that rules referencing new payees/accounts/categories
+ * are saved with the correct IDs.
+ */
+function applyEntityIdMap(
+  parts: ConditionOrAction[],
+  idMap: Record<string, string>
+): ConditionOrAction[] {
+  if (Object.keys(idMap).length === 0) return parts;
+  return parts.map((p) => {
+    if (!ENTITY_REF_FIELDS.has(p.field)) return p;
+    const v = p.value;
+    if (typeof v === "string" && idMap[v]) return { ...p, value: idMap[v] };
+    if (Array.isArray(v)) {
+      const mapped = v.map((x) => (typeof x === "string" && idMap[x] ? idMap[x] : x));
+      return { ...p, value: mapped };
+    }
+    return p;
+  });
+}
+
 /**
  * Prepare condition/action values for the API:
  *  1. Coerce any string typed by the user in a number input to a JS number.
@@ -52,7 +77,7 @@ export function useRulesSave() {
   const staged = useStagedStore((s) => s.rules);
   const queryClient = useQueryClient();
 
-  async function save(): Promise<SaveSummary> {
+  async function save(entityIdMap: Record<string, string> = {}): Promise<SaveSummary> {
     if (!connection) throw new Error("No active connection");
 
     setIsSaving(true);
@@ -74,8 +99,8 @@ export function useRulesSave() {
         return createRule(connection, {
           stage: rule.stage,
           conditionsOp: rule.conditionsOp,
-          conditions: rule.conditions,
-          actions: rule.actions,
+          conditions: applyEntityIdMap(rule.conditions, entityIdMap),
+          actions: applyEntityIdMap(rule.actions, entityIdMap),
         });
       })
     );
@@ -97,8 +122,8 @@ export function useRulesSave() {
         return updateRule(connection, rule.id, {
           stage: rule.stage,
           conditionsOp: rule.conditionsOp,
-          conditions: rule.conditions,
-          actions: rule.actions,
+          conditions: applyEntityIdMap(rule.conditions, entityIdMap),
+          actions: applyEntityIdMap(rule.actions, entityIdMap),
         });
       })
     );
@@ -180,7 +205,7 @@ export function useRulesSave() {
 
     await queryClient.invalidateQueries({ queryKey: ["rules", connection.id] });
 
-    return { succeeded, failed };
+    return { succeeded, failed, idMap: {} };
   }
 
   return { save, isSaving };

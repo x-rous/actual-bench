@@ -30,6 +30,7 @@ export function useAccountsSave() {
     const succeeded: SaveResult[] = [];
     const failed: SaveResult[] = [];
     const succeededCreateIds = new Set<string>();
+    const idMap: Record<string, string> = {};
 
     // ── Creates (parallel) ────────────────────────────────────────────────────
     const createResults = await Promise.allSettled(
@@ -41,6 +42,7 @@ export function useAccountsSave() {
       const id = toCreate[i].id;
       const r  = createResults[i];
       if (r.status === "fulfilled") {
+        idMap[id] = r.value.id;
         succeeded.push({ status: "success", id });
         succeededCreateIds.add(id);
       } else {
@@ -98,7 +100,7 @@ export function useAccountsSave() {
 
     await queryClient.invalidateQueries({ queryKey: ["accounts", connection.id] });
 
-    return { succeeded, failed };
+    return { succeeded, failed, idMap };
   }
 
   return { save, isSaving, hasPendingChanges };
