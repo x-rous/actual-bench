@@ -60,7 +60,7 @@ export type AmountRange = { num1: number; num2: number };
 export type ConditionOrAction = {
   field: string;
   op: string;
-  value: string | string[] | AmountRange;
+  value: string | number | string[] | AmountRange;
   type?: string;
 };
 

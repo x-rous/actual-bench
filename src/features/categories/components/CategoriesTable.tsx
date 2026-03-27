@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useRef, useEffect, useMemo } from "react";
+import { useRouter } from "next/navigation";
 import {
   RotateCcw, Trash2, RefreshCw, Eye, EyeOff,
   ArrowUpDown, ArrowUp, ArrowDown, Search, X, AlertTriangle,
@@ -222,10 +223,12 @@ export function CategoriesTable({
   const [confirmDialog, setConfirmDialog] = useState<ConfirmState | null>(null);
 
   const containerRef = useRef<HTMLDivElement>(null);
+  const router = useRouter();
 
   // ── Store ────────────────────────────────────────────────────────────────────
   const stagedGroups = useStagedStore((s) => s.categoryGroups);
   const stagedCats = useStagedStore((s) => s.categories);
+  const stagedRules = useStagedStore((s) => s.rules);
   const stageNew = useStagedStore((s) => s.stageNew);
   const stageUpdate = useStagedStore((s) => s.stageUpdate);
   const stageDelete = useStagedStore((s) => s.stageDelete);
@@ -264,6 +267,24 @@ export function CategoriesTable({
     }
     return dupes;
   }, [stagedCats]);
+
+  // ── Category → rule count ─────────────────────────────────────────────────────
+  const categoryRuleCount = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const s of Object.values(stagedRules)) {
+      if (s.isDeleted) continue;
+      for (const part of [...s.entity.conditions, ...s.entity.actions]) {
+        if (part.field === "category") {
+          const ids = Array.isArray(part.value) ? part.value : [part.value];
+          for (const id of ids) {
+            if (typeof id === "string" && id)
+              counts.set(id, (counts.get(id) ?? 0) + 1);
+          }
+        }
+      }
+    }
+    return counts;
+  }, [stagedRules]);
 
   // ── Build flat ordered list of visible groups ─────────────────────────────────
   const allGroups: GroupRow[] = useMemo(() => {
@@ -526,7 +547,7 @@ export function CategoriesTable({
         </td>
 
         {/* Type badge */}
-        <td className="w-24 px-2 py-0.5">
+        <td className="w-48 px-2 py-0.5">
           <Badge variant={entity.isIncome ? "status-active" : "secondary"} className="text-xs font-normal">
             {entity.isIncome ? "Income" : "Expense"}
           </Badge>
@@ -548,6 +569,9 @@ export function CategoriesTable({
               : <><Eye className="h-3 w-3" /> Visible</>}
           </button>
         </td>
+
+        {/* Rules (groups don't have direct rule associations) */}
+        <td className="w-44 px-2 py-0.5" />
 
         {/* Actions */}
         <td className="w-28 px-1 py-0.5">
@@ -668,8 +692,29 @@ export function CategoriesTable({
           </div>
         </td>
 
-        {/* Type (inherited from group — read-only) */}
-        <td className="w-24 px-2 py-0.5" />
+        {/* Move to group */}
+        <td className="w-60 px-2 py-0.5">
+          {!isDeleted && (
+            <select
+              className="h-6 w-full rounded border border-border bg-background px-1.5 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+              value={entity.groupId}
+              onChange={(e) => {
+                if (e.target.value !== entity.groupId) {
+                  pushUndo();
+                  stageUpdate("categories", entity.id, { groupId: e.target.value });
+                }
+              }}
+            >
+              {Object.values(stagedGroups)
+                .filter((g) => !g.isDeleted)
+                .map((g) => (
+                  <option key={g.entity.id} value={g.entity.id}>
+                    {g.entity.name}
+                  </option>
+                ))}
+            </select>
+          )}
+        </td>
 
         {/* Hidden toggle */}
         <td className="w-36 px-2 py-0.5">
@@ -696,6 +741,27 @@ export function CategoriesTable({
                 : <><Eye className="h-3 w-3" /> Visible</>}
             </button>
           )}
+        </td>
+
+        {/* Rules */}
+        <td className="w-44 px-2 py-0.5">
+          {!isDeleted && (() => {
+            const count = categoryRuleCount.get(entity.id) ?? 0;
+            const label = count === 0
+              ? "create rule"
+              : count === 1
+                ? "1 associated rule"
+                : `${count} associated rules`;
+            return (
+              <button
+                className="inline-flex items-center rounded bg-purple-100 px-1.5 py-0.5 text-xs font-medium text-purple-700 hover:bg-purple-200 dark:bg-purple-900/40 dark:text-purple-300 dark:hover:bg-purple-900/60"
+                onClick={() => router.push(count > 0 ? `/rules?categoryId=${entity.id}` : "/rules?new=1")}
+                title={count > 0 ? "View rules for this category" : "Go to rules to create a rule"}
+              >
+                {label}
+              </button>
+            );
+          })()}
         </td>
 
         {/* Actions */}
@@ -797,8 +863,9 @@ export function CategoriesTable({
                     <SortIndicator active={sortNameDir !== null} dir={sortNameDir ?? "asc"} />
                   </span>
                 </th>
-                <th className="w-24 px-2 py-1.5 text-left text-xs font-medium text-muted-foreground">Type</th>
+                <th className="w-48 px-2 py-1.5 text-left text-xs font-medium text-muted-foreground">Type / Group</th>
                 <th className="w-36 px-2 py-1.5 text-left text-xs font-medium text-muted-foreground">Visibility</th>
+                <th className="w-44 px-2 py-1.5 text-left text-xs font-medium text-muted-foreground">Rules</th>
                 <th className="w-28 p-0" />
               </tr>
             </thead>
@@ -808,7 +875,7 @@ export function CategoriesTable({
               {(typeFilter === "all" || typeFilter === "income") && (
                 <>
                   <tr>
-                    <td colSpan={6} className="border-b border-border/60 bg-muted/40 px-3 py-1">
+                    <td colSpan={7} className="border-b border-border/60 bg-muted/40 px-3 py-1">
                       <div className="flex items-center justify-between">
                         <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                           Income
@@ -825,7 +892,7 @@ export function CategoriesTable({
                   </tr>
                   {incomeGroups.length === 0 && (
                     <tr>
-                      <td colSpan={6} className="px-4 py-3 text-xs text-muted-foreground">
+                      <td colSpan={7} className="px-4 py-3 text-xs text-muted-foreground">
                         No income groups{search ? " matching the search" : ""}.
                       </td>
                     </tr>
@@ -839,7 +906,7 @@ export function CategoriesTable({
                         {!collapsed && cats.map((cat) => renderCategoryRow(cat, group))}
                         {!collapsed && !group.isDeleted && (
                           <tr>
-                            <td colSpan={6} className="border-b border-border/20 px-2 py-0.5 pl-14">
+                            <td colSpan={7} className="border-b border-border/20 px-2 py-0.5 pl-14">
                               <button
                                 onClick={() => addCategory(group.entity.id)}
                                 className="text-xs text-muted-foreground hover:text-foreground"
@@ -859,7 +926,7 @@ export function CategoriesTable({
               {(typeFilter === "all" || typeFilter === "expense") && (
                 <>
                   <tr>
-                    <td colSpan={6} className="border-b border-border/60 bg-muted/40 px-3 py-1">
+                    <td colSpan={7} className="border-b border-border/60 bg-muted/40 px-3 py-1">
                       <div className="flex items-center justify-between">
                         <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                           Expense
@@ -876,7 +943,7 @@ export function CategoriesTable({
                   </tr>
                   {expenseGroups.length === 0 && (
                     <tr>
-                      <td colSpan={6} className="px-4 py-3 text-xs text-muted-foreground">
+                      <td colSpan={7} className="px-4 py-3 text-xs text-muted-foreground">
                         No expense groups{search ? " matching the search" : ""}.
                       </td>
                     </tr>
@@ -890,7 +957,7 @@ export function CategoriesTable({
                         {!collapsed && cats.map((cat) => renderCategoryRow(cat, group))}
                         {!collapsed && !group.isDeleted && (
                           <tr>
-                            <td colSpan={6} className="border-b border-border/20 px-2 py-0.5 pl-14">
+                            <td colSpan={7} className="border-b border-border/20 px-2 py-0.5 pl-14">
                               <button
                                 onClick={() => addCategory(group.entity.id)}
                                 className="text-xs text-muted-foreground hover:text-foreground"

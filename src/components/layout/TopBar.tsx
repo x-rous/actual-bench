@@ -1,7 +1,8 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { ChevronDown, Save, X, Undo2, Redo2 } from "lucide-react";
+import { useState } from "react";
+import { ChevronDown, Save, X, Undo2, Redo2, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
@@ -32,6 +33,7 @@ import { useRulesSave } from "@/features/rules/hooks/useRulesSave";
 export function TopBar() {
   const router = useRouter();
   const queryClient = useQueryClient();
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   const activeInstance = useConnectionStore(selectActiveInstance);
   const instances = useConnectionStore((s) => s.instances);
@@ -94,6 +96,12 @@ export function TopBar() {
     discardAll();
     queryClient.clear();
     setActive(id);
+  }
+
+  async function handleRefresh() {
+    setIsRefreshing(true);
+    await queryClient.invalidateQueries();
+    setIsRefreshing(false);
   }
 
   function handleDisconnect() {
@@ -170,6 +178,17 @@ export function TopBar() {
           title="Redo"
         >
           <Redo2 className="h-3.5 w-3.5" />
+        </Button>
+
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-7 w-7"
+          disabled={hasChanges || isRefreshing}
+          onClick={handleRefresh}
+          title={hasChanges ? "Save or discard changes before refreshing" : "Refresh data from server"}
+        >
+          <RefreshCw className={`h-3.5 w-3.5${isRefreshing ? " animate-spin" : ""}`} />
         </Button>
 
         {hasChanges && (

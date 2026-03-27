@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useMemo } from "react";
+import { useRouter } from "next/navigation";
 import {
   RotateCcw, Trash2, RefreshCw,
   ArrowUpDown, ArrowUp, ArrowDown, Search, X, AlertTriangle,
@@ -26,6 +27,7 @@ type DoneAction = "down" | "up" | "tab" | "shiftTab" | "cancel" | "blur";
 type SortCol = "name" | "type";
 type SortDir = "asc" | "desc";
 type TypeFilter = "all" | "regular" | "transfer";
+type RulesFilter = "all" | "with_rules" | "no_rules";
 type ConfirmState = { title: string; message: string; onConfirm: () => void };
 
 // ─── NameInput ─────────────────────────────────────────────────────────────────
@@ -113,24 +115,32 @@ const TYPE_OPTIONS: { value: TypeFilter; label: string }[] = [
   { value: "transfer", label: "Transfer" },
 ];
 
+const RULES_OPTIONS: { value: RulesFilter; label: string }[] = [
+  { value: "all", label: "All" },
+  { value: "with_rules", label: "Has rules" },
+  { value: "no_rules", label: "No rules" },
+];
+
 // ─── FilterBar ─────────────────────────────────────────────────────────────────
 
 function FilterBar({
   search, onSearchChange,
   typeFilter, onTypeChange,
+  rulesFilter, onRulesFilterChange,
   filteredCount, totalCount,
   selectedCount, canFillDown,
   onFillDown, onBulkDelete, onDeselect,
 }: {
   search: string; onSearchChange: (v: string) => void;
   typeFilter: TypeFilter; onTypeChange: (v: TypeFilter) => void;
+  rulesFilter: RulesFilter; onRulesFilterChange: (v: RulesFilter) => void;
   filteredCount: number; totalCount: number;
   selectedCount: number; canFillDown: boolean;
   onFillDown: () => void;
   onBulkDelete: () => void;
   onDeselect: () => void;
 }) {
-  const hasFilters = search || typeFilter !== "all";
+  const hasFilters = search || typeFilter !== "all" || rulesFilter !== "all";
 
   if (selectedCount > 0) {
     return (
@@ -169,9 +179,11 @@ function FilterBar({
 
       <PillGroup options={TYPE_OPTIONS} value={typeFilter} onChange={onTypeChange} />
 
+      <PillGroup options={RULES_OPTIONS} value={rulesFilter} onChange={onRulesFilterChange} />
+
       {hasFilters && (
         <button
-          onClick={() => { onSearchChange(""); onTypeChange("all"); }}
+          onClick={() => { onSearchChange(""); onTypeChange("all"); onRulesFilterChange("all"); }}
           className="text-xs text-muted-foreground underline hover:text-foreground"
         >
           Clear
@@ -222,6 +234,7 @@ export function PayeesTable() {
   // ── Filter / sort state ──────────────────────────────────────────────────────
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
+  const [rulesFilter, setRulesFilter] = useState<RulesFilter>("all");
   const [sortCol, setSortCol] = useState<SortCol | null>(null);
   const [sortDir, setSortDir] = useState<SortDir>("asc");
 
@@ -236,15 +249,36 @@ export function PayeesTable() {
   const [confirmDialog, setConfirmDialog] = useState<ConfirmState | null>(null);
 
   const containerRef = useRef<HTMLDivElement>(null);
+  const router = useRouter();
 
   // ── Store subscriptions ──────────────────────────────────────────────────────
   const staged = useStagedStore((s) => s.payees);
+  const stagedRules = useStagedStore((s) => s.rules);
   const stageNew = useStagedStore((s) => s.stageNew);
   const stageUpdate = useStagedStore((s) => s.stageUpdate);
   const stageDelete = useStagedStore((s) => s.stageDelete);
   const revertEntity = useStagedStore((s) => s.revertEntity);
   const clearSaveError = useStagedStore((s) => s.clearSaveError);
   const pushUndo = useStagedStore((s) => s.pushUndo);
+
+  // ── Rules reference count per payee ──────────────────────────────────────────
+  const payeeRuleCount = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const s of Object.values(stagedRules)) {
+      if (s.isDeleted) continue;
+      for (const part of [...s.entity.conditions, ...s.entity.actions]) {
+        if (part.field === "payee" || part.field === "imported_payee") {
+          const ids = Array.isArray(part.value) ? part.value : [part.value];
+          for (const id of ids) {
+            if (typeof id === "string" && id) {
+              counts.set(id, (counts.get(id) ?? 0) + 1);
+            }
+          }
+        }
+      }
+    }
+    return counts;
+  }, [stagedRules]);
 
   // ── Duplicate name detection ─────────────────────────────────────────────────
   const duplicateNames = useMemo(() => {
@@ -269,6 +303,8 @@ export function PayeesTable() {
     if (q) result = result.filter((r) => r.entity.name.toLowerCase().includes(q));
     if (typeFilter === "regular") result = result.filter((r) => !r.entity.transferAccountId);
     if (typeFilter === "transfer") result = result.filter((r) => !!r.entity.transferAccountId);
+    if (rulesFilter === "with_rules") result = result.filter((r) => (payeeRuleCount.get(r.entity.id) ?? 0) > 0);
+    if (rulesFilter === "no_rules") result = result.filter((r) => (payeeRuleCount.get(r.entity.id) ?? 0) === 0);
 
     if (sortCol) {
       result = [...result].sort((a, b) => {
@@ -287,7 +323,7 @@ export function PayeesTable() {
       });
     }
     return result;
-  }, [staged, search, typeFilter, sortCol, sortDir]);
+  }, [staged, search, typeFilter, rulesFilter, payeeRuleCount, sortCol, sortDir]);
 
   function toggleSort(col: SortCol) {
     if (sortCol === col) {
@@ -418,12 +454,17 @@ export function PayeesTable() {
       return;
     }
 
+    const referencedRules = deletableIds.reduce((sum, id) => sum + (payeeRuleCount.get(id) ?? 0), 0);
+
     let message = `${serverIds.length} will be staged for deletion and removed on Save.`;
     if (newIds.length > 0) {
       message += ` ${newIds.length} unsaved new row${newIds.length !== 1 ? "s" : ""} will be discarded immediately.`;
     }
     if (skipped > 0) {
       message += ` ${skipped} transfer payee${skipped !== 1 ? "s" : ""} skipped (system-managed).`;
+    }
+    if (referencedRules > 0) {
+      message += ` Warning: ${referencedRules} rule reference${referencedRules !== 1 ? "s" : ""} will be affected.`;
     }
 
     setConfirmDialog({
@@ -524,6 +565,7 @@ export function PayeesTable() {
         <FilterBar
           search={search} onSearchChange={setSearch}
           typeFilter={typeFilter} onTypeChange={setTypeFilter}
+          rulesFilter={rulesFilter} onRulesFilterChange={setRulesFilter}
           filteredCount={rows.length} totalCount={totalCount}
           selectedCount={activeSelectedCount} canFillDown={canFillDown}
           onFillDown={handleFillDown}
@@ -533,7 +575,7 @@ export function PayeesTable() {
 
         {rows.length === 0 ? (
           <div className="flex items-center justify-center py-12 text-sm text-muted-foreground">
-            {search || typeFilter !== "all"
+            {search || typeFilter !== "all" || rulesFilter !== "all"
               ? "No payees match the current filters."
               : "No payees yet."}
           </div>
@@ -572,6 +614,10 @@ export function PayeesTable() {
                       Type
                       <SortIndicator col="type" sortCol={sortCol} sortDir={sortDir} />
                     </span>
+                  </th>
+
+                  <th className="w-44 px-2 py-1.5 text-left text-xs font-medium text-muted-foreground">
+                    Rules
                   </th>
 
                   <th className="w-24 p-0" />
@@ -682,6 +728,29 @@ export function PayeesTable() {
                         </Badge>
                       </td>
 
+                      {/* Rules count */}
+                      <td className="w-44 px-2 py-0.5">
+                        {(() => {
+                          const count = payeeRuleCount.get(entity.id) ?? 0;
+                          const label = count === 0
+                            ? "create rule"
+                            : count === 1
+                              ? "1 associated rule"
+                              : `${count} associated rules`;
+                          return !isDeleted
+                            ? (
+                              <button
+                                className="inline-flex items-center rounded bg-purple-100 px-1.5 py-0.5 text-xs font-medium text-purple-700 hover:bg-purple-200 dark:bg-purple-900/40 dark:text-purple-300 dark:hover:bg-purple-900/60"
+                                onClick={() => router.push(count > 0 ? `/rules?payeeId=${entity.id}` : "/rules?new=1")}
+                                title={count > 0 ? "View rules for this payee" : "Go to rules to create a rule"}
+                              >
+                                {label}
+                              </button>
+                            )
+                            : null;
+                        })()}
+                      </td>
+
                       {/* Row actions */}
                       <td className="w-24 px-1 py-0.5">
                         <div className="flex items-center justify-end gap-0.5 opacity-0 transition-opacity group-hover/row:opacity-100">
@@ -702,7 +771,19 @@ export function PayeesTable() {
                               <Button
                                 variant="ghost" size="icon-xs" title="Delete"
                                 className="text-destructive hover:text-destructive"
-                                onClick={() => { pushUndo(); stageDelete("payees", entity.id); }}
+                                onClick={() => {
+                                  const ruleCount = payeeRuleCount.get(entity.id) ?? 0;
+                                  if (ruleCount > 0) {
+                                    setConfirmDialog({
+                                      title: `Delete "${entity.name}"?`,
+                                      message: `This payee is referenced by ${ruleCount} rule${ruleCount !== 1 ? "s" : ""}. Deleting it may break those rules.`,
+                                      onConfirm: () => { pushUndo(); stageDelete("payees", entity.id); },
+                                    });
+                                  } else {
+                                    pushUndo();
+                                    stageDelete("payees", entity.id);
+                                  }
+                                }}
                               >
                                 <Trash2 />
                               </Button>

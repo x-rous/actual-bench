@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useMemo } from "react";
-import { Pencil, Trash2, RotateCcw, Copy, AlertTriangle, Search, X } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { Pencil, Trash2, RotateCcw, Copy, AlertTriangle, Search, X, Merge } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -141,9 +142,15 @@ function stageBadgeVariant(stage: string) {
 
 type Props = {
   onEdit: (id: string) => void;
+  /** Called with the selected rule IDs when the user clicks "Merge selected". */
+  onMerge: (ids: string[]) => void;
+  /** When set, only rules that reference this payee ID in a condition or action are shown. */
+  payeeId?: string | null;
+  /** When set, only rules that reference this category ID in a condition or action are shown. */
+  categoryId?: string | null;
 };
 
-export function RulesTable({ onEdit }: Props) {
+export function RulesTable({ onEdit, onMerge, payeeId, categoryId }: Props) {
   const stagedRules = useStagedStore((s) => s.rules);
   const payees = useStagedStore((s) => s.payees);
   const categories = useStagedStore((s) => s.categories);
@@ -154,8 +161,11 @@ export function RulesTable({ onEdit }: Props) {
   const clearSaveError = useStagedStore((s) => s.clearSaveError);
   const pushUndo = useStagedStore((s) => s.pushUndo);
 
+  const router = useRouter();
+
   const [stageFilter, setStageFilter] = useState<StageFilter>("all");
   const [search, setSearch] = useState("");
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   const entityMaps = useMemo<EntityMaps>(
     () => ({ payees, categories, accounts }),
@@ -166,6 +176,24 @@ export function RulesTable({ onEdit }: Props) {
     return Object.values(stagedRules).filter((s) => {
       if (s.isDeleted) return false;
       if (stageFilter !== "all" && normalizeStage(s.entity.stage) !== stageFilter) return false;
+      if (payeeId) {
+        const parts = [...s.entity.conditions, ...s.entity.actions];
+        const hasPayee = parts.some((part) => {
+          if (part.field !== "payee" && part.field !== "imported_payee") return false;
+          const ids = Array.isArray(part.value) ? part.value : [part.value];
+          return ids.includes(payeeId);
+        });
+        if (!hasPayee) return false;
+      }
+      if (categoryId) {
+        const parts = [...s.entity.conditions, ...s.entity.actions];
+        const hasCategory = parts.some((part) => {
+          if (part.field !== "category") return false;
+          const ids = Array.isArray(part.value) ? part.value : [part.value];
+          return ids.includes(categoryId);
+        });
+        if (!hasCategory) return false;
+      }
       if (search.trim()) {
         const q = search.toLowerCase();
         const preview = rulePreview(s.entity, entityMaps).toLowerCase();
@@ -173,7 +201,7 @@ export function RulesTable({ onEdit }: Props) {
       }
       return true;
     });
-  }, [stagedRules, stageFilter, search, entityMaps]);
+  }, [stagedRules, stageFilter, payeeId, categoryId, search, entityMaps]);
 
   function handleDelete(id: string) {
     pushUndo();
@@ -194,48 +222,147 @@ export function RulesTable({ onEdit }: Props) {
     revertEntity("rules", id);
   }
 
+  // ── Selection helpers ──────────────────────────────────────────────────────
+  const selectableIds = useMemo(() => new Set(rows.map((s) => s.entity.id)), [rows]);
+  const allSelected = rows.length > 0 && rows.every((s) => selectedIds.has(s.entity.id));
+  const someSelected = rows.some((s) => selectedIds.has(s.entity.id));
+  const activeSelectedIds = useMemo(
+    () => [...selectedIds].filter((id) => selectableIds.has(id)),
+    [selectedIds, selectableIds]
+  );
+
+  function toggleSelectAll() {
+    if (allSelected) {
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        for (const s of rows) next.delete(s.entity.id);
+        return next;
+      });
+    } else {
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        for (const s of rows) next.add(s.entity.id);
+        return next;
+      });
+    }
+  }
+
+  function toggleSelect(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function handleMerge() {
+    onMerge(activeSelectedIds);
+    setSelectedIds(new Set());
+  }
+
+  function handleDeleteSelected() {
+    pushUndo();
+    for (const id of activeSelectedIds) stageDelete("rules", id);
+    setSelectedIds(new Set());
+  }
+
   const totalVisible = Object.values(stagedRules).filter((s) => !s.isDeleted).length;
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
+      {/* Bulk action bar — visible when ≥1 row is selected */}
+      {activeSelectedIds.length >= 1 && (
+        <div className="flex flex-wrap items-center gap-2 border-b border-border/40 bg-primary/5 px-2 py-1.5">
+          <span className="text-xs font-medium text-primary">
+            {activeSelectedIds.length} selected
+          </span>
+          <Button size="xs" variant="destructive" onClick={handleDeleteSelected}>            
+            Delete
+          </Button>
+          {activeSelectedIds.length >= 2 && (
+            <Button size="xs" className="h-6 text-xs" onClick={handleMerge}>
+              <Merge className="h-3.5 w-3.5 mr-1.5" />
+              Merge Selected
+            </Button>
+          )}
+          <button 
+            onClick={() => setSelectedIds(new Set())}
+            className="ml-auto text-xs text-muted-foreground hover:text-foreground"
+          > Clear selection
+          </button>
+        </div>
+      )}
+
       {/* Filter bar */}
-      <div className="flex shrink-0 items-center gap-2 border-b border-border px-4 py-2">
-        <div className="flex items-center gap-1">
+      <div className="flex flex-wrap shrink-0 items-center gap-2 border-b border-border/40 bg-muted/10 px-2 py-1.5">
+        <div className="relative">
+          <Search className="absolute left-1.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search rules…"
+            className="h-6 w-44 rounded border border-border bg-background pl-6 pr-6 text-xs outline-none focus:ring-1 focus:ring-ring"
+          />
+          {search && (
+            <button
+              onClick={() => setSearch("")}
+              className="absolute right-1.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+            >
+              <X className="h-3 w-3" />
+            </button>
+          )}
+        </div>
+
+        <div className="flex gap-px rounded border border-border bg-muted/40 p-px">
           {(["all", "pre", "default", "post"] as const).map((f) => (
-            <Button
+            <button
               key={f}
-              variant={stageFilter === f ? "secondary" : "ghost"}
-              size="sm"
-              className="h-7 text-xs"
               onClick={() => setStageFilter(f)}
+              className={cn(
+                "rounded px-2 py-0.5 text-xs transition-colors",
+                stageFilter === f
+                  ? "bg-background font-medium shadow-sm"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
             >
               {f === "all" ? "All" : STAGE_LABELS[f]}
-            </Button>
+            </button>
           ))}
         </div>
 
-        <div className="ml-auto flex items-center gap-2">
-          <div className="relative">
-            <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-            <input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search rules…"
-              className="h-7 rounded-md border border-input bg-background pl-7 pr-7 text-xs focus:outline-none focus:ring-2 focus:ring-ring/50 w-48"
-            />
-            {search && (
-              <button
-                onClick={() => setSearch("")}
-                className="absolute right-1.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-              >
-                <X className="h-3 w-3" />
-              </button>
-            )}
+        {payeeId && (
+          <div className="flex items-center gap-1.5 rounded-md border border-primary/30 bg-primary/5 px-2 py-0.5 text-xs text-primary">
+            <span>
+              Payee: <span className="font-medium">{payees[payeeId]?.entity.name ?? payeeId}</span>
+            </span>
+            <button
+              onClick={() => router.push("/rules")}
+              className="text-primary/60 hover:text-primary"
+              title="Clear payee filter"
+            >
+              <X className="h-3 w-3" />
+            </button>
           </div>
-          <span className="text-xs text-muted-foreground whitespace-nowrap">
-            {rows.length} of {totalVisible}
-          </span>
-        </div>
+        )}
+        {categoryId && (
+          <div className="flex items-center gap-1.5 rounded-md border border-primary/30 bg-primary/5 px-2 py-0.5 text-xs text-primary">
+            <span>
+              Category: <span className="font-medium">{categories[categoryId]?.entity.name ?? categoryId}</span>
+            </span>
+            <button
+              onClick={() => router.push("/rules")}
+              className="text-primary/60 hover:text-primary"
+              title="Clear category filter"
+            >
+              <X className="h-3 w-3" />
+            </button>
+          </div>
+        )}
+
+        <span className="ml-auto text-xs text-muted-foreground whitespace-nowrap">
+          {rows.length} of {totalVisible}
+        </span>
       </div>
 
       {/* Table */}
@@ -248,6 +375,16 @@ export function RulesTable({ onEdit }: Props) {
           <table className="w-full text-xs">
             <thead>
               <tr className="border-b border-border bg-muted/30 text-muted-foreground">
+                <th className="w-8 px-3 py-2">
+                  <input
+                    type="checkbox"
+                    checked={allSelected}
+                    ref={(el) => { if (el) el.indeterminate = someSelected && !allSelected; }}
+                    onChange={toggleSelectAll}
+                    className="h-3.5 w-3.5 cursor-pointer rounded accent-primary"
+                    title="Select all visible rules"
+                  />
+                </th>
                 <th className="w-20 px-3 py-2 text-left font-medium">Stage</th>
                 <th className="w-12 px-2 py-2 text-left font-medium">Op</th>
                 <th className="w-[45%] px-3 py-2 text-left font-medium">Conditions</th>
@@ -267,9 +404,20 @@ export function RulesTable({ onEdit }: Props) {
                     className={cn(
                       "group border-b border-border hover:bg-muted/20 transition-colors align-top",
                       isDirty && "bg-amber-50/40 dark:bg-amber-950/10",
-                      hasError && "bg-destructive/5"
+                      hasError && "bg-destructive/5",
+                      selectedIds.has(rule.id) && "bg-primary/5"
                     )}
                   >
+                    {/* Checkbox */}
+                    <td className="px-3 py-2.5">
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.has(rule.id)}
+                        onChange={() => toggleSelect(rule.id)}
+                        className="h-3.5 w-3.5 cursor-pointer rounded accent-primary"
+                      />
+                    </td>
+
                     {/* Stage */}
                     <td className="px-3 py-2.5">
                       <div className="flex items-center gap-1">

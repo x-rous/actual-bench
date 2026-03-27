@@ -15,19 +15,20 @@ type EntityMaps = {
 };
 
 /** Safely convert any condition/action value to a plain string for display. */
-export function valueToString(value: string | string[] | AmountRange | null | undefined): string {
+export function valueToString(value: string | number | string[] | AmountRange | null | undefined): string {
   if (value == null) return "";
+  if (typeof value === "number") return String(value);
   if (Array.isArray(value)) return value.filter(Boolean).join(", ");
   if (typeof value === "object") {
     const r = value as AmountRange;
     return `${r.num1} – ${r.num2}`;
   }
-  return value ?? "";
+  return String(value);
 }
 
 function resolveValue(
   field: string,
-  value: string | string[] | AmountRange,
+  value: string | number | string[] | AmountRange,
   maps: EntityMaps,
   fieldDefs: Record<string, { entity?: string }>
 ): string {
