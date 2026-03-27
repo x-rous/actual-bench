@@ -170,6 +170,15 @@ export function useRulesSave() {
       for (const id of skippedMergeDeps) store.revertEntity("rules", id);
     }
 
+    // Remove temp-UUID staged entries for rules that were successfully created.
+    // Without this, `loadRules` after the refetch preserves every `isNew` entry
+    // not found in the server response — causing the temp entry to linger alongside
+    // the server's newly assigned rule, producing a duplicate row.
+    {
+      const store = useStagedStore.getState();
+      for (const id of succeededCreateIds) store.stageDelete("rules", id);
+    }
+
     // Clear merge dependencies whose creates succeeded.
     const processedMergeIds = [...succeededCreateIds].filter((id) => id in mergeDeps);
     if (processedMergeIds.length > 0) {

@@ -27,6 +27,7 @@ type DoneAction = "down" | "up" | "tab" | "shiftTab" | "cancel" | "blur";
 type SortCol = "name" | "type";
 type SortDir = "asc" | "desc";
 type TypeFilter = "all" | "regular" | "transfer";
+type RulesFilter = "all" | "with_rules" | "no_rules";
 type ConfirmState = { title: string; message: string; onConfirm: () => void };
 
 // ─── NameInput ─────────────────────────────────────────────────────────────────
@@ -114,24 +115,32 @@ const TYPE_OPTIONS: { value: TypeFilter; label: string }[] = [
   { value: "transfer", label: "Transfer" },
 ];
 
+const RULES_OPTIONS: { value: RulesFilter; label: string }[] = [
+  { value: "all", label: "All" },
+  { value: "with_rules", label: "Has rules" },
+  { value: "no_rules", label: "No rules" },
+];
+
 // ─── FilterBar ─────────────────────────────────────────────────────────────────
 
 function FilterBar({
   search, onSearchChange,
   typeFilter, onTypeChange,
+  rulesFilter, onRulesFilterChange,
   filteredCount, totalCount,
   selectedCount, canFillDown,
   onFillDown, onBulkDelete, onDeselect,
 }: {
   search: string; onSearchChange: (v: string) => void;
   typeFilter: TypeFilter; onTypeChange: (v: TypeFilter) => void;
+  rulesFilter: RulesFilter; onRulesFilterChange: (v: RulesFilter) => void;
   filteredCount: number; totalCount: number;
   selectedCount: number; canFillDown: boolean;
   onFillDown: () => void;
   onBulkDelete: () => void;
   onDeselect: () => void;
 }) {
-  const hasFilters = search || typeFilter !== "all";
+  const hasFilters = search || typeFilter !== "all" || rulesFilter !== "all";
 
   if (selectedCount > 0) {
     return (
@@ -170,9 +179,11 @@ function FilterBar({
 
       <PillGroup options={TYPE_OPTIONS} value={typeFilter} onChange={onTypeChange} />
 
+      <PillGroup options={RULES_OPTIONS} value={rulesFilter} onChange={onRulesFilterChange} />
+
       {hasFilters && (
         <button
-          onClick={() => { onSearchChange(""); onTypeChange("all"); }}
+          onClick={() => { onSearchChange(""); onTypeChange("all"); onRulesFilterChange("all"); }}
           className="text-xs text-muted-foreground underline hover:text-foreground"
         >
           Clear
@@ -223,6 +234,7 @@ export function PayeesTable() {
   // ── Filter / sort state ──────────────────────────────────────────────────────
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
+  const [rulesFilter, setRulesFilter] = useState<RulesFilter>("all");
   const [sortCol, setSortCol] = useState<SortCol | null>(null);
   const [sortDir, setSortDir] = useState<SortDir>("asc");
 
@@ -291,6 +303,8 @@ export function PayeesTable() {
     if (q) result = result.filter((r) => r.entity.name.toLowerCase().includes(q));
     if (typeFilter === "regular") result = result.filter((r) => !r.entity.transferAccountId);
     if (typeFilter === "transfer") result = result.filter((r) => !!r.entity.transferAccountId);
+    if (rulesFilter === "with_rules") result = result.filter((r) => (payeeRuleCount.get(r.entity.id) ?? 0) > 0);
+    if (rulesFilter === "no_rules") result = result.filter((r) => (payeeRuleCount.get(r.entity.id) ?? 0) === 0);
 
     if (sortCol) {
       result = [...result].sort((a, b) => {
@@ -309,7 +323,7 @@ export function PayeesTable() {
       });
     }
     return result;
-  }, [staged, search, typeFilter, sortCol, sortDir]);
+  }, [staged, search, typeFilter, rulesFilter, payeeRuleCount, sortCol, sortDir]);
 
   function toggleSort(col: SortCol) {
     if (sortCol === col) {
@@ -551,6 +565,7 @@ export function PayeesTable() {
         <FilterBar
           search={search} onSearchChange={setSearch}
           typeFilter={typeFilter} onTypeChange={setTypeFilter}
+          rulesFilter={rulesFilter} onRulesFilterChange={setRulesFilter}
           filteredCount={rows.length} totalCount={totalCount}
           selectedCount={activeSelectedCount} canFillDown={canFillDown}
           onFillDown={handleFillDown}
@@ -560,7 +575,7 @@ export function PayeesTable() {
 
         {rows.length === 0 ? (
           <div className="flex items-center justify-center py-12 text-sm text-muted-foreground">
-            {search || typeFilter !== "all"
+            {search || typeFilter !== "all" || rulesFilter !== "all"
               ? "No payees match the current filters."
               : "No payees yet."}
           </div>

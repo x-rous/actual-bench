@@ -234,7 +234,7 @@ export function DraftPanel() {
 
   return (
     <aside className="flex w-56 shrink-0 flex-col border-l border-border bg-background">
-      <div className="flex items-center justify-between px-3 py-2.5">
+      <div className="flex items-center justify-between px-3 py-3.5">
         <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
           Draft Changes
         </span>

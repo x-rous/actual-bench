@@ -261,46 +261,73 @@ export function RulesTable({ onEdit, onMerge, payeeId, categoryId }: Props) {
     setSelectedIds(new Set());
   }
 
+  function handleDeleteSelected() {
+    pushUndo();
+    for (const id of activeSelectedIds) stageDelete("rules", id);
+    setSelectedIds(new Set());
+  }
+
   const totalVisible = Object.values(stagedRules).filter((s) => !s.isDeleted).length;
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
-      {/* Bulk action bar — visible when ≥2 rows are selected */}
-      {activeSelectedIds.length >= 2 && (
-        <div className="flex shrink-0 items-center gap-3 border-b border-primary/20 bg-primary/5 px-4 py-2">
+      {/* Bulk action bar — visible when ≥1 row is selected */}
+      {activeSelectedIds.length >= 1 && (
+        <div className="flex flex-wrap items-center gap-2 border-b border-border/40 bg-primary/5 px-2 py-1.5">
           <span className="text-xs font-medium text-primary">
             {activeSelectedIds.length} selected
           </span>
-          <Button
-            size="sm"
-            className="h-7 text-xs"
-            onClick={handleMerge}
-          >
-            <Merge className="h-3.5 w-3.5 mr-1.5" />
-            Merge selected
+          <Button size="xs" variant="destructive" onClick={handleDeleteSelected}>            
+            Delete
           </Button>
-          <button
+          {activeSelectedIds.length >= 2 && (
+            <Button size="xs" className="h-6 text-xs" onClick={handleMerge}>
+              <Merge className="h-3.5 w-3.5 mr-1.5" />
+              Merge Selected
+            </Button>
+          )}
+          <button 
             onClick={() => setSelectedIds(new Set())}
             className="ml-auto text-xs text-muted-foreground hover:text-foreground"
-          >
-            Clear selection
+          > Clear selection
           </button>
         </div>
       )}
 
       {/* Filter bar */}
-      <div className="flex shrink-0 items-center gap-2 border-b border-border px-4 py-2">
-        <div className="flex items-center gap-1">
+      <div className="flex flex-wrap shrink-0 items-center gap-2 border-b border-border/40 bg-muted/10 px-2 py-1.5">
+        <div className="relative">
+          <Search className="absolute left-1.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search rules…"
+            className="h-6 w-44 rounded border border-border bg-background pl-6 pr-6 text-xs outline-none focus:ring-1 focus:ring-ring"
+          />
+          {search && (
+            <button
+              onClick={() => setSearch("")}
+              className="absolute right-1.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+            >
+              <X className="h-3 w-3" />
+            </button>
+          )}
+        </div>
+
+        <div className="flex gap-px rounded border border-border bg-muted/40 p-px">
           {(["all", "pre", "default", "post"] as const).map((f) => (
-            <Button
+            <button
               key={f}
-              variant={stageFilter === f ? "secondary" : "ghost"}
-              size="sm"
-              className="h-7 text-xs"
               onClick={() => setStageFilter(f)}
+              className={cn(
+                "rounded px-2 py-0.5 text-xs transition-colors",
+                stageFilter === f
+                  ? "bg-background font-medium shadow-sm"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
             >
               {f === "all" ? "All" : STAGE_LABELS[f]}
-            </Button>
+            </button>
           ))}
         </div>
 
@@ -333,28 +360,9 @@ export function RulesTable({ onEdit, onMerge, payeeId, categoryId }: Props) {
           </div>
         )}
 
-        <div className="ml-auto flex items-center gap-2">
-          <div className="relative">
-            <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-            <input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search rules…"
-              className="h-7 rounded-md border border-input bg-background pl-7 pr-7 text-xs focus:outline-none focus:ring-2 focus:ring-ring/50 w-48"
-            />
-            {search && (
-              <button
-                onClick={() => setSearch("")}
-                className="absolute right-1.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-              >
-                <X className="h-3 w-3" />
-              </button>
-            )}
-          </div>
-          <span className="text-xs text-muted-foreground whitespace-nowrap">
-            {rows.length} of {totalVisible}
-          </span>
-        </div>
+        <span className="ml-auto text-xs text-muted-foreground whitespace-nowrap">
+          {rows.length} of {totalVisible}
+        </span>
       </div>
 
       {/* Table */}
