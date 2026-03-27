@@ -25,6 +25,7 @@ export function useCategoryGroups() {
     // only. All entity data lives in the Zustand staged store (loadCategoryGroups).
     // See useAccounts.ts for a full explanation of these settings.
     staleTime: Infinity,
+    gcTime: Infinity,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
   });

@@ -4,7 +4,7 @@ import { useState, useMemo } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useStagedStore } from "@/store/staged";
 import { useConnectionStore, selectActiveInstance } from "@/store/connection";
-import { createPayee, updatePayee, deletePayee } from "@/lib/api/payees";
+import { createPayee, updatePayee, deletePayee, getPayees } from "@/lib/api/payees";
 import { extractMessage, computeSaveOperations } from "@/lib/saveUtils";
 import type { SaveResult, SaveSummary } from "@/types/diff";
 import type { Payee } from "@/types/entities";
@@ -30,6 +30,7 @@ export function usePayeesSave() {
     const succeeded: SaveResult[] = [];
     const failed: SaveResult[] = [];
     const succeededCreateIds = new Set<string>();
+    const idMap: Record<string, string> = {};
 
     // ── Creates (parallel) ────────────────────────────────────────────────────
     const createResults = await Promise.allSettled(
@@ -43,6 +44,25 @@ export function usePayeesSave() {
         succeededCreateIds.add(id);
       } else {
         failed.push({ status: "error", id, message: extractMessage(r.reason, "Create failed") });
+      }
+    }
+
+    // ── Resolve server IDs for created payees ─────────────────────────────────
+    // The Actual HTTP API does not return the new payee's ID in the create
+    // response. Fetch the fresh list and match by name to build the mapping
+    // so that rules referencing newly created payees get the correct server ID.
+    if (succeededCreateIds.size > 0) {
+      try {
+        const freshPayees = await getPayees(connection);
+        const serverIdByName = new Map(freshPayees.map((p) => [p.name, p.id]));
+        for (const p of toCreate) {
+          if (succeededCreateIds.has(p.id)) {
+            const serverId = serverIdByName.get(p.name);
+            if (serverId) idMap[p.id] = serverId;
+          }
+        }
+      } catch {
+        // idMap stays empty; rules will fall back to client UUIDs
       }
     }
 
@@ -92,7 +112,7 @@ export function usePayeesSave() {
 
     await queryClient.invalidateQueries({ queryKey: ["payees", connection.id] });
 
-    return { succeeded, failed };
+    return { succeeded, failed, idMap };
   }
 
   return { save, isSaving, hasPendingChanges };

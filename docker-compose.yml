@@ -1,33 +1,9 @@
-# Production build served via `next start`.
-# ~80% less RAM than the Turbopack dev server.
-# Usage: docker compose up --build
-#
-# The build runs inside the container (multi-stage) so no local build artifacts
-# are needed on the host. Rebuilding takes a few minutes but the result is lean.
-
 services:
   actual-admin-panel:
-    build:
-      context: .
-      dockerfile: docker/Dockerfile.prod
+    image: ghcr.io/x-rous/actual-admin-panel:latest
     ports:
       - "3000:3000"
     environment:
       NODE_ENV: production
       NEXT_TELEMETRY_DISABLED: "1"
-      # Production server is lean — 256 MB is plenty for Next.js `next start`
-      NODE_OPTIONS: --max-old-space-size=256
-    labels:
-      - "traefik.enable=true"
-      - "traefik.docker.network=proxy"
-      - "traefik.http.routers.actual-admin-panel.rule=Host(`your-domain.example.com`)"
-      - "traefik.http.routers.actual-admin-panel.entrypoints=websecure"
-      - "traefik.http.routers.actual-admin-panel.tls.certresolver=le"
-      - "traefik.http.services.actual-admin-panel.loadbalancer.server.port=3000"
-    deploy:
-      resources:
-        limits:
-          memory: 512M
-        reservations:
-          memory: 128M
     restart: unless-stopped

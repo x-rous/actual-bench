@@ -23,12 +23,14 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and push
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v6
         with:
           context: .
           file: docker/Dockerfile.prod
           push: true
-          tags: ghcr.io/x-rous/actual-admin-panel:latest
+          tags: |
+            ghcr.io/x-rous/actual-admin-panel:latest
+            ghcr.io/x-rous/actual-admin-panel:${{ github.sha }}
 
       - name: Deploy to VPS
         uses: appleboy/ssh-action@v1
@@ -37,7 +39,7 @@ jobs:
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
           script: |
-            cd /home/manaf/docker/actual-admin-panel
-            docker compose -f docker-compose.prod.yml pull
-            docker compose -f docker-compose.prod.yml up -d --remove-orphans
+            cd ${{ secrets.VPS_DEPLOY_PATH }}
+            docker compose pull
+            docker compose up -d --remove-orphans
             docker image prune -f

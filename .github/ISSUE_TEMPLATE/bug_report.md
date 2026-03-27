@@ -22,10 +22,14 @@ labels: bug
 
 <!-- What actually happened. Include screenshots or error messages if relevant. -->
 
+## Logs / Console errors
+
+<!-- Open browser DevTools (F12) → Console tab and paste any errors here. -->
+
 ## Environment
 
-- **App version**: <!-- shown in the sidebar footer, e.g. v0.1.0 -->
+- **App version**: <!-- shown in the top-bar connection menu, e.g. v1.0.0 -->
 - **Browser**: <!-- e.g. Chrome 124, Firefox 126 -->
 - **OS**: <!-- e.g. macOS 14, Windows 11, Ubuntu 24.04 -->
 - **actual-http-api version**: <!-- if known -->
-- **Deployment**: <!-- local / Docker dev / Docker production -->
+- **Deployment**: <!-- local dev / Docker / GHCR image -->

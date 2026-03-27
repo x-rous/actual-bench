@@ -294,8 +294,8 @@ export function RulesTable({ onEdit, onMerge, payeeId, categoryId }: Props) {
         </div>
       )}
 
-      {/* Filter bar */}
-      <div className="flex flex-wrap shrink-0 items-center gap-2 border-b border-border/40 bg-muted/10 px-2 py-1.5">
+      {/* Filter bar — hidden while rows are selected */}
+      {activeSelectedIds.length === 0 && <div className="flex flex-wrap shrink-0 items-center gap-2 border-b border-border/40 bg-muted/10 px-2 py-1.5">
         <div className="relative">
           <Search className="absolute left-1.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
           <input
@@ -363,7 +363,7 @@ export function RulesTable({ onEdit, onMerge, payeeId, categoryId }: Props) {
         <span className="ml-auto text-xs text-muted-foreground whitespace-nowrap">
           {rows.length} of {totalVisible}
         </span>
-      </div>
+      </div>}
 
       {/* Table */}
       <div className="flex-1 overflow-auto">
@@ -477,43 +477,41 @@ export function RulesTable({ onEdit, onMerge, payeeId, categoryId }: Props) {
                       <div className="flex items-center justify-end gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
                         <Button
                           variant="ghost"
-                          size="icon"
-                          className="h-6 w-6"
+                          size="icon-xs"
                           title="Edit"
                           onClick={() => onEdit(rule.id)}
                         >
-                          <Pencil className="h-3 w-3" />
+                          <Pencil />
                         </Button>
                         <Button
                           variant="ghost"
-                          size="icon"
-                          className="h-6 w-6"
+                          size="icon-xs"
                           title="Duplicate"
                           onClick={() => handleDuplicate(rule)}
                         >
-                          <Copy className="h-3 w-3" />
+                          <Copy />
                         </Button>
                         {(isDirty || hasError) && (
                           <Button
                             variant="ghost"
-                            size="icon"
-                            className="h-6 w-6 text-muted-foreground"
+                            size="icon-xs"
+                            className="text-muted-foreground"
                             title={hasError ? "Clear error & revert" : "Revert"}
                             onClick={() =>
                               hasError ? handleClearError(rule.id) : handleRevert(rule.id)
                             }
                           >
-                            <RotateCcw className="h-3 w-3" />
+                            <RotateCcw />
                           </Button>
                         )}
                         <Button
                           variant="ghost"
-                          size="icon"
-                          className="h-6 w-6 text-muted-foreground hover:text-destructive"
+                          size="icon-xs"
+                          className="text-destructive hover:text-destructive"
                           title="Delete"
                           onClick={() => handleDelete(rule.id)}
                         >
-                          <Trash2 className="h-3 w-3" />
+                          <Trash2 />
                         </Button>
                       </div>
                     </td>

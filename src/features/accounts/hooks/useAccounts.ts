@@ -32,6 +32,7 @@ export function useAccounts() {
     // refetchOnWindowFocus/Reconnect: disabled because a background refetch
     // would call loadAccounts and silently overwrite unsaved staged edits.
     staleTime: Infinity,
+    gcTime: Infinity,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
   });
