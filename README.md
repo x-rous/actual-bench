@@ -1,7 +1,7 @@
 # Actual Budget Admin Panel
 
-![Version](https://img.shields.io/github/v/release/manafm/actual-admin-panel?label=version)
-![License](https://img.shields.io/github/license/manafm/actual-admin-panel)
+![Version](https://img.shields.io/github/v/release/x-rous/actual-admin-panel?label=version)
+![License](https://img.shields.io/github/license/x-rous/actual-admin-panel)
 
 A web-based admin panel for [Actual Budget](https://actualbudget.org/) that connects to a self-hosted [actual-http-api](https://github.com/jhonderson/actual-http-api) server. Manage accounts, payees, categories, and rules through a clean UI with staged editing, undo/redo, and CSV import/export.
 
@@ -19,9 +19,42 @@ A web-based admin panel for [Actual Budget](https://actualbudget.org/) that conn
   - Actions: `set` (payee, category, notes, cleared)
   - Stage filter: `default`, `pre`, `post`
 
+## Requirements
+
+- A self-hosted [Actual Budget](https://actualbudget.org/) server
+- A running [actual-http-api](https://github.com/jhonderson/actual-http-api) instance pointed at that server
+
+## Quick Start (Docker)
+
+Pull the pre-built image from GHCR — no local build required:
+
+```bash
+docker run -p 3000:3000 ghcr.io/x-rous/actual-admin-panel:latest
+```
+
+Or with Docker Compose:
+
+```yaml
+services:
+  actual-admin-panel:
+    image: ghcr.io/x-rous/actual-admin-panel:latest
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: production
+      NEXT_TELEMETRY_DISABLED: "1"
+    restart: unless-stopped
+```
+
+```bash
+docker compose up -d
+```
+
+Open [http://localhost:3000](http://localhost:3000). See [Docker](#docker) for Traefik/HTTPS configuration.
+
 ## Connecting to Actual Budget
 
-You need a running [actual-http-api](https://github.com/jhonderson/actual-http-api) instance. On the Connect screen enter:
+On the Connect screen enter:
 
 | Field | Description |
 |---|---|
@@ -36,18 +69,18 @@ After connecting, the connection is saved in your browser's **session storage** 
 
 1. Make changes inline (click any cell to edit, press Enter or click away to confirm)
 2. New rows, updates, and deletions are highlighted in the table
-3. Click **Save** in the draft panel to persist all changes to the server
+3. Click **Save** in the top bar to persist all changes to the server
 4. Click **Discard** to revert all pending changes
 5. Use **Undo** / **Redo** to step through your local edit history before saving
 
 ## CSV Import / Export
 
-Every entity page has an Export button that downloads a UTF-8 (Comma delimited) CSV file compatible with Excel. The Import button accepts the same format — map your columns and the rows are staged as new or updated entities (not saved until you click Save).
+Every entity page has an Export button that downloads a UTF-8 CSV file compatible with Excel. The Import button accepts the same format — rows are staged as new or updated entities and are not saved until you click Save.
 
 ## Known Limitations
 
 - **Session storage is tab-local** — credentials clear when the tab is closed; reconnection is required in each new tab.
-- **No pagination** — all entities (accounts, payees, categories, rules) are loaded at once. Performance may degrade on very large budgets.
+- **No pagination** — all entities are loaded at once. Performance may degrade on very large budgets.
 - **Schedules** — not yet implemented.
 
 ## Development
@@ -55,7 +88,7 @@ Every entity page has an Export button that downloads a UTF-8 (Comma delimited) 
 ### Prerequisites
 
 - Node.js 20+
-- A running [actual-http-api](https://github.com/jhonderson/actual-http-api) server
+- A running [actual-http-api](https://github.com/jhonderson/actual-http-api) instance
 
 ### Setup
 
@@ -70,22 +103,6 @@ Open [http://localhost:3000](http://localhost:3000).
 
 No `.env` file is required. The app version is injected automatically from `package.json` at build time.
 
-### Versioning
-
-This project uses [semantic versioning](https://semver.org/). To cut a release:
-
-```bash
-npm version patch   # 0.1.0 → 0.1.1  (bug fixes)
-npm version minor   # 0.1.0 → 0.2.0  (new features)
-npm version major   # 0.1.0 → 1.0.0  (breaking changes)
-```
-
-`npm version` bumps `package.json`, commits the change, and creates a git tag automatically. Push the tag to create a GitHub release:
-
-```bash
-git push && git push --tags
-```
-
 ### Scripts
 
 | Command | Description |
@@ -98,11 +115,27 @@ git push && git push --tags
 | `npm run clean` | Delete build artifacts (`.next-build/`, `tsconfig.tsbuildinfo`) |
 | `npm version patch\|minor\|major` | Bump version, commit, and tag |
 
+See [CONTRIBUTING.md](CONTRIBUTING.md) for release and contribution guidelines.
+
 ## Docker
+
+### Pre-built Image (Recommended)
+
+The latest image is published to GHCR automatically on every push to `main`:
+
+```
+ghcr.io/x-rous/actual-admin-panel:latest
+```
+
+Pinned releases are also tagged by commit SHA for rollbacks:
+
+```
+ghcr.io/x-rous/actual-admin-panel:<git-sha>
+```
 
 ### Dev Container (Portainer / Traefik)
 
-The dev compose file mounts your source directory and starts the Turbopack hot-reload server. A named Docker volume persists the Turbopack build cache across restarts so you avoid an HMR rebuild loop on each start.
+The dev compose file mounts your source directory and starts the Turbopack hot-reload server. A named Docker volume persists the Turbopack build cache across restarts.
 
 **First-time setup** (run once on the host, from the project root):
 
@@ -124,7 +157,7 @@ To clear the Turbopack cache:
 docker volume rm next-build-cache
 ```
 
-### Production Build
+### Production Build (from source)
 
 Multi-stage Dockerfile — builds a lean runtime image with production-only `node_modules` running as a non-root user.
 

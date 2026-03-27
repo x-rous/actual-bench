@@ -26,5 +26,10 @@ jobs:
       - name: Type check
         run: npx tsc --noEmit
 
+      - name: Build
+        run: npm run build
+        env:
+          NEXT_TELEMETRY_DISABLED: 1
+
       - name: Run tests
-        run: npm test -- --passWithNoTests
+        run: npm test
