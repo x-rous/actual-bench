@@ -1,14 +1,22 @@
 # Actual Budget Admin Panel
 
+![CI](https://github.com/x-rous/actual-admin-panel/actions/workflows/ci.yml/badge.svg)
 ![Version](https://img.shields.io/github/v/release/x-rous/actual-admin-panel?label=version)
 ![License](https://img.shields.io/github/license/x-rous/actual-admin-panel)
 
 A web-based admin panel for [Actual Budget](https://actualbudget.org/) that connects to a self-hosted [actual-http-api](https://github.com/jhonderson/actual-http-api) server. Manage accounts, payees, categories, and rules through a clean UI with staged editing, undo/redo, and CSV import/export.
 
+## Screenshots
+
+<!-- TODO: replace with actual screenshots -->
+| Dashboard | Rules Editor |
+|---|---|
+| ![Dashboard](docs/screenshots/dashboard.png) | ![Rules Editor](docs/screenshots/rules.png) |
+
 ## Features
 
-- **Multi-connection support** — save and switch between multiple Actual Budget servers; all staged data and query cache are scoped per connection
-- **Staged editing** — all changes are held locally until you click Save; inline editing never touches the server immediately
+- **Multi-connection support** — save and switch between multiple Actual Budget servers; staged data and query cache are scoped per connection
+- **Staged editing** — all changes are held locally until you click Save; nothing touches the server until you confirm
 - **Undo / Redo** — step backwards and forwards through your edits before committing
 - **Accounts** — view and rename accounts, toggle on/off budget status; CSV import/export
 - **Payees** — view, rename, and delete payees; CSV import/export
@@ -24,7 +32,7 @@ A web-based admin panel for [Actual Budget](https://actualbudget.org/) that conn
 - A self-hosted [Actual Budget](https://actualbudget.org/) server
 - A running [actual-http-api](https://github.com/jhonderson/actual-http-api) instance pointed at that server
 
-## Quick Start (Docker)
+## Quick Start
 
 Pull the pre-built image from GHCR — no local build required:
 
@@ -32,25 +40,13 @@ Pull the pre-built image from GHCR — no local build required:
 docker run -p 3000:3000 ghcr.io/x-rous/actual-admin-panel:latest
 ```
 
-Or with Docker Compose:
-
-```yaml
-services:
-  actual-admin-panel:
-    image: ghcr.io/x-rous/actual-admin-panel:latest
-    ports:
-      - "3000:3000"
-    environment:
-      NODE_ENV: production
-      NEXT_TELEMETRY_DISABLED: "1"
-    restart: unless-stopped
-```
+Or with Docker Compose (a ready-to-use `docker-compose.yml` is included in the repo):
 
 ```bash
 docker compose up -d
 ```
 
-Open [http://localhost:3000](http://localhost:3000). See [Docker](#docker) for Traefik/HTTPS configuration.
+Open [http://localhost:3000](http://localhost:3000) and enter your connection details on the Connect screen.
 
 ## Connecting to Actual Budget
 
@@ -63,19 +59,19 @@ On the Connect screen enter:
 | **Budget Sync ID** | The sync ID of the budget file (visible in Actual Budget under Settings → Sync) |
 | **Encryption Password** | Only required if the budget is end-to-end encrypted |
 
-After connecting, the connection is saved in your browser's **session storage** so credentials are automatically cleared when you close the tab. You will need to reconnect each time you open a new tab — this is intentional for security. Use the connection menu in the top bar to add more connections or switch between them.
+After connecting, the connection is saved in **session storage** — credentials are cleared automatically when the tab is closed. Use the connection menu in the top bar to add more connections or switch between them.
 
 ## Staged Editing Workflow
 
-1. Make changes inline (click any cell to edit, press Enter or click away to confirm)
-2. New rows, updates, and deletions are highlighted in the table
+1. Click any cell to edit inline; press Enter or click away to confirm
+2. New rows, updates, and deletions are colour-coded in the table
 3. Click **Save** in the top bar to persist all changes to the server
 4. Click **Discard** to revert all pending changes
-5. Use **Undo** / **Redo** to step through your local edit history before saving
+5. Use **Undo / Redo** to step through your local edit history before saving
 
 ## CSV Import / Export
 
-Every entity page has an Export button that downloads a UTF-8 CSV file compatible with Excel. The Import button accepts the same format — rows are staged as new or updated entities and are not saved until you click Save.
+Every entity page has an **Export** button that downloads a UTF-8 CSV file compatible with Excel. The **Import** button accepts the same format — rows are staged as new or updated entities and are not saved until you click Save.
 
 ## Known Limitations
 
@@ -112,7 +108,7 @@ No `.env` file is required. The app version is injected automatically from `pack
 | `npm start` | Serve the production build |
 | `npm run lint` | ESLint |
 | `npm test` | Jest tests |
-| `npm run clean` | Delete build artifacts (`.next-build/`, `tsconfig.tsbuildinfo`) |
+| `npm run clean` | Delete `.next-build/` and `tsconfig.tsbuildinfo` |
 | `npm version patch\|minor\|major` | Bump version, commit, and tag |
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for release and contribution guidelines.
@@ -121,23 +117,23 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for release and contribution guidelines.
 
 ### Pre-built Image (Recommended)
 
-The latest image is published to GHCR automatically on every push to `main`:
+The latest image is published to GHCR on every push to `main`:
 
 ```
 ghcr.io/x-rous/actual-admin-panel:latest
 ```
 
-Pinned releases are also tagged by commit SHA for rollbacks:
+Releases are also tagged by commit SHA, enabling pinned deployments and rollbacks:
 
 ```
 ghcr.io/x-rous/actual-admin-panel:<git-sha>
 ```
 
-### Dev Container (Portainer / Traefik)
+### Dev Container
 
-The dev compose file mounts your source directory and starts the Turbopack hot-reload server. A named Docker volume persists the Turbopack build cache across restarts.
+The dev compose file mounts your source directory and runs the Turbopack hot-reload server. A named Docker volume persists the build cache across restarts.
 
-**First-time setup** (run once on the host, from the project root):
+**First-time setup** — run once on the host from the project root:
 
 ```bash
 npm install
@@ -149,7 +145,7 @@ npm install
 docker compose -f docker/docker-compose.dev.yml up -d
 ```
 
-Edit `docker/docker-compose.dev.yml` to set the source volume path and your Traefik hostname before starting. The server is available on port `3001`. Edit files on the host and changes appear immediately via hot reload.
+Edit `docker/docker-compose.dev.yml` to set the correct source volume path before starting. The server is available on port `3001`. Changes on the host are reflected immediately via hot reload.
 
 To clear the Turbopack cache:
 
@@ -157,17 +153,13 @@ To clear the Turbopack cache:
 docker volume rm next-build-cache
 ```
 
-### Production Build (from source)
+### Build from Source
 
-Multi-stage Dockerfile — builds a lean runtime image with production-only `node_modules` running as a non-root user.
+To build your own image using the multi-stage Dockerfile:
 
 ```bash
-# Build and run (docker-compose.yml is in the project root)
-docker compose up --build
-
-# Or build manually
 docker build -f docker/Dockerfile.prod -t actual-admin-panel .
 docker run -p 3000:3000 actual-admin-panel
 ```
 
-The production server uses ~256 MB RAM. The compose file includes Traefik labels for HTTPS termination.
+The production server uses ~256 MB RAM and runs as a non-root user.
