@@ -131,6 +131,9 @@ type StagedStoreActions = {
   /** Discard ALL staged changes across all entity types */
   discardAll: () => void;
 
+  /** Clear undo/redo history without touching entity data (called after a successful save) */
+  clearHistory: () => void;
+
   /** Push current state onto the undo stack */
   pushUndo: () => void;
 
@@ -369,6 +372,8 @@ export const useStagedStore = create<StagedStoreState & StagedStoreActions>((set
     }),
 
   discardAll: () => set({ ...emptySnapshot(), undoStack: [], redoStack: [], mergeDependencies: {} }),
+
+  clearHistory: () => set({ undoStack: [], redoStack: [] }),
 
   setMergeDependency: (newRuleId, originalIds) =>
     set((state) => ({

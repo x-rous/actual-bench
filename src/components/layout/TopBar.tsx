@@ -46,6 +46,7 @@ export function TopBar() {
   const undo = useStagedStore((s) => s.undo);
   const redo = useStagedStore((s) => s.redo);
   const discardAll = useStagedStore((s) => s.discardAll);
+  const clearHistory = useStagedStore((s) => s.clearHistory);
 
   const { save: saveAccounts, isSaving: isSavingAccounts } = useAccountsSave();
   const { save: savePayees, isSaving: isSavingPayees } = usePayeesSave();
@@ -76,6 +77,7 @@ export function TopBar() {
         groupsResult.failed.length +
         categoriesResult.failed.length +
         rulesResult.failed.length;
+      clearHistory();
       if (totalFailed === 0) {
         toast.success(`Saved ${totalSucceeded} item${totalSucceeded !== 1 ? "s" : ""} successfully.`);
       } else {
