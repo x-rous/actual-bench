@@ -4,7 +4,7 @@ Contributions are welcome — bug reports, feature requests, and pull requests a
 
 ## Reporting bugs
 
-Open an issue on [GitHub Issues](https://github.com/manafm/actual-admin-panel/issues) using the **Bug report** template. Include:
+Open an issue on [GitHub Issues](https://github.com/x-rous/actual-admin-panel/issues) using the **Bug report** template. Include:
 
 - Steps to reproduce
 - Expected vs. actual behaviour
@@ -25,7 +25,7 @@ Open an issue using the **Feature request** template. Check open issues first to
 ### Setup
 
 ```bash
-git clone https://github.com/manafm/actual-admin-panel.git
+git clone https://github.com/x-rous/actual-admin-panel.git
 cd actual-admin-panel
 npm install
 npm run dev
@@ -60,7 +60,7 @@ docs: document sessionStorage behaviour
 
 ### What to work on
 
-Check issues labelled [`good first issue`](https://github.com/manafm/actual-admin-panel/issues?q=is%3Aissue+label%3A%22good+first+issue%22) or [`help wanted`](https://github.com/manafm/actual-admin-panel/issues?q=is%3Aissue+label%3A%22help+wanted%22).
+Check issues labelled [`good first issue`](https://github.com/x-rous/actual-admin-panel/issues?q=is%3Aissue+label%3A%22good+first+issue%22) or [`help wanted`](https://github.com/x-rous/actual-admin-panel/issues?q=is%3Aissue+label%3A%22help+wanted%22).
 
 The highest-impact open areas are:
 

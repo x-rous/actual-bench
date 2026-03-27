@@ -117,8 +117,8 @@ const TYPE_OPTIONS: { value: TypeFilter; label: string }[] = [
 
 const RULES_OPTIONS: { value: RulesFilter; label: string }[] = [
   { value: "all", label: "All" },
-  { value: "with_rules", label: "Has rules" },
-  { value: "no_rules", label: "No rules" },
+  { value: "with_rules", label: "Has Rules" },
+  { value: "no_rules", label: "No Rules" },
 ];
 
 // ─── FilterBar ─────────────────────────────────────────────────────────────────

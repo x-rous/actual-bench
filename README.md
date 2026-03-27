@@ -3,7 +3,7 @@
 ![Version](https://img.shields.io/github/v/release/manafm/actual-admin-panel?label=version)
 ![License](https://img.shields.io/github/license/manafm/actual-admin-panel)
 
-A web-based admin panel for [Actual Budget](https://actualbudget.org/) that connects to a self-hosted [actual-http-api](https://github.com/sakowicz/actual-http-api) server. Manage accounts, payees, categories, and rules through a clean UI with staged editing, undo/redo, and CSV import/export.
+A web-based admin panel for [Actual Budget](https://actualbudget.org/) that connects to a self-hosted [actual-http-api](https://github.com/jhonderson/actual-http-api) server. Manage accounts, payees, categories, and rules through a clean UI with staged editing, undo/redo, and CSV import/export.
 
 ## Features
 
@@ -16,12 +16,12 @@ A web-based admin panel for [Actual Budget](https://actualbudget.org/) that conn
 - **Rules** — view, filter by stage, create and edit rules with a full condition/action builder; CSV import/export
   - Conditions: `contains`, `matches`, `oneOf`, `is`, `isNot`, `gt`, `lt`, `gte`, `lte`, `isapprox`, `isbetween`, `onBudget`, `offBudget`
   - Multi-value `oneOf` inputs: entity picker (accounts, payees, categories) and tag input (strings)
-  - Actions: `set`, `set-split-amount`, `link-schedule`, `prepend-notes`, `append-notes`
+  - Actions: `set` (payee, category, notes, cleared)
   - Stage filter: `default`, `pre`, `post`
 
 ## Connecting to Actual Budget
 
-You need a running [actual-http-api](https://github.com/sakowicz/actual-http-api) instance. On the Connect screen enter:
+You need a running [actual-http-api](https://github.com/jhonderson/actual-http-api) instance. On the Connect screen enter:
 
 | Field | Description |
 |---|---|
@@ -55,12 +55,12 @@ Every entity page has an Export button that downloads a UTF-8 (Comma delimited) 
 ### Prerequisites
 
 - Node.js 20+
-- A running [actual-http-api](https://github.com/sakowicz/actual-http-api) server
+- A running [actual-http-api](https://github.com/jhonderson/actual-http-api) server
 
 ### Setup
 
 ```bash
-git clone https://github.com/manafm/actual-admin-panel.git
+git clone https://github.com/x-rous/actual-admin-panel.git
 cd actual-admin-panel
 npm install
 npm run dev

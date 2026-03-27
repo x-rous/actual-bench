@@ -203,18 +203,26 @@ function EntitySection({
 // ─── DraftPanel ───────────────────────────────────────────────────────────────
 
 export function DraftPanel() {
-  const state             = useStagedStore((s) => s);
   const hasChanges        = useStagedStore(selectHasChanges);
   const mergeDependencies = useStagedStore((s) => s.mergeDependencies);
-  const payees            = useStagedStore((s) => s.payees);
-  const categories        = useStagedStore((s) => s.categories);
   const accounts          = useStagedStore((s) => s.accounts);
+  const payees            = useStagedStore((s) => s.payees);
+  const categoryGroups    = useStagedStore((s) => s.categoryGroups);
+  const categories        = useStagedStore((s) => s.categories);
+  const rules             = useStagedStore((s) => s.rules);
+  const schedules         = useStagedStore((s) => s.schedules);
 
-  const entityKeys = Object.keys(ENTITY_LABELS) as EntityKey[];
+  const slices: Record<EntityKey, StagedMap<BaseEntity>> = {
+    accounts:       accounts       as StagedMap<BaseEntity>,
+    payees:         payees         as StagedMap<BaseEntity>,
+    categoryGroups: categoryGroups as StagedMap<BaseEntity>,
+    categories:     categories     as StagedMap<BaseEntity>,
+    rules:          rules          as StagedMap<BaseEntity>,
+    schedules:      schedules      as StagedMap<BaseEntity>,
+  };
 
-  const errorCount = entityKeys.reduce((acc, key) => {
-    return acc + Object.values(state[key] as Record<string, StagedEntity<BaseEntity>>)
-      .filter((s) => s.saveError).length;
+  const errorCount = (Object.keys(ENTITY_LABELS) as EntityKey[]).reduce((acc, key) => {
+    return acc + Object.values(slices[key]).filter((s) => s.saveError).length;
   }, 0);
 
   const entityMaps: EntityMaps = useMemo(
@@ -222,15 +230,15 @@ export function DraftPanel() {
     [payees, categories, accounts]
   );
 
-  // Merge-dep sets for the Rules section
   const ruleMergeDepIds = useMemo(() => ({
     created: new Set(Object.keys(mergeDependencies)),
     deleted: new Set(Object.values(mergeDependencies).flat()),
   }), [mergeDependencies]);
 
-  function getRuleLabelFn(entity: BaseEntity): LabelResult {
-    return getRuleLabel(entity as unknown as Rule, entityMaps);
-  }
+  const getRuleLabelFn = useMemo(
+    () => (entity: BaseEntity) => getRuleLabel(entity as unknown as Rule, entityMaps),
+    [entityMaps]
+  );
 
   return (
     <aside className="flex w-56 shrink-0 flex-col border-l border-border bg-background">
@@ -259,11 +267,11 @@ export function DraftPanel() {
         </p>
       ) : (
         <div className="flex flex-col gap-0 overflow-y-auto">
-          {entityKeys.map((key) => (
+          {(Object.keys(ENTITY_LABELS) as EntityKey[]).map((key) => (
             <EntitySection
               key={key}
               label={ENTITY_LABELS[key]}
-              entries={Object.values(state[key] as Record<string, StagedEntity<BaseEntity>>)}
+              entries={Object.values(slices[key])}
               getLabelFn={key === "rules" ? getRuleLabelFn : undefined}
               mergeDepIds={key === "rules" ? ruleMergeDepIds : undefined}
             />

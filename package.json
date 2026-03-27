@@ -1,12 +1,12 @@
 {
   "name": "actual-admin-panel",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Web-based admin panel for Actual Budget — manage accounts, payees, categories, and rules via actual-http-api",
   "repository": {
     "type": "git",
-    "url": "https://github.com/manafm/actual-admin-panel"
+    "url": "https://github.com/x-rous/actual-admin-panel"
   },
-  "homepage": "https://github.com/manafm/actual-admin-panel#readme",
+  "homepage": "https://github.com/x-rous/actual-admin-panel#readme",
   "private": true,
   "scripts": {
     "dev": "NODE_OPTIONS=--max-old-space-size=2048 next dev",
@@ -27,7 +27,6 @@
     "lucide-react": "^1.0.1",
     "next": "16.2.1",
     "next-themes": "^0.4.6",
-    "papaparse": "^5.5.3",
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "react-hook-form": "^7.72.0",
@@ -44,7 +43,6 @@
     "@testing-library/react": "^16.3.2",
     "@types/jest": "^30.0.0",
     "@types/node": "^20",
-    "@types/papaparse": "^5.5.2",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "babel-plugin-react-compiler": "1.0.0",
