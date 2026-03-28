@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   Landmark,
   Users,
@@ -12,8 +13,11 @@ import {
   Tag,
   PanelLeftClose,
   PanelLeftOpen,
+  Trash2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useConnectionStore } from "@/store/connection";
+import { useStagedStore } from "@/store/staged";
 
 const LS_KEY = "sidebar-collapsed";
 
@@ -28,12 +32,24 @@ const NAV_ITEMS = [
 
 export function Sidebar() {
   const pathname = usePathname();
+  const router = useRouter();
+  const queryClient = useQueryClient();
+  const clearAll = useConnectionStore((s) => s.clearAll);
+  const discardAll = useStagedStore((s) => s.discardAll);
   const version = process.env.NEXT_PUBLIC_APP_VERSION;
 
   const [collapsed, setCollapsed] = useState<boolean>(() => {
     if (typeof window === "undefined") return false;
     return localStorage.getItem(LS_KEY) === "1";
   });
+
+  function handleClearAll() {
+    if (!window.confirm("Clear all connections and cached data? This cannot be undone.")) return;
+    discardAll();
+    queryClient.clear();
+    clearAll();
+    router.push("/connect");
+  }
 
   function toggle() {
     setCollapsed((prev) => {
@@ -78,8 +94,20 @@ export function Sidebar() {
         )}
       </nav>
 
-      {/* Collapse toggle */}
-      <div className="shrink-0 border-t border-border p-2">
+      {/* Bottom actions */}
+      <div className="shrink-0 border-t border-border p-2 flex flex-col gap-0.5">
+        <button
+          type="button"
+          onClick={handleClearAll}
+          title="Clear all connections and cached data"
+          className={cn(
+            "flex w-full items-center rounded-md px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive",
+            collapsed ? "justify-center" : "gap-2"
+          )}
+        >
+          <Trash2 className="h-4 w-4 shrink-0" />
+          {!collapsed && <span>Clear all data</span>}
+        </button>
         <button
           type="button"
           onClick={toggle}

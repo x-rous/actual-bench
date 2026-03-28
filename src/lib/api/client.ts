@@ -81,3 +81,59 @@ export async function testConnection(
 ): Promise<void> {
   await apiRequest<unknown>(connection, "/accounts", { method: "GET" });
 }
+
+// ─── Budget listing ───────────────────────────────────────────────────────────
+
+export type BudgetFile = {
+  cloudFileId: string;
+  name: string;
+  state?: string;
+  groupId?: string;
+  encryptKeyId?: string | null;
+  hasKey?: boolean;
+  owner?: string;
+};
+
+/**
+ * Lists remote budget files available on the server.
+ * Uses GET /v1/budgets/ — a server-level endpoint that doesn't require a
+ * budgetSyncId, so no budget is opened on the actual-http-api side.
+ * Filters to state === "remote" and deduplicates by cloudFileId.
+ */
+export async function listBudgets(
+  baseUrl: string,
+  apiKey: string
+): Promise<BudgetFile[]> {
+  const response = await fetch("/api/proxy", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      connection: { baseUrl, apiKey },
+      path: "/v1/budgets/",
+      method: "GET",
+    }),
+  });
+
+  if (!response.ok) {
+    let message = `HTTP ${response.status}`;
+    try {
+      const json = (await response.json()) as { error?: string; message?: string };
+      message = json.error ?? json.message ?? message;
+    } catch { /* ignore */ }
+    const error: ApiError = { kind: "api", status: response.status, message };
+    throw error;
+  }
+
+  const payload = (await response.json()) as { data: BudgetFile[] } | BudgetFile[];
+  const all: BudgetFile[] = Array.isArray(payload) ? payload : (payload.data ?? []);
+
+  // Keep only remote budgets that have a groupId, deduplicate by cloudFileId.
+  const seen = new Set<string>();
+  return all.filter((b) => {
+    if (b.state !== "remote") return false;
+    if (!b.groupId) return false;
+    if (seen.has(b.cloudFileId)) return false;
+    seen.add(b.cloudFileId);
+    return true;
+  });
+}
