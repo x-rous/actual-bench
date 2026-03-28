@@ -1,9 +1,10 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { RefreshCw, Download, Upload, ChevronsDownUp, ChevronsUpDown } from "lucide-react";
+import { Download, Upload, ChevronsDownUp, ChevronsUpDown } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { PageLayout } from "@/components/layout/PageLayout";
 import { CSV_MAX_BYTES } from "@/lib/csv";
 import { useStagedStore } from "@/store/staged";
 import { useCategoryGroups } from "../hooks/useCategoryGroups";
@@ -28,15 +29,9 @@ export function CategoriesView() {
   const allGroupIds = Object.keys(stagedGroups);
   const allCollapsed = allGroupIds.length > 0 && allGroupIds.every((id) => collapsedGroups.has(id));
 
-  function handleCollapseAll() {
-    setCollapsedGroups(new Set(allGroupIds));
-  }
+  function handleCollapseAll() { setCollapsedGroups(new Set(allGroupIds)); }
+  function handleExpandAll()   { setCollapsedGroups(new Set()); }
 
-  function handleExpandAll() {
-    setCollapsedGroups(new Set());
-  }
-
-  // ── Export ────────────────────────────────────────────────────────────────────
   function handleExportCsv() {
     const csv = exportCategoriesToCsv(stagedGroups, stagedCats);
     const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8" });
@@ -48,7 +43,6 @@ export function CategoriesView() {
     URL.revokeObjectURL(url);
   }
 
-  // ── Import ────────────────────────────────────────────────────────────────────
   function handleImportCsv(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     e.target.value = "";
@@ -97,40 +91,16 @@ export function CategoriesView() {
     reader.readAsText(file, "utf-8");
   }
 
-  if (isLoading) {
-    return (
-      <div className="flex flex-1 items-center justify-center">
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <RefreshCw className="h-4 w-4 animate-spin" />
-          Loading categories…
-        </div>
-      </div>
-    );
-  }
-
-  if (isError) {
-    return (
-      <div className="flex flex-1 flex-col items-center justify-center gap-3 text-sm">
-        <p className="text-destructive">
-          {error instanceof Error ? error.message : "An error occurred"}
-        </p>
-        <Button variant="outline" size="sm" onClick={() => refetch()}>Retry</Button>
-      </div>
-    );
-  }
-
   return (
-    <div className="flex flex-1 flex-col overflow-hidden">
-      {/* Toolbar */}
-      <div className="flex shrink-0 items-center justify-between gap-3 border-b border-border px-4 py-2">
-        <div className="flex items-center gap-2">
-          <h1 className="text-sm font-semibold">Categories</h1>
-          <span className="text-xs text-muted-foreground">
-            {groupCount} group{groupCount !== 1 ? "s" : ""} · {categoryCount} categories
-          </span>
-        </div>
-
-        <div className="flex items-center gap-2">
+    <PageLayout
+      title="Categories"
+      count={`${groupCount} group${groupCount !== 1 ? "s" : ""} · ${categoryCount} categories`}
+      isLoading={isLoading}
+      isError={isError}
+      error={error}
+      onRetry={refetch}
+      actions={
+        <>
           <Button
             variant="ghost" size="sm"
             className="h-7 text-xs text-muted-foreground"
@@ -138,10 +108,9 @@ export function CategoriesView() {
             title={allCollapsed ? "Expand all groups" : "Collapse all groups"}
           >
             {allCollapsed
-              ? <><ChevronsUpDown className="mr-1 h-3.5 w-3.5" /> Expand All</>
-              : <><ChevronsDownUp className="mr-1 h-3.5 w-3.5" /> Collapse All</>}
+              ? <><ChevronsUpDown className="mr-1 h-3.5 w-3.5" />Expand All</>
+              : <><ChevronsDownUp className="mr-1 h-3.5 w-3.5" />Collapse All</>}
           </Button>
-
           <input
             ref={importInputRef}
             type="file"
@@ -157,16 +126,13 @@ export function CategoriesView() {
             <Download />
             Export
           </Button>
-        </div>
-      </div>
-
-      {/* Tree grid */}
-      <div className="flex-1 overflow-auto">
-        <CategoriesTable
-          collapsedGroups={collapsedGroups}
-          setCollapsedGroups={setCollapsedGroups}
-        />
-      </div>
-    </div>
+        </>
+      }
+    >
+      <CategoriesTable
+        collapsedGroups={collapsedGroups}
+        setCollapsedGroups={setCollapsedGroups}
+      />
+    </PageLayout>
   );
 }

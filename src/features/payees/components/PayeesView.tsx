@@ -1,9 +1,10 @@
 "use client";
 
 import { useRef } from "react";
-import { Plus, Download, Upload, RefreshCw } from "lucide-react";
+import { Plus, Download, Upload } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { PageLayout } from "@/components/layout/PageLayout";
 import { CSV_MAX_BYTES } from "@/lib/csv";
 import { useStagedStore } from "@/store/staged";
 import { usePayees } from "../hooks/usePayees";
@@ -78,40 +79,16 @@ export function PayeesView() {
   const totalCount = Object.keys(staged).length;
   const regularCount = Object.values(staged).filter((s) => !s.entity.transferAccountId && !s.isDeleted).length;
 
-  if (isLoading) {
-    return (
-      <div className="flex flex-1 items-center justify-center">
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <RefreshCw className="h-4 w-4 animate-spin" />
-          Loading payees…
-        </div>
-      </div>
-    );
-  }
-
-  if (isError) {
-    return (
-      <div className="flex flex-1 flex-col items-center justify-center gap-3 text-sm">
-        <p className="text-destructive">
-          {error instanceof Error ? error.message : "An error occurred"}
-        </p>
-        <Button variant="outline" size="sm" onClick={() => refetch()}>Retry</Button>
-      </div>
-    );
-  }
-
   return (
-    <div className="flex flex-1 flex-col overflow-hidden">
-      {/* Toolbar */}
-      <div className="flex shrink-0 items-center justify-between gap-3 border-b border-border px-4 py-2">
-        <div className="flex items-center gap-2">
-          <h1 className="text-sm font-semibold">Payees</h1>
-          <span className="text-xs text-muted-foreground">
-            {regularCount} regular · {totalCount} total
-          </span>
-        </div>
-
-        <div className="flex items-center gap-2">
+    <PageLayout
+      title="Payees"
+      count={`${regularCount} regular · ${totalCount} total`}
+      isLoading={isLoading}
+      isError={isError}
+      error={error}
+      onRetry={refetch}
+      actions={
+        <>
           <input
             ref={importInputRef}
             type="file"
@@ -131,13 +108,10 @@ export function PayeesView() {
             <Plus />
             Add Payee
           </Button>
-        </div>
-      </div>
-
-      {/* Grid */}
-      <div className="flex-1 overflow-auto">
-        <PayeesTable />
-      </div>
-    </div>
+        </>
+      }
+    >
+      <PayeesTable />
+    </PageLayout>
   );
 }

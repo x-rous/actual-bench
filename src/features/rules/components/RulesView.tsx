@@ -2,9 +2,10 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { RefreshCw, Download, Upload, Plus } from "lucide-react";
+import { Download, Upload, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { PageLayout } from "@/components/layout/PageLayout";
 import { CSV_MAX_BYTES } from "@/lib/csv";
 import { useStagedStore } from "@/store/staged";
 import { useRules } from "../hooks/useRules";
@@ -26,7 +27,7 @@ export function RulesView() {
 
   const router = useRouter();
   const searchParams = useSearchParams();
-  const payeeIdFilter   = searchParams.get("payeeId");
+  const payeeIdFilter    = searchParams.get("payeeId");
   const categoryIdFilter = searchParams.get("categoryId");
 
   const importInputRef = useRef<HTMLInputElement>(null);
@@ -126,40 +127,17 @@ export function RulesView() {
 
   // ── Render ────────────────────────────────────────────────────────────────────
 
-  if (isLoading) {
-    return (
-      <div className="flex flex-1 items-center justify-center">
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <RefreshCw className="h-4 w-4 animate-spin" />
-          Loading rules…
-        </div>
-      </div>
-    );
-  }
-
-  if (isError) {
-    return (
-      <div className="flex flex-1 flex-col items-center justify-center gap-3 text-sm">
-        <p className="text-destructive">
-          {error instanceof Error ? error.message : "An error occurred"}
-        </p>
-        <Button variant="outline" size="sm" onClick={() => refetch()}>Retry</Button>
-      </div>
-    );
-  }
-
   return (
-    <div className="flex flex-1 flex-col overflow-hidden">
-      {/* Toolbar */}
-      <div className="flex shrink-0 items-center justify-between gap-3 border-b border-border px-4 py-2">
-        <div className="flex items-center gap-2">
-          <h1 className="text-sm font-semibold">Rules</h1>
-          <span className="text-xs text-muted-foreground">
-            {ruleCount} rule{ruleCount !== 1 ? "s" : ""}
-          </span>
-        </div>
-
-        <div className="flex items-center gap-2">
+    <PageLayout
+      title="Rules"
+      count={`${ruleCount} rule${ruleCount !== 1 ? "s" : ""}`}
+      isLoading={isLoading}
+      isError={isError}
+      error={error}
+      onRetry={refetch}
+      scrollManaged
+      actions={
+        <>
           <input
             ref={importInputRef}
             type="file"
@@ -179,10 +157,9 @@ export function RulesView() {
             <Plus />
             Add Rule
           </Button>
-        </div>
-      </div>
-
-      {/* Table */}
+        </>
+      }
+    >
       <RulesTable
         onEdit={openEditRule}
         onMerge={(ids) => setMergeRuleIds(ids)}
@@ -190,19 +167,17 @@ export function RulesView() {
         categoryId={categoryIdFilter}
       />
 
-      {/* Drawer */}
       <RuleDrawer
         open={drawerOpen}
         onOpenChange={setDrawerOpen}
         ruleId={editingRuleId}
       />
 
-      {/* Merge dialog */}
       <MergeRulesDialog
         open={mergeRuleIds.length >= 2}
         onOpenChange={(open) => { if (!open) setMergeRuleIds([]); }}
         ruleIds={mergeRuleIds}
       />
-    </div>
+    </PageLayout>
   );
 }

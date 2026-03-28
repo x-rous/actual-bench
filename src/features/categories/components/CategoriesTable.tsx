@@ -1,7 +1,12 @@
 "use client";
 
 import React, { useState, useRef, useEffect, useMemo } from "react";
-import { useRouter, useSearchParams, usePathname } from "next/navigation";
+import { useRouter } from "next/navigation";
+import { useHighlight } from "@/hooks/useHighlight";
+import { useInlineEdit } from "@/hooks/useInlineEdit";
+import { useTableSelection } from "@/hooks/useTableSelection";
+import { NameInput } from "@/components/ui/editable-cell";
+import type { DoneAction } from "@/components/ui/editable-cell";
 import {
   RotateCcw, Trash2, RefreshCw, Eye, EyeOff,
   ArrowUpDown, ArrowUp, ArrowDown, Search, X, AlertTriangle,
@@ -22,63 +27,12 @@ import type { CategoryGroup, Category } from "@/types/entities";
 
 type GroupRow = StagedEntity<CategoryGroup>;
 type CategoryRow = StagedEntity<Category>;
-type DoneAction = "down" | "up" | "tab" | "shiftTab" | "cancel" | "blur";
 type SortDir = "asc" | "desc";
 type VisibilityFilter = "all" | "visible" | "hidden";
 type TypeFilter = "all" | "income" | "expense";
 type ConfirmState = { title: string; message: string; onConfirm: () => void };
 type SelectionKind = "group" | "category";
 type CellId = { kind: SelectionKind; id: string };
-
-// ─── NameInput ─────────────────────────────────────────────────────────────────
-
-function NameInput({
-  initialValue, startChar, onDone,
-}: {
-  initialValue: string;
-  startChar?: string;
-  onDone: (value: string, action: DoneAction) => void;
-}) {
-  const [value, setValue] = useState(startChar ?? initialValue);
-  const inputRef = useRef<HTMLInputElement>(null);
-  const committed = useRef(false);
-
-  useEffect(() => {
-    const el = inputRef.current;
-    if (!el) return;
-    el.focus();
-    if (!startChar) el.select();
-  }, [startChar]);
-
-  function done(action: DoneAction) {
-    if (committed.current) return;
-    if (action !== "cancel" && value.trim() === "") {
-      committed.current = true;
-      onDone(initialValue, "cancel");
-      return;
-    }
-    committed.current = true;
-    onDone(value, action);
-  }
-
-  return (
-    <input
-      ref={inputRef}
-      value={value}
-      onChange={(e) => setValue(e.target.value)}
-      onBlur={() => done("blur")}
-      onKeyDown={(e) => {
-        e.stopPropagation();
-        if (e.key === "Enter") { e.preventDefault(); done("down"); }
-        else if (e.key === "Escape") { e.preventDefault(); done("cancel"); }
-        else if (e.key === "Tab") { e.preventDefault(); done(e.shiftKey ? "shiftTab" : "tab"); }
-        else if (e.key === "ArrowDown") { e.preventDefault(); done("down"); }
-        else if (e.key === "ArrowUp") { e.preventDefault(); done("up"); }
-      }}
-      className="w-full min-w-0 border-0 bg-transparent p-0 text-sm leading-6 outline-none"
-    />
-  );
-}
 
 // ─── PillGroup ─────────────────────────────────────────────────────────────────
 
@@ -214,33 +168,18 @@ export function CategoriesTable({
   const [sortNameDir, setSortNameDir] = useState<SortDir | null>(null);
 
   // ── Editing state ────────────────────────────────────────────────────────────
-  const [selectedCell, setSelectedCell] = useState<CellId | null>(null);
-  const [editingCell, setEditingCell] = useState<CellId | null>(null);
-  const [editStartChar, setEditStartChar] = useState<string | undefined>(undefined);
+  const {
+    selectedCell, editingCell, editStartChar,
+    selectCell, startEdit, commitEdit,
+  } = useInlineEdit<CellId>();
 
   // ── Multi-select ─────────────────────────────────────────────────────────────
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const { selectedIds, toggleSelect, clearSelection } = useTableSelection();
   const [confirmDialog, setConfirmDialog] = useState<ConfirmState | null>(null);
 
-  const containerRef = useRef<HTMLDivElement>(null);
-  const router       = useRouter();
-  const pathname     = usePathname();
-  const searchParams = useSearchParams();
-
-  const [highlightedId, setHighlightedId] = useState<string | null>(null);
-
-  useEffect(() => {
-    const id = searchParams.get("highlight");
-    if (!id) return;
-    const el = document.querySelector(`[data-row-id="${id}"]`);
-    el?.scrollIntoView({ block: "center", behavior: "smooth" });
-    const tSet   = setTimeout(() => setHighlightedId(id), 0);
-    const tClear = setTimeout(() => {
-      setHighlightedId(null);
-      router.replace(pathname, { scroll: false });
-    }, 2500);
-    return () => { clearTimeout(tSet); clearTimeout(tClear); };
-  }, [searchParams, pathname, router]);
+  const containerRef  = useRef<HTMLDivElement>(null);
+  const router        = useRouter();
+  const highlightedId = useHighlight();
 
   // ── Store ────────────────────────────────────────────────────────────────────
   const stagedGroups = useStagedStore((s) => s.categoryGroups);
@@ -388,9 +327,7 @@ export function CategoriesTable({
 
   // ── Editing ──────────────────────────────────────────────────────────────────
   function startEditing(kind: SelectionKind, id: string, startChar?: string) {
-    setSelectedCell({ kind, id });
-    setEditingCell({ kind, id });
-    setEditStartChar(startChar);
+    startEdit({ kind, id }, startChar);
   }
 
   function handleGroupNameDone(id: string, value: string, action: DoneAction) {
@@ -398,9 +335,7 @@ export function CategoriesTable({
       pushUndo();
       stageUpdate("categoryGroups", id, { name: value });
     }
-    setEditingCell(null);
-    setEditStartChar(undefined);
-    setSelectedCell({ kind: "group", id });
+    commitEdit({ kind: "group", id });
   }
 
   function handleCategoryNameDone(id: string, value: string, action: DoneAction) {
@@ -408,9 +343,7 @@ export function CategoriesTable({
       pushUndo();
       stageUpdate("categories", id, { name: value });
     }
-    setEditingCell(null);
-    setEditStartChar(undefined);
-    setSelectedCell({ kind: "category", id });
+    commitEdit({ kind: "category", id });
   }
 
   // ── Adding rows ──────────────────────────────────────────────────────────────
@@ -456,18 +389,11 @@ export function CategoriesTable({
             stageDelete("categories", id);
           }
         }
-        setSelectedIds(new Set());
+        clearSelection();
       },
     });
   }
 
-  function toggleSelect(id: string, checked: boolean) {
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (checked) next.add(id); else next.delete(id);
-      return next;
-    });
-  }
 
   const activeSelectedCount = [...selectedIds].filter((id) => {
     const g = stagedGroups[id];
@@ -489,13 +415,13 @@ export function CategoriesTable({
         key={`g-${entity.id}`}
         data-row-id={entity.id}
         className={cn(
-          "group/row border-b border-border/40 bg-muted/20 transition-colors",
+          "group/row border-b border-border/40 border-l-2 border-l-transparent bg-muted/20 transition-colors",
           highlightedId === entity.id && "bg-primary/20 ring-2 ring-inset ring-primary/40",
           highlightedId !== entity.id && isChecked && "bg-primary/10",
-          highlightedId !== entity.id && !isChecked && saveError && "bg-destructive/5",
-          highlightedId !== entity.id && !isChecked && !saveError && isDeleted && "opacity-50",
-          highlightedId !== entity.id && !isChecked && !saveError && !isDeleted && isNew && "bg-green-50/40 dark:bg-green-950/10",
-          highlightedId !== entity.id && !isChecked && !saveError && !isDeleted && !isNew && isUpdated && "bg-amber-50/40 dark:bg-amber-950/10",
+          highlightedId !== entity.id && !isChecked && saveError && "bg-destructive/5 border-l-destructive",
+          highlightedId !== entity.id && !isChecked && !saveError && isDeleted && "opacity-50 border-l-muted-foreground/30",
+          highlightedId !== entity.id && !isChecked && !saveError && !isDeleted && isNew && "bg-green-50/40 dark:bg-green-950/10 border-l-green-500",
+          highlightedId !== entity.id && !isChecked && !saveError && !isDeleted && !isNew && isUpdated && "bg-amber-50/40 dark:bg-amber-950/10 border-l-amber-400",
         )}
       >
         {/* Checkbox */}
@@ -529,8 +455,8 @@ export function CategoriesTable({
             isSelected && !isEditing && "bg-primary/10 ring-1 ring-inset ring-primary/50",
             isEditing && "ring-1 ring-inset ring-primary",
           )}
-          onClick={() => isSelected && !isDeleted ? startEditing("group", entity.id) : setSelectedCell({ kind: "group", id: entity.id })}
-          onFocus={() => { if (!editingCell) setSelectedCell({ kind: "group", id: entity.id }); }}
+          onClick={() => isSelected && !isDeleted ? startEditing("group", entity.id) : selectCell({ kind: "group", id: entity.id })}
+          onFocus={() => { if (!editingCell) selectCell({ kind: "group", id: entity.id }); }}
         >
           <div className="flex items-center gap-1">
             <button
@@ -645,13 +571,13 @@ export function CategoriesTable({
         key={`c-${entity.id}`}
         data-row-id={entity.id}
         className={cn(
-          "group/row border-b border-border/20 transition-colors",
+          "group/row border-b border-border/20 border-l-2 border-l-transparent transition-colors",
           highlightedId === entity.id && "bg-primary/20 ring-2 ring-inset ring-primary/40",
           highlightedId !== entity.id && isChecked && "bg-primary/10",
-          highlightedId !== entity.id && !isChecked && saveError && "bg-destructive/5",
-          highlightedId !== entity.id && !isChecked && !saveError && isDeleted && "opacity-50",
-          highlightedId !== entity.id && !isChecked && !saveError && !isDeleted && isNew && "bg-green-50/30 dark:bg-green-950/10",
-          highlightedId !== entity.id && !isChecked && !saveError && !isDeleted && !isNew && isUpdated && "bg-amber-50/30 dark:bg-amber-950/10",
+          highlightedId !== entity.id && !isChecked && saveError && "bg-destructive/5 border-l-destructive",
+          highlightedId !== entity.id && !isChecked && !saveError && isDeleted && "opacity-50 border-l-muted-foreground/30",
+          highlightedId !== entity.id && !isChecked && !saveError && !isDeleted && isNew && "bg-green-50/30 dark:bg-green-950/10 border-l-green-500",
+          highlightedId !== entity.id && !isChecked && !saveError && !isDeleted && !isNew && isUpdated && "bg-amber-50/30 dark:bg-amber-950/10 border-l-amber-400",
         )}
       >
         {/* Checkbox */}
@@ -685,8 +611,8 @@ export function CategoriesTable({
             isSelected && !isEditing && "bg-primary/10 ring-1 ring-inset ring-primary/50",
             isEditing && "ring-1 ring-inset ring-primary",
           )}
-          onClick={() => isSelected && !isDeleted ? startEditing("category", entity.id) : setSelectedCell({ kind: "category", id: entity.id })}
-          onFocus={() => { if (!editingCell) setSelectedCell({ kind: "category", id: entity.id }); }}
+          onClick={() => isSelected && !isDeleted ? startEditing("category", entity.id) : selectCell({ kind: "category", id: entity.id })}
+          onFocus={() => { if (!editingCell) selectCell({ kind: "category", id: entity.id }); }}
         >
           <div className="flex items-center gap-1 pl-6">
             {isEditing ? (
@@ -866,12 +792,11 @@ export function CategoriesTable({
           filteredCount={filteredCount} totalCount={totalCount}
           selectedCount={activeSelectedCount}
           onBulkDelete={handleBulkDelete}
-          onDeselect={() => setSelectedIds(new Set())}
+          onDeselect={() => clearSelection()}
         />
 
-        <div className="overflow-auto">
-          <table className="w-full border-collapse text-sm">
-            <thead className="sticky top-0 z-10 bg-background">
+        <table className="w-full border-collapse text-sm">
+          <thead className="sticky top-0 z-10 bg-background">
               <tr className="border-b border-border">
                 <th className="w-9 px-3 py-1.5" />
                 <th className="w-1 p-0" />
@@ -987,8 +912,7 @@ export function CategoriesTable({
                 </>
               )}
             </tbody>
-          </table>
-        </div>
+        </table>
       </div>
 
       {/* Confirm dialog */}

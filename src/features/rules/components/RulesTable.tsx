@@ -1,7 +1,9 @@
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
-import { useRouter, useSearchParams, usePathname } from "next/navigation";
+import { useState, useMemo } from "react";
+import { useRouter } from "next/navigation";
+import { useHighlight } from "@/hooks/useHighlight";
+import { useTableSelection } from "@/hooks/useTableSelection";
 import { Pencil, Trash2, RotateCcw, Copy, AlertTriangle, Search, X, Merge } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -161,28 +163,12 @@ export function RulesTable({ onEdit, onMerge, payeeId, categoryId }: Props) {
   const clearSaveError = useStagedStore((s) => s.clearSaveError);
   const pushUndo = useStagedStore((s) => s.pushUndo);
 
-  const router       = useRouter();
-  const pathname     = usePathname();
-  const searchParams = useSearchParams();
-
-  const [highlightedId, setHighlightedId] = useState<string | null>(null);
-
-  useEffect(() => {
-    const id = searchParams.get("highlight");
-    if (!id) return;
-    const el = document.querySelector(`[data-row-id="${id}"]`);
-    el?.scrollIntoView({ block: "center", behavior: "smooth" });
-    const tSet   = setTimeout(() => setHighlightedId(id), 0);
-    const tClear = setTimeout(() => {
-      setHighlightedId(null);
-      router.replace(pathname, { scroll: false });
-    }, 2500);
-    return () => { clearTimeout(tSet); clearTimeout(tClear); };
-  }, [searchParams, pathname, router]);
+  const router        = useRouter();
+  const highlightedId = useHighlight();
 
   const [stageFilter, setStageFilter] = useState<StageFilter>("all");
   const [search, setSearch] = useState("");
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const { selectedIds, toggleSelect, toggleSelectAll: _toggleSelectAll, clearSelection } = useTableSelection();
 
   const entityMaps = useMemo<EntityMaps>(
     () => ({ payees, categories, accounts }),
@@ -249,45 +235,24 @@ export function RulesTable({ onEdit, onMerge, payeeId, categoryId }: Props) {
   );
 
   function toggleSelectAll() {
-    if (allSelected) {
-      setSelectedIds((prev) => {
-        const next = new Set(prev);
-        for (const s of rows) next.delete(s.entity.id);
-        return next;
-      });
-    } else {
-      setSelectedIds((prev) => {
-        const next = new Set(prev);
-        for (const s of rows) next.add(s.entity.id);
-        return next;
-      });
-    }
-  }
-
-  function toggleSelect(id: string) {
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
+    _toggleSelectAll(selectableIds, allSelected);
   }
 
   function handleMerge() {
     onMerge(activeSelectedIds);
-    setSelectedIds(new Set());
+    clearSelection();
   }
 
   function handleDeleteSelected() {
     pushUndo();
     for (const id of activeSelectedIds) stageDelete("rules", id);
-    setSelectedIds(new Set());
+    clearSelection();
   }
 
   const totalVisible = Object.values(stagedRules).filter((s) => !s.isDeleted).length;
 
   return (
-    <div className="flex flex-1 flex-col overflow-hidden">
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
       {/* Bulk action bar — visible when ≥1 row is selected */}
       {activeSelectedIds.length >= 1 && (
         <div className="flex flex-wrap items-center gap-2 border-b border-border/40 bg-primary/5 px-2 py-1.5">
@@ -304,7 +269,7 @@ export function RulesTable({ onEdit, onMerge, payeeId, categoryId }: Props) {
             </Button>
           )}
           <button 
-            onClick={() => setSelectedIds(new Set())}
+            onClick={() => clearSelection()}
             className="ml-auto text-xs text-muted-foreground hover:text-foreground"
           > Clear selection
           </button>
@@ -313,8 +278,8 @@ export function RulesTable({ onEdit, onMerge, payeeId, categoryId }: Props) {
 
       {/* Filter bar — hidden while rows are selected */}
       {activeSelectedIds.length === 0 && <div className="flex flex-wrap shrink-0 items-center gap-2 border-b border-border/40 bg-muted/10 px-2 py-1.5">
-        <div className="relative">
-          <Search className="absolute left-1.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+        <div className="relative flex items-center">
+          <Search className="absolute left-1.5 h-3.5 w-3.5 text-muted-foreground" />
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
@@ -383,7 +348,7 @@ export function RulesTable({ onEdit, onMerge, payeeId, categoryId }: Props) {
       </div>}
 
       {/* Table */}
-      <div className="flex-1 overflow-auto">
+      <div className="min-h-0 flex-1 overflow-auto">
         {rows.length === 0 ? (
           <div className="flex items-center justify-center py-20 text-sm text-muted-foreground">
             No rules found.
@@ -420,11 +385,12 @@ export function RulesTable({ onEdit, onMerge, payeeId, categoryId }: Props) {
                     key={rule.id}
                     data-row-id={rule.id}
                     className={cn(
-                      "group border-b border-border hover:bg-muted/20 transition-colors align-top",
+                      "group border-b border-border border-l-2 border-l-transparent hover:bg-muted/20 transition-colors align-top",
                       highlightedId === rule.id && "bg-primary/20 ring-2 ring-inset ring-primary/40",
                       highlightedId !== rule.id && selectedIds.has(rule.id) && "bg-primary/10",
-                      highlightedId !== rule.id && !selectedIds.has(rule.id) && hasError && "bg-destructive/5",
-                      highlightedId !== rule.id && !selectedIds.has(rule.id) && !hasError && isDirty && "bg-amber-50/40 dark:bg-amber-950/10",
+                      highlightedId !== rule.id && !selectedIds.has(rule.id) && hasError && "bg-destructive/5 border-l-destructive",
+                      highlightedId !== rule.id && !selectedIds.has(rule.id) && !hasError && s.isNew && "bg-green-50/40 dark:bg-green-950/10 border-l-green-500",
+                      highlightedId !== rule.id && !selectedIds.has(rule.id) && !hasError && !s.isNew && s.isUpdated && "bg-amber-50/40 dark:bg-amber-950/10 border-l-amber-400",
                     )}
                   >
                     {/* Checkbox */}
@@ -440,8 +406,11 @@ export function RulesTable({ onEdit, onMerge, payeeId, categoryId }: Props) {
                     {/* Stage */}
                     <td className="px-3 py-2.5">
                       <div className="flex items-center gap-1">
-                        {isDirty && (
-                          <span className="h-1.5 w-1.5 rounded-full bg-amber-500 shrink-0" />
+                        {s.isNew && (
+                          <span className="h-1.5 w-1.5 rounded-full bg-green-500 shrink-0" />
+                        )}
+                        {!s.isNew && s.isUpdated && (
+                          <span className="h-1.5 w-1.5 rounded-full bg-amber-400 shrink-0" />
                         )}
                         {hasError && (
                           <AlertTriangle

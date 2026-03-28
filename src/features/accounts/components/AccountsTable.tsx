@@ -1,7 +1,11 @@
 "use client";
 
 import { useState, useRef, useEffect, useMemo } from "react";
-import { useRouter, useSearchParams, usePathname } from "next/navigation";
+import { useHighlight } from "@/hooks/useHighlight";
+import { useInlineEdit } from "@/hooks/useInlineEdit";
+import { useTableSelection } from "@/hooks/useTableSelection";
+import { NameInput } from "@/components/ui/editable-cell";
+import type { DoneAction } from "@/components/ui/editable-cell";
 import {
   Archive, ArchiveRestore, RotateCcw, Trash2, RefreshCw,
   ArrowUpDown, ArrowUp, ArrowDown, AlertTriangle,
@@ -26,67 +30,9 @@ const NAVIGABLE_COLS = ["name", "offBudget"] as const;
 type NavigableCol = (typeof NAVIGABLE_COLS)[number];
 type CellId = { rowId: string; colId: NavigableCol };
 type AccountRow = StagedEntity<Account>;
-type DoneAction = "down" | "up" | "tab" | "shiftTab" | "cancel" | "blur";
 type SortCol = "name" | "offBudget" | "closed";
 type SortDir = "asc" | "desc";
 type ConfirmState = { title: string; message: string; onConfirm: () => void };
-
-// ─── NameInput ─────────────────────────────────────────────────────────────────
-
-function NameInput({
-  initialValue, startChar, onDone,
-}: {
-  initialValue: string;
-  startChar?: string;
-  onDone: (value: string, action: DoneAction) => void;
-}) {
-  const [value, setValue] = useState(startChar ?? initialValue);
-  const [showError, setShowError] = useState(false);
-  const inputRef = useRef<HTMLInputElement>(null);
-  const committed = useRef(false);
-
-  useEffect(() => {
-    const el = inputRef.current;
-    if (!el) return;
-    el.focus();
-    if (!startChar) el.select();
-  }, [startChar]);
-
-  function done(action: DoneAction) {
-    if (committed.current) return;
-    // Reject empty commits — revert to original value
-    if (action !== "cancel" && value.trim() === "") {
-      committed.current = true;
-      onDone(initialValue, "cancel");
-      return;
-    }
-    committed.current = true;
-    onDone(value, action);
-  }
-
-  return (
-    <div className="flex flex-col">
-      <input
-        ref={inputRef}
-        value={value}
-        onChange={(e) => { setValue(e.target.value); setShowError(false); }}
-        onBlur={() => done("blur")}
-        onKeyDown={(e) => {
-          e.stopPropagation();
-          if (e.key === "Enter") { e.preventDefault(); done("down"); }
-          else if (e.key === "Escape") { e.preventDefault(); done("cancel"); }
-          else if (e.key === "Tab") { e.preventDefault(); done(e.shiftKey ? "shiftTab" : "tab"); }
-          else if (e.key === "ArrowDown") { e.preventDefault(); done("down"); }
-          else if (e.key === "ArrowUp") { e.preventDefault(); done("up"); }
-        }}
-        className={cn(
-          "w-full min-w-0 border-0 bg-transparent p-0 text-sm leading-6 outline-none",
-          showError && "placeholder:text-destructive"
-        )}
-      />
-    </div>
-  );
-}
 
 // ─── Sort helpers ──────────────────────────────────────────────────────────────
 
@@ -100,24 +46,7 @@ function SortIndicator({ col, sortCol, sortDir }: { col: SortCol; sortCol: SortC
 // ─── AccountsTable ─────────────────────────────────────────────────────────────
 
 export function AccountsTable() {
-  const router       = useRouter();
-  const pathname     = usePathname();
-  const searchParams = useSearchParams();
-
-  const [highlightedId, setHighlightedId] = useState<string | null>(null);
-
-  useEffect(() => {
-    const id = searchParams.get("highlight");
-    if (!id) return;
-    const el = document.querySelector(`[data-row-id="${id}"]`);
-    el?.scrollIntoView({ block: "center", behavior: "smooth" });
-    const tSet   = setTimeout(() => setHighlightedId(id), 0);
-    const tClear = setTimeout(() => {
-      setHighlightedId(null);
-      router.replace(pathname, { scroll: false });
-    }, 2500);
-    return () => { clearTimeout(tSet); clearTimeout(tClear); };
-  }, [searchParams, pathname, router]);
+  const highlightedId = useHighlight();
 
   // ── Filter / sort state ──────────────────────────────────────────────────────
   const [search, setSearch] = useState("");
@@ -127,13 +56,14 @@ export function AccountsTable() {
   const [sortDir, setSortDir] = useState<SortDir>("asc");
 
   // ── Cell selection + editing state ───────────────────────────────────────────
-  const [selectedCell, setSelectedCell] = useState<CellId | null>(null);
-  const [editingCell, setEditingCell] = useState<CellId | null>(null);
-  const [editStartChar, setEditStartChar] = useState<string | undefined>(undefined);
+  const {
+    selectedCell, editingCell, editStartChar,
+    selectCell: _selectCell, startEdit, commitEdit,
+  } = useInlineEdit<CellId>();
   const [bulkCount, setBulkCount] = useState(5);
 
   // ── Multi-select state ───────────────────────────────────────────────────────
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const { selectedIds, toggleSelect: toggleSelectRow, toggleSelectAll: _toggleSelectAll, clearSelection } = useTableSelection();
   const [confirmDialog, setConfirmDialog] = useState<ConfirmState | null>(null);
 
   const containerRef = useRef<HTMLDivElement>(null);
@@ -202,28 +132,8 @@ export function AccountsTable() {
   const allVisibleSelected = rows.length > 0 && rows.every((r) => selectedIds.has(r.entity.id));
   const someVisibleSelected = rows.some((r) => selectedIds.has(r.entity.id));
 
-  function toggleSelectRow(id: string, checked: boolean) {
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (checked) next.add(id); else next.delete(id);
-      return next;
-    });
-  }
-
   function toggleSelectAll() {
-    if (allVisibleSelected) {
-      setSelectedIds((prev) => {
-        const next = new Set(prev);
-        for (const id of visibleIds) next.delete(id);
-        return next;
-      });
-    } else {
-      setSelectedIds((prev) => {
-        const next = new Set(prev);
-        for (const id of visibleIds) next.add(id);
-        return next;
-      });
-    }
+    _toggleSelectAll(visibleIds, allVisibleSelected);
   }
 
   // ── Focus management ─────────────────────────────────────────────────────────
@@ -236,9 +146,7 @@ export function AccountsTable() {
 
   // ── Navigation helpers ───────────────────────────────────────────────────────
   function selectCell(rowId: string, colId: NavigableCol) {
-    setEditingCell(null);
-    setEditStartChar(undefined);
-    setSelectedCell({ rowId, colId });
+    _selectCell({ rowId, colId });
   }
 
   function moveFrom(rowId: string, colId: NavigableCol, rowDelta: number, colDelta: number) {
@@ -268,9 +176,7 @@ export function AccountsTable() {
 
   // ── Editing helpers ──────────────────────────────────────────────────────────
   function startEditing(rowId: string, colId: NavigableCol, startChar?: string) {
-    setSelectedCell({ rowId, colId });
-    setEditingCell({ rowId, colId });
-    setEditStartChar(startChar);
+    startEdit({ rowId, colId }, startChar);
   }
 
   function handleNameDone(rowId: string, value: string, action: DoneAction) {
@@ -278,9 +184,7 @@ export function AccountsTable() {
       pushUndo();
       stageUpdate("accounts", rowId, { name: value });
     }
-    setEditingCell(null);
-    setEditStartChar(undefined);
-    setSelectedCell({ rowId, colId: "name" });
+    commitEdit({ rowId, colId: "name" });
     if (action === "down") moveFrom(rowId, "name", 1, 0);
     else if (action === "up") moveFrom(rowId, "name", -1, 0);
     else if (action === "tab") tabFrom(rowId, "name", false);
@@ -309,7 +213,7 @@ export function AccountsTable() {
       onConfirm: () => {
         pushUndo();
         for (const id of selectedIds) stageDelete("accounts", id);
-        setSelectedIds(new Set());
+        clearSelection();
       },
     });
   }
@@ -440,7 +344,7 @@ export function AccountsTable() {
           onBulkClose={handleBulkClose}
           onBulkReopen={handleBulkReopen}
           onBulkDelete={handleBulkDelete}
-          onDeselect={() => setSelectedIds(new Set())}
+          onDeselect={() => clearSelection()}
         />
 
         {rows.length === 0 ? (
@@ -450,8 +354,7 @@ export function AccountsTable() {
               : "No accounts yet."}
           </div>
         ) : (
-          <div className="overflow-auto">
-            <table className="w-full border-collapse text-sm">
+          <table className="w-full border-collapse text-sm">
               <thead className="sticky top-0 z-10 bg-background">
                 <tr className="border-b border-border">
                   {/* Select all */}
@@ -514,13 +417,13 @@ export function AccountsTable() {
                       key={entity.id}
                       data-row-id={entity.id}
                       className={cn(
-                        "group/row border-b border-border/30 transition-colors",
+                        "group/row border-b border-border/30 border-l-2 border-l-transparent transition-colors",
                         highlightedId === entity.id && "bg-primary/20 ring-2 ring-inset ring-primary/40",
                         highlightedId !== entity.id && isRowSelected && "bg-primary/10",
-                        highlightedId !== entity.id && !isRowSelected && saveError && "bg-destructive/5",
-                        highlightedId !== entity.id && !isRowSelected && !saveError && isDeleted && "opacity-50",
-                        highlightedId !== entity.id && !isRowSelected && !saveError && !isDeleted && isNew && "bg-green-50/30 dark:bg-green-950/10",
-                        highlightedId !== entity.id && !isRowSelected && !saveError && !isDeleted && !isNew && isUpdated && "bg-amber-50/30 dark:bg-amber-950/10",
+                        highlightedId !== entity.id && !isRowSelected && saveError && "bg-destructive/5 border-l-destructive",
+                        highlightedId !== entity.id && !isRowSelected && !saveError && isDeleted && "opacity-50 border-l-muted-foreground/30",
+                        highlightedId !== entity.id && !isRowSelected && !saveError && !isDeleted && isNew && "bg-green-50/30 dark:bg-green-950/10 border-l-green-500",
+                        highlightedId !== entity.id && !isRowSelected && !saveError && !isDeleted && !isNew && isUpdated && "bg-amber-50/30 dark:bg-amber-950/10 border-l-amber-400",
                       )}
                     >
                       {/* Checkbox */}
@@ -558,7 +461,7 @@ export function AccountsTable() {
                           nameEditing && "ring-1 ring-inset ring-primary",
                         )}
                         onClick={() => nameSelected && !isDeleted ? startEditing(entity.id, "name") : selectCell(entity.id, "name")}
-                        onFocus={() => { if (!editingCell) setSelectedCell({ rowId: entity.id, colId: "name" }); }}
+                        onFocus={() => { if (!editingCell) selectCell(entity.id, "name"); }}
                       >
                         {nameEditing ? (
                           <NameInput
@@ -603,7 +506,7 @@ export function AccountsTable() {
                             selectCell(entity.id, "offBudget");
                           }
                         }}
-                        onFocus={() => { if (!editingCell) setSelectedCell({ rowId: entity.id, colId: "offBudget" }); }}
+                        onFocus={() => { if (!editingCell) selectCell(entity.id, "offBudget"); }}
                       >
                         <Badge variant={entity.offBudget ? "secondary" : "default"} className="text-xs font-normal">
                           {entity.offBudget ? "Off Budget" : "On Budget"}
@@ -656,8 +559,7 @@ export function AccountsTable() {
                   );
                 })}
               </tbody>
-            </table>
-          </div>
+          </table>
         )}
 
         <BulkAddBar bulkCount={bulkCount} onBulkCountChange={setBulkCount} onAdd={(n) => addRows(n, true)} />

@@ -2,6 +2,7 @@
 
 import { useMemo } from "react";
 import { useRouter } from "next/navigation";
+import { Layers } from "lucide-react";
 import { useStagedStore, selectHasChanges } from "@/store/staged";
 import { CONDITION_FIELDS, ACTION_FIELDS } from "@/features/rules/utils/ruleFields";
 import { rulePreview, valueToString } from "@/features/rules/utils/rulePreview";
@@ -273,6 +274,21 @@ export function DraftPanel() {
     [entityMaps]
   );
 
+  const isExpanded = hasChanges || errorCount > 0;
+
+  // ── Collapsed strip — shown when no pending changes ───────────────────────────
+  if (!isExpanded) {
+    return (
+      <aside
+        className="flex w-10 shrink-0 flex-col items-center border-l border-border bg-background pt-3"
+        title="No pending changes"
+      >
+        <Layers className="h-4 w-4 text-muted-foreground/40" />
+      </aside>
+    );
+  }
+
+  // ── Expanded panel — shown when there are staged changes or errors ─────────────
   return (
     <aside className="flex w-68 shrink-0 flex-col border-l border-border bg-background">
       <div className="flex items-center justify-between px-3 py-3.5">
@@ -294,24 +310,18 @@ export function DraftPanel() {
       </div>
       <Separator />
 
-      {!hasChanges ? (
-        <p className="px-3 py-4 text-xs text-muted-foreground">
-          No pending changes.
-        </p>
-      ) : (
-        <div className="flex flex-col gap-0 overflow-y-auto">
-          {(Object.keys(ENTITY_LABELS) as EntityKey[]).map((key) => (
-            <EntitySection
-              key={key}
-              label={ENTITY_LABELS[key]}
-              entries={Object.values(slices[key])}
-              getLabelFn={key === "rules" ? getRuleLabelFn : undefined}
-              mergeDepIds={key === "rules" ? ruleMergeDepIds : undefined}
-              onItemClick={ENTITY_ROUTES[key] ? (id) => handleItemClick(key, id) : undefined}
-            />
-          ))}
-        </div>
-      )}
+      <div className="flex min-h-0 flex-1 flex-col gap-0 overflow-y-auto">
+        {(Object.keys(ENTITY_LABELS) as EntityKey[]).map((key) => (
+          <EntitySection
+            key={key}
+            label={ENTITY_LABELS[key]}
+            entries={Object.values(slices[key])}
+            getLabelFn={key === "rules" ? getRuleLabelFn : undefined}
+            mergeDepIds={key === "rules" ? ruleMergeDepIds : undefined}
+            onItemClick={ENTITY_ROUTES[key] ? (id) => handleItemClick(key, id) : undefined}
+          />
+        ))}
+      </div>
     </aside>
   );
 }

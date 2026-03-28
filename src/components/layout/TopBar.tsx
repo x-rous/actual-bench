@@ -221,8 +221,8 @@ export function TopBar() {
         <Button
           size="sm"
           className={cn(
-            "h-7 text-xs",
-            hasChanges && !isSaving && "ring-2 ring-offset-1 ring-primary/50"
+            "h-7 text-xs bg-action text-action-foreground hover:bg-action-hover",
+            hasChanges && !isSaving && "ring-2 ring-offset-1 ring-action/50"
           )}
           disabled={!hasChanges || isSaving}
           onClick={handleSave}
