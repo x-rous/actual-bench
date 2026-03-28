@@ -14,10 +14,23 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Trash2,
+  HelpCircle,
+  ExternalLink,
+  AlertCircle,
+  BookOpen,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useConnectionStore } from "@/store/connection";
 import { useStagedStore } from "@/store/staged";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+
+const GITHUB_URL = "https://github.com/x-rous/actual-bench";
 
 const LS_KEY = "sidebar-collapsed";
 
@@ -96,6 +109,34 @@ export function Sidebar() {
 
       {/* Bottom actions */}
       <div className="shrink-0 border-t border-border p-2 flex flex-col gap-0.5">
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            title="Help & feedback"
+            className={cn(
+              "flex w-full items-center rounded-md px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-accent/50 hover:text-accent-foreground",
+              collapsed ? "justify-center" : "gap-2"
+            )}
+          >
+            <HelpCircle className="h-4 w-4 shrink-0 text-xs text-muted-foreground" />
+            {!collapsed && <span>Help & feedback</span>}
+          </DropdownMenuTrigger>
+          <DropdownMenuContent side="right" align="end" className="w-52 text-xs text-muted-foreground">
+            <DropdownMenuItem onClick={() => window.open(GITHUB_URL, "_blank", "noopener,noreferrer")}>
+              <ExternalLink className="h-4 w-4 text-xs text-muted-foreground"  />
+              GitHub Repository
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => window.open(`${GITHUB_URL}/issues/new`, "_blank", "noopener,noreferrer")}>
+              <AlertCircle className="h-4 w-4 text-xs text-muted-foreground" />
+              Report an Issue
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={() => window.open(`${GITHUB_URL}/blob/main/CHANGELOG.md`, "_blank", "noopener,noreferrer")}>
+              <BookOpen className="h-4 w-4 text-xs text-muted-foreground" />
+              Changelog
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+
         <button
           type="button"
           onClick={handleClearAll}
