@@ -34,6 +34,8 @@ A web-based admin tool for [Actual Budget](https://actualbudget.org/) that conne
 - **Categories** — view, rename, show/hide, and reorder categories within groups; CSV import/export
 - **Rules** — view, filter by stage, create, edit, and merge rules with a full condition/action builder; CSV import/export
 
+→ See [FEATURES.md](FEATURES.md) for the full feature reference.
+
 ## Requirements
 
 - A self-hosted [Actual Budget](https://actualbudget.org/) server
@@ -47,10 +49,18 @@ Pull the pre-built image from GHCR — no local build required:
 docker run -p 3000:3000 ghcr.io/x-rous/actual-bench:latest
 ```
 
-Or with Docker Compose (a ready-to-use `docker-compose.yml` is included in the repo):
+Or with Docker Compose — save the following as `docker-compose.yml` and run `docker compose up -d`:
 
-```bash
-docker compose up -d
+```yaml
+services:
+  actual-bench:
+    image: ghcr.io/x-rous/actual-bench:latest
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: production
+      NEXT_TELEMETRY_DISABLED: "1"
+    restart: unless-stopped
 ```
 
 Open [http://localhost:3000](http://localhost:3000) and enter your connection details on the Connect screen.
