@@ -1,9 +1,10 @@
 "use client";
 
 import { useState } from "react";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Loader2, AlertCircle, CheckCircle2, Trash2 } from "lucide-react";
+import { Loader2, AlertCircle, CheckCircle2, Trash2, Server } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -65,7 +66,7 @@ function SavedConnectionCard({
 
   return (
     <div
-      className={`flex items-center gap-3 rounded-lg border px-4 py-3 ${
+      className={`flex items-center gap-4 rounded-lg border px-5 py-4 ${
         isActive ? "border-primary bg-primary/5" : "border-border bg-background"
       }`}
     >
@@ -78,13 +79,13 @@ function SavedConnectionCard({
             </span>
           )}
         </div>
-        <div className="mt-0.5 text-xs text-muted-foreground truncate">{instance.baseUrl}</div>
+        <div className="mt-1 text-xs text-muted-foreground truncate">{instance.baseUrl}</div>
         <div className="mt-0.5 text-xs text-muted-foreground font-mono">
           API key: {"•".repeat(12)}
         </div>
       </div>
 
-      <div className="flex items-center gap-1.5 shrink-0">
+      <div className="flex items-center gap-2 shrink-0">
         <button
           type="button"
           disabled={anyBusy}
@@ -321,14 +322,18 @@ export function ConnectForm() {
   // ── Render ──────────────────────────────────────────────────────────────────
 
   return (
-    <div className="w-full max-w-3xl flex flex-col gap-6">
+    <div className="w-full max-w-4xl flex flex-col gap-8">
+      <div className="flex justify-center">
+        <Image src="/logo.png" alt="Actual Bench" width={160} height={40} priority />
+      </div>
+
       {/* Saved connections */}
       {instances.length > 0 && (
         <div>
-          <h2 className="mb-3 text-sm font-medium text-muted-foreground uppercase tracking-wide">
+          <h2 className="mb-4 text-xs font-semibold text-muted-foreground uppercase tracking-widest">
             Saved connections
           </h2>
-          <div className="flex flex-col gap-2">
+          <div className="flex flex-col gap-3">
             {instances.map((instance) => (
               <SavedConnectionCard
                 key={instance.id}
@@ -346,22 +351,22 @@ export function ConnectForm() {
       {/* New connection form */}
       <div>
         {instances.length > 0 && (
-          <h2 className="mb-3 text-sm font-medium text-muted-foreground uppercase tracking-wide">
+          <h2 className="mb-4 text-xs font-semibold text-muted-foreground uppercase tracking-widest">
             Add new connection
           </h2>
         )}
-        <div className="flex rounded-lg border border-border bg-background shadow-sm overflow-hidden min-h-[420px]">
+        <div className="flex rounded-xl border border-border bg-background shadow-sm overflow-hidden min-h-[500px]">
           {/* ── Left panel: credentials ── */}
-          <div className="w-72 shrink-0 flex flex-col border-r border-border p-6">
-            <h1 className="mb-1 text-lg font-semibold">Connect to Actual</h1>
-            <p className="mb-5 text-sm text-muted-foreground">
+          <div className="w-96 shrink-0 flex flex-col border-r border-border p-8">
+            <h1 className="mb-2 text-xl font-semibold">Connect to Actual</h1>
+            <p className="mb-7 text-sm text-muted-foreground leading-relaxed">
               Enter your{" "}
               <span className="font-medium text-foreground">actual-http-api</span>{" "}
               server details.
             </p>
 
-            <div className="flex flex-col gap-4 flex-1">
-              <div className="flex flex-col gap-1.5">
+            <div className="flex flex-col gap-5 flex-1">
+              <div className="flex flex-col gap-2">
                 <Label htmlFor="baseUrl">Server URL</Label>
                 <Input
                   id="baseUrl"
@@ -379,7 +384,7 @@ export function ConnectForm() {
                 />
               </div>
 
-              <div className="flex flex-col gap-1.5">
+              <div className="flex flex-col gap-2">
                 <Label htmlFor="apiKey">API Key</Label>
                 <Input
                   id="apiKey"
@@ -400,7 +405,7 @@ export function ConnectForm() {
               </div>
 
               {validateStatus.kind === "error" && (
-                <div className="flex items-start gap-2 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                <div className="flex items-start gap-2.5 rounded-lg bg-destructive/10 px-3.5 py-3 text-sm text-destructive">
                   <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
                   <span>{validateStatus.message}</span>
                 </div>
@@ -425,24 +430,30 @@ export function ConnectForm() {
           </div>
 
           {/* ── Right panel: budget selection ── */}
-          <div className="flex-1 flex flex-col p-6">
+          <div className="flex-1 flex flex-col p-8">
             {budgets === null ? (
-              <div className="flex flex-1 flex-col items-center justify-center text-center text-sm text-muted-foreground gap-2">
-                <p>
-                  Enter your server details and click{" "}
-                  <span className="font-medium text-foreground">Validate</span> to load available
-                  budgets.
-                </p>
+              <div className="flex flex-1 flex-col items-center justify-center text-center gap-4">
+                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted">
+                  <Server className="h-5 w-5 text-muted-foreground" />
+                </div>
+                <div className="flex flex-col gap-1">
+                  <p className="text-sm font-medium text-foreground">No server connected</p>
+                  <p className="text-sm text-muted-foreground">
+                    Enter your server details and click{" "}
+                    <span className="font-medium text-foreground">Validate</span> to load available
+                    budgets.
+                  </p>
+                </div>
               </div>
             ) : (
               <>
-                <h2 className="mb-1 text-base font-semibold">Select a budget</h2>
-                <p className="mb-4 text-sm text-muted-foreground">
+                <h2 className="mb-2 text-base font-semibold">Select a budget</h2>
+                <p className="mb-5 text-sm text-muted-foreground">
                   Choose which budget to connect to.
                 </p>
 
                 {/* Budget cards */}
-                <div className="flex flex-col gap-2 mb-5 overflow-y-auto max-h-[200px] pr-0.5">
+                <div className="flex flex-col gap-3 mb-6 overflow-y-auto max-h-[220px] pr-1">
                   {budgets.map((budget) => {
                     const selected = selectedCloudFileId === budget.cloudFileId;
                     return (
@@ -454,7 +465,7 @@ export function ConnectForm() {
                           setSelectedCloudFileId(budget.cloudFileId);
                           if (connectStatus.kind === "error") setConnectStatus({ kind: "idle" });
                         }}
-                        className={`flex items-start gap-3 rounded-md border px-3 py-2.5 text-left transition-colors disabled:opacity-50 ${
+                        className={`flex items-start gap-3 rounded-lg border px-4 py-3 text-left transition-colors disabled:opacity-50 ${
                           selected
                             ? "border-primary bg-primary/5"
                             : "border-border hover:border-muted-foreground/40 hover:bg-muted/40"
@@ -469,7 +480,7 @@ export function ConnectForm() {
                             <span className="h-2 w-2 rounded-full bg-primary block" />
                           )}
                         </span>
-                        <span className="flex flex-col gap-0.5 min-w-0">
+                        <span className="flex flex-col gap-1 min-w-0">
                           <span className="text-sm font-medium leading-tight">
                             {budget.name || budget.cloudFileId}
                           </span>
@@ -483,7 +494,7 @@ export function ConnectForm() {
                 </div>
 
                 {/* Encryption password */}
-                <div className="flex flex-col gap-1.5 mb-4">
+                <div className="flex flex-col gap-2 mb-5">
                   <Label htmlFor="encryptionPassword">
                     Encryption password{" "}
                     <span className="font-normal text-muted-foreground">(optional)</span>
@@ -503,13 +514,13 @@ export function ConnectForm() {
                 </div>
 
                 {connectStatus.kind === "error" && (
-                  <div className="flex items-start gap-2 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive mb-4">
+                  <div className="flex items-start gap-2.5 rounded-lg bg-destructive/10 px-3.5 py-3 text-sm text-destructive mb-5">
                     <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
                     <span>{connectStatus.message}</span>
                   </div>
                 )}
                 {connectStatus.kind === "success" && (
-                  <div className="flex items-center gap-2 rounded-md bg-green-50 px-3 py-2 text-sm text-green-700 mb-4">
+                  <div className="flex items-center gap-2.5 rounded-lg bg-green-50 px-3.5 py-3 text-sm text-green-700 mb-5">
                     <CheckCircle2 className="h-4 w-4 shrink-0" />
                     <span>Connected! Redirecting…</span>
                   </div>

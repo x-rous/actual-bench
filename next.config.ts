@@ -1,10 +1,16 @@
 import type { NextConfig } from "next";
-import { version } from "./package.json";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+
+const pkg = JSON.parse(
+  readFileSync(join(process.cwd(), "package.json"), "utf8")
+) as { version?: string };
 
 const nextConfig: NextConfig = {
   // Use a fresh output directory so Turbopack doesn't try to acquire a
   // lockfile on the root-owned .next/dev/cache from a prior container run.
   distDir: ".next-build",
+  output: "standalone",
   // Allow the reverse-proxy hostname to reach dev-server infrastructure
   // (HMR, dev overlay, etc.). Without this, Next.js 16 blocks cross-origin
   // requests from origins other than localhost, preventing React from fully
@@ -19,7 +25,7 @@ const nextConfig: NextConfig = {
   // Inject package.json version at build time so the UI always reflects the
   // current release without needing it set in .env files.
   env: {
-    NEXT_PUBLIC_APP_VERSION: version,
+    NEXT_PUBLIC_APP_VERSION: pkg.version ?? "0.0.0",
   },
 };
 

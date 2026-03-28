@@ -26,17 +26,13 @@ A web-based admin tool for [Actual Budget](https://actualbudget.org/) that conne
 
 ## Features
 
-- **Multi-connection support** — save and switch between multiple Actual Budget servers; staged data and query cache are scoped per connection
+- **Multi-connection support** — save and switch between multiple Actual Budget servers or budget files; staged data and query cache are scoped per connection
 - **Staged editing** — all changes are held locally until you click Save; nothing touches the server until you confirm
 - **Undo / Redo** — step backwards and forwards through your edits before committing
 - **Accounts** — view and rename accounts, toggle on/off budget status; CSV import/export
 - **Payees** — view, rename, and delete payees; CSV import/export
 - **Categories** — view, rename, show/hide, and reorder categories within groups; CSV import/export
-- **Rules** — view, filter by stage, create and edit rules with a full condition/action builder; CSV import/export
-  - Conditions: `contains`, `matches`, `oneOf`, `is`, `isNot`, `gt`, `lt`, `gte`, `lte`, `isapprox`, `isbetween`, `onBudget`, `offBudget`
-  - Multi-value `oneOf` inputs: entity picker (accounts, payees, categories) and tag input (strings)
-  - Actions: `set` (payee, category, notes, cleared)
-  - Stage filter: `default`, `pre`, `post`
+- **Rules** — view, filter by stage, create, edit, and merge rules with a full condition/action builder; CSV import/export
 
 ## Requirements
 
@@ -61,16 +57,25 @@ Open [http://localhost:3000](http://localhost:3000) and enter your connection de
 
 ## Connecting to Actual Budget
 
-On the Connect screen enter:
+The Connect screen uses a two-step flow:
+
+**Step 1 — Validate credentials**
 
 | Field | Description |
 |---|---|
 | **Server URL** | Base URL of your actual-http-api server (e.g. `https://actual-api.example.com`) |
 | **API Key** | The `ACTUAL_API_KEY` you set on the server |
-| **Budget Sync ID** | The sync ID of the budget file (visible in Actual Budget under Settings → Sync) |
+
+Click **Validate** to fetch the list of budgets available on that server.
+
+**Step 2 — Select a budget and connect**
+
+| Field | Description |
+|---|---|
+| **Budget** | Pick from the list of budgets returned by the server |
 | **Encryption Password** | Only required if the budget is end-to-end encrypted |
 
-After connecting, the connection is saved in **session storage** — credentials are cleared automatically when the tab is closed. Use the connection menu in the top bar to add more connections or switch between them.
+Click **Connect** to finish. The connection is saved in **session storage** — credentials are cleared automatically when the tab is closed. Multiple connections can be saved and switched between; previously saved connections appear at the top of the Connect screen for one-click reconnect.
 
 ## Staged Editing Workflow
 
@@ -86,14 +91,14 @@ Every entity page has an **Export** button that downloads a UTF-8 CSV file and a
 
 ### Sample Import Files
 
-Ready-to-use sample CSV files are included in [`public/samples/`](public/samples/) for testing with a fresh Actual Budget setup:
+Ready-to-use sample CSV files are included in [`public/samples csv/`](public/samples csv/) for testing with a fresh Actual Budget setup:
 
 | File | Description |
 |---|---|
-| [`sample-accounts.csv`](public/samples/sample-accounts.csv) | 7 accounts — covers `offBudget` and `closed` flag combinations |
-| [`sample-payees.csv`](public/samples/sample-payees.csv) | 15 common payees |
-| [`sample-categories.csv`](public/samples/sample-categories.csv) | 8 groups and 25 categories spanning income, housing, food, transport, health, and more |
-| [`sample-rules.csv`](public/samples/sample-rules.csv) | 10 rules demonstrating multi-condition, multi-action, `or` logic, stage filtering, and payee auto-creation |
+| [`sample-accounts.csv`](public/samples csv/sample-accounts.csv) | 7 accounts — covers `offBudget` and `closed` flag combinations |
+| [`sample-payees.csv`](public/samples csv/sample-payees.csv) | 15 common payees |
+| [`sample-categories.csv`](public/samples csv/sample-categories.csv) | 8 groups and 25 categories spanning income, housing, food, transport, health, and more |
+| [`sample-rules.csv`](public/samples csv/sample-rules.csv) | 10 rules demonstrating multi-condition, multi-action, `or` logic, stage filtering, and payee auto-creation |
 
 ### CSV Formats
 
@@ -118,9 +123,9 @@ Ready-to-use sample CSV files are included in [`public/samples/`](public/samples
 
 ## Known Limitations
 
-- **Session storage is tab-local** — credentials clear when the tab is closed; reconnection is required in each new tab.
 - **No pagination** — all entities are loaded at once. Performance may degrade on very large budgets.
 - **Schedules** — not yet implemented.
+- **Tags** — not yet implemented.
 
 ## Development
 
@@ -140,8 +145,6 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000).
 
-No `.env` file is required. The app version is injected automatically from `package.json` at build time.
-
 ### Scripts
 
 | Command | Description |
@@ -155,54 +158,3 @@ No `.env` file is required. The app version is injected automatically from `pack
 | `npm version patch\|minor\|major` | Bump version, commit, and tag |
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for release and contribution guidelines.
-
-## Docker
-
-### Pre-built Image (Recommended)
-
-The latest image is published to GHCR on every push to `main`:
-
-```
-ghcr.io/x-rous/actual-bench:latest
-```
-
-Releases are also tagged by commit SHA, enabling pinned deployments and rollbacks:
-
-```
-ghcr.io/x-rous/actual-bench:<git-sha>
-```
-
-### Dev Container
-
-The dev compose file mounts your source directory and runs the Turbopack hot-reload server. A named Docker volume persists the build cache across restarts.
-
-**First-time setup** — run once on the host from the project root:
-
-```bash
-npm install
-```
-
-**Start the container:**
-
-```bash
-docker compose -f docker/docker-compose.dev.yml up -d
-```
-
-Edit `docker/docker-compose.dev.yml` to set the correct source volume path before starting. The server is available on port `3001`. Changes on the host are reflected immediately via hot reload.
-
-To clear the Turbopack cache:
-
-```bash
-docker volume rm next-build-cache
-```
-
-### Build from Source
-
-To build your own image using the multi-stage Dockerfile:
-
-```bash
-docker build -f docker/Dockerfile.prod -t actual-bench .
-docker run -p 3000:3000 actual-bench
-```
-
-The production server uses ~256 MB RAM and runs as a non-root user.

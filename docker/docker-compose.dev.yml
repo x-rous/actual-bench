@@ -2,13 +2,14 @@
 # Usage: docker compose -f docker/docker-compose.dev.yml up -d
 #
 # First-time setup (run once on the host before starting the container):
-#   cd /opt/projects/actual-bench && npm install
+#   cd /opt/projects/actual-admin-panel && npm install
 
 services:
   actual-bench-dev:
     image: node:20-alpine
     container_name: actual-bench-dev
     working_dir: /workspace
+    user: "1000:1000"
     volumes:
       # Source code — edits on the host are reflected immediately via HMR
       - /opt/projects/actual-bench:/workspace
@@ -19,7 +20,8 @@ services:
     # Do NOT run npm install here — install on the host once and let the
     # volume mount bring node_modules in. Installing inside the container on
     # every start is slow and compiles native addons for the wrong platform.
-    command: npm run dev -- --hostname 0.0.0.0
+    #command: npm run dev -- --hostname 0.0.0.0
+    command: sh -c "npm run dev -- --hostname 0.0.0.0"
     environment:
       - NODE_ENV=development
       - NEXT_TELEMETRY_DISABLED=1
@@ -28,7 +30,7 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=proxy"
-      - "traefik.http.routers.abe-dev.rule=Host(`your-dev-domain.example.com`)"
+      - "traefik.http.routers.abe-dev.rule=Host(`actual-bench-dev.nafverse.com`)"
       - "traefik.http.routers.abe-dev.entrypoints=websecure"
       - "traefik.http.routers.abe-dev.tls.certresolver=le"
       - "traefik.http.services.abe-dev.loadbalancer.server.port=3000"
