@@ -245,13 +245,16 @@ export function DraftPanel() {
     schedules:      schedules      as StagedMap<BaseEntity>,
   };
 
-  const errorCount = (Object.keys(ENTITY_LABELS) as EntityKey[]).reduce((acc, key) => {
-    return acc + Object.values(slices[key]).filter((s) => s.saveError).length;
-  }, 0);
-
-  const totalCount = (Object.keys(ENTITY_LABELS) as EntityKey[]).reduce((acc, key) => {
-    return acc + Object.values(slices[key]).filter((s) => s.isNew || s.isUpdated || s.isDeleted).length;
-  }, 0);
+  const { errorCount, totalCount } = useMemo(() => {
+    let errors = 0, total = 0;
+    for (const key of Object.keys(ENTITY_LABELS) as EntityKey[]) {
+      for (const s of Object.values(slices[key])) {
+        if (s.saveError) errors++;
+        if (s.isNew || s.isUpdated || s.isDeleted) total++;
+      }
+    }
+    return { errorCount: errors, totalCount: total };
+  }, [slices]);
 
   const handleItemClick = (entityKey: EntityKey, id: string) => {
     const route = ENTITY_ROUTES[entityKey];

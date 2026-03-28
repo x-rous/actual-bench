@@ -255,15 +255,17 @@ export function PayeesTable() {
   // ── Derived rows: filter → sort ──────────────────────────────────────────────
   const rows: PayeeRow[] = useMemo(() => {
     const q = search.toLowerCase();
-    let result = Object.values(staged) as PayeeRow[];
-
-    if (q) result = result.filter((r) => r.entity.name.toLowerCase().includes(q));
-    if (typeFilter === "regular") result = result.filter((r) => !r.entity.transferAccountId);
-    if (typeFilter === "transfer") result = result.filter((r) => !!r.entity.transferAccountId);
-    if (rulesFilter === "with_rules") result = result.filter((r) => (payeeRuleCount.get(r.entity.id) ?? 0) > 0);
-    if (rulesFilter === "no_rules") result = result.filter((r) => (payeeRuleCount.get(r.entity.id) ?? 0) === 0);
-
-    result = [...result].sort((a, b) => {
+    const result: PayeeRow[] = [];
+    for (const r of Object.values(staged) as PayeeRow[]) {
+      if (q && !r.entity.name.toLowerCase().includes(q)) continue;
+      if (typeFilter === "regular"  && r.entity.transferAccountId)  continue;
+      if (typeFilter === "transfer" && !r.entity.transferAccountId) continue;
+      const rc = payeeRuleCount.get(r.entity.id) ?? 0;
+      if (rulesFilter === "with_rules" && rc === 0) continue;
+      if (rulesFilter === "no_rules"   && rc  >  0) continue;
+      result.push(r);
+    }
+    result.sort((a, b) => {
       // New (unsaved) rows always float to the top so they're immediately visible
       if (a.isNew !== b.isNew) return a.isNew ? -1 : 1;
       if (!sortCol) return 0;

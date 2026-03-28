@@ -175,7 +175,20 @@ export function RulesTable({ onEdit, onMerge, payeeId, categoryId }: Props) {
     [payees, categories, accounts]
   );
 
+  // Pre-compute previews once when rules or entity maps change so the search
+  // filter doesn't recompute them on every keystroke.
+  const rulePreviews = useMemo<Map<string, string>>(() => {
+    const map = new Map<string, string>();
+    for (const s of Object.values(stagedRules)) {
+      if (!s.isDeleted) {
+        map.set(s.entity.id, rulePreview(s.entity, entityMaps).toLowerCase());
+      }
+    }
+    return map;
+  }, [stagedRules, entityMaps]);
+
   const rows = useMemo<StagedEntity<Rule>[]>(() => {
+    const q = search.trim().toLowerCase();
     return Object.values(stagedRules).filter((s) => {
       if (s.isDeleted) return false;
       if (stageFilter !== "all" && normalizeStage(s.entity.stage) !== stageFilter) return false;
@@ -197,14 +210,10 @@ export function RulesTable({ onEdit, onMerge, payeeId, categoryId }: Props) {
         });
         if (!hasCategory) return false;
       }
-      if (search.trim()) {
-        const q = search.toLowerCase();
-        const preview = rulePreview(s.entity, entityMaps).toLowerCase();
-        if (!preview.includes(q)) return false;
-      }
+      if (q && !(rulePreviews.get(s.entity.id) ?? "").includes(q)) return false;
       return true;
     });
-  }, [stagedRules, stageFilter, payeeId, categoryId, search, entityMaps]);
+  }, [stagedRules, stageFilter, payeeId, categoryId, search, rulePreviews]);
 
   function handleDelete(id: string) {
     pushUndo();

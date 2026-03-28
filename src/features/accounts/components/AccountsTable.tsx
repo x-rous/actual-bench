@@ -95,16 +95,18 @@ export function AccountsTable() {
   // ── Derived rows: filter → sort ──────────────────────────────────────────────
   const rows: AccountRow[] = useMemo(() => {
     const q = search.toLowerCase();
-    let result = Object.values(staged) as AccountRow[];
-
-    if (q) result = result.filter((r) => r.entity.name.toLowerCase().includes(q));
-    if (statusFilter === "open")   result = result.filter((r) => !r.entity.closed);
-    if (statusFilter === "closed") result = result.filter((r) => r.entity.closed);
-    if (budgetFilter === "on")  result = result.filter((r) => !r.entity.offBudget);
-    if (budgetFilter === "off") result = result.filter((r) => r.entity.offBudget);
+    const result: AccountRow[] = [];
+    for (const r of Object.values(staged) as AccountRow[]) {
+      if (q && !r.entity.name.toLowerCase().includes(q)) continue;
+      if (statusFilter === "open"   && r.entity.closed)     continue;
+      if (statusFilter === "closed" && !r.entity.closed)    continue;
+      if (budgetFilter === "on"  && r.entity.offBudget)  continue;
+      if (budgetFilter === "off" && !r.entity.offBudget) continue;
+      result.push(r);
+    }
 
     if (sortCol) {
-      result = [...result].sort((a, b) => {
+      result.sort((a, b) => {
         let av: string | boolean, bv: string | boolean;
         if (sortCol === "name") { av = a.entity.name.toLowerCase(); bv = b.entity.name.toLowerCase(); }
         else if (sortCol === "offBudget") { av = a.entity.offBudget; bv = b.entity.offBudget; }
