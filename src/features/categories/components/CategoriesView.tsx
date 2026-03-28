@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { Download, Upload, ChevronsDownUp, ChevronsUpDown } from "lucide-react";
+import { Download, Upload, ChevronsUpDown, ChevronsDownUp } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { PageLayout } from "@/components/layout/PageLayout";
@@ -119,11 +119,11 @@ export function CategoriesView() {
             onChange={handleImportCsv}
           />
           <Button variant="outline" size="sm" onClick={() => importInputRef.current?.click()} title="Import CSV">
-            <Upload />
+            <Download />
             Import
           </Button>
           <Button variant="outline" size="sm" onClick={handleExportCsv} title="Export CSV">
-            <Download />
+            <Upload />
             Export
           </Button>
         </>

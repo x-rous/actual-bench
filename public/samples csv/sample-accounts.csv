@@ -1,0 +1,8 @@
+name,offBudget,closed
+Checking Account,false,false
+Savings Account,false,false
+Emergency Fund,false,false
+Credit Card,false,false
+Mortgage,true,false
+Investment Portfolio,true,false
+Old Savings Account,false,true

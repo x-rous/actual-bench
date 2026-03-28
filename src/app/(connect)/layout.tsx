@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "Connect — Actual Admin Panel",
+  title: "Connect — Actual Bench",
 };
 
 /** Minimal centered layout for the connection screen. */

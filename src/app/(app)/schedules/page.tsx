@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "Schedules — Actual Admin Panel",
+  title: "Schedules — Actual Bench",
 };
 
 export default function SchedulesPage() {

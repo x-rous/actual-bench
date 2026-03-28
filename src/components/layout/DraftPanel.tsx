@@ -293,8 +293,8 @@ export function DraftPanel() {
 
   // ── Expanded panel — shown when there are staged changes or errors ─────────────
   return (
-    <aside className="flex w-68 shrink-0 flex-col border-l border-border bg-background">
-      <div className="flex items-center justify-between px-3 py-3.5">
+    <aside className="flex w-90 shrink-0 flex-col border-l border-border bg-background">
+      <div className="flex items-center justify-between px-3 py-3">
         <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
           Draft Changes
         </span>

@@ -1,17 +1,28 @@
-# Actual Budget Admin Panel
+<p align="center">
+  <img src="public/logo.png" alt="Actual Bench" height="48" />
+</p>
 
-![CI](https://github.com/x-rous/actual-admin-panel/actions/workflows/ci.yml/badge.svg)
-![Version](https://img.shields.io/github/v/release/x-rous/actual-admin-panel?label=version)
-![License](https://img.shields.io/github/license/x-rous/actual-admin-panel)
+<p align="center">
+  <a href="https://github.com/x-rous/actual-admin-panel/actions/workflows/ci.yml"><img src="https://github.com/x-rous/actual-admin-panel/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
+  <a href="https://github.com/x-rous/actual-admin-panel/releases"><img src="https://img.shields.io/github/v/tag/x-rous/actual-admin-panel?label=version" alt="Version" /></a>
+  <a href="https://github.com/x-rous/actual-admin-panel/blob/main/LICENSE"><img src="https://img.shields.io/github/license/x-rous/actual-admin-panel" alt="License" /></a>
+</p>
 
-A web-based admin panel for [Actual Budget](https://actualbudget.org/) that connects to a self-hosted [actual-http-api](https://github.com/jhonderson/actual-http-api) server. Manage accounts, payees, categories, and rules through a clean UI with staged editing, undo/redo, and CSV import/export.
+A web-based admin tool for [Actual Budget](https://actualbudget.org/) that connects to a self-hosted [actual-http-api](https://github.com/jhonderson/actual-http-api) server. Manage accounts, payees, categories, and rules through a clean UI with staged editing, undo/redo, and CSV import/export.
 
 ## Screenshots
 
-<!-- TODO: replace with actual screenshots -->
-| Dashboard | Rules Editor |
-|---|---|
-| ![Dashboard](docs/screenshots/dashboard.png) | ![Rules Editor](docs/screenshots/rules.png) |
+| Connection  |
+|:---:
+| ![Connection Form](public/screenshots/Connection%20Form.png) |
+
+| Payees | Categories |
+|:---:|:---:|
+| ![Payees](public/screenshots/Payees%20Page.png) | ![Categories](public/screenshots/Categories%20Page.png) |
+
+| Accounts Detail | Rules |
+|:---:|:---:|
+| ![Accounts Detail](public/screenshots/Accounts%20Detailed.png) | ![Rules](public/screenshots/Rules%20Page.png)  |
 
 ## Features
 
@@ -71,7 +82,39 @@ After connecting, the connection is saved in **session storage** — credentials
 
 ## CSV Import / Export
 
-Every entity page has an **Export** button that downloads a UTF-8 CSV file compatible with Excel. The **Import** button accepts the same format — rows are staged as new or updated entities and are not saved until you click Save.
+Every entity page has an **Export** button that downloads a UTF-8 CSV file and an **Import** button that accepts the same format. Imported rows are staged as new entities and are not saved until you click Save.
+
+### Sample Import Files
+
+Ready-to-use sample CSV files are included in [`public/samples/`](public/samples/) for testing with a fresh Actual Budget setup:
+
+| File | Description |
+|---|---|
+| [`sample-accounts.csv`](public/samples/sample-accounts.csv) | 7 accounts — covers `offBudget` and `closed` flag combinations |
+| [`sample-payees.csv`](public/samples/sample-payees.csv) | 15 common payees |
+| [`sample-categories.csv`](public/samples/sample-categories.csv) | 8 groups and 25 categories spanning income, housing, food, transport, health, and more |
+| [`sample-rules.csv`](public/samples/sample-rules.csv) | 10 rules demonstrating multi-condition, multi-action, `or` logic, stage filtering, and payee auto-creation |
+
+### CSV Formats
+
+**Accounts** — columns: `name` (required), `offBudget`, `closed`
+
+**Payees** — columns: `name` (required)
+
+**Categories** — columns: `type` (required: `group` or `category`), `name` (required), `group`, `is_income`, `hidden`
+> Group rows must appear before the category rows that reference them.
+
+**Rules** — long format, one condition/action per row:
+
+| Column | Description |
+|---|---|
+| `rule_id` | Grouping key — all rows sharing the same ID form one rule |
+| `stage` | `pre`, `default`, or `post` |
+| `conditions_op` | `and` or `or` |
+| `row_type` | `condition` or `action` |
+| `field` | Field name (e.g. `imported_payee`, `payee`, `category`, `amount`) |
+| `op` | Operator (e.g. `is`, `contains`, `lt`, `oneOf`) |
+| `value` | Value — use `\|` as separator for multi-value `oneOf` operators |
 
 ## Known Limitations
 
@@ -158,8 +201,8 @@ docker volume rm next-build-cache
 To build your own image using the multi-stage Dockerfile:
 
 ```bash
-docker build -f docker/Dockerfile.prod -t actual-admin-panel .
-docker run -p 3000:3000 actual-admin-panel
+docker build -f docker/Dockerfile.prod -t actual-bench .
+docker run -p 3000:3000 actual-bench
 ```
 
 The production server uses ~256 MB RAM and runs as a non-root user.

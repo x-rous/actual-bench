@@ -185,14 +185,14 @@ export function ConnectForm() {
             <Input
               id="name"
               type="text"
-              placeholder="My Budget"
+              placeholder="My Budget Connection"
               autoComplete="off"
               value={form.name}
               onChange={update("name")}
               disabled={busy}
             />
             <p className="text-xs text-muted-foreground">
-              A friendly name shown in the connection switcher. Defaults to the server hostname.
+              A display name for the connection (defaults to the URL hostname).
             </p>
           </div>
 
@@ -242,7 +242,7 @@ export function ConnectForm() {
               disabled={busy}
             />
             <p className="text-xs text-muted-foreground">
-              In Actual Budget: <strong>Settings</strong> → <strong>Show advanced settings</strong> → <strong>Sync ID</strong>. Looks like <code className="rounded bg-muted px-1 font-mono">xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx</code>.
+              In Actual Budget: <strong>Settings</strong> → <strong>Show advanced settings</strong> → <strong>Sync ID</strong>. 
             </p>
           </div>
 

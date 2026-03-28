@@ -1,0 +1,30 @@
+rule_id,stage,conditions_op,row_type,field,op,value
+rule-001,default,and,condition,imported_payee,contains,WHOLE FOODS
+rule-001,default,and,action,payee,set,Whole Foods Market
+rule-001,default,and,action,category,set,Groceries
+rule-002,default,and,condition,imported_payee,contains,AMAZON
+rule-002,default,and,action,payee,set,Amazon
+rule-003,default,and,condition,imported_payee,is,NETFLIX.COM
+rule-003,default,and,action,payee,set,Netflix
+rule-003,default,and,action,category,set,Streaming Services
+rule-004,default,and,condition,imported_payee,is,SPOTIFY
+rule-004,default,and,action,payee,set,Spotify
+rule-004,default,and,action,category,set,Streaming Services
+rule-005,default,and,condition,imported_payee,contains,STARBUCKS
+rule-005,default,and,action,payee,set,Coffee Shop
+rule-005,default,and,action,category,set,Coffee Shops
+rule-006,default,and,condition,imported_payee,contains,SHELL
+rule-006,default,and,action,payee,set,Gas Station
+rule-006,default,and,action,category,set,Fuel
+rule-007,default,and,condition,imported_payee,contains,CVS
+rule-007,default,and,action,payee,set,Pharmacy
+rule-007,default,and,action,category,set,Pharmacy
+rule-008,default,and,condition,amount,lt,-100
+rule-008,default,and,condition,imported_payee,contains,INSURANCE
+rule-008,default,and,action,category,set,Car Insurance
+rule-009,pre,and,condition,imported_payee,contains,TRANSFER
+rule-009,pre,and,action,notes,set,Internal transfer
+rule-010,default,or,condition,imported_payee,contains,GYM
+rule-010,default,or,condition,imported_payee,contains,FITNESS
+rule-010,default,or,condition,imported_payee,contains,PLANET FITNESS
+rule-010,default,or,action,category,set,Gym & Fitness

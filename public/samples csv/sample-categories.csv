@@ -1,0 +1,36 @@
+type,name,group,is_income,hidden
+group,Income,,true,false
+category,Salary,Income,true,false
+category,Freelance,Income,true,false
+category,Investment Returns,Income,true,false
+group,Housing,,false,false
+category,Rent / Mortgage,Housing,false,false
+category,Utilities,Housing,false,false
+category,Internet & Phone,Housing,false,false
+category,Home Maintenance,Housing,false,false
+group,Food,,false,false
+category,Groceries,Food,false,false
+category,Restaurants & Takeout,Food,false,false
+category,Coffee Shops,Food,false,false
+group,Transport,,false,false
+category,Fuel,Transport,false,false
+category,Public Transit,Transport,false,false
+category,Car Insurance,Transport,false,false
+category,Car Maintenance,Transport,false,false
+group,Health,,false,false
+category,Medical,Health,false,false
+category,Pharmacy,Health,false,false
+category,Gym & Fitness,Health,false,false
+group,Subscriptions,,false,false
+category,Streaming Services,Subscriptions,false,false
+category,Software & Apps,Subscriptions,false,false
+group,Personal,,false,false
+category,Clothing,Personal,false,false
+category,Personal Care,Personal,false,false
+category,Gifts,Personal,false,false
+group,Savings,,false,false
+category,Emergency Fund,Savings,false,false
+category,Retirement,Savings,false,false
+category,Vacation Fund,Savings,false,false
+group,Hidden,,false,true
+category,Uncategorized,Hidden,false,true

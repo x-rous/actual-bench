@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
@@ -130,9 +131,10 @@ export function TopBar() {
   return (
     <header className="flex h-12 shrink-0 items-center justify-between border-b border-border bg-background px-4">
       {/* Left: branding */}
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-2">
+        <Image src="/icon.png" alt="Actual Bench" height={24} width={24} className="object-contain" />        
         <span className="text-sm font-semibold tracking-tight">
-          Actual Admin Panel
+          Actual Bench
         </span>
 
         {activeInstance && (
@@ -143,7 +145,7 @@ export function TopBar() {
               </span>
               <ChevronDown className="h-3 w-3 text-muted-foreground" />
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" className="w-60">
+            <DropdownMenuContent align="start" className="w-80">
               {instances.map((instance) => (
                 <DropdownMenuItem
                   key={instance.id}

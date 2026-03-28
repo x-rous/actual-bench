@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { Tag } from "lucide-react";
 
 export const metadata: Metadata = {
-  title: "Tags — Actual Admin Panel",
+  title: "Tags — Actual Bench",
 };
 
 export default function TagsPage() {

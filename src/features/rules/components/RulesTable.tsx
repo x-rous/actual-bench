@@ -4,20 +4,20 @@ import { useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { useHighlight } from "@/hooks/useHighlight";
 import { useTableSelection } from "@/hooks/useTableSelection";
-import { Pencil, Trash2, RotateCcw, Copy, AlertTriangle, Search, X, Merge } from "lucide-react";
+import { Pencil, Trash2, RotateCcw, Copy, AlertTriangle } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useStagedStore } from "@/store/staged";
 import { rulePreview } from "../utils/rulePreview";
 import { CONDITION_FIELDS, ACTION_FIELDS, STAGE_LABELS } from "../utils/ruleFields";
+import { FilterBar } from "./FilterBar";
+import type { StageFilter } from "./FilterBar";
 import { valueToString } from "../utils/rulePreview";
 import type { StagedEntity, StagedMap } from "@/types/staged";
 import type { Rule, ConditionOrAction, Payee, Category, Account } from "@/types/entities";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
-
-type StageFilter = "all" | "pre" | "default" | "post";
 
 type EntityMaps = {
   payees: StagedMap<Payee>;
@@ -262,99 +262,24 @@ export function RulesTable({ onEdit, onMerge, payeeId, categoryId }: Props) {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-      {/* Bulk action bar — visible when ≥1 row is selected */}
-      {activeSelectedIds.length >= 1 && (
-        <div className="flex flex-wrap items-center gap-2 border-b border-border/40 bg-primary/5 px-2 py-1.5">
-          <span className="text-xs font-medium text-primary">
-            {activeSelectedIds.length} selected
-          </span>
-          <Button size="xs" variant="destructive" onClick={handleDeleteSelected}>            
-            Delete
-          </Button>
-          {activeSelectedIds.length >= 2 && (
-            <Button size="xs" className="h-6 text-xs" onClick={handleMerge}>
-              <Merge className="h-3.5 w-3.5 mr-1.5" />
-              Merge Selected
-            </Button>
-          )}
-          <button 
-            onClick={() => clearSelection()}
-            className="ml-auto text-xs text-muted-foreground hover:text-foreground"
-          > Clear selection
-          </button>
-        </div>
-      )}
-
-      {/* Filter bar — hidden while rows are selected */}
-      {activeSelectedIds.length === 0 && <div className="flex flex-wrap shrink-0 items-center gap-2 border-b border-border/40 bg-muted/10 px-2 py-1.5">
-        <div className="relative flex items-center">
-          <Search className="absolute left-1.5 h-3.5 w-3.5 text-muted-foreground" />
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search rules…"
-            className="h-6 w-44 rounded border border-border bg-background pl-6 pr-6 text-xs outline-none focus:ring-1 focus:ring-ring"
-          />
-          {search && (
-            <button
-              onClick={() => setSearch("")}
-              className="absolute right-1.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-            >
-              <X className="h-3 w-3" />
-            </button>
-          )}
-        </div>
-
-        <div className="flex gap-px rounded border border-border bg-muted/40 p-px">
-          {(["all", "pre", "default", "post"] as const).map((f) => (
-            <button
-              key={f}
-              onClick={() => setStageFilter(f)}
-              className={cn(
-                "rounded px-2 py-0.5 text-xs transition-colors",
-                stageFilter === f
-                  ? "bg-background font-medium shadow-sm"
-                  : "text-muted-foreground hover:text-foreground"
-              )}
-            >
-              {f === "all" ? "All" : STAGE_LABELS[f]}
-            </button>
-          ))}
-        </div>
-
-        {payeeId && (
-          <div className="flex items-center gap-1.5 rounded-md border border-primary/30 bg-primary/5 px-2 py-0.5 text-xs text-primary">
-            <span>
-              Payee: <span className="font-medium">{payees[payeeId]?.entity.name ?? payeeId}</span>
-            </span>
-            <button
-              onClick={() => router.push("/rules")}
-              className="text-primary/60 hover:text-primary"
-              title="Clear payee filter"
-            >
-              <X className="h-3 w-3" />
-            </button>
-          </div>
-        )}
-        {categoryId && (
-          <div className="flex items-center gap-1.5 rounded-md border border-primary/30 bg-primary/5 px-2 py-0.5 text-xs text-primary">
-            <span>
-              Category: <span className="font-medium">{categories[categoryId]?.entity.name ?? categoryId}</span>
-            </span>
-            <button
-              onClick={() => router.push("/rules")}
-              className="text-primary/60 hover:text-primary"
-              title="Clear category filter"
-            >
-              <X className="h-3 w-3" />
-            </button>
-          </div>
-        )}
-
-        <span className="ml-auto text-xs text-muted-foreground whitespace-nowrap">
-          {rows.length} of {totalVisible}
-        </span>
-      </div>}
+      <FilterBar
+        search={search}
+        onSearchChange={setSearch}
+        stageFilter={stageFilter}
+        onStageFilterChange={setStageFilter}
+        payeeId={payeeId}
+        payeeName={payeeId ? payees[payeeId]?.entity.name : undefined}
+        categoryId={categoryId}
+        categoryName={categoryId ? categories[categoryId]?.entity.name : undefined}
+        onClearPayee={() => router.push("/rules")}
+        onClearCategory={() => router.push("/rules")}
+        rowCount={rows.length}
+        totalVisible={totalVisible}
+        selectedCount={activeSelectedIds.length}
+        onDeleteSelected={handleDeleteSelected}
+        onMerge={handleMerge}
+        onDeselect={clearSelection}
+      />
 
       {/* Table */}
       <div className="min-h-0 flex-1 overflow-auto">

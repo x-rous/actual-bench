@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Actual Admin Panel",
+  title: "Actual Bench",
   description: "Bulk admin interface for Actual Budget master data",
 };
 
