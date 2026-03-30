@@ -8,7 +8,7 @@ import { Loader2, AlertCircle, CheckCircle2, Trash2, Server } from "lucide-react
 import { useQueryClient } from "@tanstack/react-query";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { listBudgets, testConnection, type BudgetFile } from "@/lib/api/client";
+import { listBudgets, testConnection, getApiVersion, getServerVersion, type BudgetFile } from "@/lib/api/client";
 import {
   useConnectionStore,
   selectActiveInstance,
@@ -75,16 +75,14 @@ function SavedConnectionCard({
         <div className="flex items-center gap-2">
           <span className="text-sm font-medium truncate">{instance.label}</span>
           {isActive && (
-            <span className="shrink-0 rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
+            <span className="shrink-0 rounded-full bg-primary/5 py-1 px-3 text-xs font-medium text-primary">
               active
             </span>
           )}
         </div>
-        <div className="mt-1 text-xs text-muted-foreground truncate">{instance.baseUrl}</div>
-        <div className="mt-0.5 text-xs text-muted-foreground font-mono">
-          API key: {"•".repeat(12)}
-        </div>
+        <div className="mt-1 text-xs text-muted-foreground truncate">{instance.baseUrl}</div>              
       </div>
+
 
       <div className="flex items-center gap-2 shrink-0">
         <button
@@ -123,6 +121,7 @@ export function ConnectForm() {
   const queryClient = useQueryClient();
   const addInstance = useConnectionStore((s) => s.addInstance);
   const removeInstance = useConnectionStore((s) => s.removeInstance);
+  const updateInstance = useConnectionStore((s) => s.updateInstance);
   const setActiveInstance = useConnectionStore((s) => s.setActiveInstance);
   const activeInstance = useConnectionStore(selectActiveInstance);
   const instances = useConnectionStore((s) => s.instances);
@@ -137,6 +136,8 @@ export function ConnectForm() {
   const [budgets, setBudgets] = useState<BudgetFile[] | null>(null);
   const [validatedUrl, setValidatedUrl] = useState("");
   const [validatedKey, setValidatedKey] = useState("");
+  const [validatedApiVersion, setValidatedApiVersion] = useState<string | null>(null);
+  const [serverVersionMap, setServerVersionMap] = useState<Record<string, string | null>>({});
 
   // Right panel fields
   const [selectedCloudFileId, setSelectedCloudFileId] = useState<string | null>(null);
@@ -158,6 +159,12 @@ export function ConnectForm() {
       setEncryptionPassword("");
       setConnectStatus({ kind: "idle" });
     }
+
+      // reset
+      setValidatedUrl("");
+      setValidatedKey("");
+      setValidatedApiVersion(null);
+      setServerVersionMap({});
   }
 
   // ── Reconnect saved instance ─────────────────────────────────────────────────
@@ -166,6 +173,19 @@ export function ConnectForm() {
     setReconnectBusyId(instance.id);
     try {
       await testConnection(instance);
+
+      // Refresh versions on every reconnect in case the server was upgraded
+      const [apiVersionResult, serverVersionResult] = await Promise.allSettled([
+        getApiVersion(instance.baseUrl, instance.apiKey),
+        getServerVersion(instance.baseUrl, instance.apiKey, instance.budgetSyncId),
+      ]);
+      console.debug("[reconnect] apiVersion:", apiVersionResult);
+      console.debug("[reconnect] serverVersion:", serverVersionResult);
+      updateInstance(instance.id, {
+        apiVersion: apiVersionResult.status === "fulfilled" ? apiVersionResult.value : instance.apiVersion,
+        serverVersion: serverVersionResult.status === "fulfilled" ? serverVersionResult.value : instance.serverVersion,
+      });
+
       discardAll();
       queryClient.clear();
       setActiveInstance(instance.id);
@@ -223,18 +243,39 @@ export function ConnectForm() {
     setConnectStatus({ kind: "idle" });
 
     try {
-      const fetched = await listBudgets(url, key);
+      const [fetched, apiVersion] = await Promise.all([
+        listBudgets(url, key),
+        getApiVersion(url, key),
+      ]);
 
       if (fetched.length === 0) {
         setValidateStatus({ kind: "error", message: "No remote budgets found on this server." });
         return;
       }
 
+      const versionEntries = await Promise.all(
+        fetched.map(async (budget) => {
+          if (!budget.groupId) {
+            return [budget.cloudFileId, null] as const;
+          }
+
+          try {
+            const version = await getServerVersion(url, key, budget.groupId);
+            return [budget.cloudFileId, version] as const;
+          } catch {
+            return [budget.cloudFileId, null] as const;
+          }
+        })
+      );
+
       setValidatedUrl(url);
       setValidatedKey(key);
+      setValidatedApiVersion(apiVersion);
+      setServerVersionMap(Object.fromEntries(versionEntries));
       setBudgets(fetched);
       setSelectedCloudFileId(fetched[0].cloudFileId);
       setValidateStatus({ kind: "idle" });
+
     } catch (err) {
       const s =
         err && typeof err === "object" && "status" in err
@@ -282,10 +323,17 @@ export function ConnectForm() {
 
     try {
       await testConnection(instance);
+
+      const finalInstance: ConnectionInstance = {
+        ...instance,
+        apiVersion: validatedApiVersion ?? undefined,
+        serverVersion: serverVersionMap[selected.cloudFileId] ?? undefined,
+      };
+
       discardAll();
       queryClient.clear();
-      addInstance(instance);
-      setActiveInstance(instance.id);
+      addInstance(finalInstance);
+      setActiveInstance(finalInstance.id);
       setConnectStatus({ kind: "success" });
       toast.success("Connected! Redirecting…");
       await new Promise((r) => setTimeout(r, 800));
@@ -323,7 +371,7 @@ export function ConnectForm() {
   // ── Render ──────────────────────────────────────────────────────────────────
 
   return (
-    <div className="w-full max-w-4xl flex flex-col gap-8">
+    <div className="w-full max-w-4xl flex flex-col gap-4">
       <div className="flex justify-center">
         <Image src="/logo.png" alt="Actual Bench" width={160} height={40} priority />
       </div>
@@ -359,7 +407,7 @@ export function ConnectForm() {
         <div className="flex rounded-xl border border-border bg-background shadow-sm overflow-hidden min-h-[500px]">
           {/* ── Left panel: credentials ── */}
           <div className="w-96 shrink-0 flex flex-col border-r border-border p-8">
-            <h1 className="mb-2 text-xl font-semibold">Connect to Actual</h1>
+            <h1 className="mb-2 text-xl font-semibold">Connect to the API Server</h1>
             <p className="mb-7 text-sm text-muted-foreground leading-relaxed">
               Enter your{" "}
               <span className="font-medium text-foreground">actual-http-api</span>{" "}
@@ -368,7 +416,7 @@ export function ConnectForm() {
 
             <div className="flex flex-col gap-5 flex-1">
               <div className="flex flex-col gap-2">
-                <Label htmlFor="baseUrl">Server URL</Label>
+                <Label htmlFor="baseUrl">API Server URL</Label>
                 <Input
                   id="baseUrl"
                   type="text"
@@ -401,7 +449,7 @@ export function ConnectForm() {
                   disabled={anyBusy}
                 />
                 <p className="text-xs text-muted-foreground">
-                  The <code>ACTUAL_API_KEY</code> on your server.
+                  The <code>ACTUAL_API_KEY</code> on your API server.
                 </p>
               </div>
 
@@ -412,6 +460,18 @@ export function ConnectForm() {
                 </div>
               )}
 
+              { /* Actual HTTP API Version  */ 
+              validatedApiVersion &&  (
+              <div>
+                <div className="flex items-center gap-2.5 rounded-lg bg-green-50 px-3.5 py-2 text-xs text-green-700 mb-2">
+                  <CheckCircle2 className="h-4 w-4 shrink-0" />
+                  <span>API server validated</span>              
+                </div>
+                <div className="mb-4 rounded-lg border border-border bg-muted/40 px-3.5 py-2 text-xs text-muted-foreground">
+                  API Server version: v{validatedApiVersion}
+                </div>
+              </div>
+              )}
               <button
                 type="button"
                 disabled={anyBusy}
@@ -424,7 +484,7 @@ export function ConnectForm() {
                     Fetching budgets…
                   </>
                 ) : (
-                  "Validate"
+                  "Validate Server"
                 )}
               </button>
             </div>
@@ -450,11 +510,11 @@ export function ConnectForm() {
               <>
                 <h2 className="mb-2 text-base font-semibold">Select a budget</h2>
                 <p className="mb-5 text-sm text-muted-foreground">
-                  Choose which budget to connect to.
+                  Choose which budget file to connect to.
                 </p>
 
                 {/* Budget cards */}
-                <div className="flex flex-col gap-3 mb-6 overflow-y-auto max-h-[220px] pr-1">
+                <div className="flex flex-col gap-3 mb-6 overflow-y-auto max-h-[400px] pr-1">
                   {budgets.map((budget) => {
                     const selected = selectedCloudFileId === budget.cloudFileId;
                     return (
@@ -481,13 +541,19 @@ export function ConnectForm() {
                             <span className="h-2 w-2 rounded-full bg-primary block" />
                           )}
                         </span>
-                        <span className="flex flex-col gap-1 min-w-0">
+                        <span className="flex flex-col gap-2 min-w-0">
                           <span className="text-sm font-medium leading-tight">
-                            {budget.name || budget.cloudFileId}
+                            {budget.name || budget.cloudFileId}                     
                           </span>
+
                           <span className="text-xs text-muted-foreground font-mono truncate">
-                            {budget.cloudFileId}
+                            Sync ID: {budget.cloudFileId}
                           </span>
+                          
+                          <span className="text-xs text-muted-foreground font-mono truncate">
+                            Server version: v{serverVersionMap[budget.cloudFileId]}
+                          </span>
+
                         </span>
                       </button>
                     );
@@ -520,13 +586,7 @@ export function ConnectForm() {
                     <span>{connectStatus.message}</span>
                   </div>
                 )}
-                {connectStatus.kind === "success" && (
-                  <div className="flex items-center gap-2.5 rounded-lg bg-green-50 px-3.5 py-3 text-sm text-green-700 mb-5">
-                    <CheckCircle2 className="h-4 w-4 shrink-0" />
-                    <span>Connected! Redirecting…</span>
-                  </div>
-                )}
-
+                
                 <button
                   type="button"
                   disabled={connectBusy || !selectedCloudFileId}

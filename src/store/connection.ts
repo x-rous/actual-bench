@@ -11,6 +11,10 @@ export type ConnectionInstance = {
   budgetSyncId: string;
   /** Optional: required by the jhonderson actual-http-api when the budget is encrypted */
   encryptionPassword?: string;
+  /** actual-http-api wrapper version — fetched once on connect, stored in session */
+  apiVersion?: string;
+  /** Actual Budget server version — fetched once on connect, stored in session */
+  serverVersion?: string;
 };
 
 type ConnectionState = {

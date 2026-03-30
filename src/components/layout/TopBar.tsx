@@ -20,7 +20,6 @@ import {
   useConnectionStore,
   selectActiveInstance,
 } from "@/store/connection";
-import { useServerVersions } from "@/hooks/useServerVersions";
 import {
   useStagedStore,
   selectHasChanges,
@@ -43,7 +42,6 @@ export function TopBar() {
   const setActive = useConnectionStore((s) => s.setActiveInstance);
   const clearAll = useConnectionStore((s) => s.clearAll);
 
-  const { apiVersion, serverVersion } = useServerVersions(activeInstance);
 
   const hasChanges = useStagedStore(selectHasChanges);
   const canUndo = useStagedStore(selectCanUndo);
@@ -173,22 +171,25 @@ export function TopBar() {
               >
                 Disconnect
               </DropdownMenuItem>
-              {(apiVersion ?? serverVersion) && (
-                <>
-                  <DropdownMenuSeparator />
-                  <div className="px-2 py-1.5 text-xs text-muted-foreground select-none">
-                    {[
-                      apiVersion && `api v${apiVersion}`,
-                      serverVersion && `server v${serverVersion}`,
-                    ]
-                      .filter(Boolean)
-                      .join(" · ")}
-                  </div>
-                </>
-              )}
             </DropdownMenuContent>
           </DropdownMenu>
         )}
+
+        {activeInstance && (activeInstance.apiVersion ?? activeInstance.serverVersion) && (
+          <div className="flex items-center gap-2 text-xs select-none">
+            {activeInstance.apiVersion && (
+              <span className="px-3 py-1.5 rounded-md bg-muted text-muted-foreground">
+              actual-http-api v{activeInstance.apiVersion}
+              </span>
+            )}
+            {activeInstance.serverVersion && (
+              <span className="px-3 py-1.5 rounded-md bg-muted text-muted-foreground">
+              actual budget v{activeInstance.serverVersion}
+              </span>
+            )}
+          </div>
+        )}
+
       </div>
 
       {/* Right: undo/redo + unsaved indicator + save/discard */}
