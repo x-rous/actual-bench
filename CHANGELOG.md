@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.2] - 2026-04-01
+
 ### Added
 - **Docker startup banner** — container logs now show a branded banner (`🚀 Actual Bench vX.Y.Z`, environment, port, ready time) instead of the raw Next.js output
 - **Server version display** — connection dropdown shows `actual-http-api` and Actual Budget server versions; fetched once per session, silently omitted on older API versions that don't expose the endpoints
