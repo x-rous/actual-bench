@@ -5,14 +5,16 @@ Contributions are welcome — bug reports, feature requests, and pull requests a
 ## Branch Model
 
 ```
-feature/*  ──PR──►  edge  ──monthly PR──►  main  ──tag v1.x.0──►  release
+feature/*  ──PR──►  edge  ──PR──►  main  ──tag v1.x.0──►  release
 ```
 
 | Branch | Purpose | Docker tag |
 |---|---|---|
-| `main` | Stable releases only — updated once per month | `:latest` + `:<version>` |
+| `main` | Stable releases only | `:latest` + `:<version>` |
 | `edge` | Integration branch — all merged PRs land here first | `:edge` |
 | `feature/*`, `fix/*` | Short-lived working branches — one per issue or feature | none |
+
+Releases are cut as needed — minor/major versions roughly monthly, patch versions whenever a significant bug fix warrants it.
 
 **All pull requests must target `edge`, not `main`.** The PR template will remind you.
 
@@ -119,7 +121,7 @@ src/
 |---|---|---|
 | **CI** (`.github/workflows/ci.yml`) | All pushes + PRs | Lint, type-check, build, test — must pass before any merge |
 | **Edge** (`.github/workflows/edge.yml`) | Push to `edge` | Builds and pushes `:edge` + `:edge-{sha}` Docker tags, deploys to VPS |
-| **Release** (`.github/workflows/release.yml`) | Push `v*` tag | Builds and pushes `:latest` + `:<version>` Docker tags, deploys to VPS, creates GitHub Release with changelog notes |
+| **Release** (`.github/workflows/release.yml`) | Push `v*` tag | Runs full CI + verifies `package.json` version matches tag, then builds and pushes `:latest` + `:<version>` Docker tags, deploys to VPS, creates GitHub Release with changelog notes |
 
 ## Docker Tags
 
@@ -134,7 +136,7 @@ src/
 
 ## Release Process (Maintainer)
 
-Releases are cut at the end of each month. When completing a roadmap item, always:
+When completing a roadmap item or shipping a fix, always:
 1. Mark it `status: complete` in `agents/future-roadmap.md`
 2. Add the feature to the relevant section of `FEATURES.md`
 3. Add an entry under `## [Unreleased]` in `CHANGELOG.md`
