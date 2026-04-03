@@ -66,6 +66,7 @@
 - Save all staged changes to the server in one action from the top bar
 - Discard all staged changes to revert to the last server state
 - Full undo / redo history for all staged edits within a session
+- Refresh reloads data from the server — if unsaved changes exist, a confirmation prompt lets you choose to discard them and continue, or cancel
 
 ## CSV Import / Export
 
@@ -114,7 +115,7 @@
 ## Navigation & Layout
 
 - Collapsible sidebar with navigation links to all sections; collapse state persists across reloads
-- Top bar shows the active connection with a switcher dropdown, undo/redo, refresh, discard, and save
+- Top bar shows the active connection with a switcher dropdown, undo/redo, discard, save, and a refresh button — refresh prompts for confirmation when unsaved changes exist
 - Toast notifications for all success, error, and warning states
 - Entity counts shown in page headers
 - Help menu in the sidebar with links to the GitHub repository, issue tracker, and changelog

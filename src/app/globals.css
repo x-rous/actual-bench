@@ -9,6 +9,10 @@
   --color-action: var(--action);
   --color-action-foreground: var(--action-foreground);
   --color-action-hover: var(--action-hover);
+  /* ── Staged state indicator colors ───────────────────────────────────────── */
+  --color-staged-new: var(--staged-new);
+  --color-staged-updated: var(--staged-updated);
+  --color-staged-deleted: var(--staged-deleted);
   /* ─────────────────────────────────────────────────────────────────────────── */
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -75,6 +79,9 @@
   --action: oklch(0.546 0.245 262.881);
   --action-foreground: oklch(0.985 0 0);
   --action-hover: oklch(0.488 0.243 264.376);
+  --staged-new: oklch(0.627 0.194 149.214);     /* ≈ green-500 */
+  --staged-updated: oklch(0.828 0.189 84.429);  /* ≈ amber-400 */
+  --staged-deleted: var(--muted-foreground);
   --chart-1: oklch(0.87 0 0);
   --chart-2: oklch(0.556 0 0);
   --chart-3: oklch(0.439 0 0);
@@ -113,6 +120,9 @@
   --action: oklch(0.623 0.214 261.327);
   --action-foreground: oklch(0.985 0 0);
   --action-hover: oklch(0.546 0.245 262.881);
+  --staged-new: oklch(0.627 0.194 149.214);
+  --staged-updated: oklch(0.828 0.189 84.429);
+  --staged-deleted: var(--muted-foreground);
   --chart-1: oklch(0.87 0 0);
   --chart-2: oklch(0.556 0 0);
   --chart-3: oklch(0.439 0 0);

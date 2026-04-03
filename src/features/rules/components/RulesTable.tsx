@@ -324,8 +324,8 @@ export function RulesTable({ onEdit, onMerge, payeeId, categoryId }: Props) {
                       highlightedId === rule.id && "bg-primary/20 ring-2 ring-inset ring-primary/40",
                       highlightedId !== rule.id && selectedIds.has(rule.id) && "bg-primary/10",
                       highlightedId !== rule.id && !selectedIds.has(rule.id) && hasError && "bg-destructive/5 border-l-destructive",
-                      highlightedId !== rule.id && !selectedIds.has(rule.id) && !hasError && s.isNew && "bg-green-50/40 dark:bg-green-950/10 border-l-green-500",
-                      highlightedId !== rule.id && !selectedIds.has(rule.id) && !hasError && !s.isNew && s.isUpdated && "bg-amber-50/40 dark:bg-amber-950/10 border-l-amber-400",
+                      highlightedId !== rule.id && !selectedIds.has(rule.id) && !hasError && s.isNew && "bg-staged-new/5 border-l-staged-new",
+                      highlightedId !== rule.id && !selectedIds.has(rule.id) && !hasError && !s.isNew && s.isUpdated && "bg-staged-updated/5 border-l-staged-updated",
                     )}
                   >
                     {/* Checkbox */}
@@ -342,10 +342,10 @@ export function RulesTable({ onEdit, onMerge, payeeId, categoryId }: Props) {
                     <td className="px-3 py-2.5">
                       <div className="flex items-center gap-1">
                         {s.isNew && (
-                          <span className="h-1.5 w-1.5 rounded-full bg-green-500 shrink-0" />
+                          <span className="h-1.5 w-1.5 rounded-full bg-staged-new shrink-0" />
                         )}
                         {!s.isNew && s.isUpdated && (
-                          <span className="h-1.5 w-1.5 rounded-full bg-amber-400 shrink-0" />
+                          <span className="h-1.5 w-1.5 rounded-full bg-staged-updated shrink-0" />
                         )}
                         {hasError && (
                           <AlertTriangle

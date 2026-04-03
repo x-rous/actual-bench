@@ -32,4 +32,4 @@ labels: bug
 - **Browser**: <!-- e.g. Chrome 124, Firefox 126 -->
 - **OS**: <!-- e.g. macOS 14, Windows 11, Ubuntu 24.04 -->
 - **actual-http-api version**: <!-- if known -->
-- **Deployment**: <!-- local dev / Docker / GHCR image -->
+- **Deployment**: <!-- local dev / Docker (:latest) / Docker (:edge) / GHCR image -->

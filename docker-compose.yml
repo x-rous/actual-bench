@@ -1,6 +1,6 @@
 services:
   actual-bench:
-    image: ghcr.io/x-rous/actual-bench:latest
+    image: xrous/actual-bench:latest
     ports:
       - "3000:3000"
     environment:

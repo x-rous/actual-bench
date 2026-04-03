@@ -37,8 +37,11 @@ export function PayeesView() {
     const a = document.createElement("a");
     a.href = url;
     a.download = "payees.csv";
-    a.click();
-    URL.revokeObjectURL(url);
+    try {
+      a.click();
+    } finally {
+      setTimeout(() => URL.revokeObjectURL(url), 100);
+    }
   }
 
   function handleImportCsv(e: React.ChangeEvent<HTMLInputElement>) {

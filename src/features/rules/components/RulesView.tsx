@@ -9,9 +9,6 @@ import { PageLayout } from "@/components/layout/PageLayout";
 import { CSV_MAX_BYTES } from "@/lib/csv";
 import { useStagedStore } from "@/store/staged";
 import { useRules } from "../hooks/useRules";
-import { useAccounts } from "@/features/accounts/hooks/useAccounts";
-import { usePayees } from "@/features/payees/hooks/usePayees";
-import { useCategoryGroups } from "@/features/categories/hooks/useCategoryGroups";
 import { exportRulesToCsv } from "../csv/rulesCsvExport";
 import { importRulesFromCsv } from "../csv/rulesCsvImport";
 import { RulesTable } from "./RulesTable";
@@ -20,10 +17,8 @@ import { MergeRulesDialog } from "./MergeRulesDialog";
 
 export function RulesView() {
   const { isLoading, isError, error, refetch } = useRules();
-  // Ensure payees / categories / accounts are loaded so IDs resolve to names.
-  useAccounts();
-  usePayees();
-  useCategoryGroups();
+  // Accounts, payees, and categories are prefetched by AppShell via
+  // usePreloadEntities — no need to subscribe here.
 
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -70,8 +65,11 @@ export function RulesView() {
     const a    = document.createElement("a");
     a.href     = url;
     a.download = "rules.csv";
-    a.click();
-    URL.revokeObjectURL(url);
+    try {
+      a.click();
+    } finally {
+      setTimeout(() => URL.revokeObjectURL(url), 100);
+    }
   }
 
   // ── Import ────────────────────────────────────────────────────────────────────

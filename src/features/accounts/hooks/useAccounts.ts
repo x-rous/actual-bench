@@ -21,20 +21,7 @@ export function useAccounts() {
       return getAccounts(connection);
     },
     enabled: !!connection,
-    // Architecture: React Query is a fetch trigger and loading/error provider
-    // only. All entity data lives in the Zustand staged store (loadAccounts).
-    //
-    // staleTime: Infinity — we own cache invalidation via invalidateQueries
-    // after a save. The queryKey already changes on connection switch, which
-    // triggers a fresh fetch. Auto-staleness is not needed and would cause
-    // unnecessary refetches on remount.
-    //
-    // refetchOnWindowFocus/Reconnect: disabled because a background refetch
-    // would call loadAccounts and silently overwrite unsaved staged edits.
-    staleTime: Infinity,
-    gcTime: Infinity,
-    refetchOnWindowFocus: false,
-    refetchOnReconnect: false,
+    // staleTime/gcTime/refetchOn* are set globally in queryClient.ts.
   });
 
   // When server data arrives, populate the staged store. This resets any

@@ -9,7 +9,7 @@
   "homepage": "https://github.com/x-rous/actual-bench#readme",
   "private": true,
   "scripts": {
-    "dev": "NODE_OPTIONS=--max-old-space-size=2048 next dev --webpack",
+    "dev": "NODE_OPTIONS=--max-old-space-size=2048 next dev",
     "preview": "NODE_OPTIONS=--max-old-space-size=512 next start",
     "build": "next build",
     "start": "node scripts/start.mjs",

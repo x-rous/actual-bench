@@ -116,10 +116,23 @@ export function TopBar() {
     setActive(id);
   }
 
-  async function handleRefresh() {
+  function handleRefresh() {
+    if (hasChanges) {
+      toast.warning("Unsaved changes will be lost.", {
+        action: {
+          label: "Discard & Refresh",
+          onClick: async () => {
+            discardAll();
+            setIsRefreshing(true);
+            await queryClient.invalidateQueries();
+            setIsRefreshing(false);
+          },
+        },
+      });
+      return;
+    }
     setIsRefreshing(true);
-    await queryClient.invalidateQueries();
-    setIsRefreshing(false);
+    queryClient.invalidateQueries().then(() => setIsRefreshing(false));
   }
 
   function handleDisconnect() {
@@ -219,9 +232,9 @@ export function TopBar() {
           variant="ghost"
           size="icon"
           className="h-7 w-7"
-          disabled={hasChanges || isRefreshing}
+          disabled={isRefreshing}
           onClick={handleRefresh}
-          title={hasChanges ? "Save or discard changes before refreshing" : "Refresh data from server"}
+          title="Refresh data from server"
         >
           <RefreshCw className={`h-3.5 w-3.5${isRefreshing ? " animate-spin" : ""}`} />
         </Button>

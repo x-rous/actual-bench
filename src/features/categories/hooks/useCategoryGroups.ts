@@ -21,13 +21,7 @@ export function useCategoryGroups() {
       return getCategoryGroups(connection);
     },
     enabled: !!connection,
-    // Architecture: React Query is a fetch trigger and loading/error provider
-    // only. All entity data lives in the Zustand staged store (loadCategoryGroups).
-    // See useAccounts.ts for a full explanation of these settings.
-    staleTime: Infinity,
-    gcTime: Infinity,
-    refetchOnWindowFocus: false,
-    refetchOnReconnect: false,
+    // staleTime/gcTime/refetchOn* are set globally in queryClient.ts.
   });
 
   useEffect(() => {

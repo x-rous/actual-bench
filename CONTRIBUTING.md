@@ -5,18 +5,18 @@ Contributions are welcome — bug reports, feature requests, and pull requests a
 ## Branch Model
 
 ```
-feature/*  ──PR──►  edge  ──PR──►  main  ──tag v1.x.0──►  release
+feat/* or fix/*  ──PR──►  edge  ──PR──►  main  ──tag v1.x.0──►  release
 ```
 
 | Branch | Purpose | Docker tag |
 |---|---|---|
 | `main` | Stable releases only | `:latest` + `:<version>` |
 | `edge` | Integration branch — all merged PRs land here first | `:edge` |
-| `feature/*`, `fix/*` | Short-lived working branches — one per issue or feature | none |
+| `feat/*`, `fix/*`, `refactor/*`, `docs/*` | Short-lived working branches — one per issue or feature | none |
 
-Releases are cut as needed — minor/major versions roughly monthly, patch versions whenever a significant bug fix warrants it.
+Releases are cut whenever a meaningful set of changes has accumulated, or immediately for any security or critical bug fix.
 
-**All pull requests must target `edge`, not `main`.** The PR template will remind you.
+**All feature/fix pull requests must target `edge`, not `main`.** The PR template will remind you.
 
 ## Reporting bugs
 
@@ -51,9 +51,9 @@ npm run dev
 ### Before submitting
 
 ```bash
-npm run lint    # must pass with 0 errors
+npm run lint      # must pass with 0 errors
 npx tsc --noEmit  # must pass with 0 errors
-npm test        # must pass
+npm test          # must pass
 ```
 
 ### Branch naming
@@ -74,6 +74,24 @@ fix: rule drawer width not increasing behind Traefik
 feat: add schedules page with basic CRUD
 docs: document sessionStorage behaviour
 ```
+
+### PR title and description
+
+The `feat/* → edge` PR is the source of truth for the release draft. Two things matter:
+
+- **Title** — must be user-facing and clear. This becomes the changelog line verbatim.
+  - ❌ `wip stuff` / `fix bug` / `update things`
+  - ✅ `Add schedules page with basic CRUD` / `Fix rule drawer width behind Traefik`
+- **Label** — controls which changelog section the PR appears under. Labels are auto-applied from your branch name but verify before merging:
+
+| Branch prefix | Label applied | Changelog section |
+|---|---|---|
+| `feat/*` | `feat` | 🚀 Features |
+| `fix/*` | `fix` | 🐛 Bug Fixes |
+| `refactor/*` | `maintenance` | 🔧 Maintenance |
+| `docs/*` | `docs` | 🔧 Maintenance |
+
+The PR description is for reviewers — explain what changed, why, and include screenshots where relevant. It does not appear in the changelog.
 
 ### What to work on
 
@@ -119,15 +137,16 @@ src/
 
 | Workflow | Trigger | What it does |
 |---|---|---|
-| **CI** (`.github/workflows/ci.yml`) | All pushes + PRs | Lint, type-check, build, test — must pass before any merge |
+| **CI** (`.github/workflows/ci.yml`) | All pushes + PRs | Lint, type-check, test, build — must pass before any merge |
 | **Edge** (`.github/workflows/edge.yml`) | Push to `edge` | Builds and pushes `:edge` + `:edge-{sha}` Docker tags, deploys to VPS |
-| **Release** (`.github/workflows/release.yml`) | Push `v*` tag | Runs full CI + verifies `package.json` version matches tag, then builds and pushes `:latest` + `:<version>` Docker tags, deploys to VPS, creates GitHub Release with changelog notes |
+| **Release Drafter** (`.github/workflows/release-drafter.yml`) | Push to `edge` | Updates a draft GitHub Release with all merged PRs since the last tag |
+| **Release** (`.github/workflows/release.yml`) | Push `v*` tag | Runs full CI, verifies version, builds and pushes `:latest` + `:<version>` Docker tags, deploys to VPS, publishes the draft GitHub Release |
 
 ## Docker Tags
 
 | Tag | Stability | When to use |
 |---|---|---|
-| `:latest` | Stable — monthly release | Production / stable self-hosting (default) |
+| `:latest` | Stable | Production / stable self-hosting (default) |
 | `:<version>` (e.g. `:1.1.0`) | Stable — pinned | When you need a specific version |
 | `:edge` | Unstable — updated on every merge to `edge` | Testing latest changes before release |
 | `:edge-<sha>` | Unstable — specific commit | Debugging a specific change |
@@ -136,32 +155,30 @@ src/
 
 ## Release Process (Maintainer)
 
-When completing a roadmap item or shipping a fix, always:
-1. Mark it `status: complete` in `agents/future-roadmap.md`
-2. Add the feature to the relevant section of `FEATURES.md`
-3. Add an entry under `## [Unreleased]` in `CHANGELOG.md`
+### Reviewing the draft
+
+Every time a PR merges to `edge`, the Release Drafter workflow automatically updates a draft GitHub Release at **GitHub → Releases**. Check it at any point to see what's queued for the next release. You can edit the draft to add an intro summary paragraph before publishing — everything else is generated automatically.
 
 ### Cutting a release
 
 ```bash
-# 1. On the edge branch — bump version and update changelog
+# 1. Bump version on edge
 git checkout edge && git pull origin edge
 
-# Edit package.json "version": "1.1.0"
-# Edit CHANGELOG.md: rename [Unreleased] → [1.1.0] - YYYY-MM-DD, add new [Unreleased] above
+# Edit package.json "version": "1.2.0"
 
-git add package.json CHANGELOG.md
-git commit -m "chore: release v1.1.0"
+git add package.json
+git commit -m "chore: release v1.2.0"
 git push origin edge
 ```
 
 Open a PR from `edge` → `main`. After CI passes, approve and merge.
 
 ```bash
-# 2. On main — tag the release
+# 2. Tag on main
 git checkout main && git pull origin main
-git tag v1.1.0
-git push origin v1.1.0
+git tag v1.2.0
+git push origin v1.2.0
 ```
 
-Pushing the tag triggers `release.yml` automatically — Docker images are built, VPS is updated, and the GitHub Release is created with the changelog notes.
+Pushing the tag triggers `release.yml` automatically — Docker images are built, VPS is updated, and the GitHub Release is published.
