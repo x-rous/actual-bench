@@ -124,7 +124,7 @@ export function TopBar() {
           onClick: async () => {
             discardAll();
             setIsRefreshing(true);
-            await queryClient.invalidateQueries();
+            await queryClient.resetQueries();
             setIsRefreshing(false);
           },
         },
