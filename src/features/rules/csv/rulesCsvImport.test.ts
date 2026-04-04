@@ -186,6 +186,39 @@ describe("importRulesFromCsv", () => {
     expect(result.rules[0].conditions[0].value).toEqual(["p1", "p2"]);
   });
 
+  it("imports a template action (op=set-template) with options.template set", () => {
+    const csv = [
+      "rule_id,stage,conditions_op,row_type,field,op,value",
+      "r1,default,and,action,notes,set-template,{{regex imported_payee 'foo' 'bar'}}",
+    ].join("\n");
+
+    const result = importRulesFromCsv(csv, emptyMaps);
+
+    expect("error" in result).toBe(false);
+    if ("error" in result) return;
+
+    const action = result.rules[0].actions[0];
+    expect(action.op).toBe("set");
+    expect(action.value).toBe("");
+    expect(action.options).toEqual({ template: "{{regex imported_payee 'foo' 'bar'}}" });
+  });
+
+  it("imports an empty-string template action (op=set-template, blank value)", () => {
+    const csv = [
+      "rule_id,stage,conditions_op,row_type,field,op,value",
+      "r1,default,and,action,notes,set-template,",
+    ].join("\n");
+
+    const result = importRulesFromCsv(csv, emptyMaps);
+
+    expect("error" in result).toBe(false);
+    if ("error" in result) return;
+
+    const action = result.rules[0].actions[0];
+    expect(action.op).toBe("set");
+    expect(action.options).toEqual({ template: "" });
+  });
+
   it("assigns fresh IDs to imported rules (not the original rule_id)", () => {
     const csv = [
       "rule_id,stage,conditions_op,row_type,field,op,value",
