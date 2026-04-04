@@ -86,7 +86,7 @@ The `feat/* → edge` PR is the source of truth for the release draft. Two thing
 
 | Branch prefix | Label applied | Changelog section |
 |---|---|---|
-| `feat/*` | `feat` | 🚀 Features |
+| `feat/*` | `feature` | 🚀 Features |
 | `fix/*` | `fix` | 🐛 Bug Fixes |
 | `refactor/*` | `maintenance` | 🔧 Maintenance |
 | `docs/*` | `docs` | 🔧 Maintenance |

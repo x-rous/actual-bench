@@ -61,14 +61,15 @@ export function exportRulesToCsv(stagedRules: StagedMap<Rule>, maps: EntityMaps)
     }
 
     for (const act of rule.actions) {
+      const isTemplate = act.options !== undefined && "template" in act.options;
       lines.push([
         csvField(rule.id),
         isFirstRow ? csvField(rule.stage) : "",
         isFirstRow ? csvField(rule.conditionsOp) : "",
         "action",
         csvField(act.field),
-        csvField(act.op),
-        csvField(exportDisplayValue(act, maps)),
+        isTemplate ? "set-template" : csvField(act.op),
+        isTemplate ? csvField(act.options!.template ?? "") : csvField(exportDisplayValue(act, maps)),
       ].join(","));
       isFirstRow = false;
     }

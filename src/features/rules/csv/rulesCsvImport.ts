@@ -187,8 +187,12 @@ export function importRulesFromCsv(
         const r = resolveValue(field, op, rawValue, CONDITION_FIELDS, maps, createdPayees, newPayees);
         conditions.push({ field, op: op || "is", value: r.value, type: r.type });
       } else {
-        const r = resolveValue(field, "set", rawValue, ACTION_FIELDS, maps, createdPayees, newPayees);
-        actions.push({ field, op: "set", value: r.value, type: r.type });
+        if (op === "set-template") {
+          actions.push({ field, op: "set", value: "", type: "string", options: { template: rawValue } });
+        } else {
+          const r = resolveValue(field, "set", rawValue, ACTION_FIELDS, maps, createdPayees, newPayees);
+          actions.push({ field, op: "set", value: r.value, type: r.type });
+        }
       }
     }
 

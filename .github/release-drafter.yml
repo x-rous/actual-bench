@@ -8,21 +8,13 @@ branches:
 categories:
   - title: '🚀 Features'
     labels:
-      - 'feat'
       - 'feature'
-  - title: '✨ Enhancements'
-    labels:
-      - 'enhancement'
-      - 'enhance'
   - title: '🐛 Bug Fixes'
     labels:
-      - 'bug'
       - 'fix'
   - title: '🔧 Maintenance'
     labels:
       - 'maintenance'
-      - 'chore'
-      - 'refactor'
       - 'docs'
 
 change-template: '- $TITLE (#$NUMBER)'
@@ -40,16 +32,10 @@ version-resolver:
       - 'major'
   minor:
     labels:
-      - 'feat'
       - 'feature'
   patch:
     labels:
-      - 'bug'
       - 'fix'
-      - 'enhancement'
-      - 'enhance'
       - 'maintenance'
-      - 'chore'
-      - 'refactor'
       - 'docs'
   default: patch

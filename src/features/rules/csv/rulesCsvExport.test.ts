@@ -114,6 +114,24 @@ describe("exportRulesToCsv", () => {
     expect(result).toContain("Amazon|Netflix");
   });
 
+  it("exports template actions with op=set-template and value=template expression", () => {
+    const rule = makeRule("r1", {
+      actions: [{ field: "notes", op: "set", value: "", type: "string", options: { template: "{{regex imported_payee 'foo' 'bar'}}" } }],
+    });
+    const result = exportRulesToCsv(staged(rule), emptyMaps);
+    expect(result).toContain("set-template");
+    expect(result).toContain("{{regex imported_payee 'foo' 'bar'}}");
+    expect(result).not.toContain(",set,");
+  });
+
+  it("exports empty-string template actions with op=set-template and blank value", () => {
+    const rule = makeRule("r1", {
+      actions: [{ field: "notes", op: "set", value: "", type: "string", options: { template: "" } }],
+    });
+    const result = exportRulesToCsv(staged(rule), emptyMaps);
+    expect(result).toContain("set-template");
+  });
+
   it("round-trips: exported CSV can be re-imported with the same structure", () => {
     const rule = makeRule("r1", {
       stage: "pre",
@@ -132,5 +150,21 @@ describe("exportRulesToCsv", () => {
     expect(imported.rules[0].conditionsOp).toBe("or");
     expect(imported.rules[0].conditions[0]).toMatchObject({ field: "notes", op: "contains", value: "grocery" });
     expect(imported.rules[0].actions[0]).toMatchObject({ field: "cleared", op: "set" });
+  });
+
+  it("round-trips: template action survives export → import", () => {
+    const rule = makeRule("r1", {
+      actions: [{ field: "notes", op: "set", value: "", type: "string", options: { template: "{{regex imported_payee 'foo' 'bar'}}" } }],
+    });
+    const csv = exportRulesToCsv(staged(rule), emptyMaps);
+    const imported = importRulesFromCsv(csv, emptyMaps);
+
+    expect("error" in imported).toBe(false);
+    if ("error" in imported) return;
+
+    const action = imported.rules[0].actions[0];
+    expect(action.op).toBe("set");
+    expect(action.value).toBe("");
+    expect(action.options).toEqual({ template: "{{regex imported_payee 'foo' 'bar'}}" });
   });
 });
