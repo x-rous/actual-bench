@@ -58,6 +58,9 @@ function summariseCondition(c: ConditionOrAction, maps: EntityMaps): string {
 
 function summariseAction(a: ConditionOrAction, maps: EntityMaps): string {
   const fieldLabel = ACTION_FIELDS[a.field]?.label ?? a.field;
+  if (a.options !== undefined && "template" in a.options) {
+    return `set ${fieldLabel} → template: ${a.options.template}`;
+  }
   const valueLabel = resolveValue(a.field, a.value, maps, ACTION_FIELDS);
   return `set ${fieldLabel} → "${valueLabel}"`;
 }

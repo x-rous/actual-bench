@@ -83,10 +83,20 @@ export function useCategoriesSave() {
 
     setIsSaving(false);
 
+    const store = useStagedStore.getState();
+
     // Remove temp-UUID staged entries for successful creates before refetch.
     if (succeededCreateIds.size > 0) {
-      const store = useStagedStore.getState();
       for (const id of succeededCreateIds) store.stageDelete("categories", id);
+    }
+
+    // Remove staged entries for successfully saved updates/deletes so that
+    // loadCategories replaces them with fresh server data.
+    const succeededNonCreateIds = succeeded
+      .filter((r) => r.status === "success" && !succeededCreateIds.has(r.id))
+      .map((r) => r.id);
+    if (succeededNonCreateIds.length > 0) {
+      store.markSaved("categories", succeededNonCreateIds);
     }
 
     if (failed.length > 0) {

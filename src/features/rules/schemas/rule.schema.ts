@@ -10,6 +10,7 @@ const conditionOrActionSchema = z.object({
     z.object({ num1: z.number(), num2: z.number() }),
   ]),
   type: z.string().optional(),
+  options: z.object({ template: z.string().optional() }).optional(),
 });
 
 export const ruleSchema = z.object({

@@ -22,9 +22,9 @@ function RowIndicator({ row }: { row: AccountRow }) {
       className={cn(
         "h-full w-1 rounded-sm",
         row.saveError && "bg-destructive",
-        !row.saveError && row.isDeleted && "bg-muted-foreground/40",
-        !row.saveError && !row.isDeleted && row.isNew && "bg-green-500",
-        !row.saveError && !row.isDeleted && !row.isNew && row.isUpdated && "bg-amber-400"
+        !row.saveError && row.isDeleted && "bg-staged-deleted/40",
+        !row.saveError && !row.isDeleted && row.isNew && "bg-staged-new",
+        !row.saveError && !row.isDeleted && !row.isNew && row.isUpdated && "bg-staged-updated"
       )}
     />
   );
@@ -176,6 +176,8 @@ export function useAccountColumns(onEdit: (id: string) => void) {
         },
       }),
     ],
+    // Zustand action selectors are stable references — they never change
+    // between renders, so including them in the dep array is safe and explicit.
     [stageUpdate, stageDelete, revertEntity, pushUndo, onEdit]
   );
 }

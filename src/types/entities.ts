@@ -62,6 +62,8 @@ export type ConditionOrAction = {
   op: string;
   value: string | number | string[] | AmountRange;
   type?: string;
+  /** Present on actions when the user has enabled template (Handlebars) mode. */
+  options?: { template?: string };
 };
 
 export type Rule = BaseEntity & {

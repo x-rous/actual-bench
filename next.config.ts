@@ -7,6 +7,10 @@ const pkg = JSON.parse(
 ) as { version?: string };
 
 const nextConfig: NextConfig = {
+  // Enable React Compiler via the Turbopack/SWC-native path (top-level in
+  // Next.js 16 — promoted out of experimental).
+  // babel-plugin-react-compiler remains in devDependencies for Jest only.
+  reactCompiler: true,
   // Use a fresh output directory so Turbopack doesn't try to acquire a
   // lockfile on the root-owned .next/dev/cache from a prior container run.
   distDir: ".next-build",

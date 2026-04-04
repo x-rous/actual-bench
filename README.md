@@ -43,10 +43,14 @@ A web-based admin tool for [Actual Budget](https://actualbudget.org/) that conne
 
 ## Quick Start
 
-Pull the pre-built image from GHCR — no local build required:
+Pull the pre-built image from Docker Hub — no local build required:
 
 ```bash
-docker run -p 3000:3000 ghcr.io/x-rous/actual-bench:latest
+# Latest stable release
+docker run -p 3000:3000 xrous/actual-bench:latest
+
+# Latest unreleased changes (edge builds — may be unstable)
+docker run -p 3000:3000 xrous/actual-bench:edge
 ```
 
 Or with Docker Compose — save the following as `docker-compose.yml` and run `docker compose up -d`:
@@ -54,7 +58,7 @@ Or with Docker Compose — save the following as `docker-compose.yml` and run `d
 ```yaml
 services:
   actual-bench:
-    image: ghcr.io/x-rous/actual-bench:latest
+    image: xrous/actual-bench:latest
     ports:
       - "3000:3000"
     environment:
@@ -94,6 +98,7 @@ Click **Connect** to finish. The connection is saved in **session storage** — 
 3. Click **Save** in the top bar to persist all changes to the server
 4. Click **Discard** to revert all pending changes
 5. Use **Undo / Redo** to step through your local edit history before saving
+6. Click **Refresh** to reload data from the server — if you have unsaved changes, a prompt lets you choose to discard them or cancel
 
 ## CSV Import / Export
 
@@ -101,14 +106,14 @@ Every entity page has an **Export** button that downloads a UTF-8 CSV file and a
 
 ### Sample Import Files
 
-Ready-to-use sample CSV files are included in [`public/samples csv/`](public/samples csv/) for testing with a fresh Actual Budget setup:
+Ready-to-use sample CSV files are included in [`public/samples csv/`](public/samples%20csv/) for testing with a fresh Actual Budget setup:
 
 | File | Description |
 |---|---|
-| [`sample-accounts.csv`](public/samples csv/sample-accounts.csv) | 7 accounts — covers `offBudget` and `closed` flag combinations |
-| [`sample-payees.csv`](public/samples csv/sample-payees.csv) | 15 common payees |
-| [`sample-categories.csv`](public/samples csv/sample-categories.csv) | 8 groups and 25 categories spanning income, housing, food, transport, health, and more |
-| [`sample-rules.csv`](public/samples csv/sample-rules.csv) | 10 rules demonstrating multi-condition, multi-action, `or` logic, stage filtering, and payee auto-creation |
+| [`sample-accounts.csv`](public/samples%20csv/sample-accounts.csv) | 7 accounts — covers `offBudget` and `closed` flag combinations |
+| [`sample-payees.csv`](public/samples%20csv/sample-payees.csv) | 15 common payees |
+| [`sample-categories.csv`](public/samples%20csv/sample-categories.csv) | 8 groups and 25 categories spanning income, housing, food, transport, health, and more |
+| [`sample-rules.csv`](public/samples%20csv/sample-rules.csv) | 10 rules demonstrating multi-condition, multi-action, `or` logic, stage filtering, and payee auto-creation |
 
 ### CSV Formats
 
@@ -134,8 +139,6 @@ Ready-to-use sample CSV files are included in [`public/samples csv/`](public/sam
 ## Known Limitations
 
 - **No pagination** — all entities are loaded at once. Performance may degrade on very large budgets.
-- **Schedules** — not yet implemented.
-- **Tags** — not yet implemented.
 
 ## Development
 
@@ -149,6 +152,7 @@ Ready-to-use sample CSV files are included in [`public/samples csv/`](public/sam
 ```bash
 git clone https://github.com/x-rous/actual-bench.git
 cd actual-bench
+git checkout edge
 npm install
 npm run dev
 ```
@@ -164,7 +168,6 @@ Open [http://localhost:3000](http://localhost:3000).
 | `npm start` | Serve the production build |
 | `npm run lint` | ESLint |
 | `npm test` | Jest tests |
-| `npm run clean` | Delete `.next-build/` and `tsconfig.tsbuildinfo` |
-| `npm version patch\|minor\|major` | Bump version, commit, and tag |
+| `npm run clean` | Delete `.next/`, `.next-build/`, and `tsconfig.tsbuildinfo` |
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for release and contribution guidelines.

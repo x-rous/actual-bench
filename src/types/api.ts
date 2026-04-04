@@ -11,6 +11,7 @@ export type ApiConditionOrAction = {
   op: string;
   value: string | string[];
   type?: string;
+  options?: { template?: string };
 };
 
 // ─── Account ─────────────────────────────────────────────────────────────────

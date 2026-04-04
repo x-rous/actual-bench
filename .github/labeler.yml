@@ -1,0 +1,11 @@
+feature:
+  - head-branch: ['^feat/']
+
+fix:
+  - head-branch: ['^fix/']
+
+docs:
+  - head-branch: ['^docs/']
+
+maintenance:
+  - head-branch: ['^refactor/']

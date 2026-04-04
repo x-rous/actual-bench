@@ -1,0 +1,41 @@
+name-template: 'v$RESOLVED_VERSION'
+tag-template: 'v$RESOLVED_VERSION'
+
+branches:
+  - main
+  - edge
+
+categories:
+  - title: '🚀 Features'
+    labels:
+      - 'feature'
+  - title: '🐛 Bug Fixes'
+    labels:
+      - 'fix'
+  - title: '🔧 Maintenance'
+    labels:
+      - 'maintenance'
+      - 'docs'
+
+change-template: '- $TITLE (#$NUMBER)'
+
+template: |
+  ## What's Changed
+
+  $CHANGES
+
+  **Full Changelog**: $PREVIOUS_TAG...$RESOLVED_TAG
+
+version-resolver:
+  major:
+    labels:
+      - 'major'
+  minor:
+    labels:
+      - 'feature'
+  patch:
+    labels:
+      - 'fix'
+      - 'maintenance'
+      - 'docs'
+  default: patch

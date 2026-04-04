@@ -456,9 +456,9 @@ export function PayeesTable() {
                         highlightedId === entity.id && "bg-primary/20 ring-2 ring-inset ring-primary/40",
                         highlightedId !== entity.id && isRowSelected && "bg-primary/10",
                         highlightedId !== entity.id && !isRowSelected && saveError && "bg-destructive/5 border-l-destructive",
-                        highlightedId !== entity.id && !isRowSelected && !saveError && isDeleted && "opacity-50 border-l-muted-foreground/30",
-                        highlightedId !== entity.id && !isRowSelected && !saveError && !isDeleted && isNew && "bg-green-50/30 dark:bg-green-950/10 border-l-green-500",
-                        highlightedId !== entity.id && !isRowSelected && !saveError && !isDeleted && !isNew && isUpdated && "bg-amber-50/30 dark:bg-amber-950/10 border-l-amber-400",
+                        highlightedId !== entity.id && !isRowSelected && !saveError && isDeleted && "opacity-50 border-l-staged-deleted/30",
+                        highlightedId !== entity.id && !isRowSelected && !saveError && !isDeleted && isNew && "bg-staged-new/5 border-l-staged-new",
+                        highlightedId !== entity.id && !isRowSelected && !saveError && !isDeleted && !isNew && isUpdated && "bg-staged-updated/5 border-l-staged-updated",
                       )}
                     >
                       {/* Checkbox — transfer payees are not selectable */}
@@ -481,9 +481,9 @@ export function PayeesTable() {
                           className={cn(
                             "h-4 w-0.5 rounded-full",
                             saveError && "bg-destructive",
-                            !saveError && isDeleted && "bg-muted-foreground/30",
-                            !saveError && !isDeleted && isNew && "bg-green-500",
-                            !saveError && !isDeleted && !isNew && isUpdated && "bg-amber-400",
+                            !saveError && isDeleted && "bg-staged-deleted/30",
+                            !saveError && !isDeleted && isNew && "bg-staged-new",
+                            !saveError && !isDeleted && !isNew && isUpdated && "bg-staged-updated",
                           )}
                         />
                       </td>

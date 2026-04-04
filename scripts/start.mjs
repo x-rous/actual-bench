@@ -33,10 +33,15 @@ const SUPPRESS = [
 
 const env = process.env.NODE_ENV ?? "development";
 
+// Only suppress blank lines during startup — after the banner is emitted,
+// allow subsequent blank lines through (e.g. request log separators).
+let bannerDone = false;
+
 function filterLine(line) {
   // Replace the "ready" line with the branded startup banner
   const readyMatch = line.match(/✓ Ready in (.+)/);
   if (readyMatch) {
+    bannerDone = true;
     return [
       "",
       `🚀 Actual Bench v${version}`,
@@ -47,8 +52,8 @@ function filterLine(line) {
     ].join("\n");
   }
 
-  // Suppress Next.js banner lines
-  if (SUPPRESS.some((re) => re.test(line))) return null;
+  // Suppress Next.js banner lines (only during startup)
+  if (!bannerDone && SUPPRESS.some((re) => re.test(line))) return null;
 
   return line;
 }

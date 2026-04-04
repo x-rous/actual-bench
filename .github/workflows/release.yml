@@ -8,6 +8,7 @@ on:
 permissions:
   contents: write
   packages: write
+  pull-requests: read
 
 concurrency:
   group: release-${{ github.ref }}
@@ -38,13 +39,13 @@ jobs:
       - name: Type check
         run: npx tsc --noEmit
 
+      - name: Run tests
+        run: npm test
+
       - name: Build
         run: npm run build
         env:
           NEXT_TELEMETRY_DISABLED: 1
-
-      - name: Run tests
-        run: npm test
 
       - name: Verify package.json version matches tag
         run: |
@@ -121,20 +122,11 @@ jobs:
             docker compose up -d --remove-orphans
             docker image prune -f
 
-      - name: Extract changelog for this release
-        id: changelog
-        run: |
-          # Escape dots in version so awk treats them as literals, not wildcards
-          VERSION=${{ steps.version.outputs.VERSION }}
-          VERSION_ESC=$(echo "$VERSION" | sed 's/\./\\./g')
-          NOTES=$(awk "/^## \[$VERSION_ESC\]/{found=1; next} found && /^## \[/{exit} found{print}" CHANGELOG.md)
-          echo "$NOTES" > release-notes.txt
-
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+      - name: Publish GitHub Release
+        uses: release-drafter/release-drafter@v6
         with:
-          tag_name: ${{ github.ref_name }}
+          publish: true
+          tag: ${{ github.ref_name }}
           name: "Actual Bench ${{ github.ref_name }}"
-          body_path: release-notes.txt
-          draft: false
-          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

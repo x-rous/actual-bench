@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback } from "react";
-import { Trash2 } from "lucide-react";
+import { Trash2, Braces } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { TagInput } from "@/components/ui/tag-input";
 import { cn } from "@/lib/utils";
@@ -125,7 +125,21 @@ function ConditionValueInput({
     );
   }
 
-  return (
+  const isRegex = condition.op === "matches";
+
+  return isRegex ? (
+    <div className="flex flex-1 flex-col gap-0.5">
+      <input
+        className={inputCls}
+        value={valueToString(condition.value)}
+        onChange={(e) => onChange({ ...condition, value: e.target.value })}
+        placeholder="regex pattern…"
+      />
+      <span className="text-[10px] text-muted-foreground">
+        Regex pattern — e.g. <code>^amazon</code>
+      </span>
+    </div>
+  ) : (
     <input
       className={inputCls}
       value={valueToString(condition.value)}
@@ -238,6 +252,7 @@ export function ActionRow({
 }) {
   const field = action.field;
   const fieldDef = ACTION_FIELDS[field];
+  const isTemplate = action.options?.template !== undefined;
 
   const setField = useCallback(
     (newField: string) => {
@@ -247,12 +262,24 @@ export function ActionRow({
     [onChange]
   );
 
+  function toggleTemplateMode() {
+    if (isTemplate) {
+      // Switch back to text mode — restore template string as the plain value,
+      // then clear options so the action is a regular text action.
+      const restoredValue = action.options?.template ?? valueToString(action.value);
+      onChange({ ...action, value: restoredValue, options: undefined });
+    } else {
+      // Switch to template mode — pre-populate options.template from current value.
+      onChange({ ...action, options: { template: valueToString(action.value) } });
+    }
+  }
+
   const value = valueToString(action.value);
 
   return (
-    <div className="flex items-center gap-1.5">
+    <div className="flex items-start gap-1.5">
       <select
-        className={cn(selectCls, "w-32 shrink-0")}
+        className={cn(selectCls, "w-32 shrink-0 mt-0.5")}
         value={field ?? ""}
         onChange={(e) => setField(e.target.value)}
       >
@@ -263,11 +290,25 @@ export function ActionRow({
         ))}
       </select>
 
-      <span className="shrink-0 text-xs text-muted-foreground w-10 text-center">
+      <span className="shrink-0 text-xs text-muted-foreground w-10 text-center mt-2">
         {ACTION_OPS["set"]?.label ?? "set to"}
       </span>
 
-      {fieldDef?.entity ? (
+      {isTemplate ? (
+        <div className="flex flex-1 flex-col gap-0.5">
+          <input
+            className={inputCls}
+            value={action.options?.template ?? ""}
+            onChange={(e) =>
+              onChange({ ...action, options: { template: e.target.value } })
+            }
+            placeholder="{{handlebars expression…}}"
+          />
+          <span className="text-[10px] text-muted-foreground">
+            Handlebars template — e.g. <code>{"{{regex imported_payee 'foo' 'bar'}}"}</code>
+          </span>
+        </div>
+      ) : fieldDef?.entity ? (
         <EntityCombobox
           entity={fieldDef.entity}
           value={value}
@@ -285,7 +326,22 @@ export function ActionRow({
       <Button
         variant="ghost"
         size="icon"
-        className="h-7 w-7 shrink-0 text-muted-foreground hover:text-destructive"
+        title={isTemplate ? "Switch to text mode" : "Switch to template mode"}
+        className={cn(
+          "h-7 w-7 shrink-0 mt-0.5",
+          isTemplate
+            ? "text-action hover:text-action-hover"
+            : "text-muted-foreground hover:text-foreground"
+        )}
+        onClick={toggleTemplateMode}
+      >
+        <Braces className="h-3.5 w-3.5" />
+      </Button>
+
+      <Button
+        variant="ghost"
+        size="icon"
+        className="h-7 w-7 shrink-0 text-muted-foreground hover:text-destructive mt-0.5"
         onClick={onDelete}
       >
         <Trash2 className="h-3.5 w-3.5" />

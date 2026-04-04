@@ -1,5 +1,116 @@
-<!-- BEGIN:nextjs-agent-rules -->
-# This is NOT the Next.js you know
+# Actual Bench — Agent Rules
 
-This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` before writing any code. Heed deprecation notices.
-<!-- END:nextjs-agent-rules -->
+> Self-hosted admin UI for Actual Budget. Backend: `actual-http-api`.
+> Architecture: **Client → Next.js Proxy → actual-http-api**
+> Editing model: **Staged. Nothing writes to server until user clicks Save.**
+
+---
+
+## Stack (your training is outdated — follow these exactly)
+- **Next.js 16** — Turbopack is the default dev server (`next dev`); do NOT add `--webpack`
+- **React 19** — React Compiler enabled via `reactCompiler: true` in `next.config.ts` (Turbopack/SWC path). `babel-plugin-react-compiler` is in devDependencies for Jest only. `react-hooks/incompatible-library` warning is expected, do NOT fix
+- **Tailwind 4** — no `tailwind.config.js`, config is in `globals.css` via `@theme`, no v3 patterns
+- **Zustand 5** / **TanStack Query 5** / **TanStack Table 8** / **RHF 7 + Zod 4**
+- **`distDir: ".next-build"`** — non-default output dir; affects CI artifact paths, Docker COPY, and build commands
+
+---
+
+## Non-Negotiable Rules
+
+**UUIDs**
+```ts
+// ❌ crypto.randomUUID()
+// ✅
+import { generateId } from "@/lib/uuid";
+```
+
+**API calls**
+```ts
+// ❌ fetch() directly to actual-http-api
+// ✅ apiRequest() → /api/proxy → actual-http-api
+```
+
+**Mutations**
+```ts
+// ❌ call API from component
+// ✅ stageNew | stageUpdate | stageDelete → user clicks Save → API
+```
+
+**Version endpoints** (`/v1/actualhttpapiversion`, `/actualserverversion`) are optional — always `Promise.allSettled()`, never block on failure.
+
+**Staged row colors** — use semantic Tailwind tokens, never hardcode Tailwind color names:
+```tsx
+// ❌ "bg-green-500"  "bg-amber-400"  "bg-muted-foreground/40"
+// ✅
+"bg-staged-new"        // new rows
+"bg-staged-updated"    // updated rows
+"bg-staged-deleted"    // deleted rows
+// tokens defined in globals.css via @theme inline
+```
+
+**Git** — never auto-commit or auto-push. Always: show diff → propose message → wait for approval. PRs target `edge`, never `main`. Never work directly on `main` or `edge` — always use a feature or fix branch.
+```
+feat/* or fix/*  →  edge  →  main  →  release (tag v1.x.x)
+```
+
+---
+
+## State Ownership
+| Store | Owns |
+|---|---|
+| TanStack Query | Server snapshots (read-only) |
+| Zustand `staged.ts` | Pending mutations + undo/redo |
+| Zustand `connection.ts` | Active connection (`sessionStorage` — do NOT change to `localStorage`) |
+| Local state | Ephemeral UI only |
+
+---
+
+## File Map
+| Task | Path |
+|---|---|
+| API logic | `src/lib/api/<entity>.ts` |
+| Proxy | `src/app/api/proxy/route.ts` |
+| Staged store | `src/store/staged.ts` |
+| Pages | `src/app/(app)/<page>/page.tsx` |
+| Connection fields | `src/store/connection.ts` |
+| CI/CD workflows | `.github/workflows/` |
+| Docker changes | `docker/Dockerfile.prod` |
+| Query client config | `src/lib/queryClient.ts` |
+
+**Feature folder structure** (mandatory):
+```
+src/features/<entity>/
+  components/   hooks/   csv/   schemas/
+```
+
+**Proxy responsibilities:**
+- CORS handling
+- Request serialization via `serverQueueTails` (prevents concurrent budget open/close races)
+- Path construction: `/accounts` → `GET /v1/budgets/{budgetSyncId}/accounts`
+- Server-level paths (no `budgetSyncId`) passed as-is: `/v1/budgets/`
+- Logging format: `METHOD STATUS /path (Xms) [reqId]`
+
+---
+
+## Reference Documents
+
+Read these **before** implementing anything in the relevant area.
+
+| Document | When to Read |
+|---|---|
+| `agents/coding_standards.md` | Before any new component, hook, or utility |
+| `agents/actual_api_docs/api_docs.md` | Before any API integration |
+| `agents/future-roadmap.md` | Before starting any roadmap item |
+| `agents/requirements/` | Before making architectural decisions |
+| `CONTRIBUTING.md` | Before touching git, workflows, or the release process |
+| `FEATURES.md` | Before and after shipping a feature — must be updated |
+| `CHANGELOG.md` | Add an entry under `[Unreleased]` for every change |
+
+---
+
+## Before Every Commit
+```bash
+npm run lint       # 0 errors
+npx tsc --noEmit   # 0 errors
+npm test           # all suites pass
+```

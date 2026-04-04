@@ -82,12 +82,23 @@ export function useAccountsSave() {
 
     setIsSaving(false);
 
+    const store = useStagedStore.getState();
+
     // Remove temp-UUID staged entries for successful creates before refetch.
     // Without this, loadAccounts preserves every isNew entry not in the server
     // response, causing the temp entry to linger alongside the newly-created row.
     if (succeededCreateIds.size > 0) {
-      const store = useStagedStore.getState();
       for (const id of succeededCreateIds) store.stageDelete("accounts", id);
+    }
+
+    // Remove staged entries for successfully saved updates/deletes. Without this,
+    // loadAccounts sees isUpdated:true and preserves the dirty entry, so the
+    // "draft changes" list never clears after a successful save.
+    const succeededNonCreateIds = succeeded
+      .filter((r) => r.status === "success" && !succeededCreateIds.has(r.id))
+      .map((r) => r.id);
+    if (succeededNonCreateIds.length > 0) {
+      store.markSaved("accounts", succeededNonCreateIds);
     }
 
     if (failed.length > 0) {
