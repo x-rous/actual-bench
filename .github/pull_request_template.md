@@ -1,16 +1,15 @@
 <!--
-  Target branch: edge  (not main)
-  main is updated only when changes warrant a release — all PRs go to edge first.
+  Target branch: main
 
   PR title: make it user-facing — this becomes the changelog entry verbatim.
     ❌  wip stuff / fix bug / update things
     ✅  Add schedules page with basic CRUD / Fix rule drawer width behind Traefik
 
   Label: auto-applied from your branch name — verify before merging.
-    feat/*    → feat        → 🚀 Features
-    fix/*     → fix         → 🐛 Bug Fixes
+    feat/*     → feature     → 🚀 Features
+    fix/*      → fix         → 🐛 Bug Fixes
     refactor/* → maintenance → 🔧 Maintenance
-    docs/*    → docs        → 🔧 Maintenance
+    docs/*     → docs        → 🔧 Maintenance
 -->
 
 ## Summary
