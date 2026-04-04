@@ -128,6 +128,13 @@ type StagedStoreActions = {
   /** Clear the save error on a single entity (e.g. after user clicks Retry) */
   clearSaveError: <K extends EntityKey>(entityType: K, id: string) => void;
 
+  /**
+   * Remove successfully-saved entries from the staged map so the next loadX()
+   * call (triggered by invalidateQueries) creates fresh, clean entries from
+   * server data. Only call this for non-create IDs (creates use stageDelete).
+   */
+  markSaved: <K extends EntityKey>(entityType: K, ids: string[]) => void;
+
   /** Discard ALL staged changes across all entity types */
   discardAll: () => void;
 
@@ -370,6 +377,13 @@ export const useStagedStore = create<StagedStoreState & StagedStoreActions>((set
       const map = state[entityType] as StagedMap<BaseEntity>;
       if (!map[id]) return {};
       return { [entityType]: { ...map, [id]: { ...map[id], saveError: undefined } } };
+    }),
+
+  markSaved: (entityType, ids) =>
+    set((state) => {
+      const map = { ...(state[entityType] as StagedMap<BaseEntity>) };
+      for (const id of ids) delete map[id];
+      return { [entityType]: map };
     }),
 
   discardAll: () => set({ ...emptySnapshot(), undoStack: [], redoStack: [], mergeDependencies: {} }),

@@ -175,9 +175,10 @@ export function useRulesSave() {
 
     setIsSaving(false);
 
+    const store = useStagedStore.getState();
+
     // Revert staged deletions that were skipped due to their create failing.
     if (skippedMergeDeps.length > 0) {
-      const store = useStagedStore.getState();
       for (const id of skippedMergeDeps) store.revertEntity("rules", id);
     }
 
@@ -185,8 +186,16 @@ export function useRulesSave() {
     // Without this, loadRules after the refetch preserves every isNew entry
     // not found in the server response — causing the temp entry to linger.
     if (succeededCreateIds.size > 0) {
-      const store = useStagedStore.getState();
       for (const id of succeededCreateIds) store.stageDelete("rules", id);
+    }
+
+    // Remove staged entries for successfully saved updates/deletes so that
+    // loadRules replaces them with fresh server data instead of preserving them.
+    const succeededNonCreateIds = succeeded
+      .filter((r) => r.status === "success" && !succeededCreateIds.has(r.id))
+      .map((r) => r.id);
+    if (succeededNonCreateIds.length > 0) {
+      store.markSaved("rules", succeededNonCreateIds);
     }
 
     // Clear merge dependencies whose creates succeeded.

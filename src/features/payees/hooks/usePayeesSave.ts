@@ -96,10 +96,20 @@ export function usePayeesSave() {
 
     setIsSaving(false);
 
+    const store = useStagedStore.getState();
+
     // Remove temp-UUID staged entries for successful creates before refetch.
     if (succeededCreateIds.size > 0) {
-      const store = useStagedStore.getState();
       for (const id of succeededCreateIds) store.stageDelete("payees", id);
+    }
+
+    // Remove staged entries for successfully saved updates/deletes so that
+    // loadPayees replaces them with fresh server data instead of preserving them.
+    const succeededNonCreateIds = succeeded
+      .filter((r) => r.status === "success" && !succeededCreateIds.has(r.id))
+      .map((r) => r.id);
+    if (succeededNonCreateIds.length > 0) {
+      store.markSaved("payees", succeededNonCreateIds);
     }
 
     if (failed.length > 0) {
