@@ -1,19 +1,11 @@
-feat:
-  - changed-files:
-    - any-glob-to-any-file: '**'
-    head-branch: ['^feat/.*']
+feature:
+  - head-branch: ['^feat/']
 
 fix:
-  - changed-files:
-    - any-glob-to-any-file: '**'
-    head-branch: ['^fix/.*']
+  - head-branch: ['^fix/']
 
 docs:
-  - changed-files:
-    - any-glob-to-any-file: '**'
-    head-branch: ['^docs/.*']
+  - head-branch: ['^docs/']
 
 maintenance:
-  - changed-files:
-    - any-glob-to-any-file: '**'
-    head-branch: ['^refactor/.*']
+  - head-branch: ['^refactor/']
