@@ -134,7 +134,8 @@ export async function getServerVersion(
       const json = (await response.json()) as { error?: string; message?: string };
       message = json.error ?? json.message ?? message;
     } catch {}
-    throw new Error(message);
+    const error: ApiError = { kind: "api", status: response.status, message };
+    throw error;
   }
 
   const data = (await response.json()) as { data?: { version?: string } };

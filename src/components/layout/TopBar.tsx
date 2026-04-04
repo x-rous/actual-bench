@@ -20,6 +20,7 @@ import {
   useConnectionStore,
   selectActiveInstance,
 } from "@/store/connection";
+import { useSavedServersStore } from "@/store/savedServers";
 import {
   useStagedStore,
   selectHasChanges,
@@ -41,6 +42,7 @@ export function TopBar() {
   const instances = useConnectionStore((s) => s.instances);
   const setActive = useConnectionStore((s) => s.setActiveInstance);
   const clearAll = useConnectionStore((s) => s.clearAll);
+  const clearServers = useSavedServersStore((s) => s.clearServers);
 
 
   const hasChanges = useStagedStore(selectHasChanges);
@@ -139,6 +141,7 @@ export function TopBar() {
     discardAll();
     queryClient.clear();
     clearAll();
+    clearServers();
     router.push("/connect");
   }
 

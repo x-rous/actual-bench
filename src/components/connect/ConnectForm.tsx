@@ -1,616 +1,346 @@
 "use client";
 
-import { useState } from "react";
 import Image from "next/image";
-import { useRouter } from "next/navigation";
-import { toast } from "sonner";
-import { Loader2, AlertCircle, CheckCircle2, Trash2, Server } from "lucide-react";
-import { useQueryClient } from "@tanstack/react-query";
+import { Loader2, AlertCircle, CheckCircle2, Server, Plus, Check } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { listBudgets, testConnection, getApiVersion, getServerVersion, type BudgetFile } from "@/lib/api/client";
-import {
-  useConnectionStore,
-  selectActiveInstance,
-  type ConnectionInstance,
-} from "@/store/connection";
-import { useStagedStore } from "@/store/staged";
-import { generateId } from "@/lib/uuid";
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-function normalizeUrl(raw: string): string {
-  const trimmed = raw.trim().replace(/\/$/, "");
-  if (!trimmed) return trimmed;
-  if (!/^https?:\/\//i.test(trimmed)) return `https://${trimmed}`;
-  return trimmed;
-}
-
-function deriveLabel(baseUrl: string): string {
-  try {
-    return new URL(baseUrl).host;
-  } catch {
-    return baseUrl;
-  }
-}
-
-// ─── Types ────────────────────────────────────────────────────────────────────
-
-type ValidateStatus =
-  | { kind: "idle" }
-  | { kind: "busy" }
-  | { kind: "error"; message: string };
-
-type ConnectStatus =
-  | { kind: "idle" }
-  | { kind: "busy"; instanceId?: string }
-  | { kind: "error"; message: string }
-  | { kind: "success" };
-
-// ─── Saved connection card ─────────────────────────────────────────────────────
-
-function SavedConnectionCard({
-  instance,
-  isActive,
-  onConnect,
-  onRemove,
-  connectBusyId,
-}: {
-  instance: ConnectionInstance;
-  isActive: boolean;
-  onConnect: (instance: ConnectionInstance) => void;
-  onRemove: (id: string) => void;
-  connectBusyId: string | null;
-}) {
-  const busy = connectBusyId === instance.id;
-  const anyBusy = connectBusyId !== null;
-
-  return (
-    <div
-      className={`flex items-center gap-4 rounded-lg border px-5 py-4 ${
-        isActive ? "border-primary bg-primary/5" : "border-border bg-background"
-      }`}
-    >
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2">
-          <span className="text-sm font-medium truncate">{instance.label}</span>
-          {isActive && (
-            <span className="shrink-0 rounded-full bg-primary/5 py-1 px-3 text-xs font-medium text-primary">
-              active
-            </span>
-          )}
-        </div>
-        <div className="mt-1 text-xs text-muted-foreground truncate">{instance.baseUrl}</div>              
-      </div>
-
-
-      <div className="flex items-center gap-2 shrink-0">
-        <button
-          type="button"
-          disabled={anyBusy}
-          onClick={() => onConnect(instance)}
-          className="flex h-8 items-center gap-1.5 rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          {busy ? (
-            <>
-              <Loader2 className="h-3 w-3 animate-spin" />
-              Connecting…
-            </>
-          ) : (
-            "Connect"
-          )}
-        </button>
-        <button
-          type="button"
-          disabled={anyBusy}
-          onClick={() => onRemove(instance.id)}
-          title="Remove"
-          className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          <Trash2 className="h-3.5 w-3.5" />
-        </button>
-      </div>
-    </div>
-  );
-}
-
-// ─── Component ────────────────────────────────────────────────────────────────
+import { cn } from "@/lib/utils";
+import { useConnectForm } from "./useConnectForm";
+import { ConnectionCard } from "./ConnectionCard";
+import { deriveLabel } from "./utils";
 
 export function ConnectForm() {
-  const router = useRouter();
-  const queryClient = useQueryClient();
-  const addInstance = useConnectionStore((s) => s.addInstance);
-  const removeInstance = useConnectionStore((s) => s.removeInstance);
-  const updateInstance = useConnectionStore((s) => s.updateInstance);
-  const setActiveInstance = useConnectionStore((s) => s.setActiveInstance);
-  const activeInstance = useConnectionStore(selectActiveInstance);
-  const instances = useConnectionStore((s) => s.instances);
-  const discardAll = useStagedStore((s) => s.discardAll);
+  const {
+    instances,
+    activeInstance,
+    savedServers,
+    removeInstance,
+    baseUrl,
+    setBaseUrl,
+    apiKey,
+    setApiKey,
+    validateStatus,
+    setValidateStatus,
+    selectedServerId,
+    setSelectedServerId,
+    budgets,
+    validatedUrl,
+    validatedApiVersion,
+    serverVersionMap,
+    selectedCloudFileId,
+    setSelectedCloudFileId,
+    encryptionPassword,
+    setEncryptionPassword,
+    connectStatus,
+    setConnectStatus,
+    reconnectBusyId,
+    validateBusy,
+    connectBusy,
+    anyBusy,
+    step1Complete,
+    showManualForm,
+    connectedSyncIds,
+    resetStep2,
+    handleCredentialChange,
+    handleSelectServer,
+    handleReconnect,
+    handleValidate,
+    handleKeyDown,
+    handleConnect,
+  } = useConnectForm();
 
-  // Left panel fields
-  const [baseUrl, setBaseUrl] = useState("");
-  const [apiKey, setApiKey] = useState("");
-  const [validateStatus, setValidateStatus] = useState<ValidateStatus>({ kind: "idle" });
+  // ── Panels ──────────────────────────────────────────────────────────────────
 
-  // Right panel state
-  const [budgets, setBudgets] = useState<BudgetFile[] | null>(null);
-  const [validatedUrl, setValidatedUrl] = useState("");
-  const [validatedKey, setValidatedKey] = useState("");
-  const [validatedApiVersion, setValidatedApiVersion] = useState<string | null>(null);
-  const [serverVersionMap, setServerVersionMap] = useState<Record<string, string | null>>({});
-
-  // Right panel fields
-  const [selectedCloudFileId, setSelectedCloudFileId] = useState<string | null>(null);
-  const [encryptionPassword, setEncryptionPassword] = useState("");
-  const [connectStatus, setConnectStatus] = useState<ConnectStatus>({ kind: "idle" });
-
-  // Saved connection reconnect busy tracking
-  const [reconnectBusyId, setReconnectBusyId] = useState<string | null>(null);
-
-  const validateBusy = validateStatus.kind === "busy";
-  const connectBusy = connectStatus.kind === "busy";
-  const anyBusy = validateBusy || connectBusy || reconnectBusyId !== null;
-
-  // Reset right panel when credentials change
-  function handleCredentialChange() {
-    if (budgets !== null) {
-      setBudgets(null);
-      setSelectedCloudFileId(null);
-      setEncryptionPassword("");
-      setConnectStatus({ kind: "idle" });
-    }
-
-      // reset
-      setValidatedUrl("");
-      setValidatedKey("");
-      setValidatedApiVersion(null);
-      setServerVersionMap({});
-  }
-
-  // ── Reconnect saved instance ─────────────────────────────────────────────────
-
-  async function reconnect(instance: ConnectionInstance) {
-    setReconnectBusyId(instance.id);
-    try {
-      await testConnection(instance);
-
-      // Refresh versions on every reconnect in case the server was upgraded
-      const [apiVersionResult, serverVersionResult] = await Promise.allSettled([
-        getApiVersion(instance.baseUrl, instance.apiKey),
-        getServerVersion(instance.baseUrl, instance.apiKey, instance.budgetSyncId),
-      ]);
-      updateInstance(instance.id, {
-        apiVersion: apiVersionResult.status === "fulfilled" ? apiVersionResult.value : instance.apiVersion,
-        serverVersion: serverVersionResult.status === "fulfilled" ? serverVersionResult.value : instance.serverVersion,
-      });
-
-      discardAll();
-      queryClient.clear();
-      setActiveInstance(instance.id);
-      toast.success("Connected! Redirecting…");
-      await new Promise((r) => setTimeout(r, 600));
-      router.push("/rules");
-    } catch (err) {
-      const s =
-        err && typeof err === "object" && "status" in err
-          ? (err as { status: number }).status
-          : -1;
-      const raw =
-        err && typeof err === "object" && "message" in err
-          ? String((err as { message: unknown }).message)
-          : "";
-      const message =
-        s === 401 || s === 403
-          ? "Invalid API Key."
-          : s === 404
-          ? "Budget not found on the server."
-          : s >= 500
-          ? `Server error (HTTP ${s}).`
-          : raw || "Connection failed.";
-      toast.error(message);
-    } finally {
-      setReconnectBusyId(null);
-    }
-  }
-
-  function handleReconnect(instance: ConnectionInstance) {
-    reconnect(instance).catch(() => {
-      setReconnectBusyId(null);
-    });
-  }
-
-  function handleRemove(id: string) {
-    removeInstance(id);
-  }
-
-  // ── Validate: fetch budget list ─────────────────────────────────────────────
-
-  async function validate() {
-    const url = normalizeUrl(baseUrl);
-    const key = apiKey.trim();
-
-    if (!url || !key) {
-      setValidateStatus({ kind: "error", message: "Server URL and API Key are required." });
-      return;
-    }
-
-    setValidateStatus({ kind: "busy" });
-    setBudgets(null);
-    setSelectedCloudFileId(null);
-    setEncryptionPassword("");
-    setConnectStatus({ kind: "idle" });
-
-    try {
-      const [budgetsResult, apiVersionResult] = await Promise.allSettled([
-        listBudgets(url, key),
-        getApiVersion(url, key),
-      ]);
-
-      if (budgetsResult.status === "rejected") throw budgetsResult.reason;
-
-      const fetched = budgetsResult.value;
-      const apiVersion =
-        apiVersionResult.status === "fulfilled" ? apiVersionResult.value : null;
-
-      if (fetched.length === 0) {
-        setValidateStatus({ kind: "error", message: "No remote budgets found on this server." });
-        return;
-      }
-
-      const versionEntries = await Promise.all(
-        fetched.map(async (budget) => {
-          if (!budget.groupId) {
-            return [budget.cloudFileId, null] as const;
-          }
-
-          try {
-            const version = await getServerVersion(url, key, budget.groupId);
-            return [budget.cloudFileId, version] as const;
-          } catch {
-            return [budget.cloudFileId, null] as const;
-          }
-        })
-      );
-
-      setValidatedUrl(url);
-      setValidatedKey(key);
-      setValidatedApiVersion(apiVersion);
-      setServerVersionMap(Object.fromEntries(versionEntries));
-      setBudgets(fetched);
-      setSelectedCloudFileId(fetched[0].cloudFileId);
-      setValidateStatus({ kind: "idle" });
-
-    } catch (err) {
-      const s =
-        err && typeof err === "object" && "status" in err
-          ? (err as { status: number }).status
-          : -1;
-      const raw =
-        err && typeof err === "object" && "message" in err
-          ? String((err as { message: unknown }).message)
-          : "";
-      const message =
-        s === 0
-          ? "Could not reach the server. Check the URL and that the server is running."
-          : s === 401 || s === 403
-          ? "Invalid API Key."
-          : raw || "Failed to fetch budgets.";
-      setValidateStatus({ kind: "error", message });
-    }
-  }
-
-  function handleValidate() {
-    validate().catch((err) => {
-      const message = err instanceof Error ? err.message : "Unexpected error.";
-      setValidateStatus({ kind: "error", message });
-    });
-  }
-
-  // ── Connect to selected budget ──────────────────────────────────────────────
-
-  async function connect() {
-    if (!budgets || !selectedCloudFileId) return;
-
-    const selected = budgets.find((b) => b.cloudFileId === selectedCloudFileId);
-    if (!selected) return;
-
-    const instance: ConnectionInstance = {
-      id: generateId(),
-      label: selected.name || deriveLabel(validatedUrl),
-      baseUrl: validatedUrl,
-      apiKey: validatedKey,
-      budgetSyncId: selected.groupId!,
-      ...(encryptionPassword.trim() ? { encryptionPassword: encryptionPassword.trim() } : {}),
-    };
-
-    setConnectStatus({ kind: "busy" });
-
-    try {
-      await testConnection(instance);
-
-      const finalInstance: ConnectionInstance = {
-        ...instance,
-        apiVersion: validatedApiVersion ?? undefined,
-        serverVersion: serverVersionMap[selected.cloudFileId] ?? undefined,
-      };
-
-      discardAll();
-      queryClient.clear();
-      addInstance(finalInstance);
-      setActiveInstance(finalInstance.id);
-      setConnectStatus({ kind: "success" });
-      toast.success("Connected! Redirecting…");
-      await new Promise((r) => setTimeout(r, 800));
-      router.push("/rules");
-    } catch (err) {
-      const s =
-        err && typeof err === "object" && "status" in err
-          ? (err as { status: number }).status
-          : -1;
-      const raw =
-        err && typeof err === "object" && "message" in err
-          ? String((err as { message: unknown }).message)
-          : "";
-      const message =
-        s === 401 || s === 403
-          ? "Invalid API Key."
-          : s === 404
-          ? "Budget not found on the server."
-          : s >= 500
-          ? `Server error (HTTP ${s}). The actual-http-api server returned an unexpected error.`
-          : raw || "Connection failed.";
-      setConnectStatus({ kind: "error", message });
-      toast.error(message);
-    }
-  }
-
-  function handleConnect() {
-    connect().catch((err) => {
-      const message = err instanceof Error ? err.message : "Unexpected error.";
-      setConnectStatus({ kind: "error", message });
-      toast.error(message);
-    });
-  }
-
-  // ── Render ──────────────────────────────────────────────────────────────────
-
-  return (
-    <div className="w-full max-w-4xl flex flex-col gap-4">
-      <div className="flex justify-center">
-        <Image src="/logo.png" alt="Actual Bench" width={160} height={40} priority />
+  const step1Panel = (
+    <div className="rounded-xl border border-border bg-background p-6 flex flex-col gap-5">
+      <div className="flex items-center gap-3">
+        <div
+          className={cn(
+            "flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold",
+            step1Complete ? "bg-green-500 text-white" : "bg-primary text-primary-foreground"
+          )}
+        >
+          {step1Complete ? <Check className="h-3.5 w-3.5" /> : "1"}
+        </div>
+        <h3 className="font-semibold">Choose a server</h3>
+        {step1Complete && (
+          <button
+            type="button"
+            onClick={() => { resetStep2(); setSelectedServerId(null); }}
+            disabled={anyBusy}
+            className="ml-auto text-xs text-muted-foreground underline-offset-2 hover:underline disabled:opacity-50"
+          >
+            Change
+          </button>
+        )}
       </div>
 
-      {/* Saved connections */}
-      {instances.length > 0 && (
-        <div>
-          <h2 className="mb-4 text-xs font-semibold text-muted-foreground uppercase tracking-widest">
-            Saved connections
-          </h2>
-          <div className="flex flex-col gap-3">
-            {instances.map((instance) => (
-              <SavedConnectionCard
-                key={instance.id}
-                instance={instance}
-                isActive={activeInstance?.id === instance.id}
-                onConnect={handleReconnect}
-                onRemove={handleRemove}
-                connectBusyId={reconnectBusyId}
-              />
-            ))}
+      {savedServers.length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          {savedServers.map((server) => (
+            <button
+              key={server.id}
+              type="button"
+              disabled={anyBusy}
+              onClick={() => handleSelectServer(server)}
+              className={cn(
+                "flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50",
+                selectedServerId === server.id
+                  ? "bg-primary text-primary-foreground"
+                  : "border border-border bg-background hover:bg-muted"
+              )}
+            >
+              {selectedServerId === server.id && <Check className="h-3 w-3" />}
+              {server.label}
+            </button>
+          ))}
+          <button
+            type="button"
+            disabled={anyBusy}
+            onClick={() => handleSelectServer(null)}
+            className={cn(
+              "flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50",
+              selectedServerId === null
+                ? "border border-primary text-primary bg-primary/5"
+                : "border border-dashed border-border text-muted-foreground hover:bg-muted"
+            )}
+          >
+            <Plus className="h-3 w-3" />
+            New server
+          </button>
+        </div>
+      )}
+
+      {showManualForm && (
+        <div className="flex flex-col gap-4">
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="baseUrl">API Server URL</Label>
+            <Input
+              id="baseUrl"
+              type="text"
+              placeholder="https://budgetapi.example.com"
+              autoComplete="off"
+              spellCheck={false}
+              value={baseUrl}
+              onChange={(e) => {
+                setBaseUrl(e.target.value);
+                if (validateStatus.kind === "error") setValidateStatus({ kind: "idle" });
+                handleCredentialChange();
+              }}
+              onKeyDown={handleKeyDown}
+              disabled={anyBusy}
+            />
+          </div>
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="apiKey">API Key</Label>
+            <Input
+              id="apiKey"
+              type="password"
+              placeholder="••••••••••••••••"
+              autoComplete="current-password"
+              value={apiKey}
+              onChange={(e) => {
+                setApiKey(e.target.value);
+                if (validateStatus.kind === "error") setValidateStatus({ kind: "idle" });
+                handleCredentialChange();
+              }}
+              onKeyDown={handleKeyDown}
+              disabled={anyBusy}
+            />
+            <p className="text-xs text-muted-foreground">
+              The <code>ACTUAL_API_KEY</code> on your API server.
+            </p>
           </div>
         </div>
       )}
 
-      {/* New connection form */}
-      <div>
-        {instances.length > 0 && (
-          <h2 className="mb-4 text-xs font-semibold text-muted-foreground uppercase tracking-widest">
-            Add new connection
-          </h2>
+      {validateStatus.kind === "error" && (
+        <div className="flex items-start gap-2.5 rounded-lg bg-destructive/10 px-3.5 py-3 text-sm text-destructive">
+          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+          <span>{validateStatus.message}</span>
+        </div>
+      )}
+
+      <button
+        type="button"
+        disabled={anyBusy}
+        onClick={handleValidate}
+        className="flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        {validateBusy ? (
+          <><Loader2 className="h-4 w-4 animate-spin" />Loading…</>
+        ) : (
+          "Load Budgets"
         )}
-        <div className="flex rounded-xl border border-border bg-background shadow-sm overflow-hidden min-h-[500px]">
-          {/* ── Left panel: credentials ── */}
-          <div className="w-96 shrink-0 flex flex-col border-r border-border p-8">
-            <h1 className="mb-2 text-xl font-semibold">Connect to the API Server</h1>
-            <p className="mb-7 text-sm text-muted-foreground leading-relaxed">
-              Enter your{" "}
-              <span className="font-medium text-foreground">actual-http-api</span>{" "}
-              server details.
-            </p>
+      </button>
+    </div>
+  );
 
-            <div className="flex flex-col gap-5 flex-1">
-              <div className="flex flex-col gap-2">
-                <Label htmlFor="baseUrl">API Server URL</Label>
-                <Input
-                  id="baseUrl"
-                  type="text"
-                  placeholder="https://budgetapi.example.com"
-                  autoComplete="off"
-                  spellCheck={false}
-                  value={baseUrl}
-                  onChange={(e) => {
-                    setBaseUrl(e.target.value);
-                    if (validateStatus.kind === "error") setValidateStatus({ kind: "idle" });
-                    handleCredentialChange();
-                  }}
-                  disabled={anyBusy}
-                />
-              </div>
-
-              <div className="flex flex-col gap-2">
-                <Label htmlFor="apiKey">API Key</Label>
-                <Input
-                  id="apiKey"
-                  type="password"
-                  placeholder="••••••••••••••••"
-                  autoComplete="current-password"
-                  value={apiKey}
-                  onChange={(e) => {
-                    setApiKey(e.target.value);
-                    if (validateStatus.kind === "error") setValidateStatus({ kind: "idle" });
-                    handleCredentialChange();
-                  }}
-                  disabled={anyBusy}
-                />
-                <p className="text-xs text-muted-foreground">
-                  The <code>ACTUAL_API_KEY</code> on your API server.
-                </p>
-              </div>
-
-              {validateStatus.kind === "error" && (
-                <div className="flex items-start gap-2.5 rounded-lg bg-destructive/10 px-3.5 py-3 text-sm text-destructive">
-                  <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
-                  <span>{validateStatus.message}</span>
-                </div>
-              )}
-
-              { /* Actual HTTP API Version  */ 
-              validatedApiVersion &&  (
-              <div>
-                <div className="flex items-center gap-2.5 rounded-lg bg-green-50 px-3.5 py-2 text-xs text-green-700 mb-2">
-                  <CheckCircle2 className="h-4 w-4 shrink-0" />
-                  <span>API server validated</span>              
-                </div>
-                <div className="mb-4 rounded-lg border border-border bg-muted/40 px-3.5 py-2 text-xs text-muted-foreground">
-                  API Server version: v{validatedApiVersion}
-                </div>
-              </div>
-              )}
-              <button
-                type="button"
-                disabled={anyBusy}
-                onClick={handleValidate}
-                className="mt-auto flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {validateBusy ? (
-                  <>
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    Fetching budgets…
-                  </>
-                ) : (
-                  "Validate Server"
-                )}
-              </button>
-            </div>
-          </div>
-
-          {/* ── Right panel: budget selection ── */}
-          <div className="flex-1 flex flex-col p-8">
-            {budgets === null ? (
-              <div className="flex flex-1 flex-col items-center justify-center text-center gap-4">
-                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted">
-                  <Server className="h-5 w-5 text-muted-foreground" />
-                </div>
-                <div className="flex flex-col gap-1">
-                  <p className="text-sm font-medium text-foreground">No server connected</p>
-                  <p className="text-sm text-muted-foreground">
-                    Enter your server details and click{" "}
-                    <span className="font-medium text-foreground">Validate</span> to load available
-                    budgets.
-                  </p>
-                </div>
-              </div>
-            ) : (
-              <>
-                <h2 className="mb-2 text-base font-semibold">Select a budget</h2>
-                <p className="mb-5 text-sm text-muted-foreground">
-                  Choose which budget file to connect to.
-                </p>
-
-                {/* Budget cards */}
-                <div className="flex flex-col gap-3 mb-6 overflow-y-auto max-h-[400px] pr-1">
-                  {budgets.map((budget) => {
-                    const selected = selectedCloudFileId === budget.cloudFileId;
-                    return (
-                      <button
-                        key={budget.cloudFileId}
-                        type="button"
-                        disabled={connectBusy}
-                        onClick={() => {
-                          setSelectedCloudFileId(budget.cloudFileId);
-                          if (connectStatus.kind === "error") setConnectStatus({ kind: "idle" });
-                        }}
-                        className={`flex items-start gap-3 rounded-lg border px-4 py-3 text-left transition-colors disabled:opacity-50 ${
-                          selected
-                            ? "border-primary bg-primary/5"
-                            : "border-border hover:border-muted-foreground/40 hover:bg-muted/40"
-                        }`}
-                      >
-                        <span
-                          className={`mt-0.5 h-4 w-4 shrink-0 rounded-full border-2 flex items-center justify-center ${
-                            selected ? "border-primary" : "border-muted-foreground/40"
-                          }`}
-                        >
-                          {selected && (
-                            <span className="h-2 w-2 rounded-full bg-primary block" />
-                          )}
-                        </span>
-                        <span className="flex flex-col gap-2 min-w-0">
-                          <span className="text-sm font-medium leading-tight">
-                            {budget.name || budget.cloudFileId}                     
-                          </span>
-
-                          <span className="text-xs text-muted-foreground font-mono truncate">
-                            Sync ID: {budget.cloudFileId}
-                          </span>
-                          
-                          <span className="text-xs text-muted-foreground font-mono truncate">
-                            Server version: v{serverVersionMap[budget.cloudFileId]}
-                          </span>
-
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-
-                {/* Encryption password */}
-                <div className="flex flex-col gap-2 mb-5">
-                  <Label htmlFor="encryptionPassword">
-                    Encryption password{" "}
-                    <span className="font-normal text-muted-foreground">(optional)</span>
-                  </Label>
-                  <Input
-                    id="encryptionPassword"
-                    type="password"
-                    placeholder="Leave blank if budget is not encrypted"
-                    autoComplete="off"
-                    value={encryptionPassword}
-                    onChange={(e) => {
-                      setEncryptionPassword(e.target.value);
-                      if (connectStatus.kind === "error") setConnectStatus({ kind: "idle" });
-                    }}
-                    disabled={connectBusy}
-                  />
-                </div>
-
-                {connectStatus.kind === "error" && (
-                  <div className="flex items-start gap-2.5 rounded-lg bg-destructive/10 px-3.5 py-3 text-sm text-destructive mb-5">
-                    <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
-                    <span>{connectStatus.message}</span>
-                  </div>
-                )}
-                
-                <button
-                  type="button"
-                  disabled={connectBusy || !selectedCloudFileId}
-                  onClick={handleConnect}
-                  className="mt-auto flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {connectBusy ? (
-                    <>
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                      Connecting…
-                    </>
-                  ) : (
-                    "Connect"
-                  )}
-                </button>
-              </>
-            )}
-          </div>
+  const step2Panel = budgets !== null ? (
+    <div className="rounded-xl border border-border bg-background p-6 flex flex-col gap-5">
+      <div className="flex items-center gap-3">
+        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground text-xs font-bold">
+          2
+        </div>
+        <h3 className="font-semibold">Choose a budget</h3>
+        <div className="ml-auto flex items-center gap-1.5 rounded-full bg-green-50 px-2.5 py-1 text-xs text-green-700">
+          <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
+          <span>{deriveLabel(validatedUrl)}</span>
+          {validatedApiVersion && <span className="text-green-600/70">· v{validatedApiVersion}</span>}
         </div>
       </div>
+
+      <div className="flex flex-col gap-2 max-h-70 overflow-y-auto pr-1">
+        {budgets.map((budget) => {
+          const selected = selectedCloudFileId === budget.cloudFileId;
+          const alreadyConnected = connectedSyncIds.has(budget.groupId ?? "");
+          return (
+            <button
+              key={budget.cloudFileId}
+              type="button"
+              disabled={connectBusy}
+              onClick={() => {
+                setSelectedCloudFileId(budget.cloudFileId);
+                if (connectStatus.kind === "error") setConnectStatus({ kind: "idle" });
+              }}
+              className={cn(
+                "flex items-start gap-3 rounded-lg border px-4 py-3 text-left transition-colors disabled:opacity-50",
+                selected
+                  ? "border-primary bg-primary/5"
+                  : "border-border hover:border-muted-foreground/40 hover:bg-muted/40"
+              )}
+            >
+              <span
+                className={cn(
+                  "mt-0.5 h-4 w-4 shrink-0 rounded-full border-2 flex items-center justify-center",
+                  selected ? "border-primary" : "border-muted-foreground/40"
+                )}
+              >
+                {selected && <span className="h-2 w-2 rounded-full bg-primary block" />}
+              </span>
+              <span className="flex flex-col gap-1 min-w-0">
+                <span className="flex items-center gap-2">
+                  <span className="text-sm font-medium leading-tight">
+                    {budget.name || budget.cloudFileId}
+                  </span>
+                  {alreadyConnected && (
+                    <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
+                      connected
+                    </span>
+                  )}
+                </span>
+                <span className="text-xs text-muted-foreground font-mono truncate">
+                  Sync ID: {budget.cloudFileId}
+                </span>
+                {serverVersionMap[budget.cloudFileId] && (
+                  <span className="text-xs text-muted-foreground font-mono truncate">
+                    Server version: v{serverVersionMap[budget.cloudFileId]}
+                  </span>
+                )}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="flex flex-col gap-2">
+        <Label htmlFor="encryptionPassword">
+          Encryption password{" "}
+          <span className="font-normal text-muted-foreground">(optional)</span>
+        </Label>
+        <Input
+          id="encryptionPassword"
+          type="password"
+          placeholder="Leave blank if budget is not encrypted"
+          autoComplete="off"
+          value={encryptionPassword}
+          onChange={(e) => {
+            setEncryptionPassword(e.target.value);
+            if (connectStatus.kind === "error") setConnectStatus({ kind: "idle" });
+          }}
+          disabled={connectBusy}
+        />
+      </div>
+
+      {connectStatus.kind === "error" && (
+        <div className="flex items-start gap-2.5 rounded-lg bg-destructive/10 px-3.5 py-3 text-sm text-destructive">
+          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+          <span>{connectStatus.message}</span>
+        </div>
+      )}
+
+      <button
+        type="button"
+        disabled={connectBusy || !selectedCloudFileId}
+        onClick={handleConnect}
+        className="flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        {connectBusy ? (
+          <><Loader2 className="h-4 w-4 animate-spin" />Connecting…</>
+        ) : (
+          "Connect"
+        )}
+      </button>
+    </div>
+  ) : null;
+
+  // ── Layout ──────────────────────────────────────────────────────────────────
+
+  return (
+    <div className={cn("w-full flex flex-col gap-8", instances.length > 0 ? "max-w-5xl" : "max-w-xl")}>
+      <div className="flex justify-center">
+        <Image src="/logo.png" alt="Actual Bench" width={160} height={40} priority />
+      </div>
+
+      {instances.length > 0 ? (
+        /* ── Two-column layout ── */
+        <div className="grid grid-cols-1 lg:grid-cols-[2fr_3fr] gap-6 items-start">
+          {/* Left: saved connections */}
+          <section className="flex flex-col gap-3">
+            <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">
+              Your connections
+            </h2>
+            <div className="flex flex-col gap-2 overflow-y-auto max-h-96">
+              {instances.map((instance) => (
+                <ConnectionCard
+                  key={instance.id}
+                  instance={instance}
+                  isActive={activeInstance?.id === instance.id}
+                  onConnect={handleReconnect}
+                  onRemove={(id) => removeInstance(id)}
+                  connectBusyId={reconnectBusyId}
+                />
+              ))}
+            </div>
+          </section>
+
+          {/* Right: add a connection */}
+          <section className="flex flex-col gap-4">
+            <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">
+              Add a connection
+            </h2>
+            {step1Panel}
+            {step2Panel}
+          </section>
+        </div>
+      ) : (
+        /* ── Single-column layout (first-time user) ── */
+        <section className="flex flex-col gap-4">
+          {step1Panel}
+          {step2Panel}
+          {budgets === null && !validateBusy && (
+            <div className="flex flex-col items-center gap-3 py-6 text-center">
+              <div className="flex h-11 w-11 items-center justify-center rounded-full bg-muted">
+                <Server className="h-5 w-5 text-muted-foreground" />
+              </div>
+              <p className="text-sm text-muted-foreground">
+                Enter your server details above and click{" "}
+                <span className="font-medium text-foreground">Load Budgets</span> to get started.
+              </p>
+            </div>
+          )}
+        </section>
+      )}
     </div>
   );
 }

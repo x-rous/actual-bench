@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useConnectionStore } from "@/store/connection";
+import { useSavedServersStore } from "@/store/savedServers";
 import { useStagedStore } from "@/store/staged";
 import {
   DropdownMenu,
@@ -48,6 +49,7 @@ export function Sidebar() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const clearAll = useConnectionStore((s) => s.clearAll);
+  const clearServers = useSavedServersStore((s) => s.clearServers);
   const discardAll = useStagedStore((s) => s.discardAll);
   const version = process.env.NEXT_PUBLIC_APP_VERSION;
 
@@ -61,6 +63,7 @@ export function Sidebar() {
     discardAll();
     queryClient.clear();
     clearAll();
+    clearServers();
     router.push("/connect");
   }
 
