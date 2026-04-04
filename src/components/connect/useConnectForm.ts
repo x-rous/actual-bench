@@ -122,6 +122,8 @@ export function useConnectForm() {
         getServerVersion(instance.baseUrl, instance.apiKey, instance.budgetSyncId),
       ]);
       updateInstance(instance.id, {
+        apiKey: instance.apiKey,
+        encryptionPassword: instance.encryptionPassword,
         apiVersion:
           apiVersionResult.status === "fulfilled"
             ? apiVersionResult.value
@@ -246,7 +248,9 @@ export function useConnectForm() {
       const freshInstance: ConnectionInstance = {
         ...existing,
         apiKey: validatedKey,
-        ...(encryptionPassword.trim() ? { encryptionPassword: encryptionPassword.trim() } : {}),
+        // Explicitly set to undefined when blank so clearing the field removes
+        // a stored encryption password rather than silently preserving it.
+        encryptionPassword: encryptionPassword.trim() || undefined,
       };
       setConnectStatus({ kind: "busy" });
       try {

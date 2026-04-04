@@ -258,7 +258,7 @@ export function ConnectForm() {
             setEncryptionPassword(e.target.value);
             if (connectStatus.kind === "error") setConnectStatus({ kind: "idle" });
           }}
-          disabled={connectBusy}
+          disabled={connectBusy || !!reconnectBusyId}
         />
       </div>
 
