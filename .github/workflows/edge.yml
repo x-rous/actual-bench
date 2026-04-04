@@ -2,7 +2,7 @@ name: Edge
 
 on:
   push:
-    branches: [edge]
+    branches: [main]
 
 permissions:
   contents: read
@@ -45,7 +45,6 @@ jobs:
             docker.io/xrous/actual-bench
           tags: |
             type=raw,value=edge
-            type=raw,value=edge-{{sha}}
 
       - name: Build and push
         uses: docker/build-push-action@v6

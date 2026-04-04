@@ -49,7 +49,7 @@ Pull the pre-built image from Docker Hub — no local build required:
 # Latest stable release
 docker run -p 3000:3000 xrous/actual-bench:latest
 
-# Latest unreleased changes (edge builds — may be unstable)
+# Latest unreleased changes (updated on every merge to main — may be unstable)
 docker run -p 3000:3000 xrous/actual-bench:edge
 ```
 
@@ -152,7 +152,6 @@ Ready-to-use sample CSV files are included in [`public/samples csv/`](public/sam
 ```bash
 git clone https://github.com/x-rous/actual-bench.git
 cd actual-bench
-git checkout edge
 npm install
 npm run dev
 ```
