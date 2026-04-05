@@ -12,7 +12,8 @@ import {
 } from "@/components/ui/dialog";
 import { useStagedStore } from "@/store/staged";
 import { generateId } from "@/lib/uuid";
-import { ConditionRow, ActionRow, selectCls } from "./ConditionRow";
+import { ConditionRow, selectCls } from "./ConditionRow";
+import { ActionRow } from "./ActionRow";
 import {
   CONDITION_FIELDS,
   ACTION_FIELDS,

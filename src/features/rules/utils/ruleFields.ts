@@ -3,13 +3,15 @@
  * Derived from Actual Budget's rule engine.
  */
 
-export type FieldType = "string" | "id" | "number" | "date";
+export type FieldType = "string" | "id" | "number" | "date" | "boolean";
 
 export type FieldDef = {
   label: string;
   type: FieldType;
   /** For id fields, which entity type to look up */
-  entity?: "payee" | "category" | "account";
+  entity?: "payee" | "category" | "account" | "categoryGroup";
+  /** Whether this field supports Handlebars template mode */
+  supportsTemplate?: boolean;
 };
 
 export type OpDef = {
@@ -22,6 +24,7 @@ export const CONDITION_FIELDS: Record<string, FieldDef> = {
   payee:          { label: "Payee",          type: "id",     entity: "payee" },
   account:        { label: "Account",        type: "id",     entity: "account" },
   category:       { label: "Category",       type: "id",     entity: "category" },
+  category_group: { label: "Category Group", type: "id",     entity: "categoryGroup" },
   amount:         { label: "Amount",         type: "number" },
   notes:          { label: "Notes",          type: "string" },
   date:           { label: "Date",           type: "date" },
@@ -29,27 +32,31 @@ export const CONDITION_FIELDS: Record<string, FieldDef> = {
 };
 
 export const ACTION_FIELDS: Record<string, FieldDef> = {
-  payee:    { label: "Payee",    type: "id", entity: "payee" },
-  category: { label: "Category", type: "id", entity: "category" },
-  notes:    { label: "Notes",    type: "string" },
-  cleared:  { label: "Cleared",  type: "string" },
+  payee:      { label: "Payee",      type: "id",      entity: "payee" },
+  category:   { label: "Category",   type: "id",      entity: "category" },
+  account:    { label: "Account",    type: "id",      entity: "account" },
+  notes:      { label: "Notes",      type: "string",  supportsTemplate: true },
+  cleared:    { label: "Cleared",    type: "boolean" },
+  payee_name: { label: "Payee Name", type: "string",  supportsTemplate: true },
+  date:       { label: "Date",       type: "date" },
+  amount:     { label: "Amount",     type: "number" },
 };
 
 export const STRING_OPS: Record<string, OpDef> = {
-  is:             { label: "is",              hasValue: true },
-  isNot:          { label: "is not",          hasValue: true },
-  contains:       { label: "contains",        hasValue: true },
-  doesNotContain: { label: "does not contain",hasValue: true },
-  oneOf:          { label: "is one of",       hasValue: true },
-  notOneOf:       { label: "is not one of",   hasValue: true },
-  matches:        { label: "matches",         hasValue: true },
+  is:             { label: "is",               hasValue: true },
+  isNot:          { label: "is not",           hasValue: true },
+  contains:       { label: "contains",         hasValue: true },
+  doesNotContain: { label: "does not contain", hasValue: true },
+  oneOf:          { label: "is one of",        hasValue: true },
+  notOneOf:       { label: "is not one of",    hasValue: true },
+  matches:        { label: "matches",          hasValue: true },
 };
 
 export const ID_OPS: Record<string, OpDef> = {
-  is:       { label: "is",           hasValue: true },
-  isNot:    { label: "is not",       hasValue: true },
-  oneOf:    { label: "is one of",    hasValue: true },
-  notOneOf: { label: "is not one of",hasValue: true },
+  is:       { label: "is",            hasValue: true },
+  isNot:    { label: "is not",        hasValue: true },
+  oneOf:    { label: "is one of",     hasValue: true },
+  notOneOf: { label: "is not one of", hasValue: true },
 };
 
 /** Account adds budget-type boolean ops that take no value. */
@@ -60,25 +67,28 @@ export const ACCOUNT_OPS: Record<string, OpDef> = {
 };
 
 export const NUMBER_OPS: Record<string, OpDef> = {
-  is:        { label: "is",          hasValue: true },
-  isapprox:  { label: "is approx.",  hasValue: true },
+  is:        { label: "is",              hasValue: true },
+  isapprox:  { label: "is approx.",      hasValue: true },
   gt:        { label: "is greater than", hasValue: true },
-  gte:       { label: "is ≥",        hasValue: true },
+  gte:       { label: "is ≥",           hasValue: true },
   lt:        { label: "is less than",    hasValue: true },
-  lte:       { label: "is ≤",        hasValue: true },
-  isbetween: { label: "is between",  hasValue: true },
+  lte:       { label: "is ≤",           hasValue: true },
+  isbetween: { label: "is between",      hasValue: true },
 };
 
 export const DATE_OPS: Record<string, OpDef> = {
-  is:       { label: "is",        hasValue: true },
-  isNot:    { label: "is not",    hasValue: true },
-  isapprox: { label: "is approx.",hasValue: true },
-  isAfter:  { label: "is after",  hasValue: true },
-  isBefore: { label: "is before", hasValue: true },
+  is:       { label: "is",         hasValue: true },
+  isNot:    { label: "is not",     hasValue: true },
+  isapprox: { label: "is approx.", hasValue: true },
+  isAfter:  { label: "is after",   hasValue: true },
+  isBefore: { label: "is before",  hasValue: true },
 };
 
 export const ACTION_OPS: Record<string, OpDef> = {
-  set: { label: "set to", hasValue: true },
+  set:                  { label: "Set",            hasValue: true  },
+  "prepend-notes":      { label: "Prepend to Notes",  hasValue: true  },
+  "append-notes":       { label: "Append to Notes",   hasValue: true  },
+  "delete-transaction": { label: "Delete transaction", hasValue: false },
 };
 
 export function getConditionOps(field: string): Record<string, OpDef> {

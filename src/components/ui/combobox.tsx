@@ -234,15 +234,15 @@ export function MultiSearchableCombobox({
           selectedOptions.map((o) => (
             <span
               key={o.id}
-              className="flex items-center gap-0.5 rounded bg-accent px-1.5 py-0.5 text-[11px] font-medium text-accent-foreground"
+              className="flex items-center gap-1 rounded bg-accent px-2 py-1 text-xs font-medium text-accent-foreground"
             >
               {o.name}
               <button
                 type="button"
                 onClick={(e) => remove(o.id, e)}
-                className="ml-0.5 text-muted-foreground hover:text-foreground"
+                className="text-muted-foreground hover:text-foreground"
               >
-                <X className="h-2.5 w-2.5" />
+                <X className="h-3 w-3" />
               </button>
             </span>
           ))

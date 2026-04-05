@@ -1,11 +1,13 @@
 import { z } from "zod";
 
 const conditionOrActionSchema = z.object({
-  field: z.string().min(1),
+  field: z.string().min(1).optional(),
   op: z.string().min(1),
   value: z.union([
     z.string(),
     z.number(),
+    z.boolean(),
+    z.null(),
     z.array(z.string()),
     z.object({ num1: z.number(), num2: z.number() }),
   ]),
