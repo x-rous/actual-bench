@@ -22,6 +22,7 @@
 - Filter the rules list by stage, payee, or category
 - Links from Payees and Categories pages filter the rules list to that entity automatically
 - Resolved entity names displayed throughout (no raw IDs shown)
+- Category dropdowns group categories under their parent group, preserving server order; hidden categories and groups remain visible so rules referencing them can still be edited; search matches group names (shows all children) or category names
 - CSV import and export
 
 ## Accounts
