@@ -11,141 +11,13 @@ import { cn } from "@/lib/utils";
 import { useStagedStore } from "@/store/staged";
 import { generateId } from "@/lib/uuid";
 import { rulePreview } from "../utils/rulePreview";
-import { CONDITION_FIELDS, ACTION_FIELDS, STAGE_LABELS } from "../utils/ruleFields";
+import type { EntityMaps } from "../utils/rulePreview";
+import { STAGE_LABELS } from "../utils/ruleFields";
 import { FilterBar } from "./FilterBar";
 import type { StageFilter } from "./FilterBar";
-import { valueToString } from "../utils/rulePreview";
-import type { StagedEntity, StagedMap } from "@/types/staged";
-import type { Rule, ConditionOrAction, Payee, Category, Account } from "@/types/entities";
-
-// ─── Types ────────────────────────────────────────────────────────────────────
-
-type EntityMaps = {
-  payees: StagedMap<Payee>;
-  categories: StagedMap<Category>;
-  accounts: StagedMap<Account>;
-};
-
-// ─── Entity resolution ────────────────────────────────────────────────────────
-
-function resolveEntityName(
-  id: string,
-  entity: "payee" | "category" | "account",
-  maps: EntityMaps
-): string {
-  if (entity === "payee") return maps.payees[id]?.entity.name ?? id;
-  if (entity === "category") return maps.categories[id]?.entity.name ?? id;
-  if (entity === "account") return maps.accounts[id]?.entity.name ?? id;
-  return id;
-}
-
-/** Resolve a single scalar value to a display name. */
-function resolveScalar(
-  id: string,
-  field: string,
-  maps: EntityMaps,
-  fieldDefs: typeof CONDITION_FIELDS | typeof ACTION_FIELDS
-): string {
-  const def = fieldDefs[field];
-  if (def?.entity && id) return resolveEntityName(id, def.entity, maps);
-  return id;
-}
-
-/** Resolve all values (handles both single and array) to display names. */
-function resolveValues(
-  field: string,
-  value: ConditionOrAction["value"],
-  maps: EntityMaps,
-  fieldDefs: typeof CONDITION_FIELDS | typeof ACTION_FIELDS
-): string[] {
-  if (Array.isArray(value)) {
-    return value.filter(Boolean).map((v) => resolveScalar(String(v), field, maps, fieldDefs));
-  }
-  const scalar = valueToString(value);
-  if (!scalar) return [];
-  return [resolveScalar(scalar, field, maps, fieldDefs)];
-}
-
-// ─── Condition chip ───────────────────────────────────────────────────────────
-
-function ConditionChip({
-  condition,
-  maps,
-}: {
-  condition: ConditionOrAction;
-  maps: EntityMaps;
-}) {
-  const fieldLabel = CONDITION_FIELDS[condition.field]?.label ?? condition.field;
-  const valueLabels = resolveValues(condition.field, condition.value, maps, CONDITION_FIELDS);
-
-  return (
-    <div className="flex items-center gap-1 flex-wrap">
-      {/* Field — indigo */}
-      <span className="rounded px-1 py-0.5 text-[11px] font-semibold bg-indigo-50 text-indigo-700 dark:bg-indigo-950/30 dark:text-indigo-400">
-        {fieldLabel}
-      </span>
-      {/* Op — muted */}
-      <span className="text-[11px] text-muted-foreground">{condition.op}</span>
-      {/* Values — each as its own emerald chip, comma-separated */}
-      {valueLabels.map((label, i) => (
-        <span key={i} className="rounded px-1 py-0.5 text-[11px] font-medium bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-400">
-          {label}
-          {i < valueLabels.length - 1 && <span className="text-emerald-500 ml-0.5">,</span>}
-        </span>
-      ))}
-    </div>
-  );
-}
-
-// ─── Action chip ──────────────────────────────────────────────────────────────
-
-function ActionChip({
-  action,
-  maps,
-}: {
-  action: ConditionOrAction;
-  maps: EntityMaps;
-}) {
-  const fieldLabel = ACTION_FIELDS[action.field]?.label ?? action.field;
-  const template = action.options?.template;
-
-  if (template !== undefined) {
-    return (
-      <div className="flex items-center gap-1 flex-wrap">
-        {/* Field — violet */}
-        <span className="rounded px-1 py-0.5 text-[11px] font-semibold bg-violet-50 text-violet-700 dark:bg-violet-950/30 dark:text-violet-400">
-          {fieldLabel}
-        </span>
-        {/* Arrow */}
-        <span className="text-[11px] text-muted-foreground">→</span>
-        {/* Template — amber chip with monospace text */}
-        <span className="rounded px-1 py-0.5 text-[11px] font-mono bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-400">
-          {template || <span className="italic opacity-60">empty template</span>}
-        </span>
-      </div>
-    );
-  }
-
-  const valueLabels = resolveValues(action.field, action.value, maps, ACTION_FIELDS);
-
-  return (
-    <div className="flex items-center gap-1 flex-wrap">
-      {/* Field — violet */}
-      <span className="rounded px-1 py-0.5 text-[11px] font-semibold bg-violet-50 text-violet-700 dark:bg-violet-950/30 dark:text-violet-400">
-        {fieldLabel}
-      </span>
-      {/* Arrow */}
-      <span className="text-[11px] text-muted-foreground">→</span>
-      {/* Values — emerald chips */}
-      {valueLabels.map((label, i) => (
-        <span key={i} className="rounded px-1 py-0.5 text-[11px] font-medium bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-400">
-          {label}
-          {i < valueLabels.length - 1 && <span className="text-emerald-500 ml-0.5">,</span>}
-        </span>
-      ))}
-    </div>
-  );
-}
+import { ConditionChip, ActionChip } from "./RuleChips";
+import type { StagedEntity } from "@/types/staged";
+import type { Rule } from "@/types/entities";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -177,6 +49,7 @@ export function RulesTable({ onEdit, onMerge, payeeId, categoryId }: Props) {
   const payees = useStagedStore((s) => s.payees);
   const categories = useStagedStore((s) => s.categories);
   const accounts = useStagedStore((s) => s.accounts);
+  const categoryGroups = useStagedStore((s) => s.categoryGroups);
   const stageDelete = useStagedStore((s) => s.stageDelete);
   const stageNew = useStagedStore((s) => s.stageNew);
   const revertEntity = useStagedStore((s) => s.revertEntity);
@@ -191,8 +64,8 @@ export function RulesTable({ onEdit, onMerge, payeeId, categoryId }: Props) {
   const { selectedIds, toggleSelect, toggleSelectAll: _toggleSelectAll, clearSelection } = useTableSelection();
 
   const entityMaps = useMemo<EntityMaps>(
-    () => ({ payees, categories, accounts }),
-    [payees, categories, accounts]
+    () => ({ payees, categories, accounts, categoryGroups }),
+    [payees, categories, accounts, categoryGroups]
   );
 
   // Pre-compute previews once when rules or entity maps change so the search

@@ -24,7 +24,7 @@ function applyEntityIdMap(
 ): ConditionOrAction[] {
   if (Object.keys(idMap).length === 0) return parts;
   return parts.map((p) => {
-    if (!ENTITY_REF_FIELDS.has(p.field)) return p;
+    if (!p.field || !ENTITY_REF_FIELDS.has(p.field)) return p;
     const v = p.value;
     if (typeof v === "string" && idMap[v]) return { ...p, value: idMap[v] };
     if (Array.isArray(v)) {
@@ -42,7 +42,7 @@ function applyEntityIdMap(
  */
 function coerceParts(parts: ConditionOrAction[]): ConditionOrAction[] {
   return parts.map((p) => {
-    const def = CONDITION_FIELDS[p.field] ?? ACTION_FIELDS[p.field];
+    const def = CONDITION_FIELDS[p.field ?? ""] ?? ACTION_FIELDS[p.field ?? ""];
     if (def?.type !== "number") return p;
 
     let value: ConditionOrAction["value"] = p.value;

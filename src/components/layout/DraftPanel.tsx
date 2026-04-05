@@ -8,7 +8,7 @@ import { CONDITION_FIELDS, ACTION_FIELDS } from "@/features/rules/utils/ruleFiel
 import { rulePreview, valueToString } from "@/features/rules/utils/rulePreview";
 import type { BaseEntity, Rule, ConditionOrAction } from "@/types/entities";
 import type { StagedEntity, StagedMap } from "@/types/staged";
-import type { Payee, Category, Account } from "@/types/entities";
+import type { Payee, Category, Account, CategoryGroup } from "@/types/entities";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
@@ -29,6 +29,7 @@ type EntityMaps = {
   payees: StagedMap<Payee>;
   categories: StagedMap<Category>;
   accounts: StagedMap<Account>;
+  categoryGroups: StagedMap<CategoryGroup>;
 };
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -75,9 +76,10 @@ function resolvePartValue(
   let resolved = scalar;
   if (def.entity && scalar) {
     resolved =
-      def.entity === "payee"    ? (maps.payees[scalar]?.entity.name    ?? scalar) :
-      def.entity === "category" ? (maps.categories[scalar]?.entity.name ?? scalar) :
-      def.entity === "account"  ? (maps.accounts[scalar]?.entity.name  ?? scalar) :
+      def.entity === "payee"         ? (maps.payees[scalar]?.entity.name         ?? scalar) :
+      def.entity === "category"      ? (maps.categories[scalar]?.entity.name     ?? scalar) :
+      def.entity === "account"       ? (maps.accounts[scalar]?.entity.name       ?? scalar) :
+      def.entity === "categoryGroup" ? (maps.categoryGroups[scalar]?.entity.name ?? scalar) :
       scalar;
   }
 
@@ -88,12 +90,17 @@ function getRuleLabel(rule: Rule, maps: EntityMaps): LabelResult {
   const cond = rule.conditions[0];
   const act  = rule.actions[0];
 
+  const condField = cond?.field ?? "";
+  const actField  = act?.field  ?? "";
+
   const condPart = cond
-    ? `${CONDITION_FIELDS[cond.field]?.label ?? cond.field} ${cond.op} ${resolvePartValue(cond.field, cond.value, CONDITION_FIELDS, maps)}`
+    ? `${CONDITION_FIELDS[condField]?.label ?? condField} ${cond.op} ${resolvePartValue(condField, cond.value, CONDITION_FIELDS, maps)}`
     : "(no conditions)";
 
   const actPart = act
-    ? `${ACTION_FIELDS[act.field]?.label ?? act.field}: ${resolvePartValue(act.field, act.value, ACTION_FIELDS, maps)}`
+    ? act.op === "delete-transaction"
+      ? "delete transaction"
+      : `${ACTION_FIELDS[actField]?.label ?? actField}: ${resolvePartValue(actField, act.value, ACTION_FIELDS, maps)}`
     : "(no actions)";
 
   const hasMore = rule.conditions.length > 1 || rule.actions.length > 1;
@@ -266,8 +273,8 @@ export function DraftPanel() {
   };
 
   const entityMaps: EntityMaps = useMemo(
-    () => ({ payees, categories, accounts }),
-    [payees, categories, accounts]
+    () => ({ payees, categories, accounts, categoryGroups }),
+    [payees, categories, accounts, categoryGroups]
   );
 
   const ruleMergeDepIds = useMemo(() => ({

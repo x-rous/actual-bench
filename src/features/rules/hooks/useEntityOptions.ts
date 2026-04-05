@@ -14,7 +14,7 @@ import type { ComboboxOption } from "@/components/ui/combobox";
  *
  * For "payee" and "account", returns a flat alphabetically sorted list.
  */
-export function useEntityOptions(entity: "payee" | "category" | "account"): ComboboxOption[] {
+export function useEntityOptions(entity: "payee" | "category" | "account" | "categoryGroup"): ComboboxOption[] {
   const payees = useStagedStore((s) => s.payees);
   const categories = useStagedStore((s) => s.categories);
   const accounts = useStagedStore((s) => s.accounts);
@@ -47,6 +47,13 @@ export function useEntityOptions(entity: "payee" | "category" | "account"): Comb
     }
 
     return result;
+  }
+
+  if (entity === "categoryGroup") {
+    return Object.values(categoryGroups)
+      .filter((s) => !s.isDeleted)
+      .map((s) => ({ id: s.entity.id, name: s.entity.name, hidden: s.entity.hidden }))
+      .sort((a, b) => a.name.localeCompare(b.name));
   }
 
   const map = entity === "payee" ? payees : accounts;

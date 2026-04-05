@@ -1,19 +1,15 @@
 import { csvField } from "@/lib/csv";
 import { valueToString } from "../utils/rulePreview";
-import type { Rule, ConditionOrAction, Payee, Category, Account } from "@/types/entities";
+import type { EntityMaps } from "../utils/rulePreview";
+import type { Rule, ConditionOrAction } from "@/types/entities";
 import type { StagedMap } from "@/types/staged";
-
-type EntityMaps = {
-  payees: StagedMap<Payee>;
-  categories: StagedMap<Category>;
-  accounts: StagedMap<Account>;
-};
 
 function resolveIdToName(id: string, maps: EntityMaps): string {
   return (
     maps.payees[id]?.entity.name ??
     maps.categories[id]?.entity.name ??
     maps.accounts[id]?.entity.name ??
+    maps.categoryGroups[id]?.entity.name ??
     id
   );
 }
@@ -23,6 +19,7 @@ function exportDisplayValue(
   maps: EntityMaps
 ): string {
   const { value, type } = coa;
+  if (typeof value === "boolean") return value ? "true" : "false";
   if (Array.isArray(value)) {
     return value
       .filter(Boolean)
@@ -53,7 +50,7 @@ export function exportRulesToCsv(stagedRules: StagedMap<Rule>, maps: EntityMaps)
         isFirstRow ? csvField(rule.stage) : "",
         isFirstRow ? csvField(rule.conditionsOp) : "",
         "condition",
-        csvField(cond.field),
+        csvField(cond.field ?? ""),
         csvField(cond.op),
         csvField(exportDisplayValue(cond, maps)),
       ].join(","));
@@ -62,14 +59,20 @@ export function exportRulesToCsv(stagedRules: StagedMap<Rule>, maps: EntityMaps)
 
     for (const act of rule.actions) {
       const isTemplate = act.options !== undefined && "template" in act.options;
+      const isDeleteTxn = act.op === "delete-transaction";
+
       lines.push([
         csvField(rule.id),
         isFirstRow ? csvField(rule.stage) : "",
         isFirstRow ? csvField(rule.conditionsOp) : "",
         "action",
-        csvField(act.field),
+        csvField(act.field ?? ""),
         isTemplate ? "set-template" : csvField(act.op),
-        isTemplate ? csvField(act.options!.template ?? "") : csvField(exportDisplayValue(act, maps)),
+        isTemplate
+          ? csvField(act.options!.template ?? "")
+          : isDeleteTxn
+          ? ""
+          : csvField(exportDisplayValue(act, maps)),
       ].join(","));
       isFirstRow = false;
     }

@@ -5,18 +5,20 @@
 
 import type { Rule, ConditionOrAction, AmountRange } from "@/types/entities";
 import type { StagedMap } from "@/types/staged";
-import type { Payee, Category, Account } from "@/types/entities";
-import { CONDITION_FIELDS, ACTION_FIELDS } from "./ruleFields";
+import type { Payee, Category, Account, CategoryGroup } from "@/types/entities";
+import { CONDITION_FIELDS, ACTION_FIELDS, ACTION_OPS } from "./ruleFields";
 
-type EntityMaps = {
+export type EntityMaps = {
   payees: StagedMap<Payee>;
   categories: StagedMap<Category>;
   accounts: StagedMap<Account>;
+  categoryGroups: StagedMap<CategoryGroup>;
 };
 
 /** Safely convert any condition/action value to a plain string for display. */
-export function valueToString(value: string | number | string[] | AmountRange | null | undefined): string {
+export function valueToString(value: string | number | boolean | null | string[] | AmountRange | undefined): string {
   if (value == null) return "";
+  if (typeof value === "boolean") return value ? "true" : "false";
   if (typeof value === "number") return String(value);
   if (Array.isArray(value)) return value.filter(Boolean).join(", ");
   if (typeof value === "object") {
@@ -28,7 +30,7 @@ export function valueToString(value: string | number | string[] | AmountRange | 
 
 function resolveValue(
   field: string,
-  value: string | number | string[] | AmountRange,
+  value: ConditionOrAction["value"],
   maps: EntityMaps,
   fieldDefs: Record<string, { entity?: string }>
 ): string {
@@ -47,21 +49,36 @@ function resolveValue(
     const a = maps.accounts[val];
     return a ? a.entity.name : val;
   }
+  if (def?.entity === "categoryGroup") {
+    const cg = maps.categoryGroups[val];
+    return cg ? cg.entity.name : val;
+  }
   return val;
 }
 
 function summariseCondition(c: ConditionOrAction, maps: EntityMaps): string {
-  const fieldLabel = CONDITION_FIELDS[c.field]?.label ?? c.field;
-  const valueLabel = resolveValue(c.field, c.value, maps, CONDITION_FIELDS);
+  const field = c.field ?? "";
+  const fieldLabel = CONDITION_FIELDS[field]?.label ?? field;
+  const valueLabel = resolveValue(field, c.value, maps, CONDITION_FIELDS);
   return `${fieldLabel} ${c.op} "${valueLabel}"`;
 }
 
 function summariseAction(a: ConditionOrAction, maps: EntityMaps): string {
-  const fieldLabel = ACTION_FIELDS[a.field]?.label ?? a.field;
+  if (a.op === "delete-transaction") return "delete transaction";
+
+  if (a.op === "prepend-notes" || a.op === "append-notes") {
+    const opLabel = ACTION_OPS[a.op]?.label ?? a.op;
+    return `${opLabel} → "${valueToString(a.value)}"`;
+  }
+
+  const field = a.field ?? "";
+  const fieldLabel = ACTION_FIELDS[field]?.label ?? field;
+
   if (a.options !== undefined && "template" in a.options) {
     return `set ${fieldLabel} → template: ${a.options.template}`;
   }
-  const valueLabel = resolveValue(a.field, a.value, maps, ACTION_FIELDS);
+
+  const valueLabel = resolveValue(field, a.value, maps, ACTION_FIELDS);
   return `set ${fieldLabel} → "${valueLabel}"`;
 }
 
