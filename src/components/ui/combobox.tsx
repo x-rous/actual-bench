@@ -48,7 +48,7 @@ export function useComboboxState(): ComboboxStateResult {
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-export type ComboboxOption = { id: string; name: string; isGroupHeader?: true };
+export type ComboboxOption = { id: string; name: string; isGroupHeader?: true; hidden?: boolean };
 
 /**
  * Filters a grouped options list (containing group headers + selectable items)
@@ -157,7 +157,10 @@ export function SearchableCombobox({
                 o.isGroupHeader ? (
                   <li
                     key={`group-${o.id}`}
-                    className="px-2 pt-2 pb-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground select-none pointer-events-none"
+                    className={cn(
+                      "px-2 pt-2 pb-0.5 text-[10px] font-semibold uppercase tracking-wide select-none pointer-events-none",
+                      o.hidden ? "text-muted-foreground/60" : "text-muted-foreground"
+                    )}
                   >
                     {o.name}
                   </li>
@@ -166,7 +169,10 @@ export function SearchableCombobox({
                     <button
                       type="button"
                       onClick={() => select(o.id)}
-                      className="flex w-full items-center gap-2 pl-4 pr-2 py-1.5 text-xs text-foreground hover:bg-accent hover:text-accent-foreground"
+                      className={cn(
+                        "flex w-full items-center gap-2 pl-4 pr-2 py-1.5 text-xs hover:bg-accent hover:text-accent-foreground",
+                        o.hidden ? "text-foreground/60" : "text-foreground"
+                      )}
                     >
                       <Check
                         className={cn("h-3 w-3 shrink-0", value === o.id ? "opacity-100" : "opacity-0")}
@@ -264,7 +270,10 @@ export function MultiSearchableCombobox({
                 o.isGroupHeader ? (
                   <li
                     key={`group-${o.id}`}
-                    className="px-2 pt-2 pb-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground select-none pointer-events-none"
+                    className={cn(
+                      "px-2 pt-2 pb-0.5 text-[10px] font-semibold uppercase tracking-wide select-none pointer-events-none",
+                      o.hidden ? "text-muted-foreground/60" : "text-muted-foreground"
+                    )}
                   >
                     {o.name}
                   </li>
@@ -273,7 +282,10 @@ export function MultiSearchableCombobox({
                     <button
                       type="button"
                       onClick={() => toggle(o.id)}
-                      className="flex w-full items-center gap-2 pl-4 pr-2 py-1.5 text-xs text-foreground hover:bg-accent hover:text-accent-foreground"
+                      className={cn(
+                        "flex w-full items-center gap-2 pl-4 pr-2 py-1.5 text-xs hover:bg-accent hover:text-accent-foreground",
+                        o.hidden ? "text-foreground/60" : "text-foreground"
+                      )}
                     >
                       <Check
                         className={cn(
