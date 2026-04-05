@@ -1,12 +1,13 @@
 import { importRulesFromCsv } from "./rulesCsvImport";
 import type { LookupMaps } from "./rulesCsvImport";
 
-const emptyMaps: LookupMaps = { payees: {}, categories: {}, accounts: {} };
+const emptyMaps: LookupMaps = { payees: {}, categories: {}, accounts: {}, categoryGroups: {} };
 
 function makeMaps(
   payees: { id: string; name: string }[] = [],
   categories: { id: string; name: string }[] = [],
-  accounts: { id: string; name: string }[] = []
+  accounts: { id: string; name: string }[] = [],
+  categoryGroups: { id: string; name: string }[] = []
 ): LookupMaps {
   return {
     payees: Object.fromEntries(
@@ -17,6 +18,9 @@ function makeMaps(
     ),
     accounts: Object.fromEntries(
       accounts.map((a) => [a.id, { entity: a, isDeleted: false }])
+    ),
+    categoryGroups: Object.fromEntries(
+      categoryGroups.map((g) => [g.id, { entity: g, isDeleted: false }])
     ),
   };
 }
@@ -233,5 +237,66 @@ describe("importRulesFromCsv", () => {
     expect(result.rules[0].id).toMatch(
       /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
     );
+  });
+
+  it("imports a delete-transaction action (no field)", () => {
+    const csv = [
+      "rule_id,stage,conditions_op,row_type,field,op,value",
+      "r1,default,and,condition,notes,contains,junk",
+      "r1,,,action,,delete-transaction,",
+    ].join("\n");
+
+    const result = importRulesFromCsv(csv, emptyMaps);
+
+    expect("error" in result).toBe(false);
+    if ("error" in result) return;
+    expect(result.rules[0].actions).toHaveLength(1);
+    expect(result.rules[0].actions[0].op).toBe("delete-transaction");
+    expect(result.rules[0].actions[0].field).toBeUndefined();
+  });
+
+  it("imports prepend-notes and append-notes actions", () => {
+    const csv = [
+      "rule_id,stage,conditions_op,row_type,field,op,value",
+      "r1,default,and,action,notes,prepend-notes,prefix:",
+      "r1,,,action,notes,append-notes,:suffix",
+    ].join("\n");
+
+    const result = importRulesFromCsv(csv, emptyMaps);
+
+    expect("error" in result).toBe(false);
+    if ("error" in result) return;
+    expect(result.rules[0].actions).toHaveLength(2);
+    expect(result.rules[0].actions[0]).toMatchObject({ op: "prepend-notes", value: "prefix:" });
+    expect(result.rules[0].actions[1]).toMatchObject({ op: "append-notes", value: ":suffix" });
+  });
+
+  it("coerces cleared field value to boolean on import", () => {
+    const csv = [
+      "rule_id,stage,conditions_op,row_type,field,op,value",
+      "r1,default,and,action,cleared,set,true",
+      "r2,default,and,action,cleared,set,false",
+    ].join("\n");
+
+    const result = importRulesFromCsv(csv, emptyMaps);
+
+    expect("error" in result).toBe(false);
+    if ("error" in result) return;
+    expect(result.rules[0].actions[0].value).toBe(true);
+    expect(result.rules[1].actions[0].value).toBe(false);
+  });
+
+  it("resolves category_group names to IDs", () => {
+    const maps = makeMaps([], [], [], [{ id: "grp-1", name: "Food & Dining" }]);
+    const csv = [
+      "rule_id,stage,conditions_op,row_type,field,op,value",
+      "r1,default,and,condition,category_group,is,Food & Dining",
+    ].join("\n");
+
+    const result = importRulesFromCsv(csv, maps);
+
+    expect("error" in result).toBe(false);
+    if ("error" in result) return;
+    expect(result.rules[0].conditions[0].value).toBe("grp-1");
   });
 });

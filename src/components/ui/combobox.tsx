@@ -48,7 +48,46 @@ export function useComboboxState(): ComboboxStateResult {
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-export type ComboboxOption = { id: string; name: string };
+export type ComboboxOption = { id: string; name: string; isGroupHeader?: true; hidden?: boolean };
+
+/**
+ * Filters a grouped options list (containing group headers + selectable items)
+ * against a search term:
+ * - A match on a group name includes all its children.
+ * - A match on an option name includes that option (plus its nearest preceding group header).
+ * - Groups with no matching children are hidden.
+ * - If search is empty, returns the full list unchanged.
+ */
+export function filterGroupedOptions(
+  options: ComboboxOption[],
+  search: string
+): ComboboxOption[] {
+  const term = search.trim().toLowerCase();
+  if (!term) return options;
+
+  const result: ComboboxOption[] = [];
+  let groupMatches = false;
+  let pendingGroup: ComboboxOption | null = null;
+
+  for (const opt of options) {
+    if (opt.isGroupHeader) {
+      groupMatches = opt.name.toLowerCase().includes(term);
+      pendingGroup = opt;
+      continue;
+    }
+    if (groupMatches) {
+      // Group name matched — include all children
+      if (pendingGroup) { result.push(pendingGroup); pendingGroup = null; }
+      result.push(opt);
+    } else if (opt.name.toLowerCase().includes(term)) {
+      // Child matched — include it with its nearest group header
+      if (pendingGroup) { result.push(pendingGroup); pendingGroup = null; }
+      result.push(opt);
+    }
+  }
+
+  return result;
+}
 
 // ─── SearchableCombobox (single-select) ───────────────────────────────────────
 
@@ -66,10 +105,8 @@ export function SearchableCombobox({
   const { open, openDropdown, closeDropdown, search, setSearch, containerRef, searchRef } =
     useComboboxState();
 
-  const selectedLabel = options.find((o) => o.id === value)?.name ?? "";
-  const filtered = search.trim()
-    ? options.filter((o) => o.name.toLowerCase().includes(search.toLowerCase()))
-    : options;
+  const selectedLabel = options.find((o) => !o.isGroupHeader && o.id === value)?.name ?? "";
+  const filtered = filterGroupedOptions(options, search);
 
   function select(id: string) {
     onChange(id);
@@ -113,23 +150,38 @@ export function SearchableCombobox({
                 — none —
               </button>
             </li>
-            {filtered.length === 0 ? (
+            {filtered.filter((o) => !o.isGroupHeader).length === 0 ? (
               <li className="px-3 py-2 text-xs text-muted-foreground italic">No results</li>
             ) : (
-              filtered.map((o) => (
-                <li key={o.id}>
-                  <button
-                    type="button"
-                    onClick={() => select(o.id)}
-                    className="flex w-full items-center gap-2 px-2 py-1.5 text-xs text-foreground hover:bg-accent hover:text-accent-foreground"
+              filtered.map((o) =>
+                o.isGroupHeader ? (
+                  <li
+                    key={`group-${o.id}`}
+                    className={cn(
+                      "px-2 pt-2 pb-0.5 text-[10px] font-semibold uppercase tracking-wide select-none pointer-events-none",
+                      o.hidden ? "text-muted-foreground/60" : "text-muted-foreground"
+                    )}
                   >
-                    <Check
-                      className={cn("h-3 w-3 shrink-0", value === o.id ? "opacity-100" : "opacity-0")}
-                    />
-                    <span className="truncate">{o.name}</span>
-                  </button>
-                </li>
-              ))
+                    {o.name}
+                  </li>
+                ) : (
+                  <li key={o.id}>
+                    <button
+                      type="button"
+                      onClick={() => select(o.id)}
+                      className={cn(
+                        "flex w-full items-center gap-2 pl-4 pr-2 py-1.5 text-xs hover:bg-accent hover:text-accent-foreground",
+                        o.hidden ? "text-foreground/60" : "text-foreground"
+                      )}
+                    >
+                      <Check
+                        className={cn("h-3 w-3 shrink-0", value === o.id ? "opacity-100" : "opacity-0")}
+                      />
+                      <span className="truncate">{o.name}</span>
+                    </button>
+                  </li>
+                )
+              )
             )}
           </ul>
         </div>
@@ -154,11 +206,9 @@ export function MultiSearchableCombobox({
   const { open, openDropdown, closeDropdown, search, setSearch, containerRef, searchRef } =
     useComboboxState();
 
-  const filtered = search.trim()
-    ? options.filter((o) => o.name.toLowerCase().includes(search.toLowerCase()))
-    : options;
+  const filtered = filterGroupedOptions(options, search);
 
-  const selectedOptions = options.filter((o) => values.includes(o.id));
+  const selectedOptions = options.filter((o) => !o.isGroupHeader && values.includes(o.id));
 
   function toggle(id: string) {
     onChange(values.includes(id) ? values.filter((v) => v !== id) : [...values, id]);
@@ -184,15 +234,15 @@ export function MultiSearchableCombobox({
           selectedOptions.map((o) => (
             <span
               key={o.id}
-              className="flex items-center gap-0.5 rounded bg-accent px-1.5 py-0.5 text-[11px] font-medium text-accent-foreground"
+              className="flex items-center gap-1 rounded bg-accent px-2 py-1 text-xs font-medium text-accent-foreground"
             >
               {o.name}
               <button
                 type="button"
                 onClick={(e) => remove(o.id, e)}
-                className="ml-0.5 text-muted-foreground hover:text-foreground"
+                className="text-muted-foreground hover:text-foreground"
               >
-                <X className="h-2.5 w-2.5" />
+                <X className="h-3 w-3" />
               </button>
             </span>
           ))
@@ -213,26 +263,41 @@ export function MultiSearchableCombobox({
             />
           </div>
           <ul className="max-h-48 overflow-y-auto py-1">
-            {filtered.length === 0 ? (
+            {filtered.filter((o) => !o.isGroupHeader).length === 0 ? (
               <li className="px-3 py-2 text-xs text-muted-foreground italic">No results</li>
             ) : (
-              filtered.map((o) => (
-                <li key={o.id}>
-                  <button
-                    type="button"
-                    onClick={() => toggle(o.id)}
-                    className="flex w-full items-center gap-2 px-2 py-1.5 text-xs text-foreground hover:bg-accent hover:text-accent-foreground"
+              filtered.map((o) =>
+                o.isGroupHeader ? (
+                  <li
+                    key={`group-${o.id}`}
+                    className={cn(
+                      "px-2 pt-2 pb-0.5 text-[10px] font-semibold uppercase tracking-wide select-none pointer-events-none",
+                      o.hidden ? "text-muted-foreground/60" : "text-muted-foreground"
+                    )}
                   >
-                    <Check
+                    {o.name}
+                  </li>
+                ) : (
+                  <li key={o.id}>
+                    <button
+                      type="button"
+                      onClick={() => toggle(o.id)}
                       className={cn(
-                        "h-3 w-3 shrink-0",
-                        values.includes(o.id) ? "opacity-100" : "opacity-0"
+                        "flex w-full items-center gap-2 pl-4 pr-2 py-1.5 text-xs hover:bg-accent hover:text-accent-foreground",
+                        o.hidden ? "text-foreground/60" : "text-foreground"
                       )}
-                    />
-                    <span className="truncate">{o.name}</span>
-                  </button>
-                </li>
-              ))
+                    >
+                      <Check
+                        className={cn(
+                          "h-3 w-3 shrink-0",
+                          values.includes(o.id) ? "opacity-100" : "opacity-0"
+                        )}
+                      />
+                      <span className="truncate">{o.name}</span>
+                    </button>
+                  </li>
+                )
+              )
             )}
           </ul>
         </div>

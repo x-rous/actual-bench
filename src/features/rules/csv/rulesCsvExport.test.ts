@@ -16,7 +16,7 @@ function staged(rule: Rule, overrides: { isDeleted?: boolean } = {}): StagedMap<
   };
 }
 
-const emptyMaps = { payees: {}, categories: {}, accounts: {} };
+const emptyMaps = { payees: {}, categories: {}, accounts: {}, categoryGroups: {} };
 
 function makeRule(id: string, overrides: Partial<Rule> = {}): Rule {
   return {
@@ -89,6 +89,7 @@ describe("exportRulesToCsv", () => {
       payees: {},
       categories: { "cat-1": { entity: cat, original: null, isNew: false, isUpdated: false, isDeleted: false, validationErrors: {} } },
       accounts: {},
+      categoryGroups: {},
     };
     const rule = makeRule("r1", {
       actions: [{ field: "category", op: "set", value: "cat-1", type: "id" }],
@@ -106,6 +107,7 @@ describe("exportRulesToCsv", () => {
       },
       categories: {},
       accounts: {},
+      categoryGroups: {},
     };
     const rule = makeRule("r1", {
       conditions: [{ field: "payee", op: "oneOf", value: ["p1", "p2"], type: "id" }],
@@ -150,6 +152,22 @@ describe("exportRulesToCsv", () => {
     expect(imported.rules[0].conditionsOp).toBe("or");
     expect(imported.rules[0].conditions[0]).toMatchObject({ field: "notes", op: "contains", value: "grocery" });
     expect(imported.rules[0].actions[0]).toMatchObject({ field: "cleared", op: "set" });
+  });
+
+  it("exports delete-transaction action with empty field and value", () => {
+    const rule = makeRule("r1", {
+      actions: [{ op: "delete-transaction", value: "" }],
+    });
+    const result = exportRulesToCsv(staged(rule), emptyMaps);
+    expect(result).toContain("delete-transaction");
+  });
+
+  it("exports boolean cleared value as 'true' or 'false' string", () => {
+    const rule = makeRule("r1", {
+      actions: [{ field: "cleared", op: "set", value: true, type: "boolean" }],
+    });
+    const result = exportRulesToCsv(staged(rule), emptyMaps);
+    expect(result).toContain("true");
   });
 
   it("round-trips: template action survives export → import", () => {

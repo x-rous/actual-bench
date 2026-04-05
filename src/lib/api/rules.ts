@@ -52,7 +52,7 @@ function normalizeRule(raw: ApiRule): Rule {
     stage: stageFromApi(raw.stage),
     conditionsOp: raw.conditionsOp ?? "and",
     conditions: normalizeAmountParts(raw.conditions ?? []),
-    actions: raw.actions ?? [],
+    actions: normalizeAmountParts(raw.actions ?? []),
   };
 }
 

@@ -104,7 +104,6 @@ Read these **before** implementing anything in the relevant area.
 | `agents/requirements/` | Before making architectural decisions |
 | `CONTRIBUTING.md` | Before touching git, workflows, or the release process |
 | `FEATURES.md` | Before and after shipping a feature — must be updated |
-| `CHANGELOG.md` | Redirect only — points to GitHub Releases; do not add entries |
 
 ---
 

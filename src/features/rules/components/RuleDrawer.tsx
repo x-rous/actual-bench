@@ -12,8 +12,8 @@ import {
 } from "@/components/ui/sheet";
 import { useStagedStore } from "@/store/staged";
 import { generateId } from "@/lib/uuid";
-import { selectCls } from "./ConditionRow";
-import { ConditionRow, ActionRow } from "./ConditionRow";
+import { selectCls, ConditionRow } from "./ConditionRow";
+import { ActionRow } from "./ActionRow";
 import { STAGE_OPTIONS, CONDITIONS_OP_OPTIONS } from "../utils/ruleFields";
 import type { ConditionOrAction, RuleStage, ConditionsOp } from "@/types/entities";
 

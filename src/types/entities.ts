@@ -58,9 +58,10 @@ export type ConditionsOp = "and" | "or";
 export type AmountRange = { num1: number; num2: number };
 
 export type ConditionOrAction = {
-  field: string;
+  /** Absent for `delete-transaction` actions. */
+  field?: string;
   op: string;
-  value: string | number | string[] | AmountRange;
+  value: string | number | boolean | null | string[] | AmountRange;
   type?: string;
   /** Present on actions when the user has enabled template (Handlebars) mode. */
   options?: { template?: string };

@@ -8,7 +8,7 @@ export function EntityCombobox({
   value,
   onChange,
 }: {
-  entity: "payee" | "category" | "account";
+  entity: "payee" | "category" | "account" | "categoryGroup";
   value: string;
   onChange: (v: string) => void;
 }) {
@@ -18,6 +18,8 @@ export function EntityCombobox({
       ? "Select payee…"
       : entity === "category"
       ? "Select category…"
+      : entity === "categoryGroup"
+      ? "Select category group…"
       : "Select account…";
   return (
     <SearchableCombobox options={options} value={value} onChange={onChange} placeholder={placeholder} />
@@ -29,7 +31,7 @@ export function MultiEntityCombobox({
   values,
   onChange,
 }: {
-  entity: "payee" | "category" | "account";
+  entity: "payee" | "category" | "account" | "categoryGroup";
   values: string[];
   onChange: (v: string[]) => void;
 }) {
@@ -39,6 +41,8 @@ export function MultiEntityCombobox({
       ? "Select payees…"
       : entity === "category"
       ? "Select categories…"
+      : entity === "categoryGroup"
+      ? "Select category groups…"
       : "Select accounts…";
   return (
     <MultiSearchableCombobox

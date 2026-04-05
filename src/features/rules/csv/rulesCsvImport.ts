@@ -15,6 +15,7 @@ export type LookupMaps = {
   payees: NamedEntityMap;
   categories: NamedEntityMap;
   accounts: NamedEntityMap;
+  categoryGroups: NamedEntityMap;
 };
 
 export type RulesImportResult = {
@@ -44,8 +45,15 @@ function resolveScalarValue(
   fieldDefs: typeof CONDITION_FIELDS | typeof ACTION_FIELDS,
   createdPayees: Map<string, string>,
   newPayees: Payee[]
-): { value: string; type: string } {
+): { value: ConditionOrAction["value"]; type: string } {
   const def = fieldDefs[field];
+
+  // Boolean fields (e.g. cleared)
+  if (def?.type === "boolean") {
+    const boolVal = rawValue.trim().toLowerCase() === "true";
+    return { value: boolVal, type: "boolean" };
+  }
+
   if (!def || def.type !== "id") return { value: rawValue, type: def?.type ?? "string" };
 
   if (def.entity === "payee") {
@@ -70,6 +78,11 @@ function resolveScalarValue(
     return { value: existing ?? rawValue, type: existing ? "id" : "string" };
   }
 
+  if (def.entity === "categoryGroup") {
+    const existing = findIdByName(maps.categoryGroups, rawValue);
+    return { value: existing ?? rawValue, type: existing ? "id" : "string" };
+  }
+
   return { value: rawValue, type: "id" };
 }
 
@@ -86,7 +99,7 @@ function resolveValue(
   if (isMulti && rawValue.includes("|")) {
     const parts = rawValue.split("|").map((p) => p.trim()).filter(Boolean);
     const resolved = parts.map(
-      (p) => resolveScalarValue(field, p, maps, fieldDefs, createdPayees, newPayees).value
+      (p) => resolveScalarValue(field, p, maps, fieldDefs, createdPayees, newPayees).value as string
     );
     return { value: resolved, type: "id" };
   }
@@ -164,7 +177,12 @@ export function importRulesFromCsv(
     if (stage && !group.stage)               group.stage        = stage;
     if (conditionsOp && !group.conditionsOp) group.conditionsOp = conditionsOp;
 
-    if ((rowType === "condition" || rowType === "action") && field) {
+    // Accept: conditions with a field, or actions with a field or delete-transaction op
+    const isValidRow =
+      (rowType === "condition" && !!field) ||
+      (rowType === "action" && (!!field || op === "delete-transaction"));
+
+    if (isValidRow) {
       group.rows.push({ rowType, field, op, rawValue });
     }
   }
@@ -189,6 +207,10 @@ export function importRulesFromCsv(
       } else {
         if (op === "set-template") {
           actions.push({ field, op: "set", value: "", type: "string", options: { template: rawValue } });
+        } else if (op === "delete-transaction") {
+          actions.push({ op: "delete-transaction", value: "" });
+        } else if (op === "prepend-notes" || op === "append-notes") {
+          actions.push({ field: field || "notes", op, value: rawValue, type: "string" });
         } else {
           const r = resolveValue(field, "set", rawValue, ACTION_FIELDS, maps, createdPayees, newPayees);
           actions.push({ field, op: "set", value: r.value, type: r.type });

@@ -27,12 +27,13 @@ export function RulesView() {
 
   const importInputRef = useRef<HTMLInputElement>(null);
 
-  const stagedRules      = useStagedStore((s) => s.rules);
-  const stagedPayees     = useStagedStore((s) => s.payees);
-  const stagedCategories = useStagedStore((s) => s.categories);
-  const stagedAccounts   = useStagedStore((s) => s.accounts);
-  const pushUndo         = useStagedStore((s) => s.pushUndo);
-  const stageNew         = useStagedStore((s) => s.stageNew);
+  const stagedRules          = useStagedStore((s) => s.rules);
+  const stagedPayees         = useStagedStore((s) => s.payees);
+  const stagedCategories     = useStagedStore((s) => s.categories);
+  const stagedAccounts       = useStagedStore((s) => s.accounts);
+  const stagedCategoryGroups = useStagedStore((s) => s.categoryGroups);
+  const pushUndo             = useStagedStore((s) => s.pushUndo);
+  const stageNew             = useStagedStore((s) => s.stageNew);
 
   const [drawerOpen, setDrawerOpen]       = useState(false);
   const [editingRuleId, setEditingRuleId] = useState<string | null>(null);
@@ -56,9 +57,10 @@ export function RulesView() {
 
   function handleExportCsv() {
     const csv = exportRulesToCsv(stagedRules, {
-      payees:     stagedPayees,
-      categories: stagedCategories,
-      accounts:   stagedAccounts,
+      payees:         stagedPayees,
+      categories:     stagedCategories,
+      accounts:       stagedAccounts,
+      categoryGroups: stagedCategoryGroups,
     });
     const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8" });
     const url  = URL.createObjectURL(blob);
@@ -92,9 +94,10 @@ export function RulesView() {
       // Read fresh state at callback time for accurate name resolution
       const store = useStagedStore.getState();
       const result = importRulesFromCsv(text, {
-        payees:     store.payees,
-        categories: store.categories,
-        accounts:   store.accounts,
+        payees:         store.payees,
+        categories:     store.categories,
+        accounts:       store.accounts,
+        categoryGroups: store.categoryGroups,
       });
 
       if ("error" in result) {

@@ -1,13 +1,13 @@
 "use client";
 
 import { useCallback } from "react";
-import { Trash2, Braces } from "lucide-react";
+import { Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { TagInput } from "@/components/ui/tag-input";
 import { cn } from "@/lib/utils";
 import { EntityCombobox, MultiEntityCombobox } from "./EntityCombobox";
 import { valueToString } from "../utils/rulePreview";
-import { CONDITION_FIELDS, ACTION_FIELDS, ACTION_OPS, getConditionOps } from "../utils/ruleFields";
+import { CONDITION_FIELDS, getConditionOps } from "../utils/ruleFields";
 import type { ConditionOrAction, AmountRange } from "@/types/entities";
 
 // ─── Shared input/select styles ───────────────────────────────────────────────
@@ -27,8 +27,8 @@ function ConditionValueInput({
   condition: ConditionOrAction;
   onChange: (c: ConditionOrAction) => void;
 }) {
-  const fieldDef = CONDITION_FIELDS[condition.field];
-  const ops = getConditionOps(condition.field);
+  const fieldDef = CONDITION_FIELDS[condition.field ?? ""];
+  const ops = getConditionOps(condition.field ?? "");
   const opDef = ops[condition.op];
 
   if (!opDef || !opDef.hasValue) return null;
@@ -160,7 +160,7 @@ export function ConditionRow({
   onChange: (c: ConditionOrAction) => void;
   onDelete: () => void;
 }) {
-  const field = condition.field;
+  const field = condition.field ?? "";
   const ops = getConditionOps(field);
 
   const setField = useCallback(
@@ -239,113 +239,3 @@ export function ConditionRow({
   );
 }
 
-// ─── ActionRow ────────────────────────────────────────────────────────────────
-
-export function ActionRow({
-  action,
-  onChange,
-  onDelete,
-}: {
-  action: ConditionOrAction;
-  onChange: (a: ConditionOrAction) => void;
-  onDelete: () => void;
-}) {
-  const field = action.field;
-  const fieldDef = ACTION_FIELDS[field];
-  const isTemplate = action.options?.template !== undefined;
-
-  const setField = useCallback(
-    (newField: string) => {
-      const newDef = ACTION_FIELDS[newField];
-      onChange({ field: newField, op: "set", value: "", type: newDef?.type ?? "string" });
-    },
-    [onChange]
-  );
-
-  function toggleTemplateMode() {
-    if (isTemplate) {
-      // Switch back to text mode — restore template string as the plain value,
-      // then clear options so the action is a regular text action.
-      const restoredValue = action.options?.template ?? valueToString(action.value);
-      onChange({ ...action, value: restoredValue, options: undefined });
-    } else {
-      // Switch to template mode — pre-populate options.template from current value.
-      onChange({ ...action, options: { template: valueToString(action.value) } });
-    }
-  }
-
-  const value = valueToString(action.value);
-
-  return (
-    <div className="flex items-start gap-1.5">
-      <select
-        className={cn(selectCls, "w-32 shrink-0 mt-0.5")}
-        value={field ?? ""}
-        onChange={(e) => setField(e.target.value)}
-      >
-        {Object.entries(ACTION_FIELDS).map(([k, def]) => (
-          <option key={k} value={k}>
-            {def.label}
-          </option>
-        ))}
-      </select>
-
-      <span className="shrink-0 text-xs text-muted-foreground w-10 text-center mt-2">
-        {ACTION_OPS["set"]?.label ?? "set to"}
-      </span>
-
-      {isTemplate ? (
-        <div className="flex flex-1 flex-col gap-0.5">
-          <input
-            className={inputCls}
-            value={action.options?.template ?? ""}
-            onChange={(e) =>
-              onChange({ ...action, options: { template: e.target.value } })
-            }
-            placeholder="{{handlebars expression…}}"
-          />
-          <span className="text-[10px] text-muted-foreground">
-            Handlebars template — e.g. <code>{"{{regex imported_payee 'foo' 'bar'}}"}</code>
-          </span>
-        </div>
-      ) : fieldDef?.entity ? (
-        <EntityCombobox
-          entity={fieldDef.entity}
-          value={value}
-          onChange={(v) => onChange({ ...action, value: v })}
-        />
-      ) : (
-        <input
-          className={inputCls}
-          value={value}
-          onChange={(e) => onChange({ ...action, value: e.target.value })}
-          placeholder="value…"
-        />
-      )}
-
-      <Button
-        variant="ghost"
-        size="icon"
-        title={isTemplate ? "Switch to text mode" : "Switch to template mode"}
-        className={cn(
-          "h-7 w-7 shrink-0 mt-0.5",
-          isTemplate
-            ? "text-action hover:text-action-hover"
-            : "text-muted-foreground hover:text-foreground"
-        )}
-        onClick={toggleTemplateMode}
-      >
-        <Braces className="h-3.5 w-3.5" />
-      </Button>
-
-      <Button
-        variant="ghost"
-        size="icon"
-        className="h-7 w-7 shrink-0 text-muted-foreground hover:text-destructive mt-0.5"
-        onClick={onDelete}
-      >
-        <Trash2 className="h-3.5 w-3.5" />
-      </Button>
-    </div>
-  );
-}

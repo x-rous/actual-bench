@@ -1,7 +1,7 @@
 import { rulePreview, valueToString } from "./rulePreview";
 import type { Rule } from "@/types/entities";
 
-const emptyMaps = { payees: {}, categories: {}, accounts: {} };
+const emptyMaps = { payees: {}, categories: {}, accounts: {}, categoryGroups: {} };
 
 function makeRule(overrides: Partial<Rule> = {}): Rule {
   return {
@@ -85,6 +85,7 @@ describe("rulePreview", () => {
       },
       categories: {},
       accounts: {},
+      categoryGroups: {},
     };
     const rule = makeRule({
       conditions: [{ field: "payee", op: "is", value: "payee-1", type: "id" }],
