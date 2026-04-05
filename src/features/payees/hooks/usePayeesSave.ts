@@ -26,7 +26,10 @@ export function usePayeesSave() {
 
     setIsSaving(true);
 
-    const { toCreate, toUpdate, toDelete } = computeSaveOperations<Payee>(staged);
+    const ops = computeSaveOperations<Payee>(staged);
+    const toCreate = ops.toCreate.filter((p) => p.name.trim() !== "");
+    const toUpdate = ops.toUpdate.filter((p) => p.name.trim() !== "");
+    const { toDelete } = ops;
     const succeeded: SaveResult[] = [];
     const failed: SaveResult[] = [];
     const succeededCreateIds = new Set<string>();

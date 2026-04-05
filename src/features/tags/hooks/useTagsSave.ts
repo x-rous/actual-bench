@@ -26,7 +26,10 @@ export function useTagsSave() {
 
     setIsSaving(true);
 
-    const { toCreate, toUpdate, toDelete } = computeSaveOperations<Tag>(staged);
+    const ops = computeSaveOperations<Tag>(staged);
+    const toCreate = ops.toCreate.filter((t) => t.name.trim() !== "");
+    const toUpdate = ops.toUpdate.filter((t) => t.name.trim() !== "");
+    const { toDelete } = ops;
     const succeeded: SaveResult[] = [];
     const failed: SaveResult[] = [];
     const succeededCreateIds = new Set<string>();

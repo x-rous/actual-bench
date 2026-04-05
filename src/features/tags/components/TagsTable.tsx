@@ -1,18 +1,29 @@
 "use client";
 
-import { useState, useRef, useCallback, useMemo } from "react";
-import { Trash2 } from "lucide-react";
+import { useState, useRef, useEffect, useMemo } from "react";
+import { Trash2, RotateCcw, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import { useStagedStore } from "@/store/staged";
 import { useTableSelection } from "@/hooks/useTableSelection";
+import { useHighlight } from "@/hooks/useHighlight";
+import { useInlineEdit } from "@/hooks/useInlineEdit";
+import { NameInput } from "@/components/ui/editable-cell";
+import type { DoneAction } from "@/components/ui/editable-cell";
+import { generateId } from "@/lib/uuid";
 import type { Tag } from "@/types/entities";
 import { FilterBar } from "./FilterBar";
 import type { ColorFilter } from "./FilterBar";
 
+// ─── Constants ────────────────────────────────────────────────────────────────
+
 const DEFAULT_TAG_COLOR = "#E4D4FF";
+
+const NAVIGABLE_COLS = ["name", "description"] as const;
+type NavigableCol = (typeof NAVIGABLE_COLS)[number];
+type CellId = { rowId: string; colId: NavigableCol };
 
 /** Returns "#ffffff" or "#1a1a1a" for readable contrast against a hex background. */
 function contrastText(hex: string): string {
@@ -24,34 +35,117 @@ function contrastText(hex: string): string {
   return L > 0.179 ? "#1a1a1a" : "#ffffff";
 }
 
-type ConfirmState = { title: string; message: string; onConfirm: () => void };
-type EditingCell = { id: string; col: "name" | "description" } | null;
+// ─── Types ────────────────────────────────────────────────────────────────────
 
-interface TagsTableProps {
-  highlightedId?: string | null;
+type ConfirmState = { title: string; message: string; onConfirm: () => void };
+
+// ─── DescInput ────────────────────────────────────────────────────────────────
+
+/** Like NameInput but allows empty values (description is optional). */
+function DescInput({ initialValue, startChar, onDone }: {
+  initialValue: string;
+  startChar?: string;
+  onDone: (value: string, action: DoneAction) => void;
+}) {
+  const [value, setValue] = useState(startChar != null ? startChar : initialValue);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const doneCalledRef = useRef(false);
+
+  useEffect(() => {
+    inputRef.current?.focus();
+    if (startChar == null) inputRef.current?.select();
+  }, [startChar]);
+
+  function commit(action: DoneAction) {
+    if (doneCalledRef.current) return;
+    doneCalledRef.current = true;
+    onDone(value.trim(), action);
+  }
+
+  function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    switch (e.key) {
+      case "Enter":     e.preventDefault(); commit("down"); break;
+      case "Escape":    e.preventDefault(); commit("cancel"); break;
+      case "Tab":       e.preventDefault(); commit(e.shiftKey ? "shiftTab" : "tab"); break;
+      case "ArrowDown": e.preventDefault(); commit("down"); break;
+      case "ArrowUp":   e.preventDefault(); commit("up"); break;
+    }
+  }
+
+  return (
+    <input
+      ref={inputRef}
+      className="w-full bg-transparent text-xs outline-none"
+      value={value}
+      onChange={(e) => setValue(e.target.value)}
+      onBlur={() => commit("cancel")}
+      onKeyDown={handleKeyDown}
+    />
+  );
 }
 
-export function TagsTable({ highlightedId }: TagsTableProps) {
-  const stagedTags  = useStagedStore((s) => s.tags);
-  const stageUpdate = useStagedStore((s) => s.stageUpdate);
-  const stageDelete = useStagedStore((s) => s.stageDelete);
-  const pushUndo    = useStagedStore((s) => s.pushUndo);
+// ─── BulkAddBar ───────────────────────────────────────────────────────────────
 
-  // ── Filter state ─────────────────────────────────────────────────────────────
+function BulkAddBar({ bulkCount, onBulkCountChange, onAdd }: {
+  bulkCount: number; onBulkCountChange: (n: number) => void; onAdd: (n: number) => void;
+}) {
+  return (
+    <div className="flex items-center gap-2 border-t border-border/30 px-3 py-1.5">
+      <Button variant="ghost" size="xs" className="text-muted-foreground hover:text-foreground" onClick={() => onAdd(1)}>
+        + Add row
+      </Button>
+      <span className="text-xs text-muted-foreground">or add</span>
+      <input
+        type="number" min={1} max={100} value={bulkCount}
+        onChange={(e) => onBulkCountChange(Math.max(1, Math.min(100, Number(e.target.value))))}
+        className="h-6 w-12 rounded border border-border bg-background px-1.5 text-center text-xs outline-none focus:ring-1 focus:ring-ring"
+      />
+      <span className="text-xs text-muted-foreground">rows</span>
+      <Button variant="outline" size="xs" onClick={() => onAdd(bulkCount)}>Add</Button>
+    </div>
+  );
+}
+
+// ─── TagsTable ────────────────────────────────────────────────────────────────
+
+export function TagsTable() {
+  const highlightedId = useHighlight();
+
+  // ── Store subscriptions ───────────────────────────────────────────────────
+  const stagedTags     = useStagedStore((s) => s.tags);
+  const stageNew       = useStagedStore((s) => s.stageNew);
+  const stageUpdate    = useStagedStore((s) => s.stageUpdate);
+  const stageDelete    = useStagedStore((s) => s.stageDelete);
+  const revertEntity   = useStagedStore((s) => s.revertEntity);
+  const clearSaveError = useStagedStore((s) => s.clearSaveError);
+  const pushUndo       = useStagedStore((s) => s.pushUndo);
+
+  // ── Filter + bulk-add state ───────────────────────────────────────────────
   const [search, setSearch]           = useState("");
   const [colorFilter, setColorFilter] = useState<ColorFilter>("all");
+  const [bulkCount, setBulkCount]     = useState(5);
 
-  // ── Inline editing state ──────────────────────────────────────────────────────
-  const [editingCell, setEditingCell] = useState<EditingCell>(null);
-  const [editValue, setEditValue]     = useState("");
-  const inputRef = useRef<HTMLInputElement>(null);
+  // ── Inline-edit state ─────────────────────────────────────────────────────
+  const {
+    selectedCell, editingCell, editStartChar,
+    selectCell: _selectCell, startEdit, commitEdit,
+  } = useInlineEdit<CellId>();
 
-  // ── Selection state ───────────────────────────────────────────────────────────
+  // ── Selection state ───────────────────────────────────────────────────────
   const { selectedIds, toggleSelect, toggleSelectAll: _toggleSelectAll, clearSelection } = useTableSelection();
   const [confirmDialog, setConfirmDialog] = useState<ConfirmState | null>(null);
 
-  // ── Derived rows ──────────────────────────────────────────────────────────────
+  const containerRef = useRef<HTMLDivElement>(null);
 
+  // ── Focus management ──────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!selectedCell || editingCell) return;
+    containerRef.current
+      ?.querySelector<HTMLElement>(`[data-cell="${selectedCell.rowId}:${selectedCell.colId}"]`)
+      ?.focus({ preventScroll: false });
+  }, [selectedCell, editingCell]);
+
+  // ── Derived rows ──────────────────────────────────────────────────────────
   const rows = useMemo(() => {
     const q = search.trim().toLowerCase();
     return Object.values(stagedTags)
@@ -77,62 +171,104 @@ export function TagsTable({ highlightedId }: TagsTableProps) {
     return new Set([...counts.entries()].filter(([, c]) => c > 1).map(([n]) => n));
   }, [stagedTags]);
 
-  // ── Select-all helpers ────────────────────────────────────────────────────────
-
-  const visibleIds        = useMemo(() => new Set(rows.filter((r) => !r.isDeleted).map((r) => r.entity.id)), [rows]);
-  const allVisibleSelected = visibleIds.size > 0 && [...visibleIds].every((id) => selectedIds.has(id));
+  // ── Select-all helpers ────────────────────────────────────────────────────
+  const visibleIds          = useMemo(() => new Set(rows.filter((r) => !r.isDeleted).map((r) => r.entity.id)), [rows]);
+  const allVisibleSelected  = visibleIds.size > 0 && [...visibleIds].every((id) => selectedIds.has(id));
   const someVisibleSelected = [...visibleIds].some((id) => selectedIds.has(id));
 
   function toggleSelectAll() {
     _toggleSelectAll(visibleIds, allVisibleSelected);
   }
 
-  // ── Inline editing ────────────────────────────────────────────────────────────
-
-  const startEditing = useCallback((id: string, col: "name" | "description", current: string) => {
-    setEditingCell({ id, col });
-    setEditValue(current);
-    setTimeout(() => inputRef.current?.select(), 0);
-  }, []);
-
-  const commitEditing = useCallback(() => {
-    if (!editingCell) return;
-    const { id, col } = editingCell;
-    const trimmed = editValue.trim();
-    const current = stagedTags[id]?.entity;
-
-    if (col === "name") {
-      if (!trimmed) {
-        toast.error("Tag name cannot be empty.");
-        setEditingCell(null);
-        return;
-      }
-      const isDuplicate = Object.values(stagedTags).some(
-        (s) => !s.isDeleted && s.entity.id !== id && s.entity.name.trim().toLowerCase() === trimmed.toLowerCase()
-      );
-      if (isDuplicate) {
-        toast.error(`A tag named "${trimmed}" already exists.`);
-        setEditingCell(null);
-        return;
-      }
-    }
-
-    if (current && trimmed !== (current[col] ?? "")) {
-      pushUndo();
-      stageUpdate("tags", id, { [col]: trimmed || undefined });
-    }
-    setEditingCell(null);
-  }, [editingCell, editValue, stagedTags, pushUndo, stageUpdate]);
-
-  const cancelEditing = useCallback(() => setEditingCell(null), []);
-
-  function handleCellKeyDown(e: React.KeyboardEvent) {
-    if (e.key === "Enter") { e.preventDefault(); commitEditing(); }
-    if (e.key === "Escape") { e.preventDefault(); cancelEditing(); }
+  // ── Navigation helpers ────────────────────────────────────────────────────
+  function selectCell(rowId: string, colId: NavigableCol) {
+    _selectCell({ rowId, colId });
   }
 
-  // ── Color ─────────────────────────────────────────────────────────────────────
+  function moveFrom(rowId: string, colId: NavigableCol, rowDelta: number, colDelta: number) {
+    const ri = rows.findIndex((r) => r.entity.id === rowId);
+    const ci = NAVIGABLE_COLS.indexOf(colId);
+    const nr = ri + rowDelta;
+    const nc = Math.max(0, Math.min(NAVIGABLE_COLS.length - 1, ci + colDelta));
+    if (nr < 0 || nr >= rows.length) return;
+    selectCell(rows[nr].entity.id, NAVIGABLE_COLS[nc]);
+  }
 
+  function tabFrom(rowId: string, colId: NavigableCol, shift: boolean) {
+    const ri = rows.findIndex((r) => r.entity.id === rowId);
+    const ci = NAVIGABLE_COLS.indexOf(colId);
+    const d  = shift ? -1 : 1;
+    const nc = ci + d;
+    if (nc >= 0 && nc < NAVIGABLE_COLS.length) {
+      selectCell(rowId, NAVIGABLE_COLS[nc]);
+    } else if (d > 0 && ri < rows.length - 1) {
+      selectCell(rows[ri + 1].entity.id, NAVIGABLE_COLS[0]);
+    } else if (d > 0 && ri === rows.length - 1 && !search) {
+      addRows(1, true);
+    } else if (d < 0 && ri > 0) {
+      selectCell(rows[ri - 1].entity.id, NAVIGABLE_COLS[NAVIGABLE_COLS.length - 1]);
+    }
+  }
+
+  // ── Editing helpers ───────────────────────────────────────────────────────
+  function startEditing(rowId: string, colId: NavigableCol, startChar?: string) {
+    startEdit({ rowId, colId }, startChar);
+  }
+
+  function handleNameDone(rowId: string, value: string, action: DoneAction) {
+    if (action !== "cancel") {
+      const trimmed = value.trim().replace(/ /g, "");
+      const current = stagedTags[rowId]?.entity;
+      if (trimmed && current) {
+        const isDuplicate = Object.values(stagedTags).some(
+          (s) => !s.isDeleted && s.entity.id !== rowId && s.entity.name.trim().toLowerCase() === trimmed.toLowerCase()
+        );
+        if (isDuplicate) {
+          toast.error(`A tag named "${trimmed}" already exists.`);
+          commitEdit({ rowId, colId: "name" });
+          return;
+        }
+        if (trimmed !== current.name) {
+          pushUndo();
+          stageUpdate("tags", rowId, { name: trimmed });
+        }
+      }
+    }
+    commitEdit({ rowId, colId: "name" });
+    if (action === "down")          moveFrom(rowId, "name", 1, 0);
+    else if (action === "up")       moveFrom(rowId, "name", -1, 0);
+    else if (action === "tab")      tabFrom(rowId, "name", false);
+    else if (action === "shiftTab") tabFrom(rowId, "name", true);
+  }
+
+  function handleDescDone(rowId: string, value: string, action: DoneAction) {
+    if (action !== "cancel") {
+      const trimmed = value.trim();
+      const current = stagedTags[rowId]?.entity;
+      if (current && trimmed !== (current.description ?? "")) {
+        pushUndo();
+        stageUpdate("tags", rowId, { description: trimmed || undefined });
+      }
+    }
+    commitEdit({ rowId, colId: "description" });
+    if (action === "down")          moveFrom(rowId, "description", 1, 0);
+    else if (action === "up")       moveFrom(rowId, "description", -1, 0);
+    else if (action === "tab")      tabFrom(rowId, "description", false);
+    else if (action === "shiftTab") tabFrom(rowId, "description", true);
+  }
+
+  // ── Bulk add ──────────────────────────────────────────────────────────────
+  function addRows(count: number, focusFirst = false) {
+    pushUndo();
+    const firstId = generateId();
+    stageNew("tags", { id: firstId, name: "" });
+    for (let i = 1; i < count; i++) {
+      stageNew("tags", { id: generateId(), name: "" });
+    }
+    if (focusFirst) setTimeout(() => startEditing(firstId, "name"), 0);
+  }
+
+  // ── Color ─────────────────────────────────────────────────────────────────
   function handleColorChange(id: string, color: string) {
     pushUndo();
     stageUpdate("tags", id, { color });
@@ -143,8 +279,7 @@ export function TagsTable({ highlightedId }: TagsTableProps) {
     stageUpdate("tags", id, { color: undefined });
   }
 
-  // ── Single delete ─────────────────────────────────────────────────────────────
-
+  // ── Single delete ─────────────────────────────────────────────────────────
   function requestDelete(tag: Tag, isNew: boolean) {
     if (isNew) {
       pushUndo();
@@ -158,18 +293,17 @@ export function TagsTable({ highlightedId }: TagsTableProps) {
     });
   }
 
-  // ── Bulk delete ───────────────────────────────────────────────────────────────
-
+  // ── Bulk delete ───────────────────────────────────────────────────────────
   function handleBulkDelete() {
     const ids = [...selectedIds].filter((id) => stagedTags[id] && !stagedTags[id].isDeleted);
     if (ids.length === 0) { clearSelection(); return; }
 
-    const newIds    = ids.filter((id) => stagedTags[id]?.isNew);
+    const newIds    = ids.filter((id) =>  stagedTags[id]?.isNew);
     const serverIds = ids.filter((id) => !stagedTags[id]?.isNew);
 
-    let message = `${ids.length} tag${ids.length !== 1 ? "s" : ""} will be deleted.`;
-    if (serverIds.length > 0) message = `${serverIds.length} will be staged for deletion and removed on Save.`;
-    if (newIds.length > 0) message += ` ${newIds.length} unsaved new row${newIds.length !== 1 ? "s" : ""} will be discarded immediately.`;
+    let message = "";
+    if (serverIds.length > 0) message += `${serverIds.length} will be staged for deletion and removed on Save.`;
+    if (newIds.length > 0)    message += ` ${newIds.length} unsaved new row${newIds.length !== 1 ? "s" : ""} will be discarded immediately.`;
 
     setConfirmDialog({
       title: `Delete ${ids.length} tag${ids.length !== 1 ? "s" : ""}?`,
@@ -182,14 +316,42 @@ export function TagsTable({ highlightedId }: TagsTableProps) {
     });
   }
 
-  // ── Render ────────────────────────────────────────────────────────────────────
+  // ── Keyboard handler ──────────────────────────────────────────────────────
+  function handleKeyDown(e: React.KeyboardEvent<HTMLDivElement>) {
+    if (!selectedCell) return;
+    if (editingCell?.rowId === selectedCell.rowId && editingCell?.colId === selectedCell.colId) return;
+    const row = rows.find((r) => r.entity.id === selectedCell.rowId);
+    if (!row) return;
 
-  const totalCount    = Object.values(stagedTags).filter((s) => !s.isDeleted).length;
+    switch (e.key) {
+      case "ArrowDown":  e.preventDefault(); moveFrom(selectedCell.rowId, selectedCell.colId, 1, 0); break;
+      case "ArrowUp":    e.preventDefault(); moveFrom(selectedCell.rowId, selectedCell.colId, -1, 0); break;
+      case "ArrowRight": e.preventDefault(); moveFrom(selectedCell.rowId, selectedCell.colId, 0, 1); break;
+      case "ArrowLeft":  e.preventDefault(); moveFrom(selectedCell.rowId, selectedCell.colId, 0, -1); break;
+      case "Tab": e.preventDefault(); tabFrom(selectedCell.rowId, selectedCell.colId, e.shiftKey); break;
+      case "Enter": case "F2":
+        e.preventDefault();
+        if (!row.isDeleted) startEditing(selectedCell.rowId, selectedCell.colId);
+        break;
+      default:
+        if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !row.isDeleted) {
+          startEditing(selectedCell.rowId, selectedCell.colId, e.key);
+        }
+    }
+  }
+
+  // ── Render ────────────────────────────────────────────────────────────────
+  const totalCount     = Object.values(stagedTags).filter((s) => !s.isDeleted).length;
   const activeSelected = [...selectedIds].filter((id) => stagedTags[id] && !stagedTags[id].isDeleted).length;
 
   return (
     <>
-      <div className="flex flex-col">
+      <div
+        ref={containerRef}
+        className="flex flex-col outline-none"
+        onKeyDown={handleKeyDown}
+        tabIndex={-1}
+      >
         <FilterBar
           search={search} onSearchChange={setSearch}
           colorFilter={colorFilter} onColorFilterChange={setColorFilter}
@@ -207,189 +369,222 @@ export function TagsTable({ highlightedId }: TagsTableProps) {
               : "No tags yet. Click \"Add Tag\" to create one."}
           </div>
         ) : (
-          <div className="w-full overflow-auto">
-            <table className="w-full text-sm">
-              <thead className="sticky top-0 z-10 bg-background">
-                <tr className="border-b border-border bg-muted/30 text-muted-foreground">
-                  <th className="w-9 px-3 py-1.5">
-                    <input
-                      type="checkbox"
-                      checked={allVisibleSelected}
-                      ref={(el) => { if (el) el.indeterminate = someVisibleSelected && !allVisibleSelected; }}
-                      onChange={toggleSelectAll}
-                      className="h-3.5 w-3.5 cursor-pointer rounded accent-primary"
-                    />
-                  </th>
-                  <th className="w-1 p-0" />
-                  <th className="w-10 px-2 py-1.5 text-left text-xs font-medium">Color</th>
-                  <th className="w-[300px] px-2 py-1.5 text-left text-xs font-medium">Name</th>
-                  <th className="px-2 py-1.5 text-left text-xs font-medium">Description</th>
-                  <th className="w-12 p-0" />
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map(({ entity, isNew, isUpdated, isDeleted, saveError }) => {
-                  const isDuplicate    = !isDeleted && duplicateNames.has(entity.name.trim().toLowerCase());
-                  const isEditingName  = editingCell?.id === entity.id && editingCell.col === "name";
-                  const isEditingDesc  = editingCell?.id === entity.id && editingCell.col === "description";
-                  const isRowSelected  = !isDeleted && selectedIds.has(entity.id);
+          <table className="w-full text-xs">
+            <thead className="sticky top-0 z-10 bg-background">
+              <tr className="border-b border-border bg-muted/30 text-muted-foreground">
+                <th className="w-9 px-3 py-1.5">
+                  <input
+                    type="checkbox"
+                    checked={allVisibleSelected}
+                    ref={(el) => { if (el) el.indeterminate = someVisibleSelected && !allVisibleSelected; }}
+                    onChange={toggleSelectAll}
+                    className="h-3.5 w-3.5 cursor-pointer rounded accent-primary"
+                  />
+                </th>
+                <th className="w-1 p-0" />
+                <th className="w-10 px-2 py-1.5 text-left text-xs font-medium">Color</th>
+                <th className="w-[300px] px-2 py-1.5 text-left text-xs font-medium">Name</th>
+                <th className="px-2 py-1.5 text-left text-xs font-medium">Description</th>
+                <th className="w-16 p-0" />
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map(({ entity, isNew, isUpdated, isDeleted, saveError }) => {
+                const isDuplicate   = !isDeleted && duplicateNames.has(entity.name.trim().toLowerCase());
+                const nameSelected  = selectedCell?.rowId === entity.id && selectedCell?.colId === "name";
+                const nameEditing   = editingCell?.rowId  === entity.id && editingCell?.colId  === "name";
+                const descSelected  = selectedCell?.rowId === entity.id && selectedCell?.colId === "description";
+                const descEditing   = editingCell?.rowId  === entity.id && editingCell?.colId  === "description";
+                const isRowSelected = !isDeleted && selectedIds.has(entity.id);
 
-                  return (
-                    <tr
-                      key={entity.id}
-                      data-row-id={entity.id}
-                      className={cn(
-                        "group/row border-b border-border/30 border-l-2 border-l-transparent transition-colors",
-                        highlightedId === entity.id && "bg-primary/20 ring-2 ring-inset ring-primary/40",
-                        highlightedId !== entity.id && isRowSelected && "bg-primary/10",
-                        highlightedId !== entity.id && !isRowSelected && saveError && "bg-destructive/5 border-l-destructive",
-                        highlightedId !== entity.id && !isRowSelected && !saveError && isDeleted && "opacity-50 border-l-muted-foreground/30",
-                        highlightedId !== entity.id && !isRowSelected && !saveError && !isDeleted && isNew && "bg-green-50/30 dark:bg-green-950/10 border-l-green-500",
-                        highlightedId !== entity.id && !isRowSelected && !saveError && !isDeleted && !isNew && isUpdated && "bg-amber-50/30 dark:bg-amber-950/10 border-l-amber-400",
-                      )}
-                    >
-                      {/* Checkbox */}
-                      <td className="w-9 px-3 py-0.5">
-                        {!isDeleted && (
-                          <input
-                            type="checkbox"
-                            checked={isRowSelected}
-                            onChange={(e) => toggleSelect(entity.id, e.target.checked)}
-                            onClick={(e) => e.stopPropagation()}
-                            className="h-3.5 w-3.5 cursor-pointer rounded accent-primary"
-                          />
-                        )}
-                      </td>
-
-                      {/* State indicator */}
-                      <td className="w-1 p-0 pl-0.5">
-                        <div
-                          title={saveError}
-                          className={cn(
-                            "h-4 w-0.5 rounded-full",
-                            saveError && "bg-destructive",
-                            !saveError && isDeleted && "bg-muted-foreground/30",
-                            !saveError && !isDeleted && isNew && "bg-green-500",
-                            !saveError && !isDeleted && !isNew && isUpdated && "bg-amber-400",
-                          )}
+                return (
+                  <tr
+                    key={entity.id}
+                    data-row-id={entity.id}
+                    className={cn(
+                      "group/row border-b border-border/30 border-l-2 border-l-transparent transition-colors",
+                      highlightedId === entity.id && "bg-primary/20 ring-2 ring-inset ring-primary/40",
+                      highlightedId !== entity.id && isRowSelected && "bg-primary/10",
+                      highlightedId !== entity.id && !isRowSelected && saveError && "bg-destructive/5 border-l-destructive",
+                      highlightedId !== entity.id && !isRowSelected && !saveError && isDeleted && "opacity-50 border-l-muted-foreground/30",
+                      highlightedId !== entity.id && !isRowSelected && !saveError && !isDeleted && isNew && "bg-green-50/30 dark:bg-green-950/10 border-l-green-500",
+                      highlightedId !== entity.id && !isRowSelected && !saveError && !isDeleted && !isNew && isUpdated && "bg-amber-50/30 dark:bg-amber-950/10 border-l-amber-400",
+                    )}
+                  >
+                    {/* Checkbox */}
+                    <td className="w-9 px-3 py-0.5">
+                      {!isDeleted && (
+                        <input
+                          type="checkbox"
+                          checked={isRowSelected}
+                          onChange={(e) => toggleSelect(entity.id, e.target.checked)}
+                          onClick={(e) => e.stopPropagation()}
+                          className="h-3.5 w-3.5 cursor-pointer rounded accent-primary"
                         />
-                      </td>
+                      )}
+                    </td>
 
-                      {/* Color swatch */}
-                      <td className="w-10 px-2 py-0.5">
-                        {!isDeleted && (
-                          <div className="flex items-center gap-1">
-                            <label className="relative flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center">
-                              <input
-                                type="color"
-                                className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
-                                value={entity.color ?? DEFAULT_TAG_COLOR}
-                                onChange={(e) => handleColorChange(entity.id, e.target.value)}
-                              />
-                              <span
-                                className={cn(
-                                  "h-4 w-4 rounded-full transition-transform hover:scale-110",
-                                  entity.color ? "border border-border/50" : "border border-dashed border-border/60"
-                                )}
-                                style={{ backgroundColor: entity.color ?? DEFAULT_TAG_COLOR }}
-                              />
-                            </label>
-                            {entity.color && (
-                              <button
-                                className="opacity-0 group-hover/row:opacity-60 hover:!opacity-100 text-muted-foreground transition-opacity"
-                                onClick={() => handleColorClear(entity.id)}
-                                title="Clear color"
-                              >
-                                ×
-                              </button>
-                            )}
-                          </div>
-                        )}
-                      </td>
-
-                      {/* Name */}
-                      <td
+                    {/* State indicator */}
+                    <td className="w-1 p-0 pl-0.5">
+                      <div
+                        title={saveError}
                         className={cn(
-                          "cursor-default px-2 py-1.5",
-                          !isDeleted && !isEditingName && "hover:bg-muted/40",
+                          "h-4 w-0.5 rounded-full",
+                          saveError && "bg-destructive",
+                          !saveError && isDeleted && "bg-muted-foreground/30",
+                          !saveError && !isDeleted && isNew && "bg-green-500",
+                          !saveError && !isDeleted && !isNew && isUpdated && "bg-amber-400",
                         )}
-                        onClick={() => !isDeleted && !isEditingName && startEditing(entity.id, "name", entity.name)}
-                      >
-                        {isEditingName ? (
-                          <input
-                            ref={inputRef}
-                            className="w-full bg-transparent outline-none ring-1 ring-primary rounded px-1 -mx-1"
-                            value={editValue}
-                            onChange={(e) => setEditValue(e.target.value.replace(/ /g, ""))}
-                            onBlur={commitEditing}
-                            onKeyDown={handleCellKeyDown}
-                            autoFocus
-                          />
-                        ) : (() => {
-                          const effectiveColor = entity.color ?? DEFAULT_TAG_COLOR;
-                          return (
+                      />
+                    </td>
+
+                    {/* Color swatch */}
+                    <td className="w-10 px-2 py-0.5">
+                      {!isDeleted && (
+                        <div className="flex items-center gap-1">
+                          <label className="relative flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center">
+                            <input
+                              type="color"
+                              className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+                              value={entity.color ?? DEFAULT_TAG_COLOR}
+                              onChange={(e) => handleColorChange(entity.id, e.target.value)}
+                            />
                             <span
                               className={cn(
-                                "inline-flex items-center rounded-md px-2 py-1 text-xs font-medium",
-                                isDeleted && "opacity-60",
-                                isDuplicate && "ring-2 ring-amber-400",
+                                "h-4 w-4 rounded-full transition-transform hover:scale-110",
+                                entity.color ? "border border-border/50" : "border border-dashed border-border/60"
                               )}
-                              style={{ backgroundColor: effectiveColor, color: contrastText(effectiveColor) }}
+                              style={{ backgroundColor: entity.color ?? DEFAULT_TAG_COLOR }}
+                            />
+                          </label>
+                          {entity.color && (
+                            <button
+                              className="opacity-0 group-hover/row:opacity-60 hover:!opacity-100 text-muted-foreground transition-opacity"
+                              onClick={() => handleColorClear(entity.id)}
+                              title="Clear color"
                             >
-                              {entity.name
-                                ? `#${entity.name}`
-                                : <span className="italic opacity-60">unnamed</span>}
-                            </span>
-                          );
-                        })()}
-                      </td>
+                              ×
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </td>
 
-                      {/* Description */}
-                      <td
-                        className={cn(
-                          "cursor-default px-2 py-0.5 text-muted-foreground",
-                          !isDeleted && !isEditingDesc && "hover:bg-muted/40",
-                        )}
-                        onClick={() => !isDeleted && !isEditingDesc && startEditing(entity.id, "description", entity.description ?? "")}
-                      >
-                        {isEditingDesc ? (
-                          <input
-                            ref={editingCell?.col === "description" ? inputRef : undefined}
-                            className="w-full bg-transparent outline-none ring-1 ring-primary rounded px-1 -mx-1 text-foreground"
-                            value={editValue}
-                            onChange={(e) => setEditValue(e.target.value)}
-                            onBlur={commitEditing}
-                            onKeyDown={handleCellKeyDown}
-                            autoFocus
-                          />
-                        ) : (
-                          <span className="truncate block">
-                            {entity.description || <span className="italic text-muted-foreground/50">—</span>}
-                          </span>
-                        )}
-                      </td>
-
-                      {/* Actions */}
-                      <td className="w-12 px-1 py-0.5">
-                        {!isDeleted && (
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-7 w-7 opacity-0 group-hover/row:opacity-100 text-muted-foreground hover:text-destructive transition-opacity"
-                            onClick={() => requestDelete(entity, isNew)}
-                            title="Delete tag"
+                    {/* Name — useInlineEdit + NameInput */}
+                    <td
+                      data-cell={`${entity.id}:name`}
+                      tabIndex={nameSelected ? 0 : -1}
+                      className={cn(
+                        "cursor-default px-2 py-0.5 outline-none",
+                        nameSelected && !nameEditing && "bg-primary/10 ring-1 ring-inset ring-primary/50",
+                        nameEditing && "ring-1 ring-inset ring-primary",
+                      )}
+                      onClick={() => {
+                        if (!isDeleted) {
+                          if (nameSelected) startEditing(entity.id, "name");
+                          else selectCell(entity.id, "name");
+                        }
+                      }}
+                      onFocus={() => { if (!editingCell) selectCell(entity.id, "name"); }}
+                    >
+                      {nameEditing && !isDeleted ? (
+                        <NameInput
+                          initialValue={entity.name}
+                          startChar={editStartChar}
+                          onDone={(val, action) => handleNameDone(entity.id, val, action)}
+                          className="text-xs"
+                        />
+                      ) : (() => {
+                        const effectiveColor = entity.color ?? DEFAULT_TAG_COLOR;
+                        return (
+                          <span
+                            className={cn(
+                              "inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium",
+                              isDeleted && "opacity-60",
+                              isDuplicate && "ring-2 ring-amber-400",
+                            )}
+                            style={{ backgroundColor: effectiveColor, color: contrastText(effectiveColor) }}
                           >
-                            <Trash2 className="h-3.5 w-3.5" />
+                            {entity.name
+                              ? `#${entity.name}`
+                              : <span className="italic opacity-60">unnamed</span>}
+                          </span>
+                        );
+                      })()}
+                    </td>
+
+                    {/* Description — useInlineEdit + DescInput */}
+                    <td
+                      data-cell={`${entity.id}:description`}
+                      tabIndex={descSelected ? 0 : -1}
+                      className={cn(
+                        "cursor-default px-2 py-0.5 text-muted-foreground outline-none",
+                        descSelected && !descEditing && "bg-primary/10 ring-1 ring-inset ring-primary/50",
+                        descEditing && "ring-1 ring-inset ring-primary",
+                      )}
+                      onClick={() => {
+                        if (!isDeleted) {
+                          if (descSelected) startEditing(entity.id, "description");
+                          else selectCell(entity.id, "description");
+                        }
+                      }}
+                      onFocus={() => { if (!editingCell) selectCell(entity.id, "description"); }}
+                    >
+                      {descEditing && !isDeleted ? (
+                        <DescInput
+                          initialValue={entity.description ?? ""}
+                          startChar={editStartChar}
+                          onDone={(val, action) => handleDescDone(entity.id, val, action)}
+                        />
+                      ) : (
+                        <span className="block truncate">
+                          {entity.description || <span className="italic text-muted-foreground/50">—</span>}
+                        </span>
+                      )}
+                    </td>
+
+                    {/* Actions */}
+                    <td className="w-16 px-1 py-0.5">
+                      <div className="flex items-center justify-end gap-0.5 opacity-0 transition-opacity group-hover/row:opacity-100">
+                        {saveError ? (
+                          <Button
+                            variant="ghost" size="icon-xs"
+                            title="Clear error and retry"
+                            onClick={() => clearSaveError("tags", entity.id)}
+                          >
+                            <RefreshCw />
                           </Button>
+                        ) : isDeleted ? (
+                          <Button variant="ghost" size="icon-xs" title="Undo delete" onClick={() => revertEntity("tags", entity.id)}>
+                            <RotateCcw />
+                          </Button>
+                        ) : (
+                          <>
+                            <Button
+                              variant="ghost" size="icon-xs"
+                              className="text-destructive hover:text-destructive"
+                              title="Delete tag"
+                              onClick={() => requestDelete(entity, isNew)}
+                            >
+                              <Trash2 />
+                            </Button>
+                            {(isNew || isUpdated) && (
+                              <Button variant="ghost" size="icon-xs" title="Revert" onClick={() => revertEntity("tags", entity.id)}>
+                                <RotateCcw />
+                              </Button>
+                            )}
+                          </>
                         )}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         )}
+
+        <BulkAddBar bulkCount={bulkCount} onBulkCountChange={setBulkCount} onAdd={(n) => addRows(n, true)} />
       </div>
 
       {/* Confirm delete dialog */}
