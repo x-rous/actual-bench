@@ -32,6 +32,7 @@ import { usePayeesSave } from "@/features/payees/hooks/usePayeesSave";
 import { useCategoryGroupsSave } from "@/features/categories/hooks/useCategoryGroupsSave";
 import { useCategoriesSave } from "@/features/categories/hooks/useCategoriesSave";
 import { useRulesSave } from "@/features/rules/hooks/useRulesSave";
+import { useTagsSave } from "@/features/tags/hooks/useTagsSave";
 
 export function TopBar() {
   const router = useRouter();
@@ -58,16 +59,18 @@ export function TopBar() {
   const { save: saveCategoryGroups, isSaving: isSavingGroups } = useCategoryGroupsSave();
   const { save: saveCategories, isSaving: isSavingCategories } = useCategoriesSave();
   const { save: saveRules, isSaving: isSavingRules } = useRulesSave();
-  const isSaving = isSavingAccounts || isSavingPayees || isSavingGroups || isSavingCategories || isSavingRules;
+  const { save: saveTags, isSaving: isSavingTags } = useTagsSave();
+  const isSaving = isSavingAccounts || isSavingPayees || isSavingGroups || isSavingCategories || isSavingRules || isSavingTags;
 
   async function handleSave() {
     try {
-      // Step 1: Save accounts, payees, and category groups in parallel.
+      // Step 1: Save accounts, payees, category groups, and tags in parallel.
       // These are independent and their server IDs are needed by later steps.
-      const [accountsResult, payeesResult, groupsResult] = await Promise.all([
+      const [accountsResult, payeesResult, groupsResult, tagsResult] = await Promise.all([
         saveAccounts(),
         savePayees(),
         saveCategoryGroups(),
+        saveTags(),
       ]);
 
       // Step 2: Save categories after groups. Pass the group idMap so that new
@@ -88,13 +91,15 @@ export function TopBar() {
         payeesResult.succeeded.length +
         groupsResult.succeeded.length +
         categoriesResult.succeeded.length +
-        rulesResult.succeeded.length;
+        rulesResult.succeeded.length +
+        tagsResult.succeeded.length;
       const totalFailed =
         accountsResult.failed.length +
         payeesResult.failed.length +
         groupsResult.failed.length +
         categoriesResult.failed.length +
-        rulesResult.failed.length;
+        rulesResult.failed.length +
+        tagsResult.failed.length;
       clearHistory();
       if (totalFailed === 0) {
         toast.success(`Saved ${totalSucceeded} item${totalSucceeded !== 1 ? "s" : ""} successfully.`);

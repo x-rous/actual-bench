@@ -61,6 +61,15 @@
 - CSV import and export with full group hierarchy preserved
 - Duplicate group name prevention
 
+## Tags
+
+- Create, rename, and delete tags (available since Actual Budget v26.3.0)
+- Assign an optional color to each tag using a native color picker — click the color swatch to open the picker; hover the row to reveal a clear button
+- Add an optional description per tag
+- Inline editing: click any name or description cell to edit in place; Enter or Escape to confirm or cancel
+- Duplicate name detection with visual warning
+- CSV import and export
+
 ## Staged Editing
 
 - All changes (creates, updates, deletes) are held locally until explicitly saved — nothing touches the server until you confirm
@@ -72,7 +81,7 @@
 
 ## CSV Import / Export
 
-- Every entity page (Rules, Accounts, Payees, Categories) has Export and Import buttons
+- Every entity page (Rules, Accounts, Payees, Categories, Tags) has Export and Import buttons
 - Exported files are UTF-8 CSV with BOM for correct Excel / Google Sheets rendering
 - Imported rows are staged — nothing is saved until you click Save
 - 5 MB file size limit with per-row validation and skip reporting on import
@@ -90,6 +99,8 @@
 **Accounts** — columns: `name` (required), `offBudget`, `closed`
 
 **Payees** — columns: `name` (required)
+
+**Tags** — columns: `name` (required), `color` (optional hex, e.g. `#FF5733`), `description` (optional)
 
 **Categories** — columns: `type` (required: `group` or `category`), `name` (required), `group`, `is_income`, `hidden`
 > Group rows must appear before the category rows that reference them.

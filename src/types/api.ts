@@ -126,6 +126,22 @@ export type ApiScheduleInput = {
   date: string | ApiRecurConfig;
 };
 
+// ─── Tag ─────────────────────────────────────────────────────────────────────
+
+export type ApiTag = {
+  id: string;
+  /** The tag label — named "tag" (not "name") in the API response. */
+  tag: string;
+  color: string | null;
+  description: string | null;
+};
+
+export type ApiTagInput = {
+  tag: string;
+  color?: string | null;
+  description?: string | null;
+};
+
 // ─── API Response envelope ────────────────────────────────────────────────────
 
 export type ApiListResponse<T> = {

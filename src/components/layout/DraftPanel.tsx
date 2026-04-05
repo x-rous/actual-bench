@@ -21,7 +21,8 @@ type EntityKey =
   | "categoryGroups"
   | "categories"
   | "rules"
-  | "schedules";
+  | "schedules"
+  | "tags";
 
 type LabelResult = { text: string; title?: string };
 
@@ -41,6 +42,7 @@ const ENTITY_LABELS: Record<EntityKey, string> = {
   categories: "Categories",
   rules: "Rules",
   schedules: "Schedules",
+  tags: "Tags",
 };
 
 const ENTITY_ROUTES: Partial<Record<EntityKey, string>> = {
@@ -49,6 +51,7 @@ const ENTITY_ROUTES: Partial<Record<EntityKey, string>> = {
   categoryGroups: "/categories",
   categories: "/categories",
   rules: "/rules",
+  tags: "/tags",
 };
 
 // ─── Generic label (name or ID prefix) ───────────────────────────────────────
@@ -242,6 +245,7 @@ export function DraftPanel() {
   const categories        = useStagedStore((s) => s.categories);
   const rules             = useStagedStore((s) => s.rules);
   const schedules         = useStagedStore((s) => s.schedules);
+  const tags              = useStagedStore((s) => s.tags);
 
   const slices = useMemo<Record<EntityKey, StagedMap<BaseEntity>>>(
     () => ({
@@ -251,8 +255,9 @@ export function DraftPanel() {
       categories:     categories     as StagedMap<BaseEntity>,
       rules:          rules          as StagedMap<BaseEntity>,
       schedules:      schedules      as StagedMap<BaseEntity>,
+      tags:           tags           as StagedMap<BaseEntity>,
     }),
-    [accounts, payees, categoryGroups, categories, rules, schedules]
+    [accounts, payees, categoryGroups, categories, rules, schedules, tags]
   );
 
   const { errorCount, totalCount } = useMemo(() => {

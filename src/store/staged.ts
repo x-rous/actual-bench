@@ -7,6 +7,7 @@ import type {
   Category,
   Rule,
   Schedule,
+  Tag,
 } from "@/types/entities";
 import type { StagedEntity, StagedMap } from "@/types/staged";
 
@@ -83,6 +84,7 @@ type StagedStoreState = {
   categories: StagedMap<Category>;
   rules: StagedMap<Rule>;
   schedules: StagedMap<Schedule>;
+  tags: StagedMap<Tag>;
   /** Undo stack — each entry is a full snapshot of the staged maps */
   undoStack: StagedStoreSnapshot[];
   /** Redo stack */
@@ -105,6 +107,7 @@ type StagedStoreActions = {
   loadCategories: (categories: Category[]) => void;
   loadRules: (rules: Rule[]) => void;
   loadSchedules: (schedules: Schedule[]) => void;
+  loadTags: (tags: Tag[]) => void;
 
   /** Stage a new (not-yet-saved) entity */
   stageNew: <K extends EntityKey>(entityType: K, entity: EntityTypeMap[K]) => void;
@@ -162,6 +165,7 @@ type EntityTypeMap = {
   categories: Category;
   rules: Rule;
   schedules: Schedule;
+  tags: Tag;
 };
 
 // ─── Store ────────────────────────────────────────────────────────────────────
@@ -173,6 +177,7 @@ const emptySnapshot = (): StagedStoreSnapshot => ({
   categories: {},
   rules: {},
   schedules: {},
+  tags: {},
 });
 
 function snapshot(state: StagedStoreState): StagedStoreSnapshot {
@@ -183,6 +188,7 @@ function snapshot(state: StagedStoreState): StagedStoreSnapshot {
     categories: state.categories,
     rules: state.rules,
     schedules: state.schedules,
+    tags: state.tags,
   };
 }
 
@@ -340,6 +346,26 @@ export const useStagedStore = create<StagedStoreState & StagedStoreActions>((set
       return { schedules: newMap };
     }),
 
+  loadTags: (tags) =>
+    set((state) => {
+      const serverIds = new Set(tags.map((t) => t.id));
+      const newMap: StagedMap<Tag> = {};
+      for (const t of tags) {
+        const existing = state.tags[t.id];
+        if (existing && (existing.isUpdated || existing.isDeleted)) {
+          newMap[t.id] = existing;
+          continue;
+        }
+        const entry = makeStaged(t);
+        if (existing?.saveError) entry.saveError = existing.saveError;
+        newMap[t.id] = entry;
+      }
+      for (const [id, entry] of Object.entries(state.tags)) {
+        if (!serverIds.has(id) && entry.isNew) newMap[id] = entry;
+      }
+      return { tags: newMap };
+    }),
+
   stageNew: (entityType, entity) =>
     set((state) => ({
       [entityType]: {
@@ -461,6 +487,7 @@ export function selectHasChanges(state: StagedStoreState): boolean {
     "categories",
     "rules",
     "schedules",
+    "tags",
   ];
   return keys.some((key) =>
     Object.values(state[key]).some(

@@ -110,12 +110,13 @@ export type Schedule = BaseEntity & {
 };
 
 // ─── Tag ─────────────────────────────────────────────────────────────────────
-// NOTE: Tags are not implemented in the current Actual HTTP API. This type is
-// defined for future use or if a third-party API extension supports it.
 
 export type Tag = BaseEntity & {
+  /** Display label. API field: "tag" */
   name: string;
-  usageCount?: number;
+  /** Hex color string, e.g. "#FF5733". undefined = no color assigned. */
+  color?: string;
+  description?: string;
 };
 
 // ─── Normalized entity maps ───────────────────────────────────────────────────
