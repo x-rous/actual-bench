@@ -106,7 +106,6 @@ export function usePayeesSave() {
     for (const { targetId, mergeIds } of pendingPayeeMerges) {
       try {
         await mergePayees(connection, targetId, mergeIds);
-        // Mark merged-away payees as saved so loadPayees doesn't try to re-delete them
         for (const id of mergeIds) {
           succeeded.push({ status: "success", id });
         }

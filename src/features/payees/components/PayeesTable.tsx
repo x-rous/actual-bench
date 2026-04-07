@@ -313,10 +313,13 @@ export function PayeesTable() {
   }
 
   function handleMerge() {
-    // Only regular, non-deleted, server-persisted payees — first in display order becomes target
-    const selectedRegular = rows.filter(
-      (r) => !r.isDeleted && !r.isNew && !r.entity.transferAccountId && selectedIds.has(r.entity.id)
-    );
+    // Iterate selectedIds in insertion order (click order) so the first-clicked payee
+    // is always the merge target regardless of current table sort/display order.
+    const selectedRegular = [...selectedIds]
+      .map((id) => staged[id])
+      .filter((s): s is NonNullable<typeof s> =>
+        !!s && !s.isDeleted && !s.isNew && !s.entity.transferAccountId
+      );
     if (selectedRegular.length < 2) return;
     const [target, ...rest] = selectedRegular;
     setMergeDialog({

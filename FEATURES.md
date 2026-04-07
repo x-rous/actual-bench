@@ -20,8 +20,10 @@
 - Merge multiple selected rules into one via a dedicated merge dialog
 - Duplicate a rule with one click
 - Filter the rules list by stage, payee, or category
+- Search resolves entity names in condition values — searching "Groceries" finds rules where a `oneOf` condition references that payee or category by ID
 - Links from Payees and Categories pages filter the rules list to that entity automatically
 - Resolved entity names displayed throughout (no raw IDs shown)
+- Entity-reference chips (payee, category, account) are visually distinct from plain string value chips — blue for entity references, green for string values
 - Category dropdowns group categories under their parent group, preserving server order; hidden categories and groups remain visible so rules referencing them can still be edited; search matches group names (shows all children) or category names
 - CSV import and export
 
@@ -44,7 +46,7 @@
 - Transfer payees (auto-generated for inter-account transfers) shown as a separate filterable type
 - Rules count displayed per payee — click it to jump to the rules list filtered to that payee
 - Filter by name, type (regular / transfer / all), and whether a payee has associated rules
-- Bulk delete
+- Bulk delete and bulk merge — select 2 or more regular payees, click Merge; the **first payee you check** becomes the merge target (survives) regardless of table sort order, the rest are absorbed; the operation is staged and shown in the Draft Changes panel as "Merge Deleted" before being sent to the server on Save; supports Ctrl+Z undo
 - Inline editing with keyboard navigation
 - CSV import and export
 - Duplicate name detection with visual warning
@@ -67,6 +69,8 @@
 - Assign an optional color to each tag using a native color picker — click the color swatch to open the picker; hover the row to reveal a clear button
 - Add an optional description per tag
 - Inline editing: click any name or description cell to edit in place; Enter or Escape to confirm or cancel
+- Filter by name or description, and by color presence (All / Has Color / No Color) with live counts per pill
+- Bulk select with bulk delete
 - Duplicate name detection with visual warning
 - CSV import and export
 
@@ -124,6 +128,8 @@
 - Multi-select rows with checkboxes; select-all / deselect-all toggle in the header
 - Fill-down: select multiple rows and fill the same value across all of them
 - Bulk-add: add multiple empty rows at once with a configurable count
+- Global undo/redo keyboard shortcuts: Ctrl/Cmd+Z to undo, Ctrl/Cmd+Shift+Z or Ctrl+Y to redo; suppressed inside text inputs so native browser undo is not interrupted
+- Filter bars stay pinned to the top of each table when scrolling long lists (Payees, Accounts, Categories, Tags)
 
 ## Navigation & Layout
 
