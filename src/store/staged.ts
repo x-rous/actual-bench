@@ -95,9 +95,15 @@ type StagedStoreState = {
    * Intentionally excluded from undo snapshots — it is save-order metadata, not entity state.
    */
   mergeDependencies: Record<string, string[]>;
+  /**
+   * Pending payee merges: each entry holds a target that survives and the IDs
+   * that will be merged into it. Executed as a single API call on Save.
+   * Intentionally excluded from undo snapshots — pruned when undo restores payee state.
+   */
+  pendingPayeeMerges: Array<{ targetId: string; mergeIds: string[] }>;
 };
 
-type StagedStoreSnapshot = Omit<StagedStoreState, "undoStack" | "redoStack" | "mergeDependencies">;
+type StagedStoreSnapshot = Omit<StagedStoreState, "undoStack" | "redoStack" | "mergeDependencies" | "pendingPayeeMerges">;
 
 type StagedStoreActions = {
   /** Load the server snapshot for an entity type, replacing any existing staged data */
@@ -155,6 +161,15 @@ type StagedStoreActions = {
 
   /** Remove merge dependency entries for rules whose creates have been processed */
   clearMergeDependencies: (newRuleIds: string[]) => void;
+
+  /**
+   * Stage a payee merge: marks each mergeId as deleted (so they appear staged
+   * in the table and DraftPanel) and queues the merge for execution on Save.
+   */
+  stagePayeeMerge: (targetId: string, mergeIds: string[]) => void;
+
+  /** Remove all pending payee merges (called after a successful save) */
+  clearPendingPayeeMerges: () => void;
 };
 
 type EntityKey = keyof StagedStoreSnapshot;
@@ -197,6 +212,7 @@ export const useStagedStore = create<StagedStoreState & StagedStoreActions>((set
   undoStack: [],
   redoStack: [],
   mergeDependencies: {},
+  pendingPayeeMerges: [],
 
   loadAccounts: (accounts) =>
     set((state) => {
@@ -412,7 +428,7 @@ export const useStagedStore = create<StagedStoreState & StagedStoreActions>((set
       return { [entityType]: map };
     }),
 
-  discardAll: () => set({ ...emptySnapshot(), undoStack: [], redoStack: [], mergeDependencies: {} }),
+  discardAll: () => set({ ...emptySnapshot(), undoStack: [], redoStack: [], mergeDependencies: {}, pendingPayeeMerges: [] }),
 
   clearHistory: () => set({ undoStack: [], redoStack: [] }),
 
@@ -427,6 +443,20 @@ export const useStagedStore = create<StagedStoreState & StagedStoreActions>((set
       for (const id of newRuleIds) delete next[id];
       return { mergeDependencies: next };
     }),
+
+  stagePayeeMerge: (targetId, mergeIds) =>
+    set((state) => {
+      let payees = state.payees;
+      for (const id of mergeIds) {
+        payees = applyDelete(payees, id);
+      }
+      return {
+        payees,
+        pendingPayeeMerges: [...state.pendingPayeeMerges, { targetId, mergeIds }],
+      };
+    }),
+
+  clearPendingPayeeMerges: () => set({ pendingPayeeMerges: [] }),
 
   pushUndo: () =>
     set((state) => ({
@@ -449,11 +479,17 @@ export const useStagedStore = create<StagedStoreState & StagedStoreActions>((set
         if (!prev.rules[newRuleId]) delete nextMergeDeps[newRuleId];
       }
 
+      // Prune pending payee merges whose merged IDs are no longer deleted in the reverted snapshot
+      const nextPendingMerges = state.pendingPayeeMerges.filter((m) =>
+        m.mergeIds.every((id) => prev.payees[id]?.isDeleted)
+      );
+
       return {
         ...prev,
         undoStack: stack,
         redoStack: [snapshot(state), ...state.redoStack],
         mergeDependencies: nextMergeDeps,
+        pendingPayeeMerges: nextPendingMerges,
       };
     }),
 
@@ -468,11 +504,17 @@ export const useStagedStore = create<StagedStoreState & StagedStoreActions>((set
         if (!next.rules[newRuleId]) delete nextMergeDeps[newRuleId];
       }
 
+      // Prune pending payee merges whose merged IDs are no longer deleted in the redo target
+      const nextPendingMerges = state.pendingPayeeMerges.filter((m) =>
+        m.mergeIds.every((id) => next.payees[id]?.isDeleted)
+      );
+
       return {
         ...next,
         undoStack: [...state.undoStack, snapshot(state)],
         redoStack: rest,
         mergeDependencies: nextMergeDeps,
+        pendingPayeeMerges: nextPendingMerges,
       };
     }),
 }));
@@ -480,6 +522,7 @@ export const useStagedStore = create<StagedStoreState & StagedStoreActions>((set
 // ─── Derived selectors ────────────────────────────────────────────────────────
 
 export function selectHasChanges(state: StagedStoreState): boolean {
+  if (state.pendingPayeeMerges.length > 0) return true;
   const keys: EntityKey[] = [
     "accounts",
     "payees",

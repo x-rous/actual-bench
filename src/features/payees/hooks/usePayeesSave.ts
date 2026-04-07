@@ -4,7 +4,7 @@ import { useState, useMemo } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useStagedStore } from "@/store/staged";
 import { useConnectionStore, selectActiveInstance } from "@/store/connection";
-import { createPayee, updatePayee, deletePayee, getPayees } from "@/lib/api/payees";
+import { createPayee, updatePayee, deletePayee, getPayees, mergePayees } from "@/lib/api/payees";
 import { extractMessage, computeSaveOperations } from "@/lib/saveUtils";
 import type { SaveResult, SaveSummary } from "@/types/diff";
 import type { Payee } from "@/types/entities";
@@ -14,11 +14,14 @@ export function usePayeesSave() {
 
   const connection = useConnectionStore(selectActiveInstance);
   const staged = useStagedStore((s) => s.payees);
+  const pendingPayeeMerges = useStagedStore((s) => s.pendingPayeeMerges);
   const queryClient = useQueryClient();
 
   const hasPendingChanges = useMemo(
-    () => Object.values(staged).some((s) => s.isNew || s.isUpdated || s.isDeleted),
-    [staged]
+    () =>
+      Object.values(staged).some((s) => s.isNew || s.isUpdated || s.isDeleted) ||
+      pendingPayeeMerges.length > 0,
+    [staged, pendingPayeeMerges]
   );
 
   async function save(): Promise<SaveSummary> {
@@ -29,7 +32,9 @@ export function usePayeesSave() {
     const ops = computeSaveOperations<Payee>(staged);
     const toCreate = ops.toCreate.filter((p) => p.name.trim() !== "");
     const toUpdate = ops.toUpdate.filter((p) => p.name.trim() !== "");
-    const { toDelete } = ops;
+    // Exclude payees being merged — the server handles their deletion via the merge API
+    const mergedIds = new Set(pendingPayeeMerges.flatMap((m) => m.mergeIds));
+    const toDelete = ops.toDelete.filter((id) => !mergedIds.has(id));
     const succeeded: SaveResult[] = [];
     const failed: SaveResult[] = [];
     const succeededCreateIds = new Set<string>();
@@ -97,9 +102,25 @@ export function usePayeesSave() {
       }
     }
 
+    // ── Merges (sequential — each merge is a single API call) ─────────────────
+    for (const { targetId, mergeIds } of pendingPayeeMerges) {
+      try {
+        await mergePayees(connection, targetId, mergeIds);
+        // Mark merged-away payees as saved so loadPayees doesn't try to re-delete them
+        for (const id of mergeIds) {
+          succeeded.push({ status: "success", id });
+        }
+      } catch (reason) {
+        for (const id of mergeIds) {
+          failed.push({ status: "error", id, message: extractMessage(reason, "Merge failed") });
+        }
+      }
+    }
+
     setIsSaving(false);
 
     const store = useStagedStore.getState();
+    store.clearPendingPayeeMerges();
 
     // Remove temp-UUID staged entries for successful creates before refetch.
     if (succeededCreateIds.size > 0) {
@@ -124,6 +145,9 @@ export function usePayeesSave() {
     }
 
     await queryClient.invalidateQueries({ queryKey: ["payees", connection.id] });
+    if (pendingPayeeMerges.length > 0) {
+      await queryClient.invalidateQueries({ queryKey: ["rules", connection.id] });
+    }
 
     return { succeeded, failed, idMap };
   }

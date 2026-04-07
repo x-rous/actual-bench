@@ -26,16 +26,17 @@ export function FilterBar({
   typeFilter, onTypeChange,
   rulesFilter, onRulesFilterChange,
   filteredCount, totalCount,
-  selectedCount, canFillDown,
-  onFillDown, onBulkDelete, onDeselect,
+  selectedCount, canFillDown, canMerge,
+  onFillDown, onBulkDelete, onMerge, onDeselect,
 }: {
   search: string; onSearchChange: (v: string) => void;
   typeFilter: TypeFilter; onTypeChange: (v: TypeFilter) => void;
   rulesFilter: RulesFilter; onRulesFilterChange: (v: RulesFilter) => void;
   filteredCount: number; totalCount: number;
-  selectedCount: number; canFillDown: boolean;
+  selectedCount: number; canFillDown: boolean; canMerge: boolean;
   onFillDown: () => void;
   onBulkDelete: () => void;
+  onMerge: () => void;
   onDeselect: () => void;
 }) {
   const hasFilters = search || typeFilter !== "all" || rulesFilter !== "all";
@@ -46,6 +47,9 @@ export function FilterBar({
         <span className="text-xs font-medium text-primary">{selectedCount} selected</span>
         {canFillDown && (
           <Button size="xs" variant="outline" onClick={onFillDown}>Fill Down</Button>
+        )}
+        {canMerge && (
+          <Button size="xs" variant="outline" onClick={onMerge}>Merge</Button>
         )}
         <Button size="xs" variant="destructive" onClick={onBulkDelete}>Delete</Button>
         <button onClick={onDeselect} className="ml-auto text-xs text-muted-foreground hover:text-foreground">

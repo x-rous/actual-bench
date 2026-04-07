@@ -71,3 +71,14 @@ export async function deletePayee(
 ): Promise<void> {
   await apiRequest<void>(connection, `/payees/${id}`, { method: "DELETE" });
 }
+
+export async function mergePayees(
+  connection: ConnectionInstance,
+  targetId: string,
+  mergeIds: string[]
+): Promise<void> {
+  await apiRequest<void>(connection, "/payees/merge", {
+    method: "POST",
+    body: { targetId, mergeIds },
+  });
+}

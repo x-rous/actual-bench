@@ -237,8 +237,9 @@ function EntitySection({
 
 export function DraftPanel() {
   const router            = useRouter();
-  const hasChanges        = useStagedStore(selectHasChanges);
-  const mergeDependencies = useStagedStore((s) => s.mergeDependencies);
+  const hasChanges          = useStagedStore(selectHasChanges);
+  const mergeDependencies   = useStagedStore((s) => s.mergeDependencies);
+  const pendingPayeeMerges  = useStagedStore((s) => s.pendingPayeeMerges);
   const accounts          = useStagedStore((s) => s.accounts);
   const payees            = useStagedStore((s) => s.payees);
   const categoryGroups    = useStagedStore((s) => s.categoryGroups);
@@ -287,12 +288,19 @@ export function DraftPanel() {
     deleted: new Set(Object.values(mergeDependencies).flat()),
   }), [mergeDependencies]);
 
+  const payeeMergeDepIds = useMemo(() => ({
+    created: new Set<string>(),
+    deleted: new Set(pendingPayeeMerges.flatMap((m) => m.mergeIds)),
+  }), [pendingPayeeMerges]);
+
+  const hasPayeeMerges = pendingPayeeMerges.length > 0;
+
   const getRuleLabelFn = useMemo(
     () => (entity: BaseEntity) => getRuleLabel(entity as unknown as Rule, entityMaps),
     [entityMaps]
   );
 
-  const isExpanded = hasChanges || errorCount > 0;
+  const isExpanded = hasChanges || hasPayeeMerges || errorCount > 0;
 
   // ── Collapsed strip — shown when no pending changes ───────────────────────────
   if (!isExpanded) {
@@ -335,7 +343,11 @@ export function DraftPanel() {
             label={ENTITY_LABELS[key]}
             entries={Object.values(slices[key])}
             getLabelFn={key === "rules" ? getRuleLabelFn : undefined}
-            mergeDepIds={key === "rules" ? ruleMergeDepIds : undefined}
+            mergeDepIds={
+              key === "rules"   ? ruleMergeDepIds  :
+              key === "payees"  ? payeeMergeDepIds :
+              undefined
+            }
             onItemClick={ENTITY_ROUTES[key] ? (id) => handleItemClick(key, id) : undefined}
           />
         ))}

@@ -32,6 +32,7 @@ type NavigableCol = (typeof NAVIGABLE_COLS)[number];
 type CellId = { rowId: string; colId: NavigableCol };
 type PayeeRow = StagedEntity<Payee>;
 type ConfirmState = { title: string; message: string; onConfirm: () => void };
+type MergeState = { targetName: string; mergeNames: string[]; targetId: string; mergeIds: string[] };
 
 // ─── Sort helpers ──────────────────────────────────────────────────────────────
 
@@ -85,6 +86,8 @@ export function PayeesTable() {
   const { selectedIds, toggleSelect: toggleSelectRow, toggleSelectAll: _toggleSelectAll, clearSelection } = useTableSelection();
   const [confirmDialog, setConfirmDialog] = useState<ConfirmState | null>(null);
 
+  const [mergeDialog, setMergeDialog] = useState<MergeState | null>(null);
+
   const containerRef  = useRef<HTMLDivElement>(null);
   const router        = useRouter();
   const highlightedId = useHighlight();
@@ -98,6 +101,7 @@ export function PayeesTable() {
   const revertEntity = useStagedStore((s) => s.revertEntity);
   const clearSaveError = useStagedStore((s) => s.clearSaveError);
   const pushUndo = useStagedStore((s) => s.pushUndo);
+  const stagePayeeMerge = useStagedStore((s) => s.stagePayeeMerge);
 
   // ── Rules reference count per payee ──────────────────────────────────────────
   const payeeRuleCount = useMemo(() => {
@@ -308,6 +312,28 @@ export function PayeesTable() {
     }
   }
 
+  function handleMerge() {
+    // Only regular, non-deleted, server-persisted payees — first in display order becomes target
+    const selectedRegular = rows.filter(
+      (r) => !r.isDeleted && !r.isNew && !r.entity.transferAccountId && selectedIds.has(r.entity.id)
+    );
+    if (selectedRegular.length < 2) return;
+    const [target, ...rest] = selectedRegular;
+    setMergeDialog({
+      targetName: target.entity.name,
+      mergeNames: rest.map((r) => r.entity.name),
+      targetId:   target.entity.id,
+      mergeIds:   rest.map((r) => r.entity.id),
+    });
+  }
+
+  function confirmMerge(state: MergeState) {
+    pushUndo();
+    stagePayeeMerge(state.targetId, state.mergeIds);
+    clearSelection();
+    setMergeDialog(null);
+  }
+
   // ── Paste from Excel / Sheets ─────────────────────────────────────────────────
   function handlePaste(e: React.ClipboardEvent<HTMLDivElement>) {
     if (editingCell) return;
@@ -376,6 +402,11 @@ export function PayeesTable() {
   const totalCount = Object.keys(staged).length;
   const canFillDown = selectedIds.size >= 2 && selectedCell !== null;
   const activeSelectedCount = [...selectedIds].filter((id) => staged[id] && !staged[id].isDeleted).length;
+  // Merge requires 2+ non-deleted regular (non-transfer) payees selected
+  const mergeableCount = [...selectedIds].filter(
+    (id) => staged[id] && !staged[id].isDeleted && !staged[id].entity.transferAccountId && !staged[id].isNew
+  ).length;
+  const canMerge = mergeableCount >= 2;
 
   return (
     <>
@@ -385,8 +416,9 @@ export function PayeesTable() {
           typeFilter={typeFilter} onTypeChange={setTypeFilter}
           rulesFilter={rulesFilter} onRulesFilterChange={setRulesFilter}
           filteredCount={rows.length} totalCount={totalCount}
-          selectedCount={activeSelectedCount} canFillDown={canFillDown}
+          selectedCount={activeSelectedCount} canFillDown={canFillDown} canMerge={canMerge}
           onFillDown={handleFillDown}
+          onMerge={handleMerge}
           onBulkDelete={handleBulkDelete}
           onDeselect={() => clearSelection()}
         />
@@ -641,6 +673,30 @@ export function PayeesTable() {
               onClick={() => { confirmDialog?.onConfirm(); setConfirmDialog(null); }}
             >
               Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Merge dialog */}
+      <Dialog open={mergeDialog !== null} onOpenChange={(open) => { if (!open) setMergeDialog(null); }}>
+        <DialogContent showCloseButton={false}>
+          <DialogHeader>
+            <DialogTitle>Merge payees into &quot;{mergeDialog?.targetName}&quot;?</DialogTitle>
+            <DialogDescription>
+              The following payee{mergeDialog && mergeDialog.mergeIds.length !== 1 ? "s" : ""} will be merged into &quot;{mergeDialog?.targetName}&quot; and removed:{" "}
+              <strong>{mergeDialog?.mergeNames.join(", ")}</strong>.
+              All transactions and rules referencing {mergeDialog && mergeDialog.mergeIds.length !== 1 ? "them" : "it"} will be updated automatically.
+              This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setMergeDialog(null)}>Cancel</Button>
+            <Button
+              variant="default"
+              onClick={() => { if (mergeDialog) confirmMerge(mergeDialog); }}
+            >
+              Merge
             </Button>
           </DialogFooter>
         </DialogContent>
