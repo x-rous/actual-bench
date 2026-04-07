@@ -98,7 +98,7 @@ type StagedStoreState = {
   /**
    * Pending payee merges: each entry holds a target that survives and the IDs
    * that will be merged into it. Executed as a single API call on Save.
-   * Intentionally excluded from undo snapshots — pruned when undo restores payee state.
+   * Included in StagedStoreSnapshot so undo/redo correctly restores and re-queues merges.
    */
   pendingPayeeMerges: Array<{ targetId: string; mergeIds: string[] }>;
 };
