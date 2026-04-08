@@ -25,7 +25,7 @@ type ConnectionState = {
 type ConnectionActions = {
   addInstance: (instance: ConnectionInstance) => void;
   removeInstance: (id: string) => void;
-  setActiveInstance: (id: string) => void;
+  setActiveInstance: (id: string | null) => void;
   updateInstance: (id: string, patch: Partial<Omit<ConnectionInstance, "id">>) => void;
   clearAll: () => void;
 };

@@ -159,7 +159,7 @@ export type BudgetFile = {
  * Lists remote budget files available on the server.
  * Uses GET /v1/budgets/ — a server-level endpoint that doesn't require a
  * budgetSyncId, so no budget is opened on the actual-http-api side.
- * Filters to state === "remote" and deduplicates by cloudFileId.
+ * Filters to state === "remote" and deduplicates by groupId (Sync ID).
  */
 export async function listBudgets(
   baseUrl: string,
@@ -188,13 +188,15 @@ export async function listBudgets(
   const payload = (await response.json()) as { data: BudgetFile[] } | BudgetFile[];
   const all: BudgetFile[] = Array.isArray(payload) ? payload : (payload.data ?? []);
 
-  // Keep only remote budgets that have a groupId, deduplicate by cloudFileId.
+  // Keep only remote budgets that have a groupId, deduplicate by groupId (Sync ID).
+  // groupId is the server-assigned unique identifier and is guaranteed unique
+  // among state === "remote" entries. cloudFileId is NOT guaranteed unique.
   const seen = new Set<string>();
   return all.filter((b) => {
     if (b.state !== "remote") return false;
     if (!b.groupId) return false;
-    if (seen.has(b.cloudFileId)) return false;
-    seen.add(b.cloudFileId);
+    if (seen.has(b.groupId)) return false;
+    seen.add(b.groupId);
     return true;
   });
 }

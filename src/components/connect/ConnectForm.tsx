@@ -26,9 +26,8 @@ export function ConnectForm() {
     budgets,
     validatedUrl,
     validatedApiVersion,
-    serverVersionMap,
-    selectedCloudFileId,
-    setSelectedCloudFileId,
+    selectedGroupId,
+    setSelectedGroupId,
     encryptionPassword,
     setEncryptionPassword,
     connectStatus,
@@ -192,15 +191,15 @@ export function ConnectForm() {
 
       <div className="flex flex-col gap-2 max-h-70 overflow-y-auto pr-1">
         {budgets.map((budget) => {
-          const selected = selectedCloudFileId === budget.cloudFileId;
+          const selected = selectedGroupId === budget.groupId;
           const alreadyConnected = connectedSyncIds.has(budget.groupId ?? "");
           return (
             <button
-              key={budget.cloudFileId}
+              key={budget.groupId}
               type="button"
               disabled={connectBusy || !!reconnectBusyId}
               onClick={() => {
-                setSelectedCloudFileId(budget.cloudFileId);
+                setSelectedGroupId(budget.groupId ?? null);
                 if (connectStatus.kind === "error") setConnectStatus({ kind: "idle" });
               }}
               className={cn(
@@ -232,11 +231,6 @@ export function ConnectForm() {
                 <span className="text-xs text-muted-foreground font-mono truncate">
                   Sync ID: {budget.groupId}
                 </span>
-                {serverVersionMap[budget.cloudFileId] && (
-                  <span className="text-xs text-muted-foreground font-mono truncate">
-                    Server version: v{serverVersionMap[budget.cloudFileId]}
-                  </span>
-                )}
               </span>
             </button>
           );
@@ -271,7 +265,7 @@ export function ConnectForm() {
 
       <button
         type="button"
-        disabled={connectBusy || !!reconnectBusyId || !selectedCloudFileId}
+        disabled={connectBusy || !!reconnectBusyId || !selectedGroupId}
         onClick={handleConnect}
         className="flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
       >
@@ -307,7 +301,7 @@ export function ConnectForm() {
                   instance={instance}
                   isActive={activeInstance?.id === instance.id}
                   onConnect={handleReconnect}
-                  onRemove={(id) => removeInstance(id)}
+                  onRemove={removeInstance}
                   connectBusyId={reconnectBusyId}
                 />
               ))}

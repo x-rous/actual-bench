@@ -51,8 +51,7 @@ export function useConnectForm() {
   const [validatedUrl, setValidatedUrl] = useState("");
   const [validatedKey, setValidatedKey] = useState("");
   const [validatedApiVersion, setValidatedApiVersion] = useState<string | null>(null);
-  const [serverVersionMap, setServerVersionMap] = useState<Record<string, string | null>>({});
-  const [selectedCloudFileId, setSelectedCloudFileId] = useState<string | null>(null);
+  const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
   const [encryptionPassword, setEncryptionPassword] = useState("");
   const [connectStatus, setConnectStatus] = useState<ConnectStatus>({ kind: "idle" });
 
@@ -78,13 +77,12 @@ export function useConnectForm() {
 
   function resetStep2() {
     setBudgets(null);
-    setSelectedCloudFileId(null);
+    setSelectedGroupId(null);
     setEncryptionPassword("");
     setConnectStatus({ kind: "idle" });
     setValidatedUrl("");
     setValidatedKey("");
     setValidatedApiVersion(null);
-    setServerVersionMap({});
   }
 
   function handleCredentialChange() {
@@ -165,7 +163,7 @@ export function useConnectForm() {
 
     setValidateStatus({ kind: "busy" });
     setBudgets(null);
-    setSelectedCloudFileId(null);
+    setSelectedGroupId(null);
     setEncryptionPassword("");
     setConnectStatus({ kind: "idle" });
 
@@ -186,30 +184,11 @@ export function useConnectForm() {
         return;
       }
 
-      const versionEntries = await Promise.all(
-        fetched.map(async (budget) => {
-          if (!budget.groupId) return [budget.cloudFileId, null] as const;
-          try {
-            const version = await getServerVersion(url, key, budget.groupId);
-            return [budget.cloudFileId, version] as const;
-          } catch (err) {
-            // Rethrow auth errors so the caller can surface them as step-1 failures.
-            const status =
-              err && typeof err === "object" && "status" in err
-                ? (err as { status: number }).status
-                : -1;
-            if (status === 401 || status === 403) throw err;
-            return [budget.cloudFileId, null] as const;
-          }
-        })
-      );
-
       setValidatedUrl(url);
       setValidatedKey(key);
       setValidatedApiVersion(apiVersion);
-      setServerVersionMap(Object.fromEntries(versionEntries));
       setBudgets(fetched);
-      setSelectedCloudFileId(fetched[0].cloudFileId);
+      setSelectedGroupId(fetched[0].groupId!);
       setValidateStatus({ kind: "idle" });
 
       // Persist the server, then select its chip so the manual form collapses.
@@ -233,9 +212,9 @@ export function useConnectForm() {
   // ── Connect to selected budget ──────────────────────────────────────────────
 
   async function connect() {
-    if (!budgets || !selectedCloudFileId) return;
+    if (!budgets || !selectedGroupId) return;
 
-    const selected = budgets.find((b) => b.cloudFileId === selectedCloudFileId);
+    const selected = budgets.find((b) => b.groupId === selectedGroupId);
     if (!selected) return;
 
     // If this budget is already saved, reconnect to the existing instance
@@ -255,6 +234,7 @@ export function useConnectForm() {
       setConnectStatus({ kind: "busy" });
       try {
         await reconnect(freshInstance);
+        setConnectStatus({ kind: "idle" });
       } catch (err) {
         const status =
           err && typeof err === "object" && "status" in err
@@ -284,10 +264,20 @@ export function useConnectForm() {
     setConnectStatus({ kind: "busy" });
     try {
       await testConnection(instance);
+      const [apiVersionResult, serverVersionResult] = await Promise.allSettled([
+        getApiVersion(validatedUrl, validatedKey),
+        getServerVersion(validatedUrl, validatedKey, selected.groupId!),
+      ]);
       const finalInstance: ConnectionInstance = {
         ...instance,
-        apiVersion: validatedApiVersion ?? undefined,
-        serverVersion: serverVersionMap[selected.cloudFileId] ?? undefined,
+        apiVersion:
+          apiVersionResult.status === "fulfilled"
+            ? apiVersionResult.value
+            : validatedApiVersion ?? undefined,
+        serverVersion:
+          serverVersionResult.status === "fulfilled"
+            ? serverVersionResult.value
+            : undefined,
       };
       discardAll();
       queryClient.clear();
@@ -337,9 +327,8 @@ export function useConnectForm() {
     budgets,
     validatedUrl,
     validatedApiVersion,
-    serverVersionMap,
-    selectedCloudFileId,
-    setSelectedCloudFileId,
+    selectedGroupId,
+    setSelectedGroupId,
     encryptionPassword,
     setEncryptionPassword,
     connectStatus,
