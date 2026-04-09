@@ -80,3 +80,46 @@ export async function deleteAccount(
 ): Promise<void> {
   await apiRequest<void>(connection, `/accounts/${id}`, { method: "DELETE" });
 }
+
+// ─── Balance query ─────────────────────────────────────────────────────────────
+
+type BalanceRow = {
+  account: string;
+  "account.name": string;
+  balance: number;
+};
+
+/**
+ * Fetches the current balance for all accounts via ActualQL aggregation.
+ * Returns a Map<accountId, balance> where balance is in whole units (divided
+ * by 100 from the raw cent value returned by the API).
+ * Accounts with no transactions will be absent from the map.
+ */
+export async function getAccountBalances(
+  connection: ConnectionInstance
+): Promise<Map<string, number>> {
+  const response = await apiRequest<{ data: BalanceRow[] }>(
+    connection,
+    "/run-query",
+    {
+      method: "POST",
+      body: {
+        ActualQLquery: {
+          table: "transactions",
+          groupBy: ["account", "account.name"],
+          select: [
+            "account",
+            "account.name",
+            { balance: { $sum: "$amount" } },
+          ],
+        },
+      },
+    }
+  );
+
+  const map = new Map<string, number>();
+  for (const row of response.data) {
+    map.set(row.account, row.balance / 100);
+  }
+  return map;
+}
