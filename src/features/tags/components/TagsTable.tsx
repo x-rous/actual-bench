@@ -167,14 +167,14 @@ export function TagsTable() {
       });
   }, [stagedTags, search, colorFilter, sortNameDir]);
 
-  const duplicateNames = useMemo(() => {
+  const nameCountMap = useMemo(() => {
     const counts = new Map<string, number>();
     for (const s of Object.values(stagedTags)) {
       if (s.isDeleted) continue;
       const n = s.entity.name.trim().toLowerCase();
       if (n) counts.set(n, (counts.get(n) ?? 0) + 1);
     }
-    return new Set([...counts.entries()].filter(([, c]) => c > 1).map(([n]) => n));
+    return counts;
   }, [stagedTags]);
 
   // ── Select-all helpers ────────────────────────────────────────────────────
@@ -226,8 +226,12 @@ export function TagsTable() {
       const trimmed = value.trim().replace(/ /g, "");
       const current = stagedTags[rowId]?.entity;
       if (trimmed && current) {
-        const isDuplicate = duplicateNames.has(trimmed.toLowerCase());
-        if (isDuplicate) {
+        const candidateKey = trimmed.toLowerCase();
+        const currentKey   = current.name.trim().toLowerCase();
+        // Build a count that excludes this row's current name so renaming to
+        // the same value doesn't trigger a false collision.
+        const countWithoutSelf = (nameCountMap.get(candidateKey) ?? 0) - (candidateKey === currentKey ? 1 : 0);
+        if (countWithoutSelf >= 1) {
           toast.error(`A tag named "${trimmed}" already exists.`);
           commitEdit({ rowId, colId: "name" });
           return;
@@ -389,17 +393,21 @@ export function TagsTable() {
                 <th className="w-1 p-0" />
                 <th className="w-10 px-2 py-1.5 text-left text-xs font-medium">Color</th>
                 <th
-                  className="w-[300px] cursor-pointer select-none px-2 py-1.5 text-left hover:bg-muted/30"
-                  onClick={() => setSortNameDir((d) => d === null ? "asc" : d === "asc" ? "desc" : null)}
+                  className="w-[300px] px-2 py-1.5 text-left"
+                  aria-sort={sortNameDir === "asc" ? "ascending" : sortNameDir === "desc" ? "descending" : "none"}
                 >
-                  <span className="flex items-center text-xs font-medium text-muted-foreground">
+                  <button
+                    className="flex select-none items-center text-xs font-medium text-muted-foreground hover:text-foreground"
+                    onClick={() => setSortNameDir((d) => d === null ? "asc" : d === "asc" ? "desc" : null)}
+                    aria-label={`Sort by name${sortNameDir === "asc" ? ", ascending" : sortNameDir === "desc" ? ", descending" : ""}`}
+                  >
                     Name
                     {sortNameDir === null
                       ? <ArrowUpDown className="ml-1 inline h-3 w-3 opacity-30" />
                       : sortNameDir === "asc"
                         ? <ArrowUp className="ml-1 inline h-3 w-3" />
                         : <ArrowDown className="ml-1 inline h-3 w-3" />}
-                  </span>
+                  </button>
                 </th>
                 <th className="px-2 py-1.5 text-left text-xs font-medium">Description</th>
                 <th className="w-16 p-0" />
@@ -407,7 +415,7 @@ export function TagsTable() {
             </thead>
             <tbody>
               {rows.map(({ entity, isNew, isUpdated, isDeleted, saveError }) => {
-                const isDuplicate   = !isDeleted && duplicateNames.has(entity.name.trim().toLowerCase());
+                const isDuplicate   = !isDeleted && (nameCountMap.get(entity.name.trim().toLowerCase()) ?? 0) > 1;
                 const nameSelected  = selectedCell?.rowId === entity.id && selectedCell?.colId === "name";
                 const nameEditing   = editingCell?.rowId  === entity.id && editingCell?.colId  === "name";
                 const descSelected  = selectedCell?.rowId === entity.id && selectedCell?.colId === "description";

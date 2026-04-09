@@ -38,8 +38,8 @@ export function AccountsView() {
 
   function handleCreateRule(accountId: string, accountName: string) {
     setRuleSeed({
-      conditions: [{ field: "account", op: "is", value: accountId, type: "id" }],
-      actions:    [{ field: "notes",   op: "set", value: accountName, type: "string" }],
+      conditions: [{ field: "payee",   op: "contains", value: accountName, type: "string" }],
+      actions:    [{ field: "account", op: "set",      value: accountId,   type: "id"     }],
     });
     setRuleDrawerOpen(true);
   }
