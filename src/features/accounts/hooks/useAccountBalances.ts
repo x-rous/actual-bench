@@ -24,5 +24,7 @@ export function useAccountBalances() {
     },
     enabled: !!connection,
     staleTime: 60_000,
+    refetchInterval: 60_000,
+    refetchIntervalInBackground: true,
   });
 }

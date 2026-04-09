@@ -30,15 +30,17 @@
 ## Accounts
 
 - Create, rename, and delete accounts
-- Toggle on-budget / off-budget status per account
+- Budget type (on-budget / off-budget) is set at creation time via a toggle switch and displayed as a read-only badge thereafter — reflecting Actual Budget's constraint that account type cannot be changed after creation
+- Current balance column shows the live account balance fetched via ActualQL aggregation, refreshed every 60 seconds; negative balances are highlighted in red
 - Open and close accounts
 - Inline editing: double-click, Enter, or F2 to edit; Escape to cancel
 - Bulk select with bulk close, reopen, and delete
-- Filter by name, status (open / closed / all), and budget type (on / off / all)
+- Filter by name, status (open / closed / all), budget type (on / off / all), and whether an account has associated rules
 - Sort by name, status, or budget type
 - Paste tab-separated data directly from Excel or Google Sheets
 - CSV import and export
 - Duplicate name detection with visual warning
+- Rules count displayed per account — click it to jump to the rules list filtered to that account
 
 ## Payees
 
@@ -126,7 +128,6 @@
 - Inline cell editing triggered by double-click, Enter, or F2
 - Full keyboard navigation: arrow keys move between cells, Tab moves forward, Escape cancels
 - Multi-select rows with checkboxes; select-all / deselect-all toggle in the header
-- Fill-down: select multiple rows and fill the same value across all of them
 - Bulk-add: add multiple empty rows at once with a configurable count
 - Global undo/redo keyboard shortcuts: Ctrl/Cmd+Z to undo, Ctrl/Cmd+Shift+Z or Ctrl+Y to redo; suppressed inside text inputs so native browser undo is not interrupted
 - Filter bars stay pinned to the top of each table when scrolling long lists (Payees, Accounts, Categories, Tags)
