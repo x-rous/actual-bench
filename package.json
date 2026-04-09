@@ -1,6 +1,6 @@
 {
   "name": "actual-bench",
-  "version": "1.0.6",
+  "version": "1.0.7",
   "description": "Web-based admin panel for Actual Budget — manage accounts, payees, categories, and rules via actual-http-api",
   "repository": {
     "type": "git",

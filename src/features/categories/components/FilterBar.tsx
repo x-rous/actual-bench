@@ -6,6 +6,7 @@ import { PillGroup } from "@/components/ui/pill-group";
 
 export type VisibilityFilter = "all" | "visible" | "hidden";
 export type TypeFilter = "all" | "income" | "expense";
+export type RulesFilter = "all" | "with_rules" | "no_rules";
 export type SortDir = "asc" | "desc";
 
 export const VISIBILITY_OPTIONS: { value: VisibilityFilter; label: string }[] = [
@@ -20,10 +21,17 @@ export const TYPE_OPTIONS: { value: TypeFilter; label: string }[] = [
   { value: "expense", label: "Expense" },
 ];
 
+export const RULES_OPTIONS: { value: RulesFilter; label: string }[] = [
+  { value: "all",        label: "All" },
+  { value: "with_rules", label: "Has Rules" },
+  { value: "no_rules",   label: "No Rules" },
+];
+
 export function FilterBar({
   search, onSearchChange,
   visibilityFilter, onVisibilityChange,
   typeFilter, onTypeChange,
+  rulesFilter, onRulesFilterChange,
   filteredCount, totalCount,
   selectedCount,
   onBulkDelete, onDeselect,
@@ -31,12 +39,13 @@ export function FilterBar({
   search: string; onSearchChange: (v: string) => void;
   visibilityFilter: VisibilityFilter; onVisibilityChange: (v: VisibilityFilter) => void;
   typeFilter: TypeFilter; onTypeChange: (v: TypeFilter) => void;
+  rulesFilter: RulesFilter; onRulesFilterChange: (v: RulesFilter) => void;
   filteredCount: number; totalCount: number;
   selectedCount: number;
   onBulkDelete: () => void;
   onDeselect: () => void;
 }) {
-  const hasFilters = search || visibilityFilter !== "all" || typeFilter !== "all";
+  const hasFilters = search || visibilityFilter !== "all" || typeFilter !== "all" || rulesFilter !== "all";
 
   if (selectedCount > 0) {
     return (
@@ -69,10 +78,11 @@ export function FilterBar({
 
       <PillGroup options={VISIBILITY_OPTIONS} value={visibilityFilter} onChange={onVisibilityChange} />
       <PillGroup options={TYPE_OPTIONS} value={typeFilter} onChange={onTypeChange} />
+      <PillGroup options={RULES_OPTIONS} value={rulesFilter} onChange={onRulesFilterChange} />
 
       {hasFilters && (
         <button
-          onClick={() => { onSearchChange(""); onVisibilityChange("all"); onTypeChange("all"); }}
+          onClick={() => { onSearchChange(""); onVisibilityChange("all"); onTypeChange("all"); onRulesFilterChange("all"); }}
           className="text-xs text-muted-foreground underline hover:text-foreground"
         >
           Clear

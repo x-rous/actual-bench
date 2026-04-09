@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Plus, Code } from "lucide-react";
+import { Plus, Code, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Sheet,
@@ -17,17 +17,25 @@ import { ActionRow } from "./ActionRow";
 import { STAGE_OPTIONS, CONDITIONS_OP_OPTIONS } from "../utils/ruleFields";
 import type { ConditionOrAction, RuleStage, ConditionsOp } from "@/types/entities";
 
+export type RuleSeed = {
+  conditions: ConditionOrAction[];
+  actions: ConditionOrAction[];
+};
+
 type Props = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   /** ID of the rule to edit. Null = creating a new rule. */
   ruleId: string | null;
+  /** Pre-populated conditions/actions when creating a new rule from another entity. */
+  seed?: RuleSeed;
 };
 
-export function RuleDrawer({ open, onOpenChange, ruleId }: Props) {
+export function RuleDrawer({ open, onOpenChange, ruleId, seed }: Props) {
   const stagedRules = useStagedStore((s) => s.rules);
   const stageNew = useStagedStore((s) => s.stageNew);
   const stageUpdate = useStagedStore((s) => s.stageUpdate);
+  const stageDelete = useStagedStore((s) => s.stageDelete);
   const pushUndo = useStagedStore((s) => s.pushUndo);
 
   const existingRule = ruleId ? stagedRules[ruleId]?.entity : null;
@@ -50,8 +58,8 @@ export function RuleDrawer({ open, onOpenChange, ruleId }: Props) {
     } else {
       setStage("default");
       setConditionsOp("and");
-      setConditions([{ field: "payee", op: "is", value: "", type: "id" }]);
-      setActions([{ field: "category", op: "set", value: "", type: "id" }]);
+      setConditions(seed?.conditions ?? [{ field: "payee", op: "is", value: "", type: "id" }]);
+      setActions(seed?.actions ?? [{ field: "category", op: "set", value: "", type: "id" }]);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, ruleId]);
@@ -203,15 +211,28 @@ export function RuleDrawer({ open, onOpenChange, ruleId }: Props) {
         )}
 
         <SheetFooter className="shrink-0 flex-row items-center gap-2 border-t px-4 py-3">
-          <Button
-            variant="ghost"
-            size="sm"
-            className="mr-auto text-xs text-muted-foreground"
-            onClick={() => setShowJson((v) => !v)}
-          >
-            <Code className="h-3 w-3 mr-1" />
-            {showJson ? "Hide JSON" : "JSON"}
-          </Button>
+          <div className="mr-auto flex items-center gap-2">
+            {!isNew && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-xs text-destructive hover:text-destructive"
+                onClick={() => { pushUndo(); stageDelete("rules", ruleId!); onOpenChange(false); }}
+              >
+                <Trash2 className="h-3 w-3 mr-1" />
+                Delete
+              </Button>
+            )}
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-xs text-muted-foreground"
+              onClick={() => setShowJson((v) => !v)}
+            >
+              <Code className="h-3 w-3 mr-1" />
+              {showJson ? "Hide JSON" : "JSON"}
+            </Button>
+          </div>
           <Button variant="outline" size="sm" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>

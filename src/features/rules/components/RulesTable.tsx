@@ -14,7 +14,7 @@ import { rulePreview } from "../utils/rulePreview";
 import type { EntityMaps } from "../utils/rulePreview";
 import { STAGE_LABELS } from "../utils/ruleFields";
 import { FilterBar } from "./FilterBar";
-import type { StageFilter } from "./FilterBar";
+import type { StageFilter, ActionTypeFilter } from "./FilterBar";
 import { ConditionChip, ActionChip } from "./RuleChips";
 import type { StagedEntity } from "@/types/staged";
 import type { Rule } from "@/types/entities";
@@ -42,9 +42,11 @@ type Props = {
   payeeId?: string | null;
   /** When set, only rules that reference this category ID in a condition or action are shown. */
   categoryId?: string | null;
+  /** When set, only rules that reference this account ID in a condition or action are shown. */
+  accountId?: string | null;
 };
 
-export function RulesTable({ onEdit, onMerge, payeeId, categoryId }: Props) {
+export function RulesTable({ onEdit, onMerge, payeeId, categoryId, accountId }: Props) {
   const stagedRules = useStagedStore((s) => s.rules);
   const payees = useStagedStore((s) => s.payees);
   const categories = useStagedStore((s) => s.categories);
@@ -60,6 +62,7 @@ export function RulesTable({ onEdit, onMerge, payeeId, categoryId }: Props) {
   const highlightedId = useHighlight();
 
   const [stageFilter, setStageFilter] = useState<StageFilter>("all");
+  const [actionTypeFilter, setActionTypeFilter] = useState<ActionTypeFilter>("all");
   const [search, setSearch] = useState("");
   const { selectedIds, toggleSelect, toggleSelectAll: _toggleSelectAll, clearSelection } = useTableSelection();
 
@@ -85,6 +88,10 @@ export function RulesTable({ onEdit, onMerge, payeeId, categoryId }: Props) {
     return Object.values(stagedRules).filter((s) => {
       if (s.isDeleted) return false;
       if (stageFilter !== "all" && normalizeStage(s.entity.stage) !== stageFilter) return false;
+      if (actionTypeFilter !== "all") {
+        const hasAction = s.entity.actions.some((a) => a.field === actionTypeFilter);
+        if (!hasAction) return false;
+      }
       if (payeeId) {
         const parts = [...s.entity.conditions, ...s.entity.actions];
         const hasPayee = parts.some((part) => {
@@ -103,10 +110,19 @@ export function RulesTable({ onEdit, onMerge, payeeId, categoryId }: Props) {
         });
         if (!hasCategory) return false;
       }
+      if (accountId) {
+        const parts = [...s.entity.conditions, ...s.entity.actions];
+        const hasAccount = parts.some((part) => {
+          if (part.field !== "account") return false;
+          const ids = Array.isArray(part.value) ? part.value : [part.value];
+          return ids.includes(accountId);
+        });
+        if (!hasAccount) return false;
+      }
       if (q && !(rulePreviews.get(s.entity.id) ?? "").includes(q)) return false;
       return true;
     });
-  }, [stagedRules, stageFilter, payeeId, categoryId, search, rulePreviews]);
+  }, [stagedRules, stageFilter, actionTypeFilter, payeeId, categoryId, accountId, search, rulePreviews]);
 
   function handleDelete(id: string) {
     pushUndo();
@@ -160,12 +176,17 @@ export function RulesTable({ onEdit, onMerge, payeeId, categoryId }: Props) {
         onSearchChange={setSearch}
         stageFilter={stageFilter}
         onStageFilterChange={setStageFilter}
+        actionTypeFilter={actionTypeFilter}
+        onActionTypeFilterChange={setActionTypeFilter}
         payeeId={payeeId}
         payeeName={payeeId ? payees[payeeId]?.entity.name : undefined}
         categoryId={categoryId}
         categoryName={categoryId ? categories[categoryId]?.entity.name : undefined}
+        accountId={accountId}
+        accountName={accountId ? accounts[accountId]?.entity.name : undefined}
         onClearPayee={() => router.push("/rules")}
         onClearCategory={() => router.push("/rules")}
+        onClearAccount={() => router.push("/rules")}
         rowCount={rows.length}
         totalVisible={totalVisible}
         selectedCount={activeSelectedIds.length}
@@ -177,8 +198,21 @@ export function RulesTable({ onEdit, onMerge, payeeId, categoryId }: Props) {
       {/* Table */}
       <div className="min-h-0 flex-1 overflow-auto">
         {rows.length === 0 ? (
-          <div className="flex items-center justify-center py-20 text-sm text-muted-foreground">
-            No rules found.
+          <div className="flex flex-col items-center justify-center gap-2 py-20 text-sm text-muted-foreground">
+            <span>No rules found.</span>
+            {(search || stageFilter !== "all" || actionTypeFilter !== "all" || payeeId || categoryId || accountId) && (
+              <button
+                className="text-xs underline hover:text-foreground"
+                onClick={() => {
+                  setSearch("");
+                  setStageFilter("all");
+                  setActionTypeFilter("all");
+                  if (payeeId || categoryId || accountId) router.push("/rules");
+                }}
+              >
+                Clear filters
+              </button>
+            )}
           </div>
         ) : (
           <table className="w-full text-xs">
@@ -212,16 +246,17 @@ export function RulesTable({ onEdit, onMerge, payeeId, categoryId }: Props) {
                     key={rule.id}
                     data-row-id={rule.id}
                     className={cn(
-                      "group border-b border-border border-l-2 border-l-transparent hover:bg-muted/20 transition-colors align-top",
+                      "group cursor-pointer border-b border-border border-l-2 border-l-transparent hover:bg-muted/20 transition-colors align-top",
                       highlightedId === rule.id && "bg-primary/20 ring-2 ring-inset ring-primary/40",
                       highlightedId !== rule.id && selectedIds.has(rule.id) && "bg-primary/10",
                       highlightedId !== rule.id && !selectedIds.has(rule.id) && hasError && "bg-destructive/5 border-l-destructive",
                       highlightedId !== rule.id && !selectedIds.has(rule.id) && !hasError && s.isNew && "bg-green-50/40 dark:bg-green-950/10 border-l-green-500",
                       highlightedId !== rule.id && !selectedIds.has(rule.id) && !hasError && !s.isNew && s.isUpdated && "bg-amber-50/40 dark:bg-amber-950/10 border-l-amber-400",
                     )}
+                    onClick={() => onEdit(rule.id)}
                   >
                     {/* Checkbox */}
-                    <td className="px-3 py-2.5">
+                    <td className="px-3 py-2.5" onClick={(e) => e.stopPropagation()}>
                       <input
                         type="checkbox"
                         checked={selectedIds.has(rule.id)}
@@ -261,7 +296,10 @@ export function RulesTable({ onEdit, onMerge, payeeId, categoryId }: Props) {
                     {/* Conditions — one chip per line */}
                     <td className="px-3 py-2.5">
                       {rule.conditions.length === 0 ? (
-                        <span className="text-[11px] italic text-muted-foreground">No conditions</span>
+                        <span className="flex items-center gap-1.5">
+                          <span className="text-[11px] italic text-muted-foreground">No conditions</span>
+                          <Badge variant="status-warning" className="text-[10px] font-normal">catch-all</Badge>
+                        </span>
                       ) : (
                         <div className="flex flex-col gap-1">
                           {rule.conditions.map((c, i) => (
@@ -288,7 +326,7 @@ export function RulesTable({ onEdit, onMerge, payeeId, categoryId }: Props) {
                     </td>
 
                     {/* Row buttons */}
-                    <td className="px-3 py-2.5">
+                    <td className="px-3 py-2.5" onClick={(e) => e.stopPropagation()}>
                       <div className="flex items-center justify-end gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
                         <Button
                           variant="ghost"

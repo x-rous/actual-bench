@@ -16,22 +16,17 @@ export function FilterBar({
   search, onSearchChange,
   colorFilter, onColorFilterChange,
   filteredCount, totalCount,
-  colorCounts,
   selectedCount,
   onBulkDelete, onDeselect,
 }: {
   search: string; onSearchChange: (v: string) => void;
   colorFilter: ColorFilter; onColorFilterChange: (v: ColorFilter) => void;
   filteredCount: number; totalCount: number;
-  colorCounts?: Record<ColorFilter, number>;
   selectedCount: number;
   onBulkDelete: () => void;
   onDeselect: () => void;
 }) {
   const hasFilters = search || colorFilter !== "all";
-  const pillOptions = COLOR_OPTIONS.map((opt) =>
-    colorCounts ? { ...opt, label: `${opt.label} (${colorCounts[opt.value]})` } : opt
-  );
 
   if (selectedCount > 0) {
     return (
@@ -65,7 +60,7 @@ export function FilterBar({
         )}
       </div>
 
-      <PillGroup options={pillOptions} value={colorFilter} onChange={onColorFilterChange} />
+      <PillGroup options={COLOR_OPTIONS} value={colorFilter} onChange={onColorFilterChange} />
 
       {hasFilters && (
         <button

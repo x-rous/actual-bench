@@ -26,15 +26,14 @@ export function FilterBar({
   typeFilter, onTypeChange,
   rulesFilter, onRulesFilterChange,
   filteredCount, totalCount,
-  selectedCount, canFillDown, canMerge,
-  onFillDown, onBulkDelete, onMerge, onDeselect,
+  selectedCount, canMerge,
+  onBulkDelete, onMerge, onDeselect,
 }: {
   search: string; onSearchChange: (v: string) => void;
   typeFilter: TypeFilter; onTypeChange: (v: TypeFilter) => void;
   rulesFilter: RulesFilter; onRulesFilterChange: (v: RulesFilter) => void;
   filteredCount: number; totalCount: number;
-  selectedCount: number; canFillDown: boolean; canMerge: boolean;
-  onFillDown: () => void;
+  selectedCount: number; canMerge: boolean;
   onBulkDelete: () => void;
   onMerge: () => void;
   onDeselect: () => void;
@@ -45,9 +44,6 @@ export function FilterBar({
     return (
       <div className="flex flex-wrap items-center gap-2 border-b border-border/40 bg-primary/5 px-2 py-1.5">
         <span className="text-xs font-medium text-primary">{selectedCount} selected</span>
-        {canFillDown && (
-          <Button size="xs" variant="outline" onClick={onFillDown}>Fill Down</Button>
-        )}
         {canMerge && (
           <Button size="xs" variant="outline" onClick={onMerge}>Merge</Button>
         )}

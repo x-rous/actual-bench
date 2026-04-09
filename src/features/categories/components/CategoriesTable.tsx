@@ -24,7 +24,7 @@ import { generateId } from "@/lib/uuid";
 import type { StagedEntity } from "@/types/staged";
 import type { CategoryGroup, Category } from "@/types/entities";
 import { FilterBar } from "./FilterBar";
-import type { VisibilityFilter, TypeFilter, SortDir } from "./FilterBar";
+import type { VisibilityFilter, TypeFilter, RulesFilter, SortDir } from "./FilterBar";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -48,14 +48,17 @@ function SortIndicator({ active, dir }: { active: boolean; dir: SortDir }) {
 export function CategoriesTable({
   collapsedGroups,
   setCollapsedGroups,
+  onCreateRule,
 }: {
   collapsedGroups: Set<string>;
   setCollapsedGroups: React.Dispatch<React.SetStateAction<Set<string>>>;
+  onCreateRule?: (categoryId: string) => void;
 }) {
   // ── Filter / sort state ──────────────────────────────────────────────────────
   const [search, setSearch] = useState("");
   const [visibilityFilter, setVisibilityFilter] = useState<VisibilityFilter>("all");
   const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
+  const [rulesFilter, setRulesFilter] = useState<RulesFilter>("all");
   const [sortNameDir, setSortNameDir] = useState<SortDir | null>(null);
 
   // ── Editing state ────────────────────────────────────────────────────────────
@@ -133,6 +136,60 @@ export function CategoriesTable({
     return counts;
   }, [stagedRules]);
 
+  // ── Index all categories by groupId (no filters) ─────────────────────────────
+  // Used by allGroups for group-level hidden/search checks, and as the base for
+  // filteredCatsByGroup. Recomputed only when stagedCats changes.
+  const allCatsByGroup = useMemo(() => {
+    const map = new Map<string, CategoryRow[]>();
+    for (const s of Object.values(stagedCats)) {
+      const cat = s as CategoryRow;
+      const list = map.get(cat.entity.groupId);
+      if (list) list.push(cat);
+      else map.set(cat.entity.groupId, [cat]);
+    }
+    return map;
+  }, [stagedCats]);
+
+  // ── Filtered + sorted categories per group ────────────────────────────────────
+  // Replaces the getCategoriesForGroup plain function. Each call site becomes O(1).
+  const filteredCatsByGroup = useMemo(() => {
+    const q = search.toLowerCase();
+    const map = new Map<string, CategoryRow[]>();
+    for (const [groupId, cats] of allCatsByGroup) {
+      let filtered: CategoryRow[] = cats;
+      if (q) filtered = filtered.filter((c) => c.entity.name.toLowerCase().includes(q));
+      if (visibilityFilter === "visible") filtered = filtered.filter((c) => !c.entity.hidden);
+      if (visibilityFilter === "hidden")  filtered = filtered.filter((c) =>  c.entity.hidden);
+      if (sortNameDir) {
+        filtered = [...filtered].sort((a, b) =>
+          sortNameDir === "asc"
+            ? a.entity.name.toLowerCase().localeCompare(b.entity.name.toLowerCase())
+            : b.entity.name.toLowerCase().localeCompare(a.entity.name.toLowerCase())
+        );
+      }
+      map.set(groupId, filtered);
+    }
+    return map;
+  }, [allCatsByGroup, search, visibilityFilter, sortNameDir]);
+
+  // ── Rules filter layer on top of filteredCatsByGroup ────────────────────────
+  const visibleCatsByGroup = useMemo(() => {
+    if (rulesFilter === "all") return filteredCatsByGroup;
+    const map = new Map<string, CategoryRow[]>();
+    for (const [groupId, cats] of filteredCatsByGroup) {
+      const filtered = cats.filter((c) => {
+        const count = categoryRuleCount.get(c.entity.id) ?? 0;
+        return rulesFilter === "with_rules" ? count > 0 : count === 0;
+      });
+      map.set(groupId, filtered);
+    }
+    return map;
+  }, [filteredCatsByGroup, rulesFilter, categoryRuleCount]);
+
+  function getCategoriesForGroup(groupId: string): CategoryRow[] {
+    return visibleCatsByGroup.get(groupId) ?? [];
+  }
+
   // ── Build flat ordered list of visible groups ─────────────────────────────────
   const allGroups: GroupRow[] = useMemo(() => {
     let gs = Object.values(stagedGroups) as GroupRow[];
@@ -142,17 +199,16 @@ export function CategoriesTable({
     if (visibilityFilter === "visible") gs = gs.filter((g) => !g.entity.hidden);
     if (visibilityFilter === "hidden") gs = gs.filter((g) =>
       g.entity.hidden ||
-      Object.values(stagedCats).some(
-        (c) => c.entity.groupId === g.entity.id && c.entity.hidden && !c.isDeleted
+      (allCatsByGroup.get(g.entity.id) ?? []).some(
+        (c) => c.entity.hidden && !c.isDeleted
       )
     );
     if (q) gs = gs.filter((g) => {
       if (g.entity.name.toLowerCase().includes(q)) return true;
       // Also show group if any child category matches
-      const children = Object.values(stagedCats).filter(
-        (c) => c.entity.groupId === g.entity.id && c.entity.name.toLowerCase().includes(q)
+      return (allCatsByGroup.get(g.entity.id) ?? []).some(
+        (c) => c.entity.name.toLowerCase().includes(q)
       );
-      return children.length > 0;
     });
     if (sortNameDir) {
       gs = [...gs].sort((a, b) => {
@@ -165,32 +221,13 @@ export function CategoriesTable({
       gs = [...gs].sort((a, b) => Number(b.entity.isIncome) - Number(a.entity.isIncome));
     }
     return gs;
-  }, [stagedGroups, stagedCats, search, typeFilter, visibilityFilter, sortNameDir]);
+  }, [stagedGroups, allCatsByGroup, search, typeFilter, visibilityFilter, sortNameDir]);
 
-  // Categories for a given group (filtered + sorted)
-  function getCategoriesForGroup(groupId: string): CategoryRow[] {
-    let cats = Object.values(stagedCats).filter(
-      (c) => c.entity.groupId === groupId
-    ) as CategoryRow[];
-
-    const q = search.toLowerCase();
-    if (q) cats = cats.filter((c) => c.entity.name.toLowerCase().includes(q));
-    if (visibilityFilter === "visible") cats = cats.filter((c) => !c.entity.hidden);
-    if (visibilityFilter === "hidden") cats = cats.filter((c) => c.entity.hidden);
-
-    if (sortNameDir) {
-      cats = [...cats].sort((a, b) =>
-        sortNameDir === "asc"
-          ? a.entity.name.toLowerCase().localeCompare(b.entity.name.toLowerCase())
-          : b.entity.name.toLowerCase().localeCompare(a.entity.name.toLowerCase())
-      );
-    }
-    return cats;
-  }
+  const incomeGroupCount = Object.values(stagedGroups).filter((g) => !g.isDeleted && g.entity.isIncome).length;
 
   const totalCount = Object.keys(stagedGroups).length + Object.keys(stagedCats).length;
   const filteredCount = allGroups.reduce(
-    (acc, g) => acc + 1 + getCategoriesForGroup(g.entity.id).length,
+    (acc, g) => acc + 1 + (visibleCatsByGroup.get(g.entity.id)?.length ?? 0),
     0
   );
 
@@ -269,9 +306,17 @@ export function CategoriesTable({
       message: "Staged deletions will be removed on Save. Deleting a group will also delete its categories.",
       onConfirm: () => {
         pushUndo();
+        const pendingIncomeDeletes = [...selectedIds].filter((id) => stagedGroups[id]?.entity.isIncome && !stagedGroups[id]?.isDeleted).length;
+        const remainingIncomeAfter = incomeGroupCount - pendingIncomeDeletes;
+        let incomeSkipped = 0;
         for (const id of selectedIds) {
           if (stagedGroups[id]) {
-            // Also delete all child categories of this group
+            const g = stagedGroups[id];
+            // Never delete the last income group
+            if (g.entity.isIncome && remainingIncomeAfter < 1 && incomeSkipped === 0) {
+              incomeSkipped++;
+              continue;
+            }
             for (const cat of Object.values(stagedCats)) {
               if (cat.entity.groupId === id) stageDelete("categories", cat.entity.id);
             }
@@ -373,6 +418,14 @@ export function CategoriesTable({
                 )}>
                   {entity.name || "empty name"}
                   {isDuplicate && <AlertTriangle className="h-3 w-3 shrink-0 text-amber-500" aria-label="Duplicate name" />}
+                  {!isDeleted && (() => {
+                    const total = (allCatsByGroup.get(entity.id) ?? []).filter((c) => !c.isDeleted).length;
+                    const visible = (visibleCatsByGroup.get(entity.id) ?? []).filter((c) => !c.isDeleted).length;
+                    const label = visible !== total ? `${visible}/${total}` : `${total}`;
+                    return (
+                      <span className="text-xs font-normal text-muted-foreground">({label})</span>
+                    );
+                  })()}
                 </span>
                 {saveError && (
                   <span className="text-xs text-destructive leading-tight pb-0.5">{saveError}</span>
@@ -422,20 +475,22 @@ export function CategoriesTable({
               </Button>
             ) : (
               <>
-                <Button
-                  variant="ghost" size="icon-xs" title="Delete group"
-                  className="text-destructive hover:text-destructive"
-                  onClick={() => {
-                    pushUndo();
-                    // Stage-delete all child categories too
-                    for (const cat of Object.values(stagedCats)) {
-                      if (cat.entity.groupId === entity.id) stageDelete("categories", cat.entity.id);
-                    }
-                    stageDelete("categoryGroups", entity.id);
-                  }}
-                >
-                  <Trash2 />
-                </Button>
+                {!(entity.isIncome && incomeGroupCount <= 1) && (
+                  <Button
+                    variant="ghost" size="icon-xs" title="Delete group"
+                    className="text-destructive hover:text-destructive"
+                    onClick={() => {
+                      pushUndo();
+                      // Stage-delete all child categories too
+                      for (const cat of Object.values(stagedCats)) {
+                        if (cat.entity.groupId === entity.id) stageDelete("categories", cat.entity.id);
+                      }
+                      stageDelete("categoryGroups", entity.id);
+                    }}
+                  >
+                    <Trash2 />
+                  </Button>
+                )}
                 {(isNew || isUpdated) && (
                   <Button variant="ghost" size="icon-xs" title="Revert" onClick={() => revertEntity("categoryGroups", entity.id)}>
                     <RotateCcw />
@@ -593,8 +648,10 @@ export function CategoriesTable({
             return (
               <button
                 className="inline-flex items-center rounded bg-purple-100 px-1.5 py-0.5 text-xs font-medium text-purple-700 hover:bg-purple-200 dark:bg-purple-900/40 dark:text-purple-300 dark:hover:bg-purple-900/60"
-                onClick={() => router.push(count > 0 ? `/rules?categoryId=${entity.id}` : "/rules?new=1")}
-                title={count > 0 ? "View rules for this category" : "Go to rules to create a rule"}
+                onClick={() => count > 0
+                  ? router.push(`/rules?categoryId=${entity.id}`)
+                  : onCreateRule ? onCreateRule(entity.id) : router.push("/rules?new=1")}
+                title={count > 0 ? "View rules for this category" : "Create a rule for this category"}
               >
                 {label}
               </button>
@@ -680,6 +737,7 @@ export function CategoriesTable({
           search={search} onSearchChange={setSearch}
           visibilityFilter={visibilityFilter} onVisibilityChange={setVisibilityFilter}
           typeFilter={typeFilter} onTypeChange={setTypeFilter}
+          rulesFilter={rulesFilter} onRulesFilterChange={setRulesFilter}
           filteredCount={filteredCount} totalCount={totalCount}
           selectedCount={activeSelectedCount}
           onBulkDelete={handleBulkDelete}
@@ -724,7 +782,12 @@ export function CategoriesTable({
                   {incomeGroups.length === 0 && (
                     <tr>
                       <td colSpan={7} className="px-4 py-3 text-xs text-muted-foreground">
-                        No income groups{search ? " matching the search" : ""}.
+                        <span>No income groups{search || visibilityFilter !== "all" || rulesFilter !== "all" ? " matching the current filters" : ""}.</span>
+                        {(search || visibilityFilter !== "all" || rulesFilter !== "all") && (
+                          <button className="ml-2 underline hover:text-foreground" onClick={() => { setSearch(""); setVisibilityFilter("all"); setRulesFilter("all"); }}>
+                            Clear filters
+                          </button>
+                        )}
                       </td>
                     </tr>
                   )}
@@ -775,7 +838,12 @@ export function CategoriesTable({
                   {expenseGroups.length === 0 && (
                     <tr>
                       <td colSpan={7} className="px-4 py-3 text-xs text-muted-foreground">
-                        No expense groups{search ? " matching the search" : ""}.
+                        <span>No expense groups{search || visibilityFilter !== "all" || rulesFilter !== "all" ? " matching the current filters" : ""}.</span>
+                        {(search || visibilityFilter !== "all" || rulesFilter !== "all") && (
+                          <button className="ml-2 underline hover:text-foreground" onClick={() => { setSearch(""); setVisibilityFilter("all"); setRulesFilter("all"); }}>
+                            Clear filters
+                          </button>
+                        )}
                       </td>
                     </tr>
                   )}

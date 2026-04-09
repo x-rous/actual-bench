@@ -6,6 +6,7 @@ import { PillGroup } from "@/components/ui/pill-group";
 
 export type StatusFilter = "all" | "open" | "closed";
 export type BudgetFilter = "all" | "on" | "off";
+export type RulesFilter = "all" | "with_rules" | "no_rules";
 
 export const STATUS_OPTIONS: { value: StatusFilter; label: string }[] = [
   { value: "all", label: "All" },
@@ -19,6 +20,12 @@ export const BUDGET_OPTIONS: { value: BudgetFilter; label: string }[] = [
   { value: "off", label: "Off Budget" },
 ];
 
+export const RULES_OPTIONS: { value: RulesFilter; label: string }[] = [
+  { value: "all",        label: "All" },
+  { value: "with_rules", label: "Has Rules" },
+  { value: "no_rules",   label: "No Rules" },
+];
+
 export function FilterBar({
   search,
   onSearchChange,
@@ -26,11 +33,11 @@ export function FilterBar({
   onStatusChange,
   budgetFilter,
   onBudgetChange,
+  rulesFilter,
+  onRulesFilterChange,
   filteredCount,
   totalCount,
   selectedCount,
-  canFillDown,
-  onFillDown,
   onBulkClose,
   onBulkReopen,
   onBulkDelete,
@@ -42,27 +49,22 @@ export function FilterBar({
   onStatusChange: (v: StatusFilter) => void;
   budgetFilter: BudgetFilter;
   onBudgetChange: (v: BudgetFilter) => void;
+  rulesFilter: RulesFilter;
+  onRulesFilterChange: (v: RulesFilter) => void;
   filteredCount: number;
   totalCount: number;
   selectedCount: number;
-  canFillDown: boolean;
-  onFillDown: () => void;
   onBulkClose: () => void;
   onBulkReopen: () => void;
   onBulkDelete: () => void;
   onDeselect: () => void;
 }) {
-  const hasFilters = search || statusFilter !== "all" || budgetFilter !== "all";
+  const hasFilters = search || statusFilter !== "all" || budgetFilter !== "all" || rulesFilter !== "all";
 
   if (selectedCount > 0) {
     return (
       <div className="flex flex-wrap items-center gap-2 border-b border-border/40 bg-primary/5 px-2 py-1.5">
         <span className="text-xs font-medium text-primary">{selectedCount} selected</span>
-        {canFillDown && (
-          <Button size="xs" variant="outline" onClick={onFillDown}>
-            Fill Down
-          </Button>
-        )}
         <Button size="xs" variant="outline" onClick={onBulkClose}>
           Close All
         </Button>
@@ -104,6 +106,7 @@ export function FilterBar({
 
       <PillGroup options={STATUS_OPTIONS} value={statusFilter} onChange={onStatusChange} />
       <PillGroup options={BUDGET_OPTIONS} value={budgetFilter} onChange={onBudgetChange} />
+      <PillGroup options={RULES_OPTIONS} value={rulesFilter} onChange={onRulesFilterChange} />
 
       {hasFilters && (
         <button
@@ -111,6 +114,7 @@ export function FilterBar({
             onSearchChange("");
             onStatusChange("all");
             onBudgetChange("all");
+            onRulesFilterChange("all");
           }}
           className="text-xs text-muted-foreground underline hover:text-foreground"
         >

@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import { Plus, Download, Upload } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -10,17 +10,29 @@ import { useStagedStore } from "@/store/staged";
 import { generateId } from "@/lib/uuid";
 import { usePayees } from "../hooks/usePayees";
 import { PayeesTable } from "./PayeesTable";
+import { RuleDrawer } from "@/features/rules/components/RuleDrawer";
+import type { RuleSeed } from "@/features/rules/components/RuleDrawer";
 import { exportPayeesToCsv } from "../csv/payeesCsvExport";
 import { importPayeesFromCsv } from "../csv/payeesCsvImport";
 
 export function PayeesView() {
   const importInputRef = useRef<HTMLInputElement>(null);
+  const [ruleDrawerOpen, setRuleDrawerOpen] = useState(false);
+  const [ruleSeed, setRuleSeed] = useState<RuleSeed | undefined>(undefined);
 
   const { isLoading, isError, error, refetch } = usePayees();
 
   const staged = useStagedStore((s) => s.payees);
   const stageNew = useStagedStore((s) => s.stageNew);
   const pushUndo = useStagedStore((s) => s.pushUndo);
+
+  function handleCreateRule(payeeId: string, payeeName: string) {
+    setRuleSeed({
+      conditions: [{ field: "notes", op: "contains", value: payeeName, type: "string" }],
+      actions:    [{ field: "payee", op: "set",      value: payeeId,   type: "id"     }],
+    });
+    setRuleDrawerOpen(true);
+  }
 
   function handleAddPayee() {
     pushUndo();
@@ -116,7 +128,14 @@ export function PayeesView() {
         </>
       }
     >
-      <PayeesTable />
+      <PayeesTable onCreateRule={handleCreateRule} />
+
+      <RuleDrawer
+        open={ruleDrawerOpen}
+        onOpenChange={setRuleDrawerOpen}
+        ruleId={null}
+        seed={ruleSeed}
+      />
     </PageLayout>
   );
 }

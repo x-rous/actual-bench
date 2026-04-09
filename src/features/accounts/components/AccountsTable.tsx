@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useMemo } from "react";
+import { useRouter } from "next/navigation";
 import { useHighlight } from "@/hooks/useHighlight";
 import { useInlineEdit } from "@/hooks/useInlineEdit";
 import { useTableSelection } from "@/hooks/useTableSelection";
@@ -21,13 +22,13 @@ import { useStagedStore } from "@/store/staged";
 import { generateId } from "@/lib/uuid";
 import { FilterBar } from "./FilterBar";
 import { BulkAddBar } from "./BulkAddBar";
-import type { StatusFilter, BudgetFilter } from "./FilterBar";
+import type { StatusFilter, BudgetFilter, RulesFilter } from "./FilterBar";
 import type { StagedEntity } from "@/types/staged";
 import type { Account } from "@/types/entities";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
-const NAVIGABLE_COLS = ["name", "offBudget"] as const;
+const NAVIGABLE_COLS = ["name"] as const;
 type NavigableCol = (typeof NAVIGABLE_COLS)[number];
 type CellId = { rowId: string; colId: NavigableCol };
 type AccountRow = StagedEntity<Account>;
@@ -46,13 +47,19 @@ function SortIndicator({ col, sortCol, sortDir }: { col: SortCol; sortCol: SortC
 
 // ─── AccountsTable ─────────────────────────────────────────────────────────────
 
-export function AccountsTable() {
+export function AccountsTable({
+  onCreateRule,
+}: {
+  onCreateRule?: (accountId: string, accountName: string) => void;
+}) {
   const highlightedId = useHighlight();
+  const router = useRouter();
 
   // ── Filter / sort state ──────────────────────────────────────────────────────
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [budgetFilter, setBudgetFilter] = useState<BudgetFilter>("all");
+  const [rulesFilter, setRulesFilter] = useState<RulesFilter>("all");
   const [sortCol, setSortCol] = useState<SortCol | null>(null);
   const [sortDir, setSortDir] = useState<SortDir>("asc");
 
@@ -71,6 +78,7 @@ export function AccountsTable() {
 
   // ── Store subscriptions ──────────────────────────────────────────────────────
   const staged = useStagedStore((s) => s.accounts);
+  const stagedRules = useStagedStore((s) => s.rules);
   const stageNew = useStagedStore((s) => s.stageNew);
   const stageUpdate = useStagedStore((s) => s.stageUpdate);
   const stageDelete = useStagedStore((s) => s.stageDelete);
@@ -93,6 +101,24 @@ export function AccountsTable() {
     return dupes;
   }, [staged]);
 
+  // ── Account → rule count ─────────────────────────────────────────────────────
+  const accountRuleCount = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const s of Object.values(stagedRules)) {
+      if (s.isDeleted) continue;
+      for (const part of [...s.entity.conditions, ...s.entity.actions]) {
+        if (part.field === "account") {
+          const ids = Array.isArray(part.value) ? part.value : [part.value];
+          for (const id of ids) {
+            if (typeof id === "string" && id)
+              counts.set(id, (counts.get(id) ?? 0) + 1);
+          }
+        }
+      }
+    }
+    return counts;
+  }, [stagedRules]);
+
   // ── Derived rows: filter → sort ──────────────────────────────────────────────
   const rows: AccountRow[] = useMemo(() => {
     const q = search.toLowerCase();
@@ -103,6 +129,8 @@ export function AccountsTable() {
       if (statusFilter === "closed" && !r.entity.closed)    continue;
       if (budgetFilter === "on"  && r.entity.offBudget)  continue;
       if (budgetFilter === "off" && !r.entity.offBudget) continue;
+      if (rulesFilter === "with_rules" && !(accountRuleCount.get(r.entity.id) ?? 0)) continue;
+      if (rulesFilter === "no_rules"   &&  (accountRuleCount.get(r.entity.id) ?? 0)) continue;
       result.push(r);
     }
 
@@ -118,7 +146,7 @@ export function AccountsTable() {
       });
     }
     return result;
-  }, [staged, search, statusFilter, budgetFilter, sortCol, sortDir]);
+  }, [staged, search, statusFilter, budgetFilter, rulesFilter, accountRuleCount, sortCol, sortDir]);
 
   function toggleSort(col: SortCol) {
     if (sortCol === col) {
@@ -235,20 +263,6 @@ export function AccountsTable() {
     }
   }
 
-  function handleFillDown() {
-    if (!selectedCell || selectedIds.size < 2) return;
-    const colId = selectedCell.colId;
-    const selectedInOrder = rows.filter((r) => selectedIds.has(r.entity.id));
-    if (selectedInOrder.length < 2) return;
-    const source = selectedInOrder[0];
-    pushUndo();
-    for (const row of selectedInOrder.slice(1)) {
-      if (row.isDeleted) continue;
-      if (colId === "name") stageUpdate("accounts", row.entity.id, { name: source.entity.name });
-      else if (colId === "offBudget") stageUpdate("accounts", row.entity.id, { offBudget: source.entity.offBudget });
-    }
-  }
-
   // ── Paste from Excel / Sheets ─────────────────────────────────────────────────
   function handlePaste(e: React.ClipboardEvent<HTMLDivElement>) {
     if (editingCell) return; // let the input field handle it
@@ -315,13 +329,6 @@ export function AccountsTable() {
         e.preventDefault();
         if (selectedCell.colId === "name" && !row.isDeleted) startEditing(selectedCell.rowId, "name");
         break;
-      case " ":
-        if (selectedCell.colId === "offBudget" && !row.isDeleted) {
-          e.preventDefault();
-          pushUndo();
-          stageUpdate("accounts", row.entity.id, { offBudget: !row.entity.offBudget });
-        }
-        break;
       default:
         if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && selectedCell.colId === "name" && !row.isDeleted) {
           startEditing(selectedCell.rowId, "name", e.key);
@@ -331,7 +338,6 @@ export function AccountsTable() {
 
   // ── Render ───────────────────────────────────────────────────────────────────
   const totalCount = Object.keys(staged).length;
-  const canFillDown = selectedIds.size >= 2 && selectedCell !== null;
   const activeSelectedCount = [...selectedIds].filter((id) => staged[id] && !staged[id].isDeleted).length;
 
   return (
@@ -341,9 +347,9 @@ export function AccountsTable() {
           search={search} onSearchChange={setSearch}
           statusFilter={statusFilter} onStatusChange={setStatusFilter}
           budgetFilter={budgetFilter} onBudgetChange={setBudgetFilter}
+          rulesFilter={rulesFilter} onRulesFilterChange={setRulesFilter}
           filteredCount={rows.length} totalCount={totalCount}
-          selectedCount={activeSelectedCount} canFillDown={canFillDown}
-          onFillDown={handleFillDown}
+          selectedCount={activeSelectedCount}
           onBulkClose={handleBulkClose}
           onBulkReopen={handleBulkReopen}
           onBulkDelete={handleBulkDelete}
@@ -352,10 +358,16 @@ export function AccountsTable() {
 
         <div className="min-h-0 flex-1 overflow-auto">
         {rows.length === 0 ? (
-          <div className="flex items-center justify-center py-12 text-sm text-muted-foreground">
-            {search || statusFilter !== "all" || budgetFilter !== "all"
-              ? "No accounts match the current filters."
-              : "No accounts yet."}
+          <div className="flex flex-col items-center justify-center gap-2 py-12 text-sm text-muted-foreground">
+            <span>{search || statusFilter !== "all" || budgetFilter !== "all" || rulesFilter !== "all" ? "No accounts match the current filters." : "No accounts yet."}</span>
+            {(search || statusFilter !== "all" || budgetFilter !== "all" || rulesFilter !== "all") && (
+              <button
+                className="text-xs underline hover:text-foreground"
+                onClick={() => { setSearch(""); setStatusFilter("all"); setBudgetFilter("all"); setRulesFilter("all"); }}
+              >
+                Clear filters
+              </button>
+            )}
           </div>
         ) : (
           <table className="w-full border-collapse text-sm">
@@ -394,13 +406,17 @@ export function AccountsTable() {
                   </th>
 
                   <th
-                    className="w-24 cursor-pointer select-none px-2 py-1.5 text-left hover:bg-muted/30"
+                    className="w-32 cursor-pointer select-none px-2 py-1.5 text-left hover:bg-muted/30"
                     onClick={() => toggleSort("closed")}
                   >
                     <span className="flex items-center text-xs font-medium text-muted-foreground">
                       Status
                       <SortIndicator col="closed" sortCol={sortCol} sortDir={sortDir} />
                     </span>
+                  </th>
+
+                  <th className="w-40 px-2 py-1.5 text-left">
+                    <span className="text-xs font-medium text-muted-foreground">Rules</span>
                   </th>
 
                   <th className="w-24 p-0" />
@@ -412,7 +428,6 @@ export function AccountsTable() {
                   const { entity, isNew, isUpdated, isDeleted, saveError } = row;
                   const isDuplicate = !isDeleted && duplicateNames.has(entity.name.trim().toLowerCase());
                   const nameSelected   = selectedCell?.rowId === entity.id && selectedCell?.colId === "name";
-                  const budgetSelected = selectedCell?.rowId === entity.id && selectedCell?.colId === "offBudget";
                   const nameEditing    = editingCell?.rowId  === entity.id && editingCell?.colId  === "name";
                   const isRowSelected  = selectedIds.has(entity.id);
 
@@ -495,33 +510,59 @@ export function AccountsTable() {
                       </td>
 
                       {/* Budget toggle */}
-                      <td
-                        data-cell={`${entity.id}:offBudget`}
-                        tabIndex={budgetSelected ? 0 : -1}
-                        className={cn(
-                          "w-32 cursor-default px-2 py-0.5 outline-none",
-                          budgetSelected && "bg-primary/10 ring-1 ring-inset ring-primary/50",
-                        )}
-                        onClick={() => {
-                          if (budgetSelected && !isDeleted) {
-                            pushUndo();
-                            stageUpdate("accounts", entity.id, { offBudget: !entity.offBudget });
-                          } else {
-                            selectCell(entity.id, "offBudget");
-                          }
-                        }}
-                        onFocus={() => { if (!editingCell) selectCell(entity.id, "offBudget"); }}
-                      >
-                        <Badge variant={entity.offBudget ? "secondary" : "default"} className="text-xs font-normal">
+                      <td className="w-40 px-2 py-0.5">
+                        <button
+                          disabled={isDeleted}
+                          onClick={() => { pushUndo(); stageUpdate("accounts", entity.id, { offBudget: !entity.offBudget }); }}
+                          className={cn(
+                            "inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs font-medium transition-opacity",
+                            entity.offBudget
+                              ? "bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800/60 dark:text-slate-400 dark:hover:bg-slate-800"
+                              : "bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:text-emerald-400 dark:hover:bg-emerald-950/60",
+                            isDeleted && "cursor-default opacity-50",
+                          )}
+                        >
+                          <span className={cn(
+                            "relative inline-flex h-4 w-7 shrink-0 items-center rounded-full transition-colors",
+                            entity.offBudget ? "bg-slate-300 dark:bg-slate-600" : "bg-emerald-500 dark:bg-emerald-600",
+                          )}>
+                            <span className={cn(
+                              "inline-block h-3 w-3 rounded-full bg-white shadow transition-transform",
+                              entity.offBudget ? "translate-x-0.5" : "translate-x-3.5",
+                            )} />
+                          </span>
                           {entity.offBudget ? "Off Budget" : "On Budget"}
-                        </Badge>
+                        </button>
                       </td>
 
                       {/* Status */}
-                      <td className="w-24 px-2 py-0.5">
+                      <td className="w-32 px-2 py-0.5">
                         <Badge variant={entity.closed ? "status-inactive" : "status-active"} className="text-xs font-normal">
                           {entity.closed ? "Closed" : "Open"}
                         </Badge>
+                      </td>
+
+                      {/* Rules */}
+                      <td className="w-40 px-2 py-0.5">
+                        {!isDeleted && (() => {
+                          const count = accountRuleCount.get(entity.id) ?? 0;
+                          const label = count === 0
+                            ? "create rule"
+                            : count === 1
+                              ? "1 associated rule"
+                              : `${count} associated rules`;
+                          return (
+                            <button
+                              className="inline-flex items-center rounded bg-purple-100 px-1.5 py-0.5 text-xs font-medium text-purple-700 hover:bg-purple-200 dark:bg-purple-900/40 dark:text-purple-300 dark:hover:bg-purple-900/60"
+                              onClick={() => count > 0
+                                ? router.push(`/rules?accountId=${entity.id}`)
+                                : onCreateRule ? onCreateRule(entity.id, entity.name) : router.push("/rules?new=1")}
+                              title={count > 0 ? "View rules for this account" : "Create a rule for this account"}
+                            >
+                              {label}
+                            </button>
+                          );
+                        })()}
                       </td>
 
                       {/* Row actions */}

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useMemo } from "react";
-import { Trash2, RotateCcw, RefreshCw } from "lucide-react";
+import { Trash2, RotateCcw, RefreshCw, ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -123,6 +123,7 @@ export function TagsTable() {
   // ── Filter + bulk-add state ───────────────────────────────────────────────
   const [search, setSearch]           = useState("");
   const [colorFilter, setColorFilter] = useState<ColorFilter>("all");
+  const [sortNameDir, setSortNameDir] = useState<"asc" | "desc" | null>(null);
   const [bulkCount, setBulkCount]     = useState(5);
 
   // ── Inline-edit state ─────────────────────────────────────────────────────
@@ -156,29 +157,24 @@ export function TagsTable() {
         return true;
       })
       .sort((a, b) => {
+        if (sortNameDir) {
+          return sortNameDir === "asc"
+            ? a.entity.name.toLowerCase().localeCompare(b.entity.name.toLowerCase())
+            : b.entity.name.toLowerCase().localeCompare(a.entity.name.toLowerCase());
+        }
         if (a.isNew !== b.isNew) return a.isNew ? -1 : 1;
         return a.entity.name.localeCompare(b.entity.name);
       });
-  }, [stagedTags, search, colorFilter]);
+  }, [stagedTags, search, colorFilter, sortNameDir]);
 
-  const duplicateNames = useMemo(() => {
+  const nameCountMap = useMemo(() => {
     const counts = new Map<string, number>();
     for (const s of Object.values(stagedTags)) {
       if (s.isDeleted) continue;
       const n = s.entity.name.trim().toLowerCase();
       if (n) counts.set(n, (counts.get(n) ?? 0) + 1);
     }
-    return new Set([...counts.entries()].filter(([, c]) => c > 1).map(([n]) => n));
-  }, [stagedTags]);
-
-  // ── Color filter counts (all non-deleted, unaffected by search) ──────────
-  const colorCounts = useMemo(() => {
-    const all = Object.values(stagedTags).filter((s) => !s.isDeleted);
-    return {
-      all:       all.length,
-      has_color: all.filter((s) =>  !!s.entity.color).length,
-      no_color:  all.filter((s) => !s.entity.color).length,
-    };
+    return counts;
   }, [stagedTags]);
 
   // ── Select-all helpers ────────────────────────────────────────────────────
@@ -230,10 +226,12 @@ export function TagsTable() {
       const trimmed = value.trim().replace(/ /g, "");
       const current = stagedTags[rowId]?.entity;
       if (trimmed && current) {
-        const isDuplicate = Object.values(stagedTags).some(
-          (s) => !s.isDeleted && s.entity.id !== rowId && s.entity.name.trim().toLowerCase() === trimmed.toLowerCase()
-        );
-        if (isDuplicate) {
+        const candidateKey = trimmed.toLowerCase();
+        const currentKey   = current.name.trim().toLowerCase();
+        // Build a count that excludes this row's current name so renaming to
+        // the same value doesn't trigger a false collision.
+        const countWithoutSelf = (nameCountMap.get(candidateKey) ?? 0) - (candidateKey === currentKey ? 1 : 0);
+        if (countWithoutSelf >= 1) {
           toast.error(`A tag named "${trimmed}" already exists.`);
           commitEdit({ rowId, colId: "name" });
           return;
@@ -367,7 +365,6 @@ export function TagsTable() {
           colorFilter={colorFilter} onColorFilterChange={setColorFilter}
           filteredCount={rows.filter((r) => !r.isDeleted).length}
           totalCount={totalCount}
-          colorCounts={colorCounts}
           selectedCount={activeSelected}
           onBulkDelete={handleBulkDelete}
           onDeselect={clearSelection}
@@ -395,14 +392,30 @@ export function TagsTable() {
                 </th>
                 <th className="w-1 p-0" />
                 <th className="w-10 px-2 py-1.5 text-left text-xs font-medium">Color</th>
-                <th className="w-[300px] px-2 py-1.5 text-left text-xs font-medium">Name</th>
+                <th
+                  className="w-[300px] px-2 py-1.5 text-left"
+                  aria-sort={sortNameDir === "asc" ? "ascending" : sortNameDir === "desc" ? "descending" : "none"}
+                >
+                  <button
+                    className="flex select-none items-center text-xs font-medium text-muted-foreground hover:text-foreground"
+                    onClick={() => setSortNameDir((d) => d === null ? "asc" : d === "asc" ? "desc" : null)}
+                    aria-label={`Sort by name${sortNameDir === "asc" ? ", ascending" : sortNameDir === "desc" ? ", descending" : ""}`}
+                  >
+                    Name
+                    {sortNameDir === null
+                      ? <ArrowUpDown className="ml-1 inline h-3 w-3 opacity-30" />
+                      : sortNameDir === "asc"
+                        ? <ArrowUp className="ml-1 inline h-3 w-3" />
+                        : <ArrowDown className="ml-1 inline h-3 w-3" />}
+                  </button>
+                </th>
                 <th className="px-2 py-1.5 text-left text-xs font-medium">Description</th>
                 <th className="w-16 p-0" />
               </tr>
             </thead>
             <tbody>
               {rows.map(({ entity, isNew, isUpdated, isDeleted, saveError }) => {
-                const isDuplicate   = !isDeleted && duplicateNames.has(entity.name.trim().toLowerCase());
+                const isDuplicate   = !isDeleted && (nameCountMap.get(entity.name.trim().toLowerCase()) ?? 0) > 1;
                 const nameSelected  = selectedCell?.rowId === entity.id && selectedCell?.colId === "name";
                 const nameEditing   = editingCell?.rowId  === entity.id && editingCell?.colId  === "name";
                 const descSelected  = selectedCell?.rowId === entity.id && selectedCell?.colId === "description";

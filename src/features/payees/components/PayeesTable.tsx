@@ -68,7 +68,9 @@ function BulkAddBar({ bulkCount, onBulkCountChange, onAdd }: {
 
 // ─── PayeesTable ───────────────────────────────────────────────────────────────
 
-export function PayeesTable() {
+export function PayeesTable({ onCreateRule }: {
+  onCreateRule?: (payeeId: string, payeeName: string) => void;
+}) {
   // ── Filter / sort state ──────────────────────────────────────────────────────
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
@@ -139,16 +141,15 @@ export function PayeesTable() {
   }, [staged]);
 
   // ── Derived rows: filter → sort ──────────────────────────────────────────────
-  const rows: PayeeRow[] = useMemo(() => {
+  // baseRows excludes the rules filter so that rules mutations don't invalidate
+  // the sort/search/type-filter work when rulesFilter is "all" (the default).
+  const baseRows: PayeeRow[] = useMemo(() => {
     const q = search.toLowerCase();
     const result: PayeeRow[] = [];
     for (const r of Object.values(staged) as PayeeRow[]) {
       if (q && !r.entity.name.toLowerCase().includes(q)) continue;
       if (typeFilter === "regular"  && r.entity.transferAccountId)  continue;
       if (typeFilter === "transfer" && !r.entity.transferAccountId) continue;
-      const rc = payeeRuleCount.get(r.entity.id) ?? 0;
-      if (rulesFilter === "with_rules" && rc === 0) continue;
-      if (rulesFilter === "no_rules"   && rc  >  0) continue;
       result.push(r);
     }
     result.sort((a, b) => {
@@ -169,7 +170,19 @@ export function PayeesTable() {
       return 0;
     });
     return result;
-  }, [staged, search, typeFilter, rulesFilter, payeeRuleCount, sortCol, sortDir]);
+  }, [staged, search, typeFilter, sortCol, sortDir]);
+
+  // Apply the rules filter as a second step so it only invalidates when
+  // rulesFilter is active or payeeRuleCount changes.
+  const rows: PayeeRow[] = useMemo(() => {
+    if (rulesFilter === "all") return baseRows;
+    return baseRows.filter((r) => {
+      const rc = payeeRuleCount.get(r.entity.id) ?? 0;
+      if (rulesFilter === "with_rules" && rc === 0) return false;
+      if (rulesFilter === "no_rules"   && rc  >  0) return false;
+      return true;
+    });
+  }, [baseRows, rulesFilter, payeeRuleCount]);
 
   function toggleSort(col: SortCol) {
     if (sortCol === col) {
@@ -301,18 +314,6 @@ export function PayeesTable() {
     });
   }
 
-  function handleFillDown() {
-    if (!selectedCell || selectedIds.size < 2) return;
-    const selectedInOrder = rows.filter((r) => selectedIds.has(r.entity.id));
-    if (selectedInOrder.length < 2) return;
-    const source = selectedInOrder[0];
-    pushUndo();
-    for (const row of selectedInOrder.slice(1)) {
-      if (row.isDeleted || row.entity.transferAccountId) continue;
-      stageUpdate("payees", row.entity.id, { name: source.entity.name });
-    }
-  }
-
   function handleMerge() {
     // Iterate selectedIds in insertion order (click order) — first-clicked payee
     // is pre-selected as the target; the user can override in the dialog.
@@ -402,7 +403,6 @@ export function PayeesTable() {
 
   // ── Render ───────────────────────────────────────────────────────────────────
   const totalCount = Object.keys(staged).length;
-  const canFillDown = selectedIds.size >= 2 && selectedCell !== null;
   const activeSelectedCount = [...selectedIds].filter((id) => staged[id] && !staged[id].isDeleted).length;
   // Merge requires 2+ non-deleted regular (non-transfer) payees selected
   const mergeableCount = [...selectedIds].filter(
@@ -418,8 +418,7 @@ export function PayeesTable() {
           typeFilter={typeFilter} onTypeChange={setTypeFilter}
           rulesFilter={rulesFilter} onRulesFilterChange={setRulesFilter}
           filteredCount={rows.length} totalCount={totalCount}
-          selectedCount={activeSelectedCount} canFillDown={canFillDown} canMerge={canMerge}
-          onFillDown={handleFillDown}
+          selectedCount={activeSelectedCount} canMerge={canMerge}
           onMerge={handleMerge}
           onBulkDelete={handleBulkDelete}
           onDeselect={() => clearSelection()}
@@ -427,10 +426,16 @@ export function PayeesTable() {
 
         <div className="min-h-0 flex-1 overflow-auto">
         {rows.length === 0 ? (
-          <div className="flex items-center justify-center py-12 text-sm text-muted-foreground">
-            {search || typeFilter !== "all" || rulesFilter !== "all"
-              ? "No payees match the current filters."
-              : "No payees yet."}
+          <div className="flex flex-col items-center justify-center gap-2 py-12 text-sm text-muted-foreground">
+            <span>{search || typeFilter !== "all" || rulesFilter !== "all" ? "No payees match the current filters." : "No payees yet."}</span>
+            {(search || typeFilter !== "all" || rulesFilter !== "all") && (
+              <button
+                className="text-xs underline hover:text-foreground"
+                onClick={() => { setSearch(""); setTypeFilter("all"); setRulesFilter("all"); }}
+              >
+                Clear filters
+              </button>
+            )}
           </div>
         ) : (
           <table className="w-full border-collapse text-sm">
@@ -595,8 +600,10 @@ export function PayeesTable() {
                             ? (
                               <button
                                 className="inline-flex items-center rounded bg-purple-100 px-1.5 py-0.5 text-xs font-medium text-purple-700 hover:bg-purple-200 dark:bg-purple-900/40 dark:text-purple-300 dark:hover:bg-purple-900/60"
-                                onClick={() => router.push(count > 0 ? `/rules?payeeId=${entity.id}` : "/rules?new=1")}
-                                title={count > 0 ? "View rules for this payee" : "Go to rules to create a rule"}
+                                onClick={() => count > 0
+                                  ? router.push(`/rules?payeeId=${entity.id}`)
+                                  : onCreateRule ? onCreateRule(entity.id, entity.name) : router.push("/rules?new=1")}
+                                title={count > 0 ? "View rules for this payee" : "Create a rule for this payee"}
                               >
                                 {label}
                               </button>

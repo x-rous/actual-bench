@@ -10,6 +10,8 @@ import { useStagedStore } from "@/store/staged";
 import { generateId } from "@/lib/uuid";
 import { useCategoryGroups } from "../hooks/useCategoryGroups";
 import { CategoriesTable } from "./CategoriesTable";
+import { RuleDrawer } from "@/features/rules/components/RuleDrawer";
+import type { RuleSeed } from "@/features/rules/components/RuleDrawer";
 import { exportCategoriesToCsv } from "../csv/categoriesCsvExport";
 import { importCategoriesFromCsv } from "../csv/categoriesCsvImport";
 
@@ -19,6 +21,16 @@ export function CategoriesView() {
 
   // Collapse state lifted here so toolbar can control it
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
+  const [ruleDrawerOpen, setRuleDrawerOpen] = useState(false);
+  const [ruleSeed, setRuleSeed] = useState<RuleSeed | undefined>(undefined);
+
+  function handleCreateRule(categoryId: string) {
+    setRuleSeed({
+      conditions: [{ field: "payee",    op: "is",  value: "",         type: "id" }],
+      actions:    [{ field: "category", op: "set", value: categoryId, type: "id" }],
+    });
+    setRuleDrawerOpen(true);
+  }
 
   const stagedGroups = useStagedStore((s) => s.categoryGroups);
   const stagedCats = useStagedStore((s) => s.categories);
@@ -137,6 +149,14 @@ export function CategoriesView() {
       <CategoriesTable
         collapsedGroups={collapsedGroups}
         setCollapsedGroups={setCollapsedGroups}
+        onCreateRule={handleCreateRule}
+      />
+
+      <RuleDrawer
+        open={ruleDrawerOpen}
+        onOpenChange={setRuleDrawerOpen}
+        ruleId={null}
+        seed={ruleSeed}
       />
     </PageLayout>
   );

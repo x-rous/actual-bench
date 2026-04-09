@@ -24,6 +24,7 @@ export function RulesView() {
   const searchParams = useSearchParams();
   const payeeIdFilter    = searchParams.get("payeeId");
   const categoryIdFilter = searchParams.get("categoryId");
+  const accountIdFilter  = searchParams.get("accountId");
 
   const importInputRef = useRef<HTMLInputElement>(null);
 
@@ -166,6 +167,7 @@ export function RulesView() {
         onMerge={(ids) => setMergeRuleIds(ids)}
         payeeId={payeeIdFilter}
         categoryId={categoryIdFilter}
+        accountId={accountIdFilter}
       />
 
       <RuleDrawer

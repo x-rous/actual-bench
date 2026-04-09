@@ -10,13 +10,14 @@ import { useStagedStore } from "@/store/staged";
 import { generateId } from "@/lib/uuid";
 import { useAccounts } from "../hooks/useAccounts";
 import { AccountsTable } from "./AccountsTable";
-import { AccountFormDrawer } from "./AccountFormDrawer";
+import { RuleDrawer } from "@/features/rules/components/RuleDrawer";
+import type { RuleSeed } from "@/features/rules/components/RuleDrawer";
 import { exportAccountsToCsv } from "../csv/accountsCsvExport";
 import { importAccountsFromCsv } from "../csv/accountsCsvImport";
-import type { AccountFormValues } from "../schemas/account.schema";
 
 export function AccountsView() {
-  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [ruleDrawerOpen, setRuleDrawerOpen] = useState(false);
+  const [ruleSeed, setRuleSeed] = useState<RuleSeed | undefined>(undefined);
   const importInputRef = useRef<HTMLInputElement>(null);
 
   const { isLoading, isError, error, refetch } = useAccounts();
@@ -25,14 +26,22 @@ export function AccountsView() {
   const stageNew = useStagedStore((s) => s.stageNew);
   const pushUndo = useStagedStore((s) => s.pushUndo);
 
-  function handleDrawerSubmit(values: AccountFormValues) {
+  function handleAddAccount() {
     pushUndo();
     stageNew("accounts", {
       id: generateId(),
-      name: values.name,
-      offBudget: values.offBudget,
+      name: "New Account",
+      offBudget: false,
       closed: false,
     });
+  }
+
+  function handleCreateRule(accountId: string, accountName: string) {
+    setRuleSeed({
+      conditions: [{ field: "payee",   op: "contains", value: accountName, type: "string" }],
+      actions:    [{ field: "account", op: "set",      value: accountId,   type: "id"     }],
+    });
+    setRuleDrawerOpen(true);
   }
 
   function handleExportCsv() {
@@ -114,19 +123,20 @@ export function AccountsView() {
             <Upload />
             Export
           </Button>
-          <Button size="sm" onClick={() => setDrawerOpen(true)}>
+          <Button size="sm" onClick={handleAddAccount}>
             <Plus />
             Add Account
           </Button>
         </>
       }
     >
-      <AccountsTable />
+      <AccountsTable onCreateRule={handleCreateRule} />
 
-      <AccountFormDrawer
-        open={drawerOpen}
-        onOpenChange={setDrawerOpen}
-        onSubmit={handleDrawerSubmit}
+      <RuleDrawer
+        open={ruleDrawerOpen}
+        onOpenChange={setRuleDrawerOpen}
+        ruleId={null}
+        seed={ruleSeed}
       />
     </PageLayout>
   );

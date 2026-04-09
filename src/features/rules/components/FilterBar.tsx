@@ -2,27 +2,43 @@
 
 import { Search, X, Merge } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { PillGroup } from "@/components/ui/pill-group";
 import { cn } from "@/lib/utils";
 import { STAGE_LABELS } from "../utils/ruleFields";
 
 export type StageFilter = "all" | "pre" | "default" | "post";
+export type ActionTypeFilter = "all" | "category" | "payee" | "account" | "cleared" | "notes";
+
+export const ACTION_TYPE_OPTIONS: { value: ActionTypeFilter; label: string }[] = [
+  { value: "all",      label: "All" },
+  { value: "category", label: "Sets Category" },
+  { value: "payee",    label: "Sets Payee" },
+  { value: "account",  label: "Sets Account" },
+  { value: "cleared",  label: "Sets Cleared" },
+  { value: "notes",    label: "Sets Notes" },
+];
 
 export function FilterBar({
   search, onSearchChange,
   stageFilter, onStageFilterChange,
+  actionTypeFilter, onActionTypeFilterChange,
   payeeId, payeeName,
   categoryId, categoryName,
-  onClearPayee, onClearCategory,
+  accountId, accountName,
+  onClearPayee, onClearCategory, onClearAccount,
   rowCount, totalVisible,
   selectedCount,
   onDeleteSelected, onMerge, onDeselect,
 }: {
   search: string; onSearchChange: (v: string) => void;
   stageFilter: StageFilter; onStageFilterChange: (v: StageFilter) => void;
+  actionTypeFilter: ActionTypeFilter; onActionTypeFilterChange: (v: ActionTypeFilter) => void;
   payeeId?: string | null; payeeName?: string;
   categoryId?: string | null; categoryName?: string;
+  accountId?: string | null; accountName?: string;
   onClearPayee: () => void;
   onClearCategory: () => void;
+  onClearAccount: () => void;
   rowCount: number; totalVisible: number;
   selectedCount: number;
   onDeleteSelected: () => void;
@@ -61,7 +77,7 @@ export function FilterBar({
         <input
           value={search}
           onChange={(e) => onSearchChange(e.target.value)}
-          placeholder="Search rules…"
+          placeholder="Search…"
           className="h-6 w-44 rounded border border-border bg-background pl-6 pr-6 text-xs outline-none focus:ring-1 focus:ring-ring"
         />
         {search && (
@@ -91,6 +107,8 @@ export function FilterBar({
         ))}
       </div>
 
+      <PillGroup options={ACTION_TYPE_OPTIONS} value={actionTypeFilter} onChange={onActionTypeFilterChange} />
+
       {payeeId && (
         <div className="flex items-center gap-1.5 rounded-md border border-primary/30 bg-primary/5 px-2 py-0.5 text-xs text-primary">
           <span>
@@ -115,6 +133,21 @@ export function FilterBar({
             onClick={onClearCategory}
             className="text-primary/60 hover:text-primary"
             title="Clear category filter"
+          >
+            <X className="h-3 w-3" />
+          </button>
+        </div>
+      )}
+
+      {accountId && (
+        <div className="flex items-center gap-1.5 rounded-md border border-primary/30 bg-primary/5 px-2 py-0.5 text-xs text-primary">
+          <span>
+            Account: <span className="font-medium">{accountName ?? accountId}</span>
+          </span>
+          <button
+            onClick={onClearAccount}
+            className="text-primary/60 hover:text-primary"
+            title="Clear account filter"
           >
             <X className="h-3 w-3" />
           </button>
