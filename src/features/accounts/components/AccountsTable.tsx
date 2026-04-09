@@ -20,6 +20,7 @@ import {
 import { cn } from "@/lib/utils";
 import { useStagedStore } from "@/store/staged";
 import { generateId } from "@/lib/uuid";
+import { useAccountBalances } from "../hooks/useAccountBalances";
 import { FilterBar } from "./FilterBar";
 import { BulkAddBar } from "./BulkAddBar";
 import type { StatusFilter, BudgetFilter, RulesFilter } from "./FilterBar";
@@ -86,6 +87,9 @@ export function AccountsTable({
   const clearSaveError = useStagedStore((s) => s.clearSaveError);
   const pushUndo = useStagedStore((s) => s.pushUndo);
 
+  // ── Account balances ─────────────────────────────────────────────────────────
+  const { data: balances } = useAccountBalances();
+
   // ── Duplicate name detection ─────────────────────────────────────────────────
   const duplicateNames = useMemo(() => {
     const counts = new Map<string, number>();
@@ -134,17 +138,19 @@ export function AccountsTable({
       result.push(r);
     }
 
-    if (sortCol) {
-      result.sort((a, b) => {
-        let av: string | boolean, bv: string | boolean;
-        if (sortCol === "name") { av = a.entity.name.toLowerCase(); bv = b.entity.name.toLowerCase(); }
-        else if (sortCol === "offBudget") { av = a.entity.offBudget; bv = b.entity.offBudget; }
-        else { av = a.entity.closed; bv = b.entity.closed; }
-        if (av < bv) return sortDir === "asc" ? -1 : 1;
-        if (av > bv) return sortDir === "asc" ? 1 : -1;
-        return 0;
-      });
-    }
+    // New (unsaved) rows always float to the top regardless of sort column.
+    result.sort((a, b) => {
+      if (a.isNew && !b.isNew) return -1;
+      if (!a.isNew && b.isNew) return 1;
+      if (!sortCol) return 0;
+      let av: string | boolean, bv: string | boolean;
+      if (sortCol === "name") { av = a.entity.name.toLowerCase(); bv = b.entity.name.toLowerCase(); }
+      else if (sortCol === "offBudget") { av = a.entity.offBudget; bv = b.entity.offBudget; }
+      else { av = a.entity.closed; bv = b.entity.closed; }
+      if (av < bv) return sortDir === "asc" ? -1 : 1;
+      if (av > bv) return sortDir === "asc" ? 1 : -1;
+      return 0;
+    });
     return result;
   }, [staged, search, statusFilter, budgetFilter, rulesFilter, accountRuleCount, sortCol, sortDir]);
 
@@ -395,6 +401,10 @@ export function AccountsTable({
                     </span>
                   </th>
 
+                  <th className="w-32 px-4 py-1.5 text-right">
+                    <span className="text-xs font-medium text-muted-foreground">Balance</span>
+                  </th>
+
                   <th
                     className="w-32 cursor-pointer select-none px-2 py-1.5 text-left hover:bg-muted/30"
                     onClick={() => toggleSort("offBudget")}
@@ -509,30 +519,50 @@ export function AccountsTable({
                         )}
                       </td>
 
-                      {/* Budget toggle */}
-                      <td className="w-40 px-2 py-0.5">
-                        <button
-                          disabled={isDeleted}
-                          onClick={() => { pushUndo(); stageUpdate("accounts", entity.id, { offBudget: !entity.offBudget }); }}
-                          className={cn(
-                            "inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs font-medium transition-opacity",
-                            entity.offBudget
-                              ? "bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800/60 dark:text-slate-400 dark:hover:bg-slate-800"
-                              : "bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:text-emerald-400 dark:hover:bg-emerald-950/60",
-                            isDeleted && "cursor-default opacity-50",
-                          )}
-                        >
-                          <span className={cn(
-                            "relative inline-flex h-4 w-7 shrink-0 items-center rounded-full transition-colors",
-                            entity.offBudget ? "bg-slate-300 dark:bg-slate-600" : "bg-emerald-500 dark:bg-emerald-600",
-                          )}>
+                      {/* Balance */}
+                      <td className="w-32 px-4 py-0.5 text-right tabular-nums">
+                        {(() => {
+                          if (isNew) return <span className="text-xs text-muted-foreground/50">-</span>;
+                          if (!balances) return <span className="text-xs text-muted-foreground/50">-</span>;
+                          const bal = balances.get(entity.id);
+                          if (bal === undefined) return <span className="text-xs text-muted-foreground/50">-</span>;
+                          const formatted = bal.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                          return (
                             <span className={cn(
-                              "inline-block h-3 w-3 rounded-full bg-white shadow transition-transform",
-                              entity.offBudget ? "translate-x-0.5" : "translate-x-3.5",
-                            )} />
-                          </span>
-                          {entity.offBudget ? "Off Budget" : "On Budget"}
-                        </button>
+                              "text-xs",
+                              bal < 0 && "text-destructive",
+                              bal === 0 && "text-muted-foreground",
+                            )}>
+                              {formatted}
+                            </span>
+                          );
+                        })()}
+                      </td>
+
+                      {/* Budget — badge for existing rows, toggle for new staged rows */}
+                      <td className="w-40 px-2 py-0.5">
+                        {!isNew ? (
+                          <Badge variant={entity.offBudget ? "status-inactive" : "status-active"} className="text-xs font-normal">
+                            {entity.offBudget ? "Off Budget" : "On Budget"}
+                          </Badge>
+                        ) : (
+                          <button
+                            disabled={isDeleted}
+                            onClick={() => { pushUndo(); stageUpdate("accounts", entity.id, { offBudget: !entity.offBudget }); }}
+                            className="inline-flex items-center gap-1.5 text-xs font-medium text-foreground hover:text-foreground/80 transition-colors"
+                          >
+                            <span className={cn(
+                              "relative inline-flex h-4 w-7 shrink-0 items-center rounded-full transition-colors",
+                              entity.offBudget ? "bg-slate-400 dark:bg-slate-500" : "bg-emerald-500 dark:bg-emerald-600",
+                            )}>
+                              <span className={cn(
+                                "inline-block h-3 w-3 rounded-full bg-white shadow transition-transform",
+                                entity.offBudget ? "translate-x-0.5" : "translate-x-3.5",
+                              )} />
+                            </span>
+                            {entity.offBudget ? "Off Budget" : "On Budget"}
+                          </button>
+                        )}
                       </td>
 
                       {/* Status */}
