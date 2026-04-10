@@ -1,10 +1,11 @@
 "use client";
 
 import { CONDITION_FIELDS, ACTION_FIELDS, ACTION_OPS } from "../utils/ruleFields";
-import { valueToString } from "../utils/rulePreview";
+import { valueToString, isRecurConfig } from "../utils/rulePreview";
 import type { EntityMaps } from "../utils/rulePreview";
 import type { ConditionOrAction } from "@/types/entities";
 import { cn } from "@/lib/utils";
+import { recurSummary } from "@/features/schedules/lib/recurSummary";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -47,6 +48,12 @@ function resolveValues(
   maps: EntityMaps,
   fieldDefs: typeof CONDITION_FIELDS | typeof ACTION_FIELDS
 ): string[] {
+  // Date conditions in schedule-linked rules carry a RecurConfig object as their value.
+  if (field === "date" && isRecurConfig(value)) {
+    const summary = recurSummary(value);
+    return summary ? [summary] : ["recurring"];
+  }
+
   if (Array.isArray(value)) {
     return value.filter(Boolean).map((v) => resolveScalar(String(v), field, maps, fieldDefs));
   }
@@ -132,6 +139,24 @@ export function ActionChip({
   }
 
   const field = action.field ?? "";
+
+  // Link-schedule — read-only badge resolving the schedule name
+  if (op === "link-schedule") {
+    const scheduleId = valueToString(action.value);
+    const scheduleName = maps.schedules?.[scheduleId]?.entity.name ?? scheduleId;
+    return (
+      <div className="flex items-center gap-1 flex-wrap">
+        <span className="rounded px-1 py-0.5 text-[11px] font-medium bg-muted text-muted-foreground">
+          linked to schedule
+        </span>
+        <span className="text-[11px] text-muted-foreground">→</span>
+        <span className="rounded px-1 py-0.5 text-[11px] font-medium bg-sky-50 text-sky-700 dark:bg-sky-950/30 dark:text-sky-400">
+          {scheduleName}
+        </span>
+      </div>
+    );
+  }
+
   const fieldLabel = ACTION_FIELDS[field]?.label ?? field;
   const template = action.options?.template;
   const fieldDef = ACTION_FIELDS[field];

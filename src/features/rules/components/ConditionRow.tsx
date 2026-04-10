@@ -6,9 +6,10 @@ import { Button } from "@/components/ui/button";
 import { TagInput } from "@/components/ui/tag-input";
 import { cn } from "@/lib/utils";
 import { EntityCombobox, MultiEntityCombobox } from "./EntityCombobox";
-import { valueToString } from "../utils/rulePreview";
+import { valueToString, isRecurConfig } from "../utils/rulePreview";
 import { CONDITION_FIELDS, getConditionOps } from "../utils/ruleFields";
-import type { ConditionOrAction, AmountRange } from "@/types/entities";
+import { recurSummary } from "@/features/schedules/lib/recurSummary";
+import type { ConditionOrAction, AmountRange, RecurConfig } from "@/types/entities";
 
 // ─── Shared input/select styles ───────────────────────────────────────────────
 
@@ -162,6 +163,7 @@ export function ConditionRow({
 }) {
   const field = condition.field ?? "";
   const ops = getConditionOps(field);
+  const isScheduleDate = field === "date" && isRecurConfig(condition.value);
 
   const setField = useCallback(
     (newField: string) => {
@@ -197,6 +199,23 @@ export function ConditionRow({
     }
 
     onChange({ ...condition, op: newOp, value: newValue });
+  }
+
+  // Schedule-managed date condition — render read-only, not editable.
+  if (isScheduleDate) {
+    const summary = recurSummary(condition.value as unknown as RecurConfig);
+    return (
+      <div className="flex items-center gap-1.5 rounded border border-border bg-muted/30 px-2 py-1.5">
+        <span className="rounded px-1 py-0.5 text-[11px] font-semibold bg-indigo-50 text-indigo-700 dark:bg-indigo-950/30 dark:text-indigo-400">
+          Date
+        </span>
+        <span className="text-[11px] text-muted-foreground">{condition.op}</span>
+        <span className="rounded px-1 py-0.5 text-[11px] font-medium bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-400">
+          {summary || "recurring"}
+        </span>
+        <span className="ml-auto text-[10px] italic text-muted-foreground/60">managed by schedule</span>
+      </div>
+    );
   }
 
   return (

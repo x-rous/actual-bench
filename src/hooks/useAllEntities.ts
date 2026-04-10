@@ -4,6 +4,7 @@ import { useAccounts } from "@/features/accounts/hooks/useAccounts";
 import { usePayees } from "@/features/payees/hooks/usePayees";
 import { useCategoryGroups } from "@/features/categories/hooks/useCategoryGroups";
 import { useRules } from "@/features/rules/hooks/useRules";
+import { useSchedules } from "@/features/schedules/hooks/useSchedules";
 
 /**
  * Prefetches all entity types in parallel so that data is available on any
@@ -18,4 +19,5 @@ export function usePreloadEntities() {
   usePayees();
   useCategoryGroups();
   useRules();
+  useSchedules();
 }

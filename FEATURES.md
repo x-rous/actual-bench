@@ -65,6 +65,22 @@
 - CSV import and export with full group hierarchy preserved
 - Duplicate group name prevention
 
+## Schedules
+
+- Create, edit, and delete one-time and recurring schedules
+- Recurring schedules support daily, weekly, monthly, and yearly frequencies with a configurable interval
+- Monthly schedules support pattern-based targeting: specific day of the month (including "last day"), or a weekday-of-week position (e.g. "2nd Friday")
+- Weekend adjustment: when a scheduled date falls on a weekend, choose to move it to the nearest Friday (before) or Monday (after)
+- End conditions: run forever, end after N occurrences, or end on a specific date
+- Amount modes: exact (`is`), approximate (`is approx.`), or range (`is between`) with full amount and operator support
+- Payee and account assignment per schedule (both optional)
+- Auto-add toggle: when enabled, Actual Budget automatically posts a transaction when the schedule is due
+- Linked rule display: each schedule has an underlying rule managed by the server; open it directly in the Rules editor via the "Edit as Rule" button in the schedule drawer
+- Rules linked to schedules are shown read-only in the Rules table — the `link-schedule` action displays the resolved schedule name and cannot be created or edited manually
+- Filter schedules by name, payee, account, frequency, auto-add state, and completion status
+- Bulk select with bulk delete
+- CSV import and export
+
 ## Tags
 
 - Create, rename, and delete tags (available since Actual Budget v26.3.0)
@@ -99,6 +115,8 @@
 | `sample-payees.csv` | 15 common payees |
 | `sample-categories.csv` | 8 groups and 25 categories across income, housing, food, transport, health, and more |
 | `sample-rules.csv` | 10 rules demonstrating multi-condition, multi-action, `or` logic, stage filtering, and payee auto-creation |
+| `sample-schedules.csv` | 6 schedules — one-time, monthly, weekly, yearly, and range-amount examples |
+| `sample-tags.csv` | 8 tags with varied colors and descriptions |
 
 ### CSV Formats
 
@@ -107,6 +125,9 @@
 **Payees** — columns: `name` (required)
 
 **Tags** — columns: `name` (required), `color` (optional hex, e.g. `#FF5733`), `description` (optional)
+
+**Schedules** — columns: `name` (optional), `date` (required — ISO date `YYYY-MM-DD` for one-time, or JSON-encoded RecurConfig for recurring), `amount` (optional, in cents — use `num1|num2` for `isbetween`), `amountOp` (optional: `is`, `isapprox`, `isbetween`), `payee` (optional name), `account` (optional name), `posts_transaction` (optional bool)
+> The `completed` column is ignored on import — all imported schedules start as active.
 
 **Categories** — columns: `type` (required: `group` or `category`), `name` (required), `group`, `is_income`, `hidden`
 > Group rows must appear before the category rows that reference them.

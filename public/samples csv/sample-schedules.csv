@@ -1,0 +1,7 @@
+name,date,amount,amountOp,payee,account,posts_transaction
+Monthly Rent,"{""frequency"":""monthly"",""interval"":1,""start"":""2025-01-01"",""endMode"":""never"",""patterns"":[{""value"":1,""type"":""day""}]}",-150000,is,Landlord,Checking,true
+Weekly Groceries,"{""frequency"":""weekly"",""interval"":1,""start"":""2025-01-06"",""endMode"":""never""}",-8000,isapprox,Supermarket,Checking,false
+Annual Insurance,"{""frequency"":""yearly"",""interval"":1,""start"":""2025-03-15"",""endMode"":""never""}",-120000,is,Insurance Co,Savings,false
+Salary,"{""frequency"":""monthly"",""interval"":1,""start"":""2025-01-15"",""endMode"":""never"",""patterns"":[{""value"":2,""type"":""FR""}]}",350000,is,,Checking,true
+Phone Bill,"{""frequency"":""monthly"",""interval"":1,""start"":""2025-01-20"",""endMode"":""never""}",-8000|-9500,isbetween,Phone Carrier,Checking,true
+Doctor Check-up,2025-09-10,-20000,isapprox,,Savings,false

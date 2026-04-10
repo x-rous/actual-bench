@@ -97,6 +97,7 @@ export function RuleDrawer({ open, onOpenChange, ruleId, seed }: Props) {
   }
 
   const isNew = !ruleId;
+  const isScheduleLinked = actions.some((a) => a.op === "link-schedule");
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -212,7 +213,7 @@ export function RuleDrawer({ open, onOpenChange, ruleId, seed }: Props) {
 
         <SheetFooter className="shrink-0 flex-row items-center gap-2 border-t px-4 py-3">
           <div className="mr-auto flex items-center gap-2">
-            {!isNew && (
+            {!isNew && !isScheduleLinked && (
               <Button
                 variant="ghost"
                 size="sm"
@@ -222,6 +223,11 @@ export function RuleDrawer({ open, onOpenChange, ruleId, seed }: Props) {
                 <Trash2 className="h-3 w-3 mr-1" />
                 Delete
               </Button>
+            )}
+            {!isNew && isScheduleLinked && (
+              <span className="text-[11px] italic text-muted-foreground">
+                Managed by schedule — delete via Schedules page
+              </span>
             )}
             <Button
               variant="ghost"

@@ -40,6 +40,7 @@ import { usePayeesSave } from "@/features/payees/hooks/usePayeesSave";
 import { useCategoryGroupsSave } from "@/features/categories/hooks/useCategoryGroupsSave";
 import { useCategoriesSave } from "@/features/categories/hooks/useCategoriesSave";
 import { useRulesSave } from "@/features/rules/hooks/useRulesSave";
+import { useSchedulesSave } from "@/features/schedules/hooks/useSchedulesSave";
 import { useTagsSave } from "@/features/tags/hooks/useTagsSave";
 
 type PendingAction =
@@ -72,8 +73,9 @@ export function TopBar() {
   const { save: saveCategoryGroups, isSaving: isSavingGroups } = useCategoryGroupsSave();
   const { save: saveCategories, isSaving: isSavingCategories } = useCategoriesSave();
   const { save: saveRules, isSaving: isSavingRules } = useRulesSave();
+  const { save: saveSchedules, isSaving: isSavingSchedules } = useSchedulesSave();
   const { save: saveTags, isSaving: isSavingTags } = useTagsSave();
-  const isSaving = isSavingAccounts || isSavingPayees || isSavingGroups || isSavingCategories || isSavingRules || isSavingTags;
+  const isSaving = isSavingAccounts || isSavingPayees || isSavingGroups || isSavingCategories || isSavingRules || isSavingSchedules || isSavingTags;
 
   // ── Guarded action helpers ────────────────────────────────────────────────────
 
@@ -115,11 +117,12 @@ export function TopBar() {
 
   async function handleSave() {
     try {
-      const [accountsResult, payeesResult, groupsResult, tagsResult] = await Promise.all([
+      const [accountsResult, payeesResult, groupsResult, tagsResult, schedulesResult] = await Promise.all([
         saveAccounts(),
         savePayees(),
         saveCategoryGroups(),
         saveTags(),
+        saveSchedules(),
       ]);
       const categoriesResult = await saveCategories(groupsResult.idMap);
       const entityIdMap = {
@@ -135,6 +138,7 @@ export function TopBar() {
         groupsResult.succeeded.length +
         categoriesResult.succeeded.length +
         rulesResult.succeeded.length +
+        schedulesResult.succeeded.length +
         tagsResult.succeeded.length;
       const totalFailed =
         accountsResult.failed.length +
@@ -142,6 +146,7 @@ export function TopBar() {
         groupsResult.failed.length +
         categoriesResult.failed.length +
         rulesResult.failed.length +
+        schedulesResult.failed.length +
         tagsResult.failed.length;
       clearHistory();
       if (totalFailed === 0) {

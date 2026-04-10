@@ -1,0 +1,9 @@
+name,color,description
+Needs Review,,Transactions that need manual review
+Tax Deductible,#22c55e,Expenses eligible for tax deduction
+Reimbursable,#3b82f6,Work expenses to be reimbursed by employer
+Personal,#a855f7,Personal discretionary spending
+Business,,Business-related transactions
+Travel,#f97316,Travel and accommodation expenses
+Medical,#ef4444,Healthcare and medical expenses
+Subscriptions,#6366f1,Recurring subscription services

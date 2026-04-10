@@ -8,6 +8,7 @@ import { EntityCombobox } from "./EntityCombobox";
 import { selectCls, inputCls } from "./ConditionRow";
 import { valueToString } from "../utils/rulePreview";
 import { ACTION_FIELDS, ACTION_OPS } from "../utils/ruleFields";
+import { useStagedStore } from "@/store/staged";
 import type { ConditionOrAction } from "@/types/entities";
 
 // ─── ActionRow ────────────────────────────────────────────────────────────────
@@ -26,6 +27,7 @@ export function ActionRow({
   const fieldDef = ACTION_FIELDS[field];
   const isTemplate = op === "set" && action.options?.template !== undefined;
   const supportsTemplate = op === "set" && fieldDef?.supportsTemplate === true;
+  const stagedSchedules = useStagedStore((s) => s.schedules);
 
   const handleOpChange = useCallback(
     (newOp: string) => {
@@ -66,6 +68,23 @@ export function ActionRow({
       const zeroValue = fieldDef?.type === "number" || fieldDef?.type === "boolean" ? null : "";
       onChange({ ...action, value: zeroValue, options: { template: valueToString(action.value) } });
     }
+  }
+
+  // ── Link schedule — read-only, created by backend only ───────────────────
+
+  if (op === "link-schedule") {
+    const scheduleId = typeof action.value === "string" ? action.value : "";
+    const scheduleName = stagedSchedules[scheduleId]?.entity.name ?? scheduleId;
+    return (
+      <div className="flex items-center gap-1.5 rounded border border-border bg-muted/30 px-2 py-1.5">
+        <span className="text-[11px] font-medium text-muted-foreground">linked to schedule</span>
+        <span className="text-[11px] text-muted-foreground">→</span>
+        <span className="rounded bg-sky-50 px-1 py-0.5 text-[11px] font-medium text-sky-700 dark:bg-sky-950/30 dark:text-sky-400">
+          {scheduleName}
+        </span>
+        <span className="ml-auto text-[10px] italic text-muted-foreground/60">managed by schedule</span>
+      </div>
+    );
   }
 
   // ── Delete transaction ────────────────────────────────────────────────────
@@ -142,15 +161,17 @@ export function ActionRow({
         ))}
       </select>
 
-      {/* Field dropdown */}
+      {/* Field dropdown — link-schedule is excluded; it is backend-managed only */}
       <select
         className={cn(selectCls, "w-32 shrink-0")}
         value={field}
         onChange={(e) => handleFieldChange(e.target.value)}
       >
-        {Object.entries(ACTION_FIELDS).map(([k, def]) => (
-          <option key={k} value={k}>{def.label}</option>
-        ))}
+        {Object.entries(ACTION_FIELDS)
+          .filter(([k]) => k !== "link-schedule")
+          .map(([k, def]) => (
+            <option key={k} value={k}>{def.label}</option>
+          ))}
       </select>
 
       {/* Value input */}

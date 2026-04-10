@@ -6,7 +6,7 @@ import { Layers } from "lucide-react";
 import { useStagedStore, selectHasChanges } from "@/store/staged";
 import { CONDITION_FIELDS, ACTION_FIELDS } from "@/features/rules/utils/ruleFields";
 import { rulePreview, valueToString } from "@/features/rules/utils/rulePreview";
-import type { BaseEntity, Rule, ConditionOrAction } from "@/types/entities";
+import type { BaseEntity, Rule, ConditionOrAction, Schedule } from "@/types/entities";
 import type { StagedEntity, StagedMap } from "@/types/staged";
 import type { Payee, Category, Account, CategoryGroup } from "@/types/entities";
 import { Badge } from "@/components/ui/badge";
@@ -31,6 +31,7 @@ type EntityMaps = {
   categories: StagedMap<Category>;
   accounts: StagedMap<Account>;
   categoryGroups: StagedMap<CategoryGroup>;
+  schedules?: StagedMap<Schedule>;
 };
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -51,6 +52,7 @@ const ENTITY_ROUTES: Partial<Record<EntityKey, string>> = {
   categoryGroups: "/categories",
   categories: "/categories",
   rules: "/rules",
+  schedules: "/schedules",
   tags: "/tags",
 };
 
@@ -279,8 +281,8 @@ export function DraftPanel() {
   };
 
   const entityMaps: EntityMaps = useMemo(
-    () => ({ payees, categories, accounts, categoryGroups }),
-    [payees, categories, accounts, categoryGroups]
+    () => ({ payees, categories, accounts, categoryGroups, schedules }),
+    [payees, categories, accounts, categoryGroups, schedules]
   );
 
   const ruleMergeDepIds = useMemo(() => ({

@@ -75,7 +75,7 @@ RD-003 (Balance col)   — independent; add getAccountBalance to accounts.ts
 RD-004 (Payee merge)   — complete; add mergePayees to payees.ts
 RD-005 (Rules-by-payee)— can be done with RD-016 (same code path)
 RD-006 (Budget export) — requires proxy binary support patch
-RD-007 (ActualQL console) — independent; shares run-query util with RD-017
+RD-007 (ActualQL console + saved query packs) — independent; shares run-query util with RD-016
 RD-008 (Delete txn action) — complete
 RD-009 (Session token) — independent
 RD-010 (Version display) — independent
@@ -84,15 +84,14 @@ RD-012 (Currency symbol) — independent
 RD-013 (High contrast theme) — independent
 RD-014 (Regex in rules) — complete
 RD-015 (Rule templates) — complete
-RD-016 (Delete safety) — RD-005 is a sub-task of RD-016
-RD-017 (Txn count on delete) — depends on RD-016 (dialogs must exist first);
-                                shares run-query util with RD-007
+RD-016 (Entity usage & delete safety) — combines former RD-017 and RD-021;
+                                        RD-005 is a sub-task; depends on RD-003 for account balance checks;
+                                        may reuse run-query util from RD-007
 RD-018 (Saved servers)       — complete
 RD-019 (Grouped categories)  — complete
 RD-020 (Rule editing improvements) — complete
-RD-021 (Usage inspector)     — depends on RD-016 and RD-017; may reuse run-query util from RD-007
-RD-022 (Saved query packs)   — depends on RD-007
-RD-023 (Rule diagnostics)    — depends on RD-007; enhanced by RD-021 if available
+RD-023 (Rule diagnostics)    — depends on RD-007; enhanced by RD-016 if available
+RD-024 (SQLite diagnostic)   — independent; fully client-side (WASM SQLite)
 ```
 
 ---
@@ -107,36 +106,57 @@ RD-023 (Rule diagnostics)    — depends on RD-007; enhanced by RD-021 if availa
 |---|---|
 | **Priority** | High |
 | **Effort** | L |
-| **Status** | pending |
+| **Status** | complete |
 | **Depends on** | nothing |
 
-**What:** Full CRUD page for Actual Budget schedules. This is the largest completed feature gap — the API has had schedule support since v25.10.0 and the entity types are fully defined. The page currently renders a static "not yet implemented" placeholder.
+**What:** Full schedules management page for Actual Budget focused on planning and automation, not transaction management. The page should support one-time and recurring schedules, amount modes, weekend adjustment, optional automatic posting, and a clean advanced path into the existing Rules feature via **Edit as Rule**.
+
+**Product stance:**
+- Schedules are a planning / automation feature, not a transaction workspace
+- Use the Schedules page for the common path
+- Use the existing Rules feature for advanced customization
+- Do **not** turn this into a transaction-linking or transaction-browsing engine
 
 **Entity types — already complete in `src/types/entities.ts`:**
 - `Schedule`: `{ id, name?, ruleId?, nextDate?, completed, postsTransaction, payeeId?, accountId?, amount?, amountOp?, date? }`
 - `RecurConfig`: `{ frequency, interval?, patterns?, skipWeekend?, start, endMode, endOccurrences?, endDate?, weekendSolveMode? }`
-- `date` field is `string | RecurConfig` — string = one-time date, RecurConfig = recurring
+- `date` field is `string | RecurConfig` — string = one-time date, `RecurConfig` = recurring
+
+**API model (from Swagger + live payload):**
+- **Response `Schedule`** returns: `id`, `name`, `rule`, `next_date`, `completed`, `posts_transaction`, `payee`, `account`, `amount`, `amountOp`, `date`
+- **Input `ScheduleInput`** accepts: `name?`, `posts_transaction?`, `payee?`, `account?`, `amount?`, `amountOp?`, `date` (**required**)
+- `rule`, `next_date`, and `completed` are **read-only server fields** for this page; do not send them in create / update payloads
+- `date` is either a one-time ISO date string or a full `RecurConfig` object; never send both representations together
+- `amount` is either a number or `{ num1, num2 }` when `amountOp === "isbetween"`
 
 **API endpoints:**
-```
-GET    /budgets/{id}/schedules          → list all
-POST   /budgets/{id}/schedules          → create
-PATCH  /budgets/{id}/schedules/:id      → update
-DELETE /budgets/{id}/schedules/:id      → delete
+```text
+GET    /budgets/{id}/schedules          → list all schedules
+POST   /budgets/{id}/schedules          → create schedule from ScheduleInput
+PATCH  /budgets/{id}/schedules/:id      → update schedule from ScheduleInput
+DELETE /budgets/{id}/schedules/:id      → delete schedule
 ```
 
-**API response shape (from swagger):** The schedule object from the API uses snake_case: `next_date`, `posts_transaction`, `payee_id`, `account_id`. Map these to camelCase in the API layer.
+**Rules integration:**
+- Every schedule has an underlying `rule` id returned by the schedules API
+- The Schedules page should expose **Edit as Rule** for advanced customization
+- The schedule form itself should **not** attempt to recreate the full rule editor
+- The Rules UI must be able to safely open and preserve linked schedule rules, including the `link-schedule` action
 
 **Files to create:**
-```
+```text
 src/lib/api/schedules.ts               — getSchedules, createSchedule, updateSchedule, deleteSchedule
 src/features/schedules/
   hooks/useSchedules.ts                — React Query fetch hook
   hooks/useSchedulesSave.ts            — save logic (follows useAccountsSave.ts pattern)
   components/SchedulesView.tsx         — page shell + toolbar
-  components/SchedulesTable.tsx        — table with inline edit + confirm dialogs
-  components/ScheduleFormDrawer.tsx    — Sheet drawer for create/edit (like RuleDrawer.tsx)
-  components/FilterBar.tsx             — filter by payee, account, completed, frequency
+  components/SchedulesTable.tsx        — table + row actions + confirm dialogs
+  components/ScheduleFormDrawer.tsx    — create/edit drawer
+  components/FilterBar.tsx             — search + filters
+  components/RecurPatternEditor.tsx    — recurring pattern controls
+  components/AmountModeInput.tsx       — exact / approximate / range amount input
+  lib/scheduleMappers.ts               — API ↔ entity normalization
+  lib/recurSummary.ts                  — human-readable recurrence summary for table / drawer
   csv/schedulesCsvExport.ts
   csv/schedulesCsvImport.ts
   schemas/schedule.schema.ts           — Zod schema for form validation
@@ -145,15 +165,93 @@ src/features/schedules/
 **Files to update:**
 - `src/app/(app)/schedules/page.tsx` — replace placeholder with `<SchedulesView />`
 - `src/store/staged.ts` — add `schedules` slice (already defined in `EntityStore` type)
-- `src/features/schedules/` folder does not exist yet — create it
+- `src/features/rules/utils/ruleFields.ts` — add `link-schedule` action support so linked schedule rules can be rendered / preserved
+- `src/features/rules/components/RulesView.tsx` and/or `src/features/rules/components/RuleDrawer.tsx` — support opening an existing rule from the schedules page via `ruleId`
+
+**Table requirements:**
+- Show user-facing names, not raw ids, for payee and account
+- Recommended columns:
+  - Name
+  - Next Date
+  - Amount
+  - Repeats / Summary
+  - Payee
+  - Account
+  - Auto Add
+  - Completed
+  - Actions
+- `nextDate`, `completed`, and linked `ruleId` are read-only display values on this page
+- No inline transaction details or transaction linking UI
+
+**Filter / search requirements:**
+- Search by name
+- Filter by payee
+- Filter by account
+- Filter by frequency
+- Filter by `postsTransaction` (auto-add vs manual)
+- Filter by completed state
+
+**Schedule form requirements:**
+- Support both one-time and recurring schedules in a single drawer
+- One-time mode: plain ISO date string
+- Recurring mode: full `RecurConfig` editor with:
+  - `frequency`: daily / weekly / monthly / yearly
+  - `interval`
+  - `patterns` support from the start, including monthly specific days and **Last day**
+  - `skipWeekend`
+  - `weekendSolveMode`: before / after
+  - `endMode`: never / after N occurrences / on date
+  - `endOccurrences`
+  - `endDate`
+- `patterns` must not be deferred; monthly pattern support is part of the base feature
+- Payee and account selectors should allow null / blank selection when the API permits it
+- `name` should be validated as unique where possible and treated as the primary user-facing label
+
+**Amount requirements:**
+- Support all three amount modes from the start:
+  - `is` → exact amount
+  - `isapprox` → approximate amount
+  - `isbetween` → range using `{ num1, num2 }`
+- Use a dedicated input component so switching amount modes does not lose values unexpectedly
+- Amounts are stored in minor units; reuse the same amount formatting conventions as the rest of actual-bench
+- For approximate amounts, render a visible approximate cue in the table / drawer summary
+
+**Automatic posting requirements:**
+- Label `postsTransaction` in the UI as **Automatically add transaction**
+- Treat this as schedule automation metadata only; do not build a transaction posting workflow into this page
+
+**Edit as Rule requirements:**
+- Add **Edit as Rule** action in the edit drawer and row actions menu
+- Opening a schedule in Rules should use the existing rule id returned by the schedule API
+- Do not synthesize or regenerate the linked rule client-side from the schedule form
+- The Rules page remains the advanced path for category, notes, and other rule-driven automation
+- If the Rules UI does not yet understand `link-schedule`, RD-001 must add enough support to display and preserve it safely
+
+**CSV requirements:**
+- Keep schedules aligned with the standard feature-page pattern by supporting CSV import/export
+- CSV should only cover fields supported by the schedule form
+- For recurring schedules, serialize the `date` recurrence object in a stable JSON form
+
+**Validation / UX notes:**
+- `date` must be either a string or `RecurConfig`, never both
+- `amountOp === "isbetween"` requires both `num1` and `num2`
+- If `patterns` contains 31st or `Last`, reflect that clearly in the recurrence summary
+- Show a note that weekend shifting is supported but holidays are not handled
+- `completed` should be treated as read-only schedule state on this page unless the schedules API later exposes a dedicated mutation for it
+
+**Non-goals:**
+- No transaction browser
+- No linking historical transactions to schedules from this page
+- No “Find matching transactions” flow
+- No “Find schedules from transactions” flow
+- No “Create schedule from transaction” flow
+- No recreation of the full Rules experience inside the schedule form
 
 **Implementation notes:**
-- The `ScheduleFormDrawer` needs two modes: simple (one-time date, string) and recurring (RecurConfig). Use a toggle switch to switch between them.
-- `amountOp` values: `"is"` (exact), `"isapprox"` (approximately), `"isbetween"` (range with `{ num1, num2 }`).
-- `postsTransaction` = whether the schedule auto-creates a transaction when triggered. Render as a checkbox in the form.
-- For the recurrence config, `patterns` is only used for monthly frequency (e.g. "3rd Monday of the month"). Start with daily/weekly/monthly/yearly support; `patterns` can be v2.
-- The schedules page should NOT show or manage transactions — stay true to the "no transactional data" principle. Show `nextDate`, `completed`, `payeeId`, `accountId`, `amount` as read-only summary columns with edit via drawer.
-- `completed` schedules should be filterable (default: show active only).
+- Prefer the schedules API as the source of truth for all schedule CRUD
+- Use the returned schedule payload directly for the page; do not reconstruct the basic schedule view from the linked rule
+- Use the linked `rule` id only for the advanced Rules path
+- Keep the first shipped version complete for schedule management, but intentionally narrow around planning / automation rather than transaction history
 
 ---
 
@@ -222,59 +320,28 @@ src/features/tags/
 |---|---|
 | **Priority** | High |
 | **Effort** | S |
-| **Status** | complete |
+| **Status** | pending |
 | **Depends on** | nothing |
 
 **What:** Add a read-only current balance column to the Accounts table. Users currently have no visibility into account balances inside actual-bench.
 
-**API endpoint:** single query to get current balance for all accounts.
-```
-POST /budgets/string/run-query
-Body:
-{
-  "ActualQLquery": {
-    "table": "transactions",
-    "groupBy": [
-      "account",
-      "account.name"
-    ],
-    "select": [
-      "account",
-      "account.name",
-      {
-        "balance": {
-          "$sum": "$amount"
-        }
-      }
-    ]
-  }
-}
-
-Response:
-  "data": [
-        {
-            "account": "923413a1-be59-4299-a4ef-c0f52a4f9bcb",
-            "account.name": "Credit Card Loans",
-            "balance": -1176507
-        },
-        {
-            "account": "2d03cfba-d8eb-443b-967e-cbadf8b77d65",
-            "account.name": "CC-UAE MSHRQ Cashback 9644",
-            "balance": 18
-        }]
+**API endpoint:**
+```text
+GET /budgets/{id}/accounts/:accountId/balance
+    Optional query param: ?cutoff_date=YYYY-MM-DD
+    Response: { data: { amount: number } }   (amount in cents)
 ```
 
-**Shipped implementation:**
-- `src/lib/api/accounts.ts` — `getAccountBalances(connection): Promise<Map<accountId, balance>>` fetches all account balances in a single aggregated ActualQL query
-- `src/features/accounts/hooks/useAccountBalances.ts` — shared hook that wraps the aggregated query with `useQuery`; key: `["accountBalances", budgetSyncId]`; `staleTime: 60_000` (1 min — intentional override of the global `Infinity` default, since balances change frequently)
-- `src/features/accounts/components/AccountsTable.tsx` — Balance column uses the shared `useAccountBalances` hook; shows a `-` placeholder while loading or on error; negative balances highlighted in red
+**Files to update:**
+- `src/lib/api/accounts.ts` — add `getAccountBalance(connection, accountId): Promise<number>`
+- `src/features/accounts/hooks/useAccounts.ts` — add `useAccountBalance(accountId)` hook using `useQuery`; key: `["accountBalance", budgetSyncId, accountId]`
+- `src/features/accounts/components/AccountsTable.tsx` — add Balance column; fetch lazily per row using `useAccountBalance`
 
 **Implementation notes:**
-
-- The shipped approach uses a **single aggregated query** for all accounts rather than per-account lazy fetches — this avoids the N+1 query problem and improves performance.
+- Amount is in cents (integer). Divide by 100 and format as currency. Until RD-012 (currency symbol) is done, format as a plain number with 2 decimal places.
+- Fetch balance lazily per account row using individual `useQuery` calls with `staleTime: 60_000` (1 min — intentional override of the global `Infinity` default, since balances change frequently). Do not block the page load — show a `-` placeholder while loading and on error.
 - Do NOT add balance history (charts, date ranges) — that's transactional data, out of scope.
-- This balance data feeds directly into **RD-016** (account close safety warning). The `useAccountBalances` hook is built as a shared hook so RD-016 can reuse it.
-- Amount is in cents (integer). The API function divides by 100 and returns whole currency units. Until RD-012 (currency symbol) is done, format as a plain number with 2 decimal places.
+- This balance data feeds directly into **RD-016** (account close safety warning). Build it as a shared hook so RD-016 can reuse it.
 
 ---
 
@@ -388,9 +455,12 @@ if (contentType.includes("zip") || contentType.includes("octet-stream")) {
 | **Priority** | Medium |
 | **Effort** | M |
 | **Status** | pending |
-| **Depends on** | The `runQuery` utility built for RD-017 should be reused here |
+| **Depends on** | Shared `runQuery` utility (also used by RD-016) |
 
-**What:** A developer/power-user page where users can run arbitrary ActualQL queries against the open budget and see results in a generic table.
+**What:** A developer / power-user page where users can run arbitrary ActualQL queries against the open budget, inspect results in a generic table or raw JSON view, and save useful queries locally for quick reuse.
+
+**Includes former roadmap item:**
+- Former **RD-022 — Saved Query Packs**
 
 **API endpoint:**
 ```
@@ -403,10 +473,10 @@ Response: { data: Record<string, unknown>[] }
 ```ts
 type ActualQLQuery = {
   table: string;           // e.g. "transactions", "payees", "categories"
-  filter?: object;         // MongoDB-style: { payee_id: { $eq: "..." } }
+  filter?: object;         // MongoDB-style filter
   select?: string[];       // fields to return
   groupBy?: string[];      // for aggregation
-  calculate?: { name: string; func: string; field: string }[];
+  calculate?: object;      // aggregate shortcut when returning a single value
   orderBy?: object[];
   limit?: number;
   offset?: number;
@@ -418,19 +488,44 @@ type ActualQLQuery = {
 src/lib/api/query.ts          — runQuery(connection, query): Promise<Record<string,unknown>[]>
 src/app/(app)/query/page.tsx  — query console page
 src/features/query/
-  components/QueryConsole.tsx  — textarea input + results table + history
+  components/QueryConsole.tsx   — textarea input + results table + raw JSON view
+  components/SavedQueryList.tsx — built-in examples + saved queries
+  components/SaveQueryDialog.tsx
+  lib/queryPacks.ts
+  lib/queryStorage.ts
+  types.ts
 ```
 
 **Files to update:**
 - `src/components/layout/Sidebar.tsx` — add "Query" link at the bottom of NAV_ITEMS (below Tags), with a `Terminal` or `Code` icon; mark it with a `dev` badge
 
 **Implementation notes:**
-- The `runQuery` API function in `src/lib/api/query.ts` is shared with RD-017 (transaction count checks). Build it here first, or extract it when building RD-017.
-- Query history: store last 10 queries in sessionStorage under key `"actualql-history"`. Show as a collapsible list to the side of the input.
-- Results: render as a plain table — column names from the first result object's keys, rows as cells. Handle empty result set gracefully.
-- Input: a `<textarea>` for raw JSON, with a "Run" button. Add a simple example query on first load: `{ "table": "payees", "select": ["id", "name"] }`.
-- This page is intentionally minimal — it's a debug tool. Do not add syntax highlighting or a query builder (that would be a separate feature).
+- The `runQuery` API function in `src/lib/api/query.ts` is shared with RD-016 (entity usage & delete safety). Build it here first, or extract it when building RD-016.
+- Query history: store last 10 executed queries in sessionStorage under key `"actualql-history:${budgetId}"`. Show as a collapsible list beside the editor.
+- Saved queries: store locally per budget under a separate key such as `"actualql-saved-queries:${budgetId}"`.
+- Keep built-in examples, recent history, and saved queries as three distinct concepts in the UI.
+- Results: render as a plain table when the response is an array of objects, and provide a raw JSON view for debugging. Handle empty result sets and scalar `calculate` responses gracefully.
+- Input: a `<textarea>` for raw JSON, with a "Run" button and a "Format JSON" helper. Add a simple example query on first load: `{ "table": "payees", "select": ["id", "name"] }`.
+- Support saving the current query with lightweight metadata: `id`, `name`, `query`, `createdAt`, `updatedAt`.
+- Support `Load`, `Duplicate`, `Delete`, `Copy JSON`, and `Insert example` actions for saved queries.
+- Save the raw query JSON string, not a normalized parsed object.
+- This page is intentionally minimal — it's a debug / power-user tool. Do not add syntax highlighting, autocomplete, or a visual query builder.
 - Important: queries run in real-time against the server — they bypass the staged store. Make this clear with an info banner: *"Queries run directly against the server. Staged unsaved changes are not reflected."*
+- Keep persistence local-only in v1. No server sync, sharing, or export.
+
+**Built-in example pack ideas:**
+- List payees
+- Count rules
+- Transactions per payee
+- Amount by category this month
+- Uncategorized transactions this month
+- Schedules missing a linked rule (when relevant fields are available)
+
+**Non-goals:**
+- No query builder or autocomplete
+- No cloud sync or cross-device sharing
+- No permission model
+- No attempt to turn actual-bench into a BI/reporting product
 
 ---
 
@@ -655,132 +750,203 @@ GET /budgets/{id}/settings  → { currencySymbol: string, ... }
 
 ---
 
-### RD-016 — Delete / Close Safety Guards
+### RD-016 — Entity Usage & Delete Safety Foundation
 
 | | |
 |---|---|
 | **Priority** | High |
-| **Effort** | M |
+| **Effort** | L |
 | **Status** | pending |
-| **Depends on** | RD-003 (for account balance check) — can build everything else independently |
+| **Depends on** | RD-003 for account balance checks; may reuse `runQuery` from RD-007 |
 
-**What:** Add missing confirmation dialogs and dependency warnings before staging deletes or closing accounts. This was identified as a gap by analysis of the existing table components.
+**What:** Build one shared foundation for safe delete / close flows and reusable usage inspection across existing entities. This combines:
+- confirmation dialogs and dependency warnings
+- rule reference checks
+- transaction usage counts where they add value
+- a reusable **Inspect usage** drawer / sheet
+
+This turns one-off safety logic into a consistent product capability across the app while keeping actual-bench away from transaction browsing and transaction management.
+
+**Includes former roadmap items:**
+- Former **RD-017 — Transaction Count Warnings on Delete**
+- Former **RD-021 — Usage Inspector / "Where Used?" Drawer**
+- **RD-005** remains a named sub-task under this feature for payee rule counts
+
+**Why:**
+- Avoids duplicating entity-usage logic across dialogs, tables, and drawers
+- Helps users understand impact before they delete, merge, close, or edit entities
+- Adds value without turning actual-bench into a transaction workspace
+- Fits the app's role as the admin / power-user layer on top of Actual Budget
+
+**Scope v1:**
+- Supported entities: payees, categories, accounts, tags, schedules
+- Confirmation dialogs use one shared usage model
+- Row actions can open an **Inspect usage** drawer for more detail
+- Primary focus is dependency visibility, impact warnings, and safe UX — not editing
+- Read transaction data only as counts / impact metadata; do not show transaction lists
 
 **Analysis findings:**
-- Account close: no confirmation, no balance check. Actual Budget warns when closing with non-zero balance.
-- Account delete (single): direct `stageDelete` with **no confirmation dialog** — just fires immediately.
-- Account delete (bulk): confirmation dialog exists but has no rules reference check.
-- Category delete (single): direct `stageDelete` with **no confirmation at all**.
-- Category group delete (single): immediate delete with no confirmation — silently cascade-deletes all child categories.
-- Category delete (bulk): confirmation dialog exists but no rules reference warning.
-- Payee rules count: computed from `stagedRules` which is empty if the rules page was not visited — warning may silently not fire. Fix: call `GET /payees/:id/rules` on demand.
-- Rules bulk delete: direct `stageDelete` for all selected with **no confirmation**.
+- Account close currently has no confirmation and no balance check
+- Account delete (single) has no confirmation dialog
+- Account delete (bulk) exists but has no rules reference warning
+- Category delete (single) has no confirmation
+- Category group delete (single) can silently cascade-delete child categories
+- Category delete (bulk) lacks rules reference warning
+- Payee rules count may silently show 0 when rules are unavailable or stale
+- Rules bulk delete has no confirmation
+- Users also need transaction usage impact for payees/categories, but only as counts and warnings, not as a transaction browser
 
-**Fixes required — by entity:**
+**What the shared usage model should provide (entity-dependent):**
+- Rules reference count
+- Transaction usage count
+- Related entities / linked references
+- Warnings relevant to the current action
+- Account balance warning where relevant
+- Optional quick links to the owning page (Rules, Categories, Accounts, etc.)
 
-#### Accounts
-1. **Close (single)** — before staging `closed: true`, call `getAccountBalance` (from RD-003). If `balance !== 0`, show a warning dialog: *"This account has a balance of {X}. Closing it may affect your budget. Continue?"* with Cancel and Close buttons.
-2. **Delete (single)** — add a confirmation dialog. Check staged rules for references to this account. Message: *"Delete {name}? This cannot be undone after Save."* If rules reference it: *"Warning: {N} rule(s) reference this account."*
-3. **Delete (bulk)** — update existing dialog to also mention rule references.
+**Examples:**
+- **Payee:** rules count, transaction count, merge / delete impact
+- **Category:** rules count, transaction count, category-group relationship, delete impact
+- **Account:** balance warning, rules count, transaction count, close / delete impact
+- **Tag:** transaction count only in v1
+- **Schedule:** linked rule, whether it posts transactions, active / completed state
 
-**Implementation detail for account rules check:** There is no `GET /accounts/:id/rules` endpoint. Use client-side scan of `stagedRules`. If `stagedRules` is empty, add a note to the dialog: *"Load the Rules page first to check for rule dependencies."*
+**Files to create:**
+```text
+src/lib/referenceCheck.ts
+src/lib/api/query.ts                 — shared ActualQL query helper (also used by RD-007)
+src/features/usage-inspector/
+  components/UsageInspectorDrawer.tsx
+  hooks/useEntityUsage.ts
+  lib/entityUsage.ts
+  types.ts
+src/hooks/usePayeeTransactionCounts.ts
+src/hooks/useCategoryTransactionCounts.ts
+src/hooks/useAccountTransactionCounts.ts
+```
 
-#### Categories
-1. **Delete group (single)** — add a confirmation dialog (currently fires immediately). Message: *"Delete group {name} and its {N} categories? This cannot be undone after Save."* Scan staged rules for references to any of the child category IDs — include count in message.
-2. **Delete category (single)** — add a confirmation dialog. Scan staged rules for references. Message: *"Delete {name}?"* + rules warning if applicable.
-3. **Delete (bulk)** — update existing confirmation to include rules reference count.
+**Files to update:**
+- `src/features/payees/components/PayeesTable.tsx`
+- `src/features/categories/components/CategoriesTable.tsx`
+- `src/features/accounts/components/AccountsTable.tsx`
+- `src/features/tags/components/TagsTable.tsx`
+- `src/features/schedules/components/SchedulesTable.tsx`
+- confirmation dialogs / row actions across entity tables that currently handle delete / close flows
+- `src/lib/api/payees.ts` — add `getPayeeRules(connection, payeeId)`
 
-#### Payees
-1. **Rules count fix** — in the single-delete handler, when `payeeRuleCount.get(id) === 0` AND `Object.keys(stagedRules).length === 0`, call `getPayeeRules(connection, id)` (add this to `src/lib/api/payees.ts`). Show a loading state on the trash icon button (set a local `isFetchingRules` state). Display the fetched count in the confirmation dialog. This is sub-task RD-005.
-
-#### Rules
-1. **Bulk delete** — add a confirmation dialog: *"Delete {N} rules? This cannot be undone after Save."* Consistent with bulk delete dialogs on other pages.
-
-**New API function needed:**
-- `src/lib/api/payees.ts` → `getPayeeRules(connection, payeeId): Promise<Rule[]>`
-
-**Shared helper to create:** `src/lib/referenceCheck.ts` — a utility that scans a `StagedMap<Rule>` for references to a given entity ID across all condition and action fields. Used by account delete, category delete, and to cross-check payees when staged rules are loaded.
+**Shared helpers to create:**
 ```ts
 export function countRuleReferences(stagedRules: StagedMap<Rule>, entityId: string): number
 ```
 
----
+**Implementation approach:**
+1. Build a shared usage model per entity type rather than duplicating per-table logic
+2. Reuse RD-003 account balances for account close warnings
+3. Reuse targeted endpoints where they already exist
+4. Use `runQuery` only for generic transaction counts where there is no better endpoint
+5. Keep all reads queue-aware through the proxy
+6. Keep the first version lightweight: counts + key relationships + warnings
+7. Do not fetch or display full transaction lists
 
-### RD-017 — Transaction Count Warnings on Delete
+**ActualQL count queries (read-only impact metadata):**
 
-| | |
-|---|---|
-| **Priority** | Medium |
-| **Effort** | S |
-| **Status** | pending |
-| **Depends on** | RD-016 (confirmation dialogs must exist first); RD-007 shares the `runQuery` utility |
-
-**What:** Before deleting a payee or category, show how many transactions reference it. Deleting does not remove transactions — it unlinks them (sets `payee_id` / `category_id` to null). Users should be warned so they understand the data impact.
-
-**Analysis findings:**
-- Actual Budget does not delete transactions when a payee or category is deleted — it nulls the reference.
-- The warning copy should be precise: *"47 transactions will be unlinked (not deleted). Their payee will be cleared."*
-- Transaction counts can be fetched in a single `run-query` call per entity type, grouped by ID.
-
-**API endpoint:**
-```
-POST /budgets/{id}/run-query
-Body for payee counts:
+Payees:
+```json
 {
   "ActualQLquery": {
     "table": "transactions",
-    "select": ["payee_id"],
-    "groupBy": ["payee_id"],
-    "calculate": [{ "name": "count", "func": "count", "field": "id" }]
-  }
-}
-Response: { data: [{ payee_id: "abc123", count: 47 }, ...] }
-
-Body for category counts:
-{
-  "ActualQLquery": {
-    "table": "transactions",
-    "select": ["category_id"],
-    "groupBy": ["category_id"],
-    "calculate": [{ "name": "count", "func": "count", "field": "id" }]
+    "groupBy": ["payee", "payee.name"],
+    "select": [
+      "payee",
+      "payee.name",
+      {
+        "transactionCount": {
+          "$count": "$id"
+        }
+      }
+    ]
   }
 }
 ```
 
-**New API function:**
+Categories:
+```json
+{
+  "ActualQLquery": {
+    "table": "transactions",
+    "groupBy": ["category", "category.name"],
+    "select": [
+      "category",
+      "category.name",
+      {
+        "transactionCount": {
+          "$count": "$id"
+        }
+      }
+    ]
+  }
+}
 ```
-src/lib/api/query.ts  (also used by RD-007)
-  runQuery(connection, query: ActualQLQuery): Promise<Record<string, unknown>[]>
+
+Accounts:
+```json
+{
+  "ActualQLquery": {
+    "table": "transactions",
+    "groupBy": ["account", "account.name"],
+    "select": [
+      "account",
+      "account.name",
+      {
+        "transactionCount": {
+          "$count": "$id"
+        }
+      }
+    ]
+  }
+}
 ```
 
-**New hooks:**
-```
-src/hooks/usePayeeTransactionCounts.ts
-  — calls runQuery with payee groupBy query
-  — returns Map<payeeId, count>
-  — useQuery with enabled: false initially; call refetch() on first delete
-  — staleTime: 120_000 (2 min — intentional override of the global Infinity default)
+**Delete / close flows covered in this feature:**
 
-src/hooks/useCategoryTransactionCounts.ts
-  — same pattern for categories
-```
+#### Accounts
+1. **Close (single)** — before staging `closed: true`, show a warning if balance is non-zero
+2. **Delete (single)** — confirmation dialog + rules reference warning + transaction usage count if available
+3. **Delete (bulk)** — update existing dialog to include reference and usage warnings
 
-**Fetch strategy — lazy batch (recommended):**
-- On the Payees or Categories page, do NOT fetch on mount.
-- On the first delete action (single or bulk), call `refetch()` to trigger the query.
-- Cache the result for 2 minutes in React Query.
-- Show a brief spinner in the confirm button while the counts are loading.
-- Subsequent deletes in the same session use the cached result instantly.
+#### Categories
+1. **Delete group (single)** — confirmation dialog including child-category count and rules references
+2. **Delete category (single)** — confirmation dialog + rules reference warning + transaction usage count
+3. **Delete (bulk)** — update existing confirmation to include reference and usage warnings
 
-**Files to update:**
-- `src/features/payees/components/PayeesTable.tsx` — add `usePayeeTransactionCounts`; augment both single-delete and bulk-delete dialogs with the count
-- `src/features/categories/components/CategoriesTable.tsx` — add `useCategoryTransactionCounts`; augment single, group, and bulk delete dialogs
+#### Payees
+1. **Rules count fix** — if local rules count is zero and rules are unavailable or stale, fetch from API before confirming delete (sub-task RD-005)
+2. **Delete warnings** — show rules count + transaction unlink count
+3. **Merge impact** — expose the same usage summary through the inspector where helpful
 
-**Warning message format:**
-- If count is 0: no additional warning (don't clutter the dialog)
-- If count > 0: append to confirmation dialog: *"⚠ {N} transaction(s) referencing this {payee/category} will be unlinked (not deleted)."*
+#### Rules
+1. **Bulk delete** — add confirmation dialog
 
-**Important constraint:** The `run-query` endpoint is subject to the same per-server queue in the proxy. Do not fire the query on every keystroke or mouse movement — only on explicit delete intent (button click).
+#### Tags / Schedules
+1. Expose usage through the inspector drawer only in v1
+2. Do not block their existing flows unless a clear warning is needed
+
+**Usage inspector UI notes:**
+- Use a `Sheet` / drawer pattern
+- Trigger from row action menus via **Inspect usage**
+- Allow confirmation dialogs to deep-link into the same drawer when the user needs more detail
+- Show empty-state messaging clearly: *"No known references found."*
+
+**Warning copy guidance:**
+- Be precise about unlinking vs deleting, for example:
+  *"47 transactions will be unlinked (not deleted). Their payee will be cleared."*
+- Prefer counts and impact summaries over raw transaction detail
+
+**Non-goals:**
+- No full transaction browser
+- No server-persisted dependency snapshots
+- No editing from inside the inspector in v1
+- No attempt to recreate Actual Budget's transaction workflows
 
 ---
 
@@ -879,7 +1045,7 @@ The following findings from code analysis should be kept in mind when working on
 
 **`stagedRules` reliability:** Rules are prefetched on every page via `usePreloadEntities()` in AppShell — `stagedRules` is populated as soon as the app loads and does not require the Rules page to be visited first. For dependency count checks (e.g. before deleting a payee), scanning `stagedRules` is reliable. Server-side API calls (`GET /payees/:id/rules`, or a `run-query`) remain a valid fallback for fresh counts after a save.
 
-**Proxy queue awareness:** All `run-query` calls and API fetches go through the per-server queue in `route.ts`. This means a `run-query` fired during a delete confirmation will be queued behind any in-flight save operations. This is correct behavior — do not bypass the queue.
+**Proxy queue awareness:** All `run-query` calls and API fetches go through the per-server queue in `route.ts`. This means a `run-query` fired during entity usage checks or delete confirmations will be queued behind any in-flight save operations. This is correct behavior — do not bypass the queue.
 
 **`Tag` type is stale:** `src/types/entities.ts` has a comment saying *"Tags are not implemented in the current Actual HTTP API"* — this is wrong as of v26.3.0. Update the comment and add the `color` and `description` fields when implementing RD-002.
 
@@ -921,159 +1087,6 @@ The following findings from code analysis should be kept in mind when working on
 
 ---
 
-### RD-021 — Usage Inspector / "Where Used?" Drawer
-
-| | |
-|---|---|
-| **Priority** | High |
-| **Effort** | S-M |
-| **Status** | pending |
-| **Depends on** | RD-016 and RD-017 |
-
-**What:** A reusable inspector drawer that shows where an entity is used before the user deletes, merges, closes, or edits it. This turns one-off safety warnings into a consistent product feature across the app.
-
-**Why:**
-- Adds clear value without turning actual-bench into a transaction workspace
-- Helps users understand impact before they make changes
-- Reuses logic already being introduced for delete / close safety and query-based counts
-- Fits the app's role as the admin / power-user layer on top of Actual Budget
-
-**Scope v1:**
-- Supported entities: payees, categories, accounts, tags, schedules
-- Show a drawer or side sheet from row actions and confirmation dialogs
-- Primary focus is dependency visibility, not editing
-
-**What the inspector should show (entity-dependent):**
-- Rules reference count
-- Transaction usage count
-- Related entities / linked references
-- Warnings relevant to the current action
-- Optional quick links to the owning page (Rules, Categories, Accounts, etc.)
-
-**Examples:**
-- **Payee:** rules count, transaction count, merge / delete impact
-- **Category:** rules count, transaction count, category-group relationship, delete impact
-- **Account:** balance warning, rules count, transaction count, close / delete impact
-- **Tag:** transaction count only in v1 (rules do not currently use tags)
-- **Schedule:** linked rule, whether it posts transactions, active / completed state
-
-**Files to create:**
-```text
-src/features/usage-inspector/
-  components/UsageInspectorDrawer.tsx
-  hooks/useEntityUsage.ts
-  lib/entityUsage.ts
-  types.ts
-```
-
-**Files to update:**
-- `src/features/payees/components/PayeesTable.tsx`
-- `src/features/categories/components/CategoriesTable.tsx`
-- `src/features/accounts/components/AccountsTable.tsx`
-- `src/features/tags/components/TagsTable.tsx`
-- `src/features/schedules/components/SchedulesTable.tsx`
-- `src/features/*/components/*` confirmation dialogs that currently show delete / close warnings
-
-**Implementation approach:**
-- Build a shared usage model per entity type rather than duplicating per-table logic
-- Reuse existing safety-check logic from RD-016 and count logic from RD-017
-- Use direct server reads for fresh counts where needed; these should remain read-only and queue-aware through the proxy
-- Keep the first version lightweight: counts + a few key relationships + warnings
-- Do not fetch full transaction lists; counts and sample references are enough
-
-**Suggested API / query sources:**
-- Existing targeted endpoints already planned in RD-016 / RD-017 where available
-- `run-query` utility from RD-007 for generic counts when a dedicated endpoint does not exist
-- Existing account balance API from RD-003 for account close warnings
-
-**UI notes:**
-- Use a `Sheet` / drawer pattern for consistency with the rest of the app
-- Trigger from row action menus via `Inspect usage`
-- Allow confirmation dialogs to deep-link into the same drawer when the user needs more detail
-- Show empty-state messaging clearly: *"No known references found."*
-
-**Non-goals:**
-- No full transaction browser
-- No server-persisted dependency snapshots
-- No editing from inside the inspector in v1
-
----
-
-### RD-022 — Saved Query Packs
-
-| | |
-|---|---|
-| **Priority** | Medium |
-| **Effort** | S |
-| **Status** | pending |
-| **Depends on** | RD-007 |
-
-**What:** Extend the ActualQL Query Console with saved query packs so users can keep and rerun useful queries without pasting raw JSON each time.
-
-**Why:**
-- Turns RD-007 from a one-off debug textarea into a repeatable power-user tool
-- Adds value for self-hosters and advanced users without changing the app into a BI tool
-- Keeps persistence local, which matches the current trust / security posture
-
-**Scope v1:**
-- Save query locally with a name
-- List saved queries for the active budget
-- Load, edit, duplicate, delete, and rerun saved queries
-- Seed the console with a few built-in example queries
-
-**Storage model:**
-- Local only (no server persistence)
-- Store per budget id, for example:
-  ```ts
-  actualql-saved-queries:${budgetId}
-  ```
-- Keep built-in examples separate from user-saved queries
-
-**Built-in example pack ideas:**
-- List payees
-- Count rules
-- Transactions per payee
-- Amount by category this month
-- Uncategorized transactions this month
-- Schedules missing a linked rule (when relevant fields are available)
-
-**Files to create:**
-```text
-src/features/query/
-  components/SavedQueryList.tsx
-  components/SaveQueryDialog.tsx
-  lib/queryPacks.ts
-  lib/queryStorage.ts
-  types.ts
-```
-
-**Files to update:**
-- `src/features/query/components/QueryConsole.tsx`
-- `src/lib/api/query.ts` (only if needed for typed result helpers)
-
-**Implementation notes:**
-- Save the raw query JSON string, not a parsed normalized object
-- Include small metadata: `id`, `name`, `query`, `createdAt`, `updatedAt`
-- Support `Duplicate` so users can tweak an existing query safely
-- Add `Insert example` and `Save current query` actions near the editor
-- Keep history and saved queries separate: history is automatic, saved queries are user-managed
-- Keep the UX simple and local-first; no authentication, sync, or export in v1
-
-**UI notes:**
-- Show saved queries in a collapsible sidebar or secondary panel beside history
-- Distinguish visually between:
-  - built-in examples
-  - recent history
-  - saved queries
-- Add a one-click `Copy JSON` action for each saved query
-
-**Non-goals:**
-- No query sharing across devices
-- No cloud sync
-- No query builder or autocomplete
-- No permission model
-
----
 
 ### RD-023 — Rule Diagnostics / Linting
 
@@ -1139,6 +1152,57 @@ type RuleDiagnostic = {
   details?: string[];
 };
 ```
+
+---
+
+### RD-024 — SQLite Budget File Diagnostic
+
+| | |
+|---|---|
+| **Priority** | Medium |
+| **Effort** | M |
+| **Status** | pending |
+| **Depends on** | nothing (fully client-side) |
+
+**What:** A diagnostic view that lets users drop or pick a `.sqlite` Actual Budget file and inspect its contents entirely in the browser. No file is uploaded to any server — processing happens via WASM SQLite.
+
+**Why:**
+- Useful for testers and power users who want to inspect raw budget state without writing SQL manually
+- Complements ActualQL (RD-007) by providing a structural overview before running queries
+- Fully offline — no server-side risk or data exposure
+- Natural fit for actual-bench's "workbench" positioning
+
+**Scope v1:**
+- File picker and drag-and-drop zone that reads the `.sqlite` file client-side
+- Display: file size, Actual schema version (from `migrations` or `meta` table), list of all tables with row counts
+- Read-only paginated table browser — pick any table, browse rows
+- Powered by [`sql.js`](https://github.com/sql-js/sql.js) or `wa-sqlite` (WASM SQLite); no native Node.js SQLite dependency
+
+**Non-goals:**
+- No file upload to actual-http-api or any server
+- No writes to the SQLite file
+- No transaction import from this view
+- No query execution in v1 (that is RD-007's scope)
+
+**Files to create:**
+```text
+src/features/sqlite-diagnostic/
+  components/SqliteDiagnosticView.tsx   — drop zone + file info + table list
+  components/TableBrowser.tsx           — paginated read-only row viewer
+  lib/sqliteReader.ts                   — sql.js wrapper: open file, list tables, count rows, fetch page
+src/app/(app)/sqlite-diagnostic/
+  page.tsx
+```
+
+**Files to update:**
+- `src/components/layout/Sidebar.tsx` — add nav entry (e.g. "SQLite Diagnostic")
+- `src/app/(app)/layout.tsx` if any route-level setup is needed
+
+**Implementation notes:**
+- `sql.js` is loaded from CDN or bundled as a dynamic import to avoid bloating the main bundle
+- The WASM binary must be served from `public/` or imported via a worker
+- File reading uses the `FileReader` API — no server roundtrip
+- v1 is intentionally read-only and stateless; the file is never persisted between sessions
 
 **UI notes:**
 - Provide summary cards at the top: total issues, errors, warnings, infos

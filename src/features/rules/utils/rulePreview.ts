@@ -3,16 +3,28 @@
  * Resolves entity IDs to names using the staged store maps.
  */
 
-import type { Rule, ConditionOrAction, AmountRange } from "@/types/entities";
+import type { Rule, ConditionOrAction, AmountRange, Schedule, RecurConfig } from "@/types/entities";
 import type { StagedMap } from "@/types/staged";
 import type { Payee, Category, Account, CategoryGroup } from "@/types/entities";
+import { recurSummary } from "@/features/schedules/lib/recurSummary";
 import { CONDITION_FIELDS, ACTION_FIELDS, ACTION_OPS } from "./ruleFields";
+
+/** True when value is a RecurConfig (schedule-linked date condition). */
+export function isRecurConfig(value: unknown): value is RecurConfig {
+  return (
+    value !== null &&
+    typeof value === "object" &&
+    !Array.isArray(value) &&
+    "frequency" in (value as object)
+  );
+}
 
 export type EntityMaps = {
   payees: StagedMap<Payee>;
   categories: StagedMap<Category>;
   accounts: StagedMap<Account>;
   categoryGroups: StagedMap<CategoryGroup>;
+  schedules?: StagedMap<Schedule>;
 };
 
 /** Safely convert any condition/action value to a plain string for display. */
@@ -34,6 +46,11 @@ function resolveValue(
   maps: EntityMaps,
   fieldDefs: Record<string, { entity?: string }>
 ): string {
+  // Date conditions in schedule-linked rules carry a RecurConfig object as their value.
+  if (field === "date" && isRecurConfig(value)) {
+    return recurSummary(value) || "recurring";
+  }
+
   const def = fieldDefs[field];
 
   // For array values with an entity field, resolve each ID individually before
@@ -90,6 +107,13 @@ function summariseAction(a: ConditionOrAction, maps: EntityMaps): string {
   }
 
   const field = a.field ?? "";
+
+  if (a.op === "link-schedule") {
+    const scheduleId = valueToString(a.value);
+    const scheduleName = maps.schedules?.[scheduleId]?.entity.name ?? scheduleId;
+    return `linked to schedule → "${scheduleName}"`;
+  }
+
   const fieldLabel = ACTION_FIELDS[field]?.label ?? field;
 
   if (a.options !== undefined && "template" in a.options) {

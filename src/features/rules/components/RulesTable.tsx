@@ -4,7 +4,7 @@ import { useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { useHighlight } from "@/hooks/useHighlight";
 import { useTableSelection } from "@/hooks/useTableSelection";
-import { Pencil, Trash2, RotateCcw, Copy, AlertTriangle } from "lucide-react";
+import { Pencil, Trash2, RotateCcw, Copy, AlertTriangle, CalendarDays } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -52,6 +52,7 @@ export function RulesTable({ onEdit, onMerge, payeeId, categoryId, accountId }: 
   const categories = useStagedStore((s) => s.categories);
   const accounts = useStagedStore((s) => s.accounts);
   const categoryGroups = useStagedStore((s) => s.categoryGroups);
+  const schedules = useStagedStore((s) => s.schedules);
   const stageDelete = useStagedStore((s) => s.stageDelete);
   const stageNew = useStagedStore((s) => s.stageNew);
   const revertEntity = useStagedStore((s) => s.revertEntity);
@@ -67,8 +68,8 @@ export function RulesTable({ onEdit, onMerge, payeeId, categoryId, accountId }: 
   const { selectedIds, toggleSelect, toggleSelectAll: _toggleSelectAll, clearSelection } = useTableSelection();
 
   const entityMaps = useMemo<EntityMaps>(
-    () => ({ payees, categories, accounts, categoryGroups }),
-    [payees, categories, accounts, categoryGroups]
+    () => ({ payees, categories, accounts, categoryGroups, schedules }),
+    [payees, categories, accounts, categoryGroups, schedules]
   );
 
   // Pre-compute previews once when rules or entity maps change so the search
@@ -240,6 +241,7 @@ export function RulesTable({ onEdit, onMerge, payeeId, categoryId, accountId }: 
                 const rule = s.entity;
                 const isDirty = s.isNew || s.isUpdated;
                 const hasError = !!s.saveError;
+                const isScheduleLinked = rule.actions.some((a) => a.op === "link-schedule");
 
                 return (
                   <tr
@@ -283,6 +285,11 @@ export function RulesTable({ onEdit, onMerge, payeeId, categoryId, accountId }: 
                         <Badge variant={stageBadgeVariant(normalizeStage(rule.stage))}>
                           {STAGE_LABELS[normalizeStage(rule.stage)]}
                         </Badge>
+                        {isScheduleLinked && (
+                          <span title="Linked to schedule">
+                            <CalendarDays className="h-3 w-3 text-sky-500 shrink-0" aria-label="Linked to schedule" />
+                          </span>
+                        )}
                       </div>
                     </td>
 
@@ -360,9 +367,12 @@ export function RulesTable({ onEdit, onMerge, payeeId, categoryId, accountId }: 
                         <Button
                           variant="ghost"
                           size="icon-xs"
-                          className="text-destructive hover:text-destructive"
-                          title="Delete"
-                          onClick={() => handleDelete(rule.id)}
+                          className="text-destructive hover:text-destructive disabled:opacity-30 disabled:cursor-not-allowed"
+                          title={isScheduleLinked ? "Rule is linked to a schedule — delete it from the Schedules page" : "Delete"}
+                          aria-label={isScheduleLinked ? "Delete (managed by schedule)" : "Delete"}
+                          disabled={isScheduleLinked}
+                          aria-disabled={isScheduleLinked}
+                          onClick={isScheduleLinked ? undefined : () => handleDelete(rule.id)}
                         >
                           <Trash2 />
                         </Button>
