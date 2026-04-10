@@ -3,17 +3,37 @@
 import { useState, useMemo } from "react";
 import { useHighlight } from "@/hooks/useHighlight";
 import { useTableSelection } from "@/hooks/useTableSelection";
-import { Pencil, Trash2, RotateCcw, Copy, ExternalLink, AlertTriangle, Repeat2, CalendarDays } from "lucide-react";
+import { useTransactionCountsForIds } from "@/hooks/useTransactionCountsForIds";
+import { Pencil, Trash2, RotateCcw, Copy, ExternalLink, AlertTriangle, Repeat2, CalendarDays, Info } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import type { ConfirmState } from "@/components/ui/confirm-dialog";
 import { cn } from "@/lib/utils";
 import { useStagedStore } from "@/store/staged";
 import { generateId } from "@/lib/uuid";
+import { buildScheduleDeleteWarning, buildScheduleBulkDeleteWarning } from "@/lib/usageWarnings";
+import { UsageInspectorDrawer } from "@/features/usage-inspector/components/UsageInspectorDrawer";
 import { recurSummary, frequencyLabel } from "../lib/recurSummary";
 import { FilterBar } from "./FilterBar";
 import type { StatusFilter, AutoAddFilter, FrequencyFilter, EntityOption } from "./FilterBar";
 import type { StagedEntity } from "@/types/staged";
 import type { Schedule, ScheduleAmountRange } from "@/types/entities";
+
+// ─── Delete intent ────────────────────────────────────────────────────────────
+
+type DeleteIntent = {
+  /** Server-side IDs for $oneof tx-count query. Empty when all selected are isNew. */
+  ids: string[];
+  title: string;
+  onConfirm: () => void;
+  // Single delete
+  entityLabel?: string;
+  ruleId?: string;
+  postsTransaction?: boolean;
+  // Bulk delete
+  bulkCount?: number;
+};
 
 // ─── Amount display helper ────────────────────────────────────────────────────
 
@@ -66,6 +86,41 @@ export function SchedulesTable({ onEdit, onEditAsRule }: Props) {
   const pushUndo        = useStagedStore((s) => s.pushUndo);
 
   const highlightedId = useHighlight();
+
+  const [deleteIntent, setDeleteIntent] = useState<DeleteIntent | null>(null);
+  const [inspectId, setInspectId] = useState<string | null>(null);
+
+  const { data: txCounts, isLoading: txLoading } = useTransactionCountsForIds(
+    "schedule",
+    deleteIntent?.ids ?? [],
+    { enabled: !!deleteIntent && (deleteIntent.ids.length > 0) }
+  );
+
+  // ── Confirm dialog state (computed from intent + live tx counts) ─────────────
+  const txTotal = deleteIntent?.ids.length
+    ? (txCounts ? [...txCounts.values()].reduce((a, b) => a + b, 0) : undefined)
+    : 0;
+
+  const confirmState: ConfirmState | null = deleteIntent
+    ? {
+        title: deleteIntent.title,
+        message:
+          deleteIntent.bulkCount !== undefined
+            ? buildScheduleBulkDeleteWarning(
+                deleteIntent.bulkCount,
+                txTotal,
+                txLoading && deleteIntent.ids.length > 0
+              )
+            : buildScheduleDeleteWarning(
+                deleteIntent.entityLabel ?? "",
+                deleteIntent.ruleId,
+                deleteIntent.postsTransaction ?? false,
+                txTotal,
+                txLoading && deleteIntent.ids.length > 0
+              ),
+        onConfirm: deleteIntent.onConfirm,
+      }
+    : null;
 
   const [search, setSearch]                       = useState("");
   const [statusFilter, setStatusFilter]           = useState<StatusFilter>("active");
@@ -139,7 +194,19 @@ export function SchedulesTable({ onEdit, onEditAsRule }: Props) {
 
   function toggleSelectAll() { _toggleSelectAll(selectableIds, allSelected); }
 
-  function handleDelete(id: string) { pushUndo(); stageDelete("schedules", id); }
+  function handleDelete(id: string) {
+    const s = staged[id];
+    if (!s) return;
+    const entity = s.entity;
+    setDeleteIntent({
+      ids: s.isNew ? [] : [entity.id],
+      title: "Delete schedule?",
+      entityLabel: entity.name ?? "Unnamed",
+      ruleId: entity.ruleId,
+      postsTransaction: entity.postsTransaction ?? false,
+      onConfirm: () => { pushUndo(); stageDelete("schedules", id); },
+    });
+  }
 
   function handleDuplicate(s: Schedule) {
     pushUndo();
@@ -154,12 +221,22 @@ export function SchedulesTable({ onEdit, onEditAsRule }: Props) {
   }
 
   function handleBulkDelete() {
-    pushUndo();
-    for (const id of activeSelectedIds) stageDelete("schedules", id);
-    clearSelection();
+    const count = activeSelectedIds.length;
+    const serverIds = activeSelectedIds.filter((id) => !staged[id]?.isNew);
+    setDeleteIntent({
+      ids: serverIds,
+      title: `Delete ${count} schedule${count === 1 ? "" : "s"}?`,
+      bulkCount: count,
+      onConfirm: () => {
+        pushUndo();
+        for (const id of activeSelectedIds) stageDelete("schedules", id);
+        clearSelection();
+      },
+    });
   }
 
   return (
+    <>
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
       <FilterBar
         search={search}              onSearchChange={setSearch}
@@ -335,6 +412,10 @@ export function SchedulesTable({ onEdit, onEditAsRule }: Props) {
                             <RotateCcw />
                           </Button>
                         )}
+                        <Button variant="ghost" size="icon-xs" title="Inspect usage" aria-label="Inspect usage"
+                          onClick={() => setInspectId(entity.id)}>
+                          <Info />
+                        </Button>
                         <Button
                           variant="ghost" size="icon-xs"
                           className="text-destructive hover:text-destructive"
@@ -353,5 +434,19 @@ export function SchedulesTable({ onEdit, onEditAsRule }: Props) {
         )}
       </div>
     </div>
+
+    <ConfirmDialog
+      open={!!deleteIntent}
+      onOpenChange={(open) => { if (!open) setDeleteIntent(null); }}
+      state={confirmState}
+    />
+
+    <UsageInspectorDrawer
+      entityId={inspectId}
+      entityType="schedule"
+      open={!!inspectId}
+      onOpenChange={(open) => { if (!open) setInspectId(null); }}
+    />
+    </>
   );
 }

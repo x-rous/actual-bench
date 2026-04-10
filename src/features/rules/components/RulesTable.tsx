@@ -7,9 +7,12 @@ import { useTableSelection } from "@/hooks/useTableSelection";
 import { Pencil, Trash2, RotateCcw, Copy, AlertTriangle, CalendarDays } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import type { ConfirmState } from "@/components/ui/confirm-dialog";
 import { cn } from "@/lib/utils";
 import { useStagedStore } from "@/store/staged";
 import { generateId } from "@/lib/uuid";
+import { buildRuleDeleteWarning, buildRuleBulkDeleteWarning } from "@/lib/usageWarnings";
 import { rulePreview } from "../utils/rulePreview";
 import type { EntityMaps } from "../utils/rulePreview";
 import { STAGE_LABELS } from "../utils/ruleFields";
@@ -47,6 +50,8 @@ type Props = {
 };
 
 export function RulesTable({ onEdit, onMerge, payeeId, categoryId, accountId }: Props) {
+  const [confirmDialog, setConfirmDialog] = useState<ConfirmState | null>(null);
+
   const stagedRules = useStagedStore((s) => s.rules);
   const payees = useStagedStore((s) => s.payees);
   const categories = useStagedStore((s) => s.categories);
@@ -126,8 +131,11 @@ export function RulesTable({ onEdit, onMerge, payeeId, categoryId, accountId }: 
   }, [stagedRules, stageFilter, actionTypeFilter, payeeId, categoryId, accountId, search, rulePreviews]);
 
   function handleDelete(id: string) {
-    pushUndo();
-    stageDelete("rules", id);
+    setConfirmDialog({
+      title: "Delete rule?",
+      message: buildRuleDeleteWarning(),
+      onConfirm: () => { pushUndo(); stageDelete("rules", id); },
+    });
   }
 
   function handleDuplicate(rule: Rule) {
@@ -163,14 +171,22 @@ export function RulesTable({ onEdit, onMerge, payeeId, categoryId, accountId }: 
   }
 
   function handleDeleteSelected() {
-    pushUndo();
-    for (const id of activeSelectedIds) stageDelete("rules", id);
-    clearSelection();
+    if (activeSelectedIds.length === 0) return;
+    setConfirmDialog({
+      title: `Delete ${activeSelectedIds.length} rule${activeSelectedIds.length !== 1 ? "s" : ""}?`,
+      message: buildRuleBulkDeleteWarning(activeSelectedIds.length),
+      onConfirm: () => {
+        pushUndo();
+        for (const id of activeSelectedIds) stageDelete("rules", id);
+        clearSelection();
+      },
+    });
   }
 
   const totalVisible = Object.values(stagedRules).filter((s) => !s.isDeleted).length;
 
   return (
+    <>
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
       <FilterBar
         search={search}
@@ -386,5 +402,12 @@ export function RulesTable({ onEdit, onMerge, payeeId, categoryId, accountId }: 
         )}
       </div>
     </div>
+
+    <ConfirmDialog
+      open={confirmDialog !== null}
+      onOpenChange={(open) => { if (!open) setConfirmDialog(null); }}
+      state={confirmDialog}
+    />
+    </>
   );
 }

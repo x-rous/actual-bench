@@ -147,6 +147,7 @@ export function usePayeesSave() {
     }
 
     await queryClient.invalidateQueries({ queryKey: ["payees", connection.id] });
+    await queryClient.invalidateQueries({ queryKey: ["transactionCounts", "payee", connection.id] });
     if (pendingPayeeMerges.length > 0) {
       await queryClient.invalidateQueries({ queryKey: ["rules", connection.id] });
     }

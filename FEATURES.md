@@ -41,6 +41,8 @@
 - CSV import and export
 - Duplicate name detection with visual warning
 - Rules count displayed per account — click it to jump to the rules list filtered to that account
+- Every delete and close action (single and bulk) shows a confirmation dialog pre-populated with the account's outstanding balance, transaction count, and rule reference count before staging the mutation; accounts with non-zero balances receive an explicit warning about budget consistency
+- Info button on each row opens the Usage Inspector drawer (see below)
 
 ## Payees
 
@@ -52,6 +54,8 @@
 - Inline editing with keyboard navigation
 - CSV import and export
 - Duplicate name detection with visual warning
+- Every delete action (single and bulk) always confirms, showing the payee's transaction count and rule reference count — previously single deletes with no rule references skipped the confirmation entirely; transfer payees are excluded from bulk delete and counted separately in the dialog
+- Info button on each regular payee row opens the Usage Inspector drawer (see below)
 
 ## Categories
 
@@ -64,6 +68,8 @@
 - Sort by name
 - CSV import and export with full group hierarchy preserved
 - Duplicate group name prevention
+- Every delete action confirms with an impact dialog: single category shows transaction count and rule references; group delete additionally shows the child category count and aggregated transaction count across all children with a cascade warning; bulk delete computes effective group and category sets, deduplicates implicit deletions, and aggregates totals
+- Info button on each category and group row opens the Usage Inspector drawer (see below)
 
 ## Schedules
 
@@ -80,6 +86,8 @@
 - Filter schedules by name, payee, account, frequency, auto-add state, and completion status
 - Bulk select with bulk delete
 - CSV import and export
+- Every delete action confirms with an impact dialog showing the schedule's linked rule status, auto-post flag, and transaction count; bulk delete aggregates totals across all selected schedules
+- Info button on each row opens the Usage Inspector drawer (see below)
 
 ## Tags
 
@@ -91,6 +99,32 @@
 - Bulk select with bulk delete
 - Duplicate name detection with visual warning
 - CSV import and export
+- Info button on each row opens the Usage Inspector drawer; tags show the rules badge and a note that transaction data is not available for tags
+
+## Delete Safety & Usage Inspector
+
+### Confirmation dialogs
+
+Every destructive action across all entity tables — single delete, bulk delete, single close, and bulk close — is intercepted by a confirmation dialog before any staged mutation is applied. Dialog messages are context-aware and tiered based on the available impact data:
+
+- **Transaction count**: how many existing transactions reference the entity being deleted or closed; fetched on demand via a single ActualQL `$oneof` query per action and cached for 30 seconds to avoid redundant network calls on rapid re-opens
+- **Rule references**: how many non-deleted staged rules reference the entity via their conditions or actions; computed locally from the in-memory rule store
+- **Balance** (accounts): outstanding balance at the time the action is triggered; non-zero balances produce an explicit consistency warning
+- **Child count** (category groups): number of non-deleted child categories; group deletes always show a cascade warning
+
+Loading states are reflected in the dialog message in real time — if the transaction count query is still in flight when the dialog opens, the copy shows "Checking usage…" and updates once the count arrives.
+
+### Usage Inspector drawer
+
+An Info button on every entity row opens a right-side drawer that displays a complete usage profile for that entity without triggering a delete flow:
+
+- **Stats row**: Rules badge (always visible), Transactions badge (all types except tags; shows "…" during loading), Balance badge (accounts; amber when non-zero), Categories badge (category groups only)
+- **Impact section**: pre-built warning strings describing the consequences of deletion, shown only when there is meaningful content to surface
+- **Empty state**: "No known references found." when all counts are zero and no warnings apply — including category groups with no children
+- **Quick links**: "View rules →" navigation shortcut for accounts, payees, and categories that have rule references, filtered to that entity on the rules page
+- **Tags**: transaction data is not available for tags; the drawer shows the rules badge and an explanatory note
+
+Transaction counts are fetched lazily when the drawer opens, gated by the same `enabled` flag used in confirm dialogs. Category groups query by child category IDs and aggregate the counts. New (unsaved) entities are excluded from the query since no server transactions exist for them yet.
 
 ## Staged Editing
 

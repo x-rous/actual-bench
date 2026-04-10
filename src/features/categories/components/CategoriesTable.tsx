@@ -5,32 +5,58 @@ import { useRouter } from "next/navigation";
 import { useHighlight } from "@/hooks/useHighlight";
 import { useInlineEdit } from "@/hooks/useInlineEdit";
 import { useTableSelection } from "@/hooks/useTableSelection";
+import { useTransactionCountsForIds } from "@/hooks/useTransactionCountsForIds";
 import { NameInput } from "@/components/ui/editable-cell";
 import type { DoneAction } from "@/components/ui/editable-cell";
 import {
   RotateCcw, Trash2, RefreshCw, Eye, EyeOff,
   ArrowUpDown, ArrowUp, ArrowDown, AlertTriangle,
-  ChevronDown, ChevronRight,
+  ChevronDown, ChevronRight, Info,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog, DialogContent, DialogHeader, DialogTitle,
-  DialogDescription, DialogFooter,
-} from "@/components/ui/dialog";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import type { ConfirmState } from "@/components/ui/confirm-dialog";
 import { cn } from "@/lib/utils";
 import { useStagedStore } from "@/store/staged";
 import { generateId } from "@/lib/uuid";
+import { buildRuleReferenceMap } from "@/lib/referenceCheck";
+import {
+  buildCategoryDeleteWarning,
+  buildCategoryGroupDeleteWarning,
+  buildCategoryBulkDeleteWarning,
+} from "@/lib/usageWarnings";
+import { UsageInspectorDrawer } from "@/features/usage-inspector/components/UsageInspectorDrawer";
+import type { EntityUsageData } from "@/features/usage-inspector/types";
 import type { StagedEntity } from "@/types/staged";
 import type { CategoryGroup, Category } from "@/types/entities";
 import { FilterBar } from "./FilterBar";
 import type { VisibilityFilter, TypeFilter, RulesFilter, SortDir } from "./FilterBar";
 
+// ─── Delete intent ────────────────────────────────────────────────────────────
+
+type DeleteIntent = {
+  /** Server-side category IDs for $oneof tx-count query. */
+  ids: string[];
+  title: string;
+  onConfirm: () => void;
+  // Category single delete
+  entityLabel?: string;
+  entityRuleCount?: number;
+  // Group single delete
+  groupName?: string;
+  childCount?: number;
+  groupRuleCount?: number;
+  // Bulk delete
+  bulkServerCount?: number;
+  bulkNewCount?: number;
+  bulkRuleCount?: number;
+};
+
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
 type GroupRow = StagedEntity<CategoryGroup>;
 type CategoryRow = StagedEntity<Category>;
-type ConfirmState = { title: string; message: string; onConfirm: () => void };
 type SelectionKind = "group" | "category";
 type CellId = { kind: SelectionKind; id: string };
 
@@ -69,7 +95,8 @@ export function CategoriesTable({
 
   // ── Multi-select ─────────────────────────────────────────────────────────────
   const { selectedIds, toggleSelect, clearSelection } = useTableSelection();
-  const [confirmDialog, setConfirmDialog] = useState<ConfirmState | null>(null);
+  const [deleteIntent, setDeleteIntent] = useState<DeleteIntent | null>(null);
+  const [inspectTarget, setInspectTarget] = useState<{ id: string; type: EntityUsageData["entityType"] } | null>(null);
 
   const containerRef  = useRef<HTMLDivElement>(null);
   const router        = useRouter();
@@ -119,22 +146,51 @@ export function CategoriesTable({
   }, [stagedCats]);
 
   // ── Category → rule count ─────────────────────────────────────────────────────
-  const categoryRuleCount = useMemo(() => {
-    const counts = new Map<string, number>();
-    for (const s of Object.values(stagedRules)) {
-      if (s.isDeleted) continue;
-      for (const part of [...s.entity.conditions, ...s.entity.actions]) {
-        if (part.field === "category") {
-          const ids = Array.isArray(part.value) ? part.value : [part.value];
-          for (const id of ids) {
-            if (typeof id === "string" && id)
-              counts.set(id, (counts.get(id) ?? 0) + 1);
-          }
-        }
+  const categoryRuleCount = useMemo(
+    () => buildRuleReferenceMap(stagedRules, ["category"]),
+    [stagedRules]
+  );
+
+  // ── Lazy tx counts for delete confirm dialogs ─────────────────────────────────
+  const { data: txCounts, isLoading: txLoading } = useTransactionCountsForIds(
+    "category",
+    deleteIntent?.ids ?? [],
+    { enabled: !!deleteIntent && deleteIntent.ids.length > 0 }
+  );
+
+  const txTotal = deleteIntent?.ids.length
+    ? (txCounts ? [...txCounts.values()].reduce((a, b) => a + b, 0) : undefined)
+    : 0;
+
+  const confirmState: ConfirmState | null = deleteIntent
+    ? {
+        title: deleteIntent.title,
+        message:
+          deleteIntent.bulkServerCount !== undefined
+            ? buildCategoryBulkDeleteWarning(
+                deleteIntent.bulkServerCount,
+                deleteIntent.bulkNewCount ?? 0,
+                deleteIntent.bulkRuleCount ?? 0,
+                txTotal,
+                txLoading && deleteIntent.ids.length > 0
+              )
+            : deleteIntent.groupName !== undefined
+              ? buildCategoryGroupDeleteWarning(
+                  deleteIntent.groupName,
+                  deleteIntent.childCount ?? 0,
+                  deleteIntent.groupRuleCount ?? 0,
+                  txTotal,
+                  txLoading && deleteIntent.ids.length > 0
+                )
+              : buildCategoryDeleteWarning(
+                  deleteIntent.entityLabel ?? "",
+                  deleteIntent.entityRuleCount ?? 0,
+                  txTotal,
+                  txLoading && deleteIntent.ids.length > 0
+                ),
+        onConfirm: deleteIntent.onConfirm,
       }
-    }
-    return counts;
-  }, [stagedRules]);
+    : null;
 
   // ── Index all categories by groupId (no filters) ─────────────────────────────
   // Used by allGroups for group-level hidden/search checks, and as the base for
@@ -300,31 +356,69 @@ export function CategoriesTable({
 
   // ── Bulk delete ───────────────────────────────────────────────────────────────
   function handleBulkDelete() {
-    const count = selectedIds.size;
-    setConfirmDialog({
-      title: `Delete ${count} item${count !== 1 ? "s" : ""}?`,
-      message: "Staged deletions will be removed on Save. Deleting a group will also delete its categories.",
+    const pendingIncomeDeletes = [...selectedIds].filter(
+      (id) => stagedGroups[id]?.entity.isIncome && !stagedGroups[id]?.isDeleted
+    ).length;
+    const remainingIncomeAfter = incomeGroupCount - pendingIncomeDeletes;
+
+    // Resolve what will actually be deleted (respecting last-income-group guard)
+    const effectiveGroupIds: string[] = [];
+    const directCatIds: string[] = [];
+    let incomeSkipped = 0;
+
+    for (const id of selectedIds) {
+      if (stagedGroups[id]) {
+        const g = stagedGroups[id];
+        if (g.entity.isIncome && remainingIncomeAfter < 1 && incomeSkipped === 0) {
+          incomeSkipped++;
+          continue;
+        }
+        effectiveGroupIds.push(id);
+      } else if (stagedCats[id]) {
+        directCatIds.push(id);
+      }
+    }
+
+    // All category IDs affected (children of selected groups + directly selected cats)
+    const implicitCatIds = effectiveGroupIds.flatMap((gid) =>
+      Object.values(stagedCats)
+        .filter((c) => c.entity.groupId === gid)
+        .map((c) => c.entity.id)
+    );
+    const allCatIds = [...directCatIds, ...implicitCatIds];
+    const serverCatIds = allCatIds.filter((id) => !stagedCats[id]?.isNew);
+
+    const serverCount =
+      effectiveGroupIds.filter((id) => !stagedGroups[id]?.isNew).length +
+      directCatIds.filter((id) => !stagedCats[id]?.isNew).length;
+    const newCount =
+      effectiveGroupIds.filter((id) => stagedGroups[id]?.isNew).length +
+      directCatIds.filter((id) => stagedCats[id]?.isNew).length;
+    const totalRuleCount = allCatIds.reduce(
+      (sum, id) => sum + (categoryRuleCount.get(id) ?? 0),
+      0
+    );
+    const totalItems = effectiveGroupIds.length + directCatIds.length;
+
+    // Capture refs for the confirm closure
+    const groupsToDelete = [...effectiveGroupIds];
+    const catsToDelete = [...directCatIds];
+
+    setDeleteIntent({
+      ids: serverCatIds,
+      title: `Delete ${totalItems} item${totalItems !== 1 ? "s" : ""}?`,
+      bulkServerCount: serverCount,
+      bulkNewCount: newCount,
+      bulkRuleCount: totalRuleCount,
       onConfirm: () => {
         pushUndo();
-        const pendingIncomeDeletes = [...selectedIds].filter((id) => stagedGroups[id]?.entity.isIncome && !stagedGroups[id]?.isDeleted).length;
-        const remainingIncomeAfter = incomeGroupCount - pendingIncomeDeletes;
-        let incomeSkipped = 0;
-        for (const id of selectedIds) {
-          if (stagedGroups[id]) {
-            const g = stagedGroups[id];
-            // Never delete the last income group
-            if (g.entity.isIncome && remainingIncomeAfter < 1 && incomeSkipped === 0) {
-              incomeSkipped++;
-              continue;
-            }
-            for (const cat of Object.values(stagedCats)) {
-              if (cat.entity.groupId === id) stageDelete("categories", cat.entity.id);
-            }
-            stageDelete("categoryGroups", id);
-          } else if (stagedCats[id]) {
-            stageDelete("categories", id);
+        for (const gid of groupsToDelete) {
+          for (const cat of Object.values(stagedCats)) {
+            if (cat.entity.groupId === gid) stageDelete("categories", cat.entity.id);
           }
+          stageDelete("categoryGroups", gid);
         }
+        for (const id of catsToDelete) stageDelete("categories", id);
         clearSelection();
       },
     });
@@ -475,17 +569,38 @@ export function CategoriesTable({
               </Button>
             ) : (
               <>
+                <Button variant="ghost" size="icon-xs" title="Inspect usage" aria-label="Inspect usage"
+                  onClick={() => setInspectTarget({ id: entity.id, type: "categoryGroup" })}>
+                  <Info />
+                </Button>
                 {!(entity.isIncome && incomeGroupCount <= 1) && (
                   <Button
                     variant="ghost" size="icon-xs" title="Delete group"
                     className="text-destructive hover:text-destructive"
                     onClick={() => {
-                      pushUndo();
-                      // Stage-delete all child categories too
-                      for (const cat of Object.values(stagedCats)) {
-                        if (cat.entity.groupId === entity.id) stageDelete("categories", cat.entity.id);
-                      }
-                      stageDelete("categoryGroups", entity.id);
+                      const children = Object.values(stagedCats).filter(
+                        (cat) => cat.entity.groupId === entity.id && !cat.isDeleted
+                      );
+                      const serverChildIds = children
+                        .filter((cat) => !cat.isNew)
+                        .map((cat) => cat.entity.id);
+                      const groupRuleCount = children.reduce(
+                        (sum, cat) => sum + (categoryRuleCount.get(cat.entity.id) ?? 0),
+                        0
+                      );
+                      const capturedChildren = [...children];
+                      setDeleteIntent({
+                        ids: serverChildIds,
+                        title: `Delete group "${entity.name || "Unnamed"}"?`,
+                        groupName: entity.name || "Unnamed",
+                        childCount: children.length,
+                        groupRuleCount,
+                        onConfirm: () => {
+                          pushUndo();
+                          for (const cat of capturedChildren) stageDelete("categories", cat.entity.id);
+                          stageDelete("categoryGroups", entity.id);
+                        },
+                      });
                     }}
                   >
                     <Trash2 />
@@ -672,10 +787,22 @@ export function CategoriesTable({
               </Button>
             ) : (
               <>
+                <Button variant="ghost" size="icon-xs" title="Inspect usage" aria-label="Inspect usage"
+                  onClick={() => setInspectTarget({ id: entity.id, type: "category" })}>
+                  <Info />
+                </Button>
                 <Button
                   variant="ghost" size="icon-xs" title="Delete category"
                   className="text-destructive hover:text-destructive"
-                  onClick={() => { pushUndo(); stageDelete("categories", entity.id); }}
+                  onClick={() => {
+                    setDeleteIntent({
+                      ids: isNew ? [] : [entity.id],
+                      title: "Delete category?",
+                      entityLabel: entity.name || "Unnamed",
+                      entityRuleCount: categoryRuleCount.get(entity.id) ?? 0,
+                      onConfirm: () => { pushUndo(); stageDelete("categories", entity.id); },
+                    });
+                  }}
                 >
                   <Trash2 />
                 </Button>
@@ -876,24 +1003,18 @@ export function CategoriesTable({
         </div>
       </div>
 
-      {/* Confirm dialog */}
-      <Dialog open={confirmDialog !== null} onOpenChange={(open) => { if (!open) setConfirmDialog(null); }}>
-        <DialogContent showCloseButton={false}>
-          <DialogHeader>
-            <DialogTitle>{confirmDialog?.title}</DialogTitle>
-            <DialogDescription>{confirmDialog?.message}</DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setConfirmDialog(null)}>Cancel</Button>
-            <Button
-              variant="destructive"
-              onClick={() => { confirmDialog?.onConfirm(); setConfirmDialog(null); }}
-            >
-              Delete
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ConfirmDialog
+        open={!!deleteIntent}
+        onOpenChange={(open) => { if (!open) setDeleteIntent(null); }}
+        state={confirmState}
+      />
+
+      <UsageInspectorDrawer
+        entityId={inspectTarget?.id ?? null}
+        entityType={inspectTarget?.type ?? null}
+        open={!!inspectTarget}
+        onOpenChange={(open) => { if (!open) setInspectTarget(null); }}
+      />
     </>
   );
 }
