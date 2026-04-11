@@ -110,6 +110,7 @@ export function useAccountsSave() {
     }
 
     await queryClient.invalidateQueries({ queryKey: ["accounts", connection.id] });
+    await queryClient.invalidateQueries({ queryKey: ["transactionCounts", "account", connection.id] });
 
     return { succeeded, failed, idMap };
   }

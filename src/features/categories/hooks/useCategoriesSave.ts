@@ -109,6 +109,7 @@ export function useCategoriesSave() {
 
     // Both entity types share one query key since they're loaded together
     await queryClient.invalidateQueries({ queryKey: ["categoryGroups", connection.id] });
+    await queryClient.invalidateQueries({ queryKey: ["transactionCounts", "category", connection.id] });
 
     return { succeeded, failed, idMap };
   }

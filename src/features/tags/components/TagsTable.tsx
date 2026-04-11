@@ -1,10 +1,12 @@
 "use client";
 
 import { useState, useRef, useEffect, useMemo } from "react";
-import { Trash2, RotateCcw, RefreshCw, ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
+import { Trash2, RotateCcw, RefreshCw, ArrowUpDown, ArrowUp, ArrowDown, Info } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import type { ConfirmState } from "@/components/ui/confirm-dialog";
+import { UsageInspectorDrawer } from "@/features/usage-inspector/components/UsageInspectorDrawer";
 import { cn } from "@/lib/utils";
 import { useStagedStore } from "@/store/staged";
 import { useTableSelection } from "@/hooks/useTableSelection";
@@ -37,7 +39,6 @@ function contrastText(hex: string): string {
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type ConfirmState = { title: string; message: string; onConfirm: () => void };
 
 // ─── DescInput ────────────────────────────────────────────────────────────────
 
@@ -135,6 +136,7 @@ export function TagsTable() {
   // ── Selection state ───────────────────────────────────────────────────────
   const { selectedIds, toggleSelect, toggleSelectAll: _toggleSelectAll, clearSelection } = useTableSelection();
   const [confirmDialog, setConfirmDialog] = useState<ConfirmState | null>(null);
+  const [inspectId, setInspectId] = useState<string | null>(null);
 
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -585,6 +587,10 @@ export function TagsTable() {
                           </Button>
                         ) : (
                           <>
+                            <Button variant="ghost" size="icon-xs" title="Inspect usage" aria-label="Inspect usage"
+                              onClick={() => setInspectId(entity.id)}>
+                              <Info />
+                            </Button>
                             <Button
                               variant="ghost" size="icon-xs"
                               className="text-destructive hover:text-destructive"
@@ -613,24 +619,18 @@ export function TagsTable() {
         <BulkAddBar bulkCount={bulkCount} onBulkCountChange={setBulkCount} onAdd={(n) => addRows(n, true)} />
       </div>
 
-      {/* Confirm delete dialog */}
-      <Dialog open={confirmDialog !== null} onOpenChange={(open) => { if (!open) setConfirmDialog(null); }}>
-        <DialogContent showCloseButton={false}>
-          <DialogHeader>
-            <DialogTitle>{confirmDialog?.title}</DialogTitle>
-            <DialogDescription>{confirmDialog?.message}</DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setConfirmDialog(null)}>Cancel</Button>
-            <Button
-              variant="destructive"
-              onClick={() => { confirmDialog?.onConfirm(); setConfirmDialog(null); }}
-            >
-              Delete
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ConfirmDialog
+        open={confirmDialog !== null}
+        onOpenChange={(open) => { if (!open) setConfirmDialog(null); }}
+        state={confirmDialog}
+      />
+
+      <UsageInspectorDrawer
+        entityId={inspectId}
+        entityType="tag"
+        open={!!inspectId}
+        onOpenChange={(open) => { if (!open) setInspectId(null); }}
+      />
     </>
   );
 }

@@ -69,16 +69,16 @@ Each feature follows the same structure: `components/XxxView.tsx` (page shell + 
 ## Dependency Graph
 
 ```
-RD-001 (Schedules)     — independent
-RD-002 (Tags)          — independent; fix Tag type in entities.ts first
-RD-003 (Balance col)   — independent; add getAccountBalance to accounts.ts
+RD-001 (Schedules)     — complete
+RD-002 (Tags)          — complete; fix Tag type in entities.ts first
+RD-003 (Balance col)   — complete; add getAccountBalance to accounts.ts
 RD-004 (Payee merge)   — complete; add mergePayees to payees.ts
-RD-005 (Rules-by-payee)— can be done with RD-016 (same code path)
+RD-005 (Rules-by-payee)— complete; can be done with RD-016 (same code path)
 RD-006 (Budget export) — requires proxy binary support patch
 RD-007 (ActualQL console + saved query packs) — independent; shares run-query util with RD-016
 RD-008 (Delete txn action) — complete
 RD-009 (Session token) — independent
-RD-010 (Version display) — independent
+RD-010 (Version display) — complete
 RD-011 (Notes display) — independent
 RD-012 (Currency symbol) — independent
 RD-013 (High contrast theme) — independent
@@ -320,7 +320,7 @@ src/features/tags/
 |---|---|
 | **Priority** | High |
 | **Effort** | S |
-| **Status** | pending |
+| **Status** | complete |
 | **Depends on** | nothing |
 
 **What:** Add a read-only current balance column to the Accounts table. Users currently have no visibility into account balances inside actual-bench.
@@ -381,7 +381,7 @@ Body: { payeeId: string, mergeWithIds: string[] }
 |---|---|
 | **Priority** | Medium |
 | **Effort** | XS |
-| **Status** | pending |
+| **Status** | complete |
 | **Depends on** | Best implemented as part of RD-016 |
 
 **What:** Currently `payeeRuleCount` is computed by scanning `stagedRules` on the client. If the rules page has never been visited, `stagedRules` is empty and the count shows 0 even when the server has rules referencing that payee. This causes the delete safety warning to silently not fire.
@@ -756,7 +756,7 @@ GET /budgets/{id}/settings  → { currencySymbol: string, ... }
 |---|---|
 | **Priority** | High |
 | **Effort** | L |
-| **Status** | pending |
+| **Status** | complete |
 | **Depends on** | RD-003 for account balance checks; may reuse `runQuery` from RD-007 |
 
 **What:** Build one shared foundation for safe delete / close flows and reusable usage inspection across existing entities. This combines:
@@ -848,7 +848,7 @@ export function countRuleReferences(stagedRules: StagedMap<Rule>, entityId: stri
 6. Keep the first version lightweight: counts + key relationships + warnings
 7. Do not fetch or display full transaction lists
 
-**ActualQL count queries (read-only impact metadata):**
+**ActualQL queries to count existing transactions by entity - single call for each entity (read-only impact metadata):**
 
 Payees:
 ```json
@@ -897,6 +897,25 @@ Accounts:
     "select": [
       "account",
       "account.name",
+      {
+        "transactionCount": {
+          "$count": "$id"
+        }
+      }
+    ]
+  }
+}
+```
+
+Schedules:
+```json
+{
+  "ActualQLquery": {
+    "table": "transactions",
+    "groupBy": ["schedule", "schedule.name"],
+    "select": [
+      "schedule",
+      "schedule.name",
       {
         "transactionCount": {
           "$count": "$id"

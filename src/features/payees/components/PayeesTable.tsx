@@ -5,11 +5,12 @@ import { useRouter } from "next/navigation";
 import { useHighlight } from "@/hooks/useHighlight";
 import { useInlineEdit } from "@/hooks/useInlineEdit";
 import { useTableSelection } from "@/hooks/useTableSelection";
+import { useTransactionCountsForIds } from "@/hooks/useTransactionCountsForIds";
 import { NameInput } from "@/components/ui/editable-cell";
 import type { DoneAction } from "@/components/ui/editable-cell";
 import {
   RotateCcw, Trash2, RefreshCw,
-  ArrowUpDown, ArrowUp, ArrowDown, AlertTriangle,
+  ArrowUpDown, ArrowUp, ArrowDown, AlertTriangle, Info,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -17,13 +18,35 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
   DialogDescription, DialogFooter,
 } from "@/components/ui/dialog";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import type { ConfirmState } from "@/components/ui/confirm-dialog";
 import { cn } from "@/lib/utils";
 import { useStagedStore } from "@/store/staged";
 import { generateId } from "@/lib/uuid";
+import { buildRuleReferenceMap } from "@/lib/referenceCheck";
+import { buildPayeeDeleteWarning, buildPayeeBulkDeleteWarning } from "@/lib/usageWarnings";
+import { UsageInspectorDrawer } from "@/features/usage-inspector/components/UsageInspectorDrawer";
 import type { StagedEntity } from "@/types/staged";
 import type { Payee } from "@/types/entities";
 import { FilterBar } from "./FilterBar";
 import type { TypeFilter, RulesFilter, SortCol, SortDir } from "./FilterBar";
+
+// ─── Delete intent ────────────────────────────────────────────────────────────
+
+type DeleteIntent = {
+  /** Server-side IDs for $oneof tx-count query. Empty when entity is isNew. */
+  ids: string[];
+  title: string;
+  onConfirm: () => void;
+  // Single delete
+  entityLabel?: string;
+  entityRuleCount?: number;
+  // Bulk delete
+  bulkServerCount?: number;
+  bulkNewCount?: number;
+  bulkSkippedCount?: number;
+  bulkRuleCount?: number;
+};
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -31,7 +54,6 @@ const NAVIGABLE_COLS = ["name"] as const;
 type NavigableCol = (typeof NAVIGABLE_COLS)[number];
 type CellId = { rowId: string; colId: NavigableCol };
 type PayeeRow = StagedEntity<Payee>;
-type ConfirmState = { title: string; message: string; onConfirm: () => void };
 type MergeCandidate = { id: string; name: string };
 type MergeState = { candidates: MergeCandidate[]; targetId: string };
 
@@ -87,7 +109,8 @@ export function PayeesTable({ onCreateRule }: {
 
   // ── Multi-select state ───────────────────────────────────────────────────────
   const { selectedIds, toggleSelect: toggleSelectRow, toggleSelectAll: _toggleSelectAll, clearSelection } = useTableSelection();
-  const [confirmDialog, setConfirmDialog] = useState<ConfirmState | null>(null);
+  const [deleteIntent, setDeleteIntent] = useState<DeleteIntent | null>(null);
+  const [inspectId, setInspectId] = useState<string | null>(null);
 
   const [mergeDialog, setMergeDialog] = useState<MergeState | null>(null);
 
@@ -107,23 +130,44 @@ export function PayeesTable({ onCreateRule }: {
   const stagePayeeMerge = useStagedStore((s) => s.stagePayeeMerge);
 
   // ── Rules reference count per payee ──────────────────────────────────────────
-  const payeeRuleCount = useMemo(() => {
-    const counts = new Map<string, number>();
-    for (const s of Object.values(stagedRules)) {
-      if (s.isDeleted) continue;
-      for (const part of [...s.entity.conditions, ...s.entity.actions]) {
-        if (part.field === "payee" || part.field === "imported_payee") {
-          const ids = Array.isArray(part.value) ? part.value : [part.value];
-          for (const id of ids) {
-            if (typeof id === "string" && id) {
-              counts.set(id, (counts.get(id) ?? 0) + 1);
-            }
-          }
-        }
+  const payeeRuleCount = useMemo(
+    () => buildRuleReferenceMap(stagedRules, ["payee", "imported_payee"]),
+    [stagedRules]
+  );
+
+  // ── Lazy tx counts for delete confirm dialogs ─────────────────────────────────
+  const { data: txCounts, isLoading: txLoading } = useTransactionCountsForIds(
+    "payee",
+    deleteIntent?.ids ?? [],
+    { enabled: !!deleteIntent && deleteIntent.ids.length > 0 }
+  );
+
+  const txTotal = deleteIntent?.ids.length
+    ? (txCounts ? [...txCounts.values()].reduce((a, b) => a + b, 0) : undefined)
+    : 0;
+
+  const confirmState: ConfirmState | null = deleteIntent
+    ? {
+        title: deleteIntent.title,
+        message:
+          deleteIntent.bulkServerCount !== undefined
+            ? buildPayeeBulkDeleteWarning(
+                deleteIntent.bulkServerCount,
+                deleteIntent.bulkNewCount ?? 0,
+                deleteIntent.bulkSkippedCount ?? 0,
+                deleteIntent.bulkRuleCount ?? 0,
+                txTotal,
+                txLoading && deleteIntent.ids.length > 0
+              )
+            : buildPayeeDeleteWarning(
+                deleteIntent.entityLabel ?? "",
+                deleteIntent.entityRuleCount ?? 0,
+                txTotal,
+                txLoading && deleteIntent.ids.length > 0
+              ),
+        onConfirm: deleteIntent.onConfirm,
       }
-    }
-    return counts;
-  }, [stagedRules]);
+    : null;
 
   // ── Duplicate name detection ─────────────────────────────────────────────────
   const duplicateNames = useMemo(() => {
@@ -277,10 +321,9 @@ export function PayeesTable({ onCreateRule }: {
   // ── Bulk actions ─────────────────────────────────────────────────────────────
   function handleBulkDelete() {
     // Only delete regular payees (transfer payees are system-managed)
-    const deletableIds = [...selectedIds].filter(
-      (id) => staged[id] && !staged[id].entity.transferAccountId
-    );
-    const skipped = selectedIds.size - deletableIds.length;
+    const activeIds = [...selectedIds].filter((id) => staged[id] && !staged[id].isDeleted);
+    const deletableIds = activeIds.filter((id) => !staged[id]!.entity.transferAccountId);
+    const skipped = activeIds.length - deletableIds.length;
     const newIds = deletableIds.filter((id) => staged[id]?.isNew);
     const serverIds = deletableIds.filter((id) => !staged[id]?.isNew);
     const count = deletableIds.length;
@@ -290,25 +333,19 @@ export function PayeesTable({ onCreateRule }: {
       return;
     }
 
-    const referencedRules = deletableIds.reduce((sum, id) => sum + (payeeRuleCount.get(id) ?? 0), 0);
+    const totalRuleCount = deletableIds.reduce((sum, id) => sum + (payeeRuleCount.get(id) ?? 0), 0);
+    const capturedIds = [...deletableIds];
 
-    let message = `${serverIds.length} will be staged for deletion and removed on Save.`;
-    if (newIds.length > 0) {
-      message += ` ${newIds.length} unsaved new row${newIds.length !== 1 ? "s" : ""} will be discarded immediately.`;
-    }
-    if (skipped > 0) {
-      message += ` ${skipped} transfer payee${skipped !== 1 ? "s" : ""} skipped (system-managed).`;
-    }
-    if (referencedRules > 0) {
-      message += ` Warning: ${referencedRules} rule reference${referencedRules !== 1 ? "s" : ""} will be affected.`;
-    }
-
-    setConfirmDialog({
+    setDeleteIntent({
+      ids: serverIds,
       title: `Delete ${count} payee${count !== 1 ? "s" : ""}?`,
-      message: message.trim(),
+      bulkServerCount: serverIds.length,
+      bulkNewCount: newIds.length,
+      bulkSkippedCount: skipped,
+      bulkRuleCount: totalRuleCount,
       onConfirm: () => {
         pushUndo();
-        for (const id of deletableIds) stageDelete("payees", id);
+        for (const id of capturedIds) stageDelete("payees", id);
         clearSelection();
       },
     });
@@ -633,20 +670,20 @@ export function PayeesTable({ onCreateRule }: {
                                 variant="ghost" size="icon-xs" title="Delete"
                                 className="text-destructive hover:text-destructive"
                                 onClick={() => {
-                                  const ruleCount = payeeRuleCount.get(entity.id) ?? 0;
-                                  if (ruleCount > 0) {
-                                    setConfirmDialog({
-                                      title: `Delete "${entity.name}"?`,
-                                      message: `This payee is referenced by ${ruleCount} rule${ruleCount !== 1 ? "s" : ""}. Deleting it may break those rules.`,
-                                      onConfirm: () => { pushUndo(); stageDelete("payees", entity.id); },
-                                    });
-                                  } else {
-                                    pushUndo();
-                                    stageDelete("payees", entity.id);
-                                  }
+                                  setDeleteIntent({
+                                    ids: isNew ? [] : [entity.id],
+                                    title: "Delete payee?",
+                                    entityLabel: entity.name || "Unnamed",
+                                    entityRuleCount: payeeRuleCount.get(entity.id) ?? 0,
+                                    onConfirm: () => { pushUndo(); stageDelete("payees", entity.id); },
+                                  });
                                 }}
                               >
                                 <Trash2 />
+                              </Button>
+                              <Button variant="ghost" size="icon-xs" title="Inspect usage" aria-label="Inspect usage"
+                                onClick={() => setInspectId(entity.id)}>
+                                <Info />
                               </Button>
                               {(isNew || isUpdated) && (
                                 <Button variant="ghost" size="icon-xs" title="Revert" onClick={() => revertEntity("payees", entity.id)}>
@@ -668,24 +705,18 @@ export function PayeesTable({ onCreateRule }: {
         <BulkAddBar bulkCount={bulkCount} onBulkCountChange={setBulkCount} onAdd={(n) => addRows(n, true)} />
       </div>
 
-      {/* Confirm dialog */}
-      <Dialog open={confirmDialog !== null} onOpenChange={(open) => { if (!open) setConfirmDialog(null); }}>
-        <DialogContent showCloseButton={false}>
-          <DialogHeader>
-            <DialogTitle>{confirmDialog?.title}</DialogTitle>
-            <DialogDescription>{confirmDialog?.message}</DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setConfirmDialog(null)}>Cancel</Button>
-            <Button
-              variant="destructive"
-              onClick={() => { confirmDialog?.onConfirm(); setConfirmDialog(null); }}
-            >
-              Delete
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ConfirmDialog
+        open={!!deleteIntent}
+        onOpenChange={(open) => { if (!open) setDeleteIntent(null); }}
+        state={confirmState}
+      />
+
+      <UsageInspectorDrawer
+        entityId={inspectId}
+        entityType="payee"
+        open={!!inspectId}
+        onOpenChange={(open) => { if (!open) setInspectId(null); }}
+      />
 
       {/* Merge dialog */}
       <Dialog open={mergeDialog !== null} onOpenChange={(open) => { if (!open) setMergeDialog(null); }}>

@@ -5,27 +5,49 @@ import { useRouter } from "next/navigation";
 import { useHighlight } from "@/hooks/useHighlight";
 import { useInlineEdit } from "@/hooks/useInlineEdit";
 import { useTableSelection } from "@/hooks/useTableSelection";
+import { useTransactionCountsForIds } from "@/hooks/useTransactionCountsForIds";
 import { NameInput } from "@/components/ui/editable-cell";
 import type { DoneAction } from "@/components/ui/editable-cell";
 import {
   Archive, ArchiveRestore, RotateCcw, Trash2, RefreshCw,
-  ArrowUpDown, ArrowUp, ArrowDown, AlertTriangle,
+  ArrowUpDown, ArrowUp, ArrowDown, AlertTriangle, Info,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog, DialogContent, DialogHeader, DialogTitle,
-  DialogDescription, DialogFooter,
-} from "@/components/ui/dialog";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import type { ConfirmState } from "@/components/ui/confirm-dialog";
 import { cn } from "@/lib/utils";
 import { useStagedStore } from "@/store/staged";
 import { generateId } from "@/lib/uuid";
 import { useAccountBalances } from "../hooks/useAccountBalances";
+import { buildRuleReferenceMap } from "@/lib/referenceCheck";
+import {
+  buildAccountCloseWarning,
+  buildAccountDeleteWarning,
+  buildAccountBulkCloseWarning,
+  buildAccountBulkDeleteWarning,
+} from "@/lib/usageWarnings";
+import { UsageInspectorDrawer } from "@/features/usage-inspector/components/UsageInspectorDrawer";
 import { FilterBar } from "./FilterBar";
 import { BulkAddBar } from "./BulkAddBar";
 import type { StatusFilter, BudgetFilter, RulesFilter } from "./FilterBar";
 import type { StagedEntity } from "@/types/staged";
 import type { Account } from "@/types/entities";
+
+// ─── Delete intent ────────────────────────────────────────────────────────────
+
+type DeleteIntent = {
+  /** Server-side IDs for $oneof tx-count query. */
+  ids: string[];
+  title: string;
+  destructiveLabel?: string;
+  onConfirm: () => void;
+} & (
+  | { kind: "close";      label: string; balance: number }
+  | { kind: "delete";     label: string; balance: number; ruleCount: number }
+  | { kind: "bulkClose";  count: number; nonZeroBalanceCount: number }
+  | { kind: "bulkDelete"; serverCount: number; newCount: number; nonZeroBalanceCount: number; ruleCount: number }
+);
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -35,7 +57,6 @@ type CellId = { rowId: string; colId: NavigableCol };
 type AccountRow = StagedEntity<Account>;
 type SortCol = "name" | "offBudget" | "closed";
 type SortDir = "asc" | "desc";
-type ConfirmState = { title: string; message: string; onConfirm: () => void };
 
 // ─── Sort helpers ──────────────────────────────────────────────────────────────
 
@@ -73,7 +94,8 @@ export function AccountsTable({
 
   // ── Multi-select state ───────────────────────────────────────────────────────
   const { selectedIds, toggleSelect: toggleSelectRow, toggleSelectAll: _toggleSelectAll, clearSelection } = useTableSelection();
-  const [confirmDialog, setConfirmDialog] = useState<ConfirmState | null>(null);
+  const [deleteIntent, setDeleteIntent] = useState<DeleteIntent | null>(null);
+  const [inspectId, setInspectId] = useState<string | null>(null);
 
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -106,22 +128,62 @@ export function AccountsTable({
   }, [staged]);
 
   // ── Account → rule count ─────────────────────────────────────────────────────
-  const accountRuleCount = useMemo(() => {
-    const counts = new Map<string, number>();
-    for (const s of Object.values(stagedRules)) {
-      if (s.isDeleted) continue;
-      for (const part of [...s.entity.conditions, ...s.entity.actions]) {
-        if (part.field === "account") {
-          const ids = Array.isArray(part.value) ? part.value : [part.value];
-          for (const id of ids) {
-            if (typeof id === "string" && id)
-              counts.set(id, (counts.get(id) ?? 0) + 1);
-          }
+  const accountRuleCount = useMemo(
+    () => buildRuleReferenceMap(stagedRules, ["account"]),
+    [stagedRules]
+  );
+
+  // ── Lazy tx counts for delete/close confirm dialogs ───────────────────────────
+  const { data: txCounts, isLoading: txLoading } = useTransactionCountsForIds(
+    "account",
+    deleteIntent?.ids ?? [],
+    { enabled: !!deleteIntent && deleteIntent.ids.length > 0 }
+  );
+
+  const txTotal = deleteIntent?.ids.length
+    ? (txCounts ? [...txCounts.values()].reduce((a, b) => a + b, 0) : undefined)
+    : 0;
+
+  const confirmState: ConfirmState | null = deleteIntent
+    ? (() => {
+        const loading = txLoading && deleteIntent.ids.length > 0;
+        switch (deleteIntent.kind) {
+          case "close":
+            return {
+              title: deleteIntent.title,
+              message: buildAccountCloseWarning(deleteIntent.label, deleteIntent.balance, txTotal, loading),
+              onConfirm: deleteIntent.onConfirm,
+              destructiveLabel: "Close",
+            };
+          case "delete":
+            return {
+              title: deleteIntent.title,
+              message: buildAccountDeleteWarning(deleteIntent.label, deleteIntent.balance, deleteIntent.ruleCount, txTotal, loading),
+              onConfirm: deleteIntent.onConfirm,
+            };
+          case "bulkClose":
+            return {
+              title: deleteIntent.title,
+              message: buildAccountBulkCloseWarning(deleteIntent.count, deleteIntent.nonZeroBalanceCount),
+              onConfirm: deleteIntent.onConfirm,
+              destructiveLabel: "Close All",
+            };
+          case "bulkDelete":
+            return {
+              title: deleteIntent.title,
+              message: buildAccountBulkDeleteWarning(
+                deleteIntent.serverCount,
+                deleteIntent.newCount,
+                deleteIntent.nonZeroBalanceCount,
+                deleteIntent.ruleCount,
+                txTotal,
+                loading
+              ),
+              onConfirm: deleteIntent.onConfirm,
+            };
         }
-      }
-    }
-    return counts;
-  }, [stagedRules]);
+      })()
+    : null;
 
   // ── Derived rows: filter → sort ──────────────────────────────────────────────
   const rows: AccountRow[] = useMemo(() => {
@@ -241,25 +303,56 @@ export function AccountsTable({
 
   // ── Bulk actions ─────────────────────────────────────────────────────────────
   function handleBulkDelete() {
-    const ids = [...selectedIds].filter((id) => staged[id] && !staged[id].isNew);
-    const newIds = [...selectedIds].filter((id) => staged[id]?.isNew);
-    const count = selectedIds.size;
-    setConfirmDialog({
+    const activeSelection = [...selectedIds].filter(
+      (id) => !staged[id]?.isDeleted
+    );
+    const serverIds = activeSelection.filter((id) => staged[id] && !staged[id].isNew);
+    const newIds = activeSelection.filter((id) => staged[id]?.isNew);
+    const nonZeroBalanceCount = serverIds.filter((id) => {
+      const b = balances?.get(id);
+      return b === undefined || Math.abs(b) > 0; // unknown balance treated conservatively as non-zero
+    }).length;
+    const totalRuleCount = activeSelection.reduce((sum, id) => sum + (accountRuleCount.get(id) ?? 0), 0);
+    const count = activeSelection.length;
+    const capturedIds = activeSelection;
+    setDeleteIntent({
+      kind: "bulkDelete",
+      ids: serverIds,
       title: `Delete ${count} account${count !== 1 ? "s" : ""}?`,
-      message: `${ids.length} will be staged for deletion and removed on Save. ${newIds.length > 0 ? `${newIds.length} unsaved new row${newIds.length !== 1 ? "s" : ""} will be discarded immediately.` : ""}`.trim(),
+      serverCount: serverIds.length,
+      newCount: newIds.length,
+      nonZeroBalanceCount,
+      ruleCount: totalRuleCount,
       onConfirm: () => {
         pushUndo();
-        for (const id of selectedIds) stageDelete("accounts", id);
+        for (const id of capturedIds) stageDelete("accounts", id);
         clearSelection();
       },
     });
   }
 
   function handleBulkClose() {
-    pushUndo();
-    for (const id of selectedIds) {
-      if (staged[id] && !staged[id].isDeleted) stageUpdate("accounts", id, { closed: true });
-    }
+    const closeableIds = [...selectedIds].filter(
+      (id) => staged[id] && !staged[id].isDeleted && !staged[id].entity.closed
+    );
+    const count = closeableIds.length;
+    if (count === 0) return;
+    const nonZeroBalanceCount = closeableIds.filter((id) => {
+      const b = balances?.get(id);
+      return b === undefined || Math.abs(b) > 0; // unknown balance treated conservatively as non-zero
+    }).length;
+    const capturedIds = [...closeableIds];
+    setDeleteIntent({
+      kind: "bulkClose",
+      ids: [],
+      title: `Close ${count} account${count !== 1 ? "s" : ""}?`,
+      count,
+      nonZeroBalanceCount,
+      onConfirm: () => {
+        pushUndo();
+        for (const id of capturedIds) stageUpdate("accounts", id, { closed: true });
+      },
+    });
   }
 
   function handleBulkReopen() {
@@ -613,13 +706,44 @@ export function AccountsTable({
                           ) : (
                             <>
                               <Button variant="ghost" size="icon-xs" title={entity.closed ? "Reopen" : "Close"}
-                                onClick={() => { pushUndo(); stageUpdate("accounts", entity.id, { closed: !entity.closed }); }}>
+                                onClick={() => {
+                                  if (entity.closed) {
+                                    pushUndo();
+                                    stageUpdate("accounts", entity.id, { closed: false });
+                                  } else {
+                                    const balance = balances?.get(entity.id) ?? 0;
+                                    setDeleteIntent({
+                                      kind: "close",
+                                      ids: isNew ? [] : [entity.id],
+                                      title: "Close account?",
+                                      label: entity.name || "Unnamed",
+                                      balance,
+                                      onConfirm: () => { pushUndo(); stageUpdate("accounts", entity.id, { closed: true }); },
+                                    });
+                                  }
+                                }}>
                                 {entity.closed ? <ArchiveRestore /> : <Archive />}
                               </Button>
                               <Button variant="ghost" size="icon-xs" title="Delete"
                                 className="text-destructive hover:text-destructive"
-                                onClick={() => { pushUndo(); stageDelete("accounts", entity.id); }}>
+                                onClick={() => {
+                                  const balance = balances?.get(entity.id) ?? 0;
+                                  const ruleCount = accountRuleCount.get(entity.id) ?? 0;
+                                  setDeleteIntent({
+                                    kind: "delete",
+                                    ids: isNew ? [] : [entity.id],
+                                    title: "Delete account?",
+                                    label: entity.name || "Unnamed",
+                                    balance,
+                                    ruleCount,
+                                    onConfirm: () => { pushUndo(); stageDelete("accounts", entity.id); },
+                                  });
+                                }}>
                                 <Trash2 />
+                              </Button>
+                              <Button variant="ghost" size="icon-xs" title="Inspect usage" aria-label="Inspect usage"
+                                onClick={() => setInspectId(entity.id)}>
+                                <Info />
                               </Button>
                               {(isNew || isUpdated) && (
                                 <Button variant="ghost" size="icon-xs" title="Revert" onClick={() => revertEntity("accounts", entity.id)}>
@@ -641,24 +765,18 @@ export function AccountsTable({
         <BulkAddBar bulkCount={bulkCount} onBulkCountChange={setBulkCount} onAdd={(n) => addRows(n, true)} />
       </div>
 
-      {/* Confirm dialog */}
-      <Dialog open={confirmDialog !== null} onOpenChange={(open) => { if (!open) setConfirmDialog(null); }}>
-        <DialogContent showCloseButton={false}>
-          <DialogHeader>
-            <DialogTitle>{confirmDialog?.title}</DialogTitle>
-            <DialogDescription>{confirmDialog?.message}</DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setConfirmDialog(null)}>Cancel</Button>
-            <Button
-              variant="destructive"
-              onClick={() => { confirmDialog?.onConfirm(); setConfirmDialog(null); }}
-            >
-              Delete
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ConfirmDialog
+        open={!!deleteIntent}
+        onOpenChange={(open) => { if (!open) setDeleteIntent(null); }}
+        state={confirmState}
+      />
+
+      <UsageInspectorDrawer
+        entityId={inspectId}
+        entityType="account"
+        open={!!inspectId}
+        onOpenChange={(open) => { if (!open) setInspectId(null); }}
+      />
     </>
   );
 }
