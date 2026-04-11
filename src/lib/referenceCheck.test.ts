@@ -125,7 +125,8 @@ describe("buildRuleReferenceMap", () => {
     expect(payeeResult.get("cat1")).toBeUndefined();
   });
 
-  it("matches multiple field names — payee and imported_payee both count", () => {
+  it("matches multiple field names — payee and imported_payee — counts the rule once even if both fields reference the same id", () => {
+    // One rule referencing "p1" via both payee and imported_payee still counts as 1 rule.
     const rules = staged([
       makeRule("r1", {
         conditions: [
@@ -133,6 +134,16 @@ describe("buildRuleReferenceMap", () => {
           { field: "imported_payee", op: "is", value: "p1", type: "id" },
         ],
       }),
+    ]);
+    const result = buildRuleReferenceMap(rules, ["payee", "imported_payee"]);
+    expect(result.get("p1")).toBe(1);
+  });
+
+  it("counts correctly when two different rules each match via different field names", () => {
+    // Two separate rules referencing the same id → count should be 2.
+    const rules = staged([
+      makeRule("r1", { conditions: [{ field: "payee", op: "is", value: "p1", type: "id" }] }),
+      makeRule("r2", { conditions: [{ field: "imported_payee", op: "is", value: "p1", type: "id" }] }),
     ]);
     const result = buildRuleReferenceMap(rules, ["payee", "imported_payee"]);
     expect(result.get("p1")).toBe(2);
