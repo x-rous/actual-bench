@@ -13,7 +13,7 @@ interface QueryExamplesPanelProps {
 
 function GroupHeader({ label }: { label: string }) {
   return (
-    <div className="mx-3 mb-1 mt-4 border-b border-border pb-1 first:mt-2">
+    <div className="mx-3 mb-1 border-b border-border pb-1">
       <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
         {label}
       </span>
@@ -63,13 +63,13 @@ export function QueryExamplesPanel({ onInsert }: QueryExamplesPanelProps) {
   return (
     <div className="flex flex-col pb-3">
       {QUERY_PACK_GROUPS.map((group) => (
-        <div key={group.id}>
+        <div key={group.id} className="mt-4 first:mt-2">
           <GroupHeader label={group.label} />
           {group.packs.map((pack) => (
             <ExampleItem
               key={pack.id}
               pack={pack}
-              onInsert={() => onInsert(pack.query)}
+              onInsert={() => onInsert(typeof pack.query === "function" ? pack.query() : pack.query)}
             />
           ))}
         </div>

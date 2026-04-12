@@ -405,6 +405,9 @@ export function QueryResults({
     [lastRequest]
   );
 
+  // Derived state: auto-select the appropriate view mode when the result changes.
+  // This is the React-documented getDerivedStateFromProps pattern for hooks —
+  // React re-renders immediately with the updated mode, preventing any flicker.
   const [prevResult, setPrevResult] = useState<unknown | null>(null);
   if (result !== prevResult) {
     setPrevResult(result);

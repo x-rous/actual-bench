@@ -44,7 +44,8 @@ function formatExecTime(ms: number): string {
 function deriveOperationLabel(query: string): string {
   try {
     const parsed = JSON.parse(query) as Record<string, unknown>;
-    const inner = parsed.ActualQLquery as Record<string, unknown> | undefined;
+    // Accept both the wrapped { ActualQLquery: {...} } format and bare query objects.
+    const inner = (parsed.ActualQLquery ?? parsed) as Record<string, unknown>;
     if (!inner || typeof inner.table !== "string") return "query";
 
     const table = inner.table;
@@ -131,7 +132,6 @@ function HistoryItem({
   onLoad: () => void;
   onRun: () => void;
 }) {
-  const [hovered, setHovered] = useState(false);
   const label = deriveOperationLabel(entry.query);
 
   // Build the metadata line: "47 rows · 142ms" (only fields that exist)
@@ -150,8 +150,6 @@ function HistoryItem({
         "group flex items-start gap-1 border-l-2 border-transparent px-2 py-1.5 transition-colors",
         "hover:border-primary/40 hover:bg-accent/60"
       )}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
     >
       <button
         type="button"
@@ -175,16 +173,14 @@ function HistoryItem({
           </div>
         )}
       </button>
-      {hovered && (
-        <div className="flex shrink-0 items-center">
-          <ActionButton title="Load and run" onClick={onRun}>
-            <Play className="h-3 w-3" />
-          </ActionButton>
-          <ActionButton title="Copy query JSON" onClick={() => copyQuery(entry.query)}>
-            <Copy className="h-3 w-3" />
-          </ActionButton>
-        </div>
-      )}
+      <div className="flex shrink-0 items-center opacity-0 pointer-events-none transition-opacity group-hover:opacity-100 group-hover:pointer-events-auto group-focus-within:opacity-100 group-focus-within:pointer-events-auto">
+        <ActionButton title="Load and run" onClick={onRun}>
+          <Play className="h-3 w-3" />
+        </ActionButton>
+        <ActionButton title="Copy query JSON" onClick={() => copyQuery(entry.query)}>
+          <Copy className="h-3 w-3" />
+        </ActionButton>
+      </div>
     </div>
   );
 }
@@ -208,7 +204,6 @@ function SavedItem({
   onRename: (name: string) => void;
   onDuplicate: () => void;
 }) {
-  const [hovered, setHovered] = useState(false);
   const [isRenaming, setIsRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState(query.name);
 
@@ -234,9 +229,7 @@ function SavedItem({
         "group flex items-center gap-1 border-l-2 border-transparent px-2 py-1.5 transition-colors",
         "hover:border-primary/40 hover:bg-accent/60"
       )}
-      onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => {
-        setHovered(false);
         if (isRenaming) submitRename();
       }}
     >
@@ -266,8 +259,8 @@ function SavedItem({
         </button>
       )}
 
-      {hovered && !isRenaming && (
-        <div className="flex shrink-0 items-center">
+      {!isRenaming && (
+        <div className="flex shrink-0 items-center opacity-0 pointer-events-none transition-opacity group-hover:opacity-100 group-hover:pointer-events-auto group-focus-within:opacity-100 group-focus-within:pointer-events-auto">
           <ActionButton title="Load and run" onClick={onRun}>
             <Play className="h-3 w-3" />
           </ActionButton>

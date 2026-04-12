@@ -12,7 +12,12 @@ export type QueryPack = {
   name: string;
   description?: string;
   group: string;
-  query: string; // full wrapped JSON string
+  /**
+   * Full wrapped JSON string, or a factory that produces it at insertion time.
+   * Use a factory for queries that embed dynamic values (e.g. the current month)
+   * so the string is computed fresh when the user clicks the example.
+   */
+  query: string | (() => string);
 };
 
 export type QueryPackGroup = {
@@ -29,8 +34,6 @@ function getCurrentMonth(): string {
   const month = String(now.getMonth() + 1).padStart(2, "0");
   return `${year}-${month}`;
 }
-
-const CURRENT_MONTH = getCurrentMonth();
 
 // ─── Data inspection ──────────────────────────────────────────────────────────
 
@@ -117,7 +120,7 @@ const DATA_INSPECTION: QueryPack[] = [
     name: "Transactions this month",
     description: "Transactions in the current month.",
     group: "data",
-    query: JSON.stringify(
+    query: () => JSON.stringify(
       {
         ActualQLquery: {
           table: "transactions",
@@ -125,7 +128,7 @@ const DATA_INSPECTION: QueryPack[] = [
           filter: {
             date: {
               $transform: "$month",
-              $eq: CURRENT_MONTH,
+              $eq: getCurrentMonth(),
             },
           },
           select: [
@@ -155,7 +158,7 @@ const CLEANUP: QueryPack[] = [
     description:
       "Current-month transactions with no category, excluding transfers and off-budget activity.",
     group: "cleanup",
-    query: JSON.stringify(
+    query: () => JSON.stringify(
       {
         ActualQLquery: {
           table: "transactions",
@@ -165,7 +168,7 @@ const CLEANUP: QueryPack[] = [
               {
                 date: {
                   $transform: "$month",
-                  $eq: CURRENT_MONTH,
+                  $eq: getCurrentMonth(),
                 },
               },
               { category: null },
@@ -189,7 +192,7 @@ const CLEANUP: QueryPack[] = [
     description:
       "Transaction counts grouped by payee for the current month, excluding transfers and off-budget activity.",
     group: "cleanup",
-    query: JSON.stringify(
+    query: () => JSON.stringify(
       {
         ActualQLquery: {
           table: "transactions",
@@ -199,7 +202,7 @@ const CLEANUP: QueryPack[] = [
               {
                 date: {
                   $transform: "$month",
-                  $eq: CURRENT_MONTH,
+                  $eq: getCurrentMonth(),
                 },
               },
               { "account.offbudget": false },
@@ -227,7 +230,7 @@ const CLEANUP: QueryPack[] = [
     description:
       "Transaction counts grouped by category for the current month (note: this does not include truly unused categories).",
     group: "cleanup",
-    query: JSON.stringify(
+    query: () => JSON.stringify(
       {
         ActualQLquery: {
           table: "transactions",
@@ -237,7 +240,7 @@ const CLEANUP: QueryPack[] = [
               {
                 date: {
                   $transform: "$month",
-                  $eq: CURRENT_MONTH,
+                  $eq: getCurrentMonth(),
                 },
               },
               { category: { $ne: null } },
@@ -306,7 +309,7 @@ const AGGREGATION: QueryPack[] = [
     name: "Transactions per payee",
     description: "Count of non-transfer transactions grouped by payee this month.",
     group: "aggregation",
-    query: JSON.stringify(
+    query: () => JSON.stringify(
       {
         ActualQLquery: {
           table: "transactions",
@@ -316,7 +319,7 @@ const AGGREGATION: QueryPack[] = [
               {
                 date: {
                   $transform: "$month",
-                  $eq: CURRENT_MONTH,
+                  $eq: getCurrentMonth(),
                 },
               },
               { "account.offbudget": false },
@@ -343,7 +346,7 @@ const AGGREGATION: QueryPack[] = [
     description:
       "Total non-transfer transaction amount grouped by category for the current month.",
     group: "aggregation",
-    query: JSON.stringify(
+    query: () => JSON.stringify(
       {
         ActualQLquery: {
           table: "transactions",
@@ -353,7 +356,7 @@ const AGGREGATION: QueryPack[] = [
               {
                 date: {
                   $transform: "$month",
-                  $eq: CURRENT_MONTH,
+                  $eq: getCurrentMonth(),
                 },
               },
               { category: { $ne: null } },
@@ -381,7 +384,7 @@ const AGGREGATION: QueryPack[] = [
     description:
       "Total non-transfer transaction amount grouped by payee for the current month.",
     group: "aggregation",
-    query: JSON.stringify(
+    query: () => JSON.stringify(
       {
         ActualQLquery: {
           table: "transactions",
@@ -391,7 +394,7 @@ const AGGREGATION: QueryPack[] = [
               {
                 date: {
                   $transform: "$month",
-                  $eq: CURRENT_MONTH,
+                  $eq: getCurrentMonth(),
                 },
               },
               { "account.offbudget": false },
@@ -418,7 +421,7 @@ const AGGREGATION: QueryPack[] = [
     description:
       "Total non-transfer transaction amount grouped by category group for the current month.",
     group: "aggregation",
-    query: JSON.stringify(
+    query: () => JSON.stringify(
       {
         ActualQLquery: {
           table: "transactions",
@@ -428,7 +431,7 @@ const AGGREGATION: QueryPack[] = [
               {
                 date: {
                   $transform: "$month",
-                  $eq: CURRENT_MONTH,
+                  $eq: getCurrentMonth(),
                 },
               },
               { category: { $ne: null } },

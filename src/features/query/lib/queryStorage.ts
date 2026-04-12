@@ -36,7 +36,11 @@ function readSaved(budgetSyncId: string): SavedQuery[] {
 
 function writeSaved(budgetSyncId: string, queries: SavedQuery[]): void {
   if (typeof window === "undefined") return;
-  localStorage.setItem(savedKey(budgetSyncId), JSON.stringify(queries));
+  try {
+    localStorage.setItem(savedKey(budgetSyncId), JSON.stringify(queries));
+  } catch {
+    // Storage quota exceeded or access denied — degrade gracefully.
+  }
 }
 
 export function getSavedQueries(budgetSyncId: string): SavedQuery[] {
@@ -146,5 +150,9 @@ export function addToHistory(
     ...(meta?.execTime !== undefined && { execTime: meta.execTime }),
     ...(meta?.rowCount !== undefined && { rowCount: meta.rowCount }),
   };
-  sessionStorage.setItem(historyKey(budgetSyncId), JSON.stringify([entry, ...deduped]));
+  try {
+    sessionStorage.setItem(historyKey(budgetSyncId), JSON.stringify([entry, ...deduped]));
+  } catch {
+    // Storage quota exceeded or access denied — degrade gracefully.
+  }
 }

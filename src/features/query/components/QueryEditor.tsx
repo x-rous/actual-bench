@@ -21,7 +21,7 @@ interface QueryEditorProps {
   onExplain: () => void;
   onCopyQuery: () => void;
   onOpenReference: () => void;
-  onUndo?: () => void;
+  onUndo?: () => boolean;
   isRunning: boolean;
   parseError: string | null;
   editorHeight: number;

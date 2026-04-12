@@ -55,7 +55,8 @@ interface JsonEditorProps {
   value: string;
   onChange: (value: string) => void;
   onKeyDown?: (e: React.KeyboardEvent<HTMLTextAreaElement>) => void;
-  onUndo?: () => void;
+  /** Return true if custom undo was applied; false lets the browser handle it natively. */
+  onUndo?: () => boolean;
   height: number;
   placeholder?: string;
 }
@@ -112,9 +113,10 @@ export function JsonEditor({
     // This only fires when onUndo is provided, meaning a programmatic load just
     // replaced the editor value. Normal browser undo for typed text is unaffected.
     if ((e.ctrlKey || e.metaKey) && e.key === "z" && onUndo) {
-      e.preventDefault();
-      onUndo();
-      return;
+      if (onUndo()) {
+        e.preventDefault();
+        return;
+      }
     }
 
     // Intercept Tab to insert 2 spaces instead of moving browser focus.

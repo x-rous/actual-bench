@@ -209,7 +209,12 @@ export function QueryWorkspace() {
   const editorHeightRef = useRef(editorHeight);
   // Snapshot of editor content before a programmatic load — enables toast + Ctrl+Z undo.
   const prevEditorValueRef = useRef<string>("");
+  // Guards against overlapping concurrent query executions.
+  const isRunningRef = useRef(false);
+  // Mirrors the active connection so in-flight callbacks can detect stale responses.
+  const connectionRef = useRef(connection);
   useEffect(() => { editorHeightRef.current = editorHeight; }, [editorHeight]);
+  useEffect(() => { connectionRef.current = connection; }, [connection]);
 
   const handleDragStart = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
@@ -244,13 +249,15 @@ export function QueryWorkspace() {
     setSavedQueries(getSavedQueries(connection.budgetSyncId));
   }, [connection]);
 
-  // Lint as the user types — parse errors suppress lint warnings
+  // Lint as the user types; also keeps the inline parse-error banner in sync.
   useEffect(() => {
     const parsed = parseQuery(editorValue);
     if (parsed instanceof Error) {
+      setParseError(parsed.message);
       setLintWarnings([]);
       return;
     }
+    setParseError(null);
     setLintWarnings(lintQuery(parsed.inner));
   }, [editorValue]);
 
@@ -262,15 +269,23 @@ export function QueryWorkspace() {
         toast.error("No active connection.");
         return;
       }
+      // Prevent overlapping concurrent executions.
+      if (isRunningRef.current) return;
+
       const parsed = parseQuery(queryString);
       if (parsed instanceof Error) {
         setParseError(parsed.message);
         return;
       }
       setParseError(null);
+      isRunningRef.current = true;
       setIsRunning(true);
       setRunError(null);
       setShowExplanation(false);
+
+      // Snapshot the budget ID before the async gap so we can detect connection
+      // changes that occur while the request is in flight.
+      const capturedBudgetId = connection.budgetSyncId;
 
       const start = Date.now();
       try {
@@ -278,6 +293,9 @@ export function QueryWorkspace() {
           connection,
           parsed.body
         );
+        // Discard the response if the active connection changed mid-flight.
+        if (connectionRef.current?.budgetSyncId !== capturedBudgetId) return;
+
         const elapsed = Date.now() - start;
         setResult(response.data);
         setExecTime(elapsed);
@@ -298,6 +316,7 @@ export function QueryWorkspace() {
         });
         setHistory(getHistory(connection.budgetSyncId));
       } catch (err) {
+        if (connectionRef.current?.budgetSyncId !== capturedBudgetId) return;
         setExecTime(Date.now() - start);
         setPayloadBytes(null);
         const msg =
@@ -309,6 +328,7 @@ export function QueryWorkspace() {
         setRunError(msg);
         setResult(null);
       } finally {
+        isRunningRef.current = false;
         setIsRunning(false);
       }
     },
@@ -353,13 +373,14 @@ export function QueryWorkspace() {
 
   // Restores the editor to the state it was in before the last programmatic load.
   // Called either by the toast Undo button or the Ctrl+Z intercept in JsonEditor.
-  const handleUndo = useCallback(() => {
+  const handleUndo = useCallback((): boolean => {
     const prev = prevEditorValueRef.current;
-    if (!prev) return;
+    if (!prev) return false;
     prevEditorValueRef.current = "";
     setEditorValue(prev);
     setParseError(null);
     toast.dismiss();
+    return true;
   }, []);
 
   function handleSaveConfirm(name: string) {
@@ -483,7 +504,7 @@ export function QueryWorkspace() {
             onExplain={handleExplain}
             onCopyQuery={handleCopyQuery}
             onOpenReference={() => setReferenceOpen(true)}
-            onUndo={prevEditorValueRef.current ? handleUndo : undefined}
+            onUndo={handleUndo}
             isRunning={isRunning}
             parseError={parseError}
             editorHeight={editorHeight}

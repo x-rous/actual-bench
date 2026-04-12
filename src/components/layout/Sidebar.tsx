@@ -93,7 +93,7 @@ export function Sidebar() {
     >
       <nav className="flex flex-1 flex-col gap-0.5 overflow-y-auto p-2 pt-3">
         {NAV_ITEMS.map(({ label, href, icon: Icon, badge }) => {
-          const active = pathname.startsWith(href);
+          const active = pathname === href || pathname.startsWith(href + "/");
           return (
             <Link
               key={href}

@@ -44,22 +44,27 @@ export function parseQuery(input: string): ParsedQuery | Error {
 
   const obj = parsed as Record<string, unknown>;
 
+  // Accept both the wrapped format { "ActualQLquery": { ... } } and a bare
+  // ActualQL body { "table": "...", ... } typed directly.
+  let inner: Record<string, unknown>;
   if (
-    !("ActualQLquery" in obj) ||
-    typeof obj.ActualQLquery !== "object" ||
-    obj.ActualQLquery === null ||
-    Array.isArray(obj.ActualQLquery)
+    "ActualQLquery" in obj &&
+    typeof obj.ActualQLquery === "object" &&
+    obj.ActualQLquery !== null &&
+    !Array.isArray(obj.ActualQLquery)
   ) {
+    inner = obj.ActualQLquery as Record<string, unknown>;
+  } else if (typeof obj.table === "string") {
+    inner = obj;
+  } else {
     return new Error(
-      'Wrap your query: { "ActualQLquery": { "table": "..." } }'
+      'Wrap your query: { "ActualQLquery": { "table": "..." } } or provide a bare object with a "table" field.'
     );
   }
 
-  const inner = obj.ActualQLquery as Record<string, unknown>;
-
   if (typeof inner.table !== "string" || !inner.table.trim()) {
     return new Error(
-      'The "ActualQLquery" object must have a "table" string field.'
+      'The query must have a "table" string field.'
     );
   }
 

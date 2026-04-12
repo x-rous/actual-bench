@@ -18,6 +18,16 @@
 
 import { useState } from "react";
 
+// ─── Path helpers ─────────────────────────────────────────────────────────────
+
+/**
+ * Encodes an object key into a JSON Pointer segment (RFC 6901).
+ * '~' → '~0', '/' → '~1' — prevents key collisions like "a.b" vs {a:{b:…}}.
+ */
+function encodePointerKey(key: string): string {
+  return key.replace(/~/g, "~0").replace(/\//g, "~1");
+}
+
 // ─── Collapse state ───────────────────────────────────────────────────────────
 
 type CollapseMap = Map<string, boolean>;
@@ -229,7 +239,7 @@ function JsonTreeNode({
           <JsonTreeNode
             key={i}
             value={item}
-            path={`${path}[${i}]`}
+            path={`${path}/${i}`}
             depth={depth + 1}
             label={<IndexLabel i={i} />}
             collapsed={collapsed}
@@ -271,7 +281,7 @@ function JsonTreeNode({
           <JsonTreeNode
             key={k}
             value={(value as Record<string, unknown>)[k]}
-            path={`${path}.${k}`}
+            path={`${path}/${encodePointerKey(k)}`}
             depth={depth + 1}
             label={<KeyLabel k={k} />}
             collapsed={collapsed}

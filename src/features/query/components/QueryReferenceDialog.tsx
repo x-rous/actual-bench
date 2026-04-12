@@ -34,7 +34,7 @@ function Snippet({ code }: { code: string }) {
         type="button"
         onClick={copy}
         title="Copy snippet"
-        className="absolute right-1.5 top-1.5 hidden rounded p-0.5 text-muted-foreground hover:text-foreground group-hover:flex"
+        className="absolute right-1.5 top-1.5 flex rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:text-foreground group-hover:opacity-100 focus-visible:opacity-100"
       >
         <Copy className="h-3 w-3" />
       </button>

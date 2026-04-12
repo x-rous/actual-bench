@@ -11,6 +11,19 @@
 
 import type { LastExecutedRequest } from "../types";
 
+/**
+ * Escapes a value for safe interpolation inside a double-quoted shell string.
+ * Handles: backslash, double-quote, dollar sign, backtick, and newline.
+ */
+function shellEscapeDoubleQuote(value: string): string {
+  return value
+    .replace(/\\/g, "\\\\")
+    .replace(/"/g, '\\"')
+    .replace(/\$/g, "\\$")
+    .replace(/`/g, "\\`")
+    .replace(/\n/g, "\\n");
+}
+
 const ENDPOINT_PATH = (budgetSyncId: string) =>
   `/v1/budgets/${budgetSyncId}/run-query`;
 
@@ -20,7 +33,7 @@ function buildCurl(
 ): string {
   const url = `${req.baseUrl.replace(/\/$/, "")}${ENDPOINT_PATH(req.budgetSyncId)}`;
   const body = JSON.stringify({ ActualQLquery: req.query }, null, 2);
-  const apiKey = sanitize ? "{{API_KEY}}" : req.apiKey;
+  const apiKey = sanitize ? "{{API_KEY}}" : shellEscapeDoubleQuote(req.apiKey);
 
   const lines: string[] = [
     `curl -X POST "${url}" \\`,
@@ -31,7 +44,7 @@ function buildCurl(
   if (req.encryptionPassword !== undefined) {
     const password = sanitize
       ? "{{BUDGET_ENCRYPTION_PASSWORD}}"
-      : req.encryptionPassword;
+      : shellEscapeDoubleQuote(req.encryptionPassword);
     lines.push(`  -H "budget-encryption-password: ${password}" \\`);
   }
 
