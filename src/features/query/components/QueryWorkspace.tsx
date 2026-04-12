@@ -198,10 +198,14 @@ export function QueryWorkspace() {
 
   const [editorHeight, setEditorHeight] = useState<number>(() => {
     if (typeof window === "undefined") return DEFAULT_HEIGHT;
-    const stored = sessionStorage.getItem(EDITOR_HEIGHT_KEY);
-    if (!stored) return DEFAULT_HEIGHT;
-    const parsed = parseInt(stored, 10);
-    return isNaN(parsed) ? DEFAULT_HEIGHT : Math.max(MIN_HEIGHT, parsed);
+    try {
+      const stored = sessionStorage.getItem(EDITOR_HEIGHT_KEY);
+      if (!stored) return DEFAULT_HEIGHT;
+      const parsed = parseInt(stored, 10);
+      return isNaN(parsed) ? DEFAULT_HEIGHT : Math.max(MIN_HEIGHT, parsed);
+    } catch {
+      return DEFAULT_HEIGHT;
+    }
   });
 
   const mainAreaRef = useRef<HTMLDivElement>(null);
@@ -231,7 +235,11 @@ export function QueryWorkspace() {
     }
 
     function onUp() {
-      sessionStorage.setItem(EDITOR_HEIGHT_KEY, String(editorHeightRef.current));
+      try {
+        sessionStorage.setItem(EDITOR_HEIGHT_KEY, String(editorHeightRef.current));
+      } catch {
+        // Storage unavailable — height is already correct in state, just don't persist.
+      }
       document.removeEventListener("mousemove", onMove);
       document.removeEventListener("mouseup", onUp);
     }
@@ -242,8 +250,14 @@ export function QueryWorkspace() {
 
   // ─── Init ─────────────────────────────────────────────────────────────────────
 
-  // Load persisted data once the connection is known
+  // When the connection changes, clear any result/error state that belongs to
+  // the previous budget, then load the new budget's history and saved queries.
   useEffect(() => {
+    setResult(null);
+    setRunError(null);
+    setLastExecutedRequest(null);
+    setExecTime(null);
+    setPayloadBytes(null);
     if (!connection) return;
     setHistory(getHistory(connection.budgetSyncId));
     setSavedQueries(getSavedQueries(connection.budgetSyncId));
@@ -287,6 +301,17 @@ export function QueryWorkspace() {
       // changes that occur while the request is in flight.
       const capturedBudgetId = connection.budgetSyncId;
 
+      // Snapshot the current request before the async gap so it is available
+      // for cURL generation on both the success and the error path.
+      setLastExecutedRequest({
+        query: parsed.inner,
+        rawQuery: queryString,
+        baseUrl: connection.baseUrl,
+        budgetSyncId: connection.budgetSyncId,
+        apiKey: connection.apiKey,
+        encryptionPassword: connection.encryptionPassword,
+      });
+
       const start = Date.now();
       try {
         const response = await runQuery<{ data: unknown }>(
@@ -302,14 +327,6 @@ export function QueryWorkspace() {
         setPayloadBytes(
           new TextEncoder().encode(JSON.stringify(response.data)).length
         );
-        setLastExecutedRequest({
-          query: parsed.inner,
-          rawQuery: queryString,
-          baseUrl: connection.baseUrl,
-          budgetSyncId: connection.budgetSyncId,
-          apiKey: connection.apiKey,
-          encryptionPassword: connection.encryptionPassword,
-        });
         addToHistory(connection.budgetSyncId, queryString, {
           execTime: elapsed,
           rowCount: Array.isArray(response.data) ? response.data.length : undefined,

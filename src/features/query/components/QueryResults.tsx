@@ -300,13 +300,23 @@ function TableView({ data, centCols }: { data: unknown; centCols: Set<string> })
               {columns.map((col) => (
                 <th
                   key={col}
-                  onClick={() => handleSortClick(col)}
-                  className="whitespace-nowrap px-3 py-1.5 text-left font-medium text-muted-foreground cursor-pointer select-none hover:text-foreground hover:bg-muted/80 transition-colors"
+                  aria-sort={
+                    sortCol !== col
+                      ? "none"
+                      : sortDir === "asc"
+                        ? "ascending"
+                        : "descending"
+                  }
+                  className="whitespace-nowrap px-0 py-0 text-left font-medium text-muted-foreground"
                 >
-                  <span className="inline-flex items-center">
+                  <button
+                    type="button"
+                    onClick={() => handleSortClick(col)}
+                    className="inline-flex w-full items-center px-3 py-1.5 select-none cursor-pointer transition-colors hover:text-foreground hover:bg-muted/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+                  >
                     {col}
                     <SortIcon col={col} sortCol={sortCol} sortDir={sortDir} />
-                  </span>
+                  </button>
                 </th>
               ))}
             </tr>

@@ -123,7 +123,11 @@ export function getHistory(budgetSyncId: string): QueryHistoryEntry[] {
 
 export function clearHistory(budgetSyncId: string): void {
   if (typeof window === "undefined") return;
-  sessionStorage.removeItem(historyKey(budgetSyncId));
+  try {
+    sessionStorage.removeItem(historyKey(budgetSyncId));
+  } catch {
+    // Storage unavailable — degrade gracefully.
+  }
 }
 
 /**

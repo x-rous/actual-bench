@@ -41,12 +41,12 @@ function buildCurl(
     `  -H "x-api-key: ${apiKey}" \\`,
   ];
 
-  if (req.encryptionPassword !== undefined) {
-    const password = sanitize
-      ? "{{BUDGET_ENCRYPTION_PASSWORD}}"
-      : shellEscapeDoubleQuote(req.encryptionPassword);
-    lines.push(`  -H "budget-encryption-password: ${password}" \\`);
-  }
+  // The proxy always sends budget-encryption-password (empty string when unset),
+  // so the cURL output must always include the header to match actual behaviour.
+  const password = sanitize
+    ? "{{BUDGET_ENCRYPTION_PASSWORD}}"
+    : shellEscapeDoubleQuote(req.encryptionPassword ?? "");
+  lines.push(`  -H "budget-encryption-password: ${password}" \\`);
 
   lines.push(`  -d '${body.replace(/'/g, "'\\''")}'`);
 
