@@ -14,10 +14,10 @@ import { useSchedules } from "@/features/schedules/hooks/useSchedules";
  * which page the user is on. TanStack Query deduplicates the requests — page-
  * level hooks that call the same fetch hook will share the cached result.
  */
-export function usePreloadEntities() {
-  useAccounts();
-  usePayees();
-  useCategoryGroups();
-  useRules();
-  useSchedules();
+export function usePreloadEntities(enabled = true) {
+  useAccounts({ enabled });
+  usePayees({ enabled });
+  useCategoryGroups({ enabled });
+  useRules({ enabled });
+  useSchedules({ enabled });
 }

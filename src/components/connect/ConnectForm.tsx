@@ -1,15 +1,23 @@
 "use client";
 
 import Image from "next/image";
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { Loader2, AlertCircle, CheckCircle2, Server, Plus, Check } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
+import { useConnectionStore, selectActiveInstance } from "@/store/connection";
+import { useIsHydrated } from "@/hooks/useIsHydrated";
 import { useConnectForm } from "./useConnectForm";
 import { ConnectionCard } from "./ConnectionCard";
 import { deriveLabel } from "./utils";
 
 export function ConnectForm() {
+  const router = useRouter();
+  const hydrated = useIsHydrated();
+  const connectedInstance = useConnectionStore(selectActiveInstance);
+
   const {
     instances,
     activeInstance,
@@ -47,6 +55,16 @@ export function ConnectForm() {
     handleKeyDown,
     handleConnect,
   } = useConnectForm();
+
+  useEffect(() => {
+    if (hydrated && connectedInstance) {
+      router.replace("/overview");
+    }
+  }, [hydrated, connectedInstance, router]);
+
+  if (hydrated && connectedInstance) {
+    return null;
+  }
 
   // ── Panels ──────────────────────────────────────────────────────────────────
 

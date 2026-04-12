@@ -139,6 +139,7 @@ export function useSchedulesSave() {
     await queryClient.invalidateQueries({ queryKey: ["rules", connection.id] });
     await queryClient.invalidateQueries({ queryKey: ["transactionCounts", "schedule", connection.id] });
 
+    await queryClient.invalidateQueries({ queryKey: ["budget-overview", connection.id] });
     return { succeeded, failed, idMap };
     } finally {
       setIsSaving(false);

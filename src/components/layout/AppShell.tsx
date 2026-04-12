@@ -1,20 +1,14 @@
 "use client";
 
-import { useEffect, useSyncExternalStore } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect } from "react";
+import { usePathname, useRouter } from "next/navigation";
 import { TopBar } from "./TopBar";
 import { Sidebar } from "./Sidebar";
 import { DraftPanel } from "./DraftPanel";
 import { useConnectionStore, selectActiveInstance } from "@/store/connection";
 import { usePreloadEntities } from "@/hooks/useAllEntities";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
-
-// useSyncExternalStore is the React-recommended way to detect client-side
-// hydration without calling setState inside useEffect.
-const emptySubscribe = () => () => {};
-function useIsHydrated(): boolean {
-  return useSyncExternalStore(emptySubscribe, () => true, () => false);
-}
+import { useIsHydrated } from "@/hooks/useIsHydrated";
 
 /**
  * The four-panel app shell:
@@ -28,14 +22,15 @@ function useIsHydrated(): boolean {
  */
 export function AppShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
+  const pathname = usePathname();
   const activeInstance = useConnectionStore(selectActiveInstance);
 
-  // Prefetch all entity types in parallel so any page has data immediately.
-  // Hooks are disabled when there is no active connection (enabled: !!connection).
-  usePreloadEntities();
+  // Overview is a lightweight landing page, so avoid booting the full entity
+  // preload set while the user is on /overview. Other app routes keep the
+  // existing eager-preload behavior.
+  usePreloadEntities(pathname !== "/overview");
   useKeyboardShortcuts();
 
-  // Returns false on the server, true on the client — no setState needed.
   const hydrated = useIsHydrated();
 
   useEffect(() => {
@@ -44,7 +39,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     }
   }, [hydrated, activeInstance, router]);
 
-  // Show nothing until we know whether the user is connected.
   if (!hydrated) {
     return null;
   }

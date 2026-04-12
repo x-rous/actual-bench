@@ -19,6 +19,7 @@ import {
   ExternalLink,
   AlertCircle,
   BookOpen,
+  LayoutDashboard,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useConnectionStore } from "@/store/connection";
@@ -44,6 +45,7 @@ type NavItem = {
 };
 
 const NAV_ITEMS: NavItem[] = [
+  { label: "Overview", href: "/overview", icon: LayoutDashboard },
   { label: "Rules", href: "/rules", icon: ScrollText },
   { label: "Accounts", href: "/accounts", icon: Landmark },
   { label: "Payees", href: "/payees", icon: Users },

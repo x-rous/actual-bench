@@ -6,7 +6,11 @@ import { getRules } from "@/lib/api/rules";
 import { useConnectionStore, selectActiveInstance } from "@/store/connection";
 import { useStagedStore } from "@/store/staged";
 
-export function useRules() {
+type PreloadOptions = {
+  enabled?: boolean;
+};
+
+export function useRules(options: PreloadOptions = {}) {
   const connection = useConnectionStore(selectActiveInstance);
   const loadRules = useStagedStore((s) => s.loadRules);
 
@@ -16,7 +20,7 @@ export function useRules() {
       if (!connection) throw new Error("No active connection");
       return getRules(connection);
     },
-    enabled: !!connection,
+    enabled: !!connection && (options.enabled ?? true),
     // staleTime/gcTime/refetchOn* are set globally in queryClient.ts.
   });
 

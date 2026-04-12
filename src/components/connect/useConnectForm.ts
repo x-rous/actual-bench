@@ -136,7 +136,7 @@ export function useConnectForm() {
       setActiveInstance(instance.id);
       toast.success("Connected! Redirecting…");
       await new Promise((r) => setTimeout(r, 600));
-      router.push("/rules");
+      router.push("/overview");
     } finally {
       setReconnectBusyId(null);
     }
@@ -286,7 +286,7 @@ export function useConnectForm() {
       setConnectStatus({ kind: "success" });
       toast.success("Connected! Redirecting…");
       await new Promise((r) => setTimeout(r, 800));
-      router.push("/rules");
+      router.push("/overview");
     } catch (err) {
       const status =
         err && typeof err === "object" && "status" in err

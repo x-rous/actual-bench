@@ -6,7 +6,11 @@ import { getSchedules } from "@/lib/api/schedules";
 import { useConnectionStore, selectActiveInstance } from "@/store/connection";
 import { useStagedStore } from "@/store/staged";
 
-export function useSchedules() {
+type PreloadOptions = {
+  enabled?: boolean;
+};
+
+export function useSchedules(options: PreloadOptions = {}) {
   const connection = useConnectionStore(selectActiveInstance);
   const loadSchedules = useStagedStore((s) => s.loadSchedules);
 
@@ -16,7 +20,7 @@ export function useSchedules() {
       if (!connection) throw new Error("No active connection");
       return getSchedules(connection);
     },
-    enabled: !!connection,
+    enabled: !!connection && (options.enabled ?? true),
   });
 
   useEffect(() => {

@@ -6,11 +6,15 @@ import { getAccounts } from "@/lib/api/accounts";
 import { useConnectionStore, selectActiveInstance } from "@/store/connection";
 import { useStagedStore } from "@/store/staged";
 
+type PreloadOptions = {
+  enabled?: boolean;
+};
+
 /**
  * Fetches accounts from the API and loads them into the staged store.
  * Re-runs whenever the active connection changes.
  */
-export function useAccounts() {
+export function useAccounts(options: PreloadOptions = {}) {
   const connection = useConnectionStore(selectActiveInstance);
   const loadAccounts = useStagedStore((s) => s.loadAccounts);
 
@@ -20,7 +24,7 @@ export function useAccounts() {
       if (!connection) throw new Error("No active connection");
       return getAccounts(connection);
     },
-    enabled: !!connection,
+    enabled: !!connection && (options.enabled ?? true),
     // staleTime/gcTime/refetchOn* are set globally in queryClient.ts.
   });
 

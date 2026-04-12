@@ -214,6 +214,7 @@ export function useRulesSave() {
 
     await queryClient.invalidateQueries({ queryKey: ["rules", connection.id] });
 
+    await queryClient.invalidateQueries({ queryKey: ["budget-overview", connection.id] });
     return { succeeded, failed, idMap: {} };
   }
 

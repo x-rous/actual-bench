@@ -152,6 +152,7 @@ export function usePayeesSave() {
       await queryClient.invalidateQueries({ queryKey: ["rules", connection.id] });
     }
 
+    await queryClient.invalidateQueries({ queryKey: ["budget-overview", connection.id] });
     return { succeeded, failed, idMap };
   }
 

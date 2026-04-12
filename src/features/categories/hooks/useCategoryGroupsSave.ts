@@ -108,6 +108,7 @@ export function useCategoryGroupsSave() {
     await queryClient.invalidateQueries({ queryKey: ["categoryGroups", connection.id] });
     await queryClient.invalidateQueries({ queryKey: ["transactionCounts", "category", connection.id] });
 
+    await queryClient.invalidateQueries({ queryKey: ["budget-overview", connection.id] });
     return { succeeded, failed, idMap };
   }
 
