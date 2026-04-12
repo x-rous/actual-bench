@@ -68,7 +68,15 @@ export function useOverviewHeaderState({
     setEllipsisIndex(0);
 
     try {
-      const result = await refresh();
+      let result: OverviewRefreshResult;
+
+      try {
+        result = await refresh();
+      } catch (error) {
+        console.warn("[overview] Refresh failed", error);
+        result = { ok: false, hasPartialFailure: false };
+      }
+
       if (result.ok) {
         setLastRefreshedAt(new Date());
         setNow(Date.now());
