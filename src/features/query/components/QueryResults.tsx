@@ -123,11 +123,7 @@ function formatCellDisplay(col: string, value: unknown, centCols: Set<string>): 
   if (typeof value === "string") {
     return formatIsoDate(value) ?? value;
   }
-  if (
-    typeof value === "number" &&
-    Number.isInteger(value) &&
-    centCols.has(col)
-  ) {
+  if (typeof value === "number" && centCols.has(col)) {
     return formatCents(value);
   }
   if (typeof value === "object") return JSON.stringify(value);
@@ -169,6 +165,17 @@ function deriveRowCount(data: unknown): string | null {
  * Values are formatted the same way as in the Table view (dates localised,
  * cent columns divided by 100). The BOM ensures Excel opens the file correctly.
  */
+/**
+ * Neutralises CSV formula injection by prepending a tab to any cell value
+ * that starts with a spreadsheet formula trigger character (=, +, -, @).
+ * The tab is invisible in most spreadsheet apps but prevents formula execution.
+ */
+const FORMULA_TRIGGERS = new Set(["=", "+", "-", "@"]);
+
+function neutraliseFormula(v: string): string {
+  return FORMULA_TRIGGERS.has(v[0]) ? `\t${v}` : v;
+}
+
 function buildCsv(
   rows: Record<string, unknown>[],
   columns: string[],
@@ -176,11 +183,12 @@ function buildCsv(
 ): string {
   const BOM = "\uFEFF";
   const escape = (v: string) => `"${v.replace(/"/g, '""')}"`;
+  const cell = (v: string) => escape(neutraliseFormula(v));
 
   const header = columns.map(escape).join(",");
   const csvRows = rows.map((row) =>
     columns
-      .map((col) => escape(formatCellDisplay(col, row[col], centCols)))
+      .map((col) => cell(formatCellDisplay(col, row[col], centCols)))
       .join(",")
   );
 
@@ -437,9 +445,9 @@ export function QueryResults({
   function handleExportCsv() {
     if (!isArrayOfObjects(result)) return;
     const rows = result as Record<string, unknown>[];
-    const capped = rows.slice(0, TABLE_ROW_CAP);
-    const columns = getColumns(capped);
-    const csv = buildCsv(capped, columns, centCols);
+    // Export the full result set — TABLE_ROW_CAP only caps the preview render.
+    const columns = getColumns(rows);
+    const csv = buildCsv(rows, columns, centCols);
     downloadCsv(csv, "query-results.csv");
     toast.success("CSV downloaded");
   }
