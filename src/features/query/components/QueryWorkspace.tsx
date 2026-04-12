@@ -30,8 +30,19 @@ import {
 } from "../lib/queryStorage";
 import type { SavedQuery, QueryHistoryEntry, LintWarning, LastExecutedRequest } from "../types";
 
-const DEFAULT_QUERY =
-  '{\n  "ActualQLquery": {\n    "table": "transactions",\n    "limit": 10\n  }\n}';
+const DEFAULT_QUERY = JSON.stringify(
+  {
+    ActualQLquery: {
+      table: "transactions",
+      options: { splits: "inline" },
+      select: ["date", "payee.name", "category.name", "amount", "notes"],
+      orderBy: [{ date: "desc" }],
+      limit: 10,
+    },
+  },
+  null,
+  2
+);
 
 // ─── Left panel tab layout ────────────────────────────────────────────────────
 
