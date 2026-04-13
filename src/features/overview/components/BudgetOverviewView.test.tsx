@@ -37,6 +37,7 @@ const loadedStats: BudgetOverviewStats = {
 
 const loadedSnapshot: BudgetOverviewSnapshot = {
   stats: loadedStats,
+  budgetMode: "Envelope",
   budgetingSince: "Jan 2019",
 };
 
@@ -91,7 +92,7 @@ describe("BudgetOverviewView", () => {
 
     expect(screen.getByText("Household Budget")).toBeInTheDocument();
     expect(screen.getByText("Loading budget")).toBeInTheDocument();
-    expect(document.querySelectorAll("span[aria-hidden='true']")).toHaveLength(7);
+    expect(document.querySelectorAll("span[aria-hidden='true']")).toHaveLength(8);
   });
 
   it("shows loading placeholders while a manual refresh is in progress and updates the timestamp on success", async () => {
@@ -114,7 +115,7 @@ describe("BudgetOverviewView", () => {
     fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
 
     expect(screen.getByRole("button", { name: "Refreshing" })).toBeDisabled();
-    expect(document.querySelectorAll("span[aria-hidden='true']")).toHaveLength(7);
+    expect(document.querySelectorAll("span[aria-hidden='true']")).toHaveLength(8);
 
     await act(async () => {
       resolveRefresh?.({ ok: true, hasPartialFailure: false });

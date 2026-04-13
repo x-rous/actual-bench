@@ -107,7 +107,7 @@ export function OverviewStatsSection({
           Snapshot
         </div>
 
-        <dl className="mx-auto grid w-full max-w-6xl grid-cols-2 gap-x-3 gap-y-2 sm:grid-cols-3 md:grid-cols-7 md:gap-x-2 lg:gap-x-3">
+        <dl className="mx-auto grid w-full max-w-6xl grid-cols-2 gap-x-3 gap-y-2 sm:grid-cols-4 md:grid-cols-8 md:gap-x-2 lg:gap-x-3">
           {COUNT_STATS.map(({ key, label, icon }) => (
             <SnapshotCount
               key={key}
@@ -117,6 +117,11 @@ export function OverviewStatsSection({
               isLoading={isLoading}
             />
           ))}
+          <SnapshotText
+            label="Budget Mode"
+            value={snapshot?.budgetMode}
+            isLoading={isLoading}
+          />
           <SnapshotText
             label="Budgeting since"
             value={snapshot?.budgetingSince}

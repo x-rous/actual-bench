@@ -13,6 +13,7 @@ export type BudgetOverviewStats = Record<OverviewStatKey, number | null>;
 
 export type BudgetOverviewSnapshot = {
   stats: BudgetOverviewStats;
+  budgetMode: string | null;
   budgetingSince: string | null;
 };
 
