@@ -9,6 +9,16 @@
 - Per-connection query cache and staged data scoping — switching connections never leaks data between sessions
 - Connections are stored in session storage and cleared automatically when the tab is closed
 
+## Budget Overview
+
+- `/overview` is the default landing page after connecting or reconnecting to a budget
+- Compact snapshot row showing live saved-state metrics for transactions, accounts, payees, categories, schedules, and rules
+- Derived snapshot context includes **Budget Mode** (`Envelope`, `Tracking`, or `Unidentified`) and **Budgeting since** from the oldest transaction date
+- Manual refresh button with loading state and last-refreshed status
+- Snapshot values switch to loading placeholders immediately during budget switching or manual refresh
+- Main navigation hub for the connected budget with direct links to the core entity pages and ActualQL Queries
+- Budget Diagnostics appears as a planned disabled tool card only — the diagnostics workspace is not implemented yet
+
 ## Rules
 
 - Create, edit, and delete rules with a full condition/action builder
@@ -215,7 +225,7 @@ Transaction counts are fetched lazily when the drawer opens, gated by the same `
 
 ## Navigation & Layout
 
-- Collapsible sidebar with navigation links to all sections; collapse state persists across reloads
+- Collapsible sidebar with a standalone `Overview` item and grouped `Data Management` / `Tools` sections; collapse state persists across reloads
 - Top bar shows the active connection with a switcher dropdown, undo/redo, discard, save, and a refresh button — refresh prompts for confirmation when unsaved changes exist
 - Toast notifications for all success, error, and warning states
 - Entity counts shown in page headers
@@ -225,4 +235,4 @@ Transaction counts are fetched lazily when the drawer opens, gated by the same `
 ---
 
 > Planned features and improvements are tracked in [`agents/future-roadmap.md`](agents/future-roadmap.md).
-> When a roadmap item ships, add it to the relevant section above and log it in [`CHANGELOG.md`](CHANGELOG.md).
+> When a roadmap item ships, add it to the relevant section above and let the merged PR title feed the next GitHub Release draft.

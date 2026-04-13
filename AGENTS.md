@@ -38,19 +38,10 @@ import { generateId } from "@/lib/uuid";
 
 **Version endpoints** (`/v1/actualhttpapiversion`, `/actualserverversion`) are optional — always `Promise.allSettled()`, never block on failure.
 
-**Staged row colors** — use semantic Tailwind tokens, never hardcode Tailwind color names:
-```tsx
-// ❌ "bg-green-500"  "bg-amber-400"  "bg-muted-foreground/40"
-// ✅
-"bg-staged-new"        // new rows
-"bg-staged-updated"    // updated rows
-"bg-staged-deleted"    // deleted rows
-// tokens defined in globals.css via @theme inline
-```
 
-**Git** — never auto-commit or auto-push. Always: show diff → propose message → wait for approval. PRs target `main`. Never work directly on `main` — always use a feature or fix branch. Use `x-rous` as the GitHub username and `Manaf` as the author name for all commits and PRs.
+**Git** — never auto-commit or auto-push. Always: show diff → propose message → wait for approval. PRs target `main`. Never work directly on `main` — always use a short-lived branch with an approved prefix (`feat/*`, `fix/*`, `refactor/*`, or `docs/*`). Use `x-rous` as the GitHub username and `Manaf` as the author name for all commits and PRs.
 ```
-feat/* or fix/*  →  main  →  release (tag v1.x.x)
+feat/* | fix/* | refactor/* | docs/*  →  main  →  release (tag v1.x.x)
 ```
 
 ---
@@ -61,6 +52,7 @@ feat/* or fix/*  →  main  →  release (tag v1.x.x)
 | TanStack Query | Server snapshots (read-only) |
 | Zustand `staged.ts` | Pending mutations + undo/redo |
 | Zustand `connection.ts` | Active connection (`sessionStorage` — do NOT change to `localStorage`) |
+| Zustand `savedServers.ts` | Saved server presets (`sessionStorage`) |
 | Local state | Ephemeral UI only |
 
 ---
@@ -77,10 +69,11 @@ feat/* or fix/*  →  main  →  release (tag v1.x.x)
 | Docker changes | `docker/Dockerfile.prod` |
 | Query client config | `src/lib/queryClient.ts` |
 
-**Feature folder structure** (mandatory):
+**Feature folder structure** (mandatory baseline):
 ```
 src/features/<entity>/
   components/   hooks/   csv/   schemas/
+  lib/          utils/   # optional, when the feature needs them
 ```
 
 **Proxy responsibilities:**
@@ -104,6 +97,12 @@ Read these **before** implementing anything in the relevant area.
 | `agents/requirements/` | Before making architectural decisions |
 | `CONTRIBUTING.md` | Before touching git, workflows, or the release process |
 | `FEATURES.md` | Before and after shipping a feature — must be updated |
+| `README.md` | When entry points, setup flow, or product positioning changes |
+
+When shipping user-facing work:
+- Update `FEATURES.md` for shipped behavior.
+- Update `README.md` if the main app entry points or product positioning changed.
+- Update `agents/future-roadmap.md` when a roadmap item's status changes.
 
 ---
 

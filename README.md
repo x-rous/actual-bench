@@ -8,19 +8,20 @@
   <a href="https://github.com/x-rous/actual-bench/blob/main/LICENSE"><img src="https://img.shields.io/github/license/x-rous/actual-bench" alt="License" /></a>
 </p>
 
-A power-user workbench for [Actual Budget](https://github.com/actualbudget/actual). It connects to a self-hosted [actual-http-api](https://github.com/jhonderson/actual-http-api) server and gives you a dedicated UI for bulk operations, advanced rules management, and diagnostics, things that are difficult or impossible to do from the native Actual Budget interface.
+A power-user workbench for [Actual Budget](https://github.com/actualbudget/actual). It connects to a self-hosted [actual-http-api](https://github.com/jhonderson/actual-http-api) server and gives you a dedicated UI for bulk operations, advanced rules management, budget overview, and diagnostics, things that are difficult to do from the native Actual Budget interface.
 
 Useful for power users who want more control over their budget data, and for testers setting up or validating a fresh Actual Budget instance.
 
 ## Why actual-bench?
 
 - **Bulk CSV import/export** for every entity - seed a fresh budget with hundreds of rules, payees, categories, or schedules in one go
+- **Budget Overview homepage** - land on a compact overview with live budget metrics, budget mode, budgeting-since, and quick links into the main admin pages
 - **Advanced rules management** - visual condition/action builder, merge, duplicate, stage filtering, and template mode in one focused view
 - **Staged editing with undo/redo** - review every change locally before anything touches the server
 - **Multi-server, multi-budget** - save and switch between connections without leaking data between sessions
 - **Schedules management** - create and edit one-time and recurring schedules with full recurrence controls, amount modes, and weekend adjustment
 - **ActualQL query workspace** - run ad-hoc ActualQL queries against your budget, inspect results as table / raw JSON / scalar / collapsible tree, save and replay named query packs, and copy a cURL command for any executed query
-- **SQLite budget diagnostic** *(coming soon)* - inspect a `.sqlite` budget file client-side: table overview, row counts, and a read-only table browser
+- **Budget Diagnostics** *(planned)* - inspect exported budget snapshots in a read-only workspace with diagnostics and data browsing
 
 ## Architecture
 
@@ -31,7 +32,7 @@ Browser
               └─► Actual Budget  (SQLite budget file)
 ```
 
-All browser requests route through an internal Next.js proxy - no direct browser-to-API calls. Credentials never leave the server proxy; session storage is cleared when the tab is closed. For Docker deployments, ensure actual-bench and http-api reside on the same Docker network to allow internal network connectivity.
+All browser requests route through an internal Next.js proxy - no direct browser-to-API calls to `actual-http-api`. Connection credentials are sent only to actual-bench and proxied server-side to the API; session storage is cleared when the tab is closed. For Docker deployments, ensure actual-bench and http-api reside on the same Docker network to allow internal network connectivity.
 
 ## Screenshots
 
@@ -50,11 +51,12 @@ All browser requests route through an internal Next.js proxy - no direct browser
 ## Features
 
 - **Multi-connection support** - save and switch between multiple Actual Budget servers or budget files; staged data and query cache are scoped per connection
+- **Budget Overview** - connected budgets land on `/overview` with live snapshot metrics, budget mode, budgeting-since, refresh status, and direct links into core admin pages
 - **Staged editing** - all changes are held locally until you click Save; nothing touches the server until you confirm
 - **Undo / Redo** - step backwards and forwards through your edits before committing
-- **Accounts** - view and rename accounts, toggle on/off budget status; CSV import/export
-- **Payees** - view, rename, and delete payees; CSV import/export
-- **Categories** - view, rename, show/hide, and reorder categories within groups; CSV import/export
+- **Accounts** - create, edit, close, reopen, and delete accounts with live balance visibility; CSV import/export
+- **Payees** - view, edit, bulk-manage, and merge multiple payees; CSV import/export
+- **Categories** - manage groups and categories, visibility, and hierarchy; CSV import/export
 - **Rules** - view, filter by stage, create, edit, and merge rules with a full condition/action builder; CSV import/export
 - **Schedules** - create and manage one-time and recurring schedules with amount modes, weekend adjustment, and end conditions; overdue dates are highlighted; CSV import/export
 - **Tags** - create, rename, and color-code tags (requires Actual Budget v26.3.0+); CSV import/export
@@ -106,7 +108,7 @@ The Connect screen uses a two-step flow:
 | **Server URL** | Base URL of your actual-http-api server (e.g. `https://actual-api.example.com`) |
 | **API Key** | The `ACTUAL_API_KEY` you set on the server |
 
-Click **Validate** to fetch the list of budgets available on that server.
+Click **Load Budgets** to fetch the list of budgets available on that server.
 
 **Step 2 - Select a budget and connect**
 
@@ -115,7 +117,7 @@ Click **Validate** to fetch the list of budgets available on that server.
 | **Budget** | Pick from the list of budgets returned by the server |
 | **Encryption Password** | Only required if the budget is end-to-end encrypted |
 
-Click **Connect** to finish. The connection is saved in **session storage** - credentials are cleared automatically when the tab is closed. Multiple connections can be saved and switched between; previously saved connections appear at the top of the Connect screen for one-click reconnect.
+Click **Connect** to finish. Successful connect and reconnect flows land on **Overview**. The connection is saved in **session storage** - credentials are cleared automatically when the tab is closed. Multiple connections can be saved and switched between; previously saved connections appear at the top of the Connect screen for one-click reconnect.
 
 ## Staged Editing Workflow
 
@@ -170,7 +172,7 @@ Ready-to-use sample CSV files are included in [`public/samples csv/`](public/sam
 ## Coming Soon
 
 - **Rule diagnostics** - detect conflicting, shadowed, or redundant rules across stages
-- **SQLite budget diagnostic** - drop a `.sqlite` file to inspect tables, row counts, and schema version without uploading anything to a server
+- **Budget Diagnostics** - inspect exported budget snapshots in a read-only workspace with overview, diagnostics, and data browsing
 
 ## Known Limitations
 

@@ -5,8 +5,8 @@ Contributions are welcome — bug reports, feature requests, and pull requests a
 ## Branch Model
 
 ```
-feat/* or fix/*  ──PR──►  main  ──push──►  :edge Docker + deploy
-                               ──tag v1.x.0──►  :latest + :<version> + GitHub Release
+feat/* | fix/* | refactor/* | docs/*  ──PR──►  main  ──CI success──►  :edge Docker + deploy
+                                                    ──tag v1.x.0──►  :latest + :<version> + GitHub Release
 ```
 
 | Branch | Purpose | Docker tag |
@@ -36,7 +36,7 @@ Open an issue using the **Feature request** template. Check open issues first to
 ### Prerequisites
 
 - Node.js 20+
-- A running [actual-http-api](https://github.com/sakowicz/actual-http-api) server (or use a test budget)
+- A running [actual-http-api](https://github.com/jhonderson/actual-http-api) server (or use a test budget)
 
 ### Setup
 
@@ -93,6 +93,11 @@ The `feat/* → main` PR is the source of truth for the release draft. Two thing
 
 The PR description is for reviewers — explain what changed, why, and include screenshots where relevant. It does not appear in the changelog.
 
+For user-facing changes:
+
+- Update [FEATURES.md](FEATURES.md) when a feature ships or materially changes
+- Update [README.md](README.md) when the main app entry points or product positioning change
+
 ### What to work on
 
 Check issues labelled [`good first issue`](https://github.com/x-rous/actual-bench/issues?q=is%3Aissue+label%3A%22good+first+issue%22) or [`help wanted`](https://github.com/x-rous/actual-bench/issues?q=is%3Aissue+label%3A%22help+wanted%22).
@@ -113,8 +118,12 @@ src/
   features/
     accounts/       # Accounts page, hooks, components
     categories/     # Categories page, hooks, components
+    overview/       # Budget Overview page, snapshot, navigation cards
     payees/         # Payees page, hooks, components
+    query/          # ActualQL query workspace
     rules/          # Rules page, drawer, condition/action builder
+    schedules/      # Schedules page, hooks, components
+    tags/           # Tags page, hooks, components
   lib/api/          # Typed API functions per entity
   store/
     connection.ts   # Zustand store — saved connections (sessionStorage)
@@ -127,7 +136,7 @@ src/
 - **TypeScript** — strict mode; no `any`
 - **Styling** — Tailwind CSS v4; use `cn()` for conditional classes
 - **State** — Zustand stores for global state; TanStack Query for server data
-- **Components** — React Server Components where possible; `"use client"` only when needed
+- **Components** — prefer server components where practical, but most authenticated workbench UI is client-side; use `"use client"` for interactive staged-editing flows without hesitation
 - **Commits** — one logical change per commit; keep PRs focused
 - **IDs** — always use `generateId()` from `src/lib/uuid.ts`; never `crypto.randomUUID()` directly (fails on HTTP)
 
@@ -138,7 +147,7 @@ src/
 | Workflow | Trigger | What it does |
 |---|---|---|
 | **CI** (`.github/workflows/ci.yml`) | All pushes + PRs | Lint, type-check, test, build — must pass before any merge |
-| **Edge** (`.github/workflows/edge.yml`) | Push to `main` | Builds and pushes `:edge` + `:edge-{sha}` Docker tags, deploys to VPS |
+| **Edge** (`.github/workflows/edge.yml`) | `workflow_run` after CI succeeds on `main` | Builds and pushes the `:edge` Docker tag, deploys to VPS |
 | **Release Drafter** (`.github/workflows/release-drafter.yml`) | Push to `main` | Updates a draft GitHub Release with all merged PRs since the last tag |
 | **Release** (`.github/workflows/release.yml`) | Push `v*` tag | Runs full CI, verifies version, builds and pushes `:latest` + `:<version>` Docker tags, deploys to VPS, publishes the draft GitHub Release |
 

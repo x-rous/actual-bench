@@ -14,15 +14,14 @@
 ## Claude Session Rules
 
 **Git workflow — STRICT:**
-- Run lint (`npm run lint`) after making changes, then STOP.
 - Do NOT stage, commit, or push anything without explicit user approval.
 - Show the proposed commit title + description and wait for "yes" before touching git.
 - Never push to remote without a separate explicit confirmation.
 
 **Testing workflow:**
-- The dev server at `actual-bench-dev.nafverse.com` is linked to the source code live.
-- After lint passes, tell the user to test on the dev server. Wait for their feedback before proceeding.
-- Do NOT run `npm run build` — builds run in CI, not locally.
+- Before asking to commit a feature or fix, run `npm run lint`, `npx tsc --noEmit`, and `npm test` unless the user explicitly says not to.
+- The dev server at `actual-bench-dev.nafverse.com` is useful for manual browser validation when a change needs UI testing.
+- Do NOT run `npm run build` unless the user asks for a build-specific check or the change is likely to affect CI/build output.
 
 ---
 
@@ -47,10 +46,10 @@ All API functions live here. Every function imports `apiRequest` from `./client`
 All browser fetches route through here — no direct browser→API calls. The proxy serializes requests per-server via a `serverQueueTails` Map to prevent concurrent budget open/close races in actual-http-api. Budget-scoped paths are automatically prefixed: `path = "/accounts"` → `GET /v1/budgets/{budgetSyncId}/accounts`. The proxy currently calls `upstreamResponse.json()` on all 200 responses — binary responses (e.g. budget export ZIP) require special handling.
 
 **Entity types** (`src/types/entities.ts`)
-Internal normalized types. `Schedule` and `RecurConfig` are fully defined. `Tag` exists but is missing `color` and `description` fields (added in Actual Budget v26.3.0). `Transaction` type does not exist yet.
+Internal normalized types. `Schedule` and `RecurConfig` are fully defined. `Tag` includes `color` and `description` fields. `Transaction` type does not exist yet.
 
 **Staged store** (`src/store/staged.ts`)
-All mutations go through `stageNew`, `stageUpdate`, `stageDelete`. Data is not sent to the server until `Save` is clicked. The store holds `accounts`, `payees`, `categoryGroups`, `categories`, `rules`, `schedules` slices. All entity slices including rules are prefetched on every page via `usePreloadEntities()` in AppShell — `stagedRules` is populated as soon as the app loads.
+All mutations go through `stageNew`, `stageUpdate`, `stageDelete`. Data is not sent to the server until `Save` is clicked. The store holds `accounts`, `payees`, `categoryGroups`, `categories`, `rules`, `schedules`, and `tags` slices. Most entity slices are eagerly prefetched via `usePreloadEntities()` in AppShell, but `/overview` intentionally skips that preload path to stay lighter.
 
 **Connection** (`src/store/connection.ts`)
 `ConnectionInstance` type: `{ id, label, baseUrl, apiKey, budgetSyncId, encryptionPassword? }`. Persisted to sessionStorage via Zustand persist middleware.
@@ -91,7 +90,9 @@ RD-018 (Saved servers)       — complete
 RD-019 (Grouped categories)  — complete
 RD-020 (Rule editing improvements) — complete
 RD-023 (Rule diagnostics)    — depends on RD-007 (now complete); enhanced by RD-016 if available; unblocked
-RD-024 (SQLite diagnostic)   — independent; fully client-side (WASM SQLite)
+RD-024 (Budget diagnostics)  — independent; planned read-only exported-budget workspace
+RD-025 (Budget overview)     — complete
+RD-026 (Sidebar grouping)    — complete
 ```
 
 ---
@@ -1174,7 +1175,7 @@ type RuleDiagnostic = {
 
 ---
 
-### RD-024 — SQLite Budget File Diagnostic
+### RD-024 — Budget Diagnostics
 
 | | |
 |---|---|
@@ -1183,60 +1184,112 @@ type RuleDiagnostic = {
 | **Status** | pending |
 | **Depends on** | nothing (fully client-side) |
 
-**What:** A diagnostic view that lets users drop or pick a `.sqlite` Actual Budget file and inspect its contents entirely in the browser. No file is uploaded to any server — processing happens via WASM SQLite.
+**What:** A read-only diagnostics workspace that lets users open an exported Actual Budget snapshot locally and inspect its contents in the browser. No file is uploaded to any server — processing happens client-side, likely via WASM SQLite.
 
 **Why:**
 - Useful for testers and power users who want to inspect raw budget state without writing SQL manually
 - Complements ActualQL (RD-007) by providing a structural overview before running queries
 - Fully offline — no server-side risk or data exposure
-- Natural fit for actual-bench's "workbench" positioning
+- Fits actual-bench's workbench positioning better than a generic file browser
+
+**Current product state:**
+- Overview already exposes **Budget Diagnostics** as a planned disabled tool card
+- The diagnostics workspace itself does **not** exist yet
+- Do not add a live sidebar route until the page is implemented
 
 **Scope v1:**
-- File picker and drag-and-drop zone that reads the `.sqlite` file client-side
-- Display: file size, Actual schema version (from `migrations` or `meta` table), list of all tables with row counts
-- Read-only paginated table browser — pick any table, browse rows
+- File picker and drag-and-drop zone that reads an exported budget snapshot client-side
+- Display: file size, schema/version details, list of all tables with row counts
+- Read-only paginated table browser — pick any table and browse rows
 - Powered by [`sql.js`](https://github.com/sql-js/sql.js) or `wa-sqlite` (WASM SQLite); no native Node.js SQLite dependency
 
 **Non-goals:**
 - No file upload to actual-http-api or any server
-- No writes to the SQLite file
-- No transaction import from this view
-- No query execution in v1 (that is RD-007's scope)
+- No writes to the opened budget snapshot
+- No mutation flows from this workspace
+- No query execution in v1 (ActualQL already covers that workflow)
 
 **Files to create:**
 ```text
-src/features/sqlite-diagnostic/
-  components/SqliteDiagnosticView.tsx   — drop zone + file info + table list
-  components/TableBrowser.tsx           — paginated read-only row viewer
-  lib/sqliteReader.ts                   — sql.js wrapper: open file, list tables, count rows, fetch page
-src/app/(app)/sqlite-diagnostic/
+src/features/budget-diagnostics/
+  components/BudgetDiagnosticsView.tsx   — drop zone + file info + table list
+  components/TableBrowser.tsx            — paginated read-only row viewer
+  lib/sqliteReader.ts                    — WASM SQLite wrapper: open file, list tables, count rows, fetch page
+src/app/(app)/budget-diagnostics/
   page.tsx
 ```
 
 **Files to update:**
-- `src/components/layout/Sidebar.tsx` — add nav entry (e.g. "SQLite Diagnostic")
-- `src/app/(app)/layout.tsx` if any route-level setup is needed
+- `src/components/layout/Sidebar.tsx` — add nav entry only when the route exists
+- `src/features/overview/lib/overviewCards.ts` — switch the planned card to a live link when the workspace ships
 
 **Implementation notes:**
-- `sql.js` is loaded from CDN or bundled as a dynamic import to avoid bloating the main bundle
-- The WASM binary must be served from `public/` or imported via a worker
-- File reading uses the `FileReader` API — no server roundtrip
-- v1 is intentionally read-only and stateless; the file is never persisted between sessions
+- `sql.js` can be dynamically imported to avoid bloating the main bundle
+- The WASM binary must be served from `public/` or bundled appropriately
+- File reading should use the `FileReader` API — no server roundtrip
+- v1 should stay read-only and stateless; the opened file is never persisted between sessions
 
 **UI notes:**
-- Provide summary cards at the top: total issues, errors, warnings, infos
-- Table columns: severity, rule, issue, suggested action
-- Clicking a diagnostic should open or focus the related rule in the Rules page where possible
-- Allow filters by severity and issue type
-
-**Design guardrails:**
-- Do not attempt to reimplement Actual's full evaluation engine
-- Prefer transparent heuristics over overly clever scoring
-- False positives are acceptable if the explanation is clear and the severity is conservative
+- Show compact file summary cards at the top: filename, file size, schema/version, table count
+- Use a simple table list + row browser layout instead of trying to mimic a full database IDE
+- Keep system-table visibility explicit so power users can inspect raw structures when needed
 
 **Possible future integration:**
-- Show a small warning badge on the Rules nav item when diagnostics detect errors
-- Link to RD-021 Usage Inspector for missing-entity and reference-related issues
-- Offer export to CSV / JSON later if users find the diagnostics useful
+- Launch an ActualQL draft from a selected table/schema context
+- Offer export of a selected table view to CSV / JSON later if users find the diagnostics useful
+- Add higher-level structural checks once the basic browser exists
+
+---
+
+### RD-025 — Budget Overview Homepage
+
+| | |
+|---|---|
+| **Priority** | High |
+| **Effort** | M |
+| **Status** | complete |
+| **Depends on** | nothing |
+
+**What:** Add `/overview` as the default connected-budget homepage with a compact live snapshot and direct navigation into the main admin workflows.
+
+**Shipped scope:**
+- `/overview` route added and used as the landing page after connect/reconnect
+- Snapshot metrics for transactions, accounts, payees, categories, schedules, and rules
+- Derived snapshot context for **Budget Mode** and **Budgeting since**
+- Manual refresh with loading state and last-refreshed status
+- Overview-specific preload behavior so the app shell skips eager entity preload on `/overview`
+- Main action grids for core data-management pages and advanced tools
+- Budget Diagnostics represented as a planned disabled tool card only
+
+**Primary files:**
+- `src/app/(app)/overview/page.tsx`
+- `src/features/overview/`
+- `src/components/connect/useConnectForm.ts`
+- `src/components/layout/AppShell.tsx`
+- save hooks that invalidate `['budget-overview', connection.id]`
+
+---
+
+### RD-026 — Sidebar Navigation Grouping
+
+| | |
+|---|---|
+| **Priority** | Medium |
+| **Effort** | S |
+| **Status** | complete |
+| **Depends on** | RD-025 helpful, but not required |
+
+**What:** Reorganize the sidebar into a clearer navigation model without introducing heavy nesting or collapsible tree controls.
+
+**Shipped scope:**
+- `Overview` promoted to a standalone top-level nav item
+- `Data Management` and `Tools` rendered as lightweight non-clickable section headers
+- Active route highlighting preserved for exact and nested matches
+- Collapsed mode keeps the same icon-first behavior while hiding section labels
+- Current tools section includes ActualQL only; Budget Diagnostics intentionally stays out of the sidebar until the route exists
+- Sidebar footer/version placement and accessibility semantics were refined alongside the grouping work
+
+**Primary file:**
+- `src/components/layout/Sidebar.tsx`
 
 ---
