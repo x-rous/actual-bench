@@ -15,11 +15,11 @@ function ActionCard({ card }: { card: OverviewActionCard }) {
   const isTool = card.tone === "tool";
 
   const className = cn(
-    "group rounded-xl border px-4 py-3.5 transition-colors",
+    "group rounded-xl border px-4 py-3 transition-colors",
     isDisabled
-      ? "cursor-default border-dashed border-border/60 bg-background/35 opacity-60"
+      ? "cursor-default border-dashed border-border/50 bg-background/25 opacity-55"
       : isTool
-        ? "border-border/70 bg-muted/16 hover:border-foreground/15 hover:bg-muted/24"
+        ? "border-border/70 bg-muted/14 hover:border-foreground/15 hover:bg-muted/22"
         : "border-border/70 bg-background hover:border-foreground/15 hover:bg-accent/15"
   );
 
@@ -29,7 +29,7 @@ function ActionCard({ card }: { card: OverviewActionCard }) {
         className={cn(
           "rounded-lg border p-2",
           isDisabled
-            ? "border-border/50 bg-background/55"
+            ? "border-border/40 bg-background/45"
             : isTool
               ? "border-border/60 bg-background/70"
               : "border-border/70 bg-muted/25"
@@ -38,21 +38,35 @@ function ActionCard({ card }: { card: OverviewActionCard }) {
         <card.icon
           className={cn(
             "h-4 w-4 text-muted-foreground",
-            isDisabled && "text-muted-foreground/70"
+            isDisabled && "text-muted-foreground/55"
           )}
         />
       </div>
 
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
-          <div className="text-sm font-medium tracking-tight sm:text-[15px]">{card.label}</div>
+          <div
+            className={cn(
+              "text-[15px] font-semibold tracking-tight text-foreground/95",
+              isDisabled && "text-foreground/60"
+            )}
+          >
+            {card.label}
+          </div>
           {isDisabled && (
-            <span className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground">
+            <span className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground/80">
               Planned
             </span>
           )}
         </div>
-        <p className="mt-1 text-sm leading-5 text-muted-foreground">{card.description}</p>
+        <p
+          className={cn(
+            "mt-1 min-h-[3.75rem] text-[13px] leading-5 text-muted-foreground/85",
+            isDisabled && "text-muted-foreground/70"
+          )}
+        >
+          {card.description}
+        </p>
       </div>
 
       {!isDisabled && (
@@ -75,10 +89,10 @@ function ActionCard({ card }: { card: OverviewActionCard }) {
 export function OverviewNavigationSection() {
   return (
     <div className="space-y-6">
-      <section className="space-y-3 pt-2">
+      <section className="space-y-3 pt-1">
         <div className="space-y-1">
           <h2 className="text-lg font-semibold tracking-tight">{MANAGE_DATA_TITLE}</h2>
-          <p className="max-w-6xl text-sm text-muted-foreground">{MANAGE_DATA_DESCRIPTION}</p>
+          <p className="max-w-5xl text-[13px] leading-5 text-muted-foreground/80">{MANAGE_DATA_DESCRIPTION}</p>
         </div>
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
           {ENTITY_CARDS.map((card) => (
@@ -87,10 +101,10 @@ export function OverviewNavigationSection() {
         </div>
       </section>
 
-      <section className="space-y-3 border-t border-border/60 pt-6">
+      <section className="space-y-3 pt-1">
         <div className="space-y-1">
           <h2 className="text-lg font-semibold tracking-tight">Advanced Tools</h2>
-          <p className="max-w-3xl text-sm text-muted-foreground">{ADVANCED_TOOLS_DESCRIPTION}</p>
+          <p className="max-w-3xl text-[13px] leading-5 text-muted-foreground/80">{ADVANCED_TOOLS_DESCRIPTION}</p>
         </div>
 
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">

@@ -11,8 +11,11 @@ export type OverviewStatKey =
 
 export type BudgetOverviewStats = Record<OverviewStatKey, number | null>;
 
+export type BudgetMode = "Envelope" | "Tracking" | "Unidentified";
+
 export type BudgetOverviewSnapshot = {
   stats: BudgetOverviewStats;
+  budgetMode: BudgetMode | null;
   budgetingSince: string | null;
 };
 

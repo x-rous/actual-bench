@@ -41,7 +41,7 @@ export const ENTITY_CARDS: OverviewActionCard[] = [
     id: "payees",
     label: "Payees",
     description:
-      "Clean up and maintain payees through editing, bulk actions, and merge-based consolidation.",
+      "Clean up payees through editing, bulk updates, and merging multiple payees.",
     href: "/payees",
     icon: Users,
     tone: "entity",

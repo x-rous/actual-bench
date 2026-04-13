@@ -1,6 +1,6 @@
 import { runQuery } from "@/lib/api/query";
 import type { ConnectionInstance } from "@/store/connection";
-import type { BudgetOverviewSnapshot, OverviewStatKey } from "../types";
+import type { BudgetMode, BudgetOverviewSnapshot, OverviewStatKey } from "../types";
 
 type ScalarCountQuery = {
   ActualQLquery: {
@@ -53,6 +53,14 @@ export const RULE_COUNT_QUERY = {
 
 export const SCHEDULE_COUNT_QUERY = {
   ActualQLquery: { table: "schedules", calculate: { $count: "$id" } },
+} as const satisfies ScalarCountQuery;
+
+export const ZERO_BUDGET_COUNT_QUERY = {
+  ActualQLquery: { table: "zero_budgets", calculate: { $count: "$id" } },
+} as const satisfies ScalarCountQuery;
+
+export const REFLECT_BUDGET_COUNT_QUERY = {
+  ActualQLquery: { table: "reflect_budgets", calculate: { $count: "$id" } },
 } as const satisfies ScalarCountQuery;
 
 export const OLDEST_TRANSACTION_QUERY = {
@@ -116,6 +124,21 @@ function formatBudgetingSince(dateString: string): string {
   });
 }
 
+function deriveBudgetMode(
+  zeroBudgetCount: number,
+  reflectBudgetCount: number
+): BudgetMode {
+  if (zeroBudgetCount > reflectBudgetCount) {
+    return "Envelope";
+  }
+
+  if (reflectBudgetCount > zeroBudgetCount) {
+    return "Tracking";
+  }
+
+  return "Unidentified";
+}
+
 async function fetchOverviewCountWithRetry(
   connection: ConnectionInstance,
   statKey: OverviewCountKey
@@ -127,6 +150,28 @@ async function fetchOverviewCountWithRetry(
       return await runScalarCountQuery(connection, query);
     } catch (error) {
       logOverviewQueryFailure(`${statKey} count`, attempt, error);
+      if (attempt === OVERVIEW_QUERY_MAX_ATTEMPTS) {
+        return null;
+      }
+    }
+  }
+
+  return null;
+}
+
+async function fetchBudgetModeWithRetry(
+  connection: ConnectionInstance
+): Promise<BudgetMode | null> {
+  for (let attempt = 1; attempt <= OVERVIEW_QUERY_MAX_ATTEMPTS; attempt += 1) {
+    try {
+      const [zeroBudgetCount, reflectBudgetCount] = await Promise.all([
+        runScalarCountQuery(connection, ZERO_BUDGET_COUNT_QUERY),
+        runScalarCountQuery(connection, REFLECT_BUDGET_COUNT_QUERY),
+      ]);
+
+      return deriveBudgetMode(zeroBudgetCount, reflectBudgetCount);
+    } catch (error) {
+      logOverviewQueryFailure("budgetMode", attempt, error);
       if (attempt === OVERVIEW_QUERY_MAX_ATTEMPTS) {
         return null;
       }
@@ -174,18 +219,20 @@ export async function fetchEntityCount(
 export async function fetchAllOverviewStats(
   connection: ConnectionInstance
 ): Promise<BudgetOverviewSnapshot> {
-  const [entries, budgetingSince] = await Promise.all([
+  const [entries, budgetMode, budgetingSince] = await Promise.all([
     Promise.all(
       COUNT_QUERY_KEYS.map(async (statKey) => {
         const value = await fetchOverviewCountWithRetry(connection, statKey);
         return [statKey, value] as const;
       })
     ),
+    fetchBudgetModeWithRetry(connection),
     fetchBudgetingSinceWithRetry(connection),
   ]);
 
   return {
     stats: Object.fromEntries(entries) as Record<OverviewStatKey, number | null>,
+    budgetMode,
     budgetingSince,
   };
 }

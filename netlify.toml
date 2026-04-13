@@ -1,0 +1,12 @@
+[build]
+  command = "npm run build"
+  publish = ".next-build"
+
+[build.environment]
+  NODE_VERSION = "20"
+  NEXT_TELEMETRY_DISABLED = "1"
+  # Ensures Netlify knows where your custom build folder is
+  NEXT_DIST_DIR = ".next-build"
+
+[[plugins]]
+  package = "@netlify/plugin-nextjs"

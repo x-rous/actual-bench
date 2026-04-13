@@ -19,24 +19,27 @@ export function BudgetOverviewView() {
   return (
     <div className="min-h-0 flex-1 overflow-auto">
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-4 px-4 py-4 sm:px-6 sm:py-5">
-        <OverviewHeader
-          budgetLabel={connection?.label ?? ""}
-          statusLabel={headerState.statusLabel}
-          statusDotClass={headerState.statusDotClass}
-          refreshButtonLabel={headerState.refreshButtonLabel}
-          refreshStatusLabel={headerState.refreshStatusLabel}
-          isRefreshing={headerState.isRefreshing}
-          onRefresh={headerState.handleRefresh}
-        />
+        <div className="space-y-3">
+          <OverviewHeader
+            budgetLabel={connection?.label ?? ""}
+            statusLabel={headerState.statusLabel}
+            statusDotClass={headerState.statusDotClass}
+            refreshButtonLabel={headerState.refreshButtonLabel}
+            refreshStatusLabel={headerState.refreshStatusLabel}
+            isRefreshing={headerState.isRefreshing}
+            onRefresh={headerState.handleRefresh}
+          />
 
-        <OverviewStatsSection
-          snapshot={
-            headerState.isRefreshing
-              ? undefined
-              : snapshot ?? undefined
-          }
-          isLoading={isLoading || headerState.isRefreshing}
-        />
+          <OverviewStatsSection
+            snapshot={
+              headerState.isRefreshing
+                ? undefined
+                : snapshot ?? undefined
+            }
+            isLoading={isLoading || headerState.isRefreshing}
+          />
+        </div>
+
         <OverviewNavigationSection />
       </div>
     </div>

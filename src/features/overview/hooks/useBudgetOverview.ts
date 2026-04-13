@@ -13,6 +13,7 @@ function hasPartialFailure(snapshot: BudgetOverviewSnapshot | null | undefined):
   if (!snapshot) return false;
 
   return (
+    snapshot.budgetMode === null ||
     snapshot.budgetingSince === null ||
     Object.values(snapshot.stats).some((value) => value === null)
   );
