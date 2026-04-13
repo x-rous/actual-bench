@@ -646,26 +646,31 @@ GET /budgets/{id}/actualserverversion → { version: "x.y.z" }
 |---|---|
 | **Priority** | Low |
 | **Effort** | S |
-| **Status** | pending |
+| **Status** | complete |
 | **Depends on** | nothing |
 
-**What:** Actual Budget stores free-text notes on accounts, categories, and budget months. The API can read these. Display them as a tooltip or expandable inline element in the respective tables.
+**What:** Actual Budget stores free-text notes on accounts, categories, category groups, and budget months. The API can read these. Display them from the Accounts and Categories tables without adding a dedicated notes column.
 
 **API endpoints:**
 ```
-GET /budgets/{id}/notes/account-{accountId}    → { note: string }
-GET /budgets/{id}/notes/category-{categoryId}  → { note: string }
+GET /budgets/{id}/notes/account/{accountId}    → { note: string }
+GET /budgets/{id}/notes/category/{entityId}    → { note: string }   // categories and category groups
 ```
 
 **Files to update:**
-- `src/lib/api/` — add `notes.ts` with `getAccountNote(connection, accountId)` and `getCategoryNote(connection, categoryId)`
-- `src/features/accounts/components/AccountsTable.tsx` — show a note icon (`StickyNote`) in the row if note exists; tooltip on hover shows the text
-- `src/features/categories/components/CategoriesTable.tsx` — same pattern
+- `src/lib/api/notes.ts` — add `getNotesIndex(connection)`, `getAccountNote(connection, accountId)`, and `getCategoryLikeNote(connection, entityId)`
+- `src/hooks/` — add read-only note hooks for the preload index and lazy note body fetch
+- `src/components/ui/entity-note-button.tsx` — shared note trigger + dialog
+- `src/features/accounts/components/AccountsTable.tsx` — show a persistent note icon beside the account name when a note exists
+- `src/features/categories/components/CategoriesTable.tsx` — same pattern for categories and category groups
 
 **Implementation notes:**
-- Fetch notes lazily — do not block page load. Use `useQuery` per entity with `enabled: !!entityId`, `staleTime: 300_000` (intentional override of the global `Infinity` default — notes may change outside the app).
+- Preload note presence with a single ActualQL query against the `notes` table (`select: "id"`), then lazily fetch the note body only when the user opens it.
+- Keep notes in TanStack Query only — they are read-only server snapshots and do not belong in the staged store.
+- Use `GET /notes/category/{id}` for both category and category-group notes.
+- Use `staleTime: 300_000` (intentional override of the global `Infinity` default — notes may change outside the app).
 - Read-only for now. When the API adds write support for notes, promote to an editable inline field.
-- Do not add a notes column — too much visual noise. Use a subtle icon in the row actions area.
+- Do not add a notes column — too much visual noise. Use a subtle visible icon inline with the entity name.
 
 ---
 

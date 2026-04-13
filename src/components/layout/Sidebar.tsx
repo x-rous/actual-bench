@@ -99,7 +99,10 @@ type SidebarNavLinkProps = {
 };
 
 function SidebarNavLink({ item, collapsed, pathname }: SidebarNavLinkProps) {
-  const active = pathname === item.href || pathname.startsWith(item.href + "/");
+  const isExactMatch = pathname === item.href;
+  const isAncestorMatch = pathname.startsWith(item.href + "/");
+  const active = isExactMatch || isAncestorMatch;
+  const ariaCurrent = isExactMatch ? "page" : isAncestorMatch ? "location" : undefined;
   const Icon = item.icon;
 
   return (
@@ -108,7 +111,7 @@ function SidebarNavLink({ item, collapsed, pathname }: SidebarNavLinkProps) {
       title={collapsed ? item.label : undefined}
       aria-label={collapsed ? item.label : undefined}
       data-active={active ? "true" : undefined}
-      aria-current={active ? "page" : undefined}
+      aria-current={ariaCurrent}
       className={cn(
         "flex items-center rounded-md px-2 py-1.5 text-sm font-medium transition-colors",
         collapsed ? "justify-center" : "gap-2.5 px-3",

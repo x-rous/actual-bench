@@ -51,6 +51,7 @@
 - CSV import and export
 - Duplicate name detection with visual warning
 - Rules count displayed per account — click it to jump to the rules list filtered to that account
+- Accounts with notes show a note indicator beside the name; click it to open the read-only note text without leaving the table
 - Every delete and close action (single and bulk) shows a confirmation dialog pre-populated with the account's outstanding balance, transaction count, and rule reference count before staging the mutation; accounts with non-zero balances receive an explicit warning about budget consistency
 - Info button on each row opens the Usage Inspector drawer (see below)
 
@@ -78,6 +79,7 @@
 - Sort by name
 - CSV import and export with full group hierarchy preserved
 - Duplicate group name prevention
+- Categories and category groups with notes show a note indicator beside the name; click it to open the read-only note text inline from the table
 - Every delete action confirms with an impact dialog: single category shows transaction count and rule references; group delete additionally shows the child category count and aggregated transaction count across all children with a cascade warning; bulk delete computes effective group and category sets, deduplicates implicit deletions, and aggregates totals
 - Info button on each category and group row opens the Usage Inspector drawer (see below)
 

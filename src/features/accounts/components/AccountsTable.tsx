@@ -4,10 +4,12 @@ import { useState, useRef, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { useHighlight } from "@/hooks/useHighlight";
 import { useInlineEdit } from "@/hooks/useInlineEdit";
+import { useNotesIndex } from "@/hooks/useNotesIndex";
 import { useTableSelection } from "@/hooks/useTableSelection";
 import { useTransactionCountsForIds } from "@/hooks/useTransactionCountsForIds";
 import { NameInput } from "@/components/ui/editable-cell";
 import type { DoneAction } from "@/components/ui/editable-cell";
+import { EntityNoteButton } from "@/components/ui/entity-note-button";
 import {
   Archive, ArchiveRestore, RotateCcw, Trash2, RefreshCw,
   ArrowUpDown, ArrowUp, ArrowDown, AlertTriangle, Info,
@@ -111,6 +113,12 @@ export function AccountsTable({
 
   // ── Account balances ─────────────────────────────────────────────────────────
   const { data: balances } = useAccountBalances();
+  const { data: notesIndex } = useNotesIndex();
+
+  const accountIdsWithNotes = useMemo(
+    () => new Set(notesIndex?.accountIdsWithNotes ?? []),
+    [notesIndex]
+  );
 
   // ── Duplicate name detection ─────────────────────────────────────────────────
   const duplicateNames = useMemo(() => {
@@ -483,7 +491,6 @@ export function AccountsTable({
                     />
                   </th>
                   <th className="w-1 p-0" />
-
                   <th
                     className="cursor-pointer select-none px-2 py-1.5 text-left hover:bg-muted/30"
                     onClick={() => toggleSort("name")}
@@ -492,6 +499,10 @@ export function AccountsTable({
                       Account Name
                       <SortIndicator col="name" sortCol={sortCol} sortDir={sortDir} />
                     </span>
+                  </th>
+
+                  <th className="w-8 p-0">
+                    <span className="sr-only">Notes</span>
                   </th>
 
                   <th className="w-32 px-4 py-1.5 text-right">
@@ -609,6 +620,19 @@ export function AccountsTable({
                               </span>
                             )}
                           </div>
+                        )}
+                      </td>
+
+                      {/* Note */}
+                      <td className="w-8 px-0 py-0.5 text-center">
+                        {!isNew && accountIdsWithNotes.has(entity.id) && (
+                          <EntityNoteButton
+                            entityId={entity.id}
+                            entityKind="account"
+                            entityLabel={entity.name || "Unnamed account"}
+                            entityTypeLabel="Account"
+                            className="mx-auto"
+                          />
                         )}
                       </td>
 

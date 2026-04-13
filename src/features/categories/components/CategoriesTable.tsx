@@ -4,8 +4,10 @@ import React, { useState, useRef, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { useHighlight } from "@/hooks/useHighlight";
 import { useInlineEdit } from "@/hooks/useInlineEdit";
+import { useNotesIndex } from "@/hooks/useNotesIndex";
 import { useTableSelection } from "@/hooks/useTableSelection";
 import { useTransactionCountsForIds } from "@/hooks/useTransactionCountsForIds";
+import { EntityNoteButton } from "@/components/ui/entity-note-button";
 import { NameInput } from "@/components/ui/editable-cell";
 import type { DoneAction } from "@/components/ui/editable-cell";
 import {
@@ -149,6 +151,12 @@ export function CategoriesTable({
   const categoryRuleCount = useMemo(
     () => buildRuleReferenceMap(stagedRules, ["category"]),
     [stagedRules]
+  );
+  const { data: notesIndex } = useNotesIndex();
+
+  const rawEntityIdsWithNotes = useMemo(
+    () => new Set(notesIndex?.rawEntityIdsWithNotes ?? []),
+    [notesIndex]
   );
 
   // ── Lazy tx counts for delete confirm dialogs ─────────────────────────────────
@@ -533,6 +541,19 @@ export function CategoriesTable({
           </div>
         </td>
 
+        {/* Note */}
+        <td className="w-8 px-0 py-0.5 text-center">
+          {!isNew && rawEntityIdsWithNotes.has(entity.id) && (
+            <EntityNoteButton
+              entityId={entity.id}
+              entityKind="category"
+              entityLabel={entity.name || "Unnamed group"}
+              entityTypeLabel="Category group"
+              className="mx-auto"
+            />
+          )}
+        </td>
+
         {/* Type badge */}
         <td className="w-48 px-2 py-0.5">
           <Badge variant={entity.isIncome ? "status-active" : "secondary"} className="text-xs font-normal">
@@ -702,6 +723,19 @@ export function CategoriesTable({
               </div>
             )}
           </div>
+        </td>
+
+        {/* Note */}
+        <td className="w-8 px-0 py-0.5 text-center">
+          {!isNew && rawEntityIdsWithNotes.has(entity.id) && (
+            <EntityNoteButton
+              entityId={entity.id}
+              entityKind="category"
+              entityLabel={entity.name || "Unnamed category"}
+              entityTypeLabel="Category"
+              className="mx-auto"
+            />
+          )}
         </td>
 
         {/* Move to group */}
@@ -890,6 +924,9 @@ export function CategoriesTable({
                     <SortIndicator active={sortNameDir !== null} dir={sortNameDir ?? "asc"} />
                   </span>
                 </th>
+                <th className="w-8 p-0">
+                  <span className="sr-only">Notes</span>
+                </th>
                 <th className="w-48 px-2 py-1.5 text-left text-xs font-medium text-muted-foreground">Type / Group</th>
                 <th className="w-36 px-2 py-1.5 text-left text-xs font-medium text-muted-foreground">Visibility</th>
                 <th className="w-44 px-2 py-1.5 text-left text-xs font-medium text-muted-foreground">Rules</th>
@@ -902,7 +939,7 @@ export function CategoriesTable({
               {(typeFilter === "all" || typeFilter === "income") && (
                 <>
                   <tr>
-                    <td colSpan={7} className="border-b border-border/80 bg-muted/90 px-3 py-1.5">
+                    <td colSpan={8} className="border-b border-border/80 bg-muted/90 px-3 py-1.5">
                       <div className="flex items-center justify-between">
                         <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                           Income
@@ -912,7 +949,7 @@ export function CategoriesTable({
                   </tr>
                   {incomeGroups.length === 0 && (
                     <tr>
-                      <td colSpan={7} className="px-4 py-3 text-xs text-muted-foreground">
+                      <td colSpan={8} className="px-4 py-3 text-xs text-muted-foreground">
                         <span>No income groups{search || visibilityFilter !== "all" || rulesFilter !== "all" ? " matching the current filters" : ""}.</span>
                         {(search || visibilityFilter !== "all" || rulesFilter !== "all") && (
                           <button className="ml-2 underline hover:text-foreground" onClick={() => { setSearch(""); setVisibilityFilter("all"); setRulesFilter("all"); }}>
@@ -931,7 +968,7 @@ export function CategoriesTable({
                         {!collapsed && cats.map((cat) => renderCategoryRow(cat, group))}
                         {!collapsed && !group.isDeleted && (
                           <tr>
-                            <td colSpan={7} className="border-b border-border/80 bg-muted/90 px-3 py-1.5">
+                            <td colSpan={8} className="border-b border-border/80 bg-muted/90 px-3 py-1.5">
                               <button
                                 onClick={() => addCategory(group.entity.id)}
                                 className="text-xs text-muted-foreground hover:text-foreground"
@@ -951,7 +988,7 @@ export function CategoriesTable({
               {(typeFilter === "all" || typeFilter === "expense") && (
                 <>
                   <tr>
-                    <td colSpan={7} className="border-b border-border/60 bg-muted/40 px-3 py-1">
+                    <td colSpan={8} className="border-b border-border/60 bg-muted/40 px-3 py-1">
                       <div className="flex items-center justify-between">
                         <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                           Expense
@@ -968,7 +1005,7 @@ export function CategoriesTable({
                   </tr>
                   {expenseGroups.length === 0 && (
                     <tr>
-                      <td colSpan={7} className="px-4 py-3 text-xs text-muted-foreground">
+                      <td colSpan={8} className="px-4 py-3 text-xs text-muted-foreground">
                         <span>No expense groups{search || visibilityFilter !== "all" || rulesFilter !== "all" ? " matching the current filters" : ""}.</span>
                         {(search || visibilityFilter !== "all" || rulesFilter !== "all") && (
                           <button className="ml-2 underline hover:text-foreground" onClick={() => { setSearch(""); setVisibilityFilter("all"); setRulesFilter("all"); }}>
@@ -987,7 +1024,7 @@ export function CategoriesTable({
                         {!collapsed && cats.map((cat) => renderCategoryRow(cat, group))}
                         {!collapsed && !group.isDeleted && (
                           <tr>
-                            <td colSpan={7} className="border-b border-border/20 px-2 py-0.5 pl-14">
+                            <td colSpan={8} className="border-b border-border/20 px-2 py-0.5 pl-14">
                               <button
                                 onClick={() => addCategory(group.entity.id)}
                                 className="text-xs text-muted-foreground hover:text-foreground"
