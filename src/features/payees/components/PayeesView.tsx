@@ -12,6 +12,10 @@ import { usePayees } from "../hooks/usePayees";
 import { PayeesTable } from "./PayeesTable";
 import { RuleDrawer } from "@/features/rules/components/RuleDrawer";
 import type { RuleSeed } from "@/features/rules/components/RuleDrawer";
+import { PayeesTableOverlays } from "./PayeesTableOverlays";
+import type { PayeeDeleteIntent } from "./PayeesTableOverlays";
+import { PayeesMergeDialog } from "./PayeesMergeDialog";
+import type { PayeeMergeState } from "./PayeesMergeDialog";
 import { exportPayeesToCsv } from "../csv/payeesCsvExport";
 import { importPayeesFromCsv } from "../csv/payeesCsvImport";
 
@@ -19,6 +23,9 @@ export function PayeesView() {
   const importInputRef = useRef<HTMLInputElement>(null);
   const [ruleDrawerOpen, setRuleDrawerOpen] = useState(false);
   const [ruleSeed, setRuleSeed] = useState<RuleSeed | undefined>(undefined);
+  const [deleteIntent, setDeleteIntent] = useState<PayeeDeleteIntent | null>(null);
+  const [inspectId, setInspectId] = useState<string | null>(null);
+  const [mergeDialog, setMergeDialog] = useState<PayeeMergeState | null>(null);
 
   const { isLoading, isError, error, refetch } = usePayees();
 
@@ -128,13 +135,30 @@ export function PayeesView() {
         </>
       }
     >
-      <PayeesTable onCreateRule={handleCreateRule} />
+      <PayeesTable
+        onCreateRule={handleCreateRule}
+        onDeleteIntentChange={setDeleteIntent}
+        onInspectIdChange={setInspectId}
+        onMergeDialogChange={setMergeDialog}
+      />
 
       <RuleDrawer
         open={ruleDrawerOpen}
         onOpenChange={setRuleDrawerOpen}
         ruleId={null}
         seed={ruleSeed}
+      />
+
+      <PayeesTableOverlays
+        deleteIntent={deleteIntent}
+        onDeleteIntentChange={setDeleteIntent}
+        inspectId={inspectId}
+        onInspectIdChange={setInspectId}
+      />
+
+      <PayeesMergeDialog
+        mergeDialog={mergeDialog}
+        onMergeDialogChange={setMergeDialog}
       />
     </PageLayout>
   );

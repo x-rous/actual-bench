@@ -1,6 +1,6 @@
 "use client";
 
-import { Search, X } from "lucide-react";
+import { ChevronsDownUp, ChevronsUpDown, Search, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { PillGroup } from "@/components/ui/pill-group";
 
@@ -33,6 +33,8 @@ export function FilterBar({
   typeFilter, onTypeChange,
   rulesFilter, onRulesFilterChange,
   filteredCount, totalCount,
+  allCollapsed,
+  onToggleCollapseAll,
   selectedCount,
   onBulkDelete, onDeselect,
 }: {
@@ -41,6 +43,8 @@ export function FilterBar({
   typeFilter: TypeFilter; onTypeChange: (v: TypeFilter) => void;
   rulesFilter: RulesFilter; onRulesFilterChange: (v: RulesFilter) => void;
   filteredCount: number; totalCount: number;
+  allCollapsed: boolean;
+  onToggleCollapseAll: () => void;
   selectedCount: number;
   onBulkDelete: () => void;
   onDeselect: () => void;
@@ -79,6 +83,27 @@ export function FilterBar({
       <PillGroup options={VISIBILITY_OPTIONS} value={visibilityFilter} onChange={onVisibilityChange} />
       <PillGroup options={TYPE_OPTIONS} value={typeFilter} onChange={onTypeChange} />
       <PillGroup options={RULES_OPTIONS} value={rulesFilter} onChange={onRulesFilterChange} />
+
+      <div className="flex items-center gap-1">
+        <Button
+          size="xs"
+          variant="ghost"
+          onClick={onToggleCollapseAll}
+          aria-label={allCollapsed ? "Expand all groups" : "Collapse all groups"}
+        >
+          {allCollapsed ? (
+            <>
+              <ChevronsUpDown />
+              Expand All
+            </>
+          ) : (
+            <>
+              <ChevronsDownUp />
+              Collapse All
+            </>
+          )}
+        </Button>
+      </div>
 
       {hasFilters && (
         <button

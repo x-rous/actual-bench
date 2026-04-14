@@ -61,7 +61,7 @@ export type ConditionOrAction = {
   /** Absent for `delete-transaction` actions. */
   field?: string;
   op: string;
-  value: string | number | boolean | null | string[] | AmountRange;
+  value: string | number | boolean | null | string[] | AmountRange | RecurConfig;
   type?: string;
   /** Present on actions when the user has enabled template (Handlebars) mode. */
   options?: { template?: string };

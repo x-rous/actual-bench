@@ -28,11 +28,14 @@ export type EntityMaps = {
 };
 
 /** Safely convert any condition/action value to a plain string for display. */
-export function valueToString(value: string | number | boolean | null | string[] | AmountRange | undefined): string {
+export function valueToString(
+  value: string | number | boolean | null | string[] | AmountRange | RecurConfig | undefined
+): string {
   if (value == null) return "";
   if (typeof value === "boolean") return value ? "true" : "false";
   if (typeof value === "number") return String(value);
   if (Array.isArray(value)) return value.filter(Boolean).join(", ");
+  if (isRecurConfig(value)) return recurSummary(value) || "recurring";
   if (typeof value === "object") {
     const r = value as AmountRange;
     return `${r.num1} – ${r.num2}`;

@@ -22,12 +22,16 @@
 ## Rules
 
 - Create, edit, and delete rules with a full condition/action builder
+- Rule editor starts new rules with a guided default condition (`Payee is`) and a default action row, but keeps validation neutral (no immediate error banners); required fields validate when rows are edited or save is attempted, with inline warnings for risky catch-all and destructive rule combinations
+- Closing the rule drawer with unsaved edits prompts for confirmation instead of silently discarding the draft
+- Deleting a rule from the drawer now uses the same confirmation flow as deleting from the rules table
 - Three execution stages: `pre`, `default`, `post`
 - Conditions support AND / OR logic across fields: payee, imported payee, category, account, amount, notes, and more
 - Operators include `is`, `is not`, `contains`, `matches`, `lt`, `lte`, `gt`, `gte`, `oneOf`, and others; the `matches` operator shows a regex syntax hint
 - Actions include set payee, set category, set account, set amount, set notes, link schedule, and more
 - Action template mode: toggle the `{}` button on any action to enter a Handlebars expression (e.g. `{{regex imported_payee 'foo' 'bar'}}`); templates are displayed in an amber monospace chip in the rules table
 - Merge multiple selected rules into one via a dedicated merge dialog
+- Merge dialog now shares the same editor sections, row identity model, and validation behavior as the main rule drawer, avoiding combobox state jumps when rows are added or removed
 - Duplicate a rule with one click
 - Filter the rules list by stage, payee, or category
 - Search resolves entity names in condition values — searching "Groceries" finds rules where a `oneOf` condition references that payee or category by ID
@@ -59,6 +63,7 @@
 
 - Create, rename, and delete payees
 - Transfer payees (auto-generated for inter-account transfers) shown as a separate filterable type
+- Transfer payees show a disabled selection checkbox in the bulk-select column to make their non-selectable status explicit
 - Rules count displayed per payee — click it to jump to the rules list filtered to that payee
 - Filter by name, type (regular / transfer / all), and whether a payee has associated rules
 - Bulk delete and bulk merge — select 2 or more regular payees, click Merge; the **first payee you check** becomes the merge target (survives) regardless of table sort order, the rest are absorbed; the operation is staged and shown in the Draft Changes panel as "Merge Deleted" before being sent to the server on Save; supports Ctrl+Z undo
@@ -72,6 +77,8 @@
 
 - Create and manage category groups (income or expense type)
 - Create categories within groups
+- Category group reassignment opens an on-demand editor instead of rendering every group dropdown up front, keeping large category tables responsive when many groups are expanded
+- Income categories stay locked to the single income parent group; only expense categories can be moved between groups
 - Rename groups and categories inline
 - Toggle visibility (hidden / visible) per category or per entire group
 - Collapsible group rows — expand or collapse all groups with a single button
@@ -86,6 +93,8 @@
 ## Schedules
 
 - Create, edit, and delete one-time and recurring schedules
+- Closing the schedule drawer with unsaved edits prompts for confirmation instead of silently discarding the draft
+- Deleting a schedule from the drawer now uses the same impact-aware confirmation flow as deleting from the schedules table
 - Recurring schedules support daily, weekly, monthly, and yearly frequencies with a configurable interval
 - Monthly schedules support pattern-based targeting: specific day of the month (including "last day"), or a weekday-of-week position (e.g. "2nd Friday")
 - Weekend adjustment: when a scheduled date falls on a weekend, choose to move it to the nearest Friday (before) or Monday (after)
@@ -95,6 +104,7 @@
 - Auto-add toggle: when enabled, Actual Budget automatically posts a transaction when the schedule is due
 - Linked rule display: each schedule has an underlying rule managed by the server; open it directly in the Rules editor via the "Edit as Rule" button in the schedule drawer
 - Rules linked to schedules are shown read-only in the Rules table — the `link-schedule` action displays the resolved schedule name and cannot be created or edited manually
+- Schedule-generated rules are excluded from bulk selection and cannot be merged; manage them from the Schedules page instead
 - Filter schedules by name, payee, account, frequency, auto-add state, and completion status
 - Bulk select with bulk delete
 - CSV import and export
@@ -219,8 +229,11 @@ Transaction counts are fetched lazily when the drawer opens, gated by the same `
 ## Keyboard & Table UX
 
 - Inline cell editing triggered by double-click, Enter, or F2
+- Accounts, Payees, Categories, and Tags now share one inline text editor with immediate focus-on-open and consistent commit/cancel keyboard behavior
 - Full keyboard navigation: arrow keys move between cells, Tab moves forward, Escape cancels
 - Multi-select rows with checkboxes; select-all / deselect-all toggle in the header
+- Disabled bulk-selection checkboxes use dimmed styling with explanatory tooltips for system-managed rows
+- Row action buttons appear on hover or keyboard focus, and remain visible on rows with save errors or delete/revert recovery actions
 - Bulk-add: add multiple empty rows at once with a configurable count
 - Global undo/redo keyboard shortcuts: Ctrl/Cmd+Z to undo, Ctrl/Cmd+Shift+Z or Ctrl+Y to redo; suppressed inside text inputs so native browser undo is not interrupted
 - Filter bars stay pinned to the top of each table when scrolling long lists (Payees, Accounts, Categories, Tags)
@@ -232,7 +245,7 @@ Transaction counts are fetched lazily when the drawer opens, gated by the same `
 - Toast notifications for all success, error, and warning states
 - Entity counts shown in page headers
 - Help menu in the sidebar with links to the GitHub repository, issue tracker, and changelog
-- Server version info shown at the bottom of the connection dropdown — displays `actual-http-api` and Actual Budget server versions when available
+- Top bar shows a compact version cluster beside the active connection with `API` and `Actual` version badges when available
 
 ---
 

@@ -2,15 +2,17 @@
 
 import { Button } from "@/components/ui/button";
 
-export function BulkAddBar({
+type TableBulkAddBarProps = {
+  bulkCount: number;
+  onBulkCountChange: (count: number) => void;
+  onAdd: (count: number) => void;
+};
+
+export function TableBulkAddBar({
   bulkCount,
   onBulkCountChange,
   onAdd,
-}: {
-  bulkCount: number;
-  onBulkCountChange: (n: number) => void;
-  onAdd: (n: number) => void;
-}) {
+}: TableBulkAddBarProps) {
   return (
     <div className="flex items-center gap-2 border-t border-border/30 px-3 py-1.5">
       <Button

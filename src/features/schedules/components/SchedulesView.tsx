@@ -12,6 +12,8 @@ import { exportSchedulesToCsv } from "../csv/schedulesCsvExport";
 import { importSchedulesFromCsv } from "../csv/schedulesCsvImport";
 import { SchedulesTable } from "./SchedulesTable";
 import { ScheduleFormDrawer } from "./ScheduleFormDrawer";
+import { SchedulesTableOverlays } from "./SchedulesTableOverlays";
+import type { ScheduleDeleteIntent } from "./SchedulesTableOverlays";
 import { RuleDrawer } from "@/features/rules/components/RuleDrawer";
 
 export function SchedulesView() {
@@ -29,6 +31,8 @@ export function SchedulesView() {
   const [editingScheduleId, setEditingScheduleId] = useState<string | null>(null);
   const [ruleDrawerOpen, setRuleDrawerOpen] = useState(false);
   const [editingRuleId, setEditingRuleId]   = useState<string | null>(null);
+  const [deleteIntent, setDeleteIntent] = useState<ScheduleDeleteIntent | null>(null);
+  const [inspectId, setInspectId] = useState<string | null>(null);
 
   const scheduleCount = Object.values(stagedSchedules).filter((s) => !s.isDeleted).length;
 
@@ -124,7 +128,12 @@ export function SchedulesView() {
         </>
       }
     >
-      <SchedulesTable onEdit={openEdit} onEditAsRule={handleEditAsRule} />
+      <SchedulesTable
+        onEdit={openEdit}
+        onEditAsRule={handleEditAsRule}
+        onDeleteIntentChange={setDeleteIntent}
+        onInspectIdChange={setInspectId}
+      />
 
       <ScheduleFormDrawer
         open={drawerOpen}
@@ -137,6 +146,13 @@ export function SchedulesView() {
         open={ruleDrawerOpen}
         onOpenChange={setRuleDrawerOpen}
         ruleId={editingRuleId}
+      />
+
+      <SchedulesTableOverlays
+        deleteIntent={deleteIntent}
+        onDeleteIntentChange={setDeleteIntent}
+        inspectId={inspectId}
+        onInspectIdChange={setInspectId}
       />
     </PageLayout>
   );

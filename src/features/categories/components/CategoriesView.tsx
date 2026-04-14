@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { Download, Upload, ChevronsUpDown, ChevronsDownUp } from "lucide-react";
+import { Download, Upload } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { PageLayout } from "@/components/layout/PageLayout";
@@ -12,6 +12,8 @@ import { useCategoryGroups } from "../hooks/useCategoryGroups";
 import { CategoriesTable } from "./CategoriesTable";
 import { RuleDrawer } from "@/features/rules/components/RuleDrawer";
 import type { RuleSeed } from "@/features/rules/components/RuleDrawer";
+import { CategoriesTableOverlays } from "./CategoriesTableOverlays";
+import type { CategoryDeleteIntent, CategoryInspectTarget } from "./CategoriesTableOverlays";
 import { exportCategoriesToCsv } from "../csv/categoriesCsvExport";
 import { importCategoriesFromCsv } from "../csv/categoriesCsvImport";
 
@@ -23,6 +25,8 @@ export function CategoriesView() {
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
   const [ruleDrawerOpen, setRuleDrawerOpen] = useState(false);
   const [ruleSeed, setRuleSeed] = useState<RuleSeed | undefined>(undefined);
+  const [deleteIntent, setDeleteIntent] = useState<CategoryDeleteIntent | null>(null);
+  const [inspectTarget, setInspectTarget] = useState<CategoryInspectTarget | null>(null);
 
   function handleCreateRule(categoryId: string) {
     setRuleSeed({
@@ -39,11 +43,6 @@ export function CategoriesView() {
 
   const groupCount = Object.values(stagedGroups).filter((s) => !s.isDeleted).length;
   const categoryCount = Object.values(stagedCats).filter((s) => !s.isDeleted).length;
-  const allGroupIds = Object.keys(stagedGroups);
-  const allCollapsed = allGroupIds.length > 0 && allGroupIds.every((id) => collapsedGroups.has(id));
-
-  function handleCollapseAll() { setCollapsedGroups(new Set(allGroupIds)); }
-  function handleExpandAll()   { setCollapsedGroups(new Set()); }
 
   function handleExportCsv() {
     const csv = exportCategoriesToCsv(stagedGroups, stagedCats);
@@ -118,16 +117,6 @@ export function CategoriesView() {
       scrollManaged
       actions={
         <>
-          <Button
-            variant="ghost" size="sm"
-            className="h-7 text-xs text-muted-foreground"
-            onClick={allCollapsed ? handleExpandAll : handleCollapseAll}
-            title={allCollapsed ? "Expand all groups" : "Collapse all groups"}
-          >
-            {allCollapsed
-              ? <><ChevronsUpDown className="mr-1 h-3.5 w-3.5" />Expand All</>
-              : <><ChevronsDownUp className="mr-1 h-3.5 w-3.5" />Collapse All</>}
-          </Button>
           <input
             ref={importInputRef}
             type="file"
@@ -150,6 +139,8 @@ export function CategoriesView() {
         collapsedGroups={collapsedGroups}
         setCollapsedGroups={setCollapsedGroups}
         onCreateRule={handleCreateRule}
+        onDeleteIntentChange={setDeleteIntent}
+        onInspectTargetChange={setInspectTarget}
       />
 
       <RuleDrawer
@@ -157,6 +148,13 @@ export function CategoriesView() {
         onOpenChange={setRuleDrawerOpen}
         ruleId={null}
         seed={ruleSeed}
+      />
+
+      <CategoriesTableOverlays
+        deleteIntent={deleteIntent}
+        onDeleteIntentChange={setDeleteIntent}
+        inspectTarget={inspectTarget}
+        onInspectTargetChange={setInspectTarget}
       />
     </PageLayout>
   );

@@ -1,61 +1,31 @@
 "use client";
 
-import { useState, useRef, useEffect, useMemo } from "react";
+import { useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { useHighlight } from "@/hooks/useHighlight";
-import { useInlineEdit } from "@/hooks/useInlineEdit";
+import { useEditableGrid } from "@/hooks/useEditableGrid";
 import { useTableSelection } from "@/hooks/useTableSelection";
-import { useTransactionCountsForIds } from "@/hooks/useTransactionCountsForIds";
-import { NameInput } from "@/components/ui/editable-cell";
 import type { DoneAction } from "@/components/ui/editable-cell";
 import {
-  RotateCcw, Trash2, RefreshCw,
-  ArrowUpDown, ArrowUp, ArrowDown, AlertTriangle, Info,
+  ArrowUpDown, ArrowUp, ArrowDown,
 } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import {
-  Dialog, DialogContent, DialogHeader, DialogTitle,
-  DialogDescription, DialogFooter,
-} from "@/components/ui/dialog";
-import { ConfirmDialog } from "@/components/ui/confirm-dialog";
-import type { ConfirmState } from "@/components/ui/confirm-dialog";
-import { cn } from "@/lib/utils";
+import { TableBulkAddBar } from "@/components/ui/table-bulk-add-bar";
 import { useStagedStore } from "@/store/staged";
 import { generateId } from "@/lib/uuid";
 import { buildRuleReferenceMap } from "@/lib/referenceCheck";
-import { buildPayeeDeleteWarning, buildPayeeBulkDeleteWarning } from "@/lib/usageWarnings";
-import { UsageInspectorDrawer } from "@/features/usage-inspector/components/UsageInspectorDrawer";
 import type { StagedEntity } from "@/types/staged";
 import type { Payee } from "@/types/entities";
 import { FilterBar } from "./FilterBar";
+import { PayeesTableRow } from "./PayeesTableRow";
+import type { PayeeDeleteIntent } from "./PayeesTableOverlays";
+import type { PayeeMergeState } from "./PayeesMergeDialog";
 import type { TypeFilter, RulesFilter, SortCol, SortDir } from "./FilterBar";
-
-// ─── Delete intent ────────────────────────────────────────────────────────────
-
-type DeleteIntent = {
-  /** Server-side IDs for $oneof tx-count query. Empty when entity is isNew. */
-  ids: string[];
-  title: string;
-  onConfirm: () => void;
-  // Single delete
-  entityLabel?: string;
-  entityRuleCount?: number;
-  // Bulk delete
-  bulkServerCount?: number;
-  bulkNewCount?: number;
-  bulkSkippedCount?: number;
-  bulkRuleCount?: number;
-};
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
 const NAVIGABLE_COLS = ["name"] as const;
 type NavigableCol = (typeof NAVIGABLE_COLS)[number];
-type CellId = { rowId: string; colId: NavigableCol };
 type PayeeRow = StagedEntity<Payee>;
-type MergeCandidate = { id: string; name: string };
-type MergeState = { candidates: MergeCandidate[]; targetId: string };
 
 // ─── Sort helpers ──────────────────────────────────────────────────────────────
 
@@ -66,32 +36,18 @@ function SortIndicator({ col, sortCol, sortDir }: { col: SortCol; sortCol: SortC
     : <ArrowDown className="ml-1 inline h-3 w-3" />;
 }
 
-// ─── BulkAddBar ────────────────────────────────────────────────────────────────
-
-function BulkAddBar({ bulkCount, onBulkCountChange, onAdd }: {
-  bulkCount: number; onBulkCountChange: (n: number) => void; onAdd: (n: number) => void;
-}) {
-  return (
-    <div className="flex items-center gap-2 border-t border-border/30 px-3 py-1.5">
-      <Button variant="ghost" size="xs" className="text-muted-foreground hover:text-foreground" onClick={() => onAdd(1)}>
-        + Add row
-      </Button>
-      <span className="text-xs text-muted-foreground">or add</span>
-      <input
-        type="number" min={1} max={100} value={bulkCount}
-        onChange={(e) => onBulkCountChange(Math.max(1, Math.min(100, Number(e.target.value))))}
-        className="h-6 w-12 rounded border border-border bg-background px-1.5 text-center text-xs outline-none focus:ring-1 focus:ring-ring"
-      />
-      <span className="text-xs text-muted-foreground">rows</span>
-      <Button variant="outline" size="xs" onClick={() => onAdd(bulkCount)}>Add</Button>
-    </div>
-  );
-}
-
 // ─── PayeesTable ───────────────────────────────────────────────────────────────
 
-export function PayeesTable({ onCreateRule }: {
+export function PayeesTable({
+  onCreateRule,
+  onDeleteIntentChange,
+  onInspectIdChange,
+  onMergeDialogChange,
+}: {
   onCreateRule?: (payeeId: string, payeeName: string) => void;
+  onDeleteIntentChange: (intent: PayeeDeleteIntent | null) => void;
+  onInspectIdChange: (id: string | null) => void;
+  onMergeDialogChange: (state: PayeeMergeState | null) => void;
 }) {
   // ── Filter / sort state ──────────────────────────────────────────────────────
   const [search, setSearch] = useState("");
@@ -101,20 +57,11 @@ export function PayeesTable({ onCreateRule }: {
   const [sortDir, setSortDir] = useState<SortDir>("asc");
 
   // ── Cell selection + editing state ───────────────────────────────────────────
-  const {
-    selectedCell, editingCell, editStartChar,
-    selectCell: _selectCell, startEdit, commitEdit,
-  } = useInlineEdit<CellId>();
   const [bulkCount, setBulkCount] = useState(5);
 
   // ── Multi-select state ───────────────────────────────────────────────────────
   const { selectedIds, toggleSelect: toggleSelectRow, toggleSelectAll: _toggleSelectAll, clearSelection } = useTableSelection();
-  const [deleteIntent, setDeleteIntent] = useState<DeleteIntent | null>(null);
-  const [inspectId, setInspectId] = useState<string | null>(null);
 
-  const [mergeDialog, setMergeDialog] = useState<MergeState | null>(null);
-
-  const containerRef  = useRef<HTMLDivElement>(null);
   const router        = useRouter();
   const highlightedId = useHighlight();
 
@@ -134,40 +81,6 @@ export function PayeesTable({ onCreateRule }: {
     () => buildRuleReferenceMap(stagedRules, ["payee", "imported_payee"]),
     [stagedRules]
   );
-
-  // ── Lazy tx counts for delete confirm dialogs ─────────────────────────────────
-  const { data: txCounts, isLoading: txLoading } = useTransactionCountsForIds(
-    "payee",
-    deleteIntent?.ids ?? [],
-    { enabled: !!deleteIntent && deleteIntent.ids.length > 0 }
-  );
-
-  const txTotal = deleteIntent?.ids.length
-    ? (txCounts ? [...txCounts.values()].reduce((a, b) => a + b, 0) : undefined)
-    : 0;
-
-  const confirmState: ConfirmState | null = deleteIntent
-    ? {
-        title: deleteIntent.title,
-        message:
-          deleteIntent.bulkServerCount !== undefined
-            ? buildPayeeBulkDeleteWarning(
-                deleteIntent.bulkServerCount,
-                deleteIntent.bulkNewCount ?? 0,
-                deleteIntent.bulkSkippedCount ?? 0,
-                deleteIntent.bulkRuleCount ?? 0,
-                txTotal,
-                txLoading && deleteIntent.ids.length > 0
-              )
-            : buildPayeeDeleteWarning(
-                deleteIntent.entityLabel ?? "",
-                deleteIntent.entityRuleCount ?? 0,
-                txTotal,
-                txLoading && deleteIntent.ids.length > 0
-              ),
-        onConfirm: deleteIntent.onConfirm,
-      }
-    : null;
 
   // ── Duplicate name detection ─────────────────────────────────────────────────
   const duplicateNames = useMemo(() => {
@@ -228,6 +141,29 @@ export function PayeesTable({ onCreateRule }: {
     });
   }, [baseRows, rulesFilter, payeeRuleCount]);
 
+  const rowIds = useMemo(() => rows.map((row) => row.entity.id), [rows]);
+
+  const {
+    containerRef,
+    selectedCell,
+    editingCell,
+    editStartChar,
+    selectCell,
+    startEditing,
+    commitCell,
+    moveFrom,
+    tabFrom,
+    handleGridKeyDown,
+  } = useEditableGrid<NavigableCol>({
+    rowIds,
+    columns: NAVIGABLE_COLS,
+    canEditCell: (cell) => {
+      const row = staged[cell.rowId];
+      return !!row && !row.isDeleted && !row.entity.transferAccountId;
+    },
+    onAddRowAtEnd: search ? undefined : () => addRows(1, true),
+  });
+
   function toggleSort(col: SortCol) {
     if (sortCol === col) {
       if (sortDir === "asc") { setSortDir("desc"); }
@@ -249,49 +185,6 @@ export function PayeesTable({ onCreateRule }: {
     _toggleSelectAll(visibleSelectableIds, allVisibleSelected);
   }
 
-  // ── Focus management ─────────────────────────────────────────────────────────
-  useEffect(() => {
-    if (!selectedCell || editingCell) return;
-    containerRef.current
-      ?.querySelector<HTMLElement>(`[data-cell="${selectedCell.rowId}:${selectedCell.colId}"]`)
-      ?.focus({ preventScroll: false });
-  }, [selectedCell, editingCell]);
-
-  // ── Navigation helpers ───────────────────────────────────────────────────────
-  function selectCell(rowId: string, colId: NavigableCol) {
-    _selectCell({ rowId, colId });
-  }
-
-  function moveFrom(rowId: string, colId: NavigableCol, rowDelta: number, colDelta: number) {
-    const ri = rows.findIndex((r) => r.entity.id === rowId);
-    const ci = NAVIGABLE_COLS.indexOf(colId);
-    const nr = ri + rowDelta;
-    const nc = Math.max(0, Math.min(NAVIGABLE_COLS.length - 1, ci + colDelta));
-    if (nr < 0 || nr >= rows.length) return;
-    selectCell(rows[nr].entity.id, NAVIGABLE_COLS[nc]);
-  }
-
-  function tabFrom(rowId: string, colId: NavigableCol, shift: boolean) {
-    const ri = rows.findIndex((r) => r.entity.id === rowId);
-    const ci = NAVIGABLE_COLS.indexOf(colId);
-    const d = shift ? -1 : 1;
-    const nc = ci + d;
-    if (nc >= 0 && nc < NAVIGABLE_COLS.length) {
-      selectCell(rowId, NAVIGABLE_COLS[nc]);
-    } else if (d > 0 && ri < rows.length - 1) {
-      selectCell(rows[ri + 1].entity.id, NAVIGABLE_COLS[0]);
-    } else if (d > 0 && ri === rows.length - 1 && !search) {
-      addRows(1, true);
-    } else if (d < 0 && ri > 0) {
-      selectCell(rows[ri - 1].entity.id, NAVIGABLE_COLS[NAVIGABLE_COLS.length - 1]);
-    }
-  }
-
-  // ── Editing helpers ──────────────────────────────────────────────────────────
-  function startEditing(rowId: string, colId: NavigableCol, startChar?: string) {
-    startEdit({ rowId, colId }, startChar);
-  }
-
   function handleNameDone(rowId: string, value: string, action: DoneAction) {
     if (action !== "cancel") {
       const trimmed = value.trim();
@@ -300,7 +193,7 @@ export function PayeesTable({ onCreateRule }: {
         stageUpdate("payees", rowId, { name: trimmed });
       }
     }
-    commitEdit({ rowId, colId: "name" });
+    commitCell(rowId, "name");
     if (action === "down") moveFrom(rowId, "name", 1, 0);
     else if (action === "up") moveFrom(rowId, "name", -1, 0);
     else if (action === "tab") tabFrom(rowId, "name", false);
@@ -336,7 +229,7 @@ export function PayeesTable({ onCreateRule }: {
     const totalRuleCount = deletableIds.reduce((sum, id) => sum + (payeeRuleCount.get(id) ?? 0), 0);
     const capturedIds = [...deletableIds];
 
-    setDeleteIntent({
+    onDeleteIntentChange({
       ids: serverIds,
       title: `Delete ${count} payee${count !== 1 ? "s" : ""}?`,
       bulkServerCount: serverIds.length,
@@ -360,18 +253,18 @@ export function PayeesTable({ onCreateRule }: {
         !!s && !s.isDeleted && !s.isNew && !s.entity.transferAccountId
       );
     if (selectedRegular.length < 2) return;
-    setMergeDialog({
+    onMergeDialogChange({
       candidates: selectedRegular.map((r) => ({ id: r.entity.id, name: r.entity.name })),
       targetId:   selectedRegular[0].entity.id,
+      onConfirm: (targetId) => {
+        const mergeIds = selectedRegular
+          .map((row) => row.entity.id)
+          .filter((id) => id !== targetId);
+        pushUndo();
+        stagePayeeMerge(targetId, mergeIds);
+        clearSelection();
+      },
     });
-  }
-
-  function confirmMerge(state: MergeState) {
-    const mergeIds = state.candidates.filter((c) => c.id !== state.targetId).map((c) => c.id);
-    pushUndo();
-    stagePayeeMerge(state.targetId, mergeIds);
-    clearSelection();
-    setMergeDialog(null);
   }
 
   // ── Paste from Excel / Sheets ─────────────────────────────────────────────────
@@ -410,32 +303,31 @@ export function PayeesTable({ onCreateRule }: {
     }
   }
 
-  // ── Keyboard handler ─────────────────────────────────────────────────────────
-  function handleKeyDown(e: React.KeyboardEvent<HTMLDivElement>) {
-    if (!selectedCell) return;
-    if (editingCell?.rowId === selectedCell.rowId && editingCell?.colId === selectedCell.colId) return;
-    const row = rows.find((r) => r.entity.id === selectedCell.rowId);
-    if (!row) return;
-
-    switch (e.key) {
-      case "ArrowDown":  e.preventDefault(); moveFrom(selectedCell.rowId, selectedCell.colId, 1, 0); break;
-      case "ArrowUp":    e.preventDefault(); moveFrom(selectedCell.rowId, selectedCell.colId, -1, 0); break;
-      case "ArrowRight": e.preventDefault(); moveFrom(selectedCell.rowId, selectedCell.colId, 0, 1); break;
-      case "ArrowLeft":  e.preventDefault(); moveFrom(selectedCell.rowId, selectedCell.colId, 0, -1); break;
-      case "Tab": e.preventDefault(); tabFrom(selectedCell.rowId, selectedCell.colId, e.shiftKey); break;
-      case "Enter": case "F2":
-        e.preventDefault();
-        if (!row.isDeleted && !row.entity.transferAccountId) startEditing(selectedCell.rowId, "name");
-        break;
-      default:
-        if (
-          e.key.length === 1 && !e.ctrlKey && !e.metaKey &&
-          selectedCell.colId === "name" &&
-          !row.isDeleted && !row.entity.transferAccountId
-        ) {
-          startEditing(selectedCell.rowId, "name", e.key);
-        }
+  function handleOpenRules(payeeId: string, payeeName: string, ruleCount: number) {
+    if (ruleCount > 0) {
+      router.push(`/rules?payeeId=${payeeId}`);
+      return;
     }
+
+    if (onCreateRule) {
+      onCreateRule(payeeId, payeeName);
+      return;
+    }
+
+    router.push("/rules?new=1");
+  }
+
+  function handleRequestDelete(entity: Payee, ruleCount: number, isNew: boolean) {
+    onDeleteIntentChange({
+      ids: isNew ? [] : [entity.id],
+      title: "Delete payee?",
+      entityLabel: entity.name || "Unnamed",
+      entityRuleCount: ruleCount,
+      onConfirm: () => {
+        pushUndo();
+        stageDelete("payees", entity.id);
+      },
+    });
   }
 
   // ── Render ───────────────────────────────────────────────────────────────────
@@ -449,7 +341,7 @@ export function PayeesTable({ onCreateRule }: {
 
   return (
     <>
-      <div ref={containerRef} className="flex min-h-0 flex-1 flex-col overflow-hidden outline-none" onKeyDown={handleKeyDown} onPaste={handlePaste} tabIndex={-1}>
+      <div ref={containerRef} className="flex min-h-0 flex-1 flex-col overflow-hidden outline-none" onKeyDown={handleGridKeyDown} onPaste={handlePaste} tabIndex={-1}>
         <FilterBar
           search={search} onSearchChange={setSearch}
           typeFilter={typeFilter} onTypeChange={setTypeFilter}
@@ -485,7 +377,13 @@ export function PayeesTable({ onCreateRule }: {
                       checked={allVisibleSelected}
                       ref={(el) => { if (el) el.indeterminate = someVisibleSelected && !allVisibleSelected; }}
                       onChange={toggleSelectAll}
-                      className="h-3.5 w-3.5 cursor-pointer rounded accent-primary"
+                      disabled={selectableRows.length === 0}
+                      className="h-3.5 w-3.5 rounded accent-primary disabled:cursor-default disabled:opacity-50"
+                      title={
+                        selectableRows.length === 0
+                          ? "No regular payees in the current view can be selected"
+                          : "Select all visible regular payees"
+                      }
                     />
                   </th>
                   <th className="w-1 p-0" />
@@ -520,181 +418,31 @@ export function PayeesTable({ onCreateRule }: {
 
               <tbody>
                 {rows.map((row) => {
-                  const { entity, isNew, isUpdated, isDeleted, saveError } = row;
+                  const { entity, isDeleted } = row;
                   const isTransfer = !!entity.transferAccountId;
-                  const isDuplicate = !isDeleted && duplicateNames.has(entity.name.trim().toLowerCase());
-                  const nameSelected = selectedCell?.rowId === entity.id && selectedCell?.colId === "name";
-                  const nameEditing  = editingCell?.rowId  === entity.id && editingCell?.colId  === "name";
-                  const isRowSelected = !isTransfer && selectedIds.has(entity.id);
-
+                  const isNameEditing = editingCell?.rowId === entity.id && editingCell.colId === "name";
                   return (
-                    <tr
+                    <PayeesTableRow
                       key={entity.id}
-                      data-row-id={entity.id}
-                      className={cn(
-                        "group/row border-b border-border/30 border-l-2 border-l-transparent transition-colors",
-                        highlightedId === entity.id && "bg-primary/20 ring-2 ring-inset ring-primary/40",
-                        highlightedId !== entity.id && isRowSelected && "bg-primary/10",
-                        highlightedId !== entity.id && !isRowSelected && saveError && "bg-destructive/5 border-l-destructive",
-                        highlightedId !== entity.id && !isRowSelected && !saveError && isDeleted && "opacity-50 border-l-muted-foreground/30",
-                        highlightedId !== entity.id && !isRowSelected && !saveError && !isDeleted && isNew && "bg-green-50/30 dark:bg-green-950/10 border-l-green-500",
-                        highlightedId !== entity.id && !isRowSelected && !saveError && !isDeleted && !isNew && isUpdated && "bg-amber-50/30 dark:bg-amber-950/10 border-l-amber-400",
-                      )}
-                    >
-                      {/* Checkbox — transfer payees are not selectable */}
-                      <td className="w-9 px-3 py-0.5">
-                        {!isTransfer && (
-                          <input
-                            type="checkbox"
-                            checked={isRowSelected}
-                            onChange={(e) => toggleSelectRow(entity.id, e.target.checked)}
-                            onClick={(e) => e.stopPropagation()}
-                            className="h-3.5 w-3.5 cursor-pointer rounded accent-primary"
-                          />
-                        )}
-                      </td>
-
-                      {/* State indicator */}
-                      <td className="w-1 p-0 pl-0.5">
-                        <div
-                          title={saveError}
-                          className={cn(
-                            "h-4 w-0.5 rounded-full",
-                            saveError && "bg-destructive",
-                            !saveError && isDeleted && "bg-muted-foreground/30",
-                            !saveError && !isDeleted && isNew && "bg-green-500",
-                            !saveError && !isDeleted && !isNew && isUpdated && "bg-amber-400",
-                          )}
-                        />
-                      </td>
-
-                      {/* Name */}
-                      <td
-                        data-cell={`${entity.id}:name`}
-                        tabIndex={nameSelected ? 0 : -1}
-                        className={cn(
-                          "cursor-default px-2 py-0.5 outline-none",
-                          nameSelected && !nameEditing && "bg-primary/10 ring-1 ring-inset ring-primary/50",
-                          nameEditing && "ring-1 ring-inset ring-primary",
-                          isTransfer && "cursor-default",
-                        )}
-                        onClick={() => {
-                          if (nameSelected && !isDeleted && !isTransfer) {
-                            startEditing(entity.id, "name");
-                          } else {
-                            selectCell(entity.id, "name");
-                          }
-                        }}
-                        onFocus={() => { if (!editingCell) selectCell(entity.id, "name"); }}
-                      >
-                        {nameEditing && !isTransfer ? (
-                          <NameInput
-                            initialValue={entity.name}
-                            startChar={editStartChar}
-                            onDone={(val, action) => handleNameDone(entity.id, val, action)}
-                          />
-                        ) : (
-                          <div className="flex flex-col">
-                            <span className={cn(
-                              "flex items-center gap-1 leading-6",
-                              isDeleted && "line-through",
-                              !entity.name && "text-xs italic text-muted-foreground/60",
-                            )}>
-                              {entity.name || "empty name"}
-                              {isDuplicate && (
-                                <AlertTriangle className="h-3 w-3 shrink-0 text-amber-500" aria-label="Duplicate name" />
-                              )}
-                            </span>
-                            {saveError && (
-                              <span className="text-xs text-destructive leading-tight pb-0.5">
-                                {saveError}
-                              </span>
-                            )}
-                          </div>
-                        )}
-                      </td>
-
-                      {/* Type */}
-                      <td className="w-28 px-2 py-0.5">
-                        <Badge
-                          variant={isTransfer ? "secondary" : "outline"}
-                          className="text-xs font-normal"
-                        >
-                          {isTransfer ? "Transfer" : "Regular"}
-                        </Badge>
-                      </td>
-
-                      {/* Rules count */}
-                      <td className="w-44 px-2 py-0.5">
-                        {(() => {
-                          const count = payeeRuleCount.get(entity.id) ?? 0;
-                          const label = count === 0
-                            ? "create rule"
-                            : count === 1
-                              ? "1 associated rule"
-                              : `${count} associated rules`;
-                          return !isDeleted
-                            ? (
-                              <button
-                                className="inline-flex items-center rounded bg-purple-100 px-1.5 py-0.5 text-xs font-medium text-purple-700 hover:bg-purple-200 dark:bg-purple-900/40 dark:text-purple-300 dark:hover:bg-purple-900/60"
-                                onClick={() => count > 0
-                                  ? router.push(`/rules?payeeId=${entity.id}`)
-                                  : onCreateRule ? onCreateRule(entity.id, entity.name) : router.push("/rules?new=1")}
-                                title={count > 0 ? "View rules for this payee" : "Create a rule for this payee"}
-                              >
-                                {label}
-                              </button>
-                            )
-                            : null;
-                        })()}
-                      </td>
-
-                      {/* Row actions */}
-                      <td className="w-24 px-1 py-0.5">
-                        <div className="flex items-center justify-end gap-0.5 opacity-0 transition-opacity group-hover/row:opacity-100">
-                          {saveError ? (
-                            <Button
-                              variant="ghost" size="icon-xs"
-                              title="Clear error and retry"
-                              onClick={() => clearSaveError("payees", entity.id)}
-                            >
-                              <RefreshCw />
-                            </Button>
-                          ) : isDeleted ? (
-                            <Button variant="ghost" size="icon-xs" title="Undo delete" onClick={() => revertEntity("payees", entity.id)}>
-                              <RotateCcw />
-                            </Button>
-                          ) : isTransfer ? null : (
-                            <>
-                              <Button
-                                variant="ghost" size="icon-xs" title="Delete"
-                                className="text-destructive hover:text-destructive"
-                                onClick={() => {
-                                  setDeleteIntent({
-                                    ids: isNew ? [] : [entity.id],
-                                    title: "Delete payee?",
-                                    entityLabel: entity.name || "Unnamed",
-                                    entityRuleCount: payeeRuleCount.get(entity.id) ?? 0,
-                                    onConfirm: () => { pushUndo(); stageDelete("payees", entity.id); },
-                                  });
-                                }}
-                              >
-                                <Trash2 />
-                              </Button>
-                              <Button variant="ghost" size="icon-xs" title="Inspect usage" aria-label="Inspect usage"
-                                onClick={() => setInspectId(entity.id)}>
-                                <Info />
-                              </Button>
-                              {(isNew || isUpdated) && (
-                                <Button variant="ghost" size="icon-xs" title="Revert" onClick={() => revertEntity("payees", entity.id)}>
-                                  <RotateCcw />
-                                </Button>
-                              )}
-                            </>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
+                      row={row}
+                      highlightedId={highlightedId}
+                      isRowSelected={!isTransfer && selectedIds.has(entity.id)}
+                      isNameSelected={selectedCell?.rowId === entity.id && selectedCell.colId === "name"}
+                      isNameEditing={isNameEditing}
+                      editStartChar={isNameEditing ? editStartChar : undefined}
+                      isDuplicate={!isDeleted && duplicateNames.has(entity.name.trim().toLowerCase())}
+                      ruleCount={payeeRuleCount.get(entity.id) ?? 0}
+                      onToggleSelect={toggleSelectRow}
+                      onSelectNameCell={(id) => selectCell(id, "name")}
+                      onStartEditingName={(id) => startEditing(id, "name")}
+                      onDoneName={handleNameDone}
+                      onOpenRules={handleOpenRules}
+                      onClearSaveError={(id) => clearSaveError("payees", id)}
+                      onRevert={(id) => revertEntity("payees", id)}
+                      onRequestDelete={handleRequestDelete}
+                      onInspect={onInspectIdChange}
+                      isAnotherCellEditing={!!editingCell}
+                    />
                   );
                 })}
               </tbody>
@@ -702,80 +450,8 @@ export function PayeesTable({ onCreateRule }: {
         )}
         </div>
 
-        <BulkAddBar bulkCount={bulkCount} onBulkCountChange={setBulkCount} onAdd={(n) => addRows(n, true)} />
+        <TableBulkAddBar bulkCount={bulkCount} onBulkCountChange={setBulkCount} onAdd={(n) => addRows(n, true)} />
       </div>
-
-      <ConfirmDialog
-        open={!!deleteIntent}
-        onOpenChange={(open) => { if (!open) setDeleteIntent(null); }}
-        state={confirmState}
-      />
-
-      <UsageInspectorDrawer
-        entityId={inspectId}
-        entityType="payee"
-        open={!!inspectId}
-        onOpenChange={(open) => { if (!open) setInspectId(null); }}
-      />
-
-      {/* Merge dialog */}
-      <Dialog open={mergeDialog !== null} onOpenChange={(open) => { if (!open) setMergeDialog(null); }}>
-        <DialogContent showCloseButton={false}>
-          <DialogHeader>
-            <DialogTitle>Merge payees</DialogTitle>
-            <DialogDescription>
-              Select the payee to keep. The others will be merged into it and removed.
-              All transactions and rules will be updated automatically.
-              This change is staged and can be undone until you save.
-            </DialogDescription>
-          </DialogHeader>
-
-          {mergeDialog && (
-            <div className="flex flex-col gap-1 py-1">
-              {mergeDialog.candidates.map((c, i) => {
-                const isTarget = c.id === mergeDialog.targetId;
-                return (
-                  <label
-                    key={c.id}
-                    className={cn(
-                      "flex cursor-pointer items-center gap-2.5 rounded-md border px-3 py-2 text-sm transition-colors",
-                      isTarget
-                        ? "border-primary bg-primary/5 font-medium"
-                        : "border-border hover:bg-muted/40"
-                    )}
-                  >
-                    <input
-                      type="radio"
-                      name="merge-target"
-                      value={c.id}
-                      checked={isTarget}
-                      onChange={() => setMergeDialog({ ...mergeDialog, targetId: c.id })}
-                      className="accent-primary"
-                    />
-                    <span className="flex-1 truncate">{c.name || <em className="text-muted-foreground">empty name</em>}</span>
-                    {i === 0 && !isTarget && (
-                      <span className="text-[10px] text-muted-foreground">first selected</span>
-                    )}
-                    {isTarget && (
-                      <span className="text-[10px] font-medium text-primary">keep</span>
-                    )}
-                  </label>
-                );
-              })}
-            </div>
-          )}
-
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setMergeDialog(null)}>Cancel</Button>
-            <Button
-              variant="default"
-              onClick={() => { if (mergeDialog) confirmMerge(mergeDialog); }}
-            >
-              Merge
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </>
   );
 }

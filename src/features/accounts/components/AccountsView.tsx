@@ -12,12 +12,16 @@ import { useAccounts } from "../hooks/useAccounts";
 import { AccountsTable } from "./AccountsTable";
 import { RuleDrawer } from "@/features/rules/components/RuleDrawer";
 import type { RuleSeed } from "@/features/rules/components/RuleDrawer";
+import { AccountsTableOverlays } from "./AccountsTableOverlays";
+import type { AccountDeleteIntent } from "./AccountsTableOverlays";
 import { exportAccountsToCsv } from "../csv/accountsCsvExport";
 import { importAccountsFromCsv } from "../csv/accountsCsvImport";
 
 export function AccountsView() {
   const [ruleDrawerOpen, setRuleDrawerOpen] = useState(false);
   const [ruleSeed, setRuleSeed] = useState<RuleSeed | undefined>(undefined);
+  const [deleteIntent, setDeleteIntent] = useState<AccountDeleteIntent | null>(null);
+  const [inspectId, setInspectId] = useState<string | null>(null);
   const importInputRef = useRef<HTMLInputElement>(null);
 
   const { isLoading, isError, error, refetch } = useAccounts();
@@ -130,13 +134,24 @@ export function AccountsView() {
         </>
       }
     >
-      <AccountsTable onCreateRule={handleCreateRule} />
+      <AccountsTable
+        onCreateRule={handleCreateRule}
+        onDeleteIntentChange={setDeleteIntent}
+        onInspectIdChange={setInspectId}
+      />
 
       <RuleDrawer
         open={ruleDrawerOpen}
         onOpenChange={setRuleDrawerOpen}
         ruleId={null}
         seed={ruleSeed}
+      />
+
+      <AccountsTableOverlays
+        deleteIntent={deleteIntent}
+        onDeleteIntentChange={setDeleteIntent}
+        inspectId={inspectId}
+        onInspectIdChange={setInspectId}
       />
     </PageLayout>
   );

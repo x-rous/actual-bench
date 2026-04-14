@@ -3,37 +3,18 @@
 import { useState, useMemo } from "react";
 import { useHighlight } from "@/hooks/useHighlight";
 import { useTableSelection } from "@/hooks/useTableSelection";
-import { useTransactionCountsForIds } from "@/hooks/useTransactionCountsForIds";
-import { Pencil, Trash2, RotateCcw, Copy, ExternalLink, AlertTriangle, Repeat2, CalendarDays, Info } from "lucide-react";
+import { Pencil, Trash2, RotateCcw, Copy, Braces, AlertTriangle, Repeat2, CalendarDays, Info, RefreshCw } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { ConfirmDialog } from "@/components/ui/confirm-dialog";
-import type { ConfirmState } from "@/components/ui/confirm-dialog";
 import { cn } from "@/lib/utils";
 import { useStagedStore } from "@/store/staged";
 import { generateId } from "@/lib/uuid";
-import { buildScheduleDeleteWarning, buildScheduleBulkDeleteWarning } from "@/lib/usageWarnings";
-import { UsageInspectorDrawer } from "@/features/usage-inspector/components/UsageInspectorDrawer";
 import { recurSummary, frequencyLabel } from "../lib/recurSummary";
 import { FilterBar } from "./FilterBar";
+import type { ScheduleDeleteIntent } from "./SchedulesTableOverlays";
 import type { StatusFilter, AutoAddFilter, FrequencyFilter, EntityOption } from "./FilterBar";
 import type { StagedEntity } from "@/types/staged";
 import type { Schedule, ScheduleAmountRange } from "@/types/entities";
-
-// ─── Delete intent ────────────────────────────────────────────────────────────
-
-type DeleteIntent = {
-  /** Server-side IDs for $oneof tx-count query. Empty when all selected are isNew. */
-  ids: string[];
-  title: string;
-  onConfirm: () => void;
-  // Single delete
-  entityLabel?: string;
-  ruleId?: string;
-  postsTransaction?: boolean;
-  // Bulk delete
-  bulkCount?: number;
-};
 
 // ─── Amount display helper ────────────────────────────────────────────────────
 
@@ -73,9 +54,16 @@ function isOverdue(nextDate: string | undefined, completed: boolean): boolean {
 type Props = {
   onEdit: (id: string) => void;
   onEditAsRule: (ruleId: string) => void;
+  onDeleteIntentChange: (intent: ScheduleDeleteIntent | null) => void;
+  onInspectIdChange: (id: string | null) => void;
 };
 
-export function SchedulesTable({ onEdit, onEditAsRule }: Props) {
+export function SchedulesTable({
+  onEdit,
+  onEditAsRule,
+  onDeleteIntentChange,
+  onInspectIdChange,
+}: Props) {
   const staged          = useStagedStore((s) => s.schedules);
   const stagedPayees    = useStagedStore((s) => s.payees);
   const stagedAccounts  = useStagedStore((s) => s.accounts);
@@ -86,41 +74,6 @@ export function SchedulesTable({ onEdit, onEditAsRule }: Props) {
   const pushUndo        = useStagedStore((s) => s.pushUndo);
 
   const highlightedId = useHighlight();
-
-  const [deleteIntent, setDeleteIntent] = useState<DeleteIntent | null>(null);
-  const [inspectId, setInspectId] = useState<string | null>(null);
-
-  const { data: txCounts, isLoading: txLoading } = useTransactionCountsForIds(
-    "schedule",
-    deleteIntent?.ids ?? [],
-    { enabled: !!deleteIntent && (deleteIntent.ids.length > 0) }
-  );
-
-  // ── Confirm dialog state (computed from intent + live tx counts) ─────────────
-  const txTotal = deleteIntent?.ids.length
-    ? (txCounts ? [...txCounts.values()].reduce((a, b) => a + b, 0) : undefined)
-    : 0;
-
-  const confirmState: ConfirmState | null = deleteIntent
-    ? {
-        title: deleteIntent.title,
-        message:
-          deleteIntent.bulkCount !== undefined
-            ? buildScheduleBulkDeleteWarning(
-                deleteIntent.bulkCount,
-                txTotal,
-                txLoading && deleteIntent.ids.length > 0
-              )
-            : buildScheduleDeleteWarning(
-                deleteIntent.entityLabel ?? "",
-                deleteIntent.ruleId,
-                deleteIntent.postsTransaction ?? false,
-                txTotal,
-                txLoading && deleteIntent.ids.length > 0
-              ),
-        onConfirm: deleteIntent.onConfirm,
-      }
-    : null;
 
   const [search, setSearch]                       = useState("");
   const [statusFilter, setStatusFilter]           = useState<StatusFilter>("active");
@@ -198,7 +151,7 @@ export function SchedulesTable({ onEdit, onEditAsRule }: Props) {
     const s = staged[id];
     if (!s) return;
     const entity = s.entity;
-    setDeleteIntent({
+    onDeleteIntentChange({
       ids: s.isNew ? [] : [entity.id],
       title: "Delete schedule?",
       entityLabel: entity.name ?? "Unnamed",
@@ -223,7 +176,7 @@ export function SchedulesTable({ onEdit, onEditAsRule }: Props) {
   function handleBulkDelete() {
     const count = activeSelectedIds.length;
     const serverIds = activeSelectedIds.filter((id) => !staged[id]?.isNew);
-    setDeleteIntent({
+    onDeleteIntentChange({
       ids: serverIds,
       title: `Delete ${count} schedule${count === 1 ? "" : "s"}?`,
       bulkCount: count,
@@ -390,36 +343,48 @@ export function SchedulesTable({ onEdit, onEditAsRule }: Props) {
 
                     {/* Row actions */}
                     <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
-                      <div className="flex items-center justify-end gap-0.5 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
-                        <Button variant="ghost" size="icon-xs" title="Edit" aria-label="Edit" onClick={() => onEdit(entity.id)}>
+                      <div
+                        className={cn(
+                          "flex items-center justify-end gap-0.5 transition-opacity",
+                          saveError || isDeleted
+                            ? "opacity-100"
+                            : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"
+                        )}
+                      >
+                        <Button variant="ghost" size="icon-xs" title="Edit schedule" aria-label="Edit schedule" onClick={() => onEdit(entity.id)}>
                           <Pencil />
                         </Button>
-                        <Button variant="ghost" size="icon-xs" title="Duplicate" aria-label="Duplicate" onClick={() => handleDuplicate(entity)}>
+                        <Button variant="ghost" size="icon-xs" title="Duplicate schedule" aria-label="Duplicate schedule" onClick={() => handleDuplicate(entity)}>
                           <Copy />
                         </Button>
                         {entity.ruleId && (
-                          <Button variant="ghost" size="icon-xs" title="Edit as Rule" aria-label="Edit as Rule" onClick={() => onEditAsRule(entity.ruleId!)}>
-                            <ExternalLink />
+                          <Button variant="ghost" size="icon-xs" title="Open linked rule" aria-label="Open linked rule" onClick={() => onEditAsRule(entity.ruleId!)}>
+                            <Braces />
                           </Button>
                         )}
+                        <Button
+                          variant="ghost"
+                          size="icon-xs"
+                          title="Inspect usage"
+                          aria-label="Inspect usage"
+                          onClick={() => onInspectIdChange(entity.id)}
+                        >
+                          <Info />
+                        </Button>
                         {(isNew || isUpdated) && !isDeleted && (
-                          <Button variant="ghost" size="icon-xs" title="Revert" aria-label="Revert" onClick={() => revertEntity("schedules", entity.id)}>
+                          <Button variant="ghost" size="icon-xs" title="Revert changes" aria-label="Revert changes" onClick={() => revertEntity("schedules", entity.id)}>
                             <RotateCcw />
                           </Button>
                         )}
                         {saveError && (
                           <Button variant="ghost" size="icon-xs" title="Clear error" aria-label="Clear error" onClick={() => clearSaveError("schedules", entity.id)}>
-                            <RotateCcw />
+                            <RefreshCw />
                           </Button>
                         )}
-                        <Button variant="ghost" size="icon-xs" title="Inspect usage" aria-label="Inspect usage"
-                          onClick={() => setInspectId(entity.id)}>
-                          <Info />
-                        </Button>
                         <Button
                           variant="ghost" size="icon-xs"
                           className="text-destructive hover:text-destructive"
-                          title="Delete" aria-label="Delete"
+                          title="Delete schedule" aria-label="Delete schedule"
                           onClick={() => handleDelete(entity.id)}
                         >
                           <Trash2 />
@@ -434,19 +399,6 @@ export function SchedulesTable({ onEdit, onEditAsRule }: Props) {
         )}
       </div>
     </div>
-
-    <ConfirmDialog
-      open={!!deleteIntent}
-      onOpenChange={(open) => { if (!open) setDeleteIntent(null); }}
-      state={confirmState}
-    />
-
-    <UsageInspectorDrawer
-      entityId={inspectId}
-      entityType="schedule"
-      open={!!inspectId}
-      onOpenChange={(open) => { if (!open) setInspectId(null); }}
-    />
     </>
   );
 }

@@ -4,7 +4,7 @@ import { useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { useHighlight } from "@/hooks/useHighlight";
 import { useTableSelection } from "@/hooks/useTableSelection";
-import { Pencil, Trash2, RotateCcw, Copy, AlertTriangle, CalendarDays } from "lucide-react";
+import { Pencil, Trash2, RotateCcw, Copy, AlertTriangle, CalendarDays, RefreshCw } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -33,6 +33,10 @@ function stageBadgeVariant(stage: string) {
   if (stage === "pre") return "status-warning" as const;
   if (stage === "post") return "status-inactive" as const;
   return "status-active" as const;
+}
+
+function isScheduleGeneratedRule(rule: Rule | null | undefined): boolean {
+  return !!rule?.actions.some((action) => action.op === "link-schedule");
 }
 
 // ─── RulesTable ───────────────────────────────────────────────────────────────
@@ -153,9 +157,13 @@ export function RulesTable({ onEdit, onMerge, payeeId, categoryId, accountId }: 
   }
 
   // ── Selection helpers ──────────────────────────────────────────────────────
-  const selectableIds = useMemo(() => new Set(rows.map((s) => s.entity.id)), [rows]);
-  const allSelected = rows.length > 0 && rows.every((s) => selectedIds.has(s.entity.id));
-  const someSelected = rows.some((s) => selectedIds.has(s.entity.id));
+  const selectableIds = useMemo(
+    () => new Set(rows.filter((s) => !isScheduleGeneratedRule(s.entity)).map((s) => s.entity.id)),
+    [rows]
+  );
+  const selectableRowCount = selectableIds.size;
+  const allSelected = selectableRowCount > 0 && [...selectableIds].every((id) => selectedIds.has(id));
+  const someSelected = [...selectableIds].some((id) => selectedIds.has(id));
   const activeSelectedIds = useMemo(
     () => [...selectedIds].filter((id) => selectableIds.has(id)),
     [selectedIds, selectableIds]
@@ -172,10 +180,8 @@ export function RulesTable({ onEdit, onMerge, payeeId, categoryId, accountId }: 
 
   function handleDeleteSelected() {
     if (activeSelectedIds.length === 0) return;
-    // Schedule-linked rules are managed by the Schedules page and cannot be
-    // deleted directly — mirror the per-row disabled guard for bulk actions.
     const deletableIds = activeSelectedIds.filter(
-      (id) => !stagedRules[id]?.entity.actions.some((a) => a.op === "link-schedule")
+      (id) => !isScheduleGeneratedRule(stagedRules[id]?.entity)
     );
     const skippedCount = activeSelectedIds.length - deletableIds.length;
     if (deletableIds.length === 0) return;
@@ -251,8 +257,13 @@ export function RulesTable({ onEdit, onMerge, payeeId, categoryId, accountId }: 
                     checked={allSelected}
                     ref={(el) => { if (el) el.indeterminate = someSelected && !allSelected; }}
                     onChange={toggleSelectAll}
-                    className="h-3.5 w-3.5 cursor-pointer rounded accent-primary"
-                    title="Select all visible rules"
+                    disabled={selectableRowCount === 0}
+                    className="h-3.5 w-3.5 rounded accent-primary disabled:cursor-default disabled:opacity-50"
+                    title={
+                      selectableRowCount === 0
+                        ? "No mergeable or deletable rules in the current view"
+                        : "Select all visible rules"
+                    }
                   />
                 </th>
                 <th className="w-20 px-3 py-2 text-left font-medium">Stage</th>
@@ -267,7 +278,7 @@ export function RulesTable({ onEdit, onMerge, payeeId, categoryId, accountId }: 
                 const rule = s.entity;
                 const isDirty = s.isNew || s.isUpdated;
                 const hasError = !!s.saveError;
-                const isScheduleLinked = rule.actions.some((a) => a.op === "link-schedule");
+                const isScheduleLinked = isScheduleGeneratedRule(rule);
 
                 return (
                   <tr
@@ -289,7 +300,16 @@ export function RulesTable({ onEdit, onMerge, payeeId, categoryId, accountId }: 
                         type="checkbox"
                         checked={selectedIds.has(rule.id)}
                         onChange={() => toggleSelect(rule.id)}
-                        className="h-3.5 w-3.5 cursor-pointer rounded accent-primary"
+                        disabled={isScheduleLinked}
+                        className={cn(
+                          "h-3.5 w-3.5 rounded accent-primary disabled:cursor-default disabled:opacity-50",
+                          !isScheduleLinked && "cursor-pointer"
+                        )}
+                        title={
+                          isScheduleLinked
+                            ? "Schedule-generated rules are managed by the Schedules page and cannot be merged or bulk deleted"
+                            : "Select rule"
+                        }
                       />
                     </td>
 
@@ -360,11 +380,19 @@ export function RulesTable({ onEdit, onMerge, payeeId, categoryId, accountId }: 
 
                     {/* Row buttons */}
                     <td className="px-3 py-2.5" onClick={(e) => e.stopPropagation()}>
-                      <div className="flex items-center justify-end gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <div
+                        className={cn(
+                          "flex items-center justify-end gap-0.5 transition-opacity",
+                          hasError
+                            ? "opacity-100"
+                            : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"
+                        )}
+                      >
                         <Button
                           variant="ghost"
                           size="icon-xs"
                           title="Edit"
+                          aria-label="Edit rule"
                           onClick={() => onEdit(rule.id)}
                         >
                           <Pencil />
@@ -373,6 +401,7 @@ export function RulesTable({ onEdit, onMerge, payeeId, categoryId, accountId }: 
                           variant="ghost"
                           size="icon-xs"
                           title="Duplicate"
+                          aria-label="Duplicate rule"
                           onClick={() => handleDuplicate(rule)}
                         >
                           <Copy />
@@ -382,19 +411,20 @@ export function RulesTable({ onEdit, onMerge, payeeId, categoryId, accountId }: 
                             variant="ghost"
                             size="icon-xs"
                             className="text-muted-foreground"
-                            title={hasError ? "Clear error & revert" : "Revert"}
+                            title={hasError ? "Clear error and revert" : "Revert changes"}
+                            aria-label={hasError ? "Clear error and revert" : "Revert changes"}
                             onClick={() =>
                               hasError ? handleClearError(rule.id) : handleRevert(rule.id)
                             }
                           >
-                            <RotateCcw />
+                            {hasError ? <RefreshCw /> : <RotateCcw />}
                           </Button>
                         )}
                         <Button
                           variant="ghost"
                           size="icon-xs"
                           className="text-destructive hover:text-destructive disabled:opacity-30 disabled:cursor-not-allowed"
-                          title={isScheduleLinked ? "Rule is linked to a schedule — delete it from the Schedules page" : "Delete"}
+                          title={isScheduleLinked ? "Rule is linked to a schedule — delete it from the Schedules page" : "Delete rule"}
                           aria-label={isScheduleLinked ? "Delete (managed by schedule)" : "Delete"}
                           disabled={isScheduleLinked}
                           aria-disabled={isScheduleLinked}

@@ -1,20 +1,24 @@
 "use client";
 
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import { Plus, Download, Upload } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import type { ConfirmState } from "@/components/ui/confirm-dialog";
 import { PageLayout } from "@/components/layout/PageLayout";
 import { CSV_MAX_BYTES } from "@/lib/csv";
 import { useStagedStore } from "@/store/staged";
 import { generateId } from "@/lib/uuid";
 import { useTags } from "../hooks/useTags";
 import { TagsTable } from "./TagsTable";
+import { TagsTableOverlays } from "./TagsTableOverlays";
 import { exportTagsToCsv } from "../csv/tagsCsvExport";
 import { importTagsFromCsv } from "../csv/tagsCsvImport";
 
 export function TagsView() {
   const importInputRef = useRef<HTMLInputElement>(null);
+  const [confirmDialog, setConfirmDialog] = useState<ConfirmState | null>(null);
+  const [inspectId, setInspectId] = useState<string | null>(null);
 
   const { isLoading, isError, error, refetch } = useTags();
 
@@ -114,7 +118,17 @@ export function TagsView() {
         </>
       }
     >
-      <TagsTable />
+      <TagsTable
+        onConfirmDialogChange={setConfirmDialog}
+        onInspectIdChange={setInspectId}
+      />
+
+      <TagsTableOverlays
+        confirmDialog={confirmDialog}
+        onConfirmDialogChange={setConfirmDialog}
+        inspectId={inspectId}
+        onInspectIdChange={setInspectId}
+      />
     </PageLayout>
   );
 }
