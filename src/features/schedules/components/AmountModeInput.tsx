@@ -3,12 +3,11 @@
 import { useRef, useCallback } from "react";
 import { cn } from "@/lib/utils";
 
-export type AmountOp = "" | "is" | "isapprox" | "isbetween";
+export type AmountOp = "is" | "isapprox" | "isbetween";
 
 const MODE_OPTIONS: { value: AmountOp; label: string }[] = [
-  { value: "",          label: "No amount" },
-  { value: "is",        label: "Exact" },
   { value: "isapprox",  label: "Approx." },
+  { value: "is",        label: "Exact" },
   { value: "isbetween", label: "Range" },
 ];
 

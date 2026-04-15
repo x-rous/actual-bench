@@ -10,6 +10,7 @@ import { valueToString, isRecurConfig } from "../utils/rulePreview";
 import { CONDITION_FIELDS, getConditionOps } from "../utils/ruleFields";
 import { recurSummary } from "@/features/schedules/lib/recurSummary";
 import type { ConditionOrAction, AmountRange, RecurConfig } from "@/types/entities";
+import type { RuleEntityOptionsMap } from "../lib/ruleEditor";
 
 // ─── Shared input/select styles ───────────────────────────────────────────────
 
@@ -23,9 +24,11 @@ export const inputCls =
 
 function ConditionValueInput({
   condition,
+  entityOptions,
   onChange,
 }: {
   condition: ConditionOrAction;
+  entityOptions: RuleEntityOptionsMap;
   onChange: (c: ConditionOrAction) => void;
 }) {
   const fieldDef = CONDITION_FIELDS[condition.field ?? ""];
@@ -77,6 +80,7 @@ function ConditionValueInput({
     return (
       <MultiEntityCombobox
         entity={fieldDef.entity}
+        options={entityOptions[fieldDef.entity]}
         values={arr}
         onChange={(v) => onChange({ ...condition, value: v })}
       />
@@ -103,6 +107,7 @@ function ConditionValueInput({
     return (
       <EntityCombobox
         entity={fieldDef.entity}
+        options={entityOptions[fieldDef.entity]}
         value={scalar}
         onChange={(v) => onChange({ ...condition, value: v })}
       />
@@ -154,16 +159,24 @@ function ConditionValueInput({
 
 export function ConditionRow({
   condition,
+  scheduleLinked = false,
+  entityOptions,
+  error,
   onChange,
   onDelete,
 }: {
   condition: ConditionOrAction;
+  scheduleLinked?: boolean;
+  entityOptions: RuleEntityOptionsMap;
+  error?: string;
   onChange: (c: ConditionOrAction) => void;
   onDelete: () => void;
 }) {
   const field = condition.field ?? "";
   const ops = getConditionOps(field);
   const isScheduleDate = field === "date" && isRecurConfig(condition.value);
+  const isScheduleLinkedEntity =
+    scheduleLinked && (field === "payee" || field === "account") && condition.op === "is";
 
   const setField = useCallback(
     (newField: string) => {
@@ -205,56 +218,98 @@ export function ConditionRow({
   if (isScheduleDate) {
     const summary = recurSummary(condition.value as unknown as RecurConfig);
     return (
-      <div className="flex items-center gap-1.5 rounded border border-border bg-muted/30 px-2 py-1.5">
-        <span className="rounded px-1 py-0.5 text-[11px] font-semibold bg-indigo-50 text-indigo-700 dark:bg-indigo-950/30 dark:text-indigo-400">
-          Date
-        </span>
-        <span className="text-[11px] text-muted-foreground">{condition.op}</span>
-        <span className="rounded px-1 py-0.5 text-[11px] font-medium bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-400">
-          {summary || "recurring"}
-        </span>
-        <span className="ml-auto text-[10px] italic text-muted-foreground/60">managed by schedule</span>
+      <div className="space-y-1">
+        <div className="flex items-center gap-1.5 rounded border border-border bg-muted/30 px-2 py-1.5">
+          <span className="rounded px-1 py-0.5 text-[11px] font-semibold bg-indigo-50 text-indigo-700 dark:bg-indigo-950/30 dark:text-indigo-400">
+            Date
+          </span>
+          <span className="text-[11px] text-muted-foreground">{condition.op}</span>
+          <span className="rounded px-1 py-0.5 text-[11px] font-medium bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-400">
+            {summary || "recurring"}
+          </span>
+          <span className="ml-auto text-[10px] italic text-muted-foreground/60">managed by schedule</span>
+        </div>
+        {error && <p className="text-xs text-destructive">{error}</p>}
+      </div>
+    );
+  }
+
+  if (isScheduleLinkedEntity) {
+    const fieldLabel = CONDITION_FIELDS[field]?.label ?? field;
+    return (
+      <div className="space-y-1">
+        <div className="flex items-start gap-1.5">
+          <div
+            className={cn(
+              selectCls,
+              "flex w-32 shrink-0 items-center bg-muted/30 text-muted-foreground"
+            )}
+          >
+            {fieldLabel}
+          </div>
+
+          <div
+            className={cn(
+              selectCls,
+              "flex w-32 shrink-0 items-center bg-muted/30 text-muted-foreground"
+            )}
+          >
+            is
+          </div>
+
+          <div className="flex-1">
+            <ConditionValueInput condition={condition} entityOptions={entityOptions} onChange={onChange} />
+          </div>
+
+          <span className="mt-2 shrink-0 text-[10px] italic text-muted-foreground/60">
+            synced with schedule
+          </span>
+        </div>
+        {error && <p className="text-xs text-destructive">{error}</p>}
       </div>
     );
   }
 
   return (
-    <div className="flex items-start gap-1.5">
-      <select
-        className={cn(selectCls, "w-32 shrink-0")}
-        value={field ?? ""}
-        onChange={(e) => setField(e.target.value)}
-      >
-        {Object.entries(CONDITION_FIELDS).map(([k, def]) => (
-          <option key={k} value={k}>
-            {def.label}
-          </option>
-        ))}
-      </select>
+    <div className="space-y-1">
+      <div className="flex items-start gap-1.5">
+        <select
+          className={cn(selectCls, "w-32 shrink-0")}
+          value={field ?? ""}
+          onChange={(e) => setField(e.target.value)}
+        >
+          {Object.entries(CONDITION_FIELDS).map(([k, def]) => (
+            <option key={k} value={k}>
+              {def.label}
+            </option>
+          ))}
+        </select>
 
-      <select
-        className={cn(selectCls, "w-32 shrink-0")}
-        value={condition.op ?? ""}
-        onChange={(e) => handleOpChange(e.target.value)}
-      >
-        {Object.entries(ops).map(([k, def]) => (
-          <option key={k} value={k}>
-            {def.label}
-          </option>
-        ))}
-      </select>
+        <select
+          className={cn(selectCls, "w-32 shrink-0")}
+          value={condition.op ?? ""}
+          onChange={(e) => handleOpChange(e.target.value)}
+        >
+          {Object.entries(ops).map(([k, def]) => (
+            <option key={k} value={k}>
+              {def.label}
+            </option>
+          ))}
+        </select>
 
-      <ConditionValueInput condition={condition} onChange={onChange} />
+        <ConditionValueInput condition={condition} entityOptions={entityOptions} onChange={onChange} />
 
-      <Button
-        variant="ghost"
-        size="icon"
-        className="h-7 w-7 shrink-0 text-muted-foreground hover:text-destructive mt-0.5"
-        onClick={onDelete}
-      >
-        <Trash2 className="h-3.5 w-3.5" />
-      </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="mt-0.5 h-7 w-7 shrink-0 text-muted-foreground hover:text-destructive"
+          onClick={onDelete}
+          aria-label="Delete condition"
+        >
+          <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+        </Button>
+      </div>
+      {error && <p className="text-xs text-destructive">{error}</p>}
     </div>
   );
 }
-

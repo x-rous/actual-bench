@@ -26,33 +26,38 @@ describe("recurSummary", () => {
 
   // ── Weekly ─────────────────────────────────────────────────────────────────
 
-  it("formats weekly with interval 1 as 'Weekly'", () => {
+  it("formats weekly with interval 1 and weekday anchor", () => {
     const cfg: RecurConfig = { frequency: "weekly", interval: 1, start: "2025-01-01", endMode: "never" };
-    expect(recurSummary(cfg)).toBe("Weekly");
+    expect(recurSummary(cfg)).toBe("Weekly on Wednesday");
   });
 
-  it("formats weekly with interval > 1", () => {
+  it("formats weekly with interval > 1 and weekday anchor", () => {
     const cfg: RecurConfig = { frequency: "weekly", interval: 2, start: "2025-01-01", endMode: "never" };
-    expect(recurSummary(cfg)).toBe("Every 2 weeks");
+    expect(recurSummary(cfg)).toBe("Every 2 weeks on Wednesday");
   });
 
   // ── Yearly ─────────────────────────────────────────────────────────────────
 
-  it("formats yearly with interval 1 as 'Yearly'", () => {
+  it("formats yearly with interval 1 and month/day anchor", () => {
     const cfg: RecurConfig = { frequency: "yearly", interval: 1, start: "2025-01-01", endMode: "never" };
-    expect(recurSummary(cfg)).toBe("Yearly");
+    expect(recurSummary(cfg)).toBe("Yearly on Jan 1");
   });
 
   // ── Monthly — no pattern ──────────────────────────────────────────────────
 
-  it("formats monthly with no pattern as 'Monthly'", () => {
+  it("formats monthly with no pattern using the start-day anchor", () => {
     const cfg: RecurConfig = { frequency: "monthly", interval: 1, start: "2025-01-01", endMode: "never" };
-    expect(recurSummary(cfg)).toBe("Monthly");
+    expect(recurSummary(cfg)).toBe("Monthly on the 1st");
   });
 
   it("formats monthly with interval > 1 and no pattern", () => {
     const cfg: RecurConfig = { frequency: "monthly", interval: 3, start: "2025-01-01", endMode: "never" };
-    expect(recurSummary(cfg)).toBe("Every 3 months");
+    expect(recurSummary(cfg)).toBe("Every 3 months on the 1st");
+  });
+
+  it("formats monthly with last-day anchor when start is month end", () => {
+    const cfg: RecurConfig = { frequency: "monthly", interval: 1, start: "2025-01-31", endMode: "never" };
+    expect(recurSummary(cfg)).toBe("Monthly on the last day");
   });
 
   // ── Monthly — specific day pattern ────────────────────────────────────────

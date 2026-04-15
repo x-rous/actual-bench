@@ -1,66 +1,46 @@
 "use client";
 
-import React, { useState, useRef, useEffect, useMemo } from "react";
+import React, { useDeferredValue, useMemo, useState, startTransition } from "react";
 import { useRouter } from "next/navigation";
 import { useHighlight } from "@/hooks/useHighlight";
-import { useInlineEdit } from "@/hooks/useInlineEdit";
+import { useEditableGrid } from "@/hooks/useEditableGrid";
 import { useNotesIndex } from "@/hooks/useNotesIndex";
 import { useTableSelection } from "@/hooks/useTableSelection";
-import { useTransactionCountsForIds } from "@/hooks/useTransactionCountsForIds";
-import { EntityNoteButton } from "@/components/ui/entity-note-button";
-import { NameInput } from "@/components/ui/editable-cell";
 import type { DoneAction } from "@/components/ui/editable-cell";
 import {
-  RotateCcw, Trash2, RefreshCw, Eye, EyeOff,
-  ArrowUpDown, ArrowUp, ArrowDown, AlertTriangle,
-  ChevronDown, ChevronRight, Info,
+  ArrowUpDown, ArrowUp, ArrowDown,
 } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { ConfirmDialog } from "@/components/ui/confirm-dialog";
-import type { ConfirmState } from "@/components/ui/confirm-dialog";
-import { cn } from "@/lib/utils";
 import { useStagedStore } from "@/store/staged";
 import { generateId } from "@/lib/uuid";
 import { buildRuleReferenceMap } from "@/lib/referenceCheck";
-import {
-  buildCategoryDeleteWarning,
-  buildCategoryGroupDeleteWarning,
-  buildCategoryBulkDeleteWarning,
-} from "@/lib/usageWarnings";
-import { UsageInspectorDrawer } from "@/features/usage-inspector/components/UsageInspectorDrawer";
-import type { EntityUsageData } from "@/features/usage-inspector/types";
 import type { StagedEntity } from "@/types/staged";
 import type { CategoryGroup, Category } from "@/types/entities";
 import { FilterBar } from "./FilterBar";
+import type { CategoryDeleteIntent, CategoryInspectTarget } from "./CategoriesTableOverlays";
+import { CategoriesTableGroupRow } from "./CategoriesTableGroupRow";
+import { CategoriesTableCategoryRow } from "./CategoriesTableCategoryRow";
+import type { CategoryGroupOption } from "./CategoryGroupAssignmentCell";
 import type { VisibilityFilter, TypeFilter, RulesFilter, SortDir } from "./FilterBar";
-
-// ─── Delete intent ────────────────────────────────────────────────────────────
-
-type DeleteIntent = {
-  /** Server-side category IDs for $oneof tx-count query. */
-  ids: string[];
-  title: string;
-  onConfirm: () => void;
-  // Category single delete
-  entityLabel?: string;
-  entityRuleCount?: number;
-  // Group single delete
-  groupName?: string;
-  childCount?: number;
-  groupRuleCount?: number;
-  // Bulk delete
-  bulkServerCount?: number;
-  bulkNewCount?: number;
-  bulkRuleCount?: number;
-};
+import { getGroupCollapseState } from "../utils/collapsedGroups";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
 type GroupRow = StagedEntity<CategoryGroup>;
 type CategoryRow = StagedEntity<Category>;
 type SelectionKind = "group" | "category";
-type CellId = { kind: SelectionKind; id: string };
+
+const CATEGORY_NAME_COLS = ["name"] as const;
+
+function makeSelectionRowId(kind: SelectionKind, id: string) {
+  return `${kind}:${id}`;
+}
+
+function parseSelectionRowId(rowId: string): { kind: SelectionKind; id: string } | null {
+  if (rowId.startsWith("group:")) return { kind: "group", id: rowId.slice("group:".length) };
+  if (rowId.startsWith("category:")) return { kind: "category", id: rowId.slice("category:".length) };
+  return null;
+}
 
 // ─── SortIndicator ─────────────────────────────────────────────────────────────
 
@@ -77,10 +57,14 @@ export function CategoriesTable({
   collapsedGroups,
   setCollapsedGroups,
   onCreateRule,
+  onDeleteIntentChange,
+  onInspectTargetChange,
 }: {
   collapsedGroups: Set<string>;
   setCollapsedGroups: React.Dispatch<React.SetStateAction<Set<string>>>;
   onCreateRule?: (categoryId: string) => void;
+  onDeleteIntentChange: (intent: CategoryDeleteIntent | null) => void;
+  onInspectTargetChange: (target: CategoryInspectTarget | null) => void;
 }) {
   // ── Filter / sort state ──────────────────────────────────────────────────────
   const [search, setSearch] = useState("");
@@ -88,19 +72,12 @@ export function CategoriesTable({
   const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
   const [rulesFilter, setRulesFilter] = useState<RulesFilter>("all");
   const [sortNameDir, setSortNameDir] = useState<SortDir | null>(null);
+  const deferredSearch = useDeferredValue(search);
 
   // ── Editing state ────────────────────────────────────────────────────────────
-  const {
-    selectedCell, editingCell, editStartChar,
-    selectCell, startEdit, commitEdit,
-  } = useInlineEdit<CellId>();
-
   // ── Multi-select ─────────────────────────────────────────────────────────────
   const { selectedIds, toggleSelect, clearSelection } = useTableSelection();
-  const [deleteIntent, setDeleteIntent] = useState<DeleteIntent | null>(null);
-  const [inspectTarget, setInspectTarget] = useState<{ id: string; type: EntityUsageData["entityType"] } | null>(null);
 
-  const containerRef  = useRef<HTMLDivElement>(null);
   const router        = useRouter();
   const highlightedId = useHighlight();
 
@@ -159,47 +136,6 @@ export function CategoriesTable({
     [notesIndex]
   );
 
-  // ── Lazy tx counts for delete confirm dialogs ─────────────────────────────────
-  const { data: txCounts, isLoading: txLoading } = useTransactionCountsForIds(
-    "category",
-    deleteIntent?.ids ?? [],
-    { enabled: !!deleteIntent && deleteIntent.ids.length > 0 }
-  );
-
-  const txTotal = deleteIntent?.ids.length
-    ? (txCounts ? [...txCounts.values()].reduce((a, b) => a + b, 0) : undefined)
-    : 0;
-
-  const confirmState: ConfirmState | null = deleteIntent
-    ? {
-        title: deleteIntent.title,
-        message:
-          deleteIntent.bulkServerCount !== undefined
-            ? buildCategoryBulkDeleteWarning(
-                deleteIntent.bulkServerCount,
-                deleteIntent.bulkNewCount ?? 0,
-                deleteIntent.bulkRuleCount ?? 0,
-                txTotal,
-                txLoading && deleteIntent.ids.length > 0
-              )
-            : deleteIntent.groupName !== undefined
-              ? buildCategoryGroupDeleteWarning(
-                  deleteIntent.groupName,
-                  deleteIntent.childCount ?? 0,
-                  deleteIntent.groupRuleCount ?? 0,
-                  txTotal,
-                  txLoading && deleteIntent.ids.length > 0
-                )
-              : buildCategoryDeleteWarning(
-                  deleteIntent.entityLabel ?? "",
-                  deleteIntent.entityRuleCount ?? 0,
-                  txTotal,
-                  txLoading && deleteIntent.ids.length > 0
-                ),
-        onConfirm: deleteIntent.onConfirm,
-      }
-    : null;
-
   // ── Index all categories by groupId (no filters) ─────────────────────────────
   // Used by allGroups for group-level hidden/search checks, and as the base for
   // filteredCatsByGroup. Recomputed only when stagedCats changes.
@@ -217,7 +153,7 @@ export function CategoriesTable({
   // ── Filtered + sorted categories per group ────────────────────────────────────
   // Replaces the getCategoriesForGroup plain function. Each call site becomes O(1).
   const filteredCatsByGroup = useMemo(() => {
-    const q = search.toLowerCase();
+    const q = deferredSearch.toLowerCase();
     const map = new Map<string, CategoryRow[]>();
     for (const [groupId, cats] of allCatsByGroup) {
       let filtered: CategoryRow[] = cats;
@@ -234,7 +170,7 @@ export function CategoriesTable({
       map.set(groupId, filtered);
     }
     return map;
-  }, [allCatsByGroup, search, visibilityFilter, sortNameDir]);
+  }, [allCatsByGroup, deferredSearch, visibilityFilter, sortNameDir]);
 
   // ── Rules filter layer on top of filteredCatsByGroup ────────────────────────
   const visibleCatsByGroup = useMemo(() => {
@@ -257,7 +193,7 @@ export function CategoriesTable({
   // ── Build flat ordered list of visible groups ─────────────────────────────────
   const allGroups: GroupRow[] = useMemo(() => {
     let gs = Object.values(stagedGroups) as GroupRow[];
-    const q = search.toLowerCase();
+    const q = deferredSearch.toLowerCase();
     if (typeFilter === "income") gs = gs.filter((g) => g.entity.isIncome);
     if (typeFilter === "expense") gs = gs.filter((g) => !g.entity.isIncome);
     if (visibilityFilter === "visible") gs = gs.filter((g) => !g.entity.hidden);
@@ -285,15 +221,102 @@ export function CategoriesTable({
       gs = [...gs].sort((a, b) => Number(b.entity.isIncome) - Number(a.entity.isIncome));
     }
     return gs;
-  }, [stagedGroups, allCatsByGroup, search, typeFilter, visibilityFilter, sortNameDir]);
+  }, [stagedGroups, allCatsByGroup, deferredSearch, typeFilter, visibilityFilter, sortNameDir]);
+
+  const groupCountById = useMemo(() => {
+    const counts = new Map<string, { total: number; visible: number }>();
+
+    for (const [groupId, cats] of allCatsByGroup) {
+      let total = 0;
+      for (const cat of cats) {
+        if (!cat.isDeleted) total++;
+      }
+      counts.set(groupId, { total, visible: 0 });
+    }
+
+    for (const [groupId, cats] of visibleCatsByGroup) {
+      const existing = counts.get(groupId) ?? { total: 0, visible: 0 };
+      let visible = 0;
+      for (const cat of cats) {
+        if (!cat.isDeleted) visible++;
+      }
+      counts.set(groupId, { total: existing.total, visible });
+    }
+
+    return counts;
+  }, [allCatsByGroup, visibleCatsByGroup]);
 
   const incomeGroupCount = Object.values(stagedGroups).filter((g) => !g.isDeleted && g.entity.isIncome).length;
+  const activeGroupIds = useMemo(
+    () =>
+      Object.values(stagedGroups)
+        .filter((group) => !group.isDeleted)
+        .map((group) => group.entity.id),
+    [stagedGroups]
+  );
+  const groupOptions = useMemo<CategoryGroupOption[]>(
+    () =>
+      Object.values(stagedGroups)
+        .filter((group) => !group.isDeleted)
+        .map((group) => ({
+          id: group.entity.id,
+          name: group.entity.name || "Unnamed group",
+        })),
+    [stagedGroups]
+  );
+  const incomeGroupOptions = useMemo<CategoryGroupOption[]>(
+    () => groupOptions.filter((group) => stagedGroups[group.id]?.entity.isIncome),
+    [groupOptions, stagedGroups]
+  );
+  const expenseGroupOptions = useMemo<CategoryGroupOption[]>(
+    () => groupOptions.filter((group) => !stagedGroups[group.id]?.entity.isIncome),
+    [groupOptions, stagedGroups]
+  );
+  const groupLabelById = useMemo(
+    () => new Map(groupOptions.map((group) => [group.id, group.name])),
+    [groupOptions]
+  );
+  const { allCollapsed } = getGroupCollapseState(collapsedGroups, activeGroupIds);
 
   const totalCount = Object.keys(stagedGroups).length + Object.keys(stagedCats).length;
   const filteredCount = allGroups.reduce(
     (acc, g) => acc + 1 + (visibleCatsByGroup.get(g.entity.id)?.length ?? 0),
     0
   );
+
+  const visibleRowIds = useMemo(() => {
+    const next: string[] = [];
+    for (const group of allGroups) {
+      next.push(makeSelectionRowId("group", group.entity.id));
+      if (!collapsedGroups.has(group.entity.id)) {
+        for (const cat of visibleCatsByGroup.get(group.entity.id) ?? []) {
+          next.push(makeSelectionRowId("category", cat.entity.id));
+        }
+      }
+    }
+    return next;
+  }, [allGroups, collapsedGroups, visibleCatsByGroup]);
+
+  const {
+    containerRef,
+    selectedCell,
+    editingCell,
+    editStartChar,
+    selectCell,
+    startEditing,
+    commitCell,
+    handleGridKeyDown,
+  } = useEditableGrid<"name">({
+    rowIds: visibleRowIds,
+    columns: CATEGORY_NAME_COLS,
+    canEditCell: (cell) => {
+      const parsed = parseSelectionRowId(cell.rowId);
+      if (!parsed) return false;
+      return parsed.kind === "group"
+        ? !!stagedGroups[parsed.id] && !stagedGroups[parsed.id].isDeleted
+        : !!stagedCats[parsed.id] && !stagedCats[parsed.id].isDeleted;
+    },
+  });
 
   function toggleSort() {
     setSortNameDir((prev) =>
@@ -302,24 +325,36 @@ export function CategoriesTable({
   }
 
   function toggleCollapse(groupId: string) {
-    setCollapsedGroups((prev) => {
-      const next = new Set(prev);
-      if (next.has(groupId)) next.delete(groupId); else next.add(groupId);
-      return next;
+    startTransition(() => {
+      setCollapsedGroups((prev) => {
+        const next = new Set(prev);
+        if (next.has(groupId)) next.delete(groupId); else next.add(groupId);
+        return next;
+      });
     });
   }
 
-  // ── Focus management ─────────────────────────────────────────────────────────
-  useEffect(() => {
-    if (!selectedCell || editingCell) return;
-    containerRef.current
-      ?.querySelector<HTMLElement>(`[data-cell="${selectedCell.kind}:${selectedCell.id}"]`)
-      ?.focus({ preventScroll: false });
-  }, [selectedCell, editingCell]);
+  function handleVisibilityFilterChange(value: VisibilityFilter) {
+    startTransition(() => setVisibilityFilter(value));
+  }
 
-  // ── Editing ──────────────────────────────────────────────────────────────────
-  function startEditing(kind: SelectionKind, id: string, startChar?: string) {
-    startEdit({ kind, id }, startChar);
+  function handleTypeFilterChange(value: TypeFilter) {
+    startTransition(() => setTypeFilter(value));
+  }
+
+  function handleRulesFilterChange(value: RulesFilter) {
+    startTransition(() => setRulesFilter(value));
+  }
+
+  function handleToggleCollapseAll() {
+    startTransition(() => {
+      setCollapsedGroups(allCollapsed ? new Set() : new Set(activeGroupIds));
+    });
+  }
+
+  function handleCategoryGroupChange(categoryId: string, nextGroupId: string) {
+    pushUndo();
+    stageUpdate("categories", categoryId, { groupId: nextGroupId });
   }
 
   function handleGroupNameDone(id: string, value: string, action: DoneAction) {
@@ -327,7 +362,7 @@ export function CategoriesTable({
       pushUndo();
       stageUpdate("categoryGroups", id, { name: value });
     }
-    commitEdit({ kind: "group", id });
+    commitCell(makeSelectionRowId("group", id), "name");
   }
 
   function handleCategoryNameDone(id: string, value: string, action: DoneAction) {
@@ -335,7 +370,7 @@ export function CategoriesTable({
       pushUndo();
       stageUpdate("categories", id, { name: value });
     }
-    commitEdit({ kind: "category", id });
+    commitCell(makeSelectionRowId("category", id), "name");
   }
 
   // ── Adding rows ──────────────────────────────────────────────────────────────
@@ -343,7 +378,7 @@ export function CategoriesTable({
     pushUndo();
     const id = generateId();
     stageNew("categoryGroups", { id, name: "", isIncome, hidden: false, categoryIds: [] });
-    setTimeout(() => startEditing("group", id), 0);
+    setTimeout(() => startEditing(makeSelectionRowId("group", id), "name"), 0);
   }
 
   function addCategory(groupId: string) {
@@ -359,7 +394,7 @@ export function CategoriesTable({
     });
     // Expand the group so the new row is visible
     setCollapsedGroups((prev) => { const next = new Set(prev); next.delete(groupId); return next; });
-    setTimeout(() => startEditing("category", id), 0);
+    setTimeout(() => startEditing(makeSelectionRowId("category", id), "name"), 0);
   }
 
   // ── Bulk delete ───────────────────────────────────────────────────────────────
@@ -416,7 +451,8 @@ export function CategoriesTable({
     const groupsToDelete = [...effectiveGroupIds];
     const catsToDelete = [...directCatIds];
 
-    setDeleteIntent({
+    onDeleteIntentChange({
+      kind: "bulk",
       ids: serverCatIds,
       title: `Delete ${totalItems} item${totalItems !== 1 ? "s" : ""}?`,
       bulkServerCount: serverCount,
@@ -445,465 +481,150 @@ export function CategoriesTable({
 
   // ── Row render helpers ────────────────────────────────────────────────────────
   function renderGroupRow(group: GroupRow) {
-    const { entity, isNew, isUpdated, isDeleted, saveError } = group;
-    const collapsed = collapsedGroups.has(entity.id);
-    const isSelected = selectedCell?.kind === "group" && selectedCell?.id === entity.id;
-    const isEditing = editingCell?.kind === "group" && editingCell?.id === entity.id;
-    const isChecked = selectedIds.has(entity.id);
-    const isDuplicate = duplicateGroupNames.has(entity.name.trim().toLowerCase());
+    const { entity } = group;
+    const rowId = makeSelectionRowId("group", entity.id);
+    const counts = groupCountById.get(entity.id) ?? { total: 0, visible: 0 };
+    const groupCountLabel = counts.visible !== counts.total ? `${counts.visible}/${counts.total}` : `${counts.total}`;
 
     return (
-      <tr
-        key={`g-${entity.id}`}
-        data-row-id={entity.id}
-        className={cn(
-          "group/row border-b border-border/40 border-l-2 border-l-transparent bg-muted/20 transition-colors",
-          highlightedId === entity.id && "bg-primary/20 ring-2 ring-inset ring-primary/40",
-          highlightedId !== entity.id && isChecked && "bg-primary/10",
-          highlightedId !== entity.id && !isChecked && saveError && "bg-destructive/5 border-l-destructive",
-          highlightedId !== entity.id && !isChecked && !saveError && isDeleted && "opacity-50 border-l-muted-foreground/30",
-          highlightedId !== entity.id && !isChecked && !saveError && !isDeleted && isNew && "bg-green-50/40 dark:bg-green-950/10 border-l-green-500",
-          highlightedId !== entity.id && !isChecked && !saveError && !isDeleted && !isNew && isUpdated && "bg-amber-50/40 dark:bg-amber-950/10 border-l-amber-400",
-        )}
-      >
-        {/* Checkbox */}
-        <td className="w-9 px-3 py-0.5">
-          <input
-            type="checkbox"
-            checked={isChecked}
-            onChange={(e) => toggleSelect(entity.id, e.target.checked)}
-            onClick={(e) => e.stopPropagation()}
-            className="h-3.5 w-3.5 cursor-pointer rounded accent-primary"
-          />
-        </td>
-
-        {/* State indicator */}
-        <td className="w-1 p-0 pl-0.5">
-          <div className={cn(
-            "h-4 w-0.5 rounded-full",
-            saveError && "bg-destructive",
-            !saveError && isDeleted && "bg-muted-foreground/30",
-            !saveError && !isDeleted && isNew && "bg-green-500",
-            !saveError && !isDeleted && !isNew && isUpdated && "bg-amber-400",
-          )} />
-        </td>
-
-        {/* Collapse toggle + Name */}
-        <td
-          data-cell={`group:${entity.id}`}
-          tabIndex={isSelected ? 0 : -1}
-          className={cn(
-            "cursor-default px-2 py-0.5 outline-none",
-            isSelected && !isEditing && "bg-primary/10 ring-1 ring-inset ring-primary/50",
-            isEditing && "ring-1 ring-inset ring-primary",
-          )}
-          onClick={() => isSelected && !isDeleted ? startEditing("group", entity.id) : selectCell({ kind: "group", id: entity.id })}
-          onFocus={() => { if (!editingCell) selectCell({ kind: "group", id: entity.id }); }}
-        >
-          <div className="flex items-center gap-1">
-            <button
-              onClick={(e) => { e.stopPropagation(); toggleCollapse(entity.id); }}
-              className="shrink-0 text-muted-foreground hover:text-foreground"
-            >
-              {collapsed
-                ? <ChevronRight className="h-3.5 w-3.5" />
-                : <ChevronDown className="h-3.5 w-3.5" />}
-            </button>
-            {isEditing ? (
-              <NameInput
-                initialValue={entity.name}
-                startChar={editStartChar}
-                onDone={(val, action) => handleGroupNameDone(entity.id, val, action)}
-              />
-            ) : (
-              <div className="flex flex-col">
-                <span className={cn(
-                  "flex items-center gap-1 text-sm font-medium leading-6",
-                  isDeleted && "line-through",
-                  !entity.name && "text-xs italic font-normal text-muted-foreground/60",
-                )}>
-                  {entity.name || "empty name"}
-                  {isDuplicate && <AlertTriangle className="h-3 w-3 shrink-0 text-amber-500" aria-label="Duplicate name" />}
-                  {!isDeleted && (() => {
-                    const total = (allCatsByGroup.get(entity.id) ?? []).filter((c) => !c.isDeleted).length;
-                    const visible = (visibleCatsByGroup.get(entity.id) ?? []).filter((c) => !c.isDeleted).length;
-                    const label = visible !== total ? `${visible}/${total}` : `${total}`;
-                    return (
-                      <span className="text-xs font-normal text-muted-foreground">({label})</span>
-                    );
-                  })()}
-                </span>
-                {saveError && (
-                  <span className="text-xs text-destructive leading-tight pb-0.5">{saveError}</span>
-                )}
-              </div>
-            )}
-          </div>
-        </td>
-
-        {/* Note */}
-        <td className="w-8 px-0 py-0.5 text-center">
-          {!isNew && rawEntityIdsWithNotes.has(entity.id) && (
-            <EntityNoteButton
-              entityId={entity.id}
-              entityKind="category"
-              entityLabel={entity.name || "Unnamed group"}
-              entityTypeLabel="Category group"
-              className="mx-auto"
-            />
-          )}
-        </td>
-
-        {/* Type badge */}
-        <td className="w-48 px-2 py-0.5">
-          <Badge variant={entity.isIncome ? "status-active" : "secondary"} className="text-xs font-normal">
-            {entity.isIncome ? "Income" : "Expense"}
-          </Badge>
-        </td>
-
-        {/* Hidden toggle */}
-        <td className="w-36 px-2 py-0.5">
-          <button
-            disabled={isDeleted}
-            onClick={() => { pushUndo(); stageUpdate("categoryGroups", entity.id, { hidden: !entity.hidden }); }}
-            className={cn(
-              "flex items-center gap-1 text-xs transition-colors",
-              entity.hidden ? "text-amber-600" : "text-muted-foreground hover:text-foreground",
-              isDeleted && "cursor-default opacity-50",
-            )}
-          >
-            {entity.hidden
-              ? <><EyeOff className="h-3 w-3" /> Hidden</>
-              : <><Eye className="h-3 w-3" /> Visible</>}
-          </button>
-        </td>
-
-        {/* Rules (groups don't have direct rule associations) */}
-        <td className="w-44 px-2 py-0.5" />
-
-        {/* Actions */}
-        <td className="w-28 px-1 py-0.5">
-          <div className="flex items-center justify-end gap-0.5 opacity-0 transition-opacity group-hover/row:opacity-100">
-            {saveError ? (
-              <Button variant="ghost" size="icon-xs" title="Clear error and retry" onClick={() => clearSaveError("categoryGroups", entity.id)}>
-                <RefreshCw />
-              </Button>
-            ) : isDeleted ? (
-              <Button variant="ghost" size="icon-xs" title="Undo delete" onClick={() => revertEntity("categoryGroups", entity.id)}>
-                <RotateCcw />
-              </Button>
-            ) : (
-              <>
-                <Button variant="ghost" size="icon-xs" title="Inspect usage" aria-label="Inspect usage"
-                  onClick={() => setInspectTarget({ id: entity.id, type: "categoryGroup" })}>
-                  <Info />
-                </Button>
-                {!(entity.isIncome && incomeGroupCount <= 1) && (
-                  <Button
-                    variant="ghost" size="icon-xs" title="Delete group"
-                    className="text-destructive hover:text-destructive"
-                    onClick={() => {
-                      const children = Object.values(stagedCats).filter(
-                        (cat) => cat.entity.groupId === entity.id && !cat.isDeleted
-                      );
-                      const serverChildIds = children
-                        .filter((cat) => !cat.isNew)
-                        .map((cat) => cat.entity.id);
-                      const groupRuleCount = children.reduce(
-                        (sum, cat) => sum + (categoryRuleCount.get(cat.entity.id) ?? 0),
-                        0
-                      );
-                      const capturedChildren = [...children];
-                      setDeleteIntent({
-                        ids: serverChildIds,
-                        title: `Delete group "${entity.name || "Unnamed"}"?`,
-                        groupName: entity.name || "Unnamed",
-                        childCount: children.length,
-                        groupRuleCount,
-                        onConfirm: () => {
-                          pushUndo();
-                          for (const cat of capturedChildren) stageDelete("categories", cat.entity.id);
-                          stageDelete("categoryGroups", entity.id);
-                        },
-                      });
-                    }}
-                  >
-                    <Trash2 />
-                  </Button>
-                )}
-                {(isNew || isUpdated) && (
-                  <Button variant="ghost" size="icon-xs" title="Revert" onClick={() => revertEntity("categoryGroups", entity.id)}>
-                    <RotateCcw />
-                  </Button>
-                )}
-              </>
-            )}
-          </div>
-        </td>
-      </tr>
+      <CategoriesTableGroupRow
+        row={group}
+        rowId={rowId}
+        highlightedId={highlightedId}
+        collapsed={collapsedGroups.has(entity.id)}
+        isSelected={selectedCell?.rowId === rowId}
+        isEditing={editingCell?.rowId === rowId}
+        isChecked={selectedIds.has(entity.id)}
+        isDuplicate={duplicateGroupNames.has(entity.name.trim().toLowerCase())}
+        groupCountLabel={groupCountLabel}
+        hasNote={!group.isNew && rawEntityIdsWithNotes.has(entity.id)}
+        incomeGroupCount={incomeGroupCount}
+        editStartChar={editingCell?.rowId === rowId ? editStartChar : undefined}
+        onToggleSelect={toggleSelect}
+        onToggleCollapse={toggleCollapse}
+        onSelectNameCell={(nextRowId) => selectCell(nextRowId, "name")}
+        onStartEditingName={(nextRowId) => startEditing(nextRowId, "name")}
+        onDoneName={handleGroupNameDone}
+        onToggleHidden={(id, hidden) => {
+          pushUndo();
+          stageUpdate("categoryGroups", id, { hidden });
+        }}
+        onClearSaveError={(id) => clearSaveError("categoryGroups", id)}
+        onRevert={(id) => revertEntity("categoryGroups", id)}
+        onRequestDelete={(groupId) => {
+          const groupEntity = stagedGroups[groupId]?.entity;
+          if (!groupEntity) return;
+          const children = Object.values(stagedCats).filter(
+            (cat) => cat.entity.groupId === groupId && !cat.isDeleted
+          );
+          const serverChildIds = children.filter((cat) => !cat.isNew).map((cat) => cat.entity.id);
+          const groupRuleCount = children.reduce(
+            (sum, cat) => sum + (categoryRuleCount.get(cat.entity.id) ?? 0),
+            0
+          );
+          const capturedChildren = [...children];
+          onDeleteIntentChange({
+            kind: "group",
+            ids: serverChildIds,
+            title: `Delete group "${groupEntity.name || "Unnamed"}"?`,
+            groupName: groupEntity.name || "Unnamed",
+            childCount: children.length,
+            groupRuleCount,
+            onConfirm: () => {
+              pushUndo();
+              for (const cat of capturedChildren) stageDelete("categories", cat.entity.id);
+              stageDelete("categoryGroups", groupId);
+            },
+          });
+        }}
+        onInspect={(id) => onInspectTargetChange({ id, type: "categoryGroup" })}
+        isAnotherCellEditing={!!editingCell}
+      />
     );
   }
 
   function renderCategoryRow(cat: CategoryRow, group: GroupRow) {
-    const { entity, isNew, isUpdated, isDeleted, saveError } = cat;
-    const isSelected = selectedCell?.kind === "category" && selectedCell?.id === entity.id;
-    const isEditing = editingCell?.kind === "category" && editingCell?.id === entity.id;
-    const isChecked = selectedIds.has(entity.id);
-    const isDuplicate = duplicateCatNames.has(entity.id);
-    const isInheritedHidden = !isDeleted && group.entity.hidden;
+    const { entity } = cat;
+    const rowId = makeSelectionRowId("category", entity.id);
 
     return (
-      <tr
-        key={`c-${entity.id}`}
-        data-row-id={entity.id}
-        className={cn(
-          "group/row border-b border-border/20 border-l-2 border-l-transparent transition-colors",
-          highlightedId === entity.id && "bg-primary/20 ring-2 ring-inset ring-primary/40",
-          highlightedId !== entity.id && isChecked && "bg-primary/10",
-          highlightedId !== entity.id && !isChecked && saveError && "bg-destructive/5 border-l-destructive",
-          highlightedId !== entity.id && !isChecked && !saveError && isDeleted && "opacity-50 border-l-muted-foreground/30",
-          highlightedId !== entity.id && !isChecked && !saveError && !isDeleted && isNew && "bg-green-50/30 dark:bg-green-950/10 border-l-green-500",
-          highlightedId !== entity.id && !isChecked && !saveError && !isDeleted && !isNew && isUpdated && "bg-amber-50/30 dark:bg-amber-950/10 border-l-amber-400",
-        )}
-      >
-        {/* Checkbox */}
-        <td className="w-9 px-3 py-0.5">
-          <input
-            type="checkbox"
-            checked={isChecked}
-            onChange={(e) => toggleSelect(entity.id, e.target.checked)}
-            onClick={(e) => e.stopPropagation()}
-            className="h-3.5 w-3.5 cursor-pointer rounded accent-primary"
-          />
-        </td>
-
-        {/* State indicator */}
-        <td className="w-1 p-0 pl-0.5">
-          <div className={cn(
-            "h-4 w-0.5 rounded-full",
-            saveError && "bg-destructive",
-            !saveError && isDeleted && "bg-muted-foreground/30",
-            !saveError && !isDeleted && isNew && "bg-green-500",
-            !saveError && !isDeleted && !isNew && isUpdated && "bg-amber-400",
-          )} />
-        </td>
-
-        {/* Indented name */}
-        <td
-          data-cell={`category:${entity.id}`}
-          tabIndex={isSelected ? 0 : -1}
-          className={cn(
-            "cursor-default px-2 py-0.5 outline-none",
-            isSelected && !isEditing && "bg-primary/10 ring-1 ring-inset ring-primary/50",
-            isEditing && "ring-1 ring-inset ring-primary",
-          )}
-          onClick={() => isSelected && !isDeleted ? startEditing("category", entity.id) : selectCell({ kind: "category", id: entity.id })}
-          onFocus={() => { if (!editingCell) selectCell({ kind: "category", id: entity.id }); }}
-        >
-          <div className="flex items-center gap-1 pl-6">
-            {isEditing ? (
-              <NameInput
-                initialValue={entity.name}
-                startChar={editStartChar}
-                onDone={(val, action) => handleCategoryNameDone(entity.id, val, action)}
-              />
-            ) : (
-              <div className="flex flex-col">
-                <span className={cn(
-                  "flex items-center gap-1 leading-6",
-                  isDeleted && "line-through",
-                  !entity.name && "text-xs italic text-muted-foreground/60",
-                )}>
-                  {entity.name || "empty name"}
-                  {isDuplicate && <AlertTriangle className="h-3 w-3 shrink-0 text-amber-500" aria-label="Duplicate name" />}
-                </span>
-                {saveError && (
-                  <span className="text-xs text-destructive leading-tight pb-0.5">{saveError}</span>
-                )}
-              </div>
-            )}
-          </div>
-        </td>
-
-        {/* Note */}
-        <td className="w-8 px-0 py-0.5 text-center">
-          {!isNew && rawEntityIdsWithNotes.has(entity.id) && (
-            <EntityNoteButton
-              entityId={entity.id}
-              entityKind="category"
-              entityLabel={entity.name || "Unnamed category"}
-              entityTypeLabel="Category"
-              className="mx-auto"
-            />
-          )}
-        </td>
-
-        {/* Move to group */}
-        <td className="w-60 px-2 py-0.5">
-          {!isDeleted && (
-            <select
-              className="h-6 w-full rounded border border-border bg-background px-1.5 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
-              value={entity.groupId}
-              onChange={(e) => {
-                if (e.target.value !== entity.groupId) {
-                  pushUndo();
-                  stageUpdate("categories", entity.id, { groupId: e.target.value });
-                }
-              }}
-            >
-              {Object.values(stagedGroups)
-                .filter((g) => !g.isDeleted)
-                .map((g) => (
-                  <option key={g.entity.id} value={g.entity.id}>
-                    {g.entity.name}
-                  </option>
-                ))}
-            </select>
-          )}
-        </td>
-
-        {/* Hidden toggle */}
-        <td className="w-36 px-2 py-0.5">
-          {isInheritedHidden ? (
-            <span
-              className="flex items-center gap-1 text-xs text-amber-500/70 cursor-default"
-              title="Hidden because the group is hidden — unhide the group first"
-            >
-              <EyeOff className="h-3 w-3" />
-              Hidden - Inherited
-            </span>
-          ) : (
-            <button
-              disabled={isDeleted}
-              onClick={() => { pushUndo(); stageUpdate("categories", entity.id, { hidden: !entity.hidden }); }}
-              className={cn(
-                "flex items-center gap-1 text-xs transition-colors",
-                entity.hidden ? "text-amber-600" : "text-muted-foreground hover:text-foreground",
-                isDeleted && "cursor-default opacity-50",
-              )}
-            >
-              {entity.hidden
-                ? <><EyeOff className="h-3 w-3" /> Hidden</>
-                : <><Eye className="h-3 w-3" /> Visible</>}
-            </button>
-          )}
-        </td>
-
-        {/* Rules */}
-        <td className="w-44 px-2 py-0.5">
-          {!isDeleted && (() => {
-            const count = categoryRuleCount.get(entity.id) ?? 0;
-            const label = count === 0
-              ? "create rule"
-              : count === 1
-                ? "1 associated rule"
-                : `${count} associated rules`;
-            return (
-              <button
-                className="inline-flex items-center rounded bg-purple-100 px-1.5 py-0.5 text-xs font-medium text-purple-700 hover:bg-purple-200 dark:bg-purple-900/40 dark:text-purple-300 dark:hover:bg-purple-900/60"
-                onClick={() => count > 0
-                  ? router.push(`/rules?categoryId=${entity.id}`)
-                  : onCreateRule ? onCreateRule(entity.id) : router.push("/rules?new=1")}
-                title={count > 0 ? "View rules for this category" : "Create a rule for this category"}
-              >
-                {label}
-              </button>
-            );
-          })()}
-        </td>
-
-        {/* Actions */}
-        <td className="w-28 px-1 py-0.5">
-          <div className="flex items-center justify-end gap-0.5 opacity-0 transition-opacity group-hover/row:opacity-100">
-            {saveError ? (
-              <Button variant="ghost" size="icon-xs" title="Clear error and retry" onClick={() => clearSaveError("categories", entity.id)}>
-                <RefreshCw />
-              </Button>
-            ) : isDeleted ? (
-              <Button variant="ghost" size="icon-xs" title="Undo delete" onClick={() => revertEntity("categories", entity.id)}>
-                <RotateCcw />
-              </Button>
-            ) : (
-              <>
-                <Button variant="ghost" size="icon-xs" title="Inspect usage" aria-label="Inspect usage"
-                  onClick={() => setInspectTarget({ id: entity.id, type: "category" })}>
-                  <Info />
-                </Button>
-                <Button
-                  variant="ghost" size="icon-xs" title="Delete category"
-                  className="text-destructive hover:text-destructive"
-                  onClick={() => {
-                    setDeleteIntent({
-                      ids: isNew ? [] : [entity.id],
-                      title: "Delete category?",
-                      entityLabel: entity.name || "Unnamed",
-                      entityRuleCount: categoryRuleCount.get(entity.id) ?? 0,
-                      onConfirm: () => { pushUndo(); stageDelete("categories", entity.id); },
-                    });
-                  }}
-                >
-                  <Trash2 />
-                </Button>
-                {(isNew || isUpdated) && (
-                  <Button variant="ghost" size="icon-xs" title="Revert" onClick={() => revertEntity("categories", entity.id)}>
-                    <RotateCcw />
-                  </Button>
-                )}
-              </>
-            )}
-          </div>
-        </td>
-      </tr>
+      <CategoriesTableCategoryRow
+        key={entity.id}
+        row={cat}
+        rowId={rowId}
+        highlightedId={highlightedId}
+        isSelected={selectedCell?.rowId === rowId}
+        isEditing={editingCell?.rowId === rowId}
+        isChecked={selectedIds.has(entity.id)}
+        isDuplicate={duplicateCatNames.has(entity.id)}
+        hasNote={!cat.isNew && rawEntityIdsWithNotes.has(entity.id)}
+        isInheritedHidden={!cat.isDeleted && group.entity.hidden}
+        ruleCount={categoryRuleCount.get(entity.id) ?? 0}
+        groupLabel={groupLabelById.get(entity.groupId) ?? "Unknown group"}
+        groupOptions={entity.isIncome ? incomeGroupOptions : expenseGroupOptions}
+        editStartChar={editingCell?.rowId === rowId ? editStartChar : undefined}
+        onToggleSelect={toggleSelect}
+        onSelectNameCell={(nextRowId) => selectCell(nextRowId, "name")}
+        onStartEditingName={(nextRowId) => startEditing(nextRowId, "name")}
+        onDoneName={handleCategoryNameDone}
+        onChangeGroup={handleCategoryGroupChange}
+        onToggleHidden={(id, hidden) => {
+          pushUndo();
+          stageUpdate("categories", id, { hidden });
+        }}
+        onOpenRules={(categoryId, ruleCount) => {
+          if (ruleCount > 0) {
+            router.push(`/rules?categoryId=${categoryId}`);
+          } else if (onCreateRule) {
+            onCreateRule(categoryId);
+          } else {
+            router.push("/rules?new=1");
+          }
+        }}
+        onClearSaveError={(id) => clearSaveError("categories", id)}
+        onRevert={(id) => revertEntity("categories", id)}
+        onRequestDelete={(id) => {
+          const category = stagedCats[id];
+          if (!category) return;
+          onDeleteIntentChange({
+            kind: "single",
+            ids: category.isNew ? [] : [id],
+            title: "Delete category?",
+            entityLabel: category.entity.name || "Unnamed",
+            entityRuleCount: categoryRuleCount.get(id) ?? 0,
+            onConfirm: () => {
+              pushUndo();
+              stageDelete("categories", id);
+            },
+          });
+        }}
+        onInspect={(id) => onInspectTargetChange({ id, type: "category" })}
+        isAnotherCellEditing={!!editingCell}
+      />
     );
   }
 
-  // ── Keyboard handler ─────────────────────────────────────────────────────────
-  function handleKeyDown(e: React.KeyboardEvent<HTMLDivElement>) {
-    if (!selectedCell) return;
-    if (editingCell?.kind === selectedCell.kind && editingCell?.id === selectedCell.id) return;
-
-    const { kind, id } = selectedCell;
-
-    if (kind === "group") {
-      const row = stagedGroups[id];
-      if (!row) return;
-      switch (e.key) {
-        case "Enter": case "F2":
-          e.preventDefault();
-          if (!row.isDeleted) startEditing("group", id);
-          break;
-        default:
-          if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !row.isDeleted)
-            startEditing("group", id, e.key);
-      }
-    } else {
-      const row = stagedCats[id];
-      if (!row) return;
-      switch (e.key) {
-        case "Enter": case "F2":
-          e.preventDefault();
-          if (!row.isDeleted) startEditing("category", id);
-          break;
-        default:
-          if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !row.isDeleted)
-            startEditing("category", id, e.key);
-      }
-    }
-  }
-
   // ── Render ───────────────────────────────────────────────────────────────────
-  const incomeGroups = allGroups.filter((g) => g.entity.isIncome);
-  const expenseGroups = allGroups.filter((g) => !g.entity.isIncome);
+  const incomeGroups = useMemo(
+    () => allGroups.filter((g) => g.entity.isIncome),
+    [allGroups]
+  );
+  const expenseGroups = useMemo(
+    () => allGroups.filter((g) => !g.entity.isIncome),
+    [allGroups]
+  );
 
   return (
     <>
-      <div ref={containerRef} className="flex min-h-0 flex-1 flex-col overflow-hidden outline-none" onKeyDown={handleKeyDown} tabIndex={-1}>
+      <div ref={containerRef} className="flex min-h-0 flex-1 flex-col overflow-hidden outline-none" onKeyDown={handleGridKeyDown} tabIndex={-1}>
         <FilterBar
           search={search} onSearchChange={setSearch}
-          visibilityFilter={visibilityFilter} onVisibilityChange={setVisibilityFilter}
-          typeFilter={typeFilter} onTypeChange={setTypeFilter}
-          rulesFilter={rulesFilter} onRulesFilterChange={setRulesFilter}
+          visibilityFilter={visibilityFilter} onVisibilityChange={handleVisibilityFilterChange}
+          typeFilter={typeFilter} onTypeChange={handleTypeFilterChange}
+          rulesFilter={rulesFilter} onRulesFilterChange={handleRulesFilterChange}
           filteredCount={filteredCount} totalCount={totalCount}
+          allCollapsed={allCollapsed}
+          onToggleCollapseAll={handleToggleCollapseAll}
           selectedCount={activeSelectedCount}
           onBulkDelete={handleBulkDelete}
           onDeselect={() => clearSelection()}
@@ -1043,19 +764,6 @@ export function CategoriesTable({
         </table>
         </div>
       </div>
-
-      <ConfirmDialog
-        open={!!deleteIntent}
-        onOpenChange={(open) => { if (!open) setDeleteIntent(null); }}
-        state={confirmState}
-      />
-
-      <UsageInspectorDrawer
-        entityId={inspectTarget?.id ?? null}
-        entityType={inspectTarget?.type ?? null}
-        open={!!inspectTarget}
-        onOpenChange={(open) => { if (!open) setInspectTarget(null); }}
-      />
     </>
   );
 }

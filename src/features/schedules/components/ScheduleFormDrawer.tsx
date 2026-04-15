@@ -1,31 +1,60 @@
 "use client";
 
-import { useEffect } from "react";
-import { useForm } from "react-hook-form";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useForm, type Path, type PathValue } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { ExternalLink, Trash2, CheckCircle2 } from "lucide-react";
-import { Label } from "@/components/ui/label";
-import { Input } from "@/components/ui/input";
+import { ExternalLink, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { SearchableCombobox } from "@/components/ui/combobox";
+import { EditableDrawer } from "@/components/ui/editable-drawer";
 import type { ComboboxOption } from "@/components/ui/combobox";
-import {
-  Sheet, SheetContent, SheetHeader, SheetTitle,
-  SheetDescription, SheetFooter,
-} from "@/components/ui/sheet";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import type { ConfirmState } from "@/components/ui/confirm-dialog";
+import { useTransactionCountsForIds } from "@/hooks/useTransactionCountsForIds";
 import { useStagedStore } from "@/store/staged";
 import { generateId } from "@/lib/uuid";
-import { recurSummary } from "../lib/recurSummary";
+import { useDrawerCloseGuard } from "@/hooks/useDrawerCloseGuard";
 import { scheduleFormSchema, defaultFormValues } from "../schemas/schedule.schema";
 import type { ScheduleFormValues } from "../schemas/schedule.schema";
-import { AmountModeInput } from "./AmountModeInput";
-import type { AmountOp } from "./AmountModeInput";
-import { RecurPatternEditor } from "./RecurPatternEditor";
-import type { RecurValues } from "./RecurPatternEditor";
 import type { Schedule, ScheduleAmountRange, RecurConfig } from "@/types/entities";
-import { cn } from "@/lib/utils";
+import { buildScheduleDeleteWarning } from "@/lib/usageWarnings";
+import { ScheduleDetailsSection } from "./ScheduleDetailsSection";
+import { ScheduleDateSection } from "./ScheduleDateSection";
+import { ScheduleAmountSection } from "./ScheduleAmountSection";
 
 // ─── Converters ───────────────────────────────────────────────────────────────
+
+function getDisplayAmountState(schedule: Schedule): {
+  amountOp: ScheduleFormValues["amountOp"];
+  amount: string;
+  amountNum1: string;
+  amountNum2: string;
+} {
+  if (schedule.amountOp === "isbetween" && schedule.amount != null && typeof schedule.amount === "object") {
+    const range = schedule.amount as ScheduleAmountRange;
+    return {
+      amountOp: "isbetween",
+      amount: "",
+      amountNum1: (range.num1 / 100).toFixed(2),
+      amountNum2: (range.num2 / 100).toFixed(2),
+    };
+  }
+
+  if ((schedule.amountOp === "is" || schedule.amountOp === "isapprox") && typeof schedule.amount === "number") {
+    return {
+      amountOp: schedule.amountOp,
+      amount: (schedule.amount / 100).toFixed(2),
+      amountNum1: "",
+      amountNum2: "",
+    };
+  }
+
+  return {
+    amountOp: "isapprox",
+    amount: "0.00",
+    amountNum1: "",
+    amountNum2: "",
+  };
+}
 
 function scheduleToForm(s: Schedule): ScheduleFormValues {
   const base = defaultFormValues();
@@ -73,21 +102,7 @@ function scheduleToForm(s: Schedule): ScheduleFormValues {
     }
   }
 
-  let amountOp: ScheduleFormValues["amountOp"] = "";
-  let amount = "";
-  let amountNum1 = "";
-  let amountNum2 = "";
-
-  if (s.amountOp) {
-    amountOp = s.amountOp;
-    if (s.amountOp === "isbetween" && s.amount !== undefined && typeof s.amount === "object") {
-      const range = s.amount as ScheduleAmountRange;
-      amountNum1 = (range.num1 / 100).toFixed(2);
-      amountNum2 = (range.num2 / 100).toFixed(2);
-    } else if (typeof s.amount === "number") {
-      amount = (s.amount / 100).toFixed(2);
-    }
-  }
+  const { amountOp, amount, amountNum1, amountNum2 } = getDisplayAmountState(s);
 
   return {
     name: s.name ?? "",
@@ -161,6 +176,64 @@ function formToSchedule(values: ScheduleFormValues, existingId?: string): Schedu
   };
 }
 
+type ScheduleEditableSnapshot = {
+  name?: string;
+  payeeId: string | null;
+  accountId: string | null;
+  postsTransaction: boolean;
+  amount: number | ScheduleAmountRange;
+  amountOp: Schedule["amountOp"];
+  date?: string | RecurConfig;
+};
+
+function normalizeRecurConfig(config: RecurConfig): RecurConfig {
+  return {
+    frequency: config.frequency,
+    interval: config.interval ?? 1,
+    start: config.start,
+    endMode: config.endMode,
+    ...(config.endMode === "after_n_occurrences"
+      ? { endOccurrences: config.endOccurrences ?? 12 }
+      : {}),
+    ...(config.endMode === "on_date" && config.endDate ? { endDate: config.endDate } : {}),
+    ...(config.skipWeekend
+      ? {
+          skipWeekend: true,
+          weekendSolveMode: config.weekendSolveMode ?? "before",
+        }
+      : {}),
+    ...(config.patterns && config.patterns.length > 0 ? { patterns: config.patterns } : {}),
+  };
+}
+
+function toEditableSnapshot(schedule: Schedule): ScheduleEditableSnapshot {
+  const amountState = getDisplayAmountState(schedule);
+  return {
+    name: schedule.name?.trim() || undefined,
+    payeeId: schedule.payeeId ?? null,
+    accountId: schedule.accountId ?? null,
+    postsTransaction: schedule.postsTransaction ?? false,
+    amount:
+      amountState.amountOp === "isbetween"
+        ? {
+            num1: Math.round(parseFloat(amountState.amountNum1) * 100),
+            num2: Math.round(parseFloat(amountState.amountNum2) * 100),
+          }
+        : Math.round(parseFloat(amountState.amount) * 100),
+    amountOp: amountState.amountOp,
+    date:
+      typeof schedule.date === "string"
+        ? schedule.date
+        : schedule.date
+          ? normalizeRecurConfig(schedule.date)
+          : undefined,
+  };
+}
+
+function editableScheduleSignature(schedule: Schedule): string {
+  return JSON.stringify(toEditableSnapshot(schedule));
+}
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 type Props = {
@@ -181,10 +254,11 @@ export function ScheduleFormDrawer({ open, onOpenChange, scheduleId, onEditAsRul
 
   const existingSchedule = scheduleId ? stagedSchedules[scheduleId]?.entity : null;
   const isNew = !scheduleId;
+  const [deleteRequested, setDeleteRequested] = useState(false);
 
   const {
-    register, handleSubmit, reset, watch, setValue,
-    formState: { errors },
+    control, register, handleSubmit, reset, setValue,
+    formState: { errors, isDirty },
   } = useForm<ScheduleFormValues>({
     resolver: zodResolver(scheduleFormSchema),
     defaultValues: defaultFormValues(),
@@ -199,57 +273,92 @@ export function ScheduleFormDrawer({ open, onOpenChange, scheduleId, onEditAsRul
     }
   }, [open, scheduleId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const dateMode         = watch("dateMode");
-  const amountOp         = watch("amountOp");
-  const amount           = watch("amount");
-  const amountNum1       = watch("amountNum1");
-  const amountNum2       = watch("amountNum2");
-  const frequency        = watch("frequency");
-  const interval         = watch("interval");
-  const start            = watch("start");
-  const endMode          = watch("endMode");
-  const endOccurrences   = watch("endOccurrences");
-  const endDate          = watch("endDate");
-  const skipWeekend      = watch("skipWeekend");
-  const weekendSolveMode = watch("weekendSolveMode");
-  const patternMode      = watch("patternMode");
-  const patternDay       = watch("patternDay");
-  const patternWeekNum   = watch("patternWeekNum");
-  const patternWeekDay   = watch("patternWeekDay");
-  const onceDate         = watch("onceDate");
-
-  const recurValues: RecurValues = {
-    frequency, interval, start, endMode, endOccurrences: endOccurrences ?? 12,
-    endDate: endDate ?? "", skipWeekend, weekendSolveMode,
-    patternMode, patternDay, patternWeekNum, patternWeekDay,
-  };
+  const setFieldValue = useCallback(
+    <K extends Path<ScheduleFormValues>>(key: K, value: PathValue<ScheduleFormValues, K>) => {
+      setValue(key, value, { shouldDirty: true, shouldTouch: true, shouldValidate: true });
+    },
+    [setValue]
+  );
 
   // ── Selectors ────────────────────────────────────────────────────────────────
-  const payeeOptions: ComboboxOption[] = Object.values(stagedPayees)
-    .filter((s) => !s.isDeleted && !s.entity.transferAccountId)
-    .map((s) => ({ id: s.entity.id, name: s.entity.name }))
-    .sort((a, b) => a.name.localeCompare(b.name));
+  const payeeOptions: ComboboxOption[] = useMemo(
+    () =>
+      Object.values(stagedPayees)
+        .filter((s) => !s.isDeleted && !s.entity.transferAccountId)
+        .map((s) => ({ id: s.entity.id, name: s.entity.name }))
+        .sort((a, b) => a.name.localeCompare(b.name)),
+    [stagedPayees]
+  );
 
-  const accountOptions: ComboboxOption[] = Object.values(stagedAccounts)
-    .filter((s) => !s.isDeleted)
-    .map((s) => ({ id: s.entity.id, name: s.entity.name }))
-    .sort((a, b) => a.name.localeCompare(b.name));
+  const accountOptions: ComboboxOption[] = useMemo(
+    () =>
+      Object.values(stagedAccounts)
+        .filter((s) => !s.isDeleted)
+        .map((s) => ({ id: s.entity.id, name: s.entity.name }))
+        .sort((a, b) => a.name.localeCompare(b.name)),
+    [stagedAccounts]
+  );
 
-  // ── Preview summary ──────────────────────────────────────────────────────────
-  const preview = dateMode === "once"
-    ? recurSummary(onceDate)
-    : recurSummary({ frequency, interval, start, endMode, endOccurrences, endDate, skipWeekend, weekendSolveMode,
-        patterns: patternMode === "specific_day" ? [{ value: patternDay, type: "day" }]
-                : patternMode === "day_of_week"  ? [{ value: patternWeekNum, type: patternWeekDay }]
-                : undefined });
+  const { data: txCounts, isLoading: txLoading } = useTransactionCountsForIds(
+    "schedule",
+    existingSchedule && !isNew ? [existingSchedule.id] : [],
+    { enabled: deleteRequested && !!existingSchedule && !isNew }
+  );
+
+  const deleteTxTotal = existingSchedule && !isNew
+    ? (txCounts ? [...txCounts.values()].reduce((a, b) => a + b, 0) : undefined)
+    : 0;
+
+  const deleteConfirmState: ConfirmState | null =
+    deleteRequested && existingSchedule
+      ? {
+          title: "Delete schedule?",
+          message: buildScheduleDeleteWarning(
+            existingSchedule.name ?? "Unnamed",
+            existingSchedule.ruleId,
+            existingSchedule.postsTransaction ?? false,
+            deleteTxTotal,
+            txLoading && !isNew
+          ),
+          onConfirm: () => {
+            pushUndo();
+            stageDelete("schedules", scheduleId!);
+            closeDrawer();
+          },
+        }
+      : null;
+
+  const {
+    confirmDialog,
+    setConfirmDialog,
+    closeNow,
+    requestClose,
+    handleOpenChange,
+  } = useDrawerCloseGuard({
+    isDirty,
+    onClose: () => onOpenChange(false),
+    title: "Discard schedule changes?",
+    message: "Your unsaved edits in this schedule drawer will be lost.",
+  });
+
+  function closeDrawer() {
+    setDeleteRequested(false);
+    closeNow();
+  }
 
   // ── Submit ───────────────────────────────────────────────────────────────────
   function onSubmit(values: ScheduleFormValues) {
-    pushUndo();
     if (isNew) {
+      pushUndo();
       stageNew("schedules", formToSchedule(values));
     } else {
       const updated = formToSchedule(values, scheduleId!);
+      if (existingSchedule && editableScheduleSignature(existingSchedule) === editableScheduleSignature(updated)) {
+        closeDrawer();
+        return;
+      }
+
+      pushUndo();
       stageUpdate("schedules", scheduleId!, {
         name: updated.name,
         postsTransaction: updated.postsTransaction,
@@ -261,145 +370,108 @@ export function ScheduleFormDrawer({ open, onOpenChange, scheduleId, onEditAsRul
         completed: existingSchedule?.completed ?? false,
       });
     }
-    onOpenChange(false);
+    closeDrawer();
   }
 
   function handleDelete() {
-    if (!scheduleId) return;
-    pushUndo();
-    stageDelete("schedules", scheduleId);
-    onOpenChange(false);
+    if (!scheduleId || !existingSchedule) return;
+    setDeleteRequested(true);
+  }
+
+  function handleEditAsRule() {
+    if (!existingSchedule?.ruleId || !onEditAsRule) return;
+    requestClose(() => onEditAsRule(existingSchedule.ruleId!));
   }
 
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="right" className="data-[side=right]:sm:max-w-lg flex flex-col overflow-hidden p-0 gap-0">
-        <SheetHeader className="border-b border-border px-4 py-3">
-          <div className="flex items-center gap-2">
-            <SheetTitle>{isNew ? "New Schedule" : "Edit Schedule"}</SheetTitle>
-            {!isNew && existingSchedule?.completed && (
-              <span className="flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
-                <CheckCircle2 className="h-3 w-3" />
-                Completed
-              </span>
+    <>
+    <EditableDrawer
+      open={open}
+      onOpenChange={(nextOpen) => handleOpenChange(nextOpen, () => onOpenChange(true))}
+      title={isNew ? "New Schedule" : "Edit Schedule"}
+      description={isNew ? "Create a new schedule" : "Edit schedule details"}
+      descriptionClassName="sr-only"
+      contentClassName="data-[side=right]:sm:max-w-lg"
+      footerClassName="pt-3 pb-4"
+      footer={
+        <div className="flex w-full items-center gap-2">
+          <div className="flex gap-1">
+            {!isNew && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                className="text-destructive hover:text-destructive"
+                title="Delete schedule"
+                aria-label="Delete schedule"
+                onClick={handleDelete}
+              >
+                <Trash2 />
+              </Button>
+            )}
+            {!isNew && existingSchedule?.ruleId && onEditAsRule && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={handleEditAsRule}
+                title="Open underlying rule in Rules editor"
+              >
+                <ExternalLink className="h-3 w-3" />
+                Edit as Rule
+              </Button>
             )}
           </div>
-          <SheetDescription className="sr-only">
-            {isNew ? "Create a new schedule" : "Edit schedule details"}
-          </SheetDescription>
-        </SheetHeader>
 
+          <div className="ml-auto flex gap-2">
+            <Button type="button" variant="outline" onClick={() => requestClose()}>
+              Cancel
+            </Button>
+            <Button type="submit" form="schedule-form">
+              {isNew ? "Add Schedule" : "Save Changes"}
+            </Button>
+          </div>
+        </div>
+      }
+    >
         <form
           id="schedule-form"
           onSubmit={handleSubmit(onSubmit)}
           className="flex flex-1 flex-col overflow-y-auto"
         >
-          {/* ── DETAILS section ─────────────────────────────────────────── */}
-          <div className="px-4 py-4 space-y-3">
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Details</p>
-
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="sched-name" className="text-xs">Name <span className="text-muted-foreground">(optional)</span></Label>
-              <Input id="sched-name" placeholder="e.g. Monthly Rent" {...register("name")} />
-            </div>
-
-            {/* Payee + Account side by side */}
-            <div className="grid grid-cols-2 gap-3">
-              <div className="flex flex-col gap-1.5">
-                <Label className="text-xs">Payee <span className="text-muted-foreground">(optional)</span></Label>
-                <SearchableCombobox
-                  options={payeeOptions}
-                  value={watch("payeeId") ?? ""}
-                  onChange={(v) => setValue("payeeId", v)}
-                  placeholder="— none —"
-                />
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <Label className="text-xs">Account <span className="text-muted-foreground">(optional)</span></Label>
-                <SearchableCombobox
-                  options={accountOptions}
-                  value={watch("accountId") ?? ""}
-                  onChange={(v) => setValue("accountId", v)}
-                  placeholder="— none —"
-                />
-              </div>
-            </div>
-          </div>
+          <ScheduleDetailsSection
+            control={control}
+            errors={errors}
+            register={register}
+            setFieldValue={setFieldValue}
+            payeeOptions={payeeOptions}
+            accountOptions={accountOptions}
+          />
 
           <div className="border-t border-border" />
 
-          {/* ── DATE section ────────────────────────────────────────────── */}
-          <div className="px-4 py-4 space-y-3">
-            <div className="flex items-center justify-between">
-              <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Date</p>
-              {preview && (
-                <span className="rounded bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">{preview}</span>
-              )}
-            </div>
-
-            {/* Mode toggle */}
-            <div className="flex gap-1">
-              {(["once", "recurring"] as const).map((mode) => (
-                <button
-                  key={mode}
-                  type="button"
-                  onClick={() => setValue("dateMode", mode)}
-                  className={cn(
-                    "flex-1 rounded border px-2 py-1.5 text-xs font-medium transition-colors",
-                    dateMode === mode
-                      ? "border-primary bg-primary text-primary-foreground"
-                      : "border-border bg-background text-muted-foreground hover:border-primary/50 hover:text-foreground"
-                  )}
-                >
-                  {mode === "once" ? "One-time" : "Recurring"}
-                </button>
-              ))}
-            </div>
-
-            {dateMode === "once" ? (
-              <div>
-                <input
-                  type="date"
-                  value={onceDate}
-                  onChange={(e) => setValue("onceDate", e.target.value)}
-                  className="h-8 w-full rounded-md border border-input bg-background px-2 text-xs outline-none focus:ring-2 focus:ring-ring/50"
-                />
-                {errors.onceDate && <p className="mt-1 text-xs text-destructive">{errors.onceDate.message}</p>}
-              </div>
-            ) : (
-              <RecurPatternEditor
-                values={recurValues}
-                onChange={(key, val) => setValue(key as keyof ScheduleFormValues, val as never)}
-                errors={{
-                  start: errors.start?.message,
-                  endOccurrences: errors.endOccurrences?.message,
-                  endDate: errors.endDate?.message,
-                }}
-              />
-            )}
-          </div>
+          <ScheduleDateSection
+            control={control}
+            errors={{
+              onceDate: errors.onceDate?.message,
+              start: errors.start?.message,
+              endOccurrences: errors.endOccurrences?.message,
+              endDate: errors.endDate?.message,
+            }}
+            setFieldValue={setFieldValue}
+          />
 
           <div className="border-t border-border" />
 
-          {/* ── AMOUNT section ──────────────────────────────────────────── */}
-          <div className="px-4 py-4 space-y-3">
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Amount</p>
-            <AmountModeInput
-              amountOp={amountOp as AmountOp}
-              amount={amount}
-              amountNum1={amountNum1}
-              amountNum2={amountNum2}
-              onAmountOpChange={(v) => setValue("amountOp", v)}
-              onAmountChange={(v) => setValue("amount", v)}
-              onAmountNum1Change={(v) => setValue("amountNum1", v)}
-              onAmountNum2Change={(v) => setValue("amountNum2", v)}
-              errors={{
-                amount: errors.amount?.message,
-                amountNum1: errors.amountNum1?.message,
-                amountNum2: errors.amountNum2?.message,
-              }}
-            />
-          </div>
+          <ScheduleAmountSection
+            control={control}
+            errors={{
+              amount: errors.amount?.message,
+              amountNum1: errors.amountNum1?.message,
+              amountNum2: errors.amountNum2?.message,
+            }}
+            setFieldValue={setFieldValue}
+          />
 
           <div className="border-t border-border" />
 
@@ -421,48 +493,21 @@ export function ScheduleFormDrawer({ open, onOpenChange, scheduleId, onEditAsRul
             </label>
           </div>
         </form>
-
-        <SheetFooter className="border-t border-border px-4 pt-3 pb-4">
-          <div className="flex w-full items-center gap-2">
-            {/* Left side: delete + edit-as-rule */}
-            <div className="flex gap-1">
-              {!isNew && (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon-sm"
-                  className="text-destructive hover:text-destructive"
-                  title="Delete schedule"
-                  onClick={handleDelete}
-                >
-                  <Trash2 />
-                </Button>
-              )}
-              {!isNew && existingSchedule?.ruleId && onEditAsRule && (
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => { onEditAsRule(existingSchedule.ruleId!); onOpenChange(false); }}
-                  title="Open underlying rule in Rules editor"
-                >
-                  <ExternalLink className="h-3 w-3" />
-                  Edit as Rule
-                </Button>
-              )}
-            </div>
-
-            <div className="ml-auto flex gap-2">
-              <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-                Cancel
-              </Button>
-              <Button type="submit" form="schedule-form">
-                {isNew ? "Add Schedule" : "Save Changes"}
-              </Button>
-            </div>
-          </div>
-        </SheetFooter>
-      </SheetContent>
-    </Sheet>
+    </EditableDrawer>
+    <ConfirmDialog
+      open={confirmDialog !== null}
+      onOpenChange={(nextOpen) => {
+        if (!nextOpen) setConfirmDialog(null);
+      }}
+      state={confirmDialog}
+    />
+    <ConfirmDialog
+      open={deleteRequested}
+      onOpenChange={(nextOpen) => {
+        if (!nextOpen) setDeleteRequested(false);
+      }}
+      state={deleteConfirmState}
+    />
+    </>
   );
 }

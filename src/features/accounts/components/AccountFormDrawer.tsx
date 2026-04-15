@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
-import { useForm } from "react-hook-form";
+import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
@@ -29,9 +29,9 @@ export function AccountFormDrawer({ open, onOpenChange, onSubmit }: Props) {
     register,
     handleSubmit,
     reset,
-    watch,
     setValue,
     formState: { errors, isSubmitting },
+    control,
   } = useForm<AccountFormValues>({
     resolver: zodResolver(accountFormSchema),
     defaultValues: {
@@ -49,7 +49,7 @@ export function AccountFormDrawer({ open, onOpenChange, onSubmit }: Props) {
     onOpenChange(false);
   }
 
-  const offBudget = watch("offBudget");
+  const offBudget = useWatch({ control, name: "offBudget" });
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>

@@ -111,7 +111,7 @@ export type ApiSchedule = {
   posts_transaction?: boolean;
   payee?: string | null;
   account?: string | null;
-  amount?: number | ApiAmountRange;
+  amount?: number | ApiAmountRange | null;
   amountOp?: ApiAmountOp;
   date?: string | ApiRecurConfig;
 };

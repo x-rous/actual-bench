@@ -35,18 +35,37 @@ import {
   selectCanUndo,
   selectCanRedo,
 } from "@/store/staged";
-import { useAccountsSave } from "@/features/accounts/hooks/useAccountsSave";
-import { usePayeesSave } from "@/features/payees/hooks/usePayeesSave";
-import { useCategoryGroupsSave } from "@/features/categories/hooks/useCategoryGroupsSave";
-import { useCategoriesSave } from "@/features/categories/hooks/useCategoriesSave";
-import { useRulesSave } from "@/features/rules/hooks/useRulesSave";
-import { useSchedulesSave } from "@/features/schedules/hooks/useSchedulesSave";
-import { useTagsSave } from "@/features/tags/hooks/useTagsSave";
+import { useBudgetSavePipeline } from "./useBudgetSavePipeline";
 
 type PendingAction =
   | { kind: "switch"; id: string }
   | { kind: "addConnection" }
   | { kind: "disconnect" };
+
+function TopBarVersionChip({
+  label,
+  value,
+  title,
+}: {
+  label: string;
+  value: string;
+  title: string;
+}) {
+  return (
+    <span
+      title={title}
+      aria-label={title}
+      className="inline-flex items-center gap-1 rounded-sm bg-muted/55 px-1.5 py-0.5 ring-1 ring-border/50"
+    >
+      <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground/80">
+        {label}
+      </span>
+      <span className="font-mono text-[11px] leading-none text-foreground/85">
+        {value}
+      </span>
+    </span>
+  );
+}
 
 export function TopBar() {
   const router = useRouter();
@@ -68,14 +87,7 @@ export function TopBar() {
   const discardAll = useStagedStore((s) => s.discardAll);
   const clearHistory = useStagedStore((s) => s.clearHistory);
 
-  const { save: saveAccounts, isSaving: isSavingAccounts } = useAccountsSave();
-  const { save: savePayees, isSaving: isSavingPayees } = usePayeesSave();
-  const { save: saveCategoryGroups, isSaving: isSavingGroups } = useCategoryGroupsSave();
-  const { save: saveCategories, isSaving: isSavingCategories } = useCategoriesSave();
-  const { save: saveRules, isSaving: isSavingRules } = useRulesSave();
-  const { save: saveSchedules, isSaving: isSavingSchedules } = useSchedulesSave();
-  const { save: saveTags, isSaving: isSavingTags } = useTagsSave();
-  const isSaving = isSavingAccounts || isSavingPayees || isSavingGroups || isSavingCategories || isSavingRules || isSavingSchedules || isSavingTags;
+  const { saveAll, isSaving } = useBudgetSavePipeline();
 
   // ── Guarded action helpers ────────────────────────────────────────────────────
 
@@ -117,37 +129,7 @@ export function TopBar() {
 
   async function handleSave() {
     try {
-      const [accountsResult, payeesResult, groupsResult, tagsResult, schedulesResult] = await Promise.all([
-        saveAccounts(),
-        savePayees(),
-        saveCategoryGroups(),
-        saveTags(),
-        saveSchedules(),
-      ]);
-      const categoriesResult = await saveCategories(groupsResult.idMap);
-      const entityIdMap = {
-        ...payeesResult.idMap,
-        ...accountsResult.idMap,
-        ...categoriesResult.idMap,
-      };
-      const rulesResult = await saveRules(entityIdMap);
-
-      const totalSucceeded =
-        accountsResult.succeeded.length +
-        payeesResult.succeeded.length +
-        groupsResult.succeeded.length +
-        categoriesResult.succeeded.length +
-        rulesResult.succeeded.length +
-        schedulesResult.succeeded.length +
-        tagsResult.succeeded.length;
-      const totalFailed =
-        accountsResult.failed.length +
-        payeesResult.failed.length +
-        groupsResult.failed.length +
-        categoriesResult.failed.length +
-        rulesResult.failed.length +
-        schedulesResult.failed.length +
-        tagsResult.failed.length;
+      const { totalSucceeded, totalFailed } = await saveAll();
       clearHistory();
       if (totalFailed === 0) {
         toast.success(`Saved ${totalSucceeded} item${totalSucceeded !== 1 ? "s" : ""} successfully.`);
@@ -236,16 +218,24 @@ export function TopBar() {
           )}
 
           {activeInstance && (activeInstance.apiVersion ?? activeInstance.serverVersion) && (
-            <div className="flex items-center gap-2 text-xs select-none">
+            <div
+              className="inline-flex items-center gap-2 text-xs select-none"
+              title="Server versions are fetched when the connection is established or reconnected."
+              aria-label="Current server versions"
+            >
               {activeInstance.apiVersion && (
-                <span className="px-3 py-1.5 rounded-md bg-muted text-muted-foreground">
-                  actual-http-api v{activeInstance.apiVersion}
-                </span>
+                <TopBarVersionChip
+                  label="API"
+                  value={activeInstance.apiVersion}
+                  title={`actual-http-api v${activeInstance.apiVersion}`}
+                />
               )}
               {activeInstance.serverVersion && (
-                <span className="px-3 py-1.5 rounded-md bg-muted text-muted-foreground">
-                  actual budget v{activeInstance.serverVersion}
-                </span>
+                <TopBarVersionChip
+                  label="Actual"
+                  value={activeInstance.serverVersion}
+                  title={`Actual Budget v${activeInstance.serverVersion}`}
+                />
               )}
             </div>
           )}

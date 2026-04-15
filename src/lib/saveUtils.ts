@@ -35,3 +35,14 @@ export function computeSaveOperations<T extends BaseEntity>(
 
   return { toCreate, toUpdate, toDelete };
 }
+
+/**
+ * Returns true when a staged entity map contains any pending create/update/delete.
+ */
+export function hasPendingStagedChanges<T extends BaseEntity>(
+  staged: Record<string, StagedEntity<T>>
+): boolean {
+  return Object.values(staged).some(
+    (entry) => !(entry.isNew && entry.isDeleted) && (entry.isNew || entry.isUpdated || entry.isDeleted)
+  );
+}

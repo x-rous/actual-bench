@@ -1,5 +1,22 @@
 import { z } from "zod";
 
+const amountRangeSchema = z.object({
+  num1: z.number(),
+  num2: z.number(),
+});
+
+const recurConfigSchema = z.object({
+  frequency: z.enum(["daily", "weekly", "monthly", "yearly"]),
+  interval: z.number().int().min(1).optional(),
+  patterns: z.array(z.object({ value: z.number(), type: z.string() })).optional(),
+  skipWeekend: z.boolean().optional(),
+  start: z.string(),
+  endMode: z.enum(["never", "after_n_occurrences", "on_date"]),
+  endOccurrences: z.number().int().min(1).optional(),
+  endDate: z.string().optional(),
+  weekendSolveMode: z.enum(["before", "after"]).optional(),
+});
+
 const conditionOrActionSchema = z.object({
   field: z.string().min(1).optional(),
   op: z.string().min(1),
@@ -9,7 +26,8 @@ const conditionOrActionSchema = z.object({
     z.boolean(),
     z.null(),
     z.array(z.string()),
-    z.object({ num1: z.number(), num2: z.number() }),
+    amountRangeSchema,
+    recurConfigSchema,
   ]),
   type: z.string().optional(),
   options: z.object({ template: z.string().optional() }).optional(),

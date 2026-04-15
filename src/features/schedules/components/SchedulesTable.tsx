@@ -3,53 +3,35 @@
 import { useState, useMemo } from "react";
 import { useHighlight } from "@/hooks/useHighlight";
 import { useTableSelection } from "@/hooks/useTableSelection";
-import { useTransactionCountsForIds } from "@/hooks/useTransactionCountsForIds";
-import { Pencil, Trash2, RotateCcw, Copy, ExternalLink, AlertTriangle, Repeat2, CalendarDays, Info } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
+import { Pencil, Trash2, RotateCcw, Copy, Braces, AlertTriangle, Info, RefreshCw, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { ConfirmDialog } from "@/components/ui/confirm-dialog";
-import type { ConfirmState } from "@/components/ui/confirm-dialog";
 import { cn } from "@/lib/utils";
 import { useStagedStore } from "@/store/staged";
 import { generateId } from "@/lib/uuid";
-import { buildScheduleDeleteWarning, buildScheduleBulkDeleteWarning } from "@/lib/usageWarnings";
-import { UsageInspectorDrawer } from "@/features/usage-inspector/components/UsageInspectorDrawer";
 import { recurSummary, frequencyLabel } from "../lib/recurSummary";
 import { FilterBar } from "./FilterBar";
-import type { StatusFilter, AutoAddFilter, FrequencyFilter, EntityOption } from "./FilterBar";
+import type { ScheduleDeleteIntent } from "./SchedulesTableOverlays";
+import type { AutoAddFilter, FrequencyFilter, EntityOption } from "./FilterBar";
 import type { StagedEntity } from "@/types/staged";
 import type { Schedule, ScheduleAmountRange } from "@/types/entities";
-
-// ─── Delete intent ────────────────────────────────────────────────────────────
-
-type DeleteIntent = {
-  /** Server-side IDs for $oneof tx-count query. Empty when all selected are isNew. */
-  ids: string[];
-  title: string;
-  onConfirm: () => void;
-  // Single delete
-  entityLabel?: string;
-  ruleId?: string;
-  postsTransaction?: boolean;
-  // Bulk delete
-  bulkCount?: number;
-};
 
 // ─── Amount display helper ────────────────────────────────────────────────────
 
 function formatAmount(
-  amount: number | ScheduleAmountRange | undefined,
+  amount: number | ScheduleAmountRange | null | undefined,
   amountOp: Schedule["amountOp"]
 ): string {
-  if (amount === undefined || amountOp === undefined) return "";
-  if (typeof amount === "number") {
-    const display = (amount / 100).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    return amountOp === "isapprox" ? `~${display}` : display;
+  if (amountOp === "isbetween" && amount != null && typeof amount === "object" && "num1" in amount && "num2" in amount) {
+    const range = amount as ScheduleAmountRange;
+    const n1 = (range.num1 / 100).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const n2 = (range.num2 / 100).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    return `${n1} – ${n2}`;
   }
-  const range = amount as ScheduleAmountRange;
-  const n1 = (range.num1 / 100).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  const n2 = (range.num2 / 100).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  return `${n1} – ${n2}`;
+
+  const numericAmount = typeof amount === "number" ? amount : 0;
+  const normalizedOp = amountOp === "is" ? "is" : "isapprox";
+  const display = (numericAmount / 100).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return normalizedOp === "isapprox" ? `≈ ${display}` : display;
 }
 
 function formatDate(iso: string | undefined): string {
@@ -73,9 +55,16 @@ function isOverdue(nextDate: string | undefined, completed: boolean): boolean {
 type Props = {
   onEdit: (id: string) => void;
   onEditAsRule: (ruleId: string) => void;
+  onDeleteIntentChange: (intent: ScheduleDeleteIntent | null) => void;
+  onInspectIdChange: (id: string | null) => void;
 };
 
-export function SchedulesTable({ onEdit, onEditAsRule }: Props) {
+export function SchedulesTable({
+  onEdit,
+  onEditAsRule,
+  onDeleteIntentChange,
+  onInspectIdChange,
+}: Props) {
   const staged          = useStagedStore((s) => s.schedules);
   const stagedPayees    = useStagedStore((s) => s.payees);
   const stagedAccounts  = useStagedStore((s) => s.accounts);
@@ -87,43 +76,7 @@ export function SchedulesTable({ onEdit, onEditAsRule }: Props) {
 
   const highlightedId = useHighlight();
 
-  const [deleteIntent, setDeleteIntent] = useState<DeleteIntent | null>(null);
-  const [inspectId, setInspectId] = useState<string | null>(null);
-
-  const { data: txCounts, isLoading: txLoading } = useTransactionCountsForIds(
-    "schedule",
-    deleteIntent?.ids ?? [],
-    { enabled: !!deleteIntent && (deleteIntent.ids.length > 0) }
-  );
-
-  // ── Confirm dialog state (computed from intent + live tx counts) ─────────────
-  const txTotal = deleteIntent?.ids.length
-    ? (txCounts ? [...txCounts.values()].reduce((a, b) => a + b, 0) : undefined)
-    : 0;
-
-  const confirmState: ConfirmState | null = deleteIntent
-    ? {
-        title: deleteIntent.title,
-        message:
-          deleteIntent.bulkCount !== undefined
-            ? buildScheduleBulkDeleteWarning(
-                deleteIntent.bulkCount,
-                txTotal,
-                txLoading && deleteIntent.ids.length > 0
-              )
-            : buildScheduleDeleteWarning(
-                deleteIntent.entityLabel ?? "",
-                deleteIntent.ruleId,
-                deleteIntent.postsTransaction ?? false,
-                txTotal,
-                txLoading && deleteIntent.ids.length > 0
-              ),
-        onConfirm: deleteIntent.onConfirm,
-      }
-    : null;
-
   const [search, setSearch]                       = useState("");
-  const [statusFilter, setStatusFilter]           = useState<StatusFilter>("active");
   const [autoAddFilter, setAutoAddFilter]         = useState<AutoAddFilter>("all");
   const [frequencyFilter, setFrequencyFilter]     = useState<FrequencyFilter>("all");
   const [payeeFilter, setPayeeFilter]             = useState("");
@@ -162,8 +115,6 @@ export function SchedulesTable({ onEdit, onEditAsRule }: Props) {
     const q = search.trim().toLowerCase();
     return Object.values(staged).filter((s) => {
       if (s.isDeleted) return false;
-      if (statusFilter === "active"    && s.entity.completed) return false;
-      if (statusFilter === "completed" && !s.entity.completed) return false;
       if (autoAddFilter === "auto"   && !s.entity.postsTransaction) return false;
       if (autoAddFilter === "manual" &&  s.entity.postsTransaction) return false;
       if (frequencyFilter !== "all") {
@@ -181,7 +132,7 @@ export function SchedulesTable({ onEdit, onEditAsRule }: Props) {
       }
       return true;
     });
-  }, [staged, search, statusFilter, autoAddFilter, frequencyFilter, payeeFilter, accountFilter, stagedPayees, stagedAccounts]);
+  }, [staged, search, autoAddFilter, frequencyFilter, payeeFilter, accountFilter, stagedPayees, stagedAccounts]);
 
   const totalCount   = Object.values(staged).filter((s) => !s.isDeleted).length;
   const selectableIds = useMemo(() => new Set(rows.map((s) => s.entity.id)), [rows]);
@@ -198,7 +149,7 @@ export function SchedulesTable({ onEdit, onEditAsRule }: Props) {
     const s = staged[id];
     if (!s) return;
     const entity = s.entity;
-    setDeleteIntent({
+    onDeleteIntentChange({
       ids: s.isNew ? [] : [entity.id],
       title: "Delete schedule?",
       entityLabel: entity.name ?? "Unnamed",
@@ -223,7 +174,7 @@ export function SchedulesTable({ onEdit, onEditAsRule }: Props) {
   function handleBulkDelete() {
     const count = activeSelectedIds.length;
     const serverIds = activeSelectedIds.filter((id) => !staged[id]?.isNew);
-    setDeleteIntent({
+    onDeleteIntentChange({
       ids: serverIds,
       title: `Delete ${count} schedule${count === 1 ? "" : "s"}?`,
       bulkCount: count,
@@ -240,7 +191,6 @@ export function SchedulesTable({ onEdit, onEditAsRule }: Props) {
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
       <FilterBar
         search={search}              onSearchChange={setSearch}
-        statusFilter={statusFilter}  onStatusFilterChange={setStatusFilter}
         autoAddFilter={autoAddFilter} onAutoAddFilterChange={setAutoAddFilter}
         frequencyFilter={frequencyFilter} onFrequencyFilterChange={setFrequencyFilter}
         payeeFilter={payeeFilter}    onPayeeFilterChange={setPayeeFilter}  payeeOptions={payeeOptions}
@@ -255,10 +205,10 @@ export function SchedulesTable({ onEdit, onEditAsRule }: Props) {
         {rows.length === 0 ? (
           <div className="flex flex-col items-center justify-center gap-2 py-20 text-sm text-muted-foreground">
             <span>No schedules found.</span>
-            {(search || statusFilter !== "active" || autoAddFilter !== "all" || frequencyFilter !== "all" || payeeFilter || accountFilter) && (
+            {(search || autoAddFilter !== "all" || frequencyFilter !== "all" || payeeFilter || accountFilter) && (
               <button
                 className="text-xs underline hover:text-foreground"
-                onClick={() => { setSearch(""); setStatusFilter("active"); setAutoAddFilter("all"); setFrequencyFilter("all"); setPayeeFilter(""); setAccountFilter(""); }}
+                onClick={() => { setSearch(""); setAutoAddFilter("all"); setFrequencyFilter("all"); setPayeeFilter(""); setAccountFilter(""); }}
               >
                 Clear filters
               </button>
@@ -280,13 +230,12 @@ export function SchedulesTable({ onEdit, onEditAsRule }: Props) {
                 </th>
                 <th className="px-3 py-2 text-left font-medium">Name</th>
                 <th className="w-32 px-3 py-2 text-left font-medium">Next Date</th>
-                <th className="w-20 px-3 py-2 text-center font-medium">Repeating</th>
+                <th className="w-20 px-3 py-2 text-center font-medium">Recurring</th>
                 <th className="w-36 px-3 py-2 text-right font-medium">Amount</th>
-                <th className="px-3 py-2 text-left font-medium">Repeats</th>
+                <th className="w-[24rem] px-3 py-2 text-left font-medium">Repeats</th>
                 <th className="w-36 px-3 py-2 text-left font-medium">Payee</th>
                 <th className="w-36 px-3 py-2 text-left font-medium">Account</th>
                 <th className="w-20 px-3 py-2 text-center font-medium">Auto Add</th>
-                <th className="w-24 px-3 py-2 text-center font-medium">Status</th>
                 <th className="w-28 px-3 py-2 text-right font-medium">Actions</th>
               </tr>
             </thead>
@@ -345,18 +294,24 @@ export function SchedulesTable({ onEdit, onEditAsRule }: Props) {
                       {formatDate(entity.nextDate)}
                     </td>
 
-                    {/* Repeating */}
+                    {/* Recurring */}
                     <td className="px-3 py-2 text-center">
-                      {typeof entity.date !== "string"
-                        ? <Badge variant="status-active" className="gap-1 text-[10px] font-normal"><Repeat2 className="h-3 w-3" />Recurring</Badge>
-                        : <Badge variant="outline" className="gap-1 text-[10px] font-normal text-muted-foreground"><CalendarDays className="h-3 w-3" />Once</Badge>}
+                      {typeof entity.date !== "string" ? (
+                        <span
+                          className="inline-flex items-center justify-center text-primary"
+                          title="Recurring schedule"
+                          aria-label="Recurring schedule"
+                        >
+                          <Check className="h-3.5 w-3.5" />
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground/40">—</span>
+                      )}
                     </td>
 
                     {/* Amount */}
                     <td className="px-3 py-2 text-right tabular-nums">
-                      {entity.amount !== undefined
-                        ? formatAmount(entity.amount, entity.amountOp)
-                        : <span className="text-muted-foreground/40">—</span>}
+                      {formatAmount(entity.amount, entity.amountOp)}
                     </td>
 
                     {/* Repeats */}
@@ -376,50 +331,53 @@ export function SchedulesTable({ onEdit, onEditAsRule }: Props) {
 
                     {/* Auto Add */}
                     <td className="px-3 py-2 text-center">
-                      {entity.postsTransaction
-                        ? <Badge variant="status-active" className="text-[10px] font-normal">Auto</Badge>
-                        : <span className="text-muted-foreground/40">—</span>}
-                    </td>
-
-                    {/* Status */}
-                    <td className="px-3 py-2 text-center">
-                      <Badge variant={entity.completed ? "status-inactive" : "status-active"} className="text-[10px] font-normal">
-                        {entity.completed ? "Completed" : "Active"}
-                      </Badge>
+                      {entity.postsTransaction ? "Auto" : <span className="text-muted-foreground/40">—</span>}
                     </td>
 
                     {/* Row actions */}
                     <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
-                      <div className="flex items-center justify-end gap-0.5 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
-                        <Button variant="ghost" size="icon-xs" title="Edit" aria-label="Edit" onClick={() => onEdit(entity.id)}>
+                      <div
+                        className={cn(
+                          "flex items-center justify-end gap-0.5 transition-opacity",
+                          saveError || isDeleted
+                            ? "opacity-100"
+                            : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"
+                        )}
+                      >
+                        <Button variant="ghost" size="icon-xs" title="Edit schedule" aria-label="Edit schedule" onClick={() => onEdit(entity.id)}>
                           <Pencil />
                         </Button>
-                        <Button variant="ghost" size="icon-xs" title="Duplicate" aria-label="Duplicate" onClick={() => handleDuplicate(entity)}>
+                        <Button variant="ghost" size="icon-xs" title="Duplicate schedule" aria-label="Duplicate schedule" onClick={() => handleDuplicate(entity)}>
                           <Copy />
                         </Button>
                         {entity.ruleId && (
-                          <Button variant="ghost" size="icon-xs" title="Edit as Rule" aria-label="Edit as Rule" onClick={() => onEditAsRule(entity.ruleId!)}>
-                            <ExternalLink />
+                          <Button variant="ghost" size="icon-xs" title="Open linked rule" aria-label="Open linked rule" onClick={() => onEditAsRule(entity.ruleId!)}>
+                            <Braces />
                           </Button>
                         )}
+                        <Button
+                          variant="ghost"
+                          size="icon-xs"
+                          title="Inspect usage"
+                          aria-label="Inspect usage"
+                          onClick={() => onInspectIdChange(entity.id)}
+                        >
+                          <Info />
+                        </Button>
                         {(isNew || isUpdated) && !isDeleted && (
-                          <Button variant="ghost" size="icon-xs" title="Revert" aria-label="Revert" onClick={() => revertEntity("schedules", entity.id)}>
+                          <Button variant="ghost" size="icon-xs" title="Revert changes" aria-label="Revert changes" onClick={() => revertEntity("schedules", entity.id)}>
                             <RotateCcw />
                           </Button>
                         )}
                         {saveError && (
                           <Button variant="ghost" size="icon-xs" title="Clear error" aria-label="Clear error" onClick={() => clearSaveError("schedules", entity.id)}>
-                            <RotateCcw />
+                            <RefreshCw />
                           </Button>
                         )}
-                        <Button variant="ghost" size="icon-xs" title="Inspect usage" aria-label="Inspect usage"
-                          onClick={() => setInspectId(entity.id)}>
-                          <Info />
-                        </Button>
                         <Button
                           variant="ghost" size="icon-xs"
                           className="text-destructive hover:text-destructive"
-                          title="Delete" aria-label="Delete"
+                          title="Delete schedule" aria-label="Delete schedule"
                           onClick={() => handleDelete(entity.id)}
                         >
                           <Trash2 />
@@ -434,19 +392,6 @@ export function SchedulesTable({ onEdit, onEditAsRule }: Props) {
         )}
       </div>
     </div>
-
-    <ConfirmDialog
-      open={!!deleteIntent}
-      onOpenChange={(open) => { if (!open) setDeleteIntent(null); }}
-      state={confirmState}
-    />
-
-    <UsageInspectorDrawer
-      entityId={inspectId}
-      entityType="schedule"
-      open={!!inspectId}
-      onOpenChange={(open) => { if (!open) setInspectId(null); }}
-    />
     </>
   );
 }

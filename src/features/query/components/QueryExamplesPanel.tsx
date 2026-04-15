@@ -13,8 +13,8 @@ interface QueryExamplesPanelProps {
 
 function GroupHeader({ label }: { label: string }) {
   return (
-    <div className="mx-3 mb-1 border-b border-border pb-1">
-      <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+    <div className="mx-3 mb-2 border-b border-border/70 pb-2">
+      <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/90">
         {label}
       </span>
     </div>
@@ -41,18 +41,18 @@ function ExampleItem({
     >
       {/* Text block */}
       <div className="min-w-0 flex-1">
-        <div className="truncate text-[11px] font-medium leading-snug text-foreground/90 group-hover:text-foreground">
+        <div className="truncate text-[13px] font-medium leading-snug text-foreground/90 group-hover:text-foreground">
           {pack.name}
         </div>
         {pack.description && (
-          <div className="mt-0.5 line-clamp-2 text-[10px] leading-relaxed text-muted-foreground/70">
+          <div className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground/80">
             {pack.description}
           </div>
         )}
       </div>
 
       {/* Insert affordance — always visible, signals the action */}
-      <ArrowUpRight className="mt-0.5 h-3 w-3 shrink-0 text-muted-foreground/40 transition-colors group-hover:text-primary/70" />
+      <ArrowUpRight className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground/60 transition-colors group-hover:text-foreground" />
     </button>
   );
 }
@@ -63,7 +63,7 @@ export function QueryExamplesPanel({ onInsert }: QueryExamplesPanelProps) {
   return (
     <div className="flex flex-col pb-3">
       {QUERY_PACK_GROUPS.map((group) => (
-        <div key={group.id} className="mt-4 first:mt-2">
+        <div key={group.id} className="mt-5 first:mt-2">
           <GroupHeader label={group.label} />
           {group.packs.map((pack) => (
             <ExampleItem

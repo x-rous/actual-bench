@@ -1,18 +1,20 @@
 "use client";
 
 import { SearchableCombobox, MultiSearchableCombobox } from "@/components/ui/combobox";
-import { useEntityOptions } from "../hooks/useEntityOptions";
+import type { ComboboxOption } from "@/components/ui/combobox";
+import type { RuleEntityType } from "../lib/ruleEditor";
 
 export function EntityCombobox({
   entity,
+  options,
   value,
   onChange,
 }: {
-  entity: "payee" | "category" | "account" | "categoryGroup";
+  entity: RuleEntityType;
+  options: ComboboxOption[];
   value: string;
   onChange: (v: string) => void;
 }) {
-  const options = useEntityOptions(entity);
   const placeholder =
     entity === "payee"
       ? "Select payee…"
@@ -28,14 +30,15 @@ export function EntityCombobox({
 
 export function MultiEntityCombobox({
   entity,
+  options,
   values,
   onChange,
 }: {
-  entity: "payee" | "category" | "account" | "categoryGroup";
+  entity: RuleEntityType;
+  options: ComboboxOption[];
   values: string[];
   onChange: (v: string[]) => void;
 }) {
-  const options = useEntityOptions(entity);
   const placeholder =
     entity === "payee"
       ? "Select payees…"

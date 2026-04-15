@@ -105,6 +105,11 @@ function getRuleLabel(rule: Rule, maps: EntityMaps): LabelResult {
   const actPart = act
     ? act.op === "delete-transaction"
       ? "delete transaction"
+      : act.op === "link-schedule"
+        ? `linked to schedule: ${
+            maps.schedules?.[typeof act.value === "string" ? act.value : ""]?.entity.name ??
+            valueToString(act.value)
+          }`
       : `${ACTION_FIELDS[actField]?.label ?? actField}: ${resolvePartValue(actField, act.value, ACTION_FIELDS, maps)}`
     : "(no actions)";
 
