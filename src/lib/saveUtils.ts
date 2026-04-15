@@ -42,5 +42,7 @@ export function computeSaveOperations<T extends BaseEntity>(
 export function hasPendingStagedChanges<T extends BaseEntity>(
   staged: Record<string, StagedEntity<T>>
 ): boolean {
-  return Object.values(staged).some((entry) => entry.isNew || entry.isUpdated || entry.isDeleted);
+  return Object.values(staged).some(
+    (entry) => !(entry.isNew && entry.isDeleted) && (entry.isNew || entry.isUpdated || entry.isDeleted)
+  );
 }
