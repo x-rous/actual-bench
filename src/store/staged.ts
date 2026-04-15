@@ -146,6 +146,12 @@ type StagedStoreActions = {
   clearSaveError: <K extends EntityKey>(entityType: K, id: string) => void;
 
   /**
+   * Mark successfully-saved entries as clean in-place, preserving the entity in
+   * local state while resetting its staged flags to the current saved snapshot.
+   */
+  markClean: <K extends EntityKey>(entityType: K, ids: string[]) => void;
+
+  /**
    * Remove successfully-saved entries from the staged map so the next loadX()
    * call (triggered by invalidateQueries) creates fresh, clean entries from
    * server data. Only call this for non-create IDs (creates use stageDelete).
@@ -438,6 +444,24 @@ export const useStagedStore = create<StagedStoreState & StagedStoreActions>((set
       const map = state[entityType] as StagedMap<BaseEntity>;
       if (!map[id]) return {};
       return { [entityType]: { ...map, [id]: { ...map[id], saveError: undefined } } };
+    }),
+
+  markClean: (entityType, ids) =>
+    set((state) => {
+      const map = { ...(state[entityType] as StagedMap<BaseEntity>) };
+      for (const id of ids) {
+        const entry = map[id];
+        if (!entry) continue;
+        map[id] = {
+          ...entry,
+          original: structuredClone(entry.entity),
+          isUpdated: false,
+          isDeleted: false,
+          validationErrors: {},
+          saveError: undefined,
+        };
+      }
+      return { [entityType]: map };
     }),
 
   markSaved: (entityType, ids) =>

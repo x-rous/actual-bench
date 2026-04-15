@@ -4,7 +4,7 @@ import { useState, useMemo } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useStagedStore } from "@/store/staged";
 import { useConnectionStore, selectActiveInstance } from "@/store/connection";
-import { createSchedule, updateSchedule, deleteSchedule } from "@/lib/api/schedules";
+import { createSchedule, updateSchedule, deleteSchedule, getSchedules } from "@/lib/api/schedules";
 import {
   extractMessage,
   computeSaveOperations,
@@ -124,11 +124,18 @@ export function useSchedulesSave() {
 
       for (const id of succeededCreateIds) store.stageDelete("schedules", id);
 
-      const succeededNonCreateIds = succeeded
-        .filter((r) => r.status === "success" && !succeededCreateIds.has(r.id))
-        .map((r) => r.id);
-      if (succeededNonCreateIds.length > 0) {
-        store.markSaved("schedules", succeededNonCreateIds);
+      const succeededUpdatedIds = toUpdate
+        .map((schedule) => schedule.id)
+        .filter((id) => succeeded.some((result) => result.status === "success" && result.id === id));
+      if (succeededUpdatedIds.length > 0) {
+        store.markClean("schedules", succeededUpdatedIds);
+      }
+
+      const succeededDeletedIds = toDelete.filter((id) =>
+        succeeded.some((result) => result.status === "success" && result.id === id)
+      );
+      if (succeededDeletedIds.length > 0) {
+        store.markSaved("schedules", succeededDeletedIds);
       }
 
       if (failed.length > 0) {
@@ -137,9 +144,39 @@ export function useSchedulesSave() {
           if (f.status === "error") errors[f.id] = f.message;
         }
         store.setSaveErrors("schedules", errors);
+      } else {
+        store.setSaveErrors("schedules", {});
       }
 
-      await queryClient.invalidateQueries({ queryKey: ["schedules", connection.id] });
+      const requiredVisibleIds = new Set<string>([
+        ...succeededUpdatedIds,
+        ...Object.values(idMap),
+      ]);
+
+      let refreshedSchedules: Schedule[] | null = null;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const freshSchedules = await getSchedules(connection);
+        const freshIds = new Set(freshSchedules.map((schedule) => schedule.id));
+        const hasAllRequiredRows = [...requiredVisibleIds].every((id) => freshIds.has(id));
+
+        if (hasAllRequiredRows) {
+          refreshedSchedules = freshSchedules;
+          break;
+        }
+
+        if (attempt === 2) {
+          refreshedSchedules = null;
+          break;
+        }
+
+        await new Promise((resolve) => setTimeout(resolve, 250 * (attempt + 1)));
+      }
+
+      if (refreshedSchedules) {
+        queryClient.setQueryData(["schedules", connection.id], refreshedSchedules);
+        store.loadSchedules(refreshedSchedules);
+      }
+
       await queryClient.invalidateQueries({ queryKey: ["rules", connection.id] });
       await queryClient.invalidateQueries({ queryKey: ["transactionCounts", "schedule", connection.id] });
       await queryClient.invalidateQueries({ queryKey: ["budget-overview", connection.id] });

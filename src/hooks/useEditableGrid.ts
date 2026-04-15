@@ -89,34 +89,40 @@ export function useEditableGrid<Col extends string>({
     selectCell(rowIds[nextRowIndex], columns[nextColumnIndex]);
   }
 
-  function tabFrom(rowId: string, colId: Col, shift: boolean) {
+  function tabFrom(rowId: string, colId: Col, shift: boolean): boolean {
     const rowIndex = rowIndexById.get(rowId);
-    if (rowIndex === undefined) return;
+    if (rowIndex === undefined) return false;
 
     const columnIndex = columns.indexOf(colId);
-    if (columnIndex === -1) return;
+    if (columnIndex === -1) return false;
 
     const direction = shift ? -1 : 1;
     const nextColumnIndex = columnIndex + direction;
 
     if (nextColumnIndex >= 0 && nextColumnIndex < columns.length) {
       selectCell(rowId, columns[nextColumnIndex]);
-      return;
+      return true;
     }
 
     if (direction > 0 && rowIndex < rowIds.length - 1) {
       selectCell(rowIds[rowIndex + 1], columns[0]);
-      return;
+      return true;
     }
 
     if (direction > 0 && rowIndex === rowIds.length - 1) {
-      onAddRowAtEnd?.();
-      return;
+      if (onAddRowAtEnd) {
+        onAddRowAtEnd();
+        return true;
+      }
+      return false;
     }
 
     if (direction < 0 && rowIndex > 0) {
       selectCell(rowIds[rowIndex - 1], columns[columns.length - 1]);
+      return true;
     }
+
+    return false;
   }
 
   function handleGridKeyDown(e: React.KeyboardEvent<HTMLDivElement>) {
@@ -142,8 +148,9 @@ export function useEditableGrid<Col extends string>({
         moveFrom(selectedCell.rowId, selectedCell.colId, 0, -1);
         return;
       case "Tab":
-        e.preventDefault();
-        tabFrom(selectedCell.rowId, selectedCell.colId, e.shiftKey);
+        if (tabFrom(selectedCell.rowId, selectedCell.colId, e.shiftKey)) {
+          e.preventDefault();
+        }
         return;
       case "Enter":
       case "F2":

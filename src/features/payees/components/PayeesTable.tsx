@@ -230,6 +230,7 @@ export function PayeesTable({
     const capturedIds = [...deletableIds];
 
     onDeleteIntentChange({
+      kind: "bulk",
       ids: serverIds,
       title: `Delete ${count} payee${count !== 1 ? "s" : ""}?`,
       bulkServerCount: serverIds.length,
@@ -287,15 +288,21 @@ export function PayeesTable({
     e.preventDefault();
     pushUndo();
 
-    for (let i = 0; i < pastedRows.length; i++) {
-      const cols = pastedRows[i];
-      const targetIdx = startIdx + i;
+    let targetIdx = startIdx;
+    for (const cols of pastedRows) {
       const name = cols[0]?.trim() ?? "";
+
+      while (
+        targetIdx < rows.length &&
+        (rows[targetIdx]?.isDeleted || rows[targetIdx]?.entity.transferAccountId)
+      ) {
+        targetIdx++;
+      }
 
       if (targetIdx < rows.length) {
         const target = rows[targetIdx];
-        if (target.isDeleted || target.entity.transferAccountId) continue;
         if (name) stageUpdate("payees", target.entity.id, { name });
+        targetIdx++;
       } else if (!search) {
         if (!name) continue;
         stageNew("payees", { id: generateId(), name });
@@ -319,6 +326,7 @@ export function PayeesTable({
 
   function handleRequestDelete(entity: Payee, ruleCount: number, isNew: boolean) {
     onDeleteIntentChange({
+      kind: "single",
       ids: isNew ? [] : [entity.id],
       title: "Delete payee?",
       entityLabel: entity.name || "Unnamed",

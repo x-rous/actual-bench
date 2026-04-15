@@ -104,7 +104,7 @@ export function CategoriesTableCategoryRow({
       </td>
 
       <td
-        data-cell={rowId}
+        data-cell={`${rowId}:name`}
         tabIndex={isSelected ? 0 : -1}
         className={cn(
           "cursor-default px-2 py-0.5 outline-none",

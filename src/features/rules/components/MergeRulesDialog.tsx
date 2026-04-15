@@ -48,7 +48,6 @@ const DEFAULT_CONDITION_FIELD = Object.keys(CONDITION_FIELDS)[0] ?? "payee";
 const DEFAULT_ACTION_FIELD = Object.keys(ACTION_FIELDS)[0] ?? "category";
 
 export function MergeRulesDialog({ open, onOpenChange, ruleIds }: Props) {
-  const stagedRules = useStagedStore((s) => s.rules);
   const stageNew = useStagedStore((s) => s.stageNew);
   const stageDelete = useStagedStore((s) => s.stageDelete);
   const setMergeDependency = useStagedStore((s) => s.setMergeDependency);
@@ -78,6 +77,7 @@ export function MergeRulesDialog({ open, onOpenChange, ruleIds }: Props) {
 
   useEffect(() => {
     if (!open || ruleIds.length === 0) return;
+    const stagedRules = useStagedStore.getState().rules;
 
     const hasScheduleGeneratedRule = ruleIds.some((id) =>
       stagedRules[id]?.entity.actions.some((action) => action.op === "link-schedule")
@@ -118,7 +118,7 @@ export function MergeRulesDialog({ open, onOpenChange, ruleIds }: Props) {
     setConditions(createEditorParts(allConditions));
     setActions(createEditorParts(allActions));
     setDeleteOriginals(false);
-  }, [open, onOpenChange, ruleIds, stagedRules]);
+  }, [open, onOpenChange, ruleIds]);
 
   function addCondition() {
     setConditions((prev) => [

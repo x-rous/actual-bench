@@ -50,7 +50,7 @@ export const scheduleFormSchema = z
     patternWeekDay: z.string(),
 
     // ── Amount ────────────────────────────────────────────────────────────────
-    amountOp: z.enum(["", "is", "isapprox", "isbetween"]),
+    amountOp: z.enum(["is", "isapprox", "isbetween"]),
     amount: z.string(),
     amountNum1: z.string(),
     amountNum2: z.string(),
@@ -128,8 +128,8 @@ export function defaultFormValues(): ScheduleFormValues {
     patternDay: 1,
     patternWeekNum: 1,
     patternWeekDay: "MO",
-    amountOp: "",
-    amount: "",
+    amountOp: "isapprox",
+    amount: "0.00",
     amountNum1: "",
     amountNum2: "",
   };

@@ -15,7 +15,7 @@ import type { SaveResult, SaveSummary } from "@/types/diff";
 import type { Rule, ConditionOrAction, AmountRange } from "@/types/entities";
 
 /** Fields whose values are entity IDs that may need client→server substitution */
-const ENTITY_REF_FIELDS = new Set(["payee", "account", "category"]);
+const ENTITY_REF_FIELDS = new Set(["payee", "account", "category", "category_group", "categoryGroup"]);
 
 /**
  * Substitute any client-generated UUID in entity reference fields with the

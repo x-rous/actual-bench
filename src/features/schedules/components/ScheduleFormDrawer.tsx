@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useForm, type Path, type PathValue } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { ExternalLink, Trash2, CheckCircle2 } from "lucide-react";
+import { ExternalLink, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { EditableDrawer } from "@/components/ui/editable-drawer";
 import type { ComboboxOption } from "@/components/ui/combobox";
@@ -22,6 +22,39 @@ import { ScheduleDateSection } from "./ScheduleDateSection";
 import { ScheduleAmountSection } from "./ScheduleAmountSection";
 
 // ─── Converters ───────────────────────────────────────────────────────────────
+
+function getDisplayAmountState(schedule: Schedule): {
+  amountOp: ScheduleFormValues["amountOp"];
+  amount: string;
+  amountNum1: string;
+  amountNum2: string;
+} {
+  if (schedule.amountOp === "isbetween" && schedule.amount != null && typeof schedule.amount === "object") {
+    const range = schedule.amount as ScheduleAmountRange;
+    return {
+      amountOp: "isbetween",
+      amount: "",
+      amountNum1: (range.num1 / 100).toFixed(2),
+      amountNum2: (range.num2 / 100).toFixed(2),
+    };
+  }
+
+  if ((schedule.amountOp === "is" || schedule.amountOp === "isapprox") && typeof schedule.amount === "number") {
+    return {
+      amountOp: schedule.amountOp,
+      amount: (schedule.amount / 100).toFixed(2),
+      amountNum1: "",
+      amountNum2: "",
+    };
+  }
+
+  return {
+    amountOp: "isapprox",
+    amount: "0.00",
+    amountNum1: "",
+    amountNum2: "",
+  };
+}
 
 function scheduleToForm(s: Schedule): ScheduleFormValues {
   const base = defaultFormValues();
@@ -69,21 +102,7 @@ function scheduleToForm(s: Schedule): ScheduleFormValues {
     }
   }
 
-  let amountOp: ScheduleFormValues["amountOp"] = "";
-  let amount = "";
-  let amountNum1 = "";
-  let amountNum2 = "";
-
-  if (s.amountOp) {
-    amountOp = s.amountOp;
-    if (s.amountOp === "isbetween" && s.amount !== undefined && typeof s.amount === "object") {
-      const range = s.amount as ScheduleAmountRange;
-      amountNum1 = (range.num1 / 100).toFixed(2);
-      amountNum2 = (range.num2 / 100).toFixed(2);
-    } else if (typeof s.amount === "number") {
-      amount = (s.amount / 100).toFixed(2);
-    }
-  }
+  const { amountOp, amount, amountNum1, amountNum2 } = getDisplayAmountState(s);
 
   return {
     name: s.name ?? "",
@@ -155,6 +174,64 @@ function formToSchedule(values: ScheduleFormValues, existingId?: string): Schedu
     amount,
     amountOp,
   };
+}
+
+type ScheduleEditableSnapshot = {
+  name?: string;
+  payeeId: string | null;
+  accountId: string | null;
+  postsTransaction: boolean;
+  amount: number | ScheduleAmountRange;
+  amountOp: Schedule["amountOp"];
+  date?: string | RecurConfig;
+};
+
+function normalizeRecurConfig(config: RecurConfig): RecurConfig {
+  return {
+    frequency: config.frequency,
+    interval: config.interval ?? 1,
+    start: config.start,
+    endMode: config.endMode,
+    ...(config.endMode === "after_n_occurrences"
+      ? { endOccurrences: config.endOccurrences ?? 12 }
+      : {}),
+    ...(config.endMode === "on_date" && config.endDate ? { endDate: config.endDate } : {}),
+    ...(config.skipWeekend
+      ? {
+          skipWeekend: true,
+          weekendSolveMode: config.weekendSolveMode ?? "before",
+        }
+      : {}),
+    ...(config.patterns && config.patterns.length > 0 ? { patterns: config.patterns } : {}),
+  };
+}
+
+function toEditableSnapshot(schedule: Schedule): ScheduleEditableSnapshot {
+  const amountState = getDisplayAmountState(schedule);
+  return {
+    name: schedule.name?.trim() || undefined,
+    payeeId: schedule.payeeId ?? null,
+    accountId: schedule.accountId ?? null,
+    postsTransaction: schedule.postsTransaction ?? false,
+    amount:
+      amountState.amountOp === "isbetween"
+        ? {
+            num1: Math.round(parseFloat(amountState.amountNum1) * 100),
+            num2: Math.round(parseFloat(amountState.amountNum2) * 100),
+          }
+        : Math.round(parseFloat(amountState.amount) * 100),
+    amountOp: amountState.amountOp,
+    date:
+      typeof schedule.date === "string"
+        ? schedule.date
+        : schedule.date
+          ? normalizeRecurConfig(schedule.date)
+          : undefined,
+  };
+}
+
+function editableScheduleSignature(schedule: Schedule): string {
+  return JSON.stringify(toEditableSnapshot(schedule));
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -271,11 +348,17 @@ export function ScheduleFormDrawer({ open, onOpenChange, scheduleId, onEditAsRul
 
   // ── Submit ───────────────────────────────────────────────────────────────────
   function onSubmit(values: ScheduleFormValues) {
-    pushUndo();
     if (isNew) {
+      pushUndo();
       stageNew("schedules", formToSchedule(values));
     } else {
       const updated = formToSchedule(values, scheduleId!);
+      if (existingSchedule && editableScheduleSignature(existingSchedule) === editableScheduleSignature(updated)) {
+        closeDrawer();
+        return;
+      }
+
+      pushUndo();
       stageUpdate("schedules", scheduleId!, {
         name: updated.name,
         postsTransaction: updated.postsTransaction,
@@ -305,17 +388,7 @@ export function ScheduleFormDrawer({ open, onOpenChange, scheduleId, onEditAsRul
     <EditableDrawer
       open={open}
       onOpenChange={(nextOpen) => handleOpenChange(nextOpen, () => onOpenChange(true))}
-      title={
-        <div className="flex items-center gap-2">
-          <span>{isNew ? "New Schedule" : "Edit Schedule"}</span>
-          {!isNew && existingSchedule?.completed && (
-            <span className="flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
-              <CheckCircle2 className="h-3 w-3" />
-              Completed
-            </span>
-          )}
-        </div>
-      }
+      title={isNew ? "New Schedule" : "Edit Schedule"}
       description={isNew ? "Create a new schedule" : "Edit schedule details"}
       descriptionClassName="sr-only"
       contentClassName="data-[side=right]:sm:max-w-lg"

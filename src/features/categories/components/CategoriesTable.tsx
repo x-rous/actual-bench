@@ -264,6 +264,14 @@ export function CategoriesTable({
         })),
     [stagedGroups]
   );
+  const incomeGroupOptions = useMemo<CategoryGroupOption[]>(
+    () => groupOptions.filter((group) => stagedGroups[group.id]?.entity.isIncome),
+    [groupOptions, stagedGroups]
+  );
+  const expenseGroupOptions = useMemo<CategoryGroupOption[]>(
+    () => groupOptions.filter((group) => !stagedGroups[group.id]?.entity.isIncome),
+    [groupOptions, stagedGroups]
+  );
   const groupLabelById = useMemo(
     () => new Map(groupOptions.map((group) => [group.id, group.name])),
     [groupOptions]
@@ -444,6 +452,7 @@ export function CategoriesTable({
     const catsToDelete = [...directCatIds];
 
     onDeleteIntentChange({
+      kind: "bulk",
       ids: serverCatIds,
       title: `Delete ${totalItems} item${totalItems !== 1 ? "s" : ""}?`,
       bulkServerCount: serverCount,
@@ -515,6 +524,7 @@ export function CategoriesTable({
           );
           const capturedChildren = [...children];
           onDeleteIntentChange({
+            kind: "group",
             ids: serverChildIds,
             title: `Delete group "${groupEntity.name || "Unnamed"}"?`,
             groupName: groupEntity.name || "Unnamed",
@@ -552,7 +562,7 @@ export function CategoriesTable({
         isInheritedHidden={!cat.isDeleted && group.entity.hidden}
         ruleCount={categoryRuleCount.get(entity.id) ?? 0}
         groupLabel={groupLabelById.get(entity.groupId) ?? "Unknown group"}
-        groupOptions={groupOptions}
+        groupOptions={entity.isIncome ? incomeGroupOptions : expenseGroupOptions}
         editStartChar={editingCell?.rowId === rowId ? editStartChar : undefined}
         onToggleSelect={toggleSelect}
         onSelectNameCell={(nextRowId) => selectCell(nextRowId, "name")}
@@ -578,6 +588,7 @@ export function CategoriesTable({
           const category = stagedCats[id];
           if (!category) return;
           onDeleteIntentChange({
+            kind: "single",
             ids: category.isNew ? [] : [id],
             title: "Delete category?",
             entityLabel: category.entity.name || "Unnamed",

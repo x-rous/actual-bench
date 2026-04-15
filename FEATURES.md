@@ -93,6 +93,8 @@
 ## Schedules
 
 - Create, edit, and delete one-time and recurring schedules
+- Saving an unchanged schedule closes the drawer without staging a draft update, and successfully saved schedule edits remain visible in the table while the background refresh reconciles server data
+- Schedule amount editing always uses three modes only: Approx, Exact, and Range; missing/null server amounts are treated as approximate zero in the drawer and table
 - Closing the schedule drawer with unsaved edits prompts for confirmation instead of silently discarding the draft
 - Deleting a schedule from the drawer now uses the same impact-aware confirmation flow as deleting from the schedules table
 - Recurring schedules support daily, weekly, monthly, and yearly frequencies with a configurable interval
@@ -100,10 +102,13 @@
 - Weekend adjustment: when a scheduled date falls on a weekend, choose to move it to the nearest Friday (before) or Monday (after)
 - End conditions: run forever, end after N occurrences, or end on a specific date
 - Amount modes: exact (`is`), approximate (`is approx.`), or range (`is between`) with full amount and operator support
+- The schedules table uses a richer `Repeats` summary that includes inferred weekday/day anchors from the schedule start date (for example `Every 2 weeks on Wednesday` or `Monthly on the 1st`), and a compact `Recurring` column shows a checkmark for repeating schedules
+- The schedule `completed` flag is retained in the data model for round-tripping server state, but the schedules UI no longer shows a visible Status column, status filter, or completed badge because that flag does not represent a reliable paid/completed business state
 - Payee and account assignment per schedule (both optional)
 - Auto-add toggle: when enabled, Actual Budget automatically posts a transaction when the schedule is due
 - Linked rule display: each schedule has an underlying rule managed by the server; open it directly in the Rules editor via the "Edit as Rule" button in the schedule drawer
 - Rules linked to schedules are shown read-only in the Rules table — the `link-schedule` action displays the resolved schedule name and cannot be created or edited manually
+- Opening a schedule-linked rule in the drawer keeps a single editable `Payee is` row and a single editable `Account is` row (plus the schedule-managed conditions), and changes to those values stay in sync with the linked schedule draft
 - Schedule-generated rules are excluded from bulk selection and cannot be merged; manage them from the Schedules page instead
 - Filter schedules by name, payee, account, frequency, auto-add state, and completion status
 - Bulk select with bulk delete

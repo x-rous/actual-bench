@@ -279,13 +279,15 @@ export function AccountsTable({
     e.preventDefault();
     pushUndo();
 
-    for (let i = 0; i < pastedRows.length; i++) {
-      const cols = pastedRows[i];
-      const targetIdx = startIdx + i;
+    let targetIdx = startIdx;
+    for (const cols of pastedRows) {
+
+      while (targetIdx < rows.length && rows[targetIdx]?.isDeleted) {
+        targetIdx++;
+      }
 
       if (targetIdx < rows.length) {
         const target = rows[targetIdx];
-        if (target.isDeleted) continue;
         const patch: Partial<Account> = {};
         const name = cols[0]?.trim() ?? "";
         if (name) patch.name = name;
@@ -294,6 +296,7 @@ export function AccountsTable({
           patch.offBudget = v === "true" || v === "1" || v === "yes" || v === "off budget" || v === "off";
         }
         if (Object.keys(patch).length > 0) stageUpdate("accounts", target.entity.id, patch);
+        targetIdx++;
       } else if (!search) {
         const name = cols[0]?.trim() ?? "";
         if (!name) continue;

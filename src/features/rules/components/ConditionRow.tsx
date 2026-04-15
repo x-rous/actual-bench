@@ -159,12 +159,14 @@ function ConditionValueInput({
 
 export function ConditionRow({
   condition,
+  scheduleLinked = false,
   entityOptions,
   error,
   onChange,
   onDelete,
 }: {
   condition: ConditionOrAction;
+  scheduleLinked?: boolean;
   entityOptions: RuleEntityOptionsMap;
   error?: string;
   onChange: (c: ConditionOrAction) => void;
@@ -173,6 +175,8 @@ export function ConditionRow({
   const field = condition.field ?? "";
   const ops = getConditionOps(field);
   const isScheduleDate = field === "date" && isRecurConfig(condition.value);
+  const isScheduleLinkedEntity =
+    scheduleLinked && (field === "payee" || field === "account") && condition.op === "is";
 
   const setField = useCallback(
     (newField: string) => {
@@ -230,6 +234,42 @@ export function ConditionRow({
     );
   }
 
+  if (isScheduleLinkedEntity) {
+    const fieldLabel = CONDITION_FIELDS[field]?.label ?? field;
+    return (
+      <div className="space-y-1">
+        <div className="flex items-start gap-1.5">
+          <div
+            className={cn(
+              selectCls,
+              "flex w-32 shrink-0 items-center bg-muted/30 text-muted-foreground"
+            )}
+          >
+            {fieldLabel}
+          </div>
+
+          <div
+            className={cn(
+              selectCls,
+              "flex w-32 shrink-0 items-center bg-muted/30 text-muted-foreground"
+            )}
+          >
+            is
+          </div>
+
+          <div className="flex-1">
+            <ConditionValueInput condition={condition} entityOptions={entityOptions} onChange={onChange} />
+          </div>
+
+          <span className="mt-2 shrink-0 text-[10px] italic text-muted-foreground/60">
+            synced with schedule
+          </span>
+        </div>
+        {error && <p className="text-xs text-destructive">{error}</p>}
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-1">
       <div className="flex items-start gap-1.5">
@@ -264,8 +304,9 @@ export function ConditionRow({
           size="icon"
           className="mt-0.5 h-7 w-7 shrink-0 text-muted-foreground hover:text-destructive"
           onClick={onDelete}
+          aria-label="Delete condition"
         >
-          <Trash2 className="h-3.5 w-3.5" />
+          <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
         </Button>
       </div>
       {error && <p className="text-xs text-destructive">{error}</p>}

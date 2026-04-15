@@ -11,19 +11,39 @@ import {
   buildCategoryGroupDeleteWarning,
 } from "@/lib/usageWarnings";
 
-export type CategoryDeleteIntent = {
+type SingleCategoryDeleteIntent = {
+  kind: "single";
   ids: string[];
   title: string;
   onConfirm: () => void;
-  entityLabel?: string;
-  entityRuleCount?: number;
-  groupName?: string;
-  childCount?: number;
-  groupRuleCount?: number;
-  bulkServerCount?: number;
-  bulkNewCount?: number;
-  bulkRuleCount?: number;
+  entityLabel: string;
+  entityRuleCount: number;
 };
+
+type GroupCategoryDeleteIntent = {
+  kind: "group";
+  ids: string[];
+  title: string;
+  onConfirm: () => void;
+  groupName: string;
+  childCount: number;
+  groupRuleCount: number;
+};
+
+type BulkCategoryDeleteIntent = {
+  kind: "bulk";
+  ids: string[];
+  title: string;
+  onConfirm: () => void;
+  bulkServerCount: number;
+  bulkNewCount: number;
+  bulkRuleCount: number;
+};
+
+export type CategoryDeleteIntent =
+  | SingleCategoryDeleteIntent
+  | GroupCategoryDeleteIntent
+  | BulkCategoryDeleteIntent;
 
 export type CategoryInspectTarget = {
   id: string;
@@ -54,33 +74,45 @@ export function CategoriesTableOverlays({
     : 0;
 
   const confirmState: ConfirmState | null = deleteIntent
-    ? {
-        title: deleteIntent.title,
-        message:
-          deleteIntent.bulkServerCount !== undefined
-            ? buildCategoryBulkDeleteWarning(
+    ? (() => {
+        switch (deleteIntent.kind) {
+          case "bulk":
+            return {
+              title: deleteIntent.title,
+              message: buildCategoryBulkDeleteWarning(
                 deleteIntent.bulkServerCount,
-                deleteIntent.bulkNewCount ?? 0,
-                deleteIntent.bulkRuleCount ?? 0,
+                deleteIntent.bulkNewCount,
+                deleteIntent.bulkRuleCount,
                 txTotal,
                 txLoading && deleteIntent.ids.length > 0
-              )
-            : deleteIntent.groupName !== undefined
-              ? buildCategoryGroupDeleteWarning(
-                  deleteIntent.groupName,
-                  deleteIntent.childCount ?? 0,
-                  deleteIntent.groupRuleCount ?? 0,
-                  txTotal,
-                  txLoading && deleteIntent.ids.length > 0
-                )
-              : buildCategoryDeleteWarning(
-                  deleteIntent.entityLabel ?? "",
-                  deleteIntent.entityRuleCount ?? 0,
-                  txTotal,
-                  txLoading && deleteIntent.ids.length > 0
-                ),
-        onConfirm: deleteIntent.onConfirm,
-      }
+              ),
+              onConfirm: deleteIntent.onConfirm,
+            };
+          case "group":
+            return {
+              title: deleteIntent.title,
+              message: buildCategoryGroupDeleteWarning(
+                deleteIntent.groupName,
+                deleteIntent.childCount,
+                deleteIntent.groupRuleCount,
+                txTotal,
+                txLoading && deleteIntent.ids.length > 0
+              ),
+              onConfirm: deleteIntent.onConfirm,
+            };
+          case "single":
+            return {
+              title: deleteIntent.title,
+              message: buildCategoryDeleteWarning(
+                deleteIntent.entityLabel,
+                deleteIntent.entityRuleCount,
+                txTotal,
+                txLoading && deleteIntent.ids.length > 0
+              ),
+              onConfirm: deleteIntent.onConfirm,
+            };
+        }
+      })()
     : null;
 
   return (

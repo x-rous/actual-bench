@@ -248,6 +248,10 @@ export function RulesTable({ onEdit, onMerge, payeeId, categoryId, accountId }: 
             )}
           </div>
         ) : (
+          <div className="relative">
+            <span id="rules-selection-help" className="sr-only">
+              Schedule-generated rules are managed by the Schedules page and cannot be merged or bulk deleted.
+            </span>
           <table className="w-full text-xs">
             <thead className="sticky top-0 z-10 bg-background">
               <tr className="border-b border-border bg-muted/30 text-muted-foreground">
@@ -258,6 +262,8 @@ export function RulesTable({ onEdit, onMerge, payeeId, categoryId, accountId }: 
                     ref={(el) => { if (el) el.indeterminate = someSelected && !allSelected; }}
                     onChange={toggleSelectAll}
                     disabled={selectableRowCount === 0}
+                    aria-label="Select all visible rules"
+                    aria-describedby={selectableRowCount === 0 ? "rules-selection-help" : undefined}
                     className="h-3.5 w-3.5 rounded accent-primary disabled:cursor-default disabled:opacity-50"
                     title={
                       selectableRowCount === 0
@@ -301,6 +307,8 @@ export function RulesTable({ onEdit, onMerge, payeeId, categoryId, accountId }: 
                         checked={selectedIds.has(rule.id)}
                         onChange={() => toggleSelect(rule.id)}
                         disabled={isScheduleLinked}
+                        aria-label={`Select rule ${rule.id}`}
+                        aria-describedby={isScheduleLinked ? "rules-selection-help" : undefined}
                         className={cn(
                           "h-3.5 w-3.5 rounded accent-primary disabled:cursor-default disabled:opacity-50",
                           !isScheduleLinked && "cursor-pointer"
@@ -439,6 +447,7 @@ export function RulesTable({ onEdit, onMerge, payeeId, categoryId, accountId }: 
               })}
             </tbody>
           </table>
+          </div>
         )}
       </div>
     </div>

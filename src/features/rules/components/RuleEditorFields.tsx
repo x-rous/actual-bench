@@ -14,6 +14,7 @@ type Props = {
   conditionsOp: ConditionsOp;
   conditions: EditorPart[];
   actions: EditorPart[];
+  scheduleLinked?: boolean;
   entityOptions: RuleEntityOptionsMap;
   validation: RuleDraftValidation;
   showValidation: boolean;
@@ -37,6 +38,7 @@ export function RuleEditorFields({
   conditionsOp,
   conditions,
   actions,
+  scheduleLinked = false,
   entityOptions,
   validation,
   showValidation,
@@ -119,10 +121,12 @@ export function RuleEditorFields({
           <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             Conditions
           </p>
-          <Button variant="ghost" size="sm" className="h-6 text-xs" onClick={onAddCondition}>
-            <Plus className="mr-1 h-3 w-3" />
-            Add
-          </Button>
+          {!scheduleLinked && (
+            <Button variant="ghost" size="sm" className="h-6 text-xs" onClick={onAddCondition}>
+              <Plus className="mr-1 h-3 w-3" />
+              Add
+            </Button>
+          )}
         </div>
 
         {conditions.length === 0 ? (
@@ -140,6 +144,7 @@ export function RuleEditorFields({
                 <ConditionRow
                   key={entry.clientId}
                   condition={entry.part}
+                  scheduleLinked={scheduleLinked}
                   entityOptions={entityOptions}
                   error={rowErrors[0]}
                   onChange={(updated) => {

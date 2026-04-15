@@ -125,6 +125,7 @@ function TagsTableRowComponent({
                 type="color"
                 className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
                 value={effectiveColor}
+                aria-label={`Tag color for ${entity.name || entity.id}`}
                 onChange={(e) => onChangeColor(entity.id, e.target.value)}
               />
               <span
@@ -137,9 +138,10 @@ function TagsTableRowComponent({
             </label>
             {entity.color && (
               <button
-                className="text-muted-foreground opacity-0 transition-opacity group-hover/row:opacity-60 hover:!opacity-100"
+                className="text-muted-foreground opacity-0 transition-opacity group-hover/row:opacity-60 group-focus-within/row:opacity-60 focus-visible:opacity-100 hover:!opacity-100"
                 onClick={() => onClearColor(entity.id)}
                 title="Clear color"
+                aria-label="Clear tag color"
               >
                 ×
               </button>

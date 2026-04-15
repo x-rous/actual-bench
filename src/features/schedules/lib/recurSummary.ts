@@ -35,6 +35,18 @@ function formatDate(iso: string): string {
   return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 }
 
+function formatMonthDay(iso: string): string {
+  const [year, month, day] = iso.split("-").map(Number);
+  const d = new Date(year, (month ?? 1) - 1, day ?? 1);
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
+
+function weekdayFromIso(iso: string): string {
+  const [year, month, day] = iso.split("-").map(Number);
+  const d = new Date(year, (month ?? 1) - 1, day ?? 1);
+  return d.toLocaleDateString("en-US", { weekday: "long" });
+}
+
 const SINGULAR_LABEL: Record<string, string> = {
   day: "Daily",
   week: "Weekly",
@@ -61,7 +73,17 @@ export function recurSummary(date: string | RecurConfig | undefined): string {
     return `On ${formatDate(date)}`;
   }
 
-  const { frequency, interval, patterns, skipWeekend, weekendSolveMode, endMode, endOccurrences, endDate } = date;
+  const {
+    frequency,
+    interval,
+    patterns,
+    skipWeekend,
+    weekendSolveMode,
+    endMode,
+    endOccurrences,
+    endDate,
+    start,
+  } = date;
 
   // ── Base frequency phrase ────────────────────────────────────────────────────
   let base: string;
@@ -71,10 +93,10 @@ export function recurSummary(date: string | RecurConfig | undefined): string {
       base = every(interval, "day");
       break;
     case "weekly":
-      base = every(interval, "week");
+      base = `${every(interval, "week")} on ${weekdayFromIso(start)}`;
       break;
     case "yearly":
-      base = every(interval, "year");
+      base = `${every(interval, "year")} on ${formatMonthDay(start)}`;
       break;
     case "monthly": {
       const prefix = interval && interval > 1 ? `Every ${interval} months` : "Monthly";
@@ -89,7 +111,10 @@ export function recurSummary(date: string | RecurConfig | undefined): string {
           base = `${prefix} on the ${weekNum} ${weekDay}`;
         }
       } else {
-        base = prefix;
+        const [year, month, day] = start.split("-").map(Number);
+        const lastDayOfMonth = new Date(year, month ?? 1, 0).getDate();
+        const dayLabel = day === lastDayOfMonth ? "last day" : ordinal(day);
+        base = `${prefix} on the ${dayLabel}`;
       }
       break;
     }

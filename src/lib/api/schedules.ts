@@ -26,8 +26,8 @@ function normalizeSchedule(raw: ApiSchedule): Schedule {
     postsTransaction: raw.posts_transaction ?? false,
     payeeId: raw.payee ?? null,
     accountId: raw.account ?? null,
-    amount: raw.amount,
-    amountOp: raw.amountOp,
+    amount: raw.amount ?? undefined,
+    amountOp: raw.amountOp ?? undefined,
     date: raw.date,
   };
 }

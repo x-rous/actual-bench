@@ -119,6 +119,8 @@ export function useTagsSave() {
           if (f.status === "error") errors[f.id] = f.message;
         }
         store.setSaveErrors("tags", errors);
+      } else {
+        store.setSaveErrors("tags", {});
       }
 
       await queryClient.invalidateQueries({ queryKey: ["tags", connection.id] });

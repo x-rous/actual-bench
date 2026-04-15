@@ -112,6 +112,7 @@ export function useBudgetSavePipeline() {
       ? await saveRules({
           ...payees.idMap,
           ...accounts.idMap,
+          ...categoryGroups.idMap,
           ...categories.idMap,
         })
       : EMPTY_SAVE_SUMMARY;

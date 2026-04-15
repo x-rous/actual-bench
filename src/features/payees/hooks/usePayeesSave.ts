@@ -147,6 +147,8 @@ export function usePayeesSave() {
           if (f.status === "error") errors[f.id] = f.message;
         }
         useStagedStore.getState().setSaveErrors("payees", errors);
+      } else {
+        useStagedStore.getState().setSaveErrors("payees", {});
       }
 
       await queryClient.invalidateQueries({ queryKey: ["payees", connection.id] });

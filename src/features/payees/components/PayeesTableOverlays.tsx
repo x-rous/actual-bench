@@ -6,17 +6,27 @@ import { UsageInspectorDrawer } from "@/features/usage-inspector/components/Usag
 import { useTransactionCountsForIds } from "@/hooks/useTransactionCountsForIds";
 import { buildPayeeBulkDeleteWarning, buildPayeeDeleteWarning } from "@/lib/usageWarnings";
 
-export type PayeeDeleteIntent = {
+type SinglePayeeDeleteIntent = {
+  kind: "single";
   ids: string[];
   title: string;
   onConfirm: () => void;
-  entityLabel?: string;
-  entityRuleCount?: number;
-  bulkServerCount?: number;
-  bulkNewCount?: number;
-  bulkSkippedCount?: number;
-  bulkRuleCount?: number;
+  entityLabel: string;
+  entityRuleCount: number;
 };
+
+type BulkPayeeDeleteIntent = {
+  kind: "bulk";
+  ids: string[];
+  title: string;
+  onConfirm: () => void;
+  bulkServerCount: number;
+  bulkNewCount: number;
+  bulkSkippedCount: number;
+  bulkRuleCount: number;
+};
+
+export type PayeeDeleteIntent = SinglePayeeDeleteIntent | BulkPayeeDeleteIntent;
 
 type Props = {
   deleteIntent: PayeeDeleteIntent | null;
@@ -42,26 +52,29 @@ export function PayeesTableOverlays({
     : 0;
 
   const confirmState: ConfirmState | null = deleteIntent
-    ? {
-        title: deleteIntent.title,
-        message:
-          deleteIntent.bulkServerCount !== undefined
-            ? buildPayeeBulkDeleteWarning(
-                deleteIntent.bulkServerCount,
-                deleteIntent.bulkNewCount ?? 0,
-                deleteIntent.bulkSkippedCount ?? 0,
-                deleteIntent.bulkRuleCount ?? 0,
-                txTotal,
-                txLoading && deleteIntent.ids.length > 0
-              )
-            : buildPayeeDeleteWarning(
-                deleteIntent.entityLabel ?? "",
-                deleteIntent.entityRuleCount ?? 0,
-                txTotal,
-                txLoading && deleteIntent.ids.length > 0
-              ),
-        onConfirm: deleteIntent.onConfirm,
-      }
+    ? deleteIntent.kind === "bulk"
+      ? {
+          title: deleteIntent.title,
+          message: buildPayeeBulkDeleteWarning(
+            deleteIntent.bulkServerCount,
+            deleteIntent.bulkNewCount,
+            deleteIntent.bulkSkippedCount,
+            deleteIntent.bulkRuleCount,
+            txTotal,
+            txLoading && deleteIntent.ids.length > 0
+          ),
+          onConfirm: deleteIntent.onConfirm,
+        }
+      : {
+          title: deleteIntent.title,
+          message: buildPayeeDeleteWarning(
+            deleteIntent.entityLabel,
+            deleteIntent.entityRuleCount,
+            txTotal,
+            txLoading && deleteIntent.ids.length > 0
+          ),
+          onConfirm: deleteIntent.onConfirm,
+        }
     : null;
 
   return (

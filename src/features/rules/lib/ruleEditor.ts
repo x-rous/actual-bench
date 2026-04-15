@@ -83,10 +83,19 @@ function isInvalidNumber(value: ConditionOrAction["value"]): boolean {
   return typeof value !== "number" || Number.isNaN(value);
 }
 
+function isValidBooleanValue(value: ConditionOrAction["value"]): boolean {
+  return value === true || value === false || value === "true" || value === "false";
+}
+
 function isInvalidRangeValue(value: ConditionOrAction["value"]): boolean {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return true;
   if (!("num1" in value) || !("num2" in value)) return true;
-  return Number.isNaN(value.num1) || Number.isNaN(value.num2);
+  return !(
+    typeof value.num1 === "number" &&
+    typeof value.num2 === "number" &&
+    Number.isFinite(value.num1) &&
+    Number.isFinite(value.num2)
+  );
 }
 
 function isRecurConfigValue(value: ConditionOrAction["value"]): boolean {
@@ -98,25 +107,30 @@ function isRecurConfigValue(value: ConditionOrAction["value"]): boolean {
   );
 }
 
-function hasValidRequiredValue(part: ConditionOrAction, type: "string" | "id" | "number" | "date" | "boolean"): boolean {
+function hasValidRequiredValue(
+  part: ConditionOrAction,
+  fieldDef: { type: "string" | "id" | "number" | "date" | "boolean"; supportsTemplate?: boolean }
+): boolean {
   if (part.options?.template !== undefined) {
-    return !isBlankString(part.options.template);
+    return fieldDef.supportsTemplate === true && !isBlankString(part.options.template);
   }
-
-  if (type === "boolean") return true;
 
   if (Array.isArray(part.value)) {
     return !isEmptyArrayValue(part.value.map(String));
   }
 
-  if (type === "number") {
+  if (fieldDef.type === "number") {
     if (part.op === "isbetween") {
       return !isInvalidRangeValue(part.value);
     }
     return !isInvalidNumber(part.value);
   }
 
-  if (type === "date" && isRecurConfigValue(part.value)) {
+  if (fieldDef.type === "boolean") {
+    return isValidBooleanValue(part.value);
+  }
+
+  if (fieldDef.type === "date" && isRecurConfigValue(part.value)) {
     return true;
   }
 
@@ -141,7 +155,7 @@ function validateConditionPart(part: ConditionOrAction, index: number): string[]
     return errors;
   }
 
-  if (opDef.hasValue && !hasValidRequiredValue(part, fieldDef.type)) {
+  if (opDef.hasValue && !hasValidRequiredValue(part, fieldDef)) {
     errors.push(`Condition ${index + 1}: enter a valid value.`);
   }
 
@@ -168,7 +182,7 @@ function validateActionPart(part: ConditionOrAction, index: number): string[] {
     return errors;
   }
 
-  if (opDef.hasValue && !hasValidRequiredValue(part, fieldDef.type)) {
+  if (opDef.hasValue && !hasValidRequiredValue(part, fieldDef)) {
     errors.push(`Action ${index + 1}: enter a valid value.`);
   }
 

@@ -107,6 +107,7 @@ function AccountsTableRowComponent({
           checked={isRowSelected}
           onChange={(e) => onToggleSelect(entity.id, e.target.checked)}
           onClick={(e) => e.stopPropagation()}
+          aria-label={`Select account ${entity.name || "Unnamed account"}`}
           className="h-3.5 w-3.5 cursor-pointer rounded accent-primary"
         />
       </td>

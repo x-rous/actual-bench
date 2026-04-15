@@ -41,6 +41,117 @@ const DEFAULT_ACTION: ConditionOrAction = {
   type: "id",
 };
 
+const SCHEDULE_LINKED_CONDITION_FIELDS = new Set(["payee", "account"]);
+const DEFAULT_SCHEDULE_LINKED_CONDITIONS: ConditionOrAction[] = [
+  {
+    field: "payee",
+    op: "is",
+    value: "",
+    type: "id",
+  },
+  {
+    field: "account",
+    op: "is",
+    value: "",
+    type: "id",
+  },
+];
+
+function getLinkedScheduleId(actions: ConditionOrAction[]): string | null {
+  const linkAction = actions.find((action) => action.op === "link-schedule");
+  return typeof linkAction?.value === "string" && linkAction.value ? linkAction.value : null;
+}
+
+function normalizeScheduleLinkedCondition(condition: ConditionOrAction): ConditionOrAction {
+  if (!condition.field || !SCHEDULE_LINKED_CONDITION_FIELDS.has(condition.field)) {
+    return structuredClone(condition);
+  }
+
+  const nextValue = Array.isArray(condition.value)
+    ? condition.value.find((value): value is string => typeof value === "string") ?? ""
+    : typeof condition.value === "string"
+      ? condition.value
+      : "";
+
+  return {
+    ...structuredClone(condition),
+    op: "is",
+    value: nextValue,
+    type: "id",
+  };
+}
+
+function normalizeScheduleLinkedConditions(conditions: ConditionOrAction[]): ConditionOrAction[] {
+  const lastIndexByField = new Map<string, number>();
+
+  conditions.forEach((condition, index) => {
+    if (condition.field && SCHEDULE_LINKED_CONDITION_FIELDS.has(condition.field)) {
+      lastIndexByField.set(condition.field, index);
+    }
+  });
+
+  const normalized = conditions.flatMap((condition, index) => {
+    if (!condition.field || !SCHEDULE_LINKED_CONDITION_FIELDS.has(condition.field)) {
+      return [structuredClone(condition)];
+    }
+
+    return lastIndexByField.get(condition.field) === index
+      ? [normalizeScheduleLinkedCondition(condition)]
+      : [];
+  });
+
+  for (const condition of DEFAULT_SCHEDULE_LINKED_CONDITIONS) {
+    if (!normalized.some((entry) => entry.field === condition.field)) {
+      normalized.push(structuredClone(condition));
+    }
+  }
+
+  return normalized;
+}
+
+function normalizeScheduleLinkedEditorConditions(conditions: EditorPart[]): EditorPart[] {
+  const lastIndexByField = new Map<string, number>();
+
+  conditions.forEach((entry, index) => {
+    if (entry.part.field && SCHEDULE_LINKED_CONDITION_FIELDS.has(entry.part.field)) {
+      lastIndexByField.set(entry.part.field, index);
+    }
+  });
+
+  const normalized = conditions.flatMap((entry, index) => {
+    if (!entry.part.field || !SCHEDULE_LINKED_CONDITION_FIELDS.has(entry.part.field)) {
+      return [entry];
+    }
+
+    return lastIndexByField.get(entry.part.field) === index
+      ? [{ ...entry, part: normalizeScheduleLinkedCondition(entry.part) }]
+      : [];
+  });
+
+  for (const condition of DEFAULT_SCHEDULE_LINKED_CONDITIONS) {
+    if (!normalized.some((entry) => entry.part.field === condition.field)) {
+      normalized.push(createEditorPart(condition));
+    }
+  }
+
+  return normalized;
+}
+
+function extractLinkedConditionId(
+  conditions: ConditionOrAction[],
+  field: "payee" | "account"
+): string | null {
+  const match = conditions.find((condition) => condition.field === field);
+  if (!match) return null;
+
+  if (Array.isArray(match.value)) {
+    const first = match.value.find((value): value is string => typeof value === "string" && value.length > 0);
+    return first ?? null;
+  }
+
+  return typeof match.value === "string" && match.value.length > 0 ? match.value : null;
+}
+
 type Props = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -52,6 +163,7 @@ type Props = {
 
 export function RuleDrawer({ open, onOpenChange, ruleId, seed }: Props) {
   const stagedRules = useStagedStore((s) => s.rules);
+  const stagedSchedules = useStagedStore((s) => s.schedules);
   const stageNew = useStagedStore((s) => s.stageNew);
   const stageUpdate = useStagedStore((s) => s.stageUpdate);
   const stageDelete = useStagedStore((s) => s.stageDelete);
@@ -109,11 +221,20 @@ export function RuleDrawer({ open, onOpenChange, ruleId, seed }: Props) {
     if (!open) return;
 
     if (existingRule) {
+      const linkedScheduleId = getLinkedScheduleId(existingRule.actions);
+      const initialConditions = linkedScheduleId
+        ? normalizeScheduleLinkedConditions(existingRule.conditions)
+        : structuredClone(existingRule.conditions);
+      const initialActions = structuredClone(existingRule.actions);
       setStage(existingRule.stage);
       setConditionsOp(existingRule.conditionsOp);
-      setConditions(createEditorParts(existingRule.conditions));
-      setActions(createEditorParts(existingRule.actions));
-      initialSignatureRef.current = serializeRule(existingRule);
+      setConditions(createEditorParts(initialConditions));
+      setActions(createEditorParts(initialActions));
+      initialSignatureRef.current = serializeRule({
+        ...existingRule,
+        conditions: initialConditions,
+        actions: initialActions,
+      });
       return;
     }
 
@@ -129,10 +250,13 @@ export function RuleDrawer({ open, onOpenChange, ruleId, seed }: Props) {
       conditions: seededConditions,
       actions: seededActions,
     });
+  // existingRule and seed are derived from ruleId; only reinitialize when the
+  // drawer opens for a different rule or a fresh create flow.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, ruleId]);
 
   function addCondition() {
+    if (isScheduleLinked) return;
     setConditions((prev) => [...prev, createEditorPart(DEFAULT_CONDITION)]);
   }
 
@@ -142,7 +266,10 @@ export function RuleDrawer({ open, onOpenChange, ruleId, seed }: Props) {
 
   function updateCondition(clientId: string, condition: ConditionOrAction) {
     setConditions((prev) =>
-      prev.map((entry) => (entry.clientId === clientId ? { ...entry, part: condition } : entry))
+      {
+        const next = prev.map((entry) => (entry.clientId === clientId ? { ...entry, part: condition } : entry));
+        return isScheduleLinked ? normalizeScheduleLinkedEditorConditions(next) : next;
+      }
     );
   }
 
@@ -153,7 +280,10 @@ export function RuleDrawer({ open, onOpenChange, ruleId, seed }: Props) {
   }
 
   function removeCondition(clientId: string) {
-    setConditions((prev) => prev.filter((entry) => entry.clientId !== clientId));
+    setConditions((prev) => {
+      const next = prev.filter((entry) => entry.clientId !== clientId);
+      return isScheduleLinked ? normalizeScheduleLinkedEditorConditions(next) : next;
+    });
   }
 
   function removeAction(clientId: string) {
@@ -198,10 +328,14 @@ export function RuleDrawer({ open, onOpenChange, ruleId, seed }: Props) {
 
     const nextConditions = stripEditorParts(conditions);
     const nextActions = stripEditorParts(actions);
+    const linkedScheduleId = getLinkedScheduleId(nextActions);
+    const normalizedConditions = linkedScheduleId
+      ? normalizeScheduleLinkedConditions(nextConditions)
+      : nextConditions;
     const nextRule = {
       stage,
       conditionsOp,
-      conditions: nextConditions,
+      conditions: normalizedConditions,
       actions: nextActions,
     };
 
@@ -219,6 +353,22 @@ export function RuleDrawer({ open, onOpenChange, ruleId, seed }: Props) {
         id: generateId(),
         ...nextRule,
       });
+    }
+
+    if (linkedScheduleId && stagedSchedules[linkedScheduleId]) {
+      const nextPayeeId = extractLinkedConditionId(normalizedConditions, "payee");
+      const nextAccountId = extractLinkedConditionId(normalizedConditions, "account");
+      const linkedSchedule = stagedSchedules[linkedScheduleId]!.entity;
+
+      if (
+        linkedSchedule.payeeId !== nextPayeeId ||
+        linkedSchedule.accountId !== nextAccountId
+      ) {
+        stageUpdate("schedules", linkedScheduleId, {
+          payeeId: nextPayeeId,
+          accountId: nextAccountId,
+        });
+      }
     }
 
     closeNow();
@@ -278,6 +428,7 @@ export function RuleDrawer({ open, onOpenChange, ruleId, seed }: Props) {
           conditionsOp={conditionsOp}
           conditions={conditions}
           actions={actions}
+          scheduleLinked={isScheduleLinked}
           entityOptions={entityOptions}
           validation={validation}
           showValidation={saveAttempted}

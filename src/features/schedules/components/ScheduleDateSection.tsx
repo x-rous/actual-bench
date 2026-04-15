@@ -4,13 +4,15 @@ import { useMemo } from "react";
 import { useWatch, type Control, type Path, type PathValue } from "react-hook-form";
 import { cn } from "@/lib/utils";
 import { recurSummary } from "../lib/recurSummary";
-import { RecurPatternEditor } from "./RecurPatternEditor";
+import { RecurPatternEditor, type RecurValues } from "./RecurPatternEditor";
 import type { ScheduleFormValues } from "../schemas/schedule.schema";
 
 type SetScheduleValue = <K extends Path<ScheduleFormValues>>(
   key: K,
   value: PathValue<ScheduleFormValues, K>
 ) => void;
+
+type RecurPatternField = keyof RecurValues & Path<ScheduleFormValues>;
 
 type Props = {
   control: Control<ScheduleFormValues>;
@@ -38,6 +40,10 @@ export function ScheduleDateSection({ control, errors, setFieldValue }: Props) {
   const patternWeekNum = useWatch({ control, name: "patternWeekNum" });
   const patternWeekDay = useWatch({ control, name: "patternWeekDay" });
   const onceDate = useWatch({ control, name: "onceDate" });
+
+  function handleRecurChange<K extends RecurPatternField>(key: K, value: RecurValues[K]) {
+    setFieldValue(key, value as PathValue<ScheduleFormValues, K>);
+  }
 
   const preview = useMemo(() => {
     return dateMode === "once"
@@ -128,7 +134,7 @@ export function ScheduleDateSection({ control, errors, setFieldValue }: Props) {
             patternWeekNum,
             patternWeekDay,
           }}
-          onChange={(key, value) => setFieldValue(key as keyof ScheduleFormValues, value as never)}
+          onChange={handleRecurChange}
           errors={{
             start: errors.start,
             endOccurrences: errors.endOccurrences,
