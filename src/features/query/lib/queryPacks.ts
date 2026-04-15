@@ -73,15 +73,32 @@ const DATA_INSPECTION: QueryPack[] = [
     ),
   },
   {
+    id: "list-accounts",
+    name: "List accounts",
+    description: "All accounts with budget / closed status.",
+    group: "data",
+    query: JSON.stringify(
+      {
+        ActualQLquery: {
+          table: "accounts",
+          select: ["id", "name", "offbudget", "closed"],
+          orderBy: ["name"],
+        },
+      },
+      null,
+      2
+    ),
+  },
+  {
     id: "list-schedules",
     name: "List schedules",
-    description: "All schedules with their next due date.",
+    description: "All schedules with next due date and linked rule.",
     group: "data",
     query: JSON.stringify(
       {
         ActualQLquery: {
           table: "schedules",
-          select: ["id", "name", "next_date"],
+          select: ["id", "name", "next_date", "posts_transaction", "rule"],
           orderBy: ["next_date", "name"],
         },
       },
@@ -98,11 +115,11 @@ const DATA_INSPECTION: QueryPack[] = [
       {
         ActualQLquery: {
           table: "transactions",
-          options: { splits: "inline" },
           select: [
             "id",
             "date",
             "amount",
+            "account.name",
             "payee.name",
             "category.name",
             "notes",
@@ -120,32 +137,33 @@ const DATA_INSPECTION: QueryPack[] = [
     name: "Transactions this month",
     description: "Transactions in the current month.",
     group: "data",
-    query: () => JSON.stringify(
-      {
-        ActualQLquery: {
-          table: "transactions",
-          options: { splits: "inline" },
-          filter: {
-            date: {
-              $transform: "$month",
-              $eq: getCurrentMonth(),
+    query: () =>
+      JSON.stringify(
+        {
+          ActualQLquery: {
+            table: "transactions",
+            filter: {
+              date: {
+                $transform: "$month",
+                $eq: getCurrentMonth(),
+              },
             },
+            select: [
+              "id",
+              "date",
+              "amount",
+              "account.name",
+              "payee.name",
+              "category.name",
+              "notes",
+            ],
+            orderBy: [{ date: "desc" }],
+            limit: 100,
           },
-          select: [
-            "id",
-            "date",
-            "amount",
-            "payee.name",
-            "category.name",
-            "notes",
-          ],
-          orderBy: [{ date: "desc" }],
-          limit: 100,
         },
-      },
-      null,
-      2
-    ),
+        null,
+        2
+      ),
   },
 ];
 
@@ -158,26 +176,62 @@ const CLEANUP: QueryPack[] = [
     description:
       "Current-month transactions with no category, excluding transfers and off-budget activity.",
     group: "cleanup",
-    query: () => JSON.stringify(
+    query: () =>
+      JSON.stringify(
+        {
+          ActualQLquery: {
+            table: "transactions",
+            filter: {
+              $and: [
+                {
+                  date: {
+                    $transform: "$month",
+                    $eq: getCurrentMonth(),
+                  },
+                },
+                { category: null },
+                { "account.offbudget": false },
+                { transfer_id: null },
+                { "payee.transfer_acct": null },
+              ],
+            },
+            select: [
+              "id",
+              "date",
+              "amount",
+              "account.name",
+              "payee.name",
+              "notes",
+            ],
+            orderBy: [{ date: "desc" }],
+            limit: 100,
+          },
+        },
+        null,
+        2
+      ),
+  },
+  {
+    id: "transactions-on-closed-accounts",
+    name: "Transactions on closed accounts",
+    description: "Transactions posted to accounts marked as closed.",
+    group: "cleanup",
+    query: JSON.stringify(
       {
         ActualQLquery: {
           table: "transactions",
-          options: { splits: "inline" },
           filter: {
-            $and: [
-              {
-                date: {
-                  $transform: "$month",
-                  $eq: getCurrentMonth(),
-                },
-              },
-              { category: null },
-              { "account.offbudget": false },
-              { transfer_id: null },
-              { "payee.transfer_acct": null },
-            ],
+            "account.closed": true,
           },
-          select: ["id", "date", "amount", "payee.name", "notes"],
+          select: [
+            "id",
+            "date",
+            "amount",
+            "account.name",
+            "payee.name",
+            "category.name",
+            "notes",
+          ],
           orderBy: [{ date: "desc" }],
           limit: 100,
         },
@@ -187,81 +241,42 @@ const CLEANUP: QueryPack[] = [
     ),
   },
   {
-    id: "payees-high-transaction-count",
-    name: "Payee transaction counts",
-    description:
-      "Transaction counts grouped by payee for the current month, excluding transfers and off-budget activity.",
+    id: "offbudget-transactions-this-month",
+    name: "Off-budget transactions this month",
+    description: "Current-month transactions in tracking / off-budget accounts.",
     group: "cleanup",
-    query: () => JSON.stringify(
-      {
-        ActualQLquery: {
-          table: "transactions",
-          options: { splits: "inline" },
-          filter: {
-            $and: [
-              {
-                date: {
-                  $transform: "$month",
-                  $eq: getCurrentMonth(),
+    query: () =>
+      JSON.stringify(
+        {
+          ActualQLquery: {
+            table: "transactions",
+            filter: {
+              $and: [
+                {
+                  date: {
+                    $transform: "$month",
+                    $eq: getCurrentMonth(),
+                  },
                 },
-              },
-              { "account.offbudget": false },
-              { transfer_id: null },
-              { "payee.transfer_acct": null },
+                { "account.offbudget": true },
+              ],
+            },
+            select: [
+              "id",
+              "date",
+              "amount",
+              "account.name",
+              "payee.name",
+              "category.name",
+              "notes",
             ],
+            orderBy: [{ date: "desc" }],
+            limit: 100,
           },
-          groupBy: ["payee", "payee.name"],
-          select: [
-            "payee",
-            "payee.name",
-            { transactionCount: { $count: "$id" } },
-          ],
-          orderBy: ["payee.name"],
-          limit: 20,
         },
-      },
-      null,
-      2
-    ),
-  },
-  {
-    id: "least-used-categories",
-    name: "Category usage counts",
-    description:
-      "Transaction counts grouped by category for the current month (note: this does not include truly unused categories).",
-    group: "cleanup",
-    query: () => JSON.stringify(
-      {
-        ActualQLquery: {
-          table: "transactions",
-          options: { splits: "inline" },
-          filter: {
-            $and: [
-              {
-                date: {
-                  $transform: "$month",
-                  $eq: getCurrentMonth(),
-                },
-              },
-              { category: { $ne: null } },
-              { "account.offbudget": false },
-              { transfer_id: null },
-              { "payee.transfer_acct": null },
-            ],
-          },
-          groupBy: ["category", "category.name"],
-          select: [
-            "category",
-            "category.name",
-            { transactionCount: { $count: "$id" } },
-          ],
-          orderBy: ["category.name"],
-          limit: 20,
-        },
-      },
-      null,
-      2
-    ),
+        null,
+        2
+      ),
   },
   {
     id: "schedules-missing-linked-rule",
@@ -283,6 +298,97 @@ const CLEANUP: QueryPack[] = [
       2
     ),
   },
+  {
+    id: "notes-containing-refund",
+    name: 'Transactions with notes matching "refund"',
+    description: "Transactions whose notes contain the word refund.",
+    group: "cleanup",
+    query: JSON.stringify(
+      {
+        ActualQLquery: {
+          table: "transactions",
+          filter: {
+            notes: { $like: "%refund%" },
+          },
+          select: [
+            "id",
+            "date",
+            "amount",
+            "account.name",
+            "payee.name",
+            "category.name",
+            "notes",
+          ],
+          orderBy: [{ date: "desc" }],
+          limit: 50,
+        },
+      },
+      null,
+      2
+    ),
+  },
+  {
+  id: "payee-transaction-counts-on-budget",
+  name: "Payee transaction counts",
+  description:
+    "Transaction counts grouped by payee across on-budget transactions, excluding transfers.",
+  group: "aggregation",
+  query: JSON.stringify(
+    {
+      ActualQLquery: {
+        table: "transactions",
+        filter: {
+          $and: [
+            { payee: { $ne: null } },
+            { "account.offbudget": false },
+            { transfer_id: null },
+            { "payee.transfer_acct": null },
+          ],
+        },
+        groupBy: ["payee", "payee.name"],
+        select: [
+          "payee",
+          "payee.name",
+          { transactionCount: { $count: "$id" } },
+        ],
+        orderBy: ["payee.name"],
+      },
+    },
+    null,
+    2
+  ),
+},
+{
+  id: "category-usage-counts-on-budget",
+  name: "Category usage counts",
+  description:
+    "Transaction counts grouped by category across on-budget transactions, excluding transfers. Does not include truly unused categories.",
+  group: "aggregation",
+  query: JSON.stringify(
+    {
+      ActualQLquery: {
+        table: "transactions",
+        filter: {
+          $and: [
+            { category: { $ne: null } },
+            { "account.offbudget": false },
+            { transfer_id: null },
+            { "payee.transfer_acct": null },
+          ],
+        },
+        groupBy: ["category", "category.name"],
+        select: [
+          "category",
+          "category.name",
+          { transactionCount: { $count: "$id" } },
+        ],
+        orderBy: ["category.name"],
+      },
+    },
+    null,
+    2
+  ),
+},
 ];
 
 // ─── Aggregation ──────────────────────────────────────────────────────────────
@@ -305,170 +411,235 @@ const AGGREGATION: QueryPack[] = [
     ),
   },
   {
-    id: "transactions-per-payee",
-    name: "Transactions per payee",
-    description: "Count of non-transfer transactions grouped by payee this month.",
+    id: "count-transactions-this-month",
+    name: "Count transactions this month",
+    description: "Number of transactions in the current month.",
     group: "aggregation",
-    query: () => JSON.stringify(
-      {
-        ActualQLquery: {
-          table: "transactions",
-          options: { splits: "inline" },
-          filter: {
-            $and: [
-              {
-                date: {
-                  $transform: "$month",
-                  $eq: getCurrentMonth(),
-                },
+    query: () =>
+      JSON.stringify(
+        {
+          ActualQLquery: {
+            table: "transactions",
+            filter: {
+              date: {
+                $transform: "$month",
+                $eq: getCurrentMonth(),
               },
-              { "account.offbudget": false },
-              { transfer_id: null },
-              { "payee.transfer_acct": null },
-            ],
+            },
+            calculate: { $count: "$id" },
           },
-          groupBy: ["payee", "payee.name"],
-          select: [
-            "payee",
-            "payee.name",
-            { transactionCount: { $count: "$id" } },
-          ],
-          orderBy: ["payee.name"],
         },
-      },
-      null,
-      2
-    ),
+        null,
+        2
+      ),
   },
   {
-    id: "amount-by-category",
+    id: "payee-transaction-counts",
+    name: "Payee transaction counts",
+    description:
+      "Transaction counts grouped by payee for the current month, excluding transfers and off-budget activity.",
+    group: "aggregation",
+    query: () =>
+      JSON.stringify(
+        {
+          ActualQLquery: {
+            table: "transactions",
+            filter: {
+              $and: [
+                {
+                  date: {
+                    $transform: "$month",
+                    $eq: getCurrentMonth(),
+                  },
+                },
+                { "account.offbudget": false },
+                { transfer_id: null },
+                { "payee.transfer_acct": null },
+              ],
+            },
+            groupBy: ["payee", "payee.name"],
+            select: [
+              "payee",
+              "payee.name",
+              { transactionCount: { $count: "$id" } },
+            ],
+            orderBy: ["payee.name"],
+            limit: 50,
+          },
+        },
+        null,
+        2
+      ),
+  },
+  {
+    id: "category-usage-counts",
+    name: "Category usage counts",
+    description:
+      "Transaction counts grouped by category for the current month, excluding transfers and off-budget activity.",
+    group: "aggregation",
+    query: () =>
+      JSON.stringify(
+        {
+          ActualQLquery: {
+            table: "transactions",
+            filter: {
+              $and: [
+                {
+                  date: {
+                    $transform: "$month",
+                    $eq: getCurrentMonth(),
+                  },
+                },
+                { category: { $ne: null } },
+                { "account.offbudget": false },
+                { transfer_id: null },
+                { "payee.transfer_acct": null },
+              ],
+            },
+            groupBy: ["category", "category.name"],
+            select: [
+              "category",
+              "category.name",
+              { transactionCount: { $count: "$id" } },
+            ],
+            orderBy: ["category.name"],
+            limit: 50,
+          },
+        },
+        null,
+        2
+      ),
+  },
+  {
+    id: "amount-by-category-this-month",
     name: "Amount by category this month",
     description:
       "Total non-transfer transaction amount grouped by category for the current month.",
     group: "aggregation",
-    query: () => JSON.stringify(
-      {
-        ActualQLquery: {
-          table: "transactions",
-          options: { splits: "inline" },
-          filter: {
-            $and: [
-              {
-                date: {
-                  $transform: "$month",
-                  $eq: getCurrentMonth(),
+    query: () =>
+      JSON.stringify(
+        {
+          ActualQLquery: {
+            table: "transactions",
+            filter: {
+              $and: [
+                {
+                  date: {
+                    $transform: "$month",
+                    $eq: getCurrentMonth(),
+                  },
                 },
-              },
-              { category: { $ne: null } },
-              { "account.offbudget": false },
-              { transfer_id: null },
-              { "payee.transfer_acct": null },
+                { category: { $ne: null } },
+                { "account.offbudget": false },
+                { transfer_id: null },
+                { "payee.transfer_acct": null },
+              ],
+            },
+            groupBy: ["category", "category.name"],
+            select: [
+              "category",
+              "category.name",
+              { totalAmount: { $sum: "$amount" } },
             ],
+            orderBy: ["category.name"],
           },
-          groupBy: ["category", "category.name"],
-          select: [
-            "category",
-            "category.name",
-            { totalAmount: { $sum: "$amount" } },
-          ],
-          orderBy: ["category.name"],
         },
-      },
-      null,
-      2
-    ),
+        null,
+        2
+      ),
   },
   {
-    id: "amount-by-payee",
+    id: "amount-by-payee-this-month",
     name: "Amount by payee this month",
     description:
       "Total non-transfer transaction amount grouped by payee for the current month.",
     group: "aggregation",
-    query: () => JSON.stringify(
-      {
-        ActualQLquery: {
-          table: "transactions",
-          options: { splits: "inline" },
-          filter: {
-            $and: [
-              {
-                date: {
-                  $transform: "$month",
-                  $eq: getCurrentMonth(),
+    query: () =>
+      JSON.stringify(
+        {
+          ActualQLquery: {
+            table: "transactions",
+            filter: {
+              $and: [
+                {
+                  date: {
+                    $transform: "$month",
+                    $eq: getCurrentMonth(),
+                  },
                 },
-              },
-              { "account.offbudget": false },
-              { transfer_id: null },
-              { "payee.transfer_acct": null },
+                { "account.offbudget": false },
+                { transfer_id: null },
+                { "payee.transfer_acct": null },
+              ],
+            },
+            groupBy: ["payee", "payee.name"],
+            select: [
+              "payee",
+              "payee.name",
+              { totalAmount: { $sum: "$amount" } },
             ],
+            orderBy: ["payee.name"],
           },
-          groupBy: ["payee", "payee.name"],
-          select: [
-            "payee",
-            "payee.name",
-            { totalAmount: { $sum: "$amount" } },
-          ],
-          orderBy: ["payee.name"],
         },
-      },
-      null,
-      2
-    ),
+        null,
+        2
+      ),
   },
   {
-    id: "amount-by-category-group",
+    id: "amount-by-category-group-this-month",
     name: "Amount by category group this month",
     description:
       "Total non-transfer transaction amount grouped by category group for the current month.",
     group: "aggregation",
-    query: () => JSON.stringify(
-      {
-        ActualQLquery: {
-          table: "transactions",
-          options: { splits: "inline" },
-          filter: {
-            $and: [
-              {
-                date: {
-                  $transform: "$month",
-                  $eq: getCurrentMonth(),
+    query: () =>
+      JSON.stringify(
+        {
+          ActualQLquery: {
+            table: "transactions",
+            filter: {
+              $and: [
+                {
+                  date: {
+                    $transform: "$month",
+                    $eq: getCurrentMonth(),
+                  },
                 },
-              },
-              { category: { $ne: null } },
-              { "account.offbudget": false },
-              { transfer_id: null },
-              { "payee.transfer_acct": null },
+                { category: { $ne: null } },
+                { "account.offbudget": false },
+                { transfer_id: null },
+                { "payee.transfer_acct": null },
+              ],
+            },
+            groupBy: ["category.group", "category.group.name"],
+            select: [
+              "category.group",
+              "category.group.name",
+              { totalAmount: { $sum: "$amount" } },
             ],
+            orderBy: ["category.group.name"],
           },
-          groupBy: ["category.group", "category.group.name"],
-          select: [
-            "category.group",
-            "category.group.name",
-            { totalAmount: { $sum: "$amount" } },
-          ],
-          orderBy: ["category.group.name"],
         },
-      },
-      null,
-      2
-    ),
+        null,
+        2
+      ),
   },
+
+  
 ];
 
 // ─── Targeted subset queries ──────────────────────────────────────────────────
 
 const TARGETED: QueryPack[] = [
   {
-    id: "count-selected-payees",
-    name: "Count transactions for selected payees",
+    id: "transactions-for-selected-payees",
+    name: "Transactions for selected payees",
     description:
-      "Counts transactions for a sample set of payee IDs. Replace the sample IDs before running.",
+      "Transaction counts for a selected set of payee IDs. Replace the sample IDs before running.",
     group: "targeted",
     query: JSON.stringify(
       {
         ActualQLquery: {
           table: "transactions",
-          options: { splits: "inline" },
           filter: {
             payee: {
               $oneof: [
@@ -492,16 +663,15 @@ const TARGETED: QueryPack[] = [
     ),
   },
   {
-    id: "count-selected-categories",
-    name: "Count transactions for selected categories",
+    id: "transactions-for-selected-categories",
+    name: "Transactions for selected categories",
     description:
-      "Counts transactions for a sample set of category IDs. Replace the sample IDs before running.",
+      "Transaction counts for a selected set of category IDs. Replace the sample IDs before running.",
     group: "targeted",
     query: JSON.stringify(
       {
         ActualQLquery: {
           table: "transactions",
-          options: { splits: "inline" },
           filter: {
             category: {
               $oneof: [
@@ -525,16 +695,15 @@ const TARGETED: QueryPack[] = [
     ),
   },
   {
-    id: "count-selected-accounts",
-    name: "Count transactions for selected accounts",
+    id: "transactions-for-selected-accounts",
+    name: "Transactions for selected accounts",
     description:
-      "Counts transactions for a sample set of account IDs. Replace the sample IDs before running.",
+      "Transaction counts for a selected set of account IDs. Replace the sample IDs before running.",
     group: "targeted",
     query: JSON.stringify(
       {
         ActualQLquery: {
           table: "transactions",
-          options: { splits: "inline" },
           filter: {
             account: {
               $oneof: [

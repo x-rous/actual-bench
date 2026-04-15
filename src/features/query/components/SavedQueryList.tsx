@@ -115,7 +115,7 @@ export function ActionButton({
 
 function SubLabel({ children }: { children: React.ReactNode }) {
   return (
-    <div className="mx-3 mb-0.5 mt-3 border-t border-border pt-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60 first:mt-1 first:border-0 first:pt-0">
+    <div className="mx-3 mb-0.5 mt-3 border-t border-border pt-2 text-[11px] uppercase tracking-wider text-muted-foreground/60 first:mt-1 first:border-0 first:pt-0">
       {children}
     </div>
   );
@@ -253,7 +253,7 @@ function SavedItem({
           type="button"
           onClick={onLoad}
           title={query.name}
-          className="flex-1 truncate text-left text-[11px] leading-relaxed text-foreground/90"
+          className="flex-1 truncate text-left text-[12px] leading-relaxed text-foreground/90"
         >
           {query.name}
         </button>
