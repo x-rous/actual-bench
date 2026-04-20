@@ -1,7 +1,13 @@
 import sqlite3InitModule from "@sqlite.org/sqlite-wasm";
 import type { SqliteWasmApi, SqliteWasmDb } from "@sqlite.org/sqlite-wasm";
+import {
+  runDiagnosticChecks,
+  runIntegrityCheck,
+  type DiagnosticDb,
+} from "../lib/diagnosticChecks";
 import { unzipSnapshot } from "../lib/zipReader";
 import type {
+  DiagnosticsPayload,
   LoadedSnapshotSummary,
   MetadataJson,
   OverviewCountKey,
@@ -77,6 +83,10 @@ function quoteIdentifier(identifier: string): string {
   return `"${identifier.replaceAll("\"", "\"\"")}"`;
 }
 
+function sqlLiteral(value: string): string {
+  return `'${value.replaceAll("'", "''")}'`;
+}
+
 function countRows(database: SqliteWasmDb, table: OverviewCountKey): number {
   try {
     const value = database.selectValue(`SELECT COUNT(*) FROM ${quoteIdentifier(table)}`);
@@ -120,6 +130,62 @@ function buildOverview(): OverviewPayload {
       zipValid: currentSnapshot.zipValid,
     },
     counts,
+  };
+}
+
+function requireDb(): SqliteWasmDb {
+  if (!db || !currentSnapshot?.opened) {
+    throw new Error("No budget snapshot is loaded");
+  }
+  return db;
+}
+
+function selectRows<T extends Record<string, unknown>>(
+  database: SqliteWasmDb,
+  sql: string
+): T[] {
+  const resultRows: unknown[] = [];
+  database.exec({ sql, rowMode: "object", resultRows });
+  return resultRows as T[];
+}
+
+function createDiagnosticDb(database: SqliteWasmDb): DiagnosticDb {
+  return {
+    exec: (sql) => {
+      database.exec(sql);
+    },
+    selectValue: (sql) => database.selectValue(sql),
+    selectRows: (sql) => selectRows(database, sql),
+    objectExists: (name, type) => {
+      const typeClause = type ? ` AND type = ${sqlLiteral(type)}` : "";
+      const value = database.selectValue(
+        `SELECT COUNT(*) FROM sqlite_schema WHERE name = ${sqlLiteral(name)}${typeClause}`
+      );
+      return Number(value ?? 0) > 0;
+    },
+    getColumns: (name) => {
+      const rows = selectRows<{ name: string }>(
+        database,
+        `PRAGMA table_info(${quoteIdentifier(name)})`
+      );
+      return rows.map((row) => String(row.name));
+    },
+  };
+}
+
+function runWorkerDiagnostics(id: string): DiagnosticsPayload {
+  progress(id, "runningDiagnostics");
+  const database = requireDb();
+  return {
+    findings: runDiagnosticChecks(createDiagnosticDb(database), currentSnapshot?.metadata ?? null),
+  };
+}
+
+function runWorkerIntegrityCheck(id: string): DiagnosticsPayload {
+  progress(id, "runningDiagnostics");
+  const database = requireDb();
+  return {
+    findings: runIntegrityCheck(createDiagnosticDb(database)),
   };
 }
 
@@ -180,7 +246,9 @@ function handleRequest(request: WorkerRequest): Promise<unknown> | unknown {
       progress(request.id, "computingOverview");
       return buildOverview();
     case "runDiagnostics":
+      return runWorkerDiagnostics(request.id);
     case "runIntegrityCheck":
+      return runWorkerIntegrityCheck(request.id);
     case "listSchemaObjects":
     case "getSchemaObject":
     case "tableCounts":

@@ -262,7 +262,26 @@ Ordered so each merges in a working state. Each bullet = one commit.
 
 ---
 
-### M5 — Diagnostics section
+### M5 — Diagnostics section ✅ shipped
+
+**Status:** complete. Lint / `tsc --noEmit` / `npm test` all green (29 suites, 358 tests, 7 new). `npm run lint` reports the expected React Compiler `react-hooks/incompatible-library` warning for TanStack Table. `next build` bundle inspection was intentionally not run in the Docker-hosted dev workspace. Manual real-budget verification is still pending.
+
+**Files delivered**
+- `src/features/budget-diagnostics/types.ts` — added `BudgetDiagnostic`, severity, and diagnostics payload/result typing.
+- `src/features/budget-diagnostics/lib/expectedSchema.ts` (new) — expected tables, views, featured views, and column catalog mirrored from `agents/rd-006-budget-diagnostics-ddl.md` snapshot date `2026-04-20`.
+- `src/features/budget-diagnostics/lib/diagnosticChecks.ts` (new) — diagnostic engine with SQLite health/storage checks, schema checks, relationship checks, DDL quirk findings, snapshot metadata checks, and manual full integrity check.
+- `src/features/budget-diagnostics/lib/diagnosticChecks.test.ts` (new) — fake-adapter tests for clean snapshots, orphan category groups, id-less relationship tables, malformed metadata, Actual vector-clock timestamps, and integrity check results.
+- `src/features/budget-diagnostics/workers/sqliteDiagnostics.worker.ts` — added a SQLite adapter for diagnostics plus `runDiagnostics` and `runIntegrityCheck` worker handlers.
+- `src/features/budget-diagnostics/components/BudgetDiagnosticsView.tsx` — runs diagnostics after the snapshot overview loads, tracks diagnostics/integrity states, appends integrity-check results, and surfaces structured worker errors.
+- `src/features/budget-diagnostics/components/DiagnosticsSection.tsx` — diagnostics panel with loading/error states, manual full integrity-check action, and findings CSV export.
+- `src/features/budget-diagnostics/components/DiagnosticsSummaryCards.tsx` (new) — total/error/warning/info summary cards.
+- `src/features/budget-diagnostics/components/DiagnosticsTable.tsx` (new) — TanStack Table findings browser with severity filtering and sorting.
+
+**Notes for future milestones**
+- `RowDetailsSheet` remains in M6; M5 findings include `table`, `rowId`, `relatedTable`, and `relatedId` so drill-in can be wired later.
+- Unit tests use a focused fake `DiagnosticDb` adapter instead of booting SQLite WASM in Jest; the worker uses the same adapter contract against the real opened SQLite DB.
+- `schedules_json_paths` has no `id` column, so relationship diagnostics use the relationship column as row context when a source table lacks `id`.
+- Actual sync timestamps with vector-clock suffixes, for example `2026-04-12T12:24:26.880Z-0011-...`, are accepted as valid metadata dates.
 
 **Files**
 - `src/features/budget-diagnostics/lib/diagnosticChecks.ts`

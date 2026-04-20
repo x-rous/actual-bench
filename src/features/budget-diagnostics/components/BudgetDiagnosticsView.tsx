@@ -12,29 +12,48 @@ import {
   getSqliteWorkerClient,
   resetSqliteWorkerClient,
 } from "../lib/sqliteWorkerClient";
-import type { OverviewPayload, ProgressStage } from "../types";
+import type { DiagnosticsPayload, OverviewPayload, ProgressStage } from "../types";
 import { DataBrowserSection } from "./DataBrowserSection";
 import { DiagnosticsSection } from "./DiagnosticsSection";
 import { OverviewSection } from "./OverviewSection";
 
 type SnapshotState = {
   status: "idle" | "loading" | "ready" | "error";
+  diagnosticsStatus: "idle" | "loading" | "ready" | "error";
+  integrityStatus: "idle" | "loading" | "error";
   progressStage: ProgressStage | null;
   errorMessage: string | null;
+  diagnosticsError: string | null;
+  integrityError: string | null;
   overview: OverviewPayload | null;
+  diagnostics: DiagnosticsPayload | null;
   download: DownloadResult | null;
 };
 
 const INITIAL_SNAPSHOT_STATE: SnapshotState = {
   status: "idle",
+  diagnosticsStatus: "idle",
+  integrityStatus: "idle",
   progressStage: null,
   errorMessage: null,
+  diagnosticsError: null,
+  integrityError: null,
   overview: null,
+  diagnostics: null,
   download: null,
 };
 
 function getErrorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : "Unable to open the budget snapshot.";
+  if (error instanceof Error) return error.message;
+  if (
+    error &&
+    typeof error === "object" &&
+    "message" in error &&
+    typeof error.message === "string"
+  ) {
+    return error.message;
+  }
+  return "Unable to open the budget snapshot.";
 }
 
 function ReadOnlyNotice() {
@@ -85,6 +104,51 @@ export function BudgetDiagnosticsView() {
     setReloadToken((value) => value + 1);
   }, []);
 
+  const runIntegrityCheck = useCallback(() => {
+    async function run() {
+      setSnapshot((current) => ({
+        ...current,
+        integrityStatus: "loading",
+        integrityError: null,
+      }));
+
+      try {
+        const payload = await getSqliteWorkerClient().call(
+          { kind: "runIntegrityCheck" },
+          {
+            onProgress: (stage) => {
+              setSnapshot((current) => ({ ...current, progressStage: stage }));
+            },
+          }
+        );
+        setSnapshot((current) => {
+          const existing = current.diagnostics?.findings ?? [];
+          const withoutIntegrity = existing.filter(
+            (finding) => finding.code !== "SQLITE_INTEGRITY_CHECK"
+          );
+          return {
+            ...current,
+            integrityStatus: "idle",
+            integrityError: null,
+            progressStage: "ready",
+            diagnostics: {
+              findings: [...withoutIntegrity, ...payload.findings],
+            },
+          };
+        });
+      } catch (error) {
+        setSnapshot((current) => ({
+          ...current,
+          integrityStatus: "error",
+          integrityError: getErrorMessage(error),
+          progressStage: "ready",
+        }));
+      }
+    }
+
+    void run();
+  }, []);
+
   useEffect(() => {
     if (!connection) {
       resetSqliteWorkerClient();
@@ -98,9 +162,14 @@ export function BudgetDiagnosticsView() {
       resetSqliteWorkerClient();
       setSnapshot({
         status: "loading",
+        diagnosticsStatus: "idle",
+        integrityStatus: "idle",
         progressStage: "exporting",
         errorMessage: null,
+        diagnosticsError: null,
+        integrityError: null,
         overview: null,
+        diagnostics: null,
         download: null,
       });
 
@@ -125,18 +194,59 @@ export function BudgetDiagnosticsView() {
 
         setSnapshot({
           status: "ready",
+          diagnosticsStatus: "loading",
+          integrityStatus: "idle",
           progressStage: "ready",
           errorMessage: null,
+          diagnosticsError: null,
+          integrityError: null,
           overview,
+          diagnostics: null,
           download: exported.download,
         });
+
+        try {
+          const diagnostics = await getSqliteWorkerClient().call(
+            { kind: "runDiagnostics" },
+            {
+              onProgress: (stage) => {
+                if (!cancelled) {
+                  setSnapshot((current) => ({ ...current, progressStage: stage }));
+                }
+              },
+            }
+          );
+
+          if (cancelled) return;
+
+          setSnapshot((current) => ({
+            ...current,
+            diagnosticsStatus: "ready",
+            diagnosticsError: null,
+            progressStage: "ready",
+            diagnostics,
+          }));
+        } catch (error) {
+          if (cancelled) return;
+          setSnapshot((current) => ({
+            ...current,
+            diagnosticsStatus: "error",
+            diagnosticsError: getErrorMessage(error),
+            progressStage: "ready",
+          }));
+        }
       } catch (error) {
         if (cancelled) return;
         setSnapshot({
           status: "error",
+          diagnosticsStatus: "idle",
+          integrityStatus: "idle",
           progressStage: null,
           errorMessage: getErrorMessage(error),
+          diagnosticsError: null,
+          integrityError: null,
           overview: null,
+          diagnostics: null,
           download: null,
         });
       }
@@ -192,7 +302,14 @@ export function BudgetDiagnosticsView() {
             errorMessage={snapshot.errorMessage}
             onRetry={retry}
           />
-          <DiagnosticsSection />
+          <DiagnosticsSection
+            diagnostics={snapshot.diagnostics}
+            status={snapshot.diagnosticsStatus}
+            errorMessage={snapshot.diagnosticsError}
+            integrityStatus={snapshot.integrityStatus}
+            integrityError={snapshot.integrityError}
+            onRunIntegrityCheck={runIntegrityCheck}
+          />
           <DataBrowserSection />
         </div>
       </div>

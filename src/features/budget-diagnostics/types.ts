@@ -46,6 +46,24 @@ export type OverviewPayload = {
   counts: { tables: number; views: number } & Record<OverviewCountKey, number>;
 };
 
+export type DiagnosticSeverity = "error" | "warning" | "info";
+
+export type BudgetDiagnostic = {
+  code: string;
+  severity: DiagnosticSeverity;
+  title: string;
+  message: string;
+  details?: string[];
+  table?: string;
+  rowId?: string;
+  relatedTable?: string;
+  relatedId?: string;
+};
+
+export type DiagnosticsPayload = {
+  findings: BudgetDiagnostic[];
+};
+
 export type LoadedSnapshotSummary = {
   dbSizeBytes: number;
   zipFilename: string | null;
@@ -94,8 +112,8 @@ export type WorkerResultByKind = {
   init: { initialized: true };
   loadSnapshot: LoadedSnapshotSummary;
   overview: OverviewPayload;
-  runDiagnostics: never;
-  runIntegrityCheck: never;
+  runDiagnostics: DiagnosticsPayload;
+  runIntegrityCheck: DiagnosticsPayload;
   listSchemaObjects: never;
   getSchemaObject: never;
   tableCounts: never;
