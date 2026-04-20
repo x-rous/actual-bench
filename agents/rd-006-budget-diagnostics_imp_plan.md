@@ -215,7 +215,26 @@ Ordered so each merges in a working state. Each bullet = one commit.
 
 ---
 
-### M4 — Overview section
+### M4 — Overview section ✅ shipped
+
+**Status:** complete. Lint / `tsc --noEmit` / `npm test` all green (28 suites, 351 tests, 3 new). `next build` bundle inspection was intentionally not run in the Docker-hosted dev workspace. Manual real-budget verification is still pending until an active Actual server/budget is available.
+
+**Files delivered**
+- `src/features/budget-diagnostics/types.ts` — added `MetadataJson`, `OverviewPayload`, count keys, and typed `overview` worker result.
+- `src/features/budget-diagnostics/workers/sqliteDiagnostics.worker.ts` — stores loaded snapshot file metadata and implements `overview` with schema counts plus fixed key table counts.
+- `src/features/budget-diagnostics/lib/exportSnapshot.ts` — passes ZIP filename and byte size into the worker while preserving original ZIP bytes for download.
+- `src/features/budget-diagnostics/lib/zipReader.ts` — returns parsed metadata as `MetadataJson`.
+- `src/features/budget-diagnostics/lib/fileOverviewStats.ts` (new) — byte/count formatting and 12-card overview metric builder.
+- `src/features/budget-diagnostics/lib/fileOverviewStats.test.ts` (new) — formatter and metric-list coverage.
+- `src/features/budget-diagnostics/components/BudgetDiagnosticsView.tsx` — auto-opens the active budget snapshot, tracks progress/error/overview/download state, supports retry, and cleans up the worker on connection/page changes.
+- `src/features/budget-diagnostics/components/OverviewSection.tsx` — renders loading/error states, snapshot count cards, metadata, file/source details, and the Download ZIP action.
+- `src/features/budget-diagnostics/components/MetadataSummary.tsx` (new) — renders the 10 required metadata fields with `—` for missing values.
+
+**Notes for future milestones**
+- Missing key tables count as `0` in Overview so schema drift does not block snapshot rendering; M5 diagnostics will surface missing schema objects explicitly.
+- Download ZIP uses the original `DownloadResult.bytes` from M3, not the worker-transferred copy.
+- The fallback filename is `budget-{budgetSyncId}-{YYYY-MM-DD}.zip` when upstream `Content-Disposition` does not provide one.
+- `OverviewSection` uses existing local bordered panel/card styling because the repo does not currently include `src/components/ui/card.tsx`.
 
 **Files**
 - `src/features/budget-diagnostics/lib/fileOverviewStats.ts`

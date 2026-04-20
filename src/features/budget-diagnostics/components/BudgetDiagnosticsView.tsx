@@ -1,13 +1,41 @@
 "use client";
 
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { ArrowRight, LockKeyhole, Stethoscope } from "lucide-react";
 import { buttonVariants } from "@/components/ui/button";
+import type { DownloadResult } from "@/lib/api/client";
 import { cn } from "@/lib/utils";
 import { selectActiveInstance, useConnectionStore } from "@/store/connection";
+import { exportSnapshot } from "../lib/exportSnapshot";
+import {
+  getSqliteWorkerClient,
+  resetSqliteWorkerClient,
+} from "../lib/sqliteWorkerClient";
+import type { OverviewPayload, ProgressStage } from "../types";
 import { DataBrowserSection } from "./DataBrowserSection";
 import { DiagnosticsSection } from "./DiagnosticsSection";
 import { OverviewSection } from "./OverviewSection";
+
+type SnapshotState = {
+  status: "idle" | "loading" | "ready" | "error";
+  progressStage: ProgressStage | null;
+  errorMessage: string | null;
+  overview: OverviewPayload | null;
+  download: DownloadResult | null;
+};
+
+const INITIAL_SNAPSHOT_STATE: SnapshotState = {
+  status: "idle",
+  progressStage: null,
+  errorMessage: null,
+  overview: null,
+  download: null,
+};
+
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : "Unable to open the budget snapshot.";
+}
 
 function ReadOnlyNotice() {
   return (
@@ -50,6 +78,85 @@ function ConnectBudgetState() {
 
 export function BudgetDiagnosticsView() {
   const connection = useConnectionStore(selectActiveInstance);
+  const [reloadToken, setReloadToken] = useState(0);
+  const [snapshot, setSnapshot] = useState<SnapshotState>(INITIAL_SNAPSHOT_STATE);
+
+  const retry = useCallback(() => {
+    setReloadToken((value) => value + 1);
+  }, []);
+
+  useEffect(() => {
+    if (!connection) {
+      resetSqliteWorkerClient();
+      return;
+    }
+
+    let cancelled = false;
+    const activeConnection = connection;
+
+    async function openSnapshot() {
+      resetSqliteWorkerClient();
+      setSnapshot({
+        status: "loading",
+        progressStage: "exporting",
+        errorMessage: null,
+        overview: null,
+        download: null,
+      });
+
+      try {
+        const exported = await exportSnapshot(activeConnection, (stage) => {
+          if (!cancelled) {
+            setSnapshot((current) => ({ ...current, progressStage: stage }));
+          }
+        });
+        const overview = await getSqliteWorkerClient().call(
+          { kind: "overview" },
+          {
+            onProgress: (stage) => {
+              if (!cancelled) {
+                setSnapshot((current) => ({ ...current, progressStage: stage }));
+              }
+            },
+          }
+        );
+
+        if (cancelled) return;
+
+        setSnapshot({
+          status: "ready",
+          progressStage: "ready",
+          errorMessage: null,
+          overview,
+          download: exported.download,
+        });
+      } catch (error) {
+        if (cancelled) return;
+        setSnapshot({
+          status: "error",
+          progressStage: null,
+          errorMessage: getErrorMessage(error),
+          overview: null,
+          download: null,
+        });
+      }
+    }
+
+    void openSnapshot();
+
+    return () => {
+      cancelled = true;
+      resetSqliteWorkerClient();
+    };
+  }, [
+    connection,
+    connection?.apiKey,
+    connection?.baseUrl,
+    connection?.budgetSyncId,
+    connection?.encryptionPassword,
+    connection?.id,
+    reloadToken,
+  ]);
 
   if (!connection) {
     return <ConnectBudgetState />;
@@ -76,7 +183,15 @@ export function BudgetDiagnosticsView() {
       <div className="min-h-0 flex-1 overflow-auto p-6">
         <div className="mx-auto flex w-full max-w-7xl flex-col gap-5">
           <ReadOnlyNotice />
-          <OverviewSection />
+          <OverviewSection
+            connection={connection}
+            overview={snapshot.overview}
+            download={snapshot.download}
+            status={snapshot.status}
+            progressStage={snapshot.progressStage}
+            errorMessage={snapshot.errorMessage}
+            onRetry={retry}
+          />
           <DiagnosticsSection />
           <DataBrowserSection />
         </div>

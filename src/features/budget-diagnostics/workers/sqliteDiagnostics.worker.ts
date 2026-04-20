@@ -3,6 +3,9 @@ import type { SqliteWasmApi, SqliteWasmDb } from "@sqlite.org/sqlite-wasm";
 import { unzipSnapshot } from "../lib/zipReader";
 import type {
   LoadedSnapshotSummary,
+  MetadataJson,
+  OverviewCountKey,
+  OverviewPayload,
   ProgressStage,
   WorkerRequest,
   WorkerResponse,
@@ -11,6 +14,27 @@ import type {
 let sqlite3: SqliteWasmApi | null = null;
 let db: SqliteWasmDb | null = null;
 let snapshotCounter = 0;
+let currentSnapshot: {
+  dbSizeBytes: number;
+  zipFilename: string | null;
+  zipSizeBytes: number;
+  hadMetadata: boolean;
+  metadata: MetadataJson | null;
+  zipValid: boolean;
+  opened: boolean;
+} | null = null;
+
+const OVERVIEW_TABLES: readonly OverviewCountKey[] = [
+  "transactions",
+  "accounts",
+  "payees",
+  "category_groups",
+  "categories",
+  "rules",
+  "schedules",
+  "tags",
+  "notes",
+];
 
 function post(response: WorkerResponse) {
   self.postMessage(response);
@@ -39,6 +63,7 @@ async function initSqlite(wasmUrl: string): Promise<{ initialized: true }> {
 function closeCurrentDb() {
   db?.close();
   db = null;
+  currentSnapshot = null;
 }
 
 function countSchemaObjects(database: SqliteWasmDb, type: "table" | "view"): number {
@@ -48,7 +73,59 @@ function countSchemaObjects(database: SqliteWasmDb, type: "table" | "view"): num
   return typeof value === "number" ? value : Number(value ?? 0);
 }
 
-function loadSnapshot(id: string, zipBytes: ArrayBuffer): LoadedSnapshotSummary {
+function quoteIdentifier(identifier: string): string {
+  return `"${identifier.replaceAll("\"", "\"\"")}"`;
+}
+
+function countRows(database: SqliteWasmDb, table: OverviewCountKey): number {
+  try {
+    const value = database.selectValue(`SELECT COUNT(*) FROM ${quoteIdentifier(table)}`);
+    return typeof value === "number" ? value : Number(value ?? 0);
+  } catch {
+    return 0;
+  }
+}
+
+function buildOverview(): OverviewPayload {
+  if (!db || !currentSnapshot?.opened) {
+    throw new Error("No budget snapshot is loaded");
+  }
+
+  const counts = {
+    tables: countSchemaObjects(db, "table"),
+    views: countSchemaObjects(db, "view"),
+    transactions: 0,
+    accounts: 0,
+    payees: 0,
+    category_groups: 0,
+    categories: 0,
+    rules: 0,
+    schedules: 0,
+    tags: 0,
+    notes: 0,
+  } satisfies OverviewPayload["counts"];
+
+  for (const table of OVERVIEW_TABLES) {
+    counts[table] = countRows(db, table);
+  }
+
+  return {
+    metadata: currentSnapshot.metadata,
+    file: {
+      dbSizeBytes: currentSnapshot.dbSizeBytes,
+      zipFilename: currentSnapshot.zipFilename,
+      zipSizeBytes: currentSnapshot.zipSizeBytes,
+      hadMetadata: currentSnapshot.hadMetadata,
+      opened: currentSnapshot.opened,
+      zipValid: currentSnapshot.zipValid,
+    },
+    counts,
+  };
+}
+
+function loadSnapshot(request: Extract<WorkerRequest, { kind: "loadSnapshot" }>): LoadedSnapshotSummary {
+  const { id, zipBytes, zipFilename = null, zipSizeBytes = zipBytes.byteLength } = request;
+
   if (!sqlite3) {
     throw new Error("SQLite worker has not been initialized");
   }
@@ -70,11 +147,22 @@ function loadSnapshot(id: string, zipBytes: ArrayBuffer): LoadedSnapshotSummary 
 
   const tableCount = countSchemaObjects(db, "table");
   const viewCount = countSchemaObjects(db, "view");
+  currentSnapshot = {
+    dbSizeBytes: snapshot.dbBytes.byteLength,
+    zipFilename,
+    zipSizeBytes,
+    hadMetadata: snapshot.hadMetadata,
+    metadata: snapshot.metadata,
+    zipValid: true,
+    opened: true,
+  };
 
   progress(id, "ready");
 
   return {
     dbSizeBytes: snapshot.dbBytes.byteLength,
+    zipFilename,
+    zipSizeBytes,
     hadMetadata: snapshot.hadMetadata,
     metadata: snapshot.metadata,
     tableCount,
@@ -87,8 +175,10 @@ function handleRequest(request: WorkerRequest): Promise<unknown> | unknown {
     case "init":
       return initSqlite(request.wasmUrl);
     case "loadSnapshot":
-      return loadSnapshot(request.id, request.zipBytes);
+      return loadSnapshot(request);
     case "overview":
+      progress(request.id, "computingOverview");
+      return buildOverview();
     case "runDiagnostics":
     case "runIntegrityCheck":
     case "listSchemaObjects":

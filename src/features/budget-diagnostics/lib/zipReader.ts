@@ -1,9 +1,9 @@
 import { unzipSync, strFromU8 } from "fflate";
-import type { SnapshotMetadata } from "../types";
+import type { MetadataJson } from "../types";
 
 export type UnzippedSnapshot = {
   dbBytes: Uint8Array;
-  metadata: SnapshotMetadata | null;
+  metadata: MetadataJson | null;
   hadMetadata: boolean;
 };
 
@@ -11,13 +11,13 @@ function normalizeZipPath(path: string): string {
   return path.replace(/^\.?\//, "");
 }
 
-function parseMetadata(bytes: Uint8Array | undefined): SnapshotMetadata | null {
+function parseMetadata(bytes: Uint8Array | undefined): MetadataJson | null {
   if (!bytes) return null;
   const parsed = JSON.parse(strFromU8(bytes)) as unknown;
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
     throw new Error("metadata.json must contain a JSON object");
   }
-  return parsed as SnapshotMetadata;
+  return parsed as MetadataJson;
 }
 
 export function unzipSnapshot(bytes: ArrayBuffer): UnzippedSnapshot {

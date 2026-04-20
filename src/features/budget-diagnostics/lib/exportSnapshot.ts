@@ -20,7 +20,12 @@ export async function exportSnapshot(
 
   await client.call({ kind: "init", wasmUrl: "/sqlite/sqlite3.wasm" }, { onProgress });
   const summary = await client.call(
-    { kind: "loadSnapshot", zipBytes: bytesForWorker },
+    {
+      kind: "loadSnapshot",
+      zipBytes: bytesForWorker,
+      zipFilename: download.filename,
+      zipSizeBytes: download.bytes.byteLength,
+    },
     { onProgress, transfer: [bytesForWorker] }
   );
 

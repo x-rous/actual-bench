@@ -9,17 +9,62 @@ export type ProgressStage =
 
 export type SnapshotMetadata = Record<string, unknown>;
 
+export type MetadataJson = {
+  id?: string | null;
+  budgetName?: string | null;
+  cloudFileId?: string | null;
+  groupId?: string | null;
+  userId?: string | null;
+  lastUploaded?: string | null;
+  lastSyncedTimestamp?: string | null;
+  lastScheduleRun?: string | null;
+  encryptKeyId?: string | null;
+  resetClock?: boolean | null;
+};
+
+export type OverviewCountKey =
+  | "transactions"
+  | "accounts"
+  | "payees"
+  | "category_groups"
+  | "categories"
+  | "rules"
+  | "schedules"
+  | "tags"
+  | "notes";
+
+export type OverviewPayload = {
+  metadata: MetadataJson | null;
+  file: {
+    dbSizeBytes: number;
+    zipFilename: string | null;
+    zipSizeBytes: number;
+    hadMetadata: boolean;
+    opened: boolean;
+    zipValid: boolean;
+  };
+  counts: { tables: number; views: number } & Record<OverviewCountKey, number>;
+};
+
 export type LoadedSnapshotSummary = {
   dbSizeBytes: number;
+  zipFilename: string | null;
+  zipSizeBytes: number;
   hadMetadata: boolean;
-  metadata: SnapshotMetadata | null;
+  metadata: MetadataJson | null;
   tableCount: number;
   viewCount: number;
 };
 
 export type WorkerRequest =
   | { id: string; kind: "init"; wasmUrl: string }
-  | { id: string; kind: "loadSnapshot"; zipBytes: ArrayBuffer }
+  | {
+      id: string;
+      kind: "loadSnapshot";
+      zipBytes: ArrayBuffer;
+      zipFilename?: string | null;
+      zipSizeBytes?: number;
+    }
   | { id: string; kind: "overview" }
   | { id: string; kind: "runDiagnostics" }
   | { id: string; kind: "runIntegrityCheck" }
@@ -48,7 +93,7 @@ export type WorkerResponse =
 export type WorkerResultByKind = {
   init: { initialized: true };
   loadSnapshot: LoadedSnapshotSummary;
-  overview: never;
+  overview: OverviewPayload;
   runDiagnostics: never;
   runIntegrityCheck: never;
   listSchemaObjects: never;
