@@ -67,27 +67,17 @@ type ApiMonthResponse = {
 };
 
 /**
- * Fetches a single month's budget data from GET /months/{month}.
- *
- * Parses the response into a normalized LoadedMonthState with map-based
- * lookup structures for O(1) category and group access.
- *
- * Income and expense groups have different schemas: income uses `received`
- * while expense uses `budgeted`/`spent`/`balance`/`carryover`. The normalized
- * LoadedCategory always exposes `actuals` (= received for income, spent for expense).
- *
- * Query key is scoped by connectionId and month for independent invalidation.
+ * Shared query options for a single month's budget data.
+ * Exported so callers can use queryClient.fetchQuery with the same key/fn
+ * (e.g. BudgetExportDialog fetching all selected months imperatively).
  */
-export function useMonthData(month: string | null | undefined): {
-  data: LoadedMonthState | undefined;
-  isLoading: boolean;
-  error: unknown;
-} {
-  const connection = useConnectionStore(selectActiveInstance);
-
-  const query = useQuery({
-    queryKey: ["budget-month-data", connection?.id, month],
-    queryFn: async () => {
+export function budgetMonthDataQueryOptions(
+  connection: ReturnType<typeof selectActiveInstance>,
+  month: string | null | undefined
+) {
+  return {
+    queryKey: ["budget-month-data", connection?.id, month] as const,
+    queryFn: async (): Promise<LoadedMonthState> => {
       if (!connection) throw new Error("No active connection");
       if (!month) throw new Error("No month specified");
 
@@ -128,7 +118,7 @@ export function useMonthData(month: string | null | undefined): {
                 groupName: g.name,
                 isIncome: true,
                 hidden: c.hidden ?? false,
-                budgeted: 0, // placeholder — income budgets fetched separately
+                budgeted: 0,
                 actuals: (c as { received?: number | null }).received ?? 0,
                 balance: 0,
                 carryover: false,
@@ -177,8 +167,28 @@ export function useMonthData(month: string | null | undefined): {
       return { summary, groupsById, categoriesById, groupOrder } satisfies LoadedMonthState;
     },
     enabled: !!connection && !!month,
-  });
+  };
+}
 
+/**
+ * Fetches a single month's budget data from GET /months/{month}.
+ *
+ * Parses the response into a normalized LoadedMonthState with map-based
+ * lookup structures for O(1) category and group access.
+ *
+ * Income and expense groups have different schemas: income uses `received`
+ * while expense uses `budgeted`/`spent`/`balance`/`carryover`. The normalized
+ * LoadedCategory always exposes `actuals` (= received for income, spent for expense).
+ *
+ * Query key is scoped by connectionId and month for independent invalidation.
+ */
+export function useMonthData(month: string | null | undefined): {
+  data: LoadedMonthState | undefined;
+  isLoading: boolean;
+  error: unknown;
+} {
+  const connection = useConnectionStore(selectActiveInstance);
+  const query = useQuery(budgetMonthDataQueryOptions(connection, month));
   return {
     data: query.data,
     isLoading: query.isLoading,
