@@ -11,6 +11,7 @@ import type {
   BudgetCellKey,
   LoadedCategory,
   LoadedGroup,
+  LoadedMonthState,
   StagedBudgetEdit,
 } from "../types";
 
@@ -55,16 +56,26 @@ export type BudgetExportOptions = {
 
 /**
  * Builds a CSV string from loaded budget data.
+ *
+ * monthDataMap must contain a LoadedMonthState for every month in the months
+ * array — each cell reads its budgeted value from the correct month's data,
+ * not from a single snapshot. Missing months produce 0.00.
+ *
  * If stagedEdits is provided, cells with staged edits use the staged value
  * instead of the persisted value (staged-view export, FR-031).
  */
 export function exportToCsv(
   months: string[],
   groups: LoadedGroup[],
-  categoriesById: Record<string, LoadedCategory>,
+  monthDataMap: Record<string, LoadedMonthState>,
   opts: BudgetExportOptions,
   stagedEdits?: Record<BudgetCellKey, StagedBudgetEdit>
 ): string {
+  // Use any available month's categoriesById for schema-level lookups
+  // (category names, hidden flags, IDs) — these don't vary per month.
+  const refCategoriesById =
+    Object.values(monthDataMap)[0]?.categoriesById ?? {};
+
   const header = ["Group Name", "Category Name", ...months]
     .map(csvEscape)
     .join(",");
@@ -76,7 +87,7 @@ export function exportToCsv(
     if (!opts.includeHidden && group.hidden) continue;
 
     for (const catId of group.categoryIds) {
-      const cat = categoriesById[catId];
+      const cat = refCategoriesById[catId];
       if (!cat) continue;
       if (!opts.includeHidden && cat.hidden) continue;
 
@@ -85,7 +96,8 @@ export function exportToCsv(
       for (const month of months) {
         const key: BudgetCellKey = `${month}:${cat.id}`;
         const staged = stagedEdits?.[key];
-        const minorValue = staged != null ? staged.nextBudgeted : cat.budgeted;
+        const monthCat = monthDataMap[month]?.categoriesById[cat.id];
+        const minorValue = staged != null ? staged.nextBudgeted : (monthCat?.budgeted ?? 0);
         cells.push(csvEscape(minorToDecimal(minorValue)));
       }
 

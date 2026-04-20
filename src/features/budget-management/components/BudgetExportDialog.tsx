@@ -1,10 +1,13 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { MultiSearchableCombobox } from "@/components/ui/combobox";
 import type { ComboboxOption } from "@/components/ui/combobox";
+import { useConnectionStore, selectActiveInstance } from "@/store/connection";
 import { exportToCsv, exportBlankTemplate } from "../lib/budgetCsv";
-import type { LoadedCategory, LoadedGroup, StagedBudgetEdit, BudgetCellKey } from "../types";
+import { budgetMonthDataQueryOptions } from "../hooks/useMonthData";
+import type { LoadedCategory, LoadedGroup, LoadedMonthState, StagedBudgetEdit, BudgetCellKey } from "../types";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -111,6 +114,11 @@ export function BudgetExportDialog({
   const [includeHidden, setIncludeHidden] = useState(false);
   const [includeIncome, setIncludeIncome] = useState(false);
   const [includeStagedView, setIncludeStagedView] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
+  const [fetchError, setFetchError] = useState<string | null>(null);
+
+  const queryClient = useQueryClient();
+  const connection = useConnectionStore(selectActiveInstance);
 
   // Combobox options for the Select tab — one option per available month.
   const monthOptions = useMemo<ComboboxOption[]>(
@@ -161,13 +169,43 @@ export function BudgetExportDialog({
     URL.revokeObjectURL(url);
   };
 
-  const handleExport = () => {
-    if (!canExport) return;
+  const handleExport = async () => {
+    if (!canExport || !connection) return;
+    setFetchError(null);
+    setIsExporting(true);
+
+    // Fetch all selected months in parallel. queryClient.fetchQuery returns the
+    // cached value immediately for months already loaded by the grid, so only
+    // months outside the current 12-month window incur a network request.
+    const results = await Promise.allSettled(
+      selectedMonths.map((m) =>
+        queryClient.fetchQuery(budgetMonthDataQueryOptions(connection, m))
+      )
+    );
+
+    const failedCount = results.filter((r) => r.status === "rejected").length;
+    if (failedCount > 0) {
+      setIsExporting(false);
+      setFetchError(
+        `Failed to load data for ${failedCount} month${failedCount !== 1 ? "s" : ""}. Please try again.`
+      );
+      return;
+    }
+
+    const monthDataMap: Record<string, LoadedMonthState> = {};
+    for (let i = 0; i < selectedMonths.length; i++) {
+      const result = results[i];
+      if (result?.status === "fulfilled") {
+        monthDataMap[selectedMonths[i]!] = result.value;
+      }
+    }
+
     const opts = { months: selectedMonths, includeHidden, includeIncome };
     const edits = includeStagedView ? stagedEdits : undefined;
-    const csv = exportToCsv(selectedMonths, groups, categoriesById, opts, edits);
+    const csv = exportToCsv(selectedMonths, groups, monthDataMap, opts, edits);
     const filename = `budget-export-${selectedMonths[0]}-to-${selectedMonths[selectedMonths.length - 1]}.csv`;
     triggerDownload(csv, filename);
+    setIsExporting(false);
     onClose();
   };
 
@@ -363,18 +401,23 @@ export function BudgetExportDialog({
           )}
         </fieldset>
 
+        {fetchError && (
+          <p className="text-xs text-destructive mb-3" role="alert">{fetchError}</p>
+        )}
+
         <div className="flex gap-2 justify-end">
           <button
             type="button"
             onClick={onClose}
-            className="px-3 py-1.5 text-sm rounded border border-border hover:bg-muted transition-colors"
+            disabled={isExporting}
+            className="px-3 py-1.5 text-sm rounded border border-border hover:bg-muted disabled:opacity-40 transition-colors"
           >
             Cancel
           </button>
           <button
             type="button"
             onClick={handleTemplate}
-            disabled={!canExport}
+            disabled={!canExport || isExporting}
             aria-label="Download blank CSV template for the selected months"
             className="px-3 py-1.5 text-sm rounded border border-border hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
           >
@@ -382,12 +425,12 @@ export function BudgetExportDialog({
           </button>
           <button
             type="button"
-            onClick={handleExport}
-            disabled={!canExport}
+            onClick={() => void handleExport()}
+            disabled={!canExport || isExporting}
             aria-label={`Export ${selectedMonths.length} month${selectedMonths.length !== 1 ? "s" : ""} to CSV`}
             className="px-3 py-1.5 text-sm rounded bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
           >
-            Export CSV
+            {isExporting ? "Exporting…" : "Export CSV"}
           </button>
         </div>
       </div>
