@@ -14,12 +14,16 @@
  *
  * POST /api/proxy
  * Body: { connection: ConnectionInstance, path: string, method?: string, body?: unknown }
+ *
+ * For binary responses (e.g. budget export ZIP), use /api/proxy/download.
+ * Both routes share the same per-server serialization queue (see serverQueue.ts).
  */
 
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import type { ConnectionInstance } from "@/store/connection";
 import { logger } from "@/lib/logger";
+import { queueServerRequest } from "./serverQueue";
 
 type ProxyRequestBody = {
   connection: Pick<ConnectionInstance, "baseUrl" | "apiKey"> & {
@@ -30,53 +34,6 @@ type ProxyRequestBody = {
   method?: string;
   body?: unknown;
 };
-
-// ─── Per-server request queue ──────────────────────────────────────────────────
-//
-// actual-http-api wraps @actual-app/api, which keeps a single budget open at a
-// time per server instance. Every request triggers a load-budget / close-budget
-// cycle. If two requests for *different* budgets on the same server arrive
-// concurrently, the second closeBudget fires while the first is still inside a
-// spreadsheet transaction, producing:
-//
-//   "onFinish called while inside a spreadsheet transaction"
-//
-// The queue key is baseUrl only (not baseUrl+budgetSyncId) because the
-// constraint is per server instance, not per budget. All requests to the same
-// server are serialized; requests to different servers proceed in parallel.
-//
-// Each entry in the map is the "tail" of that server's chain — a void promise
-// that resolves when the previous request finishes. A new request appends
-// itself to the tail and updates it. Errors are swallowed in the tail so a
-// failed request never blocks subsequent ones.
-
-const serverQueueTails = new Map<string, Promise<void>>();
-
-// ─── Budget close helper ───────────────────────────────────────────────────────
-//
-// When a request fails with a server error, actual-http-api may leave the
-// budget in a partially-open state (transaction still active). Before the next
-// queued request runs, attempt a DELETE to close/unload the budget so the
-// server's internal state is clean. Errors are swallowed — this is best-effort.
-
-async function tryCloseBudget(
-  baseUrl: string,
-  budgetSyncId: string,
-  apiKey: string
-): Promise<void> {
-  try {
-    await fetch(
-      `${baseUrl.replace(/\/$/, "")}/v1/budgets/${budgetSyncId}`,
-      {
-        method: "DELETE",
-        headers: { "x-api-key": apiKey },
-        signal: AbortSignal.timeout(5_000),
-      }
-    );
-  } catch {
-    // Ignore — best-effort only
-  }
-}
 
 // ─── Upstream fetch ────────────────────────────────────────────────────────────
 
@@ -176,39 +133,7 @@ export async function POST(request: NextRequest) {
   // even for unencrypted budgets. Defaults to empty string when not set.
   headers["budget-encryption-password"] = connection.encryptionPassword ?? "";
 
-  // Serialize all requests to the same server (keyed by baseUrl only).
-  // See comment at the top of this file for the full rationale.
-  const serverKey = connection.baseUrl;
-  const prev = serverQueueTails.get(serverKey) ?? Promise.resolve();
-
-  const thisRequest = prev.then(() =>
+  return queueServerRequest(connection, reqId, () =>
     upstreamFetch(url, headers, method, body, reqId, start, path)
   );
-
-  // After the request completes, attempt a budget close if the server returned
-  // a 5xx error — this gives actual-http-api a chance to unload a stuck budget
-  // before the next queued request starts. The close is awaited so the queue
-  // does not release until cleanup has had a chance to run.
-  // Only attempt budget close on error when a specific budget was opened.
-  const voidTail = thisRequest.then(
-    async (response) => {
-      if (response.status >= 500 && connection.budgetSyncId) {
-        await tryCloseBudget(connection.baseUrl, connection.budgetSyncId, connection.apiKey);
-        logger.warn(`budget close attempted after ${response.status} [${reqId}]`);
-      }
-    },
-    async () => {
-      if (connection.budgetSyncId) {
-        await tryCloseBudget(connection.baseUrl, connection.budgetSyncId, connection.apiKey);
-      }
-    }
-  );
-  serverQueueTails.set(serverKey, voidTail);
-  voidTail.then(() => {
-    if (serverQueueTails.get(serverKey) === voidTail) {
-      serverQueueTails.delete(serverKey);
-    }
-  });
-
-  return thisRequest;
 }
