@@ -121,7 +121,7 @@ export function OverviewSection({
   const canDownload = Boolean(download && overview);
 
   return (
-    <section className="rounded-md border border-border bg-background p-5 shadow-sm">
+    <section className="bg-background">
       <div className="flex items-start justify-between gap-4">
         <div>
           <h2 className="text-lg font-semibold">Overview</h2>

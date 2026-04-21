@@ -86,7 +86,7 @@ Ordered so each merges in a working state. Each bullet = one commit.
 | 4  | M4 — Overview section | ✅ shipped (69bb4c6) |
 | 5  | M5 — Diagnostics section | ✅ shipped (347c6e3) |
 | 6  | M5.1 — Relationship map unification + M5 corrections | ✅ shipped |
-| 7  | M6-pre — Workbench tab structure | planned |
+| 7  | M6-pre — Workbench tab structure | ✅ shipped |
 | 8  | M6a — Data Browser worker read API + schema catalog | planned |
 | 9  | M6b — Data Browser shell + object list | planned |
 | 10 | M6c — Paginated Table Browser | planned |
@@ -536,7 +536,25 @@ M6e also needs a canonical relationship catalog for Data Browser drill-in. Creat
 
 ---
 
-### M6-pre — Workbench tab structure + section summaries
+### M6-pre — Workbench tab structure + section summaries ✅ shipped
+
+**Status:** complete. Lint / `tsc --noEmit` / `npm test` all green (30 suites, 367 tests). `npm run lint` reports the expected React Compiler `react-hooks/incompatible-library` warning for TanStack Table. `next build` bundle inspection was intentionally not run in the Docker-hosted dev workspace.
+
+**Files delivered**
+- `src/features/budget-diagnostics/components/BudgetDiagnosticsView.tsx` — replaced the vertical Overview / Diagnostics / Data Browser stack with URL-backed top-level tabs using `?tab=overview|diagnostics|data`.
+- `src/features/budget-diagnostics/components/OverviewSection.tsx` — removed the outer bordered/shadowed section shell so the Overview tab reads as page content rather than a card.
+- `src/features/budget-diagnostics/components/DiagnosticsSection.tsx` — removed the outer bordered/shadowed section shell and passed run/integrity state into the diagnostics cards.
+- `src/features/budget-diagnostics/components/DiagnosticsSummaryCards.tsx` — added `Run state` and `Integrity` cards alongside total/errors/warnings/info.
+- `src/features/budget-diagnostics/components/DataBrowserSection.tsx` — removed the outer bordered/shadowed section shell.
+- `src/features/budget-diagnostics/components/WorkbenchSummaryBar.tsx` (new) — retained only the shared `WorkbenchTab` type and a commented Data Browser summary placeholder for the future Data Browser phase.
+
+**Notes for future milestones**
+- The page no longer has the large top header (`Tools`, `Budget Diagnostics`, separate active-budget box). The tab row is the first page-level control.
+- The read-only safety copy is now a compact inline status beside the tabs.
+- The tab styling intentionally matches `src/features/query/components/QueryWorkspace.tsx`: bottom border, primary active underline, compact text, and count pill.
+- Overview and Diagnostics summary bars were removed after review. Diagnostics run state and integrity state now live in `DiagnosticsSummaryCards`.
+- Data Browser summary behavior is intentionally commented out until M6a/M6b introduce real schema object state.
+- Tab changes update URL state only; they do not refetch or reopen the snapshot.
 
 **Why this exists**
 The current page stacks Overview, Diagnostics, and Data Browser vertically. That makes the diagnostics workspace feel like one long report and forces users to scroll past sections they are not using. Before expanding Data Browser, restructure the page into a tabbed workbench so each major capability has a focused surface and a compact summary.

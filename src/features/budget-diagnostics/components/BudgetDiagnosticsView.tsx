@@ -1,9 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import type { ReactNode } from "react";
 import Link from "next/link";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { ArrowRight, LockKeyhole, Stethoscope } from "lucide-react";
 import { buttonVariants } from "@/components/ui/button";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { DownloadResult } from "@/lib/api/client";
 import { cn } from "@/lib/utils";
 import { selectActiveInstance, useConnectionStore } from "@/store/connection";
@@ -16,6 +19,7 @@ import type { DiagnosticsPayload, OverviewPayload, ProgressStage } from "../type
 import { DataBrowserSection } from "./DataBrowserSection";
 import { DiagnosticsSection } from "./DiagnosticsSection";
 import { OverviewSection } from "./OverviewSection";
+import type { WorkbenchTab } from "./WorkbenchSummaryBar";
 
 type SnapshotState = {
   status: "idle" | "loading" | "ready" | "error";
@@ -43,6 +47,20 @@ const INITIAL_SNAPSHOT_STATE: SnapshotState = {
   download: null,
 };
 
+const WORKBENCH_TABS: readonly WorkbenchTab[] = ["overview", "diagnostics", "data"];
+
+function isWorkbenchTab(value: string | null): value is WorkbenchTab {
+  return WORKBENCH_TABS.includes(value as WorkbenchTab);
+}
+
+function TabCount({ children }: { children: ReactNode }) {
+  return (
+    <span className="rounded-full bg-muted px-1.5 py-px text-[10px] leading-none text-muted-foreground group-data-[active]:bg-primary/15 group-data-[active]:text-primary">
+      {children}
+    </span>
+  );
+}
+
 function getErrorMessage(error: unknown): string {
   if (error instanceof Error) return error.message;
   if (
@@ -58,14 +76,11 @@ function getErrorMessage(error: unknown): string {
 
 function ReadOnlyNotice() {
   return (
-    <div className="flex items-start gap-3 rounded-md border border-border bg-muted/35 px-4 py-3 text-sm">
-      <LockKeyhole className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
-      <div>
-        <p className="font-medium text-foreground">Read-only diagnostics</p>
-        <p className="mt-1 text-muted-foreground">
-          No changes are written back to the budget. Export contents are processed locally in the browser.
-        </p>
-      </div>
+    <div className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
+      <LockKeyhole className="h-3.5 w-3.5 shrink-0" />
+      <span className="truncate">
+        Read-only local snapshot. Nothing is written back to the budget.
+      </span>
     </div>
   );
 }
@@ -97,12 +112,31 @@ function ConnectBudgetState() {
 
 export function BudgetDiagnosticsView() {
   const connection = useConnectionStore(selectActiveInstance);
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const [reloadToken, setReloadToken] = useState(0);
   const [snapshot, setSnapshot] = useState<SnapshotState>(INITIAL_SNAPSHOT_STATE);
+  const tabParam = searchParams.get("tab");
+  const activeTab: WorkbenchTab = isWorkbenchTab(tabParam) ? tabParam : "overview";
+  const diagnosticsCount = snapshot.diagnostics?.findings.length ?? 0;
+  const diagnosticsIssueCount =
+    snapshot.diagnostics?.findings.filter((finding) => finding.severity !== "info").length ?? 0;
 
   const retry = useCallback(() => {
     setReloadToken((value) => value + 1);
   }, []);
+
+  const setActiveTab = useCallback(
+    (value: string) => {
+      if (!isWorkbenchTab(value)) return;
+
+      const params = new URLSearchParams(searchParams.toString());
+      params.set("tab", value);
+      router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+    },
+    [pathname, router, searchParams]
+  );
 
   const runIntegrityCheck = useCallback(() => {
     async function run() {
@@ -274,43 +308,69 @@ export function BudgetDiagnosticsView() {
 
   return (
     <main className="flex min-h-0 flex-1 flex-col overflow-hidden">
-      <div className="shrink-0 border-b border-border px-6 py-4">
-        <div className="flex flex-wrap items-end justify-between gap-3">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-              Tools
-            </p>
-            <h1 className="mt-1 text-2xl font-semibold tracking-tight">
-              Budget Diagnostics
-            </h1>
-          </div>
-          <div className="rounded-md border border-border bg-muted/35 px-3 py-2 text-xs text-muted-foreground">
-            Active budget: <span className="font-medium text-foreground">{connection.label}</span>
-          </div>
-        </div>
-      </div>
+      <div className="min-h-0 flex-1 overflow-auto px-6 py-4">
+        <div className="mx-auto flex w-full max-w-7xl flex-col gap-4">
+          <Tabs
+            value={activeTab}
+            onValueChange={setActiveTab}
+            className="min-h-0 gap-3"
+          >
+            <div className="sticky top-0 z-10 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
+              <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+                <TabsList className="flex w-full shrink-0 border-b border-border lg:w-auto lg:min-w-[28rem]">
+                  <TabsTrigger
+                    value="overview"
+                    className="group flex flex-1 items-center justify-center gap-1 border-b-2 border-transparent px-2 py-2 text-[12px] font-medium transition-colors after:hidden data-[active]:border-primary data-[active]:text-foreground lg:flex-none lg:px-15"
+                  >
+                    Overview
+                  </TabsTrigger>
+                  <TabsTrigger
+                    value="diagnostics"
+                    className="group flex flex-1 items-center justify-center gap-1 border-b-2 border-transparent px-2 py-2 text-[12px] font-medium transition-colors after:hidden data-[active]:border-primary data-[active]:text-foreground lg:flex-none lg:px-15"
+                  >
+                    Diagnostics
+                    {snapshot.diagnosticsStatus === "ready" && (
+                      <TabCount>
+                        {diagnosticsIssueCount > 0 ? diagnosticsIssueCount : diagnosticsCount}
+                      </TabCount>
+                    )}
+                  </TabsTrigger>
+                  <TabsTrigger
+                    value="data"
+                    className="group flex flex-1 items-center justify-center gap-1 border-b-2 border-transparent px-2 py-2 text-[12px] font-medium transition-colors after:hidden data-[active]:border-primary data-[active]:text-foreground lg:flex-none lg:px-5"
+                  >
+                    Data Browser
+                  </TabsTrigger>
+                </TabsList>
+                <ReadOnlyNotice />
+              </div>
+            </div>
 
-      <div className="min-h-0 flex-1 overflow-auto p-6">
-        <div className="mx-auto flex w-full max-w-7xl flex-col gap-5">
-          <ReadOnlyNotice />
-          <OverviewSection
-            connection={connection}
-            overview={snapshot.overview}
-            download={snapshot.download}
-            status={snapshot.status}
-            progressStage={snapshot.progressStage}
-            errorMessage={snapshot.errorMessage}
-            onRetry={retry}
-          />
-          <DiagnosticsSection
-            diagnostics={snapshot.diagnostics}
-            status={snapshot.diagnosticsStatus}
-            errorMessage={snapshot.diagnosticsError}
-            integrityStatus={snapshot.integrityStatus}
-            integrityError={snapshot.integrityError}
-            onRunIntegrityCheck={runIntegrityCheck}
-          />
-          <DataBrowserSection />
+            <TabsContent value="overview" className="min-h-0">
+              <OverviewSection
+                connection={connection}
+                overview={snapshot.overview}
+                download={snapshot.download}
+                status={snapshot.status}
+                progressStage={snapshot.progressStage}
+                errorMessage={snapshot.errorMessage}
+                onRetry={retry}
+              />
+            </TabsContent>
+            <TabsContent value="diagnostics" className="min-h-0">
+              <DiagnosticsSection
+                diagnostics={snapshot.diagnostics}
+                status={snapshot.diagnosticsStatus}
+                errorMessage={snapshot.diagnosticsError}
+                integrityStatus={snapshot.integrityStatus}
+                integrityError={snapshot.integrityError}
+                onRunIntegrityCheck={runIntegrityCheck}
+              />
+            </TabsContent>
+            <TabsContent value="data" className="min-h-0">
+              <DataBrowserSection />
+            </TabsContent>
+          </Tabs>
         </div>
       </div>
     </main>
