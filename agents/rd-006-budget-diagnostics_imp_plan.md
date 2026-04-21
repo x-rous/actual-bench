@@ -88,7 +88,7 @@ Ordered so each merges in a working state. Each bullet = one commit.
 | 6  | M5.1 — Relationship map unification + M5 corrections | ✅ shipped |
 | 7  | M6-pre — Workbench tab structure | ✅ shipped |
 | 8  | M6a — Data Browser worker read API + schema catalog | ✅ shipped |
-| 9  | M6b — Data Browser shell + object list | planned |
+| 9  | M6b — Data Browser shell + object list | ✅ shipped |
 | 10 | M6c — Paginated Table Browser | planned |
 | 11 | M6d — Schema Explorer tab | planned |
 | 12 | M6e — Relationship-aware drill-in + row details (depends on M5.1) | planned |
@@ -685,7 +685,23 @@ The current page stacks Overview, Diagnostics, and Data Browser vertically. That
 
 ---
 
-### M6b — Data Browser shell + object list
+### M6b — Data Browser shell + object list ✅ shipped
+
+**Status:** complete. Lint / `tsc --noEmit` / `npm test` all green (31 suites, 374 tests). `npm run lint` reports the expected React Compiler `react-hooks/incompatible-library` warning for TanStack Table. `next build` bundle inspection was intentionally not run in the Docker-hosted dev workspace.
+
+**Files delivered**
+- `src/features/budget-diagnostics/components/DataBrowserSection.tsx` — replaced the placeholder with a three-pane Data Browser shell that loads schema objects after the snapshot opens.
+- `src/features/budget-diagnostics/components/TableList.tsx` (new) — searchable, sortable, grouped schema object list with row counts and schema-only labels for indexes/triggers.
+- `src/features/budget-diagnostics/lib/schemaObjectGroups.ts` (new) — group ordering/labels and default selection helper.
+- `src/features/budget-diagnostics/components/BudgetDiagnosticsView.tsx` — passes snapshot open status into Data Browser so schema loading waits for a ready snapshot; also moved the workbench to a full-width/full-height tab shell matching the Query workspace pattern.
+
+**Notes for future milestones**
+- Default selection now prefers `v_transactions`, then the first featured view, then the first table/view with rows.
+- Center panel intentionally shows selected object metadata and a placeholder for M6c/M6d rather than fetching rows.
+- Right panel is reserved for M6e row drill-in and remains non-interactive.
+- Data Browser handles snapshot-not-ready, loading, schema-load error, no-schema-objects, and no-search-results states.
+- The page is ready for M6c: the top-level tabs are no longer centered in a `max-w-*` container, the active tab owns the available vertical space, and the Data Browser center pane has a `min-h-0 overflow-auto` region where `TableBrowser` can mount without changing the surrounding workbench.
+- Use the existing Query results table visual language for M6c (`src/features/query/components/QueryResults.tsx`): dense `text-xs` table, sticky header, `bg-muted` header row, border-light hover rows, monospace truncated cells, and horizontal scrolling inside the center pane.
 
 **Files**
 - `src/features/budget-diagnostics/components/DataBrowserSection.tsx`

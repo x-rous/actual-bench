@@ -308,72 +308,74 @@ export function BudgetDiagnosticsView() {
   }
 
   return (
-    <main className="flex min-h-0 flex-1 flex-col overflow-hidden">
-      <div className="min-h-0 flex-1 overflow-auto px-6 py-4">
-        <div className="mx-auto flex w-full max-w-7xl flex-col gap-4">
-          <Tabs
-            value={activeTab}
-            onValueChange={setActiveTab}
-            className="min-h-0 gap-3"
-          >
-            <div className="sticky top-0 z-10 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
-              <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
-                <TabsList className="flex w-full shrink-0 border-b border-border lg:w-auto lg:min-w-[28rem]">
-                  <TabsTrigger
-                    value="overview"
-                    className="group flex flex-1 items-center justify-center gap-1 border-b-2 border-transparent px-2 py-2 text-[12px] font-medium transition-colors after:hidden data-[active]:border-primary data-[active]:text-foreground lg:flex-none lg:px-15"
-                  >
-                    Overview
-                  </TabsTrigger>
-                  <TabsTrigger
-                    value="diagnostics"
-                    className="group flex flex-1 items-center justify-center gap-1 border-b-2 border-transparent px-2 py-2 text-[12px] font-medium transition-colors after:hidden data-[active]:border-primary data-[active]:text-foreground lg:flex-none lg:px-15"
-                  >
-                    Diagnostics
-                    {snapshot.diagnosticsStatus === "ready" && (
-                      <TabCount>
-                        {diagnosticsIssueCount > 0 ? diagnosticsIssueCount : diagnosticsCount}
-                      </TabCount>
-                    )}
-                  </TabsTrigger>
-                  <TabsTrigger
-                    value="data"
-                    className="group flex flex-1 items-center justify-center gap-1 border-b-2 border-transparent px-2 py-2 text-[12px] font-medium transition-colors after:hidden data-[active]:border-primary data-[active]:text-foreground lg:flex-none lg:px-5"
-                  >
-                    Data Browser
-                  </TabsTrigger>
-                </TabsList>
-                <ReadOnlyNotice />
-              </div>
-            </div>
-
-            <TabsContent value="overview" className="min-h-0">
-              <OverviewSection
-                connection={connection}
-                overview={snapshot.overview}
-                download={snapshot.download}
-                status={snapshot.status}
-                progressStage={snapshot.progressStage}
-                errorMessage={snapshot.errorMessage}
-                onRetry={retry}
-              />
-            </TabsContent>
-            <TabsContent value="diagnostics" className="min-h-0">
-              <DiagnosticsSection
-                diagnostics={snapshot.diagnostics}
-                status={snapshot.diagnosticsStatus}
-                errorMessage={snapshot.diagnosticsError}
-                integrityStatus={snapshot.integrityStatus}
-                integrityError={snapshot.integrityError}
-                onRunIntegrityCheck={runIntegrityCheck}
-              />
-            </TabsContent>
-            <TabsContent value="data" className="min-h-0">
-              <DataBrowserSection />
-            </TabsContent>
-          </Tabs>
+    <main className="flex min-h-0 flex-1 flex-col overflow-hidden bg-background">
+      <Tabs
+        value={activeTab}
+        onValueChange={setActiveTab}
+        className="flex min-h-0 flex-1 flex-col overflow-hidden"
+      >
+        <div className="flex shrink-0 flex-col border-b border-border bg-background lg:flex-row lg:items-center lg:justify-between">
+          <TabsList className="flex w-full shrink-0 border-b border-border lg:w-auto lg:min-w-[30rem] lg:border-b-0">
+            <TabsTrigger
+              value="overview"
+              className="group flex flex-1 items-center justify-center gap-1 border-b-2 border-transparent px-2 py-2 text-[12px] font-medium text-muted-foreground transition-colors after:hidden hover:text-foreground data-[active]:border-primary data-[active]:text-foreground lg:flex-none lg:px-6"
+            >
+              Overview
+            </TabsTrigger>
+            <TabsTrigger
+              value="diagnostics"
+              className="group flex flex-1 items-center justify-center gap-1 border-b-2 border-transparent px-2 py-2 text-[12px] font-medium text-muted-foreground transition-colors after:hidden hover:text-foreground data-[active]:border-primary data-[active]:text-foreground lg:flex-none lg:px-6"
+            >
+              Diagnostics
+              {snapshot.diagnosticsStatus === "ready" && (
+                <TabCount>
+                  {diagnosticsIssueCount > 0 ? diagnosticsIssueCount : diagnosticsCount}
+                </TabCount>
+              )}
+            </TabsTrigger>
+            <TabsTrigger
+              value="data"
+              className="group flex flex-1 items-center justify-center gap-1 border-b-2 border-transparent px-2 py-2 text-[12px] font-medium text-muted-foreground transition-colors after:hidden hover:text-foreground data-[active]:border-primary data-[active]:text-foreground lg:flex-none lg:px-6"
+            >
+              Data Browser
+            </TabsTrigger>
+          </TabsList>
+          <div className="flex min-h-9 items-center px-3 py-2 lg:justify-end">
+            <ReadOnlyNotice />
+          </div>
         </div>
-      </div>
+
+        <TabsContent
+          value="overview"
+          className="min-h-0 flex-1 overflow-auto px-4 py-4 lg:px-5"
+        >
+          <OverviewSection
+            connection={connection}
+            overview={snapshot.overview}
+            download={snapshot.download}
+            status={snapshot.status}
+            progressStage={snapshot.progressStage}
+            errorMessage={snapshot.errorMessage}
+            onRetry={retry}
+          />
+        </TabsContent>
+        <TabsContent
+          value="diagnostics"
+          className="min-h-0 flex-1 overflow-auto px-4 py-4 lg:px-5"
+        >
+          <DiagnosticsSection
+            diagnostics={snapshot.diagnostics}
+            status={snapshot.diagnosticsStatus}
+            errorMessage={snapshot.diagnosticsError}
+            integrityStatus={snapshot.integrityStatus}
+            integrityError={snapshot.integrityError}
+            onRunIntegrityCheck={runIntegrityCheck}
+          />
+        </TabsContent>
+        <TabsContent value="data" className="flex min-h-0 flex-1 overflow-hidden">
+          <DataBrowserSection snapshotStatus={snapshot.status} />
+        </TabsContent>
+      </Tabs>
     </main>
   );
 }
