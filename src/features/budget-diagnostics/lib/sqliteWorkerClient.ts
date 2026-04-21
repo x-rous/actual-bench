@@ -14,7 +14,7 @@ type PendingRequest<T> = {
   resolve: (payload: T) => void;
   reject: (error: ApiError) => void;
   onProgress?: (stage: ProgressStage) => void;
-  timeout: ReturnType<typeof setTimeout>;
+  timeout: ReturnType<typeof setTimeout> | null;
 };
 
 function toWorkerError(message: string, raw?: unknown): ApiError {
@@ -36,6 +36,7 @@ export class SqliteWorkerClient {
     options: {
       onProgress?: (stage: ProgressStage) => void;
       transfer?: Transferable[];
+      timeoutMs?: number | null;
     } = {}
   ): Promise<WorkerResultByKind[K]> {
     const worker = this.ensureWorker();
@@ -43,10 +44,14 @@ export class SqliteWorkerClient {
     const message = { ...request, id } as WorkerRequest;
 
     return new Promise<WorkerResultByKind[K]>((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        this.pending.delete(id);
-        reject(toWorkerError(`SQLite worker request timed out: ${request.kind}`));
-      }, REQUEST_TIMEOUT_MS);
+      const timeoutMs = options.timeoutMs === undefined ? REQUEST_TIMEOUT_MS : options.timeoutMs;
+      const timeout =
+        timeoutMs === null
+          ? null
+          : setTimeout(() => {
+              this.pending.delete(id);
+              reject(toWorkerError(`SQLite worker request timed out: ${request.kind}`));
+            }, timeoutMs);
 
       this.pending.set(id, {
         resolve: resolve as (payload: unknown) => void,
@@ -92,7 +97,7 @@ export class SqliteWorkerClient {
     }
 
     this.pending.delete(response.id);
-    clearTimeout(pending.timeout);
+    if (pending.timeout) clearTimeout(pending.timeout);
 
     if (response.kind === "error") {
       pending.reject(toWorkerError(response.message));
@@ -104,7 +109,7 @@ export class SqliteWorkerClient {
 
   private rejectAll(message: string, raw?: unknown) {
     for (const pending of this.pending.values()) {
-      clearTimeout(pending.timeout);
+      if (pending.timeout) clearTimeout(pending.timeout);
       pending.reject(toWorkerError(message, raw));
     }
     this.pending.clear();

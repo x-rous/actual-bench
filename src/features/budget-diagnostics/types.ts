@@ -74,6 +74,73 @@ export type LoadedSnapshotSummary = {
   viewCount: number;
 };
 
+export type SchemaObjectType = "table" | "view" | "index" | "trigger";
+
+export type SchemaObjectGroup =
+  | "featuredViews"
+  | "coreTables"
+  | "mappingTables"
+  | "budgetTables"
+  | "systemMetadata"
+  | "reportingDashboard"
+  | "other";
+
+export type ColumnInfo = {
+  cid: number;
+  name: string;
+  type: string;
+  notNull: boolean;
+  defaultValue: unknown;
+  primaryKeyPosition: number;
+};
+
+export type IndexInfo = {
+  name: string;
+  unique: boolean;
+  origin: string | null;
+  partial: boolean;
+};
+
+export type RowKeyInfo = {
+  column: string;
+  source: "primaryKey" | "knownKey" | "rowid";
+};
+
+export type SchemaObjectSummary = {
+  name: string;
+  type: SchemaObjectType;
+  rowCount: number | null;
+  featured: boolean;
+  group: SchemaObjectGroup;
+};
+
+export type SchemaObjectDetails = {
+  name: string;
+  type: SchemaObjectType;
+  sql: string | null;
+  columns: ColumnInfo[];
+  indexes: IndexInfo[];
+  rowCount: number | null;
+  rowKey: RowKeyInfo | null;
+};
+
+export type SchemaObjectsPayload = {
+  objects: SchemaObjectSummary[];
+};
+
+export type TableCountsPayload = {
+  counts: Record<string, number | null>;
+};
+
+export type FetchRowsPayload = {
+  object: string;
+  columns: string[];
+  rows: Record<string, unknown>[];
+  offset: number;
+  limit: number;
+  rowCount: number;
+};
+
 export type WorkerRequest =
   | { id: string; kind: "init"; wasmUrl: string }
   | {
@@ -114,8 +181,8 @@ export type WorkerResultByKind = {
   overview: OverviewPayload;
   runDiagnostics: DiagnosticsPayload;
   runIntegrityCheck: DiagnosticsPayload;
-  listSchemaObjects: never;
-  getSchemaObject: never;
-  tableCounts: never;
-  fetchRows: never;
+  listSchemaObjects: SchemaObjectsPayload;
+  getSchemaObject: SchemaObjectDetails;
+  tableCounts: TableCountsPayload;
+  fetchRows: FetchRowsPayload;
 };

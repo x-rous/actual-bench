@@ -5,6 +5,13 @@ import {
   runIntegrityCheck,
   type DiagnosticDb,
 } from "../lib/diagnosticChecks";
+import {
+  fetchRows,
+  getSchemaObject,
+  listSchemaObjects,
+  tableCounts,
+  type SchemaDb,
+} from "../lib/schemaObjects";
 import { unzipSnapshot } from "../lib/zipReader";
 import type {
   DiagnosticsPayload,
@@ -173,6 +180,13 @@ function createDiagnosticDb(database: SqliteWasmDb): DiagnosticDb {
   };
 }
 
+function createSchemaDb(database: SqliteWasmDb): SchemaDb {
+  return {
+    selectValue: (sql) => database.selectValue(sql),
+    selectRows: (sql) => selectRows(database, sql),
+  };
+}
+
 function runWorkerDiagnostics(id: string): DiagnosticsPayload {
   progress(id, "runningDiagnostics");
   const database = requireDb();
@@ -184,9 +198,17 @@ function runWorkerDiagnostics(id: string): DiagnosticsPayload {
 function runWorkerIntegrityCheck(id: string): DiagnosticsPayload {
   progress(id, "runningDiagnostics");
   const database = requireDb();
-  return {
-    findings: runIntegrityCheck(createDiagnosticDb(database)),
-  };
+  const heartbeat = self.setInterval(() => {
+    progress(id, "runningDiagnostics");
+  }, 5000);
+
+  try {
+    return {
+      findings: runIntegrityCheck(createDiagnosticDb(database)),
+    };
+  } finally {
+    self.clearInterval(heartbeat);
+  }
 }
 
 function loadSnapshot(request: Extract<WorkerRequest, { kind: "loadSnapshot" }>): LoadedSnapshotSummary {
@@ -250,10 +272,13 @@ function handleRequest(request: WorkerRequest): Promise<unknown> | unknown {
     case "runIntegrityCheck":
       return runWorkerIntegrityCheck(request.id);
     case "listSchemaObjects":
+      return { objects: listSchemaObjects(createSchemaDb(requireDb())) };
     case "getSchemaObject":
+      return getSchemaObject(createSchemaDb(requireDb()), request.name);
     case "tableCounts":
+      return tableCounts(createSchemaDb(requireDb()), request.names);
     case "fetchRows":
-      throw new Error(`${request.kind} is not implemented until a later milestone`);
+      return fetchRows(createSchemaDb(requireDb()), request);
   }
 }
 

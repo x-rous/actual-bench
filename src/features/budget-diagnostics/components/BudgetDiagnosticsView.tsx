@@ -150,6 +150,7 @@ export function BudgetDiagnosticsView() {
         const payload = await getSqliteWorkerClient().call(
           { kind: "runIntegrityCheck" },
           {
+            timeoutMs: null,
             onProgress: (stage) => {
               setSnapshot((current) => ({ ...current, progressStage: stage }));
             },

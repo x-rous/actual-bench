@@ -87,7 +87,7 @@ Ordered so each merges in a working state. Each bullet = one commit.
 | 5  | M5 — Diagnostics section | ✅ shipped (347c6e3) |
 | 6  | M5.1 — Relationship map unification + M5 corrections | ✅ shipped |
 | 7  | M6-pre — Workbench tab structure | ✅ shipped |
-| 8  | M6a — Data Browser worker read API + schema catalog | planned |
+| 8  | M6a — Data Browser worker read API + schema catalog | ✅ shipped |
 | 9  | M6b — Data Browser shell + object list | planned |
 | 10 | M6c — Paginated Table Browser | planned |
 | 11 | M6d — Schema Explorer tab | planned |
@@ -611,7 +611,24 @@ The current page stacks Overview, Diagnostics, and Data Browser vertically. That
 
 ---
 
-### M6a — Data Browser worker read API + schema catalog
+### M6a — Data Browser worker read API + schema catalog ✅ shipped
+
+**Status:** complete. Lint / `tsc --noEmit` / `npm test` all green (31 suites, 374 tests, 7 new). `npm run lint` reports the expected React Compiler `react-hooks/incompatible-library` warning for TanStack Table. `next build` bundle inspection was intentionally not run in the Docker-hosted dev workspace.
+
+**Files delivered**
+- `src/features/budget-diagnostics/types.ts` — added schema object, column, index, row-key, table-count, and row-fetch payload types; worker result mapping now returns typed M6a payloads.
+- `src/features/budget-diagnostics/lib/sqlIdentifier.ts` (new) — strict SQL identifier quoting, known-object/column assertions, and exact `asc` / `desc` direction validation.
+- `src/features/budget-diagnostics/lib/schemaObjects.ts` (new) — pure schema catalog/read helpers for `listSchemaObjects`, `getSchemaObject`, `tableCounts`, `fetchRows`, row counts, indexes, raw SQL, primary-key inference, and fetch bounds.
+- `src/features/budget-diagnostics/lib/schemaObjects.test.ts` (new) — fake-adapter coverage for schema listing, details, paginated sorted rows, invalid input rejection, table counts, row-key inference, and identifier helpers.
+- `src/features/budget-diagnostics/workers/sqliteDiagnostics.worker.ts` — wired M6a worker handlers through a read-only schema adapter; added 5s progress heartbeat around `runIntegrityCheck`.
+- `src/features/budget-diagnostics/lib/sqliteWorkerClient.ts` — added per-request timeout override while keeping the default 60s timeout.
+- `src/features/budget-diagnostics/components/BudgetDiagnosticsView.tsx` — calls `runIntegrityCheck` with `timeoutMs: null`.
+
+**Notes for future milestones**
+- `fetchRows` only accepts schema objects from `sqlite_schema`, requires non-negative offsets, enforces `1 <= limit <= 1000`, and validates sort columns against `PRAGMA table_info`.
+- Indexes and triggers are included in schema listings/details but are not row-browsable; their row counts are `null`.
+- Row-key inference prefers declared primary keys, then known Actual keys (`schedule_id`, `month`, `key`), then table `rowid` when available.
+- `runIntegrityCheck` no longer times out client-side; worker heartbeat progress keeps the UI from appearing frozen during long runs.
 
 **Files**
 - `src/features/budget-diagnostics/workers/sqliteDiagnostics.worker.ts`
