@@ -1,5 +1,6 @@
 import type { BudgetDiagnostic, MetadataJson } from "../types";
 import { EXPECTED_COLUMNS, EXPECTED_TABLES, EXPECTED_VIEWS } from "./expectedSchema";
+import { RELATIONSHIPS } from "./relationshipMap";
 
 export type DiagnosticDb = {
   exec?: (sql: string) => void;
@@ -8,125 +9,6 @@ export type DiagnosticDb = {
   objectExists: (name: string, type?: "table" | "view") => boolean;
   getColumns: (name: string) => readonly string[];
 };
-
-type RelationshipCheck = {
-  code: string;
-  table: string;
-  column: string;
-  relatedTable: string;
-  relatedColumn?: string;
-  title: string;
-  skipWhere?: string;
-};
-
-const RELATIONSHIP_CHECKS: readonly RelationshipCheck[] = [
-  {
-    code: "REL_CATEGORY_ORPHAN_GROUP",
-    table: "categories",
-    column: "cat_group",
-    relatedTable: "category_groups",
-    title: "Category references a missing category group",
-  },
-  {
-    code: "REL_SCHEDULE_ORPHAN_RULE",
-    table: "schedules",
-    column: "rule",
-    relatedTable: "rules",
-    title: "Schedule references a missing rule",
-  },
-  {
-    code: "REL_PAYEE_ORPHAN_TRANSFER_ACCOUNT",
-    table: "payees",
-    column: "transfer_acct",
-    relatedTable: "accounts",
-    title: "Payee references a missing transfer account",
-  },
-  {
-    code: "REL_PAYEE_MAPPING_ORPHAN_TARGET",
-    table: "payee_mapping",
-    column: "targetId",
-    relatedTable: "payees",
-    title: "Payee mapping references a missing payee",
-  },
-  {
-    code: "REL_CATEGORY_MAPPING_ORPHAN_TRANSFER",
-    table: "category_mapping",
-    column: "transferId",
-    relatedTable: "categories",
-    title: "Category mapping references a missing category",
-  },
-  {
-    code: "REL_TRANSACTION_ORPHAN_ACCOUNT",
-    table: "transactions",
-    column: "acct",
-    relatedTable: "accounts",
-    title: "Transaction references a missing account",
-  },
-  {
-    code: "REL_TRANSACTION_ORPHAN_CATEGORY",
-    table: "transactions",
-    column: "category",
-    relatedTable: "categories",
-    title: "Transaction references a missing category",
-  },
-  {
-    code: "REL_TRANSACTION_ORPHAN_PARENT",
-    table: "transactions",
-    column: "parent_id",
-    relatedTable: "transactions",
-    title: "Child transaction references a missing parent",
-    skipWhere: `l."isChild" = 1`,
-  },
-  {
-    code: "REL_TRANSACTION_ORPHAN_TRANSFER",
-    table: "transactions",
-    column: "transferred_id",
-    relatedTable: "transactions",
-    title: "Transaction references a missing transfer pair",
-  },
-  {
-    code: "REL_SCHEDULE_NEXT_DATE_ORPHAN_SCHEDULE",
-    table: "schedules_next_date",
-    column: "schedule_id",
-    relatedTable: "schedules",
-    title: "Schedule next-date row references a missing schedule",
-  },
-  {
-    code: "REL_SCHEDULE_JSON_PATHS_ORPHAN_SCHEDULE",
-    table: "schedules_json_paths",
-    column: "schedule_id",
-    relatedTable: "schedules",
-    title: "Schedule JSON paths row references a missing schedule",
-  },
-  {
-    code: "REL_DASHBOARD_ORPHAN_PAGE",
-    table: "dashboard",
-    column: "dashboard_page_id",
-    relatedTable: "dashboard_pages",
-    title: "Dashboard widget references a missing dashboard page",
-  },
-  {
-    code: "REL_PAYEE_LOCATION_ORPHAN_PAYEE",
-    table: "payee_locations",
-    column: "payee_id",
-    relatedTable: "payees",
-    title: "Payee location references a missing payee",
-  },
-  {
-    code: "REL_REFLECT_BUDGET_ORPHAN_CATEGORY",
-    table: "reflect_budgets",
-    column: "category",
-    relatedTable: "categories",
-    title: "Reflect budget row references a missing category",
-  },
-  {
-    code: "REL_ZERO_BUDGET_ORPHAN_CATEGORY",
-    table: "zero_budgets",
-    column: "category",
-    relatedTable: "categories",
-    title: "Zero budget row references a missing category",
-  },
-];
 
 const NOTE_ID_PATTERN = /^(account|category|payee|schedule)-([0-9a-f-]{36})$/i;
 
@@ -308,41 +190,50 @@ function schemaChecks(db: DiagnosticDb): BudgetDiagnostic[] {
 function relationshipChecks(db: DiagnosticDb): BudgetDiagnostic[] {
   const findings: BudgetDiagnostic[] = [];
 
-  for (const check of RELATIONSHIP_CHECKS) {
-    if (!db.objectExists(check.table, "table") || !db.objectExists(check.relatedTable, "table")) {
+  for (const check of RELATIONSHIPS.filter((relationship) => relationship.kind === "raw")) {
+    const fromObject = check.from.object;
+    const fromColumn = check.from.column;
+    const toTable = check.to.table;
+    const toColumn = check.to.column;
+
+    if (!db.objectExists(fromObject, "table") || !db.objectExists(toTable, "table")) {
       continue;
     }
-    if (!hasColumn(db, check.table, check.column)) continue;
-    const relatedColumn = check.relatedColumn ?? "id";
-    if (!hasColumn(db, check.relatedTable, relatedColumn)) continue;
-    const rowIdColumn = hasColumn(db, check.table, "id") ? "id" : check.column;
+    if (!hasColumn(db, fromObject, fromColumn)) continue;
+    if (!hasColumn(db, toTable, toColumn)) continue;
+    const rowIdColumn = hasColumn(db, fromObject, "id") ? "id" : fromColumn;
 
-    const leftTombstone = hasColumn(db, check.table, "tombstone")
+    const leftTombstone = hasColumn(db, fromObject, "tombstone")
       ? ` AND IFNULL(l.${quoteIdentifier("tombstone")}, 0) = 0`
       : "";
-    const rightTombstone = hasColumn(db, check.relatedTable, "tombstone")
+    const rightTombstone = hasColumn(db, toTable, "tombstone")
       ? ` AND IFNULL(r.${quoteIdentifier("tombstone")}, 0) = 0`
       : "";
     const extra = check.skipWhere ? ` AND ${check.skipWhere}` : "";
     const rows = db.selectRows<{ rowId: string; relatedId: string }>(
-      `SELECT l.${quoteIdentifier(rowIdColumn)} AS rowId, l.${quoteIdentifier(check.column)} AS relatedId
-       FROM ${quoteIdentifier(check.table)} l
-       LEFT JOIN ${quoteIdentifier(check.relatedTable)} r
-         ON l.${quoteIdentifier(check.column)} = r.${quoteIdentifier(relatedColumn)}${rightTombstone}
-       WHERE l.${quoteIdentifier(check.column)} IS NOT NULL${leftTombstone}${extra}
-         AND r.${quoteIdentifier(relatedColumn)} IS NULL
+      `SELECT l.${quoteIdentifier(rowIdColumn)} AS rowId, l.${quoteIdentifier(fromColumn)} AS relatedId
+       FROM ${quoteIdentifier(fromObject)} l
+       LEFT JOIN ${quoteIdentifier(toTable)} r
+         ON l.${quoteIdentifier(fromColumn)} = r.${quoteIdentifier(toColumn)}${rightTombstone}
+       WHERE l.${quoteIdentifier(fromColumn)} IS NOT NULL${leftTombstone}${extra}
+         AND r.${quoteIdentifier(toColumn)} IS NULL
        LIMIT 100`
     );
 
     for (const row of rows) {
+      const message =
+        check.severity === "info"
+          ? `${fromObject}.${fromColumn} contains a stale raw reference to ${toTable}.${toColumn}.`
+          : `${fromObject}.${fromColumn} references a missing ${toTable}.${toColumn}.`;
+
       findings.push({
         code: check.code,
-        severity: "warning",
+        severity: check.severity,
         title: check.title,
-        message: `${check.table}.${check.column} references missing ${check.relatedTable}.${relatedColumn}.`,
-        table: check.table,
+        message,
+        table: fromObject,
         rowId: String(row.rowId),
-        relatedTable: check.relatedTable,
+        relatedTable: toTable,
         relatedId: String(row.relatedId),
       });
     }

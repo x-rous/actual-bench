@@ -76,6 +76,27 @@ All heavy work (unzip + SQLite queries) touches the same `sqlite-wasm` instance.
 
 Ordered so each merges in a working state. Each bullet = one commit.
 
+**Execution order (authoritative):**
+
+| # | Milestone | State |
+|---|---|---|
+| 1  | M1 — Binary proxy & download helper | ✅ shipped (3fbd69e) |
+| 2  | M2 — Feature scaffold + nav item | ✅ shipped (18f2378) |
+| 3  | M3 — Worker skeleton + ZIP unpacking | ✅ shipped (a7b9cde) |
+| 4  | M4 — Overview section | ✅ shipped (69bb4c6) |
+| 5  | M5 — Diagnostics section | ✅ shipped (347c6e3) |
+| 6  | M5.1 — Relationship map unification + M5 corrections | ✅ shipped |
+| 7  | M6-pre — Workbench tab structure | planned |
+| 8  | M6a — Data Browser worker read API + schema catalog | planned |
+| 9  | M6b — Data Browser shell + object list | planned |
+| 10 | M6c — Paginated Table Browser | planned |
+| 11 | M6d — Schema Explorer tab | planned |
+| 12 | M6e — Relationship-aware drill-in + row details (depends on M5.1) | planned |
+| 13 | M6f — Full object CSV export | planned |
+| 14 | M7 — Polish, banner, tests, docs, PR prep | planned |
+
+The old standalone `M8-rev` milestone has been merged into M5.1 — do not resurrect it. M5.1 is the single corrective milestone that introduces `relationshipMap.ts`, fixes the raw/view confusion in shipped M5, and adds the missing `payees.category` and `transactions.description → payee_mapping` checks.
+
 ### M1 — Binary proxy & download helper (foundation) ✅ shipped
 
 **Status:** complete. Lint / `tsc --noEmit` / `npm test` all green (26 suites, 344 tests, 12 new).
@@ -355,36 +376,479 @@ Ordered so each merges in a working state. Each bullet = one commit.
 
 ---
 
-### M6 — Data Browser section
+### M5.1 — Relationship map unification + M5 corrections ✅ shipped
+
+**Status:** complete. Lint / `tsc --noEmit` / `npm test` all green (30 suites, 367 tests, 9 new). `npm run lint` reports the expected React Compiler `react-hooks/incompatible-library` warning for TanStack Table. `next build` bundle inspection was intentionally not run in the Docker-hosted dev workspace.
+
+**Files delivered**
+- `src/features/budget-diagnostics/lib/relationshipMap.ts` (new) — single relationship catalog shared by M5 diagnostics and later M6e drill-in.
+- `src/features/budget-diagnostics/lib/relationshipMap.test.ts` (new) — contract tests for unique codes and schema-valid object/column references.
+- `src/features/budget-diagnostics/lib/diagnosticChecks.ts` — refactored relationship diagnostics to consume `RELATIONSHIPS.filter(r => r.kind === "raw")`, honor `to.column`, apply catalog severities, and keep tombstone/row-context behavior.
+- `src/features/budget-diagnostics/lib/diagnosticChecks.test.ts` — replaced the shallow clean fixture with a linked fixture and added regression coverage for corrected category/payee mapping checks.
+
+**Notes for future milestones**
+- `REL_TRANSACTION_ORPHAN_CATEGORY` is retired. Use `REL_TRANSACTION_ORPHAN_CATEGORY_MAPPING`.
+- Raw `transactions.category` now validates against `category_mapping.id`; raw `transactions.description` now validates against `payee_mapping.id`.
+- `payees.category -> categories.id` is now checked.
+- `transactions.transferred_id` and `transactions.schedule` orphan findings are intentionally `info`, not `warning`.
+- M6e must import `relationshipMap.ts`; it should not create a second relationship list.
+
+**Why this exists**
+
+Three gaps were found in the shipped M5 relationship checks:
+
+1. Raw `transactions.category` is validated against `categories.id`, but Actual's storage model resolves raw category ids through the mapping layer: `transactions.category → category_mapping.id → category_mapping.transferId → categories.id`. The direct check produces false orphans on a healthy snapshot.
+2. The raw payee mapping leg `transactions.description → payee_mapping.id` (and downstream `payee_mapping.targetId → payees.id`) is not validated at all.
+3. `payees.category → categories.id` (a direct FK — payees can reference a default category) is missing from every map and every check.
+
+M6e also needs a canonical relationship catalog for Data Browser drill-in. Creating that catalog once, now, and having M5 consume it removes the drift risk before Data Browser is built. This replaces the pre-existing "M8-rev" plan item.
+
+**Confirmed answers (authoritative — from `agents/rd-006-budget-diagnostics_db_schema_and_business_logic.md` and `..._db_schema_technical_reference.md`)**
+
+- `reflect_budgets.category` → `categories.id` — **direct**. Keep existing M5 check as-is.
+- `zero_budgets.category`    → `categories.id` — **direct**. Keep existing M5 check as-is.
+- `payees.category`          → `categories.id` — **direct**. **Add** a new M5 check.
+- `transactions.category`    → `category_mapping.id` (raw), then `category_mapping.transferId → categories.id`. **Correct** the existing check.
+- `transactions.description` → `payee_mapping.id`   (raw), then `payee_mapping.targetId → payees.id`. **Add** the missing check.
+
+**Files**
+- `src/features/budget-diagnostics/lib/relationshipMap.ts` (new — single source of truth for M5 and M6e)
+- `src/features/budget-diagnostics/lib/relationshipMap.test.ts` (new — contract tests)
+- `src/features/budget-diagnostics/lib/diagnosticChecks.ts` (refactor to consume the map)
+- `src/features/budget-diagnostics/lib/diagnosticChecks.test.ts` (extend regression coverage)
+- `src/features/budget-diagnostics/types.ts` (only if the new diagnostic codes below change the `BudgetDiagnostic` shape — they should not)
+
+**Scope**
+
+1. **Create `relationshipMap.ts`.** One typed array, read by both M5 diagnostics and M6e Data Browser drill-in. Do not fork the list anywhere else.
+   ```ts
+   export type RelationshipKind = "view" | "raw";
+   export type RelationshipSeverity = "warning" | "info";
+
+   export type Relationship = {
+     code: string;                   // stable diagnostic code, also used by M6e drill-in
+     kind: RelationshipKind;         // "raw" → orphan-checked by M5; "view" → drill-in target only
+     from: { object: string; column: string };
+     to:   { table: string;  column: string };
+     title: string;                  // user-facing finding title (raw kind only)
+     severity: RelationshipSeverity; // default severity for orphan findings (raw kind only)
+     skipWhere?: string;             // optional SQL predicate applied to the left side before the orphan join
+   };
+
+   export const RELATIONSHIPS: readonly Relationship[] = [ /* see catalog below */ ];
+   ```
+
+2. **Authoritative relationship catalog.** This is the full list — do not add, remove, or retarget entries without updating this plan.
+
+   **Raw-storage relationships** (M5 runs orphan checks on these):
+
+   | code | from | to | severity | notes |
+   |---|---|---|---|---|
+   | `REL_CATEGORY_ORPHAN_GROUP` | `categories.cat_group` | `category_groups.id` | warning | |
+   | `REL_SCHEDULE_ORPHAN_RULE` | `schedules.rule` | `rules.id` | warning | |
+   | `REL_PAYEE_ORPHAN_TRANSFER_ACCOUNT` | `payees.transfer_acct` | `accounts.id` | warning | |
+   | `REL_PAYEE_ORPHAN_CATEGORY` | `payees.category` | `categories.id` | warning | **new** |
+   | `REL_PAYEE_MAPPING_ORPHAN_TARGET` | `payee_mapping.targetId` | `payees.id` | warning | |
+   | `REL_CATEGORY_MAPPING_ORPHAN_TRANSFER` | `category_mapping.transferId` | `categories.id` | warning | |
+   | `REL_TRANSACTION_ORPHAN_ACCOUNT` | `transactions.acct` | `accounts.id` | warning | |
+   | `REL_TRANSACTION_ORPHAN_CATEGORY_MAPPING` | `transactions.category` | `category_mapping.id` | warning | **corrected** — retires `REL_TRANSACTION_ORPHAN_CATEGORY` |
+   | `REL_TRANSACTION_ORPHAN_PAYEE_MAPPING` | `transactions.description` | `payee_mapping.id` | warning | **new** |
+   | `REL_TRANSACTION_ORPHAN_PARENT` | `transactions.parent_id` | `transactions.id` | warning | `skipWhere: "isChild = 1"` inverted — apply only to rows where `isChild = 1` |
+   | `REL_TRANSACTION_ORPHAN_TRANSFER` | `transactions.transferred_id` | `transactions.id` | info | stale-lifecycle softening |
+   | `REL_TRANSACTION_ORPHAN_SCHEDULE` | `transactions.schedule` | `schedules.id` | info | stale-lifecycle softening |
+   | `REL_SCHEDULE_NEXT_DATE_ORPHAN_SCHEDULE` | `schedules_next_date.schedule_id` | `schedules.id` | warning | |
+   | `REL_SCHEDULE_JSON_PATHS_ORPHAN_SCHEDULE` | `schedules_json_paths.schedule_id` | `schedules.id` | warning | |
+   | `REL_DASHBOARD_ORPHAN_PAGE` | `dashboard.dashboard_page_id` | `dashboard_pages.id` | warning | |
+   | `REL_PAYEE_LOCATION_ORPHAN_PAYEE` | `payee_locations.payee_id` | `payees.id` | warning | |
+   | `REL_REFLECT_BUDGET_ORPHAN_CATEGORY` | `reflect_budgets.category` | `categories.id` | warning | direct — confirmed |
+   | `REL_ZERO_BUDGET_ORPHAN_CATEGORY` | `zero_budgets.category` | `categories.id` | warning | direct — confirmed |
+
+   **View relationships** (M6e drill-in targets only — not orphan-checked):
+
+   | from | to |
+   |---|---|
+   | `v_transactions.account` | `accounts.id` |
+   | `v_transactions.category` | `categories.id` (the view already resolves the mapping) |
+   | `v_transactions.payee` | `payees.id` |
+   | `v_transactions.parent_id` | `transactions.id` |
+   | `v_transactions.transfer_id` | `transactions.id` |
+   | `v_transactions.schedule` | `schedules.id` |
+   | `v_categories.group` | `category_groups.id` |
+   | `v_payees.transfer_acct` | `accounts.id` |
+   | `v_schedules.rule` | `rules.id` |
+   | `v_schedules._payee` | `payees.id` |
+
+3. **Diagnostic code compatibility.**
+   - `REL_TRANSACTION_ORPHAN_CATEGORY` is **retired**. Replace with `REL_TRANSACTION_ORPHAN_CATEGORY_MAPPING`. Document the rename in the commit message; diagnostics CSV is new-enough that no external consumer should depend on the old code.
+   - All other existing codes from shipped M5 are preserved.
+   - Every new code must have a stable title and message template.
+
+4. **Refactor `diagnosticChecks.ts`.**
+   - Replace the inline `RELATIONSHIP_CHECKS` array with `import { RELATIONSHIPS } from "./relationshipMap"` and iterate `RELATIONSHIPS.filter(r => r.kind === "raw")`.
+   - Preserve existing behavior: tombstone filtering on both sides, `hasColumn` guards, `rowId` fallback for id-less tables (e.g. `schedules_json_paths`), per-check `LIMIT 100` cap.
+   - Apply severity from `Relationship.severity`, not a hard-coded `warning`.
+   - Apply `skipWhere` verbatim — the generic runner must not special-case columns.
+
+5. **Message wording** must distinguish layers so a reader can tell where a finding comes from without looking up the code:
+   - Raw-storage wording: `"{from.object}.{from.column} references a missing {to.table} row"` or `"... contains a stale raw reference to {to.table}"` for softened `info` severity.
+   - View wording (M6e only, no orphan check): `"{from.object}.{from.column} resolves to a missing live {to.table} entity"` — only surfaced if Data Browser attempts a drill-in lookup that comes back empty.
+
+6. **Severity policy.**
+   - Structural orphans that break the normalized read model → `warning`.
+   - Orphans that represent stale lifecycle artifacts the normalized views already filter (`transactions.transferred_id`, `transactions.schedule`) → `info`.
+   - **Do not** downgrade findings that break the read model.
+   - Do not change the severity of any shipped check except the two explicitly softened in the catalog above.
+
+7. **Replace the test fixture.**
+   - Current "clean snapshot" fixture used `{ id }`-only rows; it cannot validate the mapping chain.
+   - New minimal linked fixture must exercise: `accounts`, `category_groups`, `categories`, `category_mapping`, `payees`, `payee_mapping`, `transactions`. Clean fixture must prove **zero** relationship errors under the corrected mapping.
+   - Add regression tests for each of the following corrupted fixtures, asserting exactly one finding with populated `table`, `rowId`, `relatedTable`, `relatedId`:
+     - missing `category_mapping.id` referenced by `transactions.category`
+     - missing `payee_mapping.id` referenced by `transactions.description`
+     - missing `categories.id` referenced by `category_mapping.transferId`
+     - missing `payees.id` referenced by `payee_mapping.targetId`
+     - missing `categories.id` referenced by `payees.category`
+   - Keep existing coverage for category groups, schedules, dashboard pages, `payees.transfer_acct`, notes, `reflect_budgets.category`, `zero_budgets.category`, and the self-relations.
+
+8. **Tighten the fake `DiagnosticDb` adapter.**
+   - The adapter must match against any target column, not assume `right.id`. The generic runner already passes the target column through from the map; the adapter must honor it.
+   - Keep the existing `rowId` fallback for source tables without an `id` column (e.g. `schedules_json_paths`).
+
+9. **Add `relationshipMap.test.ts`** — contract tests that assert:
+   - every `Relationship.code` is unique
+   - every `from.object` is either in `EXPECTED_TABLES` or `EXPECTED_VIEWS`
+   - every `to.table` is in `EXPECTED_TABLES`
+   - every `from.column` exists in `EXPECTED_COLUMNS[from.object]`
+   - every `to.column` exists in `EXPECTED_COLUMNS[to.table]`
+
+**Acceptance**
+- `relationshipMap.ts` is the only place relationships are declared; `diagnosticChecks.ts` and (later) M6e both import from it.
+- Lint / `tsc --noEmit` / `npm test` — all green.
+- Clean linked fixture produces zero relationship errors under the corrected mapping.
+- Each corrupted fixture listed above produces one targeted finding with `table`, `rowId`, `relatedTable`, and `relatedId` populated and the expected severity.
+- Shipped checks for category groups, schedules, dashboard pages, `payees.transfer_acct`, notes, `reflect_budgets.category`, and `zero_budgets.category` continue to pass unchanged.
+- Diagnostics CSV export schema (`code,severity,title,message,table,rowId,relatedTable,relatedId`) is unchanged.
+- `REL_TRANSACTION_ORPHAN_CATEGORY` is retired in favor of `REL_TRANSACTION_ORPHAN_CATEGORY_MAPPING`; retirement is documented in the commit message.
+
+**Sequencing notes**
+- Must land before M6-pre. M6e consumes `relationshipMap.ts` directly — it does not fork a parallel list.
+- After this ships, M6e's scope changes from "build a relationship map" to "read `relationshipMap.ts` for drill-in targets."
+
+---
+
+### M6-pre — Workbench tab structure + section summaries
+
+**Why this exists**
+The current page stacks Overview, Diagnostics, and Data Browser vertically. That makes the diagnostics workspace feel like one long report and forces users to scroll past sections they are not using. Before expanding Data Browser, restructure the page into a tabbed workbench so each major capability has a focused surface and a compact summary.
+
+**Files**
+- `src/features/budget-diagnostics/components/BudgetDiagnosticsView.tsx`
+- `src/features/budget-diagnostics/components/OverviewSection.tsx`
+- `src/features/budget-diagnostics/components/DiagnosticsSection.tsx`
+- `src/features/budget-diagnostics/components/DataBrowserSection.tsx`
+- `src/features/budget-diagnostics/components/WorkbenchSummaryBar.tsx` (new, optional shared summary shell)
+- `src/features/budget-diagnostics/types.ts`
+
+**Scope**
+1. Replace the vertical section stack with three top-level tabs:
+   - **Overview**
+   - **Diagnostics**
+   - **Data Browser**
+2. Keep the persistent page-level read-only banner above the tabs.
+3. Add a compact tab summary row above the tab content. Each tab should expose a section-specific summary:
+   - Overview: budget name, tables, views, transaction count, DB size, export/open status.
+   - Diagnostics: total findings, errors, warnings, infos, last integrity-check state.
+   - Data Browser: schema object count, featured view availability, selected object, selected object row count.
+4. Tab triggers should include concise counts where useful:
+   - `Overview`
+   - `Diagnostics` plus warning/error count when diagnostics have run.
+   - `Data Browser` plus selected object name or object count when loaded.
+5. Preserve current auto-load behavior:
+   - User opens Budget Diagnostics.
+   - Snapshot exports and opens automatically.
+   - Overview and Diagnostics data are computed in the background.
+   - User can switch tabs while loading states remain visible.
+6. Use existing `components/ui/tabs.tsx`; do not add a new tab library.
+7. Keep section components self-contained:
+   - `OverviewSection` renders only Overview tab content.
+   - `DiagnosticsSection` renders only Diagnostics tab content.
+   - `DataBrowserSection` renders only Data Browser tab content.
+8. Avoid hidden coupling between tabs. Shared state lives in `BudgetDiagnosticsView`; section-level UI state stays local to each section unless it needs URL persistence.
+9. **URL state (whole feature, reserved here):** active tab persists as `?tab=overview|diagnostics|data`. M6c will add `obj`, `p`, `ps`, `sort`, `dir` in the same query string — pick these names now so they do not collide. Missing/invalid `tab` falls back to `overview`.
+10. **Per-tab error isolation:** if one section reports a worker error (e.g. `runDiagnostics` throws), only that tab renders the error; the other two tabs stay usable. Do not introduce a page-level error state that blanks the whole workbench.
+
+**UI / UX guidance**
+- The first viewport should show the read-only banner, tab bar, summary row, and the active tab's first content without requiring long scrolling.
+- The summary row should be dense and scannable, not a second dashboard.
+- The active tab content should own the available vertical space. Data Browser in particular should use a fixed-height workbench layout with internal scroll regions.
+- Avoid nested cards. Use page-level bands/panels and small metric tiles only where they clarify the active tab.
+- Keep all user-facing language focused on the exported snapshot, not the live budget.
+
+**Acceptance**
+- Overview, Diagnostics, and Data Browser are reachable through top-level tabs.
+- Each tab shows a useful summary at the top.
+- Switching tabs does not refetch or reopen the snapshot.
+- Existing Overview and Diagnostics functionality still works.
+- No `sqlite-wasm` / `fflate` leakage into unrelated routes.
+
+---
+
+### M6a — Data Browser worker read API + schema catalog
+
+**Files**
+- `src/features/budget-diagnostics/workers/sqliteDiagnostics.worker.ts`
+- `src/features/budget-diagnostics/types.ts`
+- `src/features/budget-diagnostics/lib/schemaObjects.ts` (new)
+- `src/features/budget-diagnostics/lib/sqlIdentifier.ts` (new)
+- `src/features/budget-diagnostics/lib/schemaObjects.test.ts` (new)
+
+**Scope**
+1. Implement worker messages:
+   - `listSchemaObjects`
+   - `getSchemaObject`
+   - `tableCounts`
+   - `fetchRows`
+2. Add worker/data types:
+   ```ts
+   type SchemaObjectType = "table" | "view" | "index" | "trigger";
+   type SchemaObjectSummary = { name: string; type: SchemaObjectType; rowCount: number | null; featured: boolean; group: SchemaObjectGroup };
+   type SchemaObjectDetails = { name: string; type: SchemaObjectType; sql: string | null; columns: ColumnInfo[]; indexes: IndexInfo[]; rowCount: number | null };
+   type FetchRowsPayload = { object: string; columns: string[]; rows: Record<string, unknown>[]; offset: number; limit: number; rowCount: number };
+   ```
+3. List schema objects from `sqlite_schema` for:
+   - tables
+   - views
+   - indexes
+   - triggers
+4. Compute row counts for tables/views only. Indexes/triggers return `rowCount: null`.
+5. Read columns with `PRAGMA table_info`.
+6. Read indexes with `PRAGMA index_list` for tables.
+7. Return raw `CREATE ...` SQL from `sqlite_schema.sql`.
+8. Implement safe SQL identifier handling:
+   - Object names must come from `sqlite_schema`.
+   - Sort columns must come from `PRAGMA table_info`.
+   - Quote all identifiers.
+   - Reject unknown object names, unknown columns, negative offsets, and invalid limits.
+   - **Bounds:** `1 ≤ limit ≤ 1000` for `fetchRows`. Larger `limit` is allowed only via the M6f export cursor path.
+   - **Direction whitelist:** `direction` must match exactly `"asc"` or `"desc"`. Reject any other value (including uppercase variants) with a typed worker error.
+9. Add primary-key inference helper for row-details support:
+   - Prefer `pk > 0` from `PRAGMA table_info`.
+   - Common non-`id` keys: `schedule_id`, `month`, `key`.
+   - Fall back to `rowid` only where SQLite supports it and the object is a table.
+10. Keep worker APIs read-only. No arbitrary SQL console.
+11. **Per-request timeout override in `sqliteWorkerClient.ts`:**
+    - Default request timeout stays at 60s.
+    - `runIntegrityCheck` runs with **no timeout** (`null`). On very large DBs this can take minutes and must not spuriously time out.
+    - Worker emits a `progress` heartbeat every 5s while `integrity_check` is running, so the UI can render "running, please wait" instead of appearing frozen.
+    - Add this to the worker protocol now (used by M5 integrity button and future long-running calls), even though M5 already shipped.
+
+**Acceptance**
+- `listSchemaObjects` returns tables, views, indexes, and triggers with stable grouping metadata.
+- `getSchemaObject("v_transactions")` returns `CREATE VIEW ...` verbatim and its columns.
+- `fetchRows` returns paginated rows for `v_transactions`.
+- Invalid object/column names are rejected with typed worker errors.
+
+---
+
+### M6b — Data Browser shell + object list
 
 **Files**
 - `src/features/budget-diagnostics/components/DataBrowserSection.tsx`
 - `src/features/budget-diagnostics/components/TableList.tsx`
-- `src/features/budget-diagnostics/components/TableBrowser.tsx`
-- `src/features/budget-diagnostics/components/SchemaObjectDetails.tsx`
-- `src/features/budget-diagnostics/components/RowDetailsSheet.tsx`
-- `src/features/budget-diagnostics/lib/relationshipMap.ts`
-- `src/features/budget-diagnostics/lib/csvExport.ts`
+- `src/features/budget-diagnostics/lib/schemaObjectGroups.ts` (new)
 
 **Scope**
-1. Three-pane layout: left = TableList (search + sort by name / row count); center = TableBrowser; right = optional RowDetailsSheet.
-2. `TableList` groups entries into: **Featured views**, **Featured tables**, **System / meta tables**, **Other**. "Featured" lists are those enumerated in the spec.
-3. Default selection: `v_transactions` if present, else the first featured view.
-4. `TableBrowser`:
-   - loads columns via `PRAGMA table_info`.
-   - paginated via worker `fetchRows` (page size 100, configurable via URL param `pageSize`).
-   - sort by any column (delegated to worker `ORDER BY`).
-   - each cell: if column maps to a known foreign relation per `relationshipMap.ts`, render a link that opens `RowDetailsSheet` with the target row.
-   - "Copy row JSON" action per row.
-   - "Export CSV" downloads **the full table/view** as CSV via a worker streaming cursor — not just the current page. Warn at >100k rows.
-5. `relationshipMap.ts` hard-codes the linked columns from the spec.
-6. `SchemaObjectDetails`: toggle between "Data" and "Schema" tabs in `TableBrowser`. Schema tab shows object type, row count, `CREATE ...` SQL, columns from `PRAGMA table_info`, indexes from `PRAGMA index_list`.
-7. `RowDetailsSheet` is a stackable right-side sheet using `@base-ui/react` (already a dep). Back button pops the stack; close dismisses all.
+1. Replace the Data Browser placeholder with a workbench shell.
+2. Three-pane layout inside the Data Browser tab:
+   - Left: object list.
+   - Center: table/schema browser.
+   - Right: optional row details sheet/panel, initially closed.
+3. `TableList` capabilities:
+   - Search by object name.
+   - Sort by name or row count.
+   - Group objects into:
+     - **Featured views**: `v_transactions`, `v_payees`, `v_categories`, `v_schedules`.
+     - **Core tables**: `accounts`, `category_groups`, `categories`, `payees`, `transactions`, `schedules`, `rules`, `tags`, `notes`.
+     - **Mapping tables**: `category_mapping`, `payee_mapping`.
+     - **Budget tables**: `reflect_budgets`, `zero_budgets`, `zero_budget_months`, `created_budgets`.
+     - **System / metadata**: `__meta__`, `__migrations__`, `preferences`, `messages_clock`, `messages_crdt`, `kvcache`, `kvcache_key`.
+     - **Reporting / dashboard**: `custom_reports`, `dashboard`, `dashboard_pages`, `transaction_filters`.
+     - **Other**.
+4. Default selection:
+   - `v_transactions` when present.
+   - Else first available featured view.
+   - Else first table/view with a row count.
+5. Keep Data Browser summary in sync with object list state.
+6. Empty states:
+   - No snapshot loaded.
+   - No schema objects.
+   - No objects match search.
 
 **Acceptance**
-- User can browse `v_transactions`, click a `payee` cell → sheet opens with the payee row.
-- CSV export of a 50k row table completes without freezing the UI.
+- Data Browser tab loads a searchable grouped object list.
+- `v_transactions` is selected by default when available.
+- Row counts are visible for tables/views.
+- Indexes/triggers are listed but clearly marked as schema objects, not browsable data tables.
+
+---
+
+### M6c — Paginated Table Browser
+
+**Files**
+- `src/features/budget-diagnostics/components/TableBrowser.tsx`
+- `src/features/budget-diagnostics/lib/cellFormatters.ts` (new)
+- `src/features/budget-diagnostics/lib/cellFormatters.test.ts` (new)
+
+**Scope**
+1. Render selected table/view rows in a dense read-only grid.
+2. Use worker `fetchRows` for pagination:
+   - Default page size: 100.
+   - Allow page size through URL param `pageSize` with a bounded whitelist, for example `50 | 100 | 250 | 500`.
+3. Sorting:
+   - Click a column header to sort ascending/descending.
+   - Delegate sorting to worker `ORDER BY`. Sort column whitelist is enforced **in the worker** against `PRAGMA table_info(object)`; client-side validation is advisory only.
+   - Only allow sort columns from the selected object's column list.
+   - **View-sort perf:** featured views (`v_transactions`, `v_schedules`, etc.) wrap multi-join queries. Arbitrary `ORDER BY` on large results can be slow. Log elapsed time on each `fetchRows` response; if > 2s, surface a small "slow query" hint next to the sorted column. Do not block sorting.
+4. Column-aware rendering:
+   - Money-like integer fields remain raw by default but use tabular alignment.
+   - Transaction date integers (`YYYYMMDD`) display in readable form with raw value available in title. Zero/invalid dates (e.g. starting-balance rows) display as `—` with the raw integer in the title.
+   - Budget months (`YYYYMM`) display as month labels where obvious.
+   - Boolean-ish integer fields display compactly.
+   - JSON/serialized text is truncated with full value available in row details.
+   - **BLOB columns** (e.g. `messages_crdt.value` returned as `Uint8Array`) render as `<binary, N bytes>` with a tooltip showing hex of the first 16 bytes. Do not attempt to interpret as UTF-8.
+5. Row actions:
+   - Copy row JSON. (BLOBs serialize as `{ "$base64": "…" }` so JSON round-trips.)
+   - Open row details.
+6. URL state:
+   - Persist selected object, page, page size, sort column, and sort direction. Use the query-param names reserved in M6-pre: `obj`, `p`, `ps`, `sort`, `dir`. Active tab (`tab`) is owned by M6-pre.
+   - Invalid values (e.g. unknown object, `ps` outside `{50,100,250,500}`, `dir` ≠ `asc|desc`) fall back to defaults silently; do not render an error.
+7. Performance:
+   - Stable table dimensions.
+   - Sticky header.
+   - Horizontal scroll for wide objects.
+   - No full-table fetch for ordinary browsing.
+
+**Acceptance**
+- User can browse `v_transactions` and move through pages without UI freezes.
+- User can sort by a valid column.
+- User can copy a row as JSON.
+- Wide tables remain usable on desktop and do not break mobile layout.
+
+---
+
+### M6d — Schema Explorer tab inside Table Browser
+
+**Files**
+- `src/features/budget-diagnostics/components/SchemaObjectDetails.tsx`
+- `src/features/budget-diagnostics/components/TableBrowser.tsx`
+
+**Scope**
+1. Add `Data` / `Schema` tabs inside the center browser panel.
+2. Schema tab displays:
+   - Object name.
+   - Object type.
+   - Row count where relevant.
+   - Primary key / inferred row key.
+   - Columns from `PRAGMA table_info`.
+   - Indexes from `PRAGMA index_list`.
+   - Raw `CREATE ...` SQL from `sqlite_schema.sql`.
+3. For views:
+   - Show `CREATE VIEW ...` SQL verbatim.
+   - Show columns from `PRAGMA table_info`.
+   - Indexes section should be absent or explicitly not applicable.
+4. For indexes/triggers:
+   - Show SQL and parent table when available.
+   - Data tab should be disabled or replaced with an explanatory empty state.
+
+**Acceptance**
 - Schema tab renders `CREATE VIEW v_transactions AS ...` verbatim.
+- Table columns and indexes are visible for raw tables.
+- Index and trigger objects do not attempt row browsing.
+
+---
+
+### M6e — Relationship-aware drill-in + row details
+
+**Files**
+- `src/features/budget-diagnostics/components/RowDetailsSheet.tsx`
+- `src/features/budget-diagnostics/lib/relationshipMap.ts`
+- `src/features/budget-diagnostics/lib/relationshipMap.test.ts`
+- `src/features/budget-diagnostics/workers/sqliteDiagnostics.worker.ts`
+- `src/features/budget-diagnostics/types.ts`
+
+**Scope**
+1. **Consume `relationshipMap.ts` (built in M5.1).** Do not fork the list. Data Browser drill-in and M5 diagnostics share the same `RELATIONSHIPS` export. If a relationship needs to change, update `relationshipMap.ts` and update this plan — do not introduce a parallel catalog.
+2. The map already separates `kind: "view"` (drill-in targets only) from `kind: "raw"` (both orphan-checked and drill-in linkable). Data Browser drill-in resolves both kinds.
+3. **Full relationship set for drill-in is defined in M5.1** (§ "Authoritative relationship catalog"). Do not repeat it here — re-read M5.1 before starting M6e. Notable entries for drill-in behavior:
+   - View → entity (`v_transactions.category → categories.id`, `v_transactions.payee → payees.id`, etc.) — views already resolve the mapping layer.
+   - Raw → mapping (`transactions.category → category_mapping.id`, `transactions.description → payee_mapping.id`) — drills open the mapping row first; user can chain to `categories` / `payees` from there.
+   - Raw → entity (`categories.cat_group → category_groups.id`, `payees.transfer_acct → accounts.id`, `payees.category → categories.id`, etc.).
+4. Add worker row lookup by object + key:
+   - Key column comes from primary-key inference (M6a).
+   - Relationship links use the explicit `to.column` from the map, not a hard-coded `id`.
+5. `RowDetailsSheet`:
+   - Right-side stackable panel.
+   - Opens from linked cells and row actions.
+   - **Stack cap: 10.** Pushing an eleventh entry discards the oldest and shows a transient toast ("older drill-in entries collapsed").
+   - **Reset on object switch:** selecting a different object in the left-pane `TableList` closes the sheet entirely.
+   - Back button pops one entry; close clears the entire stack.
+   - Header displays **source layer** for the current entry: `"source: raw storage"` or `"source: featured view"`. This is why raw `transactions.category` and view `v_transactions.category` land on different targets — the header makes that explicit.
+   - Body shows object name, key, all columns, and outbound relationship links.
+6. Linked cells:
+   - Render as links only when value is non-null and the relationship is present in `RELATIONSHIPS`.
+   - If the target row is missing (tombstoned or deleted), render a muted "unresolved" state with the missing id still visible; do not throw. Missing-target for `kind: "raw"` relationships also surfaces in M5 diagnostics — the two views must agree.
+
+**Acceptance**
+- `v_transactions.payee` opens the referenced payee row directly.
+- Raw `transactions.category` opens the `category_mapping` row; from there the user can drill into `categories`.
+- Raw `transactions.description` opens the `payee_mapping` row; from there the user can drill into `payees`.
+- `payees.category` opens the referenced category row.
+- Tables without `id` still open row details using inferred keys where possible.
+- Drilling past 10 entries collapses the oldest and toasts; switching objects closes the sheet.
+- The sheet header clearly marks whether the current entry is from raw storage or a featured view.
+
+---
+
+### M6f — Full object CSV export
+
+**Files**
+- `src/features/budget-diagnostics/lib/csvExport.ts`
+- `src/features/budget-diagnostics/components/TableBrowser.tsx`
+- `src/features/budget-diagnostics/workers/sqliteDiagnostics.worker.ts`
+- `src/features/budget-diagnostics/types.ts`
+
+**Scope**
+1. Export the selected table/view as CSV.
+2. Export the full object, not just the current page.
+3. **Worker-owned cursor protocol** (pick this, not client-side paging through `fetchRows`):
+   ```ts
+   // new worker messages added to the protocol
+   | { id: string; kind: "exportRowsBegin"; object: string; orderBy?: string; direction?: "asc" | "desc" }
+   | { id: string; kind: "exportRowsNext";  cursorId: string }
+   | { id: string; kind: "exportRowsEnd";   cursorId: string }
+   ```
+   - `exportRowsBegin` validates the object + sort column (same whitelist rules as `fetchRows`), returns `{ cursorId, rowCount, columns }`.
+   - `exportRowsNext` returns the next 10 000 rows (last chunk may be smaller). Rows stream back via `progress` messages for UI updates and the final chunk via `result`.
+   - `exportRowsEnd` releases the cursor; worker auto-releases after 2 minutes idle or on snapshot reload.
+   - Main thread concatenates encoded CSV text as it arrives and assembles a final `Blob` on `exportRowsEnd`.
+4. **CSV encoding rules** (use `src/lib/csv.ts` `csvField`, extended here):
+   - **Formula-injection neutralization applies to TEXT columns only.** If the SQLite declared type (`PRAGMA table_info.type`) is INTEGER or REAL, the value passes through as-is — never prefix a `'` onto a negative number. For TEXT columns, prefix `'` when the stringified value begins with any of `=`, `+`, `-`, `@`, `\t`, or `\r`.
+   - **BLOB columns** encode as `base64:<payload>`. Cap the encoded payload at 4 KB per cell; larger blobs export as `base64:<head>;truncated=true`. Full bytes remain available in `RowDetailsSheet` only.
+   - `NULL` exports as an empty field (not the string `"null"`).
+5. Add UTF-8 BOM (`\uFEFF`) so Excel opens UTF-8 cleanly.
+6. **Memory budget:** estimate final CSV size as `rowCount × avgColumnTextLength × columnCount` (sampled from the first chunk). Warn before export when the estimate exceeds **200 MB** (roughly 1M typical transaction rows). User must confirm to proceed.
+7. Show export progress (`rows exported / total`, chunk-by-chunk).
+8. Keep UI responsive during export: all SQLite work stays in the worker; main thread only concatenates strings.
+9. Filename format: `budget-diagnostics-{object}-{YYYY-MM-DD}.csv`.
+
+**Acceptance**
+- CSV export of a 50k-row table/view completes without freezing the UI (progress advances smoothly).
+- CSV opens in Excel with UTF-8 text intact.
+- Negative `amount` values export as `-12345`, **not** `'-12345` (numeric columns are not neutralized).
+- A TEXT column value starting with `=cmd|'...'` exports neutralized so Excel treats it as text.
+- BLOB columns export as `base64:…` with a `truncated=true` marker when they exceed 4 KB.
+- Exporting an object larger than the warning threshold shows a confirm step before streaming starts.
+- Exported CSV includes all rows for the selected object.
 
 ---
 
@@ -399,15 +863,20 @@ Ordered so each merges in a working state. Each bullet = one commit.
 
 **Scope**
 1. `OpenSnapshotPanel`: progress rail using the 6 stages from the spec (Exporting ZIP → Unpacking → Opening SQLite → Reading schema → Computing overview → Running diagnostics). Shows error + "Retry" when export fails.
-2. Persistent read-only banner above the three sections: "Read-only diagnostics — no changes are written back to the budget. Export contents are processed locally in the browser."
+2. Persistent read-only banner above the tabs, two lines:
+   - Line 1: "Read-only diagnostics — no changes are written back to the budget. Export contents are processed locally in the browser."
+   - Line 2: "This tool may display personal data stored in your budget (payees, notes, imported descriptions). Close the tab when finished."
 3. Budget-switch side-effect: on `useConnectionStore` change, clear worker DB and re-run auto-fetch.
-4. Integration test (Jest + RTL): render `BudgetDiagnosticsView` with a mocked `apiDownload` returning a fixture ZIP; assert that the three sections render with expected counts. Worker is mocked via a thin fake that exposes the same interface.
-5. Lint + typecheck + full test run.
+4. Integration test (Jest + RTL): render `BudgetDiagnosticsView` with a mocked `apiDownload` returning a fixture ZIP; assert that the three tabs render with expected counts. Worker is mocked via a thin fake that exposes the same request/response interface — **do not** boot real sqlite-wasm in Jest suites.
+5. Single node-env end-to-end suite that boots the real worker against a small fixture ZIP from `agents/fixtures/` (or a programmatically built one). Keep it small and separate from the jsdom suites.
+6. Lint + typecheck + full test run.
+7. **Bundle-isolation verification.** Run `next build` + bundle analysis. Confirm no non-diagnostics route imports `@sqlite.org/sqlite-wasm` or `fflate`. Record the diagnostics-route bundle size in the PR description so regressions are visible.
 
 **Acceptance**
 - `npm run lint` — 0 errors.
 - `npx tsc --noEmit` — 0 errors.
 - `npm test` — all suites pass.
+- `next build` — succeeds; bundle analysis shows `@sqlite.org/sqlite-wasm` and `fflate` only in the diagnostics chunk.
 - Manual run against a real `actual-http-api` — full flow works end-to-end for at least two budgets with different data shapes.
 
 ---
@@ -429,40 +898,32 @@ Error: 4xx/5xx JSON  { error: string }
 As defined in the spec — stored in `types.ts`, never diverge.
 
 ### `relationshipMap`
+
+> **Canonical source:** `src/features/budget-diagnostics/lib/relationshipMap.ts`, created in **M5.1**.
+> The full catalog (codes, titles, severities, `skipWhere`) lives in the M5.1 milestone section above — do not duplicate it here.
+> The sketch below is the module's public shape only; the actual `RELATIONSHIPS` array is defined by M5.1 and must match the M5.1 catalog entry-for-entry.
+
 ```ts
-type Relation = { from: { object: string; column: string }; to: { table: string; column: string } };
-export const RELATIONSHIPS: readonly Relation[] = [
-  // Featured view → source table
-  { from: { object: "v_transactions", column: "account" },        to: { table: "accounts",        column: "id" } },
-  { from: { object: "v_transactions", column: "category" },       to: { table: "categories",      column: "id" } },
-  { from: { object: "v_transactions", column: "payee" },          to: { table: "payees",          column: "id" } },
-  { from: { object: "v_transactions", column: "parent_id" },      to: { table: "transactions",    column: "id" } },
-  { from: { object: "v_transactions", column: "transfer_id" },    to: { table: "transactions",    column: "id" } },
-  { from: { object: "v_transactions", column: "schedule" },       to: { table: "schedules",       column: "id" } },
-  { from: { object: "v_categories",   column: "group" },          to: { table: "category_groups", column: "id" } },
-  { from: { object: "v_payees",       column: "transfer_acct" },  to: { table: "accounts",        column: "id" } },
-  { from: { object: "v_schedules",    column: "rule" },           to: { table: "rules",           column: "id" } },
-  { from: { object: "v_schedules",    column: "_payee" },         to: { table: "payees",          column: "id" } },
-  // Raw tables
-  { from: { object: "categories",             column: "cat_group" },    to: { table: "category_groups", column: "id" } },
-  { from: { object: "schedules",              column: "rule" },         to: { table: "rules",           column: "id" } },
-  { from: { object: "payees",                 column: "transfer_acct" },to: { table: "accounts",        column: "id" } },
-  { from: { object: "transactions",           column: "acct" },         to: { table: "accounts",        column: "id" } },
-  { from: { object: "transactions",           column: "category" },     to: { table: "categories",      column: "id" } },
-  { from: { object: "transactions",           column: "parent_id" },    to: { table: "transactions",    column: "id" } },
-  { from: { object: "transactions",           column: "transferred_id" },to:{ table: "transactions",    column: "id" } },
-  { from: { object: "transactions",           column: "schedule" },     to: { table: "schedules",       column: "id" } },
-  { from: { object: "pending_transactions",   column: "acct" },         to: { table: "accounts",        column: "id" } },
-  { from: { object: "payee_mapping",          column: "targetId" },     to: { table: "payees",          column: "id" } },
-  { from: { object: "category_mapping",       column: "transferId" },   to: { table: "categories",      column: "id" } },
-  { from: { object: "payee_locations",        column: "payee_id" },     to: { table: "payees",          column: "id" } },
-  { from: { object: "schedules_next_date",    column: "schedule_id" },  to: { table: "schedules",       column: "id" } },
-  { from: { object: "schedules_json_paths",   column: "schedule_id" },  to: { table: "schedules",       column: "id" } },
-  { from: { object: "dashboard",              column: "dashboard_page_id" }, to: { table: "dashboard_pages", column: "id" } },
-  { from: { object: "reflect_budgets",        column: "category" },     to: { table: "categories",      column: "id" } },
-  { from: { object: "zero_budgets",           column: "category" },     to: { table: "categories",      column: "id" } },
-];
+export type RelationshipKind = "view" | "raw";
+export type RelationshipSeverity = "warning" | "info";
+
+export type Relationship = {
+  code: string;                   // stable diagnostic code, also used by M6e drill-in
+  kind: RelationshipKind;         // "raw" → orphan-checked by M5; "view" → drill-in target only
+  from: { object: string; column: string };
+  to:   { table: string;  column: string };
+  title: string;                  // finding title (raw kind only)
+  severity: RelationshipSeverity; // default severity (raw kind only)
+  skipWhere?: string;             // optional SQL predicate on the left side
+};
+
+export const RELATIONSHIPS: readonly Relationship[] = [ /* see M5.1 catalog */ ];
 ```
+
+Consumers:
+- `diagnosticChecks.ts` reads `RELATIONSHIPS.filter(r => r.kind === "raw")` for orphan checks.
+- `RowDetailsSheet` (M6e) reads the whole array for drill-in link targets, keyed by `from.object` + `from.column`.
+- `relationshipMap.test.ts` (M5.1) enforces that every `from`/`to` pair resolves against `EXPECTED_TABLES` / `EXPECTED_VIEWS` / `EXPECTED_COLUMNS`.
 
 ---
 
@@ -475,6 +936,9 @@ export const RELATIONSHIPS: readonly Relation[] = [
 | Large CSV export freezes the UI | Stream from the worker in 10k-row chunks; write into a `ReadableStream` backing a `Blob`; show progress |
 | Binary proxy breaks the JSON queue | Extract `serverQueueTails` into a shared module so both routes share it (tested) |
 | Users click "Run full integrity check" on a huge DB | Button shows estimated cost ("may take minutes on large budgets"); always runnable, never blocking other queries |
+| `PRAGMA integrity_check` hits the default worker timeout | Per-request timeout override in `sqliteWorkerClient.ts` (M6a scope item 11). `runIntegrityCheck` runs with no timeout; heartbeat `progress` messages every 5s surface "still running" to the UI |
+| CSV export of a large object freezes the UI or blows up memory | Worker-owned cursor protocol, 10k-row chunks, main-thread string concat; warn + confirm when estimated output exceeds 200 MB (M6f scope items 3 + 6) |
+| Relationship logic drifts between M5 and M6e | `relationshipMap.ts` introduced in M5.1 is the only source; both consumers import from it; `relationshipMap.test.ts` pins object/column names against the expected schema |
 | Schema drift vs upstream Actual | `expectedSchema.ts` header documents snapshot date + version; missing-column warnings are *warnings* not errors |
 | `babel-plugin-react-compiler` + worker | Worker file is outside the compiler's scope; no expected issue, but add an `eslint-disable` comment only if the compiler complains |
 
@@ -496,4 +960,4 @@ export const RELATIONSHIPS: readonly Relation[] = [
 - Manual verification on two real budgets of different sizes.
 - `FEATURES.md`, `README.md` (if entry points changed), `agents/future-roadmap.md` updated.
 - Screenshot of the three sections attached to the PR description.
-- Commit style matches `AGENTS.md`: `feat:`, `fix:`, etc. Branch `feat/rd-006-budget-diagnostics`. Author `Manaf`, GitHub user `x-rous`. No auto-commit / auto-push.
+- Commit style matches `AGENTS.md`: `feat:`, `fix:`, etc. Branch `feat/002-budget-diaganostics-page`. Author `Manaf`, GitHub user `x-rous`. No auto-commit / auto-push.

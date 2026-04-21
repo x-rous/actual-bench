@@ -49,10 +49,12 @@ class FakeDiagnosticDb implements DiagnosticDb {
     const relationMatch = /FROM "([^"]+)" l\s+LEFT JOIN "([^"]+)" r/.exec(sql);
     const rowIdColumnMatch = /SELECT l\."([^"]+)" AS rowId/.exec(sql);
     const columnMatch = /l\."([^"]+)" AS relatedId/.exec(sql);
-    if (relationMatch && rowIdColumnMatch && columnMatch) {
+    const targetColumnMatch = /ON l\."[^"]+" = r\."([^"]+)"/.exec(sql);
+    if (relationMatch && rowIdColumnMatch && columnMatch && targetColumnMatch) {
       const [, table, relatedTable] = relationMatch;
       const rowIdColumn = rowIdColumnMatch[1];
       const column = columnMatch[1];
+      const targetColumn = targetColumnMatch[1];
       const leftRows = this.objects.get(table)?.rows ?? [];
       const rightRows = this.objects.get(relatedTable)?.rows ?? [];
       const childOnly = sql.includes('l."isChild" = 1');
@@ -61,7 +63,12 @@ class FakeDiagnosticDb implements DiagnosticDb {
         .filter((row) => row[column] !== null && row[column] !== undefined)
         .filter((row) => row.tombstone !== 1)
         .filter((row) => !childOnly || row.isChild === 1)
-        .filter((row) => !rightRows.some((right) => right.id === row[column] && right.tombstone !== 1))
+        .filter(
+          (row) =>
+            !rightRows.some(
+              (right) => right[targetColumn] === row[column] && right.tombstone !== 1
+            )
+        )
         .map((row) => ({ rowId: String(row[rowIdColumn]), relatedId: String(row[column]) })) as unknown as T[];
     }
 
@@ -100,7 +107,82 @@ function buildDb(): FakeDiagnosticDb {
   for (const view of EXPECTED_VIEWS) {
     db.addObject(view, "view", EXPECTED_COLUMNS[view], [{ id: `${view}-id` }]);
   }
+
+  db.addObject("accounts", "table", EXPECTED_COLUMNS.accounts, [{ id: "account-1" }]);
+  db.addObject("category_groups", "table", EXPECTED_COLUMNS.category_groups, [
+    { id: "group-1" },
+  ]);
+  db.addObject("categories", "table", EXPECTED_COLUMNS.categories, [
+    { id: "category-1", cat_group: "group-1", tombstone: 0 },
+  ]);
+  db.addObject("category_mapping", "table", EXPECTED_COLUMNS.category_mapping, [
+    { id: "category-map-1", transferId: "category-1" },
+  ]);
+  db.addObject("rules", "table", EXPECTED_COLUMNS.rules, [{ id: "rule-1", tombstone: 0 }]);
+  db.addObject("schedules", "table", EXPECTED_COLUMNS.schedules, [
+    { id: "schedule-1", rule: "rule-1", tombstone: 0 },
+  ]);
+  db.addObject("payees", "table", EXPECTED_COLUMNS.payees, [
+    {
+      id: "payee-1",
+      category: "category-1",
+      transfer_acct: "account-1",
+      tombstone: 0,
+    },
+  ]);
+  db.addObject("payee_mapping", "table", EXPECTED_COLUMNS.payee_mapping, [
+    { id: "payee-map-1", targetId: "payee-1" },
+  ]);
+  db.addObject("transactions", "table", EXPECTED_COLUMNS.transactions, [
+    {
+      id: "transaction-parent",
+      isChild: 0,
+      acct: "account-1",
+      category: "category-map-1",
+      description: "payee-map-1",
+      tombstone: 0,
+    },
+    {
+      id: "transaction-child",
+      isChild: 1,
+      acct: "account-1",
+      category: "category-map-1",
+      description: "payee-map-1",
+      parent_id: "transaction-parent",
+      transferred_id: "transaction-parent",
+      schedule: "schedule-1",
+      tombstone: 0,
+    },
+  ]);
+  db.addObject("schedules_next_date", "table", EXPECTED_COLUMNS.schedules_next_date, [
+    { id: "schedule-next-1", schedule_id: "schedule-1", tombstone: 0 },
+  ]);
+  db.addObject("schedules_json_paths", "table", EXPECTED_COLUMNS.schedules_json_paths, [
+    { schedule_id: "schedule-1" },
+  ]);
+  db.addObject("dashboard_pages", "table", EXPECTED_COLUMNS.dashboard_pages, [
+    { id: "dashboard-page-1" },
+  ]);
+  db.addObject("dashboard", "table", EXPECTED_COLUMNS.dashboard, [
+    { id: "dashboard-1", dashboard_page_id: "dashboard-page-1", tombstone: 0 },
+  ]);
+  db.addObject("payee_locations", "table", EXPECTED_COLUMNS.payee_locations, [
+    { id: "payee-location-1", payee_id: "payee-1", tombstone: 0 },
+  ]);
+  db.addObject("reflect_budgets", "table", EXPECTED_COLUMNS.reflect_budgets, [
+    { id: "reflect-budget-1", category: "category-1" },
+  ]);
+  db.addObject("zero_budgets", "table", EXPECTED_COLUMNS.zero_budgets, [
+    { id: "zero-budget-1", category: "category-1" },
+  ]);
+
   return db;
+}
+
+function relationshipFindings(db: FakeDiagnosticDb) {
+  return runDiagnosticChecks(db, FULL_METADATA).filter((finding) =>
+    finding.code.startsWith("REL_")
+  );
 }
 
 describe("diagnosticChecks", () => {
@@ -108,6 +190,10 @@ describe("diagnosticChecks", () => {
     const findings = runDiagnosticChecks(buildDb(), FULL_METADATA);
 
     expect(findings.filter((finding) => finding.severity === "error")).toEqual([]);
+  });
+
+  it("does not produce relationship findings for a clean linked snapshot", () => {
+    expect(relationshipFindings(buildDb())).toEqual([]);
   });
 
   it("reports category group orphan relationships with row context", () => {
@@ -129,6 +215,157 @@ describe("diagnosticChecks", () => {
       relatedTable: "category_groups",
       relatedId: "missing-group",
     });
+  });
+
+  it("reports missing category mappings referenced by transactions", () => {
+    const db = buildDb();
+    db.addObject("category_mapping", "table", EXPECTED_COLUMNS.category_mapping, []);
+    db.addObject("transactions", "table", EXPECTED_COLUMNS.transactions, [
+      {
+        id: "transaction-1",
+        isChild: 0,
+        acct: "account-1",
+        category: "category-map-1",
+        description: "payee-map-1",
+        tombstone: 0,
+      },
+    ]);
+
+    expect(relationshipFindings(db)).toEqual([
+      expect.objectContaining({
+        code: "REL_TRANSACTION_ORPHAN_CATEGORY_MAPPING",
+        severity: "warning",
+        table: "transactions",
+        rowId: "transaction-1",
+        relatedTable: "category_mapping",
+        relatedId: "category-map-1",
+      }),
+    ]);
+  });
+
+  it("reports missing payee mappings referenced by transactions", () => {
+    const db = buildDb();
+    db.addObject("payee_mapping", "table", EXPECTED_COLUMNS.payee_mapping, []);
+    db.addObject("transactions", "table", EXPECTED_COLUMNS.transactions, [
+      {
+        id: "transaction-1",
+        isChild: 0,
+        acct: "account-1",
+        category: "category-map-1",
+        description: "payee-map-1",
+        tombstone: 0,
+      },
+    ]);
+
+    expect(relationshipFindings(db)).toEqual([
+      expect.objectContaining({
+        code: "REL_TRANSACTION_ORPHAN_PAYEE_MAPPING",
+        severity: "warning",
+        table: "transactions",
+        rowId: "transaction-1",
+        relatedTable: "payee_mapping",
+        relatedId: "payee-map-1",
+      }),
+    ]);
+  });
+
+  it("reports missing categories referenced by category mappings", () => {
+    const db = buildDb();
+    db.addObject("categories", "table", EXPECTED_COLUMNS.categories, [
+      { id: "category-other", cat_group: "group-1", tombstone: 0 },
+    ]);
+    db.addObject("payees", "table", EXPECTED_COLUMNS.payees, [
+      { id: "payee-1", category: "category-other", transfer_acct: "account-1", tombstone: 0 },
+    ]);
+    db.addObject("reflect_budgets", "table", EXPECTED_COLUMNS.reflect_budgets, [
+      { id: "reflect-budget-1", category: "category-other" },
+    ]);
+    db.addObject("zero_budgets", "table", EXPECTED_COLUMNS.zero_budgets, [
+      { id: "zero-budget-1", category: "category-other" },
+    ]);
+
+    const findings = relationshipFindings(db);
+
+    expect(findings).toEqual([
+      expect.objectContaining({
+        code: "REL_CATEGORY_MAPPING_ORPHAN_TRANSFER",
+        severity: "warning",
+        table: "category_mapping",
+        rowId: "category-map-1",
+        relatedTable: "categories",
+        relatedId: "category-1",
+      }),
+    ]);
+  });
+
+  it("reports missing payees referenced by payee mappings", () => {
+    const db = buildDb();
+    db.addObject("payees", "table", EXPECTED_COLUMNS.payees, []);
+    db.addObject("payee_locations", "table", EXPECTED_COLUMNS.payee_locations, []);
+
+    expect(relationshipFindings(db)).toEqual([
+      expect.objectContaining({
+        code: "REL_PAYEE_MAPPING_ORPHAN_TARGET",
+        severity: "warning",
+        table: "payee_mapping",
+        rowId: "payee-map-1",
+        relatedTable: "payees",
+        relatedId: "payee-1",
+      }),
+    ]);
+  });
+
+  it("reports missing categories referenced by payees", () => {
+    const db = buildDb();
+    db.addObject("payees", "table", EXPECTED_COLUMNS.payees, [
+      { id: "payee-1", category: "missing-category", transfer_acct: "account-1", tombstone: 0 },
+    ]);
+    db.addObject("payee_mapping", "table", EXPECTED_COLUMNS.payee_mapping, [
+      { id: "payee-map-1", targetId: "payee-1" },
+    ]);
+    db.addObject("payee_locations", "table", EXPECTED_COLUMNS.payee_locations, [
+      { id: "payee-location-1", payee_id: "payee-1", tombstone: 0 },
+    ]);
+
+    expect(relationshipFindings(db)).toEqual([
+      expect.objectContaining({
+        code: "REL_PAYEE_ORPHAN_CATEGORY",
+        severity: "warning",
+        table: "payees",
+        rowId: "payee-1",
+        relatedTable: "categories",
+        relatedId: "missing-category",
+      }),
+    ]);
+  });
+
+  it("softens stale transaction transfer and schedule relationships to info", () => {
+    const db = buildDb();
+    db.addObject("transactions", "table", EXPECTED_COLUMNS.transactions, [
+      {
+        id: "transaction-1",
+        isChild: 0,
+        acct: "account-1",
+        category: "category-map-1",
+        description: "payee-map-1",
+        transferred_id: "missing-transfer",
+        schedule: "missing-schedule",
+        tombstone: 0,
+      },
+    ]);
+
+    expect(relationshipFindings(db)).toEqual([
+      expect.objectContaining({
+        code: "REL_TRANSACTION_ORPHAN_TRANSFER",
+        severity: "info",
+        relatedId: "missing-transfer",
+      }),
+      expect.objectContaining({
+        code: "REL_TRANSACTION_ORPHAN_SCHEDULE",
+        severity: "info",
+        relatedId: "missing-schedule",
+      }),
+    ]);
   });
 
   it("uses the relationship column as row context when the table has no id column", () => {
