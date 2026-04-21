@@ -1,5 +1,5 @@
 import { EXPECTED_COLUMNS, EXPECTED_TABLES, EXPECTED_VIEWS } from "./expectedSchema";
-import { RELATIONSHIPS } from "./relationshipMap";
+import { findRelationship, relationshipsFromObject, RELATIONSHIPS } from "./relationshipMap";
 
 describe("relationshipMap", () => {
   it("uses unique relationship codes", () => {
@@ -18,5 +18,22 @@ describe("relationshipMap", () => {
       expect(EXPECTED_COLUMNS[relationship.from.object]).toContain(relationship.from.column);
       expect(EXPECTED_COLUMNS[relationship.to.table]).toContain(relationship.to.column);
     }
+  });
+
+  it("finds relationships by source object and column", () => {
+    expect(findRelationship("transactions", "category")).toMatchObject({
+      to: { table: "category_mapping", column: "id" },
+      kind: "raw",
+    });
+    expect(findRelationship("v_transactions", "category")).toMatchObject({
+      to: { table: "categories", column: "id" },
+      kind: "view",
+    });
+    expect(findRelationship("transactions", "missing")).toBeNull();
+  });
+
+  it("lists relationships for a source object", () => {
+    expect(relationshipsFromObject("payees").map((relationship) => relationship.from.column))
+      .toEqual(expect.arrayContaining(["transfer_acct", "category"]));
   });
 });

@@ -29,7 +29,8 @@
 - Paginated row browser fetches table/view rows through the SQLite worker with bounded page sizes, sticky headers, horizontal scrolling, worker-side sorting, and URL state for object, page, page size, sort column, and sort direction
 - Schema tab shows object type, parent table where available, row count, inferred row key, columns, table indexes, and raw `CREATE ...` SQL from the exported SQLite schema
 - Cell rendering keeps raw money-like integers, formats transaction dates and obvious budget months, displays boolean-ish integer fields compactly, marks BLOBs as binary with a hex preview tooltip, and preserves raw values in titles
-- Row actions copy JSON to the clipboard, serializing BLOB fields as base64, and open a raw row details preview in the side panel
+- Row actions copy JSON to the clipboard, serializing BLOB fields as base64, and open a stackable row details panel in the side pane
+- Relationship-aware drill-in turns known linked cells into navigable references, using the same relationship map as diagnostics; raw storage rows and featured-view rows are labeled separately in the details panel
 - Indexes and triggers are listed as schema objects but clearly marked as not row-browsable
 
 ## Rules

@@ -142,6 +142,16 @@ export type FetchRowsPayload = {
   rowCount: number;
 };
 
+export type LookupRowPayload = {
+  object: string;
+  objectType: SchemaObjectType;
+  columns: string[];
+  row: Record<string, unknown> | null;
+  keyColumn: string;
+  keyValue: unknown;
+  rowKey: RowKeyInfo | null;
+};
+
 export type WorkerRequest =
   | { id: string; kind: "init"; wasmUrl: string }
   | {
@@ -165,6 +175,13 @@ export type WorkerRequest =
       limit: number;
       orderBy?: string;
       direction?: "asc" | "desc";
+    }
+  | {
+      id: string;
+      kind: "lookupRow";
+      object: string;
+      keyValue: unknown;
+      keyColumn?: string;
     };
 
 type WithoutRequestId<T> = T extends { id: string } ? Omit<T, "id"> : never;
@@ -186,4 +203,5 @@ export type WorkerResultByKind = {
   getSchemaObject: SchemaObjectDetails;
   tableCounts: TableCountsPayload;
   fetchRows: FetchRowsPayload;
+  lookupRow: LookupRowPayload;
 };

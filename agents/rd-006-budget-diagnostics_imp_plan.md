@@ -91,7 +91,7 @@ Ordered so each merges in a working state. Each bullet = one commit.
 | 9  | M6b — Data Browser shell + object list | ✅ shipped |
 | 10 | M6c — Paginated Table Browser | ✅ shipped |
 | 11 | M6d — Schema Explorer tab | ✅ shipped |
-| 12 | M6e — Relationship-aware drill-in + row details (depends on M5.1) | planned |
+| 12 | M6e — Relationship-aware drill-in + row details (depends on M5.1) | ✅ shipped |
 | 13 | M6f — Full object CSV export | planned |
 | 14 | M7 — Polish, banner, tests, docs, PR prep | planned |
 
@@ -849,7 +849,26 @@ The current page stacks Overview, Diagnostics, and Data Browser vertically. That
 
 ---
 
-### M6e — Relationship-aware drill-in + row details
+### M6e — Relationship-aware drill-in + row details ✅ shipped
+
+**Status:** complete. Lint / `tsc --noEmit` / `npm test` all green (32 suites, 384 tests, 3 new). `npm run lint` reports the expected React Compiler `react-hooks/incompatible-library` warning for TanStack Table. `next build` bundle inspection was intentionally not run in the Docker-hosted dev workspace.
+
+**Files delivered**
+- `src/features/budget-diagnostics/components/RowDetailsSheet.tsx` (new) — stackable right-side row details panel with back/close controls, stack cap of 10, source-layer labels (`source: raw storage` / `source: featured view`), unresolved target state, and outbound relationship links.
+- `src/features/budget-diagnostics/components/DataBrowserSection.tsx` — replaces the M6c raw preview with `RowDetailsSheet`, clears the stack on object switch, enforces stack cap behavior, and resolves relationship links through the worker.
+- `src/features/budget-diagnostics/components/TableBrowser.tsx` — turns mapped table cells into drill-in links and opens row actions into the stackable details panel.
+- `src/features/budget-diagnostics/lib/relationshipMap.ts` — keeps `RELATIONSHIPS` as the single source of truth and adds lookup helpers for source object/column resolution.
+- `src/features/budget-diagnostics/lib/relationshipMap.test.ts` — covers source relationship lookup and object relationship listing.
+- `src/features/budget-diagnostics/lib/schemaObjects.ts` — adds read-only `lookupRow` by object + explicit key column, using M6a schema validation and row-key inference.
+- `src/features/budget-diagnostics/lib/schemaObjects.test.ts` — covers row lookup by inferred and explicit keys, including missing target rows.
+- `src/features/budget-diagnostics/workers/sqliteDiagnostics.worker.ts` — exposes the new `lookupRow` worker message.
+- `src/features/budget-diagnostics/types.ts` — adds `LookupRowPayload` and worker protocol types.
+- `FEATURES.md` — documents relationship-aware drill-in.
+
+**Notes for future milestones**
+- M6e still uses the M6c/M6d table browser as the entry point; M6f should not bypass this stack when adding export actions.
+- Missing target rows are represented as unresolved row detail entries instead of thrown UI errors. This keeps drill-in behavior aligned with M5 relationship diagnostics.
+- Relationship links are resolved exclusively through `relationshipMap.ts`. If M6f or M7 needs additional link behavior, update the shared map instead of adding another relationship catalog.
 
 **Files**
 - `src/features/budget-diagnostics/components/RowDetailsSheet.tsx`

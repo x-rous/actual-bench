@@ -2,6 +2,7 @@ import type {
   ColumnInfo,
   FetchRowsPayload,
   IndexInfo,
+  LookupRowPayload,
   RowKeyInfo,
   SchemaObjectDetails,
   SchemaObjectGroup,
@@ -258,6 +259,19 @@ function validateOffset(offset: number): number {
   return offset;
 }
 
+function sqlLiteral(value: unknown): string {
+  if (value === null || value === undefined) return "NULL";
+  if (typeof value === "number") {
+    if (!Number.isFinite(value)) throw new Error(`Invalid SQL literal: ${String(value)}`);
+    return String(value);
+  }
+  if (typeof value === "boolean") return value ? "1" : "0";
+  if (value instanceof Uint8Array) {
+    throw new Error("Binary values cannot be used as row lookup keys");
+  }
+  return `'${String(value).replaceAll("'", "''")}'`;
+}
+
 export function fetchRows(
   db: SchemaDb,
   request: {
@@ -296,5 +310,49 @@ export function fetchRows(
     offset,
     limit,
     rowCount,
+  };
+}
+
+export function lookupRow(
+  db: SchemaDb,
+  request: {
+    object: string;
+    keyValue: unknown;
+    keyColumn?: string;
+  }
+): LookupRowPayload {
+  const schemaRow = getSchemaRow(db, request.object);
+  if (!objectSupportsRows(schemaRow.type)) {
+    throw new Error(`Schema object is not row-browsable: ${request.object}`);
+  }
+
+  const columns = getColumns(db, schemaRow.name);
+  const rowKey = inferRowKey(db, schemaRow.name, schemaRow.type, columns);
+  const keyColumn = request.keyColumn ?? rowKey?.column;
+  if (!keyColumn) {
+    throw new Error(`No row key available for schema object: ${request.object}`);
+  }
+
+  const columnNames = columns.map((column) => column.name);
+  if (keyColumn === "rowid") {
+    if (!rowKey || rowKey.source !== "rowid") {
+      throw new Error(`Unknown lookup column: ${keyColumn}`);
+    }
+  } else {
+    assertKnownIdentifier(keyColumn, columnNames, "lookup column");
+  }
+
+  const rows = db.selectRows<Record<string, unknown>>(
+    `SELECT * FROM ${quoteIdentifier(schemaRow.name)} WHERE ${quoteIdentifier(keyColumn)} = ${sqlLiteral(request.keyValue)} LIMIT 1`
+  );
+
+  return {
+    object: schemaRow.name,
+    objectType: schemaRow.type,
+    columns: columnNames,
+    row: rows[0] ?? null,
+    keyColumn,
+    keyValue: request.keyValue,
+    rowKey,
   };
 }

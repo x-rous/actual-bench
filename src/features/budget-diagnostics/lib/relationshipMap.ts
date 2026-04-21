@@ -238,3 +238,16 @@ export const RELATIONSHIPS: readonly Relationship[] = [
     severity: "info",
   },
 ];
+
+export function findRelationship(object: string, column: string): Relationship | null {
+  return (
+    RELATIONSHIPS.find(
+      (relationship) =>
+        relationship.from.object === object && relationship.from.column === column
+    ) ?? null
+  );
+}
+
+export function relationshipsFromObject(object: string): Relationship[] {
+  return RELATIONSHIPS.filter((relationship) => relationship.from.object === object);
+}

@@ -9,6 +9,7 @@ import {
   fetchRows,
   getSchemaObject,
   listSchemaObjects,
+  lookupRow,
   tableCounts,
   type SchemaDb,
 } from "../lib/schemaObjects";
@@ -279,6 +280,8 @@ function handleRequest(request: WorkerRequest): Promise<unknown> | unknown {
       return tableCounts(createSchemaDb(requireDb()), request.names);
     case "fetchRows":
       return fetchRows(createSchemaDb(requireDb()), request);
+    case "lookupRow":
+      return lookupRow(createSchemaDb(requireDb()), request);
   }
 }
 

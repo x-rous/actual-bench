@@ -4,6 +4,7 @@ import {
   getSchemaObject,
   inferRowKey,
   listSchemaObjects,
+  lookupRow,
   tableCounts,
   type SchemaDb,
 } from "./schemaObjects";
@@ -88,6 +89,16 @@ class FakeSchemaDb implements SchemaDb {
       const offset = Number(offsetValue);
       const limit = Number(limitValue);
       return rows.slice(offset, offset + limit) as T[];
+    }
+
+    const lookupMatch = /SELECT \* FROM "([^"]+)" WHERE "([^"]+)" = (.+) LIMIT 1/.exec(sql);
+    if (lookupMatch) {
+      const [, objectName, keyColumn, rawValue] = lookupMatch;
+      const object = this.objects.get(objectName);
+      const value = rawValue.startsWith("'")
+        ? rawValue.slice(1, -1).replaceAll("''", "'")
+        : Number(rawValue);
+      return (object?.rows.filter((row) => row[keyColumn] === value).slice(0, 1) ?? []) as T[];
     }
 
     return [];
@@ -254,6 +265,34 @@ describe("schemaObjects", () => {
         transactions: 1,
         messages_crdt_ai: null,
       },
+    });
+  });
+
+  it("looks up rows by inferred or explicit keys", () => {
+    expect(
+      lookupRow(buildDb(), {
+        object: "transactions",
+        keyValue: "tx-1",
+      })
+    ).toMatchObject({
+      object: "transactions",
+      objectType: "table",
+      keyColumn: "id",
+      row: { id: "tx-1", date: 20260401 },
+    });
+
+    expect(
+      lookupRow(buildDb(), {
+        object: "v_transactions",
+        keyColumn: "payee",
+        keyValue: "missing",
+      })
+    ).toMatchObject({
+      object: "v_transactions",
+      objectType: "view",
+      keyColumn: "payee",
+      keyValue: "missing",
+      row: null,
     });
   });
 

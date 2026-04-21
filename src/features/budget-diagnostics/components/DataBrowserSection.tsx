@@ -1,13 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { AlertCircle, Loader2, PanelRight, TableProperties, X } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
-import { formatCellDisplay } from "../lib/cellFormatters";
+import { AlertCircle, Loader2, TableProperties } from "lucide-react";
+import { toast } from "sonner";
+import type { Relationship } from "../lib/relationshipMap";
 import { getSqliteWorkerClient } from "../lib/sqliteWorkerClient";
 import { defaultSchemaObjectSelection } from "../lib/schemaObjectGroups";
 import type { SchemaObjectSummary } from "../types";
-import { TableBrowser, type RowDetailsPreview } from "./TableBrowser";
+import { RowDetailsSheet, type RowDetailsEntry } from "./RowDetailsSheet";
+import { TableBrowser } from "./TableBrowser";
 import { TableList, type TableListSortMode } from "./TableList";
 
 type DataBrowserState =
@@ -44,7 +44,7 @@ export function DataBrowserSection({ snapshotStatus }: DataBrowserSectionProps) 
     error: null,
   });
   const [selectedName, setSelectedName] = useState<string | null>(null);
-  const [rowDetails, setRowDetails] = useState<RowDetailsPreview | null>(null);
+  const [rowStack, setRowStack] = useState<RowDetailsEntry[]>([]);
   const [search, setSearch] = useState("");
   const [sortMode, setSortMode] = useState<TableListSortMode>("name");
 
@@ -101,7 +101,7 @@ export function DataBrowserSection({ snapshotStatus }: DataBrowserSectionProps) 
   }, [objectParam, snapshotStatus, state.objects]);
 
   useEffect(() => {
-    setRowDetails(null);
+    setRowStack([]);
   }, [selectedName]);
 
   useEffect(() => {
@@ -131,6 +131,41 @@ export function DataBrowserSection({ snapshotStatus }: DataBrowserSectionProps) 
     params.delete("sort");
     params.delete("dir");
     router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+  };
+
+  const pushRowEntry = (entry: RowDetailsEntry) => {
+    setRowStack((current) => {
+      const next = [...current, entry];
+      if (next.length <= 10) return next;
+      toast("Older drill-in entries collapsed");
+      return next.slice(-10);
+    });
+  };
+
+  const followRelationship = (relationship: Relationship, value: unknown) => {
+    async function run() {
+      try {
+        const payload = await getSqliteWorkerClient().call({
+          kind: "lookupRow",
+          object: relationship.to.table,
+          keyColumn: relationship.to.column,
+          keyValue: value,
+        });
+        pushRowEntry({
+          object: payload.object,
+          objectType: payload.objectType,
+          sourceLayer: "raw",
+          columns: payload.columns,
+          row: payload.row,
+          keyColumn: payload.keyColumn,
+          keyValue: payload.keyValue,
+        });
+      } catch (error) {
+        toast.error(getErrorMessage(error));
+      }
+    }
+
+    void run();
   };
 
   return (
@@ -215,7 +250,11 @@ export function DataBrowserSection({ snapshotStatus }: DataBrowserSectionProps) 
 
           <div className="min-h-0 overflow-hidden">
             {selectedObject ? (
-              <TableBrowser object={selectedObject} onOpenRowDetails={setRowDetails} />
+              <TableBrowser
+                object={selectedObject}
+                onOpenRowDetails={pushRowEntry}
+                onFollowRelationship={followRelationship}
+              />
             ) : (
               <div className="flex min-h-80 items-center justify-center text-sm text-muted-foreground">
                 Select a schema object to inspect.
@@ -224,73 +263,15 @@ export function DataBrowserSection({ snapshotStatus }: DataBrowserSectionProps) 
           </div>
 
           <aside className="hidden min-h-0 border-l border-border px-5 py-4 lg:block">
-            <RowDetailsPanel details={rowDetails} onClose={() => setRowDetails(null)} />
+            <RowDetailsSheet
+              stack={rowStack}
+              onBack={() => setRowStack((current) => current.slice(0, -1))}
+              onClose={() => setRowStack([])}
+              onFollowRelationship={followRelationship}
+            />
           </aside>
         </div>
       )}
     </section>
-  );
-}
-
-function RowDetailsPanel({
-  details,
-  onClose,
-}: {
-  details: RowDetailsPreview | null;
-  onClose: () => void;
-}) {
-  if (!details) {
-    return (
-      <div className="flex items-start gap-2 text-sm text-muted-foreground">
-        <PanelRight className="mt-0.5 h-4 w-4" />
-        <div>
-          <p className="font-medium text-foreground">Row details</p>
-          <p className="mt-1">
-            Open a row from the table to inspect raw values. Relationship drill-in arrives
-            in M6e.
-          </p>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="flex h-full min-h-0 flex-col">
-      <div className="flex shrink-0 items-start justify-between gap-3 border-b border-border pb-3">
-        <div className="min-w-0">
-          <p className="truncate text-sm font-medium text-foreground" title={details.object}>
-            {details.object}
-          </p>
-          <p className="mt-0.5 text-xs text-muted-foreground">
-            Row {details.rowNumber.toLocaleString("en-US")}
-          </p>
-        </div>
-        <Button type="button" variant="ghost" size="icon-xs" onClick={onClose} title="Close">
-          <X />
-        </Button>
-      </div>
-      <div className="min-h-0 flex-1 overflow-auto py-3">
-        <div className="space-y-2">
-          {details.columns.map((column) => {
-            const display = formatCellDisplay(column, details.row[column]);
-            return (
-              <div key={column} className="min-w-0">
-                <div className="text-[11px] font-medium text-muted-foreground">{column}</div>
-                <div
-                  title={display.title}
-                  className={cn(
-                    "mt-0.5 break-words font-mono text-xs text-foreground",
-                    display.kind === "null" && "text-muted-foreground/50",
-                    display.kind === "binary" && "text-amber-700 dark:text-amber-400"
-                  )}
-                >
-                  {display.text}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-    </div>
   );
 }

@@ -18,6 +18,7 @@ import {
   formatCellDisplay,
   stringifyRowForClipboard,
 } from "../lib/cellFormatters";
+import { findRelationship, type Relationship } from "../lib/relationshipMap";
 import { getSqliteWorkerClient } from "../lib/sqliteWorkerClient";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type {
@@ -25,6 +26,7 @@ import type {
   SchemaObjectDetails,
   SchemaObjectSummary,
 } from "../types";
+import type { RowDetailsEntry } from "./RowDetailsSheet";
 import { SchemaObjectDetails as SchemaObjectDetailsView } from "./SchemaObjectDetails";
 
 const PAGE_SIZE_OPTIONS = [50, 100, 250, 500] as const;
@@ -33,13 +35,6 @@ const SLOW_QUERY_MS = 2000;
 
 type PageSize = (typeof PAGE_SIZE_OPTIONS)[number];
 type SortDirection = "asc" | "desc";
-
-export type RowDetailsPreview = {
-  object: string;
-  columns: string[];
-  row: Record<string, unknown>;
-  rowNumber: number;
-};
 
 type BrowserState =
   | { status: "idle" | "loading" }
@@ -57,7 +52,8 @@ type BrowserState =
 
 type TableBrowserProps = {
   object: SchemaObjectSummary;
-  onOpenRowDetails: (preview: RowDetailsPreview) => void;
+  onOpenRowDetails: (entry: RowDetailsEntry) => void;
+  onFollowRelationship: (relationship: Relationship, value: unknown) => void;
 };
 
 function parsePage(value: string | null): number {
@@ -134,7 +130,37 @@ function rowKey(
   return `${rowNumber}:${keyColumn ?? "row"}:${String(keyValue ?? "")}`;
 }
 
-export function TableBrowser({ object, onOpenRowDetails }: TableBrowserProps) {
+function sourceLayerForObject(type: SchemaObjectDetails["type"]): RowDetailsEntry["sourceLayer"] {
+  return type === "view" ? "view" : "raw";
+}
+
+function buildRowDetailsEntry({
+  details,
+  row,
+  rowNumber,
+}: {
+  details: SchemaObjectDetails;
+  row: Record<string, unknown>;
+  rowNumber: number;
+}): RowDetailsEntry {
+  const keyColumn = details.rowKey?.column ?? null;
+  return {
+    object: details.name,
+    objectType: details.type,
+    sourceLayer: sourceLayerForObject(details.type),
+    columns: Object.keys(row).length > 0 ? details.columns.map((column) => column.name) : [],
+    row,
+    keyColumn,
+    keyValue: keyColumn ? row[keyColumn] : rowNumber,
+    rowNumber,
+  };
+}
+
+export function TableBrowser({
+  object,
+  onOpenRowDetails,
+  onFollowRelationship,
+}: TableBrowserProps) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -412,6 +438,7 @@ export function TableBrowser({ object, onOpenRowDetails }: TableBrowserProps) {
                     onSort={handleSort}
                     onCopyRow={copyRow}
                     onOpenRowDetails={onOpenRowDetails}
+                    onFollowRelationship={onFollowRelationship}
                   />
                 )}
               </>
@@ -442,6 +469,7 @@ function RowsTable({
   onSort,
   onCopyRow,
   onOpenRowDetails,
+  onFollowRelationship,
 }: {
   details: SchemaObjectDetails;
   payload: FetchRowsPayload;
@@ -452,7 +480,8 @@ function RowsTable({
   objectName: string;
   onSort: (column: string) => void;
   onCopyRow: (row: Record<string, unknown>) => void;
-  onOpenRowDetails: (preview: RowDetailsPreview) => void;
+  onOpenRowDetails: (entry: RowDetailsEntry) => void;
+  onFollowRelationship: (relationship: Relationship, value: unknown) => void;
 }) {
   return (
     <div className="min-h-0 flex-1 overflow-auto">
@@ -505,6 +534,12 @@ function RowsTable({
               >
                 {payload.columns.map((column) => {
                   const display = formatCellDisplay(column, row[column]);
+                  const relationship = findRelationship(objectName, column);
+                  const linked =
+                    relationship &&
+                    row[column] !== null &&
+                    row[column] !== undefined &&
+                    !(typeof row[column] === "string" && row[column] === "");
                   return (
                     <td
                       key={column}
@@ -517,7 +552,17 @@ function RowsTable({
                           "text-right tabular-nums"
                       )}
                     >
-                      {display.text}
+                      {linked ? (
+                        <button
+                          type="button"
+                          onClick={() => onFollowRelationship(relationship, row[column])}
+                          className="max-w-full truncate text-primary underline-offset-2 hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                        >
+                          {display.text}
+                        </button>
+                      ) : (
+                        display.text
+                      )}
                     </td>
                   );
                 })}
@@ -536,14 +581,7 @@ function RowsTable({
                       type="button"
                       variant="ghost"
                       size="icon-xs"
-                      onClick={() =>
-                        onOpenRowDetails({
-                          object: objectName,
-                          columns: payload.columns,
-                          row,
-                          rowNumber,
-                        })
-                      }
+                      onClick={() => onOpenRowDetails(buildRowDetailsEntry({ details, row, rowNumber }))}
                       title="Open row details"
                     >
                       <PanelRightOpen />
