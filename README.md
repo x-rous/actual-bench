@@ -22,7 +22,7 @@ Useful for power users who want more control over their budget data, and for tes
 - **Multi-server, multi-budget** - save and switch between connections without leaking data between sessions
 - **Schedules management** - create and edit one-time and recurring schedules with full recurrence controls, amount modes, and weekend adjustment
 - **ActualQL query workspace** - run ad-hoc ActualQL queries against your budget, inspect results as table / raw JSON / scalar / collapsible tree, save and replay named query packs, and copy a cURL command for any executed query
-- **Budget Diagnostics** *(planned)* - inspect exported budget snapshots in a read-only workspace with diagnostics and data browsing
+- **Budget Diagnostics** - inspect exported budget snapshots in a read-only local workspace with overview metrics, diagnostics, and paginated SQLite data browsing
 
 ## Architecture
 
@@ -229,7 +229,6 @@ Ready-to-use sample CSV files are included in [`public/samples csv/`](public/sam
 ## Coming Soon
 
 - **Rule diagnostics** - detect conflicting, shadowed, or redundant rules across stages
-- **Budget Diagnostics** - inspect exported budget snapshots in a read-only workspace with overview, diagnostics, and data browsing
 
 ## Known Limitations
 

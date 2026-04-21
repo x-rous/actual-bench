@@ -1,8 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
-import { AlertCircle, Database, Loader2, PanelRight, TableProperties } from "lucide-react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { AlertCircle, Loader2, PanelRight, TableProperties, X } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
+import { formatCellDisplay } from "../lib/cellFormatters";
 import { getSqliteWorkerClient } from "../lib/sqliteWorkerClient";
 import { defaultSchemaObjectSelection } from "../lib/schemaObjectGroups";
 import type { SchemaObjectSummary } from "../types";
+import { TableBrowser, type RowDetailsPreview } from "./TableBrowser";
 import { TableList, type TableListSortMode } from "./TableList";
 
 type DataBrowserState =
@@ -28,24 +33,18 @@ function getErrorMessage(error: unknown): string {
   return "Unable to load schema objects.";
 }
 
-function formatRowCount(value: number | null): string {
-  return value === null ? "Not row-browsable" : value.toLocaleString("en-US");
-}
-
-function objectSubtitle(object: SchemaObjectSummary): string {
-  if (object.type === "index" || object.type === "trigger") {
-    return `${object.type} - schema object`;
-  }
-  return object.featured ? "featured view" : object.type;
-}
-
 export function DataBrowserSection({ snapshotStatus }: DataBrowserSectionProps) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const objectParam = searchParams.get("obj");
   const [state, setState] = useState<DataBrowserState>({
     status: "idle",
     objects: [],
     error: null,
   });
   const [selectedName, setSelectedName] = useState<string | null>(null);
+  const [rowDetails, setRowDetails] = useState<RowDetailsPreview | null>(null);
   const [search, setSearch] = useState("");
   const [sortMode, setSortMode] = useState<TableListSortMode>("name");
 
@@ -73,12 +72,6 @@ export function DataBrowserSection({ snapshotStatus }: DataBrowserSectionProps) 
           objects: payload.objects,
           error: null,
         });
-        setSelectedName((current) => {
-          if (current && payload.objects.some((object) => object.name === current)) {
-            return current;
-          }
-          return defaultSchemaObjectSelection(payload.objects)?.name ?? null;
-        });
       } catch (error) {
         if (cancelled) return;
         setState((current) => ({
@@ -96,6 +89,31 @@ export function DataBrowserSection({ snapshotStatus }: DataBrowserSectionProps) 
     };
   }, [snapshotStatus]);
 
+  useEffect(() => {
+    if (snapshotStatus !== "ready" || state.objects.length === 0) return;
+    const urlObject =
+      objectParam && state.objects.find((object) => object.name === objectParam);
+    setSelectedName((current) => {
+      if (urlObject) return urlObject.name;
+      if (current && state.objects.some((object) => object.name === current)) return current;
+      return defaultSchemaObjectSelection(state.objects)?.name ?? null;
+    });
+  }, [objectParam, snapshotStatus, state.objects]);
+
+  useEffect(() => {
+    setRowDetails(null);
+  }, [selectedName]);
+
+  useEffect(() => {
+    if (!selectedName || objectParam === selectedName) return;
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("obj", selectedName);
+    params.set("p", "1");
+    params.delete("sort");
+    params.delete("dir");
+    router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+  }, [objectParam, pathname, router, searchParams, selectedName]);
+
   const selectedObject = useMemo(
     () => state.objects.find((object) => object.name === selectedName) ?? null,
     [selectedName, state.objects]
@@ -105,6 +123,16 @@ export function DataBrowserSection({ snapshotStatus }: DataBrowserSectionProps) 
   ).length;
   const schemaOnly = state.objects.length - tablesAndViews;
 
+  const selectObject = (object: SchemaObjectSummary) => {
+    setSelectedName(object.name);
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("obj", object.name);
+    params.set("p", "1");
+    params.delete("sort");
+    params.delete("dir");
+    router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+  };
+
   return (
     <section className="flex min-h-0 flex-1 flex-col bg-background">
       <div className="flex shrink-0 flex-wrap items-start justify-between gap-3 border-b border-border px-4 py-4 lg:px-5">
@@ -113,7 +141,7 @@ export function DataBrowserSection({ snapshotStatus }: DataBrowserSectionProps) 
           <div>
             <h2 className="text-lg font-semibold">Data Browser</h2>
             <p className="mt-1 text-sm text-muted-foreground">
-              Browse schema objects from the exported snapshot. Row browsing arrives in M6c.
+              Browse schema objects and paginated rows from the exported snapshot.
             </p>
           </div>
         </div>
@@ -181,54 +209,13 @@ export function DataBrowserSection({ snapshotStatus }: DataBrowserSectionProps) 
               sortMode={sortMode}
               onSearchChange={setSearch}
               onSortModeChange={setSortMode}
-              onSelect={(object) => setSelectedName(object.name)}
+              onSelect={selectObject}
             />
           </aside>
 
-          <div className="min-h-0 overflow-auto px-4 py-4 lg:px-5">
+          <div className="min-h-0 overflow-hidden">
             {selectedObject ? (
-              <div className="space-y-4">
-                <div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Database className="h-4 w-4 text-muted-foreground" />
-                    <h3 className="text-base font-semibold">{selectedObject.name}</h3>
-                  </div>
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    {objectSubtitle(selectedObject)}
-                  </p>
-                </div>
-
-                <div className="grid gap-3 sm:grid-cols-3">
-                  <div className="rounded-md border border-border/70 bg-muted/12 p-3">
-                    <div className="text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
-                      Type
-                    </div>
-                    <div className="mt-2 text-sm font-medium">{selectedObject.type}</div>
-                  </div>
-                  <div className="rounded-md border border-border/70 bg-muted/12 p-3">
-                    <div className="text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
-                      Rows
-                    </div>
-                    <div className="mt-2 text-sm font-medium">
-                      {formatRowCount(selectedObject.rowCount)}
-                    </div>
-                  </div>
-                  <div className="rounded-md border border-border/70 bg-muted/12 p-3">
-                    <div className="text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
-                      Group
-                    </div>
-                    <div className="mt-2 text-sm font-medium">{selectedObject.group}</div>
-                  </div>
-                </div>
-
-                <div className="rounded-md border border-dashed border-border bg-muted/20 p-5">
-                  <p className="text-sm font-medium">Table browser arrives next</p>
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    M6c will render paginated rows here. M6d will add the schema tab for
-                    columns, indexes, and raw SQL.
-                  </p>
-                </div>
-              </div>
+              <TableBrowser object={selectedObject} onOpenRowDetails={setRowDetails} />
             ) : (
               <div className="flex min-h-80 items-center justify-center text-sm text-muted-foreground">
                 Select a schema object to inspect.
@@ -237,19 +224,73 @@ export function DataBrowserSection({ snapshotStatus }: DataBrowserSectionProps) 
           </div>
 
           <aside className="hidden min-h-0 border-l border-border px-5 py-4 lg:block">
-            <div className="flex items-start gap-2 text-sm text-muted-foreground">
-              <PanelRight className="mt-0.5 h-4 w-4" />
-              <div>
-                <p className="font-medium text-foreground">Row details</p>
-                <p className="mt-1">
-                  Drill-in details are reserved for M6e and will open here when linked cells
-                  are available.
-                </p>
-              </div>
-            </div>
+            <RowDetailsPanel details={rowDetails} onClose={() => setRowDetails(null)} />
           </aside>
         </div>
       )}
     </section>
+  );
+}
+
+function RowDetailsPanel({
+  details,
+  onClose,
+}: {
+  details: RowDetailsPreview | null;
+  onClose: () => void;
+}) {
+  if (!details) {
+    return (
+      <div className="flex items-start gap-2 text-sm text-muted-foreground">
+        <PanelRight className="mt-0.5 h-4 w-4" />
+        <div>
+          <p className="font-medium text-foreground">Row details</p>
+          <p className="mt-1">
+            Open a row from the table to inspect raw values. Relationship drill-in arrives
+            in M6e.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="flex shrink-0 items-start justify-between gap-3 border-b border-border pb-3">
+        <div className="min-w-0">
+          <p className="truncate text-sm font-medium text-foreground" title={details.object}>
+            {details.object}
+          </p>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            Row {details.rowNumber.toLocaleString("en-US")}
+          </p>
+        </div>
+        <Button type="button" variant="ghost" size="icon-xs" onClick={onClose} title="Close">
+          <X />
+        </Button>
+      </div>
+      <div className="min-h-0 flex-1 overflow-auto py-3">
+        <div className="space-y-2">
+          {details.columns.map((column) => {
+            const display = formatCellDisplay(column, details.row[column]);
+            return (
+              <div key={column} className="min-w-0">
+                <div className="text-[11px] font-medium text-muted-foreground">{column}</div>
+                <div
+                  title={display.title}
+                  className={cn(
+                    "mt-0.5 break-words font-mono text-xs text-foreground",
+                    display.kind === "null" && "text-muted-foreground/50",
+                    display.kind === "binary" && "text-amber-700 dark:text-amber-400"
+                  )}
+                >
+                  {display.text}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
   );
 }

@@ -89,7 +89,7 @@ Ordered so each merges in a working state. Each bullet = one commit.
 | 7  | M6-pre — Workbench tab structure | ✅ shipped |
 | 8  | M6a — Data Browser worker read API + schema catalog | ✅ shipped |
 | 9  | M6b — Data Browser shell + object list | ✅ shipped |
-| 10 | M6c — Paginated Table Browser | planned |
+| 10 | M6c — Paginated Table Browser | ✅ shipped |
 | 11 | M6d — Schema Explorer tab | planned |
 | 12 | M6e — Relationship-aware drill-in + row details (depends on M5.1) | planned |
 | 13 | M6f — Full object CSV export | planned |
@@ -743,7 +743,23 @@ The current page stacks Overview, Diagnostics, and Data Browser vertically. That
 
 ---
 
-### M6c — Paginated Table Browser
+### M6c — Paginated Table Browser ✅ shipped
+
+**Status:** complete. Lint / `tsc --noEmit` / `npm test` all green (32 suites, 380 tests, 6 new). `npm run lint` reports the expected React Compiler `react-hooks/incompatible-library` warning for TanStack Table. `next build` bundle inspection was intentionally not run in the Docker-hosted dev workspace.
+
+**Files delivered**
+- `src/features/budget-diagnostics/components/TableBrowser.tsx` (new) — dense read-only table/view browser with worker-backed pagination, bounded page sizes, sticky headers, horizontal scroll, worker-side sorting, slow sorted-fetch hint, row JSON copy, and row details action.
+- `src/features/budget-diagnostics/components/DataBrowserSection.tsx` — wires `TableBrowser` into the center pane, persists selected object in `obj`, resets paging/sorting on object switch, and uses the right pane for a lightweight raw row details preview while relationship drill-in remains reserved for M6e.
+- `src/features/budget-diagnostics/lib/cellFormatters.ts` (new) — column-aware cell rendering for dates, obvious budget months, boolean-ish integers, nulls, JSON-ish values, raw money-like integers, and BLOB values with hex preview; row JSON copy serializes BLOBs as `{ "$base64": "..." }`.
+- `src/features/budget-diagnostics/lib/cellFormatters.test.ts` (new) — covers date/month/boolean/raw amount/BLOB formatting and base64-safe row serialization.
+- `FEATURES.md` — documents shipped Budget Diagnostics behavior, including the paginated Data Browser.
+- `README.md` — updates Budget Diagnostics from planned to shipped read-only diagnostics/data browsing.
+
+**Notes for future milestones**
+- M6c intentionally implements a raw row details preview only. Relationship-aware stack navigation, linked cells, unresolved relationship states, and source-layer labeling remain in M6e.
+- M6c measures elapsed time around the browser-side `fetchRows` worker request and surfaces the slow sorted-query hint when a sorted fetch exceeds 2s; the worker payload contract was not changed.
+- Page size URL state uses the pinned `ps` parameter from M6-pre/M6c URL contract, not the earlier prose mention of `pageSize`.
+- Indexes/triggers remain selectable in the object list but render a schema-only empty state instead of issuing `fetchRows`.
 
 **Files**
 - `src/features/budget-diagnostics/components/TableBrowser.tsx`
