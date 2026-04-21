@@ -19,11 +19,13 @@ import {
   stringifyRowForClipboard,
 } from "../lib/cellFormatters";
 import { getSqliteWorkerClient } from "../lib/sqliteWorkerClient";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type {
   FetchRowsPayload,
   SchemaObjectDetails,
   SchemaObjectSummary,
 } from "../types";
+import { SchemaObjectDetails as SchemaObjectDetailsView } from "./SchemaObjectDetails";
 
 const PAGE_SIZE_OPTIONS = [50, 100, 250, 500] as const;
 const DEFAULT_PAGE_SIZE = 100;
@@ -44,7 +46,7 @@ type BrowserState =
   | {
       status: "ready";
       details: SchemaObjectDetails;
-      payload: FetchRowsPayload;
+      payload: FetchRowsPayload | null;
       page: number;
       pageSize: PageSize;
       sortColumn: string | null;
@@ -144,6 +146,7 @@ export function TableBrowser({ object, onOpenRowDetails }: TableBrowserProps) {
   const pageSize = parsePageSize(pageSizeParam);
   const requestedDirection = parseDirection(directionParam);
   const [state, setState] = useState<BrowserState>({ status: "idle" });
+  const [activePanel, setActivePanel] = useState<"data" | "schema">("data");
 
   const canBrowseRows = object.type === "table" || object.type === "view";
 
@@ -154,17 +157,28 @@ export function TableBrowser({ object, onOpenRowDetails }: TableBrowserProps) {
   };
 
   useEffect(() => {
-    if (!canBrowseRows) {
-      return;
-    }
-
     let cancelled = false;
 
-    async function loadRows() {
+    async function loadObject() {
       setState({ status: "loading" });
       try {
         const client = getSqliteWorkerClient();
         const details = await client.call({ kind: "getSchemaObject", name: object.name });
+        if (details.type !== "table" && details.type !== "view") {
+          if (cancelled) return;
+          setState({
+            status: "ready",
+            details,
+            payload: null,
+            page: 1,
+            pageSize,
+            sortColumn: null,
+            sortDirection: null,
+            elapsedMs: 0,
+          });
+          return;
+        }
+
         const columns = new Set(details.columns.map((column) => column.name));
         const sortColumn = sortParam && columns.has(sortParam) ? sortParam : null;
         const sortDirection = sortColumn ? requestedDirection ?? "asc" : null;
@@ -198,13 +212,12 @@ export function TableBrowser({ object, onOpenRowDetails }: TableBrowserProps) {
       }
     }
 
-    void loadRows();
+    void loadObject();
 
     return () => {
       cancelled = true;
     };
   }, [
-    canBrowseRows,
     object.name,
     pageSize,
     requestedDirection,
@@ -214,6 +227,7 @@ export function TableBrowser({ object, onOpenRowDetails }: TableBrowserProps) {
 
   const slowSortedFetch =
     state.status === "ready" &&
+    state.payload !== null &&
     Boolean(state.sortColumn) &&
     state.elapsedMs > SLOW_QUERY_MS;
 
@@ -253,24 +267,17 @@ export function TableBrowser({ object, onOpenRowDetails }: TableBrowserProps) {
       .catch(() => toast.error("Failed to copy row JSON"));
   };
 
-  const pageTotal = state.status === "ready" ? pageCount(state.payload.rowCount, state.pageSize) : 1;
+  const pageTotal =
+    state.status === "ready" && state.payload
+      ? pageCount(state.payload.rowCount, state.pageSize)
+      : 1;
 
   const rows = useMemo(
-    () => (state.status === "ready" ? state.payload.rows : []),
+    () => (state.status === "ready" && state.payload ? state.payload.rows : []),
     [state]
   );
 
-  if (!canBrowseRows) {
-    return (
-      <div className="flex h-full min-h-0 flex-col">
-        <BrowserHeader title={object.name} subtitle={`${object.type} schema object`} />
-        <div className="flex min-h-0 flex-1 items-center justify-center px-4 py-10 text-sm text-muted-foreground">
-          Indexes and triggers are schema-only objects. Row browsing is available for
-          tables and views.
-        </div>
-      </div>
-    );
-  }
+  const tabsValue = canBrowseRows ? activePanel : "schema";
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden">
@@ -278,7 +285,7 @@ export function TableBrowser({ object, onOpenRowDetails }: TableBrowserProps) {
         title={object.name}
         subtitle={object.featured ? "featured view" : object.type}
       >
-        {state.status === "ready" && (
+        {state.status === "ready" && state.payload && (
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-xs text-muted-foreground">{rowRange(state.payload)}</span>
             {state.sortColumn && (
@@ -299,7 +306,7 @@ export function TableBrowser({ object, onOpenRowDetails }: TableBrowserProps) {
       {state.status === "loading" && (
         <div className="flex min-h-0 flex-1 items-center justify-center text-sm text-muted-foreground">
           <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-          Loading rows
+          Loading schema object
         </div>
       )}
 
@@ -308,7 +315,7 @@ export function TableBrowser({ object, onOpenRowDetails }: TableBrowserProps) {
           <div className="flex gap-3">
             <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
             <div>
-              <p className="text-sm font-medium text-destructive">Rows failed to load</p>
+              <p className="text-sm font-medium text-destructive">Object failed to load</p>
               <p className="mt-1 text-sm text-muted-foreground">{state.message}</p>
             </div>
           </div>
@@ -316,164 +323,238 @@ export function TableBrowser({ object, onOpenRowDetails }: TableBrowserProps) {
       )}
 
       {state.status === "ready" && (
-        <>
-          <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-border px-3 py-2">
-            <div className="text-xs text-muted-foreground">
-              {state.payload.rowCount.toLocaleString("en-US")} total row
-              {state.payload.rowCount !== 1 ? "s" : ""}
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <label className="flex items-center gap-2 text-xs text-muted-foreground">
-                Rows
-                <select
-                  value={state.pageSize}
-                  onChange={(event) => setPageSize(Number(event.target.value) as PageSize)}
-                  className="h-7 rounded-md border border-border bg-background px-2 text-xs text-foreground outline-none focus:border-ring focus:ring-1 focus:ring-ring"
-                >
-                  {PAGE_SIZE_OPTIONS.map((option) => (
-                    <option key={option} value={option}>
-                      {option}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <div className="flex items-center gap-1">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="icon-xs"
-                  disabled={state.page <= 1}
-                  onClick={() => setPage(state.page - 1)}
-                  title="Previous page"
-                >
-                  <ChevronLeft />
-                </Button>
-                <span className="min-w-20 text-center text-xs text-muted-foreground">
-                  {state.page} / {pageTotal}
-                </span>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="icon-xs"
-                  disabled={state.page >= pageTotal}
-                  onClick={() => setPage(state.page + 1)}
-                  title="Next page"
-                >
-                  <ChevronRight />
-                </Button>
-              </div>
-            </div>
-          </div>
+        <Tabs
+          value={tabsValue}
+          onValueChange={(value) => {
+            if (value === "data" || value === "schema") setActivePanel(value);
+          }}
+          className="min-h-0 flex-1 overflow-hidden"
+        >
+          <TabsList className="flex shrink-0 border-b border-border">
+            <TabsTrigger
+              value="data"
+              disabled={!canBrowseRows}
+              className="border-b-2 border-transparent px-4 py-2 after:hidden data-[active]:border-primary disabled:pointer-events-none disabled:opacity-40"
+            >
+              Data
+            </TabsTrigger>
+            <TabsTrigger
+              value="schema"
+              className="border-b-2 border-transparent px-4 py-2 after:hidden data-[active]:border-primary"
+            >
+              Schema
+            </TabsTrigger>
+          </TabsList>
+          <TabsContent value="data" className="flex min-h-0 flex-1 flex-col overflow-hidden">
+            {state.payload ? (
+              <>
+                <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-border px-3 py-2">
+                  <div className="text-xs text-muted-foreground">
+                    {state.payload.rowCount.toLocaleString("en-US")} total row
+                    {state.payload.rowCount !== 1 ? "s" : ""}
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                      Rows
+                      <select
+                        value={state.pageSize}
+                        onChange={(event) => setPageSize(Number(event.target.value) as PageSize)}
+                        className="h-7 rounded-md border border-border bg-background px-2 text-xs text-foreground outline-none focus:border-ring focus:ring-1 focus:ring-ring"
+                      >
+                        {PAGE_SIZE_OPTIONS.map((option) => (
+                          <option key={option} value={option}>
+                            {option}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <div className="flex items-center gap-1">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="icon-xs"
+                        disabled={state.page <= 1}
+                        onClick={() => setPage(state.page - 1)}
+                        title="Previous page"
+                      >
+                        <ChevronLeft />
+                      </Button>
+                      <span className="min-w-20 text-center text-xs text-muted-foreground">
+                        {state.page} / {pageTotal}
+                      </span>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="icon-xs"
+                        disabled={state.page >= pageTotal}
+                        onClick={() => setPage(state.page + 1)}
+                        title="Next page"
+                      >
+                        <ChevronRight />
+                      </Button>
+                    </div>
+                  </div>
+                </div>
 
-          {rows.length === 0 ? (
-            <div className="flex min-h-0 flex-1 items-center justify-center text-sm text-muted-foreground">
-              No rows found for this page.
-            </div>
-          ) : (
-            <div className="min-h-0 flex-1 overflow-auto">
-              <table className="w-full text-xs">
-                <thead className="sticky top-0 z-10">
-                  <tr className="border-b border-border bg-muted">
-                    {state.payload.columns.map((column) => (
-                      <th
-                        key={column}
-                        aria-sort={
-                          state.sortColumn !== column
-                            ? "none"
-                            : state.sortDirection === "asc"
-                              ? "ascending"
-                              : "descending"
-                        }
-                        className="whitespace-nowrap px-0 py-0 text-left font-medium text-muted-foreground"
-                      >
-                        <button
-                          type="button"
-                          onClick={() => handleSort(column)}
-                          className="inline-flex w-full cursor-pointer items-center px-3 py-1.5 transition-colors select-none hover:bg-muted/80 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset focus-visible:outline-none"
-                        >
-                          {column}
-                          <SortIcon
-                            column={column}
-                            sortColumn={state.sortColumn}
-                            sortDirection={state.sortDirection}
-                          />
-                          {slowSortedFetch && state.sortColumn === column && (
-                            <span className="ml-2 text-[10px] text-amber-600 dark:text-amber-500">
-                              slow
-                            </span>
-                          )}
-                        </button>
-                      </th>
-                    ))}
-                    <th className="w-20 whitespace-nowrap px-3 py-1.5 text-right font-medium text-muted-foreground">
-                      Actions
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {rows.map((row, index) => {
-                    const rowNumber = state.payload.offset + index + 1;
-                    return (
-                      <tr
-                        key={rowKey(state.details, row, rowNumber)}
-                        className="border-b border-border/40 hover:bg-muted/20"
-                      >
-                        {state.payload.columns.map((column) => {
-                          const display = formatCellDisplay(column, row[column]);
-                          return (
-                            <td
-                              key={column}
-                              title={display.title}
-                              className={cn(
-                                "max-w-48 truncate px-3 py-1.5 font-mono text-foreground",
-                                display.kind === "null" && "text-muted-foreground/50",
-                                display.kind === "binary" && "text-amber-700 dark:text-amber-400",
-                                (display.kind === "number" || isNumericCell(row[column])) &&
-                                  "text-right tabular-nums"
-                              )}
-                            >
-                              {display.text}
-                            </td>
-                          );
-                        })}
-                        <td className="whitespace-nowrap px-3 py-1.5 text-right">
-                          <div className="flex justify-end gap-1">
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon-xs"
-                              onClick={() => copyRow(row)}
-                              title="Copy row JSON"
-                            >
-                              <Copy />
-                            </Button>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon-xs"
-                              onClick={() =>
-                                onOpenRowDetails({
-                                  object: object.name,
-                                  columns: state.payload.columns,
-                                  row,
-                                  rowNumber,
-                                })
-                              }
-                              title="Open row details"
-                            >
-                              <PanelRightOpen />
-                            </Button>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </>
+                {rows.length === 0 ? (
+                  <div className="flex min-h-0 flex-1 items-center justify-center text-sm text-muted-foreground">
+                    No rows found for this page.
+                  </div>
+                ) : (
+                  <RowsTable
+                    details={state.details}
+                    payload={state.payload}
+                    rows={rows}
+                    sortColumn={state.sortColumn}
+                    sortDirection={state.sortDirection}
+                    slowSortedFetch={slowSortedFetch}
+                    objectName={object.name}
+                    onSort={handleSort}
+                    onCopyRow={copyRow}
+                    onOpenRowDetails={onOpenRowDetails}
+                  />
+                )}
+              </>
+            ) : (
+              <div className="flex min-h-0 flex-1 items-center justify-center px-4 py-10 text-sm text-muted-foreground">
+                Indexes and triggers are schema-only objects. Row browsing is available for
+                tables and views.
+              </div>
+            )}
+          </TabsContent>
+          <TabsContent value="schema" className="flex min-h-0 flex-1 overflow-hidden">
+            <SchemaObjectDetailsView details={state.details} />
+          </TabsContent>
+        </Tabs>
       )}
+    </div>
+  );
+}
+
+function RowsTable({
+  details,
+  payload,
+  rows,
+  sortColumn,
+  sortDirection,
+  slowSortedFetch,
+  objectName,
+  onSort,
+  onCopyRow,
+  onOpenRowDetails,
+}: {
+  details: SchemaObjectDetails;
+  payload: FetchRowsPayload;
+  rows: Record<string, unknown>[];
+  sortColumn: string | null;
+  sortDirection: SortDirection | null;
+  slowSortedFetch: boolean;
+  objectName: string;
+  onSort: (column: string) => void;
+  onCopyRow: (row: Record<string, unknown>) => void;
+  onOpenRowDetails: (preview: RowDetailsPreview) => void;
+}) {
+  return (
+    <div className="min-h-0 flex-1 overflow-auto">
+      <table className="w-full text-xs">
+        <thead className="sticky top-0 z-10">
+          <tr className="border-b border-border bg-muted">
+            {payload.columns.map((column) => (
+              <th
+                key={column}
+                aria-sort={
+                  sortColumn !== column
+                    ? "none"
+                    : sortDirection === "asc"
+                      ? "ascending"
+                      : "descending"
+                }
+                className="whitespace-nowrap px-0 py-0 text-left font-medium text-muted-foreground"
+              >
+                <button
+                  type="button"
+                  onClick={() => onSort(column)}
+                  className="inline-flex w-full cursor-pointer items-center px-3 py-1.5 transition-colors select-none hover:bg-muted/80 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset focus-visible:outline-none"
+                >
+                  {column}
+                  <SortIcon
+                    column={column}
+                    sortColumn={sortColumn}
+                    sortDirection={sortDirection}
+                  />
+                  {slowSortedFetch && sortColumn === column && (
+                    <span className="ml-2 text-[10px] text-amber-600 dark:text-amber-500">
+                      slow
+                    </span>
+                  )}
+                </button>
+              </th>
+            ))}
+            <th className="w-20 whitespace-nowrap px-3 py-1.5 text-right font-medium text-muted-foreground">
+              Actions
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row, index) => {
+            const rowNumber = payload.offset + index + 1;
+            return (
+              <tr
+                key={rowKey(details, row, rowNumber)}
+                className="border-b border-border/40 hover:bg-muted/20"
+              >
+                {payload.columns.map((column) => {
+                  const display = formatCellDisplay(column, row[column]);
+                  return (
+                    <td
+                      key={column}
+                      title={display.title}
+                      className={cn(
+                        "max-w-48 truncate px-3 py-1.5 font-mono text-foreground",
+                        display.kind === "null" && "text-muted-foreground/50",
+                        display.kind === "binary" && "text-amber-700 dark:text-amber-400",
+                        (display.kind === "number" || isNumericCell(row[column])) &&
+                          "text-right tabular-nums"
+                      )}
+                    >
+                      {display.text}
+                    </td>
+                  );
+                })}
+                <td className="whitespace-nowrap px-3 py-1.5 text-right">
+                  <div className="flex justify-end gap-1">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-xs"
+                      onClick={() => onCopyRow(row)}
+                      title="Copy row JSON"
+                    >
+                      <Copy />
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-xs"
+                      onClick={() =>
+                        onOpenRowDetails({
+                          object: objectName,
+                          columns: payload.columns,
+                          row,
+                          rowNumber,
+                        })
+                      }
+                      title="Open row details"
+                    >
+                      <PanelRightOpen />
+                    </Button>
+                  </div>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
     </div>
   );
 }

@@ -90,7 +90,7 @@ Ordered so each merges in a working state. Each bullet = one commit.
 | 8  | M6a — Data Browser worker read API + schema catalog | ✅ shipped |
 | 9  | M6b — Data Browser shell + object list | ✅ shipped |
 | 10 | M6c — Paginated Table Browser | ✅ shipped |
-| 11 | M6d — Schema Explorer tab | planned |
+| 11 | M6d — Schema Explorer tab | ✅ shipped |
 | 12 | M6e — Relationship-aware drill-in + row details (depends on M5.1) | planned |
 | 13 | M6f — Full object CSV export | planned |
 | 14 | M7 — Polish, banner, tests, docs, PR prep | planned |
@@ -803,7 +803,22 @@ The current page stacks Overview, Diagnostics, and Data Browser vertically. That
 
 ---
 
-### M6d — Schema Explorer tab inside Table Browser
+### M6d — Schema Explorer tab inside Table Browser ✅ shipped
+
+**Status:** complete. Lint / `tsc --noEmit` / `npm test` all green (32 suites, 381 tests, 1 new). `npm run lint` reports the expected React Compiler `react-hooks/incompatible-library` warning for TanStack Table. `next build` bundle inspection was intentionally not run in the Docker-hosted dev workspace.
+
+**Files delivered**
+- `src/features/budget-diagnostics/components/SchemaObjectDetails.tsx` (new) — renders object type, parent table, row count, inferred row key, columns from `PRAGMA table_info`, table indexes from `PRAGMA index_list`, and raw `CREATE ...` SQL.
+- `src/features/budget-diagnostics/components/TableBrowser.tsx` — adds inner `Data` / `Schema` tabs; loads schema details for every selected schema object; fetches rows only for tables/views; keeps indexes/triggers on the Schema tab with a schema-only Data empty state.
+- `src/features/budget-diagnostics/types.ts` — adds `tableName` to `SchemaObjectDetails`.
+- `src/features/budget-diagnostics/lib/schemaObjects.ts` — returns `sqlite_schema.tbl_name` as `tableName` from `getSchemaObject`.
+- `src/features/budget-diagnostics/lib/schemaObjects.test.ts` — covers parent table names for schema-only objects.
+- `FEATURES.md` — documents the Schema tab behavior.
+
+**Notes for future milestones**
+- Relationship-aware row drill-in remains out of scope and belongs to M6e. M6d only displays schema metadata and keeps the M6c raw row details preview unchanged.
+- `getSchemaObject` now returns `tableName` for all object types. M6e can use this for index/trigger context if needed, but relationship lookup should still rely on `relationshipMap.ts`.
+- Indexes/triggers are selectable and useful in Schema, but the Data tab remains disabled/empty because they are not row-browsable.
 
 **Files**
 - `src/features/budget-diagnostics/components/SchemaObjectDetails.tsx`

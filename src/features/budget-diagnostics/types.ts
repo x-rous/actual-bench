@@ -117,6 +117,7 @@ export type SchemaObjectSummary = {
 export type SchemaObjectDetails = {
   name: string;
   type: SchemaObjectType;
+  tableName: string | null;
   sql: string | null;
   columns: ColumnInfo[];
   indexes: IndexInfo[];

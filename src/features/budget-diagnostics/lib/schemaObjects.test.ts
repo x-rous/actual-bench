@@ -13,6 +13,7 @@ type Row = Record<string, unknown>;
 type FakeObject = {
   name: string;
   type: SchemaObjectType;
+  tableName?: string | null;
   sql: string | null;
   columns: Array<{ name: string; type?: string; pk?: number }>;
   rows: Row[];
@@ -41,7 +42,7 @@ class FakeSchemaDb implements SchemaDb {
         .map((object) => ({
           name: object.name,
           type: object.type,
-          tbl_name: object.name,
+          tbl_name: object.tableName ?? object.name,
           sql: object.sql,
         }))
         .sort((a, b) => a.name.localeCompare(b.name)) as unknown as T[];
@@ -132,6 +133,7 @@ function buildDb() {
   db.addObject({
     name: "messages_crdt_row_idx",
     type: "index",
+    tableName: "messages_crdt",
     sql: "CREATE INDEX messages_crdt_row_idx ON messages_crdt(row)",
     columns: [],
     rows: [],
@@ -139,6 +141,7 @@ function buildDb() {
   db.addObject({
     name: "messages_crdt_ai",
     type: "trigger",
+    tableName: "messages_crdt",
     sql: "CREATE TRIGGER messages_crdt_ai AFTER INSERT ON messages_crdt BEGIN SELECT 1; END",
     columns: [],
     rows: [],
@@ -180,6 +183,7 @@ describe("schemaObjects", () => {
     expect(details).toMatchObject({
       name: "transactions",
       type: "table",
+      tableName: "transactions",
       sql: "CREATE TABLE transactions (id TEXT PRIMARY KEY, date INTEGER)",
       rowCount: 1,
       rowKey: { column: "id", source: "primaryKey" },
@@ -188,6 +192,15 @@ describe("schemaObjects", () => {
     expect(details.indexes).toEqual([
       { name: "transactions_id_idx", unique: true, origin: "pk", partial: false },
     ]);
+  });
+
+  it("returns parent table names for schema-only objects", () => {
+    expect(getSchemaObject(buildDb(), "messages_crdt_row_idx")).toMatchObject({
+      name: "messages_crdt_row_idx",
+      type: "index",
+      tableName: "messages_crdt",
+      rowCount: null,
+    });
   });
 
   it("fetches bounded, paginated rows with validated sorting", () => {

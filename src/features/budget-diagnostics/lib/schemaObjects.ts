@@ -221,6 +221,7 @@ export function getSchemaObject(db: SchemaDb, name: string): SchemaObjectDetails
   return {
     name: row.name,
     type: row.type,
+    tableName: row.tbl_name ?? null,
     sql: row.sql ?? null,
     columns,
     indexes: getIndexes(db, row.name, row.type),
