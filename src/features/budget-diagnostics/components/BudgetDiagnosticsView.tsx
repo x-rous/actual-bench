@@ -48,6 +48,8 @@ const INITIAL_SNAPSHOT_STATE: SnapshotState = {
 };
 
 const WORKBENCH_TABS: readonly WorkbenchTab[] = ["overview", "diagnostics", "data"];
+const WORKBENCH_TAB_CLASS =
+  "group flex flex-1 items-center justify-center gap-1 rounded-none border-x-0 border-t-0 border-b-2 border-transparent bg-transparent px-2 py-2 text-[12px] font-medium text-muted-foreground transition-colors after:hidden hover:text-foreground focus-visible:ring-0 data-[active]:border-primary data-[active]:text-foreground lg:flex-none lg:px-6";
 
 function isWorkbenchTab(value: string | null): value is WorkbenchTab {
   return WORKBENCH_TABS.includes(value as WorkbenchTab);
@@ -315,16 +317,16 @@ export function BudgetDiagnosticsView() {
         className="flex min-h-0 flex-1 flex-col overflow-hidden"
       >
         <div className="flex shrink-0 flex-col border-b border-border bg-background lg:flex-row lg:items-center lg:justify-between">
-          <TabsList className="flex w-full shrink-0 border-b border-border lg:w-auto lg:min-w-[30rem] lg:border-b-0">
+          <TabsList className="flex w-full shrink-0 border-b border-border bg-background lg:w-auto lg:min-w-[30rem] lg:border-b-0">
             <TabsTrigger
               value="overview"
-              className="group flex flex-1 items-center justify-center gap-1 border-b-2 border-transparent px-2 py-2 text-[12px] font-medium text-muted-foreground transition-colors after:hidden hover:text-foreground data-[active]:border-primary data-[active]:text-foreground lg:flex-none lg:px-6"
+              className={WORKBENCH_TAB_CLASS}
             >
               Overview
             </TabsTrigger>
             <TabsTrigger
               value="diagnostics"
-              className="group flex flex-1 items-center justify-center gap-1 border-b-2 border-transparent px-2 py-2 text-[12px] font-medium text-muted-foreground transition-colors after:hidden hover:text-foreground data-[active]:border-primary data-[active]:text-foreground lg:flex-none lg:px-6"
+              className={WORKBENCH_TAB_CLASS}
             >
               Diagnostics
               {snapshot.diagnosticsStatus === "ready" && (
@@ -335,7 +337,7 @@ export function BudgetDiagnosticsView() {
             </TabsTrigger>
             <TabsTrigger
               value="data"
-              className="group flex flex-1 items-center justify-center gap-1 border-b-2 border-transparent px-2 py-2 text-[12px] font-medium text-muted-foreground transition-colors after:hidden hover:text-foreground data-[active]:border-primary data-[active]:text-foreground lg:flex-none lg:px-6"
+              className={WORKBENCH_TAB_CLASS}
             >
               Data Browser
             </TabsTrigger>

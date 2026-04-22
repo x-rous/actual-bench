@@ -1,5 +1,7 @@
 import type {
   ColumnInfo,
+  ExportRowsBeginPayload,
+  ExportRowsNextPayload,
   FetchRowsPayload,
   IndexInfo,
   LookupRowPayload,
@@ -41,6 +43,17 @@ type IndexListRow = {
   partial?: number;
 };
 
+export type ExportRowsCursor = {
+  id: string;
+  object: string;
+  columns: ColumnInfo[];
+  columnNames: string[];
+  rowCount: number;
+  orderClause: string;
+  offset: number;
+  lastAccessedAt: number;
+};
+
 const SCHEMA_OBJECT_TYPES: readonly SchemaObjectType[] = [
   "table",
   "view",
@@ -48,6 +61,7 @@ const SCHEMA_OBJECT_TYPES: readonly SchemaObjectType[] = [
   "trigger",
 ];
 const MAX_FETCH_LIMIT = 1000;
+export const EXPORT_ROWS_CHUNK_SIZE = 10_000;
 const FEATURED_VIEW_SET = new Set<string>(FEATURED_VIEWS);
 const CORE_TABLES = new Set([
   "accounts",
@@ -310,6 +324,76 @@ export function fetchRows(
     offset,
     limit,
     rowCount,
+  };
+}
+
+export function createExportRowsCursor(
+  db: SchemaDb,
+  request: {
+    object: string;
+    orderBy?: string;
+    direction?: "asc" | "desc";
+  },
+  cursorId: string,
+  now = Date.now()
+): ExportRowsCursor {
+  const row = getSchemaRow(db, request.object);
+  if (!objectSupportsRows(row.type)) {
+    throw new Error(`Schema object is not row-browsable: ${request.object}`);
+  }
+
+  const direction = assertDirection(request.direction);
+  const columns = getColumns(db, row.name);
+  const columnNames = columns.map((column) => column.name);
+  const orderBy = request.orderBy
+    ? assertKnownIdentifier(request.orderBy, columnNames, "sort column")
+    : null;
+  const orderClause = orderBy ? ` ORDER BY ${quoteIdentifier(orderBy)} ${direction}` : "";
+  const rowCount = countRows(db, row.name, row.type) ?? 0;
+
+  return {
+    id: cursorId,
+    object: row.name,
+    columns,
+    columnNames,
+    rowCount,
+    orderClause,
+    offset: 0,
+    lastAccessedAt: now,
+  };
+}
+
+export function exportRowsBeginPayload(cursor: ExportRowsCursor): ExportRowsBeginPayload {
+  return {
+    cursorId: cursor.id,
+    object: cursor.object,
+    columns: cursor.columns,
+    rowCount: cursor.rowCount,
+    chunkSize: EXPORT_ROWS_CHUNK_SIZE,
+  };
+}
+
+export function readExportRowsChunk(
+  db: SchemaDb,
+  cursor: ExportRowsCursor,
+  now = Date.now()
+): ExportRowsNextPayload {
+  const offset = cursor.offset;
+  const rows = db.selectRows<Record<string, unknown>>(
+    `SELECT * FROM ${quoteIdentifier(cursor.object)}${cursor.orderClause} LIMIT ${EXPORT_ROWS_CHUNK_SIZE} OFFSET ${offset}`
+  );
+
+  cursor.offset += rows.length;
+  cursor.lastAccessedAt = now;
+
+  return {
+    cursorId: cursor.id,
+    object: cursor.object,
+    columns: cursor.columnNames,
+    rows,
+    offset,
+    rowCount: cursor.rowCount,
+    done: cursor.offset >= cursor.rowCount || rows.length === 0,
   };
 }
 

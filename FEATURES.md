@@ -27,6 +27,7 @@
 - Diagnostics tab runs deterministic snapshot checks, summarizes finding severity, supports a long-running full SQLite integrity check, and exports findings to CSV
 - Data Browser tab lists SQLite tables, views, indexes, and triggers grouped by Actual Budget domain; `v_transactions` is selected by default when present
 - Paginated row browser fetches table/view rows through the SQLite worker with bounded page sizes, sticky headers, horizontal scrolling, worker-side sorting, and URL state for object, page, page size, sort column, and sort direction
+- Full table/view CSV export streams rows through worker-owned cursors, preserves UTF-8 for Excel, neutralizes formula-like text values, keeps numeric negatives raw, and caps BLOB cells as base64 previews
 - Schema tab shows object type, parent table where available, row count, inferred row key, columns, table indexes, and raw `CREATE ...` SQL from the exported SQLite schema
 - Cell rendering keeps raw money-like integers, formats transaction dates and obvious budget months, displays boolean-ish integer fields compactly, marks BLOBs as binary with a hex preview tooltip, and preserves raw values in titles
 - Row actions copy JSON to the clipboard, serializing BLOB fields as base64, and open a stackable row details panel in the side pane

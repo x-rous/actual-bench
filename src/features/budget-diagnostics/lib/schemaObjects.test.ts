@@ -1,10 +1,13 @@
 import type { SchemaObjectType } from "../types";
 import {
+  createExportRowsCursor,
+  exportRowsBeginPayload,
   fetchRows,
   getSchemaObject,
   inferRowKey,
   listSchemaObjects,
   lookupRow,
+  readExportRowsChunk,
   tableCounts,
   type SchemaDb,
 } from "./schemaObjects";
@@ -229,6 +232,39 @@ describe("schemaObjects", () => {
       rowCount: 2,
       rows: [{ id: "tx-1", date: 20260401, payee: "payee-1" }],
     });
+  });
+
+  it("creates worker export cursors and reads 10k-row chunks", () => {
+    const db = buildDb();
+    const cursor = createExportRowsCursor(
+      db,
+      {
+        object: "v_transactions",
+        orderBy: "id",
+        direction: "asc",
+      },
+      "export-1",
+      1_000
+    );
+
+    expect(exportRowsBeginPayload(cursor)).toMatchObject({
+      cursorId: "export-1",
+      object: "v_transactions",
+      rowCount: 2,
+      chunkSize: 10_000,
+    });
+
+    expect(readExportRowsChunk(db, cursor, 2_000)).toMatchObject({
+      cursorId: "export-1",
+      offset: 0,
+      rowCount: 2,
+      done: true,
+      rows: [
+        { id: "tx-1", date: 20260401, payee: "payee-1" },
+        { id: "tx-2", date: 20260402, payee: "payee-2" },
+      ],
+    });
+    expect(cursor.lastAccessedAt).toBe(2_000);
   });
 
   it("rejects unsafe row fetch input", () => {

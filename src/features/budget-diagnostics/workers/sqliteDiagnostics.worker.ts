@@ -6,11 +6,15 @@ import {
   type DiagnosticDb,
 } from "../lib/diagnosticChecks";
 import {
+  createExportRowsCursor,
+  exportRowsBeginPayload,
   fetchRows,
   getSchemaObject,
   listSchemaObjects,
   lookupRow,
+  readExportRowsChunk,
   tableCounts,
+  type ExportRowsCursor,
   type SchemaDb,
 } from "../lib/schemaObjects";
 import { unzipSnapshot } from "../lib/zipReader";
@@ -28,6 +32,9 @@ import type {
 let sqlite3: SqliteWasmApi | null = null;
 let db: SqliteWasmDb | null = null;
 let snapshotCounter = 0;
+let exportCursorCounter = 0;
+const EXPORT_CURSOR_TTL_MS = 120_000;
+const exportCursors = new Map<string, ExportRowsCursor>();
 let currentSnapshot: {
   dbSizeBytes: number;
   zipFilename: string | null;
@@ -75,6 +82,7 @@ async function initSqlite(wasmUrl: string): Promise<{ initialized: true }> {
 }
 
 function closeCurrentDb() {
+  exportCursors.clear();
   db?.close();
   db = null;
   currentSnapshot = null;
@@ -212,6 +220,47 @@ function runWorkerIntegrityCheck(id: string): DiagnosticsPayload {
   }
 }
 
+function releaseIdleExportCursors(now = Date.now()) {
+  for (const [cursorId, cursor] of exportCursors) {
+    if (now - cursor.lastAccessedAt > EXPORT_CURSOR_TTL_MS) {
+      exportCursors.delete(cursorId);
+    }
+  }
+}
+
+function beginExportRows(
+  request: Extract<WorkerRequest, { kind: "exportRowsBegin" }>
+) {
+  const database = requireDb();
+  const now = Date.now();
+  releaseIdleExportCursors(now);
+  const cursorId = `export-${++exportCursorCounter}`;
+  const cursor = createExportRowsCursor(createSchemaDb(database), request, cursorId, now);
+  exportCursors.set(cursorId, cursor);
+  return exportRowsBeginPayload(cursor);
+}
+
+function nextExportRows(
+  request: Extract<WorkerRequest, { kind: "exportRowsNext" }>
+) {
+  const database = requireDb();
+  const now = Date.now();
+  releaseIdleExportCursors(now);
+  const cursor = exportCursors.get(request.cursorId);
+  if (!cursor) throw new Error(`Unknown export cursor: ${request.cursorId}`);
+  const payload = readExportRowsChunk(createSchemaDb(database), cursor, now);
+  if (payload.done) exportCursors.delete(request.cursorId);
+  return payload;
+}
+
+function endExportRows(
+  request: Extract<WorkerRequest, { kind: "exportRowsEnd" }>
+) {
+  releaseIdleExportCursors();
+  exportCursors.delete(request.cursorId);
+  return { cursorId: request.cursorId, released: true as const };
+}
+
 function loadSnapshot(request: Extract<WorkerRequest, { kind: "loadSnapshot" }>): LoadedSnapshotSummary {
   const { id, zipBytes, zipFilename = null, zipSizeBytes = zipBytes.byteLength } = request;
 
@@ -280,6 +329,12 @@ function handleRequest(request: WorkerRequest): Promise<unknown> | unknown {
       return tableCounts(createSchemaDb(requireDb()), request.names);
     case "fetchRows":
       return fetchRows(createSchemaDb(requireDb()), request);
+    case "exportRowsBegin":
+      return beginExportRows(request);
+    case "exportRowsNext":
+      return nextExportRows(request);
+    case "exportRowsEnd":
+      return endExportRows(request);
     case "lookupRow":
       return lookupRow(createSchemaDb(requireDb()), request);
   }

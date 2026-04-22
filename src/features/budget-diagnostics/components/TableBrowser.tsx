@@ -8,6 +8,7 @@ import {
   ChevronUp,
   ChevronsUpDown,
   Copy,
+  Download,
   Loader2,
   PanelRightOpen,
 } from "lucide-react";
@@ -18,6 +19,14 @@ import {
   formatCellDisplay,
   stringifyRowForClipboard,
 } from "../lib/cellFormatters";
+import {
+  CSV_MEMORY_WARNING_BYTES,
+  CSV_UTF8_BOM,
+  buildCsvHeader,
+  buildCsvRows,
+  csvExportFilename,
+  estimateCsvBytes,
+} from "../lib/csvExport";
 import { findRelationship, type Relationship } from "../lib/relationshipMap";
 import { getSqliteWorkerClient } from "../lib/sqliteWorkerClient";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -32,9 +41,14 @@ import { SchemaObjectDetails as SchemaObjectDetailsView } from "./SchemaObjectDe
 const PAGE_SIZE_OPTIONS = [50, 100, 250, 500] as const;
 const DEFAULT_PAGE_SIZE = 100;
 const SLOW_QUERY_MS = 2000;
+const BROWSER_TAB_CLASS =
+  "rounded-none border-x-0 border-t-0 border-b-2 border-transparent bg-transparent px-4 py-2 after:hidden focus-visible:ring-0 data-[active]:border-primary data-[active]:text-foreground disabled:pointer-events-none disabled:opacity-40";
 
 type PageSize = (typeof PAGE_SIZE_OPTIONS)[number];
 type SortDirection = "asc" | "desc";
+type ExportState =
+  | { status: "idle" }
+  | { status: "exporting"; exportedRows: number; rowCount: number };
 
 type BrowserState =
   | { status: "idle" | "loading" }
@@ -120,6 +134,21 @@ function pageCount(rowCount: number, pageSize: number): number {
   return Math.max(1, Math.ceil(rowCount / pageSize));
 }
 
+function formatBytes(bytes: number): string {
+  if (bytes < 1024 * 1024) return `${Math.ceil(bytes / 1024).toLocaleString("en-US")} KB`;
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
+
+function downloadCsv(content: string, filename: string) {
+  const blob = new Blob([content], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.click();
+  URL.revokeObjectURL(url);
+}
+
 function rowKey(
   details: SchemaObjectDetails,
   row: Record<string, unknown>,
@@ -173,8 +202,10 @@ export function TableBrowser({
   const requestedDirection = parseDirection(directionParam);
   const [state, setState] = useState<BrowserState>({ status: "idle" });
   const [activePanel, setActivePanel] = useState<"data" | "schema">("data");
+  const [exportState, setExportState] = useState<ExportState>({ status: "idle" });
 
   const canBrowseRows = object.type === "table" || object.type === "view";
+  const isExporting = exportState.status === "exporting";
 
   const replaceParams = (mutate: (params: URLSearchParams) => void) => {
     const params = new URLSearchParams(searchParams.toString());
@@ -293,6 +324,75 @@ export function TableBrowser({
       .catch(() => toast.error("Failed to copy row JSON"));
   };
 
+  const exportCsv = async () => {
+    if (state.status !== "ready" || !state.payload || isExporting) return;
+
+    const client = getSqliteWorkerClient();
+    let cursorId: string | null = null;
+
+    try {
+      const begin = await client.call(
+        {
+          kind: "exportRowsBegin",
+          object: state.details.name,
+          orderBy: state.sortColumn ?? undefined,
+          direction: state.sortDirection ?? undefined,
+        },
+        { timeoutMs: null }
+      );
+      cursorId = begin.cursorId;
+      setExportState({ status: "exporting", exportedRows: 0, rowCount: begin.rowCount });
+
+      const chunks: string[] = [`${CSV_UTF8_BOM}${buildCsvHeader(begin.columns)}`];
+      let exportedRows = 0;
+      let needsWarningCheck = true;
+      let done = begin.rowCount === 0;
+
+      while (!done) {
+        const next = await client.call(
+          { kind: "exportRowsNext", cursorId: begin.cursorId },
+          { timeoutMs: null }
+        );
+
+        if (needsWarningCheck) {
+          needsWarningCheck = false;
+          const estimatedBytes = estimateCsvBytes(begin.rowCount, next.rows, begin.columns);
+          if (
+            estimatedBytes > CSV_MEMORY_WARNING_BYTES &&
+            !window.confirm(
+              `This export is estimated at about ${formatBytes(estimatedBytes)}. Continue?`
+            )
+          ) {
+            toast.info("CSV export cancelled");
+            return;
+          }
+        }
+
+        const csvRows = buildCsvRows(next.rows, begin.columns);
+        if (csvRows) chunks.push("\r\n", csvRows);
+        exportedRows += next.rows.length;
+        setExportState({
+          status: "exporting",
+          exportedRows,
+          rowCount: begin.rowCount,
+        });
+        done = next.done;
+      }
+
+      downloadCsv(chunks.join(""), csvExportFilename(begin.object));
+      toast.success("CSV exported");
+    } catch (error) {
+      toast.error(getErrorMessage(error));
+    } finally {
+      if (cursorId) {
+        void client.call({ kind: "exportRowsEnd", cursorId }, { timeoutMs: null }).catch(() => {
+          // Cursor cleanup is best-effort; the worker also expires idle cursors.
+        });
+      }
+      setExportState({ status: "idle" });
+    }
+  };
+
   const pageTotal =
     state.status === "ready" && state.payload
       ? pageCount(state.payload.rowCount, state.pageSize)
@@ -314,6 +414,12 @@ export function TableBrowser({
         {state.status === "ready" && state.payload && (
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-xs text-muted-foreground">{rowRange(state.payload)}</span>
+            {isExporting && (
+              <span className="text-xs text-muted-foreground/70">
+                Exporting {exportState.exportedRows.toLocaleString("en-US")} /{" "}
+                {exportState.rowCount.toLocaleString("en-US")}
+              </span>
+            )}
             {state.sortColumn && (
               <span className="text-xs text-muted-foreground/70">
                 Sorted by <span className="font-mono">{state.sortColumn}</span>{" "}
@@ -356,17 +462,17 @@ export function TableBrowser({
           }}
           className="min-h-0 flex-1 overflow-hidden"
         >
-          <TabsList className="flex shrink-0 border-b border-border">
+          <TabsList className="flex shrink-0 border-b border-border bg-background">
             <TabsTrigger
               value="data"
               disabled={!canBrowseRows}
-              className="border-b-2 border-transparent px-4 py-2 after:hidden data-[active]:border-primary disabled:pointer-events-none disabled:opacity-40"
+              className={BROWSER_TAB_CLASS}
             >
               Data
             </TabsTrigger>
             <TabsTrigger
               value="schema"
-              className="border-b-2 border-transparent px-4 py-2 after:hidden data-[active]:border-primary"
+              className={BROWSER_TAB_CLASS}
             >
               Schema
             </TabsTrigger>
@@ -380,6 +486,20 @@ export function TableBrowser({
                     {state.payload.rowCount !== 1 ? "s" : ""}
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={isExporting}
+                      onClick={() => void exportCsv()}
+                    >
+                      {isExporting ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <Download className="h-3.5 w-3.5" />
+                      )}
+                      Export CSV
+                    </Button>
                     <label className="flex items-center gap-2 text-xs text-muted-foreground">
                       Rows
                       <select

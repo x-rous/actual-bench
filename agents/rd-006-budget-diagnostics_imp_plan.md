@@ -910,7 +910,25 @@ The current page stacks Overview, Diagnostics, and Data Browser vertically. That
 
 ---
 
-### M6f — Full object CSV export
+### M6f — Full object CSV export ✅ shipped
+
+**Status:** complete. Lint / `tsc --noEmit` / `npm test` all green (33 suites, 390 tests, 6 new). `npm run lint` reports the expected React Compiler `react-hooks/incompatible-library` warning for TanStack Table. `next build` bundle inspection was intentionally not run in the Docker-hosted dev workspace.
+
+**Files delivered**
+- `src/features/budget-diagnostics/lib/csvExport.ts` (new) — CSV encoding helpers with UTF-8 BOM support, TEXT-only formula neutralization, numeric negatives preserved, NULL-as-empty handling, capped base64 BLOB export, large-export size estimation, and safe dated filenames.
+- `src/features/budget-diagnostics/lib/csvExport.test.ts` (new) — covers formula neutralization, negative numeric exports, NULL output, BLOB base64/truncation, size estimation, and filename generation.
+- `src/features/budget-diagnostics/lib/schemaObjects.ts` — adds export cursor creation and 10k-row chunk reads using the same object/sort validation rules as paginated browsing.
+- `src/features/budget-diagnostics/lib/schemaObjects.test.ts` — covers export cursor begin payloads and chunk reads.
+- `src/features/budget-diagnostics/workers/sqliteDiagnostics.worker.ts` — exposes worker-owned `exportRowsBegin` / `exportRowsNext` / `exportRowsEnd`, keeps cursors in the worker, clears cursors on snapshot reload, and auto-expires idle cursors after 2 minutes.
+- `src/features/budget-diagnostics/types.ts` — adds export worker request and response contracts.
+- `src/features/budget-diagnostics/components/TableBrowser.tsx` — adds `Export CSV` for browsable tables/views, streams all rows through the worker cursor protocol, shows row progress, warns before estimated exports over 200 MB, preserves current sort order, and downloads `budget-diagnostics-{object}-{YYYY-MM-DD}.csv`.
+- `FEATURES.md` / `README.md` — documents full table/view CSV export.
+
+**Notes for future milestones**
+- Export currently assembles CSV text chunks on the main thread after receiving 10k-row worker chunks. If real-world exports exceed the 200 MB warning path often, consider moving to a browser stream-backed download to reduce peak memory.
+- Formula neutralization intentionally applies only to declared TEXT-like columns. INTEGER/REAL values remain raw so negative budget amounts export as numeric values.
+- The export button is available only when the selected schema object is a row-browsable table/view; indexes and triggers remain schema-only.
+- The visual tab fix requested before M6f is included in the same working set: top-level and Data Browser tabs now use flat bottom-border active styling without rounded active-tab corners.
 
 **Files**
 - `src/features/budget-diagnostics/lib/csvExport.ts`

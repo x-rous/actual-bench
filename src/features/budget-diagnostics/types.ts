@@ -142,6 +142,29 @@ export type FetchRowsPayload = {
   rowCount: number;
 };
 
+export type ExportRowsBeginPayload = {
+  cursorId: string;
+  object: string;
+  columns: ColumnInfo[];
+  rowCount: number;
+  chunkSize: number;
+};
+
+export type ExportRowsNextPayload = {
+  cursorId: string;
+  object: string;
+  columns: string[];
+  rows: Record<string, unknown>[];
+  offset: number;
+  rowCount: number;
+  done: boolean;
+};
+
+export type ExportRowsEndPayload = {
+  cursorId: string;
+  released: true;
+};
+
 export type LookupRowPayload = {
   object: string;
   objectType: SchemaObjectType;
@@ -178,6 +201,15 @@ export type WorkerRequest =
     }
   | {
       id: string;
+      kind: "exportRowsBegin";
+      object: string;
+      orderBy?: string;
+      direction?: "asc" | "desc";
+    }
+  | { id: string; kind: "exportRowsNext"; cursorId: string }
+  | { id: string; kind: "exportRowsEnd"; cursorId: string }
+  | {
+      id: string;
       kind: "lookupRow";
       object: string;
       keyValue: unknown;
@@ -203,5 +235,8 @@ export type WorkerResultByKind = {
   getSchemaObject: SchemaObjectDetails;
   tableCounts: TableCountsPayload;
   fetchRows: FetchRowsPayload;
+  exportRowsBegin: ExportRowsBeginPayload;
+  exportRowsNext: ExportRowsNextPayload;
+  exportRowsEnd: ExportRowsEndPayload;
   lookupRow: LookupRowPayload;
 };
