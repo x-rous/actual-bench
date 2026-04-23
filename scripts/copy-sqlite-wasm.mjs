@@ -2,22 +2,23 @@
 
 import { copyFileSync, existsSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const source = join(
-  root,
-  "node_modules",
-  "@sqlite.org",
-  "sqlite-wasm",
-  "sqlite-wasm",
-  "jswasm",
-  "sqlite3.wasm"
-);
+const require = createRequire(import.meta.url);
+const packageRoot = dirname(require.resolve("@sqlite.org/sqlite-wasm/package.json"));
+const sourceCandidates = [
+  join(packageRoot, "sqlite-wasm", "jswasm", "sqlite3.wasm"),
+  join(packageRoot, "dist", "sqlite3.wasm"),
+];
+const source = sourceCandidates.find((candidate) => existsSync(candidate));
 const destination = join(root, "public", "sqlite", "sqlite3.wasm");
 
-if (!existsSync(source)) {
-  throw new Error(`SQLite WASM asset not found: ${source}`);
+if (!source) {
+  throw new Error(
+    `SQLite WASM asset not found. Checked:\n${sourceCandidates.join("\n")}`
+  );
 }
 
 mkdirSync(dirname(destination), { recursive: true });

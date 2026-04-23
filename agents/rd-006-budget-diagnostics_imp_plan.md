@@ -94,8 +94,13 @@ Ordered so each merges in a working state. Each bullet = one commit.
 | 12 | M6e — Relationship-aware drill-in + row details (depends on M5.1) | ✅ shipped |
 | 13 | M6f — Full object CSV export | planned |
 | 14 | M7 — Polish, banner, tests, docs, PR prep | planned |
+| 15 | Phase M8a — Extract lazy SQLite snapshot workspace provider | planned |
+| 16 | Phase M8b — Move Data Browser to standalone snapshot-powered page | planned |
+| 17 | Phase M8c — Generalize snapshot workspace for future SQLite snapshot tools | planned |
 
 The old standalone `M8-rev` milestone has been merged into M5.1 — do not resurrect it. M5.1 is the single corrective milestone that introduces `relationshipMap.ts`, fixes the raw/view confusion in shipped M5, and adds the missing `payees.category` and `transactions.description → payee_mapping` checks.
+
+The new Phase M8 work below is unrelated to the retired `M8-rev`. M8 is the post-M7 architecture extraction that makes the exported SQLite snapshot available to multiple read-only tools without duplicating ZIP export, unzip, SQLite worker initialization, or snapshot-open logic.
 
 ### M1 — Binary proxy & download helper (foundation) ✅ shipped
 
@@ -1021,6 +1026,287 @@ The current page stacks Overview, Diagnostics, and Data Browser vertically. That
 - `npm test` — all suites pass.
 - `next build` — succeeds; bundle analysis shows `@sqlite.org/sqlite-wasm` and `fflate` only in the diagnostics chunk.
 - Manual run against a real `actual-http-api` — full flow works end-to-end for at least two budgets with different data shapes.
+
+---
+
+### Phase M8a — Extract lazy SQLite snapshot workspace provider
+
+**Status:** planned.
+
+**Goal**
+Extract the exported snapshot lifecycle from `BudgetDiagnosticsView` into a reusable, lazily-opened workspace layer. This phase must not change routes or visible product behavior. `/budget-diagnostics` should still look and behave the same, but the page should consume a shared snapshot workspace instead of owning ZIP export, worker init, snapshot loading, overview loading, retry, and worker reset directly.
+
+**Why**
+Data Browser and future read-only SQLite tools need the same exported `db.sqlite` snapshot. Duplicating the `apiDownload("/export") → worker init → ZIP unpack → SQLite open → overview` chain in each page would create drift, duplicate network work, and inconsistent error/retry behavior. M8a creates a single owner for that lifecycle.
+
+**Files to create**
+- `src/features/budget-diagnostics/components/SnapshotWorkspaceProvider.tsx`
+  - Client provider for snapshot lifecycle state and actions.
+  - Owns active connection lookup, lazy open state, progress, retry, and worker reset.
+- `src/features/budget-diagnostics/hooks/useSnapshotWorkspace.ts`
+  - Thin hook that reads the provider context and throws a clear error if used outside the provider.
+- `src/features/budget-diagnostics/hooks/useRequireSnapshotWorkspace.ts`
+  - Hook for snapshot-powered consumers. Calls `open()` on mount when the active connection exists and the snapshot is `idle`.
+  - No-op when snapshot is already `loading` or `ready`.
+- `src/features/budget-diagnostics/components/SnapshotConnectState.tsx` (optional but preferred)
+  - Extracts the current `ConnectBudgetState` empty state from `BudgetDiagnosticsView` so all snapshot-powered pages can reuse the same "connect a budget first" UX.
+
+**Files to change**
+- `src/features/budget-diagnostics/components/BudgetDiagnosticsView.tsx`
+  - Remove direct ownership of `exportSnapshot`, `resetSqliteWorkerClient`, snapshot open state, and retry token.
+  - Consume the new snapshot workspace context.
+  - Keep diagnostics-specific state here for now: `diagnosticsStatus`, `diagnosticsError`, `diagnostics`, `integrityStatus`, and `integrityError`.
+  - Trigger `runDiagnostics` only after the workspace `status` becomes `ready`.
+- `src/features/budget-diagnostics/components/OverviewSection.tsx`
+  - No major visual change. Props may be supplied from the provider instead of local `BudgetDiagnosticsView` state.
+- `src/features/budget-diagnostics/components/OpenSnapshotPanel.tsx`
+  - No visual change expected. Confirm it remains reusable by both diagnostics and future standalone Data Browser page.
+- `src/features/budget-diagnostics/lib/exportSnapshot.ts`
+  - Keep as the low-level export/open function. Do not duplicate its logic in the provider; call it from the provider.
+- `src/features/budget-diagnostics/lib/sqliteWorkerClient.ts`
+  - Keep singleton worker client. The provider becomes the owner that calls `resetSqliteWorkerClient()` on connection changes and unmount.
+- `src/features/budget-diagnostics/components/BudgetDiagnosticsView.test.tsx`
+  - Update mocks/assertions for the provider-driven lifecycle.
+  - Keep coverage for opening active snapshot, retry after failure, and budget switch reset/reopen.
+
+**Implementation tasks**
+1. Define provider state:
+   ```ts
+   type SnapshotWorkspaceStatus = "idle" | "loading" | "ready" | "error";
+
+   type SnapshotWorkspaceValue = {
+     connection: ConnectionInstance | null;
+     status: SnapshotWorkspaceStatus;
+     progressStage: ProgressStage | null;
+     errorMessage: string | null;
+     overview: OverviewPayload | null;
+     download: DownloadResult | null;
+     open: () => void;
+     retry: () => void;
+     reset: () => void;
+   };
+   ```
+2. Move the current `BudgetDiagnosticsView` open lifecycle into `SnapshotWorkspaceProvider`:
+   - active connection from `useConnectionStore(selectActiveInstance)`.
+   - `exportSnapshot(activeConnection, onProgress)`.
+   - worker `overview` call after `loadSnapshot`.
+   - `status: "ready"` only after overview is available.
+   - `status: "error"` with `errorMessage` on export/open/overview failure.
+3. Preserve current stale-run protection:
+   - use a generation ref or cancellation flag per open attempt.
+   - never update provider state from an old open attempt after retry, budget switch, or unmount.
+4. Preserve worker reset behavior:
+   - reset when the active connection identity changes.
+   - reset on provider unmount.
+   - reset when there is no active connection.
+5. Implement lazy open:
+   - provider initializes as `idle` when a connection exists.
+   - `useRequireSnapshotWorkspace()` triggers `open()` on mount if status is `idle`.
+   - direct calls to `open()` are idempotent while `loading` or `ready` for the same connection.
+6. Keep diagnostics execution outside the provider:
+   - `BudgetDiagnosticsView` watches provider `status`.
+   - when `status === "ready"` and diagnostics have not run for the current snapshot generation, call worker `runDiagnostics`.
+   - retrying the snapshot clears diagnostics state.
+7. Keep the existing UI unchanged:
+   - top tabs remain `Overview`, `Diagnostics`, `Data Browser`.
+   - `DataBrowserSection` still receives `snapshotStatus` from `BudgetDiagnosticsView` in this phase.
+   - `OverviewSection` still shows snapshot progress/error through `OpenSnapshotPanel`.
+8. Add or update tests:
+   - provider opens snapshot once for the active connection.
+   - retry re-runs export/open.
+   - budget switch resets worker and opens the new budget.
+   - diagnostics runs only after workspace status becomes `ready`.
+
+**Acceptance**
+- `/budget-diagnostics` visual behavior is unchanged.
+- One snapshot export/open happens on initial page mount with an active connection.
+- Retry reopens the snapshot and clears old snapshot error state.
+- Switching active budget resets the worker and opens the new budget.
+- Diagnostics are not part of the provider and still run only on the diagnostics workspace after snapshot readiness.
+- `npm run lint` — 0 errors, known TanStack/React Compiler warning acceptable.
+- `npx tsc --noEmit` — 0 errors.
+- `npm test` — all suites pass.
+
+**Notes for future phases**
+- This phase intentionally keeps the provider under `budget-diagnostics` to reduce blast radius. M8c can rename/generalize the folder once a second consumer exists.
+- Do not add global root-app snapshot state. The provider must stay scoped to snapshot-powered pages only.
+
+---
+
+### Phase M8b — Move Data Browser to standalone snapshot-powered page
+
+**Status:** planned. Depends on Phase M8a.
+
+**Goal**
+Create a dedicated Data Browser nav page that reuses the lazy snapshot workspace provider from M8a. The standalone page must not duplicate ZIP export, SQLite worker init, snapshot loading, schema loading, row fetching, row lookup, or CSV export logic.
+
+**Files to create**
+- `src/app/(app)/(snapshot-tools)/layout.tsx`
+  - Route-group layout that wraps snapshot-powered pages in `SnapshotWorkspaceProvider`.
+  - The route group must not alter URLs.
+- `src/app/(app)/(snapshot-tools)/budget-diagnostics/page.tsx`
+  - Move or re-home the current budget diagnostics page under the snapshot-tools route group.
+  - URL remains `/budget-diagnostics`.
+- `src/app/(app)/(snapshot-tools)/data-browser/page.tsx`
+  - New standalone Data Browser page at `/data-browser`.
+- `src/app/(app)/(snapshot-tools)/data-browser/DataBrowserClient.tsx` (or equivalent)
+  - Dynamic client wrapper if needed to preserve bundle isolation.
+- `src/features/budget-diagnostics/components/DataBrowserPage.tsx`
+  - Page-level composer for standalone Data Browser.
+  - Calls `useRequireSnapshotWorkspace()`.
+  - Handles connect/loading/error shell and renders `DataBrowserSection`.
+
+**Files to change**
+- `src/app/(app)/budget-diagnostics/page.tsx`
+  - Remove after re-homing, or leave as a thin redirect/re-export only if Next route structure requires an intermediate migration. Avoid duplicate route ownership.
+- `src/app/(app)/budget-diagnostics/BudgetDiagnosticsClient.tsx`
+  - Move under `(snapshot-tools)/budget-diagnostics/` or replace with the new route-group page.
+- `src/features/budget-diagnostics/components/BudgetDiagnosticsView.tsx`
+  - Remove the embedded `Data Browser` top-level tab if product decision is to make Data Browser a standalone tool only.
+  - If keeping an in-page tab temporarily, make it a link to `/data-browser` rather than a second embedded copy.
+- `src/features/budget-diagnostics/components/DataBrowserSection.tsx`
+  - Prefer changing the prop from `snapshotStatus` to reading workspace state directly, or keep a simple prop supplied by `DataBrowserPage`.
+  - Keep schema object loading behavior unchanged: call `listSchemaObjects` only when snapshot status is `ready`.
+- `src/features/budget-diagnostics/components/TableBrowser.tsx`
+  - No structural change expected. It already uses URL params and worker APIs.
+- `src/features/overview/lib/overviewCards.ts`
+  - Add a separate Data Browser tool card if the product wants a visible entry point.
+  - Update Budget Diagnostics description if Data Browser is no longer inside that page.
+- `FEATURES.md`
+  - Document the standalone Data Browser route and that it uses a read-only exported snapshot.
+- `README.md`
+  - Update feature entry points if `/data-browser` becomes a main tool.
+- `agents/future-roadmap.md`
+  - Update roadmap status/entry point references if applicable.
+
+**Implementation tasks**
+1. Add `(snapshot-tools)` route group layout:
+   - wraps children with `SnapshotWorkspaceProvider`.
+   - keeps the provider scoped only to pages that need exported SQLite snapshots.
+2. Move `/budget-diagnostics` into the route group:
+   - route URL must remain `/budget-diagnostics`.
+   - confirm dynamic import still keeps sqlite-wasm/fflate isolated to snapshot tool pages.
+3. Create `/data-browser` page:
+   - render `DataBrowserPage`.
+   - `DataBrowserPage` calls `useRequireSnapshotWorkspace()`.
+   - if no active connection, show `SnapshotConnectState`.
+   - if snapshot is loading, show `OpenSnapshotPanel` or a Data Browser-specific opening panel.
+   - if snapshot is error, show retry UI.
+   - if ready, render `DataBrowserSection`.
+4. Decide final Budget Diagnostics tab behavior:
+   - preferred: remove `Data Browser` as an embedded tab from Budget Diagnostics and expose it as a separate nav/tool page.
+   - acceptable migration bridge: keep a `Data Browser` tab that contains a compact call-to-action linking to `/data-browser`; do not render a second full Data Browser instance.
+5. Preserve Data Browser URL params:
+   - `/data-browser?obj=transactions&p=1&ps=100&sort=date&dir=desc`.
+   - Remove or ignore old `tab=data` routing on `/budget-diagnostics`.
+6. Ensure cross-page reuse does not reopen the snapshot:
+   - navigating between `/budget-diagnostics` and `/data-browser` under the same route-group layout should retain the provider and worker when the layout remains mounted.
+   - if Next remounts the layout during navigation, provider idempotence must still prevent duplicate open attempts while already loading.
+7. Add navigation entry:
+   - add Data Browser to the overview tools card list and/or sidebar tools group, matching the existing nav conventions.
+8. Add tests:
+   - standalone Data Browser waits for snapshot readiness before calling `listSchemaObjects`.
+   - direct visit to `/data-browser` triggers one lazy snapshot open.
+   - schema list and table browsing still work with mocked worker.
+   - budget switch clears Data Browser row stack/object selection through provider reset + existing component behavior.
+
+**Acceptance**
+- `/data-browser` works when visited directly with an active connection.
+- `/data-browser` does not duplicate `exportSnapshot` logic.
+- Data Browser still uses the same worker calls as M6a-M6f.
+- Navigating between Budget Diagnostics and Data Browser does not intentionally download/open the same snapshot twice for the same active connection.
+- Existing Data Browser features remain intact: object list, schema tab, paginated rows, row details, relationship drill-in, full CSV export.
+- Documentation and tool navigation describe Data Browser as its own read-only snapshot tool.
+- `npm run lint` — 0 errors, known TanStack/React Compiler warning acceptable.
+- `npx tsc --noEmit` — 0 errors.
+- `npm test` — all suites pass.
+
+**Notes for future phases**
+- Keep the route-group provider scoped. Do not move it to `src/app/(app)/layout.tsx`.
+- Avoid adding a second SQLite worker client for Data Browser. All snapshot tools share the same singleton worker through the provider lifecycle.
+
+---
+
+### Phase M8c — Generalize snapshot workspace for future SQLite snapshot tools
+
+**Status:** planned. Depends on Phase M8b proving there are at least two real consumers.
+
+**Goal**
+Rename and organize the snapshot workspace so future features can depend on a neutral abstraction instead of importing from a feature named `budget-diagnostics`. This phase is mostly structure, naming, and boundary hardening.
+
+**Files/directories to create**
+- `src/features/sqlite-snapshot/`
+  - `components/SnapshotWorkspaceProvider.tsx`
+  - `components/SnapshotConnectState.tsx`
+  - `components/SnapshotOpenPanel.tsx` (optional rename/move from `OpenSnapshotPanel` if it is no longer diagnostics-specific)
+  - `hooks/useSnapshotWorkspace.ts`
+  - `hooks/useRequireSnapshotWorkspace.ts`
+  - `lib/exportSnapshot.ts`
+  - `lib/sqliteWorkerClient.ts`
+  - `workers/sqliteSnapshot.worker.ts`
+  - `types.ts`
+
+**Files to move or update**
+- Move from `src/features/budget-diagnostics/lib/exportSnapshot.ts` to `src/features/sqlite-snapshot/lib/exportSnapshot.ts`.
+- Move from `src/features/budget-diagnostics/lib/sqliteWorkerClient.ts` to `src/features/sqlite-snapshot/lib/sqliteWorkerClient.ts`.
+- Consider moving `src/features/budget-diagnostics/workers/sqliteDiagnostics.worker.ts` to `src/features/sqlite-snapshot/workers/sqliteSnapshot.worker.ts`.
+  - If diagnostics-specific worker methods remain in the same worker, keep the worker name until a later split, or document that the worker is shared but still exposes diagnostics APIs.
+- Move shared snapshot lifecycle types from `budget-diagnostics/types.ts` only if this phase explicitly includes type-boundary cleanup. Do not mix this with Phase M8b unless required.
+- Update imports in:
+  - `BudgetDiagnosticsView.tsx`
+  - `DataBrowserPage.tsx`
+  - `DataBrowserSection.tsx`
+  - `TableBrowser.tsx`
+  - worker tests and schema tests as needed.
+- Update `src/features/budget-diagnostics/lib/bundleIsolation.test.ts`:
+  - allow `@sqlite.org/sqlite-wasm` and `fflate` only in `src/features/sqlite-snapshot/` and any intentionally retained worker path.
+  - keep non-snapshot pages guarded from heavy imports.
+
+**Implementation tasks**
+1. Define the neutral feature boundary:
+   - `sqlite-snapshot` owns export/download/open/worker-client lifecycle.
+   - `budget-diagnostics` owns diagnostics UI and diagnostic checks.
+   - `data-browser` can remain physically under `budget-diagnostics/components` initially, or move to a neutral/snapshot feature if product direction warrants.
+2. Move provider/hook files from M8a into `src/features/sqlite-snapshot`.
+3. Move low-level snapshot files:
+   - `exportSnapshot.ts`
+   - `sqliteWorkerClient.ts`
+   - worker file if practical.
+4. Keep diagnostics-specific logic out of the provider:
+   - provider exposes only snapshot readiness and generic worker access indirectly through existing typed calls.
+   - diagnostics still triggers `runDiagnostics`.
+   - Data Browser still triggers schema/table calls.
+5. Decide worker API ownership:
+   - short-term: one worker can expose all read-only snapshot APIs, including diagnostics and Data Browser calls.
+   - long-term option: split generic SQLite schema/table APIs from diagnostics checks if unrelated future features need only generic browsing/query primitives.
+6. Update route group imports to use `sqlite-snapshot` provider.
+7. Update tests:
+   - provider tests move to `sqlite-snapshot`.
+   - bundle isolation test proves heavy packages are not imported by normal entity pages.
+   - diagnostics tests still import diagnostic checks from `budget-diagnostics`.
+8. Update docs:
+   - `FEATURES.md` mentions shared read-only snapshot workspace powering Budget Diagnostics and Data Browser.
+   - `README.md` entry points remain user-facing; avoid implementation details unless useful.
+   - `agents/future-roadmap.md` notes that future snapshot tools should reuse `sqlite-snapshot`.
+
+**Acceptance**
+- Budget Diagnostics and Data Browser both consume the neutral snapshot workspace.
+- No feature duplicates `apiDownload("/export")`, ZIP unpacking, SQLite worker initialization, or snapshot open logic.
+- Heavy packages remain isolated from non-snapshot routes.
+- New snapshot-powered features have an obvious integration path:
+  1. place page under `(snapshot-tools)`;
+  2. call `useRequireSnapshotWorkspace()`;
+  3. use the worker API only after workspace status is `ready`.
+- Existing tests pass after imports are moved.
+- `npm run lint` — 0 errors, known TanStack/React Compiler warning acceptable.
+- `npx tsc --noEmit` — 0 errors.
+- `npm test` — all suites pass.
+
+**Non-goals**
+- Persisting the SQLite snapshot across browser reloads or sessions.
+- Adding a write-capable SQLite API.
+- Adding an arbitrary SQL console.
+- Moving every Data Browser component into a new feature folder unless a separate product decision requires it.
 
 ---
 

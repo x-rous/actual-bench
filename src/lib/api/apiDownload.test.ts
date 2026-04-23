@@ -110,6 +110,22 @@ describe("apiDownload", () => {
     expect(result.filename).toBe("budget backup.zip");
   });
 
+  it("preserves semicolons inside quoted filename values", async () => {
+    fetchMock.mockResolvedValue(
+      mockResponse({
+        status: 200,
+        bytes: [1],
+        headers: {
+          "content-type": "application/zip",
+          "content-disposition": 'attachment; filename="budget; april.zip"',
+        },
+      })
+    );
+
+    const result = await apiDownload(connection, "/export");
+    expect(result.filename).toBe("budget; april.zip");
+  });
+
   it("returns filename=null when no content-disposition is present", async () => {
     fetchMock.mockResolvedValue(
       mockResponse({

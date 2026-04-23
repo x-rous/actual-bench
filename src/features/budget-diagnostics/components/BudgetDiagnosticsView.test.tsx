@@ -82,13 +82,27 @@ const summary: LoadedSnapshotSummary = {
   zipFilename: "2026-04-23-Actual%20Bench%20Test.zip",
   zipSizeBytes: 2048,
   hadMetadata: true,
-  metadata: { id: "budget-id", budgetName: "Household", groupId: "sync-id" },
+  metadata: {
+    id: "budget-id",
+    budgetName: "Household",
+    cloudFileId: "cloud-id",
+    groupId: "sync-id",
+    userId: "user-id",
+    encryptKeyId: "encryption-key-id",
+  },
   tableCount: 12,
   viewCount: 4,
 };
 
 const overview: OverviewPayload = {
-  metadata: { id: "budget-id", budgetName: "Household", groupId: "sync-id" },
+  metadata: {
+    id: "budget-id",
+    budgetName: "Household",
+    cloudFileId: "cloud-id",
+    groupId: "sync-id",
+    userId: "user-id",
+    encryptKeyId: "encryption-key-id",
+  },
   file: {
     dbSizeBytes: 1024,
     zipFilename: "2026-04-23-Actual%20Bench%20Test.zip",
@@ -200,7 +214,10 @@ describe("BudgetDiagnosticsView", () => {
     expect(screen.getByText("Transactions")).toBeInTheDocument();
     expect(screen.getByText("42")).toBeInTheDocument();
     expect(screen.getByText("Budget ID")).toBeInTheDocument();
+    expect(screen.getByText("Cloud file ID")).toBeInTheDocument();
     expect(screen.getByText("Group ID (sync ID)")).toBeInTheDocument();
+    expect(screen.getByText("User ID")).toBeInTheDocument();
+    expect(screen.getByText("Encryption key ID")).toBeInTheDocument();
     expect(screen.getByText("2026-04-23-Actual Bench Test.zip")).toBeInTheDocument();
     expect(mockExportSnapshot).toHaveBeenCalledWith(connection, expect.any(Function));
   });

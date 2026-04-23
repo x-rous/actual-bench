@@ -17,16 +17,16 @@ function buildMetadataFields(metadata: MetadataJson | null): MetadataField[] {
   return [
     { label: "Budget name", value: formatMetadataValue(metadata?.budgetName) },
     { label: "Budget ID", value: formatMetadataValue(metadata?.id) },
-    { label: "Cloud file id", value: formatMetadataValue(metadata?.cloudFileId) },
+    { label: "Cloud file ID", value: formatMetadataValue(metadata?.cloudFileId) },
     { label: "Group ID (sync ID)", value: formatMetadataValue(metadata?.groupId) },
-    { label: "User id", value: formatMetadataValue(metadata?.userId) },
+    { label: "User ID", value: formatMetadataValue(metadata?.userId) },
     { label: "Last uploaded date", value: formatMetadataValue(metadata?.lastUploaded) },
     {
       label: "Last synced timestamp",
       value: formatMetadataValue(metadata?.lastSyncedTimestamp),
     },
     { label: "Last schedule run", value: formatMetadataValue(metadata?.lastScheduleRun) },
-    { label: "Encryption key id", value: formatMetadataValue(metadata?.encryptKeyId) },
+    { label: "Encryption key ID", value: formatMetadataValue(metadata?.encryptKeyId) },
     { label: "Reset clock state", value: formatMetadataValue(metadata?.resetClock) },
   ];
 }

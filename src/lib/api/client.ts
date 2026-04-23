@@ -103,7 +103,10 @@ function parseContentDispositionFilename(disposition: string): string | null {
       // fall through to plain filename=
     }
   }
-  const plain = /filename\s*=\s*"?([^";]+)"?/i.exec(disposition);
+  const quoted = /filename\s*=\s*"([^"]*)"/i.exec(disposition);
+  if (quoted?.[1]) return quoted[1].trim();
+
+  const plain = /filename\s*=\s*([^;]+)/i.exec(disposition);
   return plain?.[1]?.trim() ?? null;
 }
 

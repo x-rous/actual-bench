@@ -436,6 +436,33 @@ describe("schemaObjects", () => {
     });
   });
 
+  it("includes implicit rowid values when exporting rowid-keyed tables", () => {
+    const db = buildDb();
+    db.addObject({
+      name: "rowid_table",
+      type: "table",
+      sql: "CREATE TABLE rowid_table (value TEXT)",
+      columns: [{ name: "value", type: "TEXT" }],
+      rows: [{ value: "first" }],
+      supportsRowid: true,
+    });
+    const cursor = createExportRowsCursor(
+      db,
+      { object: "rowid_table", orderBy: "rowid", direction: "asc" },
+      "export-rowid",
+      1_000
+    );
+
+    expect(exportRowsBeginPayload(cursor).columns.map((column) => column.name)).toEqual([
+      "rowid",
+      "value",
+    ]);
+    expect(readExportRowsChunk(db, cursor, 2_000)).toMatchObject({
+      columns: ["rowid", "value"],
+      rows: [{ rowid: 1, value: "first" }],
+    });
+  });
+
   it("validates standalone identifier helpers", () => {
     expect(quoteIdentifier("v_transactions")).toBe("\"v_transactions\"");
     expect(() => quoteIdentifier("bad-name")).toThrow("Invalid SQL identifier: bad-name");

@@ -51,6 +51,7 @@ export type ExportRowsCursor = {
   rowCount: number | null;
   rowCountError: string | null;
   orderClause: string;
+  selectColumns: string;
   offset: number;
   lastAccessedAt: number;
 };
@@ -68,6 +69,14 @@ const SCHEMA_OBJECT_TYPES: readonly SchemaObjectType[] = [
 ];
 const MAX_FETCH_LIMIT = 1000;
 export const EXPORT_ROWS_CHUNK_SIZE = 10_000;
+const ROWID_COLUMN: ColumnInfo = {
+  cid: -1,
+  name: "rowid",
+  type: "INTEGER",
+  notNull: true,
+  defaultValue: null,
+  primaryKeyPosition: 0,
+};
 const FEATURED_VIEW_SET = new Set<string>(FEATURED_VIEWS);
 const CORE_TABLES = new Set([
   "accounts",
@@ -373,21 +382,27 @@ export function createExportRowsCursor(
 
   const direction = assertDirection(request.direction);
   const columns = getColumns(db, row.name);
-  const columnNames = columns.map((column) => column.name);
+  const rowKey = inferRowKey(db, row.name, row.type, columns);
+  const baseColumnNames = columns.map((column) => column.name);
+  const includeRowid = rowKey?.column === "rowid" && !baseColumnNames.includes("rowid");
+  const columnNames = includeRowid ? ["rowid", ...baseColumnNames] : baseColumnNames;
+  const exportColumns = includeRowid ? [ROWID_COLUMN, ...columns] : columns;
   const orderBy = request.orderBy
     ? assertKnownIdentifier(request.orderBy, columnNames, "sort column")
     : null;
   const orderClause = orderBy ? ` ORDER BY ${quoteIdentifier(orderBy)} ${direction}` : "";
   const count = countRows(db, row.name, row.type);
+  const selectColumns = includeRowid ? `rowid AS ${quoteIdentifier("rowid")}, *` : "*";
 
   return {
     id: cursorId,
     object: row.name,
-    columns,
+    columns: exportColumns,
     columnNames,
     rowCount: count.rowCount,
     rowCountError: count.rowCountError,
     orderClause,
+    selectColumns,
     offset: 0,
     lastAccessedAt: now,
   };
@@ -411,7 +426,7 @@ export function readExportRowsChunk(
 ): ExportRowsNextPayload {
   const offset = cursor.offset;
   const rows = db.selectRows<Record<string, unknown>>(
-    `SELECT * FROM ${quoteIdentifier(cursor.object)}${cursor.orderClause} LIMIT ${EXPORT_ROWS_CHUNK_SIZE} OFFSET ${offset}`
+    `SELECT ${cursor.selectColumns} FROM ${quoteIdentifier(cursor.object)}${cursor.orderClause} LIMIT ${EXPORT_ROWS_CHUNK_SIZE} OFFSET ${offset}`
   );
 
   cursor.offset += rows.length;
