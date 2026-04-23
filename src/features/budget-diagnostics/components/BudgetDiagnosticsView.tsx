@@ -79,7 +79,7 @@ function getErrorMessage(error: unknown): string {
 function ReadOnlyNotice() {
   return (
     <div className="flex min-w-0 items-start gap-2 text-[11px] leading-4 text-muted-foreground">
-      <LockKeyhole className="mt-1.5 h-3.5 w-3.5 shrink-0" />
+      <LockKeyhole className="mt-1.0 h-3.5 w-3.5 shrink-0" />
       <div className="min-w-0">
         <div className="truncate">
           Read-only. No changes written back to the budget. Exports are processed locally.

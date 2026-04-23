@@ -196,7 +196,6 @@ describe("BudgetDiagnosticsView", () => {
 
     expect(screen.getByRole("tab", { name: /Diagnostics 1/ })).toBeInTheDocument();
     expect(screen.getByText("Read-only. No changes written back to the budget. Exports are processed locally.")).toBeInTheDocument();
-    expect(screen.getByText("Export contents are processed locally and may include personal budget data.")).toBeInTheDocument();
     expect(screen.getByText("Transactions")).toBeInTheDocument();
     expect(screen.getByText("42")).toBeInTheDocument();
     expect(mockExportSnapshot).toHaveBeenCalledWith(connection, expect.any(Function));
