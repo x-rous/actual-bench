@@ -232,7 +232,7 @@ Ready-to-use sample CSV files are included in [`public/samples csv/`](public/sam
 
 ## Known Limitations
 
-- **No pagination** - all entities are loaded at once. Performance may degrade on very large budgets.
+- **No pagination on main entity admin pages** - Accounts, Payees, Categories, Rules, and related admin pages load their full entity sets. Paginated browsing is available in Budget Diagnostics / Data Browser.
 
 ## Development
 

@@ -13,17 +13,12 @@ function columnType(column: ColumnInfo): string {
   return column.type.trim().toUpperCase();
 }
 
-function isTextColumn(column: ColumnInfo): boolean {
-  const type = columnType(column);
-  return type.includes("TEXT") || type.includes("CHAR") || type.includes("CLOB");
-}
-
 function isBlobColumn(column: ColumnInfo): boolean {
   return columnType(column).includes("BLOB");
 }
 
-function neutralizeTextForCsv(value: string, column: ColumnInfo): string {
-  if (!isTextColumn(column) || value.length === 0) return value;
+function neutralizeTextForCsv(value: string): string {
+  if (value.length === 0) return value;
   return FORMULA_PREFIXES.has(value[0]) ? `'${value}` : value;
 }
 
@@ -37,9 +32,9 @@ export function encodeCsvCell(value: unknown, column: ColumnInfo): string {
   if (value === null || value === undefined) return "";
   if (isBinaryValue(value)) return encodeBlobValue(value);
 
-  const stringValue = String(value);
-  if (isBlobColumn(column)) return encodeBlobValue(new TextEncoder().encode(stringValue));
-  return neutralizeTextForCsv(stringValue, column);
+  if (isBlobColumn(column)) return encodeBlobValue(new TextEncoder().encode(String(value)));
+  if (typeof value === "string") return neutralizeTextForCsv(value);
+  return String(value);
 }
 
 export function buildCsvHeader(columns: readonly ColumnInfo[]): string {

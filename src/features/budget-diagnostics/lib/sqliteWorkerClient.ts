@@ -60,7 +60,13 @@ export class SqliteWorkerClient {
         timeout,
       });
 
-      worker.postMessage(message, options.transfer ?? []);
+      try {
+        worker.postMessage(message, options.transfer ?? []);
+      } catch (error) {
+        this.pending.delete(id);
+        if (timeout) clearTimeout(timeout);
+        reject(toWorkerError("SQLite worker request could not be sent", error));
+      }
     });
   }
 

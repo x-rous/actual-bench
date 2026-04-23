@@ -95,10 +95,10 @@ export type DownloadResult = {
  * Prefers filename*= (UTF-8) and falls back to the unquoted filename=.
  */
 function parseContentDispositionFilename(disposition: string): string | null {
-  const utf8 = /filename\*\s*=\s*UTF-8''([^;]+)/i.exec(disposition);
-  if (utf8?.[1]) {
+  const encoded = /filename\*\s*=\s*([^']+)'([^']*)'([^;]+)/i.exec(disposition);
+  if (encoded?.[3]) {
     try {
-      return decodeURIComponent(utf8[1].trim());
+      return decodeURIComponent(encoded[3].trim());
     } catch {
       // fall through to plain filename=
     }

@@ -16,9 +16,9 @@ function formatMetadataValue(value: unknown): string {
 function buildMetadataFields(metadata: MetadataJson | null): MetadataField[] {
   return [
     { label: "Budget name", value: formatMetadataValue(metadata?.budgetName) },
-    { label: "Internal budget id", value: formatMetadataValue(metadata?.id) },
+    { label: "Budget ID", value: formatMetadataValue(metadata?.id) },
     { label: "Cloud file id", value: formatMetadataValue(metadata?.cloudFileId) },
-    { label: "Group id", value: formatMetadataValue(metadata?.groupId) },
+    { label: "Group ID (sync ID)", value: formatMetadataValue(metadata?.groupId) },
     { label: "User id", value: formatMetadataValue(metadata?.userId) },
     { label: "Last uploaded date", value: formatMetadataValue(metadata?.lastUploaded) },
     {

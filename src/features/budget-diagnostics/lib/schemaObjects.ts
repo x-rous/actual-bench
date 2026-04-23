@@ -236,14 +236,18 @@ export function inferRowKey(
   type: SchemaObjectType,
   columns: readonly ColumnInfo[]
 ): RowKeyInfo | null {
-  const primaryKey = columns
+  const primaryKeys = columns
     .filter((column) => column.primaryKeyPosition > 0)
-    .sort((a, b) => a.primaryKeyPosition - b.primaryKeyPosition)[0];
-  if (primaryKey) return { column: primaryKey.name, source: "primaryKey" };
+    .sort((a, b) => a.primaryKeyPosition - b.primaryKeyPosition);
+  if (primaryKeys.length === 1) {
+    return { column: primaryKeys[0].name, source: "primaryKey" };
+  }
 
   const columnNames = new Set(columns.map((column) => column.name));
-  const knownKey = KNOWN_KEY_COLUMNS.find((column) => columnNames.has(column));
-  if (knownKey) return { column: knownKey, source: "knownKey" };
+  if (primaryKeys.length === 0) {
+    const knownKey = KNOWN_KEY_COLUMNS.find((column) => columnNames.has(column));
+    if (knownKey) return { column: knownKey, source: "knownKey" };
+  }
 
   return canReadRowid(db, object, type) ? { column: "rowid", source: "rowid" } : null;
 }
@@ -325,16 +329,20 @@ export function fetchRows(
   const limit = validateFetchLimit(request.limit);
   const direction = assertDirection(request.direction);
   const columns = getColumns(db, row.name);
-  const columnNames = columns.map((column) => column.name);
+  const rowKey = inferRowKey(db, row.name, row.type, columns);
+  const baseColumnNames = columns.map((column) => column.name);
+  const includeRowid = rowKey?.column === "rowid" && !baseColumnNames.includes("rowid");
+  const columnNames = includeRowid ? ["rowid", ...baseColumnNames] : baseColumnNames;
   const orderBy = request.orderBy
-    ? assertKnownIdentifier(request.orderBy, columnNames, "sort column")
+    ? assertKnownIdentifier(request.orderBy, baseColumnNames, "sort column")
     : null;
   const orderClause = orderBy
     ? ` ORDER BY ${quoteIdentifier(orderBy)} ${direction}`
     : "";
   const count = countRows(db, row.name, row.type);
+  const selectColumns = includeRowid ? `rowid AS ${quoteIdentifier("rowid")}, *` : "*";
   const rows = db.selectRows<Record<string, unknown>>(
-    `SELECT * FROM ${quoteIdentifier(row.name)}${orderClause} LIMIT ${limit} OFFSET ${offset}`
+    `SELECT ${selectColumns} FROM ${quoteIdentifier(row.name)}${orderClause} LIMIT ${limit} OFFSET ${offset}`
   );
 
   return {

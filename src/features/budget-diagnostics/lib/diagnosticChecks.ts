@@ -40,17 +40,6 @@ function rowCount(db: DiagnosticDb, object: string): number {
   }
 }
 
-function entityExists(db: DiagnosticDb, table: string, id: string): boolean {
-  if (!db.objectExists(table, "table")) return false;
-  const tombstoneClause = hasColumn(db, table, "tombstone")
-    ? ` AND IFNULL(${quoteIdentifier("tombstone")}, 0) = 0`
-    : "";
-  const count = db.selectValue(
-    `SELECT COUNT(*) FROM ${quoteIdentifier(table)} WHERE ${quoteIdentifier("id")} = ${sqlLiteral(id)}${tombstoneClause}`
-  );
-  return asNumber(count) > 0;
-}
-
 function sqliteChecks(db: DiagnosticDb): BudgetDiagnostic[] {
   const findings: BudgetDiagnostic[] = [];
   db.exec?.("PRAGMA foreign_keys = ON");
@@ -245,6 +234,10 @@ function relationshipChecks(db: DiagnosticDb): BudgetDiagnostic[] {
 function noteRelationshipChecks(db: DiagnosticDb): BudgetDiagnostic[] {
   if (!db.objectExists("notes", "table")) return [];
   const findings: BudgetDiagnostic[] = [];
+  const refsByKind = new Map<
+    string,
+    Array<{ noteId: string; entityId: string; table: string }>
+  >();
   const rows = db.selectRows<{ id: string }>("SELECT id FROM notes");
 
   for (const row of rows) {
@@ -259,16 +252,46 @@ function noteRelationshipChecks(db: DiagnosticDb): BudgetDiagnostic[] {
           : kind === "payee"
             ? "payees"
             : "schedules";
-    if (!entityExists(db, table, entityId)) {
+    const refs = refsByKind.get(kind) ?? [];
+    refs.push({ noteId: String(row.id), entityId, table });
+    refsByKind.set(kind, refs);
+  }
+
+  for (const [kind, refs] of refsByKind) {
+    const table = refs[0]?.table;
+    if (!table) continue;
+
+    const missing = db.objectExists(table, "table")
+      ? db.selectRows<{ noteId: string; entityId: string }>(
+          `WITH note_refs(noteId, entityId) AS (VALUES ${refs
+            .map((ref) => `(${sqlLiteral(ref.noteId)}, ${sqlLiteral(ref.entityId)})`)
+            .join(", ")})
+           SELECT note_refs.noteId, note_refs.entityId
+           FROM note_refs
+           LEFT JOIN ${quoteIdentifier(table)}
+             ON ${quoteIdentifier(table)}.${quoteIdentifier("id")} = note_refs.entityId${
+               hasColumn(db, table, "tombstone")
+                 ? ` AND IFNULL(${quoteIdentifier(table)}.${quoteIdentifier("tombstone")}, 0) = 0`
+                 : ""
+             }
+           WHERE ${quoteIdentifier(table)}.${quoteIdentifier("id")} IS NULL
+           LIMIT 100`
+        )
+      : refs.slice(0, 100).map((ref) => ({
+          noteId: ref.noteId,
+          entityId: ref.entityId,
+        }));
+
+    for (const row of missing) {
       findings.push({
         code: "REL_NOTE_ORPHAN_ENTITY",
         severity: "warning",
         title: "Note references a missing entity",
-        message: `Note ${row.id} appears to reference a missing ${kind}.`,
+        message: `Note ${row.noteId} appears to reference a missing ${kind}.`,
         table: "notes",
-        rowId: String(row.id),
+        rowId: String(row.noteId),
         relatedTable: table,
-        relatedId: entityId,
+        relatedId: String(row.entityId),
       });
     }
   }

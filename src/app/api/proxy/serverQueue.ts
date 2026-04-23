@@ -22,6 +22,10 @@ import { logger } from "@/lib/logger";
 // tail so a failed request never blocks subsequent ones.
 const serverQueueTails = new Map<string, Promise<void>>();
 
+function normalizeBaseUrl(baseUrl: string): string {
+  return baseUrl.replace(/\/+$/, "");
+}
+
 /**
  * When a request fails with a server error, actual-http-api may leave the
  * budget in a partially-open state (transaction still active). Before the
@@ -34,8 +38,9 @@ async function tryCloseBudget(
   apiKey: string
 ): Promise<void> {
   try {
+    const encodedBudgetSyncId = encodeURIComponent(budgetSyncId);
     await fetch(
-      `${baseUrl.replace(/\/$/, "")}/v1/budgets/${budgetSyncId}`,
+      `${normalizeBaseUrl(baseUrl)}/v1/budgets/${encodedBudgetSyncId}`,
       {
         method: "DELETE",
         headers: { "x-api-key": apiKey },
@@ -63,7 +68,7 @@ export function queueServerRequest(
   reqId: string,
   operation: () => Promise<NextResponse>
 ): Promise<NextResponse> {
-  const serverKey = connection.baseUrl;
+  const serverKey = normalizeBaseUrl(connection.baseUrl);
   const prev = serverQueueTails.get(serverKey) ?? Promise.resolve();
 
   const thisRequest = prev.then(operation);

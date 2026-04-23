@@ -80,11 +80,15 @@ class FakeSchemaDb implements SchemaDb {
       return [] as T[];
     }
 
-    const selectMatch = /SELECT \* FROM "([^"]+)"(?: ORDER BY "([^"]+)" (asc|desc))? LIMIT ([0-9]+) OFFSET ([0-9]+)/.exec(sql);
+    const selectMatch = /SELECT (rowid AS "rowid", \*|\*) FROM "([^"]+)"(?: ORDER BY "([^"]+)" (asc|desc))? LIMIT ([0-9]+) OFFSET ([0-9]+)/.exec(sql);
     if (selectMatch) {
-      const [, objectName, orderBy, direction, limitValue, offsetValue] = selectMatch;
+      const [, projection, objectName, orderBy, direction, limitValue, offsetValue] = selectMatch;
       const object = this.objects.get(objectName);
-      const rows = [...(object?.rows ?? [])];
+      const rows = [...(object?.rows ?? [])].map((row, index) =>
+        projection.startsWith("rowid")
+          ? { rowid: row.rowid ?? index + 1, ...row }
+          : row
+      );
       if (orderBy) {
         rows.sort((a, b) => {
           const left = String(a[orderBy] ?? "");
@@ -381,6 +385,55 @@ describe("schemaObjects", () => {
         { cid: 0, name: "value", type: "TEXT", notNull: false, defaultValue: null, primaryKeyPosition: 0 },
       ])
     ).toEqual({ column: "rowid", source: "rowid" });
+  });
+
+  it("does not infer a single-column key from composite primary keys", () => {
+    const db = buildDb();
+    db.addObject({
+      name: "composite_with_rowid",
+      type: "table",
+      sql: "CREATE TABLE composite_with_rowid (account TEXT, month TEXT, PRIMARY KEY (account, month))",
+      columns: [
+        { name: "account", type: "TEXT", pk: 1 },
+        { name: "month", type: "TEXT", pk: 2 },
+      ],
+      rows: [{ account: "acct-1", month: "2026-04" }],
+      supportsRowid: true,
+    });
+    db.addObject({
+      name: "composite_without_rowid",
+      type: "table",
+      sql: "CREATE TABLE composite_without_rowid (account TEXT, month TEXT, PRIMARY KEY (account, month)) WITHOUT ROWID",
+      columns: [
+        { name: "account", type: "TEXT", pk: 1 },
+        { name: "month", type: "TEXT", pk: 2 },
+      ],
+      rows: [{ account: "acct-1", month: "2026-04" }],
+      supportsRowid: false,
+    });
+
+    expect(getSchemaObject(db, "composite_with_rowid").rowKey).toEqual({
+      column: "rowid",
+      source: "rowid",
+    });
+    expect(getSchemaObject(db, "composite_without_rowid").rowKey).toBeNull();
+  });
+
+  it("includes implicit rowid values when rowid is the inferred row key", () => {
+    const db = buildDb();
+    db.addObject({
+      name: "rowid_table",
+      type: "table",
+      sql: "CREATE TABLE rowid_table (value TEXT)",
+      columns: [{ name: "value", type: "TEXT" }],
+      rows: [{ value: "first" }],
+      supportsRowid: true,
+    });
+
+    expect(fetchRows(db, { object: "rowid_table", offset: 0, limit: 100 })).toMatchObject({
+      columns: ["rowid", "value"],
+      rows: [{ rowid: 1, value: "first" }],
+    });
   });
 
   it("validates standalone identifier helpers", () => {

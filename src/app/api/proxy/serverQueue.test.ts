@@ -36,6 +36,27 @@ describe("queueServerRequest", () => {
     expect(order).toEqual(["first", "second"]);
   });
 
+  it("serializes requests when baseUrl only differs by a trailing slash", async () => {
+    const order: string[] = [];
+    const make = (id: string, delay: number) => () =>
+      new Promise<NextResponse>((resolve) => {
+        setTimeout(() => {
+          order.push(id);
+          resolve(NextResponse.json({ id }, { status: 200 }));
+        }, delay);
+      });
+
+    const first = queueServerRequest(connection(), "r1", make("first", 40));
+    const second = queueServerRequest(
+      { ...connection(), baseUrl: "http://example.test/" },
+      "r2",
+      make("second", 5)
+    );
+
+    await Promise.all([first, second]);
+    expect(order).toEqual(["first", "second"]);
+  });
+
   it("runs requests for different baseUrls in parallel", async () => {
     const order: string[] = [];
     const resolveA = (id: string, delay: number) => () =>
@@ -67,14 +88,14 @@ describe("queueServerRequest", () => {
       .spyOn(globalThis, "fetch")
       .mockResolvedValue(new Response(null, { status: 200 }));
 
-    await queueServerRequest(connection("budget-1"), "r1", async () =>
+    await queueServerRequest(connection("budget/1?x=#"), "r1", async () =>
       NextResponse.json({ error: "boom" }, { status: 500 })
     );
     // Wait a tick for the tail promise to run the side-effect.
     await new Promise((r) => setTimeout(r, 0));
 
     expect(closeSpy).toHaveBeenCalledWith(
-      "http://example.test/v1/budgets/budget-1",
+      "http://example.test/v1/budgets/budget%2F1%3Fx%3D%23",
       expect.objectContaining({ method: "DELETE" })
     );
   });

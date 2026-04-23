@@ -383,7 +383,9 @@ export function TableBrowser({
           needsWarningCheck = false;
           const estimatedBytes =
             begin.rowCount === null
-              ? 0
+              ? next.rows.length > 0
+                ? CSV_MEMORY_WARNING_BYTES + 1
+                : 0
               : estimateCsvBytes(begin.rowCount, next.rows, begin.columns);
           if (
             estimatedBytes > CSV_MEMORY_WARNING_BYTES &&
@@ -397,7 +399,7 @@ export function TableBrowser({
         }
 
         const csvRows = buildCsvRows(next.rows, begin.columns);
-        if (csvRows) chunks.push("\r\n", csvRows);
+        if (next.rows.length > 0 && csvRows != null) chunks.push("\r\n", csvRows);
         exportedRows += next.rows.length;
         setExportState({
           status: "exporting",

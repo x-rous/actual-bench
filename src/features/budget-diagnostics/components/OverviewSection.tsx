@@ -16,11 +16,20 @@ type OverviewSectionProps = {
   diagnosticsStatus: "idle" | "loading" | "ready" | "error";
   progressStage: ProgressStage | null;
   errorMessage: string | null;
+  diagnosticsErrorMessage: string | null;
   onRetry: () => void;
 };
 
 function fallbackZipFilename(connection: ConnectionInstance): string {
   return `budget-${connection.budgetSyncId}-${new Date().toISOString().slice(0, 10)}.zip`;
+}
+
+function displayZipFilename(filename: string): string {
+  try {
+    return decodeURIComponent(filename);
+  } catch {
+    return filename;
+  }
 }
 
 function downloadZip(download: DownloadResult, connection: ConnectionInstance) {
@@ -31,8 +40,10 @@ function downloadZip(download: DownloadResult, connection: ConnectionInstance) {
   const anchor = document.createElement("a");
   anchor.href = url;
   anchor.download = download.filename ?? fallbackZipFilename(connection);
+  document.body.append(anchor);
   anchor.click();
-  URL.revokeObjectURL(url);
+  anchor.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
 function StatusBadge({ overview }: { overview: OverviewPayload }) {
@@ -70,6 +81,7 @@ export function OverviewSection({
   diagnosticsStatus,
   progressStage,
   errorMessage,
+  diagnosticsErrorMessage,
   onRetry,
 }: OverviewSectionProps) {
   const metrics = overview ? buildOverviewMetrics(overview) : [];
@@ -108,11 +120,15 @@ export function OverviewSection({
             onRetry={onRetry}
           />
         )}
-        {status === "error" && (
+        {(status === "error" || diagnosticsStatus === "error") && (
           <OpenSnapshotPanel
             status="error"
             stage={progressStage}
-            errorMessage={errorMessage}
+            errorMessage={
+              diagnosticsStatus === "error"
+                ? (diagnosticsErrorMessage ?? errorMessage)
+                : errorMessage
+            }
             onRetry={onRetry}
           />
         )}
@@ -163,7 +179,9 @@ export function OverviewSection({
                 />
                 <DetailRow
                   label="ZIP filename"
-                  value={overview.file.zipFilename ?? fallbackZipFilename(connection)}
+                  value={displayZipFilename(
+                    overview.file.zipFilename ?? fallbackZipFilename(connection)
+                  )}
                 />
                 <DetailRow label="ZIP size" value={formatBytes(overview.file.zipSizeBytes)} />
                 <DetailRow label="db.sqlite size" value={formatBytes(overview.file.dbSizeBytes)} />

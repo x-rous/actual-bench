@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { AlertCircle, Loader2 } from "lucide-react";
 import { toast } from "sonner";
@@ -43,7 +43,9 @@ export function DataBrowserSection({ snapshotStatus }: DataBrowserSectionProps) 
     objects: [],
     error: null,
   });
+  const mountedRef = useRef(true);
   const [selectedName, setSelectedName] = useState<string | null>(null);
+  const selectedNameRef = useRef<string | null>(null);
   const [rowStack, setRowStack] = useState<RowDetailsEntry[]>([]);
   const [search, setSearch] = useState("");
   const [sortMode, setSortMode] = useState<TableListSortMode>("name");
@@ -101,6 +103,7 @@ export function DataBrowserSection({ snapshotStatus }: DataBrowserSectionProps) 
   }, [objectParam, snapshotStatus, state.objects]);
 
   useEffect(() => {
+    selectedNameRef.current = selectedName;
     setRowStack([]);
   }, [selectedName]);
 
@@ -123,6 +126,13 @@ export function DataBrowserSection({ snapshotStatus }: DataBrowserSectionProps) 
   ).length;
   const schemaOnly = state.objects.length - tablesAndViews;
 
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
   const selectObject = (object: SchemaObjectSummary) => {
     setSelectedName(object.name);
     const params = new URLSearchParams(searchParams.toString());
@@ -143,6 +153,8 @@ export function DataBrowserSection({ snapshotStatus }: DataBrowserSectionProps) 
   };
 
   const followRelationship = (relationship: Relationship, value: unknown) => {
+    const selectedAtCall = selectedNameRef.current;
+
     async function run() {
       try {
         const payload = await getSqliteWorkerClient().call({
@@ -151,6 +163,7 @@ export function DataBrowserSection({ snapshotStatus }: DataBrowserSectionProps) 
           keyColumn: relationship.to.column,
           keyValue: value,
         });
+        if (!mountedRef.current || selectedNameRef.current !== selectedAtCall) return;
         pushRowEntry({
           object: payload.object,
           objectType: payload.objectType,
@@ -161,6 +174,7 @@ export function DataBrowserSection({ snapshotStatus }: DataBrowserSectionProps) 
           keyValue: payload.keyValue,
         });
       } catch (error) {
+        if (!mountedRef.current || selectedNameRef.current !== selectedAtCall) return;
         toast.error(getErrorMessage(error));
       }
     }

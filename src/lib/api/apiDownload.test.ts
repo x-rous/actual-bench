@@ -93,6 +93,23 @@ describe("apiDownload", () => {
     expect(result.filename).toBe("budget ✓.zip");
   });
 
+  it("parses RFC 5987 filename*= values with an optional language tag", async () => {
+    fetchMock.mockResolvedValue(
+      mockResponse({
+        status: 200,
+        bytes: [1],
+        headers: {
+          "content-type": "application/zip",
+          "content-disposition":
+            "attachment; filename=\"fallback.zip\"; filename*=UTF-8'en'budget%20backup.zip",
+        },
+      })
+    );
+
+    const result = await apiDownload(connection, "/export");
+    expect(result.filename).toBe("budget backup.zip");
+  });
+
   it("returns filename=null when no content-disposition is present", async () => {
     fetchMock.mockResolvedValue(
       mockResponse({

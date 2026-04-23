@@ -73,7 +73,7 @@ export function OpenSnapshotPanel({
   const errorIndex = status === "error" ? Math.max(currentIndex, 0) : -1;
   const title =
     status === "error"
-      ? "Snapshot export failed"
+      ? "Failed to open snapshot"
       : stage === "runningDiagnostics"
         ? "Running diagnostics"
         : "Opening budget snapshot";

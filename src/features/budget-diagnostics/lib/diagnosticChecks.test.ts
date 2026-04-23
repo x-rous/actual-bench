@@ -46,6 +46,20 @@ class FakeDiagnosticDb implements DiagnosticDb {
       return (this.objects.get("notes")?.rows ?? []).map((row) => ({ id: row.id })) as unknown as T[];
     }
 
+    if (sql.includes("WITH note_refs")) {
+      const tableMatch = /LEFT JOIN "([^"]+)"/.exec(sql);
+      const table = tableMatch?.[1];
+      if (!table) return [];
+      const rightRows = this.objects.get(table)?.rows ?? [];
+      return [...sql.matchAll(/\('([^']+)', '([^']+)'\)/g)]
+        .map((match) => ({ noteId: match[1], entityId: match[2] }))
+        .filter(
+          (ref) =>
+            !rightRows.some((row) => row.id === ref.entityId && row.tombstone !== 1)
+        )
+        .slice(0, 100) as unknown as T[];
+    }
+
     const relationMatch = /FROM "([^"]+)" l\s+LEFT JOIN "([^"]+)" r/.exec(sql);
     const rowIdColumnMatch = /SELECT l\."([^"]+)" AS rowId/.exec(sql);
     const columnMatch = /l\."([^"]+)" AS relatedId/.exec(sql);
@@ -386,6 +400,35 @@ describe("diagnosticChecks", () => {
       relatedTable: "schedules",
       relatedId: "missing-schedule",
     });
+  });
+
+  it("reports note relationships with batched target lookups", () => {
+    const db = buildDb();
+    db.addObject("notes", "table", EXPECTED_COLUMNS.notes, [
+      { id: "account-00000000-0000-0000-0000-000000000001" },
+      { id: "payee-00000000-0000-0000-0000-000000000002" },
+      { id: "other-note" },
+    ]);
+
+    const findings = relationshipFindings(db);
+
+    expect(findings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "REL_NOTE_ORPHAN_ENTITY",
+          table: "notes",
+          rowId: "account-00000000-0000-0000-0000-000000000001",
+          relatedTable: "accounts",
+          relatedId: "00000000-0000-0000-0000-000000000001",
+        }),
+        expect.objectContaining({
+          code: "REL_NOTE_ORPHAN_ENTITY",
+          rowId: "payee-00000000-0000-0000-0000-000000000002",
+          relatedTable: "payees",
+          relatedId: "00000000-0000-0000-0000-000000000002",
+        }),
+      ])
+    );
   });
 
   it("reports malformed metadata dates", () => {

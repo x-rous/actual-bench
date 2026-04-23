@@ -24,9 +24,10 @@ describe("budget diagnostics bundle isolation", () => {
   it("keeps sqlite-wasm and ZIP parsing imports inside the diagnostics feature", () => {
     const offenders = listSourceFiles(SRC_DIR).flatMap((file) => {
       const relativePath = relative(ROOT, file);
+      const normalizedPath = relativePath.replace(/\\+/g, "/");
       if (
-        relativePath.startsWith(ALLOWED_PREFIX) ||
-        ALLOWED_TYPE_DECLARATIONS.has(relativePath)
+        normalizedPath.startsWith(ALLOWED_PREFIX) ||
+        ALLOWED_TYPE_DECLARATIONS.has(normalizedPath)
       ) {
         return [];
       }
@@ -34,7 +35,7 @@ describe("budget diagnostics bundle isolation", () => {
       const source = readFileSync(file, "utf8");
       return HEAVY_DIAGNOSTICS_IMPORTS.filter((moduleName) =>
         source.includes(moduleName)
-      ).map((moduleName) => `${relativePath} imports ${moduleName}`);
+      ).map((moduleName) => `${normalizedPath} imports ${moduleName}`);
     });
 
     expect(offenders).toEqual([]);

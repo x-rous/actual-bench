@@ -1,4 +1,5 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import type { AnchorHTMLAttributes } from "react";
 import { useConnectionStore, type ConnectionInstance } from "@/store/connection";
 import type { DownloadResult } from "@/lib/api/client";
 import type {
@@ -25,7 +26,7 @@ jest.mock("next/link", () => ({
     children,
     href,
     ...props
-  }: React.AnchorHTMLAttributes<HTMLAnchorElement> & { href: string }) => (
+  }: AnchorHTMLAttributes<HTMLAnchorElement> & { href: string }) => (
     <a href={href} {...props}>
       {children}
     </a>
@@ -78,19 +79,19 @@ const download: DownloadResult = {
 
 const summary: LoadedSnapshotSummary = {
   dbSizeBytes: 1024,
-  zipFilename: "household.zip",
+  zipFilename: "2026-04-23-Actual%20Bench%20Test.zip",
   zipSizeBytes: 2048,
   hadMetadata: true,
-  metadata: { budgetName: "Household" },
+  metadata: { id: "budget-id", budgetName: "Household", groupId: "sync-id" },
   tableCount: 12,
   viewCount: 4,
 };
 
 const overview: OverviewPayload = {
-  metadata: { budgetName: "Household" },
+  metadata: { id: "budget-id", budgetName: "Household", groupId: "sync-id" },
   file: {
     dbSizeBytes: 1024,
-    zipFilename: "household.zip",
+    zipFilename: "2026-04-23-Actual%20Bench%20Test.zip",
     zipSizeBytes: 2048,
     hadMetadata: true,
     opened: true,
@@ -198,6 +199,9 @@ describe("BudgetDiagnosticsView", () => {
     expect(screen.getByText("Read-only. No changes written back to the budget. Exports are processed locally.")).toBeInTheDocument();
     expect(screen.getByText("Transactions")).toBeInTheDocument();
     expect(screen.getByText("42")).toBeInTheDocument();
+    expect(screen.getByText("Budget ID")).toBeInTheDocument();
+    expect(screen.getByText("Group ID (sync ID)")).toBeInTheDocument();
+    expect(screen.getByText("2026-04-23-Actual Bench Test.zip")).toBeInTheDocument();
     expect(mockExportSnapshot).toHaveBeenCalledWith(connection, expect.any(Function));
   });
 
@@ -208,7 +212,7 @@ describe("BudgetDiagnosticsView", () => {
 
     render(<BudgetDiagnosticsView />);
 
-    expect(await screen.findByText("Snapshot export failed")).toBeInTheDocument();
+    expect(await screen.findByText("Failed to open snapshot")).toBeInTheDocument();
     expect(screen.getByText("Export failed")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
@@ -226,6 +230,7 @@ describe("BudgetDiagnosticsView", () => {
       expect(mockExportSnapshot).toHaveBeenCalledWith(connection, expect.any(Function));
     });
 
+    const resetCountBeforeSwitch = mockResetSqliteWorkerClient.mock.calls.length;
     act(() => {
       useConnectionStore.setState({
         instances: [connection, secondConnection],
@@ -237,6 +242,8 @@ describe("BudgetDiagnosticsView", () => {
     await waitFor(() => {
       expect(mockExportSnapshot).toHaveBeenCalledWith(secondConnection, expect.any(Function));
     });
-    expect(mockResetSqliteWorkerClient).toHaveBeenCalled();
+    expect(mockResetSqliteWorkerClient.mock.calls.length).toBeGreaterThan(
+      resetCountBeforeSwitch
+    );
   });
 });

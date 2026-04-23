@@ -18,11 +18,12 @@ function column(name: string, type: string): ColumnInfo {
 }
 
 describe("csvExport", () => {
-  it("neutralizes formula-like text values only for text columns", () => {
+  it("neutralizes formula-like string values without changing numeric values", () => {
     expect(encodeCsvCell("=cmd|' /C calc'!A0", column("memo", "TEXT"))).toBe(
       "'=cmd|' /C calc'!A0"
     );
     expect(encodeCsvCell("-12345", column("memo", "TEXT"))).toBe("'-12345");
+    expect(encodeCsvCell("@formula", column("value", "INTEGER"))).toBe("'@formula");
     expect(encodeCsvCell(-12345, column("amount", "INTEGER"))).toBe("-12345");
     expect(encodeCsvCell(-12.5, column("rate", "REAL"))).toBe("-12.5");
   });

@@ -58,6 +58,7 @@ export function TableList({
         <div className="relative">
           <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
           <input
+            aria-label="Search objects"
             value={search}
             onChange={(event) => onSearchChange(event.target.value)}
             placeholder="Search objects"
@@ -67,6 +68,7 @@ export function TableList({
         <div className="flex rounded-md border border-border p-0.5">
           <button
             type="button"
+            aria-pressed={sortMode === "name"}
             onClick={() => onSortModeChange("name")}
             className={cn(
               "flex-1 rounded-sm px-2 py-1 text-xs font-medium transition-colors",
@@ -79,6 +81,7 @@ export function TableList({
           </button>
           <button
             type="button"
+            aria-pressed={sortMode === "rowCount"}
             onClick={() => onSortModeChange("rowCount")}
             className={cn(
               "flex-1 rounded-sm px-2 py-1 text-xs font-medium transition-colors",

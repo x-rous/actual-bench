@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
@@ -121,6 +121,7 @@ export function BudgetDiagnosticsView() {
   const searchParams = useSearchParams();
   const [reloadToken, setReloadToken] = useState(0);
   const [snapshot, setSnapshot] = useState<SnapshotState>(INITIAL_SNAPSHOT_STATE);
+  const integrityRunGeneration = useRef(0);
   const tabParam = searchParams.get("tab");
   const activeTab: WorkbenchTab = isWorkbenchTab(tabParam) ? tabParam : "overview";
   const diagnosticsCount = snapshot.diagnostics?.findings.length ?? 0;
@@ -144,6 +145,9 @@ export function BudgetDiagnosticsView() {
 
   const runIntegrityCheck = useCallback(() => {
     async function run() {
+      const generation = ++integrityRunGeneration.current;
+      const isCurrentRun = () => integrityRunGeneration.current === generation;
+
       setSnapshot((current) => ({
         ...current,
         integrityStatus: "loading",
@@ -156,10 +160,13 @@ export function BudgetDiagnosticsView() {
           {
             timeoutMs: null,
             onProgress: (stage) => {
-              setSnapshot((current) => ({ ...current, progressStage: stage }));
+              if (isCurrentRun()) {
+                setSnapshot((current) => ({ ...current, progressStage: stage }));
+              }
             },
           }
         );
+        if (!isCurrentRun()) return;
         setSnapshot((current) => {
           const existing = current.diagnostics?.findings ?? [];
           const withoutIntegrity = existing.filter(
@@ -176,6 +183,7 @@ export function BudgetDiagnosticsView() {
           };
         });
       } catch (error) {
+        if (!isCurrentRun()) return;
         setSnapshot((current) => ({
           ...current,
           integrityStatus: "error",
@@ -190,6 +198,7 @@ export function BudgetDiagnosticsView() {
 
   useEffect(() => {
     if (!connection) {
+      integrityRunGeneration.current += 1;
       resetSqliteWorkerClient();
       return;
     }
@@ -198,6 +207,7 @@ export function BudgetDiagnosticsView() {
     const activeConnection = connection;
 
     async function openSnapshot() {
+      integrityRunGeneration.current += 1;
       resetSqliteWorkerClient();
       setSnapshot({
         status: "loading",
@@ -295,6 +305,7 @@ export function BudgetDiagnosticsView() {
 
     return () => {
       cancelled = true;
+      integrityRunGeneration.current += 1;
       resetSqliteWorkerClient();
     };
   }, [
@@ -361,6 +372,7 @@ export function BudgetDiagnosticsView() {
             diagnosticsStatus={snapshot.diagnosticsStatus}
             progressStage={snapshot.progressStage}
             errorMessage={snapshot.errorMessage}
+            diagnosticsErrorMessage={snapshot.diagnosticsError}
             onRetry={retry}
           />
         </TabsContent>
