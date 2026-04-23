@@ -41,6 +41,9 @@ yarn-error.log*
 # ── Deployment ────────────────────────────────────────────────────────────────
 .vercel
 
+# ── Generated SQLite WASM asset ───────────────────────────────────────────────
+public/sqlite/sqlite3.wasm
+
 # ── Local Claude Code settings (user-specific, not project config) ─────────────
 .claude/settings.local.json
 

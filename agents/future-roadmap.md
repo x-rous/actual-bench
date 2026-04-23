@@ -90,7 +90,7 @@ RD-018 (Saved servers)       — complete
 RD-019 (Grouped categories)  — complete
 RD-020 (Rule editing improvements) — complete
 RD-023 (Rule diagnostics)    — depends on RD-007 (now complete); enhanced by RD-016 if available; unblocked
-RD-024 (Budget diagnostics)  — independent; planned read-only exported-budget workspace
+RD-024 (Budget diagnostics)  — complete
 RD-025 (Budget overview)     — complete
 RD-026 (Sidebar grouping)    — complete
 ```
@@ -1186,7 +1186,7 @@ type RuleDiagnostic = {
 |---|---|
 | **Priority** | Medium |
 | **Effort** | M |
-| **Status** | pending |
+| **Status** | complete |
 | **Depends on** | nothing (fully client-side) |
 
 **What:** A read-only diagnostics workspace that lets users open an exported Actual Budget snapshot locally and inspect its contents in the browser. No file is uploaded to any server — processing happens client-side, likely via WASM SQLite.
@@ -1197,16 +1197,18 @@ type RuleDiagnostic = {
 - Fully offline — no server-side risk or data exposure
 - Fits actual-bench's workbench positioning better than a generic file browser
 
-**Current product state:**
-- Overview already exposes **Budget Diagnostics** as a planned disabled tool card
-- The diagnostics workspace itself does **not** exist yet
-- Do not add a live sidebar route until the page is implemented
+**Shipped product state:**
+- Overview exposes **Budget Diagnostics** as a live tool card
+- `/budget-diagnostics` opens a read-only exported-snapshot workspace for the active budget
+- Snapshot processing happens locally in the browser through a dedicated SQLite worker
 
-**Scope v1:**
-- File picker and drag-and-drop zone that reads an exported budget snapshot client-side
-- Display: file size, schema/version details, list of all tables with row counts
-- Read-only paginated table browser — pick any table and browse rows
-- Powered by [`sql.js`](https://github.com/sql-js/sql.js) or `wa-sqlite` (WASM SQLite); no native Node.js SQLite dependency
+**Shipped scope:**
+- Active budget export is downloaded through the binary proxy and opened locally in a read-only worker
+- Overview tab shows export metadata, snapshot counts, ZIP/database sizes, and source details
+- Diagnostics tab runs deterministic relationship/schema checks and supports a full SQLite integrity check
+- Data Browser lists SQLite tables, views, indexes, and triggers by Actual Budget domain
+- Read-only paginated table/view browser supports worker-side sorting, schema inspection, relationship drill-in, row JSON copy, and full table/view CSV export
+- Powered by `@sqlite.org/sqlite-wasm` in a dynamically loaded diagnostics route
 
 **Non-goals:**
 - No file upload to actual-http-api or any server
@@ -1214,35 +1216,21 @@ type RuleDiagnostic = {
 - No mutation flows from this workspace
 - No query execution in v1 (ActualQL already covers that workflow)
 
-**Files to create:**
-```text
-src/features/budget-diagnostics/
-  components/BudgetDiagnosticsView.tsx   — drop zone + file info + table list
-  components/TableBrowser.tsx            — paginated read-only row viewer
-  lib/sqliteReader.ts                    — WASM SQLite wrapper: open file, list tables, count rows, fetch page
-src/app/(app)/budget-diagnostics/
-  page.tsx
-```
-
-**Files to update:**
-- `src/components/layout/Sidebar.tsx` — add nav entry only when the route exists
-- `src/features/overview/lib/overviewCards.ts` — switch the planned card to a live link when the workspace ships
-
 **Implementation notes:**
-- `sql.js` can be dynamically imported to avoid bloating the main bundle
-- The WASM binary must be served from `public/` or bundled appropriately
-- File reading should use the `FileReader` API — no server roundtrip
-- v1 should stay read-only and stateless; the opened file is never persisted between sessions
+- The diagnostics route dynamically imports the feature UI so `@sqlite.org/sqlite-wasm` and `fflate` stay isolated to the diagnostics surface
+- The SQLite WASM binary is copied into `public/sqlite/` during postinstall
+- The opened snapshot is never written back to Actual Budget and is not persisted between sessions
 
 **UI notes:**
-- Show compact file summary cards at the top: filename, file size, schema/version, table count
-- Use a simple table list + row browser layout instead of trying to mimic a full database IDE
-- Keep system-table visibility explicit so power users can inspect raw structures when needed
+- Top-level tabs keep Overview, Diagnostics, and Data Browser separate
+- Data Browser uses a three-pane workbench: object list, row/schema browser, and row drill-in panel
+- System tables, indexes, and triggers remain explicit so power users can inspect raw structures when needed
+- A compact read-only/privacy notice stays visible in the tab header
 
 **Possible future integration:**
 - Launch an ActualQL draft from a selected table/schema context
-- Offer export of a selected table view to CSV / JSON later if users find the diagnostics useful
-- Add higher-level structural checks once the basic browser exists
+- Add JSON export if users need it
+- Add higher-level structural checks as new diagnostics patterns are identified
 
 ---
 

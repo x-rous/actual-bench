@@ -12,6 +12,7 @@ import {
   ScrollText,
   Calendar,
   Tag,
+  Stethoscope,
   Terminal,
   PanelLeftClose,
   PanelLeftOpen,
@@ -88,6 +89,12 @@ const SIDEBAR_SECTIONS: SidebarSection[] = [
       id: "tools",
       label: "Tools",
       items: [
+        {
+          id: "budget-diagnostics",
+          label: "Budget Diagnostics",
+          href: "/budget-diagnostics",
+          icon: Stethoscope,
+        },
         { id: "query", label: "ActualQL", href: "/query", icon: Terminal, badge: "dev" },
       ],
     },

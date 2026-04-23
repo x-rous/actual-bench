@@ -82,6 +82,88 @@ export async function testConnection(
   await apiRequest<unknown>(connection, "/accounts", { method: "GET" });
 }
 
+// ─── Binary download ──────────────────────────────────────────────────────────
+
+export type DownloadResult = {
+  bytes: ArrayBuffer;
+  filename: string | null;
+  contentType: string;
+};
+
+/**
+ * Parse RFC 5987 / RFC 6266 filename from a Content-Disposition header.
+ * Prefers filename*= (UTF-8) and falls back to the unquoted filename=.
+ */
+function parseContentDispositionFilename(disposition: string): string | null {
+  const encoded = /filename\*\s*=\s*([^']+)'([^']*)'([^;]+)/i.exec(disposition);
+  if (encoded?.[3]) {
+    try {
+      return decodeURIComponent(encoded[3].trim());
+    } catch {
+      // fall through to plain filename=
+    }
+  }
+  const quoted = /filename\s*=\s*"([^"]*)"/i.exec(disposition);
+  if (quoted?.[1]) return quoted[1].trim();
+
+  const plain = /filename\s*=\s*([^;]+)/i.exec(disposition);
+  return plain?.[1]?.trim() ?? null;
+}
+
+/**
+ * Download a binary resource through the proxy. Used by features that need
+ * raw bytes (e.g. the budget export ZIP). Routes through /api/proxy/download
+ * so the per-server request queue is honored and CORS stays server-side.
+ *
+ * Throws a structured ApiError on non-2xx responses.
+ */
+export async function apiDownload(
+  connection: ConnectionInstance,
+  path: string
+): Promise<DownloadResult> {
+  let response: Response;
+
+  try {
+    response = await fetch("/api/proxy/download", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ connection, path, method: "GET" }),
+    });
+  } catch (err) {
+    const error: ApiError = {
+      kind: "api",
+      status: 0,
+      message:
+        err instanceof Error ? err.message : "Network error — is the dev server running?",
+    };
+    throw error;
+  }
+
+  if (!response.ok) {
+    let message = `HTTP ${response.status}`;
+    try {
+      const json = (await response.json()) as { error?: string; message?: string };
+      message = json.error ?? json.message ?? message;
+    } catch {
+      // ignore parse errors
+    }
+
+    const error: ApiError = {
+      kind: "api",
+      status: response.status,
+      message,
+    };
+    throw error;
+  }
+
+  const bytes = await response.arrayBuffer();
+  const contentType = response.headers.get("content-type") ?? "application/octet-stream";
+  const disposition = response.headers.get("content-disposition");
+  const filename = disposition ? parseContentDispositionFilename(disposition) : null;
+
+  return { bytes, filename, contentType };
+}
+
 // ─── Version endpoints ────────────────────────────────────────────────────────
 
 /**

@@ -1,0 +1,253 @@
+export type RelationshipKind = "view" | "raw";
+export type RelationshipSeverity = "warning" | "info";
+
+export type Relationship = {
+  code: string;
+  kind: RelationshipKind;
+  from: { object: string; column: string };
+  to: { table: string; column: string };
+  title: string;
+  severity: RelationshipSeverity;
+  skipWhere?: string;
+};
+
+export const RELATIONSHIPS: readonly Relationship[] = [
+  {
+    code: "REL_CATEGORY_ORPHAN_GROUP",
+    kind: "raw",
+    from: { object: "categories", column: "cat_group" },
+    to: { table: "category_groups", column: "id" },
+    title: "Category references a missing category group",
+    severity: "warning",
+  },
+  {
+    code: "REL_SCHEDULE_ORPHAN_RULE",
+    kind: "raw",
+    from: { object: "schedules", column: "rule" },
+    to: { table: "rules", column: "id" },
+    title: "Schedule references a missing rule",
+    severity: "warning",
+  },
+  {
+    code: "REL_PAYEE_ORPHAN_TRANSFER_ACCOUNT",
+    kind: "raw",
+    from: { object: "payees", column: "transfer_acct" },
+    to: { table: "accounts", column: "id" },
+    title: "Payee references a missing transfer account",
+    severity: "warning",
+  },
+  {
+    code: "REL_PAYEE_ORPHAN_CATEGORY",
+    kind: "raw",
+    from: { object: "payees", column: "category" },
+    to: { table: "categories", column: "id" },
+    title: "Payee references a missing default category",
+    severity: "warning",
+  },
+  {
+    code: "REL_PAYEE_MAPPING_ORPHAN_TARGET",
+    kind: "raw",
+    from: { object: "payee_mapping", column: "targetId" },
+    to: { table: "payees", column: "id" },
+    title: "Payee mapping references a missing payee",
+    severity: "warning",
+  },
+  {
+    code: "REL_CATEGORY_MAPPING_ORPHAN_TRANSFER",
+    kind: "raw",
+    from: { object: "category_mapping", column: "transferId" },
+    to: { table: "categories", column: "id" },
+    title: "Category mapping references a missing category",
+    severity: "warning",
+  },
+  {
+    code: "REL_TRANSACTION_ORPHAN_ACCOUNT",
+    kind: "raw",
+    from: { object: "transactions", column: "acct" },
+    to: { table: "accounts", column: "id" },
+    title: "Transaction references a missing account",
+    severity: "warning",
+  },
+  {
+    code: "REL_TRANSACTION_ORPHAN_CATEGORY_MAPPING",
+    kind: "raw",
+    from: { object: "transactions", column: "category" },
+    to: { table: "category_mapping", column: "id" },
+    title: "Transaction references a missing category mapping",
+    severity: "warning",
+  },
+  {
+    code: "REL_TRANSACTION_ORPHAN_PAYEE_MAPPING",
+    kind: "raw",
+    from: { object: "transactions", column: "description" },
+    to: { table: "payee_mapping", column: "id" },
+    title: "Transaction references a missing payee mapping",
+    severity: "warning",
+  },
+  {
+    code: "REL_TRANSACTION_ORPHAN_PARENT",
+    kind: "raw",
+    from: { object: "transactions", column: "parent_id" },
+    to: { table: "transactions", column: "id" },
+    title: "Child transaction references a missing parent",
+    severity: "warning",
+    skipWhere: `l."isChild" = 1`,
+  },
+  {
+    code: "REL_TRANSACTION_ORPHAN_TRANSFER",
+    kind: "raw",
+    from: { object: "transactions", column: "transferred_id" },
+    to: { table: "transactions", column: "id" },
+    title: "Transaction references a missing transfer pair",
+    severity: "info",
+  },
+  {
+    code: "REL_TRANSACTION_ORPHAN_SCHEDULE",
+    kind: "raw",
+    from: { object: "transactions", column: "schedule" },
+    to: { table: "schedules", column: "id" },
+    title: "Transaction references a missing schedule",
+    severity: "info",
+  },
+  {
+    code: "REL_SCHEDULE_NEXT_DATE_ORPHAN_SCHEDULE",
+    kind: "raw",
+    from: { object: "schedules_next_date", column: "schedule_id" },
+    to: { table: "schedules", column: "id" },
+    title: "Schedule next-date row references a missing schedule",
+    severity: "warning",
+  },
+  {
+    code: "REL_SCHEDULE_JSON_PATHS_ORPHAN_SCHEDULE",
+    kind: "raw",
+    from: { object: "schedules_json_paths", column: "schedule_id" },
+    to: { table: "schedules", column: "id" },
+    title: "Schedule JSON paths row references a missing schedule",
+    severity: "warning",
+  },
+  {
+    code: "REL_DASHBOARD_ORPHAN_PAGE",
+    kind: "raw",
+    from: { object: "dashboard", column: "dashboard_page_id" },
+    to: { table: "dashboard_pages", column: "id" },
+    title: "Dashboard widget references a missing dashboard page",
+    severity: "warning",
+  },
+  {
+    code: "REL_PAYEE_LOCATION_ORPHAN_PAYEE",
+    kind: "raw",
+    from: { object: "payee_locations", column: "payee_id" },
+    to: { table: "payees", column: "id" },
+    title: "Payee location references a missing payee",
+    severity: "warning",
+  },
+  {
+    code: "REL_REFLECT_BUDGET_ORPHAN_CATEGORY",
+    kind: "raw",
+    from: { object: "reflect_budgets", column: "category" },
+    to: { table: "categories", column: "id" },
+    title: "Reflect budget row references a missing category",
+    severity: "warning",
+  },
+  {
+    code: "REL_ZERO_BUDGET_ORPHAN_CATEGORY",
+    kind: "raw",
+    from: { object: "zero_budgets", column: "category" },
+    to: { table: "categories", column: "id" },
+    title: "Zero budget row references a missing category",
+    severity: "warning",
+  },
+  {
+    code: "REL_VIEW_TRANSACTION_ACCOUNT",
+    kind: "view",
+    from: { object: "v_transactions", column: "account" },
+    to: { table: "accounts", column: "id" },
+    title: "Transaction view account drill-in",
+    severity: "info",
+  },
+  {
+    code: "REL_VIEW_TRANSACTION_CATEGORY",
+    kind: "view",
+    from: { object: "v_transactions", column: "category" },
+    to: { table: "categories", column: "id" },
+    title: "Transaction view category drill-in",
+    severity: "info",
+  },
+  {
+    code: "REL_VIEW_TRANSACTION_PAYEE",
+    kind: "view",
+    from: { object: "v_transactions", column: "payee" },
+    to: { table: "payees", column: "id" },
+    title: "Transaction view payee drill-in",
+    severity: "info",
+  },
+  {
+    code: "REL_VIEW_TRANSACTION_PARENT",
+    kind: "view",
+    from: { object: "v_transactions", column: "parent_id" },
+    to: { table: "transactions", column: "id" },
+    title: "Transaction view parent drill-in",
+    severity: "info",
+  },
+  {
+    code: "REL_VIEW_TRANSACTION_TRANSFER",
+    kind: "view",
+    from: { object: "v_transactions", column: "transfer_id" },
+    to: { table: "transactions", column: "id" },
+    title: "Transaction view transfer drill-in",
+    severity: "info",
+  },
+  {
+    code: "REL_VIEW_TRANSACTION_SCHEDULE",
+    kind: "view",
+    from: { object: "v_transactions", column: "schedule" },
+    to: { table: "schedules", column: "id" },
+    title: "Transaction view schedule drill-in",
+    severity: "info",
+  },
+  {
+    code: "REL_VIEW_CATEGORY_GROUP",
+    kind: "view",
+    from: { object: "v_categories", column: "group" },
+    to: { table: "category_groups", column: "id" },
+    title: "Category view group drill-in",
+    severity: "info",
+  },
+  {
+    code: "REL_VIEW_PAYEE_TRANSFER_ACCOUNT",
+    kind: "view",
+    from: { object: "v_payees", column: "transfer_acct" },
+    to: { table: "accounts", column: "id" },
+    title: "Payee view transfer account drill-in",
+    severity: "info",
+  },
+  {
+    code: "REL_VIEW_SCHEDULE_RULE",
+    kind: "view",
+    from: { object: "v_schedules", column: "rule" },
+    to: { table: "rules", column: "id" },
+    title: "Schedule view rule drill-in",
+    severity: "info",
+  },
+  {
+    code: "REL_VIEW_SCHEDULE_PAYEE",
+    kind: "view",
+    from: { object: "v_schedules", column: "_payee" },
+    to: { table: "payees", column: "id" },
+    title: "Schedule view payee drill-in",
+    severity: "info",
+  },
+];
+
+export function findRelationship(object: string, column: string): Relationship | null {
+  return (
+    RELATIONSHIPS.find(
+      (relationship) =>
+        relationship.from.object === object && relationship.from.column === column
+    ) ?? null
+  );
+}
+
+export function relationshipsFromObject(object: string): Relationship[] {
+  return RELATIONSHIPS.filter((relationship) => relationship.from.object === object);
+}

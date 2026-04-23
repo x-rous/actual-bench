@@ -22,7 +22,7 @@ Useful for power users who want more control over their budget data, and for tes
 - **Multi-server, multi-budget** - save and switch between connections without leaking data between sessions
 - **Schedules management** - create and edit one-time and recurring schedules with full recurrence controls, amount modes, and weekend adjustment
 - **ActualQL query workspace** - run ad-hoc ActualQL queries against your budget, inspect results as table / raw JSON / scalar / collapsible tree, save and replay named query packs, and copy a cURL command for any executed query
-- **Budget Diagnostics** *(planned)* - inspect exported budget snapshots in a read-only workspace with diagnostics and data browsing
+- **Budget Diagnostics** - inspect exported budget snapshots in a read-only local workspace with overview metrics, diagnostics, paginated SQLite data browsing, and full table/view CSV export
 
 ## Architecture
 
@@ -33,7 +33,7 @@ Browser
               └─► Actual Budget  (SQLite budget file)
 ```
 
-All browser requests route through an internal Next.js proxy - no direct browser-to-API calls to `actual-http-api`. Connection credentials are sent only to actual-bench and proxied server-side to the API; session storage is cleared when the tab is closed. For Docker deployments, ensure actual-bench and http-api reside on the same Docker network to allow internal network connectivity.
+All browser requests route through an internal Next.js proxy - no direct browser-to-API calls to `actual-http-api`. Connection credentials are sent only to actual-bench and proxied server-side to the API; session storage is cleared when the tab is closed. For Docker deployments, `actual-bench` must be able to reach `actual-http-api` from inside the container. If you see `fetch failed` or `502 Bad Gateway` during connect, first verify that both containers are attached to the same Docker network.
 
 ## Screenshots
 
@@ -92,9 +92,6 @@ services:
     image: xrous/actual-bench:latest
     ports:
       - "3000:3000"
-    environment:
-      NODE_ENV: production
-      NEXT_TELEMETRY_DISABLED: "1"
     restart: unless-stopped
 ```
 
@@ -122,6 +119,62 @@ Click **Load Budgets** to fetch the list of budgets available on that server.
 
 Click **Connect** to finish. Successful connect and reconnect flows land on **Overview**. The connection is saved in **session storage** - credentials are cleared automatically when the tab is closed. Multiple connections can be saved and switched between; previously saved connections appear at the top of the Connect screen for one-click reconnect.
 
+
+### Docker networking troubleshooting
+
+If **Load Budgets** fails with `fetch failed`, or you see a `502 Bad Gateway` error on `/api/proxy`, the most common cause is that `actual-bench` and `actual-http-api` are running on different Docker networks.
+
+Even if the `actual-http-api` URL works in your browser, `actual-bench` still needs to be able to reach that server **from inside its own container**.
+
+#### 1) Find the container names
+
+```bash
+docker ps --format "table {{.Names}}\t{{.Image}}\t{{.Ports}}"
+```
+
+Look for your `actual-bench` container and your `actual-http-api` container.
+
+#### 2) Check which Docker networks each container is using
+
+```bash
+docker inspect -f '{{.Name}} -> {{range $k, $v := .NetworkSettings.Networks}}{{printf "%s " $k}}{{end}}' <actual-bench-container>
+docker inspect -f '{{.Name}} -> {{range $k, $v := .NetworkSettings.Networks}}{{printf "%s " $k}}{{end}}' <actual-http-api-container>
+```
+
+If the network names do not overlap, the containers cannot talk to each other by Docker network routing.
+
+#### 3) Temporarily connect `actual-bench` to the same network as `actual-http-api`
+
+```bash
+docker network connect <actual-http-api-network> <actual-bench-container>
+```
+
+After that, try connecting again from the Actual Bench UI.
+
+#### 4) Make the fix permanent in Docker Compose
+
+Update the `actual-bench` service so it joins the same network as `actual-http-api`.
+
+Example:
+
+```yaml
+services:
+  actual-bench:
+    image: xrous/actual-bench:latest
+    ports:
+      - "3000:3000"
+    networks:
+      - actual-stack # replace with same network where actual http api runs
+    restart: unless-stopped
+
+networks:
+  actual-stack: # replace with same network where actual-http-api runs
+    external: true
+```
+
+Replace `actual-stack` with the real network name you found from `docker inspect`.
+
+
 ## Staged Editing Workflow
 
 1. Click any cell to edit inline; press Enter or click away to confirm
@@ -147,7 +200,7 @@ Ready-to-use sample CSV files are included in [`public/samples csv/`](public/sam
 | [`sample-rules.csv`](public/samples%20csv/sample-rules.csv) | 10 rules demonstrating multi-condition, multi-action, `or` logic, stage filtering, and payee auto-creation |
 | [`sample-schedules.csv`](public/samples%20csv/sample-schedules.csv) | 6 schedules - one-time, monthly, weekly, yearly, and range-amount examples |
 | [`sample-tags.csv`](public/samples%20csv/sample-tags.csv) | 8 tags with varied colors and descriptions |
-| [`sample-tags.csv`](public/samples%20csv/sample-budget.csv) | budget import template with groups, categories, and budgeted amounts per month |
+| [`sample-budget.csv`](public/samples%20csv/sample-budget.csv) | budget import template with groups, categories, and budgeted amounts per month |
 
 ### CSV Formats
 
@@ -176,11 +229,10 @@ Ready-to-use sample CSV files are included in [`public/samples csv/`](public/sam
 ## Coming Soon
 
 - **Rule diagnostics** - detect conflicting, shadowed, or redundant rules across stages
-- **Budget Diagnostics** - inspect exported budget snapshots in a read-only workspace with overview, diagnostics, and data browsing
 
 ## Known Limitations
 
-- **No pagination** - all entities are loaded at once. Performance may degrade on very large budgets.
+- **No pagination on main entity admin pages** - Accounts, Payees, Categories, Rules, and related admin pages load their full entity sets. Paginated browsing is available in Budget Diagnostics / Data Browser.
 
 ## Development
 
