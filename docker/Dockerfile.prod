@@ -2,6 +2,7 @@
 FROM node:20-alpine AS deps
 WORKDIR /app
 COPY package*.json ./
+COPY scripts/copy-sqlite-wasm.mjs ./scripts/copy-sqlite-wasm.mjs
 # --omit=dev installs only the runtime dependencies (~60% smaller than full install)
 RUN npm ci --omit=dev
 
@@ -9,6 +10,7 @@ RUN npm ci --omit=dev
 FROM node:20-alpine AS builder
 WORKDIR /app
 COPY package*.json ./
+COPY scripts/copy-sqlite-wasm.mjs ./scripts/copy-sqlite-wasm.mjs
 RUN npm ci
 COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1
