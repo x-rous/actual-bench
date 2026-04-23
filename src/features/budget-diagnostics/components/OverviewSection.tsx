@@ -1,4 +1,4 @@
-import { AlertCircle, CheckCircle2, Database, Download, Loader2, RotateCw } from "lucide-react";
+import { AlertCircle, CheckCircle2, Database, Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import type { DownloadResult } from "@/lib/api/client";
@@ -6,25 +6,17 @@ import type { ConnectionInstance } from "@/store/connection";
 import type { OverviewPayload, ProgressStage } from "../types";
 import { buildOverviewMetrics, formatBytes } from "../lib/fileOverviewStats";
 import { MetadataSummary } from "./MetadataSummary";
+import { OpenSnapshotPanel } from "./OpenSnapshotPanel";
 
 type OverviewSectionProps = {
   connection: ConnectionInstance;
   overview: OverviewPayload | null;
   download: DownloadResult | null;
   status: "idle" | "loading" | "ready" | "error";
+  diagnosticsStatus: "idle" | "loading" | "ready" | "error";
   progressStage: ProgressStage | null;
   errorMessage: string | null;
   onRetry: () => void;
-};
-
-const STAGE_LABELS: Record<ProgressStage, string> = {
-  exporting: "Exporting ZIP",
-  unpacking: "Unpacking ZIP",
-  opening: "Opening SQLite",
-  readingSchema: "Reading schema",
-  computingOverview: "Computing overview",
-  runningDiagnostics: "Running diagnostics",
-  ready: "Ready",
 };
 
 function fallbackZipFilename(connection: ConnectionInstance): string {
@@ -57,44 +49,6 @@ function StatusBadge({ overview }: { overview: OverviewPayload }) {
   );
 }
 
-function LoadingState({ stage }: { stage: ProgressStage | null }) {
-  return (
-    <div className="rounded-md border border-dashed border-border bg-muted/20 p-5">
-      <div className="flex items-center gap-3">
-        <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-        <div>
-          <p className="text-sm font-medium">Opening budget snapshot</p>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {stage ? STAGE_LABELS[stage] : "Preparing diagnostics"}
-          </p>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function ErrorState({ message, onRetry }: { message: string | null; onRetry: () => void }) {
-  return (
-    <div className="rounded-md border border-destructive/25 bg-destructive/5 p-5">
-      <div className="flex items-start justify-between gap-4">
-        <div className="flex min-w-0 gap-3">
-          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
-          <div>
-            <p className="text-sm font-medium text-destructive">Snapshot export failed</p>
-            <p className="mt-1 text-sm text-muted-foreground">
-              {message ?? "Unable to open the exported budget snapshot."}
-            </p>
-          </div>
-        </div>
-        <Button type="button" variant="outline" size="sm" onClick={onRetry}>
-          <RotateCw data-icon="inline-start" />
-          Retry
-        </Button>
-      </div>
-    </div>
-  );
-}
-
 function DetailRow({ label, value }: { label: string; value: string }) {
   return (
     <div className="min-w-0 rounded-md border border-border/70 bg-muted/12 px-3 py-2">
@@ -113,12 +67,14 @@ export function OverviewSection({
   overview,
   download,
   status,
+  diagnosticsStatus,
   progressStage,
   errorMessage,
   onRetry,
 }: OverviewSectionProps) {
   const metrics = overview ? buildOverviewMetrics(overview) : [];
   const canDownload = Boolean(download && overview);
+  const showProgressPanel = status === "loading" || diagnosticsStatus === "loading";
 
   return (
     <section className="bg-background">
@@ -144,8 +100,22 @@ export function OverviewSection({
       </div>
 
       <div className="mt-5 space-y-5">
-        {status === "loading" && <LoadingState stage={progressStage} />}
-        {status === "error" && <ErrorState message={errorMessage} onRetry={onRetry} />}
+        {showProgressPanel && (
+          <OpenSnapshotPanel
+            status="loading"
+            stage={progressStage}
+            errorMessage={null}
+            onRetry={onRetry}
+          />
+        )}
+        {status === "error" && (
+          <OpenSnapshotPanel
+            status="error"
+            stage={progressStage}
+            errorMessage={errorMessage}
+            onRetry={onRetry}
+          />
+        )}
 
         {overview && (
           <>

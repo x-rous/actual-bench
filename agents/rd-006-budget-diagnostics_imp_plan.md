@@ -971,7 +971,31 @@ The current page stacks Overview, Diagnostics, and Data Browser vertically. That
 
 ---
 
-### M7 — Polish, safety banner, tests, docs
+### M7 — Polish, safety banner, tests, docs ✅ shipped
+
+**Status:** complete. Lint / `tsc --noEmit` / `npm test` all green (35 suites, 395 tests). `npm run lint` reports the expected React Compiler `react-hooks/incompatible-library` warning for TanStack Table. `next build` bundle inspection was intentionally not run in the Docker-hosted dev workspace.
+
+**Files delivered**
+- `src/features/budget-diagnostics/components/OpenSnapshotPanel.tsx` (new) — staged snapshot progress rail covering Exporting ZIP, Unpacking ZIP, Opening SQLite, Reading schema, Computing overview, and Running diagnostics, with retry UI for export/open failures.
+- `src/features/budget-diagnostics/components/BudgetDiagnosticsView.tsx` — compact read-only/privacy notice in the tab header, `OpenSnapshotPanel` integration through `OverviewSection`, and budget-switch worker reset/reopen behavior covered by tests.
+- `src/features/budget-diagnostics/components/OverviewSection.tsx` — delegates loading/error snapshot status to `OpenSnapshotPanel` and keeps the overview content focused on snapshot metrics and metadata.
+- `src/features/budget-diagnostics/workers/sqliteDiagnostics.worker.ts` — emits the `readingSchema` progress stage while loading table/view counts.
+- `src/features/budget-diagnostics/components/BudgetDiagnosticsView.test.tsx` (new) — RTL coverage for opening the active snapshot through mocked worker/export clients, retrying failed export/open, and reopening when the active budget changes.
+- `src/features/budget-diagnostics/lib/bundleIsolation.test.ts` (new) — node-env static import guard ensuring `@sqlite.org/sqlite-wasm` and `fflate` remain isolated to the diagnostics feature surface, with the existing sqlite-wasm type declaration allowlisted.
+- `FEATURES.md` — documents the progress rail and privacy reminder.
+- `agents/future-roadmap.md` — marks RD-024 Budget Diagnostics complete and replaces planned notes with shipped scope.
+- `src/features/overview/lib/overviewCards.ts` — switches the Budget Diagnostics overview card from planned/disabled to a live `/budget-diagnostics` entry.
+
+**Additional hardening delivered before staging**
+- `src/features/budget-diagnostics/components/DataBrowserSection.tsx` — removes the redundant Data Browser page header and moves object stats into the left object-list pane.
+- `src/features/budget-diagnostics/components/TableBrowser.tsx` — removes the redundant selected-object header, moves row range/sort/export status into the Data tab toolbar, supports clicking a row to open row details, and highlights the selected row.
+- `src/features/budget-diagnostics/lib/schemaObjects.ts` / `types.ts` — makes row counts best-effort so one custom table/view with a failing `COUNT(*)` no longer breaks the entire Data Browser. Count errors are carried as object metadata.
+- `src/features/budget-diagnostics/components/TableList.tsx` / `SchemaObjectDetails.tsx` — show `count unavailable` for problematic custom tables/views and surface the count error in the Schema tab.
+- `src/features/budget-diagnostics/lib/schemaObjects.test.ts` — covers custom schema objects whose row count fails while listing, details, and row browsing remain usable.
+
+**Notes**
+- The planned real sqlite-wasm node-env fixture was not added. Jest could not resolve the ESM-only `@sqlite.org/sqlite-wasm` package in a direct node-env fixture without adding a separate harness, so M7 uses mocked-worker RTL coverage plus the node-env static bundle-isolation guard.
+- The OPFS warning from sqlite-wasm remains visible by request; the temporary suppression change was reverted.
 
 **Files**
 - `src/features/budget-diagnostics/components/BudgetDiagnosticsView.tsx` (top-level composer)

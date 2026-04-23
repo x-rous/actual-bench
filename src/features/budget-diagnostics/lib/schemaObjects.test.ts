@@ -23,6 +23,7 @@ type FakeObject = {
   rows: Row[];
   indexes?: Array<{ name: string; unique?: number; origin?: string; partial?: number }>;
   supportsRowid?: boolean;
+  countError?: string;
 };
 
 class FakeSchemaDb implements SchemaDb {
@@ -35,7 +36,9 @@ class FakeSchemaDb implements SchemaDb {
   selectValue(sql: string): unknown {
     const countMatch = /SELECT COUNT\(\*\) FROM "([^"]+)"/.exec(sql);
     if (countMatch) {
-      return this.objects.get(countMatch[1])?.rows.length ?? 0;
+      const object = this.objects.get(countMatch[1]);
+      if (object?.countError) throw new Error(object.countError);
+      return object?.rows.length ?? 0;
     }
     return null;
   }
@@ -189,6 +192,40 @@ describe("schemaObjects", () => {
         }),
       ])
     );
+  });
+
+  it("keeps objects with row count failures in the schema list", () => {
+    const db = buildDb();
+    db.addObject({
+      name: "z_accounts",
+      type: "view",
+      sql: "CREATE VIEW z_accounts AS SELECT * FROM accounts",
+      columns: [{ name: "id", type: "TEXT" }],
+      rows: [{ id: "acct-1" }],
+      countError: "malformed JSON",
+    });
+
+    expect(listSchemaObjects(db)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "z_accounts",
+          rowCount: null,
+          rowCountError: "malformed JSON",
+          group: "other",
+        }),
+      ])
+    );
+    expect(getSchemaObject(db, "z_accounts")).toMatchObject({
+      name: "z_accounts",
+      rowCount: null,
+      rowCountError: "malformed JSON",
+    });
+    expect(fetchRows(db, { object: "z_accounts", offset: 0, limit: 100 })).toMatchObject({
+      object: "z_accounts",
+      rowCount: null,
+      rowCountError: "malformed JSON",
+      rows: [{ id: "acct-1" }],
+    });
   });
 
   it("returns schema object details with columns, indexes, SQL, and row key", () => {

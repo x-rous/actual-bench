@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { AlertCircle, Loader2, TableProperties } from "lucide-react";
+import { AlertCircle, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import type { Relationship } from "../lib/relationshipMap";
 import { getSqliteWorkerClient } from "../lib/sqliteWorkerClient";
@@ -170,32 +170,6 @@ export function DataBrowserSection({ snapshotStatus }: DataBrowserSectionProps) 
 
   return (
     <section className="flex min-h-0 flex-1 flex-col bg-background">
-      <div className="flex shrink-0 flex-wrap items-start justify-between gap-3 border-b border-border px-4 py-4 lg:px-5">
-        <div className="flex items-start gap-3">
-          <TableProperties className="mt-1 h-4 w-4 text-muted-foreground" />
-          <div>
-            <h2 className="text-lg font-semibold">Data Browser</h2>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Browse schema objects and paginated rows from the exported snapshot.
-            </p>
-          </div>
-        </div>
-        <div className="grid grid-cols-3 gap-4 text-right text-xs">
-          <div>
-            <div className="font-semibold text-foreground">{state.objects.length}</div>
-            <div className="text-muted-foreground">Objects</div>
-          </div>
-          <div>
-            <div className="font-semibold text-foreground">{tablesAndViews}</div>
-            <div className="text-muted-foreground">Tables/views</div>
-          </div>
-          <div>
-            <div className="font-semibold text-foreground">{schemaOnly}</div>
-            <div className="text-muted-foreground">Schema only</div>
-          </div>
-        </div>
-      </div>
-
       {snapshotStatus !== "ready" && (
         <div className="flex min-h-0 flex-1 items-center justify-center px-4 py-10 text-sm text-muted-foreground">
           {snapshotStatus === "error"
@@ -237,6 +211,20 @@ export function DataBrowserSection({ snapshotStatus }: DataBrowserSectionProps) 
       {snapshotStatus === "ready" && state.objects.length > 0 && (
         <div className="grid min-h-0 flex-1 grid-cols-1 overflow-hidden lg:grid-cols-[18rem_minmax(0,1fr)_18rem]">
           <aside className="min-h-0 border-b border-border px-4 py-4 lg:border-b-0 lg:border-r lg:px-5">
+            <div className="mb-4 grid grid-cols-3 gap-2 border-b border-border pb-3 text-center text-xs">
+              <div>
+                <div className="font-semibold text-foreground">{state.objects.length}</div>
+                <div className="text-muted-foreground">Objects</div>
+              </div>
+              <div>
+                <div className="font-semibold text-foreground">{tablesAndViews}</div>
+                <div className="text-muted-foreground">Tables/views</div>
+              </div>
+              <div>
+                <div className="font-semibold text-foreground">{schemaOnly}</div>
+                <div className="text-muted-foreground">Schema</div>
+              </div>
+            </div>
             <TableList
               objects={state.objects}
               selectedName={selectedName}

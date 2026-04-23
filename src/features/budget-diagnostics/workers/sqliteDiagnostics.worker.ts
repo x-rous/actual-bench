@@ -283,6 +283,7 @@ function loadSnapshot(request: Extract<WorkerRequest, { kind: "loadSnapshot" }>)
   );
   db = new sqlite3.oo1.DB(filename, "r");
 
+  progress(id, "readingSchema");
   const tableCount = countSchemaObjects(db, "table");
   const viewCount = countSchemaObjects(db, "view");
   currentSnapshot = {

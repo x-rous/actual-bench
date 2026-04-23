@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   AlertCircle,
@@ -48,7 +48,7 @@ type PageSize = (typeof PAGE_SIZE_OPTIONS)[number];
 type SortDirection = "asc" | "desc";
 type ExportState =
   | { status: "idle" }
-  | { status: "exporting"; exportedRows: number; rowCount: number };
+  | { status: "exporting"; exportedRows: number; rowCount: number | null };
 
 type BrowserState =
   | { status: "idle" | "loading" }
@@ -101,6 +101,17 @@ function getErrorMessage(error: unknown): string {
 }
 
 function rowRange(payload: FetchRowsPayload): string {
+  if (payload.rowCount === null) {
+    if (payload.rows.length === 0 && payload.offset === 0) {
+      return "0 rows shown, total unavailable";
+    }
+    if (payload.rows.length === 0) {
+      return "No rows on this page, total unavailable";
+    }
+    const start = payload.offset + 1;
+    const end = payload.offset + payload.rows.length;
+    return `${start.toLocaleString("en-US")}-${end.toLocaleString("en-US")} of unknown`;
+  }
   if (payload.rowCount === 0) return "0 rows";
   const start = payload.offset + 1;
   const end = payload.offset + payload.rows.length;
@@ -132,6 +143,14 @@ function isNumericCell(value: unknown): boolean {
 
 function pageCount(rowCount: number, pageSize: number): number {
   return Math.max(1, Math.ceil(rowCount / pageSize));
+}
+
+function formatExportProgress(state: ExportState): string | null {
+  if (state.status !== "exporting") return null;
+  const exported = state.exportedRows.toLocaleString("en-US");
+  return state.rowCount === null
+    ? `Exporting ${exported}`
+    : `Exporting ${exported} / ${state.rowCount.toLocaleString("en-US")}`;
 }
 
 function formatBytes(bytes: number): string {
@@ -203,9 +222,14 @@ export function TableBrowser({
   const [state, setState] = useState<BrowserState>({ status: "idle" });
   const [activePanel, setActivePanel] = useState<"data" | "schema">("data");
   const [exportState, setExportState] = useState<ExportState>({ status: "idle" });
+  const [selectedRowKey, setSelectedRowKey] = useState<string | null>(null);
 
   const canBrowseRows = object.type === "table" || object.type === "view";
   const isExporting = exportState.status === "exporting";
+
+  useEffect(() => {
+    setSelectedRowKey(null);
+  }, [object.name, pageParam, pageSizeParam, sortParam, directionParam]);
 
   const replaceParams = (mutate: (params: URLSearchParams) => void) => {
     const params = new URLSearchParams(searchParams.toString());
@@ -239,7 +263,8 @@ export function TableBrowser({
         const columns = new Set(details.columns.map((column) => column.name));
         const sortColumn = sortParam && columns.has(sortParam) ? sortParam : null;
         const sortDirection = sortColumn ? requestedDirection ?? "asc" : null;
-        const maxPage = pageCount(details.rowCount ?? 0, pageSize);
+        const maxPage =
+          details.rowCount === null ? requestedPage : pageCount(details.rowCount, pageSize);
         const page = Math.min(requestedPage, maxPage);
         const offset = (page - 1) * pageSize;
         const startedAt = performance.now();
@@ -356,7 +381,10 @@ export function TableBrowser({
 
         if (needsWarningCheck) {
           needsWarningCheck = false;
-          const estimatedBytes = estimateCsvBytes(begin.rowCount, next.rows, begin.columns);
+          const estimatedBytes =
+            begin.rowCount === null
+              ? 0
+              : estimateCsvBytes(begin.rowCount, next.rows, begin.columns);
           if (
             estimatedBytes > CSV_MEMORY_WARNING_BYTES &&
             !window.confirm(
@@ -395,8 +423,10 @@ export function TableBrowser({
 
   const pageTotal =
     state.status === "ready" && state.payload
-      ? pageCount(state.payload.rowCount, state.pageSize)
-      : 1;
+      ? state.payload.rowCount === null
+        ? null
+        : pageCount(state.payload.rowCount, state.pageSize)
+      : null;
 
   const rows = useMemo(
     () => (state.status === "ready" && state.payload ? state.payload.rows : []),
@@ -407,34 +437,6 @@ export function TableBrowser({
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden">
-      <BrowserHeader
-        title={object.name}
-        subtitle={object.featured ? "featured view" : object.type}
-      >
-        {state.status === "ready" && state.payload && (
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-xs text-muted-foreground">{rowRange(state.payload)}</span>
-            {isExporting && (
-              <span className="text-xs text-muted-foreground/70">
-                Exporting {exportState.exportedRows.toLocaleString("en-US")} /{" "}
-                {exportState.rowCount.toLocaleString("en-US")}
-              </span>
-            )}
-            {state.sortColumn && (
-              <span className="text-xs text-muted-foreground/70">
-                Sorted by <span className="font-mono">{state.sortColumn}</span>{" "}
-                {state.sortDirection}
-              </span>
-            )}
-            {slowSortedFetch && (
-              <span className="text-xs text-amber-600 dark:text-amber-500">
-                Slow sorted fetch: {(state.elapsedMs / 1000).toFixed(1)}s
-              </span>
-            )}
-          </div>
-        )}
-      </BrowserHeader>
-
       {state.status === "loading" && (
         <div className="flex min-h-0 flex-1 items-center justify-center text-sm text-muted-foreground">
           <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -481,9 +483,32 @@ export function TableBrowser({
             {state.payload ? (
               <>
                 <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-border px-3 py-2">
-                  <div className="text-xs text-muted-foreground">
-                    {state.payload.rowCount.toLocaleString("en-US")} total row
-                    {state.payload.rowCount !== 1 ? "s" : ""}
+                  <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                    <span>{rowRange(state.payload)}</span>
+                    {state.payload.rowCountError && (
+                      <span
+                        className="text-amber-600 dark:text-amber-500"
+                        title={state.payload.rowCountError}
+                      >
+                        Total unavailable
+                      </span>
+                    )}
+                    {isExporting && (
+                      <span className="text-muted-foreground/70">
+                        {formatExportProgress(exportState)}
+                      </span>
+                    )}
+                    {state.sortColumn && (
+                      <span className="text-muted-foreground/70">
+                        Sorted by <span className="font-mono">{state.sortColumn}</span>{" "}
+                        {state.sortDirection}
+                      </span>
+                    )}
+                    {slowSortedFetch && (
+                      <span className="text-amber-600 dark:text-amber-500">
+                        Slow sorted fetch: {(state.elapsedMs / 1000).toFixed(1)}s
+                      </span>
+                    )}
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
                     <Button
@@ -526,13 +551,17 @@ export function TableBrowser({
                         <ChevronLeft />
                       </Button>
                       <span className="min-w-20 text-center text-xs text-muted-foreground">
-                        {state.page} / {pageTotal}
+                        {state.page} / {pageTotal ?? "?"}
                       </span>
                       <Button
                         type="button"
                         variant="outline"
                         size="icon-xs"
-                        disabled={state.page >= pageTotal}
+                        disabled={
+                          pageTotal === null
+                            ? rows.length < state.pageSize
+                            : state.page >= pageTotal
+                        }
                         onClick={() => setPage(state.page + 1)}
                         title="Next page"
                       >
@@ -555,9 +584,13 @@ export function TableBrowser({
                     sortDirection={state.sortDirection}
                     slowSortedFetch={slowSortedFetch}
                     objectName={object.name}
+                    selectedRowKey={selectedRowKey}
                     onSort={handleSort}
                     onCopyRow={copyRow}
-                    onOpenRowDetails={onOpenRowDetails}
+                    onOpenRowDetails={(entry, key) => {
+                      setSelectedRowKey(key);
+                      onOpenRowDetails(entry);
+                    }}
                     onFollowRelationship={onFollowRelationship}
                   />
                 )}
@@ -586,6 +619,7 @@ function RowsTable({
   sortDirection,
   slowSortedFetch,
   objectName,
+  selectedRowKey,
   onSort,
   onCopyRow,
   onOpenRowDetails,
@@ -598,9 +632,10 @@ function RowsTable({
   sortDirection: SortDirection | null;
   slowSortedFetch: boolean;
   objectName: string;
+  selectedRowKey: string | null;
   onSort: (column: string) => void;
   onCopyRow: (row: Record<string, unknown>) => void;
-  onOpenRowDetails: (entry: RowDetailsEntry) => void;
+  onOpenRowDetails: (entry: RowDetailsEntry, key: string) => void;
   onFollowRelationship: (relationship: Relationship, value: unknown) => void;
 }) {
   return (
@@ -647,10 +682,18 @@ function RowsTable({
         <tbody>
           {rows.map((row, index) => {
             const rowNumber = payload.offset + index + 1;
+            const key = rowKey(details, row, rowNumber);
+            const rowDetailsEntry = buildRowDetailsEntry({ details, row, rowNumber });
+            const selected = key === selectedRowKey;
             return (
               <tr
-                key={rowKey(details, row, rowNumber)}
-                className="border-b border-border/40 hover:bg-muted/20"
+                key={key}
+                onClick={() => onOpenRowDetails(rowDetailsEntry, key)}
+                className={cn(
+                  "cursor-pointer border-b border-border/40 transition-colors hover:bg-muted/20",
+                  selected && "bg-primary/8 hover:bg-primary/10"
+                )}
+                aria-selected={selected}
               >
                 {payload.columns.map((column) => {
                   const display = formatCellDisplay(column, row[column]);
@@ -675,7 +718,10 @@ function RowsTable({
                       {linked ? (
                         <button
                           type="button"
-                          onClick={() => onFollowRelationship(relationship, row[column])}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            onFollowRelationship(relationship, row[column]);
+                          }}
                           className="max-w-full truncate text-primary underline-offset-2 hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
                         >
                           {display.text}
@@ -692,7 +738,10 @@ function RowsTable({
                       type="button"
                       variant="ghost"
                       size="icon-xs"
-                      onClick={() => onCopyRow(row)}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onCopyRow(row);
+                      }}
                       title="Copy row JSON"
                     >
                       <Copy />
@@ -701,7 +750,10 @@ function RowsTable({
                       type="button"
                       variant="ghost"
                       size="icon-xs"
-                      onClick={() => onOpenRowDetails(buildRowDetailsEntry({ details, row, rowNumber }))}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onOpenRowDetails(rowDetailsEntry, key);
+                      }}
                       title="Open row details"
                     >
                       <PanelRightOpen />
@@ -713,28 +765,6 @@ function RowsTable({
           })}
         </tbody>
       </table>
-    </div>
-  );
-}
-
-function BrowserHeader({
-  title,
-  subtitle,
-  children,
-}: {
-  title: string;
-  subtitle: string;
-  children?: ReactNode;
-}) {
-  return (
-    <div className="flex shrink-0 flex-wrap items-start justify-between gap-3 border-b border-border px-3 py-3">
-      <div className="min-w-0">
-        <div className="truncate text-sm font-semibold" title={title}>
-          {title}
-        </div>
-        <div className="mt-0.5 text-xs text-muted-foreground">{subtitle}</div>
-      </div>
-      {children}
     </div>
   );
 }

@@ -48,10 +48,16 @@ export type ExportRowsCursor = {
   object: string;
   columns: ColumnInfo[];
   columnNames: string[];
-  rowCount: number;
+  rowCount: number | null;
+  rowCountError: string | null;
   orderClause: string;
   offset: number;
   lastAccessedAt: number;
+};
+
+type RowCountResult = {
+  rowCount: number | null;
+  rowCountError: string | null;
 };
 
 const SCHEMA_OBJECT_TYPES: readonly SchemaObjectType[] = [
@@ -150,10 +156,18 @@ function objectSupportsRows(type: SchemaObjectType): boolean {
   return type === "table" || type === "view";
 }
 
-function countRows(db: SchemaDb, object: string, type: SchemaObjectType): number | null {
-  if (!objectSupportsRows(type)) return null;
-  const value = db.selectValue(`SELECT COUNT(*) FROM ${quoteIdentifier(object)}`);
-  return toNumber(value);
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : "Unknown SQLite error";
+}
+
+function countRows(db: SchemaDb, object: string, type: SchemaObjectType): RowCountResult {
+  if (!objectSupportsRows(type)) return { rowCount: null, rowCountError: null };
+  try {
+    const value = db.selectValue(`SELECT COUNT(*) FROM ${quoteIdentifier(object)}`);
+    return { rowCount: toNumber(value), rowCountError: null };
+  } catch (error) {
+    return { rowCount: null, rowCountError: getErrorMessage(error) };
+  }
 }
 
 function getGroup(name: string, type: SchemaObjectType): SchemaObjectGroup {
@@ -168,13 +182,17 @@ function getGroup(name: string, type: SchemaObjectType): SchemaObjectGroup {
 }
 
 export function listSchemaObjects(db: SchemaDb): SchemaObjectSummary[] {
-  return listSchemaRows(db).map((row) => ({
-    name: row.name,
-    type: row.type,
-    rowCount: countRows(db, row.name, row.type),
-    featured: FEATURED_VIEW_SET.has(row.name),
-    group: getGroup(row.name, row.type),
-  }));
+  return listSchemaRows(db).map((row) => {
+    const count = countRows(db, row.name, row.type);
+    return {
+      name: row.name,
+      type: row.type,
+      rowCount: count.rowCount,
+      rowCountError: count.rowCountError,
+      featured: FEATURED_VIEW_SET.has(row.name),
+      group: getGroup(row.name, row.type),
+    };
+  });
 }
 
 export function getColumns(db: SchemaDb, object: string): ColumnInfo[] {
@@ -233,6 +251,7 @@ export function inferRowKey(
 export function getSchemaObject(db: SchemaDb, name: string): SchemaObjectDetails {
   const row = getSchemaRow(db, name);
   const columns = getColumns(db, row.name);
+  const count = countRows(db, row.name, row.type);
   return {
     name: row.name,
     type: row.type,
@@ -240,7 +259,8 @@ export function getSchemaObject(db: SchemaDb, name: string): SchemaObjectDetails
     sql: row.sql ?? null,
     columns,
     indexes: getIndexes(db, row.name, row.type),
-    rowCount: countRows(db, row.name, row.type),
+    rowCount: count.rowCount,
+    rowCountError: count.rowCountError,
     rowKey: inferRowKey(db, row.name, row.type, columns),
   };
 }
@@ -253,7 +273,7 @@ export function tableCounts(db: SchemaDb, names: readonly string[]): TableCounts
   for (const name of names) {
     const row = objectByName.get(name);
     if (!row) throw new Error(`Unknown schema object: ${name}`);
-    counts[name] = countRows(db, row.name, row.type);
+    counts[name] = countRows(db, row.name, row.type).rowCount;
   }
 
   return { counts };
@@ -312,7 +332,7 @@ export function fetchRows(
   const orderClause = orderBy
     ? ` ORDER BY ${quoteIdentifier(orderBy)} ${direction}`
     : "";
-  const rowCount = countRows(db, row.name, row.type) ?? 0;
+  const count = countRows(db, row.name, row.type);
   const rows = db.selectRows<Record<string, unknown>>(
     `SELECT * FROM ${quoteIdentifier(row.name)}${orderClause} LIMIT ${limit} OFFSET ${offset}`
   );
@@ -323,7 +343,8 @@ export function fetchRows(
     rows,
     offset,
     limit,
-    rowCount,
+    rowCount: count.rowCount,
+    rowCountError: count.rowCountError,
   };
 }
 
@@ -349,14 +370,15 @@ export function createExportRowsCursor(
     ? assertKnownIdentifier(request.orderBy, columnNames, "sort column")
     : null;
   const orderClause = orderBy ? ` ORDER BY ${quoteIdentifier(orderBy)} ${direction}` : "";
-  const rowCount = countRows(db, row.name, row.type) ?? 0;
+  const count = countRows(db, row.name, row.type);
 
   return {
     id: cursorId,
     object: row.name,
     columns,
     columnNames,
-    rowCount,
+    rowCount: count.rowCount,
+    rowCountError: count.rowCountError,
     orderClause,
     offset: 0,
     lastAccessedAt: now,
@@ -369,6 +391,7 @@ export function exportRowsBeginPayload(cursor: ExportRowsCursor): ExportRowsBegi
     object: cursor.object,
     columns: cursor.columns,
     rowCount: cursor.rowCount,
+    rowCountError: cursor.rowCountError,
     chunkSize: EXPORT_ROWS_CHUNK_SIZE,
   };
 }
@@ -393,7 +416,10 @@ export function readExportRowsChunk(
     rows,
     offset,
     rowCount: cursor.rowCount,
-    done: cursor.offset >= cursor.rowCount || rows.length === 0,
+    done:
+      cursor.rowCount === null
+        ? rows.length < EXPORT_ROWS_CHUNK_SIZE
+        : cursor.offset >= cursor.rowCount || rows.length === 0,
   };
 }
 

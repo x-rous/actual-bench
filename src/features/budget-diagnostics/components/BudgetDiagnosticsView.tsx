@@ -78,11 +78,13 @@ function getErrorMessage(error: unknown): string {
 
 function ReadOnlyNotice() {
   return (
-    <div className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
-      <LockKeyhole className="h-3.5 w-3.5 shrink-0" />
-      <span className="truncate">
-        Read-only local snapshot. Nothing is written back to the budget.
-      </span>
+    <div className="flex min-w-0 items-start gap-2 text-[11px] leading-4 text-muted-foreground">
+      <LockKeyhole className="mt-1.5 h-3.5 w-3.5 shrink-0" />
+      <div className="min-w-0">
+        <div className="truncate">
+          Read-only. No changes written back to the budget. Exports are processed locally.
+        </div>
+      </div>
     </div>
   );
 }
@@ -342,7 +344,7 @@ export function BudgetDiagnosticsView() {
               Data Browser
             </TabsTrigger>
           </TabsList>
-          <div className="flex min-h-9 items-center px-3 py-2 lg:justify-end">
+          <div className="flex min-h-9 items-center px-3 py-1.5 lg:justify-end">
             <ReadOnlyNotice />
           </div>
         </div>
@@ -356,6 +358,7 @@ export function BudgetDiagnosticsView() {
             overview={snapshot.overview}
             download={snapshot.download}
             status={snapshot.status}
+            diagnosticsStatus={snapshot.diagnosticsStatus}
             progressStage={snapshot.progressStage}
             errorMessage={snapshot.errorMessage}
             onRetry={retry}

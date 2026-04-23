@@ -110,6 +110,7 @@ export type SchemaObjectSummary = {
   name: string;
   type: SchemaObjectType;
   rowCount: number | null;
+  rowCountError?: string | null;
   featured: boolean;
   group: SchemaObjectGroup;
 };
@@ -122,6 +123,7 @@ export type SchemaObjectDetails = {
   columns: ColumnInfo[];
   indexes: IndexInfo[];
   rowCount: number | null;
+  rowCountError?: string | null;
   rowKey: RowKeyInfo | null;
 };
 
@@ -139,14 +141,16 @@ export type FetchRowsPayload = {
   rows: Record<string, unknown>[];
   offset: number;
   limit: number;
-  rowCount: number;
+  rowCount: number | null;
+  rowCountError?: string | null;
 };
 
 export type ExportRowsBeginPayload = {
   cursorId: string;
   object: string;
   columns: ColumnInfo[];
-  rowCount: number;
+  rowCount: number | null;
+  rowCountError?: string | null;
   chunkSize: number;
 };
 
@@ -156,7 +160,7 @@ export type ExportRowsNextPayload = {
   columns: string[];
   rows: Record<string, unknown>[];
   offset: number;
-  rowCount: number;
+  rowCount: number | null;
   done: boolean;
 };
 

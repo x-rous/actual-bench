@@ -92,6 +92,6 @@ export const TOOL_CARDS: OverviewActionCard[] = [
       "Inspect exported budget snapshots in a read-only workspace with overview, diagnostics, and data browsing.",
     icon: FileSearch,
     tone: "disabled",
-    comingSoon: true,
+    href: "/budget-diagnostics",
   },
 ];

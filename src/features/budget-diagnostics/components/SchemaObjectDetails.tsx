@@ -5,8 +5,9 @@ type SchemaObjectDetailsProps = {
   details: Details;
 };
 
-function formatCount(value: number | null): string {
-  return value === null ? "Not row-browsable" : value.toLocaleString("en-US");
+function formatCount(details: Details): string {
+  if (details.rowCountError) return "Count unavailable";
+  return details.rowCount === null ? "Not row-browsable" : details.rowCount.toLocaleString("en-US");
 }
 
 function rowKeyLabel(rowKey: RowKeyInfo | null): string {
@@ -168,9 +169,15 @@ export function SchemaObjectDetails({ details }: SchemaObjectDetailsProps) {
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           <InfoTile label="Object" value={details.name} />
           <InfoTile label="Parent table" value={details.tableName ?? "Not applicable"} />
-          <InfoTile label="Rows" value={formatCount(details.rowCount)} />
+          <InfoTile label="Rows" value={formatCount(details)} />
           <InfoTile label="Row key" value={rowKeyLabel(details.rowKey)} />
         </div>
+
+        {details.rowCountError && (
+          <div className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-700 dark:text-amber-300">
+            Row count could not be computed for this object: {details.rowCountError}
+          </div>
+        )}
 
         <section className="space-y-2">
           <h4 className="text-sm font-semibold">Columns</h4>

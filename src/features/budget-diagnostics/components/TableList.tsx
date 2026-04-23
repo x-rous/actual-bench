@@ -15,8 +15,10 @@ type TableListProps = {
   onSelect: (object: SchemaObjectSummary) => void;
 };
 
-function formatRowCount(value: number | null): string {
-  return value === null ? "schema" : value.toLocaleString("en-US");
+function formatRowCount(object: SchemaObjectSummary): string {
+  if (object.type === "index" || object.type === "trigger") return "schema";
+  if (object.rowCountError) return "count unavailable";
+  return object.rowCount === null ? "unknown" : object.rowCount.toLocaleString("en-US");
 }
 
 function objectTypeLabel(object: SchemaObjectSummary): string {
@@ -121,8 +123,11 @@ export function TableList({
                           <span className="min-w-0 truncate text-sm font-medium">
                             {object.name}
                           </span>
-                          <span className="shrink-0 text-xs tabular-nums">
-                            {formatRowCount(object.rowCount)}
+                          <span
+                            className="shrink-0 text-xs tabular-nums"
+                            title={object.rowCountError ?? undefined}
+                          >
+                            {formatRowCount(object)}
                           </span>
                         </div>
                         <div className="mt-1 text-xs text-muted-foreground">

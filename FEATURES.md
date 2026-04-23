@@ -23,6 +23,7 @@
 
 - Read-only diagnostics workspace for the active budget export; snapshot processing happens locally in the browser and no diagnostics changes are written back to the budget
 - Top-level tabs for Overview, Diagnostics, and Data Browser keep the workspace full-width and focused on one task at a time
+- Snapshot opening shows a staged progress rail with retry on export/open failures, plus a persistent privacy reminder that exported contents stay local but may include personal budget data
 - Overview tab summarizes export metadata, snapshot counts, ZIP/database sizes, and source details, with a download action for the exported ZIP
 - Diagnostics tab runs deterministic snapshot checks, summarizes finding severity, supports a long-running full SQLite integrity check, and exports findings to CSV
 - Data Browser tab lists SQLite tables, views, indexes, and triggers grouped by Actual Budget domain; `v_transactions` is selected by default when present
