@@ -38,7 +38,7 @@ All browser requests route through an internal Next.js proxy - no direct browser
 ## Screenshots
 
 | Connection  |
-|:---:
+|:---:|
 | ![Connection Form](public/screenshots/Connection%20Form.png) |
 
 | Payees | Categories |
@@ -59,11 +59,11 @@ All browser requests route through an internal Next.js proxy - no direct browser
 - **Payees** - view, edit, bulk-manage, and merge multiple payees; CSV import/export
 - **Categories** - manage groups and categories, visibility, and hierarchy; CSV import/export
 - **Rules** - view, filter by stage, create, edit, and merge rules with a full condition/action builder; CSV import/export
-- **Schedules** - create and manage one-time and recurring schedules with amount modes, weekend adjustment, and end conditions; overdue dates are highlighted; CSV import/
-export
+- **Schedules** - create and manage one-time and recurring schedules with amount modes, weekend adjustment, and end conditions; overdue dates are highlighted; CSV import/export
 - **Tags** - create, rename, and color-code tags (requires Actual Budget v26.3.0+); CSV import/export
 - **ActualQL Queries** - syntax-highlighted query editor with run / format / save / explain actions; four result views (table, raw JSON, scalar, collapsible tree); built-in example packs; saved queries with favorites; query history; cURL copy; lint warnings; and an inline quick reference dialog
 - **Budget Management Workspace** - adds a multi-month budgeting workspace with a 12-month grid, staged cell editing, Budget / Actuals / Balance view toggle, year summary draft panel, keyboard navigation, clipboard paste, right-click bulk actions, supports both tracking and envelope-mode with support for next-month hold and category transfer
+- **Budget Diagnostics** - opens a read-only exported snapshot locally in the browser with overview metadata, deterministic diagnostics, paginated SQLite data browsing, relationship drill-in, and full table/view CSV export
 
 → See [FEATURES.md](FEATURES.md) for the full feature reference.
 
@@ -226,13 +226,23 @@ Ready-to-use sample CSV files are included in [`public/samples csv/`](public/sam
 | `op` | Operator (e.g. `is`, `contains`, `lt`, `oneOf`) |
 | `value` | Value - use `\|` as separator for multi-value `oneOf` operators |
 
+## Budget Diagnostics
+
+Budget Diagnostics opens the active budget export as a read-only local snapshot. The ZIP download is proxied through actual-bench, unpacked in the browser, and opened with SQLite WASM in a web worker. Diagnostics never write back to `actual-http-api` or the Actual Budget file.
+
+The workspace includes:
+
+- **Overview** - snapshot metadata, table counts, ZIP/database sizes, and exported ZIP download
+- **Diagnostics** - deterministic schema, relationship, metadata, and SQLite health findings, plus an opt-in full integrity check
+- **Data Browser** - paginated browsing for SQLite tables/views, schema inspection, row details, relationship drill-in, and full table/view CSV export
+
 ## Coming Soon
 
 - **Rule diagnostics** - detect conflicting, shadowed, or redundant rules across stages
 
 ## Known Limitations
 
-- **No pagination on main entity admin pages** - Accounts, Payees, Categories, Rules, and related admin pages load their full entity sets. Paginated browsing is available in Budget Diagnostics / Data Browser.
+- **No pagination on main entity admin pages** - Accounts, Payees, Categories, Rules, and related admin pages load their full entity sets. Paginated browsing is available in the Budget Diagnostics Data Browser tab.
 
 ## Development
 
@@ -249,6 +259,8 @@ cd actual-bench
 npm install
 npm run dev
 ```
+
+`npm install` runs a postinstall step that copies the SQLite WASM asset used by Budget Diagnostics into `public/sqlite/`.
 
 Open [http://localhost:3000](http://localhost:3000).
 
