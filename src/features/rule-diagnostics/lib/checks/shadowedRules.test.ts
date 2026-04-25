@@ -46,7 +46,7 @@ describe("shadowedRules check", () => {
         { field: "imported_payee", op: "contains", value: "Amazon" },
         { field: "amount", op: "gt", value: 100 },
       ],
-      actions: [{ field: "payee", op: "set", value: "p-amazon-big" }],
+      actions: [{ field: "payee", op: "set", value: "p-amazon" }],
     });
     const findings = shadowedRules(ws([earlier, later]), emptyCtx);
     expect(findings).toHaveLength(1);
@@ -66,7 +66,7 @@ describe("shadowedRules check", () => {
       id: "r2",
       stage: "post",
       conditions: [{ field: "imported_payee", op: "contains", value: "Amazon" }],
-      actions: [{ field: "payee", op: "set", value: "p-other" }],
+      actions: [{ field: "payee", op: "set", value: "p-amazon" }],
     });
     const findings = shadowedRules(ws([earlier, later]), emptyCtx);
     expect(findings).toHaveLength(0);

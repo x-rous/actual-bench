@@ -9,6 +9,48 @@ function asNumber(v: ConditionOrAction["value"]): number | null {
   return null;
 }
 
+/** Tightest lower bound across all gt/gte conditions on the same field.
+ *  At equal values, "gt" wins over "gte" (stricter narrows the range further). */
+function effectiveLowerBound(
+  conds: ConditionOrAction[]
+): { op: "gt" | "gte"; value: number } | null {
+  let best: { op: "gt" | "gte"; value: number } | null = null;
+  for (const c of conds) {
+    if (c.op !== "gt" && c.op !== "gte") continue;
+    const n = asNumber(c.value);
+    if (n === null) continue;
+    if (
+      best === null ||
+      n > best.value ||
+      (n === best.value && c.op === "gt" && best.op === "gte")
+    ) {
+      best = { op: c.op, value: n };
+    }
+  }
+  return best;
+}
+
+/** Tightest upper bound across all lt/lte conditions on the same field.
+ *  At equal values, "lt" wins over "lte". */
+function effectiveUpperBound(
+  conds: ConditionOrAction[]
+): { op: "lt" | "lte"; value: number } | null {
+  let best: { op: "lt" | "lte"; value: number } | null = null;
+  for (const c of conds) {
+    if (c.op !== "lt" && c.op !== "lte") continue;
+    const n = asNumber(c.value);
+    if (n === null) continue;
+    if (
+      best === null ||
+      n < best.value ||
+      (n === best.value && c.op === "lt" && best.op === "lte")
+    ) {
+      best = { op: c.op, value: n };
+    }
+  }
+  return best;
+}
+
 /** Find contradictory pairs within an `and`-combined rule's conditions on the same field. */
 function findContradictions(rule: Rule): string[] {
   if (rule.conditionsOp !== "and") return [];
@@ -70,9 +112,10 @@ function findContradictions(rule: Rule): string[] {
       }
     }
 
-    // Numeric range contradictions: gt X with lt Y when Y <= X, etc.
-    const gt = numericBound(conds, ["gt", "gte"]);
-    const lt = numericBound(conds, ["lt", "lte"]);
+    // Numeric range contradictions: collapse multiple gt/gte and lt/lte
+    // bounds into the tightest pair before checking for an empty range.
+    const gt = effectiveLowerBound(conds);
+    const lt = effectiveUpperBound(conds);
     if (gt !== null && lt !== null) {
       // gt 10 with lt 5 → 10 < 5 false: range is empty when lt-bound <= gt-bound.
       const invalid =
@@ -118,18 +161,6 @@ function findContradictions(rule: Rule): string[] {
     seen.add(c);
     return true;
   });
-
-  function numericBound(
-    conds: ConditionOrAction[],
-    ops: ("gt" | "gte" | "lt" | "lte")[]
-  ): { op: string; value: number } | null {
-    for (const c of conds) {
-      if (!ops.includes(c.op as "gt" | "gte" | "lt" | "lte")) continue;
-      const n = asNumber(c.value);
-      if (n !== null) return { op: c.op, value: n };
-    }
-    return null;
-  }
 }
 
 export const impossibleConditions: CheckFn = (ws, ctx) => {

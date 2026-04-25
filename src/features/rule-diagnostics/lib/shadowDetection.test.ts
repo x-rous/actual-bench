@@ -24,7 +24,7 @@ describe("findShadowedPairs", () => {
         { field: "imported_payee", op: "contains", value: "Amazon" },
         { field: "amount", op: "gt", value: 100 },
       ],
-      actions: [{ field: "payee", op: "set", value: "p-amazon-big" }],
+      actions: [{ field: "payee", op: "set", value: "p-amazon" }],
     });
     const pairs = findShadowedPairs([earlier, later]);
     expect(pairs).toHaveLength(1);
@@ -131,7 +131,7 @@ describe("findShadowedPairs", () => {
     const later = rule({
       id: "r2",
       conditions: [{ field: "notes", op: "doesNotContain", value: "foo" }],
-      actions: [{ field: "category", op: "set", value: "c-2" }],
+      actions: [{ field: "category", op: "set", value: "c-1" }],
     });
     const pairs = findShadowedPairs([earlier, later]);
     expect(pairs).toHaveLength(1);
@@ -148,8 +148,42 @@ describe("findShadowedPairs", () => {
     const later = rule({
       id: "r2",
       conditions: [{ field: "payee", op: "is", value: "b" }],
-      actions: [{ field: "category", op: "set", value: "c-2" }],
+      actions: [{ field: "category", op: "set", value: "c-1" }],
     });
     expect(findShadowedPairs([earlier, later])).toHaveLength(1);
+  });
+
+  it("does NOT flag when later uses a different op on the same field (set vs prepend-notes)", () => {
+    // Earlier `set notes="X"` and later `prepend-notes "Y"` are distinct
+    // operations: the later one still has an effect (prepending Y), so it
+    // is not redundant.
+    const earlier = rule({
+      id: "r1",
+      conditions: [{ field: "imported_payee", op: "contains", value: "Amazon" }],
+      actions: [{ field: "notes", op: "set", value: "X" }],
+    });
+    const later = rule({
+      id: "r2",
+      conditions: [{ field: "imported_payee", op: "contains", value: "Amazon" }],
+      actions: [{ field: "notes", op: "prepend-notes", value: "Y" }],
+    });
+    expect(findShadowedPairs([earlier, later])).toHaveLength(0);
+  });
+
+  it("does NOT flag when later sets a different value than earlier on the same field", () => {
+    // Earlier `set category="A"` and later `set category="B"` write different
+    // values; the later rule overrides the earlier and is therefore not
+    // redundant — it must not be flagged as shadowed.
+    const earlier = rule({
+      id: "r1",
+      conditions: [{ field: "imported_payee", op: "contains", value: "Amazon" }],
+      actions: [{ field: "category", op: "set", value: "A" }],
+    });
+    const later = rule({
+      id: "r2",
+      conditions: [{ field: "imported_payee", op: "contains", value: "Amazon" }],
+      actions: [{ field: "category", op: "set", value: "B" }],
+    });
+    expect(findShadowedPairs([earlier, later])).toHaveLength(0);
   });
 });

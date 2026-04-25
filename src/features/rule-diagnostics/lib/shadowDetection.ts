@@ -86,20 +86,23 @@ function actionsDominate(earlier: Rule, later: Rule): boolean {
   // Delete-transaction is always dominant.
   if (earlier.actions.some(isDeleteTransaction)) return true;
 
-  // Every field the later rule writes must also be written by the earlier rule.
+  // For every action the later rule performs, the earlier rule must perform
+  // an equivalent one — same op, same field, same value. A different op
+  // (e.g. set vs prepend-notes) or a different value (e.g. set category="A"
+  // vs set category="B") means the later rule is NOT redundant: it changes
+  // the result in a way the earlier rule does not.
   for (const la of later.actions) {
     if (la.op === "link-schedule") continue;
     if (la.op === "delete-transaction") {
-      // Later tries to delete, but we are checking if earlier shadows it. Earlier
-      // must also be a delete-transaction to dominate a delete.
       if (!earlier.actions.some(isDeleteTransaction)) return false;
       continue;
     }
     if (!la.field) return false;
     const writtenByEarlier = earlier.actions.some(
       (ea) =>
-        (ea.op === "set" || ea.op === la.op) &&
-        ea.field === la.field
+        ea.op === la.op &&
+        ea.field === la.field &&
+        jsonEqual(ea.value, la.value)
     );
     if (!writtenByEarlier) return false;
   }
