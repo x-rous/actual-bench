@@ -42,12 +42,22 @@ type Props = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   ruleIds: string[];
+  /** Pre-tick the "Delete original rules" checkbox when set (e.g. from the diagnostics duplicate-group flow). */
+  defaultDeleteOriginals?: boolean;
+  /** Called after a successful merge with the newly-staged rule's ID. Use for post-merge navigation. */
+  onConfirmed?: (newRuleId: string) => void;
 };
 
 const DEFAULT_CONDITION_FIELD = Object.keys(CONDITION_FIELDS)[0] ?? "payee";
 const DEFAULT_ACTION_FIELD = Object.keys(ACTION_FIELDS)[0] ?? "category";
 
-export function MergeRulesDialog({ open, onOpenChange, ruleIds }: Props) {
+export function MergeRulesDialog({
+  open,
+  onOpenChange,
+  ruleIds,
+  defaultDeleteOriginals = false,
+  onConfirmed,
+}: Props) {
   const stageNew = useStagedStore((s) => s.stageNew);
   const stageDelete = useStagedStore((s) => s.stageDelete);
   const setMergeDependency = useStagedStore((s) => s.setMergeDependency);
@@ -58,7 +68,7 @@ export function MergeRulesDialog({ open, onOpenChange, ruleIds }: Props) {
   const [conditionsOp, setConditionsOp] = useState<ConditionsOp>("and");
   const [conditions, setConditions] = useState<EditorPart[]>([]);
   const [actions, setActions] = useState<EditorPart[]>([]);
-  const [deleteOriginals, setDeleteOriginals] = useState(false);
+  const [deleteOriginals, setDeleteOriginals] = useState(defaultDeleteOriginals);
   const [saveAttempted, setSaveAttempted] = useState(false);
   const [touchedConditionIds, setTouchedConditionIds] = useState<Set<string>>(new Set());
   const [touchedActionIds, setTouchedActionIds] = useState<Set<string>>(new Set());
@@ -117,8 +127,8 @@ export function MergeRulesDialog({ open, onOpenChange, ruleIds }: Props) {
     setConditionsOp(mergedOp);
     setConditions(createEditorParts(allConditions));
     setActions(createEditorParts(allActions));
-    setDeleteOriginals(false);
-  }, [open, onOpenChange, ruleIds]);
+    setDeleteOriginals(defaultDeleteOriginals);
+  }, [open, onOpenChange, ruleIds, defaultDeleteOriginals]);
 
   function addCondition() {
     setConditions((prev) => [
@@ -205,6 +215,7 @@ export function MergeRulesDialog({ open, onOpenChange, ruleIds }: Props) {
     }
 
     onOpenChange(false);
+    onConfirmed?.(newId);
     const suffix = deleteOriginals
       ? ` Original ${ruleIds.length} rules are staged for deletion and will be removed only after the merged rule is saved successfully.`
       : "";

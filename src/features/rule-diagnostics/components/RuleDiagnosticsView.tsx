@@ -1,13 +1,17 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { AlertTriangle, RefreshCw } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { AlertTriangle, ArrowLeft, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { PageLayout } from "@/components/layout/PageLayout";
 import { useRuleDiagnostics } from "../hooks/useRuleDiagnostics";
-import type { Finding, FindingCode, Severity } from "../types";
+import type { Finding, FindingCode } from "../types";
 import { DiagnosticSummaryCards } from "./DiagnosticSummaryCards";
-import { DiagnosticsFilterBar } from "./DiagnosticsFilterBar";
+import {
+  DiagnosticsFilterBar,
+  type SeverityFilterValue,
+} from "./DiagnosticsFilterBar";
 import { DiagnosticsTable } from "./DiagnosticsTable";
 
 function summarize(findings: Finding[]) {
@@ -16,15 +20,35 @@ function summarize(findings: Finding[]) {
   return summary;
 }
 
+function findingMatchesSearch(finding: Finding, query: string): boolean {
+  if (query.length === 0) return true;
+  for (const r of finding.affected) {
+    if (r.summary.toLowerCase().includes(query)) return true;
+  }
+  if (finding.counterpart && finding.counterpart.summary.toLowerCase().includes(query)) {
+    return true;
+  }
+  return false;
+}
+
 function applyFilters(
   findings: Finding[],
-  severityFilter: Set<Severity>,
+  search: string,
+  severityFilter: SeverityFilterValue,
   codeFilter: Set<FindingCode>
 ): Finding[] {
-  if (severityFilter.size === 0 && codeFilter.size === 0) return findings;
+  const trimmedSearch = search.trim().toLowerCase();
+  if (
+    trimmedSearch.length === 0 &&
+    severityFilter === "all" &&
+    codeFilter.size === 0
+  ) {
+    return findings;
+  }
   return findings.filter((f) => {
-    if (severityFilter.size > 0 && !severityFilter.has(f.severity)) return false;
+    if (severityFilter !== "all" && f.severity !== severityFilter) return false;
     if (codeFilter.size > 0 && !codeFilter.has(f.code)) return false;
+    if (!findingMatchesSearch(f, trimmedSearch)) return false;
     return true;
   });
 }
@@ -36,35 +60,30 @@ function uniqueCodes(findings: Finding[]): FindingCode[] {
 }
 
 export function RuleDiagnosticsView() {
+  const router = useRouter();
   const { report, running, error, stale, refresh } = useRuleDiagnostics();
 
-  const [severityFilter, setSeverityFilter] = useState<Set<Severity>>(new Set());
+  const [search, setSearch] = useState("");
+  const [severityFilter, setSeverityFilter] = useState<SeverityFilterValue>("all");
   const [codeFilter, setCodeFilter] = useState<Set<FindingCode>>(new Set());
 
   const allFindings = useMemo(() => report?.findings ?? [], [report]);
   const visibleFindings = useMemo(
-    () => applyFilters(allFindings, severityFilter, codeFilter),
-    [allFindings, severityFilter, codeFilter]
+    () => applyFilters(allFindings, search, severityFilter, codeFilter),
+    [allFindings, search, severityFilter, codeFilter]
   );
   const visibleSummary = useMemo(() => summarize(visibleFindings), [visibleFindings]);
   const availableCodes = useMemo(() => uniqueCodes(allFindings), [allFindings]);
 
   const totalReportFindings = report?.summary.total ?? 0;
+  const isFiltered =
+    search.trim().length > 0 || severityFilter !== "all" || codeFilter.size > 0;
   const count = report
-    ? severityFilter.size === 0 && codeFilter.size === 0
+    ? !isFiltered
       ? `${totalReportFindings} finding${totalReportFindings !== 1 ? "s" : ""}`
       : `${visibleSummary.total} of ${totalReportFindings} finding${totalReportFindings !== 1 ? "s" : ""}`
     : undefined;
   const isEmptyReport = report !== null && !running && !error && totalReportFindings === 0;
-
-  const toggleSeverity = (sev: Severity) => {
-    setSeverityFilter((prev) => {
-      const next = new Set(prev);
-      if (next.has(sev)) next.delete(sev);
-      else next.add(sev);
-      return next;
-    });
-  };
 
   const toggleCode = (code: FindingCode) => {
     setCodeFilter((prev) => {
@@ -76,21 +95,34 @@ export function RuleDiagnosticsView() {
   };
 
   const clearFilters = () => {
-    setSeverityFilter(new Set());
+    setSearch("");
+    setSeverityFilter("all");
     setCodeFilter(new Set());
   };
 
   const actions = (
-    <Button
-      variant="outline"
-      size="sm"
-      onClick={refresh}
-      disabled={running}
-      aria-label="Refresh rule diagnostics"
-    >
-      <RefreshCw className={running ? "animate-spin" : undefined} />
-      Refresh
-    </Button>
+    <>
+      <Button
+        variant="ghost"
+        size="sm"
+        onClick={() => router.push("/rules")}
+        aria-label="Back to rules"
+        title="Back to rules"
+      >
+        <ArrowLeft />
+        Back to Rules
+      </Button>
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={refresh}
+        disabled={running}
+        aria-label="Refresh rule diagnostics"
+      >
+        <RefreshCw className={running ? "animate-spin" : undefined} />
+        Refresh
+      </Button>
+    </>
   );
 
   return (
@@ -135,10 +167,12 @@ export function RuleDiagnosticsView() {
           report && (
             <>
               <DiagnosticsFilterBar
+                search={search}
                 severityFilter={severityFilter}
                 codeFilter={codeFilter}
                 availableCodes={availableCodes}
-                onSeverityToggle={toggleSeverity}
+                onSearchChange={setSearch}
+                onSeverityChange={setSeverityFilter}
                 onCodeToggle={toggleCode}
                 onClear={clearFilters}
               />

@@ -112,18 +112,25 @@ function composeMessage(
     }
     case "RULE_DUPLICATE_GROUP": {
       const count = affected.length;
+      const detail = `${count} rules in this group are structurally identical — same stage, condition operator, conditions, and actions.`;
       return {
-        title: `${count} duplicate rules`,
-        message: `${count} rules in this group have the same stage, condition operator, conditions, and actions — every rule in the group produces the same effect on every transaction.`,
+        title: `${count} duplicate rules — consider merging`,
+        message: `Use the Merge button to collapse them into one rule.`,
+        details: [detail],
       };
     }
     case "RULE_NEAR_DUPLICATE_PAIR": {
       const other = counterpart?.summary ?? first;
       const diff = typeof args.diffCount === "number" ? args.diffCount : undefined;
       const diffPhrase = diff === 1 ? "one part" : diff === 2 ? "two parts" : "one or two parts";
+      const details: string[] = [];
+      if (diff !== undefined) {
+        details.push(`Differs by ${diffPhrase} (out of conditions and actions combined).`);
+      }
       return {
-        title: "Near-duplicate rules",
-        message: `This rule differs from another rule in the same stage by only ${diffPhrase}. You may want to merge them or confirm the difference is intentional. Other rule: ${other}.`,
+        title: "Near-duplicate rules — consider merging",
+        message: `This rule differs from another rule in the same stage by only ${diffPhrase}. Use the Merge button to combine them, or confirm the difference is intentional. Other rule: ${other}.`,
+        details: details.length > 0 ? details : undefined,
       };
     }
     case "RULE_UNSUPPORTED_CONDITION_OP": {

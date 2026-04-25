@@ -1,39 +1,48 @@
 "use client";
 
-import { ChevronDown, X } from "lucide-react";
+import { ChevronDown, Search, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { PillGroup } from "@/components/ui/pill-group";
 import { cn } from "@/lib/utils";
 import type { FindingCode, Severity } from "../types";
 
-const SEVERITY_OPTIONS: { value: Severity; label: string }[] = [
+export type SeverityFilterValue = Severity | "all";
+
+const SEVERITY_OPTIONS: { value: SeverityFilterValue; label: string }[] = [
+  { value: "all", label: "All" },
   { value: "error", label: "Errors" },
   { value: "warning", label: "Warnings" },
   { value: "info", label: "Info" },
 ];
 
 type Props = {
-  severityFilter: Set<Severity>;
+  search: string;
+  severityFilter: SeverityFilterValue;
   codeFilter: Set<FindingCode>;
   availableCodes: FindingCode[];
-  onSeverityToggle: (severity: Severity) => void;
+  onSearchChange: (value: string) => void;
+  onSeverityChange: (severity: SeverityFilterValue) => void;
   onCodeToggle: (code: FindingCode) => void;
   onClear: () => void;
 };
 
 export function DiagnosticsFilterBar({
+  search,
   severityFilter,
   codeFilter,
   availableCodes,
-  onSeverityToggle,
+  onSearchChange,
+  onSeverityChange,
   onCodeToggle,
   onClear,
 }: Props) {
-  const anyActive = severityFilter.size > 0 || codeFilter.size > 0;
+  const anyActive =
+    search.trim().length > 0 || severityFilter !== "all" || codeFilter.size > 0;
   const codeButtonLabel =
     codeFilter.size === 0
       ? "All codes"
@@ -43,29 +52,34 @@ export function DiagnosticsFilterBar({
 
   return (
     <div className="flex flex-wrap items-center gap-2 border-b border-border/40 bg-muted/10 px-4 py-2">
-      <span className="text-[11px] uppercase tracking-wider text-muted-foreground">Severity</span>
-      <div className="flex gap-px rounded border border-border bg-muted/40 p-px">
-        {SEVERITY_OPTIONS.map((opt) => {
-          const isActive = severityFilter.has(opt.value);
-          return (
-            <button
-              key={opt.value}
-              type="button"
-              onClick={() => onSeverityToggle(opt.value)}
-              aria-pressed={isActive}
-              aria-label={`Toggle ${opt.label.toLowerCase()} filter`}
-              className={cn(
-                "rounded px-2 py-0.5 text-xs transition-colors",
-                isActive
-                  ? "bg-background font-medium shadow-sm"
-                  : "text-muted-foreground hover:text-foreground"
-              )}
-            >
-              {opt.label}
-            </button>
-          );
-        })}
+      <div className="relative flex items-center">
+        <Search className="absolute left-1.5 h-3.5 w-3.5 text-muted-foreground" />
+        <input
+          type="search"
+          value={search}
+          onChange={(e) => onSearchChange(e.target.value)}
+          placeholder="Search rules…"
+          aria-label="Search findings by rule"
+          className="h-7 w-56 rounded border border-border bg-background pl-6 pr-6 text-xs outline-none focus:ring-1 focus:ring-ring"
+        />
+        {search && (
+          <button
+            type="button"
+            onClick={() => onSearchChange("")}
+            aria-label="Clear search"
+            className="absolute right-1.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+          >
+            <X className="h-3 w-3" />
+          </button>
+        )}
       </div>
+
+      <span className="text-[11px] uppercase tracking-wider text-muted-foreground">Severity</span>
+      <PillGroup
+        options={SEVERITY_OPTIONS}
+        value={severityFilter}
+        onChange={onSeverityChange}
+      />
 
       <span className="text-[11px] uppercase tracking-wider text-muted-foreground">Code</span>
       <DropdownMenu>

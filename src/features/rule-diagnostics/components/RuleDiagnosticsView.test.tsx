@@ -19,6 +19,13 @@ jest.mock("next/link", () => ({
   ),
 }));
 
+const routerPushMock = jest.fn();
+jest.mock("next/navigation", () => ({
+  useRouter: () => ({ push: routerPushMock, replace: jest.fn() }),
+  usePathname: () => "/rules/diagnostics",
+  useSearchParams: () => new URLSearchParams(),
+}));
+
 const refreshMock = jest.fn();
 type HookResult = {
   report: DiagnosticReport | null;
@@ -83,6 +90,7 @@ function makeReport(findings: Finding[]): DiagnosticReport {
 beforeEach(() => {
   refreshMock.mockReset();
   toastErrorMock.mockReset();
+  routerPushMock.mockReset();
   for (const key of Object.keys(stagedRulesState)) delete stagedRulesState[key];
   hookResult = {
     report: null,
@@ -208,13 +216,16 @@ describe("RuleDiagnosticsView", () => {
       };
     }
 
-    it("toggling a severity filter hides findings of other severities", () => {
+    it("selecting a severity pill hides findings of other severities", () => {
       const { errF, warnF, infoF } = buildReportFor();
       hookResult = { ...hookResult, report: makeReport([errF, warnF, infoF]) };
       render(<RuleDiagnosticsView />);
 
-      // Toggle "Errors" → only errors visible.
-      fireEvent.click(screen.getByLabelText("Toggle errors filter"));
+      // Click the "Errors" pill in the severity PillGroup.
+      const errorsPill = screen.getAllByText("Errors").find(
+        (el) => el.tagName === "BUTTON"
+      ) as HTMLButtonElement;
+      fireEvent.click(errorsPill);
       expect(screen.getByText("Error finding")).toBeInTheDocument();
       expect(screen.queryByText("Warning finding")).not.toBeInTheDocument();
       expect(screen.queryByText("Info finding")).not.toBeInTheDocument();
@@ -225,7 +236,10 @@ describe("RuleDiagnosticsView", () => {
       hookResult = { ...hookResult, report: makeReport([errF, warnF, infoF]) };
       render(<RuleDiagnosticsView />);
 
-      fireEvent.click(screen.getByLabelText("Toggle errors filter"));
+      const errorsPill = screen.getAllByText("Errors").find(
+        (el) => el.tagName === "BUTTON"
+      ) as HTMLButtonElement;
+      fireEvent.click(errorsPill);
       expect(screen.queryByText("Warning finding")).not.toBeInTheDocument();
 
       fireEvent.click(screen.getByLabelText("Clear all filters"));
@@ -242,9 +256,136 @@ describe("RuleDiagnosticsView", () => {
       // Initial: total = 3.
       expect(screen.getByText("3 findings")).toBeInTheDocument();
 
-      // Toggle "Errors" → 1 of 3 visible.
-      fireEvent.click(screen.getByLabelText("Toggle errors filter"));
+      // Click "Errors" → 1 of 3 visible.
+      const errorsPill = screen.getAllByText("Errors").find(
+        (el) => el.tagName === "BUTTON"
+      ) as HTMLButtonElement;
+      fireEvent.click(errorsPill);
       expect(screen.getByText("1 of 3 findings")).toBeInTheDocument();
+    });
+
+    it("typing in the search box filters findings by rule summary", () => {
+      const { errF, warnF, infoF } = buildReportFor();
+      hookResult = { ...hookResult, report: makeReport([errF, warnF, infoF]) };
+      render(<RuleDiagnosticsView />);
+
+      const searchInput = screen.getByLabelText("Search findings by rule");
+      fireEvent.change(searchInput, { target: { value: "warn summary" } });
+      expect(screen.queryByText("Error finding")).not.toBeInTheDocument();
+      expect(screen.getByText("Warning finding")).toBeInTheDocument();
+      expect(screen.queryByText("Info finding")).not.toBeInTheDocument();
+    });
+
+    it("renders a Back to Rules button that navigates to /rules", () => {
+      hookResult = { ...hookResult, report: makeReport([]) };
+      render(<RuleDiagnosticsView />);
+      const backButton = screen.getByLabelText("Back to rules");
+      fireEvent.click(backButton);
+      expect(routerPushMock).toHaveBeenCalledWith("/rules");
+    });
+  });
+
+  describe("merge button", () => {
+    it("renders a Merge button on a near-duplicate finding with a 2-rule label", () => {
+      const finding = makeFinding({
+        code: "RULE_NEAR_DUPLICATE_PAIR",
+        severity: "info",
+        affected: [
+          { id: "rule-a", summary: "rule A" },
+          { id: "rule-b", summary: "rule B" },
+        ],
+      });
+      hookResult = { ...hookResult, report: makeReport([finding]) };
+      stagedRulesState["rule-a"] = { isDeleted: false };
+      stagedRulesState["rule-b"] = { isDeleted: false };
+      render(<RuleDiagnosticsView />);
+      expect(screen.getByLabelText("Merge 2 rules")).toBeInTheDocument();
+    });
+
+    it("renders a Merge button on a duplicate-group finding labelled with the cluster size", () => {
+      const finding = makeFinding({
+        code: "RULE_DUPLICATE_GROUP",
+        severity: "warning",
+        affected: [
+          { id: "rule-1", summary: "rule 1" },
+          { id: "rule-2", summary: "rule 2" },
+          { id: "rule-3", summary: "rule 3" },
+        ],
+      });
+      hookResult = { ...hookResult, report: makeReport([finding]) };
+      stagedRulesState["rule-1"] = { isDeleted: false };
+      stagedRulesState["rule-2"] = { isDeleted: false };
+      stagedRulesState["rule-3"] = { isDeleted: false };
+      render(<RuleDiagnosticsView />);
+      expect(screen.getByLabelText("Merge 3 rules")).toBeInTheDocument();
+    });
+
+    it("does NOT render a Merge button on a non-mergeable finding", () => {
+      const finding = makeFinding({
+        code: "RULE_BROAD_MATCH",
+        severity: "warning",
+      });
+      hookResult = { ...hookResult, report: makeReport([finding]) };
+      render(<RuleDiagnosticsView />);
+      expect(screen.queryByLabelText(/^Merge \d+ rules?$/)).not.toBeInTheDocument();
+    });
+
+    it("clicking Merge on a duplicate-group navigates to /rules?merge=...&from=diagnostics&intent=duplicate", () => {
+      const finding = makeFinding({
+        code: "RULE_DUPLICATE_GROUP",
+        severity: "warning",
+        affected: [
+          { id: "rule-1", summary: "rule 1" },
+          { id: "rule-2", summary: "rule 2" },
+        ],
+      });
+      hookResult = { ...hookResult, report: makeReport([finding]) };
+      stagedRulesState["rule-1"] = { isDeleted: false };
+      stagedRulesState["rule-2"] = { isDeleted: false };
+      render(<RuleDiagnosticsView />);
+      fireEvent.click(screen.getByLabelText("Merge 2 rules"));
+      expect(routerPushMock).toHaveBeenCalledTimes(1);
+      expect(routerPushMock.mock.calls[0][0]).toBe(
+        "/rules?merge=rule-1,rule-2&from=diagnostics&intent=duplicate"
+      );
+    });
+
+    it("clicking Merge on a near-duplicate uses intent=near-duplicate", () => {
+      const finding = makeFinding({
+        code: "RULE_NEAR_DUPLICATE_PAIR",
+        severity: "info",
+        affected: [
+          { id: "r-x", summary: "rule x" },
+          { id: "r-y", summary: "rule y" },
+        ],
+      });
+      hookResult = { ...hookResult, report: makeReport([finding]) };
+      stagedRulesState["r-x"] = { isDeleted: false };
+      stagedRulesState["r-y"] = { isDeleted: false };
+      render(<RuleDiagnosticsView />);
+      fireEvent.click(screen.getByLabelText("Merge 2 rules"));
+      expect(routerPushMock.mock.calls[0][0]).toBe(
+        "/rules?merge=r-x,r-y&from=diagnostics&intent=near-duplicate"
+      );
+    });
+
+    it("toasts and does not navigate when one of the rules has been staged-deleted", () => {
+      const finding = makeFinding({
+        code: "RULE_DUPLICATE_GROUP",
+        severity: "warning",
+        affected: [
+          { id: "rule-1", summary: "rule 1" },
+          { id: "rule-2", summary: "rule 2" },
+        ],
+      });
+      hookResult = { ...hookResult, report: makeReport([finding]) };
+      stagedRulesState["rule-1"] = { isDeleted: false };
+      // rule-2 missing on purpose
+      render(<RuleDiagnosticsView />);
+      fireEvent.click(screen.getByLabelText("Merge 2 rules"));
+      expect(routerPushMock).not.toHaveBeenCalled();
+      expect(toastErrorMock).toHaveBeenCalledTimes(1);
+      expect(toastErrorMock.mock.calls[0][0]).toMatch(/no longer exists/i);
     });
   });
 });

@@ -1,12 +1,14 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import type { MouseEvent } from "react";
-import { Copy } from "lucide-react";
+import { Copy, Merge } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { useStagedStore } from "@/store/staged";
-import type { Finding, RuleRef, Severity } from "../types";
+import type { Finding, FindingCode, RuleRef, Severity } from "../types";
 
 type Props = { finding: Finding };
 
@@ -25,6 +27,16 @@ const SEVERITY_LABEL: Record<Severity, string> = {
 const COUNTERPART_PREFIX: Record<string, string> = {
   RULE_SHADOWED: "shadowed by",
   RULE_NEAR_DUPLICATE_PAIR: "near-duplicate of",
+};
+
+const MERGEABLE_CODES = new Set<FindingCode>([
+  "RULE_NEAR_DUPLICATE_PAIR",
+  "RULE_DUPLICATE_GROUP",
+]);
+
+const MERGE_INTENT: Partial<Record<FindingCode, "duplicate" | "near-duplicate">> = {
+  RULE_DUPLICATE_GROUP: "duplicate",
+  RULE_NEAR_DUPLICATE_PAIR: "near-duplicate",
 };
 
 function handleRuleLinkClick(e: MouseEvent<HTMLAnchorElement>, ruleId: string): void {
@@ -70,8 +82,48 @@ function RuleChip({ rule }: { rule: RuleRef }) {
   );
 }
 
+function MergeButton({ finding }: { finding: Finding }) {
+  const router = useRouter();
+  const ids = [
+    ...finding.affected.map((r) => r.id),
+    ...(finding.counterpart ? [finding.counterpart.id] : []),
+  ];
+  const intent = MERGE_INTENT[finding.code] ?? "near-duplicate";
+  const count = ids.length;
+
+  function handleClick() {
+    if (count < 2) {
+      toast.error("Need at least two rules to merge.");
+      return;
+    }
+    const rulesMap = useStagedStore.getState().rules;
+    const missing = ids.find((id) => !rulesMap[id] || rulesMap[id].isDeleted);
+    if (missing) {
+      toast.error("One of these rules no longer exists in the current working set.");
+      return;
+    }
+    const url = `/rules?merge=${ids.join(",")}&from=diagnostics&intent=${intent}`;
+    router.push(url);
+  }
+
+  return (
+    <Button
+      variant="outline"
+      size="xs"
+      onClick={handleClick}
+      aria-label={`Merge ${count} rule${count !== 1 ? "s" : ""}`}
+      title={`Merge ${count} rule${count !== 1 ? "s" : ""}`}
+    >
+      <Merge className="h-3 w-3" />
+      Merge {count} rule{count !== 1 ? "s" : ""}
+    </Button>
+  );
+}
+
 export function FindingRow({ finding }: Props) {
   const prefix = COUNTERPART_PREFIX[finding.code];
+  const showMergeButton = MERGEABLE_CODES.has(finding.code);
+
   return (
     <div className="flex flex-col gap-1.5 border-b border-border/50 px-4 py-3">
       <div className="flex flex-wrap items-center gap-2">
@@ -79,6 +131,7 @@ export function FindingRow({ finding }: Props) {
           {SEVERITY_LABEL[finding.severity]}
         </Badge>
         <span className="text-sm font-medium">{finding.title}</span>
+        {showMergeButton && <MergeButton finding={finding} />}
         <span className="ml-auto font-mono text-[10px] uppercase text-muted-foreground/70" aria-hidden="true">
           {finding.code}
         </span>

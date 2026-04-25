@@ -39,6 +39,8 @@ export function RulesView() {
   const [drawerOpen, setDrawerOpen]       = useState(false);
   const [editingRuleId, setEditingRuleId] = useState<string | null>(null);
   const [mergeRuleIds, setMergeRuleIds]   = useState<string[]>([]);
+  const [mergeDefaultDeleteOriginals, setMergeDefaultDeleteOriginals] = useState(false);
+  const [mergeReturnTo, setMergeReturnTo] = useState<string | null>(null);
 
   const ruleCount = Object.values(stagedRules).filter((s) => !s.isDeleted).length;
 
@@ -53,6 +55,56 @@ export function RulesView() {
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Auto-open the merge dialog when navigated here with ?merge=id1,id2&from=...&intent=...
+  // (e.g. from a Merge button on a Rule Diagnostics finding).
+  useEffect(() => {
+    const mergeParam = searchParams.get("merge");
+    if (!mergeParam) return;
+    const ids = mergeParam.split(",").filter((s) => s.length > 0);
+    if (ids.length < 2) {
+      router.replace("/rules");
+      return;
+    }
+    const rulesMap = useStagedStore.getState().rules;
+    const missing = ids.find((id) => !rulesMap[id] || rulesMap[id].isDeleted);
+    if (missing) {
+      toast.error("One of the rules to merge no longer exists in the current working set.");
+      router.replace("/rules");
+      return;
+    }
+    const from = searchParams.get("from");
+    setMergeRuleIds(ids);
+    // Pre-tick "Delete originals" whenever the merge was kicked off from
+    // diagnostics — clicking Merge on either a duplicate-group or a
+    // near-duplicate finding is a clear "I want to consolidate these" intent.
+    setMergeDefaultDeleteOriginals(from === "diagnostics");
+    setMergeReturnTo(from === "diagnostics" ? "/rules/diagnostics" : null);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  function handleMergeOpenChange(open: boolean) {
+    if (open) return;
+    setMergeRuleIds([]);
+    // Cancel path: if the merge was kicked off from diagnostics, return there.
+    // Otherwise just strip the params so a refresh doesn't re-open the dialog.
+    if (mergeReturnTo) {
+      router.push(mergeReturnTo);
+    } else if (searchParams.get("merge")) {
+      router.replace("/rules");
+    }
+    setMergeReturnTo(null);
+    setMergeDefaultDeleteOriginals(false);
+  }
+
+  function handleMergeConfirmed(newRuleId: string) {
+    if (mergeReturnTo) {
+      router.push(mergeReturnTo);
+    } else {
+      // Highlight the newly-merged rule on the rules table.
+      router.replace(`/rules?highlight=${newRuleId}`);
+    }
+  }
 
   // ── Export ────────────────────────────────────────────────────────────────────
 
@@ -188,8 +240,10 @@ export function RulesView() {
 
       <MergeRulesDialog
         open={mergeRuleIds.length >= 2}
-        onOpenChange={(open) => { if (!open) setMergeRuleIds([]); }}
+        onOpenChange={handleMergeOpenChange}
         ruleIds={mergeRuleIds}
+        defaultDeleteOriginals={mergeDefaultDeleteOriginals}
+        onConfirmed={handleMergeConfirmed}
       />
     </PageLayout>
   );

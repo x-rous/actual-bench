@@ -75,20 +75,15 @@ function selectEntityMaps(state: {
 
 export function useRuleDiagnostics(): UseRuleDiagnosticsResult {
   const stagedRules = useStagedStore((s) => s.rules);
-  const payees = useStagedStore((s) => s.payees);
-  const categories = useStagedStore((s) => s.categories);
-  const accounts = useStagedStore((s) => s.accounts);
-  const categoryGroups = useStagedStore((s) => s.categoryGroups);
-  const schedules = useStagedStore((s) => s.schedules);
+  // Subscribe to entity maps so that staged-entity changes drive re-renders
+  // (the engine reads via getState() at run time, but the React layer needs
+  // these subscriptions to know when to re-evaluate the stale signature).
+  useStagedStore((s) => s.payees);
+  useStagedStore((s) => s.categories);
+  useStagedStore((s) => s.accounts);
+  useStagedStore((s) => s.categoryGroups);
+  useStagedStore((s) => s.schedules);
   const activeConnectionId = useConnectionStore((s) => s.activeInstanceId);
-
-  const entityMaps = selectEntityMaps({
-    payees,
-    categories,
-    accounts,
-    categoryGroups,
-    schedules,
-  });
 
   const [report, setReport] = useState<DiagnosticReport | null>(null);
   const [running, setRunning] = useState(false);
@@ -97,20 +92,41 @@ export function useRuleDiagnostics(): UseRuleDiagnosticsResult {
 
   const cancelledRef = useRef(false);
   const previousConnectionIdRef = useRef(activeConnectionId);
+  // True between "connection switched" and "engine ran for the new connection".
+  // Used by the staged-rules watcher to pick the right moment to refresh.
+  const awaitingPostSwitchRefreshRef = useRef(false);
 
-  // Auto-refresh on connection switch — the working set belongs to a different
-  // budget now, so the stale-banner pattern (used for in-route edits) would be
-  // misleading. Matches the spec edge-case "Switching connections mid-review".
+  // Effect 1: detect a connection switch.
+  // When the connection changes we clear the current report and put the view
+  // into the loading state immediately, then arm Effect 2 to refresh the
+  // engine once the staged store has loaded the new connection's rules.
   useEffect(() => {
     if (previousConnectionIdRef.current !== activeConnectionId) {
       previousConnectionIdRef.current = activeConnectionId;
-      setRunToken((t) => t + 1);
+      awaitingPostSwitchRefreshRef.current = true;
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setReport(null);
+      setRunning(true);
+      setError(null);
     }
   }, [activeConnectionId]);
 
-  // Current working set signature is recomputed from the latest store snapshot
-  // every render. It is compared against report.workingSetSignature to decide
-  // whether the report is stale.
+  // Effect 2: when staged-rules data updates after a connection switch, refresh.
+  // The new connection's rules arrive via AppShell's `usePreloadEntities` →
+  // `useRules` → `loadRules` chain on a subsequent React commit; this effect
+  // fires on that update and bumps runToken so the engine re-runs against
+  // the now-fresh staged store. On normal staged edits the flag is false,
+  // so this is a cheap no-op (Clarification 2 still holds).
+  useEffect(() => {
+    if (awaitingPostSwitchRefreshRef.current) {
+      awaitingPostSwitchRefreshRef.current = false;
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setRunToken((t) => t + 1);
+    }
+  }, [stagedRules]);
+
+  // Current working-set signature is recomputed every render and compared
+  // against the report's signature to drive the stale banner.
   const currentRules: Rule[] = [];
   for (const entry of Object.values(stagedRules)) {
     if (!entry.isDeleted) currentRules.push(entry.entity);
@@ -121,10 +137,15 @@ export function useRuleDiagnostics(): UseRuleDiagnosticsResult {
   useEffect(() => {
     cancelledRef.current = false;
     let cancelled = false;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setRunning(true);
     setError(null);
 
-    const ws = buildWorkingSet(stagedRules, entityMaps);
+    // Read fresh state at run time so we pick up any staged-store updates
+    // that happened between runToken bump and now (e.g. a deferred refresh
+    // after a connection switch).
+    const state = useStagedStore.getState();
+    const ws = buildWorkingSet(state.rules, selectEntityMaps(state));
     runDiagnostics(ws)
       .then((r) => {
         if (cancelled || cancelledRef.current) return;
@@ -142,10 +163,11 @@ export function useRuleDiagnostics(): UseRuleDiagnosticsResult {
     return () => {
       cancelled = true;
     };
-    // Intentionally run only on mount and on explicit refresh — not on every
-    // staged-store change. Staleness is surfaced via the `stale` flag so the
-    // UI can prompt the user instead of silently recomputing (Clarification 2).
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // Intentionally run only on mount and on explicit refresh (or
+    // deferred refresh after a connection switch via Effect 2) — not on
+    // every staged-store change. Staleness is surfaced via the `stale`
+    // flag so the UI can prompt the user instead of silently recomputing
+    // (Clarification 2).
   }, [runToken]);
 
   useEffect(() => {

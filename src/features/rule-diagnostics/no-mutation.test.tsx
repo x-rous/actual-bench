@@ -25,6 +25,12 @@ jest.mock("next/link", () => ({
   ),
 }));
 
+jest.mock("next/navigation", () => ({
+  useRouter: () => ({ push: jest.fn(), replace: jest.fn() }),
+  usePathname: () => "/rules/diagnostics",
+  useSearchParams: () => new URLSearchParams(),
+}));
+
 const refreshMock = jest.fn();
 let hookResult: {
   report: DiagnosticReport | null;
@@ -150,11 +156,22 @@ it("renders, filters, refreshes, and jump-to-rule without invoking ANY staged-st
 
   render(<RuleDiagnosticsView />);
 
-  // 1. Toggle a severity filter on, then off.
-  fireEvent.click(screen.getByLabelText("Toggle errors filter"));
-  fireEvent.click(screen.getByLabelText("Toggle errors filter"));
+  // 1. Click the Errors severity pill, then click All to reset.
+  const errorsPill = screen.getAllByText("Errors").find(
+    (el) => el.tagName === "BUTTON"
+  ) as HTMLButtonElement;
+  fireEvent.click(errorsPill);
+  const allPill = screen.getAllByText("All").find(
+    (el) => el.tagName === "BUTTON"
+  ) as HTMLButtonElement;
+  fireEvent.click(allPill);
 
-  // 2. Click Refresh.
+  // 2. Type into the search box, then clear it.
+  const searchInput = screen.getByLabelText("Search findings by rule");
+  fireEvent.change(searchInput, { target: { value: "rule" } });
+  fireEvent.change(searchInput, { target: { value: "" } });
+
+  // 3. Click Refresh.
   fireEvent.click(screen.getByLabelText("Refresh rule diagnostics"));
 
   // 3. Click each finding's rule summary link.
