@@ -409,7 +409,7 @@ Response: { data: Rule[] }
 |---|---|
 | **Priority** | Medium |
 | **Effort** | S |
-| **Status** | pending |
+| **Status** | completed |
 | **Depends on** | Proxy binary response patch |
 
 **What:** A one-click button that downloads a complete backup ZIP of the active budget. The ZIP contains `db.sqlite` + `metadata.json`.
@@ -1119,7 +1119,7 @@ The following findings from code analysis should be kept in mind when working on
 |---|---|
 | **Priority** | High |
 | **Effort** | M |
-| **Status** | pending |
+| **Status** | complete |
 | **Depends on** | RD-007 |
 
 **What:** A diagnostics tool that scans rules and highlights likely issues, risky patterns, and cleanup opportunities. This should extend the rule-management experience without recreating Actual Budget's rule engine.

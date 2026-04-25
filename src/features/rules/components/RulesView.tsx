@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Download, Upload, Plus } from "lucide-react";
+import { Download, Upload, Plus, Stethoscope } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { PageLayout } from "@/components/layout/PageLayout";
@@ -147,6 +147,16 @@ export function RulesView() {
             className="hidden"
             onChange={handleImportCsv}
           />
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => router.push("/rules/diagnostics")}
+            aria-label="Open rule diagnostics"
+            title="Open rule diagnostics"
+          >
+            <Stethoscope />
+            Diagnostics
+          </Button>
           <Button variant="outline" size="sm" onClick={() => importInputRef.current?.click()} title="Import CSV">
             <Download />
             Import
