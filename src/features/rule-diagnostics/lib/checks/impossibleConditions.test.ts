@@ -58,6 +58,35 @@ describe("impossibleConditions", () => {
     expect(impossibleConditions(ws([r]), ctx)).toHaveLength(1);
   });
 
+  it("flags `gt 5` + `gt 100` + `lt 50` (effective lower bound is the max)", () => {
+    // Effective: x > 100 AND x < 50 → empty. The earlier code returned the
+    // first matching gt (gt 5) and missed the contradiction.
+    const r = rule({
+      id: "r1",
+      conditions: [
+        { field: "amount", op: "gt", value: 5 },
+        { field: "amount", op: "gt", value: 100 },
+        { field: "amount", op: "lt", value: 50 },
+      ],
+    });
+    expect(impossibleConditions(ws([r]), ctx)).toHaveLength(1);
+  });
+
+  it("flags `gt 5` + `gte 5` + `lte 5` (tighter `gt` wins the tie-break)", () => {
+    // Effective: x > 5 AND x ≤ 5 → empty. The picked-first code would have
+    // chosen `gte 5` and `lte 5`, leaving the singleton {5} and missing the
+    // contradiction introduced by the additional `gt 5`.
+    const r = rule({
+      id: "r1",
+      conditions: [
+        { field: "amount", op: "gt", value: 5 },
+        { field: "amount", op: "gte", value: 5 },
+        { field: "amount", op: "lte", value: 5 },
+      ],
+    });
+    expect(impossibleConditions(ws([r]), ctx)).toHaveLength(1);
+  });
+
   it("flags `is \"X\"` + `isNot \"X\"`", () => {
     const r = rule({
       id: "r1",
