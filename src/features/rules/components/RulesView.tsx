@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Download, Upload, Plus } from "lucide-react";
+import { Download, Upload, Plus, Stethoscope } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { PageLayout } from "@/components/layout/PageLayout";
@@ -39,6 +39,10 @@ export function RulesView() {
   const [drawerOpen, setDrawerOpen]       = useState(false);
   const [editingRuleId, setEditingRuleId] = useState<string | null>(null);
   const [mergeRuleIds, setMergeRuleIds]   = useState<string[]>([]);
+  const [mergeDefaultDeleteOriginals, setMergeDefaultDeleteOriginals] = useState(false);
+  const [mergeReturnTo, setMergeReturnTo] = useState<string | null>(null);
+  const mergeIntentHandledRef            = useRef(false);
+  const mergeConfirmedRef                = useRef(false);
 
   const ruleCount = Object.values(stagedRules).filter((s) => !s.isDeleted).length;
 
@@ -53,6 +57,66 @@ export function RulesView() {
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Auto-open the merge dialog when navigated here with ?merge=id1,id2&from=...&intent=...
+  // (e.g. from a Merge button on a Rule Diagnostics finding). Wait for the
+  // staged store to be populated before validating the ids — otherwise a cold
+  // load would falsely report the rules as missing.
+  useEffect(() => {
+    if (mergeIntentHandledRef.current) return;
+    if (isLoading) return;
+    const mergeParam = searchParams.get("merge");
+    if (!mergeParam) return;
+    mergeIntentHandledRef.current = true;
+
+    const ids = mergeParam.split(",").filter((s) => s.length > 0);
+    if (ids.length < 2) {
+      router.replace("/rules");
+      return;
+    }
+    const rulesMap = useStagedStore.getState().rules;
+    const missing = ids.find((id) => !rulesMap[id] || rulesMap[id].isDeleted);
+    if (missing) {
+      toast.error("One of the rules to merge no longer exists in the current working set.");
+      router.replace("/rules");
+      return;
+    }
+    const from = searchParams.get("from");
+    setMergeRuleIds(ids);
+    // Pre-tick "Delete originals" whenever the merge was kicked off from
+    // diagnostics — clicking Merge on either a duplicate-group or a
+    // near-duplicate finding is a clear "I want to consolidate these" intent.
+    setMergeDefaultDeleteOriginals(from === "diagnostics");
+    setMergeReturnTo(from === "diagnostics" ? "/rules/diagnostics" : null);
+  }, [isLoading, searchParams, router]);
+
+  function handleMergeOpenChange(open: boolean) {
+    if (open) return;
+    setMergeRuleIds([]);
+    // If a confirmation just navigated, do not push again. Otherwise this is
+    // the cancel path — return to diagnostics if that's where we came from,
+    // else strip the merge params so a refresh doesn't re-open the dialog.
+    if (!mergeConfirmedRef.current) {
+      if (mergeReturnTo) {
+        router.push(mergeReturnTo);
+      } else if (searchParams.get("merge")) {
+        router.replace("/rules");
+      }
+    }
+    mergeConfirmedRef.current = false;
+    setMergeReturnTo(null);
+    setMergeDefaultDeleteOriginals(false);
+  }
+
+  function handleMergeConfirmed(newRuleId: string) {
+    mergeConfirmedRef.current = true;
+    if (mergeReturnTo) {
+      router.push(mergeReturnTo);
+    } else {
+      // Highlight the newly-merged rule on the rules table.
+      router.replace(`/rules?highlight=${newRuleId}`);
+    }
+  }
 
   // ── Export ────────────────────────────────────────────────────────────────────
 
@@ -147,6 +211,16 @@ export function RulesView() {
             className="hidden"
             onChange={handleImportCsv}
           />
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => router.push("/rules/diagnostics")}
+            aria-label="Open rule diagnostics"
+            title="Open rule diagnostics"
+          >
+            <Stethoscope />
+            Diagnostics
+          </Button>
           <Button variant="outline" size="sm" onClick={() => importInputRef.current?.click()} title="Import CSV">
             <Download />
             Import
@@ -178,8 +252,10 @@ export function RulesView() {
 
       <MergeRulesDialog
         open={mergeRuleIds.length >= 2}
-        onOpenChange={(open) => { if (!open) setMergeRuleIds([]); }}
+        onOpenChange={handleMergeOpenChange}
         ruleIds={mergeRuleIds}
+        defaultDeleteOriginals={mergeDefaultDeleteOriginals}
+        onConfirmed={handleMergeConfirmed}
       />
     </PageLayout>
   );

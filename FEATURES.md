@@ -57,6 +57,20 @@
 - Category dropdowns group categories under their parent group, preserving server order; hidden categories and groups remain visible so rules referencing them can still be edited; search matches group names (shows all children) or category names
 - CSV import and export
 
+## Rule Diagnostics
+
+- Dedicated `/rules/diagnostics` workspace, reachable via a Diagnostics button on the Rules page toolbar; bookmarkable URL
+- Read-only and advisory: never modifies, stages, creates, or deletes any rule, entity, or configuration as a side effect of running diagnostics or interacting with a finding
+- Runs against the user's current working set (server snapshot + unsaved staged edits) — lints the rules you are about to save
+- Severity-grouped findings list with summary cards for `error`, `warning`, and `info` counts; severity- and code-based filtering with a "clear filters" affordance
+- v1 checks: missing payee / category / account / category-group references, empty or no-op actions, impossibly contradictory conditions on `and`-rules, strictly shadowed rules within a stage, broad match criteria (very short `contains`/`matches`/`doesNotContain` values), duplicate rule groups, near-duplicate pairs (combined symmetric diff of 1–2 parts), and unsupported field/operator combinations
+- Schedule-generated rules (those with a `link-schedule` action) are excluded from editor-relevant checks but still surface missing-entity findings
+- Each finding includes a plain-language explanation, the affected rule's generated summary (stage + first condition + first action), and a copy-UUID button; clicking the rule summary jumps to `/rules?highlight=<id>` and the existing rule editor
+- One-click Merge button on duplicate-group and near-duplicate findings opens the existing rule merge dialog pre-filled with the relevant rules; the "Delete originals" checkbox is pre-ticked for full duplicates and left unchecked for near-duplicates; on successful merge the user is returned to the diagnostics report so cleanup flows naturally; cancelling the merge leaves the user on the rules page
+- Stale-results banner appears when the working set changes while the view is open; results stay visible until the user activates Refresh or returns to the route
+- Deterministic and reproducible: repeated runs against the same working set produce identical findings, codes, and grouping
+- Runs entirely in the browser against already-loaded data — no new backend endpoint, no network calls
+
 ## Accounts
 
 - Create, rename, and delete accounts

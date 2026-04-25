@@ -23,6 +23,7 @@ Useful for power users who want more control over their budget data, and for tes
 - **Schedules management** - create and edit one-time and recurring schedules with full recurrence controls, amount modes, and weekend adjustment
 - **ActualQL query workspace** - run ad-hoc ActualQL queries against your budget, inspect results as table / raw JSON / scalar / collapsible tree, save and replay named query packs, and copy a cURL command for any executed query
 - **Budget Diagnostics** - inspect exported budget snapshots in a read-only local workspace with overview metrics, diagnostics, paginated SQLite data browsing, and full table/view CSV export
+- **Rule Diagnostics** - lint your rule set for broken entity references, shadowed rules, impossible conditions, broad-match criteria, duplicates, near-duplicates, and unsupported field/operator combinations, with severity filters and one-click jump to the offending rule
 
 ## Architecture
 
@@ -64,6 +65,7 @@ All browser requests route through an internal Next.js proxy - no direct browser
 - **ActualQL Queries** - syntax-highlighted query editor with run / format / save / explain actions; four result views (table, raw JSON, scalar, collapsible tree); built-in example packs; saved queries with favorites; query history; cURL copy; lint warnings; and an inline quick reference dialog
 - **Budget Management Workspace** - adds a multi-month budgeting workspace with a 12-month grid, staged cell editing, Budget / Actuals / Balance view toggle, year summary draft panel, keyboard navigation, clipboard paste, right-click bulk actions, supports both tracking and envelope-mode with support for next-month hold and category transfer
 - **Budget Diagnostics** - opens a read-only exported snapshot locally in the browser with overview metadata, deterministic diagnostics, paginated SQLite data browsing, relationship drill-in, and full table/view CSV export
+- **Rule Diagnostics** - read-only `/rules/diagnostics` workspace that lints your current rule working set for missing entity references, shadowed rules, impossible conditions, broad-match criteria, duplicate / near-duplicate groups, and unsupported field/operator combinations; severity- and code-filterable; jump from any finding to the offending rule
 
 → See [FEATURES.md](FEATURES.md) for the full feature reference.
 
@@ -235,10 +237,6 @@ The workspace includes:
 - **Overview** - snapshot metadata, table counts, ZIP/database sizes, and exported ZIP download
 - **Diagnostics** - deterministic schema, relationship, metadata, and SQLite health findings, plus an opt-in full integrity check
 - **Data Browser** - paginated browsing for SQLite tables/views, schema inspection, row details, relationship drill-in, and full table/view CSV export
-
-## Coming Soon
-
-- **Rule diagnostics** - detect conflicting, shadowed, or redundant rules across stages
 
 ## Known Limitations
 
