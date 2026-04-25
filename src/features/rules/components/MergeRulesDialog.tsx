@@ -214,8 +214,11 @@ export function MergeRulesDialog({
       }
     }
 
-    onOpenChange(false);
+    // Order matters: onConfirmed handles post-merge navigation; onOpenChange
+    // then closes the dialog. The parent uses the order to suppress its
+    // cancel-path navigation when a confirmation has already routed.
     onConfirmed?.(newId);
+    onOpenChange(false);
     const suffix = deleteOriginals
       ? ` Original ${ruleIds.length} rules are staged for deletion and will be removed only after the merged rule is saved successfully.`
       : "";

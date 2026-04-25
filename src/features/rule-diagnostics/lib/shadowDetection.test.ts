@@ -102,6 +102,43 @@ describe("findShadowedPairs", () => {
     expect(findShadowedPairs([earlier, later])).toHaveLength(0);
   });
 
+  it("does NOT flag doesNotContain when earlier's value is a substring of later's", () => {
+    // A = doesNotContain "foo" matches strings without "foo".
+    // B = doesNotContain "foobar" matches strings without "foobar" (a SUPERSET — e.g. "foo bar" matches B but not A).
+    // So A does not cover B and B must not be flagged as shadowed.
+    const earlier = rule({
+      id: "r1",
+      conditions: [{ field: "notes", op: "doesNotContain", value: "foo" }],
+      actions: [{ field: "category", op: "set", value: "c-1" }],
+    });
+    const later = rule({
+      id: "r2",
+      conditions: [{ field: "notes", op: "doesNotContain", value: "foobar" }],
+      actions: [{ field: "category", op: "set", value: "c-2" }],
+    });
+    expect(findShadowedPairs([earlier, later])).toHaveLength(0);
+  });
+
+  it("flags doesNotContain when later's value is a substring of earlier's", () => {
+    // A = doesNotContain "foobar" matches strings without "foobar".
+    // B = doesNotContain "foo"    matches strings without "foo" (a SUBSET of A's matches).
+    // Every string matching B also matches A → A covers B → B is shadowed.
+    const earlier = rule({
+      id: "r1",
+      conditions: [{ field: "notes", op: "doesNotContain", value: "foobar" }],
+      actions: [{ field: "category", op: "set", value: "c-1" }],
+    });
+    const later = rule({
+      id: "r2",
+      conditions: [{ field: "notes", op: "doesNotContain", value: "foo" }],
+      actions: [{ field: "category", op: "set", value: "c-2" }],
+    });
+    const pairs = findShadowedPairs([earlier, later]);
+    expect(pairs).toHaveLength(1);
+    expect(pairs[0].shadowed.id).toBe("r2");
+    expect(pairs[0].shadowing.id).toBe("r1");
+  });
+
   it("recognises oneOf containing the later is value as a covering match", () => {
     const earlier = rule({
       id: "r1",

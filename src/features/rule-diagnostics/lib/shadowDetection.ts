@@ -53,9 +53,9 @@ function earlierCoversLater(a: ConditionOrAction, b: ConditionOrAction): boolean
     typeof b.value === "string"
   ) {
     if (a.op === "contains") return b.value.includes(a.value);
-    // For doesNotContain: a "doesNotContain X" covers "doesNotContain Y" when any string
-    // avoiding X also avoids Y only if X is contained in Y — same substring logic applies.
-    return b.value.includes(a.value);
+    // For doesNotContain: "doesNotContain X" covers "doesNotContain Y" only when
+    // Y is a substring of X — every string lacking X also lacks Y, but not vice versa.
+    return a.value.includes(b.value);
   }
 
   // oneOf [a,b,c] covers oneOf [subset] when laterSet ⊆ earlierSet.

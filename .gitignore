@@ -53,3 +53,5 @@ agents/
 .next
 .next-build
 .claude/
+specs/
+.specify/

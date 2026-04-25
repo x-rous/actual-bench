@@ -4,10 +4,6 @@ import { registerCheck } from "../runDiagnostics";
 import { buildFinding } from "../findingMessages";
 import { findingRuleSummary } from "../../utils/findingRuleSummary";
 
-function jsonEqual(a: unknown, b: unknown): boolean {
-  return JSON.stringify(a) === JSON.stringify(b);
-}
-
 function asNumber(v: ConditionOrAction["value"]): number | null {
   if (typeof v === "number" && Number.isFinite(v)) return v;
   return null;
@@ -135,10 +131,6 @@ function findContradictions(rule: Rule): string[] {
     return null;
   }
 }
-
-// Suppress unused warning for the helper-only utility.
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-const _jsonEqual = jsonEqual;
 
 export const impossibleConditions: CheckFn = (ws, ctx) => {
   const findings: Finding[] = [];

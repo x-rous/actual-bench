@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useIsFetching } from "@tanstack/react-query";
 import { useStagedStore } from "@/store/staged";
 import { useConnectionStore } from "@/store/connection";
 import type { Rule, Payee, Category, Account, CategoryGroup, Schedule } from "@/types/entities";
@@ -84,6 +85,22 @@ export function useRuleDiagnostics(): UseRuleDiagnosticsResult {
   useStagedStore((s) => s.categoryGroups);
   useStagedStore((s) => s.schedules);
   const activeConnectionId = useConnectionStore((s) => s.activeInstanceId);
+  // Number of in-flight queries for the entity types the engine consumes.
+  // Drops to 0 once the new connection's rules (and related entities) have
+  // finished loading — that's our cue to re-run after a connection switch.
+  const isLoadingEntities = useIsFetching({
+    predicate: (q) => {
+      const key = q.queryKey[0];
+      return (
+        key === "rules" ||
+        key === "payees" ||
+        key === "categories" ||
+        key === "accounts" ||
+        key === "categoryGroups" ||
+        key === "schedules"
+      );
+    },
+  }) > 0;
 
   const [report, setReport] = useState<DiagnosticReport | null>(null);
   const [running, setRunning] = useState(false);
@@ -93,13 +110,13 @@ export function useRuleDiagnostics(): UseRuleDiagnosticsResult {
   const cancelledRef = useRef(false);
   const previousConnectionIdRef = useRef(activeConnectionId);
   // True between "connection switched" and "engine ran for the new connection".
-  // Used by the staged-rules watcher to pick the right moment to refresh.
+  // The post-switch watcher waits for the rules query to settle before refreshing.
   const awaitingPostSwitchRefreshRef = useRef(false);
 
   // Effect 1: detect a connection switch.
   // When the connection changes we clear the current report and put the view
   // into the loading state immediately, then arm Effect 2 to refresh the
-  // engine once the staged store has loaded the new connection's rules.
+  // engine once the new connection's entity queries have finished loading.
   useEffect(() => {
     if (previousConnectionIdRef.current !== activeConnectionId) {
       previousConnectionIdRef.current = activeConnectionId;
@@ -111,19 +128,19 @@ export function useRuleDiagnostics(): UseRuleDiagnosticsResult {
     }
   }, [activeConnectionId]);
 
-  // Effect 2: when staged-rules data updates after a connection switch, refresh.
-  // The new connection's rules arrive via AppShell's `usePreloadEntities` →
-  // `useRules` → `loadRules` chain on a subsequent React commit; this effect
-  // fires on that update and bumps runToken so the engine re-runs against
-  // the now-fresh staged store. On normal staged edits the flag is false,
-  // so this is a cheap no-op (Clarification 2 still holds).
+  // Effect 2: when the new connection's entity queries finish loading after a
+  // switch, bump runToken so the engine re-runs against the now-fresh staged
+  // store. We gate on the queries (not on staged-rules reference changes)
+  // because `discardAll()` clears staged data BEFORE the new data arrives —
+  // reacting to the first reference change runs the engine against an empty
+  // staged store and leaves the report stuck on the empty signature.
   useEffect(() => {
-    if (awaitingPostSwitchRefreshRef.current) {
-      awaitingPostSwitchRefreshRef.current = false;
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setRunToken((t) => t + 1);
-    }
-  }, [stagedRules]);
+    if (!awaitingPostSwitchRefreshRef.current) return;
+    if (isLoadingEntities) return;
+    awaitingPostSwitchRefreshRef.current = false;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setRunToken((t) => t + 1);
+  }, [isLoadingEntities]);
 
   // Current working-set signature is recomputed every render and compared
   // against the report's signature to drive the stale banner.

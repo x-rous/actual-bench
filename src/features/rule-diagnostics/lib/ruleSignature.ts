@@ -60,12 +60,11 @@ export function rulePartSignatures(rule: Rule): string[] {
 }
 
 /**
- * Lightweight signature for detecting whether the rule working set has
- * changed since the last diagnostics run. Cheap — one pass, rule-id level.
+ * Signature for detecting whether the rule working set has changed since the
+ * last diagnostics run. Includes each rule's full content signature so that
+ * in-place edits to conditions or actions invalidate the cached report.
  */
 export function workingSetSignature(rules: Rule[]): string {
-  const parts = rules
-    .map((r) => `${r.id}:${r.stage}:${r.conditionsOp}:${r.conditions.length}:${r.actions.length}`)
-    .sort();
+  const parts = rules.map((r) => `${r.id}:${ruleSignature(r)}`).sort();
   return `n=${rules.length};${parts.join("|")}`;
 }

@@ -4,6 +4,7 @@ import { ChevronDown, Search, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
+  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
@@ -100,27 +101,18 @@ export function DiagnosticsFilterBar({
             availableCodes.map((code) => {
               const isActive = codeFilter.has(code);
               return (
-                <button
+                <DropdownMenuCheckboxItem
                   key={code}
-                  type="button"
-                  onClick={() => onCodeToggle(code)}
-                  aria-pressed={isActive}
+                  checked={isActive}
+                  onCheckedChange={() => onCodeToggle(code)}
+                  onSelect={(e) => e.preventDefault()}
                   className={cn(
-                    "flex w-full items-center gap-2 rounded px-2 py-1 text-left text-xs hover:bg-muted",
-                    isActive && "bg-muted font-medium"
+                    "gap-2 px-2 py-1 text-xs",
+                    isActive && "font-medium"
                   )}
                 >
-                  <span
-                    className={cn(
-                      "inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded border",
-                      isActive ? "border-primary bg-primary text-primary-foreground" : "border-border"
-                    )}
-                    aria-hidden="true"
-                  >
-                    {isActive && "✓"}
-                  </span>
                   <span className="font-mono text-[11px]">{code}</span>
-                </button>
+                </DropdownMenuCheckboxItem>
               );
             })
           )}
