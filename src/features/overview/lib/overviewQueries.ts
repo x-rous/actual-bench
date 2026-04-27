@@ -1,7 +1,14 @@
 import { runQuery } from "@/lib/api/query";
 import { deriveBudgetMode } from "@/lib/budget/deriveBudgetMode";
+import {
+  ZERO_BUDGET_COUNT_QUERY,
+  REFLECT_BUDGET_COUNT_QUERY,
+} from "@/lib/budget/budgetModeQueries";
 import type { ConnectionInstance } from "@/store/connection";
 import type { BudgetMode, BudgetOverviewSnapshot, OverviewStatKey } from "../types";
+
+// Re-exported so existing callers / tests inside this feature continue to work.
+export { ZERO_BUDGET_COUNT_QUERY, REFLECT_BUDGET_COUNT_QUERY };
 
 type ScalarCountQuery = {
   ActualQLquery: {
@@ -54,14 +61,6 @@ export const RULE_COUNT_QUERY = {
 
 export const SCHEDULE_COUNT_QUERY = {
   ActualQLquery: { table: "schedules", calculate: { $count: "$id" } },
-} as const satisfies ScalarCountQuery;
-
-export const ZERO_BUDGET_COUNT_QUERY = {
-  ActualQLquery: { table: "zero_budgets", calculate: { $count: "$id" } },
-} as const satisfies ScalarCountQuery;
-
-export const REFLECT_BUDGET_COUNT_QUERY = {
-  ActualQLquery: { table: "reflect_budgets", calculate: { $count: "$id" } },
 } as const satisfies ScalarCountQuery;
 
 export const OLDEST_TRANSACTION_QUERY = {

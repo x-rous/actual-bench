@@ -3,20 +3,13 @@
 import { useBudgetEditsStore } from "@/store/budgetEdits";
 import type { BudgetCellKey, BudgetCellSelection, LoadedCategory } from "../types";
 import { resolveSelectionCells } from "../lib/budgetSelectionUtils";
+import { formatDelta } from "../lib/format";
 
 type Props = {
   selection: BudgetCellSelection | null;
   activeMonths: string[];
   categories: LoadedCategory[];
 };
-
-function formatDelta(delta: number): string {
-  const sign = delta > 0 ? "+" : delta < 0 ? "−" : "";
-  return `${sign}${(Math.abs(delta) / 100).toLocaleString("en-US", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })}`;
-}
 
 /**
  * Footer bar showing:

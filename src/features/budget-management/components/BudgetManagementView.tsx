@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { addMonths } from "@/lib/budget/monthMath";
 import type { CellView } from "../types";
 import { useBudgetMode } from "../hooks/useBudgetMode";
 import { useAvailableMonths } from "../hooks/useAvailableMonths";
@@ -14,15 +15,6 @@ import { BudgetImportDialog } from "./BudgetImportDialog";
 import { CategoryTransferDialog } from "./CategoryTransferDialog";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-
-/** Add `delta` months to a YYYY-MM string. Returns a YYYY-MM string. */
-function addMonths(monthStr: string, delta: number): string {
-  const [yearStr, moStr] = monthStr.split("-");
-  const year = parseInt(yearStr ?? "2026", 10);
-  const mo = parseInt(moStr ?? "1", 10);
-  const d = new Date(year, mo - 1 + delta, 1);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-}
 
 /** Compute 12 consecutive months from a start month string. */
 function compute12Months(windowStart: string): string[] {
@@ -104,7 +96,15 @@ export function BudgetManagementView() {
   // Navigation guard: intercept browser back/forward when staged changes exist.
   useEffect(() => {
     if (!hasBudgetPendingEdits) {
-      hasPushedNavigationGuard.current = false;
+      // BM-20: when pending edits clear without a popstate (e.g. user clicked
+      // Save or discarded explicitly), consume the placeholder we previously
+      // pushed so it doesn't linger as a duplicate entry in browser history.
+      // The popstate "confirmed" branch below also clears the ref before its
+      // own back() call, so we won't double-back here.
+      if (hasPushedNavigationGuard.current) {
+        hasPushedNavigationGuard.current = false;
+        window.history.back();
+      }
       return;
     }
 

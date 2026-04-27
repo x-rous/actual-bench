@@ -1,28 +1,15 @@
 "use client";
 
 import { ChevronsLeft, ChevronsRight, ChevronLeft, ChevronRight, CalendarDays, Upload, Download, ChevronsDownUp, ChevronsUpDown, Eye, EyeOff } from "lucide-react";
+import { addMonths, formatMonthLabel } from "@/lib/budget/monthMath";
 import type { BudgetMode, CellView } from "../types";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-/** Add `delta` months to a YYYY-MM string. Returns a YYYY-MM string. */
-function addMonths(monthStr: string, delta: number): string {
-  const [yearStr, moStr] = monthStr.split("-");
-  const year = parseInt(yearStr ?? "2026", 10);
-  const mo = parseInt(moStr ?? "1", 10);
-  const d = new Date(year, mo - 1 + delta, 1);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-}
-
-/** Format a YYYY-MM window as "Jan '26 – Dec '26". */
+/** Format a YYYY-MM window as "Jan 26 – Dec 26". */
 function formatWindowRange(start: string): string {
   const end = addMonths(start, 11);
-  const fmt = (m: string) => {
-    const [y, mo] = m.split("-");
-    return new Date(parseInt(y ?? "2026", 10), parseInt(mo ?? "1", 10) - 1, 1)
-      .toLocaleString("en-US", { month: "short", year: "2-digit" });
-  };
-  return `${fmt(start)} – ${fmt(end)}`;
+  return `${formatMonthLabel(start)} – ${formatMonthLabel(end)}`;
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -223,9 +210,10 @@ export function BudgetToolbar({
               onClick={onExpandAll}
               aria-label="Expand all groups"
               title="Expand all groups"
-              className="flex items-center justify-center w-6 h-6 rounded text-muted-foreground hover:bg-muted transition-colors"
+              className="inline-flex items-center gap-1 h-6 px-2 rounded text-[11px] font-medium text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
             >
-              <ChevronsUpDown className="h-3.5 w-3.5" />
+              <ChevronsUpDown className="h-3.5 w-3.5" aria-hidden="true" />
+              Expand
             </button>
           )}
           {onCollapseAll && (
@@ -234,9 +222,10 @@ export function BudgetToolbar({
               onClick={onCollapseAll}
               aria-label="Collapse all groups"
               title="Collapse all groups"
-              className="flex items-center justify-center w-6 h-6 rounded text-muted-foreground hover:bg-muted transition-colors"
+              className="inline-flex items-center gap-1 h-6 px-2 rounded text-[11px] font-medium text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
             >
-              <ChevronsDownUp className="h-3.5 w-3.5" />
+              <ChevronsDownUp className="h-3.5 w-3.5" aria-hidden="true" />
+              Collapse
             </button>
           )}
           {onToggleShowHidden && (
@@ -245,17 +234,25 @@ export function BudgetToolbar({
               onClick={onToggleShowHidden}
               aria-label={showHidden ? "Hide hidden categories" : "Show hidden categories"}
               title={showHidden ? "Hide hidden categories" : "Show hidden categories"}
-              aria-pressed={showHidden}
-              className={`flex items-center justify-center w-6 h-6 rounded transition-colors ${
-                showHidden
+              // Inverted: pressed state means "currently hiding hidden categories"
+              // (showHidden=false). Default — hidden visible — is unpressed.
+              aria-pressed={!showHidden}
+              className={`inline-flex items-center gap-1 h-6 px-2 rounded text-[11px] font-medium transition-colors ${
+                !showHidden
                   ? "text-foreground bg-muted"
-                  : "text-muted-foreground hover:bg-muted"
+                  : "text-muted-foreground hover:bg-muted hover:text-foreground"
               }`}
             >
               {showHidden ? (
-                <EyeOff className="h-3.5 w-3.5" />
+                <>
+                  <EyeOff className="h-3.5 w-3.5" aria-hidden="true" />
+                  Hide hidden
+                </>
               ) : (
-                <Eye className="h-3.5 w-3.5" />
+                <>
+                  <Eye className="h-3.5 w-3.5" aria-hidden="true" />
+                  Show hidden
+                </>
               )}
             </button>
           )}

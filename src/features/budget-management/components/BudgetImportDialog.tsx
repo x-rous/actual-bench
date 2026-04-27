@@ -4,6 +4,7 @@ import { useState, useRef } from "react";
 import { parseCsv, matchImportRows, buildImportPreview } from "../lib/budgetCsv";
 import type { ImportRowResult, ImportPreviewEntry } from "../lib/budgetCsv";
 import { useBudgetEditsStore } from "@/store/budgetEdits";
+import { formatCurrency as formatAmount } from "../lib/format";
 import type { LoadedCategory, LoadedGroup } from "../types";
 
 type Props = {
@@ -21,13 +22,6 @@ type Step = "upload" | "match" | "preview";
 
 function getImportRowId(index: number): string {
   return String(index);
-}
-
-function formatAmount(minor: number): string {
-  return `$${(minor / 100).toLocaleString("en-US", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })}`;
 }
 
 /**

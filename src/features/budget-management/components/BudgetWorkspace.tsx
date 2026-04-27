@@ -2,10 +2,10 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { useMonthData } from "../hooks/useMonthData";
+import { toast } from "sonner";
 import { useBudgetEditsStore } from "@/store/budgetEdits";
 import { useConnectionStore, selectActiveInstance } from "@/store/connection";
-import { apiRequest } from "@/lib/api/client";
+import { addMonths } from "@/lib/budget/monthMath";
 import { parseBudgetExpression } from "../lib/budgetMath";
 import { parsePastePayload, resolveSelectionCells } from "../lib/budgetSelectionUtils";
 import { useBulkAction, type BulkActionType } from "../hooks/useBulkAction";
@@ -13,6 +13,12 @@ import { BudgetGrid } from "./BudgetGrid";
 import { BudgetSelectionSummary } from "./BudgetSelectionSummary";
 import { BulkActionDialog } from "./BulkActionDialog";
 import { BudgetCellContextMenu } from "./BudgetCellContextMenu";
+import { BudgetCarryoverProgressDialog } from "./BudgetCarryoverProgressDialog";
+import {
+  MonthsDataProvider,
+  useMonthsData,
+} from "../context/MonthsDataContext";
+import type { CarryoverToggleInput } from "../hooks/useCarryoverToggle";
 import type {
   BudgetCellKey,
   BudgetCellSelection,
@@ -22,9 +28,9 @@ import type {
   LoadedMonthState,
   NavDirection,
   NavItem,
+  RowSelection,
   StagedBudgetEdit,
 } from "../types";
-import { useLocalState } from "../hooks/useLocalState";
 
 const IMMEDIATE_BULK_ACTIONS: BulkActionType[] = [
   "copy-previous-month",
@@ -60,10 +66,24 @@ type Props = {
 
 /**
  * Main workspace composite: grid + context panel + selection summary footer.
- * Owns BudgetCellSelection local state and coordinates paste, copy, undo/redo,
- * and keyboard navigation across cells.
+ *
+ * Mounts `MonthsDataProvider` so every cell, summary row, and group aggregate
+ * inside the workspace shares a single useQueries call and a single edits
+ * subscription. The cascade runs once per pass instead of once per cell.
  */
-export function BudgetWorkspace({
+export function BudgetWorkspace(props: Props) {
+  return (
+    <MonthsDataProvider months={props.activeMonths}>
+      <BudgetWorkspaceInner {...props} />
+    </MonthsDataProvider>
+  );
+}
+
+/**
+ * Inner workspace — runs inside the MonthsDataProvider. Owns BudgetCellSelection
+ * local state and coordinates paste, copy, undo/redo, and keyboard navigation.
+ */
+function BudgetWorkspaceInner({
   budgetMode,
   cellView,
   activeMonths,
@@ -75,10 +95,15 @@ export function BudgetWorkspace({
   onBulkActionClose,
   onOpenTransfer,
 }: Props) {
-  const [selection, setSelection] = useLocalState<BudgetCellSelection | null>(null);
+  const [selection, setSelection] = useState<BudgetCellSelection | null>(null);
   const [groupSelection, setGroupSelection] = useState<{ groupId: string; month: string } | null>(null);
+  const [rowSelection, setRowSelectionLocal] = useState<RowSelection | null>(null);
   const [contextMenu, setContextMenu] = useState<ContextMenuState>(null);
   const [pendingBulkAction, setPendingBulkAction] = useState<BulkActionType | null>(null);
+  const [carryoverRequest, setCarryoverRequest] = useState<{
+    input: CarryoverToggleInput;
+    categoryLabel?: string;
+  } | null>(null);
 
   const workspaceRef = useRef<HTMLDivElement>(null);
   const { preview: previewBulk, apply: applyBulk } = useBulkAction();
@@ -87,26 +112,33 @@ export function BudgetWorkspace({
   const redo = useBudgetEditsStore((s) => s.redo);
   const stageBulkEdits = useBudgetEditsStore((s) => s.stageBulkEdits);
   const setUiSelection = useBudgetEditsStore((s) => s.setUiSelection);
+  const setRowSelectionStore = useBudgetEditsStore((s) => s.setRowSelection);
 
-  // Sync focused cell or group to store so BudgetDraftPanel can read it.
+  // Sync local selection state to the store so BudgetDraftPanel can read it.
+  // Row selection takes precedence; cell/group-cell selection clears it via
+  // the store's setUiSelection (mutually exclusive).
   useEffect(() => {
-    if (groupSelection) {
+    if (rowSelection) {
+      setRowSelectionStore(rowSelection);
+    } else if (groupSelection) {
       setUiSelection(groupSelection.month, null, groupSelection.groupId);
     } else {
       setUiSelection(selection?.anchorMonth ?? null, selection?.anchorCategoryId ?? null, null);
     }
-  }, [selection, groupSelection, setUiSelection]);
+  }, [selection, groupSelection, rowSelection, setUiSelection, setRowSelectionStore]);
 
   const queryClient = useQueryClient();
   const connection = useConnectionStore(selectActiveInstance);
 
-  const firstMonth = activeMonths[0] ?? null;
-  const { data: firstMonthData } = useMonthData(firstMonth);
-  // Categories in visual order — used for paste, copy, delete, selection bounds.
+  // Provider-supplied data (BM-01, BM-13).
+  const { raw: rawMonthsMap, merged } = useMonthsData();
+
+  // Categories in visual order — derived from the cross-month merged structure
+  // so categories that exist in any visible month are reachable in every month.
   // When showHidden=false, hidden groups and hidden categories are excluded.
   const categories = useMemo(() => {
-    if (!firstMonthData) return [];
-    const { groupOrder, groupsById, categoriesById } = firstMonthData;
+    if (!merged) return [];
+    const { groupOrder, groupsById, categoriesById } = merged;
     const expenseIds = groupOrder.filter((id) => !groupsById[id]!.isIncome);
     const incomeIds = groupOrder.filter((id) => groupsById[id]!.isIncome);
     return [...expenseIds, ...incomeIds]
@@ -116,13 +148,13 @@ export function BudgetWorkspace({
           .map((catId) => categoriesById[catId]!)
           .filter((cat) => showHidden || !cat.hidden)
       );
-  }, [firstMonthData, showHidden]);
+  }, [merged, showHidden]);
 
   // Interleaved nav list: group row followed by its visible (and expanded) categories.
   // Used for Up/Down/Tab keyboard navigation so group rows are reachable.
   const navItems = useMemo((): NavItem[] => {
-    if (!firstMonthData) return [];
-    const { groupOrder, groupsById, categoriesById } = firstMonthData;
+    if (!merged) return [];
+    const { groupOrder, groupsById, categoriesById } = merged;
     const expenseIds = groupOrder.filter((id) => !groupsById[id]!.isIncome);
     const incomeIds = groupOrder.filter((id) => groupsById[id]!.isIncome);
     const items: NavItem[] = [];
@@ -141,12 +173,13 @@ export function BudgetWorkspace({
       }
     }
     return items;
-  }, [firstMonthData, showHidden, collapsedGroups]);
+  }, [merged, showHidden, collapsedGroups]);
 
   const handleCellFocus = useCallback(
     (categoryId: string, month: string) => {
       setContextMenu(null);
       setGroupSelection(null);
+      setRowSelectionLocal(null);
       setSelection({
         anchorCategoryId: categoryId,
         anchorMonth: month,
@@ -161,7 +194,18 @@ export function BudgetWorkspace({
     (groupId: string, month: string) => {
       setContextMenu(null);
       setSelection(null);
+      setRowSelectionLocal(null);
       setGroupSelection({ groupId, month });
+    },
+    [setSelection]
+  );
+
+  const handleRowLabelFocus = useCallback(
+    (kind: "category" | "group", id: string) => {
+      setContextMenu(null);
+      setSelection(null);
+      setGroupSelection(null);
+      setRowSelectionLocal({ kind, id });
     },
     [setSelection]
   );
@@ -187,23 +231,32 @@ export function BudgetWorkspace({
     [setSelection]
   );
 
-  /** Unified navigation: moves focus through the interleaved navItems list. */
+  /**
+   * Unified navigation across the interleaved navItems list. The month axis
+   * uses index `-1` for the row-label column (the first sticky column with
+   * category / group names) and `0..activeMonths.length-1` for data columns.
+   *
+   * Pass `fromMonth = null` when the source is a row label.
+   */
   const navigateFrom = useCallback(
-    (fromItem: NavItem, fromMonth: string, dir: NavDirection) => {
+    (fromItem: NavItem, fromMonth: string | null, dir: NavDirection) => {
       const itemIdx = navItems.findIndex(
         (i) => i.type === fromItem.type && i.id === fromItem.id
       );
-      const monthIdx = activeMonths.indexOf(fromMonth);
-      if (itemIdx === -1 || monthIdx === -1) return;
+      if (itemIdx === -1) return;
+      // monthIdx === -1 represents the label column.
+      const monthIdx = fromMonth === null ? -1 : activeMonths.indexOf(fromMonth);
+      if (fromMonth !== null && monthIdx === -1) return;
 
-      // Shift+arrow: range extension — categories only, skip group items.
+      // Shift+arrow: range extension — categories only, skip group items and
+      // skip when starting from the label column (no range across the gutter).
       if (
         dir === "shift-up" ||
         dir === "shift-down" ||
         dir === "shift-left" ||
         dir === "shift-right"
       ) {
-        if (fromItem.type !== "category") return;
+        if (fromItem.type !== "category" || monthIdx === -1) return;
         setSelection((prev) => {
           if (!prev) return prev;
           const catOnlyItems = navItems.filter((i) => i.type === "category");
@@ -225,29 +278,66 @@ export function BudgetWorkspace({
 
       let newItemIdx = itemIdx;
       let newMonthIdx = monthIdx;
+      const lastMonthIdx = activeMonths.length - 1;
 
       switch (dir) {
-        case "up":    newItemIdx = Math.max(0, itemIdx - 1); break;
-        case "down":  newItemIdx = Math.min(navItems.length - 1, itemIdx + 1); break;
-        case "left":  newMonthIdx = Math.max(0, monthIdx - 1); break;
-        case "right": newMonthIdx = Math.min(activeMonths.length - 1, monthIdx + 1); break;
+        case "up":
+          newItemIdx = Math.max(0, itemIdx - 1);
+          break;
+        case "down":
+          newItemIdx = Math.min(navItems.length - 1, itemIdx + 1);
+          break;
+        case "left":
+          // Allow stepping back into the label column (-1) but no further.
+          newMonthIdx = Math.max(-1, monthIdx - 1);
+          break;
+        case "right":
+          newMonthIdx = Math.min(lastMonthIdx, monthIdx + 1);
+          break;
         case "tab":
-          if (monthIdx < activeMonths.length - 1) newMonthIdx = monthIdx + 1;
-          else { newMonthIdx = 0; newItemIdx = Math.min(navItems.length - 1, itemIdx + 1); }
+          if (monthIdx < lastMonthIdx) {
+            newMonthIdx = monthIdx + 1;
+          } else {
+            // Wrap to the next row's label column.
+            newMonthIdx = -1;
+            newItemIdx = Math.min(navItems.length - 1, itemIdx + 1);
+          }
           break;
         case "shift-tab":
-          if (monthIdx > 0) newMonthIdx = monthIdx - 1;
-          else { newMonthIdx = activeMonths.length - 1; newItemIdx = Math.max(0, itemIdx - 1); }
+          if (monthIdx > -1) {
+            newMonthIdx = monthIdx - 1;
+          } else {
+            // Wrap to the previous row's last data cell.
+            newMonthIdx = lastMonthIdx;
+            newItemIdx = Math.max(0, itemIdx - 1);
+          }
           break;
       }
 
       const newItem = navItems[newItemIdx];
+      if (!newItem) return;
+
+      // Label column: select the row, focus the label element.
+      if (newMonthIdx === -1) {
+        setContextMenu(null);
+        setSelection(null);
+        setGroupSelection(null);
+        const kind = newItem.type === "group" ? "group" : "category";
+        setRowSelectionLocal({ kind, id: newItem.id });
+        const attr = newItem.type === "group" ? "data-row-group-id" : "data-row-category-id";
+        document
+          .querySelector<HTMLElement>(`[${attr}="${CSS.escape(newItem.id)}"]`)
+          ?.focus();
+        return;
+      }
+
       const newMonth = activeMonths[newMonthIdx];
-      if (!newItem || !newMonth) return;
+      if (!newMonth) return;
 
       if (newItem.type === "group") {
         setContextMenu(null);
         setSelection(null);
+        setRowSelectionLocal(null);
         setGroupSelection({ groupId: newItem.id, month: newMonth });
         document
           .querySelector<HTMLElement>(
@@ -257,6 +347,7 @@ export function BudgetWorkspace({
       } else {
         setContextMenu(null);
         setGroupSelection(null);
+        setRowSelectionLocal(null);
         setSelection({
           anchorCategoryId: newItem.id,
           anchorMonth: newMonth,
@@ -283,6 +374,14 @@ export function BudgetWorkspace({
   const handleGroupNavigate = useCallback(
     (fromGroupId: string, fromMonth: string, dir: NavDirection) => {
       navigateFrom({ type: "group", id: fromGroupId }, fromMonth, dir);
+    },
+    [navigateFrom]
+  );
+
+  /** Navigation from a row-label (first column) cell. fromMonth is null. */
+  const handleRowLabelNavigate = useCallback(
+    (kind: "category" | "group", id: string, dir: NavDirection) => {
+      navigateFrom({ type: kind, id }, null, dir);
     },
     [navigateFrom]
   );
@@ -314,10 +413,8 @@ export function BudgetWorkspace({
         const month = activeMonths[mi];
         if (!month) continue;
 
-        // Read the cached month state to get server value for this month
-        const monthState = queryClient.getQueryData<LoadedMonthState>(
-          ["budget-month-data", connection?.id, month]
-        );
+        // Read the in-window month state from the provider's raw map.
+        const monthState = rawMonthsMap.get(month);
         const catData = monthState?.categoriesById[cat.id] ?? cat;
 
         const cellKey: BudgetCellKey = `${month}:${cat.id}`;
@@ -329,8 +426,14 @@ export function BudgetWorkspace({
     }
 
     const text = rows.join("\n");
-    navigator.clipboard.writeText(text).catch(() => undefined);
-  }, [selection, categories, activeMonths, queryClient, connection]);
+    navigator.clipboard.writeText(text).catch((err) => {
+      // BM-15: surface clipboard errors instead of silently swallowing — user
+      // sees Ctrl+C "do nothing" otherwise (e.g. in non-secure context, or
+      // when permissions are denied).
+      const message = err instanceof Error ? err.message : "Could not copy to clipboard";
+      toast.error("Copy failed", { description: message });
+    });
+  }, [selection, categories, activeMonths, rawMonthsMap]);
 
   // Context menu handler
   const handleCellContextMenu = useCallback(
@@ -340,26 +443,26 @@ export function BudgetWorkspace({
     []
   );
 
-  // Carryover toggle — immediate API action (not staged)
-  const handleCarryoverToggle = useCallback(async () => {
+  // Carryover toggle — immediate API action (not staged). Opens the progress
+  // dialog which drives the actual PATCH loop and shows partial-failure UI.
+  const handleCarryoverToggle = useCallback(() => {
     if (!connection || !contextMenu) return;
     const { categoryId, month, carryover } = contextMenu;
-    const newValue = !carryover;
-    // Apply to this month and all months in activeMonths that are >= this month
     const monthsToUpdate = activeMonths.filter((m) => m >= month);
-    for (const m of monthsToUpdate) {
-      await apiRequest(connection, `/months/${m}/categories/${categoryId}`, {
-        method: "PATCH",
-        body: { category: { carryover: newValue } },
-      });
-    }
-    // Invalidate affected months
-    for (const m of monthsToUpdate) {
-      await queryClient.invalidateQueries({
-        queryKey: ["budget-month-data", connection.id, m],
-      });
-    }
-  }, [connection, contextMenu, activeMonths, queryClient]);
+    if (monthsToUpdate.length === 0) return;
+
+    const cat = rawMonthsMap.get(month)?.categoriesById[categoryId];
+
+    setCarryoverRequest({
+      input: {
+        categoryId,
+        months: monthsToUpdate,
+        newValue: !carryover,
+      },
+      categoryLabel: cat?.name,
+    });
+    setContextMenu(null);
+  }, [connection, contextMenu, activeMonths, rawMonthsMap]);
 
   // Clear selection on any click outside the workspace div (TopBar, Sidebar, Toolbar, etc.)
   useEffect(() => {
@@ -380,18 +483,18 @@ export function BudgetWorkspace({
       if (!selection) return;
       if (IMMEDIATE_BULK_ACTIONS.includes(action)) {
         const monthDataMap: Record<string, LoadedCategory[]> = {};
+        // In-window months: read from the provider's raw map.
         for (const month of activeMonths) {
-          const state = queryClient.getQueryData<LoadedMonthState>(["budget-month-data", connection?.id, month]);
+          const state = rawMonthsMap.get(month);
           if (state) monthDataMap[month] = Object.values(state.categoriesById);
         }
-        // For average actions, also pull up to 12 months before the active window from cache.
+        // Lookback months for avg-N-months sit outside the provider window;
+        // pull them from the shared TanStack cache when present.
         if (action === "avg-3-months" || action === "avg-6-months" || action === "avg-12-months") {
           const lookback = action === "avg-3-months" ? 3 : action === "avg-6-months" ? 6 : 12;
           let m = activeMonths[0] ?? "";
           for (let i = 0; i < lookback; i++) {
-            const [y, mo] = m.split("-");
-            const d = new Date(parseInt(y ?? "2026", 10), parseInt(mo ?? "1", 10) - 2, 1);
-            m = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+            m = addMonths(m, -1);
             const state = queryClient.getQueryData<LoadedMonthState>(["budget-month-data", connection?.id, m]);
             if (state) monthDataMap[m] = Object.values(state.categoriesById);
           }
@@ -402,7 +505,7 @@ export function BudgetWorkspace({
         setPendingBulkAction(action);
       }
     },
-    [selection, activeMonths, categories, queryClient, connection, previewBulk, applyBulk]
+    [selection, activeMonths, categories, rawMonthsMap, queryClient, connection, previewBulk, applyBulk]
   );
 
   // Keyboard: undo/redo/copy/delete on the workspace container
@@ -430,10 +533,7 @@ export function BudgetWorkspace({
         if (cells.length <= 1) return; // let BudgetCell handle single-cell
         e.preventDefault();
         const newEdits: StagedBudgetEdit[] = cells.map((cell) => {
-          const monthState = queryClient.getQueryData<LoadedMonthState>(
-            ["budget-month-data", connection?.id, cell.month]
-          );
-          const serverCat = monthState?.categoriesById[cell.categoryId];
+          const serverCat = rawMonthsMap.get(cell.month)?.categoriesById[cell.categoryId];
           return {
             month: cell.month,
             categoryId: cell.categoryId,
@@ -446,7 +546,7 @@ export function BudgetWorkspace({
       }
     },
     [undo, redo, selection, handleCopySelection, activeMonths, categories,
-     stageBulkEdits, queryClient, connection]
+     stageBulkEdits, rawMonthsMap]
   );
 
   // Clipboard paste: parse tab-delimited text and stage bulk edits
@@ -469,10 +569,7 @@ export function BudgetWorkspace({
         // Single value pasted: fill every cell in the current selection rectangle.
         const cells = resolveSelectionCells(selection, activeMonths, categories);
         for (const cell of cells) {
-          const monthState = queryClient.getQueryData<LoadedMonthState>(
-            ["budget-month-data", connection?.id, cell.month]
-          );
-          const serverCat = monthState?.categoriesById[cell.categoryId];
+          const serverCat = rawMonthsMap.get(cell.month)?.categoriesById[cell.categoryId];
           newEdits.push({
             month: cell.month,
             categoryId: cell.categoryId,
@@ -501,10 +598,7 @@ export function BudgetWorkspace({
             const month = activeMonths[anchorMonthIdx + ci];
             if (!cat || !month) continue;
 
-            const monthState = queryClient.getQueryData<LoadedMonthState>(
-              ["budget-month-data", connection?.id, month]
-            );
-            const serverCat = monthState?.categoriesById[cat.id];
+            const serverCat = rawMonthsMap.get(month)?.categoriesById[cat.id];
 
             newEdits.push({
               month,
@@ -522,7 +616,7 @@ export function BudgetWorkspace({
         stageBulkEdits(newEdits);
       }
     },
-    [selection, categories, activeMonths, stageBulkEdits, queryClient, connection]
+    [selection, categories, activeMonths, stageBulkEdits, rawMonthsMap]
   );
 
   return (
@@ -542,6 +636,7 @@ export function BudgetWorkspace({
           cellView={cellView}
           selection={selection}
           groupSelection={groupSelection}
+          rowSelection={rowSelection}
           collapsedGroups={collapsedGroups}
           onToggleCollapse={onToggleCollapse}
           showHidden={showHidden}
@@ -551,10 +646,13 @@ export function BudgetWorkspace({
           onCellContextMenu={handleCellContextMenu}
           onGroupFocus={handleGroupFocus}
           onGroupNavigate={handleGroupNavigate}
+          onRowLabelFocus={handleRowLabelFocus}
+          onRowLabelNavigate={handleRowLabelNavigate}
           onClearSelection={() => {
             setContextMenu(null);
             setSelection(null);
             setGroupSelection(null);
+            setRowSelectionLocal(null);
           }}
         />
       </div>
@@ -565,10 +663,18 @@ export function BudgetWorkspace({
       />
 
       {(bulkActionOpen || pendingBulkAction !== null) && selection && (
-        <BulkActionMonthDataLoader
+        <BulkActionDialog
           selection={selection}
           activeMonths={activeMonths}
           categories={categories}
+          monthDataMap={(() => {
+            const map: Record<string, LoadedCategory[]> = {};
+            for (const month of activeMonths) {
+              const state = rawMonthsMap.get(month);
+              if (state) map[month] = Object.values(state.categoriesById);
+            }
+            return map;
+          })()}
           initialAction={pendingBulkAction ?? undefined}
           onClose={() => {
             onBulkActionClose?.();
@@ -583,68 +689,21 @@ export function BudgetWorkspace({
           y={contextMenu.y}
           carryover={contextMenu.carryover}
           budgetMode={budgetMode}
-          onToggleCarryover={() => void handleCarryoverToggle()}
+          onToggleCarryover={handleCarryoverToggle}
           onOpenTransfer={onOpenTransfer ?? (() => undefined)}
           onBulkAction={handleContextMenuBulkAction}
           onClose={() => setContextMenu(null)}
+        />
+      )}
+
+      {carryoverRequest && (
+        <BudgetCarryoverProgressDialog
+          request={carryoverRequest.input}
+          categoryLabel={carryoverRequest.categoryLabel}
+          onClose={() => setCarryoverRequest(null)}
         />
       )}
     </div>
   );
 }
 
-/**
- * Thin loader that calls useMonthData for each active month (hitting TanStack
- * Query cache warmed by BudgetGrid columns) then renders BulkActionDialog with
- * the assembled monthDataMap. Isolated as a component so hooks run at a stable
- * call-site regardless of how many months are active.
- */
-function BulkActionMonthDataLoader({
-  selection,
-  activeMonths,
-  categories,
-  onClose,
-  initialAction,
-}: {
-  selection: import("../types").BudgetCellSelection;
-  activeMonths: string[];
-  categories: LoadedCategory[];
-  onClose: () => void;
-  initialAction?: BulkActionType;
-}) {
-  // Load each month's data. These are already cached by BudgetGrid columns.
-  const m0 = useMonthData(activeMonths[0] ?? null);
-  const m1 = useMonthData(activeMonths[1] ?? null);
-  const m2 = useMonthData(activeMonths[2] ?? null);
-  const m3 = useMonthData(activeMonths[3] ?? null);
-  const m4 = useMonthData(activeMonths[4] ?? null);
-  const m5 = useMonthData(activeMonths[5] ?? null);
-  const m6 = useMonthData(activeMonths[6] ?? null);
-  const m7 = useMonthData(activeMonths[7] ?? null);
-  const m8 = useMonthData(activeMonths[8] ?? null);
-  const m9 = useMonthData(activeMonths[9] ?? null);
-  const m10 = useMonthData(activeMonths[10] ?? null);
-  const m11 = useMonthData(activeMonths[11] ?? null);
-
-  const allResults = [m0, m1, m2, m3, m4, m5, m6, m7, m8, m9, m10, m11];
-
-  const monthDataMap: Record<string, LoadedCategory[]> = {};
-  for (let i = 0; i < activeMonths.length; i++) {
-    const month = activeMonths[i];
-    const result = allResults[i];
-    if (month && result?.data) {
-      monthDataMap[month] = Object.values(result.data.categoriesById);
-    }
-  }
-
-  return (
-    <BulkActionDialog
-      selection={selection}
-      activeMonths={activeMonths}
-      categories={categories}
-      monthDataMap={monthDataMap}
-      onClose={onClose}
-      initialAction={initialAction}
-    />
-  );
-}

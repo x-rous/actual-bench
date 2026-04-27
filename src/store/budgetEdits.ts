@@ -3,7 +3,6 @@
 import { create } from "zustand";
 import type {
   BudgetCellKey,
-  BudgetEditSnapshot,
   BudgetEditsActions,
   BudgetEditsState,
   StagedBudgetEdit,
@@ -15,10 +14,69 @@ function makeKey(edit: StagedBudgetEdit): BudgetCellKey {
   return `${edit.month}:${edit.categoryId}`;
 }
 
-function snapshotEdits(
-  edits: Record<BudgetCellKey, StagedBudgetEdit>
-): BudgetEditSnapshot {
-  return { ...edits };
+/**
+ * BM-19: Inverse-patch model for undo/redo.
+ *
+ * Pre-BM-19, every action snapshotted the full edits map (~O(N) per action,
+ * O(N × actions) total memory). With 50 staged edits and 50 undo entries,
+ * that's 2,500 redundant edit objects retained.
+ *
+ * A patch records exactly what changed:
+ *   { key, prev: undefined } — key did not exist before; undo deletes it
+ *   { key, prev: <edit> }    — key existed; undo restores `prev`
+ *
+ * Each patch holds at most O(changed-keys) state. For a single-cell edit,
+ * one patch entry. For a bulk paste/import, one entry per cell — but only
+ * for the cells the operation actually touched.
+ *
+ * `undo()` applies the patch in reverse to recover the prior `edits` state,
+ * while pushing the inverse onto `redoStack`. `redo()` is symmetric.
+ */
+type EditPatch = {
+  key: BudgetCellKey;
+  prev: StagedBudgetEdit | undefined;
+};
+
+function applyPatches(
+  edits: Record<BudgetCellKey, StagedBudgetEdit>,
+  patches: EditPatch[]
+): {
+  next: Record<BudgetCellKey, StagedBudgetEdit>;
+  inverse: EditPatch[];
+} {
+  const next: Record<BudgetCellKey, StagedBudgetEdit> = { ...edits };
+  const inverse: EditPatch[] = [];
+  // Apply newest-first so the inverse runs back to original order.
+  for (let i = patches.length - 1; i >= 0; i--) {
+    const p = patches[i]!;
+    inverse.push({ key: p.key, prev: edits[p.key] });
+    if (p.prev === undefined) {
+      delete next[p.key];
+    } else {
+      next[p.key] = p.prev;
+    }
+  }
+  // Inverse was built newest-first; reverse so callers can apply it directly.
+  inverse.reverse();
+  return { next, inverse };
+}
+
+/**
+ * Build a patch list capturing the prior values of every key that's about to
+ * be added or replaced. Keys absent from `edits` get `prev: undefined`.
+ */
+function buildPatchForChanges(
+  edits: Record<BudgetCellKey, StagedBudgetEdit>,
+  keysAffected: Iterable<BudgetCellKey>
+): EditPatch[] {
+  const seen = new Set<BudgetCellKey>();
+  const patches: EditPatch[] = [];
+  for (const key of keysAffected) {
+    if (seen.has(key)) continue;
+    seen.add(key);
+    patches.push({ key, prev: edits[key] });
+  }
+  return patches;
 }
 
 // ─── Store ────────────────────────────────────────────────────────────────────
@@ -27,51 +85,61 @@ type BudgetEditsStore = BudgetEditsState & BudgetEditsActions;
 
 const MAX_UNDO_DEPTH = 50;
 
+function pushPatch(stack: EditPatch[][], patch: EditPatch[]): EditPatch[][] {
+  if (patch.length === 0) return stack;
+  return [...stack, patch].slice(-MAX_UNDO_DEPTH);
+}
+
 export const useBudgetEditsStore = create<BudgetEditsStore>()((set, get) => ({
   edits: {},
   undoStack: [],
   redoStack: [],
   uiSelection: { month: null, categoryId: null, groupId: null },
+  rowSelection: null,
   displayMonths: [],
 
   pushUndo() {
-    const { edits, undoStack } = get();
-    set({
-      undoStack: [...undoStack, snapshotEdits(edits)].slice(-MAX_UNDO_DEPTH),
-      redoStack: [],
-    });
+    // Compatibility no-op: the store now records patches automatically on
+    // every mutation, so callers no longer need to pre-stage an undo entry.
   },
 
   stageEdit(edit) {
     const { edits, undoStack } = get();
     const key = makeKey(edit);
+    const patch = buildPatchForChanges(edits, [key]);
     set({
-      undoStack: [...undoStack, snapshotEdits(edits)].slice(-MAX_UNDO_DEPTH),
+      undoStack: pushPatch(undoStack, patch),
       redoStack: [],
       edits: { ...edits, [key]: edit },
     });
   },
 
   stageBulkEdits(newEdits) {
+    if (newEdits.length === 0) return;
     const { edits, undoStack } = get();
-    const patch: Record<BudgetCellKey, StagedBudgetEdit> = {};
+    const next: Record<BudgetCellKey, StagedBudgetEdit> = { ...edits };
+    const keys: BudgetCellKey[] = [];
     for (const edit of newEdits) {
-      patch[makeKey(edit)] = edit;
+      const key = makeKey(edit);
+      keys.push(key);
+      next[key] = edit;
     }
+    const patch = buildPatchForChanges(edits, keys);
     set({
-      undoStack: [...undoStack, snapshotEdits(edits)].slice(-MAX_UNDO_DEPTH),
+      undoStack: pushPatch(undoStack, patch),
       redoStack: [],
-      edits: { ...edits, ...patch },
+      edits: next,
     });
   },
 
   removeEdit(key) {
     const { edits, undoStack } = get();
     if (!(key in edits)) return;
+    const patch = buildPatchForChanges(edits, [key]);
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { [key]: _removed, ...rest } = edits;
     set({
-      undoStack: [...undoStack, { ...edits }].slice(-MAX_UNDO_DEPTH),
+      undoStack: pushPatch(undoStack, patch),
       redoStack: [],
       edits: rest as Record<BudgetCellKey, StagedBudgetEdit>,
     });
@@ -90,6 +158,7 @@ export const useBudgetEditsStore = create<BudgetEditsStore>()((set, get) => ({
         next[key as BudgetCellKey] = edit;
       }
     }
+    // Save-side cleanup; do not record an undo entry.
     set({ edits: next });
   },
 
@@ -102,6 +171,7 @@ export const useBudgetEditsStore = create<BudgetEditsStore>()((set, get) => ({
         next[key as BudgetCellKey] = edit;
       }
     }
+    // Save-side cleanup; do not record an undo entry.
     set({ edits: next });
   },
 
@@ -124,21 +194,23 @@ export const useBudgetEditsStore = create<BudgetEditsStore>()((set, get) => ({
   undo() {
     const { edits, undoStack, redoStack } = get();
     if (undoStack.length === 0) return;
-    const previous = undoStack[undoStack.length - 1]!;
+    const patch = undoStack[undoStack.length - 1]!;
+    const { next, inverse } = applyPatches(edits, patch);
     set({
-      edits: previous,
+      edits: next,
       undoStack: undoStack.slice(0, -1),
-      redoStack: [...redoStack, snapshotEdits(edits)],
+      redoStack: pushPatch(redoStack, inverse),
     });
   },
 
   redo() {
     const { edits, undoStack, redoStack } = get();
     if (redoStack.length === 0) return;
-    const next = redoStack[redoStack.length - 1]!;
+    const patch = redoStack[redoStack.length - 1]!;
+    const { next, inverse } = applyPatches(edits, patch);
     set({
       edits: next,
-      undoStack: [...undoStack, snapshotEdits(edits)],
+      undoStack: pushPatch(undoStack, inverse),
       redoStack: redoStack.slice(0, -1),
     });
   },
@@ -148,7 +220,19 @@ export const useBudgetEditsStore = create<BudgetEditsStore>()((set, get) => ({
   },
 
   setUiSelection(month, categoryId, groupId = null) {
-    set({ uiSelection: { month, categoryId, groupId } });
+    set({
+      uiSelection: { month, categoryId, groupId },
+      // Cell/group-cell selection is mutually exclusive with row selection.
+      rowSelection: null,
+    });
+  },
+
+  setRowSelection(selection) {
+    set({
+      rowSelection: selection,
+      // Clear cell/group-cell selection so the draft panel routes correctly.
+      uiSelection: { month: null, categoryId: null, groupId: null },
+    });
   },
 
   setDisplayMonths(months) {

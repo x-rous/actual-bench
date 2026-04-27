@@ -6,9 +6,16 @@ import { runQuery } from "@/lib/api/query";
 import {
   ZERO_BUDGET_COUNT_QUERY,
   REFLECT_BUDGET_COUNT_QUERY,
-} from "@/features/overview/lib/overviewQueries";
+} from "@/lib/budget/budgetModeQueries";
 import { deriveBudgetMode } from "@/lib/budget/deriveBudgetMode";
+import type { BudgetMode as DerivedBudgetMode } from "@/features/overview/types";
 import type { BudgetMode } from "../types";
+
+const MODE_MAP: Record<DerivedBudgetMode, BudgetMode> = {
+  Envelope: "envelope",
+  Tracking: "tracking",
+  Unidentified: "unidentified",
+};
 
 /**
  * Reads the budget mode by running ActualQL queries against zero_budgets and
@@ -32,15 +39,8 @@ export function useBudgetMode(): {
         runQuery<{ data: number }>(connection, REFLECT_BUDGET_COUNT_QUERY),
       ]);
 
-      const upperMode = deriveBudgetMode(zeroResult.data, reflectResult.data);
-
-      // Normalize to lowercase canonical form for the budget-management feature
-      const modeMap: Record<string, BudgetMode> = {
-        Envelope: "envelope",
-        Tracking: "tracking",
-        Unidentified: "unidentified",
-      };
-      return modeMap[upperMode] ?? "unidentified";
+      // Exhaustive map keyed by the source's union type — no fallback needed.
+      return MODE_MAP[deriveBudgetMode(zeroResult.data, reflectResult.data)];
     },
     enabled: !!connection,
   });
