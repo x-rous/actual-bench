@@ -171,6 +171,7 @@ A multi-month budget editing workspace with staged cell editing, a draft review 
 - Expand all / Collapse all group buttons
 - Show / Hide hidden categories toggle
 - Import and Export buttons (UTF-8 CSV with BOM)
+- **Shortcuts** button (keyboard icon) opens the keyboard cheatsheet modal; also bound to `?`, `F1`, and `Ctrl/Cmd+/`
 
 ### Multi-Month Grid
 - CSS-grid layout: category label column (flexible width), a fixed 32 px notes column, and one fixed-width column per visible month (12 columns)
@@ -190,10 +191,59 @@ A multi-month budget editing workspace with staged cell editing, a draft review 
 - Undo / Redo with Ctrl+Z / Ctrl+Y / Ctrl+Shift+Z; up to 50 undo steps
 - Delete or Backspace on a focused cell sets it to zero; if the original value is already zero the staged edit is removed
 
-### Selection & Keyboard Navigation
+### Selection & Keyboard Shortcuts
+
+Spreadsheet-grade keyboard support — every shortcut is data-driven from a single keymap table, surfaced in a `?`-triggered cheatsheet modal, and scope-aware so editing a cell never collides with workspace shortcuts.
+
+**Selection (mouse + click):**
 - Click a cell to select it; Shift+click to extend a rectangular multi-cell selection
-- Arrow keys navigate between cells; Tab moves forward through the grid; all navigation closes any open context menu
+- Drag from cell to cell to select a rectangle; the first column (category / group label) is also selectable for row-aggregate views in the draft panel
 - Clicking outside the grid (toolbar, sidebar, top bar), or clicking non-interactive areas inside the grid (summary rows, section headers, group row gutters, column headers), clears the current selection and shows the year summary in the draft panel
+
+**Navigation:**
+- Arrow keys move the cursor between cells; Tab / Shift+Tab move forward / backward and wrap across rows
+- `PageUp` / `PageDown` move ten rows at a time
+- `Home` / `End` (or `Ctrl/Cmd+←` / `Ctrl/Cmd+→`) jump to the first / last month in the current row
+- `Ctrl/Cmd+Home` / `Ctrl/Cmd+End` jump to the top-left / bottom-right cell of the grid
+- `Ctrl/Cmd+↑` / `Ctrl/Cmd+↓` jump to the previous / next group section header
+
+**Range extension:**
+- `Shift+Arrow`, `Shift+PageUp/Down`, `Shift+Home/End`, `Ctrl/Cmd+Shift+Arrow`, `Ctrl/Cmd+Shift+Home/End` — same jumps as the cursor moves above, but extend the selection rectangle instead of moving the cursor
+
+**Editing:**
+- `Enter`, `F2`, or any digit / `+` / `-` / `.` / `(` enters edit mode (the typed character pre-fills the input)
+- Inside the input: `Enter` commits and moves down, `Tab` / `Shift+Tab` commit and move sideways, `Escape` cancels
+- `Delete` / `Backspace` zeroes the focused cell (multi-cell selection zeroes every selected cell as one bulk edit)
+
+**Range-edit (workspace):**
+- `Ctrl/Cmd+Enter` — fill the entire selection with the anchor cell's value
+- `Ctrl/Cmd+D` — fill down: copy the top row of the selection into all rows below
+- `Ctrl/Cmd+R` — fill right: copy the leftmost column of the selection across to the right
+- `Alt+L` — fill the selection with each row's previous-month value (wraps the existing copy-previous-month bulk action; uses TanStack Query cache for prior months outside the visible window)
+- `Alt+A` — fill the selection with each row's 3-month average
+
+**Clipboard:**
+- `Ctrl/Cmd+C` — copy the selection rectangle as tab-delimited text (round-trips cleanly via Excel / Google Sheets)
+- `Ctrl/Cmd+V` paste — fills the selection from a single value, or expands a multi-cell paste from the anchor
+
+**View & visibility:**
+- `V` — cycle Budget → Actuals → Balance
+- `H` — toggle hidden categories
+- `E` / `Shift+E` — expand all / collapse all groups
+- `[` / `]` — pan the visible 12-month window backward / forward by one month
+- `Space` (on a group label or group month aggregate) — toggle that group's collapse state
+
+**Selection actions:**
+- `Alt+C` — toggle carryover (rollover) on the anchor's category across the selected month range; opens the same progress dialog as the right-click menu
+
+**History:**
+- `Ctrl/Cmd+Z` — undo
+- `Ctrl/Cmd+Shift+Z` or `Ctrl/Cmd+Y` — redo
+
+**Help:**
+- `?` (or `F1`, `Ctrl/Cmd+/`, or the toolbar Shortcuts button) opens a two-column cheatsheet modal generated directly from the keymap — adding a future shortcut surfaces it here automatically. Renders `⌘`/`⌥`/`⇧` glyphs on macOS and `Ctrl`/`Alt`/`Shift` text elsewhere
+
+Bare-letter shortcuts (`V`, `H`, `E`, `[`, `]`) are scoped so they never fire while typing in a cell input.
 
 ### Right-Click Context Menu
 - Right-clicking any category budget cell opens a compact context menu with two sections:

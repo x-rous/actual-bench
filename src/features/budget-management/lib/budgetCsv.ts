@@ -7,6 +7,7 @@
  *   Empty cells: no change during import (treated as no-op)
  */
 
+import { minorToDecimalString, decimalStringToMinor } from "./format";
 import type {
   BudgetCellKey,
   LoadedCategory,
@@ -98,7 +99,7 @@ export function exportToCsv(
         const staged = stagedEdits?.[key];
         const monthCat = monthDataMap[month]?.categoriesById[cat.id];
         const minorValue = staged != null ? staged.nextBudgeted : (monthCat?.budgeted ?? 0);
-        cells.push(csvEscape(minorToDecimal(minorValue)));
+        cells.push(csvEscape(minorToDecimalString(minorValue)));
       }
 
       rows.push(cells.join(","));
@@ -291,7 +292,7 @@ export function buildImportPreview(
       const avail = result.monthAvailability[month];
       if (avail !== "available") continue;
 
-      const nextBudgeted = decimalToMinor(decimalStr);
+      const nextBudgeted = decimalStringToMinor(decimalStr);
       if (isNaN(nextBudgeted)) continue;
 
       // Find the current persisted budgeted for this category from categoriesById.
@@ -327,20 +328,6 @@ export function buildImportPreview(
 
 function makeMatchKey(groupName: string, categoryName: string): string {
   return `${groupName.trim().toLowerCase()}:${categoryName.trim().toLowerCase()}`;
-}
-
-/** Converts minor units integer to a decimal string (e.g. 15000 → "150.00"). */
-function minorToDecimal(minor: number): string {
-  return (minor / 100).toFixed(2);
-}
-
-/** Converts a decimal string to minor units integer (e.g. "150.00" → 15000). */
-function decimalToMinor(decimal: string): number {
-  const normalized = decimal.replace(/,/g, "").trim();
-  if (!/^[+-]?\d+(?:\.\d+)?$/.test(normalized)) return NaN;
-  const parsed = Number(normalized);
-  if (isNaN(parsed)) return NaN;
-  return Math.round(parsed * 100);
 }
 
 /** Escapes a CSV cell value. Wraps in quotes if it contains comma, quote, or newline. */
@@ -395,16 +382,18 @@ function levenshtein(a: string, b: string, threshold = 3): number {
   const dp: number[] = Array.from({ length: n + 1 }, (_, i) => i);
 
   for (let i = 1; i <= m; i++) {
-    let prev = i;
+    let prev = dp[0]!;
+    dp[0] = i;
     for (let j = 1; j <= n; j++) {
       const temp = dp[j]!;
+      // Match case: dp[i][j] = dp[i-1][j-1] (held in `prev`).
+      // Non-match: 1 + min(dp[i][j-1]=dp[j-1], dp[i-1][j]=temp, dp[i-1][j-1]=prev).
       dp[j] =
         a[i - 1] === b[j - 1]
-          ? dp[j - 1]!
-          : 1 + Math.min(dp[j - 1]!, dp[j]!, prev);
+          ? prev
+          : 1 + Math.min(dp[j - 1]!, temp, prev);
       prev = temp;
     }
-    dp[0] = i;
   }
 
   return dp[n]!;

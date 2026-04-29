@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useBulkAction, type BulkActionType, type BulkActionParams, type BulkPreviewRow } from "../hooks/useBulkAction";
+import { formatCurrency as formatAmount } from "../lib/format";
 import type { BudgetCellSelection, LoadedCategory } from "../types";
 
 type Props = {
@@ -16,13 +17,6 @@ type Props = {
 };
 
 type Step = "action" | "preview" | "done";
-
-function formatAmount(minor: number): string {
-  return `$${(minor / 100).toLocaleString("en-US", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })}`;
-}
 
 const ACTION_LABELS: Record<BulkActionType, string> = {
   "copy-previous-month": "Copy previous month",

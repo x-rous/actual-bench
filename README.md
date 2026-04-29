@@ -16,7 +16,7 @@ Useful for power users who want more control over their budget data, and for tes
 
 - **Bulk CSV import/export** for every entity - seed a fresh budget with hundreds of rules, payees, categories, or schedules in one go
 - **Budget Overview homepage** - land on a compact overview with live budget metrics, budget mode, budgeting-since, and quick links into the main admin pages
-- **Budget Management Workspace** — edit a 12-month budgeting window in a spreadsheet-like grid with staged changes, right-click bulk actions, a draft panel, and mode-aware envelope/tracking behavior
+- **Budget Management Workspace** — edit a 12-month budgeting window in a spreadsheet-like grid with staged changes, spreadsheet-grade keyboard shortcuts (range extend, fill down / right, prev-month and 3-month-avg fill, plus a `?` cheatsheet), right-click bulk actions, a draft panel, and mode-aware envelope/tracking behavior
 - **Advanced rules management** - visual condition/action builder, merge, duplicate, stage filtering, and template mode in one focused view
 - **Staged editing with undo/redo** - review every change locally before anything touches the server
 - **Multi-server, multi-budget** - save and switch between connections without leaking data between sessions
@@ -63,7 +63,7 @@ All browser requests route through an internal Next.js proxy - no direct browser
 - **Schedules** - create and manage one-time and recurring schedules with amount modes, weekend adjustment, and end conditions; overdue dates are highlighted; CSV import/export
 - **Tags** - create, rename, and color-code tags (requires Actual Budget v26.3.0+); CSV import/export
 - **ActualQL Queries** - syntax-highlighted query editor with run / format / save / explain actions; four result views (table, raw JSON, scalar, collapsible tree); built-in example packs; saved queries with favorites; query history; cURL copy; lint warnings; and an inline quick reference dialog
-- **Budget Management Workspace** - adds a multi-month budgeting workspace with a 12-month grid, staged cell editing, Budget / Actuals / Balance view toggle, year summary draft panel, keyboard navigation, clipboard paste, right-click bulk actions, supports both tracking and envelope-mode with support for next-month hold and category transfer
+- **Budget Management Workspace** - adds a multi-month budgeting workspace with a 12-month grid, staged cell editing, Budget / Actuals / Balance view toggle, year summary draft panel, spreadsheet-grade keyboard shortcuts (range extend, fill down / right, last-month or 3-month average fill, view toggles, carryover, pan months, and a `?` cheatsheet), clipboard copy/paste, right-click bulk actions; supports both tracking and envelope mode with next-month hold and category transfer
 - **Budget Diagnostics** - opens a read-only exported snapshot locally in the browser with overview metadata, deterministic diagnostics, paginated SQLite data browsing, relationship drill-in, and full table/view CSV export
 - **Rule Diagnostics** - read-only `/rules/diagnostics` workspace that lints your current rule working set for missing entity references, shadowed rules, impossible conditions, broad-match criteria, duplicate / near-duplicate groups, and unsupported field/operator combinations; severity- and code-filterable; jump from any finding to the offending rule
 

@@ -2,18 +2,13 @@
 
 import { useCallback } from "react";
 import { useBudgetEditsStore } from "@/store/budgetEdits";
+import { addMonths } from "@/lib/budget/monthMath";
 import { resolveSelectionCells } from "../lib/budgetSelectionUtils";
 import type {
   BudgetCellSelection,
   LoadedCategory,
   StagedBudgetEdit,
 } from "../types";
-
-function shiftMonth(monthStr: string, delta: number): string {
-  const [y, mo] = monthStr.split("-");
-  const d = new Date(parseInt(y ?? "2026", 10), parseInt(mo ?? "1", 10) - 1 + delta, 1);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-}
 
 export type BulkActionType =
   | "copy-previous-month"
@@ -140,7 +135,7 @@ export function useBulkAction(): UseBulkActionReturn {
             const vals: number[] = [];
             let m = cell.month;
             for (let i = 0; i < n; i++) {
-              m = shiftMonth(m, -1);
+              m = addMonths(m, -1);
               const cats = monthDataMap[m];
               const found = cats?.find((c) => c.id === cell.categoryId);
               if (found !== undefined) vals.push(found.budgeted);

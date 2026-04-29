@@ -5,6 +5,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { MultiSearchableCombobox } from "@/components/ui/combobox";
 import type { ComboboxOption } from "@/components/ui/combobox";
 import { useConnectionStore, selectActiveInstance } from "@/store/connection";
+import { subtractMonths, formatMonthLabel } from "@/lib/budget/monthMath";
 import { exportToCsv, exportBlankTemplate } from "../lib/budgetCsv";
 import { budgetMonthDataQueryOptions } from "../hooks/useMonthData";
 import type { LoadedCategory, LoadedGroup, LoadedMonthState, StagedBudgetEdit, BudgetCellKey } from "../types";
@@ -25,23 +26,13 @@ type Props = {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function fmtMonthLabel(month: string): string {
-  const [y, mo] = month.split("-");
-  return new Date(parseInt(y ?? "2026", 10), parseInt(mo ?? "1", 10) - 1, 1)
-    .toLocaleString("en-US", { month: "short", year: "2-digit" });
-}
+const fmtMonthLabel = formatMonthLabel;
 
 function fmtSummaryRange(months: string[]): string {
   if (months.length === 0) return "No months selected";
   const sorted = [...months].sort();
   if (sorted.length === 1) return fmtMonthLabel(sorted[0]!);
   return `${fmtMonthLabel(sorted[0]!)} – ${fmtMonthLabel(sorted[sorted.length - 1]!)}`;
-}
-
-function subtractMonths(monthStr: string, delta: number): string {
-  const [y, mo] = monthStr.split("-");
-  const d = new Date(parseInt(y ?? "2026", 10), parseInt(mo ?? "1", 10) - 1 - delta, 1);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 
 function resolveQuickPreset(

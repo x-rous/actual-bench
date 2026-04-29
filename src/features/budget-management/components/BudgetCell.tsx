@@ -2,9 +2,11 @@
 
 import { useRef, useState } from "react";
 import { useBudgetEditsStore } from "@/store/budgetEdits";
-import { useEffectiveMonthData } from "../hooks/useEffectiveMonthData";
+import { useEffectiveMonthFromContext } from "../context/MonthsDataContext";
 import { parseBudgetExpression } from "../lib/budgetMath";
+import { formatMinor } from "../lib/format";
 import { isIncomeBlocked, isLargeChange } from "../lib/budgetValidation";
+import { useCellKeymap, useCellEditKeymap } from "../keyboard/useBudgetKeymap";
 import type { BudgetCellKey, BudgetMode, CellView, LoadedCategory, NavDirection } from "../types";
 
 type Props = {
@@ -17,21 +19,19 @@ type Props = {
   onFocus: (categoryId: string, month: string) => void;
   onRangeSelect: (categoryId: string, month: string) => void;
   onNavigate?: (dir: NavDirection) => void;
-  /** Shared drag-state ref from BudgetGrid — set to true when mouse moves across cells. */
+  /** Shared drag-state ref from BudgetGrid — set to true once the pointer has moved past the threshold. */
   isDraggingRef?: { current: boolean };
+  /** BM-16: shared mousedown origin so each cell can compute pointer-movement
+   *  distance before flipping the drag flag. */
+  dragOriginRef?: { current: { x: number; y: number } | null };
   /** Called when the user right-clicks the cell. */
   onContextMenuRequest?: (catId: string, month: string, carryover: boolean, x: number, y: number) => void;
   /** When true, renders the cell at 50% opacity (hidden category/group shown). */
   isDimmed?: boolean;
 };
 
-function formatAmount(minor: number): string {
-  return (minor / 100).toLocaleString("en-US", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  });
-}
-
+/** BM-16: minimum pointer travel (CSS px) before treating a drag as range-select. */
+const DRAG_THRESHOLD_PX = 3;
 
 /**
  * A single budget grid cell for a (category, month) intersection.
@@ -52,21 +52,23 @@ export function BudgetCell({
   onRangeSelect,
   onNavigate,
   isDraggingRef,
+  dragOriginRef,
   onContextMenuRequest,
   isDimmed,
 }: Props) {
   const dimClass = isDimmed ? " opacity-50" : "";
   const key: BudgetCellKey = `${month}:${category.id}`;
-  const edits = useBudgetEditsStore((s) => s.edits);
+  // Subscribe only to THIS cell's staged edit — Zustand re-renders this cell
+  // only when this specific edit changes, not on every keystroke anywhere.
+  const stagedEdit = useBudgetEditsStore((s) => s.edits[key]);
   const stageEdit = useBudgetEditsStore((s) => s.stageEdit);
   const removeEdit = useBudgetEditsStore((s) => s.removeEdit);
 
-  // Load this month's effective data (server state + staged deltas applied locally).
-  // useEffectiveMonthData is cached by TanStack Query — one API call per unique month.
-  const { data: effectiveData } = useEffectiveMonthData(month);
+  // Read precomputed effective state from MonthsDataProvider — the cascade
+  // runs once per month at the provider level, not per cell.
+  const effectiveData = useEffectiveMonthFromContext(month);
   const effectiveCategory = effectiveData?.categoriesById[category.id] ?? category;
 
-  const stagedEdit = edits[key];
   const currentBudgeted = effectiveCategory.budgeted;
   const blocked = isIncomeBlocked(category, budgetMode);
   // Editing is only possible in the "budgeted" view.
@@ -92,7 +94,7 @@ export function BudgetCell({
 
   const enterEdit = (initialValue?: string) => {
     if (blocked || viewBlocked || editing) return;
-    setInputValue(initialValue ?? formatAmount(currentBudgeted));
+    setInputValue(initialValue ?? formatMinor(currentBudgeted));
     setInputError(null);
     setEditing(true);
     requestAnimationFrame(() => {
@@ -140,83 +142,62 @@ export function BudgetCell({
     setInputValue("");
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "Enter") {
-      e.preventDefault();
-      if (commitEdit()) onNavigate?.("down");
-    } else if (e.key === "Escape") {
-      e.preventDefault();
-      cancelEdit();
-    } else if (e.key === "Tab") {
-      e.preventDefault();
-      if (commitEdit()) onNavigate?.(e.shiftKey ? "shift-tab" : "tab");
+  const clearValue = () => {
+    if (currentBudgeted === 0) return;
+    const originalValue = stagedEdit?.previousBudgeted ?? effectiveCategory.budgeted;
+    if (originalValue === 0) {
+      // Going back to the original value of 0 — remove the staged edit.
+      if (stagedEdit) removeEdit(key);
+    } else {
+      stageEdit({
+        month,
+        categoryId: category.id,
+        nextBudgeted: 0,
+        previousBudgeted: originalValue,
+        source: "manual",
+      });
     }
   };
 
-  const handleCellKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
-    if (e.key === "Enter" || e.key === "F2") {
-      if (blocked || viewBlocked) return;
-      e.preventDefault();
-      enterEdit();
-    } else if (e.key === "ArrowUp") {
-      e.preventDefault();
-      onNavigate?.(e.shiftKey ? "shift-up" : "up");
-    } else if (e.key === "ArrowDown") {
-      e.preventDefault();
-      onNavigate?.(e.shiftKey ? "shift-down" : "down");
-    } else if (e.key === "ArrowLeft") {
-      e.preventDefault();
-      onNavigate?.(e.shiftKey ? "shift-left" : "left");
-    } else if (e.key === "ArrowRight") {
-      e.preventDefault();
-      onNavigate?.(e.shiftKey ? "shift-right" : "right");
-    } else if (e.key === "Tab") {
-      e.preventDefault();
-      onNavigate?.(e.shiftKey ? "shift-tab" : "tab");
-    } else if (e.key === "Delete" || e.key === "Backspace") {
-      if (blocked || viewBlocked) {
-        e.preventDefault();
-        return;
-      }
-      e.preventDefault();
-      if (currentBudgeted !== 0) {
-        const originalValue = stagedEdit?.previousBudgeted ?? effectiveCategory.budgeted;
-        if (originalValue === 0) {
-          // Going back to the original value of 0 — remove the staged edit.
-          if (stagedEdit) removeEdit(key);
-        } else {
-          stageEdit({
-            month,
-            categoryId: category.id,
-            nextBudgeted: 0,
-            previousBudgeted: originalValue,
-            source: "manual",
-          });
-        }
-      }
-    } else if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
-      if (blocked || viewBlocked) return;
-      e.preventDefault();
-      enterEdit(e.key);
-    }
-  };
+  const handleKeyDown = useCellEditKeymap({
+    commitEdit,
+    cancelEdit,
+    navigate: (dir: NavDirection) => onNavigate?.(dir),
+  });
 
-  /** On mousedown: reset drag flag and set this cell as the selection anchor. */
+  const handleCellKeyDown = useCellKeymap({
+    blocked,
+    viewBlocked,
+    navigate: (dir: NavDirection) => onNavigate?.(dir),
+    enterEdit,
+    clearValue,
+  });
+
+  /** On mousedown: reset drag flag, capture origin, set this cell as the selection anchor. */
   const handleMouseDown = (e: React.MouseEvent) => {
     if (e.shiftKey) return; // shift+click handled by click handler
     if (isDraggingRef) isDraggingRef.current = false;
+    if (dragOriginRef) dragOriginRef.current = { x: e.clientX, y: e.clientY };
     onFocus(category.id, month);
   };
 
   /**
    * On mouseenter with left button held: extend the selection (drag-select).
-   * Works for both blocked and editable cells so you can drag across the grid.
+   * BM-16: only register a drag once the pointer has moved more than
+   * DRAG_THRESHOLD_PX from the mousedown origin. Below the threshold, treat
+   * the gesture as a click — preserves edit-mode entry on a clean tap even
+   * if the pointer briefly grazes a neighbour cell.
    */
   const handleMouseEnter = (e: React.MouseEvent) => {
-    if (e.buttons === 1) {
-      if (isDraggingRef) isDraggingRef.current = true;
-      onRangeSelect(category.id, month);
+    if (e.buttons !== 1) return;
+    const origin = dragOriginRef?.current;
+    if (origin) {
+      const dx = e.clientX - origin.x;
+      const dy = e.clientY - origin.y;
+      if (Math.hypot(dx, dy) < DRAG_THRESHOLD_PX) return;
     }
+    if (isDraggingRef) isDraggingRef.current = true;
+    onRangeSelect(category.id, month);
   };
 
   /** Click: if shift, extend selection; otherwise enter edit (unless drag just ended). */
@@ -253,7 +234,7 @@ export function BudgetCell({
   // Hover tooltip: show spent/balance when in budgeted view (they aren't directly visible).
   const hoverTitle =
     cellView === "budgeted"
-      ? `Spent: ${formatAmount(effectiveCategory.actuals)} | Balance: ${formatAmount(effectiveCategory.balance)}`
+      ? `Spent: ${formatMinor(effectiveCategory.actuals)} | Balance: ${formatMinor(effectiveCategory.balance)}`
       : undefined;
 
   // ─── Blocked / read-only cell ────────────────────────────────────────────────
@@ -293,7 +274,7 @@ export function BudgetCell({
               : "text-muted-foreground"
           }
         >
-          {formatAmount(displayMinor)}
+          {formatMinor(displayMinor)}
         </span>
       </div>
     );
@@ -384,7 +365,7 @@ export function BudgetCell({
             : "text-foreground"
         }
       >
-        {formatAmount(displayMinor)}
+        {formatMinor(displayMinor)}
       </span>
 
       {hasLargeChange && (

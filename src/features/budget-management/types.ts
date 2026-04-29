@@ -92,15 +92,39 @@ export type StagedBudgetEdit = {
   saveError?: string;
 };
 
-/** Used by undo/redo in budgetEditsStore. */
+/**
+ * @deprecated As of BM-19, undo/redo uses inverse patches rather than full
+ * snapshots. Kept exported only so external callers can still import the
+ * name; new code should reference the patch shape in `store/budgetEdits.ts`.
+ */
 export type BudgetEditSnapshot = Record<BudgetCellKey, StagedBudgetEdit>;
+
+/** Internal patch shape used by the undo/redo stack (BM-19). */
+export type BudgetEditPatch = {
+  key: BudgetCellKey;
+  prev: StagedBudgetEdit | undefined;
+};
 
 // ─── Navigation ───────────────────────────────────────────────────────────────
 
 export type NavDirection =
+  // single-step
   | "up" | "down" | "left" | "right"
+  // single-step + range extension
   | "shift-up" | "shift-down" | "shift-left" | "shift-right"
-  | "tab" | "shift-tab";
+  // wrap-aware tab
+  | "tab" | "shift-tab"
+  // viewport jumps
+  | "page-up" | "page-down"
+  | "shift-page-up" | "shift-page-down"
+  // row edges (Home/End or Ctrl+Left/Right)
+  | "row-start" | "row-end"
+  | "shift-row-start" | "shift-row-end"
+  // grid corners (Ctrl+Home/End)
+  | "grid-start" | "grid-end"
+  | "shift-grid-start" | "shift-grid-end"
+  // section boundaries (Ctrl+Up/Down) — non-shift only for now
+  | "section-up" | "section-down";
 
 /** What value the grid cells display. Only "budgeted" allows editing. */
 export type CellView = "budgeted" | "spent" | "balance";
@@ -155,12 +179,18 @@ export type NavItem =
   | { type: "category"; id: string }
   | { type: "group"; id: string };
 
+/** Whole-row selection on the first column (category label or group label). */
+export type RowSelection = { kind: "category" | "group"; id: string };
+
 export type BudgetEditsState = {
   edits: Record<BudgetCellKey, StagedBudgetEdit>;
-  undoStack: BudgetEditSnapshot[];
-  redoStack: BudgetEditSnapshot[];
+  /** BM-19: stack of inverse-patch lists. Each list reverses one user action. */
+  undoStack: BudgetEditPatch[][];
+  redoStack: BudgetEditPatch[][];
   /** Currently focused cell or group — synced by BudgetWorkspace so BudgetDraftPanel can read it. */
   uiSelection: { month: string | null; categoryId: string | null; groupId: string | null };
+  /** Currently selected row label, mutually exclusive with uiSelection. */
+  rowSelection: RowSelection | null;
   /** The 12 months currently visible in the grid window — synced by BudgetManagementView. */
   displayMonths: string[];
 };
@@ -181,5 +211,7 @@ export type BudgetEditsActions = {
   /** Pass groupId to indicate a group row is selected; pass categoryId for a category cell.
    *  The two are mutually exclusive — whichever is non-null takes precedence. */
   setUiSelection: (month: string | null, categoryId: string | null, groupId?: string | null) => void;
+  /** Set the row-label selection; clears any cell/group-cell selection in uiSelection. */
+  setRowSelection: (selection: RowSelection | null) => void;
   setDisplayMonths: (months: string[]) => void;
 };
