@@ -13,6 +13,7 @@ import { BudgetWorkspace } from "./BudgetWorkspace";
 import { BudgetExportDialog } from "./BudgetExportDialog";
 import { BudgetImportDialog } from "./BudgetImportDialog";
 import { CategoryTransferDialog } from "./CategoryTransferDialog";
+import { KeyboardShortcutsHelp } from "./KeyboardShortcutsHelp";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -62,6 +63,7 @@ export function BudgetManagementView() {
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
   const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [transferDialogOpen, setTransferDialogOpen] = useState(false);
+  const [shortcutsHelpOpen, setShortcutsHelpOpen] = useState(false);
 
   // Collapse state lifted here so BudgetToolbar can trigger expand/collapse all.
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(
@@ -169,6 +171,23 @@ export function BudgetManagementView() {
     setCollapsedGroups(new Set(firstMonthData?.groupOrder ?? []));
   }, [firstMonthData]);
 
+  // ── Tier 3 keyboard shortcut handlers ────────────────────────────────────
+  const handleCycleCellView = useCallback(() => {
+    setCellView((v) => (v === "budgeted" ? "spent" : v === "spent" ? "balance" : "budgeted"));
+  }, []);
+
+  const handleToggleShowHidden = useCallback(() => {
+    setShowHidden((v) => !v);
+  }, []);
+
+  const handlePanMonthsPrev = useCallback(() => {
+    setWindowStart((s) => addMonths(s, -1));
+  }, []);
+
+  const handlePanMonthsNext = useCallback(() => {
+    setWindowStart((s) => addMonths(s, 1));
+  }, []);
+
   const isLoading = modeLoading || monthsLoading;
   const hasError = !!modeError || !!monthsError;
 
@@ -222,9 +241,10 @@ export function BudgetManagementView() {
         onExpandAll={handleExpandAll}
         onCollapseAll={handleCollapseAll}
         showHidden={showHidden}
-        onToggleShowHidden={() => setShowHidden((v) => !v)}
+        onToggleShowHidden={handleToggleShowHidden}
         onExport={handleOpenExport}
         onImport={handleOpenImport}
+        onShowShortcuts={() => setShortcutsHelpOpen(true)}
       />
 
       <BudgetWorkspace
@@ -232,6 +252,13 @@ export function BudgetManagementView() {
         cellView={cellView}
         activeMonths={activeMonths}
         availableMonths={availableMonths ?? []}
+        onCycleCellView={handleCycleCellView}
+        onToggleShowHidden={handleToggleShowHidden}
+        onExpandAll={handleExpandAll}
+        onCollapseAll={handleCollapseAll}
+        onPanMonthsPrev={handlePanMonthsPrev}
+        onPanMonthsNext={handlePanMonthsNext}
+        onOpenShortcutsHelp={() => setShortcutsHelpOpen(true)}
         collapsedGroups={collapsedGroups}
         onToggleCollapse={handleToggleGroupCollapse}
         showHidden={showHidden}
@@ -270,6 +297,11 @@ export function BudgetManagementView() {
           onClose={handleCloseTransfer}
         />
       )}
+
+      <KeyboardShortcutsHelp
+        open={shortcutsHelpOpen}
+        onOpenChange={setShortcutsHelpOpen}
+      />
 
     </div>
   );

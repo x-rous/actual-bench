@@ -5,6 +5,7 @@ import { useEffectiveMonthFromContext } from "../../context/MonthsDataContext";
 import { EntityNoteButton } from "@/components/ui/entity-note-button";
 import { useEntityNote } from "@/hooks/useEntityNote";
 import { formatMinor } from "../../lib/format";
+import { dispatchRowLabel, useGroupCellKeymap } from "../../keyboard/useBudgetKeymap";
 import { BudgetCell } from "../BudgetCell";
 import { isCellSelected, type SelectionBounds } from "./types";
 import type {
@@ -53,6 +54,7 @@ function GroupMonthAggregate({
   isSelected,
   onFocus,
   onNavigate,
+  onToggleCollapse,
 }: {
   month: string;
   groupId: string;
@@ -62,9 +64,15 @@ function GroupMonthAggregate({
   isSelected?: boolean;
   onFocus?: () => void;
   onNavigate?: (dir: NavDirection) => void;
+  onToggleCollapse?: () => void;
 }) {
   const data = useEffectiveMonthFromContext(month);
   const group = data?.groupsById[groupId];
+
+  const handleKeyDown = useGroupCellKeymap({
+    navigate: (dir) => onNavigate?.(dir),
+    toggleCollapse: () => onToggleCollapse?.(),
+  });
 
   const baseClass =
     "h-7 border-r border-b border-border bg-[#F7F8FA] dark:bg-zinc-800 dark:border-zinc-700";
@@ -97,14 +105,6 @@ function GroupMonthAggregate({
         ? group.balance
         : group.budgeted;
   }
-
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
-    if (e.key === "ArrowUp") { e.preventDefault(); onNavigate?.("up"); }
-    else if (e.key === "ArrowDown") { e.preventDefault(); onNavigate?.("down"); }
-    else if (e.key === "ArrowLeft") { e.preventDefault(); onNavigate?.("left"); }
-    else if (e.key === "ArrowRight") { e.preventDefault(); onNavigate?.("right"); }
-    else if (e.key === "Tab") { e.preventDefault(); onNavigate?.(e.shiftKey ? "shift-tab" : "tab"); }
-  };
 
   return (
     <div
@@ -161,18 +161,6 @@ export type GroupRowsProps = {
   onRowLabelNavigate?: (kind: "category" | "group", id: string, dir: NavDirection) => void;
 };
 
-/** Maps a keyboard event on a row label to a NavDirection (or null to ignore). */
-function keyToRowNavDir(e: React.KeyboardEvent<HTMLDivElement>): NavDirection | null {
-  switch (e.key) {
-    case "ArrowUp":   return "up";
-    case "ArrowDown": return "down";
-    case "ArrowLeft": return "left";   // already at the leftmost — handler will no-op
-    case "ArrowRight":return "right";
-    case "Tab":       return e.shiftKey ? "shift-tab" : "tab";
-    default:          return null;
-  }
-}
-
 /**
  * Group header row + (when not collapsed) one category row per category.
  * Light #F7F8FA background with black text; dark mode uses zinc-800.
@@ -227,20 +215,13 @@ export function BudgetGridGroupRows({
         data-row-group-id={group.id}
         onClick={() => onRowLabelFocus?.("group", group.id)}
         onFocus={() => onRowLabelFocus?.("group", group.id)}
-        onKeyDown={(e) => {
-          // Space toggles collapse on the selected group row, mirroring the
-          // chevron button. Selection itself is preserved.
-          if (e.key === " ") {
-            e.preventDefault();
-            onToggleCollapse();
-            return;
-          }
-          const dir = keyToRowNavDir(e);
-          if (!dir) return;
-          if (dir === "left") return; // already leftmost
-          e.preventDefault();
-          onRowLabelNavigate?.("group", group.id, dir);
-        }}
+        onKeyDown={(e) =>
+          dispatchRowLabel(e, {
+            navigate: (dir) => onRowLabelNavigate?.("group", group.id, dir),
+            // Space mirrors the chevron button. Selection is preserved.
+            toggleCollapse: onToggleCollapse,
+          })
+        }
       >
         <button
           type="button"
@@ -286,6 +267,7 @@ export function BudgetGridGroupRows({
           }
           onFocus={() => onGroupFocus?.(group.id, month)}
           onNavigate={(dir) => onGroupNavigate?.(group.id, month, dir)}
+          onToggleCollapse={onToggleCollapse}
         />
       ))}
 
@@ -322,13 +304,12 @@ export function BudgetGridGroupRows({
                 data-row-category-id={cat.id}
                 onClick={() => onRowLabelFocus?.("category", cat.id)}
                 onFocus={() => onRowLabelFocus?.("category", cat.id)}
-                onKeyDown={(e) => {
-                  const dir = keyToRowNavDir(e);
-                  if (!dir) return;
-                  if (dir === "left") return;
-                  e.preventDefault();
-                  onRowLabelNavigate?.("category", cat.id, dir);
-                }}
+                onKeyDown={(e) =>
+                  dispatchRowLabel(e, {
+                    navigate: (dir) => onRowLabelNavigate?.("category", cat.id, dir),
+                    // Category rows have no collapse — Space binding inert.
+                  })
+                }
               >
                 {cat.name}
               </div>

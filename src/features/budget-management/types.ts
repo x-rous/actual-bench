@@ -108,9 +108,23 @@ export type BudgetEditPatch = {
 // ─── Navigation ───────────────────────────────────────────────────────────────
 
 export type NavDirection =
+  // single-step
   | "up" | "down" | "left" | "right"
+  // single-step + range extension
   | "shift-up" | "shift-down" | "shift-left" | "shift-right"
-  | "tab" | "shift-tab";
+  // wrap-aware tab
+  | "tab" | "shift-tab"
+  // viewport jumps
+  | "page-up" | "page-down"
+  | "shift-page-up" | "shift-page-down"
+  // row edges (Home/End or Ctrl+Left/Right)
+  | "row-start" | "row-end"
+  | "shift-row-start" | "shift-row-end"
+  // grid corners (Ctrl+Home/End)
+  | "grid-start" | "grid-end"
+  | "shift-grid-start" | "shift-grid-end"
+  // section boundaries (Ctrl+Up/Down) — non-shift only for now
+  | "section-up" | "section-down";
 
 /** What value the grid cells display. Only "budgeted" allows editing. */
 export type CellView = "budgeted" | "spent" | "balance";

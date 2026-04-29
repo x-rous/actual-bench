@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronsLeft, ChevronsRight, ChevronLeft, ChevronRight, CalendarDays, Upload, Download, ChevronsDownUp, ChevronsUpDown, Eye, EyeOff } from "lucide-react";
+import { ChevronsLeft, ChevronsRight, ChevronLeft, ChevronRight, CalendarDays, Upload, Download, ChevronsDownUp, ChevronsUpDown, Eye, EyeOff, Keyboard } from "lucide-react";
 import { addMonths, formatMonthLabel } from "@/lib/budget/monthMath";
 import type { BudgetMode, CellView } from "../types";
 
@@ -47,6 +47,8 @@ type Props = {
   onToggleShowHidden?: () => void;
   onExport?: () => void;
   onImport?: () => void;
+  /** Open the keyboard-shortcuts cheatsheet modal. */
+  onShowShortcuts?: () => void;
 };
 
 function Divider() {
@@ -75,6 +77,7 @@ export function BudgetToolbar({
   onToggleShowHidden,
   onExport,
   onImport,
+  onShowShortcuts,
 }: Props) {
   const rangeLabel = formatWindowRange(windowStart);
 
@@ -286,6 +289,19 @@ export function BudgetToolbar({
           >
             <Upload className="h-3 w-3" aria-hidden="true" />
             Export
+          </button>
+        )}
+
+        {onShowShortcuts && (
+          <button
+            type="button"
+            onClick={onShowShortcuts}
+            aria-label="Show keyboard shortcuts (?)"
+            title="Keyboard shortcuts (?)"
+            className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs rounded border border-border hover:bg-muted transition-colors"
+          >
+            <Keyboard className="h-3 w-3" aria-hidden="true" />
+            Shortcuts
           </button>
         )}
 

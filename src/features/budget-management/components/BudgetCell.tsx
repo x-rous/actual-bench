@@ -6,6 +6,7 @@ import { useEffectiveMonthFromContext } from "../context/MonthsDataContext";
 import { parseBudgetExpression } from "../lib/budgetMath";
 import { formatMinor } from "../lib/format";
 import { isIncomeBlocked, isLargeChange } from "../lib/budgetValidation";
+import { useCellKeymap, useCellEditKeymap } from "../keyboard/useBudgetKeymap";
 import type { BudgetCellKey, BudgetMode, CellView, LoadedCategory, NavDirection } from "../types";
 
 type Props = {
@@ -141,74 +142,36 @@ export function BudgetCell({
     setInputValue("");
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "Enter") {
-      e.preventDefault();
-      if (commitEdit()) onNavigate?.("down");
-    } else if (e.key === "Escape") {
-      e.preventDefault();
-      cancelEdit();
-    } else if (e.key === "Tab") {
-      e.preventDefault();
-      if (commitEdit()) onNavigate?.(e.shiftKey ? "shift-tab" : "tab");
+  const clearValue = () => {
+    if (currentBudgeted === 0) return;
+    const originalValue = stagedEdit?.previousBudgeted ?? effectiveCategory.budgeted;
+    if (originalValue === 0) {
+      // Going back to the original value of 0 — remove the staged edit.
+      if (stagedEdit) removeEdit(key);
+    } else {
+      stageEdit({
+        month,
+        categoryId: category.id,
+        nextBudgeted: 0,
+        previousBudgeted: originalValue,
+        source: "manual",
+      });
     }
   };
 
-  const handleCellKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
-    if (e.key === "Enter" || e.key === "F2") {
-      if (blocked || viewBlocked) return;
-      e.preventDefault();
-      enterEdit();
-    } else if (e.key === "ArrowUp") {
-      e.preventDefault();
-      onNavigate?.(e.shiftKey ? "shift-up" : "up");
-    } else if (e.key === "ArrowDown") {
-      e.preventDefault();
-      onNavigate?.(e.shiftKey ? "shift-down" : "down");
-    } else if (e.key === "ArrowLeft") {
-      e.preventDefault();
-      onNavigate?.(e.shiftKey ? "shift-left" : "left");
-    } else if (e.key === "ArrowRight") {
-      e.preventDefault();
-      onNavigate?.(e.shiftKey ? "shift-right" : "right");
-    } else if (e.key === "Tab") {
-      e.preventDefault();
-      onNavigate?.(e.shiftKey ? "shift-tab" : "tab");
-    } else if (e.key === "Delete" || e.key === "Backspace") {
-      if (blocked || viewBlocked) {
-        e.preventDefault();
-        return;
-      }
-      e.preventDefault();
-      if (currentBudgeted !== 0) {
-        const originalValue = stagedEdit?.previousBudgeted ?? effectiveCategory.budgeted;
-        if (originalValue === 0) {
-          // Going back to the original value of 0 — remove the staged edit.
-          if (stagedEdit) removeEdit(key);
-        } else {
-          stageEdit({
-            month,
-            categoryId: category.id,
-            nextBudgeted: 0,
-            previousBudgeted: originalValue,
-            source: "manual",
-          });
-        }
-      }
-    } else if (
-      // BM-18: only digits, decimal, signs, and opening paren start edit mode.
-      // Other single-char keys fall through so browser shortcuts (e.g. quick-find)
-      // and assistive tech aren't intercepted.
-      /^[0-9.+\-(]$/.test(e.key) &&
-      !e.ctrlKey &&
-      !e.metaKey &&
-      !e.altKey
-    ) {
-      if (blocked || viewBlocked) return;
-      e.preventDefault();
-      enterEdit(e.key);
-    }
-  };
+  const handleKeyDown = useCellEditKeymap({
+    commitEdit,
+    cancelEdit,
+    navigate: (dir: NavDirection) => onNavigate?.(dir),
+  });
+
+  const handleCellKeyDown = useCellKeymap({
+    blocked,
+    viewBlocked,
+    navigate: (dir: NavDirection) => onNavigate?.(dir),
+    enterEdit,
+    clearValue,
+  });
 
   /** On mousedown: reset drag flag, capture origin, set this cell as the selection anchor. */
   const handleMouseDown = (e: React.MouseEvent) => {

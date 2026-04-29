@@ -8,7 +8,22 @@ import { useConnectionStore, selectActiveInstance } from "@/store/connection";
 import { addMonths } from "@/lib/budget/monthMath";
 import { parseBudgetExpression } from "../lib/budgetMath";
 import { parsePastePayload, resolveSelectionCells } from "../lib/budgetSelectionUtils";
+import {
+  computeCursorTarget,
+  computeRangeExtensionTarget,
+  isRangeExtensionDir,
+} from "../lib/cursorNav";
+import {
+  buildFillFromActiveEdits,
+  buildFillDownEdits,
+  buildFillRightEdits,
+  type FillSourceLookup,
+} from "../lib/budgetFill";
+
+/** Rows skipped per PageUp/PageDown. Also used for Ctrl+Shift+PageUp/Down. */
+const PAGE_SIZE = 10;
 import { useBulkAction, type BulkActionType } from "../hooks/useBulkAction";
+import { useWorkspaceKeymap } from "../keyboard/useBudgetKeymap";
 import { BudgetGrid } from "./BudgetGrid";
 import { BudgetSelectionSummary } from "./BudgetSelectionSummary";
 import { BulkActionDialog } from "./BulkActionDialog";
@@ -62,6 +77,15 @@ type Props = {
   bulkActionOpen?: boolean;
   onBulkActionClose?: () => void;
   onOpenTransfer?: () => void;
+  // ── Tier 3 view-state setters (keyboard shortcuts) ─────────────────────
+  onCycleCellView: () => void;
+  onToggleShowHidden: () => void;
+  onExpandAll: () => void;
+  onCollapseAll: () => void;
+  onPanMonthsPrev: () => void;
+  onPanMonthsNext: () => void;
+  /** Opens the keyboard-shortcuts cheatsheet (state lives in BudgetManagementView). */
+  onOpenShortcutsHelp: () => void;
 };
 
 /**
@@ -94,6 +118,13 @@ function BudgetWorkspaceInner({
   bulkActionOpen = false,
   onBulkActionClose,
   onOpenTransfer,
+  onCycleCellView,
+  onToggleShowHidden,
+  onExpandAll,
+  onCollapseAll,
+  onPanMonthsPrev,
+  onPanMonthsNext,
+  onOpenShortcutsHelp,
 }: Props) {
   const [selection, setSelection] = useState<BudgetCellSelection | null>(null);
   const [groupSelection, setGroupSelection] = useState<{ groupId: string; month: string } | null>(null);
@@ -248,71 +279,46 @@ function BudgetWorkspaceInner({
       const monthIdx = fromMonth === null ? -1 : activeMonths.indexOf(fromMonth);
       if (fromMonth !== null && monthIdx === -1) return;
 
-      // Shift+arrow: range extension — categories only, skip group items and
-      // skip when starting from the label column (no range across the gutter).
-      if (
-        dir === "shift-up" ||
-        dir === "shift-down" ||
-        dir === "shift-left" ||
-        dir === "shift-right"
-      ) {
+      // Shift+nav: range extension — categories only, never crosses into
+      // the label column (no range across the gutter).
+      if (isRangeExtensionDir(dir)) {
         if (fromItem.type !== "category" || monthIdx === -1) return;
         setSelection((prev) => {
           if (!prev) return prev;
           const catOnlyItems = navItems.filter((i) => i.type === "category");
-          const focusCatIdx = catOnlyItems.findIndex((i) => i.id === prev.focusCategoryId);
+          const focusCatIdx = catOnlyItems.findIndex(
+            (i) => i.id === prev.focusCategoryId
+          );
           const focusMonthIdx = activeMonths.indexOf(prev.focusMonth);
-          let newFocusCatIdx = focusCatIdx;
-          let newFocusMonthIdx = focusMonthIdx;
-          if (dir === "shift-up") newFocusCatIdx = Math.max(0, focusCatIdx - 1);
-          else if (dir === "shift-down") newFocusCatIdx = Math.min(catOnlyItems.length - 1, focusCatIdx + 1);
-          else if (dir === "shift-left") newFocusMonthIdx = Math.max(0, focusMonthIdx - 1);
-          else if (dir === "shift-right") newFocusMonthIdx = Math.min(activeMonths.length - 1, focusMonthIdx + 1);
-          const newFocusItem = catOnlyItems[newFocusCatIdx];
-          const newFocusMonth = activeMonths[newFocusMonthIdx];
+          const target = computeRangeExtensionTarget({
+            catItems: catOnlyItems,
+            monthCount: activeMonths.length,
+            focus: { itemIdx: focusCatIdx, monthIdx: focusMonthIdx },
+            dir,
+            pageSize: PAGE_SIZE,
+          });
+          if (!target) return prev;
+          const newFocusItem = catOnlyItems[target.itemIdx];
+          const newFocusMonth = activeMonths[target.monthIdx];
           if (!newFocusItem || !newFocusMonth) return prev;
-          return { ...prev, focusCategoryId: newFocusItem.id, focusMonth: newFocusMonth };
+          return {
+            ...prev,
+            focusCategoryId: newFocusItem.id,
+            focusMonth: newFocusMonth,
+          };
         });
         return;
       }
 
-      let newItemIdx = itemIdx;
-      let newMonthIdx = monthIdx;
-      const lastMonthIdx = activeMonths.length - 1;
-
-      switch (dir) {
-        case "up":
-          newItemIdx = Math.max(0, itemIdx - 1);
-          break;
-        case "down":
-          newItemIdx = Math.min(navItems.length - 1, itemIdx + 1);
-          break;
-        case "left":
-          // Allow stepping back into the label column (-1) but no further.
-          newMonthIdx = Math.max(-1, monthIdx - 1);
-          break;
-        case "right":
-          newMonthIdx = Math.min(lastMonthIdx, monthIdx + 1);
-          break;
-        case "tab":
-          if (monthIdx < lastMonthIdx) {
-            newMonthIdx = monthIdx + 1;
-          } else {
-            // Wrap to the next row's label column.
-            newMonthIdx = -1;
-            newItemIdx = Math.min(navItems.length - 1, itemIdx + 1);
-          }
-          break;
-        case "shift-tab":
-          if (monthIdx > -1) {
-            newMonthIdx = monthIdx - 1;
-          } else {
-            // Wrap to the previous row's last data cell.
-            newMonthIdx = lastMonthIdx;
-            newItemIdx = Math.max(0, itemIdx - 1);
-          }
-          break;
-      }
+      const target = computeCursorTarget({
+        navItems,
+        monthCount: activeMonths.length,
+        current: { itemIdx, monthIdx },
+        dir,
+        pageSize: PAGE_SIZE,
+      });
+      if (!target) return;
+      const { itemIdx: newItemIdx, monthIdx: newMonthIdx } = target;
 
       const newItem = navItems[newItemIdx];
       if (!newItem) return;
@@ -508,46 +514,137 @@ function BudgetWorkspaceInner({
     [selection, activeMonths, categories, rawMonthsMap, queryClient, connection, previewBulk, applyBulk]
   );
 
-  // Keyboard: undo/redo/copy/delete on the workspace container
-  const handleKeyDown = useCallback(
-    (e: React.KeyboardEvent<HTMLDivElement>) => {
-      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key === "z") {
-        e.preventDefault();
-        undo();
-      } else if (
-        (e.ctrlKey || e.metaKey) &&
-        (e.key === "y" || (e.shiftKey && e.key === "z"))
-      ) {
-        e.preventDefault();
-        redo();
-      } else if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key === "c") {
-        if (selection) {
-          e.preventDefault();
-          handleCopySelection();
-        }
-      } else if (e.key === "Delete" || e.key === "Backspace") {
-        // Multi-cell Delete: zero out all selected cells.
-        // Single-cell Delete is handled by BudgetCell's own keyDown handler.
-        if (!selection) return;
-        const cells = resolveSelectionCells(selection, activeMonths, categories);
-        if (cells.length <= 1) return; // let BudgetCell handle single-cell
-        e.preventDefault();
-        const newEdits: StagedBudgetEdit[] = cells.map((cell) => {
-          const serverCat = rawMonthsMap.get(cell.month)?.categoriesById[cell.categoryId];
-          return {
-            month: cell.month,
-            categoryId: cell.categoryId,
-            nextBudgeted: 0,
-            previousBudgeted: serverCat?.budgeted ?? 0,
-            source: "manual" as const,
-          };
-        });
-        stageBulkEdits(newEdits);
-      }
-    },
-    [undo, redo, selection, handleCopySelection, activeMonths, categories,
-     stageBulkEdits, rawMonthsMap]
-  );
+  const copySelection = useCallback((): boolean => {
+    if (!selection) return false;
+    handleCopySelection();
+    return true;
+  }, [selection, handleCopySelection]);
+
+  // Multi-cell Delete: zero out every cell in the selection.
+  // Single-cell Delete is handled by BudgetCell's own keymap; we return
+  // `false` here so the dispatcher doesn't preventDefault and the cell
+  // handler can do its work.
+  const zeroMultiCellSelection = useCallback((): boolean => {
+    if (!selection) return false;
+    const cells = resolveSelectionCells(selection, activeMonths, categories);
+    if (cells.length <= 1) return false;
+    const newEdits: StagedBudgetEdit[] = cells.map((cell) => {
+      const serverCat = rawMonthsMap.get(cell.month)?.categoriesById[cell.categoryId];
+      return {
+        month: cell.month,
+        categoryId: cell.categoryId,
+        nextBudgeted: 0,
+        previousBudgeted: serverCat?.budgeted ?? 0,
+        source: "manual" as const,
+      };
+    });
+    stageBulkEdits(newEdits);
+    return true;
+  }, [selection, activeMonths, categories, rawMonthsMap, stageBulkEdits]);
+
+  // Lookup used by the rectangle-fill helpers. Reads non-reactively from the
+  // edits store so the workspace doesn't re-render on every keystroke.
+  const buildFillLookup = useCallback((): FillSourceLookup => {
+    const edits = useBudgetEditsStore.getState().edits;
+    return (month, categoryId) => {
+      const serverCat = rawMonthsMap.get(month)?.categoriesById[categoryId];
+      if (!serverCat) return null;
+      const editKey: BudgetCellKey = `${month}:${categoryId}`;
+      const stagedEdit = edits[editKey];
+      const current = stagedEdit?.nextBudgeted ?? serverCat.budgeted;
+      return { current, server: serverCat.budgeted };
+    };
+  }, [rawMonthsMap]);
+
+  const fillFromActive = useCallback((): boolean => {
+    if (!selection) return false;
+    const newEdits = buildFillFromActiveEdits(selection, activeMonths, categories, buildFillLookup());
+    if (!newEdits || newEdits.length === 0) return false;
+    stageBulkEdits(newEdits);
+    return true;
+  }, [selection, activeMonths, categories, buildFillLookup, stageBulkEdits]);
+
+  const fillDown = useCallback((): boolean => {
+    if (!selection) return false;
+    const newEdits = buildFillDownEdits(selection, activeMonths, categories, buildFillLookup());
+    if (!newEdits || newEdits.length === 0) return false;
+    stageBulkEdits(newEdits);
+    return true;
+  }, [selection, activeMonths, categories, buildFillLookup, stageBulkEdits]);
+
+  const fillRight = useCallback((): boolean => {
+    if (!selection) return false;
+    const newEdits = buildFillRightEdits(selection, activeMonths, categories, buildFillLookup());
+    if (!newEdits || newEdits.length === 0) return false;
+    stageBulkEdits(newEdits);
+    return true;
+  }, [selection, activeMonths, categories, buildFillLookup, stageBulkEdits]);
+
+  // Alt+L / Alt+A — wrap the existing bulk-action path. Returns false on
+  // no-selection so the dispatcher doesn't preventDefault and the keystroke
+  // can fall through (browser-default bindings for Alt+L/A are unused, but
+  // we still keep the convention).
+  const fillPrevMonth = useCallback((): boolean => {
+    if (!selection) return false;
+    handleContextMenuBulkAction("copy-previous-month");
+    return true;
+  }, [selection, handleContextMenuBulkAction]);
+
+  const fillAvg3 = useCallback((): boolean => {
+    if (!selection) return false;
+    handleContextMenuBulkAction("avg-3-months");
+    return true;
+  }, [selection, handleContextMenuBulkAction]);
+
+  // Alt+C: toggle carryover for the anchor's category across the selected
+  // month range. The carryover dialog API is single-category, so a
+  // multi-category selection is downgraded to the anchor's category — the
+  // user can repeat Alt+C with each category selected. Right-click still
+  // exposes the per-cell forward-propagation flow.
+  const toggleCarryoverForSelection = useCallback((): boolean => {
+    if (!selection || !connection) return false;
+    const anchorCatId = selection.anchorCategoryId;
+    const anchorMonthIdx = activeMonths.indexOf(selection.anchorMonth);
+    const focusMonthIdx = activeMonths.indexOf(selection.focusMonth);
+    if (anchorMonthIdx === -1 || focusMonthIdx === -1) return false;
+    const minMonthIdx = Math.min(anchorMonthIdx, focusMonthIdx);
+    const maxMonthIdx = Math.max(anchorMonthIdx, focusMonthIdx);
+    const monthsToUpdate = activeMonths.slice(minMonthIdx, maxMonthIdx + 1);
+    if (monthsToUpdate.length === 0) return false;
+
+    const anchorCat = rawMonthsMap.get(selection.anchorMonth)?.categoriesById[anchorCatId];
+    if (!anchorCat) return false;
+
+    setCarryoverRequest({
+      input: {
+        categoryId: anchorCatId,
+        months: monthsToUpdate,
+        newValue: !anchorCat.carryover,
+      },
+      categoryLabel: anchorCat.name,
+    });
+    return true;
+  }, [selection, connection, activeMonths, rawMonthsMap]);
+
+  const handleKeyDown = useWorkspaceKeymap({
+    undo,
+    redo,
+    copySelection,
+    zeroMultiCellSelection,
+    fillFromActive,
+    fillDown,
+    fillRight,
+    fillPrevMonth,
+    fillAvg3,
+    cycleCellView: onCycleCellView,
+    toggleShowHidden: onToggleShowHidden,
+    expandAll: onExpandAll,
+    collapseAll: onCollapseAll,
+    panMonthsPrev: onPanMonthsPrev,
+    panMonthsNext: onPanMonthsNext,
+    toggleCarryoverForSelection,
+    openShortcutsHelp: onOpenShortcutsHelp,
+  });
 
   // Clipboard paste: parse tab-delimited text and stage bulk edits
   const handlePaste = useCallback(
