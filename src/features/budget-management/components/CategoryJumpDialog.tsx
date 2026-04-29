@@ -56,8 +56,17 @@ export function CategoryJumpDialog({
     : `${options.length} categories`;
 
   useEffect(() => {
-    if (!open) return;
-    requestAnimationFrame(() => inputRef.current?.focus());
+    const frame = requestAnimationFrame(() => {
+      if (open) {
+        inputRef.current?.focus();
+        return;
+      }
+      inputRef.current?.blur();
+      resultRefs.current = [];
+      setQuery("");
+      setActiveIndex(0);
+    });
+    return () => cancelAnimationFrame(frame);
   }, [open]);
 
   useEffect(() => {

@@ -82,6 +82,9 @@ export function TopBar() {
   const queryClient = useQueryClient();
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
+  const [budgetSaveReviewSkipped, setBudgetSaveReviewSkipped] = useState(
+    () => readBudgetSaveReviewSkip()
+  );
   const [budgetSaveReviewEdits, setBudgetSaveReviewEdits] = useState<Record<BudgetCellKey, StagedBudgetEdit> | null>(null);
   const [budgetSaveEdits, setBudgetSaveEdits] = useState<Record<BudgetCellKey, StagedBudgetEdit> | null>(null);
 
@@ -173,7 +176,7 @@ export function TopBar() {
       const editSnapshot = { ...edits };
       if (Object.keys(editSnapshot).length === 0) return;
 
-      if (readBudgetSaveReviewSkip()) {
+      if (budgetSaveReviewSkipped) {
         setBudgetSaveEdits(editSnapshot);
         return;
       }
@@ -224,6 +227,12 @@ export function TopBar() {
     }
     setIsRefreshing(true);
     queryClient.invalidateQueries().then(() => setIsRefreshing(false));
+  }
+
+  function handleResetBudgetSaveReview() {
+    writeBudgetSaveReviewSkip(false);
+    setBudgetSaveReviewSkipped(false);
+    toast.success("Budget save review re-enabled.");
   }
 
   return (
@@ -345,6 +354,18 @@ export function TopBar() {
             Discard
           </Button>
 
+          {isBudgetPage && budgetSaveReviewSkipped && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 text-xs"
+              onClick={handleResetBudgetSaveReview}
+              title="Show the budget save review dialog before saving again"
+            >
+              Reset review
+            </Button>
+          )}
+
           <Button
             size="sm"
             className={cn(
@@ -367,7 +388,10 @@ export function TopBar() {
             setBudgetSaveReviewEdits(null);
           }}
           onConfirm={(skipReviewNextTime) => {
-            if (skipReviewNextTime) writeBudgetSaveReviewSkip(true);
+            if (skipReviewNextTime) {
+              writeBudgetSaveReviewSkip(true);
+              setBudgetSaveReviewSkipped(true);
+            }
             setBudgetSaveEdits(budgetSaveReviewEdits);
             setBudgetSaveReviewEdits(null);
           }}

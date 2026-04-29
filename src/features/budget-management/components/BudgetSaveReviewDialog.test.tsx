@@ -51,7 +51,7 @@ describe("BudgetSaveReviewDialog", () => {
       />
     );
 
-    fireEvent.click(screen.getByLabelText("Skip review next time"));
+    fireEvent.click(screen.getByText("Skip review next time"));
     fireEvent.click(screen.getByRole("button", { name: "Save 2 changes" }));
 
     expect(onConfirm).toHaveBeenCalledWith(true);

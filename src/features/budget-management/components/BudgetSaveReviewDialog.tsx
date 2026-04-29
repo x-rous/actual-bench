@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -122,15 +123,20 @@ export function BudgetSaveReviewDialog({
         </div>
 
         <div className="flex items-center gap-3 border-t border-border px-4 py-3">
-          <label className="flex min-w-0 flex-1 items-center gap-2 text-xs text-muted-foreground">
-            <input
-              type="checkbox"
+          <div className="flex min-w-0 flex-1 items-center gap-2 text-xs text-muted-foreground">
+            <Checkbox
+              aria-labelledby="skip-budget-save-review-label"
               checked={skipReviewNextTime}
-              onChange={(e) => setSkipReviewNextTime(e.target.checked)}
-              className="h-3.5 w-3.5 rounded border-border"
+              onCheckedChange={(checked) => setSkipReviewNextTime(Boolean(checked))}
             />
-            Skip review next time
-          </label>
+            <label
+              id="skip-budget-save-review-label"
+              className="cursor-pointer"
+              onClick={() => setSkipReviewNextTime((checked) => !checked)}
+            >
+              Skip review next time
+            </label>
+          </div>
           <div className="flex shrink-0 items-center gap-2">
             <Button variant="outline" onClick={onCancel}>
               Cancel
