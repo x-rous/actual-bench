@@ -29,6 +29,11 @@ import { BudgetSelectionSummary } from "./BudgetSelectionSummary";
 import { BulkActionDialog } from "./BulkActionDialog";
 import { BudgetCellContextMenu } from "./BudgetCellContextMenu";
 import { BudgetCarryoverProgressDialog } from "./BudgetCarryoverProgressDialog";
+import { CategoryJumpDialog } from "./CategoryJumpDialog";
+import {
+  buildCategorySearchOptions,
+  type CategorySearchOption,
+} from "../lib/categorySearch";
 import {
   MonthsDataProvider,
   useMonthsData,
@@ -61,6 +66,15 @@ type ContextMenuState = {
   categoryId: string;
   month: string;
   carryover: boolean;
+} | null;
+
+type PendingCategoryJump = {
+  categoryId: string;
+  groupId: string;
+  month: string;
+  hidden: boolean;
+  groupHidden: boolean;
+  attempts: number;
 } | null;
 
 type Props = {
@@ -131,6 +145,8 @@ function BudgetWorkspaceInner({
   const [rowSelection, setRowSelectionLocal] = useState<RowSelection | null>(null);
   const [contextMenu, setContextMenu] = useState<ContextMenuState>(null);
   const [pendingBulkAction, setPendingBulkAction] = useState<BulkActionType | null>(null);
+  const [categorySearchOpen, setCategorySearchOpen] = useState(false);
+  const [pendingCategoryJump, setPendingCategoryJump] = useState<PendingCategoryJump>(null);
   const [carryoverRequest, setCarryoverRequest] = useState<{
     input: CarryoverToggleInput;
     categoryLabel?: string;
@@ -205,6 +221,11 @@ function BudgetWorkspaceInner({
     }
     return items;
   }, [merged, showHidden, collapsedGroups]);
+
+  const categorySearchOptions = useMemo<CategorySearchOption[]>(() => {
+    if (!merged) return [];
+    return buildCategorySearchOptions(merged);
+  }, [merged]);
 
   const handleCellFocus = useCallback(
     (categoryId: string, month: string) => {
@@ -391,6 +412,92 @@ function BudgetWorkspaceInner({
     },
     [navigateFrom]
   );
+
+  const selectedMonth =
+    selection?.focusMonth ??
+    groupSelection?.month ??
+    activeMonths[0] ??
+    null;
+
+  const handleCategoryJumpSelect = useCallback(
+    (option: CategorySearchOption) => {
+      const month = selectedMonth;
+      if (!month) return;
+
+      setContextMenu(null);
+      setGroupSelection(null);
+      setRowSelectionLocal(null);
+      setSelection({
+        anchorCategoryId: option.categoryId,
+        anchorMonth: month,
+        focusCategoryId: option.categoryId,
+        focusMonth: month,
+      });
+
+      if (!showHidden && (option.hidden || option.groupHidden)) {
+        onToggleShowHidden();
+      }
+      if (collapsedGroups.has(option.groupId)) {
+        onToggleCollapse(option.groupId);
+      }
+
+      setPendingCategoryJump({
+        categoryId: option.categoryId,
+        groupId: option.groupId,
+        month,
+        hidden: option.hidden,
+        groupHidden: option.groupHidden,
+        attempts: 0,
+      });
+    },
+    [
+      selectedMonth,
+      showHidden,
+      collapsedGroups,
+      onToggleShowHidden,
+      onToggleCollapse,
+      setSelection,
+    ]
+  );
+
+  useEffect(() => {
+    if (!pendingCategoryJump) return;
+    if (
+      (!showHidden && (pendingCategoryJump.hidden || pendingCategoryJump.groupHidden)) ||
+      collapsedGroups.has(pendingCategoryJump.groupId)
+    ) {
+      return;
+    }
+    const frame = requestAnimationFrame(() => {
+      const el = document.querySelector<HTMLElement>(
+        `[data-month="${CSS.escape(pendingCategoryJump.month)}"][data-category-id="${CSS.escape(pendingCategoryJump.categoryId)}"]`
+      );
+      if (!el) {
+        setPendingCategoryJump((current) => {
+          if (
+            !current ||
+            current.month !== pendingCategoryJump.month ||
+            current.categoryId !== pendingCategoryJump.categoryId
+          ) {
+            return current;
+          }
+          if (current.attempts >= 6) return null;
+          return { ...current, attempts: current.attempts + 1 };
+        });
+        return;
+      }
+      el.scrollIntoView({ block: "center", inline: "nearest" });
+      el.focus();
+      setSelection({
+        anchorCategoryId: pendingCategoryJump.categoryId,
+        anchorMonth: pendingCategoryJump.month,
+        focusCategoryId: pendingCategoryJump.categoryId,
+        focusMonth: pendingCategoryJump.month,
+      });
+      setPendingCategoryJump(null);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [pendingCategoryJump, showHidden, collapsedGroups, setSelection]);
 
   /** Copy selected cell values as tab-delimited text (dollar amounts). */
   const handleCopySelection = useCallback(() => {
@@ -642,9 +749,24 @@ function BudgetWorkspaceInner({
     collapseAll: onCollapseAll,
     panMonthsPrev: onPanMonthsPrev,
     panMonthsNext: onPanMonthsNext,
+    openCategorySearch: () => setCategorySearchOpen(true),
     toggleCarryoverForSelection,
     openShortcutsHelp: onOpenShortcutsHelp,
   });
+
+  const handleWorkspaceKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLDivElement>) => {
+      const target = e.target as HTMLElement;
+      if (
+        target.closest("[role=dialog]") ||
+        target.matches("input, textarea, select, [contenteditable='true']")
+      ) {
+        return;
+      }
+      handleKeyDown(e);
+    },
+    [handleKeyDown]
+  );
 
   // Clipboard paste: parse tab-delimited text and stage bulk edits
   const handlePaste = useCallback(
@@ -720,7 +842,7 @@ function BudgetWorkspaceInner({
     <div
       ref={workspaceRef}
       className="flex flex-col flex-1 min-h-0"
-      onKeyDown={handleKeyDown}
+      onKeyDown={handleWorkspaceKeyDown}
       onPaste={handlePaste}
       tabIndex={-1}
       aria-label="Budget workspace"
@@ -780,6 +902,15 @@ function BudgetWorkspaceInner({
         />
       )}
 
+      {categorySearchOpen && (
+        <CategoryJumpDialog
+          open={categorySearchOpen}
+          options={categorySearchOptions}
+          onOpenChange={setCategorySearchOpen}
+          onSelect={handleCategoryJumpSelect}
+        />
+      )}
+
       {contextMenu && (
         <BudgetCellContextMenu
           x={contextMenu.x}
@@ -803,4 +934,3 @@ function BudgetWorkspaceInner({
     </div>
   );
 }
-

@@ -252,8 +252,14 @@ describe("Tier 3 view & visibility bindings", () => {
     expect(matchAction(ev({ key: "]" }), "workspace")).toBe("view.pan-months-next");
   });
 
+  it("F opens category search in workspace scope only", () => {
+    expect(matchAction(ev({ key: "f" }), "workspace")).toBe("view.open-category-search");
+    expect(matchAction(ev({ key: "f" }), "cell")).toBeNull();
+    expect(matchAction(ev({ key: "f" }), "cell-edit")).toBeNull();
+  });
+
   it("Tier-3 bare-alpha bindings never fire while typing in a cell input", () => {
-    for (const k of ["v", "h", "e", "[", "]"]) {
+    for (const k of ["v", "h", "e", "f", "[", "]"]) {
       expect(matchAction(ev({ key: k }), "cell-edit")).toBeNull();
     }
     expect(matchAction(ev({ key: "E", shiftKey: true }), "cell-edit")).toBeNull();

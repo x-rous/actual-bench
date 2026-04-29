@@ -105,6 +105,7 @@ export const DEFAULT_KEYMAP: KeymapBinding[] = [
   // Pan visible months one month back / forward. Bare brackets on US layout.
   { action: "view.pan-months-prev",    chord: { key: "[" },                   scopes: ["workspace"] },
   { action: "view.pan-months-next",    chord: { key: "]" },                   scopes: ["workspace"] },
+  { action: "view.open-category-search", chord: { key: "f" },                 scopes: ["workspace"] },
 
   // ── Tier 4 selection actions ───────────────────────────────────────────
   { action: "selection.toggle-carryover", chord: { key: "c", alt: true },     scopes: ["workspace"] },

@@ -72,6 +72,7 @@ export type WorkspaceContext = {
   collapseAll: () => void;
   panMonthsPrev: () => void;
   panMonthsNext: () => void;
+  openCategorySearch: () => void;
   // ── Tier 4 selection actions ───────────────────────────────────────────
   /**
    * Toggle carryover for the anchor cell's category across the selected

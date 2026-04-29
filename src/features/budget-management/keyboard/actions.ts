@@ -63,6 +63,7 @@ export type ActionId =
   | "view.collapse-all"
   | "view.pan-months-prev"
   | "view.pan-months-next"
+  | "view.open-category-search"
   // ─── Tier 4 selection actions (workspace) ───────────────────────────────
   | "selection.toggle-carryover"
   // ─── Discoverability ────────────────────────────────────────────────────
@@ -158,6 +159,11 @@ export const ACTION_META: Record<ActionId, ActionMeta> = {
   "view.collapse-all": { id: "view.collapse-all", label: "Collapse all groups", category: "view" },
   "view.pan-months-prev": { id: "view.pan-months-prev", label: "Pan visible months one earlier", category: "view" },
   "view.pan-months-next": { id: "view.pan-months-next", label: "Pan visible months one later",   category: "view" },
+  "view.open-category-search": {
+    id: "view.open-category-search",
+    label: "Jump to category",
+    category: "navigation",
+  },
 
   "selection.toggle-carryover": {
     id: "selection.toggle-carryover",
