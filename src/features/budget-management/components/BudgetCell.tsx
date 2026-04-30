@@ -9,6 +9,12 @@ import { isIncomeBlocked, isLargeChange } from "../lib/budgetValidation";
 import { useCellKeymap, useCellEditKeymap } from "../keyboard/useBudgetKeymap";
 import type { BudgetCellKey, BudgetMode, CellView, LoadedCategory, NavDirection } from "../types";
 
+export type BudgetCellDragState = {
+  activePointerId: number | null;
+  origin: { x: number; y: number } | null;
+  hasDragged: boolean;
+};
+
 type Props = {
   category: LoadedCategory;
   month: string;
@@ -19,11 +25,10 @@ type Props = {
   onFocus: (categoryId: string, month: string) => void;
   onRangeSelect: (categoryId: string, month: string) => void;
   onNavigate?: (dir: NavDirection) => void;
-  /** Shared drag-state ref from BudgetGrid — set to true once the pointer has moved past the threshold. */
-  isDraggingRef?: { current: boolean };
-  /** BM-16: shared mousedown origin so each cell can compute pointer-movement
-   *  distance before flipping the drag flag. */
-  dragOriginRef?: { current: { x: number; y: number } | null };
+  /** Shared pointer-drag state from BudgetGrid for mouse/stylus range selection. */
+  dragStateRef?: { current: BudgetCellDragState };
+  /** Shared one-shot guard that prevents the click emitted after drag from clearing/opening edit. */
+  suppressNextClickRef?: { current: boolean };
   /** Called when the user right-clicks the cell. */
   onContextMenuRequest?: (catId: string, month: string, carryover: boolean, x: number, y: number) => void;
   /** When true, renders the cell at 50% opacity (hidden category/group shown). */
@@ -39,7 +44,7 @@ const DRAG_THRESHOLD_PX = 3;
  * Displays the budgeted amount (staged or persisted) for the specific month.
  * In edit mode, accepts numeric values or arithmetic expressions.
  * Income cells are hard-blocked in envelope mode.
- * Supports drag-to-select (via isDraggingRef) and shift+arrow range extension.
+ * Supports drag-to-select (via dragStateRef) and shift+arrow range extension.
  */
 export function BudgetCell({
   category,
@@ -51,8 +56,8 @@ export function BudgetCell({
   onFocus,
   onRangeSelect,
   onNavigate,
-  isDraggingRef,
-  dragOriginRef,
+  dragStateRef,
+  suppressNextClickRef,
   onContextMenuRequest,
   isDimmed,
 }: Props) {
@@ -173,43 +178,81 @@ export function BudgetCell({
     clearValue,
   });
 
-  /** On mousedown: reset drag flag, capture origin, set this cell as the selection anchor. */
-  const handleMouseDown = (e: React.MouseEvent) => {
+  /** On pointer down: reset drag state, capture origin, set this cell as the selection anchor. */
+  const handlePointerDown = (e: React.PointerEvent) => {
     if (e.shiftKey) return; // shift+click handled by click handler
-    if (isDraggingRef) isDraggingRef.current = false;
-    if (dragOriginRef) dragOriginRef.current = { x: e.clientX, y: e.clientY };
+    if (e.button !== 0) return;
+    if (dragStateRef) {
+      dragStateRef.current = {
+        activePointerId: e.pointerId,
+        origin: { x: e.clientX, y: e.clientY },
+        hasDragged: false,
+      };
+    }
     onFocus(category.id, month);
   };
 
   /**
-   * On mouseenter with left button held: extend the selection (drag-select).
+   * On pointer enter with the primary button held: extend the selection.
    * BM-16: only register a drag once the pointer has moved more than
    * DRAG_THRESHOLD_PX from the mousedown origin. Below the threshold, treat
    * the gesture as a click — preserves edit-mode entry on a clean tap even
    * if the pointer briefly grazes a neighbour cell.
    */
-  const handleMouseEnter = (e: React.MouseEvent) => {
+  const handlePointerEnter = (e: React.PointerEvent) => {
     if (e.buttons !== 1) return;
-    const origin = dragOriginRef?.current;
+    const dragState = dragStateRef?.current;
+    if (!dragState || dragState.activePointerId !== e.pointerId) return;
+    const origin = dragState.origin;
     if (origin) {
       const dx = e.clientX - origin.x;
       const dy = e.clientY - origin.y;
       if (Math.hypot(dx, dy) < DRAG_THRESHOLD_PX) return;
     }
-    if (isDraggingRef) isDraggingRef.current = true;
+    dragStateRef.current = {
+      ...dragState,
+      hasDragged: true,
+    };
     onRangeSelect(category.id, month);
+  };
+
+  const handlePointerUp = (e: React.PointerEvent) => {
+    const dragState = dragStateRef?.current;
+    if (!dragState || dragState.activePointerId !== e.pointerId) return;
+    if (dragState.hasDragged && suppressNextClickRef) {
+      suppressNextClickRef.current = true;
+    }
+    dragStateRef.current = {
+      activePointerId: null,
+      origin: null,
+      hasDragged: false,
+    };
+  };
+
+  const handlePointerCancel = (e: React.PointerEvent) => {
+    const dragState = dragStateRef?.current;
+    if (!dragState || dragState.activePointerId !== e.pointerId) return;
+    dragStateRef.current = {
+      activePointerId: null,
+      origin: null,
+      hasDragged: false,
+    };
   };
 
   /** Click: if shift, extend selection; otherwise enter edit (unless drag just ended). */
   const handleClick = (e: React.MouseEvent) => {
+    if (suppressNextClickRef?.current) {
+      suppressNextClickRef.current = false;
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
     if (e.shiftKey) {
       onRangeSelect(category.id, month);
-    } else if (!isDraggingRef?.current) {
+    } else {
       // Anchor was already set in mousedown; just open the editor.
       enterEdit();
     }
-    // When isDragging=true the mousedown already handled selection extension;
-    // don't enter edit mode or collapse the range.
   };
 
   const handleContextMenu = (e: React.MouseEvent) => {
@@ -255,8 +298,10 @@ export function BudgetCell({
         aria-label={blockedLabel}
         aria-readonly="true"
         aria-disabled={blocked ? "true" : undefined}
-        onMouseDown={handleMouseDown}
-        onMouseEnter={handleMouseEnter}
+        onPointerDown={handlePointerDown}
+        onPointerEnter={handlePointerEnter}
+        onPointerUp={handlePointerUp}
+        onPointerCancel={handlePointerCancel}
         onKeyDown={handleCellKeyDown}
         onContextMenu={handleContextMenu}
         tabIndex={0}
@@ -286,7 +331,9 @@ export function BudgetCell({
       <div
         className={`relative h-7 px-0.5 flex items-center border-r border-b border-border/50 bg-background ring-2 ring-inset ring-foreground/80 z-10${dimClass}`}
         role="gridcell"
-        onMouseEnter={handleMouseEnter}
+        onPointerEnter={handlePointerEnter}
+        onPointerUp={handlePointerUp}
+        onPointerCancel={handlePointerCancel}
         onContextMenu={handleContextMenu}
         data-month={month}
         data-category-id={category.id}
@@ -346,8 +393,10 @@ export function BudgetCell({
       tabIndex={0}
       aria-label={`${category.name} budget for ${month}${stagedEdit ? " (unsaved)" : ""}${hasSaveError ? " — save error" : ""}`}
       aria-selected={isSelected}
-      onMouseDown={handleMouseDown}
-      onMouseEnter={handleMouseEnter}
+      onPointerDown={handlePointerDown}
+      onPointerEnter={handlePointerEnter}
+      onPointerUp={handlePointerUp}
+      onPointerCancel={handlePointerCancel}
       onClick={handleClick}
       onKeyDown={handleCellKeyDown}
       onContextMenu={handleContextMenu}

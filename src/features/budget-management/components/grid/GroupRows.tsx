@@ -6,7 +6,7 @@ import { EntityNoteButton } from "@/components/ui/entity-note-button";
 import { useEntityNote } from "@/hooks/useEntityNote";
 import { formatMinor } from "../../lib/format";
 import { dispatchRowLabel, useGroupCellKeymap } from "../../keyboard/useBudgetKeymap";
-import { BudgetCell } from "../BudgetCell";
+import { BudgetCell, type BudgetCellDragState } from "../BudgetCell";
 import { isCellSelected, type SelectionBounds } from "./types";
 import type {
   BudgetCellSelection,
@@ -139,9 +139,8 @@ export type GroupRowsProps = {
   categoryIndexMap: Map<string, number>;
   /** Merged categoriesById for category metadata (name, isIncome, etc.). */
   categoriesById: Record<string, LoadedCategory>;
-  isDraggingRef: { current: boolean };
-  /** BM-16: shared mousedown origin so cells can apply a drag movement threshold. */
-  dragOriginRef: { current: { x: number; y: number } | null };
+  dragStateRef: { current: BudgetCellDragState };
+  suppressNextClickRef: { current: boolean };
   showHidden: boolean;
   groupSelection?: { groupId: string; month: string } | null;
   rowSelection?: RowSelection | null;
@@ -176,8 +175,8 @@ export function BudgetGridGroupRows({
   selectionBounds,
   categoryIndexMap,
   categoriesById,
-  isDraggingRef,
-  dragOriginRef,
+  dragStateRef,
+  suppressNextClickRef,
   showHidden,
   groupSelection,
   rowSelection,
@@ -342,8 +341,8 @@ export function BudgetGridGroupRows({
                     cellView={cellView}
                     isSelected={isSelected}
                     isAnchor={isAnchor}
-                    isDraggingRef={isDraggingRef}
-                    dragOriginRef={dragOriginRef}
+                    dragStateRef={dragStateRef}
+                    suppressNextClickRef={suppressNextClickRef}
                     isDimmed={catDimmed}
                     onFocus={onCellFocus}
                     onRangeSelect={onCellRangeSelect}

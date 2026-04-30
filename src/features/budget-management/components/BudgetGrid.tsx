@@ -11,6 +11,7 @@ import {
 } from "./grid/SummaryRows";
 import { SectionTotalRow } from "./grid/SectionTotal";
 import { BudgetGridGroupRows } from "./grid/GroupRows";
+import type { BudgetCellDragState } from "./BudgetCell";
 import type { SelectionBounds } from "./grid/types";
 import type {
   BudgetCellSelection,
@@ -100,9 +101,12 @@ export function BudgetGrid({
   const hasAnyData = merged !== null;
   const firstMonthError = firstMonth ? errors.get(firstMonth) : undefined;
 
-  const isDraggingRef = useRef<boolean>(false);
-  // BM-16: shared mousedown origin so cells can apply a drag movement threshold.
-  const dragOriginRef = useRef<{ x: number; y: number } | null>(null);
+  const dragStateRef = useRef<BudgetCellDragState>({
+    activePointerId: null,
+    origin: null,
+    hasDragged: false,
+  });
+  const suppressNextClickClearRef = useRef(false);
 
   // Build allCategories in visual order: expense groups first, income groups after.
   // This ensures selection index bounds match the rendered order in the grid.
@@ -221,8 +225,8 @@ export function BudgetGrid({
     selectionBounds,
     categoryIndexMap,
     categoriesById,
-    isDraggingRef,
-    dragOriginRef,
+    dragStateRef,
+    suppressNextClickRef: suppressNextClickClearRef,
     showHidden,
     onCellFocus,
     onCellRangeSelect,
@@ -241,7 +245,31 @@ export function BudgetGrid({
       aria-colcount={activeMonths.length + 2}
       style={gridStyle}
       className="flex-1 text-sm border-t border-border/50"
+      onPointerUpCapture={(e) => {
+        const dragState = dragStateRef.current;
+        if (dragState.activePointerId !== e.pointerId) return;
+        if (dragState.hasDragged) {
+          suppressNextClickClearRef.current = true;
+        }
+        dragStateRef.current = {
+          activePointerId: null,
+          origin: null,
+          hasDragged: false,
+        };
+      }}
+      onPointerCancelCapture={(e) => {
+        if (dragStateRef.current.activePointerId !== e.pointerId) return;
+        dragStateRef.current = {
+          activePointerId: null,
+          origin: null,
+          hasDragged: false,
+        };
+      }}
       onClick={(e) => {
+        if (suppressNextClickClearRef.current) {
+          suppressNextClickClearRef.current = false;
+          return;
+        }
         // Treat any selectable surface as "kept" — cells, group-month aggregates,
         // and the new row-label cells (data-row-category-id / data-row-group-id).
         // Without all four selectors, clicking a row label fires onClearSelection
