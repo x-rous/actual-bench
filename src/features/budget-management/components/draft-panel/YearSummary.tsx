@@ -163,7 +163,7 @@ function YearSummaryDisplay({
     <div className="px-3 py-2 space-y-3">
       <div>
         <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-          Year Summary
+          Period Summary
         </p>
         <p className="text-[10px] text-muted-foreground/60 mt-0.5">{yearRangeLabel}</p>
       </div>
@@ -189,7 +189,7 @@ function YearSummaryDisplay({
       <div className="border-t border-border/40 pt-2">
         <div className="flex justify-between items-baseline gap-2">
           <span className="text-[11px] font-semibold text-foreground/80">
-            {isEnvelope ? "To Budget" : "Net Balance"}
+            {isEnvelope ? "To Budget" : "Result"}
           </span>
           <span
             className={`font-sans tabular-nums text-right text-sm font-semibold ${

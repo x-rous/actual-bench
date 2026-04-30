@@ -197,8 +197,8 @@ Spreadsheet-grade keyboard support — every shortcut is data-driven from a sing
 
 **Selection (mouse + click):**
 - Click a cell to select it; Shift+click to extend a rectangular multi-cell selection
-- Drag from cell to cell to select a rectangle; the first column (category / group label) is also selectable for row-aggregate views in the draft panel
-- Clicking outside the grid (toolbar, sidebar, top bar), or clicking non-interactive areas inside the grid (summary rows, section headers, group row gutters, column headers), clears the current selection and shows the year summary in the draft panel
+- Drag from cell to cell to select a rectangle; the first column (category / group label) is also selectable for row-aggregate views in the details panel
+- Clicking outside the grid (toolbar, sidebar, top bar), or clicking non-interactive areas inside the grid (summary rows, section headers, group row gutters, column headers), clears the current selection and shows the period summary in the details panel
 
 **Navigation:**
 - Arrow keys move the cursor between cells; Tab / Shift+Tab move forward / backward and wrap across rows
@@ -254,11 +254,11 @@ Bare-letter shortcuts (`V`, `F`, `H`, `E`, `[`, `]`) are scoped so they never fi
 - Average actions look back N months before the cell's month using TanStack Query cache; pre-window months are included if previously loaded
 - Selecting a new cell or group dismisses the context menu
 
-### Draft Panel (right side)
-- **Year summary** (default, when no cell or group is selected): shows Expenses (budgeted + spent), Income (received; tracking mode also shows budgeted), and an overall total ("To Budget" in envelope mode, "Net Balance" in tracking mode). Below the totals: a Monthly Trend section with three sparkbar rows — Expenses, Income, and Balance — one bar per month in the active window; bars for months without server data are shown as stubs
-- **Category cell selected**: category name, group, and month label; metrics for budgeted (amber when staged), actuals, balance (colour-coded), carryover status, and previous-month budgeted; if a staged edit exists, a separator row shows the original value and the signed delta; save errors appear as a red message below the diff
-- **Group row selected**: group name and type (income / expense); aggregate budgeted, actuals, balance, and previous-month budgeted; if staged edits exist for any category in the group, shows original total and signed delta
-- **Staged Changes** section (always visible when edits exist, regardless of selection): header with live count badge ("N changes"); changes grouped by month, each entry showing category name and signed delta; save-error markers on failed rows
+### Budget Details Panel (right side)
+- **Period Summary** (default, when no category or group is selected): shows the active 12-month range, budget mode, coverage split between actualized/current/future months, one mode-aware primary status, and one compact trend. Tracking mode separates Actuals to date, Budget to date, and Full 12-month plan; future months are muted as plan-only and never counted as zero-actual savings. Envelope mode shows current/ending To Budget or Overbudget status, end-of-visible-plan To Budget when future months exist, and period values such as Assigned / Budgeted, Spent to date, Income received to date, and Hold for next month.
+- **Category or group label selected**: the panel switches to the selected row across the visible 12-month period. Tracking mode uses planning language (over/under plan, actual vs budget to date, full-period budget, averages to date) and does not use Balance as the primary group/category concept. If rollover/carryover applies, Tracking adds Current, Ending, or Planned Rollover Balance without summing balances across months. Envelope mode uses allocation language (Current Balance, Planned Balance, Assigned / Budgeted, Spent to date, Carryover where available) and never sums balances across months.
+- **Category or group month cell selected**: the panel switches to compact selected-month details. Tracking shows month status, budgeted, actuals, variance, rollover balance when applicable, and previous month budget when available; future months are plan-only and do not show fake under-plan results. Envelope shows Current Balance for actualized/current months, Planned Balance for future months, selected-month assigned/spent/balance, and carryover where available.
+- **Staged Changes** appears only when staged edits affect the visible period and current selection. Month-cell selections scope staged impact to the selected month and row. Tracking shows budget plan impact; Envelope shows Estimated To Budget impact and notes that final balances recalculate after save.
 
 ### Clipboard Paste
 - Paste tab-delimited data from spreadsheets into the grid starting from the top-left selected cell; fills the corresponding rectangle without requiring pre-selection of exact dimensions

@@ -7,7 +7,7 @@ import {
 } from "../../context/MonthsDataContext";
 import { formatSummary } from "../../lib/format";
 import type { BudgetMonthSummary, LoadedMonthState } from "../../types";
-import { HoldToggleButton } from "./HoldToggle";
+import { FreeHeldAmountButton, HoldMoneyButton } from "./HoldToggle";
 
 // ─── Config type ──────────────────────────────────────────────────────────────
 
@@ -31,8 +31,8 @@ export type SummaryRowConfig = {
   rowHeight?: string;
   /** Suppress the top border that normally appears on non-sub, non-bar rows. */
   noBorder?: boolean;
-  /** Renders a per-month hold toggle button inside the cell (envelope "To Budget" row). */
-  isHoldCell?: boolean;
+  /** Renders a per-month hold/free action inside the envelope summary cell. */
+  holdAction?: "set" | "free";
   /** When true, the per-month value is rendered larger and bold so the row's
    *  bottom-line total stands out (e.g. tracking "Balance", envelope "To Budget"). */
   emphasizeValue?: boolean;
@@ -116,11 +116,12 @@ export const ENVELOPE_SUMMARY_ROWS: SummaryRowConfig[] = [
     operator: "−",
   },
   {
-    label: "For next month",
-    getValue: (s) => (s.forNextMonth <= 0 ? 0 : -Math.abs(s.forNextMonth)),
+    label: "Hold for next month",
+    getValue: (s) => (s.forNextMonth <= 0 ? 0 : Math.abs(s.forNextMonth)),
     colorClass: () => "text-foreground/75",
     isSubRow: true,
     operator: "−",
+    holdAction: "free",
   },
   {
     // Row-header (left column) only: dual-color "To Budget / Overbudget"
@@ -129,10 +130,10 @@ export const ENVELOPE_SUMMARY_ROWS: SummaryRowConfig[] = [
     label: TO_BUDGET_OVERBUDGET_LABEL,
     getValue: (s) => s.toBudget,
     colorClass: (s) =>
-      s.toBudget <= 0 ? "text-destructive" : "text-emerald-600 dark:text-emerald-400",
+      s.toBudget < 0 ? "text-destructive" : "text-emerald-600 dark:text-emerald-400",
     operator: "=",
     noBorder: true,
-    isHoldCell: true,
+    holdAction: "set",
     emphasizeValue: true,
   },
 ];
@@ -261,22 +262,32 @@ function SummaryHeaderCell({
   // `text-[11px]` from the parent cell.
   const valueClass = config.emphasizeValue ? "text-[13px] font-bold" : "";
 
-  if (config.isHoldCell) {
+  if (config.holdAction) {
+    const showBalanced = config.holdAction === "set" && value === 0;
     return (
       <div
-        className={`${rowH} px-1.5 flex items-center gap-1 bg-transparent font-sans tabular-nums leading-tight text-[11px] ${borderClass} ${colorClass}`}
+        className={`${rowH} px-1.5 flex items-center justify-end gap-1 bg-transparent font-sans tabular-nums leading-tight text-[11px] ${borderClass} ${colorClass}`}
       >
-        <HoldToggleButton
-          month={month}
-          forNextMonth={data.summary.forNextMonth}
-          toBudget={data.summary.toBudget}
-        />
         <div className="flex flex-col items-end flex-1 min-w-0">
           {dynamicLabel && (
             <span className="text-[9px] font-semibold leading-none mb-0.5">{dynamicLabel}</span>
           )}
-          <span className={valueClass}>{formatSummary(value)}</span>
+          <span className={valueClass}>
+            {showBalanced ? `✓ ${formatSummary(value)}` : formatSummary(value)}
+          </span>
         </div>
+        {config.holdAction === "set" ? (
+          <HoldMoneyButton
+            month={month}
+            forNextMonth={data.summary.forNextMonth}
+            toBudget={data.summary.toBudget}
+          />
+        ) : (
+          <FreeHeldAmountButton
+            month={month}
+            forNextMonth={data.summary.forNextMonth}
+          />
+        )}
       </div>
     );
   }

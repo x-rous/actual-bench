@@ -53,7 +53,7 @@ export function BudgetManagementView() {
   const hasBudgetPendingEdits = Object.keys(edits).length > 0;
   const hasPushedNavigationGuard = useRef(false);
 
-  // Keep display window in store so BudgetDraftPanel can show year summary without props.
+  // Keep display window in store so BudgetDraftPanel can show period details without props.
   useEffect(() => {
     setDisplayMonths(activeMonths);
   }, [activeMonths, setDisplayMonths]);
