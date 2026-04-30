@@ -39,6 +39,11 @@ import { useBudgetEditsStore } from "@/store/budgetEdits";
 import { useBudgetSavePipeline } from "./useBudgetSavePipeline";
 import { useBudgetSave } from "@/features/budget-management/hooks/useBudgetSave";
 import { BudgetSaveProgressDialog } from "@/features/budget-management/components/BudgetSaveProgressDialog";
+import { BudgetSaveReviewDialog } from "@/features/budget-management/components/BudgetSaveReviewDialog";
+import {
+  readBudgetSaveReviewSkip,
+  writeBudgetSaveReviewSkip,
+} from "@/features/budget-management/lib/budgetSaveReview";
 import type { BudgetCellKey, StagedBudgetEdit } from "@/features/budget-management/types";
 
 type PendingAction =
@@ -77,6 +82,10 @@ export function TopBar() {
   const queryClient = useQueryClient();
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
+  const [budgetSaveReviewSkipped, setBudgetSaveReviewSkipped] = useState(
+    () => readBudgetSaveReviewSkip()
+  );
+  const [budgetSaveReviewEdits, setBudgetSaveReviewEdits] = useState<Record<BudgetCellKey, StagedBudgetEdit> | null>(null);
   const [budgetSaveEdits, setBudgetSaveEdits] = useState<Record<BudgetCellKey, StagedBudgetEdit> | null>(null);
 
   const activeInstance = useConnectionStore(selectActiveInstance);
@@ -104,7 +113,7 @@ export function TopBar() {
   const budgetUndo = useBudgetEditsStore((s) => s.undo);
   const budgetRedo = useBudgetEditsStore((s) => s.redo);
   const budgetDiscardAll = useBudgetEditsStore((s) => s.discardAll);
-  const { save: saveBudgetCells, isSaving: isBudgetSaving } = useBudgetSave();
+  const { isSaving: isBudgetSaving } = useBudgetSave();
 
   // Route-aware resolution
   const isBudgetPage = pathname?.startsWith("/budget-management") ?? false;
@@ -112,6 +121,8 @@ export function TopBar() {
   const canUndo = isBudgetPage ? budgetCanUndo : stagedCanUndo;
   const canRedo = isBudgetPage ? budgetCanRedo : stagedCanRedo;
   const isSaving = isBudgetPage ? (isBudgetSaving || budgetSaveEdits !== null) : isEntitySaving;
+  const saveDisabled =
+    !hasChanges || isSaving || (isBudgetPage && budgetSaveReviewEdits !== null);
 
   function handleDiscardAll() {
     if (isBudgetPage) {
@@ -162,28 +173,15 @@ export function TopBar() {
   async function handleSave() {
     if (isBudgetPage) {
       const edits = useBudgetEditsStore.getState().edits;
-      const editCount = Object.keys(edits).length;
-      if (editCount > 1) {
-        // Multi-edit: open progress dialog — it handles save internally
-        setBudgetSaveEdits({ ...edits });
+      const editSnapshot = { ...edits };
+      if (Object.keys(editSnapshot).length === 0) return;
+
+      if (budgetSaveReviewSkipped) {
+        setBudgetSaveEdits(editSnapshot);
         return;
       }
-      // Single edit: inline save with toast
-      try {
-        const results = await saveBudgetCells(edits);
-        const succeeded = results.filter((r) => r.status === "success").length;
-        const failed = results.filter((r) => r.status === "error").length;
-        if (failed === 0) {
-          toast.success(
-            `Saved ${succeeded} budget cell${succeeded !== 1 ? "s" : ""} successfully.`
-          );
-        } else {
-          toast.error(`${succeeded} saved, ${failed} failed.`);
-        }
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : "Budget save failed.";
-        toast.error(msg);
-      }
+
+      setBudgetSaveReviewEdits(editSnapshot);
     } else {
       try {
         const { totalSucceeded, totalFailed } = await saveAll();
@@ -229,6 +227,12 @@ export function TopBar() {
     }
     setIsRefreshing(true);
     queryClient.invalidateQueries().then(() => setIsRefreshing(false));
+  }
+
+  function handleResetBudgetSaveReview() {
+    writeBudgetSaveReviewSkip(false);
+    setBudgetSaveReviewSkipped(false);
+    toast.success("Budget save review re-enabled.");
   }
 
   return (
@@ -350,13 +354,25 @@ export function TopBar() {
             Discard
           </Button>
 
+          {isBudgetPage && budgetSaveReviewSkipped && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 text-xs"
+              onClick={handleResetBudgetSaveReview}
+              title="Show the budget save review dialog before saving again"
+            >
+              Reset review
+            </Button>
+          )}
+
           <Button
             size="sm"
             className={cn(
               "h-7 text-xs bg-action text-action-foreground hover:bg-action-hover",
               hasChanges && !isSaving && "ring-2 ring-offset-1 ring-action/50"
             )}
-            disabled={!hasChanges || isSaving}
+            disabled={saveDisabled}
             onClick={handleSave}
           >
             <Save className="mr-1 h-3.5 w-3.5" />
@@ -364,6 +380,23 @@ export function TopBar() {
           </Button>
         </div>
       </header>
+
+      {budgetSaveReviewEdits !== null && (
+        <BudgetSaveReviewDialog
+          edits={budgetSaveReviewEdits}
+          onCancel={() => {
+            setBudgetSaveReviewEdits(null);
+          }}
+          onConfirm={(skipReviewNextTime) => {
+            if (skipReviewNextTime) {
+              writeBudgetSaveReviewSkip(true);
+              setBudgetSaveReviewSkipped(true);
+            }
+            setBudgetSaveEdits(budgetSaveReviewEdits);
+            setBudgetSaveReviewEdits(null);
+          }}
+        />
+      )}
 
       {budgetSaveEdits !== null && (
         <BudgetSaveProgressDialog

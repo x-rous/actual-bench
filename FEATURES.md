@@ -228,6 +228,7 @@ Spreadsheet-grade keyboard support — every shortcut is data-driven from a sing
 
 **View & visibility:**
 - `V` — cycle Budget → Actuals → Balance
+- `F` — open Jump to Category search; selecting a match scrolls and focuses that category in the current month, including hidden categories and collapsed groups
 - `H` — toggle hidden categories
 - `E` / `Shift+E` — expand all / collapse all groups
 - `[` / `]` — pan the visible 12-month window backward / forward by one month
@@ -243,7 +244,7 @@ Spreadsheet-grade keyboard support — every shortcut is data-driven from a sing
 **Help:**
 - `?` (or `F1`, `Ctrl/Cmd+/`, or the toolbar Shortcuts button) opens a two-column cheatsheet modal generated directly from the keymap — adding a future shortcut surfaces it here automatically. Renders `⌘`/`⌥`/`⇧` glyphs on macOS and `Ctrl`/`Alt`/`Shift` text elsewhere
 
-Bare-letter shortcuts (`V`, `H`, `E`, `[`, `]`) are scoped so they never fire while typing in a cell input.
+Bare-letter shortcuts (`V`, `F`, `H`, `E`, `[`, `]`) are scoped so they never fire while typing in a cell input or modal search field.
 
 ### Right-Click Context Menu
 - Right-clicking any category budget cell opens a compact context menu with two sections:
@@ -263,8 +264,8 @@ Bare-letter shortcuts (`V`, `H`, `E`, `[`, `]`) are scoped so they never fire wh
 - Paste tab-delimited data from spreadsheets into the grid starting from the top-left selected cell; fills the corresponding rectangle without requiring pre-selection of exact dimensions
 
 ### Save Flow
-- **Single edit**: clicking Save in the top bar sends one `PATCH /months/{month}/categories/{id}` and shows a toast with the result
-- **Multiple edits**: clicking Save opens a non-dismissable progress dialog that sends one `PATCH` per cell sequentially (never in parallel) to avoid server race conditions
+- Clicking Save first opens a compact review summary grouped by month with total change count, affected month count, and net budget delta; users can skip this review on future saves
+- Confirming the review opens a non-dismissable progress dialog that sends one `PATCH` per cell sequentially (never in parallel) to avoid server race conditions
   - In-progress state: "Saving budget changes — N of M cells saved…" with a live progress bar
   - All-success state: cell count and affected months; dialog auto-closes after 3 seconds (manual close also available)
   - Partial or full failure state: amber header with a scrollable list of failed cells (month / category ID / error message); "Retry Failed" button re-reads only the still-failed keys from the store and re-sends them

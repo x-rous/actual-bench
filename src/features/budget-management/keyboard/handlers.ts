@@ -147,6 +147,7 @@ export const WORKSPACE_HANDLERS: Partial<Record<ActionId, ActionHandler<Workspac
   "view.collapse-all":        (_e, ctx) => ctx.collapseAll(),
   "view.pan-months-prev":     (_e, ctx) => ctx.panMonthsPrev(),
   "view.pan-months-next":     (_e, ctx) => ctx.panMonthsNext(),
+  "view.open-category-search":(_e, ctx) => ctx.openCategorySearch(),
   "selection.toggle-carryover": (_e, ctx) => ctx.toggleCarryoverForSelection(),
   "help.open-shortcuts":        (_e, ctx) => ctx.openShortcutsHelp(),
 };
