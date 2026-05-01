@@ -6,6 +6,15 @@ import {
   useRawMonthFromContext,
 } from "../../context/MonthsDataContext";
 import { formatSummary } from "../../lib/format";
+import {
+  getTrackingExpenseVariance,
+  getTrackingExpenseVarianceLabel,
+  getTrackingExpenseVarianceTooltip,
+  getTrackingResultLabel,
+  getTrackingResultTooltip,
+  getTrackingResultValue,
+  getTrackingSummaryTotals,
+} from "../../lib/trackingSummary";
 import type { BudgetMonthSummary, LoadedMonthState } from "../../types";
 import { FreeHeldAmountButton, HoldMoneyButton } from "./HoldToggle";
 
@@ -15,10 +24,29 @@ export type SummaryRowConfig = {
   /** Row-header label. ReactNode so configs can supply rich (multi-color) labels. */
   label: ReactNode;
   /** Per-cell mini-label rendered above the value. */
-  dynamicLabel?: (s: BudgetMonthSummary) => ReactNode;
+  dynamicLabel?: (
+    s: BudgetMonthSummary,
+    state: LoadedMonthState,
+    month: string
+  ) => ReactNode;
   getDynamicRowLabel?: (s: BudgetMonthSummary) => ReactNode;
-  getValue: (s: BudgetMonthSummary) => number;
-  colorClass?: (s: BudgetMonthSummary) => string;
+  getValue: (
+    s: BudgetMonthSummary,
+    state: LoadedMonthState,
+    month: string
+  ) => number | null;
+  tooltip?: (
+    s: BudgetMonthSummary,
+    state: LoadedMonthState,
+    month: string,
+    value: number | null
+  ) => string;
+  colorClass?: (
+    s: BudgetMonthSummary,
+    state: LoadedMonthState,
+    month: string,
+    value: number | null
+  ) => string;
   isConsumptionBar?: boolean;
   getActual?: (s: BudgetMonthSummary, state: LoadedMonthState) => number;
   getTarget?: (s: BudgetMonthSummary, state: LoadedMonthState) => number;
@@ -37,6 +65,8 @@ export type SummaryRowConfig = {
    *  bottom-line total stands out (e.g. tracking "Balance", envelope "To Budget"). */
   emphasizeValue?: boolean;
 };
+
+const INCOME_BAR_GREEN_THRESHOLD = 0.995;
 
 /**
  * Static dual-color label rendered for the envelope "To Budget / Overbudget"
@@ -60,31 +90,41 @@ export const TRACKING_SUMMARY_ROWS: SummaryRowConfig[] = [
     getValue: (s) => s.totalSpent,
     isConsumptionBar: true,
     barMode: "expense",
-    getActual: (s) => Math.abs(s.totalSpent),
+    getActual: (_s, state) => getTrackingSummaryTotals(state).expenseActuals,
     getTarget: (_s, state) =>
-      state.groupOrder
-        .map((id) => state.groupsById[id]!)
-        .filter((g) => !g.isIncome && !g.hidden)
-        .reduce((sum, g) => sum + Math.abs(g.budgeted), 0),
+      getTrackingSummaryTotals(state).expenseBudgeted,
   },
   {
     label: "Income",
     getValue: (s) => s.totalIncome,
     isConsumptionBar: true,
     barMode: "income",
-    getActual: (s) => s.totalIncome,
+    getActual: (_s, state) => getTrackingSummaryTotals(state).incomeActuals,
     getTarget: (_s, state) =>
-      state.groupOrder
-        .map((id) => state.groupsById[id]!)
-        .filter((g) => g.isIncome && !g.hidden)
-        .reduce((sum, g) => sum + g.budgeted, 0),
+      getTrackingSummaryTotals(state).incomeBudgeted,
   },
   {
-    label: "Balance",
-    dynamicLabel: (s) => (s.totalBalance >= 0 ? "Savings" : "Overspent"),
-    getValue: (s) => s.totalBalance,
-    colorClass: (s) =>
-      s.totalBalance >= 0
+    label: "Expense Variance",
+    dynamicLabel: (_s, state, month) =>
+      getTrackingExpenseVarianceLabel(state, month),
+    getValue: (_s, state, month) =>
+      getTrackingExpenseVariance(state, month),
+    tooltip: (_s, state, month) =>
+      getTrackingExpenseVarianceTooltip(state, month),
+    colorClass: (_s, _state, _month, value) =>
+      value == null
+        ? "text-muted-foreground"
+        : value >= 0
+        ? "text-emerald-600 dark:text-emerald-400"
+        : "text-destructive",
+  },
+  {
+    label: "Result",
+    dynamicLabel: (_s, state, month) => getTrackingResultLabel(state, month),
+    getValue: (_s, state, month) => getTrackingResultValue(state, month),
+    tooltip: (_s, state, month) => getTrackingResultTooltip(state, month),
+    colorClass: (_s, _state, _month, value) =>
+      (value ?? 0) >= 0
         ? "text-emerald-600 dark:text-emerald-400"
         : "text-destructive",
     rowHeight: "h-10",
@@ -160,7 +200,7 @@ function ConsumptionBarCell({
     ? ratio <= 1
       ? "bg-emerald-500"
       : "bg-red-500"
-    : ratio >= 1
+    : ratio >= INCOME_BAR_GREEN_THRESHOLD
     ? "bg-emerald-500"
     : "bg-amber-400";
 
@@ -254,26 +294,39 @@ function SummaryHeaderCell({
 
   if (!data) return <div className={`${rowH} bg-transparent ${borderClass}`} />;
 
-  const value = config.getValue(data.summary);
-  const dynamicLabel = config.dynamicLabel ? config.dynamicLabel(data.summary) : null;
-  const colorClass = config.colorClass ? config.colorClass(data.summary) : "text-foreground/75";
+  const value = config.getValue(data.summary, data, month);
+  const dynamicLabel = config.dynamicLabel
+    ? config.dynamicLabel(data.summary, data, month)
+    : null;
+  const colorClass = config.colorClass
+    ? config.colorClass(data.summary, data, month, value)
+    : "text-foreground/75";
+  const tooltip = config.tooltip
+    ? config.tooltip(data.summary, data, month, value)
+    : undefined;
   // Emphasised rows render the number a touch larger and bold so totals
   // stand out from the sub-rows above. Other rows keep the inherited
   // `text-[11px]` from the parent cell.
   const valueClass = config.emphasizeValue ? "text-[13px] font-bold" : "";
 
   if (config.holdAction) {
-    const showBalanced = config.holdAction === "set" && value === 0;
+    const numericValue = value ?? 0;
+    const showBalanced = config.holdAction === "set" && numericValue === 0;
     return (
       <div
         className={`${rowH} px-1.5 flex items-center justify-end gap-1 bg-transparent font-sans tabular-nums leading-tight text-[11px] ${borderClass} ${colorClass}`}
+        title={tooltip}
       >
         <div className="flex flex-col items-end flex-1 min-w-0">
           {dynamicLabel && (
-            <span className="text-[9px] font-semibold leading-none mb-0.5">{dynamicLabel}</span>
+            <span className="max-w-full truncate text-[9px] font-semibold leading-none mb-0.5">
+              {dynamicLabel}
+            </span>
           )}
           <span className={valueClass}>
-            {showBalanced ? `✓ ${formatSummary(value)}` : formatSummary(value)}
+            {showBalanced
+              ? `✓ ${formatSummary(numericValue)}`
+              : formatSummary(numericValue)}
           </span>
         </div>
         {config.holdAction === "set" ? (
@@ -295,11 +348,16 @@ function SummaryHeaderCell({
   return (
     <div
       className={`${rowH} px-2 flex flex-col items-end justify-center bg-transparent font-sans tabular-nums leading-tight text-[11px] ${borderClass} ${colorClass}`}
+      title={tooltip}
     >
       {dynamicLabel && (
-        <span className="text-[9px] font-semibold leading-none mb-0.5">{dynamicLabel}</span>
+        <span className="max-w-full truncate text-[9px] font-semibold leading-none mb-0.5">
+          {dynamicLabel}
+        </span>
       )}
-      <span className={valueClass}>{formatSummary(value)}</span>
+      <span className={valueClass}>
+        {value == null ? "—" : formatSummary(value)}
+      </span>
     </div>
   );
 }

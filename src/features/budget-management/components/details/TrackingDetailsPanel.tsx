@@ -17,6 +17,25 @@ function toneFromValue(value: number) {
   return "neutral" as const;
 }
 
+const PERIOD_TOOLTIP = {
+  incomeReceived:
+    "Sum of income received in actualized months and the current partial month.",
+  expensesSpent:
+    "Sum of expenses spent in actualized months and the current partial month.",
+  actualResult: "Income received minus expenses spent.",
+  incomeBudgetedToDate:
+    "Sum of income budgeted in actualized months and the current partial month.",
+  expensesBudgetedToDate:
+    "Sum of expenses budgeted in actualized months and the current partial month.",
+  expenseVariance:
+    "Expenses budgeted to date minus expenses spent to date. Positive means under expense plan.",
+  netPlanVariance:
+    "Actual result so far minus planned result to date: (income received - expenses spent) - (income budgeted - expenses budgeted).",
+  fullIncomeBudget: "Sum of income budgeted across the visible 12 months.",
+  fullExpenseBudget: "Sum of expenses budgeted across the visible 12 months.",
+  plannedResult: "Full-period income budgeted minus expenses budgeted.",
+} as const;
+
 export function TrackingDetailsPanel({
   metrics,
 }: {
@@ -95,15 +114,18 @@ export function TrackingDetailsPanel({
           <MetricLine
             label="Income received"
             value={formatSigned(metrics.periodActuals.incomeReceived)}
+            tooltip={PERIOD_TOOLTIP.incomeReceived}
           />
           <MetricLine
             label="Expenses spent"
             value={formatSigned(metrics.periodActuals.expensesSpent)}
+            tooltip={PERIOD_TOOLTIP.expensesSpent}
           />
           <MetricLine
             label="Result"
             value={formatDelta(metrics.periodActuals.result)}
             tone={toneFromValue(metrics.periodActuals.result)}
+            tooltip={PERIOD_TOOLTIP.actualResult}
           />
         </DetailsSection>
       )}
@@ -113,15 +135,24 @@ export function TrackingDetailsPanel({
           <MetricLine
             label="Income budgeted"
             value={formatSigned(metrics.periodBudgetToDate.incomeBudgeted)}
+            tooltip={PERIOD_TOOLTIP.incomeBudgetedToDate}
           />
           <MetricLine
             label="Expenses budgeted"
             value={formatSigned(metrics.periodBudgetToDate.expensesBudgeted)}
+            tooltip={PERIOD_TOOLTIP.expensesBudgetedToDate}
           />
           <MetricLine
-            label="Plan variance"
-            value={formatDelta(metrics.periodBudgetToDate.planVariance)}
-            tone={toneFromValue(metrics.periodBudgetToDate.planVariance)}
+            label="Expense variance"
+            value={formatDelta(metrics.periodBudgetToDate.expenseVariance)}
+            tone={toneFromValue(metrics.periodBudgetToDate.expenseVariance)}
+            tooltip={PERIOD_TOOLTIP.expenseVariance}
+          />
+          <MetricLine
+            label="Net plan variance"
+            value={formatDelta(metrics.periodBudgetToDate.netPlanVariance)}
+            tone={toneFromValue(metrics.periodBudgetToDate.netPlanVariance)}
+            tooltip={PERIOD_TOOLTIP.netPlanVariance}
           />
         </DetailsSection>
       )}
@@ -131,15 +162,18 @@ export function TrackingDetailsPanel({
           <MetricLine
             label="Income budgeted"
             value={formatSigned(metrics.periodFullPlan.incomeBudgeted)}
+            tooltip={PERIOD_TOOLTIP.fullIncomeBudget}
           />
           <MetricLine
             label="Expenses budgeted"
             value={formatSigned(metrics.periodFullPlan.expensesBudgeted)}
+            tooltip={PERIOD_TOOLTIP.fullExpenseBudget}
           />
           <MetricLine
             label="Planned result"
             value={formatDelta(metrics.periodFullPlan.plannedResult)}
             tone={toneFromValue(metrics.periodFullPlan.plannedResult)}
+            tooltip={PERIOD_TOOLTIP.plannedResult}
           />
         </DetailsSection>
       )}

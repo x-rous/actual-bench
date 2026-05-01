@@ -54,6 +54,17 @@ describe("budgetEdits store — patch-based undo/redo (BM-19)", () => {
       expect(useBudgetEditsStore.getState().edits[key("2026-01", "c1")]?.nextBudgeted).toBe(1500);
     });
 
+    it("does not push a duplicate undo step for an identical edit", () => {
+      const e = edit("2026-01", "c1", 1500, 1000);
+      useBudgetEditsStore.getState().stageEdit(e);
+      useBudgetEditsStore.getState().stageEdit(e);
+
+      expect(useBudgetEditsStore.getState().undoStack).toHaveLength(1);
+
+      useBudgetEditsStore.getState().undo();
+      expect(useBudgetEditsStore.getState().edits[key("2026-01", "c1")]).toBeUndefined();
+    });
+
     it("redo replays a previously undone edit", () => {
       const e = edit("2026-01", "c1", 1500, 1000);
       useBudgetEditsStore.getState().stageEdit(e);
@@ -109,6 +120,18 @@ describe("budgetEdits store — patch-based undo/redo (BM-19)", () => {
     it("ignores empty bulk arrays without polluting the undo stack", () => {
       useBudgetEditsStore.getState().stageBulkEdits([]);
       expect(useBudgetEditsStore.getState().undoStack).toHaveLength(0);
+    });
+
+    it("ignores bulk edits that do not change the staged state", () => {
+      const first = edit("2026-01", "c1", 100, 0);
+      const second = edit("2026-02", "c2", 200, 0);
+      useBudgetEditsStore.getState().stageBulkEdits([first, second]);
+      useBudgetEditsStore.getState().stageBulkEdits([first, second]);
+
+      expect(useBudgetEditsStore.getState().undoStack).toHaveLength(1);
+
+      useBudgetEditsStore.getState().undo();
+      expect(Object.keys(useBudgetEditsStore.getState().edits)).toHaveLength(0);
     });
   });
 

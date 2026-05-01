@@ -179,7 +179,7 @@ A multi-month budget editing workspace with staged cell editing, a draft review 
 - Group rows show aggregate totals per month; collapsed groups hide their category rows but keep the group total visible
 - Mode-specific summary section above the category groups:
   - **Envelope mode**: Available Funds (+), Overspent Last Month (−), Budgeted (−), For Next Month (−), and a **To Budget / Overbudget** (=) total row
-  - **Tracking mode**: Expenses consumption bar, Income consumption bar, and a Balance row
+  - **Tracking mode**: Expenses and Income consumption bars, an Expense Variance row for actual spending vs budgeted expenses, and a Result row that shows actual saved/overspent amounts for actualized months and projected results for current/future months
 - The 12-month window defaults to January of the current year; the user can navigate freely to any period
 
 ### Staged Cell Editing

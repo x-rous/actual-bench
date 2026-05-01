@@ -32,6 +32,7 @@ type Props = {
   groupSelection?: { groupId: string; month: string } | null;
   /** Whole-row selection on the first column (category or group label). */
   rowSelection?: RowSelection | null;
+  readOnlyMonths: Set<string>;
   /** Collapse state lifted to BudgetManagementView so toolbar can control it. */
   collapsedGroups: Set<string>;
   onToggleCollapse: (groupId: string) => void;
@@ -83,6 +84,7 @@ export function BudgetGrid({
   selection,
   groupSelection,
   rowSelection,
+  readOnlyMonths,
   collapsedGroups,
   onToggleCollapse,
   showHidden,
@@ -222,6 +224,7 @@ export function BudgetGrid({
     selection,
     groupSelection,
     rowSelection,
+    readOnlyMonths,
     selectionBounds,
     categoryIndexMap,
     categoriesById,

@@ -111,7 +111,8 @@ export type TrackingDetailsMetrics = {
   periodBudgetToDate?: {
     incomeBudgeted: number;
     expensesBudgeted: number;
-    planVariance: number;
+    expenseVariance: number;
+    netPlanVariance: number;
   };
   periodFullPlan?: {
     incomeBudgeted: number;
@@ -796,7 +797,8 @@ export function buildTrackingDetailsMetrics(
 
   const actualResult = incomeActuals - expenseActuals;
   const plannedToDate = incomeBudgetToDate - expenseBudgetToDate;
-  const planVariance = actualResult - plannedToDate;
+  const expenseVariance = expenseBudgetToDate - expenseActuals;
+  const netPlanVariance = actualResult - plannedToDate;
   const plannedResult = fullIncomeBudget - fullExpenseBudget;
 
   return {
@@ -830,7 +832,8 @@ export function buildTrackingDetailsMetrics(
     periodBudgetToDate: {
       incomeBudgeted: incomeBudgetToDate,
       expensesBudgeted: expenseBudgetToDate,
-      planVariance,
+      expenseVariance,
+      netPlanVariance,
     },
     periodFullPlan: {
       incomeBudgeted: fullIncomeBudget,

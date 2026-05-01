@@ -9,6 +9,7 @@ type Props = {
   selection: BudgetCellSelection;
   activeMonths: string[];
   categories: LoadedCategory[];
+  readOnlyMonths?: Set<string>;
   /** Map of month → category list for that month (for copy-from-month operations) */
   monthDataMap: Record<string, LoadedCategory[]>;
   onClose: () => void;
@@ -40,6 +41,7 @@ export function BulkActionDialog({
   selection,
   activeMonths,
   categories,
+  readOnlyMonths,
   monthDataMap,
   onClose,
   initialAction,
@@ -86,7 +88,8 @@ export function BulkActionDialog({
       return;
     }
 
-    const rows = preview(action, selection, activeMonths, categories, monthDataMap, params);
+    const rows = preview(action, selection, activeMonths, categories, monthDataMap, params)
+      ?.filter((row) => !readOnlyMonths?.has(row.month));
     if (!rows || rows.length === 0) {
       setParamError("No cells would be changed by this action.");
       return;

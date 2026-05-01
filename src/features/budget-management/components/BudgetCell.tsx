@@ -33,6 +33,8 @@ type Props = {
   onContextMenuRequest?: (catId: string, month: string, carryover: boolean, x: number, y: number) => void;
   /** When true, renders the cell at 50% opacity (hidden category/group shown). */
   isDimmed?: boolean;
+  /** Historical month missing from the API; visible for context but not editable. */
+  isReadOnlyMonth?: boolean;
 };
 
 /** BM-16: minimum pointer travel (CSS px) before treating a drag as range-select. */
@@ -60,6 +62,7 @@ export function BudgetCell({
   suppressNextClickRef,
   onContextMenuRequest,
   isDimmed,
+  isReadOnlyMonth = false,
 }: Props) {
   const dimClass = isDimmed ? " opacity-50" : "";
   const key: BudgetCellKey = `${month}:${category.id}`;
@@ -73,6 +76,7 @@ export function BudgetCell({
   // runs once per month at the provider level, not per cell.
   const effectiveData = useEffectiveMonthFromContext(month);
   const effectiveCategory = effectiveData?.categoriesById[category.id] ?? category;
+  const hasMonthData = effectiveData != null;
 
   const currentBudgeted = effectiveCategory.budgeted;
   const blocked = isIncomeBlocked(category, budgetMode);
@@ -98,7 +102,7 @@ export function BudgetCell({
   const inputRef = useRef<HTMLInputElement>(null);
 
   const enterEdit = (initialValue?: string) => {
-    if (blocked || viewBlocked || editing) return;
+    if (isReadOnlyMonth || blocked || viewBlocked || editing) return;
     setInputValue(initialValue ?? formatMinor(currentBudgeted));
     setInputError(null);
     setEditing(true);
@@ -148,6 +152,7 @@ export function BudgetCell({
   };
 
   const clearValue = () => {
+    if (isReadOnlyMonth) return;
     if (currentBudgeted === 0) return;
     const originalValue = stagedEdit?.previousBudgeted ?? effectiveCategory.budgeted;
     if (originalValue === 0) {
@@ -171,7 +176,7 @@ export function BudgetCell({
   });
 
   const handleCellKeyDown = useCellKeymap({
-    blocked,
+    blocked: blocked || isReadOnlyMonth,
     viewBlocked,
     navigate: (dir: NavDirection) => onNavigate?.(dir),
     enterEdit,
@@ -249,7 +254,7 @@ export function BudgetCell({
     }
     if (e.shiftKey) {
       onRangeSelect(category.id, month);
-    } else {
+    } else if (!isReadOnlyMonth) {
       // Anchor was already set in mousedown; just open the editor.
       enterEdit();
     }
@@ -257,6 +262,7 @@ export function BudgetCell({
 
   const handleContextMenu = (e: React.MouseEvent) => {
     e.preventDefault();
+    if (isReadOnlyMonth) return;
     onContextMenuRequest?.(category.id, month, effectiveCategory.carryover, e.clientX, e.clientY);
   };
 
@@ -276,15 +282,21 @@ export function BudgetCell({
 
   // Hover tooltip: show spent/balance when in budgeted view (they aren't directly visible).
   const hoverTitle =
-    cellView === "budgeted"
+    isReadOnlyMonth && !hasMonthData
+      ? "No budget exists for this past month; budget cells are read-only."
+      : cellView === "budgeted"
       ? `Spent: ${formatMinor(effectiveCategory.actuals)} | Balance: ${formatMinor(effectiveCategory.balance)}`
       : undefined;
 
   // ─── Blocked / read-only cell ────────────────────────────────────────────────
-  if (blocked || viewBlocked) {
-    const blockedLabel = blocked
+  if (blocked || viewBlocked || isReadOnlyMonth) {
+    const blockedLabel = isReadOnlyMonth
+      ? `${category.name} budget for ${month} - no budget exists for this past month`
+      : blocked
       ? `${category.name} budget for ${month} — income editing blocked in envelope mode`
       : `${category.name} ${cellView} for ${month}`;
+    const displayText =
+      isReadOnlyMonth && !hasMonthData ? "--" : formatMinor(displayMinor);
 
     let blockedCellClass =
       "relative h-7 px-2 flex items-center justify-end text-xs font-sans tabular-nums select-none outline-none border-r border-b border-border/50 cursor-not-allowed";
@@ -297,7 +309,7 @@ export function BudgetCell({
         role="gridcell"
         aria-label={blockedLabel}
         aria-readonly="true"
-        aria-disabled={blocked ? "true" : undefined}
+        aria-disabled={blocked || isReadOnlyMonth ? "true" : undefined}
         onPointerDown={handlePointerDown}
         onPointerEnter={handlePointerEnter}
         onPointerUp={handlePointerUp}
@@ -312,14 +324,16 @@ export function BudgetCell({
         {carryoverIndicator}
         <span
           className={
-            cellView === "balance" && displayMinor < 0
+            isReadOnlyMonth && !hasMonthData
+              ? "text-muted-foreground"
+              : cellView === "balance" && displayMinor < 0
               ? "text-destructive"
               : cellView === "spent"
               ? "text-foreground"
               : "text-muted-foreground"
           }
         >
-          {formatMinor(displayMinor)}
+          {displayText}
         </span>
       </div>
     );

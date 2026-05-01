@@ -66,15 +66,25 @@ export function MetricLine({
   label,
   value,
   tone = "neutral",
+  tooltip,
 }: {
   label: string;
   value: string;
   tone?: DetailsTone;
+  tooltip?: string;
 }) {
   return (
-    <div className="flex justify-between items-baseline gap-2">
-      <span className="text-muted-foreground shrink-0 text-[11px]">{label}</span>
-      <span className={`font-sans tabular-nums text-right text-[11px] ${toneClass(tone)}`}>
+    <div className="flex justify-between items-baseline gap-2" title={tooltip}>
+      <span
+        className={`text-muted-foreground shrink-0 text-[11px]${
+          tooltip ? " cursor-help" : ""
+        }`}
+      >
+        {label}
+      </span>
+      <span
+        className={`font-sans tabular-nums text-right text-[11px] ${toneClass(tone)}`}
+      >
         {value}
       </span>
     </div>

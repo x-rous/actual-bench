@@ -66,6 +66,30 @@ type ApiMonthResponse = {
   };
 };
 
+export function getMonthDataErrorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (typeof error === "string") return error;
+  if (error && typeof error === "object" && "message" in error) {
+    const message = (error as { message?: unknown }).message;
+    if (typeof message === "string") return message;
+  }
+  return "Unknown error";
+}
+
+export function isMissingBudgetMonthError(
+  error: unknown,
+  month?: string
+): boolean {
+  if (!error || typeof error !== "object") return false;
+  const status = (error as { status?: unknown }).status;
+  const message = getMonthDataErrorMessage(error);
+  return (
+    status === 404 &&
+    message.startsWith("No budget exists for month:") &&
+    (!month || message.includes(month))
+  );
+}
+
 export function budgetMonthDataQueryOptions(
   connection: ReturnType<typeof selectActiveInstance>,
   month: string | null | undefined

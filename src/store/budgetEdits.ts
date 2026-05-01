@@ -14,6 +14,22 @@ function makeKey(edit: StagedBudgetEdit): BudgetCellKey {
   return `${edit.month}:${edit.categoryId}`;
 }
 
+function sameEdit(
+  a: StagedBudgetEdit | undefined,
+  b: StagedBudgetEdit | undefined
+): boolean {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  return (
+    a.month === b.month &&
+    a.categoryId === b.categoryId &&
+    a.nextBudgeted === b.nextBudgeted &&
+    a.previousBudgeted === b.previousBudgeted &&
+    a.source === b.source &&
+    a.saveError === b.saveError
+  );
+}
+
 /**
  * BM-19: Inverse-patch model for undo/redo.
  *
@@ -106,6 +122,7 @@ export const useBudgetEditsStore = create<BudgetEditsStore>()((set, get) => ({
   stageEdit(edit) {
     const { edits, undoStack } = get();
     const key = makeKey(edit);
+    if (sameEdit(edits[key], edit)) return;
     const patch = buildPatchForChanges(edits, [key]);
     set({
       undoStack: pushPatch(undoStack, patch),
@@ -118,13 +135,15 @@ export const useBudgetEditsStore = create<BudgetEditsStore>()((set, get) => ({
     if (newEdits.length === 0) return;
     const { edits, undoStack } = get();
     const next: Record<BudgetCellKey, StagedBudgetEdit> = { ...edits };
-    const keys: BudgetCellKey[] = [];
+    const keys = new Set<BudgetCellKey>();
     for (const edit of newEdits) {
       const key = makeKey(edit);
-      keys.push(key);
+      keys.add(key);
       next[key] = edit;
     }
-    const patch = buildPatchForChanges(edits, keys);
+    const changedKeys = [...keys].filter((key) => !sameEdit(edits[key], next[key]));
+    if (changedKeys.length === 0) return;
+    const patch = buildPatchForChanges(edits, changedKeys);
     set({
       undoStack: pushPatch(undoStack, patch),
       redoStack: [],

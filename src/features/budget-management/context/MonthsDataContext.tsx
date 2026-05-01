@@ -4,7 +4,10 @@ import { createContext, useContext, useMemo, type ReactNode } from "react";
 import { useQueries } from "@tanstack/react-query";
 import { useConnectionStore, selectActiveInstance } from "@/store/connection";
 import { useBudgetEditsStore } from "@/store/budgetEdits";
-import { budgetMonthDataQueryOptions } from "../lib/monthDataQuery";
+import {
+  budgetMonthDataQueryOptions,
+  isMissingBudgetMonthError,
+} from "../lib/monthDataQuery";
 import { useBudgetMode } from "../hooks/useBudgetMode";
 import { useIncomeBudgets } from "../hooks/useIncomeBudgets";
 import {
@@ -44,6 +47,8 @@ const MonthsDataContext = createContext<MonthsDataContextValue | null>(null);
 type ProviderProps = {
   /** Visible month window (chronological order). */
   months: string[];
+  /** Months the API reports as existing; unavailable months are skipped. */
+  availableMonths?: string[];
   children: ReactNode;
 };
 
@@ -55,15 +60,24 @@ type ProviderProps = {
  * Distributes the result via React Context so per-cell components can read
  * effective data without each subscribing to the full edits map.
  */
-export function MonthsDataProvider({ months, children }: ProviderProps) {
+export function MonthsDataProvider({
+  months,
+  availableMonths,
+  children,
+}: ProviderProps) {
   const connection = useConnectionStore(selectActiveInstance);
   const { data: budgetMode } = useBudgetMode();
   const isTracking = budgetMode === "tracking";
+  const loadableMonths = availableMonths ?? months;
+  const loadableMonthSet = useMemo(
+    () => new Set(loadableMonths),
+    [loadableMonths]
+  );
 
   const queries = useQueries({
     queries: months.map((m) => ({
       ...budgetMonthDataQueryOptions(connection, m),
-      enabled: !!connection && !!m,
+      enabled: !!connection && !!m && loadableMonthSet.has(m),
     })),
   });
 
@@ -102,7 +116,7 @@ export function MonthsDataProvider({ months, children }: ProviderProps) {
       const m = months[i]!;
       const data = dataArr[i];
       const err = errorArr[i];
-      if (err) errors.set(m, err);
+      if (err && !isMissingBudgetMonthError(err, m)) errors.set(m, err);
       if (data) {
         raw.set(m, data);
         const eff = computeEffectiveMonthState({

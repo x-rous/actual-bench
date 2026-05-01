@@ -18,6 +18,50 @@ import type { NavDirection, NavItem } from "../types";
 
 export type CursorPos = { itemIdx: number; monthIdx: number };
 
+function isSkippedMonth(
+  monthIdx: number,
+  skippedMonthIdxs?: ReadonlySet<number>
+): boolean {
+  return monthIdx >= 0 && skippedMonthIdxs?.has(monthIdx) === true;
+}
+
+function findNextNavigableMonth(
+  startMonthIdx: number,
+  step: 1 | -1,
+  lastMonthIdx: number,
+  skippedMonthIdxs?: ReadonlySet<number>
+): number | null {
+  for (
+    let monthIdx = startMonthIdx;
+    monthIdx >= 0 && monthIdx <= lastMonthIdx;
+    monthIdx += step
+  ) {
+    if (!isSkippedMonth(monthIdx, skippedMonthIdxs)) return monthIdx;
+  }
+  return null;
+}
+
+function firstNavigableMonth(
+  lastMonthIdx: number,
+  skippedMonthIdxs?: ReadonlySet<number>
+): number {
+  return findNextNavigableMonth(0, 1, lastMonthIdx, skippedMonthIdxs) ?? -1;
+}
+
+function lastNavigableMonth(
+  lastMonthIdx: number,
+  skippedMonthIdxs?: ReadonlySet<number>
+): number {
+  return (
+    findNextNavigableMonth(
+      lastMonthIdx,
+      -1,
+      lastMonthIdx,
+      skippedMonthIdxs
+    ) ?? -1
+  );
+}
+
 /**
  * `shift-*` directions extend the selection focus instead of moving the
  * cursor — except for `shift-tab`, which is a wrap-aware backwards tab.
@@ -31,6 +75,7 @@ export function isRangeExtensionDir(dir: NavDirection): boolean {
 export type CursorNavInput = {
   navItems: NavItem[];
   monthCount: number;
+  skippedMonthIdxs?: ReadonlySet<number>;
   current: CursorPos;
   dir: NavDirection;
   pageSize: number;
@@ -38,7 +83,8 @@ export type CursorNavInput = {
 
 /** Returns null when the direction isn't a single-cursor move (e.g. shift-*). */
 export function computeCursorTarget(input: CursorNavInput): CursorPos | null {
-  const { navItems, monthCount, current, dir, pageSize } = input;
+  const { navItems, monthCount, skippedMonthIdxs, current, dir, pageSize } =
+    input;
   const lastItemIdx = navItems.length - 1;
   const lastMonthIdx = monthCount - 1;
   let newItemIdx = current.itemIdx;
@@ -53,10 +99,22 @@ export function computeCursorTarget(input: CursorNavInput): CursorPos | null {
       break;
     case "left":
       // -1 is the label column; never go further left.
-      newMonthIdx = Math.max(-1, current.monthIdx - 1);
+      newMonthIdx =
+        findNextNavigableMonth(
+          current.monthIdx - 1,
+          -1,
+          lastMonthIdx,
+          skippedMonthIdxs
+        ) ?? -1;
       break;
     case "right":
-      newMonthIdx = Math.min(lastMonthIdx, current.monthIdx + 1);
+      newMonthIdx =
+        findNextNavigableMonth(
+          Math.max(0, current.monthIdx + 1),
+          1,
+          lastMonthIdx,
+          skippedMonthIdxs
+        ) ?? current.monthIdx;
       break;
     case "page-up":
       newItemIdx = Math.max(0, current.itemIdx - pageSize);
@@ -65,18 +123,18 @@ export function computeCursorTarget(input: CursorNavInput): CursorPos | null {
       newItemIdx = Math.min(lastItemIdx, current.itemIdx + pageSize);
       break;
     case "row-start":
-      newMonthIdx = 0;
+      newMonthIdx = firstNavigableMonth(lastMonthIdx, skippedMonthIdxs);
       break;
     case "row-end":
-      newMonthIdx = lastMonthIdx;
+      newMonthIdx = lastNavigableMonth(lastMonthIdx, skippedMonthIdxs);
       break;
     case "grid-start":
       newItemIdx = 0;
-      newMonthIdx = 0;
+      newMonthIdx = firstNavigableMonth(lastMonthIdx, skippedMonthIdxs);
       break;
     case "grid-end":
       newItemIdx = lastItemIdx;
-      newMonthIdx = lastMonthIdx;
+      newMonthIdx = lastNavigableMonth(lastMonthIdx, skippedMonthIdxs);
       break;
     case "section-up": {
       // Walk back to the previous group row. If currently on a group, skip
@@ -94,8 +152,21 @@ export function computeCursorTarget(input: CursorNavInput): CursorPos | null {
       break;
     }
     case "tab":
-      if (current.monthIdx < lastMonthIdx) {
-        newMonthIdx = current.monthIdx + 1;
+      if (
+        current.monthIdx < lastMonthIdx &&
+        findNextNavigableMonth(
+          Math.max(0, current.monthIdx + 1),
+          1,
+          lastMonthIdx,
+          skippedMonthIdxs
+        ) !== null
+      ) {
+        newMonthIdx = findNextNavigableMonth(
+          Math.max(0, current.monthIdx + 1),
+          1,
+          lastMonthIdx,
+          skippedMonthIdxs
+        )!;
       } else {
         // Wrap to the next row's label column.
         newMonthIdx = -1;
@@ -104,10 +175,16 @@ export function computeCursorTarget(input: CursorNavInput): CursorPos | null {
       break;
     case "shift-tab":
       if (current.monthIdx > -1) {
-        newMonthIdx = current.monthIdx - 1;
+        newMonthIdx =
+          findNextNavigableMonth(
+            current.monthIdx - 1,
+            -1,
+            lastMonthIdx,
+            skippedMonthIdxs
+          ) ?? -1;
       } else {
         // Wrap to the previous row's last data cell.
-        newMonthIdx = lastMonthIdx;
+        newMonthIdx = lastNavigableMonth(lastMonthIdx, skippedMonthIdxs);
         newItemIdx = Math.max(0, current.itemIdx - 1);
       }
       break;
@@ -124,6 +201,7 @@ export type RangeExtensionInput = {
   /** Categories only — group rows are not selectable for range extension. */
   catItems: NavItem[];
   monthCount: number;
+  skippedMonthIdxs?: ReadonlySet<number>;
   /** Current focus position. itemIdx is into `catItems`; monthIdx is 0..N-1. */
   focus: CursorPos;
   dir: NavDirection;
@@ -134,7 +212,8 @@ export type RangeExtensionInput = {
 export function computeRangeExtensionTarget(
   input: RangeExtensionInput
 ): CursorPos | null {
-  const { catItems, monthCount, focus, dir, pageSize } = input;
+  const { catItems, monthCount, skippedMonthIdxs, focus, dir, pageSize } =
+    input;
   const lastCatIdx = catItems.length - 1;
   const lastMonthIdx = monthCount - 1;
   let newCatIdx = focus.itemIdx;
@@ -148,10 +227,22 @@ export function computeRangeExtensionTarget(
       newCatIdx = Math.min(lastCatIdx, focus.itemIdx + 1);
       break;
     case "shift-left":
-      newMonthIdx = Math.max(0, focus.monthIdx - 1);
+      newMonthIdx =
+        findNextNavigableMonth(
+          focus.monthIdx - 1,
+          -1,
+          lastMonthIdx,
+          skippedMonthIdxs
+        ) ?? focus.monthIdx;
       break;
     case "shift-right":
-      newMonthIdx = Math.min(lastMonthIdx, focus.monthIdx + 1);
+      newMonthIdx =
+        findNextNavigableMonth(
+          focus.monthIdx + 1,
+          1,
+          lastMonthIdx,
+          skippedMonthIdxs
+        ) ?? focus.monthIdx;
       break;
     case "shift-page-up":
       newCatIdx = Math.max(0, focus.itemIdx - pageSize);
@@ -160,18 +251,30 @@ export function computeRangeExtensionTarget(
       newCatIdx = Math.min(lastCatIdx, focus.itemIdx + pageSize);
       break;
     case "shift-row-start":
-      newMonthIdx = 0;
+      newMonthIdx =
+        firstNavigableMonth(lastMonthIdx, skippedMonthIdxs) === -1
+          ? focus.monthIdx
+          : firstNavigableMonth(lastMonthIdx, skippedMonthIdxs);
       break;
     case "shift-row-end":
-      newMonthIdx = lastMonthIdx;
+      newMonthIdx =
+        lastNavigableMonth(lastMonthIdx, skippedMonthIdxs) === -1
+          ? focus.monthIdx
+          : lastNavigableMonth(lastMonthIdx, skippedMonthIdxs);
       break;
     case "shift-grid-start":
       newCatIdx = 0;
-      newMonthIdx = 0;
+      newMonthIdx =
+        firstNavigableMonth(lastMonthIdx, skippedMonthIdxs) === -1
+          ? focus.monthIdx
+          : firstNavigableMonth(lastMonthIdx, skippedMonthIdxs);
       break;
     case "shift-grid-end":
       newCatIdx = lastCatIdx;
-      newMonthIdx = lastMonthIdx;
+      newMonthIdx =
+        lastNavigableMonth(lastMonthIdx, skippedMonthIdxs) === -1
+          ? focus.monthIdx
+          : lastNavigableMonth(lastMonthIdx, skippedMonthIdxs);
       break;
     default:
       return null;

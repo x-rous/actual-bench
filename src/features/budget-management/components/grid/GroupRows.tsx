@@ -55,6 +55,7 @@ function GroupMonthAggregate({
   onFocus,
   onNavigate,
   onToggleCollapse,
+  isReadOnlyMonth,
 }: {
   month: string;
   groupId: string;
@@ -65,6 +66,7 @@ function GroupMonthAggregate({
   onFocus?: () => void;
   onNavigate?: (dir: NavDirection) => void;
   onToggleCollapse?: () => void;
+  isReadOnlyMonth?: boolean;
 }) {
   const data = useEffectiveMonthFromContext(month);
   const group = data?.groupsById[groupId];
@@ -77,6 +79,27 @@ function GroupMonthAggregate({
   const baseClass =
     "h-7 border-r border-b border-border bg-[#F7F8FA] dark:bg-zinc-800 dark:border-zinc-700";
   const dimClass = isDimmed ? " opacity-50" : "";
+
+  if (!group && isReadOnlyMonth) {
+    return (
+      <div
+        className={`${baseClass}${dimClass} px-2 flex items-center justify-end text-xs font-sans tabular-nums text-muted-foreground cursor-not-allowed outline-none`}
+        role="gridcell"
+        tabIndex={0}
+        aria-readonly="true"
+        aria-disabled="true"
+        aria-label={`No budget data for ${month}`}
+        title="No budget exists for this past month; budget cells are read-only."
+        data-group-id={groupId}
+        data-group-month={month}
+        onClick={onFocus}
+        onFocus={onFocus}
+        onKeyDown={handleKeyDown}
+      >
+        --
+      </div>
+    );
+  }
 
   if (!group) return <div className={`${baseClass} animate-pulse${dimClass}`} />;
 
@@ -144,6 +167,7 @@ export type GroupRowsProps = {
   showHidden: boolean;
   groupSelection?: { groupId: string; month: string } | null;
   rowSelection?: RowSelection | null;
+  readOnlyMonths: Set<string>;
   onCellFocus: (categoryId: string, month: string) => void;
   onCellRangeSelect: (categoryId: string, month: string) => void;
   onCellNavigate?: (categoryId: string, month: string, dir: NavDirection) => void;
@@ -180,6 +204,7 @@ export function BudgetGridGroupRows({
   showHidden,
   groupSelection,
   rowSelection,
+  readOnlyMonths,
   onCellFocus,
   onCellRangeSelect,
   onCellNavigate,
@@ -267,6 +292,7 @@ export function BudgetGridGroupRows({
           onFocus={() => onGroupFocus?.(group.id, month)}
           onNavigate={(dir) => onGroupNavigate?.(group.id, month, dir)}
           onToggleCollapse={onToggleCollapse}
+          isReadOnlyMonth={readOnlyMonths.has(month)}
         />
       ))}
 
@@ -344,6 +370,7 @@ export function BudgetGridGroupRows({
                     dragStateRef={dragStateRef}
                     suppressNextClickRef={suppressNextClickRef}
                     isDimmed={catDimmed}
+                    isReadOnlyMonth={readOnlyMonths.has(month)}
                     onFocus={onCellFocus}
                     onRangeSelect={onCellRangeSelect}
                     onNavigate={(dir) => onCellNavigate?.(cat.id, month, dir)}
