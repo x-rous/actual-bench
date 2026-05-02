@@ -7,22 +7,37 @@ import {
 } from "../../context/MonthsDataContext";
 import { formatSummary } from "../../lib/format";
 import {
-  getTrackingExpenseVariance,
-  getTrackingExpenseVarianceLabel,
-  getTrackingExpenseVarianceTooltip,
-  getTrackingResultLabel,
-  getTrackingResultTooltip,
-  getTrackingResultValue,
-  getTrackingSummaryTotals,
+  getTrackingIncomeCell,
+  getTrackingResultCell,
+  getTrackingSpendingCell,
+  type TrackingSummaryTone,
+  type TrackingSummaryValueKind,
 } from "../../lib/trackingSummary";
 import type { BudgetMonthSummary, LoadedMonthState } from "../../types";
 import { FreeHeldAmountButton, HoldMoneyButton } from "./HoldToggle";
 
 // ─── Config type ──────────────────────────────────────────────────────────────
 
+type SummaryCellMetric = {
+  label?: ReactNode;
+  value: number | null;
+  valueKind?: TrackingSummaryValueKind;
+  signed?: boolean;
+  tone?: TrackingSummaryTone;
+  tooltip?: string;
+};
+
 export type SummaryRowConfig = {
   /** Row-header label. ReactNode so configs can supply rich (multi-color) labels. */
   label: ReactNode;
+  /** Tooltip for the sticky row label. */
+  rowTooltip?: string;
+  /** Fully derived per-month display model for semantic status rows. */
+  getCell?: (
+    s: BudgetMonthSummary,
+    state: LoadedMonthState,
+    month: string
+  ) => SummaryCellMetric;
   /** Per-cell mini-label rendered above the value. */
   dynamicLabel?: (
     s: BudgetMonthSummary,
@@ -30,7 +45,7 @@ export type SummaryRowConfig = {
     month: string
   ) => ReactNode;
   getDynamicRowLabel?: (s: BudgetMonthSummary) => ReactNode;
-  getValue: (
+  getValue?: (
     s: BudgetMonthSummary,
     state: LoadedMonthState,
     month: string
@@ -64,6 +79,8 @@ export type SummaryRowConfig = {
   /** When true, the per-month value is rendered larger and bold so the row's
    *  bottom-line total stands out (e.g. tracking "Balance", envelope "To Budget"). */
   emphasizeValue?: boolean;
+  /** Optional value class override for rows that need a stronger emphasis. */
+  valueClassName?: string;
 };
 
 const INCOME_BAR_GREEN_THRESHOLD = 0.995;
@@ -82,54 +99,63 @@ const TO_BUDGET_OVERBUDGET_LABEL: ReactNode = (
   </>
 );
 
+function toneClass(tone: TrackingSummaryTone | undefined): string {
+  switch (tone) {
+    case "positive":
+      return "text-emerald-600 dark:text-emerald-400";
+    case "negative":
+      return "text-destructive";
+    case "warning":
+      return "text-amber-600 dark:text-amber-400";
+    case "future":
+      return "text-muted-foreground/55";
+    case "muted":
+      return "text-muted-foreground";
+    case "neutral":
+    default:
+      return "text-foreground/75";
+  }
+}
+
+function formatSummaryDelta(value: number): string {
+  const sign = value > 0 ? "+" : value < 0 ? "−" : "";
+  return `${sign}${formatSummary(Math.abs(value))}`;
+}
+
+function formatSummaryCellValue(cell: SummaryCellMetric): string {
+  if (cell.value == null) return "—";
+  if (cell.valueKind === "percent") {
+    return `${cell.value.toLocaleString("en-US")}%`;
+  }
+  return cell.signed
+    ? formatSummaryDelta(cell.value)
+    : formatSummary(cell.value);
+}
+
 // ─── Per-mode configs ─────────────────────────────────────────────────────────
 
 export const TRACKING_SUMMARY_ROWS: SummaryRowConfig[] = [
   {
-    label: "Expenses",
-    getValue: (s) => s.totalSpent,
-    isConsumptionBar: true,
-    barMode: "expense",
-    getActual: (_s, state) => getTrackingSummaryTotals(state).expenseActuals,
-    getTarget: (_s, state) =>
-      getTrackingSummaryTotals(state).expenseBudgeted,
-  },
-  {
-    label: "Income",
-    getValue: (s) => s.totalIncome,
-    isConsumptionBar: true,
-    barMode: "income",
-    getActual: (_s, state) => getTrackingSummaryTotals(state).incomeActuals,
-    getTarget: (_s, state) =>
-      getTrackingSummaryTotals(state).incomeBudgeted,
-  },
-  {
-    label: "Expense Variance",
-    dynamicLabel: (_s, state, month) =>
-      getTrackingExpenseVarianceLabel(state, month),
-    getValue: (_s, state, month) =>
-      getTrackingExpenseVariance(state, month),
-    tooltip: (_s, state, month) =>
-      getTrackingExpenseVarianceTooltip(state, month),
-    colorClass: (_s, _state, _month, value) =>
-      value == null
-        ? "text-muted-foreground"
-        : value >= 0
-        ? "text-emerald-600 dark:text-emerald-400"
-        : "text-destructive",
-  },
-  {
     label: "Result",
-    dynamicLabel: (_s, state, month) => getTrackingResultLabel(state, month),
-    getValue: (_s, state, month) => getTrackingResultValue(state, month),
-    tooltip: (_s, state, month) => getTrackingResultTooltip(state, month),
-    colorClass: (_s, _state, _month, value) =>
-      (value ?? 0) >= 0
-        ? "text-emerald-600 dark:text-emerald-400"
-        : "text-destructive",
+    rowTooltip:
+      "Actual saved/overspent for past months; projected result for current/future months.",
+    getCell: (_s, state, month) => getTrackingResultCell(state, month),
     rowHeight: "h-10",
     noBorder: true,
     emphasizeValue: true,
+    valueClassName: "text-[13px] font-bold",
+  },
+  {
+    label: "Spending vs Budgeted",
+    rowTooltip: "Expenses compared with budgeted expenses.",
+    getCell: (_s, state, month) => getTrackingSpendingCell(state, month),
+    noBorder: true,
+  },
+  {
+    label: "Income",
+    rowTooltip: "Received income compared with budgeted income.",
+    getCell: (_s, state, month) => getTrackingIncomeCell(state, month),
+    noBorder: true,
   },
 ];
 
@@ -255,8 +281,9 @@ export function SummaryHeaderRow({
   return (
     <>
       <div
-        className={`${rowH} px-3 flex items-center bg-background text-[11px] text-foreground/75 sticky left-0 z-10 ${borderClass}`}
+        className={`${rowH} px-3 flex items-center bg-background text-[11px] font-medium text-foreground/75 sticky left-0 z-10 ${borderClass}`}
         role="rowheader"
+        title={config.rowTooltip}
       >
         {config.operator && (
           <span className="mr-1.5 w-3 shrink-0 text-center text-[10px] text-muted-foreground/50 font-mono select-none">
@@ -294,20 +321,38 @@ function SummaryHeaderCell({
 
   if (!data) return <div className={`${rowH} bg-transparent ${borderClass}`} />;
 
-  const value = config.getValue(data.summary, data, month);
-  const dynamicLabel = config.dynamicLabel
+  const cell = config.getCell?.(data.summary, data, month);
+  const value = cell
+    ? cell.value
+    : config.getValue
+      ? config.getValue(data.summary, data, month)
+      : null;
+  const dynamicLabel = cell?.label
+    ? cell.label
+    : config.dynamicLabel
     ? config.dynamicLabel(data.summary, data, month)
     : null;
-  const colorClass = config.colorClass
+  const colorClass = cell
+    ? "text-foreground/75"
+    : config.colorClass
     ? config.colorClass(data.summary, data, month, value)
     : "text-foreground/75";
-  const tooltip = config.tooltip
+  const tooltip = cell?.tooltip
+    ? cell.tooltip
+    : config.tooltip
     ? config.tooltip(data.summary, data, month, value)
     : undefined;
   // Emphasised rows render the number a touch larger and bold so totals
   // stand out from the sub-rows above. Other rows keep the inherited
   // `text-[11px]` from the parent cell.
-  const valueClass = config.emphasizeValue ? "text-[13px] font-bold" : "";
+  const valueClass =
+    config.valueClassName ?? (config.emphasizeValue ? "text-[13px] font-bold" : "");
+  const labelClass = cell
+    ? cell.tone === "future"
+      ? "text-muted-foreground/60"
+      : "text-muted-foreground"
+    : "";
+  const valueToneClass = cell ? toneClass(cell.tone) : "";
 
   if (config.holdAction) {
     const numericValue = value ?? 0;
@@ -319,7 +364,7 @@ function SummaryHeaderCell({
       >
         <div className="flex flex-col items-end flex-1 min-w-0">
           {dynamicLabel && (
-            <span className="max-w-full truncate text-[9px] font-semibold leading-none mb-0.5">
+            <span className="max-w-full truncate text-[9px] font-medium leading-none mb-0.5">
               {dynamicLabel}
             </span>
           )}
@@ -351,12 +396,18 @@ function SummaryHeaderCell({
       title={tooltip}
     >
       {dynamicLabel && (
-        <span className="max-w-full truncate text-[9px] font-semibold leading-none mb-0.5">
+        <span
+          className={`max-w-full truncate text-[9px] font-medium leading-none mb-0.5 ${labelClass}`}
+        >
           {dynamicLabel}
         </span>
       )}
-      <span className={valueClass}>
-        {value == null ? "—" : formatSummary(value)}
+      <span className={`${valueClass} ${valueToneClass}`}>
+        {cell
+          ? formatSummaryCellValue(cell)
+          : value == null
+            ? "—"
+            : formatSummary(value)}
       </span>
     </div>
   );

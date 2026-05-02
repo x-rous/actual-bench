@@ -32,7 +32,11 @@ function SectionTotalCell({
 }) {
   const data = useEffectiveMonthFromContext(month);
   if (!data) {
-    return <div className="h-8 bg-muted/15 border-b border-border/50 animate-pulse" />;
+    return (
+      <div
+        className="h-8 min-h-8 bg-muted/15 border-b border-border/50 animate-pulse"
+      />
+    );
   }
 
   // In Envelope mode the income section always sums actuals (received).
@@ -42,21 +46,31 @@ function SectionTotalCell({
   let total: number;
 
   if (budgetMode === "tracking") {
-    // Tracking: sum category-level values, excluding hidden groups and hidden cats.
-    const cats = data.groupOrder
-      .map((id) => data.groupsById[id]!)
-      .filter((g) => !g.hidden && (filter === "expense" ? !g.isIncome : g.isIncome))
-      .flatMap((g) =>
-        g.categoryIds
-          .map((catId) => data.categoriesById[catId])
-          .filter((c): c is NonNullable<typeof c> => !!c && !c.hidden)
-      );
-    total =
-      effectiveView === "spent"
-        ? cats.reduce((sum, c) => sum + c.actuals, 0)
-        : effectiveView === "balance"
-        ? cats.reduce((sum, c) => sum + c.balance, 0)
-        : cats.reduce((sum, c) => sum + c.budgeted, 0);
+    if (filter === "expense") {
+      total =
+        effectiveView === "spent"
+          ? data.summary.totalSpent
+          : effectiveView === "balance"
+          ? data.summary.totalBalance
+          : data.summary.totalBudgeted;
+    } else if (effectiveView === "spent") {
+      total = data.summary.totalIncome;
+    } else {
+      // Tracking income budget/balance totals are not present in the month
+      // summary, so these still come from visible income categories.
+      const cats = data.groupOrder
+        .map((id) => data.groupsById[id]!)
+        .filter((g) => !g.hidden && g.isIncome)
+        .flatMap((g) =>
+          g.categoryIds
+            .map((catId) => data.categoriesById[catId])
+            .filter((c): c is NonNullable<typeof c> => !!c && !c.hidden)
+        );
+      total =
+        effectiveView === "balance"
+          ? cats.reduce((sum, c) => sum + c.balance, 0)
+          : cats.reduce((sum, c) => sum + c.budgeted, 0);
+    }
   } else {
     // Envelope: group-level aggregates include all hidden rows.
     const groups = data.groupOrder
@@ -71,7 +85,9 @@ function SectionTotalCell({
   }
 
   return (
-    <div className="h-8 px-2 flex items-center justify-end bg-muted/15 border-b border-border/50 text-xs font-sans tabular-nums font-semibold text-foreground">
+    <div
+      className="h-8 min-h-8 px-2 flex items-center justify-end whitespace-nowrap bg-muted/15 border-b border-border/50 text-xs font-sans tabular-nums font-semibold text-foreground"
+    >
       {formatMinor(total)}
     </div>
   );
@@ -95,12 +111,16 @@ export function SectionTotalRow({
   return (
     <>
       <div
-        className="h-8 px-3 flex items-center bg-background border-b border-border/50 text-xs font-semibold text-foreground/80 sticky left-0 z-10"
+        className="h-8 min-h-8 min-w-0 px-3 flex items-center bg-background border-b border-border/50 text-xs font-semibold text-foreground/80 sticky left-0 z-10"
         role="rowheader"
+        title={label}
       >
-        {label}
+        <span className="truncate whitespace-nowrap">{label}</span>
       </div>
-      <div className="h-8 bg-muted/15 border-b border-border/50" aria-hidden="true" />
+      <div
+        className="h-8 min-h-8 bg-muted/15 border-b border-border/50"
+        aria-hidden="true"
+      />
       {activeMonths.map((month) => (
         <SectionTotalCell
           key={month}

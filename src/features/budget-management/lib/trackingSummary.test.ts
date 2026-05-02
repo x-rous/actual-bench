@@ -1,8 +1,11 @@
 import {
+  getTrackingIncomeCell,
   getTrackingExpenseVariance,
   getTrackingExpenseVarianceLabel,
+  getTrackingResultCell,
   getTrackingResultLabel,
   getTrackingResultValue,
+  getTrackingSpendingCell,
   getTrackingSummaryTotals,
 } from "./trackingSummary";
 import type { LoadedCategory, LoadedGroup, LoadedMonthState } from "../types";
@@ -100,38 +103,109 @@ function state(): LoadedMonthState {
 describe("tracking summary helpers", () => {
   const now = new Date("2026-05-02T12:00:00Z");
 
-  it("calculates visible tracking totals excluding hidden categories", () => {
+  it("uses API month summary totals for tracking actuals and expense budget", () => {
     expect(getTrackingSummaryTotals(state())).toEqual({
       incomeBudgeted: 500_000,
       incomeActuals: 520_000,
-      expenseBudgeted: 300_000,
-      expenseActuals: 280_000,
+      expenseBudgeted: 400_000,
+      expenseActuals: 380_000,
     });
   });
 
   it("calculates expense variance only for past/current months", () => {
-    expect(getTrackingExpenseVariance(state(), "2026-04", now)).toBe(20_000);
+    expect(getTrackingExpenseVariance(state(), "2026-04", now)).toBe(140_000);
     expect(getTrackingExpenseVarianceLabel(state(), "2026-04", now)).toBe(
-      "Under plan"
+      "Under budget"
     );
 
     expect(getTrackingExpenseVariance(state(), "2026-06", now)).toBeNull();
     expect(getTrackingExpenseVarianceLabel(state(), "2026-06", now)).toBe(
-      "Plan-only"
+      "Budgeted"
     );
   });
 
+  it("builds spending cells without treating future months as actual performance", () => {
+    expect(getTrackingSpendingCell(state(), "2026-04", now)).toMatchObject({
+      label: "Under budget",
+      value: 140_000,
+      signed: true,
+      tone: "positive",
+    });
+
+    expect(getTrackingSpendingCell(state(), "2026-06", now)).toMatchObject({
+      label: "Budgeted",
+      value: 400_000,
+      tone: "future",
+    });
+  });
+
+  it("uses shorter current-month labels", () => {
+    expect(getTrackingSpendingCell(state(), "2026-05", now)).toMatchObject({
+      label: "Under so far",
+      value: 140_000,
+    });
+
+    expect(getTrackingIncomeCell(state(), "2026-05", now)).toMatchObject({
+      label: "Ahead so far",
+      value: 104,
+      tone: "muted",
+    });
+  });
+
   it("uses actual result for past months and planned result for current/future months", () => {
-    expect(getTrackingResultValue(state(), "2026-04", now)).toBe(240_000);
+    expect(getTrackingResultValue(state(), "2026-04", now)).toBe(140_000);
     expect(getTrackingResultLabel(state(), "2026-04", now)).toBe("Saved");
 
-    expect(getTrackingResultValue(state(), "2026-05", now)).toBe(200_000);
+    expect(getTrackingResultValue(state(), "2026-05", now)).toBe(100_000);
     expect(getTrackingResultLabel(state(), "2026-05", now)).toBe(
       "Projected saved"
     );
-    expect(getTrackingResultValue(state(), "2026-06", now)).toBe(200_000);
+    expect(getTrackingResultCell(state(), "2026-05", now)).toMatchObject({
+      tone: "future",
+    });
+    expect(getTrackingResultValue(state(), "2026-06", now)).toBe(100_000);
     expect(getTrackingResultLabel(state(), "2026-06", now)).toBe(
       "Projected saved"
     );
+  });
+
+  it("keeps future result and income cells visually muted", () => {
+    expect(getTrackingResultCell(state(), "2026-06", now)).toMatchObject({
+      label: "Projected saved",
+      value: 100_000,
+      tone: "future",
+    });
+
+    expect(getTrackingIncomeCell(state(), "2026-06", now)).toMatchObject({
+      label: "Budgeted",
+      value: 500_000,
+      tone: "future",
+    });
+  });
+
+  it("treats near-match income as on target", () => {
+    const testState = state();
+    testState.summary.totalIncome = 499_500;
+
+    expect(getTrackingIncomeCell(testState, "2026-04", now)).toMatchObject({
+      label: "On target",
+      value: 100,
+      valueKind: "percent",
+      tone: "neutral",
+    });
+
+    testState.summary.totalIncome = 502_000;
+    expect(getTrackingIncomeCell(testState, "2026-04", now)).toMatchObject({
+      label: "On target",
+      value: 100,
+      tone: "neutral",
+    });
+
+    testState.summary.totalIncome = 503_000;
+    expect(getTrackingIncomeCell(testState, "2026-04", now)).toMatchObject({
+      label: "Ahead",
+      value: 101,
+      tone: "positive",
+    });
   });
 });
