@@ -2,9 +2,12 @@
 
 import { useEffectiveMonthFromContext } from "../../context/MonthsDataContext";
 import { formatMinor } from "../../lib/format";
+import {
+  calculateSectionTotal,
+  getSectionEffectiveView,
+  type SectionFilter,
+} from "../../lib/sectionTotals";
 import type { BudgetMode, CellView } from "../../types";
-
-export type SectionFilter = "expense" | "income";
 
 const SECTION_LABELS: Record<SectionFilter, Record<CellView, string>> = {
   expense: {
@@ -40,49 +43,12 @@ function SectionTotalCell({
   }
 
   // In Envelope mode the income section always sums actuals (received).
-  const effectiveView =
-    budgetMode === "envelope" && filter === "income" ? "spent" : cellView;
-
-  let total: number;
-
-  if (budgetMode === "tracking") {
-    if (filter === "expense") {
-      total =
-        effectiveView === "spent"
-          ? data.summary.totalSpent
-          : effectiveView === "balance"
-          ? data.summary.totalBalance
-          : data.summary.totalBudgeted;
-    } else if (effectiveView === "spent") {
-      total = data.summary.totalIncome;
-    } else {
-      // Tracking income budget/balance totals are not present in the month
-      // summary, so these still come from visible income categories.
-      const cats = data.groupOrder
-        .map((id) => data.groupsById[id]!)
-        .filter((g) => !g.hidden && g.isIncome)
-        .flatMap((g) =>
-          g.categoryIds
-            .map((catId) => data.categoriesById[catId])
-            .filter((c): c is NonNullable<typeof c> => !!c && !c.hidden)
-        );
-      total =
-        effectiveView === "balance"
-          ? cats.reduce((sum, c) => sum + c.balance, 0)
-          : cats.reduce((sum, c) => sum + c.budgeted, 0);
-    }
-  } else {
-    // Envelope: group-level aggregates include all hidden rows.
-    const groups = data.groupOrder
-      .map((id) => data.groupsById[id]!)
-      .filter((g) => (filter === "expense" ? !g.isIncome : g.isIncome));
-    total =
-      effectiveView === "spent"
-        ? groups.reduce((sum, g) => sum + g.actuals, 0)
-        : effectiveView === "balance"
-        ? groups.reduce((sum, g) => sum + g.balance, 0)
-        : groups.reduce((sum, g) => sum + g.budgeted, 0);
-  }
+  const total = calculateSectionTotal({
+    state: data,
+    filter,
+    cellView,
+    budgetMode,
+  });
 
   return (
     <div
@@ -105,8 +71,11 @@ export function SectionTotalRow({
   activeMonths: string[];
 }) {
   // In Envelope mode the income section always uses the "received" label.
-  const effectiveView =
-    budgetMode === "envelope" && filter === "income" ? "spent" : cellView;
+  const effectiveView = getSectionEffectiveView({
+    budgetMode,
+    filter,
+    cellView,
+  });
   const label = SECTION_LABELS[filter][effectiveView];
   return (
     <>

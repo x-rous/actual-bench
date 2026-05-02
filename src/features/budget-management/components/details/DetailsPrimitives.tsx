@@ -67,12 +67,18 @@ export function MetricLine({
   value,
   tone = "neutral",
   tooltip,
+  onValueClick,
+  valueAriaLabel,
 }: {
   label: string;
   value: string;
   tone?: DetailsTone;
   tooltip?: string;
+  onValueClick?: () => void;
+  valueAriaLabel?: string;
 }) {
+  const valueClass = `font-sans tabular-nums text-right text-[11px] ${toneClass(tone)}`;
+
   return (
     <div className="flex justify-between items-baseline gap-2" title={tooltip}>
       <span
@@ -82,11 +88,19 @@ export function MetricLine({
       >
         {label}
       </span>
-      <span
-        className={`font-sans tabular-nums text-right text-[11px] ${toneClass(tone)}`}
-      >
-        {value}
-      </span>
+      {onValueClick ? (
+        <button
+          type="button"
+          className={`${valueClass} rounded-sm underline decoration-dotted underline-offset-2 outline-none hover:text-primary focus-visible:ring-2 focus-visible:ring-ring/50`}
+          onClick={onValueClick}
+          aria-label={valueAriaLabel ?? `View ${label}`}
+          title={valueAriaLabel ?? `View ${label}`}
+        >
+          {value}
+        </button>
+      ) : (
+        <span className={valueClass}>{value}</span>
+      )}
     </div>
   );
 }

@@ -10,22 +10,17 @@ import {
   getTrackingIncomeCell,
   getTrackingResultCell,
   getTrackingSpendingCell,
-  type TrackingSummaryTone,
-  type TrackingSummaryValueKind,
 } from "../../lib/trackingSummary";
 import type { BudgetMonthSummary, LoadedMonthState } from "../../types";
 import { FreeHeldAmountButton, HoldMoneyButton } from "./HoldToggle";
+import {
+  formatSummaryCellValue,
+  summaryLabelClass,
+  summaryToneClass,
+  type SummaryCellMetric,
+} from "./summaryDisplay";
 
 // ─── Config type ──────────────────────────────────────────────────────────────
-
-type SummaryCellMetric = {
-  label?: ReactNode;
-  value: number | null;
-  valueKind?: TrackingSummaryValueKind;
-  signed?: boolean;
-  tone?: TrackingSummaryTone;
-  tooltip?: string;
-};
 
 export type SummaryRowConfig = {
   /** Row-header label. ReactNode so configs can supply rich (multi-color) labels. */
@@ -62,10 +57,6 @@ export type SummaryRowConfig = {
     month: string,
     value: number | null
   ) => string;
-  isConsumptionBar?: boolean;
-  getActual?: (s: BudgetMonthSummary, state: LoadedMonthState) => number;
-  getTarget?: (s: BudgetMonthSummary, state: LoadedMonthState) => number;
-  barMode?: "expense" | "income";
   /** Compact input row — rendered smaller to group visually under a total row. */
   isSubRow?: boolean;
   /** Operator prefix shown in the label cell to convey formula structure (+, −, =). */
@@ -83,8 +74,6 @@ export type SummaryRowConfig = {
   valueClassName?: string;
 };
 
-const INCOME_BAR_GREEN_THRESHOLD = 0.995;
-
 /**
  * Static dual-color label rendered for the envelope "To Budget / Overbudget"
  * row. The "To Budget" half is always green and "Overbudget" half is always
@@ -98,39 +87,6 @@ const TO_BUDGET_OVERBUDGET_LABEL: ReactNode = (
     <span className="text-destructive">Overbudget</span>
   </>
 );
-
-function toneClass(tone: TrackingSummaryTone | undefined): string {
-  switch (tone) {
-    case "positive":
-      return "text-emerald-600 dark:text-emerald-400";
-    case "negative":
-      return "text-destructive";
-    case "warning":
-      return "text-amber-600 dark:text-amber-400";
-    case "future":
-      return "text-muted-foreground/55";
-    case "muted":
-      return "text-muted-foreground";
-    case "neutral":
-    default:
-      return "text-foreground/75";
-  }
-}
-
-function formatSummaryDelta(value: number): string {
-  const sign = value > 0 ? "+" : value < 0 ? "−" : "";
-  return `${sign}${formatSummary(Math.abs(value))}`;
-}
-
-function formatSummaryCellValue(cell: SummaryCellMetric): string {
-  if (cell.value == null) return "—";
-  if (cell.valueKind === "percent") {
-    return `${cell.value.toLocaleString("en-US")}%`;
-  }
-  return cell.signed
-    ? formatSummaryDelta(cell.value)
-    : formatSummary(cell.value);
-}
 
 // ─── Per-mode configs ─────────────────────────────────────────────────────────
 
@@ -204,57 +160,6 @@ export const ENVELOPE_SUMMARY_ROWS: SummaryRowConfig[] = [
   },
 ];
 
-// ─── ConsumptionBarCell ───────────────────────────────────────────────────────
-
-function ConsumptionBarCell({
-  month,
-  config,
-}: {
-  month: string;
-  config: SummaryRowConfig;
-}) {
-  const data = useEffectiveMonthFromContext(month);
-  if (!data) return <div className="h-10 bg-transparent" />;
-
-  const actual = config.getActual ? config.getActual(data.summary, data) : 0;
-  const target = config.getTarget ? config.getTarget(data.summary, data) : 0;
-  const ratio = target > 0 ? actual / target : 0;
-  const pct = Math.max(0, Math.min(ratio * 100, 100));
-
-  const isExpense = config.barMode === "expense";
-  const barColor = isExpense
-    ? ratio <= 1
-      ? "bg-emerald-500"
-      : "bg-red-500"
-    : ratio >= INCOME_BAR_GREEN_THRESHOLD
-    ? "bg-emerald-500"
-    : "bg-amber-400";
-
-  const ratioText = target > 0 ? `${Math.round(ratio * 100)}%` : "—";
-  const tooltipText =
-    target > 0
-      ? `${isExpense ? "Spent" : "Received"}: ${formatSummary(actual)}  /  Budgeted: ${formatSummary(target)}`
-      : "No budget set";
-
-  return (
-    <div
-      className="h-10 px-2 pt-1.5 pb-1.5 flex flex-col gap-0.5 bg-transparent font-sans tabular-nums"
-      title={tooltipText}
-    >
-      <div className="flex items-center justify-end gap-1.5">
-        <span className="text-[10px] text-foreground/80 shrink-0">{formatSummary(actual)}</span>
-        <span className="text-[10px] text-muted-foreground/60 shrink-0">({ratioText})</span>
-      </div>
-      <div className="w-full h-2 rounded-full bg-muted/40 overflow-hidden">
-        <div
-          className={`h-full rounded-full transition-all ${barColor}`}
-          style={{ width: `${pct}%` }}
-        />
-      </div>
-    </div>
-  );
-}
-
 // ─── SummaryHeaderRow + SummaryHeaderCell ─────────────────────────────────────
 
 export function SummaryHeaderRow({
@@ -271,10 +176,10 @@ export function SummaryHeaderRow({
       : config.label;
 
   const isSubRow = config.isSubRow;
-  const rowH = config.rowHeight ?? (config.isConsumptionBar ? "h-10" : isSubRow ? "h-5" : "h-8");
+  const rowH = config.rowHeight ?? (isSubRow ? "h-5" : "h-8");
   // Total row gets a top border to visually separate it from the sub-rows above.
   const borderClass =
-    !isSubRow && !config.isConsumptionBar && !config.noBorder
+    !isSubRow && !config.noBorder
       ? "border-t border-border/60"
       : "";
 
@@ -293,13 +198,9 @@ export function SummaryHeaderRow({
         <span className={config.operator === "=" ? "font-semibold" : ""}>{rowLabel}</span>
       </div>
       <div className={`${rowH} bg-transparent ${borderClass}`} aria-hidden="true" />
-      {activeMonths.map((month) =>
-        config.isConsumptionBar ? (
-          <ConsumptionBarCell key={month} month={month} config={config} />
-        ) : (
-          <SummaryHeaderCell key={month} month={month} config={config} />
-        )
-      )}
+      {activeMonths.map((month) => (
+        <SummaryHeaderCell key={month} month={month} config={config} />
+      ))}
     </>
   );
 }
@@ -315,7 +216,7 @@ function SummaryHeaderCell({
   const isSubRow = config.isSubRow;
   const rowH = config.rowHeight ?? (isSubRow ? "h-6" : "h-8");
   const borderClass =
-    !isSubRow && !config.isConsumptionBar && !config.noBorder
+    !isSubRow && !config.noBorder
       ? "border-t border-border/60"
       : "";
 
@@ -348,11 +249,9 @@ function SummaryHeaderCell({
   const valueClass =
     config.valueClassName ?? (config.emphasizeValue ? "text-[13px] font-bold" : "");
   const labelClass = cell
-    ? cell.tone === "future"
-      ? "text-muted-foreground/60"
-      : "text-muted-foreground"
+    ? summaryLabelClass(cell.tone)
     : "";
-  const valueToneClass = cell ? toneClass(cell.tone) : "";
+  const valueToneClass = cell ? summaryToneClass(cell.tone) : "";
 
   if (config.holdAction) {
     const numericValue = value ?? 0;

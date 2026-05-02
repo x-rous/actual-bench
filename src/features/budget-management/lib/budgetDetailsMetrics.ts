@@ -11,6 +11,11 @@ import {
   type BudgetDetailsSelection,
   type MonthActualStatus,
 } from "./budgetDetailsModel";
+import {
+  TRACKING_INCOME_AHEAD_RATIO,
+  TRACKING_INCOME_ON_TARGET_RATIO,
+} from "./trackingSummary";
+import type { BudgetTransactionsDrilldown } from "./budgetTransactionBrowser";
 
 export type DetailsTone = "positive" | "negative" | "neutral";
 
@@ -52,6 +57,7 @@ type TrackingSelectedMonthValues = {
   budgeted: number;
   actuals: number | null;
   variance: number | null;
+  transactionDrilldown: BudgetTransactionsDrilldown | null;
   rolloverBalance: RolloverBalanceLine | null;
   previousBudgeted: number | null;
   stagedEdit: MonthEditDetails | null;
@@ -77,10 +83,18 @@ type TrackingRolloverMetrics = {
   endPlan: RolloverBalanceLine | null;
 };
 
+type TrackingPrimaryMetric = {
+  label: string;
+  value: number | null;
+  helper: string;
+  tone: DetailsTone;
+};
+
 type EnvelopeSelectedMonthValues = {
   assignedBudgeted: number;
   spent: number;
   balance: number;
+  transactionDrilldown: BudgetTransactionsDrilldown | null;
   previousBalance: number | null;
   previousLabel: string | null;
   carryover: boolean | null;
@@ -181,6 +195,7 @@ type TrackingMonthValues = {
   incomeActuals: number;
   expenseBudgeted: number;
   expenseActuals: number;
+  expenseVariance: number;
 };
 
 type SelectedMonthValues = {
@@ -310,39 +325,24 @@ function findTarget(model: BudgetDetailsModel): TargetInfo | null {
   return null;
 }
 
-function getVisibleTrackingCategories(state: LoadedMonthState): LoadedCategory[] {
-  const result: LoadedCategory[] = [];
+function getVisibleTrackingIncomeBudgeted(state: LoadedMonthState): number {
+  let total = 0;
   for (const groupId of state.groupOrder) {
     const group = state.groupsById[groupId];
-    if (!group || group.hidden) continue;
-    for (const catId of group.categoryIds) {
-      const category = state.categoriesById[catId];
-      if (!category || category.hidden) continue;
-      result.push(category);
-    }
+    if (!group || group.hidden || !group.isIncome) continue;
+    total += group.budgeted;
   }
-  return result;
+  return total;
 }
 
 function getTrackingPeriodValues(state: LoadedMonthState): TrackingMonthValues {
-  const values: TrackingMonthValues = {
-    incomeBudgeted: 0,
-    incomeActuals: 0,
-    expenseBudgeted: 0,
-    expenseActuals: 0,
+  return {
+    incomeBudgeted: getVisibleTrackingIncomeBudgeted(state),
+    incomeActuals: state.summary.totalIncome,
+    expenseBudgeted: absAmount(state.summary.totalBudgeted),
+    expenseActuals: absAmount(state.summary.totalSpent),
+    expenseVariance: state.summary.totalBalance,
   };
-
-  for (const category of getVisibleTrackingCategories(state)) {
-    if (category.isIncome) {
-      values.incomeBudgeted += category.budgeted;
-      values.incomeActuals += category.actuals;
-    } else {
-      values.expenseBudgeted += absAmount(category.budgeted);
-      values.expenseActuals += absAmount(category.actuals);
-    }
-  }
-
-  return values;
 }
 
 function getTrackingTargetValues(
@@ -354,6 +354,17 @@ function getTrackingTargetValues(
   let balance = 0;
   let hasCarryover = false;
   let found = false;
+
+  if (!target.groupId) {
+    const group = state.groupsById[target.id];
+    if (!group) return null;
+    return {
+      budgeted: target.isIncome ? group.budgeted : absAmount(group.budgeted),
+      actuals: target.isIncome ? group.actuals : absAmount(group.actuals),
+      balance: group.balance,
+      carryover: null,
+    };
+  }
 
   if (target.categoryIds.length === 1 && target.groupId) {
     const category = state.categoriesById[target.id];
@@ -406,6 +417,38 @@ function getEnvelopeTargetValues(
   };
 }
 
+function visibleGroupCategoryIds(
+  state: LoadedMonthState,
+  groupId: string
+): string[] {
+  const group = state.groupsById[groupId];
+  if (!group) return [];
+  return group.categoryIds.filter((categoryId) => {
+    const category = state.categoriesById[categoryId];
+    return !!category && !category.hidden;
+  });
+}
+
+function budgetTransactionsDrilldown(
+  entry: BudgetDetailsMonth,
+  target: TargetInfo
+): BudgetTransactionsDrilldown | null {
+  if (target.isIncome || !entry.state) return null;
+
+  const categoryIds = target.groupId
+    ? [target.id]
+    : visibleGroupCategoryIds(entry.state, target.id);
+  if (categoryIds.length === 0) return null;
+
+  return {
+    id: target.id,
+    month: entry.month,
+    title: target.title,
+    entity: target.groupId ? "category" : "group",
+    categoryIds,
+  };
+}
+
 function relevantStagedImpact(
   model: BudgetDetailsModel,
   target: TargetInfo | null
@@ -448,10 +491,136 @@ function exactCategoryMonthEdit(
   };
 }
 
-function trackingVarianceLabel(isIncome: boolean, variance: number): string {
-  if (variance === 0) return "On plan";
-  if (isIncome) return variance > 0 ? "Ahead of plan by" : "Under plan by";
-  return variance > 0 ? "Under plan by" : "Over plan by";
+function expenseBudgetStatusLabel(
+  variance: number,
+  status: MonthActualStatus | null
+): string {
+  if (status === "current-partial") {
+    if (variance > 0) return "Under so far by";
+    if (variance < 0) return "Over so far by";
+    return "On track";
+  }
+  if (status === "past") {
+    if (variance > 0) return "Under budget by";
+    if (variance < 0) return "Over budget by";
+    return "On budget";
+  }
+  if (variance > 0) return "Under budget to date by";
+  if (variance < 0) return "Over budget to date by";
+  return "On budget to date";
+}
+
+function expenseBudgetStatusTone(
+  variance: number,
+  status: MonthActualStatus | null
+): DetailsTone {
+  if (variance < 0) return "negative";
+  if (status === "current-partial") return "neutral";
+  return variance > 0 ? "positive" : "neutral";
+}
+
+function trackingExpensePrimaryMetric({
+  variance,
+  status,
+}: {
+  variance: number;
+  status: MonthActualStatus | null;
+}): TrackingPrimaryMetric {
+  return {
+    label: expenseBudgetStatusLabel(variance, status),
+    value: Math.abs(variance),
+    helper:
+      status === null
+        ? "Spending to date compared with budgeted expenses to date."
+        : "Selected month spending compared with budgeted expenses.",
+    tone: expenseBudgetStatusTone(variance, status),
+  };
+}
+
+function incomeTargetStatusLabel(
+  variant: "short" | "ahead" | "target",
+  status: MonthActualStatus | null
+): string {
+  if (status === "current-partial") {
+    if (variant === "short") return "Short so far by";
+    if (variant === "ahead") return "Ahead so far by";
+    return "On target so far";
+  }
+  if (status === "past") {
+    if (variant === "short") return "Short by";
+    if (variant === "ahead") return "Ahead by";
+    return "On target";
+  }
+  if (variant === "short") return "Short to date by";
+  if (variant === "ahead") return "Ahead to date by";
+  return "On target to date";
+}
+
+function incomeNoBudgetMetric({
+  actuals,
+  status,
+}: {
+  actuals: number;
+  status: MonthActualStatus | null;
+}): TrackingPrimaryMetric {
+  if (actuals <= 0) {
+    return {
+      label: "No income budget",
+      value: null,
+      helper: "No income budget is set for this selection.",
+      tone: "neutral",
+    };
+  }
+
+  const label =
+    status === "current-partial"
+      ? "Received so far"
+      : status === "past"
+        ? "Received"
+        : "Received to date";
+  return {
+    label,
+    value: actuals,
+    helper: "No income budget is set for this selection.",
+    tone: "neutral",
+  };
+}
+
+function trackingIncomePrimaryMetric({
+  budgeted,
+  actuals,
+  variance,
+  status,
+}: {
+  budgeted: number;
+  actuals: number;
+  variance: number;
+  status: MonthActualStatus | null;
+}): TrackingPrimaryMetric {
+  if (budgeted <= 0) return incomeNoBudgetMetric({ actuals, status });
+
+  const ratio = actuals / budgeted;
+  const isShort = ratio < TRACKING_INCOME_ON_TARGET_RATIO;
+  const isAhead = ratio >= TRACKING_INCOME_AHEAD_RATIO;
+
+  if (!isShort && !isAhead) {
+    return {
+      label: incomeTargetStatusLabel("target", status),
+      value: null,
+      helper: "Received income is within the on-target range.",
+      tone: "neutral",
+    };
+  }
+
+  return {
+    label: incomeTargetStatusLabel(isAhead ? "ahead" : "short", status),
+    value: Math.abs(variance),
+    helper:
+      status === null
+        ? "Income received to date compared with budgeted income to date."
+        : "Selected month income received compared with budgeted income.",
+    tone: status === "current-partial" ? "neutral" : toneForSigned(variance),
+  };
 }
 
 function simpleTrackingCategoryVariance(category: LoadedCategory): number {
@@ -587,23 +756,27 @@ function buildTrackingMonthMetrics(
     isIncome: target.isIncome,
     primary: futureOnly
       ? {
-          label: "Planned month budget",
+          label: "Budgeted",
           value: values.budgeted,
           helper: "Plan-only month.",
           tone: "neutral",
         }
-      : {
-          label: trackingVarianceLabel(target.isIncome, variance),
-          value: Math.abs(variance),
-          helper: "Selected month actuals compared with budget.",
-          tone: toneForSigned(variance),
-        },
+      : target.isIncome
+        ? trackingIncomePrimaryMetric({
+            budgeted: values.budgeted,
+            actuals: values.actuals,
+            variance,
+            status: entry.status,
+          })
+        : trackingExpensePrimaryMetric({ variance, status: entry.status }),
     monthValues: {
       budgetLabel: target.isIncome ? "Budgeted income" : "Budgeted",
-      actualLabel: target.isIncome ? "Received income" : "Actuals",
+      actualLabel: target.isIncome ? "Received income" : "Spent",
       budgeted: values.budgeted,
       actuals: futureOnly ? null : values.actuals,
       variance: futureOnly ? null : variance,
+      transactionDrilldown:
+        futureOnly ? null : budgetTransactionsDrilldown(entry, target),
       rolloverBalance: trackingMonthRolloverLine(model, target, entry, values),
       previousBudgeted: previousValues?.budgeted ?? null,
       stagedEdit: exactEdit,
@@ -693,14 +866,6 @@ export function buildTrackingDetailsMetrics(
       ? actualLikeMonthCount
       : fullBudgetMonthCount;
     const futureOnly = model.coverage.isFutureOnly;
-    const label = target.isIncome
-      ? variance >= 0
-        ? "Ahead of plan by"
-        : "Under plan by"
-      : variance >= 0
-      ? "Under plan by"
-      : "Over plan by";
-
     return {
       scope: model.selection.scope,
       entity: model.selection.entity,
@@ -719,14 +884,18 @@ export function buildTrackingDetailsMetrics(
             tone: "neutral",
           }
         : {
-            label,
-            value: Math.abs(variance),
-            helper: "Actuals to date compared with budget to date.",
-            tone: target.isIncome ? toneForSigned(variance) : toneForSigned(variance),
+            ...(target.isIncome
+              ? trackingIncomePrimaryMetric({
+                  budgeted: budgetToDate,
+                  actuals: actualToDate,
+                  variance,
+                  status: null,
+                })
+              : trackingExpensePrimaryMetric({ variance, status: null })),
           },
       selectionToDate: {
-        budgetLabel: target.isIncome ? "Budgeted income to date" : "Budget to date",
-        actualLabel: target.isIncome ? "Received income to date" : "Actuals to date",
+        budgetLabel: target.isIncome ? "Budgeted income to date" : "Budgeted to date",
+        actualLabel: target.isIncome ? "Received income to date" : "Spent to date",
         budgeted: budgetToDate,
         actuals: actualToDate,
         variance,
@@ -737,10 +906,10 @@ export function buildTrackingDetailsMetrics(
           ? {
               budgetLabel: target.isIncome
                 ? "Budgeted income / month"
-                : "Budget / month",
+                : "Budgeted / month",
               actualLabel: target.isIncome
                 ? "Received income / month"
-                : "Actual / month",
+                : "Spent / month",
               budgetPerMonth: Math.round(
                 (hasActualLikeMonths ? budgetToDate : fullBudget) /
                   budgetAverageDivisor
@@ -764,6 +933,7 @@ export function buildTrackingDetailsMetrics(
   let expenseActuals = 0;
   let incomeBudgetToDate = 0;
   let expenseBudgetToDate = 0;
+  let expenseVarianceToDate = 0;
   let fullIncomeBudget = 0;
   let fullExpenseBudget = 0;
   const trend: BudgetTrendPoint[] = [];
@@ -779,6 +949,7 @@ export function buildTrackingDetailsMetrics(
         expenseActuals += values.expenseActuals;
         incomeBudgetToDate += values.incomeBudgeted;
         expenseBudgetToDate += values.expenseBudgeted;
+        expenseVarianceToDate += values.expenseVariance;
       }
     }
 
@@ -797,7 +968,7 @@ export function buildTrackingDetailsMetrics(
 
   const actualResult = incomeActuals - expenseActuals;
   const plannedToDate = incomeBudgetToDate - expenseBudgetToDate;
-  const expenseVariance = expenseBudgetToDate - expenseActuals;
+  const expenseVariance = expenseVarianceToDate;
   const netPlanVariance = actualResult - plannedToDate;
   const plannedResult = fullIncomeBudget - fullExpenseBudget;
 
@@ -912,6 +1083,7 @@ function buildEnvelopeMonthMetrics(
       assignedBudgeted: values.budgeted,
       spent: values.actuals,
       balance: values.balance,
+      transactionDrilldown: budgetTransactionsDrilldown(entry, target),
       previousBalance: previousValues?.balance ?? null,
       previousLabel: previousValues ? "Previous month balance" : null,
       carryover: selection.entity === "category" ? values.carryover : null,

@@ -31,8 +31,8 @@ export type TrackingSummaryCell = {
   tooltip: string;
 };
 
-const INCOME_ON_TARGET_RATIO = 0.995;
-const INCOME_AHEAD_RATIO = 1.005;
+export const TRACKING_INCOME_ON_TARGET_RATIO = 0.995;
+export const TRACKING_INCOME_AHEAD_RATIO = 1.005;
 
 function visibleTrackingCategories(state: LoadedMonthState): LoadedCategory[] {
   const result: LoadedCategory[] = [];
@@ -221,8 +221,8 @@ export function getTrackingIncomeCell(
 
   const ratio = totals.incomeActuals / totals.incomeBudgeted;
   const percent = Math.round(ratio * 100);
-  const isShort = ratio < INCOME_ON_TARGET_RATIO;
-  const isAhead = ratio >= INCOME_AHEAD_RATIO;
+  const isShort = ratio < TRACKING_INCOME_ON_TARGET_RATIO;
+  const isAhead = ratio >= TRACKING_INCOME_AHEAD_RATIO;
   const statusLabel =
     status === "current-partial" && isShort
       ? "Received so far"

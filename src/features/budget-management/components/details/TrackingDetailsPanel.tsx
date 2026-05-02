@@ -1,7 +1,12 @@
 "use client";
 
+import { useState } from "react";
 import { formatDelta, formatSigned } from "../../lib/format";
 import type { TrackingDetailsMetrics } from "../../lib/budgetDetailsMetrics";
+import type {
+  BudgetTransactionBrowserOptions,
+  BudgetTransactionsDrilldown,
+} from "../../lib/budgetTransactionBrowser";
 import {
   DetailsHeader,
   DetailsSection,
@@ -10,6 +15,8 @@ import {
   PrimaryMetric,
   StagedImpactBlock,
 } from "./DetailsPrimitives";
+import { BudgetTransactionsDialog } from "./BudgetTransactionsDialog";
+import { useSpendingDetailsShortcut } from "./useSpendingDetailsShortcut";
 
 function toneFromValue(value: number) {
   if (value > 0) return "positive" as const;
@@ -28,9 +35,9 @@ const PERIOD_TOOLTIP = {
   expensesBudgetedToDate:
     "Sum of expenses budgeted in actualized months and the current partial month.",
   expenseVariance:
-    "Expenses budgeted to date minus expenses spent to date. Positive means under expense plan.",
+    "Expenses budgeted to date minus expenses spent to date. Positive means under budget.",
   netPlanVariance:
-    "Actual result so far minus planned result to date: (income received - expenses spent) - (income budgeted - expenses budgeted).",
+    "Actual result so far compared with budgeted result to date: (income received - expenses spent) - (income budgeted - expenses budgeted).",
   fullIncomeBudget: "Sum of income budgeted across the visible 12 months.",
   fullExpenseBudget: "Sum of expenses budgeted across the visible 12 months.",
   plannedResult: "Full-period income budgeted minus expenses budgeted.",
@@ -38,11 +45,19 @@ const PERIOD_TOOLTIP = {
 
 export function TrackingDetailsPanel({
   metrics,
+  transactionBrowserOptions,
 }: {
   metrics: TrackingDetailsMetrics;
+  transactionBrowserOptions: BudgetTransactionBrowserOptions;
 }) {
   const isFullPeriod = metrics.entity === "none";
   const isMonth = metrics.scope === "month";
+  const [transactionTarget, setTransactionTarget] =
+    useState<BudgetTransactionsDrilldown | null>(null);
+  useSpendingDetailsShortcut({
+    target: metrics.monthValues?.transactionDrilldown,
+    onOpen: setTransactionTarget,
+  });
 
   return (
     <div className="px-3 py-2 space-y-3">
@@ -71,6 +86,12 @@ export function TrackingDetailsPanel({
             <MetricLine
               label={metrics.monthValues.actualLabel}
               value={formatSigned(metrics.monthValues.actuals)}
+              onValueClick={
+                metrics.monthValues.transactionDrilldown
+                  ? () => setTransactionTarget(metrics.monthValues!.transactionDrilldown)
+                  : undefined
+              }
+              valueAriaLabel={`View transactions for ${metrics.title}`}
             />
           )}
           {metrics.monthValues.variance != null && (
@@ -143,13 +164,13 @@ export function TrackingDetailsPanel({
             tooltip={PERIOD_TOOLTIP.expensesBudgetedToDate}
           />
           <MetricLine
-            label="Expense variance"
+            label="Spending vs budgeted"
             value={formatDelta(metrics.periodBudgetToDate.expenseVariance)}
             tone={toneFromValue(metrics.periodBudgetToDate.expenseVariance)}
             tooltip={PERIOD_TOOLTIP.expenseVariance}
           />
           <MetricLine
-            label="Net plan variance"
+            label="Result vs budgeted"
             value={formatDelta(metrics.periodBudgetToDate.netPlanVariance)}
             tone={toneFromValue(metrics.periodBudgetToDate.netPlanVariance)}
             tooltip={PERIOD_TOOLTIP.netPlanVariance}
@@ -256,6 +277,14 @@ export function TrackingDetailsPanel({
       {!isMonth && <MiniTrend label={metrics.trendLabel} points={metrics.trend} />}
 
       <StagedImpactBlock mode="tracking" impact={metrics.stagedImpact} />
+      {transactionTarget && (
+        <BudgetTransactionsDialog
+          key={`${transactionTarget.entity}:${transactionTarget.id}:${transactionTarget.month}`}
+          target={transactionTarget}
+          browserOptions={transactionBrowserOptions}
+          onClose={() => setTransactionTarget(null)}
+        />
+      )}
     </div>
   );
 }

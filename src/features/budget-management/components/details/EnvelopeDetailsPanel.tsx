@@ -1,7 +1,12 @@
 "use client";
 
+import { useState } from "react";
 import { formatDelta, formatSigned } from "../../lib/format";
 import type { EnvelopeDetailsMetrics } from "../../lib/budgetDetailsMetrics";
+import type {
+  BudgetTransactionBrowserOptions,
+  BudgetTransactionsDrilldown,
+} from "../../lib/budgetTransactionBrowser";
 import {
   DetailsHeader,
   DetailsSection,
@@ -11,6 +16,8 @@ import {
   StagedImpactBlock,
   toneClass,
 } from "./DetailsPrimitives";
+import { BudgetTransactionsDialog } from "./BudgetTransactionsDialog";
+import { useSpendingDetailsShortcut } from "./useSpendingDetailsShortcut";
 
 function toneFromValue(value: number) {
   if (value > 0) return "positive" as const;
@@ -35,11 +42,19 @@ function formatEnvelopeStatusValue(label: string, value: number): string {
 
 export function EnvelopeDetailsPanel({
   metrics,
+  transactionBrowserOptions,
 }: {
   metrics: EnvelopeDetailsMetrics;
+  transactionBrowserOptions: BudgetTransactionBrowserOptions;
 }) {
   const isFullPeriod = metrics.entity === "none";
   const isMonth = metrics.scope === "month";
+  const [transactionTarget, setTransactionTarget] =
+    useState<BudgetTransactionsDrilldown | null>(null);
+  useSpendingDetailsShortcut({
+    target: metrics.monthValues?.transactionDrilldown,
+    onOpen: setTransactionTarget,
+  });
 
   return (
     <div className="px-3 py-2 space-y-3">
@@ -133,6 +148,12 @@ export function EnvelopeDetailsPanel({
           <MetricLine
             label="Spent"
             value={formatSigned(metrics.monthValues.spent)}
+            onValueClick={
+              metrics.monthValues.transactionDrilldown
+                ? () => setTransactionTarget(metrics.monthValues!.transactionDrilldown)
+                : undefined
+            }
+            valueAriaLabel={`View transactions for ${metrics.title}`}
           />
           <MetricLine
             label="Balance"
@@ -171,6 +192,14 @@ export function EnvelopeDetailsPanel({
       {!isMonth && <MiniTrend label={metrics.trendLabel} points={metrics.trend} />}
 
       <StagedImpactBlock mode="envelope" impact={metrics.stagedImpact} />
+      {transactionTarget && (
+        <BudgetTransactionsDialog
+          key={`${transactionTarget.entity}:${transactionTarget.id}:${transactionTarget.month}`}
+          target={transactionTarget}
+          browserOptions={transactionBrowserOptions}
+          onClose={() => setTransactionTarget(null)}
+        />
+      )}
     </div>
   );
 }

@@ -1,5 +1,6 @@
 "use client";
 
+import { useMemo } from "react";
 import { useQueries } from "@tanstack/react-query";
 import { useBudgetEditsStore } from "@/store/budgetEdits";
 import { useConnectionStore, selectActiveInstance } from "@/store/connection";
@@ -17,6 +18,7 @@ import {
   buildEnvelopeDetailsMetrics,
   buildTrackingDetailsMetrics,
 } from "../../lib/budgetDetailsMetrics";
+import { buildBudgetTransactionBrowserOptions } from "../../lib/budgetTransactionBrowser";
 import { EnvelopeDetailsPanel } from "./EnvelopeDetailsPanel";
 import { TrackingDetailsPanel } from "./TrackingDetailsPanel";
 import type { BudgetMode, LoadedMonthState } from "../../types";
@@ -27,6 +29,20 @@ function EmptyDetailsState({ message }: { message: string }) {
       {message}
     </div>
   );
+}
+
+const EMPTY_INCOME_CATEGORY_IDS: string[] = [];
+
+function firstLoadedIncomeCategoryIds(
+  states: Array<LoadedMonthState | undefined>
+): string[] {
+  for (const state of states) {
+    if (!state) continue;
+    return Object.values(state.categoriesById)
+      .filter((category) => category.isIncome)
+      .map((category) => category.id);
+  }
+  return EMPTY_INCOME_CATEGORY_IDS;
 }
 
 /**
@@ -56,32 +72,45 @@ export function BudgetDetailsPanel() {
     useBudgetEditsStore((s) => s.uiSelection);
   const rowSelection = useBudgetEditsStore((s) => s.rowSelection);
   const displayMonths = useBudgetEditsStore((s) => s.displayMonths);
-  const availableMonthSet = new Set(availableMonths ?? []);
+  const availableMonthSet = useMemo(
+    () => new Set(availableMonths ?? []),
+    [availableMonths]
+  );
 
-  const queries = useQueries({
-    queries: displayMonths.map((month) => ({
+  const monthQueries = useMemo(
+    () => displayMonths.map((month) => ({
       ...budgetMonthDataQueryOptions(connection, month),
       enabled: !!connection && !!month && availableMonthSet.has(month),
     })),
+    [availableMonthSet, connection, displayMonths]
+  );
+
+  const queries = useQueries({
+    queries: monthQueries,
   });
 
-  const dataArr = queries.map((query) => query.data);
-  const isMonthLoading = queries.some((query) => query.isLoading);
-  const monthQueryError = queries.find((query, index) => {
-    const month = displayMonths[index];
-    return query.isError && !isMissingBudgetMonthError(query.error, month);
-  })?.error;
+  const dataArr = useMemo(
+    () => queries.map((query) => query.data),
+    [queries]
+  );
+  const isMonthLoading = useMemo(
+    () => queries.some((query) => query.isLoading),
+    [queries]
+  );
+  const monthQueryError = useMemo(
+    () =>
+      queries.find((query, index) => {
+        const month = displayMonths[index];
+        return (
+          query.isError && !isMissingBudgetMonthError(query.error, month)
+        );
+      })?.error,
+    [displayMonths, queries]
+  );
 
-  const incomeCategoryIds = (() => {
-    if (!isTracking) return [];
-    for (const data of dataArr) {
-      if (!data) continue;
-      return Object.values(data.categoriesById)
-        .filter((category) => category.isIncome)
-        .map((category) => category.id);
-    }
-    return [];
-  })();
+  const incomeCategoryIds = isTracking
+    ? firstLoadedIncomeCategoryIds(dataArr)
+    : EMPTY_INCOME_CATEGORY_IDS;
 
   const {
     data: incomeBudgets,
@@ -92,8 +121,10 @@ export function BudgetDetailsPanel() {
   const hasMonthQueryError = monthQueryError != null;
   const hasIncomeBudgetsError = isTracking && incomeBudgetsError != null;
 
-  const statesByMonth = new Map<string, LoadedMonthState>();
-  if (!hasMonthQueryError && !hasIncomeBudgetsError) {
+  const statesByMonth = useMemo(() => {
+    const result = new Map<string, LoadedMonthState>();
+    if (hasMonthQueryError || hasIncomeBudgetsError) return result;
+
     for (let i = 0; i < displayMonths.length; i++) {
       const month = displayMonths[i];
       const serverState = dataArr[i];
@@ -105,20 +136,46 @@ export function BudgetDetailsPanel() {
         incomeBudgets,
         month,
       });
-      if (effective) statesByMonth.set(month, effective);
+      if (effective) result.set(month, effective);
     }
-  }
-
-  const model = buildBudgetDetailsModel({
-    budgetMode,
+    return result;
+  }, [
+    dataArr,
     displayMonths,
-    statesByMonth,
-    rowSelection,
-    selectedCategoryId,
-    selectedGroupId,
-    selectedMonth,
     edits,
-  });
+    hasIncomeBudgetsError,
+    hasMonthQueryError,
+    incomeBudgets,
+    isTracking,
+  ]);
+
+  const model = useMemo(
+    () =>
+      buildBudgetDetailsModel({
+        budgetMode,
+        displayMonths,
+        statesByMonth,
+        rowSelection,
+        selectedCategoryId,
+        selectedGroupId,
+        selectedMonth,
+        edits,
+      }),
+    [
+      budgetMode,
+      displayMonths,
+      edits,
+      rowSelection,
+      selectedCategoryId,
+      selectedGroupId,
+      selectedMonth,
+      statesByMonth,
+    ]
+  );
+  const transactionBrowserOptions = useMemo(
+    () => buildBudgetTransactionBrowserOptions(model),
+    [model]
+  );
 
   if (displayMonths.length === 0) {
     return <EmptyDetailsState message="Loading..." />;
@@ -165,11 +222,17 @@ export function BudgetDetailsPanel() {
 
   if (budgetMode === "envelope") {
     return (
-      <EnvelopeDetailsPanel metrics={buildEnvelopeDetailsMetrics(model)} />
+      <EnvelopeDetailsPanel
+        metrics={buildEnvelopeDetailsMetrics(model)}
+        transactionBrowserOptions={transactionBrowserOptions}
+      />
     );
   }
 
   return (
-    <TrackingDetailsPanel metrics={buildTrackingDetailsMetrics(model)} />
+    <TrackingDetailsPanel
+      metrics={buildTrackingDetailsMetrics(model)}
+      transactionBrowserOptions={transactionBrowserOptions}
+    />
   );
 }
