@@ -146,6 +146,7 @@ export type TrackingDetailsMetrics = {
   monthValues?: TrackingSelectedMonthValues;
   trendLabel: string;
   trend: BudgetTrendPoint[];
+  spendingVsBudgetedTrend?: BudgetTrendPoint[];
   stagedImpact: RelevantStagedImpact | null;
 };
 
@@ -431,7 +432,7 @@ function visibleGroupCategoryIds(
 
 function budgetTransactionsDrilldown(
   entry: BudgetDetailsMonth,
-  target: TargetInfo
+  target: TargetInfo,
 ): BudgetTransactionsDrilldown | null {
   if (target.isIncome || !entry.state) return null;
 
@@ -623,17 +624,10 @@ function trackingIncomePrimaryMetric({
   };
 }
 
-function simpleTrackingCategoryVariance(category: LoadedCategory): number {
-  if (category.isIncome) return category.actuals - category.budgeted;
-  return absAmount(category.budgeted) - absAmount(category.actuals);
-}
-
 function hasMeaningfulTrackingCategoryRollover(
   category: LoadedCategory
 ): boolean {
-  if (category.carryover) return true;
-  if (category.isIncome) return false;
-  return category.balance !== simpleTrackingCategoryVariance(category);
+  return category.carryover === true;
 }
 
 function hasMeaningfulTrackingRollover(
@@ -781,7 +775,7 @@ function buildTrackingMonthMetrics(
       previousBudgeted: previousValues?.budgeted ?? null,
       stagedEdit: exactEdit,
     },
-    trendLabel: "Monthly Variance",
+    trendLabel: "Monthly Spending vs. Budgeted",
     trend: [],
     stagedImpact: relevantStagedImpact(model, target),
   };
@@ -806,7 +800,7 @@ function missingSelectionMetrics(
       helper: "Use the month navigator to find a period with this row.",
       tone: "neutral",
     },
-    trendLabel: "Monthly Variance",
+    trendLabel: "Monthly Spending vs. Budgeted",
     trend: [],
     stagedImpact: null,
   };
@@ -923,7 +917,7 @@ export function buildTrackingDetailsMetrics(
             }
           : undefined,
       rollover: buildTrackingRolloverMetrics(model, target),
-      trendLabel: "Monthly Variance",
+      trendLabel: "Monthly Spending vs. Budgeted",
       trend,
       stagedImpact: relevantStagedImpact(model, target),
     };
@@ -937,6 +931,7 @@ export function buildTrackingDetailsMetrics(
   let fullIncomeBudget = 0;
   let fullExpenseBudget = 0;
   const trend: BudgetTrendPoint[] = [];
+  const spendingVsBudgetedTrend: BudgetTrendPoint[] = [];
 
   for (const entry of model.months) {
     const state = entry.state;
@@ -961,6 +956,13 @@ export function buildTrackingDetailsMetrics(
       month: entry.month,
       label: formatMonthLabel(entry.month),
       value: entry.status === "future" ? plannedResult : actualResult,
+      status: entry.status,
+      planOnly: entry.status === "future",
+    });
+    spendingVsBudgetedTrend.push({
+      month: entry.month,
+      label: formatMonthLabel(entry.month),
+      value: entry.status === "future" ? null : (values?.expenseVariance ?? null),
       status: entry.status,
       planOnly: entry.status === "future",
     });
@@ -1013,6 +1015,7 @@ export function buildTrackingDetailsMetrics(
     },
     trendLabel: "Monthly Result",
     trend,
+    spendingVsBudgetedTrend: model.coverage.isFutureOnly ? undefined : spendingVsBudgetedTrend,
     stagedImpact: relevantStagedImpact(model, null),
   };
 }

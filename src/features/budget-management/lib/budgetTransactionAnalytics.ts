@@ -20,6 +20,7 @@ export type RepeatedPayee = {
 
 export type BudgetTransactionAnalytics = {
   totalSpent: number;
+  netSpent: number;
   transactionCount: number;
   spendingTransactionCount: number;
   averageTransaction: number;
@@ -232,6 +233,11 @@ export function buildBudgetTransactionAnalytics(
     }
   }
 
+  // netSpent matches the budget panel: -(sum of all signed amounts).
+  // totalSpent only counts spending rows (ignoring refunds) and is used for
+  // bar-chart percentages. netSpent is what the dialog shows as "Spent".
+  const netSpent = Math.max(0, rows.reduce((sum, row) => sum - row.amount, 0));
+
   const averageTransaction =
     rows.length > 0 ? Math.round(totalSpent / rows.length) : 0;
   const topTransactions = [...rows]
@@ -268,6 +274,7 @@ export function buildBudgetTransactionAnalytics(
 
   return {
     totalSpent,
+    netSpent,
     transactionCount: rows.length,
     spendingTransactionCount,
     averageTransaction,

@@ -63,6 +63,15 @@ function rowSearchText(row: BudgetTransactionRow): string {
   );
 }
 
+export function matchesTransactionSearch(
+  row: BudgetTransactionRow,
+  query: string
+): boolean {
+  const search = normalizeSearchValue(query);
+  if (!search) return true;
+  return rowSearchText(row).includes(search);
+}
+
 export function filterBudgetTransactions(
   rows: BudgetTransactionRow[],
   query: string

@@ -7,6 +7,7 @@ import type {
   BudgetTransactionBrowserOptions,
   BudgetTransactionsDrilldown,
 } from "../../lib/budgetTransactionBrowser";
+import type { LoadedMonthState } from "../../types";
 import {
   DetailsHeader,
   DetailsSection,
@@ -46,9 +47,11 @@ const PERIOD_TOOLTIP = {
 export function TrackingDetailsPanel({
   metrics,
   transactionBrowserOptions,
+  statesByMonth,
 }: {
   metrics: TrackingDetailsMetrics;
   transactionBrowserOptions: BudgetTransactionBrowserOptions;
+  statesByMonth: Map<string, LoadedMonthState>;
 }) {
   const isFullPeriod = metrics.entity === "none";
   const isMonth = metrics.scope === "month";
@@ -275,6 +278,9 @@ export function TrackingDetailsPanel({
       )}
 
       {!isMonth && <MiniTrend label={metrics.trendLabel} points={metrics.trend} />}
+      {isFullPeriod && metrics.spendingVsBudgetedTrend && (
+        <MiniTrend label="Monthly Spending vs. Budgeted" points={metrics.spendingVsBudgetedTrend} />
+      )}
 
       <StagedImpactBlock mode="tracking" impact={metrics.stagedImpact} />
       {transactionTarget && (
@@ -282,6 +288,7 @@ export function TrackingDetailsPanel({
           key={`${transactionTarget.entity}:${transactionTarget.id}:${transactionTarget.month}`}
           target={transactionTarget}
           browserOptions={transactionBrowserOptions}
+          statesByMonth={statesByMonth}
           onClose={() => setTransactionTarget(null)}
         />
       )}

@@ -225,6 +225,7 @@ export function BudgetDetailsPanel() {
       <EnvelopeDetailsPanel
         metrics={buildEnvelopeDetailsMetrics(model)}
         transactionBrowserOptions={transactionBrowserOptions}
+        statesByMonth={statesByMonth}
       />
     );
   }
@@ -233,6 +234,7 @@ export function BudgetDetailsPanel() {
     <TrackingDetailsPanel
       metrics={buildTrackingDetailsMetrics(model)}
       transactionBrowserOptions={transactionBrowserOptions}
+      statesByMonth={statesByMonth}
     />
   );
 }

@@ -1,6 +1,16 @@
 "use client";
 
-import { useMemo, useState, type ReactNode } from "react";
+import { useMemo, useState, useEffect } from "react";
+import {
+  useReactTable,
+  getCoreRowModel,
+  getSortedRowModel,
+  getFilteredRowModel,
+  flexRender,
+  createColumnHelper,
+  type SortingState,
+  type FilterFn,
+} from "@tanstack/react-table";
 import { ArrowDown, ArrowUp, ArrowUpDown, Clock3, Search, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -22,9 +32,7 @@ import {
 import { formatDelta, formatSigned } from "../../lib/format";
 import {
   formatTransactionDateLabel,
-  prepareBudgetTransactionRows,
-  type BudgetTransactionSort,
-  type BudgetTransactionSortKey,
+  matchesTransactionSearch,
 } from "../../lib/budgetTransactionTable";
 import type {
   BudgetTransactionBrowserOptions,
@@ -32,32 +40,23 @@ import type {
   BudgetTransactionsDrilldown,
 } from "../../lib/budgetTransactionBrowser";
 import type { BudgetTransactionRow } from "../../lib/budgetTransactionsQuery";
+import type { LoadedMonthState } from "../../types";
 
 type Props = {
   target: BudgetTransactionsDrilldown | null;
   browserOptions: BudgetTransactionBrowserOptions;
+  statesByMonth: Map<string, LoadedMonthState>;
   onClose: () => void;
 };
 
-const DEFAULT_SORT: BudgetTransactionSort = { key: "amount", direction: "desc" };
 const EMPTY_TRANSACTION_ROWS: BudgetTransactionRow[] = [];
 const EMPTY_CATEGORY_IDS: string[] = [];
 const SELECT_CLASS =
   "h-7 min-w-0 rounded-md border border-input bg-background px-2 text-[11px] outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:bg-input/50 disabled:opacity-60 dark:bg-input/30";
 
-const SORT_LABELS: Record<BudgetTransactionSortKey, string> = {
-  date: "Date",
-  amount: "Amount",
-  payee: "Payee",
-  category: "Category",
-  notes: "Notes",
-};
+// ─── column setup ─────────────────────────────────────────────────────────────
 
-function errorMessage(error: unknown): string {
-  if (error instanceof Error) return error.message;
-  if (typeof error === "string") return error;
-  return "Unknown error";
-}
+const columnHelper = createColumnHelper<BudgetTransactionRow>();
 
 function amountTone(amount: number): string {
   if (amount < 0) return "text-destructive";
@@ -65,12 +64,82 @@ function amountTone(amount: number): string {
   return "text-muted-foreground";
 }
 
-function defaultDirectionFor(key: BudgetTransactionSortKey) {
-  return key === "date" || key === "amount" ? "desc" : "asc";
-}
+const columns = [
+  columnHelper.accessor("date", {
+    header: "Date",
+    cell: ({ getValue }) => (
+      <span title={getValue()}>{formatTransactionDateLabel(getValue())}</span>
+    ),
+    sortingFn: "alphanumeric",
+  }),
+  columnHelper.accessor((row) => (row.amount < 0 ? Math.abs(row.amount) : 0), {
+    id: "amount",
+    header: "Amount",
+    cell: ({ row }) => (
+      <span className={cn("font-sans font-semibold tabular-nums", amountTone(row.original.amount))}>
+        {formatDelta(row.original.amount)}
+      </span>
+    ),
+    sortingFn: "basic",
+  }),
+  columnHelper.accessor((row) => row.payeeName ?? "", {
+    id: "payee",
+    header: "Payee",
+    cell: ({ row }) => (
+      <span
+        className={cn(
+          "block max-w-[18rem] truncate font-medium",
+          row.original.payeeName ? "text-foreground" : "italic text-muted-foreground"
+        )}
+        title={row.original.payeeName ?? "No payee"}
+      >
+        {row.original.payeeName ?? "No payee"}
+      </span>
+    ),
+    sortingFn: "text",
+  }),
+  columnHelper.accessor((row) => row.categoryName ?? "", {
+    id: "category",
+    header: "Category",
+    cell: ({ row }) => (
+      <span
+        className="block max-w-56 truncate text-muted-foreground"
+        title={row.original.categoryName ?? "Uncategorized"}
+      >
+        {row.original.categoryName ?? "Uncategorized"}
+      </span>
+    ),
+    sortingFn: "text",
+  }),
+  columnHelper.accessor((row) => row.notes ?? "", {
+    id: "notes",
+    header: "Notes",
+    cell: ({ row }) => (
+      <span
+        className="block max-w-88 truncate text-muted-foreground"
+        title={row.original.notes ?? ""}
+      >
+        {row.original.notes ?? ""}
+      </span>
+    ),
+    sortingFn: "text",
+  }),
+];
 
-function targetKey(target: BudgetTransactionsDrilldown): string {
-  return `${target.entity}:${target.id}`;
+// Stable module-level filter fn — avoids recreating on every render
+const transactionSearchFilter: FilterFn<BudgetTransactionRow> = (
+  row,
+  _columnId,
+  filterValue: string
+) => matchesTransactionSearch(row.original, filterValue);
+transactionSearchFilter.autoRemove = (val: string) => !val;
+
+// ─── helpers ─────────────────────────────────────────────────────────────────
+
+function errorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (typeof error === "string") return error;
+  return "Unknown error";
 }
 
 function optionKey(option: BudgetTransactionCategoryOption): string {
@@ -82,226 +151,243 @@ function optionLabel(option: BudgetTransactionCategoryOption): string {
   return `${option.title} · ${option.subtitle}`;
 }
 
-function formatSortStatus(sort: BudgetTransactionSort): string {
-  return `Sorted by ${SORT_LABELS[sort.key]} ${sort.direction === "desc" ? "↓" : "↑"}`;
+function targetKey(target: BudgetTransactionsDrilldown): string {
+  return `${target.entity}:${target.id}`;
 }
 
-function weekRangeLabel(month: string, bucket: TransactionTimeBucket): string {
-  const week = Number(bucket.id.replace("week-", ""));
-  if (!week || !/^\d{4}-\d{2}$/.test(month)) return bucket.label;
-
-  const [year, monthNumber] = month.split("-").map(Number);
-  const firstDay = (week - 1) * 7 + 1;
-  const lastDay = Math.min(week * 7, new Date(year, monthNumber, 0).getDate());
-  const start = new Date(Date.UTC(year, monthNumber - 1, firstDay));
-  const end = new Date(Date.UTC(year, monthNumber - 1, lastDay));
-  const fmt = new Intl.DateTimeFormat("en-US", {
-    month: "short",
-    day: "numeric",
-    timeZone: "UTC",
-  });
-  return `${fmt.format(start)} - ${fmt.format(end)}`;
+function rowWeekId(date: string): string {
+  const day = Number(date.slice(-2)) || 1;
+  const week = Math.min(5, Math.max(1, Math.floor((day - 1) / 7) + 1));
+  return `week-${week}`;
 }
 
-function mostActiveWeek(buckets: TransactionTimeBucket[]): TransactionTimeBucket | null {
-  return buckets.reduce<TransactionTimeBucket | null>(
-    (best, bucket) => (!best || bucket.amount > best.amount ? bucket : best),
-    null
-  );
+function rowMatchesSpendBucket(
+  row: BudgetTransactionRow,
+  bucketId: string,
+  isGroup: boolean
+): boolean {
+  const label = isGroup
+    ? (row.categoryName?.trim() || "Uncategorized")
+    : (row.payeeName?.trim() || "No payee");
+  return label === bucketId;
 }
 
-function weekOverWeekInsight(
-  buckets: TransactionTimeBucket[]
-): { label: string; delta: number } | null {
-  let best: { label: string; delta: number } | null = null;
-  for (let i = 1; i < buckets.length; i++) {
-    const previous = buckets[i - 1];
-    const current = buckets[i];
-    if (!previous || !current) continue;
-    const delta = current.amount - previous.amount;
-    if (!best || Math.abs(delta) > Math.abs(best.delta)) {
-      best = {
-        label: `${previous.label.replace("Week ", "W")} → ${current.label.replace("Week ", "W")}`,
-        delta,
-      };
-    }
-  }
-  return best;
-}
+// ─── primitives ───────────────────────────────────────────────────────────────
 
-function SortIcon({
-  active,
-  direction,
-}: {
-  active: boolean;
-  direction: BudgetTransactionSort["direction"];
-}) {
-  if (!active) return <ArrowUpDown className="h-3 w-3 opacity-35" />;
-  if (direction === "asc") return <ArrowUp className="h-3 w-3" />;
-  return <ArrowDown className="h-3 w-3" />;
-}
-
-function SortHeader({
-  sortKey,
-  sort,
-  align = "left",
-  className,
-  onSort,
-}: {
-  sortKey: BudgetTransactionSortKey;
-  sort: BudgetTransactionSort;
-  align?: "left" | "right";
-  className?: string;
-  onSort: (key: BudgetTransactionSortKey) => void;
-}) {
-  const active = sort.key === sortKey;
-  return (
-    <th className={cn("px-3 py-2 font-medium", className)}>
-      <button
-        type="button"
-        className={cn(
-          "inline-flex w-full items-center gap-1.5 text-muted-foreground transition-colors hover:text-foreground",
-          align === "right" ? "justify-end" : "justify-start"
-        )}
-        aria-label={`Sort by ${SORT_LABELS[sortKey]}`}
-        onClick={() => onSort(sortKey)}
-      >
-        <span>{SORT_LABELS[sortKey]}</span>
-        <SortIcon active={active} direction={sort.direction} />
-      </button>
-    </th>
-  );
-}
-
-function Kpi({
+function StripItem({
   label,
   value,
-  helper,
+  tone,
 }: {
   label: string;
   value: string;
-  helper: string;
+  tone?: string;
 }) {
   return (
-    <div className="min-w-0 rounded-md border border-border/70 bg-muted/10 px-3 py-2">
-      <div className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+    <div className="flex min-w-0 flex-1 flex-col items-center">
+      <div className="text-[9px] font-medium uppercase tracking-wider text-muted-foreground">
         {label}
       </div>
-      <div className="mt-0.5 truncate font-sans text-[15px] font-semibold tabular-nums text-foreground">
+      <div className={cn("mt-0.5 truncate font-sans text-sm font-semibold tabular-nums", tone ?? "text-foreground")}>
         {value}
       </div>
-      <div className="mt-0.5 truncate text-[10px] text-muted-foreground">{helper}</div>
     </div>
   );
 }
 
-function Panel({
-  title,
-  children,
-}: {
-  title: string;
-  children: ReactNode;
-}) {
+function FilterChip({ label, onClear }: { label: string; onClear: () => void }) {
   return (
-    <section className="min-h-0 rounded-md border border-border/70 bg-background p-3">
-      <h3 className="mb-2 text-xs font-semibold text-foreground">{title}</h3>
-      {children}
+    <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary">
+      {label}
+      <button
+        type="button"
+        aria-label={`Remove filter: ${label}`}
+        className="ml-0.5 rounded-full p-0.5 hover:bg-primary/20"
+        onClick={onClear}
+      >
+        <X className="h-2.5 w-2.5" aria-hidden="true" />
+      </button>
+    </span>
+  );
+}
+
+function Panel({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <section className="flex h-full min-h-0 flex-col rounded-md border border-border/70 bg-background p-3">
+      <h3 className="mb-2 shrink-0 text-xs font-semibold text-foreground">{title}</h3>
+      <div className="min-h-0 flex-1 overflow-hidden">{children}</div>
     </section>
   );
 }
 
+const BREAKDOWN_VISIBLE_LIMIT = 6;
+
 function SpendBreakdown({
   buckets,
   emptyLabel,
+  selectedId,
+  onSelect,
 }: {
   buckets: TransactionSpendBucket[];
   emptyLabel: string;
+  selectedId: string | null;
+  onSelect: (id: string) => void;
 }) {
-  const visible = buckets.slice(0, 6);
+  const visible = buckets.slice(0, BREAKDOWN_VISIBLE_LIMIT);
+  const hiddenCount = Math.max(0, buckets.length - BREAKDOWN_VISIBLE_LIMIT);
+  const hasSelection = selectedId !== null;
+
   if (visible.length === 0) {
-    return <div className="py-8 text-center text-xs text-muted-foreground">{emptyLabel}</div>;
+    return (
+      <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
+        {emptyLabel}
+      </div>
+    );
   }
 
   return (
-    <div className="space-y-2">
-      {visible.map((bucket) => (
-        <div key={bucket.id}>
-          <div className="mb-1 flex items-center justify-between gap-3">
-            <span className="min-w-0 truncate text-xs font-medium text-foreground">
-              {bucket.label}
-            </span>
-            <span className="shrink-0 font-sans text-[11px] tabular-nums text-foreground">
-              {formatSigned(bucket.amount)}
-              <span className="ml-2 text-muted-foreground">
-                {Math.round(bucket.percentage * 100)}%
+    <div className="flex h-full flex-col">
+      <div className="space-y-1.5">
+        {visible.map((bucket) => {
+          const isActive = selectedId === bucket.id;
+          return (
+          <button
+            key={bucket.id}
+            type="button"
+            aria-pressed={isActive}
+            className={cn(
+              "w-full cursor-pointer rounded px-1.5 py-1 text-left transition-all",
+              isActive
+                ? "bg-primary/10 ring-1 ring-primary/30"
+                : hasSelection
+                  ? "opacity-40 hover:opacity-100 hover:bg-muted/40"
+                  : "hover:bg-muted/40"
+            )}
+            onClick={() => onSelect(bucket.id)}
+          >
+            <div className="mb-1 flex items-center justify-between gap-2">
+              <span className="min-w-0 truncate text-[11px] font-medium text-foreground">
+                {bucket.label}
               </span>
-            </span>
-          </div>
-          <div className="h-1 overflow-hidden rounded-full bg-muted">
-            <div
-              className="h-full rounded-full bg-foreground/60"
-              style={{
-                width: `${Math.max(bucket.percentage * 100, bucket.amount > 0 ? 3 : 0)}%`,
-              }}
-            />
-          </div>
+              <span className="shrink-0 font-sans text-xs tabular-nums text-foreground">
+                {formatSigned(bucket.amount)}
+                <span className="ml-1.5 text-muted-foreground">
+                  {Math.round(bucket.percentage * 100)}%
+                </span>
+              </span>
+            </div>
+            <div className="h-1 overflow-hidden rounded-full bg-muted">
+              <div
+                className={cn(
+                  "h-full rounded-full transition-colors",
+                  isActive ? "bg-primary" : "bg-foreground/50"
+                )}
+                style={{ width: `${Math.max(bucket.percentage * 100, bucket.amount > 0 ? 3 : 0)}%` }}
+              />
+            </div>
+          </button>
+          );
+        })}
+      </div>
+      {hiddenCount > 0 && (
+        <div className="mt-2 text-center text-[10px] text-muted-foreground">
+          + {hiddenCount} more
         </div>
-      ))}
+      )}
     </div>
   );
+}
+
+function weekStartDate(month: string, weekId: string): string {
+  const week = Number(weekId.replace("week-", ""));
+  if (!week || !/^\d{4}-\d{2}$/.test(month)) return "";
+  const [year, mon] = month.split("-").map(Number);
+  const firstDay = (week - 1) * 7 + 1;
+  const start = new Date(Date.UTC(year, mon - 1, firstDay));
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+    timeZone: "UTC",
+  }).format(start);
 }
 
 function WeeklySpending({
   buckets,
   month,
+  selectedId,
+  onSelect,
 }: {
   buckets: TransactionTimeBucket[];
   month: string;
+  selectedId: string | null;
+  onSelect: (id: string) => void;
 }) {
-  const active = mostActiveWeek(buckets);
-  const wow = weekOverWeekInsight(buckets);
+  const maxAmount = Math.max(...buckets.map((b) => b.amount), 1);
 
   return (
-    <div className="space-y-3">
-      <div className="grid grid-cols-5 gap-1.5">
+    <div className="flex h-full flex-col gap-1">
+      {/* Amount labels — row above bars, outside each bar button */}
+      <div className="flex shrink-0 gap-1.5">
         {buckets.map((bucket) => (
-          <div key={bucket.id} className="min-w-0">
-            <div className="mb-1 truncate text-center font-sans text-[10px] tabular-nums text-foreground">
-              {formatSigned(bucket.amount)}
-            </div>
-            <div className="flex h-16 items-end rounded bg-muted/50 px-1">
-              <div
-                className="w-full rounded-t bg-primary/60"
-                style={{
-                  height: `${Math.max(bucket.percentage * 100, bucket.amount > 0 ? 7 : 2)}%`,
-                }}
-                title={`${bucket.label}: ${formatSigned(bucket.amount)}`}
-              />
-            </div>
-            <div className="mt-1 text-center text-[10px] text-muted-foreground">
-              {bucket.label.replace("Week ", "W")}
-            </div>
+          <div
+            key={bucket.id}
+            className="flex-1 truncate text-center font-sans text-[11px] tabular-nums text-foreground"
+          >
+            {bucket.amount > 0 ? formatSigned(bucket.amount) : ""}
           </div>
         ))}
       </div>
 
-      <div className="grid gap-2 text-[11px] sm:grid-cols-2">
-        <div className="rounded-md bg-muted/35 px-2 py-1.5">
-          <div className="text-muted-foreground">Most active week</div>
-          <div className="mt-0.5 truncate font-medium text-foreground">
-            {active && active.amount > 0
-              ? `${active.label.replace("Week ", "W")} · ${weekRangeLabel(month, active)} · ${formatSigned(active.amount)} (${Math.round(active.percentage * 100)}%)`
-              : "No active week"}
+      {/* Bar chart — flex-1 so each button gets a properly defined height */}
+      <div className="flex min-h-0 flex-1 gap-1.5">
+        {buckets.map((bucket) => {
+          const isActive = selectedId === bucket.id;
+          // Normalize: tallest bar fills 70% of chart height
+          const heightPct = bucket.amount > 0
+            ? Math.max((bucket.amount / maxAmount) * 70, 8)
+            : 2;
+          return (
+            <button
+              key={bucket.id}
+              type="button"
+              aria-pressed={isActive}
+              title={`${bucket.label}: ${formatSigned(bucket.amount)}`}
+              className={cn(
+                "group relative flex-1 cursor-pointer rounded-sm bg-muted/50 transition-colors",
+                isActive ? "ring-2 ring-primary/40" : "hover:bg-muted/70"
+              )}
+              onClick={() => onSelect(bucket.id)}
+            >
+              <div
+                className={cn(
+                  "absolute inset-x-0 bottom-0 rounded-sm transition-colors",
+                  isActive
+                    ? "bg-primary"
+                    : "bg-primary/55 group-hover:bg-primary/75"
+                )}
+                style={{ height: `${heightPct}%` }}
+              />
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Week labels with start dates */}
+      <div className="flex shrink-0 gap-1.5">
+        {buckets.map((bucket) => (
+          <div
+            key={bucket.id}
+            className={cn(
+              "flex-1 text-center transition-colors",
+              selectedId === bucket.id ? "text-primary" : "text-muted-foreground"
+            )}
+          >
+            <div className={cn("text-[10px]", selectedId === bucket.id && "font-semibold")}>
+              {bucket.label.replace("Week ", "W")}
+            </div>
+            <div className="text-[9px]">{weekStartDate(month, bucket.id)}</div>
           </div>
-        </div>
-        <div className="rounded-md bg-muted/35 px-2 py-1.5">
-          <div className="text-muted-foreground">Week-over-week</div>
-          <div className="mt-0.5 truncate font-medium text-foreground">
-            {wow
-              ? `${formatDelta(wow.delta)} · ${wow.label}`
-              : "No weekly change"}
-          </div>
-        </div>
+        ))}
       </div>
     </div>
   );
@@ -309,31 +395,38 @@ function WeeklySpending({
 
 function LoadingState() {
   return (
-    <div className="px-4 py-12 text-center">
-      <div className="mx-auto mb-3 flex h-9 w-9 items-center justify-center rounded-full bg-muted">
-        <Clock3 className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
+    <div className="flex h-full items-center justify-center">
+      <div className="text-center">
+        <div className="mx-auto mb-3 flex h-9 w-9 items-center justify-center rounded-full bg-muted">
+          <Clock3 className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
+        </div>
+        <div className="text-sm font-medium text-foreground">Loading transactions</div>
+        <div className="mt-1 text-xs text-muted-foreground">Fetching read-only transaction rows.</div>
       </div>
-      <div className="text-sm font-medium text-foreground">Loading transactions</div>
-      <div className="mt-1 text-xs text-muted-foreground">Fetching read-only transaction rows.</div>
     </div>
   );
 }
 
 function EmptyState({ message }: { message: string }) {
-  return <div className="px-4 py-12 text-center text-sm text-muted-foreground">{message}</div>;
+  return (
+    <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+      {message}
+    </div>
+  );
 }
 
-export function BudgetTransactionsDialog({
-  target,
-  browserOptions,
-  onClose,
-}: Props) {
-  const [search, setSearch] = useState("");
-  const [sort, setSort] = useState<BudgetTransactionSort>(DEFAULT_SORT);
-  const [activeTarget, setActiveTarget] =
-    useState<BudgetTransactionsDrilldown | null>(target);
+// ─── dialog ───────────────────────────────────────────────────────────────────
+
+export function BudgetTransactionsDialog({ target, browserOptions, statesByMonth, onClose }: Props) {
+  const [spendFilter, setSpendFilter] = useState<string | null>(null);
+  const [weekFilter, setWeekFilter] = useState<string | null>(null);
+  const [globalFilter, setGlobalFilter] = useState("");
+  const [sorting, setSorting] = useState<SortingState>([{ id: "amount", desc: true }]);
+  const [activeTarget, setActiveTarget] = useState<BudgetTransactionsDrilldown | null>(target);
+
   const open = target != null;
   const effectiveTarget = activeTarget ?? target;
+
   const { data, isLoading, error } = useBudgetTransactions({
     month: effectiveTarget?.month ?? "",
     categoryIds: effectiveTarget?.categoryIds ?? EMPTY_CATEGORY_IDS,
@@ -341,32 +434,92 @@ export function BudgetTransactionsDialog({
   });
 
   const rows = data ?? EMPTY_TRANSACTION_ROWS;
-  const analytics = useMemo(() => buildBudgetTransactionAnalytics(rows), [rows]);
-  const visibleRows = useMemo(
-    () => prepareBudgetTransactionRows(rows, search, sort),
-    [rows, search, sort]
-  );
   const isGroup = effectiveTarget?.entity === "group";
-  const primaryBreakdown = isGroup ? analytics.spendByCategory : analytics.spendByPayee;
-  const topPayee = analytics.spendByPayee[0];
+
+  // Clear visual + search filters when target or month changes
+  useEffect(() => {
+    setSpendFilter(null);
+    setWeekFilter(null);
+    setGlobalFilter("");
+  }, [effectiveTarget?.id, effectiveTarget?.month]);
+
+  // Rows filtered by spend selection only — drives WeeklySpending (cross-filter)
+  const spendFilteredRows = useMemo(() => {
+    if (!spendFilter) return rows;
+    return rows.filter((row) => rowMatchesSpendBucket(row, spendFilter, isGroup));
+  }, [rows, spendFilter, isGroup]);
+
+  // Rows filtered by week selection only — drives SpendBreakdown (cross-filter)
+  const weekFilteredRows = useMemo(() => {
+    if (!weekFilter) return rows;
+    return rows.filter((row) => rowWeekId(row.date) === weekFilter);
+  }, [rows, weekFilter]);
+
+  // Rows with both filters — drives KPIs and table
+  const visuallyFilteredRows = useMemo(() => {
+    if (!spendFilter && !weekFilter) return rows;
+    return rows.filter((row) => {
+      if (spendFilter && !rowMatchesSpendBucket(row, spendFilter, isGroup)) return false;
+      if (weekFilter && rowWeekId(row.date) !== weekFilter) return false;
+      return true;
+    });
+  }, [rows, spendFilter, weekFilter, isGroup]);
+
+  // Analytics for SpendBreakdown — responds to week filter
+  const spendBreakdownAnalytics = useMemo(
+    () => buildBudgetTransactionAnalytics(weekFilteredRows),
+    [weekFilteredRows]
+  );
+
+  // Analytics for WeeklySpending — responds to spend/category filter
+  const weeklyAnalytics = useMemo(
+    () => buildBudgetTransactionAnalytics(spendFilteredRows),
+    [spendFilteredRows]
+  );
+
+  // Rows for KPIs: only update for category selection (budgets exist at category level),
+  // not for payee or week filters (no budget granularity at those levels).
+  const kpiRows = useMemo(() => {
+    if (isGroup && spendFilter) {
+      return rows.filter((row) => rowMatchesSpendBucket(row, spendFilter, true));
+    }
+    return rows;
+  }, [rows, spendFilter, isGroup]);
+
+  // Analytics for KPIs
+  const analytics = useMemo(
+    () => buildBudgetTransactionAnalytics(kpiRows),
+    [kpiRows]
+  );
+
+  const primaryBreakdown = isGroup ? spendBreakdownAnalytics.spendByCategory : spendBreakdownAnalytics.spendByPayee;
+
   const selectedCategoryKey = effectiveTarget ? targetKey(effectiveTarget) : "";
   const hasSelectedCategoryOption = browserOptions.categories.some(
     (option) => optionKey(option) === selectedCategoryKey
   );
-  const monthLabel = effectiveTarget
-    ? formatMonthLabel(effectiveTarget.month, "long")
-    : "";
+  const monthLabel = effectiveTarget ? formatMonthLabel(effectiveTarget.month, "long") : "";
 
-  function handleSort(sortKey: BudgetTransactionSortKey) {
-    setSort((current) => {
-      if (current.key !== sortKey) {
-        return { key: sortKey, direction: defaultDirectionFor(sortKey) };
-      }
-      return {
-        key: sortKey,
-        direction: current.direction === "asc" ? "desc" : "asc",
-      };
-    });
+  const table = useReactTable({
+    data: visuallyFilteredRows,
+    columns,
+    state: { sorting, globalFilter },
+    onSortingChange: setSorting,
+    onGlobalFilterChange: setGlobalFilter,
+    globalFilterFn: transactionSearchFilter,
+    getCoreRowModel: getCoreRowModel(),
+    getSortedRowModel: getSortedRowModel(),
+    getFilteredRowModel: getFilteredRowModel(),
+  });
+
+  const tableRows = table.getRowModel().rows;
+
+  function toggleSpendFilter(id: string) {
+    setSpendFilter((current) => (current === id ? null : id));
+  }
+
+  function toggleWeekFilter(id: string) {
+    setWeekFilter((current) => (current === id ? null : id));
   }
 
   function handleMonthChange(month: string) {
@@ -374,27 +527,22 @@ export function BudgetTransactionsDialog({
       const base = current ?? target;
       return base ? { ...base, month } : base;
     });
-    setSearch("");
+    setSpendFilter(null);
+    setWeekFilter(null);
+    setGlobalFilter("");
   }
 
   function handleCategoryChange(key: string) {
-    const option = browserOptions.categories.find(
-      (candidate) => optionKey(candidate) === key
-    );
+    const option = browserOptions.categories.find((candidate) => optionKey(candidate) === key);
     if (!option) return;
-
     setActiveTarget((current) => {
       const base = current ?? target;
       if (!base) return base;
-      return {
-        ...base,
-        id: option.id,
-        title: option.title,
-        entity: option.entity,
-        categoryIds: option.categoryIds,
-      };
+      return { ...base, id: option.id, title: option.title, entity: option.entity, categoryIds: option.categoryIds };
     });
-    setSearch("");
+    setSpendFilter(null);
+    setWeekFilter(null);
+    setGlobalFilter("");
   }
 
   function closeDialog() {
@@ -402,15 +550,41 @@ export function BudgetTransactionsDialog({
     onClose();
   }
 
+  const hasVisualFilters = spendFilter !== null || weekFilter !== null;
+  const weekFilterLabel = weekFilter
+    ? (analytics.spendByWeek.find((b) => b.id === weekFilter)?.label ?? weekFilter.replace("week-", "Week "))
+    : "";
+
+  const budgetValues = useMemo(() => {
+    if (!effectiveTarget) return null;
+    const state = statesByMonth.get(effectiveTarget.month);
+    if (!state) return null;
+    if (effectiveTarget.entity === "group") {
+      // When a sub-category is selected in the breakdown, drill into its budget
+      if (spendFilter) {
+        const subCategory = Object.values(state.categoriesById).find(
+          (cat) => !cat.isIncome && cat.groupId === effectiveTarget.id && cat.name === spendFilter
+        );
+        if (subCategory) return { budgeted: Math.abs(subCategory.budgeted) };
+      }
+      const group = state.groupsById[effectiveTarget.id];
+      if (!group || group.isIncome) return null;
+      return { budgeted: Math.abs(group.budgeted) };
+    }
+    const category = state.categoriesById[effectiveTarget.id];
+    if (!category || category.isIncome) return null;
+    return { budgeted: Math.abs(category.budgeted) };
+  }, [effectiveTarget, statesByMonth, spendFilter]);
+
+  const variance = budgetValues !== null ? budgetValues.budgeted - analytics.netSpent : null;
+
+  const hasData = !isLoading && !error && rows.length > 0;
+
   return (
-    <Dialog
-      open={open}
-      onOpenChange={(nextOpen) => {
-        if (!nextOpen) closeDialog();
-      }}
-    >
-      <DialogContent className="max-h-[86vh] max-w-[min(68rem,calc(100vw-2rem))] gap-0 overflow-hidden p-0 sm:max-w-[min(68rem,calc(100vw-2rem))]">
-        <DialogHeader className="border-b border-border bg-background px-4 py-3 pr-12">
+    <Dialog open={open} onOpenChange={(nextOpen) => { if (!nextOpen) closeDialog(); }}>
+      <DialogContent className="flex max-h-[86vh] max-w-[min(72rem,calc(100vw-2rem))] flex-col gap-0 overflow-hidden p-0 sm:max-w-[min(72rem,calc(100vw-2rem))]">
+        {/* Header */}
+        <DialogHeader className="shrink-0 border-b border-border bg-background px-4 py-3 pr-12">
           <div className="flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
@@ -423,9 +597,6 @@ export function BudgetTransactionsDialog({
                     {effectiveTarget?.categoryIds.length ?? 0} categories
                   </Badge>
                 )}
-                <Badge variant="outline" className="text-[10px] text-muted-foreground">
-                  Press D
-                </Badge>
               </div>
               <DialogDescription className="mt-1 truncate text-xs">
                 {monthLabel}
@@ -451,14 +622,12 @@ export function BudgetTransactionsDialog({
               <select
                 value={selectedCategoryKey}
                 onChange={(event) => handleCategoryChange(event.target.value)}
-                className={cn(SELECT_CLASS, "w-64 max-w-full")}
+                className={cn(SELECT_CLASS, "w-96 max-w-full")}
                 disabled={!effectiveTarget || browserOptions.categories.length === 0}
                 aria-label="Select spending category or group"
               >
                 {effectiveTarget && !hasSelectedCategoryOption && (
-                  <option value={selectedCategoryKey}>
-                    {effectiveTarget.title}
-                  </option>
+                  <option value={selectedCategoryKey}>{effectiveTarget.title}</option>
                 )}
                 {browserOptions.categories.map((option) => (
                   <option key={optionKey(option)} value={optionKey(option)}>
@@ -470,86 +639,115 @@ export function BudgetTransactionsDialog({
           </div>
         </DialogHeader>
 
-        <div className="max-h-[calc(86vh-4.25rem)] overflow-hidden">
+        {/* Summary strip — only when data is loaded */}
+        {hasData && (
+          <div className="shrink-0 border-b border-border/70 bg-muted/5 px-4 py-2">
+            <div className="flex items-stretch divide-x divide-border/50">
+              <StripItem label="Spent" value={formatSigned(analytics.netSpent)} />
+              {budgetValues !== null && (
+                <>
+                  <StripItem label="Budgeted" value={formatSigned(budgetValues.budgeted)} />
+                  {variance !== null && (
+                    <StripItem
+                      label="Variance"
+                      value={formatDelta(variance)}
+                      tone={
+                        variance < 0
+                          ? "text-destructive"
+                          : variance > 0
+                            ? "text-emerald-700 dark:text-emerald-400"
+                            : "text-muted-foreground"
+                      }
+                    />
+                  )}
+                </>
+              )}
+              <StripItem
+                label="Transactions"
+                value={analytics.transactionCount.toLocaleString()}
+              />
+              <StripItem
+                label="Average"
+                value={analytics.averageTransaction > 0 ? formatSigned(analytics.averageTransaction) : "—"}
+              />
+            </div>
+          </div>
+        )}
+
+        {/* Body */}
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
           {isLoading ? (
             <LoadingState />
           ) : error ? (
-            <div className="px-4 py-12 text-center text-xs text-destructive">
+            <div className="flex h-full items-center justify-center px-4 text-center text-xs text-destructive">
               Could not load transactions: {errorMessage(error)}
             </div>
           ) : rows.length === 0 ? (
             <EmptyState message="No transactions found for this selection." />
           ) : (
-            <div className="grid max-h-[calc(86vh-4.25rem)] grid-rows-[auto_auto_minmax(14rem,1fr)] gap-3 overflow-hidden p-4">
-              <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-                <Kpi
-                  label="Total spent"
-                  value={formatSigned(analytics.totalSpent)}
-                  helper={
-                    isGroup
-                      ? `Across ${effectiveTarget?.categoryIds.length ?? 0} categories`
-                      : "Across this category"
-                  }
-                />
-                <Kpi
-                  label="Transactions"
-                  value={analytics.transactionCount.toLocaleString()}
-                  helper={`${analytics.distinctPayeeCount} payees`}
-                />
-                <Kpi
-                  label="Average"
-                  value={formatSigned(analytics.averageTransaction)}
-                  helper="Per transaction"
-                />
-                <Kpi
-                  label="Top payee"
-                  value={topPayee?.label ?? "None"}
-                  helper={topPayee ? `${formatSigned(topPayee.amount)} · ${topPayee.count} transactions` : "No payee"}
-                />
-              </div>
-
-              <div className="grid min-h-0 gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(20rem,0.8fr)]">
-                <Panel
-                  title={
-                    isGroup
-                      ? "Where the group spend went"
-                      : "Where the spend went (by payee)"
-                  }
-                >
+            <div className="flex min-h-0 flex-1 flex-col gap-2.5 overflow-hidden p-3">
+              {/* Visual panels */}
+              <div className="grid h-[256px] shrink-0 grid-cols-2 gap-2.5">
+                <Panel title={isGroup ? "Where the group spend went" : "Where the spend went (by payee)"}>
                   <SpendBreakdown
                     buckets={primaryBreakdown}
                     emptyLabel="No spending breakdown available."
+                    selectedId={spendFilter}
+                    onSelect={toggleSpendFilter}
                   />
                 </Panel>
 
                 <Panel title="When spending happened">
                   <WeeklySpending
-                    buckets={analytics.spendByWeek}
+                    buckets={weeklyAnalytics.spendByWeek}
                     month={effectiveTarget?.month ?? ""}
+                    selectedId={weekFilter}
+                    onSelect={toggleWeekFilter}
                   />
                 </Panel>
               </div>
 
-              <section className="flex min-h-0 flex-col rounded-md border border-border/70 bg-background">
-                <div className="flex flex-col gap-2 border-b border-border/70 p-3 sm:flex-row sm:items-center sm:justify-between">
+              {/* Active filter chips */}
+              {hasVisualFilters && (
+                <div className="flex shrink-0 flex-wrap items-center gap-1.5 py-0.5">
+                  <span className="text-[10px] text-muted-foreground">Filtered by:</span>
+                  {spendFilter && (
+                    <FilterChip label={spendFilter} onClear={() => setSpendFilter(null)} />
+                  )}
+                  {weekFilter && (
+                    <FilterChip label={weekFilterLabel} onClear={() => setWeekFilter(null)} />
+                  )}
+                  <button
+                    type="button"
+                    className="text-[10px] text-muted-foreground underline hover:text-foreground"
+                    onClick={() => { setSpendFilter(null); setWeekFilter(null); }}
+                  >
+                    Clear all
+                  </button>
+                </div>
+              )}
+
+              {/* Transaction table */}
+              <section className="flex min-h-0 flex-1 flex-col rounded-md border border-border/70 bg-background">
+                <div className="flex shrink-0 flex-col gap-2 border-b border-border/70 p-3 sm:flex-row sm:items-center sm:justify-between">
                   <div className="relative max-w-sm flex-1">
                     <Search
                       className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground"
                       aria-hidden="true"
                     />
                     <Input
-                      value={search}
-                      onChange={(event) => setSearch(event.target.value)}
+                      value={globalFilter}
+                      onChange={(event) => setGlobalFilter(event.target.value)}
                       placeholder="Search transactions"
                       aria-label="Search transactions"
                       className="h-8 rounded-md pl-8 pr-8 text-xs"
                     />
-                    {search.length > 0 && (
+                    {globalFilter.length > 0 && (
                       <button
                         type="button"
                         aria-label="Clear search"
                         className="absolute right-2 top-1/2 inline-flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
-                        onClick={() => setSearch("")}
+                        onClick={() => setGlobalFilter("")}
                       >
                         <X className="h-3.5 w-3.5" aria-hidden="true" />
                       </button>
@@ -557,95 +755,76 @@ export function BudgetTransactionsDialog({
                   </div>
 
                   <div className="text-[10px] text-muted-foreground">
-                    {visibleRows.length.toLocaleString()} of {rows.length.toLocaleString()} rows ·{" "}
-                    {formatSortStatus(sort)}
+                    {tableRows.length.toLocaleString()} of {rows.length.toLocaleString()} rows
+                    {hasVisualFilters ? " (filtered)" : ""}
                   </div>
                 </div>
 
                 <div className="min-h-0 flex-1 overflow-auto">
-                  {visibleRows.length === 0 ? (
+                  {tableRows.length === 0 ? (
                     <EmptyState message="No transactions match this search." />
                   ) : (
                     <table className="w-full min-w-[760px] border-collapse text-xs">
                       <thead className="sticky top-0 z-10 border-b border-border bg-muted/95 text-[10px] uppercase tracking-wide text-muted-foreground backdrop-blur">
-                        <tr>
-                          <SortHeader
-                            sortKey="date"
-                            sort={sort}
-                            className="w-px whitespace-nowrap text-left"
-                            onSort={handleSort}
-                          />
-                          <SortHeader
-                            sortKey="amount"
-                            sort={sort}
-                            align="right"
-                            className="w-px whitespace-nowrap text-right"
-                            onSort={handleSort}
-                          />
-                          <SortHeader
-                            sortKey="payee"
-                            sort={sort}
-                            className="min-w-44 text-left"
-                            onSort={handleSort}
-                          />
-                          <SortHeader
-                            sortKey="category"
-                            sort={sort}
-                            className="w-48 text-left"
-                            onSort={handleSort}
-                          />
-                          <SortHeader
-                            sortKey="notes"
-                            sort={sort}
-                            className="min-w-56 text-left"
-                            onSort={handleSort}
-                          />
-                        </tr>
+                        {table.getHeaderGroups().map((headerGroup) => (
+                          <tr key={headerGroup.id}>
+                            {headerGroup.headers.map((header) => {
+                              const isSorted = header.column.getIsSorted();
+                              const isAmount = header.id === "amount";
+                              const isDate = header.id === "date";
+                              return (
+                                <th
+                                  key={header.id}
+                                  className={cn(
+                                    "px-3 py-2 font-medium",
+                                    isDate && "w-px whitespace-nowrap",
+                                    isAmount && "w-px whitespace-nowrap text-right"
+                                  )}
+                                >
+                                  <button
+                                    type="button"
+                                    className={cn(
+                                      "inline-flex w-full items-center gap-1.5 text-muted-foreground transition-colors hover:text-foreground",
+                                      isAmount ? "justify-end" : "justify-start"
+                                    )}
+                                    onClick={header.column.getToggleSortingHandler()}
+                                    aria-label={`Sort by ${header.id}`}
+                                  >
+                                    <span>
+                                      {flexRender(header.column.columnDef.header, header.getContext())}
+                                    </span>
+                                    {isSorted === "asc" ? (
+                                      <ArrowUp className="h-3 w-3" />
+                                    ) : isSorted === "desc" ? (
+                                      <ArrowDown className="h-3 w-3" />
+                                    ) : (
+                                      <ArrowUpDown className="h-3 w-3 opacity-35" />
+                                    )}
+                                  </button>
+                                </th>
+                              );
+                            })}
+                          </tr>
+                        ))}
                       </thead>
                       <tbody>
-                        {visibleRows.map((row) => (
+                        {tableRows.map((row) => (
                           <tr
                             key={row.id}
                             className="border-b border-border/60 last:border-0 hover:bg-muted/30"
                           >
-                            <td className="w-px whitespace-nowrap px-3 py-2 font-medium text-foreground">
-                              <span title={row.date}>{formatTransactionDateLabel(row.date)}</span>
-                            </td>
-                            <td
-                              className={cn(
-                                "w-px whitespace-nowrap px-3 py-2 text-right font-sans font-semibold tabular-nums",
-                                amountTone(row.amount)
-                              )}
-                            >
-                              {formatDelta(row.amount)}
-                            </td>
-                            <td className="px-3 py-2">
-                              <div
+                            {row.getVisibleCells().map((cell) => (
+                              <td
+                                key={cell.id}
                                 className={cn(
-                                  "max-w-[20rem] truncate font-medium text-foreground",
-                                  !row.payeeName && "italic text-muted-foreground"
+                                  "px-3 py-2",
+                                  cell.column.id === "date" && "w-px whitespace-nowrap font-medium text-foreground",
+                                  cell.column.id === "amount" && "w-px whitespace-nowrap text-right"
                                 )}
-                                title={row.payeeName ?? "No payee"}
                               >
-                                {row.payeeName ?? "No payee"}
-                              </div>
-                            </td>
-                            <td className="px-3 py-2">
-                              <div
-                                className="max-w-[14rem] truncate font-medium text-muted-foreground"
-                                title={row.categoryName ?? "Uncategorized"}
-                              >
-                                {row.categoryName ?? "Uncategorized"}
-                              </div>
-                            </td>
-                            <td className="px-3 py-2">
-                              <div
-                                className="max-w-[26rem] truncate text-muted-foreground"
-                                title={row.notes ?? ""}
-                              >
-                                {row.notes ?? ""}
-                              </div>
-                            </td>
+                                {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                              </td>
+                            ))}
                           </tr>
                         ))}
                       </tbody>
@@ -653,9 +832,8 @@ export function BudgetTransactionsDialog({
                   )}
                 </div>
 
-                <div className="border-t border-border/70 px-3 py-1.5 text-[10px] text-muted-foreground">
-                  Showing {visibleRows.length.toLocaleString()} of{" "}
-                  {rows.length.toLocaleString()} transactions
+                <div className="shrink-0 border-t border-border/70 px-3 py-1.5 text-[10px] text-muted-foreground">
+                  Showing {tableRows.length.toLocaleString()} of {rows.length.toLocaleString()} transactions
                 </div>
               </section>
             </div>

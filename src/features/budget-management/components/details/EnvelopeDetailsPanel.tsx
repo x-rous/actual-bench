@@ -7,6 +7,7 @@ import type {
   BudgetTransactionBrowserOptions,
   BudgetTransactionsDrilldown,
 } from "../../lib/budgetTransactionBrowser";
+import type { LoadedMonthState } from "../../types";
 import {
   DetailsHeader,
   DetailsSection,
@@ -43,9 +44,11 @@ function formatEnvelopeStatusValue(label: string, value: number): string {
 export function EnvelopeDetailsPanel({
   metrics,
   transactionBrowserOptions,
+  statesByMonth,
 }: {
   metrics: EnvelopeDetailsMetrics;
   transactionBrowserOptions: BudgetTransactionBrowserOptions;
+  statesByMonth: Map<string, LoadedMonthState>;
 }) {
   const isFullPeriod = metrics.entity === "none";
   const isMonth = metrics.scope === "month";
@@ -197,6 +200,7 @@ export function EnvelopeDetailsPanel({
           key={`${transactionTarget.entity}:${transactionTarget.id}:${transactionTarget.month}`}
           target={transactionTarget}
           browserOptions={transactionBrowserOptions}
+          statesByMonth={statesByMonth}
           onClose={() => setTransactionTarget(null)}
         />
       )}
