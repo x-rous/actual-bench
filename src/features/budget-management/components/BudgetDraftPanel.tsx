@@ -3,6 +3,7 @@
 import { Separator } from "@/components/ui/separator";
 import { BudgetDetailsPanel } from "./details/BudgetDetailsPanel";
 
+
 /**
  * Right-side draft panel for the Budget Management page.
  *
@@ -13,9 +14,8 @@ export function BudgetDraftPanel() {
   return (
     <aside
       className="flex w-[17rem] shrink-0 flex-col border-l border-border bg-background"
-      data-budget-details-panel
-    >
-      <div className="flex items-center px-3 h-10 shrink-0">
+      data-budget-details-panel>
+      <div className="flex items-center px-3 shrink-0 h-[2.7rem]">
         <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
           Budget Details
         </span>
