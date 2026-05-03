@@ -1,163 +1,237 @@
 <p align="center">
-  <img src="public/logo.png" alt="Actual Bench" height="48" />
+  <img src="public/logo.png" alt="Actual Bench" height="72" />
+</p>
+
+<h1 align="center">Actual Bench</h1>
+
+<p align="center">
+  <strong>The advanced admin, budgeting, diagnostics, and ActualQL workbench for Actual Budget.</strong>
+</p>
+
+<p align="center">
+  Bulk-edit your budget data, clean up rules, inspect snapshots, run ActualQL, and manage multi-month budgets, safely, with every change staged locally until you click <strong>Save</strong>.
 </p>
 
 <p align="center">
   <a href="https://github.com/x-rous/actual-bench/actions/workflows/ci.yml"><img src="https://github.com/x-rous/actual-bench/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
-  <a href="https://github.com/x-rous/actual-bench/releases"><img src="https://img.shields.io/github/v/tag/x-rous/actual-bench?label=version" alt="Version" /></a>
+  <a href="https://github.com/x-rous/actual-bench/releases"><img src="https://img.shields.io/github/v/tag/x-rous/actual-bench?label=version" alt="Latest version" /></a>
+  <a href="https://hub.docker.com/r/xrous/actual-bench"><img src="https://img.shields.io/docker/pulls/xrous/actual-bench?label=docker%20pulls" alt="Docker pulls" /></a>
   <a href="https://github.com/x-rous/actual-bench/blob/main/LICENSE"><img src="https://img.shields.io/github/license/x-rous/actual-bench" alt="License" /></a>
 </p>
 
-A power-user workbench for [Actual Budget](https://github.com/actualbudget/actual). It connects to a self-hosted [actual-http-api](https://github.com/jhonderson/actual-http-api) server and gives you a dedicated UI for bulk operations, advanced rules management, budget overview, and diagnostics, things that are difficult to do from the native Actual Budget interface.
+---
 
-Useful for power users who want more control over their budget data, and for testers setting up or validating a fresh Actual Budget instance.
+**Actual Bench** is a companion app for [Actual Budget](https://github.com/actualbudget/actual). It connects to a self-hosted [actual-http-api](https://github.com/jhonderson/actual-http-api) server and gives power users a focused interface for the work that is hard to do in the native Actual Budget UI: bulk setup, master-data cleanup, advanced rule maintenance, full year view budget editing, diagnostics, and ad-hoc ActualQL analysis.
 
-## Why actual-bench?
+It is not trying to replace Actual Budget's day-to-day transaction entry experience. It is the workbench you open when you need to inspect, repair, seed, audit, or reshape your budget data with confidence.
 
-- **Bulk CSV import/export** for every entity - seed a fresh budget with hundreds of rules, payees, categories, or schedules in one go
-- **Budget Overview homepage** - land on a compact overview with live budget metrics, budget mode, budgeting-since, and quick links into the main admin pages
-- **Budget Management Workspace** — edit a 12-month budgeting window in a spreadsheet-like grid with staged changes, spreadsheet-grade keyboard shortcuts (range extend, fill down / right, prev-month and 3-month-avg fill, plus a `?` cheatsheet), right-click bulk actions, a draft panel, and mode-aware envelope/tracking behavior
-- **Advanced rules management** - visual condition/action builder, merge, duplicate, stage filtering, and template mode in one focused view
-- **Staged editing with undo/redo** - review every change locally before anything touches the server
-- **Multi-server, multi-budget** - save and switch between connections without leaking data between sessions
-- **Schedules management** - create and edit one-time and recurring schedules with full recurrence controls, amount modes, and weekend adjustment
-- **ActualQL query workspace** - run ad-hoc ActualQL queries against your budget, inspect results as table / raw JSON / scalar / collapsible tree, save and replay named query packs, and copy a cURL command for any executed query
-- **Budget Diagnostics** - inspect exported budget snapshots in a read-only local workspace with overview metrics, diagnostics, paginated SQLite data browsing, and full table/view CSV export
-- **Rule Diagnostics** - lint your rule set for broken entity references, shadowed rules, impossible conditions, broad-match criteria, duplicates, near-duplicates, and unsupported field/operator combinations, with severity filters and one-click jump to the offending rule
+## Why Actual Bench?
 
-## Architecture
+- **Staged by default** - creates, edits, deletes, merges, imports, and budget-cell changes stay local until you explicitly save.
+- **Spreadsheet-grade budget editing** - edit a 12-month budget window with keyboard navigation, range selection, copy/paste, fill actions, right-click bulk actions, undo/redo, and a draft review panel.
+- **Powerful rules management** - create, edit, duplicate, merge, filter, lint, and clean up Actual Budget rules with resolved entity names instead of raw IDs.
+- **Bulk data management** - manage accounts, payees, categories, schedules, tags, and rules with inline editing, filters, CSV import/export, bulk actions, and impact-aware confirmations.
+- **Diagnostics without mutation** - inspect exported budget snapshots locally in the browser, run deterministic health checks, browse SQLite tables/views, and export findings or data.
+- **ActualQL workspace** - run, format, explain, save, replay, and export ActualQL queries with table, raw JSON, scalar, and tree result views.
+- **Multi-budget friendly** - save multiple connections, switch between budgets, and keep staged data and query cache scoped per connection.
 
-```
-Browser
-  └─► actual-bench  (this app)
-        └─► actual-http-api  (REST API server - jhonderson/actual-http-api)
-              └─► Actual Budget  (SQLite budget file)
-```
-
-All browser requests route through an internal Next.js proxy - no direct browser-to-API calls to `actual-http-api`. Connection credentials are sent only to actual-bench and proxied server-side to the API; session storage is cleared when the tab is closed. For Docker deployments, `actual-bench` must be able to reach `actual-http-api` from inside the container. If you see `fetch failed` or `502 Bad Gateway` during connect, first verify that both containers are attached to the same Docker network.
 
 ## Screenshots
 
 | Connection  |
 |:---:|
-| ![Connection Form](public/screenshots/Connection%20Form.png) |
+| ![Connection Form](public/screenshots/connection-form.png) |
 
 | Payees | Categories |
 |:---:|:---:|
-| ![Payees](public/screenshots/Payees%20Page.png) | ![Categories](public/screenshots/Categories%20Page.png) |
+| ![Payees](public/screenshots/payees-page.png) | ![Categories](public/screenshots/categories-page.png) |
 
 | Accounts Detail | Rules |
 |:---:|:---:|
-| ![Accounts Detail](public/screenshots/Accounts%20Detailed.png) | ![Rules](public/screenshots/Rules%20Page.png)  |
+| ![Accounts Detail](public/screenshots/accounts-page.png) | ![Rules](public/screenshots/rules-page.png)  |
 
-## Features
+| Rule diagnostics | Rules Merge |
+|:---:|:---:|
+| ![Rule diagnostics](public/screenshots/rules-diagnostics.png) | ![ActualQL queries](public/screenshots/rules-merge.png) |
 
-- **Multi-connection support** - save and switch between multiple Actual Budget servers or budget files; staged data and query cache are scoped per connection
-- **Budget Overview** - connected budgets land on `/overview` with live snapshot metrics, budget mode, budgeting-since, refresh status, and direct links into core admin pages
-- **Staged editing** - all changes are held locally until you click Save; nothing touches the server until you confirm
-- **Undo / Redo** - step backwards and forwards through your edits before committing
-- **Accounts** - create, edit, close, reopen, and delete accounts with live balance visibility; CSV import/export
-- **Payees** - view, edit, bulk-manage, and merge multiple payees; CSV import/export
-- **Categories** - manage groups and categories, visibility, and hierarchy; CSV import/export
-- **Rules** - view, filter by stage, create, edit, and merge rules with a full condition/action builder; CSV import/export
-- **Schedules** - create and manage one-time and recurring schedules with amount modes, weekend adjustment, and end conditions; overdue dates are highlighted; CSV import/export
-- **Tags** - create, rename, and color-code tags (requires Actual Budget v26.3.0+); CSV import/export
-- **ActualQL Queries** - syntax-highlighted query editor with run / format / save / explain actions; four result views (table, raw JSON, scalar, collapsible tree); built-in example packs; saved queries with favorites; query history; cURL copy; lint warnings; and an inline quick reference dialog
-- **Budget Management Workspace** - adds a multi-month budgeting workspace with a 12-month grid, staged cell editing, Budget / Actuals / Balance view toggle, year summary draft panel, spreadsheet-grade keyboard shortcuts (range extend, fill down / right, last-month or 3-month average fill, view toggles, carryover, pan months, and a `?` cheatsheet), clipboard copy/paste, right-click bulk actions; supports both tracking and envelope mode with next-month hold and category transfer
-- **Budget Diagnostics** - opens a read-only exported snapshot locally in the browser with overview metadata, deterministic diagnostics, paginated SQLite data browsing, relationship drill-in, and full table/view CSV export
-- **Rule Diagnostics** - read-only `/rules/diagnostics` workspace that lints your current rule working set for missing entity references, shadowed rules, impossible conditions, broad-match criteria, duplicate / near-duplicate groups, and unsupported field/operator combinations; severity- and code-filterable; jump from any finding to the offending rule
+| Envelope Budget | Tracking Budget |
+|:---:|:---:|
+| ![Envelope Budget](public/screenshots/budget-envelope.png) | ![Tracking Budget](public/screenshots/budget-tracking.png) |
 
-→ See [FEATURES.md](FEATURES.md) for the full feature reference.
+| ActualQL Queries | Budget File Overview |
+|:---:|:---:|
+| ![Budget diagnostics](public/screenshots/ActualQL.png) | ![Data browser](public/screenshots/budget-file-overview.png) |
+
+| Budget Diagnostics | Data Browser |
+|:---:|:---:|
+| ![Budget diagnostics](public/screenshots/budget-file-diagnostics.png) | ![Data browser](public/screenshots/budget-file-data-browsing.png) |
+
+
+
+## Feature overview
+
+### Budget Management Workspace
+
+A full-width 12-month budget editor for envelope and tracking budgets.
+
+- Budget / Actuals / Balance view toggle
+- Sticky month headers and sticky category column
+- Expand/collapse category groups and show/hide hidden categories
+- Inline cell editing with arithmetic expression support
+- Multi-cell selection, copy/paste from Excel or Google Sheets, fill down/right, previous-month fill, and average-based fill
+- Right-click bulk actions such as copy previous month, set to zero, set fixed amount, apply percentage change, and average calculations
+- Draft panel with selected-cell details, group totals, year summary, staged deltas, and save errors
+- Envelope-mode actions for next-month hold and category transfer
+- Keyboard shortcut cheatsheet generated from the same keymap used by the workspace
+
+### Data Management
+
+Manage the core Actual Budget entities from dedicated admin pages.
+
+| Area | What you can do |
+|---|---|
+| **Accounts** | Create, rename, close, reopen, delete, inspect balances, view rule references, import/export CSV |
+| **Payees** | Create, rename, merge, delete, separate regular and transfer payees, view rule references, import/export CSV |
+| **Categories** | Manage income/expense groups, categories, visibility, hierarchy, notes, and import/export CSV |
+| **Schedules** | Create one-time or recurring schedules with amount modes, recurrence controls, weekend adjustment, auto-add, and linked rules |
+| **Tags** | Create, rename, color-code, describe, filter, bulk-delete, and import/export tags |
+| **Rules** | Build rules with conditions/actions, stages, AND/OR logic, templates, entity chips, filtering, search, duplication, merge, and CSV import/export |
+
+### Rule Diagnostics
+
+A read-only linting workspace for the rules you are about to save.
+
+- Runs against the current working set, including unsaved staged edits
+- Detects missing entity references, empty/no-op actions, impossible conditions, shadowed rules, broad match criteria, duplicates, near-duplicates, and unsupported field/operator combinations
+- Groups findings by severity with filters for error, warning, info, and code
+- Lets you jump directly to the affected rule
+- Opens the merge dialog from duplicate and near-duplicate findings
+- Runs in the browser against already-loaded data; no new backend endpoint is required
+
+### Budget Diagnostics
+
+A read-only local diagnostics workspace for exported budget snapshots.
+
+- Opens the active budget export locally in the browser
+- Shows snapshot metadata, object counts, ZIP size, SQLite size, sync details, and source details
+- Runs deterministic schema, relationship, metadata, and SQLite health checks
+- Supports a full SQLite integrity check
+- Exports findings to CSV
+- Includes a Data Browser for tables, views, indexes, triggers, schema inspection, row details, relationship drill-in, and full table/view CSV export
+
+### ActualQL Queries
+
+A dedicated query console for advanced analysis.
+
+- Syntax-highlighted JSON editor with line numbers
+- Run with button or `Ctrl/Cmd+Enter`
+- Format JSON, save queries, pin favorites, and reload recent history
+- Explain query intent in plain English
+- Built-in ActualQL reference and example packs
+- Result views: table, raw JSON, scalar, and collapsible tree
+- Copy result JSON, query JSON, sanitized cURL, or full cURL when explicitly needed
+- Warns when staged local changes exist because query results reflect saved server state
+
+### Staged editing and safety
+
+Actual Bench is built around a review-before-save workflow.
+
+- Nothing is written to the server until you click **Save**
+- New, updated, deleted, and invalid rows are visually marked
+- Top bar shows staged changes across the current workspace
+- Undo/redo works across staged edits within the session
+- Refresh, navigation, browser close, and cross-workspace entry flows warn before discarding pending changes
+- Delete/close dialogs show impact details such as transaction counts, rule references, account balance, and child category counts where available
+- Usage Inspector drawers show references and impact without triggering a delete flow
+
+## Architecture
+
+```mermaid
+flowchart LR
+  Browser[Browser]
+  App[Actual Bench\nNext.js app]
+  Proxy[Internal /api/proxy]
+  API[actual-http-api]
+  Actual[Actual Budget server]
+  Budget[(Budget data)]
+
+  Browser --> App
+  App --> Proxy
+  Proxy --> API
+  API --> Actual
+  Actual --> Budget
+```
+
+All requests to `actual-http-api` go through Actual Bench's internal Next.js proxy. The browser does not call `actual-http-api` directly.
+
+## Privacy and data handling
+
+- Saved connections are stored in **session storage** and are cleared when the browser tab is closed.
+- Staged data and query cache are scoped per connection so switching budgets does not leak local state between sessions.
+- Budget Diagnostics processes exported snapshots locally in the browser and does not write diagnostic changes back to the budget.
+- Exported budget ZIP files and diagnostic data may still contain personal financial information, so handle downloaded files carefully.
+- ActualQL queries are read-only from the Actual Bench perspective, but they reflect saved server state, not unsaved staged edits.
 
 ## Requirements
 
-- A self-hosted [Actual Budget](https://github.com/actualbudget/actual) server
-- A running [actual-http-api](https://github.com/jhonderson/actual-http-api) instance pointed at that server
+- A running [Actual Budget](https://github.com/actualbudget/actual) server
+- A running [actual-http-api](https://github.com/jhonderson/actual-http-api) instance connected to that server
+- An `ACTUAL_API_KEY` configured for `actual-http-api`
+- Docker, Docker Compose, or Node.js 20+ for local development
 
-## Quick Start
 
-Pull the pre-built image from Docker Hub - no local build required:
+## Quick start
+
+### Docker
 
 ```bash
 # Latest stable release
-docker run -p 3000:3000 xrous/actual-bench:latest
+docker run -d \
+  --name actual-bench \
+  --restart unless-stopped \
+  -p 3000:3000 \
+  xrous/actual-bench:latest
 
-# Latest unreleased changes (updated on every merge to main - may be unstable)
-docker run -p 3000:3000 xrous/actual-bench:edge
+# Latest unreleased build from main. Useful for testing, but may be unstable.
+docker run -d \
+  --name actual-bench-edge \
+  --restart unless-stopped \
+  -p 3000:3000 \
+  xrous/actual-bench:edge
 ```
 
-Or with Docker Compose - save the following as `docker-compose.yml` and run `docker compose up -d`:
+Open `http://localhost:3000` and connect to your `actual-http-api` server.
+
+### Docker Compose
 
 ```yaml
 services:
   actual-bench:
     image: xrous/actual-bench:latest
+    container_name: actual-bench
     ports:
       - "3000:3000"
     restart: unless-stopped
 ```
 
-Open [http://localhost:3000](http://localhost:3000) and enter your connection details on the Connect screen.
-
-## Connecting to Actual Budget
-
-The Connect screen uses a two-step flow:
-
-**Step 1 - Validate credentials**
-
-| Field | Description |
-|---|---|
-| **Server URL** | Base URL of your actual-http-api server (e.g. `https://actual-api.example.com`) |
-| **API Key** | The `ACTUAL_API_KEY` you set on the server |
-
-Click **Load Budgets** to fetch the list of budgets available on that server.
-
-**Step 2 - Select a budget and connect**
-
-| Field | Description |
-|---|---|
-| **Budget** | Pick from the list of budgets returned by the server |
-| **Encryption Password** | Only required if the budget is end-to-end encrypted |
-
-Click **Connect** to finish. Successful connect and reconnect flows land on **Overview**. The connection is saved in **session storage** - credentials are cleared automatically when the tab is closed. Multiple connections can be saved and switched between; previously saved connections appear at the top of the Connect screen for one-click reconnect.
-
-
-### Docker networking troubleshooting
-
-If **Load Budgets** fails with `fetch failed`, or you see a `502 Bad Gateway` error on `/api/proxy`, the most common cause is that `actual-bench` and `actual-http-api` are running on different Docker networks.
-
-Even if the `actual-http-api` URL works in your browser, `actual-bench` still needs to be able to reach that server **from inside its own container**.
-
-#### 1) Find the container names
+Start it with:
 
 ```bash
-docker ps --format "table {{.Names}}\t{{.Image}}\t{{.Ports}}"
+docker compose up -d
 ```
 
-Look for your `actual-bench` container and your `actual-http-api` container.
+### Docker networking note
 
-#### 2) Check which Docker networks each container is using
+If Actual Bench and `actual-http-api` are running in separate containers, Actual Bench must be able to reach `actual-http-api` **from inside the Actual Bench container**.
+
+If the UI shows `fetch failed` or `502 Bad Gateway`, check whether both containers share a Docker network:
 
 ```bash
-docker inspect -f '{{.Name}} -> {{range $k, $v := .NetworkSettings.Networks}}{{printf "%s " $k}}{{end}}' <actual-bench-container>
-docker inspect -f '{{.Name}} -> {{range $k, $v := .NetworkSettings.Networks}}{{printf "%s " $k}}{{end}}' <actual-http-api-container>
+docker inspect -f '{{.Name}} -> {{range $k, $v := .NetworkSettings.Networks}}{{printf "%s " $k}}{{end}}' actual-bench
+docker inspect -f '{{.Name}} -> {{range $k, $v := .NetworkSettings.Networks}}{{printf "%s " $k}}{{end}}' actual-http-api
 ```
 
-If the network names do not overlap, the containers cannot talk to each other by Docker network routing.
-
-#### 3) Temporarily connect `actual-bench` to the same network as `actual-http-api`
-
-```bash
-docker network connect <actual-http-api-network> <actual-bench-container>
-```
-
-After that, try connecting again from the Actual Bench UI.
-
-#### 4) Make the fix permanent in Docker Compose
-
-Update the `actual-bench` service so it joins the same network as `actual-http-api`.
-
-Example:
+For a permanent Compose-based fix, attach Actual Bench to the same external network as `actual-http-api`:
 
 ```yaml
 services:
@@ -166,88 +240,104 @@ services:
     ports:
       - "3000:3000"
     networks:
-      - actual-stack # replace with same network where actual http api runs
+      - actual-stack
     restart: unless-stopped
 
 networks:
-  actual-stack: # replace with same network where actual-http-api runs
+  actual-stack:
     external: true
 ```
 
-Replace `actual-stack` with the real network name you found from `docker inspect`.
+Replace `actual-stack` with your real Docker network name.
 
+## Connecting to a budget
 
-## Staged Editing Workflow
+Actual Bench uses a two-step connection flow.
 
-1. Click any cell to edit inline; press Enter or click away to confirm
-2. New rows, updates, and deletions are colour-coded in the table
-3. Click **Save** in the top bar to persist all changes to the server
-4. Click **Discard** to revert all pending changes
-5. Use **Undo / Redo** to step through your local edit history before saving
-6. Click **Refresh** to reload data from the server - if you have unsaved changes, a prompt lets you choose to discard them or cancel
+### 1. Choose a server
 
-## CSV Import / Export
+Enter your `actual-http-api` base URL and API key, then click **Load Budgets**.
 
-Every entity page has an **Export** button that downloads a UTF-8 CSV file and an **Import** button that accepts the same format. Imported rows are staged as new entities and are not saved until you click Save.
-
-### Sample Import Files
-
-Ready-to-use sample CSV files are included in [`public/samples csv/`](public/samples%20csv/) for testing with a fresh Actual Budget setup:
-
-| File | Description |
+| Field | Description |
 |---|---|
-| [`sample-accounts.csv`](public/samples%20csv/sample-accounts.csv) | 7 accounts - covers `offBudget` and `closed` flag combinations |
-| [`sample-payees.csv`](public/samples%20csv/sample-payees.csv) | 15 common payees |
-| [`sample-categories.csv`](public/samples%20csv/sample-categories.csv) | 8 groups and 25 categories spanning income, housing, food, transport, health, and more |
-| [`sample-rules.csv`](public/samples%20csv/sample-rules.csv) | 10 rules demonstrating multi-condition, multi-action, `or` logic, stage filtering, and payee auto-creation |
-| [`sample-schedules.csv`](public/samples%20csv/sample-schedules.csv) | 6 schedules - one-time, monthly, weekly, yearly, and range-amount examples |
-| [`sample-tags.csv`](public/samples%20csv/sample-tags.csv) | 8 tags with varied colors and descriptions |
-| [`sample-budget.csv`](public/samples%20csv/sample-budget.csv) | budget import template with groups, categories, and budgeted amounts per month |
+| **API Server URL** | Base URL of your `actual-http-api` server, for example `https://actual-api.example.com` |
+| **API Key** | The `ACTUAL_API_KEY` configured on the API server |
 
-### CSV Formats
+### 2. Choose a budget
 
-**Accounts** - columns: `name` (required), `offBudget`, `closed`
+Pick a budget returned by the API server, optionally enter the encryption password for encrypted budgets, and click **Connect**.
 
-**Payees** - columns: `name` (required)
+Previously used connections appear on the connection screen for one-click reconnect during the current browser session.
 
-**Categories** - columns: `type` (required: `group` or `category`), `name` (required), `group`, `is_income`, `hidden`
-> Group rows must appear before the category rows that reference them.
 
-**Schedules** - columns: `name` (optional), `date` (required - ISO date `YYYY-MM-DD` for one-time, or JSON-encoded RecurConfig for recurring), `amount` (optional, in cents - use `num1|num2` for `isbetween`), `amountOp` (optional: `is`, `isapprox`, `isbetween`), `payee` (optional name), `account` (optional name), `posts_transaction` (optional bool)
-> The `completed` column is ignored on import - all imported schedules start as active.
+## Common workflows
 
-**Rules** - long format, one condition/action per row:
+### Seed or migrate a budget
 
-| Column | Description |
+1. Connect to the target budget.
+2. Import accounts, payees, categories, schedules, tags, or rules from CSV.
+3. Review staged changes in the draft panel.
+4. Use undo/redo or discard if something looks wrong.
+5. Click **Save** only when the staged result is correct.
+
+### Clean up rules
+
+1. Open **Rules** to filter, inspect, duplicate, edit, or merge rules.
+2. Open **Rule Diagnostics** to find broken references, duplicates, broad criteria, shadowing, and impossible conditions.
+3. Jump from a finding to the affected rule or start a merge directly from duplicate findings.
+4. Save once the staged rule set is clean.
+
+### Review budget health
+
+1. Open **Budget Diagnostics**.
+2. Review snapshot metadata and object counts.
+3. Run diagnostics and optional full integrity check.
+4. Use **Data Browser** for deeper SQLite inspection.
+5. Export findings or table/view CSVs when needed.
+
+### Analyze with ActualQL
+
+1. Open **ActualQL**.
+2. Start from an example query or write raw ActualQL JSON.
+3. Run the query and inspect results as table, JSON, scalar, or tree.
+4. Save useful queries, pin favorites, or copy a sanitized cURL for debugging.
+
+## CSV import/export
+
+Every entity page supports CSV export and import. Imported rows are staged first and only saved after confirmation.
+
+Sample files are included in [`public/samples csv/`](public/samples%20csv/) for testing with a fresh budget:
+
+| File | Contents |
 |---|---|
-| `rule_id` | Grouping key - all rows sharing the same ID form one rule |
-| `stage` | `pre`, `default`, or `post` |
-| `conditions_op` | `and` or `or` |
-| `row_type` | `condition` or `action` |
-| `field` | Field name (e.g. `imported_payee`, `payee`, `category`, `amount`) |
-| `op` | Operator (e.g. `is`, `contains`, `lt`, `oneOf`) |
-| `value` | Value - use `\|` as separator for multi-value `oneOf` operators |
+| `sample-accounts.csv` | Accounts covering on/off-budget and open/closed combinations |
+| `sample-payees.csv` | Common regular payees |
+| `sample-categories.csv` | Category groups and categories across income and expense areas |
+| `sample-rules.csv` | Multi-condition, multi-action, OR logic, stages, and payee auto-creation examples |
+| `sample-schedules.csv` | One-time, monthly, weekly, yearly, and range-amount schedules |
+| `sample-tags.csv` | Tags with colors and descriptions |
+| `sample-budget.csv` | Budget import template with groups, categories, and budgeted amounts per month |
 
-## Budget Diagnostics
+CSV exports include a UTF-8 BOM for better compatibility with Excel and Google Sheets.
 
-Budget Diagnostics opens the active budget export as a read-only local snapshot. The ZIP download is proxied through actual-bench, unpacked in the browser, and opened with SQLite WASM in a web worker. Diagnostics never write back to `actual-http-api` or the Actual Budget file.
 
-The workspace includes:
+## Tech stack
 
-- **Overview** - snapshot metadata, table counts, ZIP/database sizes, and exported ZIP download
-- **Diagnostics** - deterministic schema, relationship, metadata, and SQLite health findings, plus an opt-in full integrity check
-- **Data Browser** - paginated browsing for SQLite tables/views, schema inspection, row details, relationship drill-in, and full table/view CSV export
-
-## Known Limitations
-
-- **No pagination on main entity admin pages** - Accounts, Payees, Categories, Rules, and related admin pages load their full entity sets. Paginated browsing is available in the Budget Diagnostics Data Browser tab.
+- [Next.js](https://nextjs.org/) + React + TypeScript
+- Tailwind CSS
+- Zustand for local staged state
+- TanStack Query for server-state caching
+- TanStack Table for entity tables
+- SQLite WASM worker for local diagnostics snapshot inspection
+- Docker images published for stable releases and edge builds
 
 ## Development
 
 ### Prerequisites
 
 - Node.js 20+
-- A running [actual-http-api](https://github.com/jhonderson/actual-http-api) instance
+- npm
+- A running `actual-http-api` instance for integration testing
 
 ### Setup
 
@@ -258,19 +348,38 @@ npm install
 npm run dev
 ```
 
-`npm install` runs a postinstall step that copies the SQLite WASM asset used by Budget Diagnostics into `public/sqlite/`.
+`npm install` copies the SQLite WASM asset used by Budget Diagnostics into `public/sqlite/`.
 
-Open [http://localhost:3000](http://localhost:3000).
+Open `http://localhost:3000`.
 
 ### Scripts
 
 | Command | Description |
 |---|---|
-| `npm run dev` | Start Turbopack dev server |
-| `npm run build` | Production build |
+| `npm run dev` | Start the development server |
+| `npm run build` | Build for production |
 | `npm start` | Serve the production build |
-| `npm run lint` | ESLint |
-| `npm test` | Jest tests |
-| `npm run clean` | Delete `.next/`, `.next-build/`, and `tsconfig.tsbuildinfo` |
+| `npm run lint` | Run ESLint |
+| `npm test` | Run tests |
+| `npm run clean` | Remove build/cache artifacts |
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for release and contribution guidelines.
+## Known limitations
+
+- Main entity admin pages load the full entity set; very large budgets may feel slower on Accounts, Payees, Categories, Rules, and similar pages.
+- Actual Bench depends on `actual-http-api`; unsupported or changing API endpoints may affect some features.
+
+## Contributing
+
+Contributions are welcome. Please keep PRs focused, user-facing, and aligned with the staged-editing model.
+
+Useful links:
+
+- [Feature reference](FEATURES.md)
+- [Contributing guide](CONTRIBUTING.md)
+- [Changelog](CHANGELOG.md)
+- [Issues](https://github.com/x-rous/actual-bench/issues)
+- [Releases](https://github.com/x-rous/actual-bench/releases)
+
+## License
+
+This project is licensed under the terms of the repository license. See [LICENSE](LICENSE) for details.

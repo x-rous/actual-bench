@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { StickyNote } from "lucide-react";
 import { useMonthsData } from "../context/MonthsDataContext";
 import { MonthColumnHeader } from "./grid/MonthColumnHeader";
@@ -11,6 +11,7 @@ import {
 } from "./grid/SummaryRows";
 import { SectionTotalRow } from "./grid/SectionTotal";
 import { BudgetGridGroupRows } from "./grid/GroupRows";
+import type { BudgetCellDragState } from "./BudgetCell";
 import type { SelectionBounds } from "./grid/types";
 import type {
   BudgetCellSelection,
@@ -31,6 +32,7 @@ type Props = {
   groupSelection?: { groupId: string; month: string } | null;
   /** Whole-row selection on the first column (category or group label). */
   rowSelection?: RowSelection | null;
+  readOnlyMonths: Set<string>;
   /** Collapse state lifted to BudgetManagementView so toolbar can control it. */
   collapsedGroups: Set<string>;
   onToggleCollapse: (groupId: string) => void;
@@ -82,6 +84,7 @@ export function BudgetGrid({
   selection,
   groupSelection,
   rowSelection,
+  readOnlyMonths,
   collapsedGroups,
   onToggleCollapse,
   showHidden,
@@ -100,9 +103,34 @@ export function BudgetGrid({
   const hasAnyData = merged !== null;
   const firstMonthError = firstMonth ? errors.get(firstMonth) : undefined;
 
-  const isDraggingRef = useRef<boolean>(false);
-  // BM-16: shared mousedown origin so cells can apply a drag movement threshold.
-  const dragOriginRef = useRef<{ x: number; y: number } | null>(null);
+  const dragStateRef = useRef<BudgetCellDragState>({
+    activePointerId: null,
+    origin: null,
+    hasDragged: false,
+  });
+  const suppressNextClickClearRef = useRef(false);
+
+  useEffect(() => {
+    const clearDragState = (e: PointerEvent) => {
+      const dragState = dragStateRef.current;
+      if (dragState.activePointerId !== e.pointerId) return;
+      if (dragState.hasDragged) {
+        suppressNextClickClearRef.current = true;
+      }
+      dragStateRef.current = {
+        activePointerId: null,
+        origin: null,
+        hasDragged: false,
+      };
+    };
+
+    window.addEventListener("pointerup", clearDragState);
+    window.addEventListener("pointercancel", clearDragState);
+    return () => {
+      window.removeEventListener("pointerup", clearDragState);
+      window.removeEventListener("pointercancel", clearDragState);
+    };
+  }, []);
 
   // Build allCategories in visual order: expense groups first, income groups after.
   // This ensures selection index bounds match the rendered order in the grid.
@@ -204,6 +232,7 @@ export function BudgetGrid({
       : budgetMode === "envelope"
       ? ENVELOPE_SUMMARY_ROWS
       : [];
+  const selectedMonth = selection?.focusMonth ?? groupSelection?.month ?? null;
 
   const gridStyle: React.CSSProperties = {
     display: "grid",
@@ -218,11 +247,12 @@ export function BudgetGrid({
     selection,
     groupSelection,
     rowSelection,
+    readOnlyMonths,
     selectionBounds,
     categoryIndexMap,
     categoriesById,
-    isDraggingRef,
-    dragOriginRef,
+    dragStateRef,
+    suppressNextClickRef: suppressNextClickClearRef,
     showHidden,
     onCellFocus,
     onCellRangeSelect,
@@ -241,7 +271,31 @@ export function BudgetGrid({
       aria-colcount={activeMonths.length + 2}
       style={gridStyle}
       className="flex-1 text-sm border-t border-border/50"
+      onPointerUpCapture={(e) => {
+        const dragState = dragStateRef.current;
+        if (dragState.activePointerId !== e.pointerId) return;
+        if (dragState.hasDragged) {
+          suppressNextClickClearRef.current = true;
+        }
+        dragStateRef.current = {
+          activePointerId: null,
+          origin: null,
+          hasDragged: false,
+        };
+      }}
+      onPointerCancelCapture={(e) => {
+        if (dragStateRef.current.activePointerId !== e.pointerId) return;
+        dragStateRef.current = {
+          activePointerId: null,
+          origin: null,
+          hasDragged: false,
+        };
+      }}
       onClick={(e) => {
+        if (suppressNextClickClearRef.current) {
+          suppressNextClickClearRef.current = false;
+          return;
+        }
         // Treat any selectable surface as "kept" — cells, group-month aggregates,
         // and the new row-label cells (data-row-category-id / data-row-group-id).
         // Without all four selectors, clicking a row label fires onClearSelection
@@ -256,14 +310,14 @@ export function BudgetGrid({
     >
       {/* ── Column headers ── */}
       <div
-        className="h-8 px-3 flex items-center border-b-2 border-border bg-muted text-xs font-bold text-foreground sticky left-0 top-0 z-20"
+        className="h-8 px-3 flex items-center border-b-2 border-border bg-muted text-xs font-bold text-foreground sticky left-0 top-0 z-30"
         role="columnheader"
         aria-label="Category"
       >
         Category
       </div>
       <div
-        className="h-8 flex items-center justify-center border-b-2 border-border bg-muted sticky top-0 z-10"
+        className="h-8 flex items-center justify-center border-b-2 border-border bg-muted sticky top-0 z-20"
         role="columnheader"
         aria-label="Notes"
       >
@@ -277,6 +331,7 @@ export function BudgetGrid({
           key={month}
           month={month}
           availableMonths={availableMonths}
+          isSelected={month === selectedMonth}
         />
       ))}
 

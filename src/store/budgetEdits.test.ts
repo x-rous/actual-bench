@@ -54,6 +54,28 @@ describe("budgetEdits store — patch-based undo/redo (BM-19)", () => {
       expect(useBudgetEditsStore.getState().edits[key("2026-01", "c1")]?.nextBudgeted).toBe(1500);
     });
 
+    it("does not push a duplicate undo step for an identical edit", () => {
+      const e = edit("2026-01", "c1", 1500, 1000);
+      useBudgetEditsStore.getState().stageEdit(e);
+      useBudgetEditsStore.getState().stageEdit(e);
+
+      expect(useBudgetEditsStore.getState().undoStack).toHaveLength(1);
+
+      useBudgetEditsStore.getState().undo();
+      expect(useBudgetEditsStore.getState().edits[key("2026-01", "c1")]).toBeUndefined();
+    });
+
+    it("does not push a duplicate undo step when restaging the same value after a save error", () => {
+      const e = edit("2026-01", "c1", 1500, 1000);
+      const cellKey = key("2026-01", "c1");
+      useBudgetEditsStore.getState().stageEdit(e);
+      useBudgetEditsStore.getState().setSaveError(cellKey, "Save failed");
+      useBudgetEditsStore.getState().stageEdit(e);
+
+      expect(useBudgetEditsStore.getState().undoStack).toHaveLength(1);
+      expect(useBudgetEditsStore.getState().edits[cellKey]?.saveError).toBeUndefined();
+    });
+
     it("redo replays a previously undone edit", () => {
       const e = edit("2026-01", "c1", 1500, 1000);
       useBudgetEditsStore.getState().stageEdit(e);
@@ -109,6 +131,37 @@ describe("budgetEdits store — patch-based undo/redo (BM-19)", () => {
     it("ignores empty bulk arrays without polluting the undo stack", () => {
       useBudgetEditsStore.getState().stageBulkEdits([]);
       expect(useBudgetEditsStore.getState().undoStack).toHaveLength(0);
+    });
+
+    it("ignores bulk edits that do not change the staged state", () => {
+      const first = edit("2026-01", "c1", 100, 0);
+      const second = edit("2026-02", "c2", 200, 0);
+      useBudgetEditsStore.getState().stageBulkEdits([first, second]);
+      useBudgetEditsStore.getState().stageBulkEdits([first, second]);
+
+      expect(useBudgetEditsStore.getState().undoStack).toHaveLength(1);
+
+      useBudgetEditsStore.getState().undo();
+      expect(Object.keys(useBudgetEditsStore.getState().edits)).toHaveLength(0);
+    });
+
+    it("clears stale save errors for identical bulk edits without pushing undo", () => {
+      const first = edit("2026-01", "c1", 100, 0);
+      const second = edit("2026-02", "c2", 200, 0);
+      const firstKey = key("2026-01", "c1");
+      const secondKey = key("2026-02", "c2");
+
+      useBudgetEditsStore.getState().stageBulkEdits([first, second]);
+      useBudgetEditsStore.getState().setSaveError(firstKey, "Save failed");
+      useBudgetEditsStore.getState().setSaveError(secondKey, "Save failed");
+      const beforeUndoLength = useBudgetEditsStore.getState().undoStack.length;
+
+      useBudgetEditsStore.getState().stageBulkEdits([first, second]);
+
+      const state = useBudgetEditsStore.getState();
+      expect(state.undoStack).toHaveLength(beforeUndoLength);
+      expect(state.edits[firstKey]?.saveError).toBeUndefined();
+      expect(state.edits[secondKey]?.saveError).toBeUndefined();
     });
   });
 

@@ -4,7 +4,10 @@ import { createContext, useContext, useMemo, type ReactNode } from "react";
 import { useQueries } from "@tanstack/react-query";
 import { useConnectionStore, selectActiveInstance } from "@/store/connection";
 import { useBudgetEditsStore } from "@/store/budgetEdits";
-import { budgetMonthDataQueryOptions } from "../lib/monthDataQuery";
+import {
+  budgetMonthDataQueryOptions,
+  isMissingBudgetMonthError,
+} from "../lib/monthDataQuery";
 import { useBudgetMode } from "../hooks/useBudgetMode";
 import { useIncomeBudgets } from "../hooks/useIncomeBudgets";
 import {
@@ -44,6 +47,8 @@ const MonthsDataContext = createContext<MonthsDataContextValue | null>(null);
 type ProviderProps = {
   /** Visible month window (chronological order). */
   months: string[];
+  /** Months the API reports as existing; unavailable months are skipped. */
+  availableMonths?: string[];
   children: ReactNode;
 };
 
@@ -55,22 +60,38 @@ type ProviderProps = {
  * Distributes the result via React Context so per-cell components can read
  * effective data without each subscribing to the full edits map.
  */
-export function MonthsDataProvider({ months, children }: ProviderProps) {
+export function MonthsDataProvider({
+  months,
+  availableMonths,
+  children,
+}: ProviderProps) {
   const connection = useConnectionStore(selectActiveInstance);
   const { data: budgetMode } = useBudgetMode();
   const isTracking = budgetMode === "tracking";
+  const loadableMonths = availableMonths ?? months;
+  const loadableMonthSet = useMemo(
+    () => new Set(loadableMonths),
+    [loadableMonths]
+  );
 
   const queries = useQueries({
     queries: months.map((m) => ({
       ...budgetMonthDataQueryOptions(connection, m),
-      enabled: !!connection && !!m,
+      enabled: !!connection && !!m && loadableMonthSet.has(m),
     })),
   });
 
-  // Snapshot the data/error references so memo deps can be a stable spread.
-  const dataArr = queries.map((q) => q.data);
-  const errorArr = queries.map((q) => q.error);
-  const isLoading = queries.some((q) => q.isLoading);
+  // Snapshot only loadable month results. Disabled TanStack Query entries can
+  // still expose cached data, so unavailable months must be filtered here.
+  const dataArr = queries.map((q, i) =>
+    loadableMonthSet.has(months[i]!) ? q.data : undefined
+  );
+  const errorArr = queries.map((q, i) =>
+    loadableMonthSet.has(months[i]!) ? q.error : null
+  );
+  const isLoading = queries.some(
+    (q, i) => loadableMonthSet.has(months[i]!) && q.isLoading
+  );
 
   // Income category IDs — read from any loaded month (consistent across months).
   const incomeCategoryIds = useMemo(() => {
@@ -100,9 +121,10 @@ export function MonthsDataProvider({ months, children }: ProviderProps) {
 
     for (let i = 0; i < months.length; i++) {
       const m = months[i]!;
+      if (!loadableMonthSet.has(m)) continue;
       const data = dataArr[i];
       const err = errorArr[i];
-      if (err) errors.set(m, err);
+      if (err && !isMissingBudgetMonthError(err, m)) errors.set(m, err);
       if (data) {
         raw.set(m, data);
         const eff = computeEffectiveMonthState({
@@ -122,7 +144,7 @@ export function MonthsDataProvider({ months, children }: ProviderProps) {
     // Spread data and error arrays so the memo recomputes only when an
     // underlying query result reference changes, not on every render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [months, allEdits, isTracking, incomeBudgets, isLoading, ...dataArr, ...errorArr]);
+  }, [months, loadableMonthSet, allEdits, isTracking, incomeBudgets, isLoading, ...dataArr, ...errorArr]);
 
   return (
     <MonthsDataContext.Provider value={value}>

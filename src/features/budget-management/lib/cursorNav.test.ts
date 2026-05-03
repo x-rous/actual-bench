@@ -38,8 +38,38 @@ function move(current: CursorPos, dir: NavDirection): CursorPos | null {
   return computeCursorTarget({ navItems: NAV_ITEMS, monthCount: MONTH_COUNT, current, dir, pageSize: PAGE_SIZE });
 }
 
+function moveSkipping(
+  current: CursorPos,
+  dir: NavDirection,
+  skippedMonthIdxs: ReadonlySet<number>
+): CursorPos | null {
+  return computeCursorTarget({
+    navItems: NAV_ITEMS,
+    monthCount: MONTH_COUNT,
+    skippedMonthIdxs,
+    current,
+    dir,
+    pageSize: PAGE_SIZE,
+  });
+}
+
 function extend(focus: CursorPos, dir: NavDirection): CursorPos | null {
   return computeRangeExtensionTarget({ catItems: CAT_ITEMS, monthCount: MONTH_COUNT, focus, dir, pageSize: PAGE_SIZE });
+}
+
+function extendSkipping(
+  focus: CursorPos,
+  dir: NavDirection,
+  skippedMonthIdxs: ReadonlySet<number>
+): CursorPos | null {
+  return computeRangeExtensionTarget({
+    catItems: CAT_ITEMS,
+    monthCount: MONTH_COUNT,
+    skippedMonthIdxs,
+    focus,
+    dir,
+    pageSize: PAGE_SIZE,
+  });
 }
 
 describe("computeCursorTarget — single step", () => {
@@ -157,6 +187,44 @@ describe("computeCursorTarget — unhandled directions", () => {
   });
 });
 
+describe("computeCursorTarget — skipped months", () => {
+  const leadingSkipped = new Set([0, 1, 2]);
+
+  it("left jumps over skipped leading months to the label column", () => {
+    expect(moveSkipping({ itemIdx: 5, monthIdx: 3 }, "left", leadingSkipped)).toEqual({
+      itemIdx: 5,
+      monthIdx: -1,
+    });
+  });
+
+  it("right from the label column lands on the first non-skipped month", () => {
+    expect(moveSkipping({ itemIdx: 5, monthIdx: -1 }, "right", leadingSkipped)).toEqual({
+      itemIdx: 5,
+      monthIdx: 3,
+    });
+  });
+
+  it("row-start and grid-start use the first non-skipped month", () => {
+    expect(moveSkipping({ itemIdx: 5, monthIdx: 8 }, "row-start", leadingSkipped)).toEqual({
+      itemIdx: 5,
+      monthIdx: 3,
+    });
+    expect(moveSkipping({ itemIdx: 5, monthIdx: 8 }, "grid-start", leadingSkipped)).toEqual({
+      itemIdx: 0,
+      monthIdx: 3,
+    });
+  });
+
+  it("shift-tab wraps to the previous row's last non-skipped month", () => {
+    expect(
+      moveSkipping({ itemIdx: 5, monthIdx: -1 }, "shift-tab", new Set([10, 11]))
+    ).toEqual({
+      itemIdx: 4,
+      monthIdx: 9,
+    });
+  });
+});
+
 // ─── Range extension ──────────────────────────────────────────────────────
 
 describe("computeRangeExtensionTarget — single step", () => {
@@ -209,5 +277,23 @@ describe("computeRangeExtensionTarget — unhandled directions", () => {
     expect(extend({ itemIdx: 3, monthIdx: 5 }, "up")).toBeNull();
     expect(extend({ itemIdx: 3, monthIdx: 5 }, "page-down")).toBeNull();
     expect(extend({ itemIdx: 3, monthIdx: 5 }, "tab")).toBeNull();
+  });
+});
+
+describe("computeRangeExtensionTarget — skipped months", () => {
+  const leadingSkipped = new Set([0, 1, 2]);
+
+  it("shift-left does not extend into skipped leading months", () => {
+    expect(extendSkipping({ itemIdx: 3, monthIdx: 3 }, "shift-left", leadingSkipped)).toEqual({
+      itemIdx: 3,
+      monthIdx: 3,
+    });
+  });
+
+  it("shift-row-start uses the first non-skipped month", () => {
+    expect(extendSkipping({ itemIdx: 3, monthIdx: 8 }, "shift-row-start", leadingSkipped)).toEqual({
+      itemIdx: 3,
+      monthIdx: 3,
+    });
   });
 });

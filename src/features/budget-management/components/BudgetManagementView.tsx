@@ -53,7 +53,7 @@ export function BudgetManagementView() {
   const hasBudgetPendingEdits = Object.keys(edits).length > 0;
   const hasPushedNavigationGuard = useRef(false);
 
-  // Keep display window in store so BudgetDraftPanel can show year summary without props.
+  // Keep display window in store so BudgetDraftPanel can show period details without props.
   useEffect(() => {
     setDisplayMonths(activeMonths);
   }, [activeMonths, setDisplayMonths]);
@@ -156,9 +156,12 @@ export function BudgetManagementView() {
     }
   };
 
-  // Load first active month's data for export/import dialogs (already cached by grid).
-  const firstActiveMonth = activeMonths[0] ?? null;
-  const { data: firstMonthData } = useMonthData(firstActiveMonth);
+  // Load the first existing month in the visible window for export/import
+  // dialogs. A visible year can include leading months before the budget was
+  // created; querying those months returns the API's expected 404.
+  const firstAvailableActiveMonth =
+    activeMonths.find((month) => availableMonths?.includes(month)) ?? null;
+  const { data: firstMonthData } = useMonthData(firstAvailableActiveMonth);
   const groups = firstMonthData
     ? firstMonthData.groupOrder.map((id) => firstMonthData.groupsById[id]!).filter(Boolean)
     : [];
@@ -290,9 +293,9 @@ export function BudgetManagementView() {
         />
       )}
 
-      {budgetMode === "envelope" && transferDialogOpen && firstActiveMonth && (
+      {budgetMode === "envelope" && transferDialogOpen && firstAvailableActiveMonth && (
         <CategoryTransferDialog
-          month={firstActiveMonth}
+          month={firstAvailableActiveMonth}
           categories={categories}
           onClose={handleCloseTransfer}
         />

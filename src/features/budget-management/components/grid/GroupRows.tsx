@@ -2,11 +2,12 @@
 
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { useEffectiveMonthFromContext } from "../../context/MonthsDataContext";
+import { useBudgetEditsStore } from "@/store/budgetEdits";
 import { EntityNoteButton } from "@/components/ui/entity-note-button";
 import { useEntityNote } from "@/hooks/useEntityNote";
 import { formatMinor } from "../../lib/format";
 import { dispatchRowLabel, useGroupCellKeymap } from "../../keyboard/useBudgetKeymap";
-import { BudgetCell } from "../BudgetCell";
+import { BudgetCell, type BudgetCellDragState } from "../BudgetCell";
 import { isCellSelected, type SelectionBounds } from "./types";
 import type {
   BudgetCellSelection,
@@ -55,6 +56,7 @@ function GroupMonthAggregate({
   onFocus,
   onNavigate,
   onToggleCollapse,
+  isReadOnlyMonth,
 }: {
   month: string;
   groupId: string;
@@ -65,9 +67,18 @@ function GroupMonthAggregate({
   onFocus?: () => void;
   onNavigate?: (dir: NavDirection) => void;
   onToggleCollapse?: () => void;
+  isReadOnlyMonth?: boolean;
 }) {
   const data = useEffectiveMonthFromContext(month);
   const group = data?.groupsById[groupId];
+  const stagedChildCount = useBudgetEditsStore((s) => {
+    if (!group) return 0;
+    let count = 0;
+    for (const categoryId of group.categoryIds) {
+      if (s.edits[`${month}:${categoryId}`]) count++;
+    }
+    return count;
+  });
 
   const handleKeyDown = useGroupCellKeymap({
     navigate: (dir) => onNavigate?.(dir),
@@ -77,6 +88,28 @@ function GroupMonthAggregate({
   const baseClass =
     "h-7 border-r border-b border-border bg-[#F7F8FA] dark:bg-zinc-800 dark:border-zinc-700";
   const dimClass = isDimmed ? " opacity-50" : "";
+
+  if (!group && isReadOnlyMonth) {
+    return (
+      <div
+        className={`${baseClass}${dimClass} px-2 flex items-center justify-end text-xs font-sans tabular-nums text-muted-foreground cursor-not-allowed outline-none${isSelected ? " ring-2 ring-inset ring-foreground/80" : ""}`}
+        role="gridcell"
+        tabIndex={0}
+        aria-selected={isSelected}
+        aria-readonly="true"
+        aria-disabled="true"
+        aria-label={`No budget data for ${month}`}
+        title="No budget exists for this past month; budget cells are read-only."
+        data-group-id={groupId}
+        data-group-month={month}
+        onClick={onFocus}
+        onFocus={onFocus}
+        onKeyDown={handleKeyDown}
+      >
+        --
+      </div>
+    );
+  }
 
   if (!group) return <div className={`${baseClass} animate-pulse${dimClass}`} />;
 
@@ -108,18 +141,25 @@ function GroupMonthAggregate({
 
   return (
     <div
-      className={`${baseClass}${dimClass} px-2 flex items-center justify-end text-xs font-sans tabular-nums text-black dark:text-zinc-200 cursor-default outline-none${isSelected ? " ring-2 ring-inset ring-foreground/80" : ""}`}
+      className={`${baseClass}${dimClass} relative px-2 flex items-center justify-end text-xs font-sans tabular-nums text-black dark:text-zinc-200 cursor-default outline-none${isSelected ? " ring-2 ring-inset ring-foreground/80" : ""}`}
       role="gridcell"
       tabIndex={0}
       aria-selected={isSelected}
       aria-label={`${group.name} total for ${month}: ${formatMinor(displayValue)}`}
-      title={`Budgeted: ${formatMinor(group.budgeted)} | Actuals: ${formatMinor(Math.abs(group.actuals))} | Balance: ${formatMinor(group.balance)}`}
+      title={`Budgeted: ${formatMinor(group.budgeted)} | Actuals: ${formatMinor(Math.abs(group.actuals))} | Balance: ${formatMinor(group.balance)}${stagedChildCount > 0 ? ` | ${stagedChildCount} staged change${stagedChildCount !== 1 ? "s" : ""} in this group` : ""}`}
       data-group-id={groupId}
       data-group-month={month}
       onClick={onFocus}
       onFocus={onFocus}
       onKeyDown={handleKeyDown}
     >
+      {stagedChildCount > 0 && (
+        <span
+          className="absolute top-1 left-1 h-1.5 w-1.5 rounded-full bg-amber-400"
+          aria-hidden="true"
+          title={`${stagedChildCount} staged change${stagedChildCount !== 1 ? "s" : ""} in this group for ${month}`}
+        />
+      )}
       {formatMinor(displayValue)}
     </div>
   );
@@ -139,12 +179,12 @@ export type GroupRowsProps = {
   categoryIndexMap: Map<string, number>;
   /** Merged categoriesById for category metadata (name, isIncome, etc.). */
   categoriesById: Record<string, LoadedCategory>;
-  isDraggingRef: { current: boolean };
-  /** BM-16: shared mousedown origin so cells can apply a drag movement threshold. */
-  dragOriginRef: { current: { x: number; y: number } | null };
+  dragStateRef: { current: BudgetCellDragState };
+  suppressNextClickRef: { current: boolean };
   showHidden: boolean;
   groupSelection?: { groupId: string; month: string } | null;
   rowSelection?: RowSelection | null;
+  readOnlyMonths: Set<string>;
   onCellFocus: (categoryId: string, month: string) => void;
   onCellRangeSelect: (categoryId: string, month: string) => void;
   onCellNavigate?: (categoryId: string, month: string, dir: NavDirection) => void;
@@ -176,11 +216,12 @@ export function BudgetGridGroupRows({
   selectionBounds,
   categoryIndexMap,
   categoriesById,
-  isDraggingRef,
-  dragOriginRef,
+  dragStateRef,
+  suppressNextClickRef,
   showHidden,
   groupSelection,
   rowSelection,
+  readOnlyMonths,
   onCellFocus,
   onCellRangeSelect,
   onCellNavigate,
@@ -268,6 +309,7 @@ export function BudgetGridGroupRows({
           onFocus={() => onGroupFocus?.(group.id, month)}
           onNavigate={(dir) => onGroupNavigate?.(group.id, month, dir)}
           onToggleCollapse={onToggleCollapse}
+          isReadOnlyMonth={readOnlyMonths.has(month)}
         />
       ))}
 
@@ -342,9 +384,10 @@ export function BudgetGridGroupRows({
                     cellView={cellView}
                     isSelected={isSelected}
                     isAnchor={isAnchor}
-                    isDraggingRef={isDraggingRef}
-                    dragOriginRef={dragOriginRef}
+                    dragStateRef={dragStateRef}
+                    suppressNextClickRef={suppressNextClickRef}
                     isDimmed={catDimmed}
+                    isReadOnlyMonth={readOnlyMonths.has(month)}
                     onFocus={onCellFocus}
                     onRangeSelect={onCellRangeSelect}
                     onNavigate={(dir) => onCellNavigate?.(cat.id, month, dir)}

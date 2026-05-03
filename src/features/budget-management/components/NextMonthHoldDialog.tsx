@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { formatMonthLabel } from "@/lib/budget/monthMath";
 import { useNextMonthHold } from "../hooks/useNextMonthHold";
 
 type Props = {
@@ -20,6 +21,7 @@ type Props = {
  */
 export function NextMonthHoldDialog({ month, onClose, defaultAmount, setOnly }: Props) {
   const { setHold, clearHold, isPending, error } = useNextMonthHold();
+  const monthLabel = formatMonthLabel(month, "long");
 
   const [amountStr, setAmountStr] = useState(
     defaultAmount != null && defaultAmount > 0
@@ -65,11 +67,13 @@ export function NextMonthHoldDialog({ month, onClose, defaultAmount, setOnly }: 
       <div className="bg-background border border-border rounded-lg shadow-xl w-full max-w-sm mx-4 p-5">
         {!done ? (
           <>
-            <h2 className="text-base font-semibold mb-4">Next Month Hold for {month}</h2>
+            <h2 className="text-base font-semibold mb-4">
+              Hold for next month — {monthLabel}
+            </h2>
 
             <div className="mb-4">
               <label htmlFor="hold-amount" className="block text-sm font-medium mb-1">
-                Hold amount ($)
+                Amount to hold
               </label>
               <input
                 id="hold-amount"
@@ -89,7 +93,7 @@ export function NextMonthHoldDialog({ month, onClose, defaultAmount, setOnly }: 
               className="mb-4 p-2 rounded bg-orange-50 dark:bg-orange-950/20 text-xs text-orange-700 dark:text-orange-400"
               role="note"
             >
-              This action takes effect immediately and does not go through the save panel.
+              This action applies immediately and does not go through the save panel.
             </div>
 
             {validationError && (

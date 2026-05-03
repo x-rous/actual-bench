@@ -6,23 +6,57 @@ import {
   useRawMonthFromContext,
 } from "../../context/MonthsDataContext";
 import { formatSummary } from "../../lib/format";
+import {
+  getTrackingIncomeCell,
+  getTrackingResultCell,
+  getTrackingSpendingCell,
+} from "../../lib/trackingSummary";
 import type { BudgetMonthSummary, LoadedMonthState } from "../../types";
-import { HoldToggleButton } from "./HoldToggle";
+import { FreeHeldAmountButton, HoldMoneyButton } from "./HoldToggle";
+import {
+  formatSummaryCellValue,
+  summaryLabelClass,
+  summaryToneClass,
+  type SummaryCellMetric,
+} from "./summaryDisplay";
 
 // ─── Config type ──────────────────────────────────────────────────────────────
 
 export type SummaryRowConfig = {
   /** Row-header label. ReactNode so configs can supply rich (multi-color) labels. */
   label: ReactNode;
+  /** Tooltip for the sticky row label. */
+  rowTooltip?: string;
+  /** Fully derived per-month display model for semantic status rows. */
+  getCell?: (
+    s: BudgetMonthSummary,
+    state: LoadedMonthState,
+    month: string
+  ) => SummaryCellMetric;
   /** Per-cell mini-label rendered above the value. */
-  dynamicLabel?: (s: BudgetMonthSummary) => ReactNode;
+  dynamicLabel?: (
+    s: BudgetMonthSummary,
+    state: LoadedMonthState,
+    month: string
+  ) => ReactNode;
   getDynamicRowLabel?: (s: BudgetMonthSummary) => ReactNode;
-  getValue: (s: BudgetMonthSummary) => number;
-  colorClass?: (s: BudgetMonthSummary) => string;
-  isConsumptionBar?: boolean;
-  getActual?: (s: BudgetMonthSummary, state: LoadedMonthState) => number;
-  getTarget?: (s: BudgetMonthSummary, state: LoadedMonthState) => number;
-  barMode?: "expense" | "income";
+  getValue?: (
+    s: BudgetMonthSummary,
+    state: LoadedMonthState,
+    month: string
+  ) => number | null;
+  tooltip?: (
+    s: BudgetMonthSummary,
+    state: LoadedMonthState,
+    month: string,
+    value: number | null
+  ) => string;
+  colorClass?: (
+    s: BudgetMonthSummary,
+    state: LoadedMonthState,
+    month: string,
+    value: number | null
+  ) => string;
   /** Compact input row — rendered smaller to group visually under a total row. */
   isSubRow?: boolean;
   /** Operator prefix shown in the label cell to convey formula structure (+, −, =). */
@@ -31,11 +65,15 @@ export type SummaryRowConfig = {
   rowHeight?: string;
   /** Suppress the top border that normally appears on non-sub, non-bar rows. */
   noBorder?: boolean;
-  /** Renders a per-month hold toggle button inside the cell (envelope "To Budget" row). */
-  isHoldCell?: boolean;
+  /** Renders a per-month hold/free action inside the envelope summary cell. */
+  holdAction?: "set" | "free";
   /** When true, the per-month value is rendered larger and bold so the row's
    *  bottom-line total stands out (e.g. tracking "Balance", envelope "To Budget"). */
   emphasizeValue?: boolean;
+  /** Optional value class override for rows that need a stronger emphasis. */
+  valueClassName?: string;
+  /** Tiny top margin before the row. */
+  marginTop?: boolean;
 };
 
 /**
@@ -56,40 +94,27 @@ const TO_BUDGET_OVERBUDGET_LABEL: ReactNode = (
 
 export const TRACKING_SUMMARY_ROWS: SummaryRowConfig[] = [
   {
-    label: "Expenses",
-    getValue: (s) => s.totalSpent,
-    isConsumptionBar: true,
-    barMode: "expense",
-    getActual: (s) => Math.abs(s.totalSpent),
-    getTarget: (_s, state) =>
-      state.groupOrder
-        .map((id) => state.groupsById[id]!)
-        .filter((g) => !g.isIncome && !g.hidden)
-        .reduce((sum, g) => sum + Math.abs(g.budgeted), 0),
+    label: "Spending vs Budgeted",
+    rowTooltip: "Expenses compared with budgeted expenses.",
+    getCell: (_s, state, month) => getTrackingSpendingCell(state, month),
+    noBorder: true,
+    marginTop: true,
   },
   {
     label: "Income",
-    getValue: (s) => s.totalIncome,
-    isConsumptionBar: true,
-    barMode: "income",
-    getActual: (s) => s.totalIncome,
-    getTarget: (_s, state) =>
-      state.groupOrder
-        .map((id) => state.groupsById[id]!)
-        .filter((g) => g.isIncome && !g.hidden)
-        .reduce((sum, g) => sum + g.budgeted, 0),
+    rowTooltip: "Received income compared with budgeted income.",
+    getCell: (_s, state, month) => getTrackingIncomeCell(state, month),
+    noBorder: true,
   },
   {
-    label: "Balance",
-    dynamicLabel: (s) => (s.totalBalance >= 0 ? "Savings" : "Overspent"),
-    getValue: (s) => s.totalBalance,
-    colorClass: (s) =>
-      s.totalBalance >= 0
-        ? "text-emerald-600 dark:text-emerald-400"
-        : "text-destructive",
+    label: "Result",
+    rowTooltip:
+      "Actual saved/overspent for past months; projected result for current/future months.",
+    getCell: (_s, state, month) => getTrackingResultCell(state, month),
     rowHeight: "h-10",
     noBorder: true,
     emphasizeValue: true,
+    valueClassName: "text-[13px] font-bold",
   },
 ];
 
@@ -116,11 +141,12 @@ export const ENVELOPE_SUMMARY_ROWS: SummaryRowConfig[] = [
     operator: "−",
   },
   {
-    label: "For next month",
-    getValue: (s) => (s.forNextMonth <= 0 ? 0 : -Math.abs(s.forNextMonth)),
+    label: "Hold for next month",
+    getValue: (s) => (s.forNextMonth <= 0 ? 0 : Math.abs(s.forNextMonth)),
     colorClass: () => "text-foreground/75",
     isSubRow: true,
     operator: "−",
+    holdAction: "free",
   },
   {
     // Row-header (left column) only: dual-color "To Budget / Overbudget"
@@ -129,64 +155,13 @@ export const ENVELOPE_SUMMARY_ROWS: SummaryRowConfig[] = [
     label: TO_BUDGET_OVERBUDGET_LABEL,
     getValue: (s) => s.toBudget,
     colorClass: (s) =>
-      s.toBudget <= 0 ? "text-destructive" : "text-emerald-600 dark:text-emerald-400",
+      s.toBudget < 0 ? "text-destructive" : "text-emerald-600 dark:text-emerald-400",
     operator: "=",
     noBorder: true,
-    isHoldCell: true,
+    holdAction: "set",
     emphasizeValue: true,
   },
 ];
-
-// ─── ConsumptionBarCell ───────────────────────────────────────────────────────
-
-function ConsumptionBarCell({
-  month,
-  config,
-}: {
-  month: string;
-  config: SummaryRowConfig;
-}) {
-  const data = useEffectiveMonthFromContext(month);
-  if (!data) return <div className="h-10 bg-transparent" />;
-
-  const actual = config.getActual ? config.getActual(data.summary, data) : 0;
-  const target = config.getTarget ? config.getTarget(data.summary, data) : 0;
-  const ratio = target > 0 ? actual / target : 0;
-  const pct = Math.max(0, Math.min(ratio * 100, 100));
-
-  const isExpense = config.barMode === "expense";
-  const barColor = isExpense
-    ? ratio <= 1
-      ? "bg-emerald-500"
-      : "bg-red-500"
-    : ratio >= 1
-    ? "bg-emerald-500"
-    : "bg-amber-400";
-
-  const ratioText = target > 0 ? `${Math.round(ratio * 100)}%` : "—";
-  const tooltipText =
-    target > 0
-      ? `${isExpense ? "Spent" : "Received"}: ${formatSummary(actual)}  /  Budgeted: ${formatSummary(target)}`
-      : "No budget set";
-
-  return (
-    <div
-      className="h-10 px-2 pt-1.5 pb-1.5 flex flex-col gap-0.5 bg-transparent font-sans tabular-nums"
-      title={tooltipText}
-    >
-      <div className="flex items-center justify-end gap-1.5">
-        <span className="text-[10px] text-foreground/80 shrink-0">{formatSummary(actual)}</span>
-        <span className="text-[10px] text-muted-foreground/60 shrink-0">({ratioText})</span>
-      </div>
-      <div className="w-full h-2 rounded-full bg-muted/40 overflow-hidden">
-        <div
-          className={`h-full rounded-full transition-all ${barColor}`}
-          style={{ width: `${pct}%` }}
-        />
-      </div>
-    </div>
-  );
-}
 
 // ─── SummaryHeaderRow + SummaryHeaderCell ─────────────────────────────────────
 
@@ -204,18 +179,20 @@ export function SummaryHeaderRow({
       : config.label;
 
   const isSubRow = config.isSubRow;
-  const rowH = config.rowHeight ?? (config.isConsumptionBar ? "h-10" : isSubRow ? "h-5" : "h-8");
+  const rowH = config.rowHeight ?? (isSubRow ? "h-5" : "h-8");
   // Total row gets a top border to visually separate it from the sub-rows above.
   const borderClass =
-    !isSubRow && !config.isConsumptionBar && !config.noBorder
+    !isSubRow && !config.noBorder
       ? "border-t border-border/60"
       : "";
+  const marginTopClass = config.marginTop ? "mt-1" : "";
 
   return (
     <>
       <div
-        className={`${rowH} px-3 flex items-center bg-background text-[11px] text-foreground/75 sticky left-0 z-10 ${borderClass}`}
+        className={`${rowH} px-3 ${marginTopClass} flex items-center bg-background text-[11px] font-medium text-foreground/75 sticky left-0 z-10 ${borderClass}`}
         role="rowheader"
+        title={config.rowTooltip}
       >
         {config.operator && (
           <span className="mr-1.5 w-3 shrink-0 text-center text-[10px] text-muted-foreground/50 font-mono select-none">
@@ -224,14 +201,10 @@ export function SummaryHeaderRow({
         )}
         <span className={config.operator === "=" ? "font-semibold" : ""}>{rowLabel}</span>
       </div>
-      <div className={`${rowH} bg-transparent ${borderClass}`} aria-hidden="true" />
-      {activeMonths.map((month) =>
-        config.isConsumptionBar ? (
-          <ConsumptionBarCell key={month} month={month} config={config} />
-        ) : (
-          <SummaryHeaderCell key={month} month={month} config={config} />
-        )
-      )}
+      <div className={`${rowH} ${marginTopClass} bg-transparent ${borderClass}`} aria-hidden="true" />
+      {activeMonths.map((month) => (
+        <SummaryHeaderCell key={month} month={month} config={config} />
+      ))}
     </>
   );
 }
@@ -247,48 +220,99 @@ function SummaryHeaderCell({
   const isSubRow = config.isSubRow;
   const rowH = config.rowHeight ?? (isSubRow ? "h-6" : "h-8");
   const borderClass =
-    !isSubRow && !config.isConsumptionBar && !config.noBorder
+    !isSubRow && !config.noBorder
       ? "border-t border-border/60"
       : "";
+  const marginTopClass = config.marginTop ? "mt-1" : "";
 
-  if (!data) return <div className={`${rowH} bg-transparent ${borderClass}`} />;
+  if (!data) return <div className={`${rowH} ${marginTopClass} bg-transparent ${borderClass}`} />;
 
-  const value = config.getValue(data.summary);
-  const dynamicLabel = config.dynamicLabel ? config.dynamicLabel(data.summary) : null;
-  const colorClass = config.colorClass ? config.colorClass(data.summary) : "text-foreground/75";
+  const cell = config.getCell?.(data.summary, data, month);
+  const value = cell
+    ? cell.value
+    : config.getValue
+      ? config.getValue(data.summary, data, month)
+      : null;
+  const dynamicLabel = cell?.label
+    ? cell.label
+    : config.dynamicLabel
+    ? config.dynamicLabel(data.summary, data, month)
+    : null;
+  const colorClass = cell
+    ? "text-foreground/75"
+    : config.colorClass
+    ? config.colorClass(data.summary, data, month, value)
+    : "text-foreground/75";
+  const tooltip = cell?.tooltip
+    ? cell.tooltip
+    : config.tooltip
+    ? config.tooltip(data.summary, data, month, value)
+    : undefined;
   // Emphasised rows render the number a touch larger and bold so totals
   // stand out from the sub-rows above. Other rows keep the inherited
   // `text-[11px]` from the parent cell.
-  const valueClass = config.emphasizeValue ? "text-[13px] font-bold" : "";
+  const valueClass =
+    config.valueClassName ?? (config.emphasizeValue ? "text-[13px] font-bold" : "");
+  const labelClass = cell
+    ? summaryLabelClass(cell.tone)
+    : "";
+  const valueToneClass = cell ? summaryToneClass(cell.tone) : "";
 
-  if (config.isHoldCell) {
+  if (config.holdAction) {
+    const numericValue = value ?? 0;
+    const showBalanced = config.holdAction === "set" && numericValue === 0;
     return (
       <div
-        className={`${rowH} px-1.5 flex items-center gap-1 bg-transparent font-sans tabular-nums leading-tight text-[11px] ${borderClass} ${colorClass}`}
+        className={`${rowH} px-1.5 ${marginTopClass} flex items-center justify-end gap-1 bg-transparent font-sans tabular-nums leading-tight text-[11px] ${borderClass} ${colorClass}`}
+        title={tooltip}
       >
-        <HoldToggleButton
-          month={month}
-          forNextMonth={data.summary.forNextMonth}
-          toBudget={data.summary.toBudget}
-        />
         <div className="flex flex-col items-end flex-1 min-w-0">
           {dynamicLabel && (
-            <span className="text-[9px] font-semibold leading-none mb-0.5">{dynamicLabel}</span>
+            <span className="max-w-full truncate text-[9px] font-medium leading-none mb-0.5">
+              {dynamicLabel}
+            </span>
           )}
-          <span className={valueClass}>{formatSummary(value)}</span>
+          <span className={valueClass}>
+            {showBalanced
+              ? `✓ ${formatSummary(numericValue)}`
+              : formatSummary(numericValue)}
+          </span>
         </div>
+        {config.holdAction === "set" ? (
+          <HoldMoneyButton
+            month={month}
+            forNextMonth={data.summary.forNextMonth}
+            toBudget={data.summary.toBudget}
+          />
+        ) : (
+          <FreeHeldAmountButton
+            month={month}
+            forNextMonth={data.summary.forNextMonth}
+          />
+        )}
       </div>
     );
   }
 
   return (
     <div
-      className={`${rowH} px-2 flex flex-col items-end justify-center bg-transparent font-sans tabular-nums leading-tight text-[11px] ${borderClass} ${colorClass}`}
+      className={`${rowH} px-2 ${marginTopClass} flex flex-col items-end justify-center bg-transparent font-sans tabular-nums leading-tight text-[11px] ${borderClass} ${colorClass}`}
+      title={tooltip}
     >
       {dynamicLabel && (
-        <span className="text-[9px] font-semibold leading-none mb-0.5">{dynamicLabel}</span>
+        <span
+          className={`max-w-full truncate text-[9px] font-medium leading-none mb-0.5 ${labelClass}`}
+        >
+          {dynamicLabel}
+        </span>
       )}
-      <span className={valueClass}>{formatSummary(value)}</span>
+      <span className={`${valueClass} ${valueToneClass}`}>
+        {cell
+          ? formatSummaryCellValue(cell)
+          : value == null
+            ? "—"
+            : formatSummary(value)}
+      </span>
     </div>
   );
 }

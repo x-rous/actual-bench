@@ -14,6 +14,21 @@ function makeKey(edit: StagedBudgetEdit): BudgetCellKey {
   return `${edit.month}:${edit.categoryId}`;
 }
 
+function sameEdit(
+  a: StagedBudgetEdit | undefined,
+  b: StagedBudgetEdit | undefined
+): boolean {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  return (
+    a.month === b.month &&
+    a.categoryId === b.categoryId &&
+    a.nextBudgeted === b.nextBudgeted &&
+    a.previousBudgeted === b.previousBudgeted &&
+    a.source === b.source
+  );
+}
+
 /**
  * BM-19: Inverse-patch model for undo/redo.
  *
@@ -106,6 +121,17 @@ export const useBudgetEditsStore = create<BudgetEditsStore>()((set, get) => ({
   stageEdit(edit) {
     const { edits, undoStack } = get();
     const key = makeKey(edit);
+    const existing = edits[key];
+    if (sameEdit(existing, edit)) {
+      if (existing?.saveError && edit.saveError == null) {
+        // Clearing a stale save error is metadata cleanup, not a user edit.
+        // Do not push an undo entry for the same budget value.
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const { saveError: _saveError, ...rest } = existing;
+        set({ edits: { ...edits, [key]: rest as StagedBudgetEdit } });
+      }
+      return;
+    }
     const patch = buildPatchForChanges(edits, [key]);
     set({
       undoStack: pushPatch(undoStack, patch),
@@ -118,13 +144,29 @@ export const useBudgetEditsStore = create<BudgetEditsStore>()((set, get) => ({
     if (newEdits.length === 0) return;
     const { edits, undoStack } = get();
     const next: Record<BudgetCellKey, StagedBudgetEdit> = { ...edits };
-    const keys: BudgetCellKey[] = [];
+    const keys = new Set<BudgetCellKey>();
+    let clearedSaveError = false;
     for (const edit of newEdits) {
       const key = makeKey(edit);
-      keys.push(key);
-      next[key] = edit;
+      keys.add(key);
+      const existing = edits[key];
+      if (sameEdit(existing, edit) && existing?.saveError && edit.saveError == null) {
+        // Clearing stale save errors is metadata cleanup, not a user edit.
+        // Do not include it in undo/redo patch calculation.
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const { saveError: _saveError, ...rest } = existing;
+        next[key] = rest as StagedBudgetEdit;
+        clearedSaveError = true;
+      } else {
+        next[key] = edit;
+      }
     }
-    const patch = buildPatchForChanges(edits, keys);
+    const changedKeys = [...keys].filter((key) => !sameEdit(edits[key], next[key]));
+    if (changedKeys.length === 0) {
+      if (clearedSaveError) set({ edits: next });
+      return;
+    }
+    const patch = buildPatchForChanges(edits, changedKeys);
     set({
       undoStack: pushPatch(undoStack, patch),
       redoStack: [],

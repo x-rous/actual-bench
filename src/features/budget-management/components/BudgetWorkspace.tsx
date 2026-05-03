@@ -7,6 +7,7 @@ import { useBudgetEditsStore } from "@/store/budgetEdits";
 import { useConnectionStore, selectActiveInstance } from "@/store/connection";
 import { addMonths } from "@/lib/budget/monthMath";
 import { parseBudgetExpression } from "../lib/budgetMath";
+import { buildReadOnlyMissingBudgetMonthSet } from "../lib/monthAvailability";
 import { parsePastePayload, resolveSelectionCells } from "../lib/budgetSelectionUtils";
 import {
   computeCursorTarget,
@@ -111,7 +112,10 @@ type Props = {
  */
 export function BudgetWorkspace(props: Props) {
   return (
-    <MonthsDataProvider months={props.activeMonths}>
+    <MonthsDataProvider
+      months={props.activeMonths}
+      availableMonths={props.availableMonths}
+    >
       <BudgetWorkspaceInner {...props} />
     </MonthsDataProvider>
   );
@@ -176,6 +180,23 @@ function BudgetWorkspaceInner({
 
   const queryClient = useQueryClient();
   const connection = useConnectionStore(selectActiveInstance);
+  const readOnlyMonths = useMemo(
+    () => buildReadOnlyMissingBudgetMonthSet(activeMonths, availableMonths),
+    [activeMonths, availableMonths]
+  );
+  const readOnlyMonthIndices = useMemo(
+    () =>
+      new Set(
+        activeMonths.flatMap((month, index) =>
+          readOnlyMonths.has(month) ? [index] : []
+        )
+      ),
+    [activeMonths, readOnlyMonths]
+  );
+  const firstSelectableMonth = useMemo(
+    () => activeMonths.find((month) => !readOnlyMonths.has(month)) ?? null,
+    [activeMonths, readOnlyMonths]
+  );
 
   // Provider-supplied data (BM-01, BM-13).
   const { raw: rawMonthsMap, merged } = useMonthsData();
@@ -314,6 +335,7 @@ function BudgetWorkspaceInner({
           const target = computeRangeExtensionTarget({
             catItems: catOnlyItems,
             monthCount: activeMonths.length,
+            skippedMonthIdxs: readOnlyMonthIndices,
             focus: { itemIdx: focusCatIdx, monthIdx: focusMonthIdx },
             dir,
             pageSize: PAGE_SIZE,
@@ -334,6 +356,7 @@ function BudgetWorkspaceInner({
       const target = computeCursorTarget({
         navItems,
         monthCount: activeMonths.length,
+        skippedMonthIdxs: readOnlyMonthIndices,
         current: { itemIdx, monthIdx },
         dir,
         pageSize: PAGE_SIZE,
@@ -388,7 +411,7 @@ function BudgetWorkspaceInner({
           ?.focus();
       }
     },
-    [navItems, activeMonths, setSelection]
+    [navItems, activeMonths, readOnlyMonthIndices, setSelection]
   );
 
   const handleCellNavigate = useCallback(
@@ -416,8 +439,7 @@ function BudgetWorkspaceInner({
   const selectedMonth =
     selection?.focusMonth ??
     groupSelection?.month ??
-    activeMonths[0] ??
-    null;
+    firstSelectableMonth;
 
   const handleCategoryJumpSelect = useCallback(
     (option: CategorySearchOption) => {
@@ -561,7 +583,9 @@ function BudgetWorkspaceInner({
   const handleCarryoverToggle = useCallback(() => {
     if (!connection || !contextMenu) return;
     const { categoryId, month, carryover } = contextMenu;
-    const monthsToUpdate = activeMonths.filter((m) => m >= month);
+    const monthsToUpdate = activeMonths.filter(
+      (m) => m >= month && !readOnlyMonths.has(m)
+    );
     if (monthsToUpdate.length === 0) return;
 
     const cat = rawMonthsMap.get(month)?.categoriesById[categoryId];
@@ -575,20 +599,27 @@ function BudgetWorkspaceInner({
       categoryLabel: cat?.name,
     });
     setContextMenu(null);
-  }, [connection, contextMenu, activeMonths, rawMonthsMap]);
+  }, [connection, contextMenu, activeMonths, readOnlyMonths, rawMonthsMap]);
+
+  const clearGridSelection = useCallback(() => {
+    setContextMenu(null);
+    setSelection(null);
+    setGroupSelection(null);
+    setRowSelectionLocal(null);
+  }, []);
 
   // Clear selection on any click outside the workspace div (TopBar, Sidebar, Toolbar, etc.)
   useEffect(() => {
     const handleDocMouseDown = (e: MouseEvent) => {
       const target = e.target as Element;
       if (target.closest("[role=dialog]")) return;
+      if (target.closest("[data-budget-details-panel]")) return;
       if (workspaceRef.current?.contains(target)) return;
-      setSelection(null);
-      setGroupSelection(null);
+      clearGridSelection();
     };
     document.addEventListener("mousedown", handleDocMouseDown);
     return () => document.removeEventListener("mousedown", handleDocMouseDown);
-  }, [setSelection]);
+  }, [clearGridSelection]);
 
   // Execute no-input bulk actions immediately from the context menu.
   const handleContextMenuBulkAction = useCallback(
@@ -612,13 +643,24 @@ function BudgetWorkspaceInner({
             if (state) monthDataMap[m] = Object.values(state.categoriesById);
           }
         }
-        const rows = previewBulk(action, selection, activeMonths, categories, monthDataMap);
+        const rows = previewBulk(action, selection, activeMonths, categories, monthDataMap)
+          ?.filter((row) => !readOnlyMonths.has(row.month));
         if (rows && rows.length > 0) applyBulk(rows);
       } else {
         setPendingBulkAction(action);
       }
     },
-    [selection, activeMonths, categories, rawMonthsMap, queryClient, connection, previewBulk, applyBulk]
+    [
+      selection,
+      activeMonths,
+      categories,
+      rawMonthsMap,
+      queryClient,
+      connection,
+      previewBulk,
+      applyBulk,
+      readOnlyMonths,
+    ]
   );
 
   const copySelection = useCallback((): boolean => {
@@ -635,25 +677,28 @@ function BudgetWorkspaceInner({
     if (!selection) return false;
     const cells = resolveSelectionCells(selection, activeMonths, categories);
     if (cells.length <= 1) return false;
-    const newEdits: StagedBudgetEdit[] = cells.map((cell) => {
+    const newEdits: StagedBudgetEdit[] = cells.flatMap((cell) => {
+      if (readOnlyMonths.has(cell.month)) return [];
       const serverCat = rawMonthsMap.get(cell.month)?.categoriesById[cell.categoryId];
-      return {
+      return [{
         month: cell.month,
         categoryId: cell.categoryId,
         nextBudgeted: 0,
         previousBudgeted: serverCat?.budgeted ?? 0,
         source: "manual" as const,
-      };
+      }];
     });
+    if (newEdits.length === 0) return false;
     stageBulkEdits(newEdits);
     return true;
-  }, [selection, activeMonths, categories, rawMonthsMap, stageBulkEdits]);
+  }, [selection, activeMonths, categories, readOnlyMonths, rawMonthsMap, stageBulkEdits]);
 
   // Lookup used by the rectangle-fill helpers. Reads non-reactively from the
   // edits store so the workspace doesn't re-render on every keystroke.
   const buildFillLookup = useCallback((): FillSourceLookup => {
     const edits = useBudgetEditsStore.getState().edits;
     return (month, categoryId) => {
+      if (readOnlyMonths.has(month)) return null;
       const serverCat = rawMonthsMap.get(month)?.categoriesById[categoryId];
       if (!serverCat) return null;
       const editKey: BudgetCellKey = `${month}:${categoryId}`;
@@ -661,7 +706,7 @@ function BudgetWorkspaceInner({
       const current = stagedEdit?.nextBudgeted ?? serverCat.budgeted;
       return { current, server: serverCat.budgeted };
     };
-  }, [rawMonthsMap]);
+  }, [readOnlyMonths, rawMonthsMap]);
 
   const fillFromActive = useCallback((): boolean => {
     if (!selection) return false;
@@ -716,7 +761,9 @@ function BudgetWorkspaceInner({
     if (anchorMonthIdx === -1 || focusMonthIdx === -1) return false;
     const minMonthIdx = Math.min(anchorMonthIdx, focusMonthIdx);
     const maxMonthIdx = Math.max(anchorMonthIdx, focusMonthIdx);
-    const monthsToUpdate = activeMonths.slice(minMonthIdx, maxMonthIdx + 1);
+    const monthsToUpdate = activeMonths
+      .slice(minMonthIdx, maxMonthIdx + 1)
+      .filter((month) => !readOnlyMonths.has(month));
     if (monthsToUpdate.length === 0) return false;
 
     const anchorCat = rawMonthsMap.get(selection.anchorMonth)?.categoriesById[anchorCatId];
@@ -731,7 +778,7 @@ function BudgetWorkspaceInner({
       categoryLabel: anchorCat.name,
     });
     return true;
-  }, [selection, connection, activeMonths, rawMonthsMap]);
+  }, [selection, connection, activeMonths, readOnlyMonths, rawMonthsMap]);
 
   const handleKeyDown = useWorkspaceKeymap({
     undo,
@@ -771,6 +818,14 @@ function BudgetWorkspaceInner({
   // Clipboard paste: parse tab-delimited text and stage bulk edits
   const handlePaste = useCallback(
     (e: React.ClipboardEvent<HTMLDivElement>) => {
+      const target = e.target as HTMLElement | null;
+      if (
+        target?.closest(
+          "input, textarea, select, [contenteditable='true'], [contenteditable='']"
+        )
+      ) {
+        return;
+      }
       if (!selection) return;
       const text = e.clipboardData.getData("text/plain");
       if (!text) return;
@@ -788,6 +843,7 @@ function BudgetWorkspaceInner({
         // Single value pasted: fill every cell in the current selection rectangle.
         const cells = resolveSelectionCells(selection, activeMonths, categories);
         for (const cell of cells) {
+          if (readOnlyMonths.has(cell.month)) continue;
           const serverCat = rawMonthsMap.get(cell.month)?.categoriesById[cell.categoryId];
           newEdits.push({
             month: cell.month,
@@ -816,6 +872,7 @@ function BudgetWorkspaceInner({
             const cat = categories[anchorCatIdx + ri];
             const month = activeMonths[anchorMonthIdx + ci];
             if (!cat || !month) continue;
+            if (readOnlyMonths.has(month)) continue;
 
             const serverCat = rawMonthsMap.get(month)?.categoriesById[cat.id];
 
@@ -835,7 +892,7 @@ function BudgetWorkspaceInner({
         stageBulkEdits(newEdits);
       }
     },
-    [selection, categories, activeMonths, stageBulkEdits, rawMonthsMap]
+    [selection, categories, activeMonths, readOnlyMonths, stageBulkEdits, rawMonthsMap]
   );
 
   return (
@@ -847,7 +904,14 @@ function BudgetWorkspaceInner({
       tabIndex={-1}
       aria-label="Budget workspace"
     >
-      <div className="flex-1 min-w-0 overflow-auto">
+      <div
+        className="flex-1 min-w-0 overflow-auto"
+        onClick={(e) => {
+          const target = e.target as Element;
+          if (target.closest("[role=grid]")) return;
+          clearGridSelection();
+        }}
+      >
         <BudgetGrid
           activeMonths={activeMonths}
           availableMonths={availableMonths}
@@ -856,6 +920,7 @@ function BudgetWorkspaceInner({
           selection={selection}
           groupSelection={groupSelection}
           rowSelection={rowSelection}
+          readOnlyMonths={readOnlyMonths}
           collapsedGroups={collapsedGroups}
           onToggleCollapse={onToggleCollapse}
           showHidden={showHidden}
@@ -867,12 +932,7 @@ function BudgetWorkspaceInner({
           onGroupNavigate={handleGroupNavigate}
           onRowLabelFocus={handleRowLabelFocus}
           onRowLabelNavigate={handleRowLabelNavigate}
-          onClearSelection={() => {
-            setContextMenu(null);
-            setSelection(null);
-            setGroupSelection(null);
-            setRowSelectionLocal(null);
-          }}
+          onClearSelection={clearGridSelection}
         />
       </div>
       <BudgetSelectionSummary
@@ -886,6 +946,7 @@ function BudgetWorkspaceInner({
           selection={selection}
           activeMonths={activeMonths}
           categories={categories}
+          readOnlyMonths={readOnlyMonths}
           monthDataMap={(() => {
             const map: Record<string, LoadedCategory[]> = {};
             for (const month of activeMonths) {
