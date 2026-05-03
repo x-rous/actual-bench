@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { StickyNote } from "lucide-react";
 import { useMonthsData } from "../context/MonthsDataContext";
 import { MonthColumnHeader } from "./grid/MonthColumnHeader";
@@ -110,6 +110,28 @@ export function BudgetGrid({
   });
   const suppressNextClickClearRef = useRef(false);
 
+  useEffect(() => {
+    const clearDragState = (e: PointerEvent) => {
+      const dragState = dragStateRef.current;
+      if (dragState.activePointerId !== e.pointerId) return;
+      if (dragState.hasDragged) {
+        suppressNextClickClearRef.current = true;
+      }
+      dragStateRef.current = {
+        activePointerId: null,
+        origin: null,
+        hasDragged: false,
+      };
+    };
+
+    window.addEventListener("pointerup", clearDragState);
+    window.addEventListener("pointercancel", clearDragState);
+    return () => {
+      window.removeEventListener("pointerup", clearDragState);
+      window.removeEventListener("pointercancel", clearDragState);
+    };
+  }, []);
+
   // Build allCategories in visual order: expense groups first, income groups after.
   // This ensures selection index bounds match the rendered order in the grid.
   // When showHidden=false, hidden groups and hidden categories are excluded.
@@ -210,6 +232,7 @@ export function BudgetGrid({
       : budgetMode === "envelope"
       ? ENVELOPE_SUMMARY_ROWS
       : [];
+  const selectedMonth = selection?.focusMonth ?? groupSelection?.month ?? null;
 
   const gridStyle: React.CSSProperties = {
     display: "grid",
@@ -287,14 +310,14 @@ export function BudgetGrid({
     >
       {/* ── Column headers ── */}
       <div
-        className="h-8 px-3 flex items-center border-b-2 border-border bg-muted text-xs font-bold text-foreground sticky left-0 top-0 z-20"
+        className="h-8 px-3 flex items-center border-b-2 border-border bg-muted text-xs font-bold text-foreground sticky left-0 top-0 z-30"
         role="columnheader"
         aria-label="Category"
       >
         Category
       </div>
       <div
-        className="h-8 flex items-center justify-center border-b-2 border-border bg-muted sticky top-0 z-10"
+        className="h-8 flex items-center justify-center border-b-2 border-border bg-muted sticky top-0 z-20"
         role="columnheader"
         aria-label="Notes"
       >
@@ -308,6 +331,7 @@ export function BudgetGrid({
           key={month}
           month={month}
           availableMonths={availableMonths}
+          isSelected={month === selectedMonth}
         />
       ))}
 

@@ -2,6 +2,7 @@
 
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { useEffectiveMonthFromContext } from "../../context/MonthsDataContext";
+import { useBudgetEditsStore } from "@/store/budgetEdits";
 import { EntityNoteButton } from "@/components/ui/entity-note-button";
 import { useEntityNote } from "@/hooks/useEntityNote";
 import { formatMinor } from "../../lib/format";
@@ -70,6 +71,14 @@ function GroupMonthAggregate({
 }) {
   const data = useEffectiveMonthFromContext(month);
   const group = data?.groupsById[groupId];
+  const stagedChildCount = useBudgetEditsStore((s) => {
+    if (!group) return 0;
+    let count = 0;
+    for (const categoryId of group.categoryIds) {
+      if (s.edits[`${month}:${categoryId}`]) count++;
+    }
+    return count;
+  });
 
   const handleKeyDown = useGroupCellKeymap({
     navigate: (dir) => onNavigate?.(dir),
@@ -132,18 +141,25 @@ function GroupMonthAggregate({
 
   return (
     <div
-      className={`${baseClass}${dimClass} px-2 flex items-center justify-end text-xs font-sans tabular-nums text-black dark:text-zinc-200 cursor-default outline-none${isSelected ? " ring-2 ring-inset ring-foreground/80" : ""}`}
+      className={`${baseClass}${dimClass} relative px-2 flex items-center justify-end text-xs font-sans tabular-nums text-black dark:text-zinc-200 cursor-default outline-none${isSelected ? " ring-2 ring-inset ring-foreground/80" : ""}`}
       role="gridcell"
       tabIndex={0}
       aria-selected={isSelected}
       aria-label={`${group.name} total for ${month}: ${formatMinor(displayValue)}`}
-      title={`Budgeted: ${formatMinor(group.budgeted)} | Actuals: ${formatMinor(Math.abs(group.actuals))} | Balance: ${formatMinor(group.balance)}`}
+      title={`Budgeted: ${formatMinor(group.budgeted)} | Actuals: ${formatMinor(Math.abs(group.actuals))} | Balance: ${formatMinor(group.balance)}${stagedChildCount > 0 ? ` | ${stagedChildCount} staged change${stagedChildCount !== 1 ? "s" : ""} in this group` : ""}`}
       data-group-id={groupId}
       data-group-month={month}
       onClick={onFocus}
       onFocus={onFocus}
       onKeyDown={handleKeyDown}
     >
+      {stagedChildCount > 0 && (
+        <span
+          className="absolute top-1 left-1 h-1.5 w-1.5 rounded-full bg-amber-400"
+          aria-hidden="true"
+          title={`${stagedChildCount} staged change${stagedChildCount !== 1 ? "s" : ""} in this group for ${month}`}
+        />
+      )}
       {formatMinor(displayValue)}
     </div>
   );

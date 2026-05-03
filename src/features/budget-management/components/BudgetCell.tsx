@@ -193,13 +193,6 @@ export function BudgetCell({
         origin: { x: e.clientX, y: e.clientY },
         hasDragged: false,
       };
-      if (e.currentTarget.setPointerCapture) {
-        try {
-          e.currentTarget.setPointerCapture(e.pointerId);
-        } catch {
-          // Pointer capture can fail if the pointer is no longer active.
-        }
-      }
     }
     onFocus(category.id, month);
   };
@@ -212,7 +205,17 @@ export function BudgetCell({
    * if the pointer briefly grazes a neighbour cell.
    */
   const handlePointerEnter = (e: React.PointerEvent) => {
-    if (e.buttons !== 1) return;
+    if (e.buttons !== 1) {
+      const dragState = dragStateRef?.current;
+      if (dragStateRef && dragState?.activePointerId === e.pointerId) {
+        dragStateRef.current = {
+          activePointerId: null,
+          origin: null,
+          hasDragged: false,
+        };
+      }
+      return;
+    }
     const dragState = dragStateRef?.current;
     if (!dragState || dragState.activePointerId !== e.pointerId) return;
     const origin = dragState.origin;
@@ -231,9 +234,6 @@ export function BudgetCell({
   const handlePointerUp = (e: React.PointerEvent) => {
     const dragState = dragStateRef?.current;
     if (!dragState || dragState.activePointerId !== e.pointerId) return;
-    if (e.currentTarget.hasPointerCapture?.(e.pointerId)) {
-      e.currentTarget.releasePointerCapture(e.pointerId);
-    }
     if (dragState.hasDragged && suppressNextClickRef) {
       suppressNextClickRef.current = true;
     }
@@ -247,9 +247,6 @@ export function BudgetCell({
   const handlePointerCancel = (e: React.PointerEvent) => {
     const dragState = dragStateRef?.current;
     if (!dragState || dragState.activePointerId !== e.pointerId) return;
-    if (e.currentTarget.hasPointerCapture?.(e.pointerId)) {
-      e.currentTarget.releasePointerCapture(e.pointerId);
-    }
     dragStateRef.current = {
       activePointerId: null,
       origin: null,
