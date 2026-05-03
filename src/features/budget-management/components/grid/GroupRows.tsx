@@ -83,9 +83,10 @@ function GroupMonthAggregate({
   if (!group && isReadOnlyMonth) {
     return (
       <div
-        className={`${baseClass}${dimClass} px-2 flex items-center justify-end text-xs font-sans tabular-nums text-muted-foreground cursor-not-allowed outline-none`}
+        className={`${baseClass}${dimClass} px-2 flex items-center justify-end text-xs font-sans tabular-nums text-muted-foreground cursor-not-allowed outline-none${isSelected ? " ring-2 ring-inset ring-foreground/80" : ""}`}
         role="gridcell"
         tabIndex={0}
+        aria-selected={isSelected}
         aria-readonly="true"
         aria-disabled="true"
         aria-label={`No budget data for ${month}`}

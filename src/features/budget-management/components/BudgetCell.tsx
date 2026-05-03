@@ -193,6 +193,13 @@ export function BudgetCell({
         origin: { x: e.clientX, y: e.clientY },
         hasDragged: false,
       };
+      if (e.currentTarget.setPointerCapture) {
+        try {
+          e.currentTarget.setPointerCapture(e.pointerId);
+        } catch {
+          // Pointer capture can fail if the pointer is no longer active.
+        }
+      }
     }
     onFocus(category.id, month);
   };
@@ -224,6 +231,9 @@ export function BudgetCell({
   const handlePointerUp = (e: React.PointerEvent) => {
     const dragState = dragStateRef?.current;
     if (!dragState || dragState.activePointerId !== e.pointerId) return;
+    if (e.currentTarget.hasPointerCapture?.(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    }
     if (dragState.hasDragged && suppressNextClickRef) {
       suppressNextClickRef.current = true;
     }
@@ -237,6 +247,9 @@ export function BudgetCell({
   const handlePointerCancel = (e: React.PointerEvent) => {
     const dragState = dragStateRef?.current;
     if (!dragState || dragState.activePointerId !== e.pointerId) return;
+    if (e.currentTarget.hasPointerCapture?.(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    }
     dragStateRef.current = {
       activePointerId: null,
       origin: null,
@@ -288,7 +301,7 @@ export function BudgetCell({
       ? `Spent: ${formatMinor(effectiveCategory.actuals)} | Balance: ${formatMinor(effectiveCategory.balance)}`
       : undefined;
 
-  // ─── Blocked / read-only cell ────────────────────────────────────────────────
+  // ─── Non-editable cell ───────────────────────────────────────────────────────
   if (blocked || viewBlocked || isReadOnlyMonth) {
     const blockedLabel = isReadOnlyMonth
       ? `${category.name} budget for ${month} - no budget exists for this past month`
@@ -299,21 +312,31 @@ export function BudgetCell({
       isReadOnlyMonth && !hasMonthData ? "--" : formatMinor(displayMinor);
 
     let blockedCellClass =
-      "relative h-7 px-2 flex items-center justify-end text-xs font-sans tabular-nums select-none outline-none border-r border-b border-border/50 cursor-not-allowed";
+      "relative h-7 px-2 flex items-center justify-end text-xs font-sans tabular-nums select-none outline-none border-r border-b border-border/50 transition-colors";
 
-    blockedCellClass += " bg-muted/30";
+    blockedCellClass += blocked || isReadOnlyMonth ? " cursor-not-allowed" : " cursor-default";
+
+    if (isAnchor) {
+      blockedCellClass += " bg-muted/30 ring-2 ring-inset ring-foreground/80";
+    } else if (isSelected) {
+      blockedCellClass += " bg-primary/10";
+    } else {
+      blockedCellClass += " bg-muted/30 hover:bg-muted/40 focus:bg-muted/40";
+    }
 
     return (
       <div
         className={`${blockedCellClass}${dimClass}`}
         role="gridcell"
         aria-label={blockedLabel}
+        aria-selected={isSelected}
         aria-readonly="true"
         aria-disabled={blocked || isReadOnlyMonth ? "true" : undefined}
         onPointerDown={handlePointerDown}
         onPointerEnter={handlePointerEnter}
         onPointerUp={handlePointerUp}
         onPointerCancel={handlePointerCancel}
+        onClick={handleClick}
         onKeyDown={handleCellKeyDown}
         onContextMenu={handleContextMenu}
         tabIndex={0}

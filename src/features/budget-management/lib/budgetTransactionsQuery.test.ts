@@ -84,6 +84,7 @@ describe("budget transaction queries", () => {
           amount: -500,
           "payee.name": "Skipped",
         },
+        null,
       ],
     });
 
@@ -108,6 +109,19 @@ describe("budget transaction queries", () => {
       expect.objectContaining({
         method: "POST",
       })
+    );
+  });
+
+  it("throws a clear error when the ActualQL response is missing a data array", async () => {
+    mockApiRequest.mockResolvedValueOnce({});
+
+    await expect(
+      fetchBudgetTransactions(connection, {
+        month: "2026-04",
+        categoryIds: ["cat-1"],
+      })
+    ).rejects.toThrow(
+      "Budget transactions query returned an invalid response: missing data array"
     );
   });
 });

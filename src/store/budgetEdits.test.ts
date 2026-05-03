@@ -65,6 +65,17 @@ describe("budgetEdits store — patch-based undo/redo (BM-19)", () => {
       expect(useBudgetEditsStore.getState().edits[key("2026-01", "c1")]).toBeUndefined();
     });
 
+    it("does not push a duplicate undo step when restaging the same value after a save error", () => {
+      const e = edit("2026-01", "c1", 1500, 1000);
+      const cellKey = key("2026-01", "c1");
+      useBudgetEditsStore.getState().stageEdit(e);
+      useBudgetEditsStore.getState().setSaveError(cellKey, "Save failed");
+      useBudgetEditsStore.getState().stageEdit(e);
+
+      expect(useBudgetEditsStore.getState().undoStack).toHaveLength(1);
+      expect(useBudgetEditsStore.getState().edits[cellKey]?.saveError).toBeUndefined();
+    });
+
     it("redo replays a previously undone edit", () => {
       const e = edit("2026-01", "c1", 1500, 1000);
       useBudgetEditsStore.getState().stageEdit(e);

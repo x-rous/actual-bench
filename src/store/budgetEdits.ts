@@ -25,8 +25,7 @@ function sameEdit(
     a.categoryId === b.categoryId &&
     a.nextBudgeted === b.nextBudgeted &&
     a.previousBudgeted === b.previousBudgeted &&
-    a.source === b.source &&
-    a.saveError === b.saveError
+    a.source === b.source
   );
 }
 
@@ -122,7 +121,17 @@ export const useBudgetEditsStore = create<BudgetEditsStore>()((set, get) => ({
   stageEdit(edit) {
     const { edits, undoStack } = get();
     const key = makeKey(edit);
-    if (sameEdit(edits[key], edit)) return;
+    const existing = edits[key];
+    if (sameEdit(existing, edit)) {
+      if (existing?.saveError && edit.saveError == null) {
+        // Clearing a stale save error is metadata cleanup, not a user edit.
+        // Do not push an undo entry for the same budget value.
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const { saveError: _saveError, ...rest } = existing;
+        set({ edits: { ...edits, [key]: rest as StagedBudgetEdit } });
+      }
+      return;
+    }
     const patch = buildPatchForChanges(edits, [key]);
     set({
       undoStack: pushPatch(undoStack, patch),

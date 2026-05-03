@@ -81,10 +81,17 @@ export function MonthsDataProvider({
     })),
   });
 
-  // Snapshot the data/error references so memo deps can be a stable spread.
-  const dataArr = queries.map((q) => q.data);
-  const errorArr = queries.map((q) => q.error);
-  const isLoading = queries.some((q) => q.isLoading);
+  // Snapshot only loadable month results. Disabled TanStack Query entries can
+  // still expose cached data, so unavailable months must be filtered here.
+  const dataArr = queries.map((q, i) =>
+    loadableMonthSet.has(months[i]!) ? q.data : undefined
+  );
+  const errorArr = queries.map((q, i) =>
+    loadableMonthSet.has(months[i]!) ? q.error : null
+  );
+  const isLoading = queries.some(
+    (q, i) => loadableMonthSet.has(months[i]!) && q.isLoading
+  );
 
   // Income category IDs — read from any loaded month (consistent across months).
   const incomeCategoryIds = useMemo(() => {
@@ -114,6 +121,7 @@ export function MonthsDataProvider({
 
     for (let i = 0; i < months.length; i++) {
       const m = months[i]!;
+      if (!loadableMonthSet.has(m)) continue;
       const data = dataArr[i];
       const err = errorArr[i];
       if (err && !isMissingBudgetMonthError(err, m)) errors.set(m, err);
@@ -136,7 +144,7 @@ export function MonthsDataProvider({
     // Spread data and error arrays so the memo recomputes only when an
     // underlying query result reference changes, not on every render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [months, allEdits, isTracking, incomeBudgets, isLoading, ...dataArr, ...errorArr]);
+  }, [months, loadableMonthSet, allEdits, isTracking, incomeBudgets, isLoading, ...dataArr, ...errorArr]);
 
   return (
     <MonthsDataContext.Provider value={value}>

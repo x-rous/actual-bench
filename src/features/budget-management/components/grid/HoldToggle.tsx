@@ -17,12 +17,14 @@ function HoldClearConfirmDialog({
   onConfirm,
   onCancel,
   isPending,
+  error,
 }: {
   month: string;
   forNextMonth: number;
   onConfirm: () => void;
   onCancel: () => void;
   isPending: boolean;
+  error: string | null;
 }) {
   const monthLabel = formatMonthLabel(month, "long");
 
@@ -46,6 +48,11 @@ function HoldClearConfirmDialog({
         <p className="text-xs bg-amber-50 dark:bg-amber-950/20 text-amber-700 dark:text-amber-400 rounded px-2.5 py-1.5 mb-4">
           This action applies immediately and does not go through the save panel.
         </p>
+        {error && (
+          <p className="text-xs text-destructive mb-3" role="alert">
+            {error}
+          </p>
+        )}
         <div className="flex gap-2 justify-end">
           <button
             type="button"
@@ -128,7 +135,7 @@ export function FreeHeldAmountButton({
   month: string;
   forNextMonth: number;
 }) {
-  const { clearHold, isPending } = useNextMonthHold();
+  const { clearHold, isPending, error } = useNextMonthHold();
   const [showConfirm, setShowConfirm] = useState(false);
 
   if (forNextMonth === 0) return null;
@@ -139,8 +146,12 @@ export function FreeHeldAmountButton({
   };
 
   const handleConfirmClear = async () => {
-    await clearHold(month);
-    setShowConfirm(false);
+    try {
+      await clearHold(month);
+      setShowConfirm(false);
+    } catch {
+      // error is set by the hook and shown in the confirmation dialog.
+    }
   };
 
   return (
@@ -163,6 +174,7 @@ export function FreeHeldAmountButton({
           onConfirm={() => void handleConfirmClear()}
           onCancel={() => setShowConfirm(false)}
           isPending={isPending}
+          error={error}
         />
       )}
     </>

@@ -84,6 +84,16 @@ function normalizeTransactionRow(
   };
 }
 
+function hasTransactionData(
+  response: BudgetTransactionsResponse | null | undefined
+): response is BudgetTransactionsResponse {
+  return response != null && Array.isArray(response.data);
+}
+
+function isRawTransactionRow(row: unknown): row is RawBudgetTransactionRow {
+  return row != null && typeof row === "object" && !Array.isArray(row);
+}
+
 export async function fetchBudgetTransactions(
   connection: ConnectionInstance,
   params: BudgetTransactionsQueryParams
@@ -95,7 +105,14 @@ export async function fetchBudgetTransactions(
     buildBudgetTransactionsQuery(params)
   );
 
+  if (!hasTransactionData(response)) {
+    throw new Error(
+      "Budget transactions query returned an invalid response: missing data array"
+    );
+  }
+
   return response.data
+    .filter(isRawTransactionRow)
     .map(normalizeTransactionRow)
     .filter((row): row is BudgetTransactionRow => row != null);
 }

@@ -178,7 +178,7 @@ A multi-month budget editing workspace with staged cell editing, a draft review 
 - Category and month header row is sticky — stays visible while scrolling down; category name column is sticky — stays visible while scrolling right; all sticky cells use solid opaque backgrounds to prevent bleed-through
 - Group rows show aggregate totals per month; collapsed groups hide their category rows but keep the group total visible
 - Mode-specific summary section above the category groups:
-  - **Envelope mode**: Available Funds (+), Overspent Last Month (−), Budgeted (−), For Next Month (−), and a **To Budget / Overbudget** (=) total row
+  - **Envelope mode**: Available Funds (+), Overspent Last Month (−), Budgeted (−), Hold for next month (−), and a **To Budget / Overbudget** (=) total row
   - **Tracking mode**: compact status rows for Result, Spending vs Budgeted, and Income. Past months show actual performance, the current month is marked partial, and future months show budgeted context instead of zero-actual performance.
 - The 12-month window defaults to January of the current year; the user can navigate freely to any period
 

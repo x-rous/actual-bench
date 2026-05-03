@@ -193,6 +193,10 @@ function BudgetWorkspaceInner({
       ),
     [activeMonths, readOnlyMonths]
   );
+  const firstSelectableMonth = useMemo(
+    () => activeMonths.find((month) => !readOnlyMonths.has(month)) ?? null,
+    [activeMonths, readOnlyMonths]
+  );
 
   // Provider-supplied data (BM-01, BM-13).
   const { raw: rawMonthsMap, merged } = useMonthsData();
@@ -435,8 +439,7 @@ function BudgetWorkspaceInner({
   const selectedMonth =
     selection?.focusMonth ??
     groupSelection?.month ??
-    activeMonths[0] ??
-    null;
+    firstSelectableMonth;
 
   const handleCategoryJumpSelect = useCallback(
     (option: CategorySearchOption) => {

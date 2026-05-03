@@ -88,10 +88,14 @@ export function BulkActionDialog({
       return;
     }
 
-    const rows = preview(action, selection, activeMonths, categories, monthDataMap, params)
-      ?.filter((row) => !readOnlyMonths?.has(row.month));
-    if (!rows || rows.length === 0) {
+    const allRows = preview(action, selection, activeMonths, categories, monthDataMap, params);
+    const rows = allRows?.filter((row) => !readOnlyMonths?.has(row.month));
+    if (!allRows || allRows.length === 0) {
       setParamError("No cells would be changed by this action.");
+      return;
+    }
+    if (!rows || rows.length === 0) {
+      setParamError("All matching months are read-only.");
       return;
     }
 

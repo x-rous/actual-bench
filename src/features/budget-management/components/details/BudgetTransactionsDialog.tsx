@@ -356,7 +356,6 @@ export function BudgetTransactionsDialog({
   const monthLabel = effectiveTarget
     ? formatMonthLabel(effectiveTarget.month, "long")
     : "";
-  const visibleRowLimit = Math.min(6, visibleRows.length);
 
   function handleSort(sortKey: BudgetTransactionSortKey) {
     setSort((current) => {
@@ -655,8 +654,8 @@ export function BudgetTransactionsDialog({
                 </div>
 
                 <div className="border-t border-border/70 px-3 py-1.5 text-[10px] text-muted-foreground">
-                  Showing {visibleRowLimit.toLocaleString()} visible rows of{" "}
-                  {visibleRows.length.toLocaleString()} transactions
+                  Showing {visibleRows.length.toLocaleString()} of{" "}
+                  {rows.length.toLocaleString()} transactions
                 </div>
               </section>
             </div>
