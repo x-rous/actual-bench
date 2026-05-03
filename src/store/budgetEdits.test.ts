@@ -144,6 +144,25 @@ describe("budgetEdits store — patch-based undo/redo (BM-19)", () => {
       useBudgetEditsStore.getState().undo();
       expect(Object.keys(useBudgetEditsStore.getState().edits)).toHaveLength(0);
     });
+
+    it("clears stale save errors for identical bulk edits without pushing undo", () => {
+      const first = edit("2026-01", "c1", 100, 0);
+      const second = edit("2026-02", "c2", 200, 0);
+      const firstKey = key("2026-01", "c1");
+      const secondKey = key("2026-02", "c2");
+
+      useBudgetEditsStore.getState().stageBulkEdits([first, second]);
+      useBudgetEditsStore.getState().setSaveError(firstKey, "Save failed");
+      useBudgetEditsStore.getState().setSaveError(secondKey, "Save failed");
+      const beforeUndoLength = useBudgetEditsStore.getState().undoStack.length;
+
+      useBudgetEditsStore.getState().stageBulkEdits([first, second]);
+
+      const state = useBudgetEditsStore.getState();
+      expect(state.undoStack).toHaveLength(beforeUndoLength);
+      expect(state.edits[firstKey]?.saveError).toBeUndefined();
+      expect(state.edits[secondKey]?.saveError).toBeUndefined();
+    });
   });
 
   describe("removeEdit", () => {

@@ -145,13 +145,27 @@ export const useBudgetEditsStore = create<BudgetEditsStore>()((set, get) => ({
     const { edits, undoStack } = get();
     const next: Record<BudgetCellKey, StagedBudgetEdit> = { ...edits };
     const keys = new Set<BudgetCellKey>();
+    let clearedSaveError = false;
     for (const edit of newEdits) {
       const key = makeKey(edit);
       keys.add(key);
-      next[key] = edit;
+      const existing = edits[key];
+      if (sameEdit(existing, edit) && existing?.saveError && edit.saveError == null) {
+        // Clearing stale save errors is metadata cleanup, not a user edit.
+        // Do not include it in undo/redo patch calculation.
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const { saveError: _saveError, ...rest } = existing;
+        next[key] = rest as StagedBudgetEdit;
+        clearedSaveError = true;
+      } else {
+        next[key] = edit;
+      }
     }
     const changedKeys = [...keys].filter((key) => !sameEdit(edits[key], next[key]));
-    if (changedKeys.length === 0) return;
+    if (changedKeys.length === 0) {
+      if (clearedSaveError) set({ edits: next });
+      return;
+    }
     const patch = buildPatchForChanges(edits, changedKeys);
     set({
       undoStack: pushPatch(undoStack, patch),

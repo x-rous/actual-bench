@@ -72,6 +72,8 @@ export type SummaryRowConfig = {
   emphasizeValue?: boolean;
   /** Optional value class override for rows that need a stronger emphasis. */
   valueClassName?: string;
+  /** Tiny top margin before the row. */
+  marginTop?: boolean;
 };
 
 /**
@@ -92,6 +94,19 @@ const TO_BUDGET_OVERBUDGET_LABEL: ReactNode = (
 
 export const TRACKING_SUMMARY_ROWS: SummaryRowConfig[] = [
   {
+    label: "Spending vs Budgeted",
+    rowTooltip: "Expenses compared with budgeted expenses.",
+    getCell: (_s, state, month) => getTrackingSpendingCell(state, month),
+    noBorder: true,
+    marginTop: true,
+  },
+  {
+    label: "Income",
+    rowTooltip: "Received income compared with budgeted income.",
+    getCell: (_s, state, month) => getTrackingIncomeCell(state, month),
+    noBorder: true,
+  },
+  {
     label: "Result",
     rowTooltip:
       "Actual saved/overspent for past months; projected result for current/future months.",
@@ -100,18 +115,6 @@ export const TRACKING_SUMMARY_ROWS: SummaryRowConfig[] = [
     noBorder: true,
     emphasizeValue: true,
     valueClassName: "text-[13px] font-bold",
-  },
-  {
-    label: "Spending vs Budgeted",
-    rowTooltip: "Expenses compared with budgeted expenses.",
-    getCell: (_s, state, month) => getTrackingSpendingCell(state, month),
-    noBorder: true,
-  },
-  {
-    label: "Income",
-    rowTooltip: "Received income compared with budgeted income.",
-    getCell: (_s, state, month) => getTrackingIncomeCell(state, month),
-    noBorder: true,
   },
 ];
 
@@ -182,11 +185,12 @@ export function SummaryHeaderRow({
     !isSubRow && !config.noBorder
       ? "border-t border-border/60"
       : "";
+  const marginTopClass = config.marginTop ? "mt-1" : "";
 
   return (
     <>
       <div
-        className={`${rowH} px-3 flex items-center bg-background text-[11px] font-medium text-foreground/75 sticky left-0 z-10 ${borderClass}`}
+        className={`${rowH} px-3 ${marginTopClass} flex items-center bg-background text-[11px] font-medium text-foreground/75 sticky left-0 z-10 ${borderClass}`}
         role="rowheader"
         title={config.rowTooltip}
       >
@@ -197,7 +201,7 @@ export function SummaryHeaderRow({
         )}
         <span className={config.operator === "=" ? "font-semibold" : ""}>{rowLabel}</span>
       </div>
-      <div className={`${rowH} bg-transparent ${borderClass}`} aria-hidden="true" />
+      <div className={`${rowH} ${marginTopClass} bg-transparent ${borderClass}`} aria-hidden="true" />
       {activeMonths.map((month) => (
         <SummaryHeaderCell key={month} month={month} config={config} />
       ))}
@@ -219,8 +223,9 @@ function SummaryHeaderCell({
     !isSubRow && !config.noBorder
       ? "border-t border-border/60"
       : "";
+  const marginTopClass = config.marginTop ? "mt-1" : "";
 
-  if (!data) return <div className={`${rowH} bg-transparent ${borderClass}`} />;
+  if (!data) return <div className={`${rowH} ${marginTopClass} bg-transparent ${borderClass}`} />;
 
   const cell = config.getCell?.(data.summary, data, month);
   const value = cell
@@ -258,7 +263,7 @@ function SummaryHeaderCell({
     const showBalanced = config.holdAction === "set" && numericValue === 0;
     return (
       <div
-        className={`${rowH} px-1.5 flex items-center justify-end gap-1 bg-transparent font-sans tabular-nums leading-tight text-[11px] ${borderClass} ${colorClass}`}
+        className={`${rowH} px-1.5 ${marginTopClass} flex items-center justify-end gap-1 bg-transparent font-sans tabular-nums leading-tight text-[11px] ${borderClass} ${colorClass}`}
         title={tooltip}
       >
         <div className="flex flex-col items-end flex-1 min-w-0">
@@ -291,7 +296,7 @@ function SummaryHeaderCell({
 
   return (
     <div
-      className={`${rowH} px-2 flex flex-col items-end justify-center bg-transparent font-sans tabular-nums leading-tight text-[11px] ${borderClass} ${colorClass}`}
+      className={`${rowH} px-2 ${marginTopClass} flex flex-col items-end justify-center bg-transparent font-sans tabular-nums leading-tight text-[11px] ${borderClass} ${colorClass}`}
       title={tooltip}
     >
       {dynamicLabel && (

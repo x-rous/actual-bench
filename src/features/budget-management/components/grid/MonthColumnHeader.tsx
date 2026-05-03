@@ -45,7 +45,7 @@ export function MonthColumnHeader({
     <div
       className={`h-8 px-2 flex items-center justify-end gap-1.5 border-b-2 text-xs font-semibold sticky top-0 z-20 ${
         isSelected
-          ? "border-primary/70 bg-muted text-foreground ring-1 ring-inset ring-primary/50"
+          ? "border-primary/70 bg-muted text-foreground"
           : "border-border bg-muted text-foreground"
       }`}
       aria-label={`Month: ${label}`}
