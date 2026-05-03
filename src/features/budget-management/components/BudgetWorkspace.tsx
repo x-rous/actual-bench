@@ -818,6 +818,14 @@ function BudgetWorkspaceInner({
   // Clipboard paste: parse tab-delimited text and stage bulk edits
   const handlePaste = useCallback(
     (e: React.ClipboardEvent<HTMLDivElement>) => {
+      const target = e.target as HTMLElement | null;
+      if (
+        target?.closest(
+          "input, textarea, select, [contenteditable='true'], [contenteditable='']"
+        )
+      ) {
+        return;
+      }
       if (!selection) return;
       const text = e.clipboardData.getData("text/plain");
       if (!text) return;
