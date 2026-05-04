@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  Bulk-edit your budget data, clean up rules, inspect snapshots, run ActualQL, and manage multi-month budgets, safely, with every change staged locally until you click <strong>Save</strong>.
+  Bulk-edit your budget data, clean up rules, inspect budget file snapshots, run ActualQL, and manage yearly budgets, safely, with every change staged locally until you click <strong>Save</strong>.
 </p>
 
 <p align="center">
@@ -75,53 +75,51 @@ It is not trying to replace Actual Budget's day-to-day transaction entry experie
 A full-width 12-month budget editor for envelope and tracking budgets.
 
 - Budget / Actuals / Balance view toggle
-- Sticky month headers and sticky category column
 - Expand/collapse category groups and show/hide hidden categories
 - Inline cell editing with arithmetic expression support
 - Multi-cell selection, copy/paste from Excel or Google Sheets, fill down/right, previous-month fill, and average-based fill
 - Right-click bulk actions such as copy previous month, set to zero, set fixed amount, apply percentage change, and average calculations
 - Draft panel with selected-cell details, group totals, year summary, staged deltas, and save errors
 - Envelope-mode actions for next-month hold and category transfer
-- Keyboard shortcut cheatsheet generated from the same keymap used by the workspace
+- Keyboard shortcut cheatsheet
 
-### Data Management
+### Advanced Data Management
 
-Manage the core Actual Budget entities from dedicated admin pages.
+Manage the core Actual Budget entities from dedicated admin pages with support for bulk actions.
 
 | Area | What you can do |
 |---|---|
 | **Accounts** | Create, rename, close, reopen, delete, inspect balances, view rule references, import/export CSV |
 | **Payees** | Create, rename, merge, delete, separate regular and transfer payees, view rule references, import/export CSV |
 | **Categories** | Manage income/expense groups, categories, visibility, hierarchy, notes, and import/export CSV |
-| **Schedules** | Create one-time or recurring schedules with amount modes, recurrence controls, weekend adjustment, auto-add, and linked rules |
+| **Schedules** | Create one-time or recurring schedules with amount modes, recurrence controls, weekend adjustment, auto-add, linked rules, and CSV import/export |
 | **Tags** | Create, rename, color-code, describe, filter, bulk-delete, and import/export tags |
 | **Rules** | Build rules with conditions/actions, stages, AND/OR logic, templates, entity chips, filtering, search, duplication, merge, and CSV import/export |
 
 ### Rule Diagnostics
 
-A read-only linting workspace for the rules you are about to save.
+A read-only linting workspace for rules to help you identify potential issues and duplicates.
 
-- Runs against the current working set, including unsaved staged edits
-- Detects missing entity references, empty/no-op actions, impossible conditions, shadowed rules, broad match criteria, duplicates, near-duplicates, and unsupported field/operator combinations
+- Detects missing entity references, empty/no-op actions, shadowed rules, broad match criteria, duplicates, and near-duplicates rules.
 - Groups findings by severity with filters for error, warning, info, and code
 - Lets you jump directly to the affected rule
 - Opens the merge dialog from duplicate and near-duplicate findings
 - Runs in the browser against already-loaded data; no new backend endpoint is required
+- Runs against the current working set, including unsaved staged edits
 
-### Budget Diagnostics
+### Budget Diagnostics & Data Browser
 
-A read-only local diagnostics workspace for exported budget snapshots.
+A read-only local diagnostics workspace for the exported budget snapshots.
 
-- Opens the active budget export locally in the browser
+- Opens the active budget SQLite database file locally in the browser
 - Shows snapshot metadata, object counts, ZIP size, SQLite size, sync details, and source details
-- Runs deterministic schema, relationship, metadata, and SQLite health checks
+- Runs deterministic schema, relationship, metadata, and SQLite health checks and exports findings to CSV
 - Supports a full SQLite integrity check
-- Exports findings to CSV
 - Includes a Data Browser for tables, views, indexes, triggers, schema inspection, row details, relationship drill-in, and full table/view CSV export
 
 ### ActualQL Queries
 
-A dedicated query console for advanced analysis.
+A dedicated query console using ActualQL API end point for advanced queries and analysis.
 
 - Syntax-highlighted JSON editor with line numbers
 - Run with button or `Ctrl/Cmd+Enter`
@@ -250,6 +248,7 @@ networks:
 
 Replace `actual-stack` with your real Docker network name.
 
+
 ## Connecting to a budget
 
 Actual Bench uses a two-step connection flow.
@@ -268,39 +267,6 @@ Enter your `actual-http-api` base URL and API key, then click **Load Budgets**.
 Pick a budget returned by the API server, optionally enter the encryption password for encrypted budgets, and click **Connect**.
 
 Previously used connections appear on the connection screen for one-click reconnect during the current browser session.
-
-
-## Common workflows
-
-### Seed or migrate a budget
-
-1. Connect to the target budget.
-2. Import accounts, payees, categories, schedules, tags, or rules from CSV.
-3. Review staged changes in the draft panel.
-4. Use undo/redo or discard if something looks wrong.
-5. Click **Save** only when the staged result is correct.
-
-### Clean up rules
-
-1. Open **Rules** to filter, inspect, duplicate, edit, or merge rules.
-2. Open **Rule Diagnostics** to find broken references, duplicates, broad criteria, shadowing, and impossible conditions.
-3. Jump from a finding to the affected rule or start a merge directly from duplicate findings.
-4. Save once the staged rule set is clean.
-
-### Review budget health
-
-1. Open **Budget Diagnostics**.
-2. Review snapshot metadata and object counts.
-3. Run diagnostics and optional full integrity check.
-4. Use **Data Browser** for deeper SQLite inspection.
-5. Export findings or table/view CSVs when needed.
-
-### Analyze with ActualQL
-
-1. Open **ActualQL**.
-2. Start from an example query or write raw ActualQL JSON.
-3. Run the query and inspect results as table, JSON, scalar, or tree.
-4. Save useful queries, pin favorites, or copy a sanitized cURL for debugging.
 
 ## CSV import/export
 
