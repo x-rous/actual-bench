@@ -43,6 +43,7 @@ import { generateId } from "@/lib/uuid";
 ```
 feat/* | fix/* | refactor/* | docs/*  →  main  →  release (tag v1.x.x)
 ```
+CI (`ci.yml`) runs lint, type-check, tests, and build on every push — no need to run these manually before committing.
 
 ---
 
@@ -55,6 +56,7 @@ feat/* | fix/* | refactor/* | docs/*  →  main  →  release (tag v1.x.x)
 | Zustand `connection.ts` | Active connection (`sessionStorage` — do NOT change to `localStorage`) |
 | Zustand `savedServers.ts` | Saved server presets (`sessionStorage`) |
 | Local state | Ephemeral UI only |
+
 
 ---
 
@@ -79,39 +81,50 @@ src/features/<entity>/
   lib/          utils/   # optional, when the feature needs them
 ```
 
-**Proxy responsibilities:**
-- CORS handling
-- Request serialization via `serverQueueTails` (prevents concurrent budget open/close races)
-- Path construction: `/accounts` → `GET /v1/budgets/{budgetSyncId}/accounts`
-- Server-level paths (no `budgetSyncId`) passed as-is: `/v1/budgets/`
-- Logging format: `METHOD STATUS /path (Xms) [reqId]`
+## Proxy Notes
+
+The proxy is responsible for:
+
+- CORS handling.
+- Request serialization using `serverQueueTails`.
+- Adding `/v1/budgets/{budgetSyncId}` for budget-scoped paths.
+- Passing server-level paths as-is.
+
+Do not bypass or duplicate proxy behavior in feature code.
 
 ---
 
-## Reference Documents
+## Reference Docs
 
-Read these **before** implementing anything in the relevant area.
+Read these only when relevant to the task:
 
-| Document | When to Read |
+| Task | Read |
 |---|---|
-| `agents/coding_standards.md` | Before any new component, hook, or utility |
-| `agents/actual_api_docs/api_docs.md` | Before any API integration |
-| `agents/future-roadmap.md` | Before starting any roadmap item |
-| `agents/requirements/` | Before making architectural decisions |
-| `CONTRIBUTING.md` | Before touching git, workflows, or the release process |
-| `FEATURES.md` | Before and after shipping a feature — must be updated |
-| `README.md` | When entry points, setup flow, or product positioning changes |
+| New component, hook, or utility | `agents/coding_standards.md` |
+| API integration | `agents/actual_api_docs/api_docs.md` |
+| Roadmap work | `agents/future-roadmap.md` |
+| Architecture decision | `agents/requirements/` |
+| Git, workflow, or release change | `CONTRIBUTING.md` |
 
-When shipping user-facing work:
-- Update `FEATURES.md` for shipped behavior.
-- Update `README.md` if the main app entry points or product positioning changed.
-- Update `agents/future-roadmap.md` when a roadmap item's status changes.
+Update these only when the change requires it:
+
+| Change | Update |
+|---|---|
+| User-facing feature added or changed | `FEATURES.md` |
+| Setup, entry point, or positioning changed | `README.md` |
 
 ---
 
-## Before Every Commit
+## Validation
+
+GitHub Actions runs lint, typecheck, and tests on push/PR.
+
+Before proposing completion, run only the checks that match the files changed when practical:
+
 ```bash
-npm run lint       # 0 errors
-npx tsc --noEmit   # 0 errors
-npm test           # all suites pass
+npm run lint
+npx tsc --noEmit
+npm test
 ```
+
+Do not spend time running the full suite for documentation-only changes unless requested.

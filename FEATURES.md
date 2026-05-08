@@ -410,6 +410,39 @@ Transaction counts are fetched lazily when the drawer opens, gated by the same `
 | `op` | Operator (e.g. `is`, `contains`, `lt`, `oneOf`) |
 | `value` | Value — use `\|` as separator for multi-value `oneOf` operators |
 
+## Bundle Export / Import
+
+Available from the **Budget Overview** page (`Export` / `Import` buttons in the page header).
+
+### Bundle Export
+
+- Opens a dialog listing all six entity types — Accounts, Payees, Categories & Groups, Tags, Schedules, Rules — with checkboxes pre-selected; live entity counts displayed per type
+- Entity data is loaded on demand when the dialog opens, so exporting from the Overview page (which intentionally skips preloading) always reflects current server state
+- Inline dependency warnings appear dynamically as selections change:
+  - Selecting **Rules** without Payees, Categories, or Accounts produces a portability warning
+  - Selecting **Schedules** without Payees or Accounts produces a portability warning
+- Download produces a single ZIP file named `budget-bundle-<label>-<YYYY-MM-DD>.zip`; each entity type is a separate UTF-8 CSV with BOM using the same format as the per-page exports
+
+**ZIP contents:**
+```
+budget-bundle-<label>-<date>.zip
+  ├── accounts.csv
+  ├── payees.csv
+  ├── category-groups-and-categories.csv
+  ├── tags.csv
+  ├── schedules.csv
+  └── rules.csv
+```
+
+### Bundle Import
+
+- Accepts a `.zip` file produced by Bundle Export (partial bundles with a subset of CSVs are valid)
+- Preview step shows each detected entity type with its row count before any staging occurs
+- Import processes entity types in dependency order — categories first, rules last — so that name→ID resolution for Schedules and Rules picks up Accounts and Payees staged earlier in the same operation
+- All imported rows are staged; nothing is saved until the user clicks Save in the top bar
+- Result summary shows staged count, skipped count, and any parse errors per entity type; quick-navigation links jump directly to each entity page to review the staged rows
+- A single undo step covers the entire bundle import
+
 ## Keyboard & Table UX
 
 - Inline cell editing triggered by double-click, Enter, or F2
