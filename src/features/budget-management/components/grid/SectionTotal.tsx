@@ -86,10 +86,6 @@ export function SectionTotalRow({
       >
         <span className="truncate whitespace-nowrap">{label}</span>
       </div>
-      <div
-        className="h-8 min-h-8 bg-muted/15 border-b border-border/50"
-        aria-hidden="true"
-      />
       {activeMonths.map((month) => (
         <SectionTotalCell
           key={month}

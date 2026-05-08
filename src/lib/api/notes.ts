@@ -2,6 +2,8 @@ import { apiRequest } from "./client";
 import { runQuery } from "./query";
 import type { ConnectionInstance } from "@/store/connection";
 
+export type NoteRow = { id: string; note: string };
+
 type NoteIndexRow = {
   id: string;
 };
@@ -97,6 +99,19 @@ export async function getAccountNote(
     `/notes/account/${accountId}`
   );
   return extractNote(response);
+}
+
+export async function getAllNotes(
+  connection: ConnectionInstance
+): Promise<Map<string, string>> {
+  const response = await runQuery<{ data: NoteRow[] }>(connection, {
+    ActualQLquery: { table: "notes", select: "*" },
+  });
+  const map = new Map<string, string>();
+  for (const row of response.data) {
+    if (row.id && row.note) map.set(row.id, row.note);
+  }
+  return map;
 }
 
 export async function getCategoryLikeNote(

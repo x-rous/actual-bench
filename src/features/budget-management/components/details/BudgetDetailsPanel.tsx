@@ -19,6 +19,7 @@ import {
   buildTrackingDetailsMetrics,
 } from "../../lib/budgetDetailsMetrics";
 import { buildBudgetTransactionBrowserOptions } from "../../lib/budgetTransactionBrowser";
+import { useAllNotes } from "@/hooks/useAllNotes";
 import { EnvelopeDetailsPanel } from "./EnvelopeDetailsPanel";
 import { TrackingDetailsPanel } from "./TrackingDetailsPanel";
 import type { BudgetMode, LoadedMonthState } from "../../types";
@@ -177,6 +178,17 @@ export function BudgetDetailsPanel() {
     [model]
   );
 
+  const { data: allNotes } = useAllNotes();
+  const note = (() => {
+    if (selectedCategoryId && selectedMonth) {
+      return allNotes?.get(`${selectedCategoryId}-${selectedMonth}`) ?? "";
+    }
+    if (rowSelection?.kind === "category" || rowSelection?.kind === "group") {
+      return allNotes?.get(rowSelection.id) ?? "";
+    }
+    return "";
+  })();
+
   if (displayMonths.length === 0) {
     return <EmptyDetailsState message="Loading..." />;
   }
@@ -226,6 +238,7 @@ export function BudgetDetailsPanel() {
         metrics={buildEnvelopeDetailsMetrics(model)}
         transactionBrowserOptions={transactionBrowserOptions}
         statesByMonth={statesByMonth}
+        note={note}
       />
     );
   }
@@ -235,6 +248,7 @@ export function BudgetDetailsPanel() {
       metrics={buildTrackingDetailsMetrics(model)}
       transactionBrowserOptions={transactionBrowserOptions}
       statesByMonth={statesByMonth}
+      note={note}
     />
   );
 }

@@ -1,10 +1,9 @@
 "use client";
 
-import { ChevronDown, ChevronRight } from "lucide-react";
+import { ChevronDown, ChevronRight, StickyNote } from "lucide-react";
 import { useEffectiveMonthFromContext } from "../../context/MonthsDataContext";
 import { useBudgetEditsStore } from "@/store/budgetEdits";
-import { EntityNoteButton } from "@/components/ui/entity-note-button";
-import { useEntityNote } from "@/hooks/useEntityNote";
+import { useAllNotes } from "@/hooks/useAllNotes";
 import { formatMinor } from "../../lib/format";
 import { dispatchRowLabel, useGroupCellKeymap } from "../../keyboard/useBudgetKeymap";
 import { BudgetCell, type BudgetCellDragState } from "../BudgetCell";
@@ -18,31 +17,6 @@ import type {
   NavDirection,
   RowSelection,
 } from "../../types";
-
-// ─── NoteCell ─────────────────────────────────────────────────────────────────
-
-/** Renders EntityNoteButton only when the entity actually has a note. */
-function NoteCell({
-  entityId,
-  entityLabel,
-  entityTypeLabel,
-}: {
-  entityId: string;
-  entityLabel: string;
-  entityTypeLabel: string;
-}) {
-  const { data: note } = useEntityNote("category", entityId, true);
-  if (!note?.trim()) return null;
-  return (
-    <EntityNoteButton
-      entityId={entityId}
-      entityKind="category"
-      entityLabel={entityLabel}
-      entityTypeLabel={entityTypeLabel}
-      className="mx-auto"
-    />
-  );
-}
 
 // ─── GroupMonthAggregate ──────────────────────────────────────────────────────
 
@@ -231,6 +205,8 @@ export function BudgetGridGroupRows({
   onRowLabelFocus,
   onRowLabelNavigate,
 }: GroupRowsProps) {
+  const { data: allNotes } = useAllNotes();
+
   // When showHidden=true and this group is hidden, dim all its rows.
   const groupDimmed = showHidden && group.hidden;
   const groupDimClass = groupDimmed ? " opacity-50" : "";
@@ -280,18 +256,10 @@ export function BudgetGridGroupRows({
             <ChevronDown className="h-3.5 w-3.5" />
           )}
         </button>
-        <span className="truncate">{group.name}</span>
-      </div>
-
-      {/* Notes column for group row */}
-      <div
-        className={`h-7 flex items-center justify-center border-r border-b border-border bg-[#F7F8FA] dark:bg-zinc-800 dark:border-zinc-700${groupDimClass}`}
-      >
-        <NoteCell
-          entityId={group.id}
-          entityLabel={group.name}
-          entityTypeLabel="Category group"
-        />
+        <span className="flex-1 min-w-0 truncate">{group.name}</span>
+        {allNotes?.has(group.id) && (
+          <StickyNote className="ml-1.5 h-3 w-3 shrink-0 text-muted-foreground/50" aria-hidden="true" />
+        )}
       </div>
 
       {/* Group aggregate cells */}
@@ -338,7 +306,7 @@ export function BudgetGridGroupRows({
             >
               {/* Category label — clickable / focusable to select the row */}
               <div
-                className={`h-7 px-4 flex items-center border-r border-b border-border/50 text-xs truncate sticky left-0 bg-background cursor-default outline-none${catDimClass}${catRowSelectedClass}`}
+                className={`h-7 pl-4 pr-2 flex items-center border-r border-b border-border/50 text-xs sticky left-0 bg-background cursor-default outline-none${catDimClass}${catRowSelectedClass}`}
                 role="gridcell"
                 tabIndex={0}
                 aria-selected={isCatRowSelected}
@@ -353,18 +321,10 @@ export function BudgetGridGroupRows({
                   })
                 }
               >
-                {cat.name}
-              </div>
-
-              {/* Notes column */}
-              <div
-                className={`h-7 flex items-center justify-center border-r border-b border-border/50 bg-background${catDimClass}`}
-              >
-                <NoteCell
-                  entityId={cat.id}
-                  entityLabel={cat.name}
-                  entityTypeLabel="Category"
-                />
+                <span className="flex-1 min-w-0 truncate">{cat.name}</span>
+                {allNotes?.has(cat.id) && (
+                  <StickyNote className="ml-1.5 h-3 w-3 shrink-0 text-muted-foreground/50" aria-hidden="true" />
+                )}
               </div>
 
               {/* Budget cells */}

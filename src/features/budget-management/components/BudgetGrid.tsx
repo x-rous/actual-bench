@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useMemo, useRef } from "react";
-import { StickyNote } from "lucide-react";
 import { useMonthsData } from "../context/MonthsDataContext";
 import { MonthColumnHeader } from "./grid/MonthColumnHeader";
 import {
@@ -61,7 +60,7 @@ type Props = {
 /**
  * Budget grid — CSS grid layout.
  *
- * Column layout: [category label (flex)] [notes (32 px)] [month columns…]
+ * Column layout: [category label (flex)] [month columns…]
  *
  * Sections:
  *   1. Mode-specific summary rows (`grid/SummaryRows.tsx`)
@@ -236,8 +235,7 @@ export function BudgetGrid({
 
   const gridStyle: React.CSSProperties = {
     display: "grid",
-    // Category label: wider flexible column; notes: 32 px; months: narrower
-    gridTemplateColumns: `minmax(180px, 1fr) 32px repeat(${activeMonths.length}, minmax(69px, 94px))`,
+    gridTemplateColumns: `minmax(180px, 1fr) repeat(${activeMonths.length}, minmax(69px, 94px))`,
   };
 
   const sharedGroupProps = {
@@ -268,7 +266,7 @@ export function BudgetGrid({
     <div
       role="grid"
       aria-label="Budget grid"
-      aria-colcount={activeMonths.length + 2}
+      aria-colcount={activeMonths.length + 1}
       style={gridStyle}
       className="flex-1 text-sm border-t border-border/50"
       onPointerUpCapture={(e) => {
@@ -316,16 +314,6 @@ export function BudgetGrid({
       >
         Category
       </div>
-      <div
-        className="h-8 flex items-center justify-center border-b-2 border-border bg-muted sticky top-0 z-20"
-        role="columnheader"
-        aria-label="Notes"
-      >
-        <StickyNote
-          className="h-3.5 w-3.5 text-muted-foreground/60"
-          aria-hidden="true"
-        />
-      </div>
       {activeMonths.map((month) => (
         <MonthColumnHeader
           key={month}
@@ -349,7 +337,7 @@ export function BudgetGrid({
           Expenses" and "Total Received Income") get the same border style. */}
       {summaryRows.length > 0 && (
         <div
-          style={{ gridColumn: `1 / ${activeMonths.length + 3}` }}
+          style={{ gridColumn: `1 / ${activeMonths.length + 2}` }}
           className="h-0.5 bg-border/60"
           aria-hidden="true"
         />
@@ -379,7 +367,7 @@ export function BudgetGrid({
       {/* Separator between expense and income sections */}
       {expenseGroups.length > 0 && incomeGroups.length > 0 && (
         <div
-          style={{ gridColumn: `1 / ${activeMonths.length + 3}` }}
+          style={{ gridColumn: `1 / ${activeMonths.length + 2}` }}
           className="h-0.5 bg-border/60"
           aria-hidden="true"
         />

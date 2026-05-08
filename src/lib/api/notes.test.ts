@@ -1,4 +1,5 @@
 import {
+  getAllNotes,
   getAccountNote,
   getCategoryLikeNote,
   getNotesIndex,
@@ -109,5 +110,52 @@ describe("notes api helpers", () => {
   it("returns an empty string for malformed note payloads", async () => {
     mockApiRequest.mockResolvedValueOnce({ data: { value: 123 } });
     await expect(getAccountNote(connection, "acc-1")).resolves.toBe("");
+  });
+
+  describe("getAllNotes", () => {
+    it("returns a map of all note rows keyed by id", async () => {
+      const categoryMonthId = "af375fd4-d759-46b3-bffe-74a856151d57-2026-02";
+      mockRunQuery.mockResolvedValueOnce({
+        data: [
+          { id: categoryMonthId, note: "Rent was late this month" },
+          { id: "cat-1", note: "Groceries category note" },
+          { id: "account-acc-1", note: "Checking account note" },
+          { id: "budget-2026-04", note: "April budget note" },
+        ],
+      });
+
+      const result = await getAllNotes(connection);
+
+      expect(result.get(categoryMonthId)).toBe("Rent was late this month");
+      expect(result.get("cat-1")).toBe("Groceries category note");
+      expect(result.get("account-acc-1")).toBe("Checking account note");
+      expect(result.get("budget-2026-04")).toBe("April budget note");
+      expect(result.size).toBe(4);
+      expect(mockRunQuery).toHaveBeenCalledWith(connection, {
+        ActualQLquery: { table: "notes", select: "*" },
+      });
+    });
+
+    it("skips rows with an empty note string", async () => {
+      mockRunQuery.mockResolvedValueOnce({
+        data: [
+          { id: "cat-1", note: "Has a note" },
+          { id: "cat-2", note: "" },
+        ],
+      });
+
+      const result = await getAllNotes(connection);
+
+      expect(result.has("cat-1")).toBe(true);
+      expect(result.has("cat-2")).toBe(false);
+    });
+
+    it("returns an empty map when there are no notes", async () => {
+      mockRunQuery.mockResolvedValueOnce({ data: [] });
+
+      const result = await getAllNotes(connection);
+
+      expect(result.size).toBe(0);
+    });
   });
 });
