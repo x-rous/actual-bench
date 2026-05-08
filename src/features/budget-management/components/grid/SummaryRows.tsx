@@ -201,7 +201,6 @@ export function SummaryHeaderRow({
         )}
         <span className={config.operator === "=" ? "font-semibold" : ""}>{rowLabel}</span>
       </div>
-      <div className={`${rowH} ${marginTopClass} bg-transparent ${borderClass}`} aria-hidden="true" />
       {activeMonths.map((month) => (
         <SummaryHeaderCell key={month} month={month} config={config} />
       ))}

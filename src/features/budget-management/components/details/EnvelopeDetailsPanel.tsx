@@ -45,10 +45,12 @@ export function EnvelopeDetailsPanel({
   metrics,
   transactionBrowserOptions,
   statesByMonth,
+  note,
 }: {
   metrics: EnvelopeDetailsMetrics;
   transactionBrowserOptions: BudgetTransactionBrowserOptions;
   statesByMonth: Map<string, LoadedMonthState>;
+  note?: string;
 }) {
   const isFullPeriod = metrics.entity === "none";
   const isMonth = metrics.scope === "month";
@@ -192,9 +194,26 @@ export function EnvelopeDetailsPanel({
         </DetailsSection>
       )}
 
+      {isMonth && note && (
+        <DetailsSection title="Note">
+          <p className="whitespace-pre-wrap text-[11px] text-foreground/80">
+            {note}
+          </p>
+        </DetailsSection>
+      )}
+
       {!isMonth && <MiniTrend label={metrics.trendLabel} points={metrics.trend} />}
 
       <StagedImpactBlock mode="envelope" impact={metrics.stagedImpact} />
+
+      {!isFullPeriod && !isMonth && note && (
+        <DetailsSection title="Note">
+          <p className="whitespace-pre-wrap text-[11px] text-foreground/80">
+            {note}
+          </p>
+        </DetailsSection>
+      )}
+
       {transactionTarget && (
         <BudgetTransactionsDialog
           key={`${transactionTarget.entity}:${transactionTarget.id}:${transactionTarget.month}`}
