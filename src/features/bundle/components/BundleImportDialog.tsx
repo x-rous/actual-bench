@@ -341,12 +341,14 @@ export function BundleImportDialog({ open, onOpenChange }: Props) {
                     <span>{r.staged} staged</span>
                     {r.skipped > 0 && <span>· {r.skipped} skipped</span>}
                     <button
+                      type="button"
                       onClick={() => {
                         router.push(ENTITY_PAGE[r.key]);
                         closeAndReset();
                       }}
                       className="ml-1 text-foreground/60 transition-colors hover:text-foreground"
                       title={`Go to ${BUNDLE_ENTITY_LABELS[r.key]}`}
+                      aria-label={`Go to ${BUNDLE_ENTITY_LABELS[r.key]}`}
                     >
                       <ExternalLink className="h-3.5 w-3.5" />
                     </button>
