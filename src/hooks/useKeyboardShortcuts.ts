@@ -26,9 +26,10 @@ export function useKeyboardShortcuts() {
     function handleKeyDown(e: KeyboardEvent) {
       const mod = e.ctrlKey || e.metaKey;
       if (!mod) return;
+      const key = e.key.toLowerCase();
 
       // Ctrl/Cmd+K — open global search (fires from anywhere, including inputs)
-      if (e.key === "k") {
+      if (key === "k") {
         e.preventDefault();
         openSearch();
         return;
@@ -42,10 +43,10 @@ export function useKeyboardShortcuts() {
         target.isContentEditable
       ) return;
 
-      if (e.key === "z" && !e.shiftKey) {
+      if (key === "z" && !e.shiftKey) {
         e.preventDefault();
         undo();
-      } else if ((e.key === "z" && e.shiftKey) || e.key === "y") {
+      } else if ((key === "z" && e.shiftKey) || key === "y") {
         e.preventDefault();
         redo();
       }

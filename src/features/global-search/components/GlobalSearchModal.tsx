@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { Search } from "lucide-react";
@@ -11,6 +11,11 @@ import { useGlobalSearchStore } from "../store/useGlobalSearchStore";
 import { searchEntities } from "../lib/searchEntities";
 import { SearchResultGroup } from "./SearchResultGroup";
 import type { SearchResult } from "../types";
+
+function clampFocusedIndex(index: number, resultCount: number): number {
+  if (resultCount === 0) return -1;
+  return Math.min(Math.max(index, 0), resultCount - 1);
+}
 
 export function GlobalSearchModal() {
   const isOpen = useGlobalSearchStore((s) => s.isOpen);
@@ -53,6 +58,18 @@ function GlobalSearchModalContent() {
     () => groups.flatMap((g) => g.results),
     [groups]
   );
+  const activeIndex = clampFocusedIndex(focusedIndex, flatResults.length);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setFocusedIndex((index) => {
+        const nextIndex = clampFocusedIndex(index, flatResults.length);
+        return nextIndex === index ? index : nextIndex;
+      });
+    }, 0);
+
+    return () => clearTimeout(timer);
+  }, [flatResults.length]);
 
   const handleSelect = useCallback(
     (result: SearchResult) => {
@@ -73,17 +90,17 @@ function GlobalSearchModalContent() {
 
       if (e.key === "ArrowDown" || (e.key === "Tab" && !e.shiftKey)) {
         e.preventDefault();
-        setFocusedIndex((i) => Math.min(i + 1, flatResults.length - 1));
+        setFocusedIndex((i) => clampFocusedIndex(i + 1, flatResults.length));
       } else if (e.key === "ArrowUp" || (e.key === "Tab" && e.shiftKey)) {
         e.preventDefault();
-        setFocusedIndex((i) => Math.max(i - 1, 0));
+        setFocusedIndex((i) => clampFocusedIndex(i - 1, flatResults.length));
       } else if (e.key === "Enter") {
         e.preventDefault();
-        const result = flatResults[focusedIndex];
+        const result = flatResults[activeIndex];
         if (result) handleSelect(result);
       }
     },
-    [flatResults, focusedIndex, close, handleSelect]
+    [flatResults, activeIndex, close, handleSelect]
   );
 
   const handleBackdropClick = useCallback(
@@ -104,8 +121,8 @@ function GlobalSearchModalContent() {
   }, [groups]);
 
   const activedescendant =
-    focusedIndex >= 0 && flatResults[focusedIndex]
-      ? `search-result-${flatResults[focusedIndex]!.id}`
+    activeIndex >= 0 && flatResults[activeIndex]
+      ? `search-result-${flatResults[activeIndex]!.id}`
       : undefined;
 
   return createPortal(
@@ -173,7 +190,7 @@ function GlobalSearchModalContent() {
             <SearchResultGroup
               key={group.entityType}
               group={group}
-              focusedIndex={focusedIndex}
+              focusedIndex={activeIndex}
               groupStartIndex={groupStartIndices[i] ?? 0}
               onSelect={handleSelect}
             />

@@ -90,6 +90,7 @@ export function TopBar() {
   const [budgetSaveEdits, setBudgetSaveEdits] = useState<Record<BudgetCellKey, StagedBudgetEdit> | null>(null);
 
   const openSearch = useGlobalSearchStore((s) => s.open);
+  const searchShortcutLabel = "Ctrl+k";
 
   const activeInstance = useConnectionStore(selectActiveInstance);
   const instances = useConnectionStore((s) => s.instances);
@@ -317,12 +318,12 @@ export function TopBar() {
               size="sm"
               className="h-7 gap-1.5 text-xs text-muted-foreground"
               onClick={openSearch}
-              title="Search (Ctrl+K)"
+              title={`Search (${searchShortcutLabel})`}
             >
               <Search className="h-3.5 w-3.5" />
               <span className="hidden sm:inline">Search</span>
               <kbd className="hidden sm:inline pointer-events-none rounded border border-border bg-muted px-1 py-0.5 font-mono text-[10px] text-muted-foreground">
-                ⌘K
+                {searchShortcutLabel}
               </kbd>
             </Button>
           )}

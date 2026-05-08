@@ -66,6 +66,10 @@ function truncate(s: string, max: number): string {
   return s.length > max ? s.slice(0, max) + "…" : s;
 }
 
+function entityHref(page: string, id: string): string {
+  return `/${page}?highlight=${encodeURIComponent(id)}`;
+}
+
 function searchPayees(
   slices: SearchSlices,
   needle: string
@@ -80,7 +84,7 @@ function searchPayees(
       entityType: "payee",
       id: entry.entity.id,
       label: entry.entity.name,
-      href: `/payees?highlight=${entry.entity.id}`,
+      href: entityHref("payees", entry.entity.id),
       score: s,
     });
   }
@@ -104,7 +108,7 @@ function searchCategories(
       id: entry.entity.id,
       label: entry.entity.name,
       sublabel: groupName || undefined,
-      href: `/categories?highlight=${entry.entity.id}`,
+      href: entityHref("categories", entry.entity.id),
       score: s,
     });
   }
@@ -126,7 +130,7 @@ function searchAccounts(
       id: entry.entity.id,
       label: entry.entity.name,
       sublabel: entry.entity.offBudget ? "Off budget" : "On budget",
-      href: `/accounts?highlight=${entry.entity.id}`,
+      href: entityHref("accounts", entry.entity.id),
       score: s,
     });
   }
@@ -158,7 +162,7 @@ function searchRules(
       id: rule.id,
       label: preview,
       sublabel: stageLabel,
-      href: `/rules?highlight=${rule.id}`,
+      href: entityHref("rules", rule.id),
       score: s,
     });
   }
@@ -184,7 +188,7 @@ function searchSchedules(
       id: schedule.id,
       label: name,
       sublabel: payeeName || undefined,
-      href: `/schedules?highlight=${schedule.id}`,
+      href: entityHref("schedules", schedule.id),
       score: s,
     });
   }
@@ -207,7 +211,7 @@ function searchTags(
       id: tag.id,
       label: tag.name,
       sublabel: tag.description ? truncate(tag.description, 40) : undefined,
-      href: `/tags?highlight=${tag.id}`,
+      href: entityHref("tags", tag.id),
       score: s,
     });
   }

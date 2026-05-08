@@ -251,6 +251,15 @@ describe("searchEntities", () => {
     }
   });
 
+  test("entity hrefs encode highlight ids", () => {
+    const slices: SearchSlices = {
+      ...emptySlices,
+      payees: makePayee("p/1?x=#", "Amazon"),
+    };
+    const groups = searchEntities("Amazon", slices);
+    expect(groups[0]!.results[0]!.href).toBe("/payees?highlight=p%2F1%3Fx%3D%23");
+  });
+
   test("empty tags slice omits tags group", () => {
     const slices: SearchSlices = {
       ...emptySlices,
