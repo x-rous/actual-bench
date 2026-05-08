@@ -2,7 +2,7 @@ import { apiRequest } from "./client";
 import { runQuery } from "./query";
 import type { ConnectionInstance } from "@/store/connection";
 
-export type NoteRow = { id: string; note: string };
+export type NoteRow = { id: string; note: string | null };
 
 type NoteIndexRow = {
   id: string;
