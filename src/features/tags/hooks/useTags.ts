@@ -6,7 +6,11 @@ import { getTags } from "@/lib/api/tags";
 import { useConnectionStore, selectActiveInstance } from "@/store/connection";
 import { useStagedStore } from "@/store/staged";
 
-export function useTags() {
+type PreloadOptions = {
+  enabled?: boolean;
+};
+
+export function useTags(options: PreloadOptions = {}) {
   const connection = useConnectionStore(selectActiveInstance);
   const loadTags = useStagedStore((s) => s.loadTags);
 
@@ -16,7 +20,7 @@ export function useTags() {
       if (!connection) throw new Error("No active connection");
       return getTags(connection);
     },
-    enabled: !!connection,
+    enabled: !!connection && (options.enabled ?? true),
   });
 
   useEffect(() => {

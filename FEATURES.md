@@ -9,6 +9,12 @@
 - Per-connection query cache and staged data scoping — switching connections never leaks data between sessions
 - Connections are stored in session storage and cleared automatically when the tab is closed
 
+## Global Search
+
+- `Ctrl/Cmd+K` or the top-bar Search button opens a global search modal across accounts, payees, categories, rules, schedules, and tags
+- Results are grouped by entity type, capped per group, and ranked by exact, prefix, word-boundary, and substring matches
+- Selecting a result navigates to the matching entity page with the row highlighted; search runs against already-loaded in-memory state without server writes
+
 ## Budget Overview
 
 - `/overview` is the default landing page after connecting or reconnecting to a budget

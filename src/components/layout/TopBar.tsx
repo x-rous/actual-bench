@@ -4,7 +4,7 @@ import Image from "next/image";
 import { useRouter, usePathname } from "next/navigation";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
-import { ChevronDown, Save, X, Undo2, Redo2, RefreshCw } from "lucide-react";
+import { ChevronDown, Save, X, Undo2, Redo2, RefreshCw, Search } from "lucide-react";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
@@ -28,6 +28,7 @@ import {
   useConnectionStore,
   selectActiveInstance,
 } from "@/store/connection";
+import { useGlobalSearchStore } from "@/features/global-search/store/useGlobalSearchStore";
 import { useSavedServersStore } from "@/store/savedServers";
 import {
   useStagedStore,
@@ -87,6 +88,8 @@ export function TopBar() {
   );
   const [budgetSaveReviewEdits, setBudgetSaveReviewEdits] = useState<Record<BudgetCellKey, StagedBudgetEdit> | null>(null);
   const [budgetSaveEdits, setBudgetSaveEdits] = useState<Record<BudgetCellKey, StagedBudgetEdit> | null>(null);
+
+  const openSearch = useGlobalSearchStore((s) => s.open);
 
   const activeInstance = useConnectionStore(selectActiveInstance);
   const instances = useConnectionStore((s) => s.instances);
@@ -306,8 +309,23 @@ export function TopBar() {
           )}
         </div>
 
-        {/* Right: undo/redo + unsaved indicator + save/discard */}
+        {/* Right: search + undo/redo + unsaved indicator + save/discard */}
         <div className="flex items-center gap-1">
+          {activeInstance && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 gap-1.5 text-xs text-muted-foreground"
+              onClick={openSearch}
+              title="Search (Ctrl+K)"
+            >
+              <Search className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">Search</span>
+              <kbd className="hidden sm:inline pointer-events-none rounded border border-border bg-muted px-1 py-0.5 font-mono text-[10px] text-muted-foreground">
+                ⌘K
+              </kbd>
+            </Button>
+          )}
           <Button
             variant="ghost"
             size="icon"
