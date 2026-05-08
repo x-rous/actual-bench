@@ -16,6 +16,10 @@ jest.mock("next/link", () => ({
   ),
 }));
 
+jest.mock("next/navigation", () => ({
+  useRouter: () => ({ push: jest.fn() }),
+}));
+
 jest.mock("../hooks/useBudgetOverview", () => ({
   useBudgetOverview: jest.fn(),
 }));

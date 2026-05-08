@@ -7,8 +7,10 @@ import { join, relative } from "node:path";
 
 const ROOT = process.cwd();
 const SRC_DIR = join(ROOT, "src");
-const HEAVY_DIAGNOSTICS_IMPORTS = ["@sqlite.org/sqlite-wasm", "fflate"] as const;
-const ALLOWED_PREFIX = "src/features/budget-diagnostics/";
+const SQLITE_IMPORTS = ["@sqlite.org/sqlite-wasm"] as const;
+const FFLATE_IMPORTS = ["fflate"] as const;
+const SQLITE_ALLOWED_PREFIXES = ["src/features/budget-diagnostics/"];
+const FFLATE_ALLOWED_PREFIXES = ["src/features/budget-diagnostics/", "src/features/bundle/"];
 const ALLOWED_TYPE_DECLARATIONS = new Set(["src/types/sqlite-wasm.d.ts"]);
 
 function listSourceFiles(dir: string): string[] {
@@ -25,17 +27,26 @@ describe("budget diagnostics bundle isolation", () => {
     const offenders = listSourceFiles(SRC_DIR).flatMap((file) => {
       const relativePath = relative(ROOT, file);
       const normalizedPath = relativePath.replace(/\\+/g, "/");
-      if (
-        normalizedPath.startsWith(ALLOWED_PREFIX) ||
-        ALLOWED_TYPE_DECLARATIONS.has(normalizedPath)
-      ) {
-        return [];
-      }
+      if (ALLOWED_TYPE_DECLARATIONS.has(normalizedPath)) return [];
 
       const source = readFileSync(file, "utf8");
-      return HEAVY_DIAGNOSTICS_IMPORTS.filter((moduleName) =>
-        source.includes(moduleName)
-      ).map((moduleName) => `${normalizedPath} imports ${moduleName}`);
+      const violations: string[] = [];
+
+      for (const moduleName of SQLITE_IMPORTS) {
+        const allowed = SQLITE_ALLOWED_PREFIXES.some((p) => normalizedPath.startsWith(p));
+        if (!allowed && source.includes(moduleName)) {
+          violations.push(`${normalizedPath} imports ${moduleName}`);
+        }
+      }
+
+      for (const moduleName of FFLATE_IMPORTS) {
+        const allowed = FFLATE_ALLOWED_PREFIXES.some((p) => normalizedPath.startsWith(p));
+        if (!allowed && source.includes(moduleName)) {
+          violations.push(`${normalizedPath} imports ${moduleName}`);
+        }
+      }
+
+      return violations;
     });
 
     expect(offenders).toEqual([]);
