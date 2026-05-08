@@ -10,6 +10,7 @@ import { useConnectionStore, selectActiveInstance } from "@/store/connection";
 import { usePreloadEntities } from "@/hooks/useAllEntities";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { useIsHydrated } from "@/hooks/useIsHydrated";
+import { GlobalSearchModal } from "@/features/global-search/components/GlobalSearchModal";
 
 /**
  * The four-panel app shell:
@@ -57,6 +58,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex h-full flex-col">
       <TopBar />
+      <GlobalSearchModal />
       <div className="flex min-h-0 flex-1 overflow-hidden">
         <Sidebar />
         <main className="flex min-h-0 flex-1 flex-col overflow-hidden">
