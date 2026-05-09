@@ -1,6 +1,7 @@
 "use client";
 
 import { useBudgetEditsStore } from "@/store/budgetEdits";
+import { generateId } from "@/lib/uuid";
 
 type StagedTransferParams = {
   month: string;
@@ -23,7 +24,7 @@ export function useStagedTransfer() {
     sourceServerBudgeted,
     destServerBudgeted,
   }: StagedTransferParams) {
-    const transferGroupId = `transfer-${crypto.randomUUID()}`;
+    const transferGroupId = `transfer-${generateId()}`;
 
     const sourcePrev =
       edits[`${month}:${sourceCategoryId}`]?.nextBudgeted ?? sourceServerBudgeted;

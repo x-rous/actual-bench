@@ -33,8 +33,13 @@ export function StagedCategoryTransferDialog({
   const comboboxId = useId();
 
   const [otherCategoryId, setOtherCategoryId] = useState("");
-  const [amountStr, setAmountStr] = useState("");
+  const [userAmountStr, setUserAmountStr] = useState<string | null>(null);
   const [validationError, setValidationError] = useState<string | null>(null);
+
+  // Derive prefill from clickedBalance until the user edits the field
+  const amountStr = userAmountStr ?? (monthData
+    ? ((mode === "transfer" ? clickedBalance : Math.abs(clickedBalance)) / 100).toFixed(2)
+    : "");
 
   // ── Effective value helpers ────────────────────────────────────────────────
 
@@ -95,14 +100,6 @@ export function StagedCategoryTransferDialog({
     if (!otherCategoryId) return absOverspent;
     const srcBal = eligibleCategories.find((c) => c.id === otherCategoryId)?.effectiveBalance ?? 0;
     return Math.min(absOverspent, srcBal);
-  }
-
-  // Pre-fill amount once (on first render when monthData is ready)
-  const [prefilled, setPrefilled] = useState(false);
-  if (!prefilled && monthData) {
-    const prefillCents = mode === "transfer" ? clickedBalance : Math.abs(clickedBalance);
-    setAmountStr((prefillCents / 100).toFixed(2));
-    setPrefilled(true);
   }
 
   // ── Validation ────────────────────────────────────────────────────────────
@@ -227,7 +224,7 @@ export function StagedCategoryTransferDialog({
               step="0.01"
               value={amountStr}
               onChange={(e) => {
-                setAmountStr(e.target.value);
+                setUserAmountStr(e.target.value);
                 setValidationError(null);
               }}
               placeholder="0.00"
