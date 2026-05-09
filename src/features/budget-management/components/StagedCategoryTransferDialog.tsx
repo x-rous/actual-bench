@@ -36,11 +36,6 @@ export function StagedCategoryTransferDialog({
   const [userAmountStr, setUserAmountStr] = useState<string | null>(null);
   const [validationError, setValidationError] = useState<string | null>(null);
 
-  // Derive prefill from clickedBalance until the user edits the field
-  const amountStr = userAmountStr ?? (monthData
-    ? ((mode === "transfer" ? clickedBalance : Math.abs(clickedBalance)) / 100).toFixed(2)
-    : "");
-
   // ── Effective value helpers ────────────────────────────────────────────────
 
   function effectiveBudgeted(catId: string): number {
@@ -85,6 +80,11 @@ export function StagedCategoryTransferDialog({
   const clickedBalance = effectiveBalance(clickedCategoryId);
   const clickedCat = monthData?.categoriesById[clickedCategoryId];
   const clickedName = clickedCat?.name ?? clickedCategoryId;
+
+  // Derive prefill from clickedBalance until the user edits the field
+  const amountStr = userAmountStr ?? (monthData
+    ? ((mode === "transfer" ? clickedBalance : Math.abs(clickedBalance)) / 100).toFixed(2)
+    : "");
 
   // Cover mode: pick source with positive balance; transfer mode: pick any destination
   const eligibleCategories = buildEligible(mode === "cover");
