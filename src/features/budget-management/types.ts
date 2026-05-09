@@ -88,8 +88,10 @@ export type StagedBudgetEdit = {
   categoryId: string;
   nextBudgeted: number;
   previousBudgeted: number;
-  source: "manual" | "paste" | "bulk-action" | "import";
+  source: "manual" | "paste" | "bulk-action" | "import" | "transfer";
   saveError?: string;
+  /** Links the two legs of a staged transfer for draft-panel grouping. */
+  transferGroupId?: string;
 };
 
 /**

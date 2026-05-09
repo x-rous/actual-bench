@@ -311,6 +311,193 @@ describe("computeEffectiveMonthState", () => {
       expect(r?.categoriesById.i1!.budgeted).toBe(0);
     });
   });
+
+  describe("Layer 3 — per-category balance cascade", () => {
+    it("envelope carryover=true: prior edit cascades balance to future month", () => {
+      const s = state({
+        month: "2026-02",
+        groups: [group({ id: "g1", categoryIds: ["c1"], balance: 300 })],
+        cats: [cat({ id: "c1", carryover: true, balance: 300 })],
+        summary: { totalBalance: 300 },
+      });
+      const r = computeEffectiveMonthState({
+        serverState: s,
+        allEdits: editsMap([edit("2026-01", "c1", 600, 400)]), // +200 prior month
+        isTracking: false,
+        incomeBudgets: undefined,
+        month: "2026-02",
+      });
+      expect(r?.categoriesById.c1!.balance).toBe(500); // 300 + 200
+      expect(r?.groupsById.g1!.balance).toBe(500);
+      expect(r?.summary.totalBalance).toBe(500);
+    });
+
+    it("envelope carryover=false: prior edit still cascades (envelope always chains)", () => {
+      const s = state({
+        month: "2026-02",
+        groups: [group({ id: "g1", categoryIds: ["c1"], balance: 100 })],
+        cats: [cat({ id: "c1", carryover: false, balance: 100 })],
+        summary: { totalBalance: 100 },
+      });
+      const r = computeEffectiveMonthState({
+        serverState: s,
+        allEdits: editsMap([edit("2026-01", "c1", 500, 300)]), // +200
+        isTracking: false,
+        incomeBudgets: undefined,
+        month: "2026-02",
+      });
+      expect(r?.categoriesById.c1!.balance).toBe(300); // 100 + 200
+      expect(r?.groupsById.g1!.balance).toBe(300);
+      expect(r?.summary.totalBalance).toBe(300);
+    });
+
+    it("tracking carryover=false: prior edit does NOT cascade balance", () => {
+      const s = state({
+        month: "2026-02",
+        groups: [group({ id: "g1", categoryIds: ["c1"], balance: 100 })],
+        cats: [cat({ id: "c1", carryover: false, balance: 100 })],
+        summary: { totalBalance: 100 },
+      });
+      const r = computeEffectiveMonthState({
+        serverState: s,
+        allEdits: editsMap([edit("2026-01", "c1", 500, 300)]), // +200, but carryover=false
+        isTracking: true,
+        incomeBudgets: undefined,
+        month: "2026-02",
+      });
+      // Layer 3 does not cascade — balance stays at server value
+      expect(r?.categoriesById.c1!.balance).toBe(100);
+      expect(r?.groupsById.g1!.balance).toBe(100);
+      expect(r?.summary.totalBalance).toBe(100);
+    });
+
+    it("tracking carryover=true: prior edit cascades balance", () => {
+      const s = state({
+        month: "2026-02",
+        groups: [group({ id: "g1", categoryIds: ["c1"], balance: 50 })],
+        cats: [cat({ id: "c1", carryover: true, balance: 50 })],
+        summary: { totalBalance: 50 },
+      });
+      const r = computeEffectiveMonthState({
+        serverState: s,
+        allEdits: editsMap([edit("2026-01", "c1", 300, 100)]), // +200
+        isTracking: true,
+        incomeBudgets: undefined,
+        month: "2026-02",
+      });
+      expect(r?.categoriesById.c1!.balance).toBe(250); // 50 + 200
+      expect(r?.groupsById.g1!.balance).toBe(250);
+      expect(r?.summary.totalBalance).toBe(250);
+    });
+
+    it("two prior edits for same category: cascade delta = sum of both", () => {
+      const s = state({
+        month: "2026-03",
+        groups: [group({ id: "g1", categoryIds: ["c1"], balance: 0 })],
+        cats: [cat({ id: "c1", balance: 0 })],
+        summary: { totalBalance: 0 },
+      });
+      const r = computeEffectiveMonthState({
+        serverState: s,
+        allEdits: editsMap([
+          edit("2026-01", "c1", 200, 100), // +100
+          edit("2026-02", "c1", 600, 400), // +200
+        ]),
+        isTracking: false,
+        incomeBudgets: undefined,
+        month: "2026-03",
+      });
+      expect(r?.categoriesById.c1!.balance).toBe(300); // 0 + 100 + 200
+      expect(r?.groupsById.g1!.balance).toBe(300);
+      expect(r?.summary.totalBalance).toBe(300);
+    });
+
+    it("Layer 2 + Layer 3 compose: current-month edit and prior cascade both apply", () => {
+      const s = state({
+        month: "2026-02",
+        groups: [group({ id: "g1", categoryIds: ["c1"], budgeted: 400, balance: 200 })],
+        cats: [cat({ id: "c1", budgeted: 400, balance: 200 })],
+        summary: { totalBudgeted: -400, totalBalance: 200, toBudget: 0 },
+      });
+      const r = computeEffectiveMonthState({
+        serverState: s,
+        // Prior month: +100 cascade; current month: budgeted changes from 400 → 600 (+200)
+        allEdits: editsMap([
+          edit("2026-01", "c1", 300, 200), // +100 cascade
+          edit("2026-02", "c1", 600, 400), // +200 Layer 2
+        ]),
+        isTracking: false,
+        incomeBudgets: undefined,
+        month: "2026-02",
+      });
+      // Layer 2: budgeted 400→600, balance 200+200=400
+      // Layer 3: balance 400+100=500
+      expect(r?.categoriesById.c1!.budgeted).toBe(600);
+      expect(r?.categoriesById.c1!.balance).toBe(500);
+      expect(r?.groupsById.g1!.balance).toBe(500);
+    });
+
+    it("category absent in future month: no crash, balance of existing categories unaffected", () => {
+      // serverState for 2026-02 does not contain c1 at all
+      const s = state({
+        month: "2026-02",
+        groups: [group({ id: "g1", categoryIds: ["c2"], balance: 50 })],
+        cats: [cat({ id: "c2", balance: 50 })],
+        summary: { totalBalance: 50 },
+      });
+      const r = computeEffectiveMonthState({
+        serverState: s,
+        allEdits: editsMap([edit("2026-01", "c1", 500, 300)]), // c1 absent this month
+        isTracking: false,
+        incomeBudgets: undefined,
+        month: "2026-02",
+      });
+      // No crash; c2 balance unchanged — cascade for c1 is skipped
+      expect(r?.categoriesById.c2!.balance).toBe(50);
+      expect(r?.groupsById.g1!.balance).toBe(50);
+      expect(r?.summary.totalBalance).toBe(50);
+    });
+
+    it("income categories are excluded from balance cascade", () => {
+      const s = state({
+        month: "2026-02",
+        groups: [group({ id: "gi", isIncome: true, categoryIds: ["i1"], balance: 0 })],
+        cats: [cat({ id: "i1", isIncome: true, groupId: "gi", balance: 0 })],
+        summary: { totalBalance: 0 },
+      });
+      const r = computeEffectiveMonthState({
+        serverState: s,
+        allEdits: editsMap([edit("2026-01", "i1", 1000, 500)]),
+        isTracking: false,
+        incomeBudgets: undefined,
+        month: "2026-02",
+      });
+      // Income category balance does not cascade via Layer 3
+      expect(r?.categoriesById.i1!.balance).toBe(0);
+      expect(r?.groupsById.gi!.balance).toBe(0);
+      expect(r?.summary.totalBalance).toBe(0);
+    });
+
+    it("hidden category in tracking mode: summary not polluted, group logic mirrors Layer 2", () => {
+      const s = state({
+        month: "2026-02",
+        groups: [group({ id: "g1", hidden: false, categoryIds: ["c1"], balance: 0 })],
+        cats: [cat({ id: "c1", hidden: true, carryover: true, balance: 0 })],
+        summary: { totalBalance: 0 },
+      });
+      const r = computeEffectiveMonthState({
+        serverState: s,
+        allEdits: editsMap([edit("2026-01", "c1", 500, 300)]), // +200
+        isTracking: true,
+        incomeBudgets: undefined,
+        month: "2026-02",
+      });
+      // Category balance updates, but visible group and summary are not polluted
+      expect(r?.categoriesById.c1!.balance).toBe(200);
+      expect(r?.groupsById.g1!.balance).toBe(0); // visible group unchanged
+      expect(r?.summary.totalBalance).toBe(0); // summary unchanged
+    });
+  });
 });
 
 // ─── mergeMonthStates ──────────────────────────────────────────────────────────

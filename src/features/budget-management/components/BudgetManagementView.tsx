@@ -12,7 +12,7 @@ import { BudgetToolbar } from "./BudgetToolbar";
 import { BudgetWorkspace } from "./BudgetWorkspace";
 import { BudgetExportDialog } from "./BudgetExportDialog";
 import { BudgetImportDialog } from "./BudgetImportDialog";
-import { CategoryTransferDialog } from "./CategoryTransferDialog";
+import { StagedCategoryTransferDialog } from "./StagedCategoryTransferDialog";
 import { KeyboardShortcutsHelp } from "./KeyboardShortcutsHelp";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -59,10 +59,13 @@ export function BudgetManagementView() {
   }, [activeMonths, setDisplayMonths]);
 
   const [cellView, setCellView] = useState<CellView>("budgeted");
-  const [bulkActionOpen, setBulkActionOpen] = useState(false);
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
   const [importDialogOpen, setImportDialogOpen] = useState(false);
-  const [transferDialogOpen, setTransferDialogOpen] = useState(false);
+  const [transferState, setTransferState] = useState<{
+    categoryId: string;
+    month: string;
+    mode: "cover" | "transfer";
+  } | null>(null);
   const [shortcutsHelpOpen, setShortcutsHelpOpen] = useState(false);
 
   // Collapse state lifted here so BudgetToolbar can trigger expand/collapse all.
@@ -136,13 +139,16 @@ export function BudgetManagementView() {
     return () => window.removeEventListener("popstate", handlePopState);
   }, [discardEntityChanges, hasBudgetPendingEdits, hasPendingEdits]);
 
-  const handleCloseBulkAction = () => setBulkActionOpen(false);
   const handleOpenExport = () => setExportDialogOpen(true);
   const handleCloseExport = () => setExportDialogOpen(false);
   const handleOpenImport = () => setImportDialogOpen(true);
   const handleCloseImport = () => setImportDialogOpen(false);
-  const handleOpenTransfer = () => setTransferDialogOpen(true);
-  const handleCloseTransfer = () => setTransferDialogOpen(false);
+  const handleOpenTransfer = (
+    categoryId: string,
+    month: string,
+    mode: "cover" | "transfer"
+  ) => setTransferState({ categoryId, month, mode });
+  const handleCloseTransfer = () => setTransferState(null);
 
   // When the import dialog imports months outside the current window,
   // move the window start to include them.
@@ -265,8 +271,6 @@ export function BudgetManagementView() {
         collapsedGroups={collapsedGroups}
         onToggleCollapse={handleToggleGroupCollapse}
         showHidden={showHidden}
-        bulkActionOpen={bulkActionOpen}
-        onBulkActionClose={handleCloseBulkAction}
         onOpenTransfer={budgetMode === "envelope" ? handleOpenTransfer : undefined}
       />
 
@@ -293,10 +297,11 @@ export function BudgetManagementView() {
         />
       )}
 
-      {budgetMode === "envelope" && transferDialogOpen && firstAvailableActiveMonth && (
-        <CategoryTransferDialog
-          month={firstAvailableActiveMonth}
-          categories={categories}
+      {transferState && (
+        <StagedCategoryTransferDialog
+          month={transferState.month}
+          clickedCategoryId={transferState.categoryId}
+          mode={transferState.mode}
           onClose={handleCloseTransfer}
         />
       )}

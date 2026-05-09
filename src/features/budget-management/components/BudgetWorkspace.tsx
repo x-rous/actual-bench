@@ -88,10 +88,7 @@ type Props = {
   onToggleCollapse: (groupId: string) => void;
   /** When true, hidden groups/categories are rendered (dimmed); when false they are hidden. */
   showHidden?: boolean;
-  /** When true, open the bulk action dialog for the current selection */
-  bulkActionOpen?: boolean;
-  onBulkActionClose?: () => void;
-  onOpenTransfer?: () => void;
+  onOpenTransfer?: (categoryId: string, month: string, mode: "cover" | "transfer") => void;
   // ── Tier 3 view-state setters (keyboard shortcuts) ─────────────────────
   onCycleCellView: () => void;
   onToggleShowHidden: () => void;
@@ -133,8 +130,6 @@ function BudgetWorkspaceInner({
   collapsedGroups,
   onToggleCollapse,
   showHidden = false,
-  bulkActionOpen = false,
-  onBulkActionClose,
   onOpenTransfer,
   onCycleCellView,
   onToggleShowHidden,
@@ -199,7 +194,7 @@ function BudgetWorkspaceInner({
   );
 
   // Provider-supplied data (BM-01, BM-13).
-  const { raw: rawMonthsMap, merged } = useMonthsData();
+  const { raw: rawMonthsMap, merged, effective: effectiveMonthsMap } = useMonthsData();
 
   // Categories in visual order — derived from the cross-month merged structure
   // so categories that exist in any visible month are reachable in every month.
@@ -941,7 +936,7 @@ function BudgetWorkspaceInner({
         categories={categories}
       />
 
-      {(bulkActionOpen || pendingBulkAction !== null) && selection && (
+      {pendingBulkAction !== null && selection && (
         <BulkActionDialog
           selection={selection}
           activeMonths={activeMonths}
@@ -955,11 +950,8 @@ function BudgetWorkspaceInner({
             }
             return map;
           })()}
-          initialAction={pendingBulkAction ?? undefined}
-          onClose={() => {
-            onBulkActionClose?.();
-            setPendingBulkAction(null);
-          }}
+          initialAction={pendingBulkAction}
+          onClose={() => setPendingBulkAction(null)}
         />
       )}
 
@@ -972,18 +964,26 @@ function BudgetWorkspaceInner({
         />
       )}
 
-      {contextMenu && (
-        <BudgetCellContextMenu
-          x={contextMenu.x}
-          y={contextMenu.y}
-          carryover={contextMenu.carryover}
-          budgetMode={budgetMode}
-          onToggleCarryover={handleCarryoverToggle}
-          onOpenTransfer={onOpenTransfer ?? (() => undefined)}
-          onBulkAction={handleContextMenuBulkAction}
-          onClose={() => setContextMenu(null)}
-        />
-      )}
+      {contextMenu && (() => {
+        const contextMenuBalance =
+          effectiveMonthsMap.get(contextMenu.month)?.categoriesById[contextMenu.categoryId]?.balance
+          ?? rawMonthsMap.get(contextMenu.month)?.categoriesById[contextMenu.categoryId]?.balance
+          ?? 0;
+        const mode = contextMenuBalance < 0 ? "cover" : "transfer";
+        return (
+          <BudgetCellContextMenu
+            x={contextMenu.x}
+            y={contextMenu.y}
+            carryover={contextMenu.carryover}
+            budgetMode={budgetMode}
+            categoryBalance={contextMenuBalance}
+            onToggleCarryover={handleCarryoverToggle}
+            onOpenTransfer={() => onOpenTransfer?.(contextMenu.categoryId, contextMenu.month, mode)}
+            onBulkAction={handleContextMenuBulkAction}
+            onClose={() => setContextMenu(null)}
+          />
+        );
+      })()}
 
       {carryoverRequest && (
         <BudgetCarryoverProgressDialog

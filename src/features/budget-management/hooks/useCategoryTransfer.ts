@@ -1,3 +1,6 @@
+// Direct-API helper retained for RD-024v2 (Test Data Generator).
+// The UI transfer flow uses useStagedTransfer instead.
+// Do not wire this hook to any UI component.
 "use client";
 
 import { useCallback, useState } from "react";

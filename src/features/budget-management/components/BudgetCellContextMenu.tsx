@@ -10,6 +10,7 @@ type Props = {
   y: number;
   carryover: boolean;
   budgetMode: BudgetMode;
+  categoryBalance: number;
   onToggleCarryover: () => void;
   onOpenTransfer: () => void;
   /** Called with the action type — BudgetWorkspace decides immediate vs. dialog. */
@@ -30,9 +31,9 @@ const BULK_ITEMS: BulkItem[] = [
   { action: "set-to-zero",         label: "Set to zero",             icon: <ZapOff className="h-3 w-3" />,    needsInput: false },
   { action: "set-fixed",           label: "Set to fixed amount…",    icon: <Percent className="h-3 w-3" />,   needsInput: true  },
   { action: "apply-percentage",    label: "Apply % change…",         icon: <Percent className="h-3 w-3" />,   needsInput: true  },
-  { action: "avg-3-months",        label: "Set to 3 months average", icon: <TrendingUp className="h-3 w-3" />, needsInput: false },
-  { action: "avg-6-months",        label: "Set to 6 months average", icon: <TrendingUp className="h-3 w-3" />, needsInput: false },
-  { action: "avg-12-months",       label: "Set to yearly average",   icon: <TrendingUp className="h-3 w-3" />, needsInput: false },
+  { action: "avg-3-months",        label: "Avg. 3-month budget",     icon: <TrendingUp className="h-3 w-3" />, needsInput: false },
+  { action: "avg-6-months",        label: "Avg. 6-month budget",     icon: <TrendingUp className="h-3 w-3" />, needsInput: false },
+  { action: "avg-12-months",       label: "Avg. 12-month budget",    icon: <TrendingUp className="h-3 w-3" />, needsInput: false },
 ];
 
 export function BudgetCellContextMenu({
@@ -40,6 +41,7 @@ export function BudgetCellContextMenu({
   y,
   carryover,
   budgetMode,
+  categoryBalance,
   onToggleCarryover,
   onOpenTransfer,
   onBulkAction,
@@ -74,16 +76,18 @@ export function BudgetCellContextMenu({
       onClick={(e) => e.stopPropagation()}
     >
       {/* Cell-level actions */}
-      <button
-        role="menuitem"
-        type="button"
-        className="w-full flex items-center gap-2 px-3 py-1.5 text-left hover:bg-muted transition-colors"
-        onClick={() => { onToggleCarryover(); onClose(); }}
-      >
-        <RefreshCw className="h-3 w-3 text-muted-foreground shrink-0" />
-        <span>{carryover ? "Disable Rollover" : "Enable Rollover"}</span>
-        <span className="ml-auto text-[10px] text-muted-foreground">(this month+)</span>
-      </button>
+      {budgetMode === "tracking" && (
+        <button
+          role="menuitem"
+          type="button"
+          className="w-full flex items-center gap-2 px-3 py-1.5 text-left hover:bg-muted transition-colors"
+          onClick={() => { onToggleCarryover(); onClose(); }}
+        >
+          <RefreshCw className="h-3 w-3 text-muted-foreground shrink-0" />
+          <span>{carryover ? "Disable Rollover" : "Enable Rollover"}</span>
+          <span className="ml-auto text-[10px] text-muted-foreground">(this month+)</span>
+        </button>
+      )}
       {budgetMode === "envelope" && (
         <button
           role="menuitem"
@@ -92,12 +96,14 @@ export function BudgetCellContextMenu({
           onClick={() => { onOpenTransfer(); onClose(); }}
         >
           <ArrowRightLeft className="h-3 w-3 text-muted-foreground shrink-0" />
-          Transfer Budget
+          {categoryBalance < 0 ? "Cover Overspending" : "Transfer to Another Category"}
         </button>
       )}
 
       {/* Bulk actions */}
-      <div className="h-px bg-border/50 my-1" />
+      {(budgetMode === "tracking" || budgetMode === "envelope") && (
+        <div className="h-px bg-border/50 my-1" />
+      )}
       <p className="px-3 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground select-none">
         Set Budget
       </p>

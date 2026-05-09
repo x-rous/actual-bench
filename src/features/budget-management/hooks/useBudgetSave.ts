@@ -67,11 +67,16 @@ type UseBudgetSaveReturn = {
 /**
  * Feature-local save pipeline for budget cell edits.
  *
- * Issues PATCH /months/{month}/categories/{categoryId} calls sequentially
- * (never in parallel) so the server's budget sync state is not raced.
+ * Save order (all sequential — never parallel):
+ *   1. Complete transfer pairs → POST /months/{month}/categorytransfers (atomic)
+ *   2. Incomplete transfer legs + standalone edits → PATCH per cell
+ *
+ * Using POST for complete pairs avoids the "onFinish called while inside a
+ * spreadsheet transaction" server error that occurs when two PATCH calls for
+ * the same transfer arrive before actual-http-api finishes its recalculation.
  *
  * Pre-save: re-fetches GET /months to verify all target months still exist.
- * Progress: exposes { completed, total } updated after each PATCH.
+ * Progress: exposes { completed, total } updated after each API call.
  * Clearing: only keys that received a 200 are removed from the store —
  * failed keys remain with their saveError set, visible in the grid.
  */
@@ -152,17 +157,109 @@ export function useBudgetSave(): UseBudgetSaveReturn {
         saveSnapshot.set(key, edit.nextBudgeted);
       }
 
+      // Group validEntries by transferGroupId to detect complete transfer pairs.
+      const transferGroups = new Map<string, [BudgetCellKey, StagedBudgetEdit][]>();
+      const nonTransferEntries: [BudgetCellKey, StagedBudgetEdit][] = [];
+
+      for (const entry of validEntries) {
+        const [, edit] = entry;
+        if (edit.transferGroupId) {
+          if (!transferGroups.has(edit.transferGroupId)) {
+            transferGroups.set(edit.transferGroupId, []);
+          }
+          transferGroups.get(edit.transferGroupId)!.push(entry);
+        } else {
+          nonTransferEntries.push(entry);
+        }
+      }
+
+      // Complete pair = exactly 2 legs with the same transferGroupId.
+      // Incomplete legs fall through to PATCH like standalone edits.
+      type TransferPair = {
+        src: [BudgetCellKey, StagedBudgetEdit];
+        dst: [BudgetCellKey, StagedBudgetEdit];
+      };
+      const completePairs: TransferPair[] = [];
+      const incompleteLegs: [BudgetCellKey, StagedBudgetEdit][] = [];
+
+      for (const legs of transferGroups.values()) {
+        if (legs.length === 2) {
+          const [a, b] = legs as [[BudgetCellKey, StagedBudgetEdit], [BudgetCellKey, StagedBudgetEdit]];
+          const aDelta = a[1].nextBudgeted - a[1].previousBudgeted;
+          // src = negative-delta leg (budget decreases), dst = positive-delta leg
+          const [src, dst] = aDelta < 0 ? [a, b] : [b, a];
+          completePairs.push({ src, dst });
+        } else {
+          for (const leg of legs) incompleteLegs.push(leg);
+        }
+      }
+
+      const totalCalls = completePairs.length + incompleteLegs.length + nonTransferEntries.length;
+
       setIsSaving(true);
-      setProgress({ completed: 0, total: validEntries.length });
+      setProgress({ completed: 0, total: totalCalls });
 
       const succeededKeys: BudgetCellKey[] = [];
       const successMonths = new Set<string>();
+      let completedCalls = 0;
 
-      for (let i = 0; i < validEntries.length; i++) {
-        const entry = validEntries[i];
-        if (!entry) continue;
-        const [key, edit] = entry;
+      // ── 1. Complete transfer pairs via atomic POST ────────────────────────────
+      for (const { src, dst } of completePairs) {
+        const [srcKey, srcEdit] = src;
+        const [dstKey, dstEdit] = dst;
+        const amount = dstEdit.nextBudgeted - dstEdit.previousBudgeted;
+        const month = srcEdit.month;
 
+        try {
+          await apiRequest(connection, `/months/${month}/categorytransfers`, {
+            method: "POST",
+            body: {
+              categorytransfer: {
+                fromCategoryId: srcEdit.categoryId,
+                toCategoryId: dstEdit.categoryId,
+                amount,
+              },
+            },
+          });
+
+          // BM-11: Optimistic cache update for both legs together.
+          queryClient.setQueryData(
+            ["budget-month-data", connection.id, month],
+            (prev: LoadedMonthState | undefined) => {
+              if (!prev) return prev;
+              let next = applyBudgetedToMonthState(prev, srcEdit.categoryId, srcEdit.nextBudgeted);
+              next = applyBudgetedToMonthState(next, dstEdit.categoryId, dstEdit.nextBudgeted);
+              return next;
+            }
+          );
+
+          succeededKeys.push(srcKey, dstKey);
+          successMonths.add(month);
+          results.push(
+            { month, categoryId: srcEdit.categoryId, status: "success" },
+            { month, categoryId: dstEdit.categoryId, status: "success" }
+          );
+        } catch (err) {
+          const message =
+            err instanceof Error
+              ? err.message
+              : (err as { message?: string }).message ?? "Save failed";
+          setSaveError(srcKey, message);
+          setSaveError(dstKey, message);
+          results.push(
+            { month, categoryId: srcEdit.categoryId, status: "error", message },
+            { month, categoryId: dstEdit.categoryId, status: "error", message }
+          );
+        }
+
+        completedCalls++;
+        setProgress({ completed: completedCalls, total: totalCalls });
+      }
+
+      // ── 2. Incomplete transfer legs + standalone edits via PATCH ─────────────
+      const patchEntries = [...incompleteLegs, ...nonTransferEntries];
+
+      for (const [key, edit] of patchEntries) {
         try {
           await apiRequest(connection, `/months/${edit.month}/categories/${edit.categoryId}`, {
             method: "PATCH",
@@ -171,8 +268,7 @@ export function useBudgetSave(): UseBudgetSaveReturn {
 
           // BM-11: Optimistically update the cached month state so the grid
           // clears the amber "staged" styling immediately, without waiting for
-          // the invalidation refetch round trip. The server is still the source
-          // of truth — the parallel invalidation below will reconcile.
+          // the invalidation refetch round trip.
           queryClient.setQueryData(
             ["budget-month-data", connection.id, edit.month],
             (prev: LoadedMonthState | undefined) =>
@@ -188,7 +284,9 @@ export function useBudgetSave(): UseBudgetSaveReturn {
           });
         } catch (err) {
           const message =
-            err instanceof Error ? err.message : "Save failed";
+            err instanceof Error
+              ? err.message
+              : (err as { message?: string }).message ?? "Save failed";
           setSaveError(key, message);
           results.push({
             month: edit.month,
@@ -198,7 +296,8 @@ export function useBudgetSave(): UseBudgetSaveReturn {
           });
         }
 
-        setProgress({ completed: i + 1, total: validEntries.length });
+        completedCalls++;
+        setProgress({ completed: completedCalls, total: totalCalls });
       }
 
       // Clear only the keys that actually succeeded AND whose stored value

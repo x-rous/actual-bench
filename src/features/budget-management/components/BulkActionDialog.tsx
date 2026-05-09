@@ -17,7 +17,7 @@ type Props = {
   initialAction?: BulkActionType;
 };
 
-type Step = "action" | "preview" | "done";
+type Step = "action" | "preview";
 
 const ACTION_LABELS: Record<BulkActionType, string> = {
   "copy-previous-month": "Copy previous month",
@@ -25,9 +25,9 @@ const ACTION_LABELS: Record<BulkActionType, string> = {
   "set-to-zero":         "Set all to zero",
   "set-fixed":           "Set to fixed amount",
   "apply-percentage":    "Apply percentage change",
-  "avg-3-months":        "Set to 3 months average",
-  "avg-6-months":        "Set to 6 months average",
-  "avg-12-months":       "Set to yearly average",
+  "avg-3-months":        "Avg. 3-month budget",
+  "avg-6-months":        "Avg. 6-month budget",
+  "avg-12-months":       "Avg. 12-month budget",
 };
 
 /**
@@ -105,7 +105,7 @@ export function BulkActionDialog({
 
   const handleApply = () => {
     apply(previewRows);
-    setStep("done");
+    onClose();
   };
 
   return (
@@ -274,23 +274,6 @@ export function BulkActionDialog({
           </>
         )}
 
-        {step === "done" && (
-          <>
-            <h2 className="text-base font-semibold mb-3">Changes Staged</h2>
-            <p className="text-sm text-muted-foreground mb-4">
-              {previewRows.length} cell{previewRows.length !== 1 ? "s" : ""} staged as a single undo step. Use Ctrl+Z to reverse.
-            </p>
-            <div className="flex justify-end">
-              <button
-                type="button"
-                onClick={onClose}
-                className="px-3 py-1.5 text-sm rounded bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
-              >
-                Done
-              </button>
-            </div>
-          </>
-        )}
       </div>
     </div>
   );
