@@ -475,6 +475,7 @@ budget-bundle-<label>-<date>.zip
 - Entity counts shown in page headers
 - Help menu in the sidebar with links to the GitHub repository, issue tracker, and changelog
 - Top bar shows a compact version cluster beside the active connection with `API` and `Actual` version badges when available
+- **Dark mode toggle** in the sidebar footer: cycles System → Light → Dark; preference persists in `localStorage`; icon reflects the resolved appearance (Moon when OS is dark in System mode, Sun when OS is light)
 
 ---
 

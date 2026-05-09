@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import type { ComponentType } from "react";
+import { useTheme } from "next-themes";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
@@ -23,6 +24,9 @@ import {
   BookOpen,
   LayoutDashboard,
   Wallet,
+  Monitor,
+  Sun,
+  Moon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useConnectionStore } from "@/store/connection";
@@ -158,6 +162,16 @@ export function Sidebar() {
     return localStorage.getItem(LS_KEY) === "1";
   });
 
+  const { theme, resolvedTheme, setTheme } = useTheme();
+  const themeOrder = ["system", "light", "dark"] as const;
+  const themeLabels: Record<string, string> = { system: "System", light: "Light", dark: "Dark" };
+  // Icon reflects the resolved appearance (so system+dark OS shows Moon); label reflects the stored mode.
+  const ThemeIcon = resolvedTheme === "light" ? Sun : resolvedTheme === "dark" ? Moon : Monitor;
+  const cycleTheme = () => {
+    const idx = themeOrder.indexOf((theme ?? "system") as typeof themeOrder[number]);
+    setTheme(themeOrder[(idx + 1) % themeOrder.length]);
+  };
+
   function handleClearAll() {
     if (!window.confirm("Clear all connections and cached data? This cannot be undone.")) return;
     discardAll();
@@ -268,6 +282,18 @@ export function Sidebar() {
         >
           <Trash2 className="h-4 w-4 shrink-0" />
           {!collapsed && <span>Clear all data</span>}
+        </button>
+        <button
+          type="button"
+          onClick={cycleTheme}
+          title={`Theme: ${themeLabels[theme ?? "system"]} — click to cycle`}
+          className={cn(
+            "flex w-full items-center rounded-md px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-accent/50 hover:text-accent-foreground",
+            collapsed ? "justify-center" : "gap-2"
+          )}
+        >
+          <ThemeIcon className="h-4 w-4 shrink-0" />
+          {!collapsed && <span>{themeLabels[theme ?? "system"]}</span>}
         </button>
         <button
           type="button"

@@ -129,7 +129,7 @@ function GroupMonthAggregate({
     >
       {stagedChildCount > 0 && (
         <span
-          className="absolute top-1 left-1 h-1.5 w-1.5 rounded-full bg-amber-400"
+          className="absolute top-1 left-1 h-1.5 w-1.5 rounded-full bg-amber-400 dark:bg-amber-500"
           aria-hidden="true"
           title={`${stagedChildCount} staged change${stagedChildCount !== 1 ? "s" : ""} in this group for ${month}`}
         />

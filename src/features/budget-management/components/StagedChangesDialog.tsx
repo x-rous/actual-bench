@@ -60,7 +60,7 @@ export function StagedChangesDialog({ onClose }: { onClose: () => void }) {
         role="dialog"
         aria-modal="true"
         aria-label="Staged changes"
-        className="relative flex flex-col bg-background border-l border-border shadow-xl h-full w-[17rem] shrink-0"
+        className="relative flex flex-col bg-background border-l border-border shadow-xl h-full w-68 shrink-0"
       >
         {/* Header */}
         <div className="flex items-center justify-between px-3 shrink-0 h-[2.7rem] border-b border-border">
