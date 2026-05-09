@@ -21,7 +21,12 @@ export function useVersionCheckContext(): VersionCheckState {
 }
 
 function compareSemver(a: string, b: string): number {
-  const parse = (v: string) => v.replace(/^v/, "").split(".").map(Number);
+  const parse = (v: string): [number, number, number] => {
+    const core = v.replace(/^v/, "").split(/[-+]/)[0];
+    const parts = (core ?? "").split(".").slice(0, 3);
+    const [maj, min, pat] = [0, 1, 2].map((i) => Number(parts[i]) || 0);
+    return [maj, min, pat];
+  };
   const [aMaj, aMin, aPat] = parse(a);
   const [bMaj, bMin, bPat] = parse(b);
   return bMaj - aMaj || bMin - aMin || bPat - aPat;
