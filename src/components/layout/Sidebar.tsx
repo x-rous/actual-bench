@@ -27,11 +27,13 @@ import {
   Monitor,
   Sun,
   Moon,
+  ArrowUpCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useConnectionStore } from "@/store/connection";
 import { useSavedServersStore } from "@/store/savedServers";
 import { useStagedStore } from "@/store/staged";
+import { useVersionCheckContext } from "@/hooks/useVersionCheck";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -156,6 +158,7 @@ export function Sidebar() {
   const clearServers = useSavedServersStore((s) => s.clearServers);
   const discardAll = useStagedStore((s) => s.discardAll);
   const version = process.env.NEXT_PUBLIC_APP_VERSION;
+  const { updateAvailable, latestVersion } = useVersionCheckContext();
 
   const [collapsed, setCollapsed] = useState<boolean>(() => {
     if (typeof window === "undefined") return false;
@@ -236,9 +239,20 @@ export function Sidebar() {
         })}
 
         {!collapsed && version && (
-          <span className="mt-auto px-3 pt-4 text-xs text-muted-foreground/55">
-            v{version}
-          </span>
+          <div className="mt-auto px-3 pt-4 flex flex-col gap-1">
+            <span className="text-xs text-muted-foreground/55">v{version}</span>
+            {updateAvailable && latestVersion && (
+              <a
+                href="https://github.com/x-rous/actual-bench/releases"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-1 text-xs text-blue-500 hover:text-blue-600 dark:text-blue-400 dark:hover:text-blue-300"
+              >
+                <ArrowUpCircle className="h-3 w-3 shrink-0" />
+                v{latestVersion} available
+              </a>
+            )}
+          </div>
         )}
       </nav>
 
