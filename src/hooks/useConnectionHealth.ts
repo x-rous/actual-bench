@@ -26,20 +26,25 @@ export function useConnectionHealthContext(): ConnectionHealthState {
   return useContext(ConnectionHealthContext);
 }
 
-async function pingServer(baseUrl: string, apiKey: string): Promise<number> {
+async function pingServer(
+  baseUrl: string,
+  apiKey: string
+): Promise<{ latencyMs: number; ok: boolean }> {
   const start = performance.now();
-  const response = await fetch("/api/proxy", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      connection: { baseUrl, apiKey },
-      path: "/v1/actualhttpapiversion",
-      method: "GET",
+  const [result] = await Promise.allSettled([
+    fetch("/api/proxy", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        connection: { baseUrl, apiKey },
+        path: "/v1/actualhttpapiversion",
+        method: "GET",
+      }),
     }),
-  });
+  ]);
   const latencyMs = performance.now() - start;
-  if (!response.ok) throw new Error(`HTTP ${response.status}`);
-  return latencyMs;
+  if (result.status === "rejected") return { latencyMs, ok: false };
+  return { latencyMs, ok: result.value.ok };
 }
 
 export function useConnectionHealth(): ConnectionHealthState {
@@ -55,22 +60,23 @@ export function useConnectionHealth(): ConnectionHealthState {
     isChecking.current = true;
     setStatus("checking");
 
-    try {
-      const ms = await pingServer(baseUrl, apiKey);
+    const { latencyMs: ms, ok } = await pingServer(baseUrl, apiKey);
+
+    if (ok) {
       consecutiveFailures.current = 0;
       setShowBanner(false);
       setLatencyMs(ms);
       setStatus(ms > DEGRADED_THRESHOLD_MS ? "degraded" : "healthy");
-    } catch {
+    } else {
       consecutiveFailures.current += 1;
       setLatencyMs(null);
       setStatus("offline");
       if (consecutiveFailures.current >= OFFLINE_BANNER_THRESHOLD) {
         setShowBanner(true);
       }
-    } finally {
-      isChecking.current = false;
     }
+
+    isChecking.current = false;
   }, []);
 
   useEffect(() => {
