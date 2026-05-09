@@ -1,16 +1,18 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { TopBar } from "./TopBar";
 import { Sidebar } from "./Sidebar";
 import { DraftPanel } from "./DraftPanel";
 import { BudgetDraftPanel } from "@/features/budget-management/components/BudgetDraftPanel";
+import { ConnectionOfflineBanner } from "./ConnectionOfflineBanner";
 import { useConnectionStore, selectActiveInstance } from "@/store/connection";
 import { usePreloadEntities } from "@/hooks/useAllEntities";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { useIsHydrated } from "@/hooks/useIsHydrated";
 import { GlobalSearchModal } from "@/features/global-search/components/GlobalSearchModal";
+import { useConnectionHealth, ConnectionHealthContext } from "@/hooks/useConnectionHealth";
 
 /**
  * The four-panel app shell:
@@ -38,12 +40,27 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   useKeyboardShortcuts();
 
   const hydrated = useIsHydrated();
+  const health = useConnectionHealth();
 
   useEffect(() => {
     if (hydrated && !activeInstance) {
       router.replace("/connect");
     }
   }, [hydrated, activeInstance, router]);
+
+  // Clear persisted filter state when the active connection changes so that
+  // stale entity IDs stored in filter values don't carry over to a new budget.
+  const prevConnectionIdRef = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    const currentId = activeInstance?.id;
+    if (prevConnectionIdRef.current !== undefined && prevConnectionIdRef.current !== currentId) {
+      for (let i = sessionStorage.length - 1; i >= 0; i--) {
+        const k = sessionStorage.key(i);
+        if (k?.startsWith("filters:")) sessionStorage.removeItem(k);
+      }
+    }
+    prevConnectionIdRef.current = currentId;
+  }, [activeInstance?.id]);
 
   if (!hydrated) {
     return null;
@@ -56,16 +73,19 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const isBudgetPage = pathname?.startsWith("/budget-management") ?? false;
 
   return (
-    <div className="flex h-full flex-col">
-      <TopBar />
-      <GlobalSearchModal />
-      <div className="flex min-h-0 flex-1 overflow-hidden">
-        <Sidebar />
-        <main className="flex min-h-0 flex-1 flex-col overflow-hidden">
-          {children}
-        </main>
-        {isBudgetPage ? <BudgetDraftPanel /> : <DraftPanel />}
+    <ConnectionHealthContext.Provider value={health}>
+      <div className="flex h-full flex-col">
+        <TopBar />
+        <ConnectionOfflineBanner />
+        <GlobalSearchModal />
+        <div className="flex min-h-0 flex-1 overflow-hidden">
+          <Sidebar />
+          <main className="flex min-h-0 flex-1 flex-col overflow-hidden">
+            {children}
+          </main>
+          {isBudgetPage ? <BudgetDraftPanel /> : <DraftPanel />}
+        </div>
       </div>
-    </div>
+    </ConnectionHealthContext.Provider>
   );
 }

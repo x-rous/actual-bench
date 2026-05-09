@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useMemo } from "react";
+import { usePersistedFilters } from "@/hooks/usePersistedFilters";
 import { useRouter } from "next/navigation";
 import { useHighlight } from "@/hooks/useHighlight";
 import { useTableSelection } from "@/hooks/useTableSelection";
@@ -71,9 +72,15 @@ export function RulesTable({ onEdit, onMerge, payeeId, categoryId, accountId }: 
   const router        = useRouter();
   const highlightedId = useHighlight();
 
-  const [stageFilter, setStageFilter] = useState<StageFilter>("all");
-  const [actionTypeFilter, setActionTypeFilter] = useState<ActionTypeFilter>("all");
-  const [search, setSearch] = useState("");
+  const [filters, setFilters, clearFilters] = usePersistedFilters("filters:rules", {
+    search: "",
+    stageFilter: "all" as StageFilter,
+    actionTypeFilter: "all" as ActionTypeFilter,
+  });
+  const { search, stageFilter, actionTypeFilter } = filters;
+  const setSearch          = (v: string)           => setFilters((f) => ({ ...f, search: v }));
+  const setStageFilter     = (v: StageFilter)      => setFilters((f) => ({ ...f, stageFilter: v }));
+  const setActionTypeFilter = (v: ActionTypeFilter) => setFilters((f) => ({ ...f, actionTypeFilter: v }));
   const { selectedIds, toggleSelect, toggleSelectAll: _toggleSelectAll, clearSelection } = useTableSelection();
 
   const entityMaps = useMemo<EntityMaps>(
@@ -237,9 +244,7 @@ export function RulesTable({ onEdit, onMerge, payeeId, categoryId, accountId }: 
               <button
                 className="text-xs underline hover:text-foreground"
                 onClick={() => {
-                  setSearch("");
-                  setStageFilter("all");
-                  setActionTypeFilter("all");
+                  clearFilters();
                   if (payeeId || categoryId || accountId) router.push("/rules");
                 }}
               >

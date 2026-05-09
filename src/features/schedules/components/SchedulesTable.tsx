@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useMemo } from "react";
+import { usePersistedFilters } from "@/hooks/usePersistedFilters";
 import { useHighlight } from "@/hooks/useHighlight";
 import { useTableSelection } from "@/hooks/useTableSelection";
 import { Pencil, Trash2, RotateCcw, Copy, Braces, AlertTriangle, Info, RefreshCw, Check } from "lucide-react";
@@ -76,11 +77,19 @@ export function SchedulesTable({
 
   const highlightedId = useHighlight();
 
-  const [search, setSearch]                       = useState("");
-  const [autoAddFilter, setAutoAddFilter]         = useState<AutoAddFilter>("all");
-  const [frequencyFilter, setFrequencyFilter]     = useState<FrequencyFilter>("all");
-  const [payeeFilter, setPayeeFilter]             = useState("");
-  const [accountFilter, setAccountFilter]         = useState("");
+  const [filters, setFilters, clearFilters] = usePersistedFilters("filters:schedules", {
+    search: "",
+    autoAddFilter: "all" as AutoAddFilter,
+    frequencyFilter: "all" as FrequencyFilter,
+    payeeFilter: "",
+    accountFilter: "",
+  });
+  const { search, autoAddFilter, frequencyFilter, payeeFilter, accountFilter } = filters;
+  const setSearch          = (v: string)          => setFilters((f) => ({ ...f, search: v }));
+  const setAutoAddFilter   = (v: AutoAddFilter)   => setFilters((f) => ({ ...f, autoAddFilter: v }));
+  const setFrequencyFilter = (v: FrequencyFilter) => setFilters((f) => ({ ...f, frequencyFilter: v }));
+  const setPayeeFilter     = (v: string)          => setFilters((f) => ({ ...f, payeeFilter: v }));
+  const setAccountFilter   = (v: string)          => setFilters((f) => ({ ...f, accountFilter: v }));
 
   const { selectedIds, toggleSelect, toggleSelectAll: _toggleSelectAll, clearSelection } =
     useTableSelection();
@@ -208,7 +217,7 @@ export function SchedulesTable({
             {(search || autoAddFilter !== "all" || frequencyFilter !== "all" || payeeFilter || accountFilter) && (
               <button
                 className="text-xs underline hover:text-foreground"
-                onClick={() => { setSearch(""); setAutoAddFilter("all"); setFrequencyFilter("all"); setPayeeFilter(""); setAccountFilter(""); }}
+                onClick={clearFilters}
               >
                 Clear filters
               </button>

@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useDeferredValue, useMemo, useState, startTransition } from "react";
+import { usePersistedFilters } from "@/hooks/usePersistedFilters";
 import { useRouter } from "next/navigation";
 import { useHighlight } from "@/hooks/useHighlight";
 import { useEditableGrid } from "@/hooks/useEditableGrid";
@@ -67,10 +68,17 @@ export function CategoriesTable({
   onInspectTargetChange: (target: CategoryInspectTarget | null) => void;
 }) {
   // ── Filter / sort state ──────────────────────────────────────────────────────
-  const [search, setSearch] = useState("");
-  const [visibilityFilter, setVisibilityFilter] = useState<VisibilityFilter>("all");
-  const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
-  const [rulesFilter, setRulesFilter] = useState<RulesFilter>("all");
+  const [filters, setFilters, clearFilters] = usePersistedFilters("filters:categories", {
+    search: "",
+    visibilityFilter: "all" as VisibilityFilter,
+    typeFilter: "all" as TypeFilter,
+    rulesFilter: "all" as RulesFilter,
+  });
+  const { search, visibilityFilter, typeFilter, rulesFilter } = filters;
+  const setSearch          = (v: string)           => setFilters((f) => ({ ...f, search: v }));
+  const setVisibilityFilter = (v: VisibilityFilter) => setFilters((f) => ({ ...f, visibilityFilter: v }));
+  const setTypeFilter      = (v: TypeFilter)        => setFilters((f) => ({ ...f, typeFilter: v }));
+  const setRulesFilter     = (v: RulesFilter)       => setFilters((f) => ({ ...f, rulesFilter: v }));
   const [sortNameDir, setSortNameDir] = useState<SortDir | null>(null);
   const deferredSearch = useDeferredValue(search);
 
@@ -344,6 +352,10 @@ export function CategoriesTable({
 
   function handleRulesFilterChange(value: RulesFilter) {
     startTransition(() => setRulesFilter(value));
+  }
+
+  function handleClearFilters() {
+    startTransition(() => clearFilters());
   }
 
   function handleToggleCollapseAll() {
@@ -673,7 +685,7 @@ export function CategoriesTable({
                       <td colSpan={8} className="px-4 py-3 text-xs text-muted-foreground">
                         <span>No income groups{search || visibilityFilter !== "all" || rulesFilter !== "all" ? " matching the current filters" : ""}.</span>
                         {(search || visibilityFilter !== "all" || rulesFilter !== "all") && (
-                          <button className="ml-2 underline hover:text-foreground" onClick={() => { setSearch(""); setVisibilityFilter("all"); setRulesFilter("all"); }}>
+                          <button className="ml-2 underline hover:text-foreground" onClick={handleClearFilters}>
                             Clear filters
                           </button>
                         )}
@@ -729,7 +741,7 @@ export function CategoriesTable({
                       <td colSpan={8} className="px-4 py-3 text-xs text-muted-foreground">
                         <span>No expense groups{search || visibilityFilter !== "all" || rulesFilter !== "all" ? " matching the current filters" : ""}.</span>
                         {(search || visibilityFilter !== "all" || rulesFilter !== "all") && (
-                          <button className="ml-2 underline hover:text-foreground" onClick={() => { setSearch(""); setVisibilityFilter("all"); setRulesFilter("all"); }}>
+                          <button className="ml-2 underline hover:text-foreground" onClick={handleClearFilters}>
                             Clear filters
                           </button>
                         )}

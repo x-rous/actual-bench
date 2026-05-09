@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useMemo } from "react";
+import { usePersistedFilters } from "@/hooks/usePersistedFilters";
 import { ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
 import { toast } from "sonner";
 import type { ConfirmState } from "@/components/ui/confirm-dialog";
@@ -42,8 +43,13 @@ export function TagsTable({
   const pushUndo       = useStagedStore((s) => s.pushUndo);
 
   // ── Filter + bulk-add state ───────────────────────────────────────────────
-  const [search, setSearch]           = useState("");
-  const [colorFilter, setColorFilter] = useState<ColorFilter>("all");
+  const [filters, setFilters] = usePersistedFilters("filters:tags", {
+    search: "",
+    colorFilter: "all" as ColorFilter,
+  });
+  const { search, colorFilter } = filters;
+  const setSearch      = (v: string)      => setFilters((f) => ({ ...f, search: v }));
+  const setColorFilter = (v: ColorFilter) => setFilters((f) => ({ ...f, colorFilter: v }));
   const [sortNameDir, setSortNameDir] = useState<"asc" | "desc" | null>(null);
   const [bulkCount, setBulkCount]     = useState(5);
 

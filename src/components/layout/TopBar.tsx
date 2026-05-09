@@ -29,6 +29,8 @@ import {
   selectActiveInstance,
 } from "@/store/connection";
 import { useGlobalSearchStore } from "@/features/global-search/store/useGlobalSearchStore";
+import { useConnectionHealthContext } from "@/hooks/useConnectionHealth";
+import { ConnectionHealthDot } from "./ConnectionHealthDot";
 import { useSavedServersStore } from "@/store/savedServers";
 import {
   useStagedStore,
@@ -92,6 +94,9 @@ export function TopBar() {
   const openSearch = useGlobalSearchStore((s) => s.open);
   const searchShortcutLabel = "Ctrl+k";
 
+  const { status: healthStatus } = useConnectionHealthContext();
+  const isOffline = healthStatus === "offline";
+
   const activeInstance = useConnectionStore(selectActiveInstance);
   const instances = useConnectionStore((s) => s.instances);
   const setActive = useConnectionStore((s) => s.setActiveInstance);
@@ -126,7 +131,7 @@ export function TopBar() {
   const canRedo = isBudgetPage ? budgetCanRedo : stagedCanRedo;
   const isSaving = isBudgetPage ? (isBudgetSaving || budgetSaveEdits !== null) : isEntitySaving;
   const saveDisabled =
-    !hasChanges || isSaving || (isBudgetPage && budgetSaveReviewEdits !== null);
+    !hasChanges || isSaving || isOffline || (isBudgetPage && budgetSaveReviewEdits !== null);
 
   function handleDiscardAll() {
     if (isBudgetPage) {
@@ -252,6 +257,7 @@ export function TopBar() {
           {activeInstance && (
             <DropdownMenu>
               <DropdownMenuTrigger className="inline-flex h-7 items-center gap-1 rounded-md px-2 text-xs font-medium transition-colors hover:bg-accent hover:text-accent-foreground">
+                <ConnectionHealthDot />
                 <span className="max-w-40 truncate text-muted-foreground">
                   {activeInstance.label}
                 </span>
@@ -393,6 +399,7 @@ export function TopBar() {
             )}
             disabled={saveDisabled}
             onClick={handleSave}
+            title={isOffline ? "Cannot save — server is unreachable" : undefined}
           >
             <Save className="mr-1 h-3.5 w-3.5" />
             {isSaving ? "Saving…" : "Save"}

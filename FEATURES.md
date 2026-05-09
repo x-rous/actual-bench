@@ -466,6 +466,7 @@ budget-bundle-<label>-<date>.zip
 - Bulk-add: add multiple empty rows at once with a configurable count
 - Global undo/redo keyboard shortcuts: Ctrl/Cmd+Z to undo, Ctrl/Cmd+Shift+Z or Ctrl+Y to redo; suppressed inside text inputs so native browser undo is not interrupted
 - Filter bars stay pinned to the top of each table when scrolling long lists (Payees, Accounts, Categories, Tags)
+- **Filter state persistence**: search text and active filter pills on all six entity pages (Accounts, Payees, Categories, Tags, Schedules, Rules) are persisted to `sessionStorage` and restored on navigation. Filters reset to defaults when the active connection changes. Inline "Clear filters" links appear in the empty state when filters are active.
 
 ## Navigation & Layout
 
@@ -476,6 +477,7 @@ budget-bundle-<label>-<date>.zip
 - Help menu in the sidebar with links to the GitHub repository, issue tracker, and changelog
 - Top bar shows a compact version cluster beside the active connection with `API` and `Actual` version badges when available
 - **Dark mode toggle** in the sidebar footer: cycles System → Light → Dark; preference persists in `localStorage`; icon reflects the resolved appearance (Moon when OS is dark in System mode, Sun when OS is light)
+- **Connection health indicator**: a coloured dot inside the connection dropdown trigger in the top bar actively polls `GET /actualhttpapiversion` every 30 seconds. Green = healthy (with round-trip latency in the tooltip), pulsing amber = checking, solid amber = degraded (>3 s response), red = offline. When the server is unreachable for two consecutive checks, a non-blocking red strip appears below the top bar and the Save button is disabled with an explanatory tooltip. The banner and disabled state clear automatically as soon as a check succeeds. Polling pauses when the browser tab is hidden and resumes immediately on tab focus.
 
 ---
 
