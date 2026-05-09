@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect, useId } from "react";
+import { useState, useRef, useEffect, useId, useCallback } from "react";
 import { formatCurrency } from "../lib/format";
 
 export type CategoryWithBalance = {
@@ -34,6 +34,7 @@ export function CategoryBalanceCombobox({
   const listRef = useRef<HTMLUListElement>(null);
   const generatedId = useId();
   const inputId = id ?? generatedId;
+  const listboxId = `${inputId}-listbox`;
 
   const selectedCat = categories.find((c) => c.id === value);
 
@@ -56,28 +57,25 @@ export function CategoryBalanceCombobox({
   // Flat selectable list for keyboard navigation
   const flatSelectable = filtered;
 
-  useEffect(() => {
+  // Reset query and active index at every close site instead of in an effect
+  // body, which avoids the react-hooks/set-state-in-effect lint rule.
+  const closeAndReset = useCallback(() => {
+    setOpen(false);
+    setQuery("");
     setActiveIndex(-1);
-  }, [query]);
-
-  useEffect(() => {
-    if (!open) {
-      setQuery("");
-      setActiveIndex(-1);
-    }
-  }, [open]);
+  }, []);
 
   // Close on outside click
   useEffect(() => {
     if (!open) return;
     const handler = (e: MouseEvent) => {
       if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
-        setOpen(false);
+        closeAndReset();
       }
     };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
-  }, [open]);
+  }, [open, closeAndReset]);
 
   const handleInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (!open) {
@@ -98,10 +96,10 @@ export function CategoryBalanceCombobox({
       const active = flatSelectable[activeIndex];
       if (active) {
         onChange(active.id);
-        setOpen(false);
+        closeAndReset();
       }
     } else if (e.key === "Escape") {
-      setOpen(false);
+      closeAndReset();
     }
   };
 
@@ -115,6 +113,7 @@ export function CategoryBalanceCombobox({
         type="text"
         role="combobox"
         aria-expanded={open}
+        aria-controls={listboxId}
         aria-autocomplete="list"
         autoComplete="off"
         value={displayValue}
@@ -124,6 +123,7 @@ export function CategoryBalanceCombobox({
         onClick={() => setOpen(true)}
         onChange={(e) => {
           setQuery(e.target.value);
+          setActiveIndex(-1);
           if (!open) setOpen(true);
         }}
         onKeyDown={handleInputKeyDown}
@@ -136,7 +136,7 @@ export function CategoryBalanceCombobox({
               No matching categories
             </div>
           ) : (
-            <ul ref={listRef} role="listbox">
+            <ul ref={listRef} role="listbox" id={listboxId}>
               {groupOrder.map((groupId) => {
                 const cats = groupMap.get(groupId) ?? [];
                 const groupName = cats[0]?.groupName ?? groupId;
@@ -168,7 +168,7 @@ export function CategoryBalanceCombobox({
                             onMouseDown={(e) => {
                               e.preventDefault();
                               onChange(cat.id);
-                              setOpen(false);
+                              closeAndReset();
                             }}
                           >
                             <span className="truncate">{cat.name}</span>
