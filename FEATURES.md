@@ -255,13 +255,16 @@ Bare-letter shortcuts (`V`, `F`, `H`, `E`, `[`, `]`) are scoped so they never fi
 
 ### Right-Click Context Menu
 - Right-clicking any category budget cell opens a compact context menu with two sections:
-  - **Cell actions**: Enable / Disable Rollover (carryover); Transfer Budget (envelope mode only, opens the transfer dialog)
-  - **Set Budget**: inline bulk actions — Copy previous month, Copy specific month…, Set to zero, Set to fixed amount…, Apply % change…, Set to 3 months average, Set to 6 months average, Set to yearly average
-- No-input actions (copy previous, set to zero, the three averages) execute immediately and are staged as one undo step; input-required actions (copy specific month, set fixed, apply %) open a dialog
-- Average actions look back N months before the cell's month using TanStack Query cache; pre-window months are included if previously loaded
+  - **Cell actions** (mode-aware):
+    - **Tracking mode only**: Enable / Disable Rollover (carryover) — applies from the right-clicked month forward
+    - **Envelope mode only**: Cover Overspending (when the category balance is negative) or Transfer to Another Category (when positive) — opens the staged transfer dialog
+  - **Set Budget**: inline bulk actions — Copy previous month, Copy specific month…, Set to zero, Set to fixed amount…, Apply % change…, Avg. 3-month budget, Avg. 6-month budget, Avg. 12-month budget
+- No-input actions (copy previous, set to zero, the three averages) execute immediately and are staged as one undo step; input-required actions (copy specific month, set fixed, apply %) open a two-step dialog (parameters → preview)
+- Average actions use the **budgeted** amount from each prior month (not actual spending); they look back N months using TanStack Query cache — pre-window months are included if previously loaded
 - Selecting a new cell or group dismisses the context menu
 
 ### Budget Details Panel (right side)
+- **Staged changes badge**: when one or more edits are pending, an amber "N changes" / "1 change" badge appears in the panel header next to "Budget Details". Clicking it opens a panel-anchored overlay listing all staged changes grouped by month — transfer pairs appear as a single linked row; standalone edits show category name, month, and signed delta. The badge disappears automatically when all changes are saved or discarded. Category names are resolved from the TanStack Query cache; no new network requests are made when opening the overlay.
 - **Period Summary** (default, when no category or group is selected): shows the active 12-month range, budget mode, coverage split between actualized/current/future months, one mode-aware primary status, and one compact trend. Tracking mode separates Actuals to date, Budget to date, and Full 12-month plan; future months are muted as plan-only and never counted as zero-actual savings. Envelope mode shows current/ending To Budget or Overbudget status, end-of-visible-plan To Budget when future months exist, and period values such as Assigned / Budgeted, Spent to date, Income received to date, and Hold for next month.
 - **Category or group label selected**: the panel switches to the selected row across the visible 12-month period. Tracking mode uses planning language (over/under plan, actual vs budget to date, full-period budget, averages to date) and does not use Balance as the primary group/category concept. If rollover/carryover applies, Tracking adds Current, Ending, or Planned Rollover Balance without summing balances across months. Tracking also shows a **Monthly average** (full 12-month budgeted ÷ 12) beneath the full-period budget figure. Envelope mode uses allocation language (Current Balance, Planned Balance, Assigned / Budgeted, Spent to date, Carryover where available) and never sums balances across months. If a note exists for the selected category or group, a **Note** section is shown at the bottom of the panel.
 - **Category or group month cell selected**: the panel switches to compact selected-month details. Tracking shows month status, budgeted, actuals, variance, rollover balance when applicable, and previous month budget when available; future months are plan-only and do not show fake under-plan results. Envelope shows Current Balance for actualized/current months, Planned Balance for future months, selected-month assigned/spent/balance, and carryover where available. If a note exists for the selected category × month combination, a **Note** section is shown at the bottom of the panel.
@@ -273,7 +276,7 @@ Bare-letter shortcuts (`V`, `F`, `H`, `E`, `[`, `]`) are scoped so they never fi
 
 ### Save Flow
 - Clicking Save first opens a compact review summary grouped by month with total change count, affected month count, and net budget delta; users can skip this review on future saves
-- Confirming the review opens a non-dismissable progress dialog that sends one `PATCH` per cell sequentially (never in parallel) to avoid server race conditions
+- Confirming the review opens a non-dismissable progress dialog that processes edits sequentially (never in parallel) to avoid server race conditions: complete transfer pairs are sent first via the atomic `POST /months/{month}/categorytransfers` endpoint (one request per pair); remaining standalone edits and any incomplete transfer legs are sent as individual `PATCH /months/{month}/categories/{id}` requests
   - In-progress state: "Saving budget changes — N of M cells saved…" with a live progress bar
   - All-success state: cell count and affected months; dialog auto-closes after 3 seconds (manual close also available)
   - Partial or full failure state: amber header with a scrollable list of failed cells (month / category ID / error message); "Retry Failed" button re-reads only the still-failed keys from the store and re-sends them
@@ -296,8 +299,15 @@ Bare-letter shortcuts (`V`, `F`, `H`, `E`, `[`, `]`) are scoped so they never fi
 
 ### Envelope-Mode Immediate Actions
 - **Hold toggle**: each "To Budget" cell in the summary section has a hold toggle button (arrow icon, left of the amount). Clicking it when no hold is active opens the "Next Month Hold for YYYY-MM" dialog to set an amount; the dialog closes immediately on save. Clicking it when a hold is active shows a confirmation dialog ("Free the hold for YYYY-MM?") before clearing. Both actions are immediate and bypass the staged save panel
-- **Transfer**: right-click any category cell → Transfer Budget → opens the Category Transfer dialog; moves budget between non-income categories immediately
-- Hold and Transfer are only available in envelope mode; they do not appear in tracking mode
+- Hold is only available in envelope mode; it does not appear in tracking mode
+
+### Envelope-Mode Staged Transfers
+- Right-click any spending category cell → **Cover Overspending** (negative balance) or **Transfer to Another Category** (positive balance) → opens the staged transfer dialog
+- **Cover Overspending**: picks the destination automatically (the right-clicked, overspent category); user selects a source from a grouped category combobox filtered to categories with available balance, and enters the amount (pre-filled to the overspending amount, capped at the source's available balance)
+- **Transfer to Another Category**: the right-clicked category is the source; user selects a destination from the full category combobox and enters an amount (pre-filled to the source's full balance, capped there)
+- Both legs are staged together as a single undo step under a shared `transferGroupId`; the draft panel renders the pair as one linked row ("Transfer  From → To  +$amount")
+- The effective balance shown in the combobox is staged-aware — if a prior edit already affects a category's budgeted amount, the displayed balance reflects that
+- On save, complete transfer pairs are sent via the atomic `POST /months/{month}/categorytransfers` endpoint; standalone edits and incomplete legs use the existing `PATCH` path. This prevents "onFinish inside spreadsheet transaction" errors that occur when two PATCHes for the same transfer race the server's internal recalculation
 
 ### Navigation Safety
 - Browser close / refresh prompts confirmation when staged changes exist (`beforeunload`)
@@ -305,7 +315,7 @@ Bare-letter shortcuts (`V`, `F`, `H`, `E`, `[`, `]`) are scoped so they never fi
 - Entry guard: if unsaved entity changes exist on another page, the workspace shows a blocking screen with a "Discard changes and continue" option rather than silently mixing two edit stores
 
 ### v1 Limitations
-- Carryover is read-only in this release; shown in the context panel but not editable
+- Carryover is read-only in this release; shown in the context panel but not editable via the grid (toggle via the right-click menu in tracking mode)
 - Category-to-pool transfers (omitting source or destination category) are not supported in v1
 - No virtualization; very large category lists may scroll slowly in the grid
 
