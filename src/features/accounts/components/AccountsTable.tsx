@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useMemo, useCallback } from "react";
+import { usePersistedFilters } from "@/hooks/usePersistedFilters";
 import { useRouter } from "next/navigation";
 import { useHighlight } from "@/hooks/useHighlight";
 import { useEditableGrid } from "@/hooks/useEditableGrid";
@@ -52,10 +53,17 @@ export function AccountsTable({
   const router = useRouter();
 
   // ── Filter / sort state ──────────────────────────────────────────────────────
-  const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
-  const [budgetFilter, setBudgetFilter] = useState<BudgetFilter>("all");
-  const [rulesFilter, setRulesFilter] = useState<RulesFilter>("all");
+  const [filters, setFilters, clearFilters] = usePersistedFilters("filters:accounts", {
+    search: "",
+    statusFilter: "all" as StatusFilter,
+    budgetFilter: "all" as BudgetFilter,
+    rulesFilter: "all" as RulesFilter,
+  });
+  const { search, statusFilter, budgetFilter, rulesFilter } = filters;
+  const setSearch       = (v: string)       => setFilters((f) => ({ ...f, search: v }));
+  const setStatusFilter = (v: StatusFilter) => setFilters((f) => ({ ...f, statusFilter: v }));
+  const setBudgetFilter = (v: BudgetFilter) => setFilters((f) => ({ ...f, budgetFilter: v }));
+  const setRulesFilter  = (v: RulesFilter)  => setFilters((f) => ({ ...f, rulesFilter: v }));
   const [sortCol, setSortCol] = useState<SortCol | null>(null);
   const [sortDir, setSortDir] = useState<SortDir>("asc");
 
@@ -397,7 +405,7 @@ export function AccountsTable({
             {(search || statusFilter !== "all" || budgetFilter !== "all" || rulesFilter !== "all") && (
               <button
                 className="text-xs underline hover:text-foreground"
-                onClick={() => { setSearch(""); setStatusFilter("all"); setBudgetFilter("all"); setRulesFilter("all"); }}
+                onClick={clearFilters}
               >
                 Clear filters
               </button>

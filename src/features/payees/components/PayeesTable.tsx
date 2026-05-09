@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useMemo } from "react";
+import { usePersistedFilters } from "@/hooks/usePersistedFilters";
 import { useRouter } from "next/navigation";
 import { useHighlight } from "@/hooks/useHighlight";
 import { useEditableGrid } from "@/hooks/useEditableGrid";
@@ -50,9 +51,15 @@ export function PayeesTable({
   onMergeDialogChange: (state: PayeeMergeState | null) => void;
 }) {
   // ── Filter / sort state ──────────────────────────────────────────────────────
-  const [search, setSearch] = useState("");
-  const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
-  const [rulesFilter, setRulesFilter] = useState<RulesFilter>("all");
+  const [filters, setFilters, clearFilters] = usePersistedFilters("filters:payees", {
+    search: "",
+    typeFilter: "all" as TypeFilter,
+    rulesFilter: "all" as RulesFilter,
+  });
+  const { search, typeFilter, rulesFilter } = filters;
+  const setSearch      = (v: string)      => setFilters((f) => ({ ...f, search: v }));
+  const setTypeFilter  = (v: TypeFilter)  => setFilters((f) => ({ ...f, typeFilter: v }));
+  const setRulesFilter = (v: RulesFilter) => setFilters((f) => ({ ...f, rulesFilter: v }));
   const [sortCol, setSortCol] = useState<SortCol | null>(null);
   const [sortDir, setSortDir] = useState<SortDir>("asc");
 
@@ -368,7 +375,7 @@ export function PayeesTable({
             {(search || typeFilter !== "all" || rulesFilter !== "all") && (
               <button
                 className="text-xs underline hover:text-foreground"
-                onClick={() => { setSearch(""); setTypeFilter("all"); setRulesFilter("all"); }}
+                onClick={clearFilters}
               >
                 Clear filters
               </button>
