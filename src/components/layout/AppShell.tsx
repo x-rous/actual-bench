@@ -7,12 +7,14 @@ import { Sidebar } from "./Sidebar";
 import { DraftPanel } from "./DraftPanel";
 import { BudgetDraftPanel } from "@/features/budget-management/components/BudgetDraftPanel";
 import { ConnectionOfflineBanner } from "./ConnectionOfflineBanner";
+import { NewVersionBanner } from "./NewVersionBanner";
 import { useConnectionStore, selectActiveInstance } from "@/store/connection";
 import { usePreloadEntities } from "@/hooks/useAllEntities";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { useIsHydrated } from "@/hooks/useIsHydrated";
 import { GlobalSearchModal } from "@/features/global-search/components/GlobalSearchModal";
 import { useConnectionHealth, ConnectionHealthContext } from "@/hooks/useConnectionHealth";
+import { useVersionCheck, VersionCheckContext } from "@/hooks/useVersionCheck";
 
 /**
  * The four-panel app shell:
@@ -41,6 +43,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   const hydrated = useIsHydrated();
   const health = useConnectionHealth();
+  const versionCheck = useVersionCheck();
 
   useEffect(() => {
     if (hydrated && !activeInstance) {
@@ -74,9 +77,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <ConnectionHealthContext.Provider value={health}>
+    <VersionCheckContext.Provider value={versionCheck}>
       <div className="flex h-full flex-col">
         <TopBar />
         <ConnectionOfflineBanner />
+        <NewVersionBanner />
         <GlobalSearchModal />
         <div className="flex min-h-0 flex-1 overflow-hidden">
           <Sidebar />
@@ -86,6 +91,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           {isBudgetPage ? <BudgetDraftPanel /> : <DraftPanel />}
         </div>
       </div>
+    </VersionCheckContext.Provider>
     </ConnectionHealthContext.Provider>
   );
 }
