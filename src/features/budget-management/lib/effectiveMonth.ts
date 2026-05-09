@@ -41,6 +41,18 @@ export type ComputeEffectiveMonthStateInput = {
  *     Updates category, group, and summary totals. Tracking-mode hidden
  *     categories are excluded from the summary updates.
  *
+ *   Layer 3 — Per-category balance cascade:
+ *     Envelope mode: all spending categories — the server always chains
+ *       balance(M) = budgeted(M) + actuals(M) + balance(M−1), so a staged
+ *       edit in any prior month shifts the effective balance of every later
+ *       month by the same cumulative delta.
+ *     Tracking mode: only categories with carryover === true.
+ *     cascadeDelta(M, C) = Σ (nextBudgeted − previousBudgeted) for all
+ *       staged edits for C in months < M.
+ *     Updates category.balance, group.balance, summary.totalBalance.
+ *     summary.toBudget is NOT touched here — the scalar priorDelta cascade
+ *     above already adjusts it correctly.
+ *
  * Returns the unmodified `serverState` when no layer changes anything (cheap
  * short-circuit) or `undefined` when no server state was provided.
  */
@@ -71,7 +83,25 @@ export function computeEffectiveMonthState(
     priorDelta += edit.nextBudgeted - edit.previousBudgeted;
   }
 
-  if (!incomeBudgetForMonth && editEntries.length === 0 && priorDelta === 0) {
+  // ── Per-category cascade: cumulative deltas from prior-month staged edits ──
+  // Envelope mode: all spending categories (server always chains balance forward).
+  // Tracking mode: only categories with carryover === true.
+  const priorCatDeltas = new Map<string, number>();
+  for (const [key, edit] of Object.entries(allEdits)) {
+    const editMonth = key.split(":")[0];
+    if (!editMonth || editMonth >= month) continue;
+    const catId = key.slice(editMonth.length + 1);
+    const cat = serverState.categoriesById[catId];
+    if (!cat) continue;
+    if (isTracking && !cat.carryover) continue;
+    if (cat.isIncome) continue;
+    const prev = priorCatDeltas.get(catId) ?? 0;
+    priorCatDeltas.set(catId, prev + (edit.nextBudgeted - edit.previousBudgeted));
+  }
+
+  const hasCatCascade = priorCatDeltas.size > 0;
+
+  if (!incomeBudgetForMonth && editEntries.length === 0 && priorDelta === 0 && !hasCatCascade) {
     return serverState;
   }
 
@@ -158,6 +188,40 @@ export function computeEffectiveMonthState(
       summary.totalBudgeted -= delta;
       summary.totalBalance += delta;
       summary.toBudget -= delta;
+    }
+  }
+
+  // ── Layer 3: Per-category balance cascade ──────────────────────────────────
+  for (const [catId, cascadeDelta] of priorCatDeltas) {
+    if (cascadeDelta === 0) continue;
+
+    const currentCat = categoriesById[catId] ?? serverState.categoriesById[catId];
+    if (!currentCat) continue;
+
+    categoriesById[catId] = {
+      ...currentCat,
+      balance: currentCat.balance + cascadeDelta,
+    };
+
+    const groupId = currentCat.groupId;
+    const currentGroup = groupsById[groupId] ?? serverState.groupsById[groupId];
+
+    if (currentGroup) {
+      const effectivelyHidden = currentCat.hidden || currentGroup.hidden;
+      // Mirror Layer 2's skip rule: hidden cat inside a visible group must not
+      // pollute the visible group's aggregate in Tracking mode.
+      const skipGroupUpdate = isTracking && effectivelyHidden && !currentGroup.hidden;
+
+      if (!skipGroupUpdate) {
+        groupsById[groupId] = {
+          ...currentGroup,
+          balance: currentGroup.balance + cascadeDelta,
+        };
+      }
+
+      if (!(isTracking && effectivelyHidden)) {
+        summary.totalBalance += cascadeDelta;
+      }
     }
   }
 

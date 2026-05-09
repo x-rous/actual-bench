@@ -196,6 +196,7 @@ A multi-month budget editing workspace with staged cell editing, a draft review 
 - Income categories are hard-blocked (non-interactive) in envelope mode
 - Undo / Redo with Ctrl+Z / Ctrl+Y / Ctrl+Shift+Z; up to 50 undo steps
 - Delete or Backspace on a focused cell sets it to zero; if the original value is already zero the staged edit is removed
+- **Pre-save balance cascade** — staging a budget edit in month M immediately updates the *effective* per-category balance for all visible and future months (M+1, M+2, …) without writing to the server. In envelope mode this applies to every spending category (the server always chains `balance(M) = budgeted(M) + actuals(M) + balance(M−1)`); in tracking mode only categories with `carryover = true` cascade. Any month fetched later by scrolling forward automatically receives the correct cascade delta because it is derived purely from the in-memory staged edits map.
 
 ### Selection & Keyboard Shortcuts
 
