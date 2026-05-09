@@ -153,6 +153,7 @@ export function importRulesFromCsv(
   type RuleGroup = {
     stage: string;
     conditionsOp: string;
+    isScheduleRule: boolean;
     rows: { rowType: string; field: string; op: string; rawValue: string }[];
   };
 
@@ -164,7 +165,7 @@ export function importRulesFromCsv(
     const ruleId = cellAt(row, ruleIdIdx);
     if (!ruleId) { parseSkipped++; continue; }
 
-    if (!groups.has(ruleId)) groups.set(ruleId, { stage: "", conditionsOp: "", rows: [] });
+    if (!groups.has(ruleId)) groups.set(ruleId, { stage: "", conditionsOp: "", isScheduleRule: false, rows: [] });
 
     const group        = groups.get(ruleId)!;
     const stage        = cellAt(row, stageIdx);
@@ -176,6 +177,7 @@ export function importRulesFromCsv(
 
     if (stage && !group.stage)               group.stage        = stage;
     if (conditionsOp && !group.conditionsOp) group.conditionsOp = conditionsOp;
+    if (op === "link-schedule")              group.isScheduleRule = true;
 
     // Accept: conditions with a field, or actions with a field or delete-transaction op
     const isValidRow =
@@ -197,6 +199,8 @@ export function importRulesFromCsv(
   let skipped = parseSkipped;
 
   for (const [, group] of groups) {
+    if (group.isScheduleRule) { skipped++; continue; }
+
     const conditions: ConditionOrAction[] = [];
     const actions:    ConditionOrAction[] = [];
 

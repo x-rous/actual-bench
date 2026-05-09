@@ -57,4 +57,25 @@ describe("importPayeesFromCsv", () => {
     expect(result.payees).toHaveLength(2);
     expect(result.payees[0]).toEqual({ name: "Amazon" });
   });
+
+  it("skips transfer payees and counts them as skipped", () => {
+    const csv = "id,name,type\n1,Amazon,regular\n2,Transfer: Savings,transfer\n3,Netflix,regular";
+    const result = importPayeesFromCsv(csv);
+
+    expect("error" in result).toBe(false);
+    if ("error" in result) return;
+    expect(result.payees).toHaveLength(2);
+    expect(result.payees.map((p) => p.name)).toEqual(["Amazon", "Netflix"]);
+    expect(result.skipped).toBe(1);
+  });
+
+  it("skips transfer payees case-insensitively", () => {
+    const csv = "name,type\nAmazon,TRANSFER";
+    const result = importPayeesFromCsv(csv);
+
+    expect("error" in result).toBe(false);
+    if ("error" in result) return;
+    expect(result.payees).toHaveLength(0);
+    expect(result.skipped).toBe(1);
+  });
 });

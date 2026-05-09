@@ -22,6 +22,7 @@ export function importPayeesFromCsv(text: string): PayeesImportResult | PayeesIm
   const headers = parseCsvLine(nonEmpty[0]).map((h) => h.trim().toLowerCase());
   const nameIdx = headers.indexOf("name");
   if (nameIdx === -1) return { error: 'CSV must have a "name" column.' };
+  const typeIdx = headers.indexOf("type");
 
   const payees: Pick<Payee, "name">[] = [];
   let skipped = 0;
@@ -30,6 +31,8 @@ export function importPayeesFromCsv(text: string): PayeesImportResult | PayeesIm
     const fields = parseCsvLine(allLines[i]);
     const name = fields[nameIdx]?.trim() ?? "";
     if (!name) { skipped++; continue; }
+    const type = typeIdx !== -1 ? (fields[typeIdx]?.trim().toLowerCase() ?? "") : "";
+    if (type === "transfer") { skipped++; continue; }
     payees.push({ name });
   }
 

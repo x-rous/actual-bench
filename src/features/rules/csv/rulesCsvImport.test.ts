@@ -286,6 +286,25 @@ describe("importRulesFromCsv", () => {
     expect(result.rules[1].actions[0].value).toBe(false);
   });
 
+  it("skips rules with a link-schedule action and counts them as skipped", () => {
+    const csv = [
+      "rule_id,stage,conditions_op,row_type,field,op,value",
+      "r1,default,and,condition,notes,contains,grocery",
+      "r1,,,action,category,set,Food",
+      "r2,default,and,condition,notes,contains,schedule",
+      "r2,,,action,,link-schedule,some-schedule-id",
+      "r3,default,and,action,category,set,Transport",
+    ].join("\n");
+
+    const result = importRulesFromCsv(csv, emptyMaps);
+
+    expect("error" in result).toBe(false);
+    if ("error" in result) return;
+    expect(result.rules).toHaveLength(2);
+    expect(result.rules.map((r) => r.conditions[0]?.value ?? r.actions[0]?.value)).not.toContain("some-schedule-id");
+    expect(result.skipped).toBe(1);
+  });
+
   it("resolves category_group names to IDs", () => {
     const maps = makeMaps([], [], [], [{ id: "grp-1", name: "Food & Dining" }]);
     const csv = [
