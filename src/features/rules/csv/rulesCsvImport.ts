@@ -177,7 +177,7 @@ export function importRulesFromCsv(
 
     if (stage && !group.stage)               group.stage        = stage;
     if (conditionsOp && !group.conditionsOp) group.conditionsOp = conditionsOp;
-    if (op === "link-schedule")              group.isScheduleRule = true;
+    if (rowType === "action" && op === "link-schedule") group.isScheduleRule = true;
 
     // Accept: conditions with a field, or actions with a field or delete-transaction op
     const isValidRow =
