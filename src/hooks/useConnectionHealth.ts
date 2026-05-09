@@ -84,17 +84,14 @@ export function useConnectionHealth(): ConnectionHealthState {
     consecutiveFailures.current = 0;
     isChecking.current = false;
 
-    if (!activeInstance) {
-      setStatus("unknown");
-      setLatencyMs(null);
-      setShowBanner(false);
-      return;
-    }
+    if (!activeInstance) return;
 
     const { baseUrl, apiKey } = activeInstance;
-    void runCheck(baseUrl, apiKey);
-
     let timeoutId: ReturnType<typeof setTimeout>;
+
+    // runCheck calls setStatus("checking") before its first await; deferring
+    // keeps it out of the synchronous effect body to satisfy the lint rule.
+    const initialId = setTimeout(() => void runCheck(baseUrl, apiKey), 0);
 
     function scheduleNext() {
       timeoutId = setTimeout(() => {
@@ -118,10 +115,14 @@ export function useConnectionHealth(): ConnectionHealthState {
     document.addEventListener("visibilitychange", handleVisibilityChange);
 
     return () => {
+      clearTimeout(initialId);
       clearTimeout(timeoutId);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   }, [activeInstance, runCheck]);
 
+  // When no connection is active derive the reset values during render rather
+  // than calling setState in the effect body (which triggers cascading renders).
+  if (!activeInstance) return { status: "unknown", latencyMs: null, showBanner: false };
   return { status, latencyMs, showBanner };
 }
