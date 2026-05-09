@@ -22,7 +22,7 @@ export function BudgetDraftPanel() {
 
   return (
     <aside
-      className="flex w-[17rem] shrink-0 flex-col border-l border-border bg-background"
+      className="flex w-68 shrink-0 flex-col border-l border-border bg-background"
       data-budget-details-panel>
       <div className="flex items-center justify-between px-3 shrink-0 h-[2.7rem]">
         <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">

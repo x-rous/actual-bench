@@ -32,7 +32,7 @@ export function MonthColumnHeader({
   const dotColor = !isAvailable
     ? "bg-muted-foreground/40"
     : hasStagedEdits
-    ? "bg-amber-400"
+    ? "bg-amber-400 dark:bg-amber-500"
     : "bg-transparent";
 
   const dotTitle = !isAvailable
