@@ -96,11 +96,13 @@ export function SearchableCombobox({
   value,
   onChange,
   placeholder = "— select —",
+  footer,
 }: {
   options: ComboboxOption[];
   value: string;
   onChange: (v: string) => void;
   placeholder?: string;
+  footer?: (search: string) => React.ReactNode;
 }) {
   const { open, openDropdown, closeDropdown, search, setSearch, containerRef, searchRef } =
     useComboboxState();
@@ -184,6 +186,11 @@ export function SearchableCombobox({
               )
             )}
           </ul>
+          {footer && (
+            <div className="border-t border-border">
+              {footer(search)}
+            </div>
+          )}
         </div>
       )}
     </div>

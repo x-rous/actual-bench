@@ -9,6 +9,18 @@
 - Per-connection query cache and staged data scoping — switching connections never leaks data between sessions
 - Connections are stored in session storage and cleared automatically when the tab is closed
 
+## Quick Create
+
+- `N` (bare key, when no input or dialog is focused) or `Ctrl/Cmd+Shift+N` (from anywhere, including inside inputs) opens a global Quick Create dialog to stage a new entity without leaving the current page
+- Supports four entity types: **Payee**, **Category**, **Account**, and **Tag** — switchable via pill buttons inside the dialog
+- Conditional secondary fields per type: Category requires a group selection (searchable combobox of existing groups); Account has an on-budget / off-budget toggle; Tag has an optional color picker with a clear action
+- Name field auto-focuses on open; `Enter` submits when the form is valid, `Escape` closes without staging anything
+- Non-blocking amber duplicate warning when a name already exists in the staged store — submission is still allowed
+- Hard blocks: empty name, or Category selected with no group chosen
+- On submit, the entity is staged immediately (one undo step) and a toast confirms the action; the dialog closes and the user stays on the current page
+- **Inline "Create" prompt** in the Rule Drawer: typing in a payee or category combobox and finding no match shows a `+ Create [type] "[name]"` footer button — clicking it opens the Quick Create dialog pre-seeded with the typed name; the new entity appears in the combobox options as soon as the dialog closes
+- **Global keyboard shortcuts modal** accessible from a standalone "Keyboard shortcuts" button in the sidebar footer; lists app-wide shortcuts (Quick Create, Global Search, Undo, Redo) with keyboard badge styling; references the budget workspace `?` shortcut for workspace-specific bindings
+
 ## Global Search
 
 - `Ctrl/Cmd+K` or the top-bar Search button opens a global search modal across accounts, payees, categories, rules, schedules, and tags
@@ -235,6 +247,7 @@ Spreadsheet-grade keyboard support — every shortcut is data-driven from a sing
 
 **View & visibility:**
 - `V` — cycle Budget → Actuals → Balance
+- `D` — open the spending details panel for the currently selected category or group in the focused month
 - `F` — open Jump to Category search; selecting a match scrolls and focuses that category in the current month, including hidden categories and collapsed groups
 - `H` — toggle hidden categories
 - `E` / `Shift+E` — expand all / collapse all groups
@@ -474,7 +487,7 @@ budget-bundle-<label>-<date>.zip
 - Top bar shows the active connection with a switcher dropdown, undo/redo, discard, save, and a refresh button — refresh prompts for confirmation when unsaved changes exist
 - Toast notifications for all success, error, and warning states
 - Entity counts shown in page headers
-- Help menu in the sidebar with links to the GitHub repository, issue tracker, and changelog
+- Help menu in the sidebar with links to the GitHub repository, issue tracker, and changelog; a separate standalone "Keyboard shortcuts" button below it opens an app-wide shortcuts cheatsheet
 - Top bar shows a compact version cluster beside the active connection with `API` and `Actual` version badges when available
 - **Dark mode toggle** in the sidebar footer: cycles System → Light → Dark; preference persists in `localStorage`; icon reflects the resolved appearance (Moon when OS is dark in System mode, Sun when OS is light)
 - **Connection health indicator**: a coloured dot inside the connection dropdown trigger in the top bar actively polls `GET /actualhttpapiversion` every 30 seconds. Green = healthy (with round-trip latency in the tooltip), pulsing amber = checking, solid amber = degraded (>3 s response), red = offline. When the server is unreachable for two consecutive checks, a non-blocking red strip appears below the top bar and the Save button is disabled with an explanatory tooltip. The banner and disabled state clear automatically as soon as a check succeeds. Polling pauses when the browser tab is hidden and resumes immediately on tab focus.

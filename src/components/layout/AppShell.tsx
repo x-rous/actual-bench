@@ -13,6 +13,7 @@ import { usePreloadEntities } from "@/hooks/useAllEntities";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { useIsHydrated } from "@/hooks/useIsHydrated";
 import { GlobalSearchModal } from "@/features/global-search/components/GlobalSearchModal";
+import { QuickCreateDialog } from "@/features/quick-create/components/QuickCreateDialog";
 import { useConnectionHealth, ConnectionHealthContext } from "@/hooks/useConnectionHealth";
 import { useVersionCheck, VersionCheckContext } from "@/hooks/useVersionCheck";
 
@@ -83,6 +84,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <ConnectionOfflineBanner />
         <NewVersionBanner />
         <GlobalSearchModal />
+        <QuickCreateDialog />
         <div className="flex min-h-0 flex-1 overflow-hidden">
           <Sidebar />
           <main className="flex min-h-0 flex-1 flex-col overflow-hidden">

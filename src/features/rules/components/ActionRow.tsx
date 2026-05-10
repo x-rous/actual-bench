@@ -9,6 +9,8 @@ import { selectCls, inputCls } from "./ConditionRow";
 import { valueToString } from "../utils/rulePreview";
 import { ACTION_FIELDS, ACTION_OPS } from "../utils/ruleFields";
 import { useStagedStore } from "@/store/staged";
+import { useQuickCreateStore } from "@/features/quick-create/store/useQuickCreateStore";
+import type { QuickCreateEntityType } from "@/features/quick-create/store/useQuickCreateStore";
 import type { ConditionOrAction } from "@/types/entities";
 import type { RuleEntityOptionsMap } from "../lib/ruleEditor";
 
@@ -33,6 +35,7 @@ export function ActionRow({
   const isTemplate = op === "set" && action.options?.template !== undefined;
   const supportsTemplate = op === "set" && fieldDef?.supportsTemplate === true;
   const stagedSchedules = useStagedStore((s) => s.schedules);
+  const openQuickCreate = useQuickCreateStore((s) => s.open);
 
   const handleOpChange = useCallback(
     (newOp: string) => {
@@ -233,6 +236,7 @@ export function ActionRow({
             options={entityOptions[fieldDef.entity]}
             value={valueToString(action.value)}
             onChange={(v) => onChange({ ...action, value: v })}
+            onQuickCreate={(name) => openQuickCreate(fieldDef.entity as QuickCreateEntityType, name)}
           />
         ) : (
           <input
