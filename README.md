@@ -130,6 +130,14 @@ A dedicated query console using ActualQL API end point for advanced queries and 
 - Copy result JSON, query JSON, sanitized cURL, or full cURL when explicitly needed
 - Warns when staged local changes exist because query results reflect saved server state
 
+### Excel Companion Workbook
+
+An optional Excel companion workbook is available for users who prefer spreadsheet-based reporting alongside Actual Bench.
+
+The workbook connects to `actual-http-api` and fetches read-only budget data for category groups, categories, accounts, payees, rules, transactions, months, account balances, and monthly budget status. It provides Excel tables for categories, category groups, accounts, payees, rules, all transactions, account balances, monthly budget status, available months, and separate balance, spent, and budgeted views.
+
+Download: [Actual Bench Excel Companion](https://github.com/x-rous/actual-bench/releases/latest/download/actual-bench-excel-companion.xlsx)
+
 ### Staged editing and safety
 
 Actual Bench is built around a review-before-save workflow.
@@ -169,6 +177,7 @@ All requests to `actual-http-api` go through Actual Bench's internal Next.js pro
 - Budget Diagnostics processes exported snapshots locally in the browser and does not write diagnostic changes back to the budget.
 - Exported budget ZIP files and diagnostic data may still contain personal financial information, so handle downloaded files carefully.
 - ActualQL queries are read-only from the Actual Bench perspective, but they reflect saved server state, not unsaved staged edits.
+- The Excel companion workbook may contain your Actual API URL, API key, and downloaded financial data after use, so do not share a configured copy.
 
 ## Requirements
 
