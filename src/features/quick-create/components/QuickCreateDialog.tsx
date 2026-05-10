@@ -115,7 +115,7 @@ function QuickCreateForm({
     close();
   }
 
-  function handleKeyDown(e: React.KeyboardEvent) {
+  function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
     if (e.key === "Enter" && isValid) {
       e.preventDefault();
       handleCreate();
@@ -123,7 +123,7 @@ function QuickCreateForm({
   }
 
   return (
-    <div className="flex flex-col gap-4" onKeyDown={handleKeyDown}>
+    <div className="flex flex-col gap-4">
       <DialogHeader>
         <DialogTitle className="flex items-center gap-2">
           <Plus className="h-4 w-4" />
@@ -160,6 +160,7 @@ function QuickCreateForm({
           maxLength={100}
           value={name}
           onChange={(e) => setName(e.target.value)}
+          onKeyDown={handleKeyDown}
           placeholder={`${ENTITY_LABELS[selectedType]} name…`}
           className="h-8 w-full rounded-md border border-input bg-background px-2 text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-ring/50"
         />

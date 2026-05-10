@@ -108,13 +108,17 @@ function ConditionValueInput({
 
   if (fieldDef?.entity) {
     const scalar = valueToString(condition.value);
+    const QUICK_CREATE_ENTITIES: QuickCreateEntityType[] = ["payee", "category", "account", "tag"];
+    const quickCreateEntity = QUICK_CREATE_ENTITIES.includes(fieldDef.entity as QuickCreateEntityType)
+      ? (fieldDef.entity as QuickCreateEntityType)
+      : null;
     return (
       <EntityCombobox
         entity={fieldDef.entity}
         options={entityOptions[fieldDef.entity]}
         value={scalar}
         onChange={(v) => onChange({ ...condition, value: v })}
-        onQuickCreate={(name) => onQuickCreate(fieldDef.entity as QuickCreateEntityType, name)}
+        onQuickCreate={quickCreateEntity ? (name) => onQuickCreate(quickCreateEntity, name) : undefined}
       />
     );
   }
