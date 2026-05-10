@@ -64,6 +64,7 @@ export type ActionId =
   | "view.pan-months-prev"
   | "view.pan-months-next"
   | "view.open-category-search"
+  | "view.open-spending-details"
   // ─── Tier 4 selection actions (workspace) ───────────────────────────────
   | "selection.toggle-carryover"
   // ─── Discoverability ────────────────────────────────────────────────────
@@ -163,6 +164,11 @@ export const ACTION_META: Record<ActionId, ActionMeta> = {
     id: "view.open-category-search",
     label: "Jump to category",
     category: "navigation",
+  },
+  "view.open-spending-details": {
+    id: "view.open-spending-details",
+    label: "Open spending details",
+    category: "view",
   },
 
   "selection.toggle-carryover": {

@@ -28,6 +28,7 @@ import {
   Sun,
   Moon,
   ArrowUpCircle,
+  Keyboard,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useConnectionStore } from "@/store/connection";
@@ -41,6 +42,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { GlobalShortcutsHelp } from "./GlobalShortcutsHelp";
 
 const GITHUB_URL = "https://github.com/x-rous/actual-bench";
 const LS_KEY = "sidebar-collapsed";
@@ -160,6 +162,7 @@ export function Sidebar() {
   const version = process.env.NEXT_PUBLIC_APP_VERSION;
   const { updateAvailable, latestVersion } = useVersionCheckContext();
 
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [collapsed, setCollapsed] = useState<boolean>(() => {
     if (typeof window === "undefined") return false;
     return localStorage.getItem(LS_KEY) === "1";
@@ -287,6 +290,19 @@ export function Sidebar() {
 
         <button
           type="button"
+          onClick={() => setShortcutsOpen(true)}
+          title="Keyboard shortcuts"
+          className={cn(
+            "flex w-full items-center rounded-md px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-accent/50 hover:text-accent-foreground",
+            collapsed ? "justify-center" : "gap-2"
+          )}
+        >
+          <Keyboard className="h-4 w-4 shrink-0" />
+          {!collapsed && <span>Keyboard shortcuts</span>}
+        </button>
+
+        <button
+          type="button"
           onClick={handleClearAll}
           title="Clear all connections and cached data"
           className={cn(
@@ -328,6 +344,8 @@ export function Sidebar() {
           )}
         </button>
       </div>
+
+      <GlobalShortcutsHelp open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
     </aside>
   );
 }

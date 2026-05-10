@@ -9,6 +9,8 @@ import { EntityCombobox, MultiEntityCombobox } from "./EntityCombobox";
 import { valueToString, isRecurConfig } from "../utils/rulePreview";
 import { CONDITION_FIELDS, getConditionOps } from "../utils/ruleFields";
 import { recurSummary } from "@/features/schedules/lib/recurSummary";
+import { useQuickCreateStore } from "@/features/quick-create/store/useQuickCreateStore";
+import type { QuickCreateEntityType } from "@/features/quick-create/store/useQuickCreateStore";
 import type { ConditionOrAction, AmountRange, RecurConfig } from "@/types/entities";
 import type { RuleEntityOptionsMap } from "../lib/ruleEditor";
 
@@ -26,10 +28,12 @@ function ConditionValueInput({
   condition,
   entityOptions,
   onChange,
+  onQuickCreate,
 }: {
   condition: ConditionOrAction;
   entityOptions: RuleEntityOptionsMap;
   onChange: (c: ConditionOrAction) => void;
+  onQuickCreate: (entity: QuickCreateEntityType, name: string) => void;
 }) {
   const fieldDef = CONDITION_FIELDS[condition.field ?? ""];
   const ops = getConditionOps(condition.field ?? "");
@@ -104,12 +108,17 @@ function ConditionValueInput({
 
   if (fieldDef?.entity) {
     const scalar = valueToString(condition.value);
+    const QUICK_CREATE_ENTITIES: QuickCreateEntityType[] = ["payee", "category", "account", "tag"];
+    const quickCreateEntity = QUICK_CREATE_ENTITIES.includes(fieldDef.entity as QuickCreateEntityType)
+      ? (fieldDef.entity as QuickCreateEntityType)
+      : null;
     return (
       <EntityCombobox
         entity={fieldDef.entity}
         options={entityOptions[fieldDef.entity]}
         value={scalar}
         onChange={(v) => onChange({ ...condition, value: v })}
+        onQuickCreate={quickCreateEntity ? (name) => onQuickCreate(quickCreateEntity, name) : undefined}
       />
     );
   }
@@ -172,6 +181,7 @@ export function ConditionRow({
   onChange: (c: ConditionOrAction) => void;
   onDelete: () => void;
 }) {
+  const openQuickCreate = useQuickCreateStore((s) => s.open);
   const field = condition.field ?? "";
   const ops = getConditionOps(field);
   const isScheduleDate = field === "date" && isRecurConfig(condition.value);
@@ -258,7 +268,7 @@ export function ConditionRow({
           </div>
 
           <div className="flex-1">
-            <ConditionValueInput condition={condition} entityOptions={entityOptions} onChange={onChange} />
+            <ConditionValueInput condition={condition} entityOptions={entityOptions} onChange={onChange} onQuickCreate={openQuickCreate} />
           </div>
 
           <span className="mt-2 shrink-0 text-[10px] italic text-muted-foreground/60">
@@ -297,7 +307,7 @@ export function ConditionRow({
           ))}
         </select>
 
-        <ConditionValueInput condition={condition} entityOptions={entityOptions} onChange={onChange} />
+        <ConditionValueInput condition={condition} entityOptions={entityOptions} onChange={onChange} onQuickCreate={openQuickCreate} />
 
         <Button
           variant="ghost"
