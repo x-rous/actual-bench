@@ -2,19 +2,21 @@
 
 import { useMemo } from "react";
 import { formatMonthLabel } from "@/lib/budget/monthMath";
-import { formatSigned as fmt, formatCurrency } from "../../lib/format";
+import { formatSigned as fmt, formatCurrency, formatMinor } from "../../lib/format";
 import type {
   BudgetCellKey,
   LoadedCategory,
   StagedBudgetEdit,
+  StagedHold,
 } from "../../types";
 
 /**
  * Counts logical staged changes: transfer pairs count as 1, standalone edits
- * count as 1 each. Matches the count shown in the section header.
+ * count as 1 each, holds count as 1 each.
  */
 export function countLogicalEdits(
-  edits: Record<BudgetCellKey, StagedBudgetEdit>
+  edits: Record<BudgetCellKey, StagedBudgetEdit>,
+  holds: Record<string, StagedHold> = {}
 ): number {
   const groupIds = new Set<string>();
   let standalone = 0;
@@ -25,7 +27,7 @@ export function countLogicalEdits(
       standalone++;
     }
   }
-  return standalone + groupIds.size;
+  return standalone + groupIds.size + Object.keys(holds).length;
 }
 
 /**
@@ -39,9 +41,11 @@ export function countLogicalEdits(
  */
 export function StagedChangesSection({
   edits,
+  holds = {},
   allCategories,
 }: {
   edits: Record<BudgetCellKey, StagedBudgetEdit>;
+  holds?: Record<string, StagedHold>;
   allCategories: LoadedCategory[];
 }) {
   const editList = Object.values(edits);
@@ -67,29 +71,34 @@ export function StagedChangesSection({
     return { standaloneEdits: standalone, transferGroups: groups };
   }, [editList]);
 
-  const totalChanges = standaloneEdits.length + transferGroups.size;
+  const totalChanges = standaloneEdits.length + transferGroups.size + Object.keys(holds).length;
 
   const byMonth = useMemo(() => {
-    const grouped: Record<string, { standalone: StagedBudgetEdit[]; transferGroupIds: string[] }> = {};
+    const grouped: Record<string, { standalone: StagedBudgetEdit[]; transferGroupIds: string[]; hold: StagedHold | null }> = {};
 
     for (const edit of standaloneEdits) {
-      if (!grouped[edit.month]) grouped[edit.month] = { standalone: [], transferGroupIds: [] };
+      if (!grouped[edit.month]) grouped[edit.month] = { standalone: [], transferGroupIds: [], hold: null };
       grouped[edit.month]!.standalone.push(edit);
     }
 
     for (const [groupId, legs] of transferGroups) {
       const month = legs[0]?.month;
       if (!month) continue;
-      if (!grouped[month]) grouped[month] = { standalone: [], transferGroupIds: [] };
+      if (!grouped[month]) grouped[month] = { standalone: [], transferGroupIds: [], hold: null };
       grouped[month]!.transferGroupIds.push(groupId);
     }
 
+    for (const [month, hold] of Object.entries(holds)) {
+      if (!grouped[month]) grouped[month] = { standalone: [], transferGroupIds: [], hold: null };
+      grouped[month]!.hold = hold;
+    }
+
     return grouped;
-  }, [standaloneEdits, transferGroups]);
+  }, [standaloneEdits, transferGroups, holds]);
 
   const months = useMemo(() => Object.keys(byMonth).sort(), [byMonth]);
 
-  if (editList.length === 0) {
+  if (editList.length === 0 && Object.keys(holds).length === 0) {
     return (
       <div className="px-3 py-4 text-[11px] text-muted-foreground text-center">
         No staged changes
@@ -105,9 +114,10 @@ export function StagedChangesSection({
       </p>
 
       {months.map((month) => {
-        const { standalone, transferGroupIds } = byMonth[month] ?? {
+        const { standalone, transferGroupIds, hold } = byMonth[month] ?? {
           standalone: [],
           transferGroupIds: [],
+          hold: null,
         };
 
         const sortedStandalone = standalone.slice().sort((a, b) => {
@@ -121,6 +131,27 @@ export function StagedChangesSection({
             <p className="text-[11px] font-semibold text-foreground/80 mb-1">
               {formatMonthLabel(month, "long")}
             </p>
+
+            {/* Hold row */}
+            {hold && (
+              <div className="flex items-baseline justify-between gap-1 py-0.5">
+                <span className="text-[10px] text-muted-foreground shrink-0">Hold for next month</span>
+                <span
+                  className={`font-sans tabular-nums text-[10px] shrink-0 ${
+                    hold.nextAmount === 0
+                      ? "text-muted-foreground line-through"
+                      : "text-amber-600 dark:text-amber-400"
+                  }`}
+                >
+                  {hold.nextAmount === 0
+                    ? formatMinor(hold.previousAmount)
+                    : formatMinor(hold.nextAmount)}
+                </span>
+                {hold.saveError && (
+                  <span className="text-[9px] text-destructive shrink-0" title={hold.saveError}>!</span>
+                )}
+              </div>
+            )}
 
             {/* Transfer group rows */}
             {transferGroupIds.map((groupId) => {

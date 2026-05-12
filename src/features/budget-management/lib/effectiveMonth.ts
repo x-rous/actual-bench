@@ -13,6 +13,7 @@ import type {
   LoadedGroup,
   LoadedMonthState,
   StagedBudgetEdit,
+  StagedHold,
 } from "../types";
 
 export type ComputeEffectiveMonthStateInput = {
@@ -22,6 +23,8 @@ export type ComputeEffectiveMonthStateInput = {
   /** Map<month, Map<categoryId, budgeted>> from useIncomeBudgets. Tracking mode only. */
   incomeBudgets: Map<string, Map<string, number>> | undefined;
   month: string;
+  /** Staged holds keyed by month — from the budgetEdits store. */
+  stagedHolds?: Record<string, StagedHold>;
 };
 
 /**
@@ -59,7 +62,7 @@ export type ComputeEffectiveMonthStateInput = {
 export function computeEffectiveMonthState(
   input: ComputeEffectiveMonthStateInput
 ): LoadedMonthState | undefined {
-  const { serverState, allEdits, isTracking, incomeBudgets, month } = input;
+  const { serverState, allEdits, isTracking, incomeBudgets, month, stagedHolds } = input;
   if (!serverState || !month) return serverState;
 
   const incomeBudgetForMonth = isTracking ? incomeBudgets?.get(month) : undefined;
@@ -101,7 +104,9 @@ export function computeEffectiveMonthState(
 
   const hasCatCascade = priorCatDeltas.size > 0;
 
-  if (!incomeBudgetForMonth && editEntries.length === 0 && priorDelta === 0 && !hasCatCascade) {
+  const stagedHold = stagedHolds?.[month];
+
+  if (!incomeBudgetForMonth && editEntries.length === 0 && priorDelta === 0 && !hasCatCascade && !stagedHold) {
     return serverState;
   }
 
@@ -222,6 +227,17 @@ export function computeEffectiveMonthState(
       if (!(isTracking && effectivelyHidden)) {
         summary.totalBalance += cascadeDelta;
       }
+    }
+  }
+
+  // ── Hold overlay: staged hold for month M only ─────────────────────────────
+  // forNextMonth on the server is a positive integer (0 = no hold).
+  // nextAmount/previousAmount use the same convention.
+  if (stagedHold) {
+    const holdDelta = stagedHold.nextAmount - serverState.summary.forNextMonth;
+    if (holdDelta !== 0) {
+      summary.forNextMonth = stagedHold.nextAmount;
+      summary.toBudget -= holdDelta;
     }
   }
 

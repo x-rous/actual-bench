@@ -82,6 +82,20 @@ export type LoadedMonthState = {
 
 // ─── Staged edits ─────────────────────────────────────────────────────────────
 
+/**
+ * Staged "hold for next month" — keyed by month string in the store.
+ * `nextAmount` and `previousAmount` are positive minor units (0 = no hold /
+ * clear hold), matching the server's forNextMonth convention.
+ */
+export type StagedHold = {
+  month: string;
+  /** New hold amount in positive minor units. 0 = stage a hold clear. */
+  nextAmount: number;
+  /** Server's forNextMonth at the time of first staging (positive minor units, 0 = no hold). For undo. */
+  previousAmount: number;
+  saveError?: string;
+};
+
 /** Stored in budgetEditsStore as Record<BudgetCellKey, StagedBudgetEdit>. */
 export type StagedBudgetEdit = {
   month: string;
@@ -106,6 +120,23 @@ export type BudgetEditPatch = {
   key: BudgetCellKey;
   prev: StagedBudgetEdit | undefined;
 };
+
+/** Tagged patch for a single cell edit — part of the unified ActionPatch union. */
+export type EditPatch = {
+  type: "edit";
+  key: BudgetCellKey;
+  prev: StagedBudgetEdit | undefined;
+};
+
+/** Tagged patch for a hold action — part of the unified ActionPatch union. */
+export type HoldPatch = {
+  type: "hold";
+  month: string;
+  prev: StagedHold | undefined;
+};
+
+/** Union of all reversible action patch types for the undo/redo stack. */
+export type ActionPatch = EditPatch | HoldPatch;
 
 // ─── Navigation ───────────────────────────────────────────────────────────────
 
@@ -186,9 +217,11 @@ export type RowSelection = { kind: "category" | "group"; id: string };
 
 export type BudgetEditsState = {
   edits: Record<BudgetCellKey, StagedBudgetEdit>;
-  /** BM-19: stack of inverse-patch lists. Each list reverses one user action. */
-  undoStack: BudgetEditPatch[][];
-  redoStack: BudgetEditPatch[][];
+  /** Staged holds keyed by month string. At most one hold per month. */
+  holds: Record<string, StagedHold>;
+  /** Unified undo/redo stack covering both cell edits and holds. */
+  undoStack: ActionPatch[][];
+  redoStack: ActionPatch[][];
   /** Currently focused cell or group — synced by BudgetWorkspace so BudgetDraftPanel can read it. */
   uiSelection: { month: string | null; categoryId: string | null; groupId: string | null };
   /** Currently selected row label, mutually exclusive with uiSelection. */
@@ -201,11 +234,17 @@ export type BudgetEditsActions = {
   stageEdit: (edit: StagedBudgetEdit) => void;
   stageBulkEdits: (edits: StagedBudgetEdit[]) => void;
   removeEdit: (key: BudgetCellKey) => void;
+  stageHold: (hold: StagedHold) => void;
+  removeHold: (month: string) => void;
+  clearHoldsForMonths: (months: string[]) => void;
+  setHoldSaveError: (month: string, message: string) => void;
+  clearHoldSaveError: (month: string) => void;
   discardAll: () => void;
   clearEditsForMonths: (months: string[]) => void;
   clearEditsForKeys: (keys: BudgetCellKey[]) => void;
   setSaveError: (key: BudgetCellKey, message: string) => void;
   clearSaveError: (key: BudgetCellKey) => void;
+  clearHistory: () => void;
   pushUndo: () => void;
   undo: () => void;
   redo: () => void;

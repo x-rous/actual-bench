@@ -110,9 +110,10 @@ export function MonthsDataProvider({
 
   const { data: incomeBudgets } = useIncomeBudgets(incomeCategoryIds, isTracking);
 
-  // Single subscription to the entire edits map happens here, ONCE for the
-  // whole grid — instead of once per cell as in the pre-BM-02 implementation.
+  // Single subscription to the entire edits map and holds map happens here,
+  // ONCE for the whole grid — instead of once per cell as in pre-BM-02.
   const allEdits = useBudgetEditsStore((s) => s.edits);
+  const allHolds = useBudgetEditsStore((s) => s.holds);
 
   const value = useMemo<MonthsDataContextValue>(() => {
     const raw = new Map<string, LoadedMonthState>();
@@ -133,6 +134,7 @@ export function MonthsDataProvider({
           isTracking,
           incomeBudgets,
           month: m,
+          stagedHolds: allHolds,
         });
         if (eff) effective.set(m, eff);
       }
@@ -144,7 +146,7 @@ export function MonthsDataProvider({
     // Spread data and error arrays so the memo recomputes only when an
     // underlying query result reference changes, not on every render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [months, loadableMonthSet, allEdits, isTracking, incomeBudgets, isLoading, ...dataArr, ...errorArr]);
+  }, [months, loadableMonthSet, allEdits, allHolds, isTracking, incomeBudgets, isLoading, ...dataArr, ...errorArr]);
 
   return (
     <MonthsDataContext.Provider value={value}>

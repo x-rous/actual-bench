@@ -4,10 +4,11 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { CheckCircle2, AlertCircle, Loader2 } from "lucide-react";
 import { useBudgetSave } from "../hooks/useBudgetSave";
 import { useBudgetEditsStore } from "@/store/budgetEdits";
-import type { BudgetCellKey, BudgetSaveResult, StagedBudgetEdit } from "../types";
+import type { BudgetCellKey, BudgetSaveResult, StagedBudgetEdit, StagedHold } from "../types";
 
 type Props = {
   edits: Record<BudgetCellKey, StagedBudgetEdit>;
+  holds?: Record<string, StagedHold>;
   onClose: () => void;
 };
 
@@ -33,7 +34,7 @@ function buildRejectedSaveResults(
   }));
 }
 
-export function BudgetSaveProgressDialog({ edits, onClose }: Props) {
+export function BudgetSaveProgressDialog({ edits, holds = {}, onClose }: Props) {
   const { save, isSaving, progress } = useBudgetSave();
   const [results, setResults] = useState<BudgetSaveResult[]>([]);
   const [dialogState, setDialogState] = useState<DialogState>("saving");
@@ -62,7 +63,7 @@ export function BudgetSaveProgressDialog({ edits, onClose }: Props) {
   useEffect(() => {
     if (hasStarted.current) return;
     hasStarted.current = true;
-    void save(edits)
+    void save(edits, holds)
       .then(applyResults)
       .catch((error: unknown) => {
         console.error("Budget save failed", error);
@@ -89,10 +90,20 @@ export function BudgetSaveProgressDialog({ edits, onClose }: Props) {
         retryEdits[key as BudgetCellKey] = edit;
       }
     }
+    // Retry failed hold months too.
+    const failedHoldMonths = new Set(
+      failedResults.filter((r) => r.categoryId === "").map((r) => r.month)
+    );
+    const currentHolds = useBudgetEditsStore.getState().holds;
+    const retryHolds: Record<string, StagedHold> = {};
+    for (const [month, hold] of Object.entries(currentHolds)) {
+      if (failedHoldMonths.has(month)) retryHolds[month] = hold;
+    }
+
     setDialogState("saving");
     setResults([]);
     try {
-      const retryResults = await save(retryEdits);
+      const retryResults = await save(retryEdits, retryHolds);
       applyResults(retryResults);
     } catch (error) {
       console.error("Budget save retry failed", error);

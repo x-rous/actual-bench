@@ -11,6 +11,7 @@ import type {
   BudgetSaveResult,
   LoadedMonthState,
   StagedBudgetEdit,
+  StagedHold,
 } from "../types";
 
 /**
@@ -58,7 +59,8 @@ type SaveProgress = {
 
 type UseBudgetSaveReturn = {
   save: (
-    edits: Record<BudgetCellKey, StagedBudgetEdit>
+    edits: Record<BudgetCellKey, StagedBudgetEdit>,
+    holds?: Record<string, StagedHold>
   ) => Promise<BudgetSaveResult[]>;
   isSaving: boolean;
   progress: SaveProgress;
@@ -84,19 +86,24 @@ export function useBudgetSave(): UseBudgetSaveReturn {
   const connection = useConnectionStore(selectActiveInstance);
   const queryClient = useQueryClient();
   const clearEditsForKeys = useBudgetEditsStore((s) => s.clearEditsForKeys);
+  const clearHoldsForMonths = useBudgetEditsStore((s) => s.clearHoldsForMonths);
+  const clearHistory = useBudgetEditsStore((s) => s.clearHistory);
   const setSaveError = useBudgetEditsStore((s) => s.setSaveError);
+  const setHoldSaveError = useBudgetEditsStore((s) => s.setHoldSaveError);
 
   const [isSaving, setIsSaving] = useState(false);
   const [progress, setProgress] = useState<SaveProgress>({ completed: 0, total: 0 });
 
   const save = useCallback(
     async (
-      edits: Record<BudgetCellKey, StagedBudgetEdit>
+      edits: Record<BudgetCellKey, StagedBudgetEdit>,
+      holds: Record<string, StagedHold> = {}
     ): Promise<BudgetSaveResult[]> => {
       if (!connection) throw new Error("No active connection");
 
       const entries = Object.entries(edits) as [BudgetCellKey, StagedBudgetEdit][];
-      if (entries.length === 0) return [];
+      const holdEntries = Object.entries(holds) as [string, StagedHold][];
+      if (entries.length === 0 && holdEntries.length === 0) return [];
 
       // Pre-save guard: verify all target months still exist in GET /months.
       const monthsResult = await apiRequest<{ data: string[] }>(connection, "/months");
@@ -194,14 +201,86 @@ export function useBudgetSave(): UseBudgetSaveReturn {
         }
       }
 
-      const totalCalls = completePairs.length + incompleteLegs.length + nonTransferEntries.length;
+      const totalCalls =
+        holdEntries.filter(([m]) => availableSet.has(m)).length +
+        completePairs.length +
+        incompleteLegs.length +
+        nonTransferEntries.length;
 
       setIsSaving(true);
       setProgress({ completed: 0, total: totalCalls });
 
       const succeededKeys: BudgetCellKey[] = [];
+      const succeededHoldMonths: string[] = [];
       const successMonths = new Set<string>();
       let completedCalls = 0;
+
+      // ── 0. Staged holds ───────────────────────────────────────────────────────
+      for (const [month, hold] of holdEntries) {
+        if (!availableSet.has(month)) {
+          results.push({
+            month,
+            categoryId: "",
+            status: "error",
+            message: `Month ${month} is no longer available in this budget`,
+          });
+          continue;
+        }
+
+        try {
+          if (hold.nextAmount === 0) {
+            // resetBudgetHold — DELETE /months/{month}/nextmonthbudgethold
+            await apiRequest(connection, `/months/${month}/nextmonthbudgethold`, {
+              method: "DELETE",
+            });
+          } else {
+            // When the server already has a hold (previousAmount > 0), DELETE it
+            // first so the subsequent POST sets an absolute value rather than
+            // adding on top of whatever the server currently holds.
+            if (hold.previousAmount > 0) {
+              await apiRequest(connection, `/months/${month}/nextmonthbudgethold`, {
+                method: "DELETE",
+              });
+            }
+            // holdBudgetForNextMonth — POST /months/{month}/nextmonthbudgethold
+            await apiRequest(connection, `/months/${month}/nextmonthbudgethold`, {
+              method: "POST",
+              body: { amount: hold.nextAmount },
+            });
+          }
+
+          // Optimistic cache update: apply the hold to the cached month state.
+          queryClient.setQueryData(
+            ["budget-month-data", connection.id, month],
+            (prev: LoadedMonthState | undefined) => {
+              if (!prev) return prev;
+              const holdDelta = hold.nextAmount - prev.summary.forNextMonth;
+              return {
+                ...prev,
+                summary: {
+                  ...prev.summary,
+                  forNextMonth: hold.nextAmount,
+                  toBudget: prev.summary.toBudget - holdDelta,
+                },
+              };
+            }
+          );
+
+          succeededHoldMonths.push(month);
+          successMonths.add(month);
+          results.push({ month, categoryId: "", status: "success" });
+        } catch (err) {
+          const message =
+            err instanceof Error
+              ? err.message
+              : (err as { message?: string }).message ?? "Save failed";
+          setHoldSaveError(month, message);
+          results.push({ month, categoryId: "", status: "error", message });
+        }
+
+        completedCalls++;
+        setProgress({ completed: completedCalls, total: totalCalls });
+      }
 
       // ── 1. Complete transfer pairs via atomic POST ────────────────────────────
       for (const { src, dst } of completePairs) {
@@ -300,7 +379,12 @@ export function useBudgetSave(): UseBudgetSaveReturn {
         setProgress({ completed: completedCalls, total: totalCalls });
       }
 
-      // Clear only the keys that actually succeeded AND whose stored value
+      // Clear succeeded hold months from the store.
+      if (succeededHoldMonths.length > 0) {
+        clearHoldsForMonths(succeededHoldMonths);
+      }
+
+      // Clear only the edit keys that actually succeeded AND whose stored value
       // still matches the snapshot taken at save-enqueue time. Anything the
       // user re-edited mid-save stays in the store with the newer value.
       if (succeededKeys.length > 0) {
@@ -313,9 +397,18 @@ export function useBudgetSave(): UseBudgetSaveReturn {
         if (safeToClear.length > 0) {
           clearEditsForKeys(safeToClear);
         }
-        // BM-11: Invalidate in parallel — invalidations are read-side and
-        // independent. The optimistic updates above already cleared the UI;
-        // these refetches reconcile against the server.
+      }
+
+      // Clear undo/redo history after any successful save so the user cannot
+      // undo back to a state that has already been persisted to the server.
+      if (succeededKeys.length > 0 || succeededHoldMonths.length > 0) {
+        clearHistory();
+      }
+
+      // BM-11: Invalidate in parallel — invalidations are read-side and
+      // independent. The optimistic updates above already cleared the UI;
+      // these refetches reconcile against the server.
+      if (successMonths.size > 0) {
         await Promise.all(
           Array.from(successMonths).map((month) =>
             queryClient.invalidateQueries({
@@ -330,7 +423,7 @@ export function useBudgetSave(): UseBudgetSaveReturn {
 
       return results;
     },
-    [connection, queryClient, clearEditsForKeys, setSaveError]
+    [connection, queryClient, clearEditsForKeys, clearHoldsForMonths, setSaveError, setHoldSaveError]
   );
 
   return { save, isSaving, progress };
