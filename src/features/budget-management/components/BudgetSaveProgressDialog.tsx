@@ -69,7 +69,7 @@ export function BudgetSaveProgressDialog({ edits, holds = {}, onClose }: Props) 
         console.error("Budget save failed", error);
         applyResults(buildRejectedSaveResults(edits, error));
       });
-  }, [edits, save, applyResults]);
+  }, [edits, holds, save, applyResults]);
 
   // Auto-close countdown for success state
   useEffect(() => {

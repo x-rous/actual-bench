@@ -423,7 +423,7 @@ export function useBudgetSave(): UseBudgetSaveReturn {
 
       return results;
     },
-    [connection, queryClient, clearEditsForKeys, clearHoldsForMonths, setSaveError, setHoldSaveError]
+    [connection, queryClient, clearEditsForKeys, clearHoldsForMonths, clearHistory, setSaveError, setHoldSaveError]
   );
 
   return { save, isSaving, progress };
