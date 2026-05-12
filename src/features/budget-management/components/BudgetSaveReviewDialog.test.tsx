@@ -31,7 +31,7 @@ describe("BudgetSaveReviewDialog", () => {
     );
 
     expect(screen.getByText("Review save summary")).toBeInTheDocument();
-    expect(screen.getByText("Changes")).toBeInTheDocument();
+    expect(screen.getAllByText("Changes")).toHaveLength(2); // summary card + table column header
     expect(screen.getByText("Months")).toBeInTheDocument();
     expect(screen.getAllByText("Net")).toHaveLength(2);
     expect(screen.getByText("Apr 2026")).toBeInTheDocument();

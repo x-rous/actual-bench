@@ -2,10 +2,12 @@
 
 import { create } from "zustand";
 import type {
+  ActionPatch,
   BudgetCellKey,
   BudgetEditsActions,
   BudgetEditsState,
   StagedBudgetEdit,
+  StagedHold,
 } from "@/features/budget-management/types";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -37,59 +39,59 @@ function sameEdit(
  * that's 2,500 redundant edit objects retained.
  *
  * A patch records exactly what changed:
- *   { key, prev: undefined } — key did not exist before; undo deletes it
- *   { key, prev: <edit> }    — key existed; undo restores `prev`
+ *   { type: "edit", key, prev: undefined } — key did not exist; undo deletes it
+ *   { type: "edit", key, prev: <edit> }    — key existed; undo restores `prev`
+ *   { type: "hold", month, prev: undefined } — no hold existed; undo deletes it
+ *   { type: "hold", month, prev: <hold> }    — hold existed; undo restores `prev`
  *
- * Each patch holds at most O(changed-keys) state. For a single-cell edit,
- * one patch entry. For a bulk paste/import, one entry per cell — but only
- * for the cells the operation actually touched.
- *
- * `undo()` applies the patch in reverse to recover the prior `edits` state,
- * while pushing the inverse onto `redoStack`. `redo()` is symmetric.
+ * `undo()` applies the patch in reverse to recover the prior state, while
+ * pushing the inverse onto `redoStack`. `redo()` is symmetric.
  */
-type EditPatch = {
-  key: BudgetCellKey;
-  prev: StagedBudgetEdit | undefined;
-};
 
-function applyPatches(
+function applyActionPatches(
   edits: Record<BudgetCellKey, StagedBudgetEdit>,
-  patches: EditPatch[]
+  holds: Record<string, StagedHold>,
+  patches: ActionPatch[]
 ): {
-  next: Record<BudgetCellKey, StagedBudgetEdit>;
-  inverse: EditPatch[];
+  nextEdits: Record<BudgetCellKey, StagedBudgetEdit>;
+  nextHolds: Record<string, StagedHold>;
+  inverse: ActionPatch[];
 } {
-  const next: Record<BudgetCellKey, StagedBudgetEdit> = { ...edits };
-  const inverse: EditPatch[] = [];
+  const nextEdits: Record<BudgetCellKey, StagedBudgetEdit> = { ...edits };
+  const nextHolds: Record<string, StagedHold> = { ...holds };
+  const inverse: ActionPatch[] = [];
   // Apply newest-first so the inverse runs back to original order.
   for (let i = patches.length - 1; i >= 0; i--) {
     const p = patches[i]!;
-    inverse.push({ key: p.key, prev: edits[p.key] });
-    if (p.prev === undefined) {
-      delete next[p.key];
+    if (p.type === "edit") {
+      inverse.push({ type: "edit", key: p.key, prev: edits[p.key] });
+      if (p.prev === undefined) delete nextEdits[p.key];
+      else nextEdits[p.key] = p.prev;
     } else {
-      next[p.key] = p.prev;
+      inverse.push({ type: "hold", month: p.month, prev: holds[p.month] });
+      if (p.prev === undefined) delete nextHolds[p.month];
+      else nextHolds[p.month] = p.prev;
     }
   }
   // Inverse was built newest-first; reverse so callers can apply it directly.
   inverse.reverse();
-  return { next, inverse };
+  return { nextEdits, nextHolds, inverse };
 }
 
 /**
- * Build a patch list capturing the prior values of every key that's about to
- * be added or replaced. Keys absent from `edits` get `prev: undefined`.
+ * Build a patch list capturing the prior values of every edit key that's
+ * about to be added or replaced. Keys absent from `edits` get `prev: undefined`.
  */
-function buildPatchForChanges(
+function buildEditPatchForChanges(
   edits: Record<BudgetCellKey, StagedBudgetEdit>,
   keysAffected: Iterable<BudgetCellKey>
-): EditPatch[] {
+): ActionPatch[] {
   const seen = new Set<BudgetCellKey>();
-  const patches: EditPatch[] = [];
+  const patches: ActionPatch[] = [];
   for (const key of keysAffected) {
     if (seen.has(key)) continue;
     seen.add(key);
-    patches.push({ key, prev: edits[key] });
+    patches.push({ type: "edit", key, prev: edits[key] });
   }
   return patches;
 }
@@ -100,13 +102,14 @@ type BudgetEditsStore = BudgetEditsState & BudgetEditsActions;
 
 const MAX_UNDO_DEPTH = 50;
 
-function pushPatch(stack: EditPatch[][], patch: EditPatch[]): EditPatch[][] {
+function pushPatch(stack: ActionPatch[][], patch: ActionPatch[]): ActionPatch[][] {
   if (patch.length === 0) return stack;
   return [...stack, patch].slice(-MAX_UNDO_DEPTH);
 }
 
 export const useBudgetEditsStore = create<BudgetEditsStore>()((set, get) => ({
   edits: {},
+  holds: {},
   undoStack: [],
   redoStack: [],
   uiSelection: { month: null, categoryId: null, groupId: null },
@@ -132,7 +135,7 @@ export const useBudgetEditsStore = create<BudgetEditsStore>()((set, get) => ({
       }
       return;
     }
-    const patch = buildPatchForChanges(edits, [key]);
+    const patch = buildEditPatchForChanges(edits, [key]);
     set({
       undoStack: pushPatch(undoStack, patch),
       redoStack: [],
@@ -166,7 +169,7 @@ export const useBudgetEditsStore = create<BudgetEditsStore>()((set, get) => ({
       if (clearedSaveError) set({ edits: next });
       return;
     }
-    const patch = buildPatchForChanges(edits, changedKeys);
+    const patch = buildEditPatchForChanges(edits, changedKeys);
     set({
       undoStack: pushPatch(undoStack, patch),
       redoStack: [],
@@ -177,7 +180,7 @@ export const useBudgetEditsStore = create<BudgetEditsStore>()((set, get) => ({
   removeEdit(key) {
     const { edits, undoStack } = get();
     if (!(key in edits)) return;
-    const patch = buildPatchForChanges(edits, [key]);
+    const patch = buildEditPatchForChanges(edits, [key]);
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { [key]: _removed, ...rest } = edits;
     set({
@@ -187,8 +190,92 @@ export const useBudgetEditsStore = create<BudgetEditsStore>()((set, get) => ({
     });
   },
 
+  stageHold(hold) {
+    const { holds, undoStack } = get();
+    const existing = holds[hold.month];
+    if (existing && existing.nextAmount === hold.nextAmount) {
+      if (existing.saveError) {
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const { saveError: _saveError, ...rest } = existing;
+        set({ holds: { ...holds, [hold.month]: rest as StagedHold } });
+      }
+      return;
+    }
+
+    // Always preserve the server-baseline previousAmount from the first staging
+    // for this month. When the user stages a FREE then re-opens the Hold dialog,
+    // the dialog receives currentForNextMonth=0 (effective after overlay) so it
+    // passes previousAmount=0 — but the real server value is in existing.previousAmount.
+    // Inheriting it here keeps undo, the draft panel, and the save-pipeline reset
+    // guard all anchored to the actual server state.
+    const previousAmount =
+      existing !== undefined ? existing.previousAmount : hold.previousAmount;
+    const normalizedHold: StagedHold = { ...hold, previousAmount };
+
+    // If the staged amount equals the server's hold it is a net no-op — remove
+    // the entry so it does not pollute the draft panel or trigger a redundant save.
+    if (normalizedHold.nextAmount === previousAmount) {
+      if (existing !== undefined) {
+        const patch: ActionPatch[] = [{ type: "hold", month: hold.month, prev: existing }];
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const { [hold.month]: _removed, ...rest } = holds;
+        set({
+          undoStack: pushPatch(undoStack, patch),
+          redoStack: [],
+          holds: rest as Record<string, StagedHold>,
+        });
+      }
+      return;
+    }
+
+    const patch: ActionPatch[] = [{ type: "hold", month: hold.month, prev: existing }];
+    set({
+      undoStack: pushPatch(undoStack, patch),
+      redoStack: [],
+      holds: { ...holds, [hold.month]: normalizedHold },
+    });
+  },
+
+  removeHold(month) {
+    const { holds } = get();
+    if (!(month in holds)) return;
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { [month]: _removed, ...rest } = holds;
+    set({ holds: rest as Record<string, StagedHold> });
+  },
+
+  clearHoldsForMonths(months) {
+    const { holds } = get();
+    const monthSet = new Set(months);
+    const next: Record<string, StagedHold> = {};
+    for (const [m, hold] of Object.entries(holds)) {
+      if (!monthSet.has(m)) next[m] = hold;
+    }
+    set({ holds: next });
+  },
+
+  setHoldSaveError(month, message) {
+    const { holds } = get();
+    const existing = holds[month];
+    if (!existing) return;
+    set({ holds: { ...holds, [month]: { ...existing, saveError: message } } });
+  },
+
+  clearHoldSaveError(month) {
+    const { holds } = get();
+    const existing = holds[month];
+    if (!existing) return;
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { saveError: _saveError, ...rest } = existing;
+    set({ holds: { ...holds, [month]: rest as StagedHold } });
+  },
+
   discardAll() {
-    set({ edits: {}, undoStack: [], redoStack: [] });
+    set({ edits: {}, holds: {}, undoStack: [], redoStack: [] });
+  },
+
+  clearHistory() {
+    set({ undoStack: [], redoStack: [] });
   },
 
   clearEditsForMonths(months) {
@@ -234,31 +321,34 @@ export const useBudgetEditsStore = create<BudgetEditsStore>()((set, get) => ({
   },
 
   undo() {
-    const { edits, undoStack, redoStack } = get();
+    const { edits, holds, undoStack, redoStack } = get();
     if (undoStack.length === 0) return;
     const patch = undoStack[undoStack.length - 1]!;
-    const { next, inverse } = applyPatches(edits, patch);
+    const { nextEdits, nextHolds, inverse } = applyActionPatches(edits, holds, patch);
     set({
-      edits: next,
+      edits: nextEdits,
+      holds: nextHolds,
       undoStack: undoStack.slice(0, -1),
       redoStack: pushPatch(redoStack, inverse),
     });
   },
 
   redo() {
-    const { edits, undoStack, redoStack } = get();
+    const { edits, holds, undoStack, redoStack } = get();
     if (redoStack.length === 0) return;
     const patch = redoStack[redoStack.length - 1]!;
-    const { next, inverse } = applyPatches(edits, patch);
+    const { nextEdits, nextHolds, inverse } = applyActionPatches(edits, holds, patch);
     set({
-      edits: next,
+      edits: nextEdits,
+      holds: nextHolds,
       undoStack: pushPatch(undoStack, inverse),
       redoStack: redoStack.slice(0, -1),
     });
   },
 
   hasPendingEdits() {
-    return Object.keys(get().edits).length > 0;
+    const { edits, holds } = get();
+    return Object.keys(edits).length > 0 || Object.keys(holds).length > 0;
   },
 
   setUiSelection(month, categoryId, groupId = null) {

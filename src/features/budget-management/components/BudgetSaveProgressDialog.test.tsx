@@ -48,7 +48,7 @@ describe("BudgetSaveProgressDialog", () => {
     );
 
     expect(await screen.findByText("Save failed")).toBeInTheDocument();
-    expect(screen.getByText("2 cells could not be saved.")).toBeInTheDocument();
+    expect(screen.getByText("2 changes could not be saved.")).toBeInTheDocument();
     expect(screen.getAllByText("No active connection")).toHaveLength(2);
     expect(consoleError).toHaveBeenCalledWith("Budget save failed", error);
 

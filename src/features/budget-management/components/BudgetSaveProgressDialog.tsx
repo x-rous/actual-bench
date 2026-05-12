@@ -4,10 +4,11 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { CheckCircle2, AlertCircle, Loader2 } from "lucide-react";
 import { useBudgetSave } from "../hooks/useBudgetSave";
 import { useBudgetEditsStore } from "@/store/budgetEdits";
-import type { BudgetCellKey, BudgetSaveResult, StagedBudgetEdit } from "../types";
+import type { BudgetCellKey, BudgetSaveResult, StagedBudgetEdit, StagedHold } from "../types";
 
 type Props = {
   edits: Record<BudgetCellKey, StagedBudgetEdit>;
+  holds?: Record<string, StagedHold>;
   onClose: () => void;
 };
 
@@ -33,7 +34,7 @@ function buildRejectedSaveResults(
   }));
 }
 
-export function BudgetSaveProgressDialog({ edits, onClose }: Props) {
+export function BudgetSaveProgressDialog({ edits, holds = {}, onClose }: Props) {
   const { save, isSaving, progress } = useBudgetSave();
   const [results, setResults] = useState<BudgetSaveResult[]>([]);
   const [dialogState, setDialogState] = useState<DialogState>("saving");
@@ -62,13 +63,13 @@ export function BudgetSaveProgressDialog({ edits, onClose }: Props) {
   useEffect(() => {
     if (hasStarted.current) return;
     hasStarted.current = true;
-    void save(edits)
+    void save(edits, holds)
       .then(applyResults)
       .catch((error: unknown) => {
         console.error("Budget save failed", error);
         applyResults(buildRejectedSaveResults(edits, error));
       });
-  }, [edits, save, applyResults]);
+  }, [edits, holds, save, applyResults]);
 
   // Auto-close countdown for success state
   useEffect(() => {
@@ -89,10 +90,20 @@ export function BudgetSaveProgressDialog({ edits, onClose }: Props) {
         retryEdits[key as BudgetCellKey] = edit;
       }
     }
+    // Retry failed hold months too.
+    const failedHoldMonths = new Set(
+      failedResults.filter((r) => r.categoryId === "").map((r) => r.month)
+    );
+    const currentHolds = useBudgetEditsStore.getState().holds;
+    const retryHolds: Record<string, StagedHold> = {};
+    for (const [month, hold] of Object.entries(currentHolds)) {
+      if (failedHoldMonths.has(month)) retryHolds[month] = hold;
+    }
+
     setDialogState("saving");
     setResults([]);
     try {
-      const retryResults = await save(retryEdits);
+      const retryResults = await save(retryEdits, retryHolds);
       applyResults(retryResults);
     } catch (error) {
       console.error("Budget save retry failed", error);
@@ -117,7 +128,7 @@ export function BudgetSaveProgressDialog({ edits, onClose }: Props) {
             </div>
             <p className="text-sm text-muted-foreground mb-3">
               {progress.total > 0
-                ? `${progress.completed} of ${progress.total} cells saved…`
+                ? `${progress.completed} of ${progress.total} changes saved…`
                 : "Preparing…"}
             </p>
             {progress.total > 0 && (
@@ -138,7 +149,7 @@ export function BudgetSaveProgressDialog({ edits, onClose }: Props) {
               <h2 className="text-base font-semibold text-foreground">All changes saved</h2>
             </div>
             <p className="text-sm text-muted-foreground mb-1">
-              {succeededResults.length} cell{succeededResults.length !== 1 ? "s" : ""} saved
+              {succeededResults.length} change{succeededResults.length !== 1 ? "s" : ""} saved
               {successMonths.length > 0 && ` across ${successMonths.length} month${successMonths.length !== 1 ? "s" : ""}`}.
             </p>
             {successMonths.length > 0 && (
@@ -166,8 +177,8 @@ export function BudgetSaveProgressDialog({ edits, onClose }: Props) {
             </div>
             <p className="text-sm text-muted-foreground mb-3">
               {dialogState === "partial-failure"
-                ? `${succeededResults.length} cell${succeededResults.length !== 1 ? "s" : ""} saved, ${failedResults.length} failed.`
-                : `${failedResults.length} cell${failedResults.length !== 1 ? "s" : ""} could not be saved.`}
+                ? `${succeededResults.length} change${succeededResults.length !== 1 ? "s" : ""} saved, ${failedResults.length} failed.`
+                : `${failedResults.length} change${failedResults.length !== 1 ? "s" : ""} could not be saved.`}
             </p>
             <div className="mb-4 max-h-44 overflow-y-auto rounded border border-border divide-y divide-border">
               {failedResults.map((r) => (

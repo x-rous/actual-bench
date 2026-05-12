@@ -1,7 +1,119 @@
+language: "en-US"
+early_access: false
+
+tone_instructions: "Be concise, practical, and focus on real defects, regressions, security, maintainability, and user-facing impact. Avoid nitpicks unless they prevent bugs."
+
 reviews:
+  profile: "chill"
+  request_changes_workflow: true
+
+  high_level_summary: true
+  high_level_summary_in_walkthrough: true
   review_status: true
+  review_details: false
+  commit_status: true
+  fail_commit_status: false
+
+  collapse_walkthrough: true
+  changed_files_summary: true
+  sequence_diagrams: false
+  estimate_code_review_effort: true
+  assess_linked_issues: true
+  related_issues: true
+  related_prs: true
+  suggested_labels: true
+  suggested_reviewers: false
+  auto_assign_reviewers: false
+
   auto_review:
     enabled: true
     drafts: false
-    base_branches:
-      - "main"
+    auto_incremental_review: true
+    auto_pause_after_reviewed_commits: 5
+    ignore_title_keywords:
+      - "WIP"
+      - "DO NOT MERGE"
+      - "[skip review]"
+    ignore_usernames:
+      - "dependabot[bot]"
+      - "github-actions[bot]"
+
+  path_filters:
+    - "!**/.next/**"
+    - "!**/.next-build/**"
+    - "!**/node_modules/**"
+    - "!**/dist/**"
+    - "!**/build/**"
+    - "!**/coverage/**"
+    - "!**/*.lock"
+    - "!**/package-lock.json"
+    - "!**/pnpm-lock.yaml"
+    - "!**/yarn.lock"
+    - "!**/*.png"
+    - "!**/*.jpg"
+    - "!**/*.jpeg"
+    - "!**/*.gif"
+    - "!**/*.svg"
+    - "!**/*.webp"
+
+  labeling_instructions:
+    - label: "frontend"
+      instructions: "Suggest when the PR changes React components, UI layout, styling, accessibility, or client-side behavior."
+    - label: "api"
+      instructions: "Suggest when the PR changes Next.js API routes, proxy behavior, request validation, server-side logic, or actual-http-api integration."
+    - label: "budget-management"
+      instructions: "Suggest when the PR changes budget-management logic, month summaries, staged changes, Tracking/Envelope behavior, or transaction analysis."
+    - label: "docs"
+      instructions: "Suggest when the PR mainly changes README, AGENTS.md, tutorials, or documentation."
+    - label: "ci"
+      instructions: "Suggest when the PR changes GitHub Actions, Docker, release workflows, build configuration, or deployment behavior."
+    - label: "tests"
+      instructions: "Suggest when the PR adds or changes Jest, React Testing Library, or regression tests."
+
+  path_instructions:
+    - path: "src/app/api/**"
+      instructions: |
+        Review as server-side API/proxy code. Focus on input validation, error handling, response consistency, authentication/secret leakage risks, binary response handling, and avoiding unsafe assumptions when calling actual-http-api.
+
+    - path: "src/features/budget-management/**"
+      instructions: |
+        This is one of the most sensitive areas of actual-bench. Pay close attention to Actual Budget mode differences:
+        - Tracking and Envelope budgets must not be treated the same unless intentionally documented.
+        - Hidden category behavior, rollover/carryover behavior, available funds, budgeted values, spent values, and To Budget / Overbudget summaries must remain mode-aware.
+        - Staged edits should remain local until Save and should not silently mutate server state.
+        - Review user-facing regressions carefully, especially table totals, month summaries, dialogs, and selection behavior.
+
+    - path: "src/features/**"
+      instructions: |
+        Review for React state consistency, TypeScript correctness, accessibility, keyboard behavior, loading/error states, and whether the feature adds useful behavior without unnecessary complexity.
+
+    - path: "src/lib/**"
+      instructions: |
+        Review utilities for edge cases, predictable behavior, type safety, and whether shared logic can break existing callers.
+
+    - path: "src/**/*.test.*"
+      instructions: |
+        Review whether tests cover meaningful behavior, edge cases, regressions, and user-visible outcomes. Avoid suggesting tests that only lock implementation details.
+
+    - path: ".github/workflows/**"
+      instructions: |
+        Review GitHub Actions for reliable CI/CD, correct permissions, cache safety, Docker build behavior, multi-arch build concerns, tag/release logic, and avoiding accidental secret exposure.
+
+    - path: "Dockerfile"
+      instructions: |
+        Review Docker changes for production readiness, image size, runtime user safety, environment variables, Next.js build/start behavior, and self-hosted deployment reliability.
+
+    - path: "docs/**"
+      instructions: |
+        Review documentation for clarity, beginner-friendliness, accuracy, and practical value for self-hosted Actual Budget users.
+
+    - path: "README.md"
+      instructions: |
+        Review the README as open-source onboarding material. Focus on whether a new user quickly understands what actual-bench does, who it is for, how to run it, and how it relates to Actual Budget and actual-http-api.
+
+    - path: "AGENTS.md"
+      instructions: |
+        Review agent instructions for clarity and usefulness. Keep them lightweight; avoid duplicating tasks already handled by CI unless the instruction changes how an AI coding agent should work.
+
+chat:
+  auto_reply: true

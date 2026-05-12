@@ -1,6 +1,6 @@
 import { formatMonthLabel } from "@/lib/budget/monthMath";
 import { isLargeChange } from "./budgetValidation";
-import type { BudgetCellKey, StagedBudgetEdit } from "../types";
+import type { BudgetCellKey, StagedBudgetEdit, StagedHold } from "../types";
 
 export const BUDGET_SAVE_REVIEW_SKIP_KEY =
   "actual-bench:budget-save-review:skip";
@@ -29,10 +29,12 @@ export type BudgetSaveReviewMonth = {
   label: string;
   totalDelta: number;
   entries: BudgetSaveReviewEntry[];
+  hold?: StagedHold;
 };
 
 export type BudgetSaveReviewSummary = {
   editCount: number;
+  holdCount: number;
   monthCount: number;
   totalDelta: number;
   largeChangeCount: number;
@@ -41,7 +43,8 @@ export type BudgetSaveReviewSummary = {
 
 export function buildBudgetSaveReviewSummary(
   edits: Record<BudgetCellKey, StagedBudgetEdit>,
-  categoryLookup: BudgetSaveReviewCategoryLookup = {}
+  categoryLookup: BudgetSaveReviewCategoryLookup = {},
+  holds: Record<string, StagedHold> = {}
 ): BudgetSaveReviewSummary {
   const grouped = new Map<string, BudgetSaveReviewEntry[]>();
 
@@ -63,6 +66,11 @@ export function buildBudgetSaveReviewSummary(
     grouped.set(edit.month, entries);
   }
 
+  // Ensure months that only have a hold (no cell edits) appear in the list.
+  for (const month of Object.keys(holds)) {
+    if (!grouped.has(month)) grouped.set(month, []);
+  }
+
   const months = [...grouped.entries()]
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([month, entries]) => {
@@ -75,11 +83,13 @@ export function buildBudgetSaveReviewSummary(
         label: formatMonthLabel(month, "long"),
         totalDelta: sortedEntries.reduce((sum, e) => sum + e.delta, 0),
         entries: sortedEntries,
+        hold: holds[month],
       };
     });
 
   return {
     editCount: months.reduce((sum, m) => sum + m.entries.length, 0),
+    holdCount: Object.keys(holds).length,
     monthCount: months.length,
     totalDelta: months.reduce((sum, m) => sum + m.totalDelta, 0),
     largeChangeCount: months.reduce(

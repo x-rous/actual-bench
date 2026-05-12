@@ -142,7 +142,7 @@ export const ENVELOPE_SUMMARY_ROWS: SummaryRowConfig[] = [
   },
   {
     label: "Hold for next month",
-    getValue: (s) => (s.forNextMonth <= 0 ? 0 : Math.abs(s.forNextMonth)),
+    getValue: (s) => (s.forNextMonth > 0 ? -s.forNextMonth : 0),
     colorClass: () => "text-foreground/75",
     isSubRow: true,
     operator: "−",
@@ -265,6 +265,12 @@ function SummaryHeaderCell({
         className={`${rowH} px-1.5 ${marginTopClass} flex items-center justify-end gap-1 bg-transparent font-sans tabular-nums leading-tight text-[11px] ${borderClass} ${colorClass}`}
         title={tooltip}
       >
+        {config.holdAction === "free" && (
+          <FreeHeldAmountButton
+            month={month}
+            forNextMonth={data.summary.forNextMonth}
+          />
+        )}
         <div className="flex flex-col items-end flex-1 min-w-0">
           {dynamicLabel && (
             <span className="max-w-full truncate text-[9px] font-medium leading-none mb-0.5">
@@ -277,16 +283,11 @@ function SummaryHeaderCell({
               : formatSummary(numericValue)}
           </span>
         </div>
-        {config.holdAction === "set" ? (
+        {config.holdAction === "set" && (
           <HoldMoneyButton
             month={month}
             forNextMonth={data.summary.forNextMonth}
             toBudget={data.summary.toBudget}
-          />
-        ) : (
-          <FreeHeldAmountButton
-            month={month}
-            forNextMonth={data.summary.forNextMonth}
           />
         )}
       </div>

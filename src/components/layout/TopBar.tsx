@@ -47,7 +47,7 @@ import {
   readBudgetSaveReviewSkip,
   writeBudgetSaveReviewSkip,
 } from "@/features/budget-management/lib/budgetSaveReview";
-import type { BudgetCellKey, StagedBudgetEdit } from "@/features/budget-management/types";
+import type { BudgetCellKey, StagedBudgetEdit, StagedHold } from "@/features/budget-management/types";
 
 type PendingAction =
   | { kind: "switch"; id: string }
@@ -89,7 +89,9 @@ export function TopBar() {
     () => readBudgetSaveReviewSkip()
   );
   const [budgetSaveReviewEdits, setBudgetSaveReviewEdits] = useState<Record<BudgetCellKey, StagedBudgetEdit> | null>(null);
+  const [budgetSaveReviewHolds, setBudgetSaveReviewHolds] = useState<Record<string, StagedHold>>({});
   const [budgetSaveEdits, setBudgetSaveEdits] = useState<Record<BudgetCellKey, StagedBudgetEdit> | null>(null);
+  const [budgetSaveHolds, setBudgetSaveHolds] = useState<Record<string, StagedHold>>({});
 
   const openSearch = useGlobalSearchStore((s) => s.open);
   const searchShortcutLabel = "Ctrl+k";
@@ -115,7 +117,7 @@ export function TopBar() {
 
   // Budget page store (always called — hooks cannot be conditional)
   const budgetHasChanges = useBudgetEditsStore(
-    (s) => Object.keys(s.edits).length > 0
+    (s) => Object.keys(s.edits).length > 0 || Object.keys(s.holds).length > 0
   );
   const budgetCanUndo = useBudgetEditsStore((s) => s.undoStack.length > 0);
   const budgetCanRedo = useBudgetEditsStore((s) => s.redoStack.length > 0);
@@ -181,16 +183,19 @@ export function TopBar() {
 
   async function handleSave() {
     if (isBudgetPage) {
-      const edits = useBudgetEditsStore.getState().edits;
+      const { edits, holds } = useBudgetEditsStore.getState();
       const editSnapshot = { ...edits };
-      if (Object.keys(editSnapshot).length === 0) return;
+      const holdSnapshot = { ...holds };
+      if (Object.keys(editSnapshot).length === 0 && Object.keys(holdSnapshot).length === 0) return;
 
       if (budgetSaveReviewSkipped) {
         setBudgetSaveEdits(editSnapshot);
+        setBudgetSaveHolds(holdSnapshot);
         return;
       }
 
       setBudgetSaveReviewEdits(editSnapshot);
+      setBudgetSaveReviewHolds(holdSnapshot);
     } else {
       try {
         const { totalSucceeded, totalFailed } = await saveAll();
@@ -410,8 +415,10 @@ export function TopBar() {
       {budgetSaveReviewEdits !== null && (
         <BudgetSaveReviewDialog
           edits={budgetSaveReviewEdits}
+          holds={budgetSaveReviewHolds}
           onCancel={() => {
             setBudgetSaveReviewEdits(null);
+            setBudgetSaveReviewHolds({});
           }}
           onConfirm={(skipReviewNextTime) => {
             if (skipReviewNextTime) {
@@ -419,7 +426,9 @@ export function TopBar() {
               setBudgetSaveReviewSkipped(true);
             }
             setBudgetSaveEdits(budgetSaveReviewEdits);
+            setBudgetSaveHolds(budgetSaveReviewHolds);
             setBudgetSaveReviewEdits(null);
+            setBudgetSaveReviewHolds({});
           }}
         />
       )}
@@ -427,7 +436,11 @@ export function TopBar() {
       {budgetSaveEdits !== null && (
         <BudgetSaveProgressDialog
           edits={budgetSaveEdits}
-          onClose={() => setBudgetSaveEdits(null)}
+          holds={budgetSaveHolds}
+          onClose={() => {
+            setBudgetSaveEdits(null);
+            setBudgetSaveHolds({});
+          }}
         />
       )}
 

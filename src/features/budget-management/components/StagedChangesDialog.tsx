@@ -18,12 +18,13 @@ import type { LoadedCategory, LoadedMonthState } from "../types";
  */
 export function StagedChangesDialog({ onClose }: { onClose: () => void }) {
   const edits = useBudgetEditsStore((s) => s.edits);
+  const holds = useBudgetEditsStore((s) => s.holds);
   const displayMonths = useBudgetEditsStore((s) => s.displayMonths);
   const connection = useConnectionStore(selectActiveInstance);
   const queryClient = useQueryClient();
   const overlayRef = useRef<HTMLDivElement>(null);
 
-  const totalChanges = countLogicalEdits(edits);
+  const totalChanges = countLogicalEdits(edits, holds);
 
   // Resolve category metadata from the cache. We only need one loaded month —
   // the category set is the same across all months in a budget.
@@ -84,7 +85,7 @@ export function StagedChangesDialog({ onClose }: { onClose: () => void }) {
 
         {/* Content */}
         <div className="flex-1 overflow-y-auto">
-          <StagedChangesSection edits={edits} allCategories={allCategories} />
+          <StagedChangesSection edits={edits} holds={holds} allCategories={allCategories} />
         </div>
       </div>
     </div>

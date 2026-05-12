@@ -12,10 +12,11 @@ import {
 } from "@/components/ui/dialog";
 import { formatMinor } from "../lib/format";
 import { buildBudgetSaveReviewSummary } from "../lib/budgetSaveReview";
-import type { BudgetCellKey, StagedBudgetEdit } from "../types";
+import type { BudgetCellKey, StagedBudgetEdit, StagedHold } from "../types";
 
 type Props = {
   edits: Record<BudgetCellKey, StagedBudgetEdit>;
+  holds?: Record<string, StagedHold>;
   onCancel: () => void;
   onConfirm: (skipReviewNextTime: boolean) => void;
 };
@@ -28,21 +29,25 @@ function formatDeltaAmount(delta: number): string {
 
 export function BudgetSaveReviewDialog({
   edits,
+  holds = {},
   onCancel,
   onConfirm,
 }: Props) {
   const [skipReviewNextTime, setSkipReviewNextTime] = useState(false);
   const summary = useMemo(
-    () => buildBudgetSaveReviewSummary(edits),
-    [edits]
+    () => buildBudgetSaveReviewSummary(edits, {}, holds),
+    [edits, holds]
   );
+  const totalCount = summary.editCount + summary.holdCount;
+
   const monthRows = useMemo(
     () =>
       summary.months.map((month) => ({
         month: month.month,
         label: month.label,
-        changeCount: month.entries.length,
+        changeCount: month.entries.length + (month.hold ? 1 : 0),
         totalDelta: month.totalDelta,
+        hold: month.hold,
       })),
     [summary.months]
   );
@@ -65,7 +70,7 @@ export function BudgetSaveReviewDialog({
             <div className="border-r border-border px-2 py-2">
               <p className="text-[10px] uppercase text-muted-foreground">Changes</p>
               <p className="font-semibold text-foreground tabular-nums">
-                {summary.editCount}
+                {totalCount}
               </p>
             </div>
             <div className="border-r border-border px-2 py-2">
@@ -94,15 +99,25 @@ export function BudgetSaveReviewDialog({
             <thead className="bg-muted text-[10px] uppercase text-muted-foreground">
               <tr>
                 <th className="px-2 py-1.5 text-left font-medium">Month</th>
-                <th className="w-16 px-2 py-1.5 text-right font-medium">Edits</th>
+                <th className="w-16 px-2 py-1.5 text-right font-medium">Changes</th>
                 <th className="w-24 px-2 py-1.5 text-right font-medium">Net</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
               {monthRows.map((row) => (
                 <tr key={row.month}>
-                  <td className="truncate px-2 py-1.5 font-medium text-foreground">
-                    {row.label}
+                  <td className="px-2 py-1.5 font-medium text-foreground">
+                    <div className="truncate">{row.label}</div>
+                    {row.hold && (
+                      <div className="text-[10px] font-normal text-muted-foreground mt-0.5">
+                        Hold:{" "}
+                        {row.hold.nextAmount === 0 ? (
+                          <span className="line-through">{formatMinor(row.hold.previousAmount)}</span>
+                        ) : (
+                          formatMinor(row.hold.nextAmount)
+                        )}
+                      </div>
+                    )}
                   </td>
                   <td className="px-2 py-1.5 text-right tabular-nums text-muted-foreground">
                     {row.changeCount}
@@ -143,9 +158,9 @@ export function BudgetSaveReviewDialog({
             </Button>
             <Button
               onClick={() => onConfirm(skipReviewNextTime)}
-              disabled={summary.editCount === 0}
+              disabled={totalCount === 0}
             >
-              Save {summary.editCount} change{summary.editCount !== 1 ? "s" : ""}
+              Save {totalCount} change{totalCount !== 1 ? "s" : ""}
             </Button>
           </div>
         </div>

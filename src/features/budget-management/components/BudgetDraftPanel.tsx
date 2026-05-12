@@ -16,9 +16,10 @@ import { BudgetDetailsPanel } from "./details/BudgetDetailsPanel";
  */
 export function BudgetDraftPanel() {
   const edits = useBudgetEditsStore((s) => s.edits);
+  const holds = useBudgetEditsStore((s) => s.holds);
   const [dialogOpen, setDialogOpen] = useState(false);
 
-  const changeCount = countLogicalEdits(edits);
+  const changeCount = countLogicalEdits(edits, holds);
 
   return (
     <aside
