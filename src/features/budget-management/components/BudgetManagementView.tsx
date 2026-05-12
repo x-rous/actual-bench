@@ -8,6 +8,7 @@ import { useAvailableMonths } from "../hooks/useAvailableMonths";
 import { useMonthData } from "../hooks/useMonthData";
 import { useBudgetEditsStore } from "@/store/budgetEdits";
 import { useStagedStore, selectHasChanges } from "@/store/staged";
+import { usePrefetchAdjacentMonths } from "../hooks/usePrefetchAdjacentMonths";
 import { BudgetToolbar } from "./BudgetToolbar";
 import { BudgetWorkspace } from "./BudgetWorkspace";
 import { BudgetExportDialog } from "./BudgetExportDialog";
@@ -57,6 +58,10 @@ export function BudgetManagementView() {
   useEffect(() => {
     setDisplayMonths(activeMonths);
   }, [activeMonths, setDisplayMonths]);
+
+  // Warm the adjacent ±12 months in the TanStack Query cache so «/» navigation
+  // renders from cache without a loading state.
+  usePrefetchAdjacentMonths({ windowStart, availableMonths });
 
   const [cellView, setCellView] = useState<CellView>("budgeted");
   const [exportDialogOpen, setExportDialogOpen] = useState(false);

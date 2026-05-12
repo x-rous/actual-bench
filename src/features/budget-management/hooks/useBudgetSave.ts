@@ -6,6 +6,7 @@ import { useConnectionStore, selectActiveInstance } from "@/store/connection";
 import { apiRequest } from "@/lib/api/client";
 import { useBudgetEditsStore } from "@/store/budgetEdits";
 import { budgetMonthDataQueryOptions } from "./useMonthData";
+import { addMonths } from "@/lib/budget/monthMath";
 import type {
   BudgetCellKey,
   BudgetSaveResult,
@@ -416,6 +417,24 @@ export function useBudgetSave(): UseBudgetSaveReturn {
             })
           )
         );
+
+        // RD-038: Invalidate the two adjacent 12-month windows so any prefetched
+        // months get fresh server cascade values (incomeAvailable / toBudget)
+        // after saves propagate through the server.
+        const displayMonths = useBudgetEditsStore.getState().displayMonths;
+        if (displayMonths.length > 0) {
+          const firstVisible = displayMonths[0]!;
+          const adjacentMonths: string[] = [];
+          for (let i = -12; i <= -1; i++) adjacentMonths.push(addMonths(firstVisible, i));
+          for (let i = 12; i <= 23; i++) adjacentMonths.push(addMonths(firstVisible, i));
+          await Promise.all(
+            adjacentMonths.map((month) =>
+              queryClient.invalidateQueries({
+                queryKey: ["budget-month-data", connection.id, month],
+              })
+            )
+          );
+        }
       }
 
       setIsSaving(false);

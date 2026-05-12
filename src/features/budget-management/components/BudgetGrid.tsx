@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef } from "react";
+import { Loader2 } from "lucide-react";
 import { useMonthsData } from "../context/MonthsDataContext";
 import { MonthColumnHeader } from "./grid/MonthColumnHeader";
 import {
@@ -186,11 +187,12 @@ export function BudgetGrid({
   if (isLoading && !hasAnyData) {
     return (
       <div
-        className="flex-1 flex items-center justify-center"
+        className="min-h-full flex flex-col items-center justify-center gap-3"
         aria-busy="true"
         aria-label="Loading budget data…"
       >
-        <div className="text-sm text-muted-foreground">Loading budget data…</div>
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        <p className="text-sm text-muted-foreground">Loading budget data…</p>
       </div>
     );
   }
