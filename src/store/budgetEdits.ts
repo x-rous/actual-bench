@@ -193,7 +193,14 @@ export const useBudgetEditsStore = create<BudgetEditsStore>()((set, get) => ({
   stageHold(hold) {
     const { holds, undoStack } = get();
     const existing = holds[hold.month];
-    if (existing && existing.nextAmount === hold.nextAmount) return;
+    if (existing && existing.nextAmount === hold.nextAmount) {
+      if (existing.saveError) {
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const { saveError: _saveError, ...rest } = existing;
+        set({ holds: { ...holds, [hold.month]: rest as StagedHold } });
+      }
+      return;
+    }
 
     // Always preserve the server-baseline previousAmount from the first staging
     // for this month. When the user stages a FREE then re-opens the Hold dialog,

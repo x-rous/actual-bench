@@ -180,7 +180,7 @@
 
 URL: `/budget-management`
 
-A multi-month budget editing workspace with staged cell editing, a draft review panel, right-click bulk actions, CSV import/export, and envelope-mode immediate actions.
+A multi-month budget editing workspace with staged cell editing, a draft review panel, right-click bulk actions, CSV import/export, and envelope-mode staged hold and transfer actions.
 
 ### Toolbar
 - Budget mode badge (`Envelope`, `Tracking`, or `Unknown`) always visible at the left
@@ -281,19 +281,20 @@ Bare-letter shortcuts (`V`, `F`, `H`, `E`, `[`, `]`) are scoped so they never fi
 - **Period Summary** (default, when no category or group is selected): shows the active 12-month range, budget mode, coverage split between actualized/current/future months, one mode-aware primary status, and one compact trend. Tracking mode separates Actuals to date, Budget to date, and Full 12-month plan; future months are muted as plan-only and never counted as zero-actual savings. Envelope mode shows current/ending To Budget or Overbudget status, end-of-visible-plan To Budget when future months exist, and period values such as Assigned / Budgeted, Spent to date, Income received to date, and Hold for next month.
 - **Category or group label selected**: the panel switches to the selected row across the visible 12-month period. Tracking mode uses planning language (over/under plan, actual vs budget to date, full-period budget, averages to date) and does not use Balance as the primary group/category concept. If rollover/carryover applies, Tracking adds Current, Ending, or Planned Rollover Balance without summing balances across months. Tracking also shows a **Monthly average** (full 12-month budgeted ÷ 12) beneath the full-period budget figure. Envelope mode uses allocation language (Current Balance, Planned Balance, Assigned / Budgeted, Spent to date, Carryover where available) and never sums balances across months. If a note exists for the selected category or group, a **Note** section is shown at the bottom of the panel.
 - **Category or group month cell selected**: the panel switches to compact selected-month details. Tracking shows month status, budgeted, actuals, variance, rollover balance when applicable, and previous month budget when available; future months are plan-only and do not show fake under-plan results. Envelope shows Current Balance for actualized/current months, Planned Balance for future months, selected-month assigned/spent/balance, and carryover where available. If a note exists for the selected category × month combination, a **Note** section is shown at the bottom of the panel.
-- **Staged Changes** appears only when staged edits affect the visible period and current selection. Month-cell selections scope staged impact to the selected month and row. Tracking shows budget plan impact; Envelope shows Estimated To Budget impact and notes that final balances recalculate after save.
+- **Staged Changes** appears only when staged edits affect the visible period and current selection. Month-cell selections scope staged impact to the selected month and row. Tracking shows budget plan impact; Envelope shows Estimated To Budget impact and notes that final balances recalculate after save. The staged changes overlay (accessible from the "N changes" badge) includes hold entries alongside cell edits and transfer pairs.
 - All notes are fetched in a single bulk ActualQL `SELECT *` from the `notes` table and cached for 5 minutes — no per-entity network calls are made when selecting cells or row labels.
 
 ### Clipboard Paste
 - Paste tab-delimited data from spreadsheets into the grid starting from the top-left selected cell; fills the corresponding rectangle without requiring pre-selection of exact dimensions
 
 ### Save Flow
-- Clicking Save first opens a compact review summary grouped by month with total change count, affected month count, and net budget delta; users can skip this review on future saves
-- Confirming the review opens a non-dismissable progress dialog that processes edits sequentially (never in parallel) to avoid server race conditions: complete transfer pairs are sent first via the atomic `POST /months/{month}/categorytransfers` endpoint (one request per pair); remaining standalone edits and any incomplete transfer legs are sent as individual `PATCH /months/{month}/categories/{id}` requests
-  - In-progress state: "Saving budget changes — N of M cells saved…" with a live progress bar
-  - All-success state: cell count and affected months; dialog auto-closes after 3 seconds (manual close also available)
-  - Partial or full failure state: amber header with a scrollable list of failed cells (month / category ID / error message); "Retry Failed" button re-reads only the still-failed keys from the store and re-sends them
-- Failed cells always remain in the store with their `saveError` set — only cells that received a 200 response are cleared; TanStack Query cache is invalidated per succeeded month
+- Clicking Save first opens a compact review summary grouped by month with total change count (cell edits + holds), affected month count, and net budget delta; individual months show a sub-line for any staged hold; users can skip this review on future saves
+- Confirming the review opens a non-dismissable progress dialog that processes changes sequentially (never in parallel) to avoid server race conditions: complete transfer pairs are sent first via the atomic `POST /months/{month}/categorytransfers` endpoint (one request per pair); remaining standalone edits and any incomplete transfer legs are sent as individual `PATCH /months/{month}/categories/{id}` requests; holds are processed last — DELETE-before-POST when replacing an existing server hold, or DELETE alone when freeing
+  - In-progress state: "Saving budget changes — N of M changes saved…" with a live progress bar
+  - All-success state: change count and affected months; dialog auto-closes after 3 seconds (manual close also available)
+  - Partial or full failure state: amber header with a scrollable list of failed changes (month / category ID / error message); "Retry Failed" button re-reads only the still-failed keys and hold months from the store and re-sends them
+- Failed changes (cell edits and holds) always remain in the store with their `saveError` set — only changes that received a 200 response are cleared; TanStack Query cache is invalidated per succeeded month; for hold saves, M+1 is also invalidated because the server updates `fromLastMonth` on the following month
+- Undo/redo history is cleared after a fully or partially successful save so stale undo steps from before the save cannot be replayed
 
 ### CSV Export
 - Three month-selection modes in the export dialog:
@@ -310,9 +311,12 @@ Bare-letter shortcuts (`V`, `F`, `H`, `E`, `[`, `]`) are scoped so they never fi
 - Levenshtein-distance fuzzy matching (distance ≤ 2) offers suggestions for near-miss category names
 - Out-of-range months (exist in budget but outside the current 12-month window) shown with an "Extend visible range" option; absent months (not in `GET /months`) rejected with a clear error
 
-### Envelope-Mode Immediate Actions
-- **Hold toggle**: each "To Budget" cell in the summary section has a hold toggle button (arrow icon, left of the amount). Clicking it when no hold is active opens the "Next Month Hold for YYYY-MM" dialog to set an amount; the dialog closes immediately on save. Clicking it when a hold is active shows a confirmation dialog ("Free the hold for YYYY-MM?") before clearing. Both actions are immediate and bypass the staged save panel
-- Hold is only available in envelope mode; it does not appear in tracking mode
+### Envelope-Mode Hold (Staged)
+- **Hold toggle**: each "To Budget" cell in the summary section shows the currently held amount as a negative value (e.g. `-$350.00`) with a free-hold icon to its left. Clicking the toggle when no hold is active opens the "Hold for next month - YYYY-MM" dialog; the amount input auto-focuses with the existing value fully selected so the user can type immediately. Pressing `Enter` or clicking "Stage Hold" stages the hold; `Escape` closes without staging.
+- Clicking the toggle when a hold is already staged or active stages a free (sets the hold amount to zero and removes the entry from the draft panel).
+- Staged holds appear in the draft panel alongside cell edits and are saved in the same batch when the user clicks Save. Undo/redo applies to hold staging on the same history stack as cell edits (up to 50 steps).
+- The staged hold is immediately overlaid on the effective month state — `To Budget` and `Hold for next month` in the summary row update without writing to the server.
+- Hold is only available in envelope mode; it does not appear in tracking mode.
 
 ### Envelope-Mode Staged Transfers
 - Right-click any spending category cell → **Cover Overspending** (negative balance) or **Transfer to Another Category** (positive balance) → opens the staged transfer dialog

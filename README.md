@@ -80,7 +80,7 @@ A full-width 12-month budget editor for envelope and tracking budgets.
 - Multi-cell selection, copy/paste from Excel or Google Sheets, fill down/right, previous-month fill, and average-based fill
 - Right-click bulk actions such as copy previous month, set to zero, set fixed amount, apply percentage change, and average calculations
 - Draft panel with selected-cell details, group totals, year summary, staged deltas, and save errors
-- Envelope-mode actions for next-month hold and category transfer
+- Envelope-mode staged hold for next month (with undo support) and staged category transfer
 - Keyboard shortcut cheatsheet
 
 ### Advanced Data Management

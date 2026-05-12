@@ -53,7 +53,7 @@ export function NextMonthHoldDialog({
 
   const handleSet = () => {
     const amount = Math.round(parseFloat(amountStr) * 100);
-    if (isNaN(amount) || amount < 0) {
+    if (!Number.isFinite(amount) || !Number.isSafeInteger(amount) || amount < 0) {
       setValidationError("Please enter a valid amount (0 or greater).");
       return;
     }

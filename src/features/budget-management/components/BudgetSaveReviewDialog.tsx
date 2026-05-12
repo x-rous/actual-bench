@@ -99,7 +99,7 @@ export function BudgetSaveReviewDialog({
             <thead className="bg-muted text-[10px] uppercase text-muted-foreground">
               <tr>
                 <th className="px-2 py-1.5 text-left font-medium">Month</th>
-                <th className="w-16 px-2 py-1.5 text-right font-medium">Edits</th>
+                <th className="w-16 px-2 py-1.5 text-right font-medium">Changes</th>
                 <th className="w-24 px-2 py-1.5 text-right font-medium">Net</th>
               </tr>
             </thead>

@@ -24,7 +24,7 @@ export function StagedChangesDialog({ onClose }: { onClose: () => void }) {
   const queryClient = useQueryClient();
   const overlayRef = useRef<HTMLDivElement>(null);
 
-  const totalChanges = countLogicalEdits(edits);
+  const totalChanges = countLogicalEdits(edits, holds);
 
   // Resolve category metadata from the cache. We only need one loaded month —
   // the category set is the same across all months in a budget.

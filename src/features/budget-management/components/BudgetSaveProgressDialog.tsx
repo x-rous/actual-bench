@@ -128,7 +128,7 @@ export function BudgetSaveProgressDialog({ edits, holds = {}, onClose }: Props) 
             </div>
             <p className="text-sm text-muted-foreground mb-3">
               {progress.total > 0
-                ? `${progress.completed} of ${progress.total} cells saved…`
+                ? `${progress.completed} of ${progress.total} changes saved…`
                 : "Preparing…"}
             </p>
             {progress.total > 0 && (
@@ -149,7 +149,7 @@ export function BudgetSaveProgressDialog({ edits, holds = {}, onClose }: Props) 
               <h2 className="text-base font-semibold text-foreground">All changes saved</h2>
             </div>
             <p className="text-sm text-muted-foreground mb-1">
-              {succeededResults.length} cell{succeededResults.length !== 1 ? "s" : ""} saved
+              {succeededResults.length} change{succeededResults.length !== 1 ? "s" : ""} saved
               {successMonths.length > 0 && ` across ${successMonths.length} month${successMonths.length !== 1 ? "s" : ""}`}.
             </p>
             {successMonths.length > 0 && (
@@ -177,8 +177,8 @@ export function BudgetSaveProgressDialog({ edits, holds = {}, onClose }: Props) 
             </div>
             <p className="text-sm text-muted-foreground mb-3">
               {dialogState === "partial-failure"
-                ? `${succeededResults.length} cell${succeededResults.length !== 1 ? "s" : ""} saved, ${failedResults.length} failed.`
-                : `${failedResults.length} cell${failedResults.length !== 1 ? "s" : ""} could not be saved.`}
+                ? `${succeededResults.length} change${succeededResults.length !== 1 ? "s" : ""} saved, ${failedResults.length} failed.`
+                : `${failedResults.length} change${failedResults.length !== 1 ? "s" : ""} could not be saved.`}
             </p>
             <div className="mb-4 max-h-44 overflow-y-auto rounded border border-border divide-y divide-border">
               {failedResults.map((r) => (
