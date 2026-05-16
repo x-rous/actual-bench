@@ -4,6 +4,7 @@ import { useCallback, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useConnectionStore, selectActiveInstance } from "@/store/connection";
 import { apiRequest } from "@/lib/api/client";
+import { addMonths } from "@/lib/budget/monthMath";
 
 export type CarryoverToggleInput = {
   categoryId: string;
@@ -85,6 +86,22 @@ export function useCarryoverToggle(): UseCarryoverToggleReturn {
           successMonths.map((m) =>
             queryClient.invalidateQueries({
               queryKey: ["budget-month-data", connection.id, m],
+            })
+          )
+        );
+
+        // RD-038: Invalidate adjacent prefetched windows so any pre-warmed months
+        // reflect the updated carryover flag and compute the correct per-category
+        // balance cascade in tracking mode.
+        const firstMonth = input.months[0]!;
+        const lastMonth = input.months[input.months.length - 1]!;
+        const adjacentMonths: string[] = [];
+        for (let i = -12; i <= -1; i++) adjacentMonths.push(addMonths(firstMonth, i));
+        for (let i = 1; i <= 12; i++) adjacentMonths.push(addMonths(lastMonth, i));
+        await Promise.all(
+          adjacentMonths.map((month) =>
+            queryClient.invalidateQueries({
+              queryKey: ["budget-month-data", connection.id, month],
             })
           )
         );
