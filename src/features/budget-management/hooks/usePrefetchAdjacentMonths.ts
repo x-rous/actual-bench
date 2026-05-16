@@ -16,12 +16,12 @@ type Props = {
  * after the current 12-month window. Fires as a background side-effect so
  * that «/» navigation renders from cache without a loading state.
  *
- * prefetchQuery is a no-op if the data is already cached or a fetch is in
- * flight — safe to call on every windowStart change.
- *
- * staleTime is intentionally kept at 0 (the query default) so TanStack Query
- * fires a background refetch when the prefetched months become visible. Any
- * staleness from save or carryover toggle self-corrects within ~200–400ms.
+ * prefetchQuery is a no-op if the data is already fresh — safe to call on
+ * every windowStart change. staleTime of 2 minutes keeps prefetched months
+ * fresh across typical month-by-month navigation so repeated adjacent-window
+ * shifts don't trigger redundant network requests. Saves and carryover toggles
+ * explicitly invalidate affected query keys, so stale data is never silently
+ * retained after a write.
  */
 export function usePrefetchAdjacentMonths({ windowStart, availableMonths }: Props) {
   const connection = useConnectionStore(selectActiveInstance);
@@ -44,7 +44,10 @@ export function usePrefetchAdjacentMonths({ windowStart, availableMonths }: Prop
 
     for (const month of monthsToPrefetch) {
       if (!availableSet.has(month)) continue;
-      queryClient.prefetchQuery(budgetMonthDataQueryOptions(connection, month));
+      queryClient.prefetchQuery({
+        ...budgetMonthDataQueryOptions(connection, month),
+        staleTime: 2 * 60 * 1000, // 2 min — keeps prefetched months fresh across navigation
+      });
     }
   }, [windowStart, availableMonths, connection, queryClient]);
 }
