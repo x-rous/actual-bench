@@ -63,6 +63,79 @@ describe("validateRuleDraft", () => {
     expect(result.conditionErrors[0]).toContain("Condition 1: enter a valid value.");
   });
 
+  it("accepts a valid formula starting with =", () => {
+    const result = validateRuleDraft(
+      buildDraft({
+        actions: [
+          {
+            clientId: "action-1",
+            part: {
+              field: "notes",
+              op: "set",
+              value: "",
+              type: "string",
+              options: { formula: '=IF(ISBLANK(notes), imported_payee, notes)' },
+            },
+          },
+        ],
+      })
+    );
+
+    expect(result.actionErrors[0]).toEqual([]);
+  });
+
+  it("rejects an empty formula", () => {
+    const result = validateRuleDraft(
+      buildDraft({
+        actions: [
+          {
+            clientId: "action-1",
+            part: { field: "notes", op: "set", value: "", type: "string", options: { formula: "" } },
+          },
+        ],
+      })
+    );
+
+    expect(result.actionErrors[0]).toContain("Action 1: enter a valid value.");
+  });
+
+  it("rejects a formula not starting with =", () => {
+    const result = validateRuleDraft(
+      buildDraft({
+        actions: [
+          {
+            clientId: "action-1",
+            part: { field: "notes", op: "set", value: "", type: "string", options: { formula: "IF(ISBLANK(notes), x, notes)" } },
+          },
+        ],
+      })
+    );
+
+    expect(result.actionErrors[0]).toContain("Action 1: formula must start with =");
+  });
+
+  it("rejects formula mode on ID fields (e.g. category)", () => {
+    const result = validateRuleDraft(
+      buildDraft({
+        actions: [
+          {
+            clientId: "action-1",
+            part: {
+              field: "category",
+              op: "set",
+              value: "",
+              type: "id",
+              options: { formula: "=IF(TRUE, x, y)" },
+            },
+          },
+        ],
+      })
+    );
+
+    // supportsFormula is false for category, so treated as invalid value
+    expect(result.actionErrors[0]).toContain("Action 1: enter a valid value.");
+  });
+
   it("rejects template values for fields that do not support templates", () => {
     const result = validateRuleDraft(
       buildDraft({

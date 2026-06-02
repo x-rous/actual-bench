@@ -59,7 +59,13 @@ export function exportRulesToCsv(stagedRules: StagedMap<Rule>, maps: EntityMaps)
 
     for (const act of rule.actions) {
       const isTemplate = act.options !== undefined && "template" in act.options;
+      const isFormula = act.options !== undefined && "formula" in act.options;
       const isDeleteTxn = act.op === "delete-transaction";
+
+      // Prefix formulas starting with "=" with a single quote so spreadsheet apps
+      // treat the cell as text rather than evaluating it as a formula.
+      const rawFormula = act.options?.formula ?? "";
+      const formulaExportValue = rawFormula.startsWith("=") ? "'" + rawFormula : rawFormula;
 
       lines.push([
         csvField(rule.id),
@@ -67,9 +73,11 @@ export function exportRulesToCsv(stagedRules: StagedMap<Rule>, maps: EntityMaps)
         isFirstRow ? csvField(rule.conditionsOp) : "",
         "action",
         csvField(act.field ?? ""),
-        isTemplate ? "set-template" : csvField(act.op),
+        isTemplate ? "set-template" : isFormula ? "set-formula" : csvField(act.op),
         isTemplate
           ? csvField(act.options!.template ?? "")
+          : isFormula
+          ? csvField(formulaExportValue)
           : isDeleteTxn
           ? ""
           : csvField(exportDisplayValue(act, maps)),

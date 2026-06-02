@@ -211,6 +211,11 @@ export function importRulesFromCsv(
       } else {
         if (op === "set-template") {
           actions.push({ field, op: "set", value: "", type: "string", options: { template: rawValue } });
+        } else if (op === "set-formula") {
+          // Strip the leading "'" that the exporter adds to prevent spreadsheet apps
+          // from evaluating "=…" values as formulas.
+          const formula = rawValue.startsWith("'=") ? rawValue.slice(1) : rawValue;
+          actions.push({ field, op: "set", value: "", type: "string", options: { formula } });
         } else if (op === "delete-transaction") {
           actions.push({ op: "delete-transaction", value: "" });
         } else if (op === "prepend-notes" || op === "append-notes") {

@@ -33,7 +33,9 @@ export function ActionRow({
   const field = action.field ?? "";
   const fieldDef = ACTION_FIELDS[field];
   const isTemplate = op === "set" && action.options?.template !== undefined;
+  const isFormula = op === "set" && action.options?.formula !== undefined;
   const supportsTemplate = op === "set" && fieldDef?.supportsTemplate === true;
+  const supportsFormula = op === "set" && fieldDef?.supportsFormula === true;
   const stagedSchedules = useStagedStore((s) => s.schedules);
   const openQuickCreate = useQuickCreateStore((s) => s.open);
 
@@ -72,9 +74,19 @@ export function ActionRow({
       const restoredValue = action.options?.template ?? valueToString(action.value);
       onChange({ ...action, value: restoredValue, options: undefined });
     } else {
-      // Enter template mode: zero value type-aware
+      // Enter template mode (exits formula mode if active)
       const zeroValue = fieldDef?.type === "number" || fieldDef?.type === "boolean" ? null : "";
       onChange({ ...action, value: zeroValue, options: { template: valueToString(action.value) } });
+    }
+  }
+
+  function toggleFormulaMode() {
+    if (isFormula) {
+      const restoredValue = action.options?.formula ?? valueToString(action.value);
+      onChange({ ...action, value: restoredValue, options: undefined });
+    } else {
+      // Enter formula mode (exits template mode if active)
+      onChange({ ...action, value: "", options: { formula: valueToString(action.value) } });
     }
   }
 
@@ -190,7 +202,19 @@ export function ActionRow({
             ))}
         </select>
 
-        {isTemplate ? (
+        {isFormula ? (
+          <div className="flex flex-1 flex-col gap-0.5">
+            <input
+              className={inputCls}
+              value={action.options?.formula ?? ""}
+              onChange={(e) => onChange({ ...action, options: { formula: e.target.value } })}
+              placeholder="=IF(ISBLANK(notes), …)"
+            />
+            <span className="text-[10px] text-muted-foreground">
+              Excel formula — e.g. <code>{"=IF(ISBLANK(notes), imported_payee, notes)"}</code>
+            </span>
+          </div>
+        ) : isTemplate ? (
           <div className="flex flex-1 flex-col gap-0.5">
             <input
               className={inputCls}
@@ -247,7 +271,24 @@ export function ActionRow({
           />
         )}
 
-        {supportsTemplate && (
+        {supportsFormula && !isTemplate && (
+          <Button
+            variant="ghost"
+            size="icon"
+            title={isFormula ? "Switch to text mode" : "Switch to formula mode"}
+            className={cn(
+              "mt-0.5 h-7 w-7 shrink-0 font-mono text-base leading-none",
+              isFormula
+                ? "text-amber-600 hover:text-amber-700"
+                : "text-muted-foreground hover:text-foreground"
+            )}
+            onClick={toggleFormulaMode}
+          >
+            ƒ
+          </Button>
+        )}
+
+        {supportsTemplate && !isFormula && (
           <Button
             variant="ghost"
             size="icon"

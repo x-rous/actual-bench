@@ -159,6 +159,7 @@ export function ActionChip({
 
   const fieldLabel = ACTION_FIELDS[field]?.label ?? field;
   const template = action.options?.template;
+  const formula = action.options?.formula;
   const fieldDef = ACTION_FIELDS[field];
 
   // Template mode
@@ -174,6 +175,24 @@ export function ActionChip({
         <span className="text-[11px] text-muted-foreground">template:</span>
         <span className="rounded px-1 py-0.5 text-[11px] font-mono bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-400">
           {template || <span className="italic opacity-60">empty template</span>}
+        </span>
+      </div>
+    );
+  }
+
+  // Formula mode
+  if (formula !== undefined) {
+    return (
+      <div className="flex items-center gap-1 flex-wrap">
+        <span className="rounded px-1 py-0.5 text-[11px] font-medium bg-muted text-muted-foreground">
+          set
+        </span>
+        <span className="rounded px-1 py-0.5 text-[11px] font-semibold bg-violet-50 text-violet-700 dark:bg-violet-950/30 dark:text-violet-400">
+          {fieldLabel}
+        </span>
+        <span className="text-[11px] text-muted-foreground">formula:</span>
+        <span className="rounded px-1 py-0.5 text-[11px] font-mono bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-400">
+          {formula || <span className="italic opacity-60">empty formula</span>}
         </span>
       </div>
     );

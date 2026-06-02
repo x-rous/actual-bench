@@ -1,11 +1,12 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { Fragment, type ReactNode } from "react";
 import { Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { ConditionRow, selectCls } from "./ConditionRow";
+import { cn } from "@/lib/utils";
+import { ConditionRow } from "./ConditionRow";
 import { ActionRow } from "./ActionRow";
-import { STAGE_OPTIONS, CONDITIONS_OP_OPTIONS } from "../utils/ruleFields";
+import { STAGE_OPTIONS } from "../utils/ruleFields";
 import type { EditorPart, RuleDraftValidation, RuleEntityOptionsMap } from "../lib/ruleEditor";
 import type { ConditionOrAction, ConditionsOp, RuleStage } from "@/types/entities";
 
@@ -60,36 +61,25 @@ export function RuleEditorFields({
 
   return (
     <div className="flex-1 space-y-6 overflow-y-auto px-4 py-4">
-      <div className="flex items-end gap-4">
-        <div className="flex flex-col gap-1">
-          <label htmlFor="stage-select" className="text-xs font-medium text-muted-foreground">Stage</label>
-          <select
-            id="stage-select"
-            className={selectCls}
-            value={stage}
-            onChange={(e) => onStageChange(e.target.value as RuleStage)}
-          >
-            {STAGE_OPTIONS.map((option) => (
-              <option key={option} value={option}>
-                {option.charAt(0).toUpperCase() + option.slice(1)}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="flex flex-1 flex-col gap-1">
-          <label htmlFor="conditionsop-select" className="text-xs font-medium text-muted-foreground">Match</label>
-          <select
-            id="conditionsop-select"
-            className={selectCls}
-            value={conditionsOp}
-            onChange={(e) => onConditionsOpChange(e.target.value as ConditionsOp)}
-          >
-            {CONDITIONS_OP_OPTIONS.map((option) => (
-              <option key={option} value={option}>
-                {option === "and" ? "ALL conditions (and)" : "ANY condition (or)"}
-              </option>
-            ))}
-          </select>
+      {/* Stage — inline label + compact segmented toggle */}
+      <div className="flex items-center gap-3">
+        <span className="whitespace-nowrap text-xs font-medium text-muted-foreground">Stage</span>
+        <div className="flex w-fit overflow-hidden rounded-md border border-input">
+          {STAGE_OPTIONS.map((s) => (
+            <button
+              key={s}
+              type="button"
+              onClick={() => onStageChange(s)}
+              className={cn(
+                "border-r border-input px-4 py-1.5 text-xs font-medium transition-colors last:border-r-0",
+                stage === s
+                  ? "bg-primary text-primary-foreground"
+                  : "bg-background text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+              )}
+            >
+              {s.charAt(0).toUpperCase() + s.slice(1)}
+            </button>
+          ))}
         </div>
       </div>
 
@@ -118,49 +108,86 @@ export function RuleEditorFields({
         </div>
       )}
 
+      {/* Conditions section */}
       <div className="space-y-2">
         <div className="flex items-center justify-between">
-          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            Conditions
-          </p>
+          <div className="flex items-center gap-2">
+            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              Conditions
+            </p>
+            {!scheduleLinked && (
+              <>
+                <span className="text-xs text-muted-foreground">· match</span>
+                <div className="flex overflow-hidden rounded border border-input text-[11px]">
+                  {(["and", "or"] as ConditionsOp[]).map((op, i) => (
+                    <button
+                      key={op}
+                      type="button"
+                      onClick={() => onConditionsOpChange(op)}
+                      className={cn(
+                        "px-2 py-0.5 font-semibold transition-colors",
+                        i > 0 && "border-l border-input",
+                        conditionsOp === op
+                          ? "bg-primary text-primary-foreground"
+                          : "bg-background text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+                      )}
+                    >
+                      {op === "and" ? "ALL" : "ANY"}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
           {!scheduleLinked && (
             <Button variant="ghost" size="sm" className="h-6 text-xs" onClick={onAddCondition}>
               <Plus className="mr-1 h-3 w-3" />
-              Add
+              Add condition
             </Button>
           )}
         </div>
 
         {conditions.length === 0 ? (
           <p className="text-xs italic text-muted-foreground">
-            No conditions yet. This rule will match all transactions unless you add one.
+            No conditions yet. This rule will apply to every transaction.
           </p>
         ) : (
-          <div className="space-y-2">
+          <div>
             {conditions.map((entry, index) => {
               const rowErrors =
                 showValidation || touchedConditionIds.has(entry.clientId)
                   ? validation.conditionErrors[index] ?? []
                   : [];
               return (
-                <ConditionRow
-                  key={entry.clientId}
-                  condition={entry.part}
-                  scheduleLinked={scheduleLinked}
-                  entityOptions={entityOptions}
-                  error={rowErrors[0]}
-                  onChange={(updated) => {
-                    onConditionTouched(entry.clientId);
-                    onConditionChange(entry.clientId, updated);
-                  }}
-                  onDelete={() => onConditionDelete(entry.clientId)}
-                />
+                <Fragment key={entry.clientId}>
+                  {index > 0 && (
+                    <div className="flex items-center gap-2 py-1.5">
+                      <div className="flex-1 border-t border-dashed border-border" />
+                      <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground/60">
+                        {conditionsOp}
+                      </span>
+                      <div className="flex-1 border-t border-dashed border-border" />
+                    </div>
+                  )}
+                  <ConditionRow
+                    condition={entry.part}
+                    scheduleLinked={scheduleLinked}
+                    entityOptions={entityOptions}
+                    error={rowErrors[0]}
+                    onChange={(updated) => {
+                      onConditionTouched(entry.clientId);
+                      onConditionChange(entry.clientId, updated);
+                    }}
+                    onDelete={() => onConditionDelete(entry.clientId)}
+                  />
+                </Fragment>
               );
             })}
           </div>
         )}
       </div>
 
+      {/* Actions section */}
       <div className="space-y-2">
         <div className="flex items-center justify-between">
           <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
@@ -168,13 +195,13 @@ export function RuleEditorFields({
           </p>
           <Button variant="ghost" size="sm" className="h-6 text-xs" onClick={onAddAction}>
             <Plus className="mr-1 h-3 w-3" />
-            Add
+            Add action
           </Button>
         </div>
 
         {actions.length === 0 ? (
           <p className="text-xs italic text-muted-foreground">
-            No actions yet. Add at least one action before saving.
+            No actions yet. Add at least one before saving.
           </p>
         ) : (
           <div className="space-y-2">

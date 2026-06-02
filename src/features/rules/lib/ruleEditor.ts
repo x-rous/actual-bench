@@ -109,10 +109,14 @@ function isRecurConfigValue(value: ConditionOrAction["value"]): boolean {
 
 function hasValidRequiredValue(
   part: ConditionOrAction,
-  fieldDef: { type: "string" | "id" | "number" | "date" | "boolean"; supportsTemplate?: boolean }
+  fieldDef: { type: "string" | "id" | "number" | "date" | "boolean"; supportsTemplate?: boolean; supportsFormula?: boolean }
 ): boolean {
   if (part.options?.template !== undefined) {
     return fieldDef.supportsTemplate === true && !isBlankString(part.options.template);
+  }
+
+  if (part.options?.formula !== undefined) {
+    return fieldDef.supportsFormula === true && !isBlankString(part.options.formula);
   }
 
   if (Array.isArray(part.value)) {
@@ -184,6 +188,15 @@ function validateActionPart(part: ConditionOrAction, index: number): string[] {
 
   if (opDef.hasValue && !hasValidRequiredValue(part, fieldDef)) {
     errors.push(`Action ${index + 1}: enter a valid value.`);
+  }
+
+  // Formula-specific: must start with "="
+  if (
+    part.options?.formula !== undefined &&
+    !isBlankString(part.options.formula) &&
+    !part.options.formula.trim().startsWith("=")
+  ) {
+    errors.push(`Action ${index + 1}: formula must start with =`);
   }
 
   return errors;

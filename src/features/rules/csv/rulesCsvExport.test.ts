@@ -170,6 +170,34 @@ describe("exportRulesToCsv", () => {
     expect(result).toContain("true");
   });
 
+  it("exports formula actions with op=set-formula and prefixes '=' formulas with single-quote", () => {
+    const rule = makeRule("r1", {
+      actions: [{ field: "notes", op: "set", value: "", type: "string", options: { formula: "=IF(ISBLANK(notes), x, notes)" } }],
+    });
+    const result = exportRulesToCsv(staged(rule), emptyMaps);
+    expect(result).toContain("set-formula");
+    // The formula is prefixed with ' to prevent spreadsheet apps from evaluating it
+    expect(result).toContain("'=IF(ISBLANK(notes)");
+    expect(result).not.toContain(",set,");
+  });
+
+  it("round-trips: formula action survives export → import", () => {
+    const formula = '=IF(ISBLANK(notes), "(" & imported_payee & ") |", notes & " (" & imported_payee & ") |")';
+    const rule = makeRule("r1", {
+      actions: [{ field: "notes", op: "set", value: "", type: "string", options: { formula } }],
+    });
+    const csv = exportRulesToCsv(staged(rule), emptyMaps);
+    const imported = importRulesFromCsv(csv, emptyMaps);
+
+    expect("error" in imported).toBe(false);
+    if ("error" in imported) return;
+
+    const action = imported.rules[0].actions[0];
+    expect(action.op).toBe("set");
+    expect(action.value).toBe("");
+    expect(action.options).toEqual({ formula });
+  });
+
   it("round-trips: template action survives export → import", () => {
     const rule = makeRule("r1", {
       actions: [{ field: "notes", op: "set", value: "", type: "string", options: { template: "{{regex imported_payee 'foo' 'bar'}}" } }],

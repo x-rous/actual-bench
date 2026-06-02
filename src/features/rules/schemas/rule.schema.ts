@@ -30,7 +30,7 @@ const conditionOrActionSchema = z.object({
     recurConfigSchema,
   ]),
   type: z.string().optional(),
-  options: z.object({ template: z.string().optional() }).optional(),
+  options: z.object({ template: z.string().optional(), formula: z.string().optional() }).optional(),
 });
 
 export const ruleSchema = z.object({
