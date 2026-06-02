@@ -30,7 +30,12 @@ const conditionOrActionSchema = z.object({
     recurConfigSchema,
   ]),
   type: z.string().optional(),
-  options: z.object({ template: z.string().optional(), formula: z.string().optional() }).optional(),
+  options: z
+    .object({ template: z.string().optional(), formula: z.string().optional() })
+    .refine((o) => !(o.template !== undefined && o.formula !== undefined), {
+      message: "template and formula are mutually exclusive",
+    })
+    .optional(),
 });
 
 export const ruleSchema = z.object({

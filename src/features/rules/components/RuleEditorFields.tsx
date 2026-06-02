@@ -1,7 +1,7 @@
 "use client";
 
-import { Fragment, type ReactNode } from "react";
-import { Plus } from "lucide-react";
+import { type ReactNode } from "react";
+import { ChevronDown, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { ConditionRow } from "./ConditionRow";
@@ -61,20 +61,36 @@ export function RuleEditorFields({
 
   return (
     <div className="flex-1 space-y-6 overflow-y-auto px-4 py-4">
-      {/* Stage — inline label + compact segmented toggle */}
-      <div className="flex items-center gap-3">
-        <span className="whitespace-nowrap text-xs font-medium text-muted-foreground">Stage</span>
-        <div className="flex w-fit overflow-hidden rounded-md border border-input">
+      {/* Stage — pill-style toggle */}
+      <div className="flex items-center gap-2">
+        <span id="stage-label" className="whitespace-nowrap text-xs font-medium text-muted-foreground">Stage</span>
+        <div
+          role="radiogroup"
+          aria-labelledby="stage-label"
+          className="flex items-center gap-0.5"
+          onKeyDown={(e) => {
+            if (!["ArrowRight", "ArrowLeft", "ArrowDown", "ArrowUp"].includes(e.key)) return;
+            e.preventDefault();
+            const radios = Array.from(e.currentTarget.querySelectorAll<HTMLButtonElement>('[role="radio"]'));
+            const currentIndex = STAGE_OPTIONS.indexOf(stage);
+            const delta = e.key === "ArrowRight" || e.key === "ArrowDown" ? 1 : -1;
+            const nextIndex = (currentIndex + delta + STAGE_OPTIONS.length) % STAGE_OPTIONS.length;
+            onStageChange(STAGE_OPTIONS[nextIndex]);
+            radios[nextIndex]?.focus();
+          }}
+        >
           {STAGE_OPTIONS.map((s) => (
             <button
               key={s}
               type="button"
+              role="radio"
+              aria-checked={stage === s}
               onClick={() => onStageChange(s)}
               className={cn(
-                "border-r border-input px-4 py-1.5 text-xs font-medium transition-colors last:border-r-0",
+                "rounded px-2.5 py-1 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
                 stage === s
-                  ? "bg-primary text-primary-foreground"
-                  : "bg-background text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+                  ? "bg-primary/10 text-primary"
+                  : "text-muted-foreground hover:text-foreground"
               )}
             >
               {s.charAt(0).toUpperCase() + s.slice(1)}
@@ -111,34 +127,9 @@ export function RuleEditorFields({
       {/* Conditions section */}
       <div className="space-y-2">
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              Conditions
-            </p>
-            {!scheduleLinked && (
-              <>
-                <span className="text-xs text-muted-foreground">· match</span>
-                <div className="flex overflow-hidden rounded border border-input text-[11px]">
-                  {(["and", "or"] as ConditionsOp[]).map((op, i) => (
-                    <button
-                      key={op}
-                      type="button"
-                      onClick={() => onConditionsOpChange(op)}
-                      className={cn(
-                        "px-2 py-0.5 font-semibold transition-colors",
-                        i > 0 && "border-l border-input",
-                        conditionsOp === op
-                          ? "bg-primary text-primary-foreground"
-                          : "bg-background text-muted-foreground hover:bg-muted/60 hover:text-foreground"
-                      )}
-                    >
-                      {op === "and" ? "ALL" : "ANY"}
-                    </button>
-                  ))}
-                </div>
-              </>
-            )}
-          </div>
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Conditions
+          </p>
           {!scheduleLinked && (
             <Button variant="ghost" size="sm" className="h-6 text-xs" onClick={onAddCondition}>
               <Plus className="mr-1 h-3 w-3" />
@@ -147,40 +138,47 @@ export function RuleEditorFields({
           )}
         </div>
 
+        {!scheduleLinked && (
+          <p className="text-xs text-muted-foreground">
+            If{" "}
+            <button
+              type="button"
+              onClick={() => onConditionsOpChange(conditionsOp === "and" ? "or" : "and")}
+              className="inline-flex items-center gap-0.5 rounded bg-primary/10 px-1.5 py-0.5 text-xs font-semibold text-primary transition-colors hover:bg-primary/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+              aria-label={`Match logic: currently ${conditionsOp === "and" ? "ALL" : "ANY"}. Click to toggle.`}
+            >
+              {conditionsOp === "and" ? "ALL" : "ANY"}
+              <ChevronDown className="h-2.5 w-2.5" />
+            </button>
+            {" "}of these conditions match:
+          </p>
+        )}
+
         {conditions.length === 0 ? (
           <p className="text-xs italic text-muted-foreground">
             No conditions yet. This rule will apply to every transaction.
           </p>
         ) : (
-          <div>
-            {conditions.map((entry, index) => {
+          <div className="space-y-2">
+            {conditions.map((entry) => {
+              const index = conditions.indexOf(entry);
               const rowErrors =
                 showValidation || touchedConditionIds.has(entry.clientId)
                   ? validation.conditionErrors[index] ?? []
                   : [];
               return (
-                <Fragment key={entry.clientId}>
-                  {index > 0 && (
-                    <div className="flex items-center gap-2 py-1.5">
-                      <div className="flex-1 border-t border-dashed border-border" />
-                      <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground/60">
-                        {conditionsOp}
-                      </span>
-                      <div className="flex-1 border-t border-dashed border-border" />
-                    </div>
-                  )}
-                  <ConditionRow
-                    condition={entry.part}
-                    scheduleLinked={scheduleLinked}
-                    entityOptions={entityOptions}
-                    error={rowErrors[0]}
-                    onChange={(updated) => {
-                      onConditionTouched(entry.clientId);
-                      onConditionChange(entry.clientId, updated);
-                    }}
-                    onDelete={() => onConditionDelete(entry.clientId)}
-                  />
-                </Fragment>
+                <ConditionRow
+                  key={entry.clientId}
+                  condition={entry.part}
+                  scheduleLinked={scheduleLinked}
+                  entityOptions={entityOptions}
+                  error={rowErrors[0]}
+                  onChange={(updated) => {
+                    onConditionTouched(entry.clientId);
+                    onConditionChange(entry.clientId, updated);
+                  }}
+                  onDelete={() => onConditionDelete(entry.clientId)}
+                />
               );
             })}
           </div>

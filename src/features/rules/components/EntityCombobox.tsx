@@ -36,6 +36,7 @@ export function EntityCombobox({
       value={value}
       onChange={onChange}
       placeholder={placeholder}
+      triggerClassName="bg-sky-50 border-sky-200 dark:bg-sky-950/20 dark:border-sky-800"
       footer={
         canQuickCreate
           ? (search) =>
@@ -80,6 +81,7 @@ export function MultiEntityCombobox({
       values={values}
       onChange={onChange}
       placeholder={placeholder}
+      triggerClassName="bg-sky-50 border-sky-200 dark:bg-sky-950/20 dark:border-sky-800"
     />
   );
 }

@@ -19,6 +19,12 @@ import type { RuleEntityOptionsMap } from "../lib/ruleEditor";
 export const selectCls =
   "h-8 rounded-md border border-input bg-background px-2 text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-ring/50";
 
+export const conditionFieldSelectCls =
+  "h-8 rounded-md border border-indigo-200 bg-indigo-50 px-2 text-xs font-medium text-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-400/50 dark:border-indigo-800 dark:bg-indigo-950/30 dark:text-indigo-300";
+
+export const fieldSelectCls =
+  "h-8 rounded-md border border-violet-200 bg-violet-50 px-2 text-xs font-medium text-violet-700 focus:outline-none focus:ring-2 focus:ring-violet-400/50 dark:border-violet-800 dark:bg-violet-950/30 dark:text-violet-300";
+
 export const inputCls =
   "h-8 w-full rounded-md border border-input bg-background px-2 text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-ring/50";
 
@@ -284,7 +290,7 @@ export function ConditionRow({
     <div className="space-y-1">
       <div className="flex items-start gap-1.5">
         <select
-          className={cn(selectCls, "w-32 shrink-0")}
+          className={cn(conditionFieldSelectCls, "w-32 shrink-0")}
           value={field ?? ""}
           onChange={(e) => setField(e.target.value)}
         >

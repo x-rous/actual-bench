@@ -5,7 +5,7 @@ import { Trash2, Braces } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { EntityCombobox } from "./EntityCombobox";
-import { selectCls, inputCls } from "./ConditionRow";
+import { selectCls, fieldSelectCls, inputCls } from "./ConditionRow";
 import { valueToString } from "../utils/rulePreview";
 import { ACTION_FIELDS, ACTION_OPS } from "../utils/ruleFields";
 import { useStagedStore } from "@/store/staged";
@@ -191,7 +191,7 @@ export function ActionRow({
         </select>
 
         <select
-          className={cn(selectCls, "w-32 shrink-0")}
+          className={cn(fieldSelectCls, "w-32 shrink-0")}
           value={field}
           onChange={(e) => handleFieldChange(e.target.value)}
         >
@@ -276,6 +276,8 @@ export function ActionRow({
             variant="ghost"
             size="icon"
             title={isFormula ? "Switch to text mode" : "Switch to formula mode"}
+            aria-label={isFormula ? "Switch to text mode" : "Switch to formula mode"}
+            aria-pressed={isFormula}
             className={cn(
               "mt-0.5 h-7 w-7 shrink-0 font-mono text-base leading-none",
               isFormula
@@ -293,6 +295,8 @@ export function ActionRow({
             variant="ghost"
             size="icon"
             title={isTemplate ? "Switch to text mode" : "Switch to template mode"}
+            aria-label={isTemplate ? "Switch to text mode" : "Switch to template mode"}
+            aria-pressed={isTemplate}
             className={cn(
               "mt-0.5 h-7 w-7 shrink-0",
               isTemplate
