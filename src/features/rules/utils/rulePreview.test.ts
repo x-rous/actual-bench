@@ -103,6 +103,22 @@ describe("rulePreview", () => {
     expect(result).toContain("unknown-id");
   });
 
+  it("formats a template action", () => {
+    const rule = makeRule({
+      actions: [{ field: "notes", op: "set", value: "", type: "string", options: { template: "{{imported_payee}}" } }],
+    });
+    const result = rulePreview(rule, emptyMaps);
+    expect(result).toContain("template: {{imported_payee}}");
+  });
+
+  it("formats a formula action", () => {
+    const rule = makeRule({
+      actions: [{ field: "notes", op: "set", value: "", type: "string", options: { formula: "=IF(ISBLANK(notes), imported_payee, notes)" } }],
+    });
+    const result = rulePreview(rule, emptyMaps);
+    expect(result).toContain("formula: =IF(ISBLANK(notes)");
+  });
+
   it("formats the full If…→ structure", () => {
     const rule = makeRule({
       conditionsOp: "and",

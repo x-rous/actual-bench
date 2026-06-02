@@ -12,6 +12,8 @@ export type FieldDef = {
   entity?: "payee" | "category" | "account" | "categoryGroup";
   /** Whether this field supports Handlebars template mode */
   supportsTemplate?: boolean;
+  /** Whether this field supports Excel formula mode */
+  supportsFormula?: boolean;
 };
 
 export type OpDef = {
@@ -35,9 +37,9 @@ export const ACTION_FIELDS: Record<string, FieldDef> = {
   payee:           { label: "Payee",          type: "id",      entity: "payee" },
   category:        { label: "Category",       type: "id",      entity: "category" },
   account:         { label: "Account",        type: "id",      entity: "account" },
-  notes:           { label: "Notes",          type: "string",  supportsTemplate: true },
+  notes:           { label: "Notes",          type: "string",  supportsTemplate: true, supportsFormula: true },
   cleared:         { label: "Cleared",        type: "boolean" },
-  payee_name:      { label: "Payee Name",     type: "string",  supportsTemplate: true },
+  payee_name:      { label: "Payee Name",     type: "string",  supportsTemplate: true, supportsFormula: true },
   date:            { label: "Date",           type: "date" },
   amount:          { label: "Amount",         type: "number" },
   // Linked schedule action — created automatically by the schedules API.

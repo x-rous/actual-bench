@@ -97,12 +97,14 @@ export function SearchableCombobox({
   onChange,
   placeholder = "— select —",
   footer,
+  triggerClassName,
 }: {
   options: ComboboxOption[];
   value: string;
   onChange: (v: string) => void;
   placeholder?: string;
   footer?: (search: string) => React.ReactNode;
+  triggerClassName?: string;
 }) {
   const { open, openDropdown, closeDropdown, search, setSearch, containerRef, searchRef } =
     useComboboxState();
@@ -122,7 +124,8 @@ export function SearchableCombobox({
         onClick={() => (open ? closeDropdown() : openDropdown())}
         className={cn(
           "flex h-8 w-full items-center justify-between rounded-md border border-input bg-background px-2 text-xs focus:outline-none focus:ring-2 focus:ring-ring/50",
-          !selectedLabel && "text-muted-foreground"
+          !selectedLabel && "text-muted-foreground",
+          triggerClassName
         )}
       >
         <span className="truncate">{selectedLabel || placeholder}</span>
@@ -204,11 +207,13 @@ export function MultiSearchableCombobox({
   values,
   onChange,
   placeholder = "— select —",
+  triggerClassName,
 }: {
   options: ComboboxOption[];
   values: string[];
   onChange: (v: string[]) => void;
   placeholder?: string;
+  triggerClassName?: string;
 }) {
   const { open, openDropdown, closeDropdown, search, setSearch, containerRef, searchRef } =
     useComboboxState();
@@ -233,7 +238,10 @@ export function MultiSearchableCombobox({
         tabIndex={0}
         onClick={() => (open ? closeDropdown() : openDropdown())}
         onKeyDown={(e) => e.key === "Enter" && (open ? closeDropdown() : openDropdown())}
-        className="flex min-h-8 w-full cursor-pointer flex-wrap items-center gap-1 rounded-md border border-input bg-background px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-ring/50"
+        className={cn(
+          "flex min-h-8 w-full cursor-pointer flex-wrap items-center gap-1 rounded-md border border-input bg-background px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-ring/50",
+          triggerClassName
+        )}
       >
         {selectedOptions.length === 0 ? (
           <span className="text-muted-foreground">{placeholder}</span>

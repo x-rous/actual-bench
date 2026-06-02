@@ -207,6 +207,40 @@ describe("importRulesFromCsv", () => {
     expect(action.options).toEqual({ template: "{{regex imported_payee 'foo' 'bar'}}" });
   });
 
+  it("imports a formula action (op=set-formula) with options.formula set", () => {
+    const formula = "=IF(ISBLANK(notes), x, notes)";
+    const csv = [
+      "rule_id,stage,conditions_op,row_type,field,op,value",
+      `r1,default,and,action,notes,set-formula,"${formula}"`,
+    ].join("\n");
+
+    const result = importRulesFromCsv(csv, emptyMaps);
+
+    expect("error" in result).toBe(false);
+    if ("error" in result) return;
+
+    const action = result.rules[0].actions[0];
+    expect(action.op).toBe("set");
+    expect(action.value).toBe("");
+    expect(action.options).toEqual({ formula });
+  });
+
+  it("strips leading single-quote from formula values prefixed by the exporter", () => {
+    const formula = "=IF(ISBLANK(notes), x, notes)";
+    const csv = [
+      "rule_id,stage,conditions_op,row_type,field,op,value",
+      `r1,default,and,action,notes,set-formula,"'${formula}"`,
+    ].join("\n");
+
+    const result = importRulesFromCsv(csv, emptyMaps);
+
+    expect("error" in result).toBe(false);
+    if ("error" in result) return;
+
+    const action = result.rules[0].actions[0];
+    expect(action.options).toEqual({ formula });
+  });
+
   it("imports an empty-string template action (op=set-template, blank value)", () => {
     const csv = [
       "rule_id,stage,conditions_op,row_type,field,op,value",

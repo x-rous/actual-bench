@@ -63,8 +63,8 @@ export type ConditionOrAction = {
   op: string;
   value: string | number | boolean | null | string[] | AmountRange | RecurConfig;
   type?: string;
-  /** Present on actions when the user has enabled template (Handlebars) mode. */
-  options?: { template?: string };
+  /** Present on actions when the user has enabled template (Handlebars) or formula (Excel) mode. */
+  options?: { template?: string; formula?: string };
 };
 
 export type Rule = BaseEntity & {

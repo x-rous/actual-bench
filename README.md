@@ -94,7 +94,7 @@ Manage the core Actual Budget entities from dedicated admin pages with support f
 | **Categories** | Manage income/expense groups, categories, visibility, hierarchy, notes, and import/export CSV |
 | **Schedules** | Create one-time or recurring schedules with amount modes, recurrence controls, weekend adjustment, auto-add, linked rules, and CSV import/export |
 | **Tags** | Create, rename, color-code, describe, filter, bulk-delete, and import/export tags |
-| **Rules** | Build rules with conditions/actions, stages, AND/OR logic, templates, entity chips, filtering, search, duplication, merge, and CSV import/export |
+| **Rules** | Build rules with conditions/actions, stages, AND/OR logic, templates, HyperFormula formulas, entity chips, filtering, search, duplication, merge, and CSV import/export |
 
 ### Rule Diagnostics
 

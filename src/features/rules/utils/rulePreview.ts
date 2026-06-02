@@ -123,6 +123,10 @@ function summariseAction(a: ConditionOrAction, maps: EntityMaps): string {
     return `set ${fieldLabel} → template: ${a.options.template}`;
   }
 
+  if (a.options !== undefined && "formula" in a.options) {
+    return `set ${fieldLabel} → formula: ${a.options.formula}`;
+  }
+
   const valueLabel = resolveValue(field, a.value, maps, ACTION_FIELDS);
   const wrapped = Array.isArray(a.value) ? valueLabel : `"${valueLabel}"`;
   return `set ${fieldLabel} → ${wrapped}`;

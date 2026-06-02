@@ -64,6 +64,7 @@
 - Operators include `is`, `is not`, `contains`, `matches`, `lt`, `lte`, `gt`, `gte`, `oneOf`, and others; the `matches` operator shows a regex syntax hint
 - Actions include set payee, set category, set account, set amount, set notes, link schedule, and more
 - Action template mode: toggle the `{}` button on any action to enter a Handlebars expression (e.g. `{{regex imported_payee 'foo' 'bar'}}`); templates are displayed in an amber monospace chip in the rules table
+- Action formula mode: toggle the `ƒ` button on `notes` or `payee_name` actions to enter an Excel-style formula evaluated by HyperFormula (e.g. `=IF(ISBLANK(notes), imported_payee, notes)`); formulas must start with `=` and are displayed in an amber monospace chip in the rules table; template and formula modes are mutually exclusive per action row
 - Merge multiple selected rules into one via a dedicated merge dialog
 - Merge dialog now shares the same editor sections, row identity model, and validation behavior as the main rule drawer, avoiding combobox state jumps when rows are added or removed
 - Duplicate a rule with one click
@@ -436,8 +437,8 @@ Transaction counts are fetched lazily when the drawer opens, gated by the same `
 | `conditions_op` | `and` or `or` |
 | `row_type` | `condition` or `action` |
 | `field` | Field name (e.g. `imported_payee`, `payee`, `category`, `amount`) |
-| `op` | Operator (e.g. `is`, `contains`, `lt`, `oneOf`) |
-| `value` | Value — use `\|` as separator for multi-value `oneOf` operators |
+| `op` | Operator (e.g. `is`, `contains`, `lt`, `oneOf`); use synthetic op `set-template` for Handlebars template actions or `set-formula` for formula actions |
+| `value` | Value — use `\|` as separator for multi-value `oneOf` operators; formula values starting with `=` are exported with a leading `'` (e.g. `'=IF(...)`) to prevent Excel from evaluating them and the prefix is stripped on re-import |
 
 ## Bundle Export / Import
 
