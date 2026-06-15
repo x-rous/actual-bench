@@ -37,6 +37,7 @@ type AccountsTableRowProps = {
   onStartEditingName: (id: string) => void;
   onDoneName: (id: string, value: string, action: DoneAction) => void;
   onToggleNewBudgetType: (id: string, nextOffBudget: boolean) => void;
+  onSetInitialBalance: (id: string, value: number | undefined) => void;
   onOpenRules: (accountId: string, accountName: string, ruleCount: number) => void;
   onClearSaveError: (id: string) => void;
   onRevert: (id: string) => void;
@@ -55,6 +56,42 @@ function formatBalance(balance?: number) {
   });
 }
 
+function InitialBalanceInput({
+  accountId,
+  accountName,
+  value,
+  disabled,
+  onChange,
+}: {
+  accountId: string;
+  accountName: string;
+  value: number | undefined;
+  disabled: boolean;
+  onChange: (id: string, value: number | undefined) => void;
+}) {
+  return (
+    <input
+      key={value ?? "empty"}
+      type="text"
+      inputMode="decimal"
+      disabled={disabled}
+      defaultValue={formatBalance(value) ?? ""}
+      placeholder="0.00"
+      aria-label={`Initial balance for ${accountName || "new account"}`}
+      onKeyDown={(e) => e.stopPropagation()}
+      onFocus={(e) => e.target.select()}
+      onBlur={(e) => {
+        const raw = e.target.value.replace(/,/g, "").trim();
+        const parsed = raw === "" ? undefined : parseFloat(raw);
+        const next = parsed === undefined || Number.isNaN(parsed) ? undefined : parsed;
+        onChange(accountId, next);
+        e.target.value = formatBalance(next) ?? "";
+      }}
+      className="w-full rounded border border-input bg-background px-1 py-0.5 text-right text-xs tabular-nums outline-none focus:ring-1 focus:ring-ring disabled:opacity-50"
+    />
+  );
+}
+
 function AccountsTableRowComponent({
   row,
   highlightedId,
@@ -71,6 +108,7 @@ function AccountsTableRowComponent({
   onStartEditingName,
   onDoneName,
   onToggleNewBudgetType,
+  onSetInitialBalance,
   onOpenRules,
   onClearSaveError,
   onRevert,
@@ -180,7 +218,15 @@ function AccountsTableRowComponent({
       </td>
 
       <td className="w-32 px-4 py-0.5 text-right tabular-nums">
-        {isNew || formattedBalance === null ? (
+        {isNew ? (
+          <InitialBalanceInput
+            accountId={entity.id}
+            accountName={entity.name}
+            value={entity.initialBalance}
+            disabled={isDeleted}
+            onChange={onSetInitialBalance}
+          />
+        ) : formattedBalance === null ? (
           <span className="text-xs text-muted-foreground/50">-</span>
         ) : (
           <span

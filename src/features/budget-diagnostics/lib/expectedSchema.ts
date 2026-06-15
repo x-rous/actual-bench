@@ -1,7 +1,7 @@
 /**
  * Expected Actual Budget snapshot schema.
  *
- * Source: agents/rd-006-budget-diagnostics-ddl.md
+ * Source: agents/rd-specs/rd-006-budget-diagnostics-ddl.md
  * Source snapshot date: 2026-04-20
  */
 

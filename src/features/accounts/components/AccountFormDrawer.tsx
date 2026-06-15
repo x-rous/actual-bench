@@ -37,11 +37,12 @@ export function AccountFormDrawer({ open, onOpenChange, onSubmit }: Props) {
     defaultValues: {
       name: "",
       offBudget: false,
+      initialBalance: undefined,
     },
   });
 
   useEffect(() => {
-    if (open) reset({ name: "", offBudget: false });
+    if (open) reset({ name: "", offBudget: false, initialBalance: undefined });
   }, [open, reset]);
 
   function handleFormSubmit(values: AccountFormValues) {
@@ -79,6 +80,26 @@ export function AccountFormDrawer({ open, onOpenChange, onSubmit }: Props) {
             {errors.name && (
               <p className="text-xs text-destructive">{errors.name.message}</p>
             )}
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="account-initial-balance">Initial Balance</Label>
+            <Input
+              id="account-initial-balance"
+              type="number"
+              step="0.01"
+              placeholder="0.00"
+              aria-invalid={!!errors.initialBalance}
+              {...register("initialBalance", {
+                setValueAs: (v) => (v === "" || v === null || v === undefined ? undefined : Number(v)),
+              })}
+            />
+            {errors.initialBalance && (
+              <p className="text-xs text-destructive">{errors.initialBalance.message}</p>
+            )}
+            <p className="text-xs text-muted-foreground">
+              Optional starting balance for this account. Leave blank for $0.00.
+            </p>
           </div>
 
           <div className="flex flex-col gap-1.5">

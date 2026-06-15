@@ -102,7 +102,7 @@ For user-facing changes:
 
 Check issues labelled [`good first issue`](https://github.com/x-rous/actual-bench/issues?q=is%3Aissue+label%3A%22good+first+issue%22) or [`help wanted`](https://github.com/x-rous/actual-bench/issues?q=is%3Aissue+label%3A%22help+wanted%22).
 
-Planned roadmap items with effort estimates are tracked in [`agents/future-roadmap.md`](agents/future-roadmap.md). If you want to pick up a `pending` item, open an issue first to claim it and avoid duplicate work.
+Planned roadmap items with effort estimates are tracked in [`agents/roadmap.md`](agents/roadmap.md). If you want to pick up a `pending` item, open an issue first to claim it and avoid duplicate work.
 
 ## Project structure
 

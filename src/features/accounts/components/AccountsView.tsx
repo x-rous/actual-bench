@@ -1,15 +1,19 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { Plus, Download, Upload } from "lucide-react";
+import { Plus, Download, Upload, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { PageLayout } from "@/components/layout/PageLayout";
 import { CSV_MAX_BYTES } from "@/lib/csv";
+import { cn } from "@/lib/utils";
 import { useStagedStore } from "@/store/staged";
 import { generateId } from "@/lib/uuid";
 import { useAccounts } from "../hooks/useAccounts";
+import { useAccountBalances } from "../hooks/useAccountBalances";
 import { AccountsTable } from "./AccountsTable";
+import { AccountFormDrawer } from "./AccountFormDrawer";
+import type { AccountFormValues } from "../schemas/account.schema";
 import { RuleDrawer } from "@/features/rules/components/RuleDrawer";
 import type { RuleSeed } from "@/features/rules/components/RuleDrawer";
 import { AccountsTableOverlays } from "./AccountsTableOverlays";
@@ -20,24 +24,40 @@ import { importAccountsFromCsv } from "../csv/accountsCsvImport";
 export function AccountsView() {
   const [ruleDrawerOpen, setRuleDrawerOpen] = useState(false);
   const [ruleSeed, setRuleSeed] = useState<RuleSeed | undefined>(undefined);
+  const [formDrawerOpen, setFormDrawerOpen] = useState(false);
   const [deleteIntent, setDeleteIntent] = useState<AccountDeleteIntent | null>(null);
   const [inspectId, setInspectId] = useState<string | null>(null);
   const importInputRef = useRef<HTMLInputElement>(null);
 
   const { isLoading, isError, error, refetch } = useAccounts();
+  const { refetch: refetchBalances, isFetching: isRefreshingBalances } = useAccountBalances();
 
   const staged = useStagedStore((s) => s.accounts);
   const stageNew = useStagedStore((s) => s.stageNew);
   const pushUndo = useStagedStore((s) => s.pushUndo);
 
   function handleAddAccount() {
+    setFormDrawerOpen(true);
+  }
+
+  function handleCreateAccount(values: AccountFormValues) {
     pushUndo();
     stageNew("accounts", {
       id: generateId(),
-      name: "New Account",
-      offBudget: false,
+      name: values.name,
+      offBudget: values.offBudget,
       closed: false,
+      initialBalance: values.initialBalance,
     });
+  }
+
+  async function handleRefreshBalances() {
+    const result = await refetchBalances();
+    if (result.error) {
+      toast.error("Failed to refresh balances.");
+    } else {
+      toast.success("Balances refreshed.");
+    }
   }
 
   function handleCreateRule(accountId: string, accountName: string) {
@@ -119,6 +139,16 @@ export function AccountsView() {
             className="hidden"
             onChange={handleImportCsv}
           />
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleRefreshBalances}
+            disabled={isRefreshingBalances}
+            title="Refresh balances"
+          >
+            <RefreshCw className={cn(isRefreshingBalances && "animate-spin")} />
+            Refresh
+          </Button>
           <Button variant="outline" size="sm" onClick={() => importInputRef.current?.click()} title="Import CSV">
             <Download />
             Import
@@ -145,6 +175,12 @@ export function AccountsView() {
         onOpenChange={setRuleDrawerOpen}
         ruleId={null}
         seed={ruleSeed}
+      />
+
+      <AccountFormDrawer
+        open={formDrawerOpen}
+        onOpenChange={setFormDrawerOpen}
+        onSubmit={handleCreateAccount}
       />
 
       <AccountsTableOverlays
