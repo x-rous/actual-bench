@@ -11,9 +11,11 @@ import { useStagedStore } from "@/store/staged";
 import { useRules } from "../hooks/useRules";
 import { exportRulesToCsv } from "../csv/rulesCsvExport";
 import { importRulesFromCsv } from "../csv/rulesCsvImport";
+import type { SkipReason } from "../csv/rulesCsvImport";
 import { RulesTable } from "./RulesTable";
 import { RuleDrawer } from "./RuleDrawer";
 import { MergeRulesDialog } from "./MergeRulesDialog";
+import { RulesImportResultDialog } from "./RulesImportResultDialog";
 
 export function RulesView() {
   const { isLoading, isError, error, refetch } = useRules();
@@ -41,6 +43,7 @@ export function RulesView() {
   const [mergeRuleIds, setMergeRuleIds]   = useState<string[]>([]);
   const [mergeDefaultDeleteOriginals, setMergeDefaultDeleteOriginals] = useState(false);
   const [mergeReturnTo, setMergeReturnTo] = useState<string | null>(null);
+  const [importResult, setImportResult]   = useState<{ imported: number; skipped: number; skipReasons: SkipReason[] } | null>(null);
   const mergeIntentHandledRef            = useRef(false);
   const mergeConfirmedRef                = useRef(false);
 
@@ -174,17 +177,17 @@ export function RulesView() {
       for (const payee of result.newPayees) stageNew("payees", payee);
       for (const rule  of result.rules)     stageNew("rules",  rule);
 
-      if (result.rules.length === 0) {
+      if (result.skipReasons.length > 0) {
+        setImportResult({ imported: result.rules.length, skipped: result.skipped, skipReasons: result.skipReasons });
+      } else if (result.rules.length === 0) {
         toast.warning(
           result.skipped > 0
             ? `No rules imported — ${result.skipped} row(s) skipped.`
             : "No valid rules found in CSV."
         );
       } else {
-        const suffix = result.skipped > 0 ? ` (${result.skipped} row(s) skipped)` : "";
-        toast.success(
-          `Imported ${result.rules.length} rule${result.rules.length !== 1 ? "s" : ""}${suffix}.`
-        );
+        const suffix = result.skipped > 0 ? ` (${result.skipped} skipped)` : "";
+        toast.success(`Imported ${result.rules.length} rule${result.rules.length !== 1 ? "s" : ""}${suffix}.`);
       }
     };
 
@@ -256,6 +259,14 @@ export function RulesView() {
         ruleIds={mergeRuleIds}
         defaultDeleteOriginals={mergeDefaultDeleteOriginals}
         onConfirmed={handleMergeConfirmed}
+      />
+
+      <RulesImportResultDialog
+        open={importResult !== null}
+        onOpenChange={(open) => { if (!open) setImportResult(null); }}
+        imported={importResult?.imported ?? 0}
+        skipped={importResult?.skipped ?? 0}
+        skipReasons={importResult?.skipReasons ?? []}
       />
     </PageLayout>
   );
