@@ -43,13 +43,14 @@ describe("importRulesFromCsv", () => {
   });
 
   it("imports a rule with one condition and one action", () => {
+    const maps = makeMaps([], [{ id: "food-id", name: "Food" }]);
     const csv = [
       "rule_id,stage,conditions_op,row_type,field,op,value",
       "r1,default,and,condition,notes,contains,grocery",
       "r1,,,action,category,set,Food",
     ].join("\n");
 
-    const result = importRulesFromCsv(csv, emptyMaps);
+    const result = importRulesFromCsv(csv, maps);
 
     expect("error" in result).toBe(false);
     if ("error" in result) return;
@@ -66,6 +67,7 @@ describe("importRulesFromCsv", () => {
   });
 
   it("groups multiple rows with the same rule_id into a single rule", () => {
+    const maps = makeMaps([], [{ id: "food-id", name: "Food" }]);
     const csv = [
       "rule_id,stage,conditions_op,row_type,field,op,value",
       "r1,default,and,condition,notes,contains,a",
@@ -73,7 +75,7 @@ describe("importRulesFromCsv", () => {
       "r1,,,action,category,set,Food",
     ].join("\n");
 
-    const result = importRulesFromCsv(csv, emptyMaps);
+    const result = importRulesFromCsv(csv, maps);
 
     expect("error" in result).toBe(false);
     if ("error" in result) return;
@@ -132,7 +134,7 @@ describe("importRulesFromCsv", () => {
   it("defaults stage to 'default' for unknown/missing stage values", () => {
     const csv = [
       "rule_id,stage,conditions_op,row_type,field,op,value",
-      "r1,nonsense,and,action,category,set,Food",
+      "r1,nonsense,and,action,notes,set,Food",
     ].join("\n");
 
     const result = importRulesFromCsv(csv, emptyMaps);
@@ -145,8 +147,8 @@ describe("importRulesFromCsv", () => {
   it("accepts pre and post as valid stages", () => {
     const csv = [
       "rule_id,stage,conditions_op,row_type,field,op,value",
-      "r1,pre,and,action,category,set,Food",
-      "r2,post,and,action,category,set,Food",
+      "r1,pre,and,action,notes,set,Food",
+      "r2,post,and,action,notes,set,Food",
     ].join("\n");
 
     const result = importRulesFromCsv(csv, emptyMaps);
@@ -260,7 +262,7 @@ describe("importRulesFromCsv", () => {
   it("assigns fresh IDs to imported rules (not the original rule_id)", () => {
     const csv = [
       "rule_id,stage,conditions_op,row_type,field,op,value",
-      "original-id,default,and,action,category,set,Food",
+      "original-id,default,and,action,notes,set,Food",
     ].join("\n");
 
     const result = importRulesFromCsv(csv, emptyMaps);
@@ -324,10 +326,10 @@ describe("importRulesFromCsv", () => {
     const csv = [
       "rule_id,stage,conditions_op,row_type,field,op,value",
       "r1,default,and,condition,notes,contains,grocery",
-      "r1,,,action,category,set,Food",
+      "r1,,,action,notes,set,Food",
       "r2,default,and,condition,notes,contains,schedule",
       "r2,,,action,,link-schedule,some-schedule-id",
-      "r3,default,and,action,category,set,Transport",
+      "r3,default,and,action,notes,set,Transport",
     ].join("\n");
 
     const result = importRulesFromCsv(csv, emptyMaps);
@@ -337,6 +339,93 @@ describe("importRulesFromCsv", () => {
     expect(result.rules).toHaveLength(2);
     expect(result.rules.map((r) => r.conditions[0]?.value ?? r.actions[0]?.value)).not.toContain("some-schedule-id");
     expect(result.skipped).toBe(1);
+  });
+
+  it("skips a rule with an unmatched category action and records a skip reason", () => {
+    const csv = [
+      "rule_id,stage,conditions_op,row_type,field,op,value",
+      "r1,default,and,condition,notes,contains,grocery",
+      "r1,,,action,category,set,NonExistentCategory",
+    ].join("\n");
+
+    const result = importRulesFromCsv(csv, emptyMaps);
+
+    expect("error" in result).toBe(false);
+    if ("error" in result) return;
+    expect(result.rules).toHaveLength(0);
+    expect(result.skipped).toBe(1);
+    expect(result.skipReasons).toHaveLength(1);
+    expect(result.skipReasons[0].ruleGroupId).toBe("r1");
+    expect(result.skipReasons[0].reason).toMatch(/category/i);
+    expect(result.skipReasons[0].reason).toContain("NonExistentCategory");
+  });
+
+  it("skips a rule with an unmatched account action and records a skip reason", () => {
+    const csv = [
+      "rule_id,stage,conditions_op,row_type,field,op,value",
+      "r1,default,and,condition,notes,contains,transfer",
+      "r1,,,action,account,set,NonExistentAccount",
+    ].join("\n");
+
+    const result = importRulesFromCsv(csv, emptyMaps);
+
+    expect("error" in result).toBe(false);
+    if ("error" in result) return;
+    expect(result.rules).toHaveLength(0);
+    expect(result.skipped).toBe(1);
+    expect(result.skipReasons[0].reason).toMatch(/account/i);
+    expect(result.skipReasons[0].reason).toContain("NonExistentAccount");
+  });
+
+  it("imports valid rules and skips only those with unmatched refs", () => {
+    const maps = makeMaps([], [{ id: "food-id", name: "Food" }]);
+    const csv = [
+      "rule_id,stage,conditions_op,row_type,field,op,value",
+      "r1,default,and,condition,notes,contains,grocery",
+      "r1,,,action,category,set,Food",
+      "r2,default,and,condition,notes,contains,other",
+      "r2,,,action,category,set,MissingCategory",
+    ].join("\n");
+
+    const result = importRulesFromCsv(csv, maps);
+
+    expect("error" in result).toBe(false);
+    if ("error" in result) return;
+    expect(result.rules).toHaveLength(1);
+    expect(result.rules[0].actions[0].value).toBe("food-id");
+    expect(result.skipped).toBe(1);
+    expect(result.skipReasons).toHaveLength(1);
+    expect(result.skipReasons[0].ruleGroupId).toBe("r2");
+  });
+
+  it("skips a rule with an unmatched category_group condition and records a skip reason", () => {
+    const csv = [
+      "rule_id,stage,conditions_op,row_type,field,op,value",
+      "r1,default,and,condition,category_group,is,MissingGroup",
+    ].join("\n");
+
+    const result = importRulesFromCsv(csv, emptyMaps);
+
+    expect("error" in result).toBe(false);
+    if ("error" in result) return;
+    expect(result.rules).toHaveLength(0);
+    expect(result.skipReasons[0].reason).toMatch(/category group/i);
+  });
+
+  it("does not create payees when the rule group is skipped due to unmatched refs", () => {
+    const csv = [
+      "rule_id,stage,conditions_op,row_type,field,op,value",
+      "r1,default,and,condition,payee,is,NewPayee",
+      "r1,,,action,category,set,MissingCategory",
+    ].join("\n");
+
+    const result = importRulesFromCsv(csv, emptyMaps);
+
+    expect("error" in result).toBe(false);
+    if ("error" in result) return;
+    expect(result.rules).toHaveLength(0);
+    expect(result.skipped).toBe(1);
+    expect(result.newPayees).toHaveLength(0);
   });
 
   it("resolves category_group names to IDs", () => {

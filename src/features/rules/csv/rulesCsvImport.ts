@@ -18,10 +18,16 @@ export type LookupMaps = {
   categoryGroups: NamedEntityMap;
 };
 
+export type SkipReason = {
+  ruleGroupId: string;
+  reason: string;
+};
+
 export type RulesImportResult = {
   rules: Rule[];
   newPayees: Payee[];
   skipped: number;
+  skipReasons: SkipReason[];
 };
 
 export type RulesImportError = {
@@ -44,7 +50,8 @@ function resolveScalarValue(
   maps: LookupMaps,
   fieldDefs: typeof CONDITION_FIELDS | typeof ACTION_FIELDS,
   createdPayees: Map<string, string>,
-  newPayees: Payee[]
+  newPayees: Payee[],
+  badRefs: string[]
 ): { value: ConditionOrAction["value"]; type: string } {
   const def = fieldDefs[field];
 
@@ -70,16 +77,19 @@ function resolveScalarValue(
 
   if (def.entity === "category") {
     const existing = findIdByName(maps.categories, rawValue);
+    if (!existing && rawValue.trim()) badRefs.push(`category "${rawValue.trim()}"`);
     return { value: existing ?? rawValue, type: existing ? "id" : "string" };
   }
 
   if (def.entity === "account") {
     const existing = findIdByName(maps.accounts, rawValue);
+    if (!existing && rawValue.trim()) badRefs.push(`account "${rawValue.trim()}"`);
     return { value: existing ?? rawValue, type: existing ? "id" : "string" };
   }
 
   if (def.entity === "categoryGroup") {
     const existing = findIdByName(maps.categoryGroups, rawValue);
+    if (!existing && rawValue.trim()) badRefs.push(`category group "${rawValue.trim()}"`);
     return { value: existing ?? rawValue, type: existing ? "id" : "string" };
   }
 
@@ -93,17 +103,18 @@ function resolveValue(
   fieldDefs: typeof CONDITION_FIELDS | typeof ACTION_FIELDS,
   maps: LookupMaps,
   createdPayees: Map<string, string>,
-  newPayees: Payee[]
+  newPayees: Payee[],
+  badRefs: string[]
 ): { value: ConditionOrAction["value"]; type: string } {
   const isMulti = op === "oneOf" || op === "notOneOf";
   if (isMulti && rawValue.includes("|")) {
     const parts = rawValue.split("|").map((p) => p.trim()).filter(Boolean);
     const resolved = parts.map(
-      (p) => resolveScalarValue(field, p, maps, fieldDefs, createdPayees, newPayees).value as string
+      (p) => resolveScalarValue(field, p, maps, fieldDefs, createdPayees, newPayees, badRefs).value as string
     );
     return { value: resolved, type: "id" };
   }
-  return resolveScalarValue(field, rawValue, maps, fieldDefs, createdPayees, newPayees);
+  return resolveScalarValue(field, rawValue, maps, fieldDefs, createdPayees, newPayees, badRefs);
 }
 
 // ─── Main import function ─────────────────────────────────────────────────────
@@ -197,16 +208,20 @@ export function importRulesFromCsv(
   const newPayees: Payee[] = [];
   const createdPayees = new Map<string, string>();
   let skipped = parseSkipped;
+  const skipReasons: SkipReason[] = [];
 
-  for (const [, group] of groups) {
+  for (const [ruleGroupId, group] of groups) {
     if (group.isScheduleRule) { skipped++; continue; }
 
+    const newPayeesStart = newPayees.length;
+    const createdPayeesSnapshot = new Map(createdPayees);
+    const badRefs: string[] = [];
     const conditions: ConditionOrAction[] = [];
     const actions:    ConditionOrAction[] = [];
 
     for (const { rowType, field, op, rawValue } of group.rows) {
       if (rowType === "condition") {
-        const r = resolveValue(field, op, rawValue, CONDITION_FIELDS, maps, createdPayees, newPayees);
+        const r = resolveValue(field, op, rawValue, CONDITION_FIELDS, maps, createdPayees, newPayees, badRefs);
         conditions.push({ field, op: op || "is", value: r.value, type: r.type });
       } else {
         if (op === "set-template") {
@@ -221,10 +236,20 @@ export function importRulesFromCsv(
         } else if (op === "prepend-notes" || op === "append-notes") {
           actions.push({ field: field || "notes", op, value: rawValue, type: "string" });
         } else {
-          const r = resolveValue(field, "set", rawValue, ACTION_FIELDS, maps, createdPayees, newPayees);
+          const r = resolveValue(field, "set", rawValue, ACTION_FIELDS, maps, createdPayees, newPayees, badRefs);
           actions.push({ field, op: "set", value: r.value, type: r.type });
         }
       }
+    }
+
+    if (badRefs.length > 0) {
+      // Roll back any payees auto-created while processing this skipped group.
+      newPayees.length = newPayeesStart;
+      createdPayees.clear();
+      for (const [k, v] of createdPayeesSnapshot) createdPayees.set(k, v);
+      skipped++;
+      skipReasons.push({ ruleGroupId, reason: `unmatched ${[...new Set(badRefs)].join(", ")}` });
+      continue;
     }
 
     if (conditions.length === 0 && actions.length === 0) { skipped++; continue; }
@@ -242,5 +267,5 @@ export function importRulesFromCsv(
     });
   }
 
-  return { rules, newPayees, skipped };
+  return { rules, newPayees, skipped, skipReasons };
 }
