@@ -25,6 +25,11 @@ export type ApiAccount = {
 
 export type ApiAccountInput = Omit<ApiAccount, "id">;
 
+/** POST /accounts body shape — initialBalance is a one-time creation param, in cents. */
+export type ApiAccountCreateInput = Pick<ApiAccountInput, "name" | "offbudget"> & {
+  initialBalance?: number;
+};
+
 // ─── Payee ───────────────────────────────────────────────────────────────────
 
 export type ApiPayee = {

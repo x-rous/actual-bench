@@ -93,8 +93,10 @@
 ## Accounts
 
 - Create, rename, and delete accounts
+- "Add Account" opens a form drawer with Name, an optional Initial Balance (seeds the account's starting balance on creation), and Budget Type
 - Budget type (on-budget / off-budget) is set at creation time via a toggle switch and displayed as a read-only badge thereafter — reflecting Actual Budget's constraint that account type cannot be changed after creation
-- Current balance column shows the live account balance fetched via ActualQL aggregation, refreshed every 60 seconds; negative balances are highlighted in red
+- Current balance column shows the live account balance fetched via ActualQL aggregation, refreshed every 60 seconds, or via the toolbar "Refresh" action; negative balances are highlighted in red
+- For staged (new) accounts created via the bottom Add Rows / paste flow, the Balance column is editable to set the initial balance
 - Open and close accounts
 - Inline editing: double-click, Enter, or F2 to edit; Escape to cancel
 - Bulk select with bulk close, reopen, and delete
@@ -499,5 +501,4 @@ budget-bundle-<label>-<date>.zip
 
 ---
 
-> Planned features and improvements are tracked in [`agents/future-roadmap.md`](agents/future-roadmap.md).
-> When a roadmap item ships, add it to the relevant section above and let the merged PR title feed the next GitHub Release draft.
+> When a feature ships, add it to the relevant section above and let the merged PR title feed the next GitHub Release draft.

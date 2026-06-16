@@ -15,6 +15,8 @@ export type Account = BaseEntity & {
   name: string;
   offBudget: boolean;
   closed: boolean;
+  /** Whole-currency-unit balance to seed on creation. Create-time only — never returned by the API. */
+  initialBalance?: number;
 };
 
 // ─── Payee ───────────────────────────────────────────────────────────────────

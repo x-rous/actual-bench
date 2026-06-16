@@ -40,7 +40,7 @@ export function useAccountsSave() {
       // ── Creates (parallel) ──────────────────────────────────────────────────
       const createResults = await Promise.allSettled(
         toCreate.map((a) =>
-          createAccount(connection, { name: a.name, offBudget: a.offBudget, closed: a.closed })
+          createAccount(connection, { name: a.name, offBudget: a.offBudget, closed: a.closed, initialBalance: a.initialBalance })
         )
       );
       for (let i = 0; i < toCreate.length; i++) {

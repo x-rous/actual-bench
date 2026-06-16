@@ -338,6 +338,12 @@ export function AccountsTable({
     stageUpdate("accounts", accountId, { offBudget: nextOffBudget });
   }
 
+  function handleSetInitialBalance(accountId: string, value: number | undefined) {
+    if (value === staged[accountId]?.entity.initialBalance) return;
+    pushUndo();
+    stageUpdate("accounts", accountId, { initialBalance: value });
+  }
+
   function handleReopen(accountId: string) {
     pushUndo();
     stageUpdate("accounts", accountId, { closed: false });
@@ -494,6 +500,7 @@ export function AccountsTable({
                       onStartEditingName={handleStartEditingName}
                       onDoneName={handleNameDone}
                       onToggleNewBudgetType={handleToggleNewBudgetType}
+                      onSetInitialBalance={handleSetInitialBalance}
                       onOpenRules={handleOpenRules}
                       onClearSaveError={handleClearSaveError}
                       onRevert={handleRevert}

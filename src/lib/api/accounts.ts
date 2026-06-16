@@ -9,6 +9,7 @@ import type { ConnectionInstance } from "@/store/connection";
 import type {
   ApiAccount,
   ApiAccountInput,
+  ApiAccountCreateInput,
   ApiListResponse,
   ApiSingleResponse,
 } from "@/types/api";
@@ -34,6 +35,15 @@ function denormalizeAccount(
   };
 }
 
+function denormalizeAccountCreate(
+  account: Pick<Account, "name" | "offBudget" | "initialBalance">
+): ApiAccountCreateInput {
+  return {
+    ...denormalizeAccount(account),
+    ...(account.initialBalance !== undefined ? { initialBalance: Math.round(account.initialBalance * 100) } : {}),
+  };
+}
+
 // ─── API functions ────────────────────────────────────────────────────────────
 
 export async function getAccounts(connection: ConnectionInstance): Promise<Account[]> {
@@ -52,7 +62,7 @@ export async function createAccount(
   const response = await apiRequest<ApiSingleResponse<ApiAccount>>(
     connection,
     "/accounts",
-    { method: "POST", body: { account: denormalizeAccount(input) } }
+    { method: "POST", body: { account: denormalizeAccountCreate(input) } }
   );
   return normalizeAccount(response.data);
 }
