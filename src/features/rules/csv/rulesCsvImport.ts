@@ -213,6 +213,8 @@ export function importRulesFromCsv(
   for (const [ruleGroupId, group] of groups) {
     if (group.isScheduleRule) { skipped++; continue; }
 
+    const newPayeesStart = newPayees.length;
+    const createdPayeesSnapshot = new Map(createdPayees);
     const badRefs: string[] = [];
     const conditions: ConditionOrAction[] = [];
     const actions:    ConditionOrAction[] = [];
@@ -241,6 +243,10 @@ export function importRulesFromCsv(
     }
 
     if (badRefs.length > 0) {
+      // Roll back any payees auto-created while processing this skipped group.
+      newPayees.length = newPayeesStart;
+      createdPayees.clear();
+      for (const [k, v] of createdPayeesSnapshot) createdPayees.set(k, v);
       skipped++;
       skipReasons.push({ ruleGroupId, reason: `unmatched ${[...new Set(badRefs)].join(", ")}` });
       continue;

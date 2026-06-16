@@ -412,6 +412,22 @@ describe("importRulesFromCsv", () => {
     expect(result.skipReasons[0].reason).toMatch(/category group/i);
   });
 
+  it("does not create payees when the rule group is skipped due to unmatched refs", () => {
+    const csv = [
+      "rule_id,stage,conditions_op,row_type,field,op,value",
+      "r1,default,and,condition,payee,is,NewPayee",
+      "r1,,,action,category,set,MissingCategory",
+    ].join("\n");
+
+    const result = importRulesFromCsv(csv, emptyMaps);
+
+    expect("error" in result).toBe(false);
+    if ("error" in result) return;
+    expect(result.rules).toHaveLength(0);
+    expect(result.skipped).toBe(1);
+    expect(result.newPayees).toHaveLength(0);
+  });
+
   it("resolves category_group names to IDs", () => {
     const maps = makeMaps([], [], [], [{ id: "grp-1", name: "Food & Dining" }]);
     const csv = [
