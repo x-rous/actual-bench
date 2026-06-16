@@ -28,11 +28,14 @@ function buildRejectedResults(
   error: unknown
 ): CarryoverToggleResult[] {
   const message = getErrorMessage(error);
-  return request.months.map((m) => ({
-    month: m,
-    status: "error" as const,
-    message,
-  }));
+  return request.categoryIds.flatMap((categoryId) =>
+    request.months.map((m) => ({
+      categoryId,
+      month: m,
+      status: "error" as const,
+      message,
+    }))
+  );
 }
 
 /**
@@ -110,6 +113,11 @@ export function BudgetCarryoverProgressDialog({
   const verbing = request.newValue ? "Enabling" : "Disabling";
   const verbed = request.newValue ? "enabled" : "disabled";
   const verbedTitle = request.newValue ? "Rollover enabled" : "Rollover disabled";
+  const isMultiCategory = request.categoryIds.length > 1;
+  const scopeLabel = isMultiCategory
+    ? `${request.categoryIds.length} categories`
+    : (categoryLabel ?? undefined);
+  const unitLabel = isMultiCategory ? "category-month" : "month";
 
   return (
     <div
@@ -125,12 +133,12 @@ export function BudgetCarryoverProgressDialog({
               <Loader2 className="h-4 w-4 animate-spin text-primary" />
               <h2 className="text-base font-semibold text-foreground">
                 {verbing} rollover
-                {categoryLabel ? ` for ${categoryLabel}` : ""}
+                {scopeLabel ? ` for ${scopeLabel}` : ""}
               </h2>
             </div>
             <p className="text-sm text-muted-foreground mb-3">
               {progress.total > 0
-                ? `${progress.completed} of ${progress.total} months updated…`
+                ? `${progress.completed} of ${progress.total} ${unitLabel}${progress.total !== 1 ? "s" : ""} updated…`
                 : "Preparing…"}
             </p>
             {progress.total > 0 && (
@@ -153,9 +161,9 @@ export function BudgetCarryoverProgressDialog({
               <h2 className="text-base font-semibold text-foreground">{verbedTitle}</h2>
             </div>
             <p className="text-sm text-muted-foreground mb-4">
-              Rollover {verbed} on {succeededResults.length} month
-              {succeededResults.length !== 1 ? "s" : ""}
-              {categoryLabel ? ` for ${categoryLabel}` : ""}.
+              Rollover {verbed} on {succeededResults.length}{" "}
+              {unitLabel}{succeededResults.length !== 1 ? "s" : ""}
+              {scopeLabel && !isMultiCategory ? ` for ${scopeLabel}` : ""}.
             </p>
             <div className="flex justify-end">
               <button
@@ -179,13 +187,15 @@ export function BudgetCarryoverProgressDialog({
             </div>
             <p className="text-sm text-muted-foreground mb-3">
               {dialogState === "partial-failure"
-                ? `${succeededResults.length} month${succeededResults.length !== 1 ? "s" : ""} updated, ${failedResults.length} failed.`
-                : `${failedResults.length} month${failedResults.length !== 1 ? "s" : ""} could not be updated.`}
+                ? `${succeededResults.length} ${unitLabel}${succeededResults.length !== 1 ? "s" : ""} updated, ${failedResults.length} failed.`
+                : `${failedResults.length} ${unitLabel}${failedResults.length !== 1 ? "s" : ""} could not be updated.`}
             </p>
             <div className="mb-4 max-h-44 overflow-y-auto rounded border border-border divide-y divide-border">
-              {failedResults.map((r) => (
-                <div key={r.month} className="px-3 py-2 text-xs">
-                  <span className="font-mono text-foreground">{r.month}</span>
+              {failedResults.map((r, i) => (
+                <div key={i} className="px-3 py-2 text-xs">
+                  <span className="font-mono text-foreground">
+                    {isMultiCategory ? `${r.categoryId}: ${r.month}` : r.month}
+                  </span>
                   {r.message && (
                     <p className="text-destructive mt-0.5">{r.message}</p>
                   )}

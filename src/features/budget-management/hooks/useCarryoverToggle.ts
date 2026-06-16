@@ -7,7 +7,7 @@ import { apiRequest } from "@/lib/api/client";
 import { addMonths } from "@/lib/budget/monthMath";
 
 export type CarryoverToggleInput = {
-  categoryId: string;
+  categoryIds: string[];
   /** Months to update, in chronological order. */
   months: string[];
   /** The carryover value to set on every month. */
@@ -15,6 +15,7 @@ export type CarryoverToggleInput = {
 };
 
 export type CarryoverToggleResult = {
+  categoryId: string;
   month: string;
   status: "success" | "error";
   message?: string;
@@ -52,38 +53,42 @@ export function useCarryoverToggle(): UseCarryoverToggleReturn {
   const run = useCallback(
     async (input: CarryoverToggleInput): Promise<CarryoverToggleResult[]> => {
       if (!connection) throw new Error("No active connection");
-      if (input.months.length === 0) return [];
+      if (input.months.length === 0 || input.categoryIds.length === 0) return [];
+
+      const pairs = input.categoryIds.flatMap((catId) =>
+        input.months.map((m) => ({ catId, m }))
+      );
 
       setIsPending(true);
-      setProgress({ completed: 0, total: input.months.length });
+      setProgress({ completed: 0, total: pairs.length });
 
       const results: CarryoverToggleResult[] = [];
-      const successMonths: string[] = [];
+      const successMonths = new Set<string>();
 
-      for (let i = 0; i < input.months.length; i++) {
-        const m = input.months[i]!;
+      for (let i = 0; i < pairs.length; i++) {
+        const { catId, m } = pairs[i]!;
         try {
           await apiRequest(
             connection,
-            `/months/${m}/categories/${input.categoryId}`,
+            `/months/${m}/categories/${catId}`,
             {
               method: "PATCH",
               body: { category: { carryover: input.newValue } },
             }
           );
-          successMonths.push(m);
-          results.push({ month: m, status: "success" });
+          successMonths.add(m);
+          results.push({ categoryId: catId, month: m, status: "success" });
         } catch (err) {
           const message =
             err instanceof Error ? err.message : "Carryover update failed";
-          results.push({ month: m, status: "error", message });
+          results.push({ categoryId: catId, month: m, status: "error", message });
         }
-        setProgress({ completed: i + 1, total: input.months.length });
+        setProgress({ completed: i + 1, total: pairs.length });
       }
 
-      if (successMonths.length > 0) {
+      if (successMonths.size > 0) {
         await Promise.all(
-          successMonths.map((m) =>
+          [...successMonths].map((m) =>
             queryClient.invalidateQueries({
               queryKey: ["budget-month-data", connection.id, m],
             })
