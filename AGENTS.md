@@ -102,12 +102,11 @@ Read these only when relevant to the task:
 |---|---|
 | New component, hook, or utility | `agents/coding_standards.md` |
 | API integration | `agents/actual_api_docs/api_docs.md` |
-| Roadmap work (master list of features) | `agents/roadmap.md` |
-| Reviewing existing features / improvements | `agents/findings.md` |
-| Context behind rejected/deferred items, constraints | `agents/knowledge.md` |
-| Architecture decision | `agents/requirements/` |
+| Roadmap work (master list of features - internal) | `agents/roadmap.md` |
+| Reviewing existing features / improvements - internal| `agents/findings.md` |
+| Context behind rejected/deferred items, constraints - internal | `agents/knowledge.md` |
 | Git, workflow, or release change | `CONTRIBUTING.md` |
-| Overall agents/ folder framework | `agents/FRAMEWORK.md` |
+| Overall agents/ folder framework -internal | `agents/FRAMEWORK.md` |
 
 Update these only when the change requires it:
 
@@ -115,8 +114,8 @@ Update these only when the change requires it:
 |---|---|
 | User-facing feature added or changed | `FEATURES.md` |
 | Setup, entry point, or positioning changed | `README.md` |
-| RD-### item shipped or status changed | `agents/roadmap.md` |
-| F-### finding resolved | `agents/findings.md` |
+| RD-### item shipped or status changed - internal | `agents/roadmap.md` |
+| F-### finding resolved - internal | `agents/findings.md` |
 
 ---
 

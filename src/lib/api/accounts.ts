@@ -40,7 +40,7 @@ function denormalizeAccountCreate(
 ): ApiAccountCreateInput {
   return {
     ...denormalizeAccount(account),
-    ...(account.initialBalance ? { initialBalance: Math.round(account.initialBalance * 100) } : {}),
+    ...(account.initialBalance !== undefined ? { initialBalance: Math.round(account.initialBalance * 100) } : {}),
   };
 }
 

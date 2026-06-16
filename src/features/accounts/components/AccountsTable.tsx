@@ -339,6 +339,7 @@ export function AccountsTable({
   }
 
   function handleSetInitialBalance(accountId: string, value: number | undefined) {
+    if (value === staged[accountId]?.entity.initialBalance) return;
     pushUndo();
     stageUpdate("accounts", accountId, { initialBalance: value });
   }

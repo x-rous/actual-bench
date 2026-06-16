@@ -1,10 +1,3 @@
-/**
- * Expected Actual Budget snapshot schema.
- *
- * Source: agents/rd-specs/rd-006-budget-diagnostics-ddl.md
- * Source snapshot date: 2026-04-20
- */
-
 export const DDL_SOURCE_DATE = "2026-04-20";
 
 export const EXPECTED_TABLES = [

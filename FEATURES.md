@@ -501,5 +501,4 @@ budget-bundle-<label>-<date>.zip
 
 ---
 
-> Planned features and improvements are tracked in [`agents/roadmap.md`](agents/roadmap.md) (new features) and [`agents/findings.md`](agents/findings.md) (fixes/improvements to existing features).
-> When a roadmap item ships, add it to the relevant section above and let the merged PR title feed the next GitHub Release draft.
+> When a feature ships, add it to the relevant section above and let the merged PR title feed the next GitHub Release draft.
