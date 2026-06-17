@@ -18,6 +18,8 @@ function makeStagedEntity<T extends { id: string; name: string }>(entity: T) {
 const payeeAlice = makeStagedEntity({ id: "p1", name: "Alice" });
 const categoryFood = makeStagedEntity({ id: "c1", name: "Food", groupId: "g1", isIncome: false, hidden: false });
 const accountChecking = makeStagedEntity({ id: "a1", name: "Checking", offBudget: false, closed: false });
+const groupGroceries = makeStagedEntity({ id: "g1", name: "Groceries", isIncome: false, hidden: false, categoryIds: [] });
+const scheduleRent = makeStagedEntity({ id: "s1", name: "Rent", completed: false, postsTransaction: true });
 
 const fullMaps: EntityMaps = {
   payees: { p1: payeeAlice },
@@ -69,6 +71,13 @@ describe("ConditionChip — missing entity references", () => {
     render(<ConditionChip condition={condition} maps={emptyMaps} />);
     expect(screen.getByText("[deleted account]")).toBeInTheDocument();
   });
+
+  it("shows '[deleted group]' instead of UUID when category group is missing", () => {
+    const condition: ConditionOrAction = { field: "category_group", op: "is", value: "gone-uuid", type: "id" };
+    render(<ConditionChip condition={condition} maps={emptyMaps} />);
+    expect(screen.getByText("[deleted group]")).toBeInTheDocument();
+    expect(screen.queryByText("gone-uuid")).not.toBeInTheDocument();
+  });
 });
 
 describe("ActionChip — missing entity references", () => {
@@ -85,11 +94,22 @@ describe("ActionChip — missing entity references", () => {
     expect(screen.queryByText("ghost-uuid")).not.toBeInTheDocument();
   });
 
-  it("shows 'Deleted schedule' for link-schedule when schedule is missing", () => {
+  it("shows '[deleted schedule]' for link-schedule when schedule is missing", () => {
     const action: ConditionOrAction = { field: "schedule", op: "link-schedule", value: "sched-gone", type: "id" };
     const mapsWithSchedules: EntityMaps = { ...emptyMaps, schedules: {} };
     render(<ActionChip action={action} maps={mapsWithSchedules} />);
     expect(screen.getByText("[deleted schedule]")).toBeInTheDocument();
     expect(screen.queryByText("sched-gone")).not.toBeInTheDocument();
+  });
+
+  it("shows '[deleted schedule]' for link-schedule when schedule is staged as deleted", () => {
+    const action: ConditionOrAction = { field: "schedule", op: "link-schedule", value: "s1", type: "id" };
+    const mapsWithDeletedSchedule: EntityMaps = {
+      ...emptyMaps,
+      schedules: { s1: { ...scheduleRent, isDeleted: true } },
+    };
+    render(<ActionChip action={action} maps={mapsWithDeletedSchedule} />);
+    expect(screen.getByText("[deleted schedule]")).toBeInTheDocument();
+    expect(screen.queryByText("Rent")).not.toBeInTheDocument();
   });
 });
