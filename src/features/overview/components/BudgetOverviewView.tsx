@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { selectActiveInstance, useConnectionStore } from "@/store/connection";
 import { BundleExportDialog } from "@/features/bundle/components/BundleExportDialog";
 import { BundleImportDialog } from "@/features/bundle/components/BundleImportDialog";
 import { useBudgetOverview } from "../hooks/useBudgetOverview";
@@ -12,7 +11,6 @@ import { OverviewStatsSection } from "./OverviewStatsSection";
 
 export function BudgetOverviewView() {
   const { snapshot, isLoading, refresh } = useBudgetOverview();
-  const connection = useConnectionStore(selectActiveInstance);
   const headerState = useOverviewHeaderState({
     hasStats: !!snapshot,
     isLoading,
@@ -26,9 +24,6 @@ export function BudgetOverviewView() {
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-4 px-4 py-4 sm:px-6 sm:py-5">
         <div className="space-y-3">
           <OverviewHeader
-            budgetLabel={connection?.label ?? ""}
-            statusLabel={headerState.statusLabel}
-            statusDotClass={headerState.statusDotClass}
             refreshButtonLabel={headerState.refreshButtonLabel}
             refreshStatusLabel={headerState.refreshStatusLabel}
             isRefreshing={headerState.isRefreshing}

@@ -4,9 +4,11 @@ import {
   Landmark,
   LayoutList,
   ScrollText,
+  ShieldCheck,
   Tag,
   Terminal,
   Users,
+  Wallet,
 } from "lucide-react";
 import type { OverviewActionCard } from "../types";
 
@@ -19,6 +21,15 @@ export const ADVANCED_TOOLS_DESCRIPTION =
   "Tools for deeper inspection and analysis.";
 
 export const ENTITY_CARDS: OverviewActionCard[] = [
+  {
+    id: "budget-management",
+    label: "Budget Management",
+    description:
+      "Manage monthly budget amounts, carryover settings, and holds across all category groups.",
+    href: "/budget-management",
+    icon: Wallet,
+    tone: "entity",
+  },
   {
     id: "rules",
     label: "Rules",
@@ -93,5 +104,14 @@ export const TOOL_CARDS: OverviewActionCard[] = [
     icon: FileSearch,
     tone: "tool",
     href: "/budget-diagnostics",
+  },
+  {
+    id: "rule-diagnostics",
+    label: "Rule Diagnostics",
+    description:
+      "Analyse rule coverage and conflicts across your transactions to identify gaps and overlapping conditions.",
+    icon: ShieldCheck,
+    tone: "tool",
+    href: "/rules/diagnostics",
   },
 ];

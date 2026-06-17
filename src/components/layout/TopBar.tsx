@@ -481,6 +481,7 @@ export function TopBar() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
     </>
   );
 }
