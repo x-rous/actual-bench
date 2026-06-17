@@ -16,16 +16,30 @@ function isEntityField(field: string, fieldDefs: typeof CONDITION_FIELDS | typeo
 
 // ─── Entity resolution ────────────────────────────────────────────────────────
 
+const DELETED_LABELS: Record<"payee" | "category" | "account" | "categoryGroup", string> = {
+  payee:         "[deleted payee]",
+  category:      "[deleted category]",
+  account:       "[deleted account]",
+  categoryGroup: "[deleted group]",
+};
+
+type ResolvedValue = { label: string; missing: boolean };
+
 function resolveEntityName(
   id: string,
   entity: "payee" | "category" | "account" | "categoryGroup",
   maps: EntityMaps
-): string {
-  if (entity === "payee")         return maps.payees[id]?.entity.name         ?? id;
-  if (entity === "category")      return maps.categories[id]?.entity.name     ?? id;
-  if (entity === "account")       return maps.accounts[id]?.entity.name       ?? id;
-  if (entity === "categoryGroup") return maps.categoryGroups[id]?.entity.name ?? id;
-  return id;
+): ResolvedValue {
+  let staged: { entity: { name: string }; isDeleted: boolean } | undefined;
+  if (entity === "payee")         staged = maps.payees[id];
+  else if (entity === "category") staged = maps.categories[id];
+  else if (entity === "account")  staged = maps.accounts[id];
+  else                            staged = maps.categoryGroups[id];
+
+  if (!staged || staged.isDeleted) {
+    return { label: DELETED_LABELS[entity], missing: true };
+  }
+  return { label: staged.entity.name, missing: false };
 }
 
 function resolveScalar(
@@ -33,13 +47,13 @@ function resolveScalar(
   field: string,
   maps: EntityMaps,
   fieldDefs: typeof CONDITION_FIELDS | typeof ACTION_FIELDS
-): string {
+): ResolvedValue {
   const def = fieldDefs[field];
   if (def?.entity && id) return resolveEntityName(id, def.entity, maps);
   if (def?.type === "number" && id !== "" && !isNaN(Number(id))) {
-    return Number(id).toFixed(2);
+    return { label: Number(id).toFixed(2), missing: false };
   }
-  return id;
+  return { label: id, missing: false };
 }
 
 function resolveValues(
@@ -47,11 +61,11 @@ function resolveValues(
   value: ConditionOrAction["value"],
   maps: EntityMaps,
   fieldDefs: typeof CONDITION_FIELDS | typeof ACTION_FIELDS
-): string[] {
+): ResolvedValue[] {
   // Date conditions in schedule-linked rules carry a RecurConfig object as their value.
   if (field === "date" && isRecurConfig(value)) {
     const summary = recurSummary(value);
-    return summary ? [summary] : ["recurring"];
+    return [{ label: summary || "recurring", missing: false }];
   }
 
   if (Array.isArray(value)) {
@@ -73,7 +87,7 @@ export function ConditionChip({
 }) {
   const field = condition.field ?? "";
   const fieldLabel = CONDITION_FIELDS[field]?.label ?? field;
-  const valueLabels = resolveValues(field, condition.value, maps, CONDITION_FIELDS);
+  const resolvedValues = resolveValues(field, condition.value, maps, CONDITION_FIELDS);
   const isEntity = isEntityField(field, CONDITION_FIELDS);
 
   return (
@@ -84,16 +98,20 @@ export function ConditionChip({
       </span>
       {/* Op — muted */}
       <span className="text-[11px] text-muted-foreground">{condition.op}</span>
-      {/* Values — sky for entity references, emerald for plain strings */}
-      {valueLabels.map((label, i) => (
+      {/* Values — amber for missing refs, sky for entity references, emerald for plain strings */}
+      {resolvedValues.map(({ label, missing }, i) => (
         <span key={i} className={cn(
           "rounded px-1 py-0.5 text-[11px] font-medium",
-          isEntity
-            ? "bg-sky-50 text-sky-700 dark:bg-sky-950/30 dark:text-sky-400"
-            : "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-400"
+          missing
+            ? "bg-destructive/10 text-destructive dark:bg-destructive/20"
+            : isEntity
+              ? "bg-sky-50 text-sky-700 dark:bg-sky-950/30 dark:text-sky-400"
+              : "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-400"
         )}>
           {label}
-          {i < valueLabels.length - 1 && <span className={isEntity ? "text-sky-500 ml-0.5" : "text-emerald-500 ml-0.5"}>,</span>}
+          {i < resolvedValues.length - 1 && (
+            <span className={missing ? "text-destructive ml-0.5" : isEntity ? "text-sky-500 ml-0.5" : "text-emerald-500 ml-0.5"}>,</span>
+          )}
         </span>
       ))}
     </div>
@@ -143,14 +161,21 @@ export function ActionChip({
   // Link-schedule — read-only badge resolving the schedule name
   if (op === "link-schedule") {
     const scheduleId = valueToString(action.value);
-    const scheduleName = maps.schedules?.[scheduleId]?.entity.name ?? scheduleId;
+    const staged = maps.schedules?.[scheduleId];
+    const scheduleMissing = !staged || staged.isDeleted;
+    const scheduleName = scheduleMissing ? "[deleted schedule]" : staged.entity.name;
     return (
       <div className="flex items-center gap-1 flex-wrap">
         <span className="rounded px-1 py-0.5 text-[11px] font-medium bg-muted text-muted-foreground">
           linked to schedule
         </span>
         <span className="text-[11px] text-muted-foreground">→</span>
-        <span className="rounded px-1 py-0.5 text-[11px] font-medium bg-sky-50 text-sky-700 dark:bg-sky-950/30 dark:text-sky-400">
+        <span className={cn(
+          "rounded px-1 py-0.5 text-[11px] font-medium",
+          scheduleMissing
+            ? "bg-destructive/10 text-destructive dark:bg-destructive/20"
+            : "bg-sky-50 text-sky-700 dark:bg-sky-950/30 dark:text-sky-400"
+        )}>
           {scheduleName}
         </span>
       </div>
@@ -199,12 +224,12 @@ export function ActionChip({
   }
 
   // Boolean field — show Yes/No
-  let valueLabels: string[];
+  let resolvedValues: ResolvedValue[];
   if (fieldDef?.type === "boolean") {
     const boolVal = action.value === true || action.value === "true";
-    valueLabels = [boolVal ? "Yes" : "No"];
+    resolvedValues = [{ label: boolVal ? "Yes" : "No", missing: false }];
   } else {
-    valueLabels = resolveValues(field, action.value, maps, ACTION_FIELDS);
+    resolvedValues = resolveValues(field, action.value, maps, ACTION_FIELDS);
   }
   const isEntity = isEntityField(field, ACTION_FIELDS);
 
@@ -217,15 +242,19 @@ export function ActionChip({
         {fieldLabel}
       </span>
       <span className="text-[11px] text-muted-foreground">→</span>
-      {valueLabels.map((label, i) => (
+      {resolvedValues.map(({ label, missing }, i) => (
         <span key={i} className={cn(
           "rounded px-1 py-0.5 text-[11px] font-medium",
-          isEntity
-            ? "bg-sky-50 text-sky-700 dark:bg-sky-950/30 dark:text-sky-400"
-            : "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-400"
+          missing
+            ? "bg-destructive/10 text-destructive dark:bg-destructive/20"
+            : isEntity
+              ? "bg-sky-50 text-sky-700 dark:bg-sky-950/30 dark:text-sky-400"
+              : "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-400"
         )}>
           {label}
-          {i < valueLabels.length - 1 && <span className={isEntity ? "text-sky-500 ml-0.5" : "text-emerald-500 ml-0.5"}>,</span>}
+          {i < resolvedValues.length - 1 && (
+            <span className={missing ? "text-destructive ml-0.5" : isEntity ? "text-sky-500 ml-0.5" : "text-emerald-500 ml-0.5"}>,</span>
+          )}
         </span>
       ))}
     </div>
