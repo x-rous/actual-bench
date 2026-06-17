@@ -22,6 +22,8 @@ type SavedServersActions = {
    * already exists it is not added again.
    */
   addServer: (params: Omit<SavedServer, "id">) => void;
+  /** Removes the saved server entry matching the given baseUrl. No-op if not found. */
+  removeServer: (baseUrl: string) => void;
   /** Removes all saved servers. Called alongside clearAll() on the connection store. */
   clearServers: () => void;
 };
@@ -49,6 +51,11 @@ export const useSavedServersStore = create<SavedServersState & SavedServersActio
           }
           return { servers: [...state.servers, { ...params, id: generateId() }] };
         }),
+
+      removeServer: (baseUrl) =>
+        set((state) => ({
+          servers: state.servers.filter((s) => s.baseUrl !== baseUrl),
+        })),
 
       clearServers: () => set({ servers: [] }),
     }),
