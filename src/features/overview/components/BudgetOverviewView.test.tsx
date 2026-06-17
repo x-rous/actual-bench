@@ -87,15 +87,13 @@ describe("BudgetOverviewView", () => {
     mockUseBudgetOverview.mockReset();
   });
 
-  it("shows the selected budget name immediately and a loading badge during budget switches", () => {
+  it("shows loading placeholders for all snapshot metrics while data is being fetched", () => {
     mockUseBudgetOverview.mockReturnValue(
       buildHookResult({ snapshot: null, isLoading: true })
     );
 
     render(<BudgetOverviewView />);
 
-    expect(screen.getByText("Household Budget")).toBeInTheDocument();
-    expect(screen.getByText("Loading budget")).toBeInTheDocument();
     expect(screen.getAllByLabelText("Loading snapshot metric")).toHaveLength(8);
   });
 

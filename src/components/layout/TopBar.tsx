@@ -4,7 +4,7 @@ import Image from "next/image";
 import { useRouter, usePathname } from "next/navigation";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
-import { ChevronDown, Save, X, Undo2, Redo2, RefreshCw, Search, Package } from "lucide-react";
+import { ChevronDown, Save, X, Undo2, Redo2, RefreshCw, Search } from "lucide-react";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
@@ -41,8 +41,6 @@ import {
 import { useBudgetEditsStore } from "@/store/budgetEdits";
 import { useBudgetSavePipeline } from "./useBudgetSavePipeline";
 import { useBudgetSave } from "@/features/budget-management/hooks/useBudgetSave";
-import { BundleExportDialog } from "@/features/bundle/components/BundleExportDialog";
-import { BundleImportDialog } from "@/features/bundle/components/BundleImportDialog";
 import { BudgetSaveProgressDialog } from "@/features/budget-management/components/BudgetSaveProgressDialog";
 import { BudgetSaveReviewDialog } from "@/features/budget-management/components/BudgetSaveReviewDialog";
 import {
@@ -95,9 +93,6 @@ export function TopBar() {
   const [budgetSaveReviewHolds, setBudgetSaveReviewHolds] = useState<Record<string, StagedHold>>({});
   const [budgetSaveEdits, setBudgetSaveEdits] = useState<Record<BudgetCellKey, StagedBudgetEdit> | null>(null);
   const [budgetSaveHolds, setBudgetSaveHolds] = useState<Record<string, StagedHold>>({});
-
-  const [bundleExportOpen, setBundleExportOpen] = useState(false);
-  const [bundleImportOpen, setBundleImportOpen] = useState(false);
 
   const openSearch = useGlobalSearchStore((s) => s.open);
   const searchShortcutLabel = "Ctrl+k";
@@ -394,25 +389,6 @@ export function TopBar() {
             <RefreshCw className={`h-3.5 w-3.5${isRefreshing ? " animate-spin" : ""}`} />
           </Button>
 
-          {activeInstance && (
-            <DropdownMenu>
-              <DropdownMenuTrigger
-                className="inline-flex h-7 w-7 items-center justify-center rounded-md transition-colors hover:bg-accent hover:text-accent-foreground"
-                title="Bundle Export / Import"
-              >
-                <Package className="h-3.5 w-3.5" />
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={() => setBundleExportOpen(true)}>
-                  Export bundle…
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setBundleImportOpen(true)}>
-                  Import bundle…
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          )}
-
           <Button
             variant="ghost"
             size="sm"
@@ -506,12 +482,6 @@ export function TopBar() {
         </DialogContent>
       </Dialog>
 
-      {bundleExportOpen && (
-        <BundleExportDialog open={bundleExportOpen} onOpenChange={setBundleExportOpen} />
-      )}
-      {bundleImportOpen && (
-        <BundleImportDialog open={bundleImportOpen} onOpenChange={setBundleImportOpen} />
-      )}
     </>
   );
 }

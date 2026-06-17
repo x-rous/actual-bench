@@ -86,19 +86,12 @@ export function useOverviewHeaderState({
     }
   }
 
-  const isHeaderLoading = isLoading || isRefreshing;
-
   return {
     isRefreshing,
-    isHeaderLoading,
     refreshButtonLabel: isRefreshing ? "Refreshing" : "Refresh",
     refreshStatusLabel: isRefreshing
       ? `Refreshing${ELLIPSIS_FRAMES[ellipsisIndex]}`
       : getRelativeRefreshLabel(lastRefreshedAt, now),
-    statusLabel: isHeaderLoading ? "Loading budget" : "Connected",
-    statusDotClass: isHeaderLoading
-      ? "h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse"
-      : "h-1.5 w-1.5 rounded-full bg-green-500",
     handleRefresh,
   };
 }
