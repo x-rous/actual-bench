@@ -159,7 +159,7 @@ export function SchedulesTable({
       const status = statusMap.get(s.entity.id);
       if (statusFilter === "active"    && s.entity.completed) return false;
       if (statusFilter === "completed" && !s.entity.completed) return false;
-      if (statusFilter === "missed"    && status !== "missed") return false;
+      if (statusFilter === "missed" && !txsLoading && status !== "missed") return false;
       if (autoAddFilter === "auto"   && !s.entity.postsTransaction) return false;
       if (autoAddFilter === "manual" &&  s.entity.postsTransaction) return false;
       if (frequencyFilter !== "all") {
@@ -177,7 +177,7 @@ export function SchedulesTable({
       }
       return true;
     });
-  }, [staged, search, statusFilter, statusMap, autoAddFilter, frequencyFilter, payeeFilter, accountFilter, stagedPayees, stagedAccounts]);
+  }, [staged, search, statusFilter, txsLoading, statusMap, autoAddFilter, frequencyFilter, payeeFilter, accountFilter, stagedPayees, stagedAccounts]);
 
   const totalCount   = Object.values(staged).filter((s) => !s.isDeleted).length;
   const selectableIds = useMemo(() => new Set(rows.map((s) => s.entity.id)), [rows]);
