@@ -4,8 +4,16 @@ import { Search, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { PillGroup } from "@/components/ui/pill-group";
 
+export type StatusFilter = "active" | "all" | "missed" | "completed";
 export type AutoAddFilter = "all" | "auto" | "manual";
 export type FrequencyFilter = "all" | "once" | "daily" | "weekly" | "monthly" | "yearly";
+
+const STATUS_OPTIONS: { value: StatusFilter; label: string }[] = [
+  { value: "active",    label: "Active" },
+  { value: "all",       label: "All" },
+  { value: "missed",    label: "Missed" },
+  { value: "completed", label: "Completed" },
+];
 
 const AUTO_ADD_OPTIONS: { value: AutoAddFilter; label: string }[] = [
   { value: "all",    label: "All" },
@@ -27,6 +35,8 @@ export type EntityOption = { value: string; label: string };
 type Props = {
   search: string;
   onSearchChange: (v: string) => void;
+  statusFilter: StatusFilter;
+  onStatusFilterChange: (v: StatusFilter) => void;
   autoAddFilter: AutoAddFilter;
   onAutoAddFilterChange: (v: AutoAddFilter) => void;
   frequencyFilter: FrequencyFilter;
@@ -49,6 +59,7 @@ const selectCls =
 
 export function FilterBar({
   search, onSearchChange,
+  statusFilter, onStatusFilterChange,
   autoAddFilter, onAutoAddFilterChange,
   frequencyFilter, onFrequencyFilterChange,
   payeeFilter, onPayeeFilterChange, payeeOptions,
@@ -69,7 +80,7 @@ export function FilterBar({
   }
 
   const hasFilters =
-    search || autoAddFilter !== "all" ||
+    search || statusFilter !== "active" || autoAddFilter !== "all" ||
     frequencyFilter !== "all" || payeeFilter !== "" || accountFilter !== "";
 
   return (
@@ -91,6 +102,7 @@ export function FilterBar({
         )}
       </div>
 
+      <PillGroup options={STATUS_OPTIONS}    value={statusFilter}    onChange={onStatusFilterChange} />
       <PillGroup options={AUTO_ADD_OPTIONS}  value={autoAddFilter}   onChange={onAutoAddFilterChange} />
       <PillGroup options={FREQUENCY_OPTIONS} value={frequencyFilter} onChange={onFrequencyFilterChange} />
 
@@ -128,6 +140,7 @@ export function FilterBar({
         <button
           onClick={() => {
             onSearchChange("");
+            onStatusFilterChange("active");
             onAutoAddFilterChange("all");
             onFrequencyFilterChange("all");
             onPayeeFilterChange("");

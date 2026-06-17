@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { usePersistedFilters } from "@/hooks/usePersistedFilters";
 import { useHighlight } from "@/hooks/useHighlight";
 import { useTableSelection } from "@/hooks/useTableSelection";
@@ -8,11 +9,15 @@ import { Pencil, Trash2, RotateCcw, Copy, Braces, AlertTriangle, Info, RefreshCw
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useStagedStore } from "@/store/staged";
+import { useConnectionStore, selectActiveInstance } from "@/store/connection";
 import { generateId } from "@/lib/uuid";
 import { recurSummary, frequencyLabel } from "../lib/recurSummary";
 import { FilterBar } from "./FilterBar";
 import type { ScheduleDeleteIntent } from "./SchedulesTableOverlays";
-import type { AutoAddFilter, FrequencyFilter, EntityOption } from "./FilterBar";
+import type { AutoAddFilter, StatusFilter, FrequencyFilter, EntityOption } from "./FilterBar";
+import { useScheduleTransactions } from "../hooks/useScheduleTransactions";
+import { computeScheduleStatus, STATUS_BADGE } from "../lib/scheduleStatus";
+import { useBudgetPreferences } from "@/hooks/useBudgetPreferences";
 import type { StagedEntity } from "@/types/staged";
 import type { Schedule, ScheduleAmountRange } from "@/types/entities";
 
@@ -77,19 +82,46 @@ export function SchedulesTable({
 
   const highlightedId = useHighlight();
 
+  const queryClient = useQueryClient();
+  const connection  = useConnectionStore(selectActiveInstance);
+
+  // Force-refresh preferences whenever the Schedules page opens so the
+  // upcomingScheduledTransactionLength value is always current, not cached.
+  useEffect(() => {
+    queryClient.invalidateQueries({ queryKey: ["budgetPreferences", connection?.id] });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const { data: scheduleTxMap, isLoading: txsLoading } = useScheduleTransactions();
+  const { upcomingScheduledTransactionLength: upcomingDays } = useBudgetPreferences();
+
   const [filters, setFilters, clearFilters] = usePersistedFilters("filters:schedules", {
     search: "",
+    statusFilter: "active" as StatusFilter,
     autoAddFilter: "all" as AutoAddFilter,
     frequencyFilter: "all" as FrequencyFilter,
     payeeFilter: "",
     accountFilter: "",
   });
-  const { search, autoAddFilter, frequencyFilter, payeeFilter, accountFilter } = filters;
-  const setSearch          = (v: string)          => setFilters((f) => ({ ...f, search: v }));
+  const { search, statusFilter, autoAddFilter, frequencyFilter, payeeFilter, accountFilter } = filters;
+  const setSearch          = (v: string)       => setFilters((f) => ({ ...f, search: v }));
+  const setStatusFilter    = (v: StatusFilter) => setFilters((f) => ({ ...f, statusFilter: v }));
   const setAutoAddFilter   = (v: AutoAddFilter)   => setFilters((f) => ({ ...f, autoAddFilter: v }));
   const setFrequencyFilter = (v: FrequencyFilter) => setFilters((f) => ({ ...f, frequencyFilter: v }));
   const setPayeeFilter     = (v: string)          => setFilters((f) => ({ ...f, payeeFilter: v }));
   const setAccountFilter   = (v: string)          => setFilters((f) => ({ ...f, accountFilter: v }));
+
+  // Precompute status for every non-deleted schedule once tx data arrives.
+  // While txsLoading the map is empty — rows show no badge until data lands.
+  const statusMap = useMemo(() => {
+    const map = new Map<string, ReturnType<typeof computeScheduleStatus>>();
+    if (!scheduleTxMap) return map;
+    for (const s of Object.values(staged)) {
+      if (s.isDeleted) continue;
+      const txs = scheduleTxMap.get(s.entity.id) ?? [];
+      map.set(s.entity.id, computeScheduleStatus(s.entity, txs, upcomingDays));
+    }
+    return map;
+  }, [staged, scheduleTxMap, upcomingDays]);
 
   const { selectedIds, toggleSelect, toggleSelectAll: _toggleSelectAll, clearSelection } =
     useTableSelection();
@@ -124,6 +156,10 @@ export function SchedulesTable({
     const q = search.trim().toLowerCase();
     return Object.values(staged).filter((s) => {
       if (s.isDeleted) return false;
+      const status = statusMap.get(s.entity.id);
+      if (statusFilter === "active"    && s.entity.completed) return false;
+      if (statusFilter === "completed" && !s.entity.completed) return false;
+      if (statusFilter === "missed"    && status !== "missed") return false;
       if (autoAddFilter === "auto"   && !s.entity.postsTransaction) return false;
       if (autoAddFilter === "manual" &&  s.entity.postsTransaction) return false;
       if (frequencyFilter !== "all") {
@@ -141,7 +177,7 @@ export function SchedulesTable({
       }
       return true;
     });
-  }, [staged, search, autoAddFilter, frequencyFilter, payeeFilter, accountFilter, stagedPayees, stagedAccounts]);
+  }, [staged, search, statusFilter, statusMap, autoAddFilter, frequencyFilter, payeeFilter, accountFilter, stagedPayees, stagedAccounts]);
 
   const totalCount   = Object.values(staged).filter((s) => !s.isDeleted).length;
   const selectableIds = useMemo(() => new Set(rows.map((s) => s.entity.id)), [rows]);
@@ -200,6 +236,7 @@ export function SchedulesTable({
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
       <FilterBar
         search={search}              onSearchChange={setSearch}
+        statusFilter={statusFilter}  onStatusFilterChange={setStatusFilter}
         autoAddFilter={autoAddFilter} onAutoAddFilterChange={setAutoAddFilter}
         frequencyFilter={frequencyFilter} onFrequencyFilterChange={setFrequencyFilter}
         payeeFilter={payeeFilter}    onPayeeFilterChange={setPayeeFilter}  payeeOptions={payeeOptions}
@@ -214,7 +251,7 @@ export function SchedulesTable({
         {rows.length === 0 ? (
           <div className="flex flex-col items-center justify-center gap-2 py-20 text-sm text-muted-foreground">
             <span>No schedules found.</span>
-            {(search || autoAddFilter !== "all" || frequencyFilter !== "all" || payeeFilter || accountFilter) && (
+            {(search || statusFilter !== "active" || autoAddFilter !== "all" || frequencyFilter !== "all" || payeeFilter || accountFilter) && (
               <button
                 className="text-xs underline hover:text-foreground"
                 onClick={clearFilters}
@@ -289,6 +326,16 @@ export function SchedulesTable({
                         <span className={cn("font-medium", !entity.name && "italic text-muted-foreground")}>
                           {entity.name || "Unnamed"}
                         </span>
+                        {(() => {
+                          const status = statusMap.get(entity.id);
+                          if (!status || txsLoading) return null;
+                          const badge = STATUS_BADGE[status];
+                          return (
+                            <span className={cn("rounded px-1 py-0.5 text-[10px] font-medium", badge.className)}>
+                              {badge.label}
+                            </span>
+                          );
+                        })()}
                       </div>
                       {saveError && <p className="mt-0.5 text-[11px] text-destructive">{saveError}</p>}
                     </td>
