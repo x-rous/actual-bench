@@ -587,7 +587,7 @@ function BudgetWorkspaceInner({
 
     setCarryoverRequest({
       input: {
-        categoryId,
+        categoryIds: [categoryId],
         months: monthsToUpdate,
         newValue: !carryover,
       },
@@ -743,11 +743,8 @@ function BudgetWorkspaceInner({
     return true;
   }, [selection, handleContextMenuBulkAction]);
 
-  // Alt+C: toggle carryover for the anchor's category across the selected
-  // month range. The carryover dialog API is single-category, so a
-  // multi-category selection is downgraded to the anchor's category — the
-  // user can repeat Alt+C with each category selected. Right-click still
-  // exposes the per-cell forward-propagation flow.
+  // Alt+C: toggle carryover for all selected categories across the selected
+  // month range. newValue is derived from the anchor cell's current carryover state.
   const toggleCarryoverForSelection = useCallback((): boolean => {
     if (!selection || !connection) return false;
     const anchorCatId = selection.anchorCategoryId;
@@ -764,16 +761,23 @@ function BudgetWorkspaceInner({
     const anchorCat = rawMonthsMap.get(selection.anchorMonth)?.categoriesById[anchorCatId];
     if (!anchorCat) return false;
 
+    const anchorCatIdx = categories.findIndex((c) => c.id === selection.anchorCategoryId);
+    const focusCatIdx = categories.findIndex((c) => c.id === selection.focusCategoryId);
+    if (anchorCatIdx === -1 || focusCatIdx === -1) return false;
+    const minCatIdx = Math.min(anchorCatIdx, focusCatIdx);
+    const maxCatIdx = Math.max(anchorCatIdx, focusCatIdx);
+    const categoryIds = categories.slice(minCatIdx, maxCatIdx + 1).map((c) => c.id);
+
     setCarryoverRequest({
       input: {
-        categoryId: anchorCatId,
+        categoryIds,
         months: monthsToUpdate,
         newValue: !anchorCat.carryover,
       },
-      categoryLabel: anchorCat.name,
+      categoryLabel: categoryIds.length === 1 ? anchorCat.name : undefined,
     });
     return true;
-  }, [selection, connection, activeMonths, readOnlyMonths, rawMonthsMap]);
+  }, [selection, connection, activeMonths, readOnlyMonths, rawMonthsMap, categories]);
 
   const handleKeyDown = useWorkspaceKeymap({
     undo,
