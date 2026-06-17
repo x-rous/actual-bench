@@ -16,6 +16,7 @@ import { GlobalSearchModal } from "@/features/global-search/components/GlobalSea
 import { QuickCreateDialog } from "@/features/quick-create/components/QuickCreateDialog";
 import { useConnectionHealth, ConnectionHealthContext } from "@/hooks/useConnectionHealth";
 import { useVersionCheck, VersionCheckContext } from "@/hooks/useVersionCheck";
+import { useBudgetPreferences } from "@/hooks/useBudgetPreferences";
 
 /**
  * The four-panel app shell:
@@ -41,6 +42,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   // existing eager-preload behavior.
   usePreloadEntities(pathname !== "/overview");
   useKeyboardShortcuts();
+  useBudgetPreferences();
 
   const hydrated = useIsHydrated();
   const health = useConnectionHealth();

@@ -114,11 +114,11 @@ export function SchedulesView() {
             onChange={handleImportCsv}
           />
           <Button variant="outline" size="sm" onClick={() => importInputRef.current?.click()} title="Import CSV">
-            <Upload />
+            <Download />
             Import
           </Button>
           <Button variant="outline" size="sm" onClick={handleExportCsv} title="Export CSV">
-            <Download />
+            <Upload />
             Export
           </Button>
           <Button size="sm" onClick={openNew}>
