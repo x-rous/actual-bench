@@ -52,7 +52,8 @@ import type { BudgetCellKey, StagedBudgetEdit, StagedHold } from "@/features/bud
 type PendingAction =
   | { kind: "switch"; id: string }
   | { kind: "addConnection" }
-  | { kind: "disconnect" };
+  | { kind: "disconnect" }
+  | { kind: "disconnectAll" };
 
 function TopBarVersionChip({
   label,
@@ -104,6 +105,8 @@ export function TopBar() {
   const setActive = useConnectionStore((s) => s.setActiveInstance);
   const clearAll = useConnectionStore((s) => s.clearAll);
   const clearServers = useSavedServersStore((s) => s.clearServers);
+  const removeServer = useSavedServersStore((s) => s.removeServer);
+  const removeInstance = useConnectionStore((s) => s.removeInstance);
 
   // Entity pages store
   const stagedHasChanges = useStagedStore(selectHasChanges);
@@ -165,6 +168,20 @@ export function TopBar() {
       setActive(null);
       router.push("/connect");
     } else if (action.kind === "disconnect") {
+      handleDiscardAll();
+      queryClient.clear();
+      if (activeInstance) {
+        const { instances } = useConnectionStore.getState();
+        const othersSameServer = instances.some(
+          (i) => i.id !== activeInstance.id && i.baseUrl === activeInstance.baseUrl
+        );
+        removeInstance(activeInstance.id);
+        if (!othersSameServer) removeServer(activeInstance.baseUrl);
+      }
+      if (useConnectionStore.getState().instances.length === 0) {
+        router.push("/connect");
+      }
+    } else if (action.kind === "disconnectAll") {
       handleDiscardAll();
       queryClient.clear();
       clearAll();
@@ -268,30 +285,38 @@ export function TopBar() {
                 </span>
                 <ChevronDown className="h-3 w-3 text-muted-foreground" />
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="start" className="w-80">
-                {instances.map((instance) => (
-                  <DropdownMenuItem
-                    key={instance.id}
-                    onClick={() => handleSwitchConnection(instance.id)}
-                    className="flex items-center justify-between"
-                  >
-                    <span className="truncate">{instance.label}</span>
-                    {instance.id === activeInstance.id && (
-                      <Badge variant="secondary" className="ml-2 text-xs">
-                        active
-                      </Badge>
-                    )}
-                  </DropdownMenuItem>
-                ))}
+              <DropdownMenuContent align="start" className="w-64">
+                {instances.map((instance) => {
+                  const isActive = instance.id === activeInstance.id;
+                  return (
+                    <DropdownMenuItem
+                      key={instance.id}
+                      onClick={() => handleSwitchConnection(instance.id)}
+                      className="flex items-center justify-between"
+                    >
+                      <span className="truncate">{instance.label}</span>
+                      {isActive && (
+                        <Badge variant="secondary" className="ml-2 shrink-0 text-xs">active</Badge>
+                      )}
+                    </DropdownMenuItem>
+                  );
+                })}
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={() => requestAction({ kind: "addConnection" })}>
                   Add connection…
                 </DropdownMenuItem>
+                <DropdownMenuSeparator />
                 <DropdownMenuItem
                   onClick={() => requestAction({ kind: "disconnect" })}
-                  className="text-destructive"
+                  className="text-destructive focus:text-destructive"
                 >
                   Disconnect
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => requestAction({ kind: "disconnectAll" })}
+                  className="text-destructive focus:text-destructive"
+                >
+                  Disconnect All Connections
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
