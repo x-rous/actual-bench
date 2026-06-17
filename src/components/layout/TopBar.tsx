@@ -105,7 +105,6 @@ export function TopBar() {
   const setActive = useConnectionStore((s) => s.setActiveInstance);
   const clearAll = useConnectionStore((s) => s.clearAll);
   const clearServers = useSavedServersStore((s) => s.clearServers);
-  const removeServer = useSavedServersStore((s) => s.removeServer);
   const removeInstance = useConnectionStore((s) => s.removeInstance);
 
   // Entity pages store
@@ -171,12 +170,7 @@ export function TopBar() {
       handleDiscardAll();
       queryClient.clear();
       if (activeInstance) {
-        const { instances } = useConnectionStore.getState();
-        const othersSameServer = instances.some(
-          (i) => i.id !== activeInstance.id && i.baseUrl === activeInstance.baseUrl
-        );
         removeInstance(activeInstance.id);
-        if (!othersSameServer) removeServer(activeInstance.baseUrl);
       }
       if (useConnectionStore.getState().instances.length === 0) {
         router.push("/connect");
