@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useIsFetching } from "@tanstack/react-query";
+import { useIsFetching, useQueryClient } from "@tanstack/react-query";
 import { useStagedStore } from "@/store/staged";
 import { useConnectionStore } from "@/store/connection";
 import type { Rule, Payee, Category, Account, CategoryGroup, Schedule } from "@/types/entities";
@@ -75,6 +75,7 @@ function selectEntityMaps(state: {
 }
 
 export function useRuleDiagnostics(): UseRuleDiagnosticsResult {
+  const queryClient = useQueryClient();
   const stagedRules = useStagedStore((s) => s.rules);
   // Subscribe to entity maps so that staged-entity changes drive re-renders
   // (the engine reads via getState() at run time, but the React layer needs
@@ -102,21 +103,31 @@ export function useRuleDiagnostics(): UseRuleDiagnosticsResult {
     },
   }) > 0;
 
+  // Check synchronously whether rules data is already cached. `useIsFetching`
+  // is useless here — at the first render, fetches haven't started yet (they
+  // start in effects) so it returns 0 even when no rules are loaded. The
+  // query state is authoritative: "success" means data exists in the cache.
+  const rulesAlreadyCached =
+    queryClient.getQueryState(["rules", activeConnectionId])?.status === "success";
+
   const [report, setReport] = useState<DiagnosticReport | null>(null);
-  const [running, setRunning] = useState(false);
+  // Start in running=true when rules aren't cached yet so the page shows a
+  // spinner while the preload queries complete.
+  const [running, setRunning] = useState(!rulesAlreadyCached);
   const [error, setError] = useState<string | null>(null);
   const [runToken, setRunToken] = useState(0);
 
   const cancelledRef = useRef(false);
   const previousConnectionIdRef = useRef(activeConnectionId);
-  // True between "connection switched" and "engine ran for the new connection".
-  // The post-switch watcher waits for the rules query to settle before refreshing.
-  const awaitingPostSwitchRefreshRef = useRef(false);
+  // True while the engine should wait for entity data before running.
+  // Covers both direct navigation (cache miss) and connection switches.
+  const awaitingPostSwitchRefreshRef = useRef(!rulesAlreadyCached);
+  // Track the previous isLoadingEntities value to detect true→false transitions.
+  const prevIsLoadingRef = useRef(isLoadingEntities);
 
   // Effect 1: detect a connection switch.
-  // When the connection changes we clear the current report and put the view
-  // into the loading state immediately, then arm Effect 2 to refresh the
-  // engine once the new connection's entity queries have finished loading.
+  // Immediately clears the report and arms the loading watcher so the engine
+  // re-runs once the new connection's entity queries have settled.
   useEffect(() => {
     if (previousConnectionIdRef.current !== activeConnectionId) {
       previousConnectionIdRef.current = activeConnectionId;
@@ -128,19 +139,30 @@ export function useRuleDiagnostics(): UseRuleDiagnosticsResult {
     }
   }, [activeConnectionId]);
 
-  // Effect 2: when the new connection's entity queries finish loading after a
-  // switch, bump runToken so the engine re-runs against the now-fresh staged
-  // store. We gate on the queries (not on staged-rules reference changes)
-  // because `discardAll()` clears staged data BEFORE the new data arrives —
-  // reacting to the first reference change runs the engine against an empty
-  // staged store and leaves the report stuck on the empty signature.
+  // Effect 2: auto-refresh when entity queries finish loading.
+  // Only fires on a true→false transition so it never triggers prematurely
+  // on mount (where isLoadingEntities starts false before fetches begin).
+  // Covers both initial direct navigation and post-connection-switch loads.
+  // Also handles the edge case where the new connection's rules are already
+  // cached after a switch — no fetch occurs so the true→false transition
+  // never fires; we detect this via rulesAlreadyCached and run immediately.
   useEffect(() => {
+    const wasLoading = prevIsLoadingRef.current;
+    prevIsLoadingRef.current = isLoadingEntities;
     if (!awaitingPostSwitchRefreshRef.current) return;
-    if (isLoadingEntities) return;
-    awaitingPostSwitchRefreshRef.current = false;
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setRunToken((t) => t + 1);
-  }, [isLoadingEntities]);
+    if (wasLoading && !isLoadingEntities) {
+      // Normal path: load just completed.
+      awaitingPostSwitchRefreshRef.current = false;
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setRunToken((t) => t + 1);
+    } else if (!wasLoading && !isLoadingEntities && rulesAlreadyCached) {
+      // Edge case: rules already cached for this connection — no fetch will
+      // happen so the transition above never fires; run immediately.
+      awaitingPostSwitchRefreshRef.current = false;
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setRunToken((t) => t + 1);
+    }
+  }, [isLoadingEntities, rulesAlreadyCached]);
 
   // Current working-set signature is recomputed every render and compared
   // against the report's signature to drive the stale banner.
@@ -152,6 +174,9 @@ export function useRuleDiagnostics(): UseRuleDiagnosticsResult {
   const stale = report !== null && report.workingSetSignature !== currentSignature;
 
   useEffect(() => {
+    // Entities are still loading (initial page load or connection switch) —
+    // Effect 2 will bump runToken once the queries settle. Skip for now.
+    if (awaitingPostSwitchRefreshRef.current) return;
     cancelledRef.current = false;
     let cancelled = false;
     // eslint-disable-next-line react-hooks/set-state-in-effect
