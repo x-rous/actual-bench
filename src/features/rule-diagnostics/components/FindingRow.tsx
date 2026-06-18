@@ -45,6 +45,14 @@ function handleRuleLinkClick(e: MouseEvent<HTMLAnchorElement>, ruleId: string): 
   if (!entry || entry.isDeleted) {
     e.preventDefault();
     toast.error("This rule no longer exists in the current working set.");
+    return;
+  }
+  // Clear persisted Rules-page filters so the target rule is always visible
+  // after the jump — any active search/stage/action-type filter could hide it.
+  try {
+    sessionStorage.removeItem("filters:rules");
+  } catch {
+    // ignore — storage may be unavailable in some environments
   }
 }
 

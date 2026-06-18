@@ -13,6 +13,7 @@ import {
   ScrollText,
   Calendar,
   Tag,
+  ShieldCheck,
   Stethoscope,
   Terminal,
   PanelLeftClose,
@@ -103,6 +104,7 @@ const SIDEBAR_SECTIONS: SidebarSection[] = [
           href: "/budget-diagnostics",
           icon: Stethoscope,
         },
+        { id: "rule-diagnostics", label: "Rule Diagnostics", href: "/rules/diagnostics", icon: ShieldCheck },
         { id: "query", label: "ActualQL", href: "/query", icon: Terminal, badge: "dev" },
       ],
     },
@@ -113,11 +115,14 @@ type SidebarNavLinkProps = {
   item: NavItem;
   collapsed: boolean;
   pathname: string;
+  allHrefs: string[];
 };
 
-function SidebarNavLink({ item, collapsed, pathname }: SidebarNavLinkProps) {
+function SidebarNavLink({ item, collapsed, pathname, allHrefs }: SidebarNavLinkProps) {
   const isExactMatch = pathname === item.href;
-  const isAncestorMatch = pathname.startsWith(item.href + "/");
+  // Suppress ancestor highlighting when another sidebar item owns the exact path.
+  const anotherItemOwnsPath = allHrefs.some((h) => h !== item.href && h === pathname);
+  const isAncestorMatch = !anotherItemOwnsPath && pathname.startsWith(item.href + "/");
   const active = isExactMatch || isAncestorMatch;
   const ariaCurrent = isExactMatch ? "page" : isAncestorMatch ? "location" : undefined;
   const Icon = item.icon;
@@ -151,6 +156,12 @@ function SidebarNavLink({ item, collapsed, pathname }: SidebarNavLinkProps) {
     </Link>
   );
 }
+
+const ALL_SIDEBAR_HREFS: string[] = SIDEBAR_SECTIONS.flatMap((section) =>
+  section.type === "item"
+    ? [section.item.href]
+    : section.group.items.map((item) => item.href)
+);
 
 export function Sidebar() {
   const pathname = usePathname();
@@ -213,6 +224,7 @@ export function Sidebar() {
                   item={section.item}
                   collapsed={collapsed}
                   pathname={pathname}
+                  allHrefs={ALL_SIDEBAR_HREFS}
                 />
               </div>
             );
@@ -234,6 +246,7 @@ export function Sidebar() {
                     item={item}
                     collapsed={collapsed}
                     pathname={pathname}
+                    allHrefs={ALL_SIDEBAR_HREFS}
                   />
                 ))}
               </div>
