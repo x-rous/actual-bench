@@ -143,15 +143,26 @@ export function useRuleDiagnostics(): UseRuleDiagnosticsResult {
   // Only fires on a true→false transition so it never triggers prematurely
   // on mount (where isLoadingEntities starts false before fetches begin).
   // Covers both initial direct navigation and post-connection-switch loads.
+  // Also handles the edge case where the new connection's rules are already
+  // cached after a switch — no fetch occurs so the true→false transition
+  // never fires; we detect this via rulesAlreadyCached and run immediately.
   useEffect(() => {
     const wasLoading = prevIsLoadingRef.current;
     prevIsLoadingRef.current = isLoadingEntities;
-    if (wasLoading && !isLoadingEntities && awaitingPostSwitchRefreshRef.current) {
+    if (!awaitingPostSwitchRefreshRef.current) return;
+    if (wasLoading && !isLoadingEntities) {
+      // Normal path: load just completed.
+      awaitingPostSwitchRefreshRef.current = false;
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setRunToken((t) => t + 1);
+    } else if (!wasLoading && !isLoadingEntities && rulesAlreadyCached) {
+      // Edge case: rules already cached for this connection — no fetch will
+      // happen so the transition above never fires; run immediately.
       awaitingPostSwitchRefreshRef.current = false;
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setRunToken((t) => t + 1);
     }
-  }, [isLoadingEntities]);
+  }, [isLoadingEntities, rulesAlreadyCached]);
 
   // Current working-set signature is recomputed every render and compared
   // against the report's signature to drive the stale banner.
