@@ -324,20 +324,20 @@ export function SchedulesTable({
                     className="h-3.5 w-3.5 cursor-pointer rounded accent-primary"
                   />
                 </th>
-                <th className="cursor-pointer select-none px-3 py-2 text-left hover:bg-muted/30" onClick={() => toggleSort("name")}>
-                  <span className="flex items-center font-medium">Name<SortIndicator col="name" sortCol={sortCol} sortDir={sortDir} /></span>
+                <th className="px-3 py-2 text-left" aria-sort={sortCol === "name" ? (sortDir === "asc" ? "ascending" : "descending") : "none"}>
+                  <button type="button" onClick={() => toggleSort("name")} className="flex w-full items-center font-medium cursor-pointer select-none hover:bg-muted/30">Name<SortIndicator col="name" sortCol={sortCol} sortDir={sortDir} /></button>
                 </th>
-                <th className="w-32 cursor-pointer select-none px-3 py-2 text-left hover:bg-muted/30" onClick={() => toggleSort("nextDate")}>
-                  <span className="flex items-center font-medium">Next Date<SortIndicator col="nextDate" sortCol={sortCol} sortDir={sortDir} /></span>
+                <th className="w-32 px-3 py-2 text-left" aria-sort={sortCol === "nextDate" ? (sortDir === "asc" ? "ascending" : "descending") : "none"}>
+                  <button type="button" onClick={() => toggleSort("nextDate")} className="flex w-full items-center font-medium cursor-pointer select-none hover:bg-muted/30">Next Date<SortIndicator col="nextDate" sortCol={sortCol} sortDir={sortDir} /></button>
                 </th>
                 <th className="w-20 px-3 py-2 text-center font-medium">Recurring</th>
                 <th className="w-36 px-3 py-2 text-right font-medium">Amount</th>
                 <th className="w-[24rem] px-3 py-2 text-left font-medium">Repeats</th>
-                <th className="w-36 cursor-pointer select-none px-3 py-2 text-left hover:bg-muted/30" onClick={() => toggleSort("payee")}>
-                  <span className="flex items-center font-medium">Payee<SortIndicator col="payee" sortCol={sortCol} sortDir={sortDir} /></span>
+                <th className="w-36 px-3 py-2 text-left" aria-sort={sortCol === "payee" ? (sortDir === "asc" ? "ascending" : "descending") : "none"}>
+                  <button type="button" onClick={() => toggleSort("payee")} className="flex w-full items-center font-medium cursor-pointer select-none hover:bg-muted/30">Payee<SortIndicator col="payee" sortCol={sortCol} sortDir={sortDir} /></button>
                 </th>
-                <th className="w-36 cursor-pointer select-none px-3 py-2 text-left hover:bg-muted/30" onClick={() => toggleSort("account")}>
-                  <span className="flex items-center font-medium">Account<SortIndicator col="account" sortCol={sortCol} sortDir={sortDir} /></span>
+                <th className="w-36 px-3 py-2 text-left" aria-sort={sortCol === "account" ? (sortDir === "asc" ? "ascending" : "descending") : "none"}>
+                  <button type="button" onClick={() => toggleSort("account")} className="flex w-full items-center font-medium cursor-pointer select-none hover:bg-muted/30">Account<SortIndicator col="account" sortCol={sortCol} sortDir={sortDir} /></button>
                 </th>
                 <th className="w-20 px-3 py-2 text-center font-medium">Auto Add</th>
                 <th className="w-28 px-3 py-2 text-right font-medium">Actions</th>
