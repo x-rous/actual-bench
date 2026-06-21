@@ -409,23 +409,31 @@ export function PayeesTable({
                   <th className="w-1 p-0" />
 
                   <th
-                    className="cursor-pointer select-none px-2 py-1.5 text-left hover:bg-muted/30"
-                    onClick={() => toggleSort("name")}
+                    className="px-2 py-1.5 text-left"
+                    aria-sort={sortCol === "name" ? (sortDir === "asc" ? "ascending" : "descending") : "none"}
                   >
-                    <span className="flex items-center text-xs font-medium text-muted-foreground">
+                    <button
+                      type="button"
+                      onClick={() => toggleSort("name")}
+                      className="flex w-full items-center text-xs font-medium text-muted-foreground cursor-pointer select-none hover:bg-muted/30"
+                    >
                       Payee Name
                       <SortIndicator col="name" sortCol={sortCol} sortDir={sortDir} />
-                    </span>
+                    </button>
                   </th>
 
                   <th
-                    className="w-28 cursor-pointer select-none px-2 py-1.5 text-left hover:bg-muted/30"
-                    onClick={() => toggleSort("type")}
+                    className="w-28 px-2 py-1.5 text-left"
+                    aria-sort={sortCol === "type" ? (sortDir === "asc" ? "ascending" : "descending") : "none"}
                   >
-                    <span className="flex items-center text-xs font-medium text-muted-foreground">
+                    <button
+                      type="button"
+                      onClick={() => toggleSort("type")}
+                      className="flex w-full items-center text-xs font-medium text-muted-foreground cursor-pointer select-none hover:bg-muted/30"
+                    >
                       Type
                       <SortIndicator col="type" sortCol={sortCol} sortDir={sortDir} />
-                    </span>
+                    </button>
                   </th>
 
                   <th className="w-44 px-2 py-1.5 text-left text-xs font-medium text-muted-foreground">
