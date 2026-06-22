@@ -433,13 +433,17 @@ export function AccountsTable({
                   </th>
                   <th className="w-1 p-0" />
                   <th
-                    className="cursor-pointer select-none px-2 py-1.5 text-left hover:bg-muted/30"
-                    onClick={() => toggleSort("name")}
+                    className="px-2 py-1.5 text-left"
+                    aria-sort={sortCol === "name" ? (sortDir === "asc" ? "ascending" : "descending") : "none"}
                   >
-                    <span className="flex items-center text-xs font-medium text-muted-foreground">
+                    <button
+                      type="button"
+                      onClick={() => toggleSort("name")}
+                      className="flex w-full items-center text-xs font-medium text-muted-foreground cursor-pointer select-none hover:bg-muted/30"
+                    >
                       Account Name
                       <SortIndicator col="name" sortCol={sortCol} sortDir={sortDir} />
-                    </span>
+                    </button>
                   </th>
 
                   <th className="w-8 p-0">
@@ -451,23 +455,31 @@ export function AccountsTable({
                   </th>
 
                   <th
-                    className="w-32 cursor-pointer select-none px-2 py-1.5 text-left hover:bg-muted/30"
-                    onClick={() => toggleSort("offBudget")}
+                    className="w-32 px-2 py-1.5 text-left"
+                    aria-sort={sortCol === "offBudget" ? (sortDir === "asc" ? "ascending" : "descending") : "none"}
                   >
-                    <span className="flex items-center text-xs font-medium text-muted-foreground">
+                    <button
+                      type="button"
+                      onClick={() => toggleSort("offBudget")}
+                      className="flex w-full items-center text-xs font-medium text-muted-foreground cursor-pointer select-none hover:bg-muted/30"
+                    >
                       Budget
                       <SortIndicator col="offBudget" sortCol={sortCol} sortDir={sortDir} />
-                    </span>
+                    </button>
                   </th>
 
                   <th
-                    className="w-32 cursor-pointer select-none px-2 py-1.5 text-left hover:bg-muted/30"
-                    onClick={() => toggleSort("closed")}
+                    className="w-32 px-2 py-1.5 text-left"
+                    aria-sort={sortCol === "closed" ? (sortDir === "asc" ? "ascending" : "descending") : "none"}
                   >
-                    <span className="flex items-center text-xs font-medium text-muted-foreground">
+                    <button
+                      type="button"
+                      onClick={() => toggleSort("closed")}
+                      className="flex w-full items-center text-xs font-medium text-muted-foreground cursor-pointer select-none hover:bg-muted/30"
+                    >
                       Status
                       <SortIndicator col="closed" sortCol={sortCol} sortDir={sortDir} />
-                    </span>
+                    </button>
                   </th>
 
                   <th className="w-40 px-2 py-1.5 text-left">

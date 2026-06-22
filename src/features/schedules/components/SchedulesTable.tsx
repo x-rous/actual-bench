@@ -1,11 +1,11 @@
 "use client";
 
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { usePersistedFilters } from "@/hooks/usePersistedFilters";
 import { useHighlight } from "@/hooks/useHighlight";
 import { useTableSelection } from "@/hooks/useTableSelection";
-import { Pencil, Trash2, RotateCcw, Copy, Braces, AlertTriangle, Info, RefreshCw, Check } from "lucide-react";
+import { Pencil, Trash2, RotateCcw, Copy, Braces, AlertTriangle, Info, RefreshCw, Check, ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useStagedStore } from "@/store/staged";
@@ -54,6 +54,18 @@ function isOverdue(nextDate: string | undefined, completed: boolean): boolean {
   const [year, month, day] = nextDate.split("-").map(Number);
   const due = new Date(year, (month ?? 1) - 1, day ?? 1);
   return due < today;
+}
+
+// ─── Sort helpers ────────────────────────────────────────────────────────────
+
+type SortCol = "name" | "nextDate" | "payee" | "account";
+type SortDir = "asc" | "desc";
+
+function SortIndicator({ col, sortCol, sortDir }: { col: SortCol; sortCol: SortCol | null; sortDir: SortDir }) {
+  if (sortCol !== col) return <ArrowUpDown className="ml-1 inline h-3 w-3 opacity-30" />;
+  return sortDir === "asc"
+    ? <ArrowUp className="ml-1 inline h-3 w-3" />
+    : <ArrowDown className="ml-1 inline h-3 w-3" />;
 }
 
 // ─── SchedulesTable ───────────────────────────────────────────────────────────
@@ -179,10 +191,48 @@ export function SchedulesTable({
     });
   }, [staged, search, statusFilter, txsLoading, statusMap, autoAddFilter, frequencyFilter, payeeFilter, accountFilter, stagedPayees, stagedAccounts]);
 
+  // ── Column sort ───────────────────────────────────────────────────────────────
+  const [sortCol, setSortCol] = useState<SortCol | null>(null);
+  const [sortDir, setSortDir] = useState<SortDir>("asc");
+
+  function toggleSort(col: SortCol) {
+    if (sortCol === col) {
+      if (sortDir === "asc") { setSortDir("desc"); }
+      else { setSortCol(null); setSortDir("asc"); }
+    } else {
+      setSortCol(col);
+      setSortDir("asc");
+    }
+  }
+
+  const sortedRows = useMemo(() => {
+    if (!sortCol) return rows;
+    return [...rows].sort((a, b) => {
+      let cmp = 0;
+      if (sortCol === "name") {
+        if (!a.entity.name && !b.entity.name) cmp = 0;
+        else if (!a.entity.name) cmp = 1;
+        else if (!b.entity.name) cmp = -1;
+        else cmp = a.entity.name.toLowerCase().localeCompare(b.entity.name.toLowerCase());
+      } else if (sortCol === "nextDate") {
+        cmp = (a.entity.nextDate ?? "").localeCompare(b.entity.nextDate ?? "");
+      } else if (sortCol === "payee") {
+        const an = (stagedPayees[a.entity.payeeId ?? ""]?.entity.name ?? "").toLowerCase();
+        const bn = (stagedPayees[b.entity.payeeId ?? ""]?.entity.name ?? "").toLowerCase();
+        cmp = an.localeCompare(bn);
+      } else if (sortCol === "account") {
+        const an = (stagedAccounts[a.entity.accountId ?? ""]?.entity.name ?? "").toLowerCase();
+        const bn = (stagedAccounts[b.entity.accountId ?? ""]?.entity.name ?? "").toLowerCase();
+        cmp = an.localeCompare(bn);
+      }
+      return sortDir === "asc" ? cmp : -cmp;
+    });
+  }, [rows, sortCol, sortDir, stagedPayees, stagedAccounts]);
+
   const totalCount   = Object.values(staged).filter((s) => !s.isDeleted).length;
-  const selectableIds = useMemo(() => new Set(rows.map((s) => s.entity.id)), [rows]);
-  const allSelected   = rows.length > 0 && rows.every((s) => selectedIds.has(s.entity.id));
-  const someSelected  = rows.some((s) => selectedIds.has(s.entity.id));
+  const selectableIds = useMemo(() => new Set(sortedRows.map((s) => s.entity.id)), [sortedRows]);
+  const allSelected   = sortedRows.length > 0 && sortedRows.every((s) => selectedIds.has(s.entity.id));
+  const someSelected  = sortedRows.some((s) => selectedIds.has(s.entity.id));
   const activeSelectedIds = useMemo(
     () => [...selectedIds].filter((id) => selectableIds.has(id)),
     [selectedIds, selectableIds]
@@ -248,7 +298,7 @@ export function SchedulesTable({
       />
 
       <div className="min-h-0 flex-1 overflow-auto">
-        {rows.length === 0 ? (
+        {sortedRows.length === 0 ? (
           <div className="flex flex-col items-center justify-center gap-2 py-20 text-sm text-muted-foreground">
             <span>No schedules found.</span>
             {(search || statusFilter !== "active" || autoAddFilter !== "all" || frequencyFilter !== "all" || payeeFilter || accountFilter) && (
@@ -274,19 +324,27 @@ export function SchedulesTable({
                     className="h-3.5 w-3.5 cursor-pointer rounded accent-primary"
                   />
                 </th>
-                <th className="px-3 py-2 text-left font-medium">Name</th>
-                <th className="w-32 px-3 py-2 text-left font-medium">Next Date</th>
+                <th className="px-3 py-2 text-left" aria-sort={sortCol === "name" ? (sortDir === "asc" ? "ascending" : "descending") : "none"}>
+                  <button type="button" onClick={() => toggleSort("name")} className="flex w-full items-center font-medium cursor-pointer select-none hover:bg-muted/30">Name<SortIndicator col="name" sortCol={sortCol} sortDir={sortDir} /></button>
+                </th>
+                <th className="w-32 px-3 py-2 text-left" aria-sort={sortCol === "nextDate" ? (sortDir === "asc" ? "ascending" : "descending") : "none"}>
+                  <button type="button" onClick={() => toggleSort("nextDate")} className="flex w-full items-center font-medium cursor-pointer select-none hover:bg-muted/30">Next Date<SortIndicator col="nextDate" sortCol={sortCol} sortDir={sortDir} /></button>
+                </th>
                 <th className="w-20 px-3 py-2 text-center font-medium">Recurring</th>
                 <th className="w-36 px-3 py-2 text-right font-medium">Amount</th>
                 <th className="w-[24rem] px-3 py-2 text-left font-medium">Repeats</th>
-                <th className="w-36 px-3 py-2 text-left font-medium">Payee</th>
-                <th className="w-36 px-3 py-2 text-left font-medium">Account</th>
+                <th className="w-36 px-3 py-2 text-left" aria-sort={sortCol === "payee" ? (sortDir === "asc" ? "ascending" : "descending") : "none"}>
+                  <button type="button" onClick={() => toggleSort("payee")} className="flex w-full items-center font-medium cursor-pointer select-none hover:bg-muted/30">Payee<SortIndicator col="payee" sortCol={sortCol} sortDir={sortDir} /></button>
+                </th>
+                <th className="w-36 px-3 py-2 text-left" aria-sort={sortCol === "account" ? (sortDir === "asc" ? "ascending" : "descending") : "none"}>
+                  <button type="button" onClick={() => toggleSort("account")} className="flex w-full items-center font-medium cursor-pointer select-none hover:bg-muted/30">Account<SortIndicator col="account" sortCol={sortCol} sortDir={sortDir} /></button>
+                </th>
                 <th className="w-20 px-3 py-2 text-center font-medium">Auto Add</th>
                 <th className="w-28 px-3 py-2 text-right font-medium">Actions</th>
               </tr>
             </thead>
             <tbody>
-              {rows.map((s) => {
+              {sortedRows.map((s) => {
                 const { entity, isNew, isUpdated, isDeleted, saveError } = s;
                 const payeeName   = stagedPayees[entity.payeeId ?? ""]?.entity.name ?? "";
                 const accountName = stagedAccounts[entity.accountId ?? ""]?.entity.name ?? "";
