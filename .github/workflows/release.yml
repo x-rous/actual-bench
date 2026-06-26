@@ -14,6 +14,10 @@ concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  IMAGE_GHCR: ghcr.io/x-rous/actual-bench
+  IMAGE_DOCKERHUB: docker.io/xrous/actual-bench
+
 jobs:
   # ── Gate: run the full CI suite and verify version consistency ────────────────
   validate-and-test:
@@ -57,22 +61,82 @@ jobs:
           fi
           echo "✓ Version match: $PKG_VERSION"
 
-  # ── Release: build, push, deploy, publish GitHub Release ─────────────────────
-  release:
-    name: release
-    runs-on: ubuntu-latest
+  # ── Build each architecture natively (no QEMU), push by digest ───────────────
+  build:
+    name: build
     needs: validate-and-test
-
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-latest
+          - platform: linux/arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push by digest
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile.prod
+          platforms: ${{ matrix.platform }}
+          outputs: type=image,"name=${{ env.IMAGE_GHCR }},${{ env.IMAGE_DOCKERHUB }}",push-by-digest=true,name-canonical=true,push=true
+          cache-from: type=gha,scope=${{ matrix.platform }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.platform }}
+          provenance: true
+          sbom: true
+
+      - name: Export digest
+        run: |
+          mkdir -p /tmp/digests
+          digest="${{ steps.build.outputs.digest }}"
+          touch "/tmp/digests/${digest#sha256:}"
+
+      - name: Upload digest
+        uses: actions/upload-artifact@v4
+        with:
+          name: digests-${{ strategy.job-index }}
+          path: /tmp/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  # ── Merge per-arch digests into a single multi-arch manifest ─────────────────
+  merge:
+    name: merge
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
       - name: Extract version from tag
         id: version
         run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
 
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
+      - name: Download digests
+        uses: actions/download-artifact@v4
+        with:
+          path: /tmp/digests
+          pattern: digests-*
+          merge-multiple: true
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -95,8 +159,8 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: |
-            ghcr.io/x-rous/actual-bench
-            docker.io/xrous/actual-bench
+            ${{ env.IMAGE_GHCR }}
+            ${{ env.IMAGE_DOCKERHUB }}
           tags: |
             type=raw,value=latest
             type=raw,value=${{ steps.version.outputs.VERSION }}
@@ -104,18 +168,19 @@ jobs:
             org.opencontainers.image.title=Actual Bench
             org.opencontainers.image.version=${{ steps.version.outputs.VERSION }}
 
-      - name: Build and push
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: docker/Dockerfile.prod
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+      - name: Create manifest list and push
+        working-directory: /tmp/digests
+        run: |
+          docker buildx imagetools create \
+            $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
+            $(printf '${{ env.IMAGE_GHCR }}@sha256:%s ' *)
 
+  # ── Deploy to the VPS and verify the app actually answers ────────────────────
+  deploy:
+    name: deploy
+    needs: merge
+    runs-on: ubuntu-latest
+    steps:
       - name: Deploy to VPS
         uses: appleboy/ssh-action@v1
         with:
@@ -123,11 +188,30 @@ jobs:
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
           script: |
+            set -e
             cd ${{ secrets.VPS_DEPLOY_PATH }}
             docker compose pull
             docker compose up -d --remove-orphans
+            # Wait for the new container to actually serve before declaring success
+            for i in $(seq 1 15); do
+              if curl -fsS -o /dev/null http://localhost:3000/; then
+                echo "✓ healthy"
+                break
+              fi
+              if [ "$i" = 15 ]; then
+                echo "::error::health check failed after deploy"
+                exit 1
+              fi
+              sleep 2
+            done
             docker image prune -f
 
+  # ── Publish the GitHub Release once the image is live ────────────────────────
+  publish-release:
+    name: publish-release
+    needs: deploy
+    runs-on: ubuntu-latest
+    steps:
       - name: Publish GitHub Release
         uses: release-drafter/release-drafter@v6
         with:
