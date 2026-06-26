@@ -16,6 +16,14 @@ export type EntityNoteKind = "account" | "category" | "budgetMonth";
 /**
  * Direct-save mutations for a single entity note.
  *
+ * **Intentional exception to the staged-mutation model.** AGENTS.md's contract
+ * is "stage every mutation (stageNew/stageUpdate/stageDelete); nothing writes
+ * until the user clicks Save." Notes are deliberately exempt: they live in their
+ * own key-value table, orthogonal to entity dirty-state, with a self-contained
+ * popover/panel editor. So Save/Clear here issue an immediate PUT/DELETE and
+ * invalidate the note caches rather than routing through staged.ts /
+ * budgetEdits.ts — don't "fix" this back onto the staged stores.
+ *
  * `save` writes the note (empty/whitespace-only content clears it via DELETE
  * instead of persisting an empty string); `remove` clears it outright. Both
  * invalidate the three note caches so the popover, row indicators, and the

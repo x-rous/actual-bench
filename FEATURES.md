@@ -317,7 +317,7 @@ Bare-letter shortcuts (`V`, `F`, `H`, `E`, `[`, `]`) are scoped so they never fi
 
 ### Envelope-Mode Hold (Staged)
 - **Hold toggle**: each "To Budget" cell in the summary section shows the currently held amount as a negative value (e.g. `-$350.00`) with a free-hold icon to its left. Clicking the toggle when no hold is active opens the "Hold for next month - YYYY-MM" dialog; the amount input auto-focuses with the existing value fully selected so the user can type immediately. Pressing `Enter` or clicking "Stage Hold" stages the hold; `Escape` closes without staging.
-+- Clicking the toggle stages a free (hold amount = 0). If the hold was only staged locally, the staged hold entry is removed; if a server hold exists, a staged clear remains in the draft panel until Save so the delete can be persisted.
+- Clicking the toggle stages a free hold (hold amount = 0). If the hold was only staged locally, the staged hold entry is removed; if a server hold exists, a staged clear remains in the draft panel until Save so the delete can be persisted.
 - Staged holds appear in the draft panel alongside cell edits and are saved in the same batch when the user clicks Save. Undo/redo applies to hold staging on the same history stack as cell edits (up to 50 steps).
 - The staged hold is immediately overlaid on the effective month state — `To Budget` and `Hold for next month` in the summary row update without writing to the server.
 - Hold is only available in envelope mode; it does not appear in tracking mode.

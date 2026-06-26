@@ -156,6 +156,24 @@ describe("EntityNoteButton", () => {
     );
   });
 
+  it("does not fire a save or delete when a brand-new note is left blank", () => {
+    setNote("", true);
+    renderButton({ hasNote: false });
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Add note for Account Checking" })
+    );
+
+    // Whitespace-only draft on a note that never existed: Save is enabled (the
+    // draft differs from the empty stored value) but must not issue a DELETE for
+    // a missing note — it just closes.
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "   " } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(saveMutate).not.toHaveBeenCalled();
+    expect(removeMutate).not.toHaveBeenCalled();
+  });
+
   it("renders markdown in read mode and switches to edit on Edit", () => {
     setNote("## Heading\n\n__bold__", true);
     renderButton({ hasNote: true });

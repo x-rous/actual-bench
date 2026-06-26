@@ -58,6 +58,12 @@ export function BudgetNoteSection({ target }: { target: BudgetNoteTarget }) {
   }
 
   function handleSave() {
+    // Blank draft on an entity that has no note: nothing to persist or clear, so
+    // close without issuing a DELETE for a note that doesn't exist.
+    if (!note && draft.trim() === "") {
+      cancel();
+      return;
+    }
     save.mutate(draft, { onSuccess: () => setEditing(false) });
   }
 

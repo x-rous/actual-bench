@@ -40,6 +40,8 @@ export function EntityNoteButton({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const notesQuery = useAllNotes();
+  // Notes intentionally bypass the staged-mutation model (AGENTS.md): these
+  // save/remove handlers write straight to the server. See useNoteMutation.
   const { save, remove } = useNoteMutation(entityKind, entityId);
 
   // Note content for every entity is already batched into one shared query (the
@@ -77,6 +79,13 @@ export function EntityNoteButton({
   }
 
   function handleSave() {
+    // Blank draft on a note that never existed: nothing to persist and nothing
+    // to clear, so just close instead of firing a DELETE for a missing note
+    // (which the API could answer with a spurious 404).
+    if (!noteExists && draft.trim() === "") {
+      handleCancel();
+      return;
+    }
     save.mutate(draft, { onSuccess: () => setUserMode("read") });
   }
 
