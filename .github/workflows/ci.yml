@@ -2,7 +2,12 @@ name: CI
 
 on:
   push:
-    branches: ["**"]
+    branches: [main]
+    paths-ignore:
+      - "**/*.md"
+      - "docs/**"
+  # No paths-ignore on pull_request: CI is a required status check, so every PR
+  # must report it (a skipped run leaves the check pending and blocks merge).
   pull_request:
 
 permissions:
@@ -25,7 +30,15 @@ jobs:
           cache: "npm"
 
       - name: Install dependencies
-        run: npm ci
+        run: npm ci --prefer-offline --no-audit --no-fund
+
+      - name: Cache Next.js build
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/.next-build/cache
+          key: nextjs-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-${{ hashFiles('src/**') }}
+          restore-keys: |
+            nextjs-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-
 
       - name: Lint
         run: npm run lint
