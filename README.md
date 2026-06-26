@@ -156,7 +156,7 @@ Actual Bench is built around a review-before-save workflow.
 ```mermaid
 flowchart LR
   Browser[Browser]
-  App[Actual Bench\nNext.js app]
+  App["Actual Bench<br/>Next.js app"]
   Proxy[Internal /api/proxy]
   API[actual-http-api]
   Actual[Actual Budget server]
@@ -305,7 +305,7 @@ CSV exports include a UTF-8 BOM for better compatibility with Excel and Google S
 - TanStack Query for server-state caching
 - TanStack Table for entity tables
 - SQLite WASM worker for local diagnostics snapshot inspection
-- Docker images published for stable releases and edge builds
+- Docker images published for stable releases and edge builds — multi-arch (`linux/amd64` + `linux/arm64`)
 
 ## Development
 
