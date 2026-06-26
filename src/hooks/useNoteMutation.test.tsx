@@ -38,6 +38,14 @@ function renderWithNotes(entries: Array<[string, string]>) {
   });
 }
 
+function renderColdCache() {
+  // The allNotes query is never populated, so getQueryState() is undefined.
+  const client = new QueryClient();
+  return renderHook(() => useNoteMutation("account", "acc-1"), {
+    wrapper: makeWrapper(client),
+  });
+}
+
 describe("useNoteMutation", () => {
   beforeEach(() => {
     notes.setAccountNote.mockClear();
@@ -57,6 +65,16 @@ describe("useNoteMutation", () => {
 
   it("sends the DELETE when clearing a note that exists", async () => {
     const { result } = renderWithNotes([[toAccountNoteId("acc-1"), "existing"]]);
+    await act(async () => {
+      await result.current.remove.mutateAsync();
+    });
+    expect(notes.deleteAccountNote).toHaveBeenCalledWith({ id: "conn-1" }, "acc-1");
+  });
+
+  it("sends the DELETE when the notes cache is cold (absence unconfirmed)", async () => {
+    // A cold cache is not proof the note is absent: skipping the DELETE here
+    // would silently fail to clear a note that exists server-side.
+    const { result } = renderColdCache();
     await act(async () => {
       await result.current.remove.mutateAsync();
     });
