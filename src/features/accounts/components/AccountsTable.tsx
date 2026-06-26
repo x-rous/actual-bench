@@ -5,7 +5,7 @@ import { usePersistedFilters } from "@/hooks/usePersistedFilters";
 import { useRouter } from "next/navigation";
 import { useHighlight } from "@/hooks/useHighlight";
 import { useEditableGrid } from "@/hooks/useEditableGrid";
-import { useNotesIndex } from "@/hooks/useNotesIndex";
+import { useAllNotes } from "@/hooks/useAllNotes";
 import { useTableSelection } from "@/hooks/useTableSelection";
 import type { DoneAction } from "@/components/ui/editable-cell";
 import { ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
@@ -85,12 +85,17 @@ export function AccountsTable({
 
   // ── Account balances ─────────────────────────────────────────────────────────
   const { data: balances } = useAccountBalances();
-  const { data: notesIndex } = useNotesIndex();
+  const { data: allNotes } = useAllNotes();
 
-  const accountIdsWithNotes = useMemo(
-    () => new Set(notesIndex?.accountIdsWithNotes ?? []),
-    [notesIndex]
-  );
+  const accountIdsWithNotes = useMemo(() => {
+    const ids = new Set<string>();
+    if (allNotes) {
+      for (const key of allNotes.keys()) {
+        if (key.startsWith("account-")) ids.add(key.slice("account-".length));
+      }
+    }
+    return ids;
+  }, [allNotes]);
 
   // ── Duplicate name detection ─────────────────────────────────────────────────
   const duplicateNames = useMemo(() => {

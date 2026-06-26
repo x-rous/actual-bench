@@ -5,7 +5,7 @@ import { usePersistedFilters } from "@/hooks/usePersistedFilters";
 import { useRouter } from "next/navigation";
 import { useHighlight } from "@/hooks/useHighlight";
 import { useEditableGrid } from "@/hooks/useEditableGrid";
-import { useNotesIndex } from "@/hooks/useNotesIndex";
+import { useAllNotes } from "@/hooks/useAllNotes";
 import { useTableSelection } from "@/hooks/useTableSelection";
 import type { DoneAction } from "@/components/ui/editable-cell";
 import {
@@ -137,11 +137,11 @@ export function CategoriesTable({
     () => buildRuleReferenceMap(stagedRules, ["category"]),
     [stagedRules]
   );
-  const { data: notesIndex } = useNotesIndex();
+  const { data: allNotes } = useAllNotes();
 
   const rawEntityIdsWithNotes = useMemo(
-    () => new Set(notesIndex?.rawEntityIdsWithNotes ?? []),
-    [notesIndex]
+    () => new Set(allNotes ? allNotes.keys() : []),
+    [allNotes]
   );
 
   // ── Index all categories by groupId (no filters) ─────────────────────────────

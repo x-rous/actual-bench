@@ -12,15 +12,20 @@ import { formatMonthLabel } from "@/lib/budget/monthMath";
  *
  * Subscribes to the edits map only enough to know whether *any* key starts
  * with `${month}:`, so re-renders are scoped to changes for this column.
+ *
+ * Available months are clickable: selecting the header picks the whole month so
+ * the details panel shows a month overview and the editable month note.
  */
 export function MonthColumnHeader({
   month,
   availableMonths,
   isSelected,
+  onSelect,
 }: {
   month: string;
   availableMonths: string[];
   isSelected?: boolean;
+  onSelect?: (month: string) => void;
 }) {
   const hasStagedEdits = useBudgetEditsStore((s) =>
     Object.keys(s.edits).some((k) => k.startsWith(`${month}:`))
@@ -41,21 +46,39 @@ export function MonthColumnHeader({
     ? "Has unsaved staged changes"
     : "Loaded, no staged changes";
 
+  const selectable = isAvailable && onSelect != null;
+
   return (
     <div
       className={`h-8 px-2 flex items-center justify-end gap-1.5 border-b-2 text-xs font-semibold sticky top-0 z-20 ${
         isSelected
           ? "border-primary/70 bg-muted text-foreground"
           : "border-border bg-muted text-foreground"
-      }`}
+      } ${selectable ? "cursor-pointer hover:bg-muted/70" : ""}`}
       aria-label={`Month: ${label}`}
+      {...(selectable
+        ? {
+            role: "button",
+            tabIndex: 0,
+            "data-month-header": month,
+            "aria-pressed": isSelected ?? false,
+            title: `Select ${label}`,
+            onClick: () => onSelect(month),
+            onKeyDown: (e: React.KeyboardEvent) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                onSelect(month);
+              }
+            },
+          }
+        : {})}
     >
       <span
         className={`h-1.5 w-1.5 rounded-full shrink-0 ${dotColor}`}
         title={dotTitle}
         aria-hidden="true"
       />
-      {label}
+      <span className="truncate">{label}</span>
     </div>
   );
 }

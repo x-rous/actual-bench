@@ -80,6 +80,7 @@ A full-width 12-month budget editor for envelope and tracking budgets.
 - Multi-cell selection, copy/paste from Excel or Google Sheets, fill down/right, previous-month fill, and average-based fill
 - Right-click bulk actions such as copy previous month, set to zero, set fixed amount, apply percentage change, and average calculations
 - Draft panel with selected-cell details, group totals, year summary, staged deltas, and save errors
+- Editable notes in the details panel for the selected cell, category, group, or whole month (selected from its column header) — read, add, edit, and clear inline with immediate save
 - Envelope-mode staged hold for next month (with undo support) and staged category transfer
 - Keyboard shortcut cheatsheet
 
@@ -89,7 +90,7 @@ Manage the core Actual Budget entities from dedicated admin pages with support f
 
 | Area | What you can do |
 |---|---|
-| **Accounts** | Create, rename, close, reopen, delete, inspect balances, view rule references, import/export CSV |
+| **Accounts** | Create, rename, close, reopen, delete, inspect balances, view rule references, notes, import/export CSV |
 | **Payees** | Create, rename, merge, delete, separate regular and transfer payees, view rule references, import/export CSV |
 | **Categories** | Manage income/expense groups, categories, visibility, hierarchy, notes, and import/export CSV |
 | **Schedules** | Create one-time or recurring schedules with amount modes, recurrence controls, weekend adjustment, auto-add, linked rules, and CSV import/export |

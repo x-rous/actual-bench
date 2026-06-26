@@ -32,6 +32,8 @@ type Props = {
   groupSelection?: { groupId: string; month: string } | null;
   /** Whole-row selection on the first column (category or group label). */
   rowSelection?: RowSelection | null;
+  /** Whole-month selection, set by clicking a month column header. */
+  monthSelection?: string | null;
   readOnlyMonths: Set<string>;
   /** Collapse state lifted to BudgetManagementView so toolbar can control it. */
   collapsedGroups: Set<string>;
@@ -54,6 +56,8 @@ type Props = {
   onRowLabelNavigate?: (kind: "category" | "group", id: string, dir: NavDirection) => void;
   /** Called when clicking a non-interactive area inside the grid (summary rows, headers, gutters). */
   onClearSelection?: () => void;
+  /** Called when a month column header is clicked, to select the whole month. */
+  onMonthSelect?: (month: string) => void;
 };
 
 // ─── Main grid ─────────────────────────────────────────────────────────────────
@@ -84,6 +88,7 @@ export function BudgetGrid({
   selection,
   groupSelection,
   rowSelection,
+  monthSelection,
   readOnlyMonths,
   collapsedGroups,
   onToggleCollapse,
@@ -97,6 +102,7 @@ export function BudgetGrid({
   onRowLabelFocus,
   onRowLabelNavigate,
   onClearSelection,
+  onMonthSelect,
 }: Props) {
   const firstMonth = activeMonths[0] ?? null;
   const { merged, isLoading, errors } = useMonthsData();
@@ -233,7 +239,8 @@ export function BudgetGrid({
       : budgetMode === "envelope"
       ? ENVELOPE_SUMMARY_ROWS
       : [];
-  const selectedMonth = selection?.focusMonth ?? groupSelection?.month ?? null;
+  const selectedMonth =
+    selection?.focusMonth ?? groupSelection?.month ?? monthSelection ?? null;
 
   const gridStyle: React.CSSProperties = {
     display: "grid",
@@ -302,7 +309,7 @@ export function BudgetGrid({
         // on bubble-up and immediately wipes the row selection that the label's
         // own onClick / onFocus just set.
         const selectable =
-          "[data-category-id],[data-group-id],[data-row-category-id],[data-row-group-id]";
+          "[data-category-id],[data-group-id],[data-row-category-id],[data-row-group-id],[data-month-header]";
         if (!(e.target as Element).closest(selectable)) {
           onClearSelection?.();
         }
@@ -322,6 +329,7 @@ export function BudgetGrid({
           month={month}
           availableMonths={availableMonths}
           isSelected={month === selectedMonth}
+          onSelect={onMonthSelect}
         />
       ))}
 

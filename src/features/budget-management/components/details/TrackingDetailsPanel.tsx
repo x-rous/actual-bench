@@ -17,6 +17,7 @@ import {
   StagedImpactBlock,
 } from "./DetailsPrimitives";
 import { BudgetTransactionsDialog } from "./BudgetTransactionsDialog";
+import { BudgetNoteSection, type BudgetNoteTarget } from "./BudgetNoteSection";
 import { useSpendingDetailsShortcut } from "./useSpendingDetailsShortcut";
 
 function toneFromValue(value: number) {
@@ -48,12 +49,12 @@ export function TrackingDetailsPanel({
   metrics,
   transactionBrowserOptions,
   statesByMonth,
-  note,
+  noteTarget,
 }: {
   metrics: TrackingDetailsMetrics;
   transactionBrowserOptions: BudgetTransactionBrowserOptions;
   statesByMonth: Map<string, LoadedMonthState>;
-  note?: string;
+  noteTarget?: BudgetNoteTarget | null;
 }) {
   const isFullPeriod = metrics.entity === "none";
   const isMonth = metrics.scope === "month";
@@ -283,12 +284,8 @@ export function TrackingDetailsPanel({
         </DetailsSection>
       )}
 
-      {isMonth && note && (
-        <DetailsSection title="Note">
-          <p className="whitespace-pre-wrap text-[11px] text-foreground/80">
-            {note}
-          </p>
-        </DetailsSection>
+      {isMonth && noteTarget && (
+        <BudgetNoteSection key={noteTarget.id} target={noteTarget} />
       )}
 
       {!isMonth && <MiniTrend label={metrics.trendLabel} points={metrics.trend} />}
@@ -298,12 +295,8 @@ export function TrackingDetailsPanel({
 
       <StagedImpactBlock mode="tracking" impact={metrics.stagedImpact} />
 
-      {!isFullPeriod && !isMonth && note && (
-        <DetailsSection title="Note">
-          <p className="whitespace-pre-wrap text-[11px] text-foreground/80">
-            {note}
-          </p>
-        </DetailsSection>
+      {!isFullPeriod && !isMonth && noteTarget && (
+        <BudgetNoteSection key={noteTarget.id} target={noteTarget} />
       )}
 
       {transactionTarget && (

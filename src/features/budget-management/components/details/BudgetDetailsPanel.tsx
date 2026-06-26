@@ -19,7 +19,9 @@ import {
   buildTrackingDetailsMetrics,
 } from "../../lib/budgetDetailsMetrics";
 import { buildBudgetTransactionBrowserOptions } from "../../lib/budgetTransactionBrowser";
-import { useAllNotes } from "@/hooks/useAllNotes";
+import { toCategoryMonthNoteId } from "@/lib/api/notes";
+import type { BudgetNoteTarget } from "./BudgetNoteSection";
+import { BudgetMonthSummaryPanel } from "./BudgetMonthSummaryPanel";
 import { EnvelopeDetailsPanel } from "./EnvelopeDetailsPanel";
 import { TrackingDetailsPanel } from "./TrackingDetailsPanel";
 import type { BudgetMode, LoadedMonthState } from "../../types";
@@ -178,15 +180,21 @@ export function BudgetDetailsPanel() {
     [model]
   );
 
-  const { data: allNotes } = useAllNotes();
-  const note = (() => {
+  // What the inline note editor targets, derived from the current selection:
+  // a category×month cell, or a whole category/group row. The editor reads the
+  // note content itself (from the shared all-notes cache), so the panel only
+  // needs to resolve the target id here.
+  const noteTarget: BudgetNoteTarget | null = (() => {
     if (selectedCategoryId && selectedMonth) {
-      return allNotes?.get(`${selectedCategoryId}-${selectedMonth}`) ?? "";
+      return {
+        kind: "category",
+        id: toCategoryMonthNoteId(selectedCategoryId, selectedMonth),
+      };
     }
     if (rowSelection?.kind === "category" || rowSelection?.kind === "group") {
-      return allNotes?.get(rowSelection.id) ?? "";
+      return { kind: "category", id: rowSelection.id };
     }
-    return "";
+    return null;
   })();
 
   if (displayMonths.length === 0) {
@@ -232,13 +240,26 @@ export function BudgetDetailsPanel() {
     );
   }
 
+  // A whole-month selection (month set, no category/group/row) shows a
+  // single-month overview plus the editable month note, rendered outside the
+  // Envelope/Tracking metric panels.
+  if (selectedMonth && !selectedCategoryId && !selectedGroupId && !rowSelection) {
+    return (
+      <BudgetMonthSummaryPanel
+        month={selectedMonth}
+        state={statesByMonth.get(selectedMonth)}
+        isTracking={isTracking}
+      />
+    );
+  }
+
   if (budgetMode === "envelope") {
     return (
       <EnvelopeDetailsPanel
         metrics={buildEnvelopeDetailsMetrics(model)}
         transactionBrowserOptions={transactionBrowserOptions}
         statesByMonth={statesByMonth}
-        note={note}
+        noteTarget={noteTarget}
       />
     );
   }
@@ -248,7 +269,7 @@ export function BudgetDetailsPanel() {
       metrics={buildTrackingDetailsMetrics(model)}
       transactionBrowserOptions={transactionBrowserOptions}
       statesByMonth={statesByMonth}
-      note={note}
+      noteTarget={noteTarget}
     />
   );
 }

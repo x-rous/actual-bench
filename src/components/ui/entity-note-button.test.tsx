@@ -1,267 +1,224 @@
 import React from "react";
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { EntityNoteButton } from "./entity-note-button";
 
-jest.mock("../../hooks/useEntityNote", () => ({
-  useEntityNote: jest.fn(),
+jest.mock("../../hooks/useAllNotes", () => ({
+  useAllNotes: jest.fn(),
 }));
 
-jest.mock("@base-ui/react/preview-card", () => {
+jest.mock("../../hooks/useNoteMutation", () => ({
+  useNoteMutation: jest.fn(),
+}));
+
+// Minimal controlled stand-in for the base-ui Popover parts our wrapper uses.
+jest.mock("@base-ui/react/popover", () => {
   const React = jest.requireActual("react") as typeof import("react");
 
-  type PreviewContextValue = {
-    open: boolean;
-    onOpenChange: (open: boolean) => void;
-  };
-
-  const PreviewContext = React.createContext<PreviewContextValue>({
+  type Ctx = { open: boolean; onOpenChange: (open: boolean) => void };
+  const PopoverContext = React.createContext<Ctx>({
     open: false,
     onOpenChange: () => {},
   });
 
   return {
-    PreviewCard: {
+    Popover: {
       Root: ({
         open,
         onOpenChange,
         children,
       }: {
-        open: boolean;
-        onOpenChange: (open: boolean) => void;
+        open?: boolean;
+        onOpenChange?: (open: boolean) => void;
         children: React.ReactNode;
       }) => (
-        <PreviewContext.Provider value={{ open, onOpenChange }}>
+        <PopoverContext.Provider
+          value={{ open: !!open, onOpenChange: onOpenChange ?? (() => {}) }}
+        >
           {children}
-        </PreviewContext.Provider>
+        </PopoverContext.Provider>
       ),
       Trigger: ({
-        children,
         render,
-        onMouseEnter,
-        onFocus,
-        onMouseDown,
+        children,
         onClick,
+        onMouseDown,
         ...props
       }: {
-        children: React.ReactNode;
         render: React.ReactElement;
-        onMouseEnter?: React.MouseEventHandler;
-        onFocus?: React.FocusEventHandler;
-        onMouseDown?: React.MouseEventHandler;
+        children: React.ReactNode;
         onClick?: React.MouseEventHandler;
+        onMouseDown?: React.MouseEventHandler;
       }) => {
-        const ctx = React.useContext(PreviewContext);
+        const ctx = React.useContext(PopoverContext);
         return React.cloneElement(
           render as React.ReactElement<Record<string, unknown>>,
           {
             ...props,
-            onMouseEnter: (e: React.MouseEvent) => {
-              onMouseEnter?.(e);
-              ctx.onOpenChange(true);
-            },
-            onFocus: (e: React.FocusEvent) => {
-              onFocus?.(e);
-              ctx.onOpenChange(true);
-            },
             onMouseDown,
-            onClick,
+            onClick: (e: React.MouseEvent) => {
+              onClick?.(e);
+              ctx.onOpenChange(!ctx.open);
+            },
           },
           children
         );
       },
       Portal: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-      Positioner: ({
-        children,
-        className,
-      }: {
-        children: React.ReactNode;
-        className?: string;
-      }) => <div className={className}>{children}</div>,
-      Popup: ({
-        children,
-        className,
-      }: {
-        children: React.ReactNode;
-        className?: string;
-      }) => {
-        const ctx = React.useContext(PreviewContext);
+      Positioner: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+      Popup: ({ children }: { children: React.ReactNode }) => {
+        const ctx = React.useContext(PopoverContext);
         if (!ctx.open) return null;
-        return <div className={className}>{children}</div>;
+        return <div>{children}</div>;
       },
     },
   };
 });
 
-const mockUseEntityNote = jest.requireMock(
-  "../../hooks/useEntityNote"
-).useEntityNote as jest.Mock;
+const mockUseAllNotes = jest.requireMock("../../hooks/useAllNotes")
+  .useAllNotes as jest.Mock;
+const mockUseNoteMutation = jest.requireMock("../../hooks/useNoteMutation")
+  .useNoteMutation as jest.Mock;
+
+const saveMutate = jest.fn();
+const removeMutate = jest.fn();
+
+function setNote(value: string | undefined, isSuccess: boolean) {
+  // The popover reads from the batched all-notes map; the default entity in
+  // these tests is account/acc-1, whose notes-table key is `account-acc-1`.
+  const data = new Map<string, string>();
+  if (value) data.set("account-acc-1", value);
+  mockUseAllNotes.mockReturnValue({
+    data: isSuccess ? data : undefined,
+    isLoading: false,
+    isError: false,
+    isSuccess,
+    refetch: jest.fn(),
+  });
+}
+
+beforeEach(() => {
+  mockUseAllNotes.mockReset();
+  mockUseNoteMutation.mockReset();
+  saveMutate.mockReset();
+  removeMutate.mockReset();
+  mockUseNoteMutation.mockReturnValue({
+    save: { mutate: saveMutate, reset: jest.fn(), isPending: false, isError: false },
+    remove: { mutate: removeMutate, reset: jest.fn(), isPending: false, isError: false },
+  });
+});
+
+function renderButton(props: Partial<React.ComponentProps<typeof EntityNoteButton>> = {}) {
+  return render(
+    <EntityNoteButton
+      entityId="acc-1"
+      entityKind="account"
+      entityLabel="Checking"
+      entityTypeLabel="Account"
+      {...props}
+    />
+  );
+}
 
 describe("EntityNoteButton", () => {
-  beforeEach(() => {
-    mockUseEntityNote.mockReset();
+  it("labels the trigger 'Add note' when the entity has no note", () => {
+    setNote(undefined, false);
+    renderButton({ hasNote: false });
+    expect(
+      screen.getByRole("button", { name: "Add note for Account Checking" })
+    ).toBeInTheDocument();
   });
 
-  afterEach(() => {
-    jest.useRealTimers();
+  it("labels the trigger 'Edit note' when the entity already has a note", () => {
+    setNote(undefined, false);
+    renderButton({ hasNote: true });
+    expect(
+      screen.getByRole("button", { name: "Edit note for Account Checking" })
+    ).toBeInTheDocument();
   });
 
-  it("shows a markdown preview after a short hover delay", () => {
-    jest.useFakeTimers();
-
-    mockUseEntityNote.mockReturnValue({
-      data: "# Preview Title\n\n1. First\n   - Nested",
-      isLoading: false,
-      isError: false,
-      refetch: jest.fn(),
-    });
-
-    render(
-      <EntityNoteButton
-        entityId="acc-1"
-        entityKind="account"
-        entityLabel="Checking"
-        entityTypeLabel="Account"
-      />
-    );
-
-    fireEvent.mouseEnter(
-      screen.getByRole("button", { name: "Preview note for Account Checking" })
-    );
-
-    expect(screen.queryByText("Note Preview")).not.toBeInTheDocument();
-
-    act(() => {
-      jest.advanceTimersByTime(349);
-    });
-    expect(screen.queryByText("Note Preview")).not.toBeInTheDocument();
-
-    act(() => {
-      jest.advanceTimersByTime(1);
-    });
-
-    expect(screen.getByText("Note Preview")).toBeInTheDocument();
-    expect(screen.getByText("Preview Title")).toBeInTheDocument();
-    expect(screen.getByText("First")).toBeInTheDocument();
-    expect(screen.getByText("Nested")).toBeInTheDocument();
-  });
-
-  it("pins the preview open on click and renders markdown content", () => {
-    mockUseEntityNote.mockReturnValue({
-      data: "## Full View\n\n__bold__ and _soft_",
-      isLoading: false,
-      isError: false,
-      refetch: jest.fn(),
-    });
-
-    render(
-      <EntityNoteButton
-        entityId="cat-1"
-        entityKind="category"
-        entityLabel="Groceries"
-        entityTypeLabel="Category"
-      />
-    );
+  it("opens an empty note straight into edit mode and saves the draft", () => {
+    setNote("", true);
+    renderButton({ hasNote: false });
 
     fireEvent.click(
-      screen.getByRole("button", { name: "Preview note for Category Groceries" })
+      screen.getByRole("button", { name: "Add note for Account Checking" })
     );
 
-    expect(screen.getByText("Note")).toBeInTheDocument();
-    expect(screen.getByText("Full View")).toBeInTheDocument();
+    const textarea = screen.getByRole("textbox");
+    expect(textarea).toBeInTheDocument();
+
+    fireEvent.change(textarea, { target: { value: "Pays on the 1st" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(saveMutate).toHaveBeenCalledWith(
+      "Pays on the 1st",
+      expect.objectContaining({ onSuccess: expect.any(Function) })
+    );
+  });
+
+  it("does not fire a save or delete when a brand-new note is left blank", () => {
+    setNote("", true);
+    renderButton({ hasNote: false });
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Add note for Account Checking" })
+    );
+
+    // Whitespace-only draft on a note that never existed: Save is enabled (the
+    // draft differs from the empty stored value) but must not issue a DELETE for
+    // a missing note — it just closes.
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "   " } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(saveMutate).not.toHaveBeenCalled();
+    expect(removeMutate).not.toHaveBeenCalled();
+  });
+
+  it("renders markdown in read mode and switches to edit on Edit", () => {
+    setNote("## Heading\n\n__bold__", true);
+    renderButton({ hasNote: true });
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Edit note for Account Checking" })
+    );
+
+    expect(screen.getByText("Heading")).toBeInTheDocument();
     expect(screen.getByText("bold")).toBeInTheDocument();
-    expect(screen.getByText("soft")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Close" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    expect(screen.getByRole("textbox")).toHaveValue("## Heading\n\n__bold__");
   });
 
-  it("immediately closes the first pinned popover when another note is opened", () => {
-    mockUseEntityNote.mockImplementation((kind: string, id: string) => ({
-      data: `# ${kind}:${id}`,
-      isLoading: false,
-      isError: false,
-      refetch: jest.fn(),
-    }));
-
-    render(
-      <>
-        <EntityNoteButton
-          entityId="acc-1"
-          entityKind="account"
-          entityLabel="Checking"
-          entityTypeLabel="Account"
-        />
-        <EntityNoteButton
-          entityId="acc-2"
-          entityKind="account"
-          entityLabel="Savings"
-          entityTypeLabel="Account"
-        />
-      </>
-    );
+  it("clears an existing note via the Clear action", () => {
+    setNote("Some note", true);
+    renderButton({ hasNote: true });
 
     fireEvent.click(
-      screen.getByRole("button", { name: "Preview note for Account Checking" })
+      screen.getByRole("button", { name: "Edit note for Account Checking" })
     );
-    expect(screen.getByText("account:acc-1")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.click(screen.getByRole("button", { name: "Clear" }));
 
-    fireEvent.click(
-      screen.getByRole("button", { name: "Preview note for Account Savings" })
+    expect(removeMutate).toHaveBeenCalledWith(
+      undefined,
+      expect.objectContaining({ onSuccess: expect.any(Function) })
     );
-
-    expect(screen.queryByText("account:acc-1")).not.toBeInTheDocument();
-    expect(screen.getByText("account:acc-2")).toBeInTheDocument();
   });
 
-  it("transfers the active preview when hovering another note", () => {
-    jest.useFakeTimers();
-
-    mockUseEntityNote.mockImplementation((kind: string, id: string) => ({
-      data: `# ${kind}:${id}`,
-      isLoading: false,
-      isError: false,
-      refetch: jest.fn(),
-    }));
-
-    render(
-      <>
-        <EntityNoteButton
-          entityId="acc-1"
-          entityKind="account"
-          entityLabel="Checking"
-          entityTypeLabel="Account"
-        />
-        <EntityNoteButton
-          entityId="acc-2"
-          entityKind="account"
-          entityLabel="Savings"
-          entityTypeLabel="Account"
-        />
-      </>
-    );
+  it("disables Save until the draft changes", () => {
+    setNote("Original", true);
+    renderButton({ hasNote: true });
 
     fireEvent.click(
-      screen.getByRole("button", { name: "Preview note for Account Checking" })
+      screen.getByRole("button", { name: "Edit note for Account Checking" })
     );
-    expect(screen.getByText("account:acc-1")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
 
-    fireEvent.mouseEnter(
-      screen.getByRole("button", { name: "Preview note for Account Savings" })
-    );
+    expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
 
-    expect(screen.queryByText("account:acc-1")).not.toBeInTheDocument();
-    expect(screen.queryByText("account:acc-2")).not.toBeInTheDocument();
-
-    act(() => {
-      jest.advanceTimersByTime(349);
+    fireEvent.change(screen.getByRole("textbox"), {
+      target: { value: "Original + more" },
     });
-
-    expect(screen.queryByText("account:acc-2")).not.toBeInTheDocument();
-
-    act(() => {
-      jest.advanceTimersByTime(1);
-    });
-
-    expect(screen.queryByText("account:acc-1")).not.toBeInTheDocument();
-    expect(screen.getByText("account:acc-2")).toBeInTheDocument();
-    expect(screen.getByText("Note Preview")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Save" })).not.toBeDisabled();
   });
 });

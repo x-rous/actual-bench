@@ -206,12 +206,13 @@ function AccountsTableRowComponent({
       </td>
 
       <td className="w-8 px-0 py-0.5 text-center">
-        {!isNew && hasNote && (
+        {!isNew && (
           <EntityNoteButton
             entityId={entity.id}
             entityKind="account"
             entityLabel={entity.name || "Unnamed account"}
             entityTypeLabel="Account"
+            hasNote={hasNote}
             className="mx-auto"
           />
         )}

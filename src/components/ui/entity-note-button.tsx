@@ -1,62 +1,25 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import { PreviewCard } from "@base-ui/react/preview-card";
-import { Loader2, RefreshCw, StickyNote } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Loader2, Pencil, Plus, RefreshCw, StickyNote, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { MarkdownPreview } from "@/components/ui/markdown-preview";
-import { useEntityNote, type EntityNoteKind } from "@/hooks/useEntityNote";
+import { useAllNotes } from "@/hooks/useAllNotes";
+import { useNoteMutation, type EntityNoteKind } from "@/hooks/useNoteMutation";
+import { toAccountNoteId, toBudgetNoteId } from "@/lib/api/notes";
 import { cn } from "@/lib/utils";
-
-let pinnedNoteKeyStore: string | null = null;
-let previewNoteKeyStore: string | null = null;
-const pinnedNoteListeners = new Set<() => void>();
-const previewNoteListeners = new Set<() => void>();
-const HOVER_PREVIEW_DELAY_MS = 350;
-
-function subscribePinnedNote(listener: () => void) {
-  pinnedNoteListeners.add(listener);
-  return () => {
-    pinnedNoteListeners.delete(listener);
-  };
-}
-
-function getPinnedNoteSnapshot() {
-  return pinnedNoteKeyStore;
-}
-
-function setPinnedNoteKey(nextKey: string | null) {
-  if (pinnedNoteKeyStore === nextKey) return;
-  pinnedNoteKeyStore = nextKey;
-  for (const listener of pinnedNoteListeners) {
-    listener();
-  }
-}
-
-function subscribePreviewNote(listener: () => void) {
-  previewNoteListeners.add(listener);
-  return () => {
-    previewNoteListeners.delete(listener);
-  };
-}
-
-function getPreviewNoteSnapshot() {
-  return previewNoteKeyStore;
-}
-
-function setPreviewNoteKey(nextKey: string | null) {
-  if (previewNoteKeyStore === nextKey) return;
-  previewNoteKeyStore = nextKey;
-  for (const listener of previewNoteListeners) {
-    listener();
-  }
-}
 
 type EntityNoteButtonProps = {
   entityId: string;
   entityKind: EntityNoteKind;
   entityLabel: string;
   entityTypeLabel: string;
+  /** Cheap "this entity already has a note" hint (from the notes index) for trigger styling. */
+  hasNote?: boolean;
+  /** Popover placement relative to the trigger. Defaults to right/start. */
+  side?: "top" | "right" | "bottom" | "left";
+  align?: "start" | "center" | "end";
   className?: string;
 };
 
@@ -65,198 +28,223 @@ export function EntityNoteButton({
   entityKind,
   entityLabel,
   entityTypeLabel,
+  hasNote = false,
+  side = "right",
+  align = "start",
   className,
 }: EntityNoteButtonProps) {
-  const [shouldLoad, setShouldLoad] = useState(false);
-  const hoverTimerRef = useRef<number | null>(null);
-  const noteKey = useMemo(() => `${entityKind}:${entityId}`, [entityId, entityKind]);
-  const pinnedNoteKey = useSyncExternalStore(
-    subscribePinnedNote,
-    getPinnedNoteSnapshot,
-    () => null
-  );
-  const previewNoteKey = useSyncExternalStore(
-    subscribePreviewNote,
-    getPreviewNoteSnapshot,
-    () => null
-  );
-  const pinnedOpen = pinnedNoteKey === noteKey;
-  const previewOpen = previewNoteKey === noteKey;
-  const open = pinnedOpen || previewOpen;
-  const noteQuery = useEntityNote(
-    entityKind,
-    entityId,
-    shouldLoad || open
-  );
+  const [open, setOpen] = useState(false);
+  // `userMode` overrides the default; null means "derive from whether a note exists".
+  const [userMode, setUserMode] = useState<"read" | "edit" | null>(null);
+  const [draft, setDraft] = useState("");
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  const trimmedNote = noteQuery.data?.trim() ?? "";
-  const hasMeaningfulNote = trimmedNote.length > 0;
+  const notesQuery = useAllNotes();
+  // Notes intentionally bypass the staged-mutation model (AGENTS.md): these
+  // save/remove handlers write straight to the server. See useNoteMutation.
+  const { save, remove } = useNoteMutation(entityKind, entityId);
 
-  function clearHoverTimer() {
-    if (hoverTimerRef.current !== null) {
-      window.clearTimeout(hoverTimerRef.current);
-      hoverTimerRef.current = null;
-    }
-  }
-
-  function stopEvent(e: React.SyntheticEvent) {
-    e.stopPropagation();
-  }
-
-  function clearActiveNote() {
-    if (previewNoteKey !== null && previewNoteKey !== noteKey) {
-      setPreviewNoteKey(null);
-    }
-    if (pinnedNoteKey !== null && pinnedNoteKey !== noteKey) {
-      setPinnedNoteKey(null);
-    }
-  }
-
-  function handleHoverPreviewIntent() {
-    setShouldLoad(true);
-    clearHoverTimer();
-    clearActiveNote();
-    hoverTimerRef.current = window.setTimeout(() => {
-      setPreviewNoteKey(noteKey);
-      hoverTimerRef.current = null;
-    }, HOVER_PREVIEW_DELAY_MS);
-  }
-
-  function handleFocusPreviewIntent() {
-    setShouldLoad(true);
-    clearHoverTimer();
-    clearActiveNote();
-    setPreviewNoteKey(noteKey);
-  }
+  // Note content for every entity is already batched into one shared query (the
+  // same data that drives the note indicators), so opening a popover reads from
+  // cache instead of firing a slow per-entity request.
+  const noteKey =
+    entityKind === "account"
+      ? toAccountNoteId(entityId)
+      : entityKind === "budgetMonth"
+        ? toBudgetNoteId(entityId)
+        : entityId;
+  const loadedNote = notesQuery.data?.get(noteKey) ?? "";
+  // Until the batch resolves, fall back to the index hint; afterwards, trust the data.
+  const noteExists = notesQuery.isSuccess ? loadedNote.trim().length > 0 : hasNote;
+  // An empty note opens straight into edit (the "add note" path); otherwise read.
+  const mode = userMode ?? (noteExists ? "read" : "edit");
+  const dirty = draft !== loadedNote;
+  const label = entityLabel || entityId;
 
   useEffect(() => {
-    return () => {
-      clearHoverTimer();
-      if (getPreviewNoteSnapshot() === noteKey) {
-        setPreviewNoteKey(null);
-      }
-      if (getPinnedNoteSnapshot() === noteKey) {
-        setPinnedNoteKey(null);
-      }
-    };
-  }, [noteKey]);
+    if (open && mode === "edit") textareaRef.current?.focus();
+  }, [open, mode]);
+
+  function enterEdit() {
+    setDraft(loadedNote);
+    save.reset();
+    remove.reset();
+    setUserMode("edit");
+  }
+
+  function handleCancel() {
+    save.reset();
+    if (noteExists) setUserMode("read");
+    else setOpen(false);
+  }
+
+  function handleSave() {
+    // Blank draft on a note that never existed: nothing to persist and nothing
+    // to clear, so just close instead of firing a DELETE for a missing note
+    // (which the API could answer with a spurious 404).
+    if (!noteExists && draft.trim() === "") {
+      handleCancel();
+      return;
+    }
+    save.mutate(draft, { onSuccess: () => setUserMode("read") });
+  }
+
+  function handleClear() {
+    remove.mutate(undefined, {
+      onSuccess: () => {
+        setDraft("");
+        setUserMode("read");
+      },
+    });
+  }
 
   return (
-    <>
-      <PreviewCard.Root
-        open={open}
-        onOpenChange={(nextOpen) => {
-          if (nextOpen) return;
-          clearHoverTimer();
-          if (pinnedOpen) setPinnedNoteKey(null);
-          if (!pinnedOpen && previewOpen) setPreviewNoteKey(null);
-        }}
+    <Popover
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next);
+        if (!next) {
+          setUserMode(null);
+          setDraft("");
+          save.reset();
+          remove.reset();
+        }
+      }}
+    >
+      <PopoverTrigger
+        render={
+          <Button
+            variant="ghost"
+            size="icon-xs"
+            className={cn(
+              "h-5 w-5 shrink-0 touch-manipulation transition-colors",
+              noteExists
+                ? "text-foreground/80 hover:text-foreground"
+                : "text-muted-foreground/40 hover:text-foreground",
+              className
+            )}
+          />
+        }
+        aria-label={
+          noteExists
+            ? `Edit note for ${entityTypeLabel} ${label}`
+            : `Add note for ${entityTypeLabel} ${label}`
+        }
+        onMouseDown={(e: React.MouseEvent) => e.stopPropagation()}
+        onClick={(e: React.MouseEvent) => e.stopPropagation()}
       >
-        <PreviewCard.Trigger
-          render={
+        <StickyNote className="h-3.5 w-3.5" aria-hidden="true" />
+      </PopoverTrigger>
+
+      <PopoverContent
+        side={side}
+        align={align}
+        sideOffset={10}
+        className="w-[min(20rem,calc(100vw-2rem))] rounded"
+      >
+        <div className="flex items-center justify-between gap-2 px-3 pt-3 pb-2">
+          <div className="flex min-w-0 items-center gap-2">
+            <StickyNote
+              className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
+              aria-hidden="true"
+            />
+            <span className="truncate text-sm font-medium text-foreground">{label}</span>
+          </div>
+          {mode === "read" && noteExists && (
             <Button
               variant="ghost"
-              size="icon-xs"
-              className={cn(
-                "h-5 w-5 shrink-0 touch-manipulation text-muted-foreground/80 hover:text-foreground focus-visible:text-foreground",
-                className
-              )}
-            />
-          }
-          aria-label={`Preview note for ${entityTypeLabel} ${entityLabel || entityId}`}
-          onMouseEnter={handleHoverPreviewIntent}
-          onFocus={handleFocusPreviewIntent}
-          onMouseDown={stopEvent}
-          onClick={(e: React.MouseEvent) => {
-            stopEvent(e);
-            clearHoverTimer();
-            setShouldLoad(true);
-            setPreviewNoteKey(null);
-            setPinnedNoteKey(pinnedOpen ? null : noteKey);
-          }}
-        >
-          <StickyNote className="h-3.5 w-3.5" aria-hidden="true" />
-        </PreviewCard.Trigger>
-
-        <PreviewCard.Portal>
-          <PreviewCard.Positioner
-            side="right"
-            align="start"
-            sideOffset={10}
-            className="z-[80]"
-          >
-            <PreviewCard.Popup
-              className="z-[80] w-[min(30rem,calc(100vw-2rem))] origin-(--transform-origin) rounded-xl bg-popover p-0 text-popover-foreground shadow-lg ring-1 ring-foreground/10 duration-100 outline-none data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95 motion-reduce:data-open:animate-none motion-reduce:data-closed:animate-none"
-              onMouseDown={stopEvent}
-              onClick={stopEvent}
+              size="xs"
+              className="-mr-1 shrink-0 text-muted-foreground hover:text-foreground"
+              onClick={enterEdit}
             >
-              <div className="border-b border-border px-3 py-2">
-                <div className="flex items-center justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="text-[13px] font-medium text-muted-foreground">
-                      {pinnedOpen ? "Note" : "Note Preview"}
-                    </p>
-                    <p className="truncate text-sm text-foreground">
-                      {entityLabel || entityId}
-                    </p>
-                  </div>
-                  {pinnedOpen && (
-                    <Button
-                      variant="ghost"
-                      size="xs"
-                      onClick={() => setPinnedNoteKey(null)}
-                    >
-                      Close
-                    </Button>
-                  )}
-                </div>
-              </div>
+              <Pencil className="h-3.5 w-3.5" />
+              Edit
+            </Button>
+          )}
+        </div>
 
-              {noteQuery.isLoading ? (
-                <div
-                  aria-live="polite"
-                  className="flex min-h-20 items-center justify-center gap-2 px-3 py-4 text-sm text-muted-foreground"
+        {notesQuery.isLoading ? (
+          <div
+            aria-live="polite"
+            className="flex min-h-16 items-center justify-center gap-2 px-3 pb-4 text-sm text-muted-foreground"
+          >
+            <Loader2 className="h-4 w-4 animate-spin" />
+            Loading note…
+          </div>
+        ) : notesQuery.isError ? (
+          <div aria-live="polite" className="space-y-2 px-3 pb-4">
+            <p className="text-sm text-destructive">Could not load this note. Try again.</p>
+            <Button variant="outline" size="sm" onClick={() => void notesQuery.refetch()}>
+              <RefreshCw />
+              Retry
+            </Button>
+          </div>
+        ) : mode === "edit" ? (
+          <div className="px-3 pb-3">
+            <textarea
+              ref={textareaRef}
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              rows={5}
+              placeholder="Write a note… Markdown supported."
+              className="w-full resize-y rounded border border-input bg-transparent px-2.5 py-1.5 text-sm transition-colors outline-none placeholder:text-muted-foreground focus-visible:border-ring"
+            />
+            {(save.isError || remove.isError) && (
+              <p aria-live="polite" className="mt-2 text-xs text-destructive">
+                {save.isError ? "Could not save the note. Try again." : "Could not clear the note. Try again."}
+              </p>
+            )}
+            <div className="mt-2.5 flex items-center justify-between gap-2">
+              {noteExists ? (
+                <Button
+                  variant="ghost"
+                  size="xs"
+                  className="-ml-1 text-destructive hover:text-destructive"
+                  onClick={handleClear}
+                  disabled={save.isPending || remove.isPending}
                 >
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  Loading note…
-                </div>
-              ) : noteQuery.isError ? (
-                <div aria-live="polite" className="space-y-2 px-3 py-4">
-                  <p className="text-sm text-destructive">
-                    Could not load this note. Try again.
-                  </p>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => void noteQuery.refetch()}
-                  >
-                    <RefreshCw />
-                    Retry
-                  </Button>
-                </div>
-              ) : hasMeaningfulNote ? (
-                <>
-                  <div
-                    aria-live="polite"
-                    className="max-h-80 min-h-32 overflow-auto overscroll-contain px-3 py-3"
-                  >
-                    <MarkdownPreview markdown={trimmedNote} />
-                  </div>
-                  {!pinnedOpen && (
-                    <div className="border-t border-border px-3 py-2 text-[13px] text-muted-foreground">
-                      Click the note icon to keep this open.
-                    </div>
-                  )}
-                </>
+                  <Trash2 className="h-3.5 w-3.5" />
+                  {remove.isPending ? "Clearing…" : "Clear"}
+                </Button>
               ) : (
-                <div aria-live="polite" className="px-3 py-4 text-sm text-muted-foreground">
-                  This note is empty.
-                </div>
+                <span />
               )}
-            </PreviewCard.Popup>
-          </PreviewCard.Positioner>
-        </PreviewCard.Portal>
-      </PreviewCard.Root>
-    </>
+              <div className="flex items-center gap-1.5">
+                <Button variant="ghost" size="xs" onClick={handleCancel} disabled={save.isPending}>
+                  Cancel
+                </Button>
+                <Button size="xs" onClick={handleSave} disabled={!dirty || save.isPending}>
+                  {save.isPending ? (
+                    <>
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      Saving…
+                    </>
+                  ) : (
+                    "Save"
+                  )}
+                </Button>
+              </div>
+            </div>
+          </div>
+        ) : noteExists ? (
+          <div
+            aria-live="polite"
+            className="max-h-80 overflow-auto overscroll-contain px-3 pb-3"
+          >
+            <MarkdownPreview markdown={loadedNote.trim()} />
+          </div>
+        ) : (
+          <div className="flex flex-col items-start gap-2 px-3 pb-4">
+            <p aria-live="polite" className="text-sm text-muted-foreground">
+              No note yet.
+            </p>
+            <Button variant="outline" size="xs" onClick={enterEdit}>
+              <Plus className="h-3.5 w-3.5" />
+              Add note
+            </Button>
+          </div>
+        )}
+      </PopoverContent>
+    </Popover>
   );
 }
