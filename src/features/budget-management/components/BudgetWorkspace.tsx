@@ -142,6 +142,7 @@ function BudgetWorkspaceInner({
   const [selection, setSelection] = useState<BudgetCellSelection | null>(null);
   const [groupSelection, setGroupSelection] = useState<{ groupId: string; month: string } | null>(null);
   const [rowSelection, setRowSelectionLocal] = useState<RowSelection | null>(null);
+  const [monthSelection, setMonthSelection] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<ContextMenuState>(null);
   const [pendingBulkAction, setPendingBulkAction] = useState<BulkActionType | null>(null);
   const [categorySearchOpen, setCategorySearchOpen] = useState(false);
@@ -162,16 +163,19 @@ function BudgetWorkspaceInner({
 
   // Sync local selection state to the store so BudgetDraftPanel can read it.
   // Row selection takes precedence; cell/group-cell selection clears it via
-  // the store's setUiSelection (mutually exclusive).
+  // the store's setUiSelection (mutually exclusive). A whole-month selection
+  // (month set, no category/group) is the lone "month, null, null" store state.
   useEffect(() => {
     if (rowSelection) {
       setRowSelectionStore(rowSelection);
     } else if (groupSelection) {
       setUiSelection(groupSelection.month, null, groupSelection.groupId);
+    } else if (monthSelection) {
+      setUiSelection(monthSelection, null, null);
     } else {
       setUiSelection(selection?.anchorMonth ?? null, selection?.anchorCategoryId ?? null, null);
     }
-  }, [selection, groupSelection, rowSelection, setUiSelection, setRowSelectionStore]);
+  }, [selection, groupSelection, rowSelection, monthSelection, setUiSelection, setRowSelectionStore]);
 
   const queryClient = useQueryClient();
   const connection = useConnectionStore(selectActiveInstance);
@@ -243,11 +247,22 @@ function BudgetWorkspaceInner({
     return buildCategorySearchOptions(merged);
   }, [merged]);
 
+  // Selecting the whole month from a column header. Toggles off when the
+  // already-selected month header is clicked again.
+  const handleMonthHeaderSelect = useCallback((month: string) => {
+    setContextMenu(null);
+    setSelection(null);
+    setGroupSelection(null);
+    setRowSelectionLocal(null);
+    setMonthSelection((prev) => (prev === month ? null : month));
+  }, []);
+
   const handleCellFocus = useCallback(
     (categoryId: string, month: string) => {
       setContextMenu(null);
       setGroupSelection(null);
       setRowSelectionLocal(null);
+      setMonthSelection(null);
       setSelection({
         anchorCategoryId: categoryId,
         anchorMonth: month,
@@ -263,6 +278,7 @@ function BudgetWorkspaceInner({
       setContextMenu(null);
       setSelection(null);
       setRowSelectionLocal(null);
+      setMonthSelection(null);
       setGroupSelection({ groupId, month });
     },
     [setSelection]
@@ -273,6 +289,7 @@ function BudgetWorkspaceInner({
       setContextMenu(null);
       setSelection(null);
       setGroupSelection(null);
+      setMonthSelection(null);
       setRowSelectionLocal({ kind, id });
     },
     [setSelection]
@@ -357,6 +374,7 @@ function BudgetWorkspaceInner({
         pageSize: PAGE_SIZE,
       });
       if (!target) return;
+      setMonthSelection(null);
       const { itemIdx: newItemIdx, monthIdx: newMonthIdx } = target;
 
       const newItem = navItems[newItemIdx];
@@ -434,6 +452,7 @@ function BudgetWorkspaceInner({
   const selectedMonth =
     selection?.focusMonth ??
     groupSelection?.month ??
+    monthSelection ??
     firstSelectableMonth;
 
   const handleCategoryJumpSelect = useCallback(
@@ -444,6 +463,7 @@ function BudgetWorkspaceInner({
       setContextMenu(null);
       setGroupSelection(null);
       setRowSelectionLocal(null);
+      setMonthSelection(null);
       setSelection({
         anchorCategoryId: option.categoryId,
         anchorMonth: month,
@@ -505,6 +525,7 @@ function BudgetWorkspaceInner({
       }
       el.scrollIntoView({ block: "center", inline: "nearest" });
       el.focus();
+      setMonthSelection(null);
       setSelection({
         anchorCategoryId: pendingCategoryJump.categoryId,
         anchorMonth: pendingCategoryJump.month,
@@ -601,6 +622,7 @@ function BudgetWorkspaceInner({
     setSelection(null);
     setGroupSelection(null);
     setRowSelectionLocal(null);
+    setMonthSelection(null);
   }, []);
 
   // Clear selection on any click outside the workspace div (TopBar, Sidebar, Toolbar, etc.)
@@ -919,6 +941,7 @@ function BudgetWorkspaceInner({
           selection={selection}
           groupSelection={groupSelection}
           rowSelection={rowSelection}
+          monthSelection={monthSelection}
           readOnlyMonths={readOnlyMonths}
           collapsedGroups={collapsedGroups}
           onToggleCollapse={onToggleCollapse}
@@ -932,6 +955,7 @@ function BudgetWorkspaceInner({
           onRowLabelFocus={handleRowLabelFocus}
           onRowLabelNavigate={handleRowLabelNavigate}
           onClearSelection={clearGridSelection}
+          onMonthSelect={handleMonthHeaderSelect}
         />
       </div>
       <BudgetSelectionSummary

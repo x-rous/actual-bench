@@ -147,12 +147,13 @@ export function CategoriesTableGroupRow({
       </td>
 
       <td className="w-8 px-0 py-0.5 text-center">
-        {!isNew && hasNote && (
+        {!isNew && (
           <EntityNoteButton
             entityId={entity.id}
             entityKind="category"
             entityLabel={entity.name || "Unnamed group"}
             entityTypeLabel="Category group"
+            hasNote={hasNote}
             className="mx-auto"
           />
         )}

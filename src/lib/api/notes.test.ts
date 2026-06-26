@@ -6,6 +6,13 @@ import {
   parseNotesIndexIds,
   toAccountNoteId,
   toBudgetNoteId,
+  toCategoryMonthNoteId,
+  setAccountNote,
+  deleteAccountNote,
+  setCategoryNote,
+  deleteCategoryNote,
+  setBudgetMonthNote,
+  deleteBudgetMonthNote,
 } from "./notes";
 import type { ConnectionInstance } from "@/store/connection";
 
@@ -156,6 +163,90 @@ describe("notes api helpers", () => {
       const result = await getAllNotes(connection);
 
       expect(result.size).toBe(0);
+    });
+  });
+
+  describe("note writers", () => {
+    it("builds the composite category × month cell id", () => {
+      expect(toCategoryMonthNoteId("af375fd4-d759-46b3-bffe-74a856151d57", "2026-06")).toBe(
+        "af375fd4-d759-46b3-bffe-74a856151d57-2026-06"
+      );
+    });
+
+    it("PUTs an account note with a { data } body", async () => {
+      mockApiRequest.mockResolvedValueOnce(undefined);
+
+      await setAccountNote(connection, "acc-1", "Checking note");
+
+      expect(mockApiRequest).toHaveBeenCalledWith(connection, "/notes/account/acc-1", {
+        method: "PUT",
+        body: { data: "Checking note" },
+      });
+    });
+
+    it("DELETEs an account note", async () => {
+      mockApiRequest.mockResolvedValueOnce(undefined);
+
+      await deleteAccountNote(connection, "acc-1");
+
+      expect(mockApiRequest).toHaveBeenCalledWith(connection, "/notes/account/acc-1", {
+        method: "DELETE",
+      });
+    });
+
+    it("PUTs a category note with a { data } body", async () => {
+      mockApiRequest.mockResolvedValueOnce(undefined);
+
+      await setCategoryNote(connection, "cat-1", "Groceries note");
+
+      expect(mockApiRequest).toHaveBeenCalledWith(connection, "/notes/category/cat-1", {
+        method: "PUT",
+        body: { data: "Groceries note" },
+      });
+    });
+
+    it("writes a category × month cell note through the category route", async () => {
+      mockApiRequest.mockResolvedValueOnce(undefined);
+
+      const cellId = toCategoryMonthNoteId("cat-1", "2026-06");
+      await setCategoryNote(connection, cellId, "Rent was late");
+
+      expect(mockApiRequest).toHaveBeenCalledWith(
+        connection,
+        "/notes/category/cat-1-2026-06",
+        { method: "PUT", body: { data: "Rent was late" } }
+      );
+    });
+
+    it("DELETEs a category note", async () => {
+      mockApiRequest.mockResolvedValueOnce(undefined);
+
+      await deleteCategoryNote(connection, "cat-1");
+
+      expect(mockApiRequest).toHaveBeenCalledWith(connection, "/notes/category/cat-1", {
+        method: "DELETE",
+      });
+    });
+
+    it("PUTs a budget-month note with a { data } body", async () => {
+      mockApiRequest.mockResolvedValueOnce(undefined);
+
+      await setBudgetMonthNote(connection, "2026-06", "June plan");
+
+      expect(mockApiRequest).toHaveBeenCalledWith(connection, "/notes/budgetmonth/2026-06", {
+        method: "PUT",
+        body: { data: "June plan" },
+      });
+    });
+
+    it("DELETEs a budget-month note", async () => {
+      mockApiRequest.mockResolvedValueOnce(undefined);
+
+      await deleteBudgetMonthNote(connection, "2026-06");
+
+      expect(mockApiRequest).toHaveBeenCalledWith(connection, "/notes/budgetmonth/2026-06", {
+        method: "DELETE",
+      });
     });
   });
 });
