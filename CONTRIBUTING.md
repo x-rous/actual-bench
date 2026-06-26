@@ -148,9 +148,9 @@ src/
 | Workflow | Trigger | What it does |
 |---|---|---|
 | **CI** (`.github/workflows/ci.yml`) | Pushes to `main` (skips doc-only) + all PRs | Lint, type-check, test, build — must pass before any merge |
-| **Edge** (`.github/workflows/edge.yml`) | `workflow_run` after CI succeeds on `main` | Builds the multi-arch (`amd64` + `arm64`) `:edge` Docker tag natively in parallel, then deploys to the VPS and health-checks the running app |
+| **Edge** (`.github/workflows/edge.yml`) | `workflow_run` after CI succeeds on `main` | Builds the multi-arch (`amd64` + `arm64`) `:edge` Docker tag natively in parallel, then deploys to the VPS |
 | **Release Drafter** (`.github/workflows/release-drafter.yml`) | Push to `main` | Updates a draft GitHub Release with all merged PRs since the last tag |
-| **Release** (`.github/workflows/release.yml`) | Push `v*` tag | Runs full CI, verifies version, builds the multi-arch `:latest` + `:<version>` Docker tags, deploys to the VPS, health-checks it, then publishes the draft GitHub Release |
+| **Release** (`.github/workflows/release.yml`) | Push `v*` tag | Runs full CI, verifies version, builds the multi-arch `:latest` + `:<version>` Docker tags, deploys to the VPS, then publishes the draft GitHub Release |
 
 ## Docker Tags
 
