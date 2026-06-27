@@ -43,7 +43,11 @@ function ConnectState() {
 
 function LoadingState() {
   return (
-    <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 p-6 text-center">
+    <div
+      role="status"
+      aria-live="polite"
+      className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 p-6 text-center"
+    >
       <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
       <div className="text-sm font-medium">Loading budget data…</div>
       <p className="max-w-sm text-xs leading-5 text-muted-foreground">
@@ -56,7 +60,10 @@ function LoadingState() {
 
 function ErrorState({ message, onRetry }: { message: string | null; onRetry: () => void }) {
   return (
-    <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 p-6 text-center">
+    <div
+      role="alert"
+      className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 p-6 text-center"
+    >
       <div className="text-sm font-medium text-destructive">Couldn’t open the budget data</div>
       <p className="max-w-sm text-xs leading-5 text-muted-foreground">
         {message ?? "The budget export could not be loaded."}

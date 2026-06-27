@@ -3,11 +3,13 @@
 import { useEffect, useState } from "react";
 
 function formatLoadedAgo(loadedAt: number, now: number): string {
-  const seconds = Math.max(0, Math.round((now - loadedAt) / 1000));
+  // Floor so the label never advances to the next unit before that boundary
+  // (e.g. 90s reads "1m ago", not "2m ago").
+  const seconds = Math.max(0, Math.floor((now - loadedAt) / 1000));
   if (seconds < 60) return "just now";
-  const minutes = Math.round(seconds / 60);
+  const minutes = Math.floor(seconds / 60);
   if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.round(minutes / 60);
+  const hours = Math.floor(minutes / 60);
   return `${hours}h ago`;
 }
 

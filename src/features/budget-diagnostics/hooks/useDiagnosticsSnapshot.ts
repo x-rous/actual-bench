@@ -121,6 +121,7 @@ export function useDiagnosticsSnapshot() {
     if (
       cache.signature === connectionSignature(connection) &&
       cache.snapshot.status === "ready" &&
+      cache.snapshot.diagnosticsStatus !== "loading" &&
       isSqliteWorkerLoadedFor(connection.id)
     ) {
       return;
@@ -128,6 +129,14 @@ export function useDiagnosticsSnapshot() {
 
     let cancelled = false;
     const activeConnection = connection;
+
+    // Stamp the cache as reusable. Called only once diagnostics has reached a
+    // terminal state (ready or error) — never mid-load — so an interrupted load
+    // can't be short-circuited on return and leave the tab stuck loading.
+    const commitCache = () =>
+      useDiagnosticsCacheStore
+        .getState()
+        .commitLoaded(activeConnection.id, connectionSignature(activeConnection));
 
     async function openSnapshot() {
       integrityRunGeneration.current += 1;
@@ -180,11 +189,6 @@ export function useDiagnosticsSnapshot() {
           diagnostics: null,
           download: exported.download,
         });
-        // Snapshot is now reusable across navigation; stamp the cache so the
-        // mount guard above can short-circuit on return, and "loaded X ago" works.
-        useDiagnosticsCacheStore
-          .getState()
-          .commitLoaded(activeConnection.id, connectionSignature(activeConnection));
 
         try {
           const diagnostics = await getSqliteWorkerClient().call(
@@ -207,6 +211,7 @@ export function useDiagnosticsSnapshot() {
             progressStage: "ready",
             diagnostics,
           }));
+          commitCache();
         } catch (error) {
           if (cancelled) return;
           setSnapshot((current) => ({
@@ -215,6 +220,10 @@ export function useDiagnosticsSnapshot() {
             diagnosticsError: getErrorMessage(error),
             progressStage: "ready",
           }));
+          // Diagnostics failed but the snapshot is still usable (overview + DB
+          // loaded), so mark it reusable — the error surfaces on the Diagnostics
+          // tab and Reload re-runs everything.
+          commitCache();
         }
       } catch (error) {
         if (cancelled) return;

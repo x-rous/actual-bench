@@ -289,4 +289,34 @@ describe("BudgetDiagnosticsView", () => {
     expect(screen.getByText("Snapshot counts")).toBeInTheDocument();
     expect(mockExportSnapshot).toHaveBeenCalledTimes(1);
   });
+
+  it("re-exports (does not reuse) when a prior load was interrupted mid-diagnostics", async () => {
+    // Worker whose runDiagnostics never resolves — simulates navigating away
+    // while diagnostics is still running.
+    mockGetSqliteWorkerClient.mockReturnValue({
+      call: jest.fn((request: WorkerRequestInput) => {
+        if (request.kind === "overview") return Promise.resolve(overview);
+        if (request.kind === "runDiagnostics") return new Promise(() => {}); // hangs
+        return Promise.resolve({ objects: [] });
+      }),
+    } as unknown as SqliteWorkerClient);
+
+    const { unmount } = render(<BudgetDiagnosticsView />);
+    // Overview is ready but diagnostics is still loading (never resolves).
+    await waitFor(() => {
+      expect(screen.getByText("Snapshot counts")).toBeInTheDocument();
+    });
+    expect(mockExportSnapshot).toHaveBeenCalledTimes(1);
+
+    // Navigate away mid-diagnostics, then back with the worker still "loaded".
+    unmount();
+    (isSqliteWorkerLoadedFor as jest.Mock).mockReturnValue(true);
+    render(<BudgetDiagnosticsView />);
+
+    // The interrupted snapshot was never committed, so it must re-export rather
+    // than reuse a snapshot stuck on diagnosticsStatus: "loading".
+    await waitFor(() => {
+      expect(mockExportSnapshot).toHaveBeenCalledTimes(2);
+    });
+  });
 });

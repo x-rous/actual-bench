@@ -175,7 +175,7 @@ All requests to `actual-http-api` go through Actual Bench's internal Next.js pro
 
 - Saved connections are stored in **session storage** and are cleared when the browser tab is closed.
 - Staged data and query cache are scoped per connection so switching budgets does not leak local state between sessions.
-- Budget File Health processes exported snapshots locally in the browser and does not write diagnostic changes back to the budget.
+- Budget File Health and the Data Browser process exported snapshots locally in the browser and do not write changes back to the budget.
 - Exported budget ZIP files and diagnostic data may still contain personal financial information, so handle downloaded files carefully.
 - ActualQL queries are read-only from the Actual Bench perspective, but they reflect saved server state, not unsaved staged edits.
 - The Excel companion workbook may contain your Actual API URL, API key, and downloaded financial data after use, so do not share a configured copy.
@@ -324,7 +324,7 @@ npm install
 npm run dev
 ```
 
-`npm install` copies the SQLite WASM asset used by Budget File Health into `public/sqlite/`.
+`npm install` copies the SQLite WASM asset used by Budget File Health and the Data Browser into `public/sqlite/`.
 
 Open `http://localhost:3000`.
 
