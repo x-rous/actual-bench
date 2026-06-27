@@ -13,9 +13,11 @@ import { BudgetDiagnosticsView } from "./BudgetDiagnosticsView";
 import { exportSnapshot } from "../lib/exportSnapshot";
 import {
   getSqliteWorkerClient,
+  isSqliteWorkerLoadedFor,
   resetSqliteWorkerClient,
   type SqliteWorkerClient,
 } from "../lib/sqliteWorkerClient";
+import { useDiagnosticsCacheStore } from "../store/diagnosticsCache";
 
 const mockReplace = jest.fn();
 let mockSearchParams = new URLSearchParams();
@@ -46,6 +48,8 @@ jest.mock("../lib/exportSnapshot", () => ({
 jest.mock("../lib/sqliteWorkerClient", () => ({
   getSqliteWorkerClient: jest.fn(),
   resetSqliteWorkerClient: jest.fn(),
+  markSqliteWorkerLoaded: jest.fn(),
+  isSqliteWorkerLoadedFor: jest.fn(() => false),
 }));
 
 const mockExportSnapshot = exportSnapshot as jest.MockedFunction<typeof exportSnapshot>;
@@ -180,6 +184,10 @@ describe("BudgetDiagnosticsView", () => {
     mockSearchParams = new URLSearchParams();
     mockReplace.mockReset();
     mockResetSqliteWorkerClient.mockReset();
+    // The snapshot cache is module-level (survives navigation by design), so
+    // clear it between tests to keep them isolated.
+    useDiagnosticsCacheStore.getState().reset();
+    (isSqliteWorkerLoadedFor as jest.Mock).mockReturnValue(false);
     mockGetSqliteWorkerClient.mockReturnValue(createWorkerClient() as SqliteWorkerClient);
     mockExportSnapshot.mockImplementation(async (_connection, onProgress) => {
       onProgress?.("exporting");
@@ -203,7 +211,8 @@ describe("BudgetDiagnosticsView", () => {
     render(<BudgetDiagnosticsView />);
 
     expect(screen.getByRole("tab", { name: "Overview" })).toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: "Data Browser" })).toBeInTheDocument();
+    // Data Browser is now its own top-level page, not a tab here.
+    expect(screen.queryByRole("tab", { name: "Data Browser" })).not.toBeInTheDocument();
 
     await waitFor(() => {
       expect(screen.getByText("Snapshot counts")).toBeInTheDocument();
@@ -262,5 +271,52 @@ describe("BudgetDiagnosticsView", () => {
     expect(mockResetSqliteWorkerClient.mock.calls.length).toBeGreaterThan(
       resetCountBeforeSwitch
     );
+  });
+
+  it("reuses the cached snapshot on remount without re-downloading", async () => {
+    const { unmount } = render(<BudgetDiagnosticsView />);
+    await waitFor(() => {
+      expect(screen.getByText("Snapshot counts")).toBeInTheDocument();
+    });
+    expect(mockExportSnapshot).toHaveBeenCalledTimes(1);
+
+    // Simulate navigating away and back, with the worker still holding the DB.
+    unmount();
+    (isSqliteWorkerLoadedFor as jest.Mock).mockReturnValue(true);
+    render(<BudgetDiagnosticsView />);
+
+    // The ready snapshot renders immediately and no second export is triggered.
+    expect(screen.getByText("Snapshot counts")).toBeInTheDocument();
+    expect(mockExportSnapshot).toHaveBeenCalledTimes(1);
+  });
+
+  it("re-exports (does not reuse) when a prior load was interrupted mid-diagnostics", async () => {
+    // Worker whose runDiagnostics never resolves — simulates navigating away
+    // while diagnostics is still running.
+    mockGetSqliteWorkerClient.mockReturnValue({
+      call: jest.fn((request: WorkerRequestInput) => {
+        if (request.kind === "overview") return Promise.resolve(overview);
+        if (request.kind === "runDiagnostics") return new Promise(() => {}); // hangs
+        return Promise.resolve({ objects: [] });
+      }),
+    } as unknown as SqliteWorkerClient);
+
+    const { unmount } = render(<BudgetDiagnosticsView />);
+    // Overview is ready but diagnostics is still loading (never resolves).
+    await waitFor(() => {
+      expect(screen.getByText("Snapshot counts")).toBeInTheDocument();
+    });
+    expect(mockExportSnapshot).toHaveBeenCalledTimes(1);
+
+    // Navigate away mid-diagnostics, then back with the worker still "loaded".
+    unmount();
+    (isSqliteWorkerLoadedFor as jest.Mock).mockReturnValue(true);
+    render(<BudgetDiagnosticsView />);
+
+    // The interrupted snapshot was never committed, so it must re-export rather
+    // than reuse a snapshot stuck on diagnosticsStatus: "loading".
+    await waitFor(() => {
+      expect(mockExportSnapshot).toHaveBeenCalledTimes(2);
+    });
   });
 });

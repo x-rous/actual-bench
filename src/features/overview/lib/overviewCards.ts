@@ -1,5 +1,6 @@
 import {
   Calendar,
+  Database,
   FileSearch,
   Landmark,
   LayoutList,
@@ -98,12 +99,21 @@ export const TOOL_CARDS: OverviewActionCard[] = [
   },
   {
     id: "diagnostics",
-    label: "Budget Diagnostics",
+    label: "Budget File Health",
     description:
-      "Inspect exported budget snapshots in a read-only workspace with overview, diagnostics, and data browsing.",
+      "Inspect the exported budget file in a read-only workspace with an overview and deterministic health checks.",
     icon: FileSearch,
     tone: "tool",
     href: "/budget-diagnostics",
+  },
+  {
+    id: "data-browser",
+    label: "Data Browser",
+    description:
+      "Browse the budget file's SQLite tables, views, and rows directly, with schema inspection and CSV export.",
+    icon: Database,
+    tone: "tool",
+    href: "/data-browser",
   },
   {
     id: "rule-diagnostics",

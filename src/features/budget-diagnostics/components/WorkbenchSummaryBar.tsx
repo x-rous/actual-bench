@@ -1,4 +1,4 @@
-export type WorkbenchTab = "overview" | "diagnostics" | "data";
+export type WorkbenchTab = "overview" | "diagnostics";
 
 /*
  * Data Browser summary placeholder for the later Data Browser milestone.

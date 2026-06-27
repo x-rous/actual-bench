@@ -35,16 +35,23 @@
 - Manual refresh button with loading state and last-refreshed status
 - Snapshot values switch to loading placeholders immediately during budget switching or manual refresh
 - Main navigation hub for the connected budget with direct links to the core entity pages and ActualQL Queries
-- Budget Diagnostics opens a read-only exported-snapshot workspace for inspecting budget health and raw SQLite data locally in the browser
+- Budget File Health opens a read-only exported-snapshot workspace for inspecting budget health locally in the browser
+- Data Browser opens the exported budget's raw SQLite tables, views, and rows directly (its own page, sharing the cached snapshot)
 
-## Budget Diagnostics
+## Budget File Health
 
 - Read-only diagnostics workspace for the active budget export; snapshot processing happens locally in the browser and no diagnostics changes are written back to the budget
-- Top-level tabs for Overview, Diagnostics, and Data Browser keep the workspace full-width and focused on one task at a time
+- The exported snapshot is downloaded and opened once, then cached across navigation (with a "loaded X ago" label and a Reload button), and is shared with the standalone Data Browser
+- Top-level tabs for Overview and Diagnostics keep the workspace full-width and focused on one task at a time
 - Snapshot opening shows a staged progress rail with retry on export/open failures, plus a persistent privacy reminder that exported contents stay local but may include personal budget data
 - Overview tab summarizes export metadata, snapshot counts, ZIP/database sizes, and source details, with a download action for the exported ZIP
 - Diagnostics tab runs deterministic snapshot checks, summarizes finding severity, supports a long-running full SQLite integrity check, and exports findings to CSV
-- Data Browser tab lists SQLite tables, views, indexes, and triggers grouped by Actual Budget domain; `v_transactions` is selected by default when present
+
+## Data Browser
+
+A standalone page (own navigation item) for browsing the active budget's exported SQLite directly. Reuses the cached Budget File Health snapshot, so it opens instantly once the budget has been loaded anywhere.
+
+- Lists SQLite tables, views, indexes, and triggers grouped by Actual Budget domain; `v_transactions` is selected by default when present
 - Paginated row browser fetches table/view rows through the SQLite worker with bounded page sizes, sticky headers, horizontal scrolling, worker-side sorting, and URL state for object, page, page size, sort column, and sort direction
 - Full table/view CSV export streams rows through worker-owned cursors, preserves UTF-8 for Excel, neutralizes formula-like text values, keeps numeric negatives raw, and caps BLOB cells as base64 previews
 - Schema tab shows object type, parent table where available, row count, inferred row key, columns, table indexes, and raw `CREATE ...` SQL from the exported SQLite schema
