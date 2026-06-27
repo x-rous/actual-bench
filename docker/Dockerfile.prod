@@ -1,12 +1,4 @@
-# ── Stage 1: production dependencies only ─────────────────────────────────────
-FROM node:20-alpine AS deps
-WORKDIR /app
-COPY package*.json ./
-COPY scripts/copy-sqlite-wasm.mjs ./scripts/copy-sqlite-wasm.mjs
-# --omit=dev installs only the runtime dependencies (~60% smaller than full install)
-RUN npm ci --omit=dev
-
-# ── Stage 2: full build ────────────────────────────────────────────────────────
+# ── Stage 1: full build ────────────────────────────────────────────────────────
 FROM node:20-alpine AS builder
 WORKDIR /app
 COPY package*.json ./
@@ -14,39 +6,41 @@ COPY scripts/copy-sqlite-wasm.mjs ./scripts/copy-sqlite-wasm.mjs
 RUN npm ci
 COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1
+# Produces a standalone server under .next-build/standalone (output: "standalone")
 RUN npm run build
 
-# ── Stage 3: lean runtime image ───────────────────────────────────────────────
+# ── Stage 2: lean runtime image (Next.js standalone output) ───────────────────
 FROM node:20-alpine AS runner
 WORKDIR /app
 
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
-# 256 MB is sufficient for next start (production server is lean)
+# The standalone server is lean; 256 MB is plenty.
 ENV NODE_OPTIONS=--max-old-space-size=256
+# Bind all interfaces so the reverse proxy can reach the container.
+ENV HOSTNAME=0.0.0.0
+ENV PORT=3000
 
 # Non-root user for security
 RUN addgroup --system --gid 1001 nodejs \
  && adduser  --system --uid 1001 nextjs
 
-# Static assets
+# Public static assets (includes public/sqlite/sqlite3.wasm for in-browser
+# Budget Diagnostics).
 COPY --from=builder --chown=nextjs:nodejs /app/public ./public
 
-# Build output — uses distDir: ".next-build" from next.config.ts
-COPY --from=builder --chown=nextjs:nodejs /app/.next-build ./.next-build
+# Standalone server bundle: server.js + traced node_modules + package.json +
+# the server-side build output (.next-build/…). This replaces copying the full
+# production node_modules — only the modules the server actually imports ship.
+COPY --from=builder --chown=nextjs:nodejs /app/.next-build/standalone ./
 
-# Config — next start reads this to locate the custom distDir
-COPY --from=builder --chown=nextjs:nodejs /app/next.config.ts ./next.config.ts
+# Client static assets emitted by the build, served by the standalone server.
+COPY --from=builder --chown=nextjs:nodejs /app/.next-build/static ./.next-build/static
 
-# Production node_modules from the deps stage (no devDependencies)
-COPY --from=deps --chown=nextjs:nodejs /app/node_modules ./node_modules
-
-# package.json required by npm start
-COPY --from=builder --chown=nextjs:nodejs /app/package.json ./package.json
-
-# Branded startup wrapper (reads package.json version, spawns next start)
-COPY --from=builder --chown=nextjs:nodejs /app/scripts ./scripts
+# Branded startup wrapper (reads package.json version, spawns the standalone
+# server.js). package.json comes from the standalone bundle copied above.
+COPY --from=builder --chown=nextjs:nodejs /app/scripts/start.mjs ./scripts/start.mjs
 
 USER nextjs
 EXPOSE 3000
-CMD ["npm", "start"]
+CMD ["node", "scripts/start.mjs"]
