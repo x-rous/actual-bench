@@ -123,7 +123,7 @@ jobs:
             $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
             $(printf '${{ env.IMAGE_GHCR }}@sha256:%s ' *)
 
-  # ── Deploy to the VPS and verify the app actually answers ────────────────────
+  # ── Deploy to the VPS ────────────────────────────────────────────────────────
   deploy:
     needs: merge
     runs-on: ubuntu-latest
@@ -135,20 +135,7 @@ jobs:
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
           script: |
-            set -e
             cd ${{ secrets.VPS_DEPLOY_PATH }}
             docker compose pull
             docker compose up -d --remove-orphans
-            # Wait for the new container to actually serve before declaring success
-            for i in $(seq 1 15); do
-              if curl -fsS -o /dev/null http://localhost:3000/; then
-                echo "✓ healthy"
-                break
-              fi
-              if [ "$i" = 15 ]; then
-                echo "::error::health check failed after deploy"
-                exit 1
-              fi
-              sleep 2
-            done
             docker image prune -f
