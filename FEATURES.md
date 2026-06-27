@@ -35,9 +35,9 @@
 - Manual refresh button with loading state and last-refreshed status
 - Snapshot values switch to loading placeholders immediately during budget switching or manual refresh
 - Main navigation hub for the connected budget with direct links to the core entity pages and ActualQL Queries
-- Budget Diagnostics opens a read-only exported-snapshot workspace for inspecting budget health and raw SQLite data locally in the browser
+- Budget File Health opens a read-only exported-snapshot workspace for inspecting budget health and raw SQLite data locally in the browser
 
-## Budget Diagnostics
+## Budget File Health
 
 - Read-only diagnostics workspace for the active budget export; snapshot processing happens locally in the browser and no diagnostics changes are written back to the budget
 - Top-level tabs for Overview, Diagnostics, and Data Browser keep the workspace full-width and focused on one task at a time

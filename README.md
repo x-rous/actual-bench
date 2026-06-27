@@ -62,7 +62,7 @@ It is not trying to replace Actual Budget's day-to-day transaction entry experie
 |:---:|:---:|
 | ![Budget diagnostics](public/screenshots/ActualQL.png) | ![Data browser](public/screenshots/budget-file-overview.png) |
 
-| Budget Diagnostics | Data Browser |
+| Budget File Health | Data Browser |
 |:---:|:---:|
 | ![Budget diagnostics](public/screenshots/budget-file-diagnostics.png) | ![Data browser](public/screenshots/budget-file-data-browsing.png) |
 
@@ -108,7 +108,7 @@ A read-only linting workspace for rules to help you identify potential issues an
 - Runs in the browser against already-loaded data; no new backend endpoint is required
 - Runs against the current working set, including unsaved staged edits
 
-### Budget Diagnostics & Data Browser
+### Budget File Health & Data Browser
 
 A read-only local diagnostics workspace for the exported budget snapshots.
 
@@ -175,7 +175,7 @@ All requests to `actual-http-api` go through Actual Bench's internal Next.js pro
 
 - Saved connections are stored in **session storage** and are cleared when the browser tab is closed.
 - Staged data and query cache are scoped per connection so switching budgets does not leak local state between sessions.
-- Budget Diagnostics processes exported snapshots locally in the browser and does not write diagnostic changes back to the budget.
+- Budget File Health processes exported snapshots locally in the browser and does not write diagnostic changes back to the budget.
 - Exported budget ZIP files and diagnostic data may still contain personal financial information, so handle downloaded files carefully.
 - ActualQL queries are read-only from the Actual Bench perspective, but they reflect saved server state, not unsaved staged edits.
 - The Excel companion workbook may contain your Actual API URL, API key, and downloaded financial data after use, so do not share a configured copy.
@@ -324,7 +324,7 @@ npm install
 npm run dev
 ```
 
-`npm install` copies the SQLite WASM asset used by Budget Diagnostics into `public/sqlite/`.
+`npm install` copies the SQLite WASM asset used by Budget File Health into `public/sqlite/`.
 
 Open `http://localhost:3000`.
 

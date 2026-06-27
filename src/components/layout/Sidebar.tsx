@@ -15,6 +15,7 @@ import {
   Tag,
   ShieldCheck,
   Stethoscope,
+  Database,
   Terminal,
   PanelLeftClose,
   PanelLeftOpen,
@@ -100,12 +101,13 @@ const SIDEBAR_SECTIONS: SidebarSection[] = [
       items: [
         {
           id: "budget-diagnostics",
-          label: "Budget Diagnostics",
+          label: "Budget File Health",
           href: "/budget-diagnostics",
           icon: Stethoscope,
         },
+        { id: "data-browser", label: "Data Browser", href: "/data-browser", icon: Database },
         { id: "rule-diagnostics", label: "Rule Diagnostics", href: "/rules/diagnostics", icon: ShieldCheck },
-        { id: "query", label: "ActualQL", href: "/query", icon: Terminal, badge: "dev" },
+        { id: "query", label: "ActualQL Queries", href: "/query", icon: Terminal },
       ],
     },
   },

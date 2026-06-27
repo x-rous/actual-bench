@@ -211,7 +211,8 @@ describe("BudgetDiagnosticsView", () => {
     render(<BudgetDiagnosticsView />);
 
     expect(screen.getByRole("tab", { name: "Overview" })).toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: "Data Browser" })).toBeInTheDocument();
+    // Data Browser is now its own top-level page, not a tab here.
+    expect(screen.queryByRole("tab", { name: "Data Browser" })).not.toBeInTheDocument();
 
     await waitFor(() => {
       expect(screen.getByText("Snapshot counts")).toBeInTheDocument();
