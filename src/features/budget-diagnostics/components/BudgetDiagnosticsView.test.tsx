@@ -13,9 +13,11 @@ import { BudgetDiagnosticsView } from "./BudgetDiagnosticsView";
 import { exportSnapshot } from "../lib/exportSnapshot";
 import {
   getSqliteWorkerClient,
+  isSqliteWorkerLoadedFor,
   resetSqliteWorkerClient,
   type SqliteWorkerClient,
 } from "../lib/sqliteWorkerClient";
+import { useDiagnosticsCacheStore } from "../store/diagnosticsCache";
 
 const mockReplace = jest.fn();
 let mockSearchParams = new URLSearchParams();
@@ -46,6 +48,8 @@ jest.mock("../lib/exportSnapshot", () => ({
 jest.mock("../lib/sqliteWorkerClient", () => ({
   getSqliteWorkerClient: jest.fn(),
   resetSqliteWorkerClient: jest.fn(),
+  markSqliteWorkerLoaded: jest.fn(),
+  isSqliteWorkerLoadedFor: jest.fn(() => false),
 }));
 
 const mockExportSnapshot = exportSnapshot as jest.MockedFunction<typeof exportSnapshot>;
@@ -180,6 +184,10 @@ describe("BudgetDiagnosticsView", () => {
     mockSearchParams = new URLSearchParams();
     mockReplace.mockReset();
     mockResetSqliteWorkerClient.mockReset();
+    // The snapshot cache is module-level (survives navigation by design), so
+    // clear it between tests to keep them isolated.
+    useDiagnosticsCacheStore.getState().reset();
+    (isSqliteWorkerLoadedFor as jest.Mock).mockReturnValue(false);
     mockGetSqliteWorkerClient.mockReturnValue(createWorkerClient() as SqliteWorkerClient);
     mockExportSnapshot.mockImplementation(async (_connection, onProgress) => {
       onProgress?.("exporting");
@@ -262,5 +270,22 @@ describe("BudgetDiagnosticsView", () => {
     expect(mockResetSqliteWorkerClient.mock.calls.length).toBeGreaterThan(
       resetCountBeforeSwitch
     );
+  });
+
+  it("reuses the cached snapshot on remount without re-downloading", async () => {
+    const { unmount } = render(<BudgetDiagnosticsView />);
+    await waitFor(() => {
+      expect(screen.getByText("Snapshot counts")).toBeInTheDocument();
+    });
+    expect(mockExportSnapshot).toHaveBeenCalledTimes(1);
+
+    // Simulate navigating away and back, with the worker still holding the DB.
+    unmount();
+    (isSqliteWorkerLoadedFor as jest.Mock).mockReturnValue(true);
+    render(<BudgetDiagnosticsView />);
+
+    // The ready snapshot renders immediately and no second export is triggered.
+    expect(screen.getByText("Snapshot counts")).toBeInTheDocument();
+    expect(mockExportSnapshot).toHaveBeenCalledTimes(1);
   });
 });

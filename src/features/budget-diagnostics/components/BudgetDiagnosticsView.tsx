@@ -7,45 +7,23 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { ArrowRight, LockKeyhole, Stethoscope } from "lucide-react";
 import { buttonVariants } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import type { DownloadResult } from "@/lib/api/client";
 import { cn } from "@/lib/utils";
 import { selectActiveInstance, useConnectionStore } from "@/store/connection";
 import { exportSnapshot } from "../lib/exportSnapshot";
 import {
   getSqliteWorkerClient,
+  isSqliteWorkerLoadedFor,
+  markSqliteWorkerLoaded,
   resetSqliteWorkerClient,
 } from "../lib/sqliteWorkerClient";
-import type { DiagnosticsPayload, OverviewPayload, ProgressStage } from "../types";
+import {
+  connectionSignature,
+  useDiagnosticsCacheStore,
+} from "../store/diagnosticsCache";
 import { DataBrowserSection } from "./DataBrowserSection";
 import { DiagnosticsSection } from "./DiagnosticsSection";
 import { OverviewSection } from "./OverviewSection";
 import type { WorkbenchTab } from "./WorkbenchSummaryBar";
-
-type SnapshotState = {
-  status: "idle" | "loading" | "ready" | "error";
-  diagnosticsStatus: "idle" | "loading" | "ready" | "error";
-  integrityStatus: "idle" | "loading" | "error";
-  progressStage: ProgressStage | null;
-  errorMessage: string | null;
-  diagnosticsError: string | null;
-  integrityError: string | null;
-  overview: OverviewPayload | null;
-  diagnostics: DiagnosticsPayload | null;
-  download: DownloadResult | null;
-};
-
-const INITIAL_SNAPSHOT_STATE: SnapshotState = {
-  status: "idle",
-  diagnosticsStatus: "idle",
-  integrityStatus: "idle",
-  progressStage: null,
-  errorMessage: null,
-  diagnosticsError: null,
-  integrityError: null,
-  overview: null,
-  diagnostics: null,
-  download: null,
-};
 
 const WORKBENCH_TABS: readonly WorkbenchTab[] = ["overview", "diagnostics", "data"];
 const WORKBENCH_TAB_CLASS =
@@ -114,13 +92,36 @@ function ConnectBudgetState() {
   );
 }
 
+function formatLoadedAgo(loadedAt: number, now: number): string {
+  const seconds = Math.max(0, Math.round((now - loadedAt) / 1000));
+  if (seconds < 60) return "just now";
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.round(minutes / 60);
+  return `${hours}h ago`;
+}
+
+/** Self-updating "loaded X ago" label (refreshes once a minute). */
+function LoadedAgo({ at }: { at: number }) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 60_000);
+    return () => clearInterval(id);
+  }, []);
+  return <>{formatLoadedAgo(at, now)}</>;
+}
+
 export function BudgetDiagnosticsView() {
   const connection = useConnectionStore(selectActiveInstance);
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const [reloadToken, setReloadToken] = useState(0);
-  const [snapshot, setSnapshot] = useState<SnapshotState>(INITIAL_SNAPSHOT_STATE);
+  // Snapshot lives in a module-level store so it survives navigation (and is
+  // shared with the standalone Data Browser) instead of being rebuilt on mount.
+  const snapshot = useDiagnosticsCacheStore((s) => s.snapshot);
+  const setSnapshot = useDiagnosticsCacheStore((s) => s.setSnapshot);
+  const loadedAt = useDiagnosticsCacheStore((s) => s.loadedAt);
   const integrityRunGeneration = useRef(0);
   const tabParam = searchParams.get("tab");
   const activeTab: WorkbenchTab = isWorkbenchTab(tabParam) ? tabParam : "overview";
@@ -129,6 +130,10 @@ export function BudgetDiagnosticsView() {
     snapshot.diagnostics?.findings.filter((finding) => finding.severity !== "info").length ?? 0;
 
   const retry = useCallback(() => {
+    // Force a fresh export: drop the cached snapshot and the loaded worker DB,
+    // then bump the token to re-run the load effect.
+    resetSqliteWorkerClient();
+    useDiagnosticsCacheStore.getState().reset();
     setReloadToken((value) => value + 1);
   }, []);
 
@@ -194,12 +199,25 @@ export function BudgetDiagnosticsView() {
     }
 
     void run();
-  }, []);
+  }, [setSnapshot]);
 
   useEffect(() => {
     if (!connection) {
       integrityRunGeneration.current += 1;
       resetSqliteWorkerClient();
+      useDiagnosticsCacheStore.getState().reset();
+      return;
+    }
+
+    // Cache hit: the worker still holds this connection's DB and we already have
+    // a ready snapshot — reuse it instead of re-downloading. Reload, connection
+    // change, and disconnect all clear the cache, so a stale snapshot can't stick.
+    const cache = useDiagnosticsCacheStore.getState();
+    if (
+      cache.signature === connectionSignature(connection) &&
+      cache.snapshot.status === "ready" &&
+      isSqliteWorkerLoadedFor(connection.id)
+    ) {
       return;
     }
 
@@ -228,6 +246,10 @@ export function BudgetDiagnosticsView() {
             setSnapshot((current) => ({ ...current, progressStage: stage }));
           }
         });
+        if (cancelled) return;
+        // Worker now holds this connection's DB — record it so a later visit
+        // (or the standalone Data Browser) can reuse it without re-exporting.
+        markSqliteWorkerLoaded(activeConnection.id);
         const overview = await getSqliteWorkerClient().call(
           { kind: "overview" },
           {
@@ -253,6 +275,11 @@ export function BudgetDiagnosticsView() {
           diagnostics: null,
           download: exported.download,
         });
+        // Snapshot is now reusable across navigation; stamp the cache so the
+        // mount guard above can short-circuit on return, and "loaded X ago" works.
+        useDiagnosticsCacheStore
+          .getState()
+          .commitLoaded(activeConnection.id, connectionSignature(activeConnection));
 
         try {
           const diagnostics = await getSqliteWorkerClient().call(
@@ -306,7 +333,10 @@ export function BudgetDiagnosticsView() {
     return () => {
       cancelled = true;
       integrityRunGeneration.current += 1;
-      resetSqliteWorkerClient();
+      // Intentionally do NOT reset the worker here — keep the loaded DB alive so
+      // returning to this page (or opening the Data Browser) reuses it without a
+      // re-download. The worker is reset on explicit Reload, connection change,
+      // or disconnect instead.
     };
   }, [
     connection,
@@ -316,6 +346,7 @@ export function BudgetDiagnosticsView() {
     connection?.encryptionPassword,
     connection?.id,
     reloadToken,
+    setSnapshot,
   ]);
 
   if (!connection) {
@@ -355,7 +386,22 @@ export function BudgetDiagnosticsView() {
               Data Browser
             </TabsTrigger>
           </TabsList>
-          <div className="flex min-h-9 items-center px-3 py-1.5 lg:justify-end">
+          <div className="flex min-h-9 items-center gap-3 px-3 py-1.5 lg:justify-end">
+            {snapshot.status === "ready" && loadedAt != null && (
+              <span className="text-[11px] text-muted-foreground">
+                Loaded <LoadedAgo at={loadedAt} />
+              </span>
+            )}
+            {snapshot.status === "ready" && (
+              <button
+                type="button"
+                onClick={retry}
+                className="text-[11px] font-medium text-muted-foreground underline-offset-2 transition-colors hover:text-foreground hover:underline"
+                title="Re-download the budget export and rebuild the snapshot"
+              >
+                Reload
+              </button>
+            )}
             <ReadOnlyNotice />
           </div>
         </div>

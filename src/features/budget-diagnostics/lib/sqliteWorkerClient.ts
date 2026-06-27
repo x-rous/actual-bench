@@ -123,6 +123,9 @@ export class SqliteWorkerClient {
 }
 
 let singleton: SqliteWorkerClient | null = null;
+// Which connection's budget DB the live worker currently holds. Lets callers
+// reuse an already-loaded snapshot across navigation instead of re-downloading.
+let loadedConnectionId: string | null = null;
 
 export function getSqliteWorkerClient(): SqliteWorkerClient {
   singleton ??= new SqliteWorkerClient();
@@ -132,4 +135,17 @@ export function getSqliteWorkerClient(): SqliteWorkerClient {
 export function resetSqliteWorkerClient() {
   singleton?.destroy();
   singleton = null;
+  loadedConnectionId = null;
+}
+
+/** Record that the live worker now holds the given connection's budget DB. */
+export function markSqliteWorkerLoaded(connectionId: string) {
+  loadedConnectionId = connectionId;
+}
+
+/** True when a live worker already holds the given connection's budget DB. */
+export function isSqliteWorkerLoadedFor(
+  connectionId: string | null | undefined
+): boolean {
+  return singleton !== null && loadedConnectionId != null && loadedConnectionId === connectionId;
 }
