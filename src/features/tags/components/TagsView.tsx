@@ -74,7 +74,7 @@ export function TagsView() {
       if (imported === 0) {
         toast.warning(
           result.skipped > 0
-            ? `No tags imported — ${result.skipped} row(s) skipped.`
+            ? `No tags imported - ${result.skipped} row(s) skipped.`
             : "No valid tags found in CSV."
         );
       } else {

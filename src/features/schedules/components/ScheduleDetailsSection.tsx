@@ -59,7 +59,7 @@ export function ScheduleDetailsSection({
             options={payeeOptions}
             value={payeeId}
             onChange={(value) => setFieldValue("payeeId", value)}
-            placeholder="— none —"
+            placeholder="- none -"
           />
           {errors.payeeId?.message && (
             <p className="text-xs text-destructive">{errors.payeeId.message}</p>
@@ -73,7 +73,7 @@ export function ScheduleDetailsSection({
             options={accountOptions}
             value={accountId}
             onChange={(value) => setFieldValue("accountId", value)}
-            placeholder="— none —"
+            placeholder="- none -"
           />
           {errors.accountId?.message && (
             <p className="text-xs text-destructive">{errors.accountId.message}</p>

@@ -359,7 +359,7 @@ export function RulesTable({ onEdit, onMerge, payeeId, categoryId, accountId }: 
                       </span>
                     </td>
 
-                    {/* Conditions — one chip per line */}
+                    {/* Conditions - one chip per line */}
                     <td className="px-3 py-2.5">
                       {rule.conditions.length === 0 ? (
                         <span className="flex items-center gap-1.5">
@@ -378,7 +378,7 @@ export function RulesTable({ onEdit, onMerge, payeeId, categoryId, accountId }: 
                       )}
                     </td>
 
-                    {/* Actions — one chip per line */}
+                    {/* Actions - one chip per line */}
                     <td className="px-3 py-2.5">
                       {rule.actions.length === 0 ? (
                         <span className="text-[11px] italic text-muted-foreground">No actions</span>
@@ -437,7 +437,7 @@ export function RulesTable({ onEdit, onMerge, payeeId, categoryId, accountId }: 
                           variant="ghost"
                           size="icon-xs"
                           className="text-destructive hover:text-destructive disabled:opacity-30 disabled:cursor-not-allowed"
-                          title={isScheduleLinked ? "Rule is linked to a schedule — delete it from the Schedules page" : "Delete rule"}
+                          title={isScheduleLinked ? "Rule is linked to a schedule - delete it from the Schedules page" : "Delete rule"}
                           aria-label={isScheduleLinked ? "Delete (managed by schedule)" : "Delete"}
                           disabled={isScheduleLinked}
                           aria-disabled={isScheduleLinked}

@@ -211,7 +211,7 @@ export function ActionRow({
               placeholder="=IF(ISBLANK(notes), …)"
             />
             <span className="text-[10px] text-muted-foreground">
-              Excel formula — e.g. <code>{"=IF(ISBLANK(notes), imported_payee, notes)"}</code>
+              Excel formula - e.g. <code>{"=IF(ISBLANK(notes), imported_payee, notes)"}</code>
             </span>
           </div>
         ) : isTemplate ? (
@@ -223,7 +223,7 @@ export function ActionRow({
               placeholder="{{handlebars expression…}}"
             />
             <span className="text-[10px] text-muted-foreground">
-              Handlebars template — e.g. <code>{"{{regex imported_payee 'foo' 'bar'}}"}</code>
+              Handlebars template - e.g. <code>{"{{regex imported_payee 'foo' 'bar'}}"}</code>
             </span>
           </div>
         ) : fieldDef?.type === "boolean" ? (

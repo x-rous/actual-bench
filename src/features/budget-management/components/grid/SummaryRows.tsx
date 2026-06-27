@@ -310,7 +310,7 @@ function SummaryHeaderCell({
         {cell
           ? formatSummaryCellValue(cell)
           : value == null
-            ? "—"
+            ? "-"
             : formatSummary(value)}
       </span>
     </div>

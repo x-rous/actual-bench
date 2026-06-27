@@ -139,15 +139,15 @@ function BasicsSection() {
 
       <div>
         <Heading>Required field</Heading>
-        <Kv label="table">Target table name — e.g. <code className="font-mono text-[11px]">transactions</code>, <code className="font-mono text-[11px]">payees</code>, <code className="font-mono text-[11px]">categories</code>, <code className="font-mono text-[11px]">schedules</code>, <code className="font-mono text-[11px]">rules</code></Kv>
+        <Kv label="table">Target table name - e.g. <code className="font-mono text-[11px]">transactions</code>, <code className="font-mono text-[11px]">payees</code>, <code className="font-mono text-[11px]">categories</code>, <code className="font-mono text-[11px]">schedules</code>, <code className="font-mono text-[11px]">rules</code></Kv>
       </div>
 
       <div>
         <Heading>Optional fields</Heading>
-        <Kv label="filter">Filter conditions — see Filters section</Kv>
-        <Kv label="select">Fields to return — array of field names or aggregate objects</Kv>
-        <Kv label="groupBy">Array of fields to group by — pair with aggregates in select</Kv>
-        <Kv label="calculate">Scalar aggregate — returns a single value instead of rows</Kv>
+        <Kv label="filter">Filter conditions - see Filters section</Kv>
+        <Kv label="select">Fields to return - array of field names or aggregate objects</Kv>
+        <Kv label="groupBy">Array of fields to group by - pair with aggregates in select</Kv>
+        <Kv label="calculate">Scalar aggregate - returns a single value instead of rows</Kv>
         <Kv label="orderBy">Array of field names or <code className="font-mono text-[11px]">{"{ field: \"asc\" | \"desc\" }"}</code></Kv>
         <Kv label="limit">Maximum number of rows to return</Kv>
         <Kv label="offset">Number of rows to skip (for pagination)</Kv>
@@ -179,35 +179,35 @@ function FiltersSection() {
       </div>
 
       <div>
-        <Heading>Comparison — $gte, $lte</Heading>
+        <Heading>Comparison - $gte, $lte</Heading>
         <Snippet
           code={`"filter": {\n  "date": { "$gte": "2025-01-01", "$lte": "2025-01-31" }\n}`}
         />
       </div>
 
       <div>
-        <Heading>$oneof — match any in a list</Heading>
+        <Heading>$oneof - match any in a list</Heading>
         <Snippet
           code={`"filter": { "payee": { "$oneof": ["id-1", "id-2", "id-3"] } }`}
         />
       </div>
 
       <div>
-        <Heading>$and — all conditions must match</Heading>
+        <Heading>$and - all conditions must match</Heading>
         <Snippet
           code={`"filter": {\n  "$and": [\n    { "date": { "$gte": "2025-01-01" } },\n    { "category": null }\n  ]\n}`}
         />
       </div>
 
       <div>
-        <Heading>$or — any condition must match</Heading>
+        <Heading>$or - any condition must match</Heading>
         <Snippet
           code={`"filter": {\n  "$or": [\n    { "payee": "id-1" },\n    { "payee": "id-2" }\n  ]\n}`}
         />
       </div>
 
       <div>
-        <Heading>$like — pattern match</Heading>
+        <Heading>$like - pattern match</Heading>
         <Snippet code={`"filter": { "notes": { "$like": "%refund%" } }`} />
       </div>
     </div>
@@ -266,8 +266,8 @@ function AggregatesSection() {
 
       <div>
         <Heading>Functions</Heading>
-        <Kv label="$count">Count rows — typically <code className="font-mono text-[11px]">{"{ \"$count\": \"$id\" }"}</code></Kv>
-        <Kv label="$sum">Sum a numeric field — typically amount</Kv>
+        <Kv label="$count">Count rows - typically <code className="font-mono text-[11px]">{"{ \"$count\": \"$id\" }"}</code></Kv>
+        <Kv label="$sum">Sum a numeric field - typically amount</Kv>
         <Kv label="$avg">Average a numeric field</Kv>
         <Kv label="$min">Minimum value</Kv>
         <Kv label="$max">Maximum value</Kv>
@@ -401,7 +401,7 @@ function DataModelSection() {
   return (
     <div className="flex flex-col gap-5">
       <Para>
-        ActualQL exposes the following tables. Use dotted paths to traverse relationships —
+        ActualQL exposes the following tables. Use dotted paths to traverse relationships -
         e.g. <code className="font-mono text-[11px]">payee.name</code> on a{" "}
         <code className="font-mono text-[11px]">transactions</code> query resolves the linked payee&apos;s name.
       </Para>
@@ -421,7 +421,7 @@ function DataModelSection() {
             </thead>
             <tbody className="font-mono">
               {[
-                ["id", "string", "UUID — primary key"],
+                ["id", "string", "UUID - primary key"],
                 ["date", "string", "ISO date, e.g. 2025-01-15"],
                 ["amount", "integer", "Cents (÷ 100 for dollar value). Negative = expense"],
                 ["notes", "string | null", "Free-text memo"],
@@ -555,7 +555,7 @@ function DataModelSection() {
                 ["id", "UUID"],
                 ["name", "Human-readable name"],
                 ["next_date", "ISO date of next occurrence"],
-                ["posts_transaction", "boolean — auto-post when due"],
+                ["posts_transaction", "boolean - auto-post when due"],
                 ["rule", "Foreign key → rules.id (nullable)"],
               ].map(([f, n]) => (
                 <tr key={f} className="border-b border-border/40">
@@ -591,8 +591,8 @@ function DataModelSection() {
                 ["category.group", "Category group ID"],
                 ["category.group.name", "Category group display name"],
                 ["account.name", "Account display name"],
-                ["account.offbudget", "boolean — off-budget / tracking account"],
-                ["account.closed", "boolean — account is closed"],
+                ["account.offbudget", "boolean - off-budget / tracking account"],
+                ["account.closed", "boolean - account is closed"],
               ].map(([p, r]) => (
                 <tr key={p} className="border-b border-border/40">
                   <td className="px-3 py-1 text-foreground">{p}</td>

@@ -9,4 +9,4 @@ export type Scope =
   | "cell-edit"     // budget cell, input focused
   | "group-cell"    // group month aggregate (first column of a group row's data)
   | "row-label"     // first-column label cell (group or category name)
-  | "workspace";    // outermost workspace container — global shortcuts
+  | "workspace";    // outermost workspace container - global shortcuts

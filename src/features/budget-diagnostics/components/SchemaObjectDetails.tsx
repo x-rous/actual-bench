@@ -90,7 +90,7 @@ function ColumnsTable({ columns }: { columns: ColumnInfo[] }) {
                 {column.notNull ? "Yes" : "No"}
               </td>
               <td className="whitespace-nowrap px-3 py-1.5 font-mono tabular-nums text-muted-foreground">
-                {column.primaryKeyPosition || "—"}
+                {column.primaryKeyPosition || "-"}
               </td>
               <td
                 className="max-w-56 truncate px-3 py-1.5 font-mono text-muted-foreground"
@@ -144,7 +144,7 @@ function IndexesTable({ indexes }: { indexes: IndexInfo[] }) {
                 {index.unique ? "Yes" : "No"}
               </td>
               <td className="whitespace-nowrap px-3 py-1.5 font-mono text-muted-foreground">
-                {index.origin ?? "—"}
+                {index.origin ?? "-"}
               </td>
               <td className="whitespace-nowrap px-3 py-1.5 text-muted-foreground">
                 {index.partial ? "Yes" : "No"}

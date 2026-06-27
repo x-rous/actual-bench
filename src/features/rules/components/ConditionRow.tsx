@@ -157,7 +157,7 @@ function ConditionValueInput({
         placeholder="regex pattern…"
       />
       <span className="text-[10px] text-muted-foreground">
-        Regex pattern — e.g. <code>^amazon</code>
+        Regex pattern - e.g. <code>^amazon</code>
       </span>
     </div>
   ) : (

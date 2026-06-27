@@ -219,7 +219,7 @@ function TagsTableRowComponent({
           />
         ) : (
           <span className="block truncate">
-            {entity.description || <span className="italic text-muted-foreground/50">—</span>}
+            {entity.description || <span className="italic text-muted-foreground/50">-</span>}
           </span>
         )}
       </td>

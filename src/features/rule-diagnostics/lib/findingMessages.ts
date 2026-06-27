@@ -112,9 +112,9 @@ function composeMessage(
     }
     case "RULE_DUPLICATE_GROUP": {
       const count = affected.length;
-      const detail = `${count} rules in this group are structurally identical — same stage, condition operator, conditions, and actions.`;
+      const detail = `${count} rules in this group are structurally identical - same stage, condition operator, conditions, and actions.`;
       return {
-        title: `${count} duplicate rules — consider merging`,
+        title: `${count} duplicate rules - consider merging`,
         message: `Use the Merge button to collapse them into one rule.`,
         details: [detail],
       };
@@ -128,7 +128,7 @@ function composeMessage(
         details.push(`Differs by ${diffPhrase} (out of conditions and actions combined).`);
       }
       return {
-        title: "Near-duplicate rules — consider merging",
+        title: "Near-duplicate rules - consider merging",
         message: `This rule differs from another rule in the same stage by only ${diffPhrase}. Use the Merge button to combine them, or confirm the difference is intentional. Other rule: ${other}.`,
         details: details.length > 0 ? details : undefined,
       };

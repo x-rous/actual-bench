@@ -92,13 +92,13 @@ export function ConditionChip({
 
   return (
     <div className="flex items-center gap-1 flex-wrap">
-      {/* Field — indigo */}
+      {/* Field - indigo */}
       <span className="rounded px-1 py-0.5 text-[11px] font-semibold bg-indigo-50 text-indigo-700 dark:bg-indigo-950/30 dark:text-indigo-400">
         {fieldLabel}
       </span>
-      {/* Op — muted */}
+      {/* Op - muted */}
       <span className="text-[11px] text-muted-foreground">{condition.op}</span>
-      {/* Values — amber for missing refs, sky for entity references, emerald for plain strings */}
+      {/* Values - amber for missing refs, sky for entity references, emerald for plain strings */}
       {resolvedValues.map(({ label, missing }, i) => (
         <span key={i} className={cn(
           "rounded px-1 py-0.5 text-[11px] font-medium",

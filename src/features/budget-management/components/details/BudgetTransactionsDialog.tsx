@@ -326,7 +326,7 @@ function WeeklySpending({
 
   return (
     <div className="flex h-full flex-col gap-1">
-      {/* Amount labels — row above bars, outside each bar button */}
+      {/* Amount labels - row above bars, outside each bar button */}
       <div className="flex shrink-0 gap-1.5">
         {buckets.map((bucket) => (
           <div
@@ -338,7 +338,7 @@ function WeeklySpending({
         ))}
       </div>
 
-      {/* Bar chart — flex-1 so each button gets a properly defined height */}
+      {/* Bar chart - flex-1 so each button gets a properly defined height */}
       <div className="flex min-h-0 flex-1 gap-1.5">
         {buckets.map((bucket) => {
           const isActive = selectedId === bucket.id;
@@ -639,7 +639,7 @@ export function BudgetTransactionsDialog({ target, browserOptions, statesByMonth
           </div>
         </DialogHeader>
 
-        {/* Summary strip — only when data is loaded */}
+        {/* Summary strip - only when data is loaded */}
         {hasData && (
           <div className="shrink-0 border-b border-border/70 bg-muted/5 px-4 py-2">
             <div className="flex items-stretch divide-x divide-border/50">
@@ -668,7 +668,7 @@ export function BudgetTransactionsDialog({ target, browserOptions, statesByMonth
               />
               <StripItem
                 label="Average"
-                value={analytics.averageTransaction > 0 ? formatSigned(analytics.averageTransaction) : "—"}
+                value={analytics.averageTransaction > 0 ? formatSigned(analytics.averageTransaction) : "-"}
               />
             </div>
           </div>

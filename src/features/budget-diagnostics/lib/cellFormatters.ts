@@ -152,7 +152,7 @@ export function formatCellDisplay(column: string, value: unknown): CellDisplay {
   if (integer !== null && isDateColumn(column)) {
     const formatted = formatDateInteger(integer);
     return {
-      text: formatted ?? "—",
+      text: formatted ?? "-",
       title: String(value),
       kind: "date",
     };

@@ -175,7 +175,7 @@ export const ACTION_META: Record<ActionId, ActionMeta> = {
     id: "selection.toggle-carryover",
     label: "Toggle carryover (rollover) on selected months",
     category: "selection",
-    description: "Anchor category only — multi-category selections fall back to the anchor's category",
+    description: "Anchor category only - multi-category selections fall back to the anchor's category",
   },
 
   "help.open-shortcuts": {

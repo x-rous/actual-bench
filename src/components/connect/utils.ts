@@ -34,7 +34,7 @@ export function parseApiError(err: unknown): string {
   // they add no information beyond what the status-based messages already say.
   const detail =
     raw && !["fetch failed", "failed to fetch"].includes(raw.toLowerCase())
-      ? ` — ${raw}`
+      ? ` - ${raw}`
       : "";
 
   if (status === -1 || status === 0)    return `Cannot reach the server. Check the URL and that it is running.${detail}`;
@@ -44,7 +44,7 @@ export function parseApiError(err: unknown): string {
                                         return `Server unavailable (HTTP ${status})${detail}.`;
   if (status >= 500)                    return `Server error (HTTP ${status})${detail}.`;
   if (status >= 400)                    return `Request error (HTTP ${status})${detail}.`;
-  return detail ? detail.slice(4) : "Unexpected error."; // strip leading " — "
+  return detail ? detail.slice(4) : "Unexpected error."; // strip leading " - "
 }
 
 // ─── Types ────────────────────────────────────────────────────────────────────

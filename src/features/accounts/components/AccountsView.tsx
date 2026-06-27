@@ -116,7 +116,7 @@ export function AccountsView() {
       if (imported === 0) {
         toast.warning("No valid rows found in CSV.");
       } else if (result.skipped > 0) {
-        toast.success(`Imported ${imported} account${imported !== 1 ? "s" : ""} (${result.skipped} skipped — empty name).`);
+        toast.success(`Imported ${imported} account${imported !== 1 ? "s" : ""} (${result.skipped} skipped - empty name).`);
       } else {
         toast.success(`Imported ${imported} account${imported !== 1 ? "s" : ""}.`);
       }

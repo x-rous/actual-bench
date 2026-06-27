@@ -158,7 +158,7 @@ export function StagedCategoryTransferDialog({
       destServerBudgeted: monthData?.categoriesById[destinationCategoryId]?.budgeted ?? 0,
     });
 
-    toast.success("Transfer staged — save to apply");
+    toast.success("Transfer staged - save to apply");
     onClose();
   }
 

@@ -42,7 +42,7 @@ export async function apiRequest<T>(
       kind: "api",
       status: 0,
       message:
-        err instanceof Error ? err.message : "Network error — is the dev server running?",
+        err instanceof Error ? err.message : "Network error - is the dev server running?",
     };
     throw error;
   }
@@ -134,7 +134,7 @@ export async function apiDownload(
       kind: "api",
       status: 0,
       message:
-        err instanceof Error ? err.message : "Network error — is the dev server running?",
+        err instanceof Error ? err.message : "Network error - is the dev server running?",
     };
     throw error;
   }

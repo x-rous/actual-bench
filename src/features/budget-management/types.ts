@@ -42,7 +42,7 @@ export type LoadedGroup = {
   name: string;
   isIncome: boolean;
   hidden: boolean;
-  categoryIds: string[];  // ordered list — use with LoadedMonthState.categoriesById
+  categoryIds: string[];  // ordered list - use with LoadedMonthState.categoriesById
   budgeted: number;
   /** Actual money flow for the month: `spent` (expense groups) or `received` (income groups). */
   actuals: number;

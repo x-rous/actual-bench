@@ -91,7 +91,7 @@ export function SchedulesView() {
       if (result.schedules.length === 0) {
         toast.warning(
           result.skipped > 0
-            ? `No schedules imported — ${result.skipped} row(s) skipped.`
+            ? `No schedules imported - ${result.skipped} row(s) skipped.`
             : "No valid schedules found in CSV."
         );
       } else {

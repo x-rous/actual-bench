@@ -48,7 +48,7 @@ async function upstreamDownload(
     const message =
       err instanceof Error ? err.message : "Network error reaching API server";
     const ms = Date.now() - start;
-    logger.warn(`${method} 502 ${path} (${ms}ms) [${reqId}] — ${message}`);
+    logger.warn(`${method} 502 ${path} (${ms}ms) [${reqId}] - ${message}`);
     return NextResponse.json({ error: message }, { status: 502 });
   }
 
@@ -67,7 +67,7 @@ async function upstreamDownload(
       }
     }
     const ms = Date.now() - start;
-    logger.warn(`${method} ${upstream.status} ${path} (${ms}ms) [${reqId}] — ${message}`);
+    logger.warn(`${method} ${upstream.status} ${path} (${ms}ms) [${reqId}] - ${message}`);
     return NextResponse.json(
       { error: message },
       { status: upstream.status }

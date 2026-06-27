@@ -61,7 +61,7 @@ export const logger = {
   },
 
   exception(message: string, error: unknown, meta?: LogMeta) {
-    write("error", `${message} — ${serializeError(error)}`, meta);
+    write("error", `${message} - ${serializeError(error)}`, meta);
   },
 
   child(context: LogMeta) {
@@ -79,7 +79,7 @@ export const logger = {
         write("error", message, { ...context, ...(meta ?? {}) });
       },
       exception(message: string, error: unknown, meta?: LogMeta) {
-        write("error", `${message} — ${serializeError(error)}`, {
+        write("error", `${message} - ${serializeError(error)}`, {
           ...context,
           ...(meta ?? {}),
         });

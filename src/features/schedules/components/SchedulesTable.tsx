@@ -419,7 +419,7 @@ export function SchedulesTable({
                           <Check className="h-3.5 w-3.5" />
                         </span>
                       ) : (
-                        <span className="text-muted-foreground/40">—</span>
+                        <span className="text-muted-foreground/40">-</span>
                       )}
                     </td>
 
@@ -430,22 +430,22 @@ export function SchedulesTable({
 
                     {/* Repeats */}
                     <td className="px-3 py-2 text-muted-foreground">
-                      {recurSummary(entity.date) || <span className="italic text-muted-foreground/40">—</span>}
+                      {recurSummary(entity.date) || <span className="italic text-muted-foreground/40">-</span>}
                     </td>
 
                     {/* Payee */}
                     <td className="px-3 py-2 text-muted-foreground">
-                      {payeeName || <span className="italic text-muted-foreground/40">—</span>}
+                      {payeeName || <span className="italic text-muted-foreground/40">-</span>}
                     </td>
 
                     {/* Account */}
                     <td className="px-3 py-2 text-muted-foreground">
-                      {accountName || <span className="italic text-muted-foreground/40">—</span>}
+                      {accountName || <span className="italic text-muted-foreground/40">-</span>}
                     </td>
 
                     {/* Auto Add */}
                     <td className="px-3 py-2 text-center">
-                      {entity.postsTransaction ? "Auto" : <span className="text-muted-foreground/40">—</span>}
+                      {entity.postsTransaction ? "Auto" : <span className="text-muted-foreground/40">-</span>}
                     </td>
 
                     {/* Row actions */}

@@ -144,7 +144,7 @@ export function RuleDiagnosticsView() {
           >
             <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
             <span>
-              Results are out of date — the working set has changed since this report was generated.
+              Results are out of date - the working set has changed since this report was generated.
             </span>
             <Button
               variant="ghost"

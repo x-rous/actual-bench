@@ -98,7 +98,7 @@ export function DiagnosticsTable({
         header: "Row",
         cell: ({ row }) => {
           const finding = row.original;
-          if (!finding.table && !finding.rowId) return <span className="text-muted-foreground">—</span>;
+          if (!finding.table && !finding.rowId) return <span className="text-muted-foreground">-</span>;
           return (
             <div className="max-w-56 truncate text-xs" title={`${finding.table ?? ""}:${finding.rowId ?? ""}`}>
               {finding.table}
@@ -113,7 +113,7 @@ export function DiagnosticsTable({
         cell: ({ row }) => {
           const finding = row.original;
           if (!finding.relatedTable && !finding.relatedId) {
-            return <span className="text-muted-foreground">—</span>;
+            return <span className="text-muted-foreground">-</span>;
           }
           return (
             <div

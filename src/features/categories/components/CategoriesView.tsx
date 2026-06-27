@@ -100,7 +100,7 @@ export function CategoriesView() {
       const total = groupsImported + catsImported;
 
       if (total === 0) {
-        toast.warning(result.skipped > 0 ? `No rows imported — ${result.skipped} skipped.` : "No valid rows found in CSV.");
+        toast.warning(result.skipped > 0 ? `No rows imported - ${result.skipped} skipped.` : "No valid rows found in CSV.");
       } else {
         const parts: string[] = [];
         if (groupsImported > 0) parts.push(`${groupsImported} group${groupsImported !== 1 ? "s" : ""}`);

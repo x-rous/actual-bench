@@ -34,7 +34,7 @@ export function buildPayeeDeleteWarning(
 ): string {
   // txLine is only set when we have a definite non-zero count; loading is handled separately.
   const txLine = !loading && txCount && txCount > 0
-    ? `${plural(txCount, "transaction")} will be unlinked — their payee will be cleared.`
+    ? `${plural(txCount, "transaction")} will be unlinked - their payee will be cleared.`
     : null;
 
   if (ruleCount > 0 && txLine) {
@@ -79,7 +79,7 @@ export function buildPayeeBulkDeleteWarning(
   if (loading) {
     parts.push("Checking usage...");
   } else if (txCount && txCount > 0) {
-    parts.push(`${plural(txCount, "transaction")} will be unlinked (not deleted) — their payee will be cleared.`);
+    parts.push(`${plural(txCount, "transaction")} will be unlinked (not deleted) - their payee will be cleared.`);
   }
 
   return parts.join(" ");
@@ -215,7 +215,7 @@ export function buildAccountDeleteWarning(
   if (balance !== 0) {
     parts.push(
       `Warning: "${name}" has an outstanding balance of ${formatBalance(balance)}. ` +
-      `Deleting it may cause inconsistencies — consider closing instead.`
+      `Deleting it may cause inconsistencies - consider closing instead.`
     );
   }
 
@@ -226,7 +226,7 @@ export function buildAccountDeleteWarning(
   if (loading) {
     parts.push("Checking usage...");
   } else if (txCount && txCount > 0) {
-    parts.push(`Contains ${plural(txCount, "transaction")} — these will be permanently lost.`);
+    parts.push(`Contains ${plural(txCount, "transaction")} - these will be permanently lost.`);
   }
 
   if (parts.length === 0) {
@@ -247,7 +247,7 @@ export function buildAccountBulkCloseWarning(
   if (nonZeroBalanceCount > 0) {
     return (
       `Close ${plural(count, "account")}? ` +
-      `${plural(nonZeroBalanceCount, "account")} ${nonZeroBalanceCount === 1 ? "has" : "have"} a non-zero balance — ` +
+      `${plural(nonZeroBalanceCount, "account")} ${nonZeroBalanceCount === 1 ? "has" : "have"} a non-zero balance - ` +
       `verify transfers are handled in Actual Budget before saving.`
     );
   }

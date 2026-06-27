@@ -40,7 +40,7 @@ function dispatch<Ctx>(
   const handler = handlers[action];
   if (!handler) return;
   const result = handler(e, ctx);
-  if (result === false) return; // explicit no-op — let the event continue
+  if (result === false) return; // explicit no-op - let the event continue
   e.preventDefault();
 }
 

@@ -95,7 +95,7 @@ export function PageLayout({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-      {/* Toolbar — always visible regardless of loading/error state */}
+      {/* Toolbar - always visible regardless of loading/error state */}
       <div className="flex shrink-0 items-center justify-between gap-3 border-b border-border px-4 py-2">
         <div className="flex items-center gap-2">
           <h1 className="text-sm font-semibold">{title}</h1>

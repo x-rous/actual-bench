@@ -401,7 +401,7 @@ export function RuleDrawer({ open, onOpenChange, ruleId, seed }: Props) {
               )}
               {!isNew && isScheduleLinked && (
                 <span className="text-[11px] italic text-muted-foreground">
-                  Managed by schedule — delete via Schedules page
+                  Managed by schedule - delete via Schedules page
                 </span>
               )}
               <Button
