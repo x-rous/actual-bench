@@ -10,7 +10,7 @@ import { useStagedStore } from "@/store/staged";
 import { generateId } from "@/lib/uuid";
 import { usePayees } from "../hooks/usePayees";
 import { PayeesTable } from "./PayeesTable";
-import { RuleDrawer } from "@/features/rules/components/RuleDrawer";
+import dynamic from "next/dynamic";
 import type { RuleSeed } from "@/features/rules/components/RuleDrawer";
 import { PayeesTableOverlays } from "./PayeesTableOverlays";
 import type { PayeeDeleteIntent } from "./PayeesTableOverlays";
@@ -18,6 +18,13 @@ import { PayeesMergeDialog } from "./PayeesMergeDialog";
 import type { PayeeMergeState } from "./PayeesMergeDialog";
 import { exportPayeesToCsv } from "../csv/payeesCsvExport";
 import { importPayeesFromCsv } from "../csv/payeesCsvImport";
+
+// Lazy-loaded: the rule builder is a secondary action on this page, so keep its
+// bundle out of the initial Payees route load.
+const RuleDrawer = dynamic(
+  () => import("@/features/rules/components/RuleDrawer").then((m) => m.RuleDrawer),
+  { ssr: false },
+);
 
 export function PayeesView() {
   const importInputRef = useRef<HTMLInputElement>(null);

@@ -14,12 +14,19 @@ import { useAccountBalances } from "../hooks/useAccountBalances";
 import { AccountsTable } from "./AccountsTable";
 import { AccountFormDrawer } from "./AccountFormDrawer";
 import type { AccountFormValues } from "../schemas/account.schema";
-import { RuleDrawer } from "@/features/rules/components/RuleDrawer";
+import dynamic from "next/dynamic";
 import type { RuleSeed } from "@/features/rules/components/RuleDrawer";
 import { AccountsTableOverlays } from "./AccountsTableOverlays";
 import type { AccountDeleteIntent } from "./AccountsTableOverlays";
 import { exportAccountsToCsv } from "../csv/accountsCsvExport";
 import { importAccountsFromCsv } from "../csv/accountsCsvImport";
+
+// Lazy-loaded: the rule builder is a secondary action on this page, so keep its
+// bundle out of the initial Accounts route load.
+const RuleDrawer = dynamic(
+  () => import("@/features/rules/components/RuleDrawer").then((m) => m.RuleDrawer),
+  { ssr: false },
+);
 
 export function AccountsView() {
   const [ruleDrawerOpen, setRuleDrawerOpen] = useState(false);

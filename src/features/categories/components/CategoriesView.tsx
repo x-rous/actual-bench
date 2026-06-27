@@ -10,12 +10,19 @@ import { useStagedStore } from "@/store/staged";
 import { generateId } from "@/lib/uuid";
 import { useCategoryGroups } from "../hooks/useCategoryGroups";
 import { CategoriesTable } from "./CategoriesTable";
-import { RuleDrawer } from "@/features/rules/components/RuleDrawer";
+import dynamic from "next/dynamic";
 import type { RuleSeed } from "@/features/rules/components/RuleDrawer";
 import { CategoriesTableOverlays } from "./CategoriesTableOverlays";
 import type { CategoryDeleteIntent, CategoryInspectTarget } from "./CategoriesTableOverlays";
 import { exportCategoriesToCsv } from "../csv/categoriesCsvExport";
 import { importCategoriesFromCsv } from "../csv/categoriesCsvImport";
+
+// Lazy-loaded: the rule builder is a secondary action on this page, so keep its
+// bundle out of the initial Categories route load.
+const RuleDrawer = dynamic(
+  () => import("@/features/rules/components/RuleDrawer").then((m) => m.RuleDrawer),
+  { ssr: false },
+);
 
 export function CategoriesView() {
   const { isLoading, isError, error, refetch } = useCategoryGroups();

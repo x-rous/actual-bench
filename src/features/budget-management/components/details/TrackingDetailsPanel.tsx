@@ -16,7 +16,7 @@ import {
   PrimaryMetric,
   StagedImpactBlock,
 } from "./DetailsPrimitives";
-import { BudgetTransactionsDialog } from "./BudgetTransactionsDialog";
+import dynamic from "next/dynamic";
 import { BudgetNoteSection, type BudgetNoteTarget } from "./BudgetNoteSection";
 import { useSpendingDetailsShortcut } from "./useSpendingDetailsShortcut";
 
@@ -44,6 +44,13 @@ const PERIOD_TOOLTIP = {
   fullExpenseBudget: "Sum of expenses budgeted across the visible 12 months.",
   plannedResult: "Full-period income budgeted minus expenses budgeted.",
 } as const;
+
+// Lazy-loaded: the transactions dialog (large) is only shown when a user drills
+// into a cell, so keep it out of the initial budget workspace bundle.
+const BudgetTransactionsDialog = dynamic(
+  () => import("./BudgetTransactionsDialog").then((m) => m.BudgetTransactionsDialog),
+  { ssr: false },
+);
 
 export function TrackingDetailsPanel({
   metrics,
