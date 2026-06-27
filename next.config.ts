@@ -7,6 +7,10 @@ const pkg = JSON.parse(
 ) as { version?: string };
 
 const nextConfig: NextConfig = {
+  // Emit a self-contained standalone server (server.js + only the traced
+  // runtime node_modules) so the Docker runtime image doesn't carry the full
+  // production dependency tree. Output lands in `${distDir}/standalone`.
+  output: "standalone",
   // Enable React Compiler via the Turbopack/SWC-native path (top-level in
   // Next.js 16 — promoted out of experimental).
   // babel-plugin-react-compiler remains in devDependencies for Jest only.

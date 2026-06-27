@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 /**
- * Branded startup wrapper for `next start`.
+ * Branded startup wrapper for the Next.js standalone server.
  *
- * Spawns the Next.js production server, pipes its stdout through a line
+ * Spawns the standalone production server (server.js), pipes its stdout through a line
  * filter that suppresses the default Next.js banner and replaces the
  * "✓ Ready in Xms" line with a single clean branded message. All other
  * output (errors, warnings, request logs) is forwarded unchanged so
@@ -58,7 +58,7 @@ function filterLine(line) {
   return line;
 }
 
-const child = spawn("node_modules/.bin/next", ["start"], {
+const child = spawn("node", ["server.js"], {
   stdio: ["inherit", "pipe", "pipe"],
   env: process.env,
 });
