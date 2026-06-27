@@ -34,5 +34,5 @@ export function useBudgetPreferences(): BudgetPreferences {
     refetchIntervalInBackground: false,
   });
 
-  return data ?? { upcomingScheduledTransactionLength: 14 };
+  return data ?? { upcomingScheduledTransactionLength: 14, budgetMode: "envelope" };
 }

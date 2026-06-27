@@ -1,14 +1,7 @@
 import { runQuery } from "@/lib/api/query";
-import { deriveBudgetMode } from "@/lib/budget/deriveBudgetMode";
-import {
-  ZERO_BUDGET_COUNT_QUERY,
-  REFLECT_BUDGET_COUNT_QUERY,
-} from "@/lib/budget/budgetModeQueries";
+import { fetchBudgetPreferences } from "@/lib/api/preferences";
 import type { ConnectionInstance } from "@/store/connection";
 import type { BudgetMode, BudgetOverviewSnapshot, OverviewStatKey } from "../types";
-
-// Re-exported so existing callers / tests inside this feature continue to work.
-export { ZERO_BUDGET_COUNT_QUERY, REFLECT_BUDGET_COUNT_QUERY };
 
 type ScalarCountQuery = {
   ActualQLquery: {
@@ -124,8 +117,6 @@ function formatBudgetingSince(dateString: string): string {
   });
 }
 
-// deriveBudgetMode is now shared from src/lib/budget/deriveBudgetMode.ts
-
 async function fetchOverviewCountWithRetry(
   connection: ConnectionInstance,
   statKey: OverviewCountKey
@@ -151,12 +142,10 @@ async function fetchBudgetModeWithRetry(
 ): Promise<BudgetMode | null> {
   for (let attempt = 1; attempt <= OVERVIEW_QUERY_MAX_ATTEMPTS; attempt += 1) {
     try {
-      const [zeroBudgetCount, reflectBudgetCount] = await Promise.all([
-        runScalarCountQuery(connection, ZERO_BUDGET_COUNT_QUERY),
-        runScalarCountQuery(connection, REFLECT_BUDGET_COUNT_QUERY),
-      ]);
-
-      return deriveBudgetMode(zeroBudgetCount, reflectBudgetCount);
+      // Detected from the `budgetType` preference (see fetchBudgetPreferences),
+      // not from budget-table row counts — correct even for empty budgets.
+      const { budgetMode } = await fetchBudgetPreferences(connection);
+      return budgetMode === "tracking" ? "Tracking" : "Envelope";
     } catch (error) {
       logOverviewQueryFailure("budgetMode", attempt, error);
       if (attempt === OVERVIEW_QUERY_MAX_ATTEMPTS) {
