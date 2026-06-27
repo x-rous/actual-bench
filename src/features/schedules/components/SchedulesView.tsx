@@ -14,7 +14,14 @@ import { SchedulesTable } from "./SchedulesTable";
 import { ScheduleFormDrawer } from "./ScheduleFormDrawer";
 import { SchedulesTableOverlays } from "./SchedulesTableOverlays";
 import type { ScheduleDeleteIntent } from "./SchedulesTableOverlays";
-import { RuleDrawer } from "@/features/rules/components/RuleDrawer";
+import dynamic from "next/dynamic";
+
+// Lazy-loaded: the rule builder is a secondary action on this page, so keep its
+// bundle out of the initial Schedules route load.
+const RuleDrawer = dynamic(
+  () => import("@/features/rules/components/RuleDrawer").then((m) => m.RuleDrawer),
+  { ssr: false },
+);
 
 export function SchedulesView() {
   const { isLoading, isError, error, refetch } = useSchedules();

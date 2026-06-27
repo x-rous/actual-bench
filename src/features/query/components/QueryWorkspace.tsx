@@ -14,7 +14,7 @@ import { SaveQueryDialog } from "./SaveQueryDialog";
 import { QueryExamplesPanel } from "./QueryExamplesPanel";
 import { QueryExplanationPanel } from "./QueryExplanationPanel";
 import { QueryLintPanel } from "./QueryLintPanel";
-import { QueryReferenceDialog } from "./QueryReferenceDialog";
+import dynamic from "next/dynamic";
 import { parseQuery, lintQuery } from "../lib/queryValidation";
 import { formatJson } from "../lib/queryFormatting";
 import { explainQuery } from "../lib/queryExplain";
@@ -176,6 +176,13 @@ function LeftPanel({
     </aside>
   );
 }
+
+// Lazy-loaded: the reference dialog is only shown on demand, so keep its large
+// bundle out of the initial Query route load.
+const QueryReferenceDialog = dynamic(
+  () => import("./QueryReferenceDialog").then((m) => m.QueryReferenceDialog),
+  { ssr: false },
+);
 
 export function QueryWorkspace() {
   const connection = useConnectionStore(selectActiveInstance);
