@@ -60,7 +60,7 @@ export function BudgetSelectionSummary({
       aria-live="polite"
       aria-label="Selection summary"
     >
-      {/* Global staged edits — always visible */}
+      {/* Global staged edits - always visible */}
       {totalStaged > 0 ? (
         <>
           <span

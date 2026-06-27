@@ -60,7 +60,7 @@ export function useEntityUsage(
   }, [entityId, entityType, open, groupField, stagedCategories, stagedAccounts, stagedPayees, stagedSchedules]);
 
   const { data: txCounts, isLoading: txLoading } = useTransactionCountsForIds(
-    groupField ?? "payee", // safe fallback — hook is disabled when groupField is null
+    groupField ?? "payee", // safe fallback - hook is disabled when groupField is null
     queryIds,
     { enabled: open && !!groupField && queryIds.length > 0 }
   );

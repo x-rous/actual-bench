@@ -35,7 +35,7 @@ export function BudgetDraftPanel() {
             variant="outline"
             className="text-amber-600 border-amber-300 dark:text-amber-400 dark:border-amber-700 cursor-pointer hover:bg-amber-50 dark:hover:bg-amber-950/20"
             onClick={() => setDialogOpen(true)}
-            aria-label={`${changeCount} staged change${changeCount !== 1 ? "s" : ""} — click to review`}
+            aria-label={`${changeCount} staged change${changeCount !== 1 ? "s" : ""} - click to review`}
             title="Review staged changes"
           >
             {changeCount} {changeCount === 1 ? "change" : "changes"}

@@ -95,7 +95,7 @@ export function SearchableCombobox({
   options,
   value,
   onChange,
-  placeholder = "— select —",
+  placeholder = "- select -",
   footer,
   triggerClassName,
 }: {
@@ -152,7 +152,7 @@ export function SearchableCombobox({
                 className="flex w-full items-center gap-2 px-2 py-1.5 text-xs text-muted-foreground hover:bg-accent hover:text-accent-foreground"
               >
                 <Check className={cn("h-3 w-3 shrink-0", value === "" ? "opacity-100" : "opacity-0")} />
-                — none —
+                - none -
               </button>
             </li>
             {filtered.filter((o) => !o.isGroupHeader).length === 0 ? (
@@ -206,7 +206,7 @@ export function MultiSearchableCombobox({
   options,
   values,
   onChange,
-  placeholder = "— select —",
+  placeholder = "- select -",
   triggerClassName,
 }: {
   options: ComboboxOption[];

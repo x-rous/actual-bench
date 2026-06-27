@@ -69,10 +69,10 @@ export function UsageInspectorDrawer({ entityId, entityType, open, onOpenChange 
             <>
               {/* ── Stats row ────────────────────────────────────────────── */}
               <div className="flex flex-wrap gap-2">
-                {/* Rules badge — always shown */}
+                {/* Rules badge - always shown */}
                 <StatBadge label="Rules" value={String(usage.ruleCount)} />
 
-                {/* Tx count badge — not for tags */}
+                {/* Tx count badge - not for tags */}
                 {usage.entityType !== "tag" && (
                   <StatBadge
                     label="Transactions"
@@ -81,7 +81,7 @@ export function UsageInspectorDrawer({ entityId, entityType, open, onOpenChange 
                   />
                 )}
 
-                {/* Balance badge — accounts only */}
+                {/* Balance badge - accounts only */}
                 {usage.entityType === "account" && usage.balance !== undefined && (
                   <StatBadge
                     label="Balance"
@@ -90,7 +90,7 @@ export function UsageInspectorDrawer({ entityId, entityType, open, onOpenChange 
                   />
                 )}
 
-                {/* Child count — category groups only */}
+                {/* Child count - category groups only */}
                 {usage.entityType === "categoryGroup" && usage.childCount !== undefined && (
                   <StatBadge label="Categories" value={String(usage.childCount)} />
                 )}

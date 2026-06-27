@@ -331,7 +331,7 @@ export function Sidebar() {
         <button
           type="button"
           onClick={cycleTheme}
-          title={`Theme: ${themeLabels[theme ?? "system"]} — click to cycle`}
+          title={`Theme: ${themeLabels[theme ?? "system"]} - click to cycle`}
           className={cn(
             "flex w-full items-center rounded-md px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-accent/50 hover:text-accent-foreground",
             collapsed ? "justify-center" : "gap-2"

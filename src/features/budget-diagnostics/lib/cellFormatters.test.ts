@@ -13,12 +13,12 @@ describe("cellFormatters", () => {
       kind: "date",
     });
     expect(formatCellDisplay("date", 0)).toEqual({
-      text: "—",
+      text: "-",
       title: "0",
       kind: "date",
     });
     expect(formatCellDisplay("posted_date", 20260230)).toEqual({
-      text: "—",
+      text: "-",
       title: "20260230",
       kind: "date",
     });

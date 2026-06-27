@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { BudgetDiagnosticsClient } from "./BudgetDiagnosticsClient";
 
 export const metadata: Metadata = {
-  title: "Budget File Health — Actual Bench",
+  title: "Budget File Health - Actual Bench",
 };
 
 export default function BudgetDiagnosticsPage() {

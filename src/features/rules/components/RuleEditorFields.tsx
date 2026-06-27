@@ -61,7 +61,7 @@ export function RuleEditorFields({
 
   return (
     <div className="flex-1 space-y-6 overflow-y-auto px-4 py-4">
-      {/* Stage — pill-style toggle */}
+      {/* Stage - pill-style toggle */}
       <div className="flex items-center gap-2">
         <span id="stage-label" className="whitespace-nowrap text-xs font-medium text-muted-foreground">Stage</span>
         <div

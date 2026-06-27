@@ -25,10 +25,10 @@ import { colorizeJson } from "../lib/jsonColorize";
 // ─── Layout constants ─────────────────────────────────────────────────────────
 // These must match the textarea's rendered metrics exactly.
 
-const GUTTER_W   = 40;    // px — wide enough for 4-digit line numbers
-const PAD_X      = 16;    // px — horizontal content padding (matches px-4)
-const PAD_Y      = 12;    // px — vertical content padding (matches py-3)
-const FONT_SIZE  = 12;    // px — text-xs
+const GUTTER_W   = 40;    // px - wide enough for 4-digit line numbers
+const PAD_X      = 16;    // px - horizontal content padding (matches px-4)
+const PAD_Y      = 12;    // px - vertical content padding (matches py-3)
+const FONT_SIZE  = 12;    // px - text-xs
 const LINE_H_R   = 1.625; // leading-relaxed
 const LINE_H_PX  = FONT_SIZE * LINE_H_R; // 19.5 px
 

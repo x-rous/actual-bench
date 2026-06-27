@@ -319,7 +319,7 @@ export function BudgetExportDialog({
           </div>
         )}
 
-        {/* Select — searchable multi-select combobox constrained to availableMonths */}
+        {/* Select - searchable multi-select combobox constrained to availableMonths */}
         {mode === "select" && (
           <div className="mb-4">
             <label className="block text-xs text-muted-foreground mb-1">
@@ -334,7 +334,7 @@ export function BudgetExportDialog({
           </div>
         )}
 
-        {/* Resolution summary — always visible */}
+        {/* Resolution summary - always visible */}
         <div
           className={`mb-4 px-3 py-2 rounded text-xs ${
             canExport

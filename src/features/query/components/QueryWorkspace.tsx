@@ -167,7 +167,7 @@ function LeftPanel({
         )}
       </div>
 
-      {/* Footer — only shown on Examples tab */}
+      {/* Footer - only shown on Examples tab */}
       {activeTab === "examples" && (
         <div className="shrink-0 border-t border-border px-3 py-2 text-[10px] text-muted-foreground/50">
           Click an example to load it into the editor.

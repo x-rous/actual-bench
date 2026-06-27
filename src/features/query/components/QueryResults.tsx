@@ -290,7 +290,7 @@ function TableView({ data, centCols }: { data: unknown; centCols: Set<string> })
         </span>
         {isCapped && (
           <span className="text-amber-600 dark:text-amber-500">
-            Showing first {TABLE_ROW_CAP} — add{" "}
+            Showing first {TABLE_ROW_CAP} - add{" "}
             <code className="font-mono">&quot;limit&quot;</code> to control
             result size.
           </span>
@@ -463,7 +463,7 @@ export function QueryResults({
   if (error) {
     return (
       <div className="flex flex-1 flex-col overflow-hidden">
-        {/* Status bar — shown on error too */}
+        {/* Status bar - shown on error too */}
         {execTime !== null && execTime !== undefined && (
           <ResultsActionBar
             hasResult={false}
@@ -609,7 +609,7 @@ function ResultsActionBar({
           </>
         )}
 
-        {/* Export CSV — only for array-of-objects results */}
+        {/* Export CSV - only for array-of-objects results */}
         {hasResult && isTableResult && (
           <Button
             size="sm"
@@ -637,7 +637,7 @@ function ResultsActionBar({
           </Button>
         )}
 
-        {/* cURL buttons — safe first, secrets second (amber) */}
+        {/* cURL buttons - safe first, secrets second (amber) */}
         {lastRequest && <CopyCurlButton lastRequest={lastRequest} />}
       </div>
     </div>

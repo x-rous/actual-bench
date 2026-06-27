@@ -33,7 +33,7 @@ export function parseQuery(input: string): ParsedQuery | Error {
   try {
     parsed = JSON.parse(input);
   } catch {
-    return new Error("Invalid JSON — check syntax.");
+    return new Error("Invalid JSON - check syntax.");
   }
 
   if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
@@ -91,7 +91,7 @@ export function lintQuery(query: ActualQLQuery): LintWarning[] {
     warnings.push({
       id: "unbounded-transactions",
       message:
-        'Unbounded transaction scan — may return thousands of rows and time out (15s proxy limit). Add "limit", "groupBy", or "calculate" to narrow the scope.',
+        'Unbounded transaction scan - may return thousands of rows and time out (15s proxy limit). Add "limit", "groupBy", or "calculate" to narrow the scope.',
     });
   }
 
@@ -100,7 +100,7 @@ export function lintQuery(query: ActualQLQuery): LintWarning[] {
     warnings.push({
       id: "empty-oneof",
       message:
-        'Empty "$oneof" array — this filter matches nothing and will return no results.',
+        'Empty "$oneof" array - this filter matches nothing and will return no results.',
     });
   }
 
@@ -130,7 +130,7 @@ export function lintQuery(query: ActualQLQuery): LintWarning[] {
       warnings.push({
         id: "groupby-no-aggregate",
         message:
-          '"groupBy" without an aggregate — grouped queries typically need a "$count" or "$sum" in "select".',
+          '"groupBy" without an aggregate - grouped queries typically need a "$count" or "$sum" in "select".',
       });
     }
   }

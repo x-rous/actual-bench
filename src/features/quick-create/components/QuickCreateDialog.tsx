@@ -111,7 +111,7 @@ function QuickCreateForm({
         break;
     }
 
-    toast.success(`${label} staged — save to persist.`);
+    toast.success(`${label} staged - save to persist.`);
     close();
   }
 
@@ -167,12 +167,12 @@ function QuickCreateForm({
         {isDuplicate && (
           <p className="flex items-center gap-1 text-xs text-amber-600 dark:text-amber-400">
             <AlertTriangle className="h-3 w-3 shrink-0" />
-            A {ENTITY_LABELS[selectedType].toLowerCase()} named &ldquo;{trimmedName}&rdquo; already exists — it will still be staged.
+            A {ENTITY_LABELS[selectedType].toLowerCase()} named &ldquo;{trimmedName}&rdquo; already exists - it will still be staged.
           </p>
         )}
       </div>
 
-      {/* Secondary field — Category group */}
+      {/* Secondary field - Category group */}
       {selectedType === "category" && (
         <div className="space-y-1.5">
           <label className="text-xs font-medium text-foreground">
@@ -186,13 +186,13 @@ function QuickCreateForm({
           />
           {groupOptions.length === 0 && (
             <p className="text-xs text-muted-foreground italic">
-              No category groups exist yet — create one on the Categories page first.
+              No category groups exist yet - create one on the Categories page first.
             </p>
           )}
         </div>
       )}
 
-      {/* Secondary field — Account budget type */}
+      {/* Secondary field - Account budget type */}
       {selectedType === "account" && (
         <div className="space-y-1.5">
           <label className="text-xs font-medium text-foreground">Budget type</label>
@@ -220,7 +220,7 @@ function QuickCreateForm({
         </div>
       )}
 
-      {/* Secondary field — Tag color */}
+      {/* Secondary field - Tag color */}
       {selectedType === "tag" && (
         <div className="space-y-1.5">
           <label className="text-xs font-medium text-foreground">Color (optional)</label>

@@ -46,7 +46,7 @@ function formatSummaryDelta(value: number): string {
 }
 
 export function formatSummaryCellValue(cell: SummaryCellMetric): string {
-  if (cell.value == null) return "—";
+  if (cell.value == null) return "-";
   if (cell.valueKind === "percent") {
     return `${cell.value.toLocaleString("en-US")}%`;
   }

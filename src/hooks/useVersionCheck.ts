@@ -51,7 +51,7 @@ export function useVersionCheck(): VersionCheckState {
         setLatestVersion(latest);
         setDismissed(localStorage.getItem(dismissKey(latest)) === "1");
       })
-      .catch(() => { /* silently ignore — version check is non-critical */ });
+      .catch(() => { /* silently ignore - version check is non-critical */ });
 
     return () => { cancelled = true; };
   }, []);

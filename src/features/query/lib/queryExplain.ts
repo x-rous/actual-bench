@@ -55,7 +55,7 @@ export function explainQuery(query: ActualQLQuery): string[] {
       all: "returns both parent and sub-transactions",
     };
     const desc = splitDesc[query.options.splits] ?? query.options.splits;
-    lines.push(`Split behavior is set to \`${query.options.splits}\` — ${desc}.`);
+    lines.push(`Split behavior is set to \`${query.options.splits}\` - ${desc}.`);
   }
 
   // Result type summary
@@ -166,7 +166,7 @@ function describeCalculate(calculate: Record<string, unknown>): string {
   };
 
   const desc = fnNames[fn] ?? `computes ${fn} of`;
-  return `Computes a scalar — ${desc} \`${operandStr}\` across matching rows.`;
+  return `Computes a scalar - ${desc} \`${operandStr}\` across matching rows.`;
 }
 
 function describeOrderBy(

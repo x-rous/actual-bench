@@ -342,7 +342,7 @@ export function BudgetGrid({
         />
       ))}
 
-      {/* Separator between summary and data — matches the expense ↔ income
+      {/* Separator between summary and data - matches the expense ↔ income
           divider thickness so both section-total rows ("Total Budgeted
           Expenses" and "Total Received Income") get the same border style. */}
       {summaryRows.length > 0 && (

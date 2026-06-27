@@ -1,6 +1,6 @@
 import type { MetadataJson } from "../types";
 
-const EMPTY_VALUE = "—";
+const EMPTY_VALUE = "-";
 
 type MetadataField = {
   label: string;

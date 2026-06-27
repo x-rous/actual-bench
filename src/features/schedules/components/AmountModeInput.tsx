@@ -52,7 +52,7 @@ export function AmountModeInput({
 
   return (
     <div className="flex flex-col gap-2">
-      {/* Mode selector — roving tabindex radiogroup */}
+      {/* Mode selector - roving tabindex radiogroup */}
       <div
         role="radiogroup"
         aria-label="Amount mode"

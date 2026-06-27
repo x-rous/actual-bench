@@ -296,7 +296,7 @@ export function BudgetImportDialog({
                             <span className="text-destructive">Unmatched</span>
                           )}
                           {Object.values(result.monthAvailability).some((s) => s === "absent") && (
-                            <span className="text-destructive ml-1">— month absent</span>
+                            <span className="text-destructive ml-1">- month absent</span>
                           )}
                         </td>
                       </tr>

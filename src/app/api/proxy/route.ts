@@ -59,7 +59,7 @@ async function upstreamFetch(
     const message =
       err instanceof Error ? err.message : "Network error reaching API server";
     const ms = Date.now() - start;
-    logger.warn(`${method} 502 ${path} (${ms}ms) [${reqId}] — ${message}`);
+    logger.warn(`${method} 502 ${path} (${ms}ms) [${reqId}] - ${message}`);
     return NextResponse.json({ error: message }, { status: 502 });
   }
 
@@ -83,7 +83,7 @@ async function upstreamFetch(
       // ignore — use status string
     }
     const ms = Date.now() - start;
-    logger.warn(`${method} ${upstreamResponse.status} ${path} (${ms}ms) [${reqId}] — ${message}`);
+    logger.warn(`${method} ${upstreamResponse.status} ${path} (${ms}ms) [${reqId}] - ${message}`);
     return NextResponse.json(
       { error: message },
       { status: upstreamResponse.status }

@@ -182,7 +182,7 @@ export function RulesView() {
       } else if (result.rules.length === 0) {
         toast.warning(
           result.skipped > 0
-            ? `No rules imported — ${result.skipped} row(s) skipped.`
+            ? `No rules imported - ${result.skipped} row(s) skipped.`
             : "No valid rules found in CSV."
         );
       } else {

@@ -51,7 +51,7 @@ function ExampleItem({
         )}
       </div>
 
-      {/* Insert affordance — always visible, signals the action */}
+      {/* Insert affordance - always visible, signals the action */}
       <ArrowUpRight className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground/60 transition-colors group-hover:text-foreground" />
     </button>
   );

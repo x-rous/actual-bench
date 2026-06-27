@@ -303,7 +303,7 @@ export function BudgetCell({
     const blockedLabel = isReadOnlyMonth
       ? `${category.name} budget for ${month} - no budget exists for this past month`
       : blocked
-      ? `${category.name} budget for ${month} — income editing blocked in envelope mode`
+      ? `${category.name} budget for ${month} - income editing blocked in envelope mode`
       : `${category.name} ${cellView} for ${month}`;
     const displayText =
       isReadOnlyMonth && !hasMonthData ? "--" : formatMinor(displayMinor);
@@ -425,7 +425,7 @@ export function BudgetCell({
       className={`${cellClass}${dimClass}`}
       role="gridcell"
       tabIndex={0}
-      aria-label={`${category.name} budget for ${month}${stagedEdit ? " (unsaved)" : ""}${hasSaveError ? " — save error" : ""}`}
+      aria-label={`${category.name} budget for ${month}${stagedEdit ? " (unsaved)" : ""}${hasSaveError ? " - save error" : ""}`}
       aria-selected={isSelected}
       onPointerDown={handlePointerDown}
       onPointerEnter={handlePointerEnter}

@@ -214,7 +214,7 @@ export function BundleImportDialog({ open, onOpenChange }: Props) {
 
     const totalStaged = results.reduce((sum, r) => sum + r.staged, 0);
     if (totalStaged > 0) {
-      toast.success(`${totalStaged} entities staged — save to persist.`);
+      toast.success(`${totalStaged} entities staged - save to persist.`);
     } else {
       toast.warning("No entities were staged.");
     }
@@ -230,7 +230,7 @@ export function BundleImportDialog({ open, onOpenChange }: Props) {
             <DialogTitle>Import Bundle</DialogTitle>
             <DialogDescription>
               Select a ZIP bundle exported from Actual Bench. Entities will be
-              staged — nothing is saved until you click Save.
+              staged - nothing is saved until you click Save.
             </DialogDescription>
           </DialogHeader>
 

@@ -173,7 +173,7 @@ export function CategoriesTableCategoryRow({
         {isInheritedHidden ? (
           <span
             className="flex cursor-default items-center gap-1 text-xs text-amber-500/70"
-            title="Hidden because the group is hidden — unhide the group first"
+            title="Hidden because the group is hidden - unhide the group first"
           >
             <EyeOff className="h-3 w-3" />
             Hidden - Inherited

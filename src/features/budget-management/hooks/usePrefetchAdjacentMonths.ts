@@ -46,7 +46,7 @@ export function usePrefetchAdjacentMonths({ windowStart, availableMonths }: Prop
       if (!availableSet.has(month)) continue;
       queryClient.prefetchQuery({
         ...budgetMonthDataQueryOptions(connection, month),
-        staleTime: 2 * 60 * 1000, // 2 min — keeps prefetched months fresh across navigation
+        staleTime: 2 * 60 * 1000, // 2 min - keeps prefetched months fresh across navigation
       });
     }
   }, [windowStart, availableMonths, connection, queryClient]);

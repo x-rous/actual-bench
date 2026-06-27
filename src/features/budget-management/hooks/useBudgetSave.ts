@@ -144,7 +144,7 @@ export function useBudgetSave(): UseBudgetSaveReturn {
         const [key, edit] = entry;
         if (validCategoryIds && !validCategoryIds.has(edit.categoryId)) {
           const message =
-            "Category was removed from this budget — discard the staged edit to continue.";
+            "Category was removed from this budget - discard the staged edit to continue.";
           setSaveError(key, message);
           results.push({
             month: edit.month,

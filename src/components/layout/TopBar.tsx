@@ -423,7 +423,7 @@ export function TopBar() {
             )}
             disabled={saveDisabled}
             onClick={handleSave}
-            title={isOffline ? "Cannot save — server is unreachable" : undefined}
+            title={isOffline ? "Cannot save - server is unreachable" : undefined}
           >
             <Save className="mr-1 h-3.5 w-3.5" />
             {isSaving ? "Saving…" : "Save"}

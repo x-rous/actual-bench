@@ -219,7 +219,7 @@ export function BudgetGridGroupRows({
 
   return (
     <>
-      {/* Group header — light bg, black text. Clicking anywhere outside the
+      {/* Group header - light bg, black text. Clicking anywhere outside the
           chevron selects the group row; the chevron continues to toggle
           collapse via stopPropagation. */}
       <div
@@ -281,7 +281,7 @@ export function BudgetGridGroupRows({
         />
       ))}
 
-      {/* Category rows — hidden when collapsed */}
+      {/* Category rows - hidden when collapsed */}
       {!collapsed &&
         group.categoryIds.map((catId) => {
           const cat = categoriesById[catId];
@@ -304,7 +304,7 @@ export function BudgetGridGroupRows({
               role="row"
               aria-label={cat.name}
             >
-              {/* Category label — clickable / focusable to select the row */}
+              {/* Category label - clickable / focusable to select the row */}
               <div
                 className={`h-7 pl-4 pr-2 flex items-center border-r border-b border-border/50 text-xs sticky left-0 bg-background cursor-default outline-none${catDimClass}${catRowSelectedClass}`}
                 role="gridcell"

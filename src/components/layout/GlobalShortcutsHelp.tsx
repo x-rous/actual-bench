@@ -56,7 +56,7 @@ export function GlobalShortcutsHelp({
         <DialogHeader>
           <DialogTitle>Keyboard shortcuts</DialogTitle>
           <DialogDescription id="shortcuts-desc" className="text-[11px]">
-            App-wide shortcuts. The Budget workspace has additional shortcuts — press{" "}
+            App-wide shortcuts. The Budget workspace has additional shortcuts - press{" "}
             <Kbd>?</Kbd> there to see them.
           </DialogDescription>
         </DialogHeader>
