@@ -1,4 +1,4 @@
-name-template: 'v$RESOLVED_VERSION'
+name-template: 'Actual Bench v$RESOLVED_VERSION'
 tag-template: 'v$RESOLVED_VERSION'
 
 branches:
@@ -23,7 +23,7 @@ template: |
 
   $CHANGES
 
-  **Full Changelog**: $PREVIOUS_TAG...$RESOLVED_TAG
+  **Full Changelog**: https://github.com/x-rous/actual-bench/compare/$PREVIOUS_TAG...v$RESOLVED_VERSION
 
 version-resolver:
   major:
