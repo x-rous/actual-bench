@@ -13,10 +13,16 @@
 </p>
 
 <p align="center">
+  <a href="https://actual-bench-demo.vercel.app"><img src="https://img.shields.io/badge/%E2%96%B6_live_demo-online-brightgreen" alt="Live demo" /></a>
   <a href="https://github.com/x-rous/actual-bench/actions/workflows/ci.yml"><img src="https://github.com/x-rous/actual-bench/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
   <a href="https://github.com/x-rous/actual-bench/releases"><img src="https://img.shields.io/github/v/tag/x-rous/actual-bench?label=version" alt="Latest version" /></a>
   <a href="https://hub.docker.com/r/xrous/actual-bench"><img src="https://img.shields.io/docker/pulls/xrous/actual-bench?label=docker%20pulls" alt="Docker pulls" /></a>
   <a href="https://github.com/x-rous/actual-bench/blob/main/LICENSE"><img src="https://img.shields.io/github/license/x-rous/actual-bench" alt="License" /></a>
+</p>
+
+<p align="center">
+  <a href="https://actual-bench-demo.vercel.app"><strong>🚀 Try the live demo →</strong></a><br />
+  <sub>Explore a fully-loaded sample budget — no setup required. (Shared sandbox; resets periodically.)</sub>
 </p>
 
 ---
