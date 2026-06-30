@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Inter, JetBrains_Mono } from "next/font/google";
+import { Analytics } from "@vercel/analytics/next";
 import { Providers } from "@/components/providers";
 import "./globals.css";
 
@@ -31,6 +32,9 @@ export default function RootLayout({
     >
       <body className="h-full overflow-hidden font-sans">
         <Providers>{children}</Providers>
+        {/* Vercel Web Analytics — only on the Vercel-hosted demo, never in
+            self-hosted/Docker builds (no beacon injected off-Vercel). */}
+        {process.env.VERCEL ? <Analytics /> : null}
       </body>
     </html>
   );
