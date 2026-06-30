@@ -17,7 +17,10 @@ const nextConfig: NextConfig = {
   reactCompiler: true,
   // Use a fresh output directory so Turbopack doesn't try to acquire a
   // lockfile on the root-owned .next/dev/cache from a prior container run.
-  distDir: ".next-build",
+  // Exception: on Vercel, use the default ".next" — Vercel's Next.js builder
+  // hard-expects ".next" and fails to locate a custom distDir, so the demo
+  // deployment needs the standard path. CI/Docker keep ".next-build".
+  distDir: process.env.VERCEL ? ".next" : ".next-build",
   // Allow the reverse-proxy hostname to reach dev-server infrastructure
   // (HMR, dev overlay, etc.). Without this, Next.js 16 blocks cross-origin
   // requests from origins other than localhost, preventing React from fully
