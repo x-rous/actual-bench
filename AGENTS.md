@@ -11,7 +11,7 @@
 - **React 19** — React Compiler enabled via `reactCompiler: true` in `next.config.ts` (Turbopack/SWC path). `babel-plugin-react-compiler` is in devDependencies for Jest only. `react-hooks/incompatible-library` warning is expected, do NOT fix
 - **Tailwind 4** — no `tailwind.config.js`, config is in `globals.css` via `@theme`, no v3 patterns
 - **Zustand 5** / **TanStack Query 5** / **TanStack Table 8** / **RHF 7 + Zod 4**
-- **`distDir: ".next-build"`** — non-default output dir; affects CI artifact paths, Docker COPY, and build commands
+- **`distDir`** — `.next-build` everywhere (non-default; affects CI artifact paths, Docker COPY, build commands), **except on Vercel** (`process.env.VERCEL`) where it's the default `.next` because Vercel's builder expects that path
 
 ---
 
@@ -73,6 +73,9 @@ CI (`ci.yml`) runs lint, type-check, tests, and build on every push — no need 
 | CI/CD workflows | `.github/workflows/` |
 | Docker changes | `docker/Dockerfile.prod` |
 | Query client config | `src/lib/queryClient.ts` |
+| Demo connection endpoint | `src/app/api/demo/route.ts` |
+| Demo "Try it" button | `src/components/connect/DemoButton.tsx` |
+| Demo backend (Hugging Face Space source) | `demo/` |
 
 **Feature folder structure** (mandatory baseline):
 ```
@@ -80,6 +83,15 @@ src/features/<entity>/
   components/   hooks/   csv/   schemas/
   lib/          utils/   # optional, when the feature needs them
 ```
+
+## Demo Deployment
+
+The public demo (`actual-bench-demo.vercel.app`) is **separate from the self-hosted Docker product**: the Next.js UI runs on **Vercel**, talking to a **Hugging Face Space** backend.
+
+- **`demo/`** is the Hugging Face Space source: `actual-server` (sync) + `actual-http-api` (REST) in one image, with a seed budget **baked in** (self-resets on restart). It deploys **manually/separately** — editing `demo/` does NOT auto-update the live backend. Regenerate the seed with `node demo/generate-seed.mjs`.
+- `src/app/api/demo/route.ts` + `DemoButton` are gated on `DEMO_MODE=1` + the `DEMO_*` env vars → **inert/hidden for self-hosters**.
+- Analytics (`src/components/demo-analytics.tsx`) is Vercel-only via `NEXT_PUBLIC_ANALYTICS=1` and is **tree-shaken out of self-hosted builds**.
+- Vercel deploys a **preview per push/PR** (maintainer-only, auth-protected) and **production on every `main` merge**. Full guide: `docs/DEMO_DEPLOYMENT.md`.
 
 ## Proxy Notes
 
@@ -106,6 +118,7 @@ Read these only when relevant to the task:
 | Reviewing existing features / improvements - internal| `agents/findings.md` |
 | Context behind rejected/deferred items, constraints - internal | `agents/knowledge.md` |
 | Git, workflow, or release change | `CONTRIBUTING.md` |
+| Demo / Vercel / Hugging Face deployment | `docs/DEMO_DEPLOYMENT.md` |
 | Overall agents/ folder framework -internal | `agents/FRAMEWORK.md` |
 
 Update these only when the change requires it:

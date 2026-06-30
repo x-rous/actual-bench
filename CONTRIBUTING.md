@@ -162,6 +162,18 @@ src/
 
 ---
 
+## Preview & demo deployments
+
+There is a public demo at **[actual-bench-demo.vercel.app](https://actual-bench-demo.vercel.app)** — the Next.js UI on Vercel (auto-deploys on every merge to `main`) plus a separate **[Hugging Face Space](https://huggingface.co/spaces/x-rous/actual-bench-demo)** backend (an `actual-server` + `actual-http-api` with a seeded budget that resets periodically).
+
+A few things to know as a contributor:
+
+- **Every PR gets a Vercel preview build automatically**, but previews are **maintainer-only** (protected by Vercel authentication). Validate your changes with local `npm run dev` and the CI checks — don't rely on the preview URL.
+- The **`demo/` folder is the Hugging Face Space source**, and it deploys **manually and separately**. Editing `demo/` in a PR does **not** update the live demo backend; a maintainer redeploys it. See [`docs/DEMO_DEPLOYMENT.md`](docs/DEMO_DEPLOYMENT.md).
+- Demo-only code (`/api/demo`, the "Try the live demo" button, Vercel analytics) is gated behind env vars and is completely inert in self-hosted builds.
+
+---
+
 ## Release Process (Maintainer)
 
 ### Reviewing the draft
