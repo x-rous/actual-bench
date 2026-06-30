@@ -179,6 +179,20 @@ jobs:
             $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
             $(printf '${{ env.IMAGE_GHCR }}@sha256:%s ' *)
 
+  # ── Redeploy the public demo UI on Vercel ────────────────────────────────────
+  # Fires a Vercel deploy hook so the demo (https://…vercel.app) rebuilds from
+  # the just-tagged commit. Skipped automatically if the secret isn't set.
+  deploy-demo:
+    name: deploy-demo
+    needs: merge
+    runs-on: ubuntu-latest
+    if: ${{ vars.DEMO_DEPLOY_ENABLED == 'true' }}
+    steps:
+      - name: Trigger Vercel demo redeploy
+        run: curl -fsSL -X POST "$VERCEL_DEPLOY_HOOK"
+        env:
+          VERCEL_DEPLOY_HOOK: ${{ secrets.VERCEL_DEPLOY_HOOK }}
+
   # ── Deploy to the VPS ────────────────────────────────────────────────────────
   deploy:
     name: deploy
