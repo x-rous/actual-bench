@@ -8,6 +8,7 @@ import type { ApiError } from "@/types/errors";
 const connection: ConnectionInstance = {
   id: "c",
   label: "test",
+  mode: "http-api",
   baseUrl: "http://example.test",
   apiKey: "key",
   budgetSyncId: "b1",

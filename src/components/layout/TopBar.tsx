@@ -27,6 +27,7 @@ import {
 import {
   useConnectionStore,
   selectActiveInstance,
+  isHttpApiConnection,
 } from "@/store/connection";
 import { useGlobalSearchStore } from "@/features/global-search/store/useGlobalSearchStore";
 import { useConnectionHealthContext } from "@/hooks/useConnectionHealth";
@@ -101,6 +102,7 @@ export function TopBar() {
   const isOffline = healthStatus === "offline";
 
   const activeInstance = useConnectionStore(selectActiveInstance);
+  const activeHttpInstance = isHttpApiConnection(activeInstance) ? activeInstance : null;
   const instances = useConnectionStore((s) => s.instances);
   const setActive = useConnectionStore((s) => s.setActiveInstance);
   const clearAll = useConnectionStore((s) => s.clearAll);
@@ -316,24 +318,24 @@ export function TopBar() {
             </DropdownMenu>
           )}
 
-          {activeInstance && (activeInstance.apiVersion ?? activeInstance.serverVersion) && (
+          {activeHttpInstance && (activeHttpInstance.apiVersion ?? activeHttpInstance.serverVersion) && (
             <div
               className="inline-flex items-center gap-2 text-xs select-none"
               title="Server versions are fetched when the connection is established or reconnected."
               aria-label="Current server versions"
             >
-              {activeInstance.apiVersion && (
+              {activeHttpInstance.apiVersion && (
                 <TopBarVersionChip
                   label="API"
-                  value={activeInstance.apiVersion}
-                  title={`actual-http-api v${activeInstance.apiVersion}`}
+                  value={activeHttpInstance.apiVersion}
+                  title={`actual-http-api v${activeHttpInstance.apiVersion}`}
                 />
               )}
-              {activeInstance.serverVersion && (
+              {activeHttpInstance.serverVersion && (
                 <TopBarVersionChip
                   label="Actual"
-                  value={activeInstance.serverVersion}
-                  title={`Actual Budget v${activeInstance.serverVersion}`}
+                  value={activeHttpInstance.serverVersion}
+                  title={`Actual Budget v${activeHttpInstance.serverVersion}`}
                 />
               )}
             </div>

@@ -47,6 +47,7 @@ export function DemoButton() {
     addInstance({
       id,
       label: "Live Demo",
+      mode: "http-api",
       baseUrl: demo.baseUrl,
       apiKey: demo.apiKey,
       budgetSyncId: demo.budgetSyncId,

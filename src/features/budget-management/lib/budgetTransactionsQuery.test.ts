@@ -15,6 +15,7 @@ const mockApiRequest = apiRequest as jest.MockedFunction<typeof apiRequest>;
 const connection: ConnectionInstance = {
   id: "conn-1",
   label: "Test",
+  mode: "http-api",
   baseUrl: "http://localhost:5006",
   apiKey: "test-key",
   budgetSyncId: "budget-1",

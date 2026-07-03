@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { selectActiveInstance, useConnectionStore } from "@/store/connection";
+import { selectActiveInstance, useConnectionStore, isHttpApiConnection } from "@/store/connection";
 import { exportSnapshot } from "../lib/exportSnapshot";
 import {
   getSqliteWorkerClient,
@@ -39,6 +39,7 @@ function getErrorMessage(error: unknown): string {
  */
 export function useDiagnosticsSnapshot() {
   const connection = useConnectionStore(selectActiveInstance);
+  const httpConnection = isHttpApiConnection(connection) ? connection : null;
   const [reloadToken, setReloadToken] = useState(0);
   const snapshot = useDiagnosticsCacheStore((s) => s.snapshot);
   const setSnapshot = useDiagnosticsCacheStore((s) => s.setSnapshot);
@@ -107,7 +108,7 @@ export function useDiagnosticsSnapshot() {
   }, [setSnapshot]);
 
   useEffect(() => {
-    if (!connection) {
+    if (!httpConnection) {
       integrityRunGeneration.current += 1;
       resetSqliteWorkerClient();
       useDiagnosticsCacheStore.getState().reset();
@@ -119,16 +120,16 @@ export function useDiagnosticsSnapshot() {
     // change, and disconnect all clear the cache, so a stale snapshot can't stick.
     const cache = useDiagnosticsCacheStore.getState();
     if (
-      cache.signature === connectionSignature(connection) &&
+      cache.signature === connectionSignature(httpConnection) &&
       cache.snapshot.status === "ready" &&
       cache.snapshot.diagnosticsStatus !== "loading" &&
-      isSqliteWorkerLoadedFor(connection.id)
+      isSqliteWorkerLoadedFor(httpConnection.id)
     ) {
       return;
     }
 
     let cancelled = false;
-    const activeConnection = connection;
+    const activeConnection = httpConnection;
 
     // Stamp the cache as reusable. Called only once diagnostics has reached a
     // terminal state (ready or error) — never mid-load — so an interrupted load
@@ -253,15 +254,15 @@ export function useDiagnosticsSnapshot() {
       // or disconnect instead.
     };
   }, [
-    connection,
-    connection?.apiKey,
-    connection?.baseUrl,
-    connection?.budgetSyncId,
-    connection?.encryptionPassword,
-    connection?.id,
+    httpConnection,
+    httpConnection?.apiKey,
+    httpConnection?.baseUrl,
+    httpConnection?.budgetSyncId,
+    httpConnection?.encryptionPassword,
+    httpConnection?.id,
     reloadToken,
     setSnapshot,
   ]);
 
-  return { connection, snapshot, loadedAt, retry, runIntegrityCheck } as const;
+  return { connection: httpConnection, snapshot, loadedAt, retry, runIntegrityCheck } as const;
 }

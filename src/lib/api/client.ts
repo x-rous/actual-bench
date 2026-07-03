@@ -6,8 +6,20 @@
  * forwards to: {baseUrl}/v1/budgets/{budgetSyncId}/{resource}
  */
 
-import type { ConnectionInstance } from "@/store/connection";
+import { isHttpApiConnection, type ConnectionInstance, type HttpApiConnection } from "@/store/connection";
 import type { ApiError } from "@/types/errors";
+
+// ─── Connection mode guard ─────────────────────────────────────────────────────
+
+function requireHttpApiConnection(connection: ConnectionInstance): HttpApiConnection {
+  if (isHttpApiConnection(connection)) return connection;
+  const error: ApiError = {
+    kind: "api",
+    status: 400,
+    message: "Direct Actual Server transport is not active for app pages yet.",
+  };
+  throw error;
+}
 
 // ─── Request helpers ──────────────────────────────────────────────────────────
 
@@ -27,6 +39,7 @@ export async function apiRequest<T>(
   options: RequestOptions = {}
 ): Promise<T> {
   const { method = "GET", body } = options;
+  const httpConnection = requireHttpApiConnection(connection);
 
   let response: Response;
 
@@ -34,7 +47,7 @@ export async function apiRequest<T>(
     response = await fetch("/api/proxy", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ connection, path, method, body }),
+      body: JSON.stringify({ connection: httpConnection, path, method, body }),
     });
   } catch (err) {
     // Network-level failure (e.g. server not running)
@@ -121,13 +134,14 @@ export async function apiDownload(
   connection: ConnectionInstance,
   path: string
 ): Promise<DownloadResult> {
+  const httpConnection = requireHttpApiConnection(connection);
   let response: Response;
 
   try {
     response = await fetch("/api/proxy/download", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ connection, path, method: "GET" }),
+      body: JSON.stringify({ connection: httpConnection, path, method: "GET" }),
     });
   } catch (err) {
     const error: ApiError = {

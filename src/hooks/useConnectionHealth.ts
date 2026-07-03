@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback, createContext, useContext } from "react";
-import { useConnectionStore, selectActiveInstance } from "@/store/connection";
+import { useConnectionStore, selectActiveInstance, isHttpApiConnection } from "@/store/connection";
 
 export type HealthStatus = "unknown" | "checking" | "healthy" | "degraded" | "offline";
 
@@ -84,7 +84,7 @@ export function useConnectionHealth(): ConnectionHealthState {
     consecutiveFailures.current = 0;
     isChecking.current = false;
 
-    if (!activeInstance) return;
+    if (!activeInstance || !isHttpApiConnection(activeInstance)) return;
 
     const { baseUrl, apiKey } = activeInstance;
     let timeoutId: ReturnType<typeof setTimeout>;
@@ -123,6 +123,6 @@ export function useConnectionHealth(): ConnectionHealthState {
 
   // When no connection is active derive the reset values during render rather
   // than calling setState in the effect body (which triggers cascading renders).
-  if (!activeInstance) return { status: "unknown", latencyMs: null, showBanner: false };
+  if (!activeInstance || !isHttpApiConnection(activeInstance)) return { status: "unknown", latencyMs: null, showBanner: false };
   return { status, latencyMs, showBanner };
 }

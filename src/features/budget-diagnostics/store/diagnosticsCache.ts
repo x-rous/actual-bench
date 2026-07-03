@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import type { DownloadResult } from "@/lib/api/client";
-import type { ConnectionInstance } from "@/store/connection";
+import { isHttpApiConnection, type ConnectionInstance } from "@/store/connection";
 import type { DiagnosticsPayload, OverviewPayload, ProgressStage } from "../types";
 
 /**
@@ -48,7 +48,7 @@ export function connectionSignature(connection: ConnectionInstance): string {
     connection.id,
     connection.baseUrl,
     connection.budgetSyncId ?? "",
-    connection.apiKey ?? "",
+    isHttpApiConnection(connection) ? connection.apiKey : "",
     connection.encryptionPassword ?? "",
   ].join("|");
 }

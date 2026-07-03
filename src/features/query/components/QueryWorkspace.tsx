@@ -3,7 +3,7 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { AlertTriangle, X } from "lucide-react";
 import { toast } from "sonner";
-import { useConnectionStore, selectActiveInstance } from "@/store/connection";
+import { useConnectionStore, selectActiveInstance, isHttpApiConnection } from "@/store/connection";
 import { useStagedStore, selectHasChanges } from "@/store/staged";
 import { runQuery } from "@/lib/api/query";
 import { cn } from "@/lib/utils";
@@ -299,6 +299,10 @@ export function QueryWorkspace() {
     async (queryString: string) => {
       if (!connection) {
         toast.error("No active connection.");
+        return;
+      }
+      if (!isHttpApiConnection(connection)) {
+        toast.error("Direct Actual Server transport is not active for queries yet.");
         return;
       }
       // Prevent overlapping concurrent executions.

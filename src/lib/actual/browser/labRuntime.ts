@@ -7,6 +7,11 @@ export type BrowserApiLabInput = {
   encryptionPassword?: string;
 };
 
+export type BrowserApiBudgetListInput = {
+  serverUrl: string;
+  serverPassword: string;
+};
+
 export type BrowserApiLabBudget = {
   cloudFileId?: string;
   name?: string;
@@ -114,7 +119,21 @@ function normalizeAccount(account: ActualAccount): BrowserApiLabAccount | null {
   };
 }
 
-function redactMessage(message: string, input: BrowserApiLabInput): string {
+function filterRemoteBudgets(budgets: BrowserApiLabBudget[]): BrowserApiLabBudget[] {
+  const seen = new Set<string>();
+  return budgets.filter((budget) => {
+    if (budget.state !== "remote") return false;
+    if (!budget.groupId) return false;
+    if (seen.has(budget.groupId)) return false;
+    seen.add(budget.groupId);
+    return true;
+  });
+}
+
+function redactMessage(
+  message: string,
+  input: { serverPassword?: string; encryptionPassword?: string }
+): string {
   let redacted = message;
   for (const secret of [input.serverPassword, input.encryptionPassword]) {
     if (!secret) continue;
@@ -123,7 +142,10 @@ function redactMessage(message: string, input: BrowserApiLabInput): string {
   return redacted;
 }
 
-function toErrorMessage(error: unknown, input: BrowserApiLabInput): string {
+function toErrorMessage(
+  error: unknown,
+  input: { serverPassword?: string; encryptionPassword?: string }
+): string {
   const message =
     error instanceof Error
       ? error.message
@@ -237,6 +259,47 @@ async function loadActualApi(): Promise<ActualApiModule> {
   return actual as unknown as ActualApiModule;
 }
 
+export async function listBrowserApiBudgets(
+  input: BrowserApiBudgetListInput
+): Promise<BrowserApiLabBudget[]> {
+  const serverUrl = normalizeUrl(input.serverUrl);
+  const serverPassword = input.serverPassword;
+
+  if (!serverUrl) throw new Error("Actual Server URL is required.");
+  if (!serverPassword) throw new Error("Actual Server password is required.");
+
+  let actual: ActualApiModule | null = null;
+  let initialized = false;
+
+  try {
+    actual = await withTimeout(loadActualApi(), "Loading @actual-app/api");
+    await withTimeout(
+      initializeActualApi(actual, {
+        dataDir: "/documents",
+        serverURL: serverUrl,
+        password: serverPassword,
+        verbose: false,
+      }),
+      "Initializing browser API worker"
+    );
+    initialized = true;
+
+    const budgets = (await withTimeout(actual.getBudgets(), "Listing budgets"))
+      .map(normalizeBudget);
+    return filterRemoteBudgets(budgets);
+  } catch (error) {
+    throw new Error(toErrorMessage(error, input));
+  } finally {
+    if (actual && initialized) {
+      await withTimeout(
+        actual.shutdown(),
+        "Shutting down browser API",
+        SHUTDOWN_STEP_TIMEOUT_MS
+      ).catch(() => undefined);
+    }
+  }
+}
+
 export async function runBrowserApiLab(
   input: BrowserApiLabInput,
   onStep: (update: BrowserApiLabStepUpdate) => void
@@ -284,7 +347,9 @@ export async function runBrowserApiLab(
     completeStep("init", "Worker runtime initialized.");
 
     startStep("budgets");
-    const budgets = (await withTimeout(actual.getBudgets(), "Listing budgets")).map(normalizeBudget);
+    const budgets = filterRemoteBudgets(
+      (await withTimeout(actual.getBudgets(), "Listing budgets")).map(normalizeBudget)
+    );
     completeStep(
       "budgets",
       budgets.length + " budget" + (budgets.length === 1 ? "" : "s") + " returned."

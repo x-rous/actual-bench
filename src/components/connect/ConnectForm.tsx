@@ -3,7 +3,7 @@
 import Image from "next/image";
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, AlertCircle, CheckCircle2, Server, Plus, Check } from "lucide-react";
+import { Loader2, AlertCircle, CheckCircle2, Server, Plus, Check, KeyRound } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
@@ -11,7 +11,7 @@ import { useConnectionStore, selectActiveInstance } from "@/store/connection";
 import { useIsHydrated } from "@/hooks/useIsHydrated";
 import { useConnectForm } from "./useConnectForm";
 import { ConnectionCard } from "./ConnectionCard";
-import { deriveLabel } from "./utils";
+import { deriveLabel, getConnectionModeBadge } from "./utils";
 
 export function ConnectForm() {
   const router = useRouter();
@@ -21,17 +21,22 @@ export function ConnectForm() {
   const {
     instances,
     activeInstance,
-    savedServers,
+    savedServersForMode,
     removeInstance,
+    connectionMode,
+    handleModeChange,
     baseUrl,
     setBaseUrl,
     apiKey,
     setApiKey,
+    serverPassword,
+    setServerPassword,
     validateStatus,
     setValidateStatus,
     selectedServerId,
     setSelectedServerId,
     budgets,
+    validatedMode,
     validatedUrl,
     validatedApiVersion,
     selectedGroupId,
@@ -66,6 +71,8 @@ export function ConnectForm() {
     return null;
   }
 
+  const activeValidatedMode = validatedMode ?? connectionMode;
+
   // ── Panels ──────────────────────────────────────────────────────────────────
 
   const step1Panel = (
@@ -92,9 +99,47 @@ export function ConnectForm() {
         )}
       </div>
 
-      {savedServers.length > 0 && (
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2" role="tablist" aria-label="Connection type">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={connectionMode === "http-api"}
+          disabled={anyBusy}
+          onClick={() => handleModeChange("http-api")}
+          className={cn(
+            "flex min-h-11 items-center justify-center gap-2 rounded-lg border px-3 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50",
+            connectionMode === "http-api"
+              ? "border-primary bg-primary/5 text-primary"
+              : "border-border hover:bg-muted"
+          )}
+        >
+          <Server className="h-4 w-4" />
+          Classic API Server
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={connectionMode === "browser-api"}
+          disabled={anyBusy}
+          onClick={() => handleModeChange("browser-api")}
+          className={cn(
+            "flex min-h-11 items-center justify-center gap-2 rounded-lg border px-3 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50",
+            connectionMode === "browser-api"
+              ? "border-primary bg-primary/5 text-primary"
+              : "border-border hover:bg-muted"
+          )}
+        >
+          <KeyRound className="h-4 w-4" />
+          <span>Direct Actual Server</span>
+          <span className="rounded-sm bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-700">
+            Experimental
+          </span>
+        </button>
+      </div>
+
+      {savedServersForMode.length > 0 && (
         <div className="flex flex-wrap gap-2">
-          {savedServers.map((server) => (
+          {savedServersForMode.map((server) => (
             <button
               key={server.id}
               type="button"
@@ -131,11 +176,13 @@ export function ConnectForm() {
       {showManualForm && (
         <div className="flex flex-col gap-4">
           <div className="flex flex-col gap-2">
-            <Label htmlFor="baseUrl">API Server URL</Label>
+            <Label htmlFor="baseUrl">
+              {connectionMode === "browser-api" ? "Actual Server URL" : "API Server URL"}
+            </Label>
             <Input
               id="baseUrl"
               type="text"
-              placeholder="https://budgetapi.example.com"
+              placeholder={connectionMode === "browser-api" ? "https://actual.example.com" : "https://budgetapi.example.com"}
               autoComplete="off"
               spellCheck={false}
               value={baseUrl}
@@ -148,26 +195,50 @@ export function ConnectForm() {
               disabled={anyBusy}
             />
           </div>
-          <div className="flex flex-col gap-2">
-            <Label htmlFor="apiKey">API Key</Label>
-            <Input
-              id="apiKey"
-              type="password"
-              placeholder="••••••••••••••••"
-              autoComplete="current-password"
-              value={apiKey}
-              onChange={(e) => {
-                setApiKey(e.target.value);
-                if (validateStatus.kind === "error") setValidateStatus({ kind: "idle" });
-                handleCredentialChange();
-              }}
-              onKeyDown={handleKeyDown}
-              disabled={anyBusy}
-            />
-            <p className="text-xs text-muted-foreground">
-              The <code>ACTUAL_API_KEY</code> on your API server.
-            </p>
-          </div>
+
+          {connectionMode === "http-api" ? (
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="apiKey">API Key</Label>
+              <Input
+                id="apiKey"
+                type="password"
+                placeholder="••••••••••••••••"
+                autoComplete="current-password"
+                value={apiKey}
+                onChange={(e) => {
+                  setApiKey(e.target.value);
+                  if (validateStatus.kind === "error") setValidateStatus({ kind: "idle" });
+                  handleCredentialChange();
+                }}
+                onKeyDown={handleKeyDown}
+                disabled={anyBusy}
+              />
+              <p className="text-xs text-muted-foreground">
+                The <code>ACTUAL_API_KEY</code> on your API server.
+              </p>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="serverPassword">Server password</Label>
+              <Input
+                id="serverPassword"
+                type="password"
+                placeholder="••••••••••••••••"
+                autoComplete="current-password"
+                value={serverPassword}
+                onChange={(e) => {
+                  setServerPassword(e.target.value);
+                  if (validateStatus.kind === "error") setValidateStatus({ kind: "idle" });
+                  handleCredentialChange();
+                }}
+                onKeyDown={handleKeyDown}
+                disabled={anyBusy}
+              />
+              <p className="text-xs text-muted-foreground">
+                Stored in session storage for this browser tab.
+              </p>
+            </div>
+          )}
         </div>
       )}
 
@@ -203,6 +274,7 @@ export function ConnectForm() {
         <div className="ml-auto flex items-center gap-1.5 rounded-full bg-green-50 px-2.5 py-1 text-xs text-green-700">
           <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
           <span>{deriveLabel(validatedUrl)}</span>
+          <span className="text-green-600/70">· {getConnectionModeBadge(activeValidatedMode)}</span>
           {validatedApiVersion && <span className="text-green-600/70">· v{validatedApiVersion}</span>}
         </div>
       </div>
@@ -242,7 +314,7 @@ export function ConnectForm() {
                   </span>
                   {alreadyConnected && (
                     <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
-                      connected
+                      {activeValidatedMode === "browser-api" ? "saved" : "connected"}
                     </span>
                   )}
                 </span>
@@ -281,6 +353,13 @@ export function ConnectForm() {
         </div>
       )}
 
+      {connectStatus.kind === "success" && activeValidatedMode === "browser-api" && (
+        <div className="flex items-start gap-2.5 rounded-lg bg-green-50 px-3.5 py-3 text-sm text-green-700">
+          <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+          <span>Direct connection saved. Classic connections still power app pages.</span>
+        </div>
+      )}
+
       <button
         type="button"
         disabled={connectBusy || !!reconnectBusyId || !selectedGroupId}
@@ -288,7 +367,12 @@ export function ConnectForm() {
         className="flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
       >
         {connectBusy ? (
-          <><Loader2 className="h-4 w-4 animate-spin" />Connecting…</>
+          <>
+            <Loader2 className="h-4 w-4 animate-spin" />
+            {activeValidatedMode === "browser-api" ? "Saving…" : "Connecting…"}
+          </>
+        ) : activeValidatedMode === "browser-api" ? (
+          "Save Direct Connection"
         ) : (
           "Connect"
         )}
