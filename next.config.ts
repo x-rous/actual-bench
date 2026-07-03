@@ -6,6 +6,24 @@ const pkg = JSON.parse(
   readFileSync(join(process.cwd(), "package.json"), "utf8")
 ) as { version?: string };
 
+const directBrowserApiLabEnabled =
+  process.env.NEXT_PUBLIC_DIRECT_BROWSER_API === "1";
+
+const directBrowserApiLabHeaders = [
+  {
+    key: "Cross-Origin-Opener-Policy",
+    value: "same-origin",
+  },
+  {
+    key: "Cross-Origin-Embedder-Policy",
+    value: "require-corp",
+  },
+  {
+    key: "Cross-Origin-Resource-Policy",
+    value: "same-origin",
+  },
+];
+
 const nextConfig: NextConfig = {
   // Emit a self-contained standalone server (server.js + only the traced
   // runtime node_modules) so the Docker runtime image doesn't carry the full
@@ -36,6 +54,28 @@ const nextConfig: NextConfig = {
   // current release without needing it set in .env files.
   env: {
     NEXT_PUBLIC_APP_VERSION: pkg.version ?? "0.0.0",
+  },
+  async headers() {
+    if (!directBrowserApiLabEnabled) return [];
+
+    return [
+      {
+        source: "/browser-api-lab",
+        headers: directBrowserApiLabHeaders,
+      },
+      {
+        source: "/browser-api-lab/:path*",
+        headers: directBrowserApiLabHeaders,
+      },
+      {
+        source: "/_next/static/:path*",
+        headers: directBrowserApiLabHeaders,
+      },
+      {
+        source: "/actual-api-assets/:path*",
+        headers: directBrowserApiLabHeaders,
+      },
+    ];
   },
 };
 
