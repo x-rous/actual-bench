@@ -33,7 +33,7 @@ type SavedServerInput = Omit<SavedHttpApiServer, "id"> | Omit<SavedBrowserApiSer
 
 type SavedServersActions = {
   /**
-   * Adds a server. Idempotent by mode + baseUrl so Classic and Direct presets
+   * Adds a server. Idempotent by mode + baseUrl so HTTP API and Direct presets
    * for the same host can coexist without overwriting each other.
    */
   addServer: (params: SavedServerInput) => void;

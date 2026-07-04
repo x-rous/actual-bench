@@ -76,6 +76,15 @@ const secondConnection: ConnectionInstance = {
   budgetSyncId: "budget-2",
 };
 
+const directConnection: ConnectionInstance = {
+  id: "direct-1",
+  label: "Direct Household",
+  mode: "browser-api",
+  baseUrl: "https://actual.example.com",
+  serverPassword: "secret",
+  budgetSyncId: "budget-1",
+};
+
 const download: DownloadResult = {
   bytes: new ArrayBuffer(8),
   filename: "household.zip",
@@ -206,6 +215,15 @@ describe("BudgetDiagnosticsView", () => {
       useConnectionStore.setState({ instances: [], activeInstanceId: null });
     });
     jest.clearAllMocks();
+  });
+
+  it("gates Direct connections before exporting a snapshot", () => {
+    setActiveConnection(directConnection);
+
+    render(<BudgetDiagnosticsView />);
+
+    expect(screen.getByText("Budget File Health needs HTTP API Server mode")).toBeInTheDocument();
+    expect(mockExportSnapshot).not.toHaveBeenCalled();
   });
 
   it("opens the active budget snapshot and renders the tabbed diagnostics workspace", async () => {

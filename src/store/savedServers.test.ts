@@ -5,7 +5,7 @@ import {
 } from "./savedServers";
 
 describe("saved servers migration", () => {
-  it("migrates legacy saved servers without a mode to Classic http-api", () => {
+  it("migrates legacy saved servers without a mode to HTTP API mode", () => {
     const migrated = migrateSavedServersState({
       servers: [
         {
@@ -20,7 +20,7 @@ describe("saved servers migration", () => {
     expect(migrated.servers).toHaveLength(1);
     const [server] = migrated.servers;
     expect(isHttpApiSavedServer(server)).toBe(true);
-    if (!isHttpApiSavedServer(server)) throw new Error("Expected Classic saved server");
+    if (!isHttpApiSavedServer(server)) throw new Error("Expected HTTP API saved server");
     expect(server.mode).toBe("http-api");
     expect(server.apiKey).toBe("api-key");
   });

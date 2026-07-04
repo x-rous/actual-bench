@@ -27,7 +27,7 @@
 
 ---
 
-**Actual Bench** is a companion app for [Actual Budget](https://github.com/actualbudget/actual). It connects to a self-hosted [actual-http-api](https://github.com/jhonderson/actual-http-api) server and gives power users a focused interface for the work that is hard to do in the native Actual Budget UI: bulk setup, master-data cleanup, advanced rule maintenance, full year view budget editing, diagnostics, and ad-hoc ActualQL analysis.
+**Actual Bench** is a companion app for [Actual Budget](https://github.com/actualbudget/actual). It connects through the self-hosted [actual-http-api](https://github.com/jhonderson/actual-http-api) proxy by default, with an opt-in Direct Actual Server mode for selected browser-transport workflows. It gives power users a focused interface for the work that is hard to do in the native Actual Budget UI: bulk setup, master-data cleanup, advanced rule maintenance, full year view budget editing, diagnostics, and ad-hoc ActualQL analysis.
 
 It is not trying to replace Actual Budget's day-to-day transaction entry experience. It is the workbench you open when you need to inspect, repair, seed, audit, or reshape your budget data with confidence.
 
@@ -172,14 +172,22 @@ flowchart LR
   App --> Proxy
   Proxy --> API
   API --> Actual
+  Browser -. Direct mode .-> Actual
   Actual --> Budget
 ```
 
-All requests to `actual-http-api` go through Actual Bench's internal Next.js proxy. The browser does not call `actual-http-api` directly.
+HTTP API Server mode sends all `actual-http-api` requests through Actual Bench's internal Next.js proxy; the browser never calls `actual-http-api` directly. Direct mode bypasses `actual-http-api` and uses Actual's browser API worker from the user's browser.
+
+### Direct mode
+
+Direct mode is opt-in. Set `DIRECT_BROWSER_API=1` or `NEXT_PUBLIC_DIRECT_BROWSER_API=1` and restart the app to enable the Direct connection tab and the worker/static asset headers. The app must be served with cross-origin isolation (`Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy: require-corp`), and the Actual Server must be reachable from the browser through CORS or a same-origin reverse proxy.
+
+Direct mode currently supports core entity pages and Budget Management reads/staged saves. Budget File Health, Data Browser, and the generic ActualQL Query workspace remain HTTP API Server-only because they depend on full budget export or broader query-console compatibility.
 
 ## Privacy and data handling
 
 - Saved connections are stored in **session storage** and are cleared when the browser tab is closed.
+- Direct mode credentials are also kept in session storage; use **Disconnect All Connections** or **Clear all data** to remove Actual Bench connection state in the current tab. Actual's browser worker cache may require clearing this site's browser data if it becomes stale or corrupt.
 - Staged data and query cache are scoped per connection so switching budgets does not leak local state between sessions.
 - Budget File Health and the Data Browser process exported snapshots locally in the browser and do not write changes back to the budget.
 - Exported budget ZIP files and diagnostic data may still contain personal financial information, so handle downloaded files carefully.
@@ -189,8 +197,8 @@ All requests to `actual-http-api` go through Actual Bench's internal Next.js pro
 ## Requirements
 
 - A running [Actual Budget](https://github.com/actualbudget/actual) server
-- A running [actual-http-api](https://github.com/jhonderson/actual-http-api) instance connected to that server
-- An `ACTUAL_API_KEY` configured for `actual-http-api`
+- For HTTP API Server mode: a running [actual-http-api](https://github.com/jhonderson/actual-http-api) instance and an `ACTUAL_API_KEY`
+- For Direct mode: `DIRECT_BROWSER_API=1` or `NEXT_PUBLIC_DIRECT_BROWSER_API=1`, cross-origin isolation headers, and browser access from Actual Bench to Actual Server
 - Docker, Docker Compose, or Node.js 20+ for local development
 
 
@@ -267,20 +275,22 @@ Replace `actual-stack` with your real Docker network name.
 
 ## Connecting to a budget
 
-Actual Bench uses a two-step connection flow.
+Actual Bench uses a two-step connection flow for both HTTP API Server and Direct Actual Server connections.
 
 ### 1. Choose a server
 
-Enter your `actual-http-api` base URL and API key, then click **Load Budgets**.
+Choose **HTTP API Server** for an `actual-http-api` proxy, or **Direct Actual Server** for a browser-to-Actual Server connection. Enter the matching server URL and credential, then click **Load Budgets**.
 
 | Field | Description |
 |---|---|
-| **API Server URL** | Base URL of your `actual-http-api` server, for example `https://actual-api.example.com` |
-| **API Key** | The `ACTUAL_API_KEY` configured on the API server |
+| **HTTP API Server URL** | Base URL of your `actual-http-api` server, for example `https://actual-api.example.com` |
+| **API Key** | The `ACTUAL_API_KEY` configured on the HTTP API server |
+| **Actual Server URL** | Base URL of your Actual Server when using Direct mode, for example `https://actual.example.com` |
+| **Actual Server password** | The password used by Actual Server browser clients |
 
 ### 2. Choose a budget
 
-Pick a budget returned by the API server, optionally enter the encryption password for encrypted budgets, and click **Connect**.
+Pick a budget returned by the selected server, optionally enter the encryption password for encrypted budgets, and click **Connect**.
 
 Previously used connections appear on the connection screen for one-click reconnect during the current browser session.
 

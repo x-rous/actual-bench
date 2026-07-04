@@ -21,7 +21,7 @@ jest.mock("../../../lib/actual", () => ({
 
 let mockActiveConnection: ConnectionInstance = {
   id: "conn-1",
-  label: "Classic",
+  label: "HTTP API",
   mode: "http-api",
   baseUrl: "https://api.example.com",
   apiKey: "key",
@@ -71,7 +71,7 @@ describe("useAccountsSave", () => {
     mockSyncTransportAfterChanges.mockClear();
     mockActiveConnection = {
       id: "conn-1",
-      label: "Classic",
+      label: "HTTP API",
       mode: "http-api",
       baseUrl: "https://api.example.com",
       apiKey: "key",
@@ -83,7 +83,7 @@ describe("useAccountsSave", () => {
     useStagedStore.getState().discardAll();
   });
 
-  it("saves Classic staged creates through the selected transport without Direct sync", async () => {
+  it("saves HTTP API staged creates through the selected transport without Direct sync", async () => {
     const transport = makeTransport("http-api");
     mockGetTransport.mockReturnValue(transport);
     stageNewAccount();

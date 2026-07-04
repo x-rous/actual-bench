@@ -3,7 +3,13 @@
 import Link from "next/link";
 import { ArrowRight, Database, Loader2, LockKeyhole } from "lucide-react";
 import { Button, buttonVariants } from "@/components/ui/button";
+import { DirectModeUnavailable } from "@/components/DirectModeUnavailable";
 import { cn } from "@/lib/utils";
+import {
+  isBrowserApiConnection,
+  selectActiveInstance,
+  useConnectionStore,
+} from "@/store/connection";
 import { useDiagnosticsSnapshot } from "../hooks/useDiagnosticsSnapshot";
 import { DataBrowserSection } from "./DataBrowserSection";
 import { SnapshotReloadControls } from "./SnapshotReloadControls";
@@ -81,7 +87,18 @@ function ErrorState({ message, onRetry }: { message: string | null; onRetry: () 
  * loads instantly without re-downloading.
  */
 export function DataBrowserView() {
+  const activeConnection = useConnectionStore(selectActiveInstance);
   const { connection, snapshot, loadedAt, retry } = useDiagnosticsSnapshot();
+
+  if (isBrowserApiConnection(activeConnection)) {
+    return (
+      <DirectModeUnavailable
+        title="Data Browser needs HTTP API Server mode"
+        description="Direct mode cannot export the full budget database for local SQLite browsing yet."
+        detail="Use an HTTP API Server connection for raw SQLite table browsing until Direct export support is added."
+      />
+    );
+  }
 
   if (!connection) {
     return <ConnectState />;

@@ -9,7 +9,11 @@ import {
   getServerVersion,
   type BudgetFile,
 } from "@/lib/api/client";
-import { listBrowserApiBudgets } from "@/lib/actual/browser/labRuntime";
+import { getTransport } from "@/lib/actual";
+import {
+  listBrowserApiBudgets,
+  loadBrowserApiBudgetList,
+} from "@/lib/actual/browser/labRuntime";
 import {
   useConnectionStore,
   selectActiveInstance,
@@ -57,6 +61,7 @@ export function useConnectForm() {
   const instances = useConnectionStore((s) => s.instances);
   const discardAll = useStagedStore((s) => s.discardAll);
   const addServer = useSavedServersStore((s) => s.addServer);
+  const removeServer = useSavedServersStore((s) => s.removeServer);
   const savedServers = useSavedServersStore((s) => s.servers);
 
   // Server credentials
@@ -76,6 +81,7 @@ export function useConnectForm() {
   const [validatedApiKey, setValidatedApiKey] = useState("");
   const [validatedServerPassword, setValidatedServerPassword] = useState("");
   const [validatedApiVersion, setValidatedApiVersion] = useState<string | null>(null);
+  const [validatedServerVersion, setValidatedServerVersion] = useState<string | null>(null);
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
   const [encryptionPassword, setEncryptionPassword] = useState("");
   const [connectStatus, setConnectStatus] = useState<ConnectStatus>({ kind: "idle" });
@@ -113,6 +119,36 @@ export function useConnectForm() {
 
   // ── State helpers ────────────────────────────────────────────────────────────
 
+  function removeSavedServerIfUnused(instance: ConnectionInstance) {
+    const stillUsed = useConnectionStore
+      .getState()
+      .instances.some(
+        (other) =>
+          other.id !== instance.id &&
+          other.mode === instance.mode &&
+          other.baseUrl === instance.baseUrl
+      );
+
+    if (stillUsed) return;
+
+    const savedServer = useSavedServersStore
+      .getState()
+      .servers.find(
+        (server) =>
+          server.mode === instance.mode && server.baseUrl === instance.baseUrl
+      );
+
+    if (savedServer) removeServer(savedServer.id);
+  }
+
+  function handleRemoveInstance(id: string) {
+    const instance = useConnectionStore
+      .getState()
+      .instances.find((candidate) => candidate.id === id);
+    if (instance) removeSavedServerIfUnused(instance);
+    removeInstance(id);
+  }
+
   function resetStep2() {
     setBudgets(null);
     setSelectedGroupId(null);
@@ -123,6 +159,7 @@ export function useConnectForm() {
     setValidatedApiKey("");
     setValidatedServerPassword("");
     setValidatedApiVersion(null);
+    setValidatedServerVersion(null);
   }
 
   function handleCredentialChange() {
@@ -178,6 +215,8 @@ export function useConnectForm() {
       try {
         discardAll();
         queryClient.clear();
+        const version = await getTransport(instance).getServerVersion().catch(() => null);
+        if (version) updateInstance(instance.id, { serverVersion: version });
         setActiveInstance(instance.id);
         toast.success("Direct connection opened. Redirecting…");
         await new Promise((r) => setTimeout(r, 600));
@@ -263,6 +302,7 @@ export function useConnectForm() {
     try {
       let fetched: BudgetFile[];
       let apiVersion: string | null = null;
+      let serverVersion: string | null = null;
 
       if (mode === "http-api") {
         const [budgetsResult, apiVersionResult] = await Promise.allSettled([
@@ -278,10 +318,12 @@ export function useConnectForm() {
 
         addServer({ mode: "http-api", label: deriveLabel(url), baseUrl: url, apiKey: key });
       } else {
-        fetched = (await listBrowserApiBudgets({
+        const result = await loadBrowserApiBudgetList({
           serverUrl: url,
           serverPassword: password,
-        })).map(toBudgetFile);
+        });
+        fetched = result.budgets.map(toBudgetFile);
+        serverVersion = result.serverVersion;
 
         addServer({
           mode: "browser-api",
@@ -301,6 +343,7 @@ export function useConnectForm() {
       setValidatedApiKey(mode === "http-api" ? key : "");
       setValidatedServerPassword(mode === "browser-api" ? password : "");
       setValidatedApiVersion(apiVersion);
+      setValidatedServerVersion(serverVersion);
       setBudgets(fetched);
       setSelectedGroupId(fetched[0].groupId!);
       setValidateStatus({ kind: "idle" });
@@ -346,6 +389,7 @@ export function useConnectForm() {
         baseUrl: validatedUrl,
         serverPassword: validatedServerPassword,
         budgetSyncId: selected.groupId!,
+        ...(validatedServerVersion ? { serverVersion: validatedServerVersion } : {}),
         ...(encryptionPassword.trim() ? { encryptionPassword: encryptionPassword.trim() } : {}),
       };
 
@@ -365,7 +409,7 @@ export function useConnectForm() {
       return;
     }
 
-    // If this Classic budget is already saved, reconnect to the existing instance
+    // If this HTTP API budget is already saved, reconnect to the existing instance
     // instead of creating a duplicate.
     const existing = instances
       .filter(isHttpApiConnection)
@@ -467,7 +511,7 @@ export function useConnectForm() {
     activeInstance,
     savedServers,
     savedServersForMode,
-    removeInstance,
+    removeInstance: handleRemoveInstance,
     // Credentials
     connectionMode,
     handleModeChange,
@@ -485,6 +529,7 @@ export function useConnectForm() {
     validatedMode,
     validatedUrl,
     validatedApiVersion,
+    validatedServerVersion,
     selectedGroupId,
     setSelectedGroupId,
     encryptionPassword,

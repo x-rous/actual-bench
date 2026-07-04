@@ -47,7 +47,7 @@ describe("Actual transport factory", () => {
     mockSyncBrowserApiRuntime.mockReset();
   });
 
-  it("dispatches Classic connections to the HTTP API transport", () => {
+  it("dispatches HTTP API connections to the HTTP API transport", () => {
     expect(getTransport(httpConnection).mode).toBe("http-api");
   });
 
@@ -55,7 +55,7 @@ describe("Actual transport factory", () => {
     expect(getTransport(browserConnection).mode).toBe("browser-api");
   });
 
-  it("Classic account reads delegate to the existing accounts API helper", async () => {
+  it("HTTP API account reads delegate to the existing accounts API helper", async () => {
     const accounts: Account[] = [
       { id: "account-1", name: "Checking", offBudget: false, closed: false },
     ];

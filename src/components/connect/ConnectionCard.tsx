@@ -27,7 +27,7 @@ export function ConnectionCard({
       className={cn(
         "flex items-center gap-3 rounded-lg border px-4 py-3 transition-colors",
         isActive ? "border-primary bg-primary/5" : "border-border bg-background",
-        isDirect && "border-amber-200 bg-amber-50/40"
+        isDirect && "border-emerald-200 bg-emerald-50/40"
       )}
     >
       <div className="flex-1 min-w-0">
@@ -37,7 +37,7 @@ export function ConnectionCard({
             className={cn(
               "shrink-0 rounded-full px-2 py-0.5 text-xs font-medium",
               isDirect
-                ? "bg-amber-100 text-amber-700"
+                ? "bg-emerald-100 text-emerald-700"
                 : "bg-muted text-muted-foreground"
             )}
           >
@@ -58,7 +58,7 @@ export function ConnectionCard({
           type="button"
           disabled={anyBusy}
           onClick={() => onConnect(instance)}
-          title={isDirect ? "Open Direct connection" : "Connect"}
+          title="Connect"
           className="flex h-8 items-center gap-1.5 rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
         >
           {busy ? (
@@ -66,8 +66,6 @@ export function ConnectionCard({
               <Loader2 className="h-3 w-3 animate-spin" />
               Connecting…
             </>
-          ) : isDirect ? (
-            "Open"
           ) : (
             "Connect"
           )}
@@ -76,9 +74,13 @@ export function ConnectionCard({
           type="button"
           disabled={anyBusy}
           onClick={() => onRemove(instance.id)}
-          title="Remove"
+          title={
+            isDirect
+              ? "Forget Direct connection and saved credentials if no other budget uses this server"
+              : "Remove connection"
+          }
           aria-label={
-            "Remove " + instance.label
+            (isDirect ? "Forget Direct connection " : "Remove connection ") + instance.label
           }
           className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive disabled:cursor-not-allowed disabled:opacity-50"
         >

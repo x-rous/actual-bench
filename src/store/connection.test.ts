@@ -5,7 +5,7 @@ import {
 } from "./connection";
 
 describe("connection store migration", () => {
-  it("migrates legacy connections without a mode to Classic http-api", () => {
+  it("migrates legacy connections without a mode to HTTP API mode", () => {
     const migrated = migrateConnectionState({
       instances: [
         {
@@ -26,7 +26,7 @@ describe("connection store migration", () => {
     expect(migrated.instances).toHaveLength(1);
     const [instance] = migrated.instances;
     expect(isHttpApiConnection(instance)).toBe(true);
-    if (!isHttpApiConnection(instance)) throw new Error("Expected Classic connection");
+    if (!isHttpApiConnection(instance)) throw new Error("Expected HTTP API connection");
     expect(instance.mode).toBe("http-api");
     expect(instance.apiKey).toBe("api-key");
     expect(instance.encryptionPassword).toBe("budget-password");
@@ -34,7 +34,7 @@ describe("connection store migration", () => {
     expect(instance.serverVersion).toBe("25.4.0");
   });
 
-  it("preserves Direct connections but does not restore them as active", () => {
+  it("preserves Direct connections and restores them as active within the session", () => {
     const migrated = migrateConnectionState({
       state: {
         instances: [
@@ -52,7 +52,7 @@ describe("connection store migration", () => {
       },
     });
 
-    expect(migrated.activeInstanceId).toBeNull();
+    expect(migrated.activeInstanceId).toBe("direct-1");
     expect(migrated.instances).toHaveLength(1);
     const [instance] = migrated.instances;
     expect(isBrowserApiConnection(instance)).toBe(true);

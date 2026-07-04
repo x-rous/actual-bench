@@ -43,6 +43,7 @@ export function ConnectForm() {
     validatedMode,
     validatedUrl,
     validatedApiVersion,
+    validatedServerVersion,
     selectedGroupId,
     setSelectedGroupId,
     encryptionPassword,
@@ -76,6 +77,8 @@ export function ConnectForm() {
   }
 
   const activeValidatedMode = validatedMode ?? connectionMode;
+  const directBrowserApiEnabled =
+    process.env.NEXT_PUBLIC_DIRECT_BROWSER_API_ENABLED === "1";
 
   // ── Panels ──────────────────────────────────────────────────────────────────
 
@@ -118,13 +121,18 @@ export function ConnectForm() {
           )}
         >
           <Server className="h-4 w-4" />
-          Classic API Server
+          <span className="whitespace-nowrap">HTTP API Server</span>
         </button>
         <button
           type="button"
           role="tab"
           aria-selected={connectionMode === "browser-api"}
-          disabled={anyBusy}
+          disabled={anyBusy || !directBrowserApiEnabled}
+          title={
+            directBrowserApiEnabled
+              ? "Direct Actual Server"
+              : "Set DIRECT_BROWSER_API=1 and restart the app to enable Direct mode"
+          }
           onClick={() => handleModeChange("browser-api")}
           className={cn(
             "flex min-h-11 items-center justify-center gap-2 rounded-lg border px-3 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50",
@@ -134,12 +142,28 @@ export function ConnectForm() {
           )}
         >
           <KeyRound className="h-4 w-4" />
-          <span>Direct Actual Server</span>
-          <span className="rounded-sm bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-700">
-            Experimental
-          </span>
+          <span className="whitespace-nowrap">Direct Actual Server</span>
         </button>
       </div>
+
+      {!directBrowserApiEnabled && (
+        <div className="flex items-start gap-2.5 rounded-lg border border-muted bg-muted/40 px-3.5 py-3 text-xs leading-5 text-muted-foreground">
+          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+          <span>Set <code>DIRECT_BROWSER_API=1</code> and restart the app to enable Direct Actual Server mode.</span>
+        </div>
+      )}
+
+      {connectionMode === "browser-api" && (
+        <div className="flex items-start gap-2.5 rounded-lg border border-emerald-200 bg-emerald-50/70 px-3.5 py-3 text-xs leading-5 text-emerald-950 dark:border-emerald-900/50 dark:bg-emerald-950/20 dark:text-emerald-100">
+          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+          <div>
+            <p className="font-medium">Direct connects this browser to your Actual Server.</p>
+            <p className="mt-1 text-emerald-950/75 dark:text-emerald-100/80">
+              It needs Direct mode enabled on this app and browser access to your server. Credentials stay in session storage for this tab. If local budget data ever looks stale, clear browser data for this site.
+            </p>
+          </div>
+        </div>
+      )}
 
       {savedServersForMode.length > 0 && (
         <div className="flex flex-wrap gap-2">
@@ -181,7 +205,7 @@ export function ConnectForm() {
         <div className="flex flex-col gap-4">
           <div className="flex flex-col gap-2">
             <Label htmlFor="baseUrl">
-              {connectionMode === "browser-api" ? "Actual Server URL" : "API Server URL"}
+              {connectionMode === "browser-api" ? "Actual Server URL" : "HTTP API Server URL"}
             </Label>
             <Input
               id="baseUrl"
@@ -279,7 +303,8 @@ export function ConnectForm() {
           <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
           <span>{deriveLabel(validatedUrl)}</span>
           <span className="text-green-600/70">· {getConnectionModeBadge(activeValidatedMode)}</span>
-          {validatedApiVersion && <span className="text-green-600/70">· v{validatedApiVersion}</span>}
+          {validatedApiVersion && <span className="text-green-600/70">· API v{validatedApiVersion}</span>}
+          {validatedServerVersion && <span className="text-green-600/70">· Actual v{validatedServerVersion}</span>}
         </div>
       </div>
 
@@ -360,7 +385,7 @@ export function ConnectForm() {
       {connectStatus.kind === "success" && activeValidatedMode === "browser-api" && (
         <div className="flex items-start gap-2.5 rounded-lg bg-green-50 px-3.5 py-3 text-sm text-green-700">
           <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
-          <span>Direct connection opened. Core entity pages now use the browser transport.</span>
+          <span>Direct connection opened. Core entity pages and Budget Management now use the browser transport.</span>
         </div>
       )}
 
@@ -373,10 +398,8 @@ export function ConnectForm() {
         {connectBusy ? (
           <>
             <Loader2 className="h-4 w-4 animate-spin" />
-            {activeValidatedMode === "browser-api" ? "Opening…" : "Connecting…"}
+            Connecting…
           </>
-        ) : activeValidatedMode === "browser-api" ? (
-          "Open Direct Connection"
         ) : (
           "Connect"
         )}

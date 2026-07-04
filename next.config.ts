@@ -55,6 +55,7 @@ const nextConfig: NextConfig = {
   // current release without needing it set in .env files.
   env: {
     NEXT_PUBLIC_APP_VERSION: pkg.version ?? "0.0.0",
+    NEXT_PUBLIC_DIRECT_BROWSER_API_ENABLED: directBrowserApiLabEnabled ? "1" : "0",
   },
   async headers() {
     if (!directBrowserApiLabEnabled) return [];

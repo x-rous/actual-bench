@@ -3,8 +3,14 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { AlertTriangle, X } from "lucide-react";
 import { toast } from "sonner";
-import { useConnectionStore, selectActiveInstance, isHttpApiConnection } from "@/store/connection";
+import {
+  useConnectionStore,
+  selectActiveInstance,
+  isBrowserApiConnection,
+  isHttpApiConnection,
+} from "@/store/connection";
 import { useStagedStore, selectHasChanges } from "@/store/staged";
+import { DirectModeUnavailable } from "@/components/DirectModeUnavailable";
 import { runQuery } from "@/lib/api/query";
 import { cn } from "@/lib/utils";
 import { QueryEditor } from "./QueryEditor";
@@ -302,7 +308,7 @@ export function QueryWorkspace() {
         return;
       }
       if (!isHttpApiConnection(connection)) {
-        toast.error("Direct Actual Server transport is not active for queries yet.");
+        toast.error("ActualQL Queries require an HTTP API Server connection.");
         return;
       }
       // Prevent overlapping concurrent executions.
@@ -497,6 +503,16 @@ export function QueryWorkspace() {
   }
 
   // ─── Render ──────────────────────────────────────────────────────────────────
+
+  if (isBrowserApiConnection(connection)) {
+    return (
+      <DirectModeUnavailable
+        title="ActualQL Queries need HTTP API Server mode"
+        description="Direct mode currently supports only the internal query subset used by migrated app pages."
+        detail="Use an HTTP API Server connection for the generic query workspace."
+      />
+    );
+  }
 
   return (
     <div className="flex min-h-0 flex-1 overflow-hidden">

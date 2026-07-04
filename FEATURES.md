@@ -5,7 +5,8 @@
 - Two-step connect flow: validate server credentials (URL + API key), then pick from the list of budgets returned by the server
 - Save multiple server connections and switch between them with one click from the top bar
 - Optional encryption password for end-to-end encrypted budgets
-- Experimental Direct Actual Server mode opens a selected budget through the browser API worker without an `actual-http-api` proxy; core entity pages and Budget Management support reads and staged saves in the Direct transport
+- Direct Actual Server mode opens a selected budget through the browser API worker without an `actual-http-api` proxy; core entity pages and Budget Management support reads and staged saves in the Direct transport when `DIRECT_BROWSER_API=1` or `NEXT_PUBLIC_DIRECT_BROWSER_API=1` is enabled
+- Direct mode is clearly gated for HTTP API Server-only tools: Budget File Health, Data Browser, and the generic ActualQL Query workspace show unavailable states instead of running broken export/query paths
 - Remove saved connections individually
 - Per-connection query cache and staged data scoping — switching connections never leaks data between sessions
 - Connections are stored in session storage and cleared automatically when the tab is closed
@@ -506,7 +507,7 @@ budget-bundle-<label>-<date>.zip
 - Help menu in the sidebar with links to the GitHub repository, issue tracker, and changelog; a separate standalone "Keyboard shortcuts" button below it opens an app-wide shortcuts cheatsheet
 - Top bar shows a compact version cluster beside the active connection with `API` and `Actual` version badges when available
 - **Dark mode toggle** in the sidebar footer: cycles System → Light → Dark; preference persists in `localStorage`; icon reflects the resolved appearance (Moon when OS is dark in System mode, Sun when OS is light)
-- **Connection health indicator**: a coloured dot inside the connection dropdown trigger in the top bar actively polls `GET /actualhttpapiversion` every 30 seconds. Green = healthy (with round-trip latency in the tooltip), pulsing amber = checking, solid amber = degraded (>3 s response), red = offline. When the server is unreachable for two consecutive checks, a non-blocking red strip appears below the top bar and the Save button is disabled with an explanatory tooltip. The banner and disabled state clear automatically as soon as a check succeeds. Polling pauses when the browser tab is hidden and resumes immediately on tab focus.
+- **Connection health indicator**: HTTP API Server connections poll `GET /actualhttpapiversion` every 30 seconds through the proxy. Green = healthy (with round-trip latency in the tooltip), pulsing amber = checking, solid amber = degraded (>3 s response), red = offline. Direct connections show a distinct Direct browser-session status without pinging HTTP API version endpoints. When an HTTP API Server is unreachable for two consecutive checks, a non-blocking red strip appears below the top bar and the Save button is disabled with an explanatory tooltip. The banner and disabled state clear automatically as soon as a check succeeds. Polling pauses when the browser tab is hidden and resumes immediately on tab focus.
 
 ---
 

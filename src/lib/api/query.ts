@@ -2,7 +2,7 @@
  * Shared ActualQL query helper.
  *
  * Scope: intentionally narrow for internal app queries. The Query Console still
- * gates itself to Classic mode; Direct mode support here adapts the known query
+ * gates itself to HTTP API Server mode; Direct mode support here adapts the known query
  * shapes used by Budget Management, preferences, overview, and impact warnings.
  */
 

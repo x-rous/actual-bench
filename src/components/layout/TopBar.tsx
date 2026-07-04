@@ -61,23 +61,37 @@ function TopBarVersionChip({
   label,
   value,
   title,
+  tone = "neutral",
 }: {
   label: string;
-  value: string;
+  value?: string;
   title: string;
+  tone?: "neutral" | "direct";
 }) {
   return (
     <span
       title={title}
       aria-label={title}
-      className="inline-flex items-center gap-1 rounded-sm bg-muted/55 px-1.5 py-0.5 ring-1 ring-border/50"
+      className={cn(
+        "inline-flex items-center gap-1 rounded-sm px-1.5 py-0.5 ring-1",
+        tone === "direct"
+          ? "bg-emerald-100 text-emerald-700 ring-emerald-200"
+          : "bg-muted/55 ring-border/50"
+      )}
     >
-      <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground/80">
+      <span
+        className={cn(
+          "text-[10px] font-semibold uppercase leading-none tracking-wide",
+          tone === "direct" ? "text-emerald-700" : "text-muted-foreground/80"
+        )}
+      >
         {label}
       </span>
-      <span className="font-mono text-[11px] leading-none text-foreground/85">
-        {value}
-      </span>
+      {value && (
+        <span className="font-mono text-[11px] leading-none text-foreground/85">
+          {value}
+        </span>
+      )}
     </span>
   );
 }
@@ -105,10 +119,13 @@ export function TopBar() {
   const activeInstance = useConnectionStore(selectActiveInstance);
   const activeHttpInstance = isHttpApiConnection(activeInstance) ? activeInstance : null;
   const activeDirectInstance = isBrowserApiConnection(activeInstance) ? activeInstance : null;
+  const activeActualServerVersion = activeInstance?.serverVersion;
   const instances = useConnectionStore((s) => s.instances);
   const setActive = useConnectionStore((s) => s.setActiveInstance);
   const clearAll = useConnectionStore((s) => s.clearAll);
   const clearServers = useSavedServersStore((s) => s.clearServers);
+  const savedServers = useSavedServersStore((s) => s.servers);
+  const removeServer = useSavedServersStore((s) => s.removeServer);
   const removeInstance = useConnectionStore((s) => s.removeInstance);
 
   // Entity pages store
@@ -144,6 +161,24 @@ export function TopBar() {
     isOffline ||
     (isBudgetPage && budgetSaveReviewEdits !== null);
 
+  function removeSavedServerIfUnused(instance: typeof activeInstance) {
+    if (!instance) return;
+    const stillUsed = instances.some(
+      (other) =>
+        other.id !== instance.id &&
+        other.mode === instance.mode &&
+        other.baseUrl === instance.baseUrl
+    );
+
+    if (stillUsed) return;
+
+    const savedServer = savedServers.find(
+      (server) =>
+        server.mode === instance.mode && server.baseUrl === instance.baseUrl
+    );
+    if (savedServer) removeServer(savedServer.id);
+  }
+
   function handleDiscardAll() {
     if (isBudgetPage) {
       budgetDiscardAll();
@@ -177,6 +212,7 @@ export function TopBar() {
       handleDiscardAll();
       queryClient.clear();
       if (activeInstance) {
+        removeSavedServerIfUnused(activeInstance);
         removeInstance(activeInstance.id);
       }
       if (useConnectionStore.getState().instances.length === 0) {
@@ -323,37 +359,36 @@ export function TopBar() {
             </DropdownMenu>
           )}
 
-          {activeHttpInstance && (activeHttpInstance.apiVersion ?? activeHttpInstance.serverVersion) && (
+          {activeInstance && (activeDirectInstance || activeHttpInstance?.apiVersion || activeActualServerVersion) && (
             <div
               className="inline-flex items-center gap-2 text-xs select-none"
               title="Server versions are fetched when the connection is established or reconnected."
               aria-label="Current server versions"
             >
-              {activeHttpInstance.apiVersion && (
+              {activeDirectInstance && (
+                <TopBarVersionChip
+                  label="Direct"
+                  title="Direct Actual Server connection"
+                  tone="direct"
+                />
+              )}
+              {activeHttpInstance?.apiVersion && (
                 <TopBarVersionChip
                   label="API"
                   value={activeHttpInstance.apiVersion}
                   title={`actual-http-api v${activeHttpInstance.apiVersion}`}
                 />
               )}
-              {activeHttpInstance.serverVersion && (
+              {activeActualServerVersion && (
                 <TopBarVersionChip
                   label="Actual"
-                  value={activeHttpInstance.serverVersion}
-                  title={`Actual Budget v${activeHttpInstance.serverVersion}`}
+                  value={activeActualServerVersion}
+                  title={`Actual Budget v${activeActualServerVersion}`}
                 />
               )}
             </div>
           )}
 
-          {activeDirectInstance && (
-            <span
-              className="inline-flex items-center rounded-sm bg-emerald-100 px-1.5 py-0.5 text-[11px] font-medium text-emerald-800 ring-1 ring-emerald-200"
-              title="Direct browser API mode: reads and staged saves use the browser transport."
-            >
-              Direct
-            </span>
-          )}
         </div>
 
         {/* Right: search + undo/redo + unsaved indicator + save/discard */}

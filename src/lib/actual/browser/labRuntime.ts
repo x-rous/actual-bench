@@ -22,6 +22,11 @@ export type BrowserApiLabBudget = {
   owner?: string;
 };
 
+export type BrowserApiBudgetListResult = {
+  budgets: BrowserApiLabBudget[];
+  serverVersion: string | null;
+};
+
 export type BrowserApiLabAccount = {
   id: string;
   name: string;
@@ -82,6 +87,7 @@ type ActualApiModule = {
     verbose?: boolean;
   }): Promise<unknown>;
   getBudgets(): Promise<ActualBudget[]>;
+  getServerVersion?(): Promise<{ version: string } | { error: string }>;
   downloadBudget(syncId: string, options?: { password?: string }): Promise<unknown>;
   getAccounts(): Promise<ActualAccount[]>;
   sync(): Promise<unknown>;
@@ -263,9 +269,9 @@ async function loadActualApi(): Promise<ActualApiModule> {
   return actual as unknown as ActualApiModule;
 }
 
-export async function listBrowserApiBudgets(
+export async function loadBrowserApiBudgetList(
   input: BrowserApiBudgetListInput
-): Promise<BrowserApiLabBudget[]> {
+): Promise<BrowserApiBudgetListResult> {
   const serverUrl = normalizeUrl(input.serverUrl);
   const serverPassword = input.serverPassword;
 
@@ -287,7 +293,19 @@ export async function listBrowserApiBudgets(
 
     const budgets = (await withTimeout(actual.getBudgets(), "Listing budgets"))
       .map(normalizeBudget);
-    return filterRemoteBudgets(budgets);
+    const versionResult = actual.getServerVersion
+      ? await withTimeout(
+          actual.getServerVersion(),
+          "Reading Actual Server version",
+          10_000
+        ).catch(() => null)
+      : null;
+
+    return {
+      budgets: filterRemoteBudgets(budgets),
+      serverVersion:
+        versionResult && "version" in versionResult ? versionResult.version : null,
+    };
   } catch (error) {
     throw new Error(toErrorMessage(error, input));
   } finally {
@@ -299,6 +317,12 @@ export async function listBrowserApiBudgets(
       ).catch(() => undefined);
     }
   }
+}
+
+export async function listBrowserApiBudgets(
+  input: BrowserApiBudgetListInput
+): Promise<BrowserApiLabBudget[]> {
+  return (await loadBrowserApiBudgetList(input)).budgets;
 }
 
 export async function runBrowserApiLab(
