@@ -5,7 +5,7 @@
 - Two-step connect flow: validate server credentials (URL + API key), then pick from the list of budgets returned by the server
 - Save multiple server connections and switch between them with one click from the top bar
 - Optional encryption password for end-to-end encrypted budgets
-- Direct Actual Server mode opens a selected budget through the browser API worker without an `actual-http-api` proxy; core entity pages and Budget Management support reads and staged saves in the Direct transport when `DIRECT_BROWSER_API=1` or `NEXT_PUBLIC_DIRECT_BROWSER_API=1` is enabled
+- Direct Actual Server mode is available by default and opens a selected budget through the browser API worker without an `actual-http-api` proxy; core entity pages and Budget Management support reads and staged saves in the Direct transport
 - Direct mode is clearly gated for HTTP API Server-only tools: Budget File Health, Data Browser, and the generic ActualQL Query workspace show unavailable states instead of running broken export/query paths
 - Remove saved connections individually
 - Per-connection query cache and staged data scoping — switching connections never leaks data between sessions

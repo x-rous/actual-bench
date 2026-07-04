@@ -158,7 +158,7 @@ export function BrowserApiLabClient({ enabled }: BrowserApiLabClientProps) {
               </Badge>
             </div>
             <p className="max-w-2xl text-sm text-muted-foreground">
-              Hidden runtime check for Actual browser API worker before the main app transport is migrated.
+              Runtime check for Actual browser API worker, deployment headers, and Direct transport setup.
             </p>
           </div>
           <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/40 px-3 py-2 text-sm">
@@ -172,8 +172,8 @@ export function BrowserApiLabClient({ enabled }: BrowserApiLabClientProps) {
           <section className="flex items-start gap-3 rounded-lg border border-amber-400/30 bg-amber-50 p-4 text-sm text-amber-900 dark:bg-amber-950/20 dark:text-amber-200">
             <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
             <div>
-              <p className="font-medium">Browser API lab is disabled.</p>
-              <p className="mt-1">Set NEXT_PUBLIC_DIRECT_BROWSER_API=1 and restart the dev server to enable this route.</p>
+              <p className="font-medium">Browser API lab is disabled for this deployment.</p>
+              <p className="mt-1">Remove DIRECT_BROWSER_API=0 or NEXT_PUBLIC_DIRECT_BROWSER_API=0 and restart the app to enable this route.</p>
             </div>
           </section>
         )}

@@ -21,6 +21,12 @@ const ASSET_HEADERS = {
 
 const WORKER_CLONE_GUARD = "\n(() => {\n  const scope = self;\n  const nativePostMessage = scope.postMessage.bind(scope);\n\n  function cloneSafe(value, seen = new WeakMap()) {\n    if (typeof value === \"function\") return undefined;\n    if (typeof value === \"bigint\") return String(value);\n    if (value instanceof Error) {\n      return { name: value.name, message: value.message, stack: value.stack };\n    }\n    if (value instanceof Date) return value.toISOString();\n    if (value instanceof RegExp) return String(value);\n    if (value instanceof ArrayBuffer) return value.slice(0);\n    if (ArrayBuffer.isView(value)) return new value.constructor(value);\n    if (value instanceof Map) {\n      return Array.from(value.entries()).map(([key, item]) => [\n        cloneSafe(key, seen),\n        cloneSafe(item, seen),\n      ]);\n    }\n    if (value instanceof Set) {\n      return Array.from(value.values()).map((item) => cloneSafe(item, seen));\n    }\n    if (Array.isArray(value)) return value.map((item) => cloneSafe(item, seen));\n    if (value && typeof value === \"object\") {\n      if (seen.has(value)) return seen.get(value);\n\n      const output = {};\n      seen.set(value, output);\n\n      for (const [key, item] of Object.entries(value)) {\n        const safeItem = cloneSafe(item, seen);\n        if (safeItem !== undefined) output[key] = safeItem;\n      }\n      return output;\n    }\n    return value;\n  }\n\n  function safePostMessage(message, transfer) {\n    try {\n      if (transfer === undefined) {\n        nativePostMessage(message);\n      } else {\n        nativePostMessage(message, transfer);\n      }\n    } catch (error) {\n      if (!(error instanceof DOMException) || error.name !== \"DataCloneError\") {\n        throw error;\n      }\n\n      nativePostMessage(cloneSafe(message));\n    }\n  }\n\n  try {\n    Object.defineProperty(scope, \"postMessage\", {\n      configurable: true,\n      value: safePostMessage,\n      writable: true,\n    });\n  } catch {\n    scope.postMessage = safePostMessage;\n  }\n\n  const scopePrototype = Object.getPrototypeOf(scope);\n  if (scopePrototype?.postMessage) {\n    try {\n      Object.defineProperty(scopePrototype, \"postMessage\", {\n        configurable: true,\n        value: safePostMessage,\n        writable: true,\n      });\n    } catch {}\n  }\n})();\n";
 
+
+function isDirectBrowserApiDisabled(value: string | undefined): boolean {
+  const normalized = value?.trim().toLowerCase();
+  return normalized === "0" || normalized === "false" || normalized === "off";
+}
+
 function contentTypeFor(pathname: string): string {
   switch (extname(pathname)) {
     case ".js":
@@ -68,8 +74,8 @@ function resolveAssetPath(parts: string[]): string | null {
 
 export async function GET(_request: Request, context: RouteContext) {
   const enabled =
-    process.env["NEXT_PUBLIC_DIRECT_BROWSER_API"]?.trim() === "1" ||
-    process.env["DIRECT_BROWSER_API"]?.trim() === "1";
+    !isDirectBrowserApiDisabled(process.env["DIRECT_BROWSER_API"]) &&
+    !isDirectBrowserApiDisabled(process.env["NEXT_PUBLIC_DIRECT_BROWSER_API"]);
 
   if (!enabled) {
     return new NextResponse(null, { status: 404, headers: ASSET_HEADERS });

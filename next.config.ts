@@ -6,9 +6,14 @@ const pkg = JSON.parse(
   readFileSync(join(process.cwd(), "package.json"), "utf8")
 ) as { version?: string };
 
-const directBrowserApiLabEnabled =
-  process.env["NEXT_PUBLIC_DIRECT_BROWSER_API"]?.trim() === "1" ||
-  process.env["DIRECT_BROWSER_API"]?.trim() === "1";
+function isDirectBrowserApiDisabled(value: string | undefined): boolean {
+  const normalized = value?.trim().toLowerCase();
+  return normalized === "0" || normalized === "false" || normalized === "off";
+}
+
+const directBrowserApiEnabled =
+  !isDirectBrowserApiDisabled(process.env["DIRECT_BROWSER_API"]) &&
+  !isDirectBrowserApiDisabled(process.env["NEXT_PUBLIC_DIRECT_BROWSER_API"]);
 
 const directBrowserApiLabHeaders = [
   {
@@ -55,10 +60,10 @@ const nextConfig: NextConfig = {
   // current release without needing it set in .env files.
   env: {
     NEXT_PUBLIC_APP_VERSION: pkg.version ?? "0.0.0",
-    NEXT_PUBLIC_DIRECT_BROWSER_API_ENABLED: directBrowserApiLabEnabled ? "1" : "0",
+    NEXT_PUBLIC_DIRECT_BROWSER_API_ENABLED: directBrowserApiEnabled ? "1" : "0",
   },
   async headers() {
-    if (!directBrowserApiLabEnabled) return [];
+    if (!directBrowserApiEnabled) return [];
 
     return [
       {

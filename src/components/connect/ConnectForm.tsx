@@ -131,7 +131,7 @@ export function ConnectForm() {
           title={
             directBrowserApiEnabled
               ? "Direct Actual Server"
-              : "Set DIRECT_BROWSER_API=1 and restart the app to enable Direct mode"
+              : "Direct Actual Server mode is disabled for this deployment"
           }
           onClick={() => handleModeChange("browser-api")}
           className={cn(
@@ -149,7 +149,7 @@ export function ConnectForm() {
       {!directBrowserApiEnabled && (
         <div className="flex items-start gap-2.5 rounded-lg border border-muted bg-muted/40 px-3.5 py-3 text-xs leading-5 text-muted-foreground">
           <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
-          <span>Set <code>DIRECT_BROWSER_API=1</code> and restart the app to enable Direct Actual Server mode.</span>
+          <span>Direct Actual Server mode is disabled for this deployment. Remove <code>DIRECT_BROWSER_API=0</code> or <code>NEXT_PUBLIC_DIRECT_BROWSER_API=0</code> and restart the app to show both connection modes.</span>
         </div>
       )}
 
@@ -159,7 +159,7 @@ export function ConnectForm() {
           <div>
             <p className="font-medium">Direct connects this browser to your Actual Server.</p>
             <p className="mt-1 text-emerald-950/75 dark:text-emerald-100/80">
-              It needs Direct mode enabled on this app and browser access to your server. Credentials stay in session storage for this tab. If local budget data ever looks stale, clear browser data for this site.
+              Your browser must be able to reach the Actual Server URL directly. Credentials stay in session storage for this tab.
             </p>
           </div>
         </div>
