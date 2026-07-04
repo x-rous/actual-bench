@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { selectActiveInstance, useConnectionStore, isHttpApiConnection } from "@/store/connection";
+import { selectActiveInstance, useConnectionStore } from "@/store/connection";
 import { exportSnapshot } from "../lib/exportSnapshot";
 import {
   getSqliteWorkerClient,
@@ -39,12 +39,15 @@ function getErrorMessage(error: unknown): string {
  */
 export function useDiagnosticsSnapshot() {
   const connection = useConnectionStore(selectActiveInstance);
-  const httpConnection = isHttpApiConnection(connection) ? connection : null;
   const [reloadToken, setReloadToken] = useState(0);
   const snapshot = useDiagnosticsCacheStore((s) => s.snapshot);
   const setSnapshot = useDiagnosticsCacheStore((s) => s.setSnapshot);
   const loadedAt = useDiagnosticsCacheStore((s) => s.loadedAt);
   const integrityRunGeneration = useRef(0);
+  const connectionApiKey =
+    connection?.mode === "http-api" ? connection.apiKey : undefined;
+  const connectionServerPassword =
+    connection?.mode === "browser-api" ? connection.serverPassword : undefined;
 
   const retry = useCallback(() => {
     // Force a fresh export: drop the cached snapshot and the loaded worker DB,
@@ -108,7 +111,7 @@ export function useDiagnosticsSnapshot() {
   }, [setSnapshot]);
 
   useEffect(() => {
-    if (!httpConnection) {
+    if (!connection) {
       integrityRunGeneration.current += 1;
       resetSqliteWorkerClient();
       useDiagnosticsCacheStore.getState().reset();
@@ -120,16 +123,16 @@ export function useDiagnosticsSnapshot() {
     // change, and disconnect all clear the cache, so a stale snapshot can't stick.
     const cache = useDiagnosticsCacheStore.getState();
     if (
-      cache.signature === connectionSignature(httpConnection) &&
+      cache.signature === connectionSignature(connection) &&
       cache.snapshot.status === "ready" &&
       cache.snapshot.diagnosticsStatus !== "loading" &&
-      isSqliteWorkerLoadedFor(httpConnection.id)
+      isSqliteWorkerLoadedFor(connection.id)
     ) {
       return;
     }
 
     let cancelled = false;
-    const activeConnection = httpConnection;
+    const activeConnection = connection;
 
     // Stamp the cache as reusable. Called only once diagnostics has reached a
     // terminal state (ready or error) — never mid-load — so an interrupted load
@@ -254,15 +257,16 @@ export function useDiagnosticsSnapshot() {
       // or disconnect instead.
     };
   }, [
-    httpConnection,
-    httpConnection?.apiKey,
-    httpConnection?.baseUrl,
-    httpConnection?.budgetSyncId,
-    httpConnection?.encryptionPassword,
-    httpConnection?.id,
+    connection,
+    connectionApiKey,
+    connectionServerPassword,
+    connection?.baseUrl,
+    connection?.budgetSyncId,
+    connection?.encryptionPassword,
+    connection?.id,
     reloadToken,
     setSnapshot,
   ]);
 
-  return { connection: httpConnection, snapshot, loadedAt, retry, runIntegrityCheck } as const;
+  return { connection, snapshot, loadedAt, retry, runIntegrityCheck } as const;
 }

@@ -23,13 +23,23 @@ export type ActualQueryBuilder = {
   options(opts: Record<string, unknown>): ActualQueryBuilder;
 };
 
+export type ActualBrowserApiSend = <T = unknown>(
+  name: string,
+  args?: unknown,
+  options?: { catchErrors?: boolean }
+) => Promise<T>;
+
+export type ActualBrowserApiInitResult = {
+  send: ActualBrowserApiSend;
+};
+
 export type ActualBrowserApi = {
   init(config: {
     dataDir?: string;
     serverURL: string;
     password: string;
     verbose?: boolean;
-  }): Promise<unknown>;
+  }): Promise<ActualBrowserApiInitResult>;
   getBudgets(): Promise<unknown[]>;
   downloadBudget(syncId: string, options?: { password?: string }): Promise<unknown>;
   sync(): Promise<unknown>;
@@ -86,9 +96,13 @@ type WorkerInitMessage = {
   args?: unknown;
 };
 
+export type ActualBrowserApiRuntime = ActualBrowserApi & {
+  send: ActualBrowserApiSend;
+};
+
 type ActiveRuntime = {
   key: string;
-  promise: Promise<ActualBrowserApi>;
+  promise: Promise<ActualBrowserApiRuntime>;
 };
 
 const DEFAULT_STEP_TIMEOUT_MS = 45_000;
@@ -165,7 +179,7 @@ function withTimeout<T>(
 async function initializeActualApi(
   actual: ActualBrowserApi,
   config: Parameters<ActualBrowserApi["init"]>[0]
-): Promise<unknown> {
+): Promise<ActualBrowserApiInitResult> {
   const NativeWorker = window.Worker;
   const assetsBaseUrl = getActualAssetsBaseUrl();
   let redirectedBackendWorker = false;
@@ -244,9 +258,63 @@ export async function syncBrowserApiRuntime(
   return nextSync;
 }
 
+type ActualExportBudgetResult = {
+  data?: unknown;
+  error?: string;
+};
+
+function exportedZipToArrayBuffer(data: unknown): ArrayBuffer {
+  if (data instanceof ArrayBuffer) return data.slice(0);
+
+  if (ArrayBuffer.isView(data)) {
+    return data.buffer.slice(
+      data.byteOffset,
+      data.byteOffset + data.byteLength
+    ) as ArrayBuffer;
+  }
+
+  if (Array.isArray(data)) {
+    return Uint8Array.from(data).buffer as ArrayBuffer;
+  }
+
+  if (
+    data &&
+    typeof data === "object" &&
+    "type" in data &&
+    (data as { type?: unknown }).type === "Buffer" &&
+    "data" in data &&
+    Array.isArray((data as { data?: unknown }).data)
+  ) {
+    return Uint8Array.from((data as { data: number[] }).data).buffer as ArrayBuffer;
+  }
+
+  throw new Error("Direct budget export returned an unsupported byte payload.");
+}
+
+export async function exportBrowserApiBudgetZip(
+  connection: BrowserApiConnection
+): Promise<ArrayBuffer> {
+  const actual = await getBrowserApiRuntime(connection);
+  await withTimeout(actual.sync(), "Syncing budget");
+  const result = await withTimeout(
+    actual.send<ActualExportBudgetResult | null>("export-budget"),
+    "Exporting budget snapshot"
+  );
+
+  if (!result) {
+    throw new Error("Direct budget export returned no data.");
+  }
+
+  if (result.error) {
+    throw new Error("Direct budget export failed: " + result.error);
+  }
+
+  return exportedZipToArrayBuffer(result.data);
+}
+
 export async function getBrowserApiRuntime(
   connection: BrowserApiConnection
-): Promise<ActualBrowserApi> {
+): Promise<ActualBrowserApiRuntime> {
   if (typeof window === "undefined") {
     throw new Error("Direct browser API transport can only run in the browser.");
   }
@@ -262,18 +330,19 @@ export async function getBrowserApiRuntime(
     if (previousRuntime) await shutdownRuntime(previousRuntime);
 
     const actual = await withTimeout(loadActualApi(), "Loading @actual-app/api");
-    await initializeActualApi(actual, {
+    const initResult = await initializeActualApi(actual, {
       dataDir: "/documents",
       serverURL: serverUrl,
       password: connection.serverPassword,
       verbose: false,
     });
+    const runtime: ActualBrowserApiRuntime = { ...actual, send: initResult.send };
     await withTimeout(
-      actual.downloadBudget(connection.budgetSyncId, { password: encryptionPassword }),
+      runtime.downloadBudget(connection.budgetSyncId, { password: encryptionPassword }),
       "Opening budget"
     );
-    await withTimeout(actual.sync(), "Syncing budget");
-    return actual;
+    await withTimeout(runtime.sync(), "Syncing budget");
+    return runtime;
   })();
 
   activeRuntime = { key, promise };

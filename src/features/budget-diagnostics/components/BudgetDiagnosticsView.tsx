@@ -8,12 +8,6 @@ import { ArrowRight, LockKeyhole, Stethoscope } from "lucide-react";
 import { buttonVariants } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
-import { DirectModeUnavailable } from "@/components/DirectModeUnavailable";
-import {
-  isBrowserApiConnection,
-  selectActiveInstance,
-  useConnectionStore,
-} from "@/store/connection";
 import { useDiagnosticsSnapshot } from "../hooks/useDiagnosticsSnapshot";
 import { SnapshotReloadControls } from "./SnapshotReloadControls";
 import { DiagnosticsSection } from "./DiagnosticsSection";
@@ -78,7 +72,6 @@ export function BudgetDiagnosticsView() {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const activeConnection = useConnectionStore(selectActiveInstance);
   // Snapshot loading/caching (incl. reload + integrity check) lives in a shared
   // hook so the standalone Data Browser reuses the exact same cache + worker.
   const { connection, snapshot, loadedAt, retry, runIntegrityCheck } =
@@ -99,16 +92,6 @@ export function BudgetDiagnosticsView() {
     },
     [pathname, router, searchParams]
   );
-
-  if (isBrowserApiConnection(activeConnection)) {
-    return (
-      <DirectModeUnavailable
-        title="Budget File Health needs HTTP API Server mode"
-        description="Direct mode does not have a safe browser API export helper yet, so snapshot diagnostics are unavailable for this connection."
-        detail="Use an HTTP API Server connection for Budget File Health and Data Browser until Direct export support is added."
-      />
-    );
-  }
 
   if (!connection) {
     return <ConnectBudgetState />;

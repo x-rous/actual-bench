@@ -182,7 +182,7 @@ HTTP API Server mode sends all `actual-http-api` requests through Actual Bench's
 
 Direct mode is shown by default alongside HTTP API Server mode. It uses worker/static asset headers required for cross-origin isolation (`Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy: require-corp`), and the Actual Server must be reachable from the browser through CORS or a same-origin reverse proxy. Set `DIRECT_BROWSER_API=0` or `NEXT_PUBLIC_DIRECT_BROWSER_API=0` only if your deployment cannot support Direct mode.
 
-Direct mode currently supports core entity pages and Budget Management reads/staged saves. Budget File Health, Data Browser, and the generic ActualQL Query workspace remain HTTP API Server-only because they depend on full budget export or broader query-console compatibility.
+Direct mode currently supports core entity pages, Budget Management reads/staged saves, Budget File Health, and Data Browser. The generic ActualQL Query workspace remains HTTP API Server-only because it depends on broader query-console compatibility.
 
 ## Privacy and data handling
 

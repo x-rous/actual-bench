@@ -217,13 +217,13 @@ describe("BudgetDiagnosticsView", () => {
     jest.clearAllMocks();
   });
 
-  it("gates Direct connections before exporting a snapshot", () => {
+  it("opens Direct connection snapshots through the shared diagnostics workspace", async () => {
     setActiveConnection(directConnection);
 
     render(<BudgetDiagnosticsView />);
 
-    expect(screen.getByText("Budget File Health needs HTTP API Server mode")).toBeInTheDocument();
-    expect(mockExportSnapshot).not.toHaveBeenCalled();
+    expect(await screen.findByText("Snapshot counts")).toBeInTheDocument();
+    expect(mockExportSnapshot).toHaveBeenCalledWith(directConnection, expect.any(Function));
   });
 
   it("opens the active budget snapshot and renders the tabbed diagnostics workspace", async () => {
