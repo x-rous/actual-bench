@@ -1,8 +1,8 @@
 import { getAccounts } from "../api/accounts";
-import { getBrowserApiRuntime } from "./browser/runtime";
+import { getBrowserApiRuntime, syncBrowserApiRuntime } from "./browser/runtime";
 import { getTransport } from "./index";
 import type { BrowserApiConnection, HttpApiConnection } from "@/store/connection";
-import type { Account } from "@/types/entities";
+import type { Account, Rule } from "@/types/entities";
 
 jest.mock("../api/accounts", () => ({
   ...jest.requireActual("../api/accounts"),
@@ -11,11 +11,15 @@ jest.mock("../api/accounts", () => ({
 
 jest.mock("./browser/runtime", () => ({
   getBrowserApiRuntime: jest.fn(),
+  syncBrowserApiRuntime: jest.fn(),
 }));
 
 const mockGetAccounts = getAccounts as jest.MockedFunction<typeof getAccounts>;
 const mockGetBrowserApiRuntime = getBrowserApiRuntime as jest.MockedFunction<
   typeof getBrowserApiRuntime
+>;
+const mockSyncBrowserApiRuntime = syncBrowserApiRuntime as jest.MockedFunction<
+  typeof syncBrowserApiRuntime
 >;
 
 const httpConnection: HttpApiConnection = {
@@ -40,6 +44,7 @@ describe("Actual transport factory", () => {
   beforeEach(() => {
     mockGetAccounts.mockReset();
     mockGetBrowserApiRuntime.mockReset();
+    mockSyncBrowserApiRuntime.mockReset();
   });
 
   it("dispatches Classic connections to the HTTP API transport", () => {
@@ -76,6 +81,77 @@ describe("Actual transport factory", () => {
     ]);
     expect(mockGetAccounts).not.toHaveBeenCalled();
     expect(mockGetBrowserApiRuntime).toHaveBeenCalledWith(browserConnection);
+  });
+
+  it("Direct account creates use the browser runtime and convert the initial balance", async () => {
+    const createAccount = jest.fn().mockResolvedValue("account-1");
+    const closeAccount = jest.fn().mockResolvedValue(undefined);
+    mockGetBrowserApiRuntime.mockResolvedValue({
+      createAccount,
+      closeAccount,
+    } as never);
+
+    await expect(
+      getTransport(browserConnection).createAccount({
+        name: "New Checking",
+        offBudget: true,
+        closed: true,
+        initialBalance: 12.34,
+      })
+    ).resolves.toEqual({
+      id: "account-1",
+      name: "New Checking",
+      offBudget: true,
+      closed: true,
+      initialBalance: 12.34,
+    });
+
+    expect(createAccount).toHaveBeenCalledWith(
+      { name: "New Checking", offbudget: true, closed: false },
+      1234
+    );
+    expect(closeAccount).toHaveBeenCalledWith("account-1");
+  });
+
+  it("Direct rule creates convert default stage and amount values for the browser API", async () => {
+    const createRule = jest.fn().mockResolvedValue({
+      id: "rule-1",
+      stage: null,
+      conditionsOp: "and",
+      conditions: [{ field: "amount", op: "is", value: 1234 }],
+      actions: [],
+    });
+    mockGetBrowserApiRuntime.mockResolvedValue({ createRule } as never);
+
+    const rule: Omit<Rule, "id"> = {
+      stage: "default",
+      conditionsOp: "and",
+      conditions: [{ field: "amount", op: "is", value: 12.34 }],
+      actions: [],
+    };
+
+    await expect(getTransport(browserConnection).createRule(rule)).resolves.toEqual({
+      id: "rule-1",
+      stage: "default",
+      conditionsOp: "and",
+      conditions: [{ field: "amount", op: "is", value: 12.34 }],
+      actions: [],
+    });
+
+    expect(createRule).toHaveBeenCalledWith({
+      stage: null,
+      conditionsOp: "and",
+      conditions: [{ field: "amount", op: "is", value: 1234 }],
+      actions: [],
+    });
+  });
+
+  it("Direct transport sync delegates to the browser runtime sync queue", async () => {
+    mockSyncBrowserApiRuntime.mockResolvedValueOnce(undefined);
+
+    await getTransport(browserConnection).sync();
+
+    expect(mockSyncBrowserApiRuntime).toHaveBeenCalledWith(browserConnection);
   });
 
   it("Direct account balances are converted from cents without using fetch", async () => {

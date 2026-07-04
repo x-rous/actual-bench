@@ -14,4 +14,5 @@ export function getTransport(
     : createBrowserApiTransport(connection);
 }
 
+export { syncTransportAfterChanges } from "./transport";
 export type { ActualBenchTransport } from "./transport";

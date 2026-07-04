@@ -8,6 +8,7 @@ import {
   extractNote,
   parseNotesIndexIds,
   toAccountNoteId,
+  toBudgetNoteId,
   type NoteRow,
 } from "../api/notes";
 import { normalizePayee } from "../api/payees";
@@ -24,9 +25,20 @@ import type {
   ApiSchedule,
   ApiTag,
 } from "@/types/api";
-import type { Account, Payee, Rule, Schedule, Tag } from "@/types/entities";
-import { getBrowserApiRuntime, type ActualBrowserApi } from "./browser/runtime";
-import type { ActualBenchTransport } from "./transport";
+import type {
+  Account,
+  Payee,
+  Rule,
+  Schedule,
+  Tag,
+} from "@/types/entities";
+import {
+  getBrowserApiRuntime,
+  syncBrowserApiRuntime,
+  type ActualBrowserApi,
+} from "./browser/runtime";
+import { prepareRuleForTransport, prepareRulePatchForTransport } from "./ruleMutation";
+import type { ActualBenchTransport, ScheduleWriteInput } from "./transport";
 
 type RecordLike = Record<string, unknown>;
 
@@ -149,6 +161,48 @@ function buildActualQuery(
   return { table, select };
 }
 
+function denormalizeSchedule(input: ScheduleWriteInput): Omit<ApiSchedule, "id"> {
+  if (input.date == null) throw new Error("Schedule date is required but was missing");
+
+  const schedule: Omit<ApiSchedule, "id"> = {
+    date: input.date,
+    posts_transaction: input.postsTransaction,
+    payee: input.payeeId ?? null,
+    account: input.accountId ?? null,
+  };
+  if (input.name !== undefined) schedule.name = input.name;
+  if (input.amount !== undefined) schedule.amount = input.amount;
+  if (input.amountOp !== undefined) schedule.amountOp = input.amountOp;
+  return schedule;
+}
+
+type BrowserRuleStage = "pre" | "post" | null;
+type BrowserRule = Omit<ApiRule, "stage"> & { stage: BrowserRuleStage };
+
+function toBrowserRuleStage(stage: Rule["stage"]): BrowserRuleStage {
+  return stage === "default" ? null : stage;
+}
+
+function denormalizeRuleForBrowser(input: Omit<Rule, "id">): Omit<BrowserRule, "id"> {
+  const rule = prepareRuleForTransport(input);
+  return {
+    ...rule,
+    stage: toBrowserRuleStage(rule.stage),
+  } as unknown as Omit<BrowserRule, "id">;
+}
+
+function denormalizeRulePatchForBrowser(
+  id: string,
+  patch: Partial<Omit<Rule, "id">>
+): BrowserRule {
+  const rule = prepareRulePatchForTransport(patch);
+  return {
+    id,
+    ...rule,
+    ...(rule.stage !== undefined ? { stage: toBrowserRuleStage(rule.stage) } : {}),
+  } as unknown as BrowserRule;
+}
+
 async function getBrowserAccounts(
   connection: BrowserApiConnection
 ): Promise<Account[]> {
@@ -228,6 +282,7 @@ export function createBrowserApiTransport(
 ): ActualBenchTransport {
   return {
     mode: connection.mode,
+    sync: () => syncBrowserApiRuntime(connection),
     getServerVersion: async () => {
       const api = await getBrowserApiRuntime(connection);
       if (typeof api.getServerVersion !== "function") return null;
@@ -236,31 +291,175 @@ export function createBrowserApiTransport(
     },
     getAccounts: () => getBrowserAccounts(connection),
     getAccountBalances: () => getBrowserAccountBalances(connection),
+    createAccount: async (input) => {
+      const api = await getBrowserApiRuntime(connection);
+      const id = await api.createAccount(
+        {
+          name: input.name,
+          offbudget: input.offBudget,
+          closed: false,
+        },
+        input.initialBalance !== undefined
+          ? Math.round(input.initialBalance * 100)
+          : undefined
+      );
+      if (input.closed) await api.closeAccount(id);
+      return { id, ...input };
+    },
+    updateAccount: async (id, patch) => {
+      const api = await getBrowserApiRuntime(connection);
+      const fields: Partial<ApiAccount> = {};
+      if (patch.name !== undefined) fields.name = patch.name;
+      if (patch.offBudget !== undefined) fields.offbudget = patch.offBudget;
+      if (Object.keys(fields).length > 0) await api.updateAccount(id, fields);
+      if (patch.closed === true) await api.closeAccount(id);
+      if (patch.closed === false) await api.reopenAccount(id);
+    },
+    deleteAccount: async (id) => {
+      const api = await getBrowserApiRuntime(connection);
+      await api.deleteAccount(id);
+    },
+
     getPayees: async () => {
       const api = await getBrowserApiRuntime(connection);
       return (await api.getPayees())
         .map(normalizeDirectPayee)
         .filter((payee): payee is Payee => payee !== null);
     },
+    createPayee: async (input) => {
+      const api = await getBrowserApiRuntime(connection);
+      const id = await api.createPayee({ name: input.name });
+      return { id, name: input.name };
+    },
+    updatePayee: async (id, patch) => {
+      const api = await getBrowserApiRuntime(connection);
+      const fields: Partial<ApiPayee> = {};
+      if (patch.name !== undefined) fields.name = patch.name;
+      await api.updatePayee(id, fields);
+    },
+    deletePayee: async (id) => {
+      const api = await getBrowserApiRuntime(connection);
+      await api.deletePayee(id);
+    },
+    mergePayees: async (targetId, mergeIds) => {
+      const api = await getBrowserApiRuntime(connection);
+      await api.mergePayees(targetId, mergeIds);
+    },
+
     getCategoryGroups: () => getBrowserCategoryGroups(connection),
+    createCategoryGroup: async (input) => {
+      const api = await getBrowserApiRuntime(connection);
+      return api.createCategoryGroup({
+        name: input.name,
+        is_income: input.isIncome,
+        hidden: input.hidden,
+      });
+    },
+    updateCategoryGroup: async (id, patch) => {
+      const api = await getBrowserApiRuntime(connection);
+      const fields: Partial<ApiCategoryGroup> = {};
+      if (patch.name !== undefined) fields.name = patch.name;
+      if (patch.hidden !== undefined) fields.hidden = patch.hidden;
+      await api.updateCategoryGroup(id, fields);
+    },
+    deleteCategoryGroup: async (id) => {
+      const api = await getBrowserApiRuntime(connection);
+      await api.deleteCategoryGroup(id);
+    },
+    createCategory: async (input) => {
+      const api = await getBrowserApiRuntime(connection);
+      return api.createCategory({
+        name: input.name,
+        group_id: input.groupId,
+        is_income: input.isIncome,
+        hidden: input.hidden,
+      });
+    },
+    updateCategory: async (id, patch) => {
+      const api = await getBrowserApiRuntime(connection);
+      const fields: Partial<ApiCategory> = {};
+      if (patch.name !== undefined) fields.name = patch.name;
+      if (patch.hidden !== undefined) fields.hidden = patch.hidden;
+      await api.updateCategory(id, fields);
+    },
+    deleteCategory: async (id) => {
+      const api = await getBrowserApiRuntime(connection);
+      await api.deleteCategory(id);
+    },
+
     getTags: async () => {
       const api = await getBrowserApiRuntime(connection);
       return (await api.getTags())
         .map(normalizeDirectTag)
         .filter((tag): tag is Tag => tag !== null);
     },
+    createTag: async (input) => {
+      const api = await getBrowserApiRuntime(connection);
+      const id = await api.createTag({
+        tag: input.name,
+        color: input.color ?? null,
+        description: input.description ?? null,
+      });
+      return { id, name: input.name, color: input.color, description: input.description };
+    },
+    updateTag: async (id, patch) => {
+      const api = await getBrowserApiRuntime(connection);
+      const fields: Partial<Omit<ApiTag, "id">> = {};
+      if (patch.name !== undefined) fields.tag = patch.name;
+      if ("color" in patch) fields.color = patch.color ?? null;
+      if ("description" in patch) fields.description = patch.description ?? null;
+      await api.updateTag(id, fields);
+    },
+    deleteTag: async (id) => {
+      const api = await getBrowserApiRuntime(connection);
+      await api.deleteTag(id);
+    },
+
     getRules: async () => {
       const api = await getBrowserApiRuntime(connection);
       return (await api.getRules())
         .map(normalizeDirectRule)
         .filter((rule): rule is Rule => rule !== null);
     },
+    createRule: async (input) => {
+      const api = await getBrowserApiRuntime(connection);
+      return normalizeRule(
+        await api.createRule(denormalizeRuleForBrowser(input) as unknown as Omit<ApiRule, "id">)
+      );
+    },
+    updateRule: async (id, patch) => {
+      const api = await getBrowserApiRuntime(connection);
+      await api.updateRule(denormalizeRulePatchForBrowser(id, patch) as unknown as ApiRule);
+    },
+    deleteRule: async (id) => {
+      const api = await getBrowserApiRuntime(connection);
+      await api.deleteRule(id);
+    },
+
     getSchedules: async () => {
       const api = await getBrowserApiRuntime(connection);
       return (await api.getSchedules())
         .map(normalizeDirectSchedule)
         .filter((schedule): schedule is Schedule => schedule !== null);
     },
+    createSchedule: async (input) => {
+      const api = await getBrowserApiRuntime(connection);
+      const id = await api.createSchedule(denormalizeSchedule(input));
+      return {
+        id,
+        completed: false,
+        ...input,
+      };
+    },
+    updateSchedule: async (id, input) => {
+      const api = await getBrowserApiRuntime(connection);
+      await api.updateSchedule(id, denormalizeSchedule(input));
+    },
+    deleteSchedule: async (id) => {
+      const api = await getBrowserApiRuntime(connection);
+      await api.deleteSchedule(id);
+    },
+
     getNotesIndex: async () => {
       const notes = await getBrowserAllNotes(connection);
       return parseNotesIndexIds([...notes.keys()]);
@@ -273,6 +472,30 @@ export function createBrowserApiTransport(
     getCategoryLikeNote: async (id) => {
       const api = await getBrowserApiRuntime(connection);
       return extractNote(await api.getNote(id));
+    },
+    setAccountNote: async (accountId, note) => {
+      const api = await getBrowserApiRuntime(connection);
+      await api.updateNote(toAccountNoteId(accountId), note);
+    },
+    deleteAccountNote: async (accountId) => {
+      const api = await getBrowserApiRuntime(connection);
+      await api.updateNote(toAccountNoteId(accountId), null);
+    },
+    setCategoryNote: async (id, note) => {
+      const api = await getBrowserApiRuntime(connection);
+      await api.updateNote(id, note);
+    },
+    deleteCategoryNote: async (id) => {
+      const api = await getBrowserApiRuntime(connection);
+      await api.updateNote(id, null);
+    },
+    setBudgetMonthNote: async (month, note) => {
+      const api = await getBrowserApiRuntime(connection);
+      await api.updateNote(toBudgetNoteId(month), note);
+    },
+    deleteBudgetMonthNote: async (month) => {
+      const api = await getBrowserApiRuntime(connection);
+      await api.updateNote(toBudgetNoteId(month), null);
     },
   };
 }

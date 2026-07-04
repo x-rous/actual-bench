@@ -7,7 +7,8 @@ const pkg = JSON.parse(
 ) as { version?: string };
 
 const directBrowserApiLabEnabled =
-  process.env.NEXT_PUBLIC_DIRECT_BROWSER_API === "1";
+  process.env["NEXT_PUBLIC_DIRECT_BROWSER_API"]?.trim() === "1" ||
+  process.env["DIRECT_BROWSER_API"]?.trim() === "1";
 
 const directBrowserApiLabHeaders = [
   {

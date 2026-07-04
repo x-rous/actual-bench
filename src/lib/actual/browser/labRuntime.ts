@@ -219,7 +219,7 @@ async function initializeActualApi(
   const assetsBaseUrl = getActualAssetsBaseUrl();
   let redirectedBackendWorker = false;
 
-  window.Worker = class ActualBenchWorker extends NativeWorker {
+  const ActualBenchWorker = class extends NativeWorker {
     constructor(scriptURL: string | URL, options?: WorkerOptions) {
       const actualBackendWorkerUrl = redirectedBackendWorker
         ? scriptURL
@@ -245,12 +245,16 @@ async function initializeActualApi(
         super.postMessage(rewrittenMessage, options);
       }
     }
-  } as typeof Worker;
+  };
+
+  window.Worker = ActualBenchWorker as typeof Worker;
 
   try {
-    return await actual.init(config);
+    return await withTimeout(actual.init(config), "Initializing browser API worker");
   } finally {
-    window.Worker = NativeWorker;
+    if (window.Worker === (ActualBenchWorker as typeof Worker)) {
+      window.Worker = NativeWorker;
+    }
   }
 }
 
@@ -273,15 +277,12 @@ export async function listBrowserApiBudgets(
 
   try {
     actual = await withTimeout(loadActualApi(), "Loading @actual-app/api");
-    await withTimeout(
-      initializeActualApi(actual, {
-        dataDir: "/documents",
-        serverURL: serverUrl,
-        password: serverPassword,
-        verbose: false,
-      }),
-      "Initializing browser API worker"
-    );
+    await initializeActualApi(actual, {
+      dataDir: "/documents",
+      serverURL: serverUrl,
+      password: serverPassword,
+      verbose: false,
+    });
     initialized = true;
 
     const budgets = (await withTimeout(actual.getBudgets(), "Listing budgets"))
@@ -334,15 +335,12 @@ export async function runBrowserApiLab(
     completeStep("load", "Browser API module loaded.");
 
     startStep("init");
-    await withTimeout(
-      initializeActualApi(actual, {
-        dataDir: "/documents",
-        serverURL: serverUrl,
-        password: serverPassword,
-        verbose: true,
-      }),
-      "Initializing browser API worker"
-    );
+    await initializeActualApi(actual, {
+      dataDir: "/documents",
+      serverURL: serverUrl,
+      password: serverPassword,
+      verbose: true,
+    });
     initialized = true;
     completeStep("init", "Worker runtime initialized.");
 

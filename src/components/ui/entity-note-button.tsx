@@ -9,11 +9,6 @@ import { useAllNotes } from "@/hooks/useAllNotes";
 import { useNoteMutation, type EntityNoteKind } from "@/hooks/useNoteMutation";
 import { toAccountNoteId, toBudgetNoteId } from "@/lib/api/notes";
 import { cn } from "@/lib/utils";
-import {
-  useConnectionStore,
-  selectActiveInstance,
-  isBrowserApiConnection,
-} from "@/store/connection";
 
 type EntityNoteButtonProps = {
   entityId: string;
@@ -44,8 +39,6 @@ export function EntityNoteButton({
   const [draft, setDraft] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  const connection = useConnectionStore(selectActiveInstance);
-  const directReadOnly = isBrowserApiConnection(connection);
   const notesQuery = useAllNotes();
   // Notes intentionally bypass the staged-mutation model (AGENTS.md): these
   // save/remove handlers write straight to the server. See useNoteMutation.
@@ -64,7 +57,7 @@ export function EntityNoteButton({
   // Until the batch resolves, fall back to the index hint; afterwards, trust the data.
   const noteExists = notesQuery.isSuccess ? loadedNote.trim().length > 0 : hasNote;
   // An empty note opens straight into edit (the "add note" path); otherwise read.
-  const mode = directReadOnly ? "read" : userMode ?? (noteExists ? "read" : "edit");
+  const mode = userMode ?? (noteExists ? "read" : "edit");
   const dirty = draft !== loadedNote;
   const label = entityLabel || entityId;
 
@@ -163,8 +156,6 @@ export function EntityNoteButton({
               size="xs"
               className="-mr-1 shrink-0 text-muted-foreground hover:text-foreground"
               onClick={enterEdit}
-              disabled={directReadOnly}
-              title={directReadOnly ? "Direct browser API mode is read-only" : undefined}
             >
               <Pencil className="h-3.5 w-3.5" />
               Edit
@@ -251,8 +242,6 @@ export function EntityNoteButton({
               variant="outline"
               size="xs"
               onClick={enterEdit}
-              disabled={directReadOnly}
-              title={directReadOnly ? "Direct browser API mode is read-only" : undefined}
             >
               <Plus className="h-3.5 w-3.5" />
               Add note

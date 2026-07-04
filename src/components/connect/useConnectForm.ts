@@ -179,7 +179,7 @@ export function useConnectForm() {
         discardAll();
         queryClient.clear();
         setActiveInstance(instance.id);
-        toast.success("Direct read-only connection opened. Redirecting…");
+        toast.success("Direct connection opened. Redirecting…");
         await new Promise((r) => setTimeout(r, 600));
         router.push("/accounts");
       } finally {
@@ -359,7 +359,7 @@ export function useConnectForm() {
       queryClient.clear();
       setActiveInstance(directConnection.id);
       setConnectStatus({ kind: "success" });
-      toast.success("Direct read-only connection opened. Redirecting…");
+      toast.success("Direct connection opened. Redirecting…");
       await new Promise((r) => setTimeout(r, 800));
       router.push("/accounts");
       return;

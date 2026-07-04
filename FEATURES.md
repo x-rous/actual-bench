@@ -5,7 +5,7 @@
 - Two-step connect flow: validate server credentials (URL + API key), then pick from the list of budgets returned by the server
 - Save multiple server connections and switch between them with one click from the top bar
 - Optional encryption password for end-to-end encrypted budgets
-- Experimental Direct Actual Server mode opens a selected budget through the browser API worker for read-only core entity pages without an `actual-http-api` proxy; writes remain Classic-only in this milestone
+- Experimental Direct Actual Server mode opens a selected budget through the browser API worker without an `actual-http-api` proxy; core entity pages support reads and staged entity saves, while Budget Management saves remain Classic-only in this milestone
 - Remove saved connections individually
 - Per-connection query cache and staged data scoping — switching connections never leaks data between sessions
 - Connections are stored in session storage and cleared automatically when the tab is closed

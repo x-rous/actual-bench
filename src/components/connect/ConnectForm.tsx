@@ -360,7 +360,7 @@ export function ConnectForm() {
       {connectStatus.kind === "success" && activeValidatedMode === "browser-api" && (
         <div className="flex items-start gap-2.5 rounded-lg bg-green-50 px-3.5 py-3 text-sm text-green-700">
           <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
-          <span>Direct read-only connection opened. Core entity pages now use the browser transport.</span>
+          <span>Direct connection opened. Core entity pages now use the browser transport.</span>
         </div>
       )}
 

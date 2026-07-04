@@ -27,14 +27,39 @@ export type ActualBrowserApi = {
   downloadBudget(syncId: string, options?: { password?: string }): Promise<unknown>;
   sync(): Promise<unknown>;
   getAccounts(): Promise<ApiAccount[]>;
+  createAccount(account: Omit<ApiAccount, "id">, initialBalance?: number): Promise<string>;
+  updateAccount(accountId: string, fields: Partial<ApiAccount>): Promise<void>;
+  closeAccount(accountId: string): Promise<void>;
+  reopenAccount(accountId: string): Promise<void>;
+  deleteAccount(accountId: string): Promise<void>;
   getAccountBalance(accountId: string): Promise<number>;
   getCategoryGroups(options?: { hidden?: boolean }): Promise<ApiCategoryGroup[]>;
+  createCategoryGroup(group: Omit<ApiCategoryGroup, "id">): Promise<string>;
+  updateCategoryGroup(groupId: string, fields: Partial<ApiCategoryGroup>): Promise<void>;
+  deleteCategoryGroup(groupId: string): Promise<void>;
   getCategories(options?: { hidden?: boolean }): Promise<Array<ApiCategory | ApiCategoryGroup>>;
+  createCategory(category: Omit<ApiCategory, "id">): Promise<string>;
+  updateCategory(categoryId: string, fields: Partial<ApiCategory>): Promise<void>;
+  deleteCategory(categoryId: string): Promise<void>;
   getPayees(): Promise<ApiPayee[]>;
+  createPayee(payee: Omit<ApiPayee, "id">): Promise<string>;
+  updatePayee(payeeId: string, fields: Partial<ApiPayee>): Promise<void>;
+  deletePayee(payeeId: string): Promise<void>;
+  mergePayees(targetId: string, mergeIds: string[]): Promise<void>;
   getTags(): Promise<ApiTag[]>;
+  createTag(tag: Omit<ApiTag, "id">): Promise<string>;
+  updateTag(tagId: string, fields: Partial<Omit<ApiTag, "id">>): Promise<void>;
+  deleteTag(tagId: string): Promise<void>;
   getRules(): Promise<ApiRule[]>;
+  createRule(rule: Omit<ApiRule, "id">): Promise<ApiRule>;
+  updateRule(rule: ApiRule): Promise<ApiRule>;
+  deleteRule(ruleId: string): Promise<boolean>;
   getSchedules(): Promise<ApiSchedule[]>;
+  createSchedule(schedule: Omit<ApiSchedule, "id">): Promise<string>;
+  updateSchedule(scheduleId: string, fields: Partial<ApiSchedule>): Promise<string>;
+  deleteSchedule(scheduleId: string): Promise<void>;
   getNote(id: string): Promise<NoteRow | null>;
+  updateNote(id: string, note: string | null): Promise<void>;
   q?(table: string): ActualQueryBuilder;
   runQuery?(query: unknown): Promise<unknown>;
   aqlQuery?(query: unknown): Promise<unknown>;
@@ -56,6 +81,7 @@ const DEFAULT_STEP_TIMEOUT_MS = 45_000;
 const SHUTDOWN_STEP_TIMEOUT_MS = 15_000;
 
 let activeRuntime: ActiveRuntime | null = null;
+let syncQueue = Promise.resolve();
 
 function normalizeUrl(url: string): string {
   return url.trim().replace(/\/+$/, "");
@@ -130,7 +156,7 @@ async function initializeActualApi(
   const assetsBaseUrl = getActualAssetsBaseUrl();
   let redirectedBackendWorker = false;
 
-  window.Worker = class ActualBenchWorker extends NativeWorker {
+  const ActualBenchWorker = class extends NativeWorker {
     constructor(scriptURL: string | URL, options?: WorkerOptions) {
       const actualBackendWorkerUrl = redirectedBackendWorker
         ? scriptURL
@@ -156,12 +182,16 @@ async function initializeActualApi(
         super.postMessage(rewrittenMessage, options);
       }
     }
-  } as typeof Worker;
+  };
+
+  window.Worker = ActualBenchWorker as typeof Worker;
 
   try {
-    return await actual.init(config);
+    return await withTimeout(actual.init(config), "Initializing browser API worker");
   } finally {
-    window.Worker = NativeWorker;
+    if (window.Worker === (ActualBenchWorker as typeof Worker)) {
+      window.Worker = NativeWorker;
+    }
   }
 }
 
@@ -189,6 +219,17 @@ export function clearBrowserApiRuntimeCache(): void {
   if (runtime) void shutdownRuntime(runtime);
 }
 
+export async function syncBrowserApiRuntime(
+  connection: BrowserApiConnection
+): Promise<void> {
+  const nextSync = syncQueue.then(async () => {
+    const actual = await getBrowserApiRuntime(connection);
+    await withTimeout(actual.sync(), "Syncing budget");
+  });
+  syncQueue = nextSync.catch(() => undefined);
+  return nextSync;
+}
+
 export async function getBrowserApiRuntime(
   connection: BrowserApiConnection
 ): Promise<ActualBrowserApi> {
@@ -207,15 +248,12 @@ export async function getBrowserApiRuntime(
     if (previousRuntime) await shutdownRuntime(previousRuntime);
 
     const actual = await withTimeout(loadActualApi(), "Loading @actual-app/api");
-    await withTimeout(
-      initializeActualApi(actual, {
-        dataDir: "/documents",
-        serverURL: serverUrl,
-        password: connection.serverPassword,
-        verbose: false,
-      }),
-      "Initializing browser API worker"
-    );
+    await initializeActualApi(actual, {
+      dataDir: "/documents",
+      serverURL: serverUrl,
+      password: connection.serverPassword,
+      verbose: false,
+    });
     await withTimeout(
       actual.downloadBudget(connection.budgetSyncId, { password: encryptionPassword }),
       "Opening budget"

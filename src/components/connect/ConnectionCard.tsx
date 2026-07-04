@@ -58,7 +58,7 @@ export function ConnectionCard({
           type="button"
           disabled={anyBusy}
           onClick={() => onConnect(instance)}
-          title={isDirect ? "Open Direct read-only connection" : "Connect"}
+          title={isDirect ? "Open Direct connection" : "Connect"}
           className="flex h-8 items-center gap-1.5 rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
         >
           {busy ? (

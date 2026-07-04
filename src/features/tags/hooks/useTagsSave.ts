@@ -4,7 +4,7 @@ import { useState, useMemo } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useStagedStore } from "@/store/staged";
 import { useConnectionStore, selectActiveInstance } from "@/store/connection";
-import { createTag, updateTag, deleteTag, getTags } from "@/lib/api/tags";
+import { getTransport, syncTransportAfterChanges } from "@/lib/actual";
 import {
   extractMessage,
   computeSaveOperations,
@@ -31,6 +31,7 @@ export function useTagsSave() {
     setIsSaving(true);
 
     try {
+      const transport = getTransport(connection);
       const ops = computeSaveOperations<Tag>(staged);
       const toCreate = ops.toCreate.filter((t) => t.name.trim() !== "");
       const toUpdate = ops.toUpdate.filter((t) => t.name.trim() !== "");
@@ -42,11 +43,13 @@ export function useTagsSave() {
 
       // ── Creates (parallel) ──────────────────────────────────────────────────
       const createResults = await Promise.allSettled(
-        toCreate.map((t) => createTag(connection, { name: t.name, color: t.color, description: t.description }))
+        toCreate.map((t) =>
+          transport.createTag({ name: t.name, color: t.color, description: t.description })
+        )
       );
       for (let i = 0; i < toCreate.length; i++) {
         const id = toCreate[i].id;
-        const r  = createResults[i];
+        const r = createResults[i];
         if (r.status === "fulfilled") {
           succeeded.push({ status: "success", id });
           succeededCreateIds.add(id);
@@ -61,7 +64,7 @@ export function useTagsSave() {
       const unresolved = toCreate.filter((t) => succeededCreateIds.has(t.id) && !idMap[t.id]);
       if (unresolved.length > 0) {
         try {
-          const freshTags = await getTags(connection);
+          const freshTags = await transport.getTags();
           const serverIdByName = new Map(freshTags.map((t) => [t.name, t.id]));
           for (const t of unresolved) {
             const serverId = serverIdByName.get(t.name);
@@ -74,11 +77,13 @@ export function useTagsSave() {
 
       // ── Updates (parallel) ──────────────────────────────────────────────────
       const updateResults = await Promise.allSettled(
-        toUpdate.map((t) => updateTag(connection, t.id, { name: t.name, color: t.color, description: t.description }))
+        toUpdate.map((t) =>
+          transport.updateTag(t.id, { name: t.name, color: t.color, description: t.description })
+        )
       );
       for (let i = 0; i < toUpdate.length; i++) {
         const id = toUpdate[i].id;
-        const r  = updateResults[i];
+        const r = updateResults[i];
         if (r.status === "fulfilled") {
           succeeded.push({ status: "success", id });
         } else {
@@ -88,11 +93,11 @@ export function useTagsSave() {
 
       // ── Deletes (parallel) ──────────────────────────────────────────────────
       const deleteResults = await Promise.allSettled(
-        toDelete.map((id) => deleteTag(connection, id))
+        toDelete.map((id) => transport.deleteTag(id))
       );
       for (let i = 0; i < toDelete.length; i++) {
         const id = toDelete[i];
-        const r  = deleteResults[i];
+        const r = deleteResults[i];
         if (r.status === "fulfilled") {
           succeeded.push({ status: "success", id });
         } else {
@@ -122,6 +127,8 @@ export function useTagsSave() {
       } else {
         store.setSaveErrors("tags", {});
       }
+
+      await syncTransportAfterChanges(transport, succeeded.length > 0);
 
       await queryClient.invalidateQueries({ queryKey: ["tags", connection.id] });
       return { succeeded, failed, idMap };

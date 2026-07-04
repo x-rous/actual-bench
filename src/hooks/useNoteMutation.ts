@@ -1,21 +1,9 @@
 "use client";
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import {
-  setAccountNote,
-  deleteAccountNote,
-  setCategoryNote,
-  deleteCategoryNote,
-  setBudgetMonthNote,
-  deleteBudgetMonthNote,
-  toAccountNoteId,
-  toBudgetNoteId,
-} from "@/lib/api/notes";
-import {
-  useConnectionStore,
-  selectActiveInstance,
-  isBrowserApiConnection,
-} from "@/store/connection";
+import { toAccountNoteId, toBudgetNoteId } from "@/lib/api/notes";
+import { getTransport, syncTransportAfterChanges } from "@/lib/actual";
+import { useConnectionStore, selectActiveInstance } from "@/store/connection";
 
 export type EntityNoteKind = "account" | "category" | "budgetMonth";
 
@@ -26,7 +14,7 @@ export type EntityNoteKind = "account" | "category" | "budgetMonth";
  * is "stage every mutation (stageNew/stageUpdate/stageDelete); nothing writes
  * until the user clicks Save." Notes are deliberately exempt: they live in their
  * own key-value table, orthogonal to entity dirty-state, with a self-contained
- * popover/panel editor. So Save/Clear here issue an immediate PUT/DELETE and
+ * popover/panel editor. So Save/Clear here issue an immediate write/delete and
  * invalidate the note caches rather than routing through staged.ts /
  * budgetEdits.ts — don't "fix" this back onto the staged stores.
  *
@@ -58,20 +46,21 @@ export function useNoteMutation(kind: EntityNoteKind, id: string) {
     void queryClient.invalidateQueries({ queryKey: ["allNotes", connection?.id] });
   }
 
-  function requireWritableConnection() {
+  function requireConnection() {
     if (!connection) throw new Error("No active connection");
-    if (isBrowserApiConnection(connection)) {
-      throw new Error("Direct browser API mode is read-only in this milestone.");
-    }
     return connection;
   }
 
-  function writeNote(note: string) {
-    const writableConnection = requireWritableConnection();
+  async function writeNote(note: string) {
+    const activeConnection = requireConnection();
     if (note.trim() === "") return clearNote();
-    if (kind === "account") return setAccountNote(writableConnection, id, note);
-    if (kind === "budgetMonth") return setBudgetMonthNote(writableConnection, id, note);
-    return setCategoryNote(writableConnection, id, note);
+
+    const transport = getTransport(activeConnection);
+    if (kind === "account") await transport.setAccountNote(id, note);
+    else if (kind === "budgetMonth") await transport.setBudgetMonthNote(id, note);
+    else await transport.setCategoryNote(id, note);
+
+    await syncTransportAfterChanges(transport, true);
   }
 
   // The notes-table key for this entity, matching how getAllNotes indexes them.
@@ -94,15 +83,19 @@ export function useNoteMutation(kind: EntityNoteKind, id: string) {
     return (state.data?.get(noteCacheKey())?.trim().length ?? 0) === 0;
   }
 
-  function clearNote(): Promise<void> {
-    const writableConnection = requireWritableConnection();
+  async function clearNote(): Promise<void> {
+    const activeConnection = requireConnection();
     // Skip the DELETE only when the cache positively confirms there's nothing to
     // clear; an unguarded DELETE on a never-created note can 404 and surface a
     // false "could not clear" error. A cold cache isn't confirmation, so delete.
-    if (noteKnownAbsent()) return Promise.resolve();
-    if (kind === "account") return deleteAccountNote(writableConnection, id);
-    if (kind === "budgetMonth") return deleteBudgetMonthNote(writableConnection, id);
-    return deleteCategoryNote(writableConnection, id);
+    if (noteKnownAbsent()) return;
+
+    const transport = getTransport(activeConnection);
+    if (kind === "account") await transport.deleteAccountNote(id);
+    else if (kind === "budgetMonth") await transport.deleteBudgetMonthNote(id);
+    else await transport.deleteCategoryNote(id);
+
+    await syncTransportAfterChanges(transport, true);
   }
 
   const save = useMutation({ mutationFn: writeNote, onSuccess: invalidate });

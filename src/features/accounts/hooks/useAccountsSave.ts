@@ -4,7 +4,7 @@ import { useState, useMemo } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useStagedStore } from "@/store/staged";
 import { useConnectionStore, selectActiveInstance } from "@/store/connection";
-import { createAccount, updateAccount, deleteAccount } from "@/lib/api/accounts";
+import { getTransport, syncTransportAfterChanges } from "@/lib/actual";
 import {
   extractMessage,
   computeSaveOperations,
@@ -31,6 +31,7 @@ export function useAccountsSave() {
     setIsSaving(true);
 
     try {
+      const transport = getTransport(connection);
       const { toCreate, toUpdate, toDelete } = computeSaveOperations<Account>(staged);
       const succeeded: SaveResult[] = [];
       const failed: SaveResult[] = [];
@@ -40,12 +41,17 @@ export function useAccountsSave() {
       // ── Creates (parallel) ──────────────────────────────────────────────────
       const createResults = await Promise.allSettled(
         toCreate.map((a) =>
-          createAccount(connection, { name: a.name, offBudget: a.offBudget, closed: a.closed, initialBalance: a.initialBalance })
+          transport.createAccount({
+            name: a.name,
+            offBudget: a.offBudget,
+            closed: a.closed,
+            initialBalance: a.initialBalance,
+          })
         )
       );
       for (let i = 0; i < toCreate.length; i++) {
         const id = toCreate[i].id;
-        const r  = createResults[i];
+        const r = createResults[i];
         if (r.status === "fulfilled") {
           idMap[id] = r.value.id;
           succeeded.push({ status: "success", id });
@@ -58,12 +64,16 @@ export function useAccountsSave() {
       // ── Updates (parallel) ──────────────────────────────────────────────────
       const updateResults = await Promise.allSettled(
         toUpdate.map((a) =>
-          updateAccount(connection, a.id, { name: a.name, offBudget: a.offBudget, closed: a.closed })
+          transport.updateAccount(a.id, {
+            name: a.name,
+            offBudget: a.offBudget,
+            closed: a.closed,
+          })
         )
       );
       for (let i = 0; i < toUpdate.length; i++) {
         const id = toUpdate[i].id;
-        const r  = updateResults[i];
+        const r = updateResults[i];
         if (r.status === "fulfilled") {
           succeeded.push({ status: "success", id });
         } else {
@@ -73,11 +83,11 @@ export function useAccountsSave() {
 
       // ── Deletes (parallel) ──────────────────────────────────────────────────
       const deleteResults = await Promise.allSettled(
-        toDelete.map((id) => deleteAccount(connection, id))
+        toDelete.map((id) => transport.deleteAccount(id))
       );
       for (let i = 0; i < toDelete.length; i++) {
         const id = toDelete[i];
-        const r  = deleteResults[i];
+        const r = deleteResults[i];
         if (r.status === "fulfilled") {
           succeeded.push({ status: "success", id });
         } else {
@@ -111,6 +121,8 @@ export function useAccountsSave() {
         }
         useStagedStore.getState().setSaveErrors("accounts", errors);
       }
+
+      await syncTransportAfterChanges(transport, succeeded.length > 0);
 
       await queryClient.invalidateQueries({ queryKey: ["accounts", connection.id] });
       await queryClient.invalidateQueries({ queryKey: ["transactionCounts", "account", connection.id] });

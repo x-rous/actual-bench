@@ -67,7 +67,11 @@ function resolveAssetPath(parts: string[]): string | null {
 }
 
 export async function GET(_request: Request, context: RouteContext) {
-  if (process.env.NEXT_PUBLIC_DIRECT_BROWSER_API !== "1") {
+  const enabled =
+    process.env["NEXT_PUBLIC_DIRECT_BROWSER_API"]?.trim() === "1" ||
+    process.env["DIRECT_BROWSER_API"]?.trim() === "1";
+
+  if (!enabled) {
     return new NextResponse(null, { status: 404, headers: ASSET_HEADERS });
   }
 

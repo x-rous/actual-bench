@@ -11,10 +11,11 @@ type DemoConnection = { baseUrl: string; apiKey: string; budgetSyncId: string };
 /**
  * "Try the live demo" entry point on the connect screen.
  *
- * Fetches the demo connection from /api/demo (which 404s unless the deployment
- * sets DEMO_MODE=1 + the DEMO_* vars), so this renders nothing on self-hosted
- * builds. Clicking it registers the demo as the active connection and drops the
- * visitor straight into the app — the normal "bring your own actual-http-api"
+ * Fetches the demo connection from /api/demo after the server-rendered connect
+ * page confirms DEMO_MODE=1 + the DEMO_* vars are present. Self-hosted builds
+ * do not render this component, so they do not probe the demo endpoint. Clicking
+ * it registers the demo as the active connection and drops the visitor straight
+ * into the app — the normal "bring your own actual-http-api"
  * form below remains the default path.
  */
 export function DemoButton() {
