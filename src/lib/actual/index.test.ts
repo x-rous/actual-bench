@@ -40,6 +40,25 @@ const browserConnection: BrowserApiConnection = {
   budgetSyncId: "budget-1",
 };
 
+function createMockQueryBuilder() {
+  const builder = {
+    options: jest.fn(),
+    filter: jest.fn(),
+    select: jest.fn(),
+    calculate: jest.fn(),
+    groupBy: jest.fn(),
+    orderBy: jest.fn(),
+    limit: jest.fn(),
+    offset: jest.fn(),
+    unfilter: jest.fn(),
+    raw: jest.fn(),
+    withDead: jest.fn(),
+    withoutValidatedRefs: jest.fn(),
+  };
+  for (const method of Object.values(builder)) method.mockReturnValue(builder);
+  return builder;
+}
+
 describe("Actual transport factory", () => {
   beforeEach(() => {
     mockGetAccounts.mockReset();
@@ -238,17 +257,7 @@ describe("Actual transport factory", () => {
   });
 
   it("Direct runQuery adapts supported wrapped ActualQL JSON into browser q() calls", async () => {
-    const builder = {
-      options: jest.fn(),
-      filter: jest.fn(),
-      select: jest.fn(),
-      calculate: jest.fn(),
-      groupBy: jest.fn(),
-      orderBy: jest.fn(),
-      limit: jest.fn(),
-      offset: jest.fn(),
-    };
-    for (const method of Object.values(builder)) method.mockReturnValue(builder);
+    const builder = createMockQueryBuilder();
     const q = jest.fn().mockReturnValue(builder);
     const aqlQuery = jest.fn().mockResolvedValue({ data: [] });
     mockGetBrowserApiRuntime.mockResolvedValue({ q, aqlQuery } as never);
@@ -271,23 +280,67 @@ describe("Actual transport factory", () => {
     expect(builder.options).toHaveBeenCalledWith({ splits: "inline" });
     expect(builder.filter).toHaveBeenCalledWith({ account: "account-1" });
     expect(builder.select).toHaveBeenCalledWith(["id", "date"]);
-    expect(builder.groupBy).toHaveBeenCalledWith(["account"]);
-    expect(builder.orderBy).toHaveBeenCalledWith([{ date: "desc" }]);
+    expect(builder.groupBy).toHaveBeenCalledWith("account");
+    expect(builder.orderBy).toHaveBeenCalledWith({ date: "desc" });
     expect(builder.limit).toHaveBeenCalledWith(10);
+    expect(builder.offset).not.toHaveBeenCalled();
     expect(aqlQuery).toHaveBeenCalledWith(builder);
   });
 
-  it("Direct runQuery rejects unsupported wrapped ActualQL fields explicitly", async () => {
-    const builder = {
-      options: jest.fn().mockReturnThis(),
-      filter: jest.fn().mockReturnThis(),
-      select: jest.fn().mockReturnThis(),
-      calculate: jest.fn().mockReturnThis(),
-      groupBy: jest.fn().mockReturnThis(),
-      orderBy: jest.fn().mockReturnThis(),
-      limit: jest.fn().mockReturnThis(),
-      offset: jest.fn().mockReturnThis(),
-    };
+  it("Direct runQuery adapts bare query JSON arrays, flags, and unfilter", async () => {
+    const builder = createMockQueryBuilder();
+    const q = jest.fn().mockReturnValue(builder);
+    const aqlQuery = jest.fn().mockResolvedValue({ data: [] });
+    mockGetBrowserApiRuntime.mockResolvedValue({ q, aqlQuery } as never);
+
+    await expect(
+      getTransport(browserConnection).runQuery({
+        table: "transactions",
+        filter: [{ account: "account-1" }, { date: { $gte: "2026-01-01" } }],
+        groupBy: ["account", "account.name"],
+        orderBy: [{ date: "desc" }, "account.name"],
+        select: ["account", "account.name", { total: { $sum: "$amount" } }],
+        offset: 5,
+        unfilter: "date",
+        raw: true,
+        withDead: true,
+        withoutValidatedRefs: true,
+      })
+    ).resolves.toEqual({ data: [] });
+
+    expect(q).toHaveBeenCalledWith("transactions");
+    expect(builder.filter).toHaveBeenNthCalledWith(1, { account: "account-1" });
+    expect(builder.filter).toHaveBeenNthCalledWith(2, { date: { $gte: "2026-01-01" } });
+    expect(builder.groupBy).toHaveBeenNthCalledWith(1, "account");
+    expect(builder.groupBy).toHaveBeenNthCalledWith(2, "account.name");
+    expect(builder.orderBy).toHaveBeenNthCalledWith(1, { date: "desc" });
+    expect(builder.orderBy).toHaveBeenNthCalledWith(2, "account.name");
+    expect(builder.offset).toHaveBeenCalledWith(5);
+    expect(builder.limit).not.toHaveBeenCalled();
+    expect(builder.unfilter).toHaveBeenCalledWith(["date"]);
+    expect(builder.raw).toHaveBeenCalledTimes(1);
+    expect(builder.withDead).toHaveBeenCalledTimes(1);
+    expect(builder.withoutValidatedRefs).toHaveBeenCalledTimes(1);
+    expect(aqlQuery).toHaveBeenCalledWith(builder);
+  });
+
+  it("Direct runQuery falls back to deprecated browser runQuery when aqlQuery is unavailable", async () => {
+    const builder = createMockQueryBuilder();
+    const runQuery = jest.fn().mockResolvedValue({ data: 3 });
+    mockGetBrowserApiRuntime.mockResolvedValue({
+      q: jest.fn().mockReturnValue(builder),
+      runQuery,
+    } as never);
+
+    await expect(
+      getTransport(browserConnection).runQuery({ ActualQLquery: { table: "payees" } })
+    ).resolves.toEqual({ data: 3 });
+
+    expect(runQuery).toHaveBeenCalledWith(builder);
+  });
+
+  it("Direct runQuery rejects unsupported ActualQL fields before execution", async () => {
+    const builder = createMockQueryBuilder();
     const aqlQuery = jest.fn();
     mockGetBrowserApiRuntime.mockResolvedValue({
       q: jest.fn().mockReturnValue(builder),
@@ -299,6 +352,27 @@ describe("Actual transport factory", () => {
         ActualQLquery: { table: "transactions", join: ["accounts"] },
       })
     ).rejects.toThrow("Direct browser API query adapter does not support ActualQL field: join");
+    expect(aqlQuery).not.toHaveBeenCalled();
+  });
+
+  it("Direct runQuery validates limit and offset before execution", async () => {
+    const builder = createMockQueryBuilder();
+    const aqlQuery = jest.fn();
+    mockGetBrowserApiRuntime.mockResolvedValue({
+      q: jest.fn().mockReturnValue(builder),
+      aqlQuery,
+    } as never);
+
+    await expect(
+      getTransport(browserConnection).runQuery({
+        ActualQLquery: { table: "transactions", limit: Number.MAX_SAFE_INTEGER + 1 },
+      })
+    ).rejects.toThrow("ActualQLquery.limit to be a non-negative safe integer");
+    await expect(
+      getTransport(browserConnection).runQuery({
+        ActualQLquery: { table: "transactions", offset: -1 },
+      })
+    ).rejects.toThrow("ActualQLquery.offset to be a non-negative safe integer");
     expect(aqlQuery).not.toHaveBeenCalled();
   });
 

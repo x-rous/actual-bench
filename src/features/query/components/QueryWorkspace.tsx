@@ -6,11 +6,9 @@ import { toast } from "sonner";
 import {
   useConnectionStore,
   selectActiveInstance,
-  isBrowserApiConnection,
   isHttpApiConnection,
 } from "@/store/connection";
 import { useStagedStore, selectHasChanges } from "@/store/staged";
-import { DirectModeUnavailable } from "@/components/DirectModeUnavailable";
 import { runQuery } from "@/lib/api/query";
 import { cn } from "@/lib/utils";
 import { QueryEditor } from "./QueryEditor";
@@ -307,10 +305,6 @@ export function QueryWorkspace() {
         toast.error("No active connection.");
         return;
       }
-      if (!isHttpApiConnection(connection)) {
-        toast.error("ActualQL Queries require an HTTP API Server connection.");
-        return;
-      }
       // Prevent overlapping concurrent executions.
       if (isRunningRef.current) return;
 
@@ -329,16 +323,28 @@ export function QueryWorkspace() {
       // changes that occur while the request is in flight.
       const capturedBudgetId = connection.budgetSyncId;
 
-      // Snapshot the current request before the async gap so it is available
-      // for cURL generation on both the success and the error path.
-      setLastExecutedRequest({
-        query: parsed.inner,
-        rawQuery: queryString,
-        baseUrl: connection.baseUrl,
-        budgetSyncId: connection.budgetSyncId,
-        apiKey: connection.apiKey,
-        encryptionPassword: connection.encryptionPassword,
-      });
+      // Snapshot the current request before the async gap so result actions can
+      // use the executed query, even if the editor changes afterward.
+      setLastExecutedRequest(
+        isHttpApiConnection(connection)
+          ? {
+              mode: "http-api",
+              query: parsed.inner,
+              rawQuery: queryString,
+              baseUrl: connection.baseUrl,
+              budgetSyncId: connection.budgetSyncId,
+              apiKey: connection.apiKey,
+              encryptionPassword: connection.encryptionPassword,
+            }
+          : {
+              mode: "browser-api",
+              query: parsed.inner,
+              rawQuery: queryString,
+              baseUrl: connection.baseUrl,
+              budgetSyncId: connection.budgetSyncId,
+              encryptionPassword: connection.encryptionPassword,
+            }
+      );
 
       const start = Date.now();
       try {
@@ -503,16 +509,6 @@ export function QueryWorkspace() {
   }
 
   // ─── Render ──────────────────────────────────────────────────────────────────
-
-  if (isBrowserApiConnection(connection)) {
-    return (
-      <DirectModeUnavailable
-        title="ActualQL Queries need HTTP API Server mode"
-        description="Direct mode currently supports only the internal query subset used by migrated app pages."
-        detail="Use an HTTP API Server connection for the generic query workspace."
-      />
-    );
-  }
 
   return (
     <div className="flex min-h-0 flex-1 overflow-hidden">

@@ -1,7 +1,7 @@
 # Actual Bench — Agent Rules
 
-> Self-hosted admin UI for Actual Budget. Backend: `actual-http-api`.
-> Architecture: **Client → Next.js Proxy → actual-http-api**
+> Self-hosted admin UI for Actual Budget. Target backend: **Direct Actual Server** via the browser API transport; compatibility backend: **HTTP API Server** via `actual-http-api`.
+> Architecture: **Client → Direct transport → Actual Server** (target) and **Client → Next.js Proxy → actual-http-api** (maintained compatibility).
 > Editing model: **Staged. Nothing writes to server until user clicks Save.**
 
 ---
@@ -26,8 +26,8 @@ import { generateId } from "@/lib/uuid";
 
 **API calls**
 ```ts
-// ❌ fetch() directly to actual-http-api
-// ✅ apiRequest() → /api/proxy → actual-http-api
+// ❌ fetch() directly to actual-http-api or Actual Server from feature code
+// ✅ feature code uses transport/business helpers; HTTP API Server helpers use apiRequest() → /api/proxy → actual-http-api
 ```
 
 **Mutations**
@@ -63,8 +63,9 @@ CI (`ci.yml`) runs lint, type-check, tests, and build on every push — no need 
 ## File Map
 | Task | Path |
 |---|---|
-| API logic | `src/lib/api/<entity>.ts` |
-| Proxy | `src/app/api/proxy/route.ts` |
+| Transport logic | `src/lib/actual/*` |
+| HTTP API Server helper logic | `src/lib/api/<entity>.ts` |
+| Proxy (HTTP API Server mode) | `src/app/api/proxy/route.ts` |
 | Staged store (entity pages) | `src/store/staged.ts` |
 | Budget cell edits store | `src/store/budgetEdits.ts` |
 | Budget mode shared utility | `src/lib/budget/deriveBudgetMode.ts` |
@@ -95,7 +96,7 @@ The public demo (`actual-bench-demo.vercel.app`) is **separate from the self-hos
 
 ## Proxy Notes
 
-The proxy is responsible for:
+The proxy is the maintained HTTP API Server compatibility path. Direct mode should not duplicate proxy behavior; it should go through the transport abstraction. The proxy is responsible for:
 
 - CORS handling.
 - Request serialization using `serverQueueTails`.

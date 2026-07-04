@@ -4,18 +4,22 @@
 // Dotted paths, aggregate expressions, $oneof, $transform, options.splits, etc.
 // all pass through as-is.
 
+export type ActualQLExpression = string | Record<string, unknown>;
+
 export type ActualQLQuery = {
   table: string;
-  filter?: Record<string, unknown>;
-  select?: Array<string | Record<string, unknown>> | Record<string, unknown>;
-  groupBy?: string[];
-  calculate?: Record<string, unknown>;
-  orderBy?: Array<string | Record<string, "asc" | "desc">>;
+  filter?: Record<string, unknown> | Array<Record<string, unknown>>;
+  select?: "*" | ActualQLExpression | ActualQLExpression[];
+  groupBy?: ActualQLExpression | ActualQLExpression[];
+  calculate?: ActualQLExpression;
+  orderBy?: ActualQLExpression | ActualQLExpression[];
   limit?: number;
   offset?: number;
-  options?: {
-    splits?: "inline" | "grouped" | "all";
-  };
+  options?: Record<string, unknown>;
+  unfilter?: string | string[];
+  raw?: boolean;
+  withDead?: boolean;
+  withoutValidatedRefs?: boolean;
 };
 
 // ─── Saved query ──────────────────────────────────────────────────────────────
@@ -50,17 +54,20 @@ export type QueryHistoryEntry = {
 
 export type QueryResultMode = "table" | "raw" | "scalar" | "tree";
 
-// ─── Last executed request (for cURL generation in Phase 2) ──────────────────
+// ─── Last executed request ───────────────────────────────────────────────────
 
 export type LastExecutedRequest = {
   query: ActualQLQuery;
-  /** Full wrapped editor string at execution time — used for "Copy query JSON". */
+  /** Full editor string at execution time — preserved for copy/replay flows. */
   rawQuery: string;
+  mode: "http-api" | "browser-api";
   baseUrl: string;
   budgetSyncId: string;
-  apiKey: string;
   encryptionPassword?: string;
-};
+} & (
+  | { mode: "http-api"; apiKey: string }
+  | { mode: "browser-api"; apiKey?: never }
+);
 
 // ─── Lint warning ─────────────────────────────────────────────────────────────
 

@@ -36,6 +36,7 @@ import {
   getBrowserApiRuntime,
   syncBrowserApiRuntime,
   type ActualBrowserApi,
+  type ActualQueryBuilder,
 } from "./browser/runtime";
 import { prepareRuleForTransport, prepareRulePatchForTransport } from "./ruleMutation";
 import { unsupportedTransportOperation, type ActualBenchTransport, type ScheduleWriteInput, type TransportBudgetMonth } from "./transport";
@@ -156,9 +157,92 @@ function assertRecord(value: unknown, label: string): RecordLike {
   return value;
 }
 
-function getWrappedActualQuery(body: object): RecordLike {
-  const wrapped = assertRecord(body, "the query body");
-  return assertRecord(wrapped.ActualQLquery, "ActualQLquery");
+function getActualQueryInput(body: object): RecordLike {
+  const parsed = assertRecord(body, "the query body");
+  if ("ActualQLquery" in parsed) {
+    return assertRecord(parsed.ActualQLquery, "ActualQLquery");
+  }
+  if ("table" in parsed) return parsed;
+
+  throw new Error(
+    'Direct browser API query adapter requires a query object with "table" or an "ActualQLquery" wrapper.'
+  );
+}
+
+function assertQueryBuilderMethod(
+  query: ActualQueryBuilder,
+  method: keyof ActualQueryBuilder
+): void {
+  if (typeof query[method] !== "function") {
+    throw new Error(
+      "Direct browser API query adapter cannot apply ActualQL field because the installed Actual API query builder does not expose " +
+        method +
+        "()."
+    );
+  }
+}
+
+function toRepeatedValues(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : [value];
+}
+
+function applyRepeatedBuilderMethod(
+  query: ActualQueryBuilder,
+  method: "filter" | "groupBy" | "orderBy",
+  value: unknown
+): ActualQueryBuilder {
+  if (value === undefined) return query;
+
+  assertQueryBuilderMethod(query, method);
+  let nextQuery = query;
+  for (const item of toRepeatedValues(value)) {
+    if (method === "filter") {
+      nextQuery = nextQuery.filter(assertRecord(item, "ActualQLquery.filter item"));
+    } else {
+      nextQuery = nextQuery[method](item);
+    }
+  }
+  return nextQuery;
+}
+
+function getSafeInteger(value: unknown, field: "limit" | "offset"): number {
+  if (
+    typeof value !== "number" ||
+    !Number.isSafeInteger(value) ||
+    value < 0
+  ) {
+    throw new Error(
+      "Direct browser API query adapter requires ActualQLquery." +
+        field +
+        " to be a non-negative safe integer."
+    );
+  }
+  return value;
+}
+
+function getBooleanFlag(value: unknown, field: string): boolean {
+  if (typeof value !== "boolean") {
+    throw new Error(
+      "Direct browser API query adapter requires ActualQLquery." +
+        field +
+        " to be a boolean when provided."
+    );
+  }
+  return value;
+}
+
+function getUnfilterValue(value: unknown): string[] | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value === "string") return [value];
+  if (
+    Array.isArray(value) &&
+    value.every((item): item is string => typeof item === "string")
+  ) {
+    return value;
+  }
+  throw new Error(
+    "Direct browser API query adapter requires ActualQLquery.unfilter to be a string or string array."
+  );
 }
 
 function createBrowserQuery(api: ActualBrowserApi, body: object): unknown {
@@ -166,7 +250,7 @@ function createBrowserQuery(api: ActualBrowserApi, body: object): unknown {
     throw unsupportedTransportOperation("browser-api", "ActualQL queries");
   }
 
-  const query = getWrappedActualQuery(body);
+  const query = getActualQueryInput(body);
   const supportedKeys = new Set([
     "table",
     "options",
@@ -177,6 +261,10 @@ function createBrowserQuery(api: ActualBrowserApi, body: object): unknown {
     "orderBy",
     "limit",
     "offset",
+    "unfilter",
+    "raw",
+    "withDead",
+    "withoutValidatedRefs",
   ]);
   for (const key of Object.keys(query)) {
     if (!supportedKeys.has(key)) {
@@ -195,9 +283,7 @@ function createBrowserQuery(api: ActualBrowserApi, body: object): unknown {
   if (query.options !== undefined) {
     browserQuery = browserQuery.options(assertRecord(query.options, "ActualQLquery.options"));
   }
-  if (query.filter !== undefined) {
-    browserQuery = browserQuery.filter(assertRecord(query.filter, "ActualQLquery.filter"));
-  }
+  browserQuery = applyRepeatedBuilderMethod(browserQuery, "filter", query.filter);
   if (query.calculate !== undefined) {
     if (query.select !== undefined) {
       throw new Error(
@@ -208,24 +294,56 @@ function createBrowserQuery(api: ActualBrowserApi, body: object): unknown {
   } else if (query.select !== undefined) {
     browserQuery = browserQuery.select(query.select);
   }
-  if (query.groupBy !== undefined) browserQuery = browserQuery.groupBy(query.groupBy);
-  if (query.orderBy !== undefined) browserQuery = browserQuery.orderBy(query.orderBy);
+  browserQuery = applyRepeatedBuilderMethod(browserQuery, "groupBy", query.groupBy);
+  browserQuery = applyRepeatedBuilderMethod(browserQuery, "orderBy", query.orderBy);
   if (query.limit !== undefined) {
-    const limit = query.limit;
-    if (typeof limit !== "number" || !Number.isInteger(limit) || limit < 0) {
-      throw new Error("Direct browser API query adapter requires a non-negative integer limit.");
-    }
-    browserQuery = browserQuery.limit(limit);
+    browserQuery = browserQuery.limit(getSafeInteger(query.limit, "limit"));
   }
   if (query.offset !== undefined) {
-    const offset = query.offset;
-    if (typeof offset !== "number" || !Number.isInteger(offset) || offset < 0) {
-      throw new Error("Direct browser API query adapter requires a non-negative integer offset.");
-    }
-    browserQuery = browserQuery.offset(offset);
+    browserQuery = browserQuery.offset(getSafeInteger(query.offset, "offset"));
+  }
+
+  const unfilter = getUnfilterValue(query.unfilter);
+  if (unfilter !== undefined) {
+    assertQueryBuilderMethod(browserQuery, "unfilter");
+    browserQuery = browserQuery.unfilter(unfilter);
+  }
+
+  // Do not inject Direct-only default limits here. The workspace already warns
+  // about risky unbounded reads, and silently changing Direct semantics would
+  // make the same saved query return different data by connection mode.
+  if (query.raw !== undefined && getBooleanFlag(query.raw, "raw")) {
+    assertQueryBuilderMethod(browserQuery, "raw");
+    browserQuery = browserQuery.raw();
+  }
+  if (query.withDead !== undefined && getBooleanFlag(query.withDead, "withDead")) {
+    assertQueryBuilderMethod(browserQuery, "withDead");
+    browserQuery = browserQuery.withDead();
+  }
+  if (
+    query.withoutValidatedRefs !== undefined &&
+    getBooleanFlag(query.withoutValidatedRefs, "withoutValidatedRefs")
+  ) {
+    assertQueryBuilderMethod(browserQuery, "withoutValidatedRefs");
+    browserQuery = browserQuery.withoutValidatedRefs();
   }
 
   return browserQuery;
+}
+
+function getErrorMessage(value: unknown): string {
+  if (value instanceof Error) return value.message;
+  if (isRecord(value) && typeof value.message === "string") return value.message;
+  return String(value || "Direct ActualQL query failed.");
+}
+
+function cleanBrowserQueryError(value: unknown): Error {
+  const firstLine = getErrorMessage(value).split("\n")[0]?.trim();
+  return new Error(
+    firstLine
+      ? "Direct ActualQL query failed: " + firstLine
+      : "Direct ActualQL query failed."
+  );
 }
 
 async function runBrowserQuery<T>(
@@ -233,9 +351,15 @@ async function runBrowserQuery<T>(
   body: object
 ): Promise<T> {
   const api = await getBrowserApiRuntime(connection);
-  const runner = api.aqlQuery ?? api.runQuery;
+  const runner = api.aqlQuery?.bind(api) ?? api.runQuery?.bind(api);
   if (!runner) throw unsupportedTransportOperation("browser-api", "ActualQL queries");
-  return (await runner(createBrowserQuery(api, body))) as T;
+
+  const query = createBrowserQuery(api, body);
+  try {
+    return (await runner(query)) as T;
+  } catch (err) {
+    throw cleanBrowserQueryError(err);
+  }
 }
 
 function toBudgetAmount(amount: number): number {

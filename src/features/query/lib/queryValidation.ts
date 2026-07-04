@@ -1,7 +1,7 @@
 /**
  * Query parsing and lint rules for the ActualQL workspace.
  *
- * parseQuery: validates the full wrapped JSON string `{ "ActualQLquery": { ... } }`
+ * parseQuery: validates wrapped `{ "ActualQLquery": { ... } }` or bare query JSON
  * and returns { body, inner } or an Error describing why the input is invalid.
  * Called before every network request and displayed inline in the editor.
  *
@@ -37,9 +37,7 @@ export function parseQuery(input: string): ParsedQuery | Error {
   }
 
   if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
-    return new Error(
-      'Query must be a JSON object with an "ActualQLquery" key.'
-    );
+    return new Error("Query must be a JSON object.");
   }
 
   const obj = parsed as Record<string, unknown>;
@@ -78,20 +76,20 @@ export function parseQuery(input: string): ParsedQuery | Error {
 export function lintQuery(query: ActualQLQuery): LintWarning[] {
   const warnings: LintWarning[] = [];
 
-  // Unbounded transaction scan — the proxy enforces a 15-second timeout.
-  // A full transactions table can have thousands of rows. A query with any
-  // filter is considered scoped and does not trigger this warning.
+  // Unbounded transaction scan — HTTP mode has a proxy timeout, and Direct mode
+  // can still be expensive for large budgets. A query with any filter is
+  // considered scoped and does not trigger this warning.
   if (
     query.table === "transactions" &&
     !query.limit &&
-    !query.groupBy?.length &&
+    !hasQueryValue(query.groupBy) &&
     !query.calculate &&
-    (!query.filter || Object.keys(query.filter).length === 0)
+    !hasQueryValue(query.filter)
   ) {
     warnings.push({
       id: "unbounded-transactions",
       message:
-        'Unbounded transaction scan - may return thousands of rows and time out (15s proxy limit). Add "limit", "groupBy", or "calculate" to narrow the scope.',
+        'Unbounded transaction scan - may return thousands of rows and time out. Add "limit", "groupBy", or "calculate" to narrow the scope.',
     });
   }
 
@@ -107,7 +105,7 @@ export function lintQuery(query: ActualQLQuery): LintWarning[] {
   // groupBy without an aggregate in select — every group will return its
   // raw rows, which is rarely what the user intends
   if (
-    query.groupBy?.length &&
+    hasQueryValue(query.groupBy) &&
     !query.calculate &&
     Array.isArray(query.select)
   ) {
@@ -140,7 +138,15 @@ export function lintQuery(query: ActualQLQuery): LintWarning[] {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
+function hasQueryValue(value: unknown): boolean {
+  if (Array.isArray(value)) return value.length > 0;
+  if (typeof value === "string") return value.trim().length > 0;
+  if (value && typeof value === "object") return Object.keys(value).length > 0;
+  return value !== undefined && value !== null;
+}
+
 function hasEmptyOneof(filter: unknown): boolean {
+  if (Array.isArray(filter)) return filter.some((item) => hasEmptyOneof(item));
   if (!filter || typeof filter !== "object") return false;
   const obj = filter as Record<string, unknown>;
 

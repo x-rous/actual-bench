@@ -134,7 +134,7 @@ function BasicsSection() {
     <div className="flex flex-col gap-4">
       <Para>
         ActualQL is a JSON-based query language for reading data from an Actual Budget.
-        All queries must be wrapped in <code className="font-mono text-[11px]">{"{ \"ActualQLquery\": { ... } }"}</code>.
+        The editor accepts bare query objects or the <code className="font-mono text-[11px]">{"{ \"ActualQLquery\": { ... } }"}</code> wrapper used by actual-http-api.
       </Para>
 
       <div>
@@ -156,7 +156,7 @@ function BasicsSection() {
       <div>
         <Heading>Minimal example</Heading>
         <Snippet
-          code={`{\n  "ActualQLquery": {\n    "table": "payees",\n    "limit": 10\n  }\n}`}
+          code={`{\n  "table": "payees",\n  "limit": 10\n}`}
         />
       </div>
     </div>
@@ -340,7 +340,7 @@ function TransactionsSection() {
         <Para>
           Querying <code className="font-mono text-[11px]">transactions</code> without a <code className="font-mono text-[11px]">limit</code>,
           <code className="font-mono text-[11px]">groupBy</code>, or <code className="font-mono text-[11px]">calculate</code> can return
-          thousands of rows and may time out (proxy enforces a 15-second limit).
+          thousands of rows and may time out. Add a limit before broad inspection queries.
         </Para>
       </div>
     </div>

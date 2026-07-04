@@ -5,7 +5,7 @@
  * Returns an ordered list of sentences that describe what the query does.
  */
 
-import type { ActualQLQuery } from "../types";
+import type { ActualQLExpression, ActualQLQuery } from "../types";
 
 export function explainQuery(query: ActualQLQuery): string[] {
   const lines: string[] = [];
@@ -24,8 +24,9 @@ export function explainQuery(query: ActualQLQuery): string[] {
   }
 
   // groupBy
-  if (query.groupBy && query.groupBy.length > 0) {
-    const fields = query.groupBy.map((f) => `\`${f}\``).join(", ");
+  const groupBy = toExpressionArray(query.groupBy);
+  if (groupBy.length > 0) {
+    const fields = groupBy.map(formatExpressionLabel).join(", ");
     lines.push(`Groups rows by ${fields}.`);
   }
 
@@ -35,8 +36,9 @@ export function explainQuery(query: ActualQLQuery): string[] {
   }
 
   // orderBy
-  if (query.orderBy && query.orderBy.length > 0) {
-    lines.push(describeOrderBy(query.orderBy));
+  const orderBy = toExpressionArray(query.orderBy);
+  if (orderBy.length > 0) {
+    lines.push(describeOrderBy(orderBy));
   }
 
   // limit / offset
@@ -48,20 +50,22 @@ export function explainQuery(query: ActualQLQuery): string[] {
   }
 
   // options.splits
-  if (query.options?.splits) {
+  const splitMode =
+    typeof query.options?.splits === "string" ? query.options.splits : undefined;
+  if (splitMode) {
     const splitDesc: Record<string, string> = {
       inline: "shows sub-transactions individually",
       grouped: "groups sub-transactions under their parent",
       all: "returns both parent and sub-transactions",
     };
-    const desc = splitDesc[query.options.splits] ?? query.options.splits;
-    lines.push(`Split behavior is set to \`${query.options.splits}\` - ${desc}.`);
+    const desc = splitDesc[splitMode] ?? splitMode;
+    lines.push(`Split behavior is set to \`${splitMode}\` - ${desc}.`);
   }
 
   // Result type summary
   if (query.calculate) {
     lines.push("Returns a single calculated value, not a list of rows.");
-  } else if (query.groupBy?.length) {
+  } else if (groupBy.length > 0) {
     lines.push("Returns one aggregated row per group.");
   } else {
     lines.push("Returns a list of rows.");
@@ -72,7 +76,23 @@ export function explainQuery(query: ActualQLQuery): string[] {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function describeFilter(filter: Record<string, unknown>): string {
+function toExpressionArray(
+  value: ActualQLExpression | ActualQLExpression[] | undefined
+): ActualQLExpression[] {
+  if (value === undefined) return [];
+  return Array.isArray(value) ? value : [value];
+}
+
+function formatExpressionLabel(value: ActualQLExpression): string {
+  return `\`${typeof value === "string" ? value : JSON.stringify(value)}\``;
+}
+
+function describeFilter(filter: Record<string, unknown> | Array<Record<string, unknown>>): string {
+  if (Array.isArray(filter)) {
+    if (filter.length === 0) return "No effective filter conditions.";
+    return `Applies ${filter.length} filter condition${filter.length !== 1 ? "s" : ""}.`;
+  }
+
   // Compound operators
   if ("$and" in filter && Array.isArray(filter["$and"])) {
     return `Filters rows where ALL of ${filter["$and"].length} conditions match ($and).`;
@@ -116,10 +136,13 @@ function describeFilter(filter: Record<string, unknown>): string {
 }
 
 function describeSelect(
-  select: Array<string | Record<string, unknown>> | Record<string, unknown>
+  select: "*" | ActualQLExpression | ActualQLExpression[]
 ): string {
+  if (select === "*") return "Selects all fields.";
   if (!Array.isArray(select)) {
-    return "Selects fields using an object expression.";
+    return typeof select === "string"
+      ? `Selects field \`${select}\`.`
+      : "Selects fields using an object expression.";
   }
 
   const simple: string[] = [];
@@ -151,7 +174,11 @@ function describeSelect(
   return `Selects ${parts.join(" and ")}.`;
 }
 
-function describeCalculate(calculate: Record<string, unknown>): string {
+function describeCalculate(calculate: ActualQLExpression): string {
+  if (typeof calculate === "string") {
+    return `Computes a scalar from \`${calculate}\`.`;
+  }
+
   const fn = Object.keys(calculate)[0];
   const operand = calculate[fn];
   const operandStr =
@@ -169,9 +196,7 @@ function describeCalculate(calculate: Record<string, unknown>): string {
   return `Computes a scalar - ${desc} \`${operandStr}\` across matching rows.`;
 }
 
-function describeOrderBy(
-  orderBy: Array<string | Record<string, "asc" | "desc">>
-): string {
+function describeOrderBy(orderBy: ActualQLExpression[]): string {
   const parts: string[] = [];
   for (const item of orderBy) {
     if (typeof item === "string") {

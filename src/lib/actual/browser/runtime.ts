@@ -14,12 +14,16 @@ import type { NoteRow } from "@/lib/api/notes";
 
 export type ActualQueryBuilder = {
   filter(expr: unknown): ActualQueryBuilder;
+  unfilter(exprs?: unknown): ActualQueryBuilder;
   select(exprs?: unknown): ActualQueryBuilder;
   calculate(expr: unknown): ActualQueryBuilder;
   groupBy(exprs: unknown): ActualQueryBuilder;
   orderBy(exprs: unknown): ActualQueryBuilder;
   limit(num: number): ActualQueryBuilder;
   offset(num: number): ActualQueryBuilder;
+  raw(): ActualQueryBuilder;
+  withDead(): ActualQueryBuilder;
+  withoutValidatedRefs(): ActualQueryBuilder;
   options(opts: Record<string, unknown>): ActualQueryBuilder;
 };
 

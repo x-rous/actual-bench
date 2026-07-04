@@ -27,7 +27,7 @@
 
 ---
 
-**Actual Bench** is a companion app for [Actual Budget](https://github.com/actualbudget/actual). It connects through the self-hosted [actual-http-api](https://github.com/jhonderson/actual-http-api) proxy by default, with an opt-in Direct Actual Server mode for selected browser-transport workflows. It gives power users a focused interface for the work that is hard to do in the native Actual Budget UI: bulk setup, master-data cleanup, advanced rule maintenance, full year view budget editing, diagnostics, and ad-hoc ActualQL analysis.
+**Actual Bench** is a companion app for [Actual Budget](https://github.com/actualbudget/actual). Its target architecture is Direct Actual Server access through Actual's browser API transport, while HTTP API Server mode through [actual-http-api](https://github.com/jhonderson/actual-http-api) remains fully supported for existing deployments and integrations. It gives power users a focused interface for the work that is hard to do in the native Actual Budget UI: bulk setup, master-data cleanup, advanced rule maintenance, full year view budget editing, diagnostics, and ad-hoc ActualQL analysis.
 
 It is not trying to replace Actual Budget's day-to-day transaction entry experience. It is the workbench you open when you need to inspect, repair, seed, audit, or reshape your budget data with confidence.
 
@@ -126,7 +126,7 @@ A read-only local diagnostics workspace for the exported budget snapshots.
 
 ### ActualQL Queries
 
-A dedicated query console using ActualQL API end point for advanced queries and analysis.
+A dedicated query console using ActualQL for advanced queries and analysis, available in HTTP API Server mode and Direct Actual Server mode.
 
 - Syntax-highlighted JSON editor with line numbers
 - Run with button or `Ctrl/Cmd+Enter`
@@ -134,7 +134,7 @@ A dedicated query console using ActualQL API end point for advanced queries and 
 - Explain query intent in plain English
 - Built-in ActualQL reference and example packs
 - Result views: table, raw JSON, scalar, and collapsible tree
-- Copy result JSON, query JSON, sanitized cURL, or full cURL when explicitly needed
+- Copy result JSON and query JSON in all modes; copy sanitized or full actual-http-api cURL from HTTP API Server executions when explicitly needed
 - Warns when staged local changes exist because query results reflect saved server state
 
 ### Excel Companion Workbook
@@ -163,26 +163,30 @@ Actual Bench is built around a review-before-save workflow.
 flowchart LR
   Browser[Browser]
   App["Actual Bench<br/>Next.js app"]
-  Proxy[Internal /api/proxy]
+  Direct["Direct transport<br/>@actual-app/api browser build"]
+  Worker["Browser worker<br/>local budget runtime"]
+  Proxy["Internal /api/proxy"]
   API[actual-http-api]
   Actual[Actual Budget server]
   Budget[(Budget data)]
 
   Browser --> App
-  App --> Proxy
-  Proxy --> API
-  API --> Actual
-  Browser -. Direct mode .-> Actual
+  App --> Direct
+  Direct --> Worker
+  Worker --> Actual
+  App -. HTTP API Server mode .-> Proxy
+  Proxy -.-> API
+  API -.-> Actual
   Actual --> Budget
 ```
 
-HTTP API Server mode sends all `actual-http-api` requests through Actual Bench's internal Next.js proxy; the browser never calls `actual-http-api` directly. Direct mode bypasses `actual-http-api` and uses Actual's browser API worker from the user's browser.
+Direct mode is the target architecture for browser-based Actual Bench workflows: it bypasses `actual-http-api` and uses Actual's browser API worker from the user's browser. HTTP API Server mode remains a maintained compatibility architecture; it sends all `actual-http-api` requests through Actual Bench's internal Next.js proxy, and the browser never calls `actual-http-api` directly.
 
 ### Direct mode
 
-Direct mode is shown by default alongside HTTP API Server mode. It uses worker/static asset headers required for cross-origin isolation (`Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy: require-corp`), and the Actual Server must be reachable from the browser through CORS or a same-origin reverse proxy. Set `DIRECT_BROWSER_API=0` or `NEXT_PUBLIC_DIRECT_BROWSER_API=0` only if your deployment cannot support Direct mode.
+Direct mode is shown by default alongside HTTP API Server mode and is the preferred target for new browser workflows. It uses worker/static asset headers required for cross-origin isolation (`Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy: require-corp`), and the Actual Server must be reachable from the browser through CORS or a same-origin reverse proxy. Set `DIRECT_BROWSER_API=0` or `NEXT_PUBLIC_DIRECT_BROWSER_API=0` only if your deployment cannot support Direct mode.
 
-Direct mode currently supports core entity pages, Budget Management reads/staged saves, Budget File Health, and Data Browser. The generic ActualQL Query workspace remains HTTP API Server-only because it depends on broader query-console compatibility.
+Direct mode currently supports core entity pages, Budget Management reads/staged saves, Budget File Health, Data Browser, and the ActualQL Query workspace. HTTP API Server mode remains first-class and maintained for deployments that prefer or require `actual-http-api`; query cURL generation remains HTTP API Server-only because it targets actual-http-api's `/run-query` endpoint.
 
 ## Privacy and data handling
 
@@ -197,8 +201,8 @@ Direct mode currently supports core entity pages, Budget Management reads/staged
 ## Requirements
 
 - A running [Actual Budget](https://github.com/actualbudget/actual) server
-- For HTTP API Server mode: a running [actual-http-api](https://github.com/jhonderson/actual-http-api) instance and an `ACTUAL_API_KEY`
 - For Direct mode: browser access from Actual Bench to Actual Server, plus cross-origin isolation/CORS support. Direct mode is enabled by default; set `DIRECT_BROWSER_API=0` or `NEXT_PUBLIC_DIRECT_BROWSER_API=0` to hide it when a deployment cannot support it
+- For HTTP API Server mode: a running [actual-http-api](https://github.com/jhonderson/actual-http-api) instance and an `ACTUAL_API_KEY`
 - Docker, Docker Compose, or Node.js 20+ for local development
 
 
@@ -222,7 +226,7 @@ docker run -d \
   xrous/actual-bench:edge
 ```
 
-Open `http://localhost:3000` and connect to your `actual-http-api` server.
+Open `http://localhost:3000` and connect with Direct Actual Server mode, or use HTTP API Server mode if you run `actual-http-api`.
 
 ### Docker Compose
 
@@ -244,7 +248,7 @@ docker compose up -d
 
 ### Docker networking note
 
-If Actual Bench and `actual-http-api` are running in separate containers, Actual Bench must be able to reach `actual-http-api` **from inside the Actual Bench container**.
+Direct mode is browser-to-Actual-Server, so the browser must be able to reach your Actual Server URL and the response must satisfy CORS/cross-origin-isolation requirements. HTTP API Server mode is server-to-`actual-http-api`: if Actual Bench and `actual-http-api` are running in separate containers, Actual Bench must be able to reach `actual-http-api` **from inside the Actual Bench container**.
 
 If the UI shows `fetch failed` or `502 Bad Gateway`, check whether both containers share a Docker network:
 
@@ -279,7 +283,7 @@ Actual Bench uses a two-step connection flow for both HTTP API Server and Direct
 
 ### 1. Choose a server
 
-Choose **HTTP API Server** for an `actual-http-api` proxy, or **Direct Actual Server** for a browser-to-Actual Server connection. Enter the matching server URL and credential, then click **Load Budgets**.
+Choose **Direct Actual Server** for the target browser-to-Actual Server connection, or **HTTP API Server** for the maintained `actual-http-api` compatibility path. Enter the matching server URL and credential, then click **Load Budgets**.
 
 | Field | Description |
 |---|---|
@@ -358,7 +362,7 @@ Open `http://localhost:3000`.
 ## Known limitations
 
 - Main entity admin pages load the full entity set; very large budgets may feel slower on Accounts, Payees, Categories, Rules, and similar pages.
-- Actual Bench depends on `actual-http-api`; unsupported or changing API endpoints may affect some features.
+- Direct mode depends on browser cross-origin isolation, CORS, and Actual's browser API package. HTTP API Server mode depends on `actual-http-api`; unsupported or changing API endpoints may affect that compatibility path.
 
 ## Contributing
 

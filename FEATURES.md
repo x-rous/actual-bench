@@ -5,8 +5,8 @@
 - Two-step connect flow: validate server credentials (URL + API key), then pick from the list of budgets returned by the server
 - Save multiple server connections and switch between them with one click from the top bar
 - Optional encryption password for end-to-end encrypted budgets
-- Direct Actual Server mode is available by default and opens a selected budget through the browser API worker without an `actual-http-api` proxy; core entity pages, Budget Management, Budget File Health, and Data Browser support the Direct transport
-- Direct mode is clearly gated for HTTP API Server-only tools: the generic ActualQL Query workspace shows an unavailable state instead of running an unsupported query-console path
+- Direct Actual Server mode is the target architecture and opens a selected budget through the browser API worker without an `actual-http-api` proxy; core entity pages, Budget Management, Budget File Health, Data Browser, and ActualQL Queries support the Direct transport
+- HTTP API Server mode remains fully maintained as the `actual-http-api` compatibility path; HTTP-specific actions stay mode-aware, and ActualQL cURL generation is shown only for HTTP API Server query executions
 - Remove saved connections individually
 - Per-connection query cache and staged data scoping — switching connections never leaks data between sessions
 - Connections are stored in session storage and cleared automatically when the tab is closed
@@ -351,7 +351,8 @@ Bare-letter shortcuts (`V`, `F`, `H`, `E`, `[`, `]`) are scoped so they never fi
 
 ## ActualQL Queries
 
-- Dedicated query workspace for running arbitrary ActualQL JSON queries against the open budget
+- Dedicated query workspace for running arbitrary ActualQL JSON queries against the open budget in HTTP API Server mode or Direct Actual Server mode
+- Accepts bare ActualQL query objects and the wrapped `{ "ActualQLquery": ... }` shape used by actual-http-api
 - Resizable editor / results split — drag the divider to adjust the balance; position persists across reloads via session storage
 - Syntax-highlighted JSON editor with line numbers, current-line highlight, and JetBrains Mono font; edit raw JSON directly with no normalization or auto-correction
 - Action bar: Run (or Ctrl/Cmd+Enter), Format JSON, Save, Explain, and ActualQL Reference buttons
@@ -364,8 +365,8 @@ Bare-letter shortcuts (`V`, `F`, `H`, `E`, `[`, `]`) are scoped so they never fi
   - **Tree** — collapsible recursive JSON tree; auto-selected for plain-object results; nodes with more than 5 children start collapsed
 - Smart cell formatting in the table view: ISO date strings displayed as human-readable dates (e.g. `Jan 15, 2024`); `amount` and `balance` integer columns formatted as decimal values (cents ÷ 100); raw value always accessible via hover tooltip
 - Execution metadata bar: OK / Error status chip, elapsed time, row count, and payload size shown inline with the result actions
-- Result actions: Copy result JSON, Copy query JSON, Copy sanitized cURL (secrets replaced with placeholders), and Copy full cURL (opt-in, clearly marked as containing real credentials)
-- cURL is always generated from the last successfully executed request, not the current editor state
+- Result actions: Copy result JSON and Copy query JSON in all modes; HTTP API Server executions also expose sanitized cURL (secrets replaced with placeholders) and full cURL (opt-in, clearly marked as containing real credentials)
+- HTTP cURL is always generated from the last HTTP API Server request, not the current editor state
 - **Explain this query** — one-click plain-English summary of what the current query does: target table, filters, grouping, aggregation, ordering, and whether the result is tabular or scalar
 - **ActualQL Reference** dialog — six-section quick reference covering basics, filter operators, joined fields, aggregates, transactions-specific options, and copyable snippets
 - Built-in example packs in four groups (Data inspection, Cleanup & validation, Aggregation, Targeted subset) — one-click insert into the editor

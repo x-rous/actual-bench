@@ -637,8 +637,8 @@ function ResultsActionBar({
           </Button>
         )}
 
-        {/* cURL buttons - safe first, secrets second (amber) */}
-        {lastRequest && <CopyCurlButton lastRequest={lastRequest} />}
+        {/* cURL commands target actual-http-api and only apply to HTTP API Server mode. */}
+        {lastRequest?.mode === "http-api" && <CopyCurlButton lastRequest={lastRequest} />}
       </div>
     </div>
   );
