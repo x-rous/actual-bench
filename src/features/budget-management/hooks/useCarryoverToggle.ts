@@ -3,7 +3,7 @@
 import { useCallback, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useConnectionStore, selectActiveInstance } from "@/store/connection";
-import { apiRequest } from "@/lib/api/client";
+import { getTransport, syncTransportAfterChanges } from "@/lib/actual";
 import { addMonths } from "@/lib/budget/monthMath";
 
 export type CarryoverToggleInput = {
@@ -54,6 +54,7 @@ export function useCarryoverToggle(): UseCarryoverToggleReturn {
     async (input: CarryoverToggleInput): Promise<CarryoverToggleResult[]> => {
       if (!connection) throw new Error("No active connection");
       if (input.months.length === 0 || input.categoryIds.length === 0) return [];
+      const transport = getTransport(connection);
 
       const pairs = input.categoryIds.flatMap((catId) =>
         input.months.map((m) => ({ catId, m }))
@@ -68,14 +69,7 @@ export function useCarryoverToggle(): UseCarryoverToggleReturn {
       for (let i = 0; i < pairs.length; i++) {
         const { catId, m } = pairs[i]!;
         try {
-          await apiRequest(
-            connection,
-            `/months/${m}/categories/${catId}`,
-            {
-              method: "PATCH",
-              body: { category: { carryover: input.newValue } },
-            }
-          );
+          await transport.setBudgetCarryover(m, catId, input.newValue);
           successMonths.add(m);
           results.push({ categoryId: catId, month: m, status: "success" });
         } catch (err) {
@@ -85,6 +79,8 @@ export function useCarryoverToggle(): UseCarryoverToggleReturn {
         }
         setProgress({ completed: i + 1, total: pairs.length });
       }
+
+      await syncTransportAfterChanges(transport, successMonths.size > 0);
 
       if (successMonths.size > 0) {
         await Promise.all(

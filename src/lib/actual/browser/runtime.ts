@@ -13,7 +13,14 @@ import type { BrowserApiConnection } from "@/store/connection";
 import type { NoteRow } from "@/lib/api/notes";
 
 export type ActualQueryBuilder = {
-  select(exprs?: unknown): unknown;
+  filter(expr: unknown): ActualQueryBuilder;
+  select(exprs?: unknown): ActualQueryBuilder;
+  calculate(expr: unknown): ActualQueryBuilder;
+  groupBy(exprs: unknown): ActualQueryBuilder;
+  orderBy(exprs: unknown): ActualQueryBuilder;
+  limit(num: number): ActualQueryBuilder;
+  offset(num: number): ActualQueryBuilder;
+  options(opts: Record<string, unknown>): ActualQueryBuilder;
 };
 
 export type ActualBrowserApi = {
@@ -26,6 +33,13 @@ export type ActualBrowserApi = {
   getBudgets(): Promise<unknown[]>;
   downloadBudget(syncId: string, options?: { password?: string }): Promise<unknown>;
   sync(): Promise<unknown>;
+  batchBudgetUpdates(func: () => Promise<void>): Promise<void>;
+  getBudgetMonths(): Promise<string[]>;
+  getBudgetMonth(month: string): Promise<unknown>;
+  setBudgetAmount(month: string, categoryId: string, value: number): Promise<void>;
+  setBudgetCarryover(month: string, categoryId: string, flag: boolean): Promise<void>;
+  holdBudgetForNextMonth(month: string, amount: number): Promise<boolean>;
+  resetBudgetHold(month: string): Promise<void>;
   getAccounts(): Promise<ApiAccount[]>;
   createAccount(account: Omit<ApiAccount, "id">, initialBalance?: number): Promise<string>;
   updateAccount(accountId: string, fields: Partial<ApiAccount>): Promise<void>;

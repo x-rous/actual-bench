@@ -154,6 +154,154 @@ describe("Actual transport factory", () => {
     expect(mockSyncBrowserApiRuntime).toHaveBeenCalledWith(browserConnection);
   });
 
+  it("Direct budget reads delegate to the browser budget API", async () => {
+    const getBudgetMonths = jest.fn().mockResolvedValue(["2026-01", "2026-02"]);
+    const month = {
+      month: "2026-01",
+      incomeAvailable: 0,
+      lastMonthOverspent: 0,
+      forNextMonth: 0,
+      totalBudgeted: 0,
+      toBudget: 0,
+      fromLastMonth: 0,
+      totalIncome: 0,
+      totalSpent: 0,
+      totalBalance: 0,
+      categoryGroups: [],
+    };
+    const getBudgetMonth = jest.fn().mockResolvedValue(month);
+    mockGetBrowserApiRuntime.mockResolvedValue({
+      getBudgetMonths,
+      getBudgetMonth,
+    } as never);
+
+    const transport = getTransport(browserConnection);
+
+    await expect(transport.getBudgetMonths()).resolves.toEqual(["2026-01", "2026-02"]);
+    await expect(transport.getBudgetMonth("2026-01")).resolves.toBe(month);
+    expect(getBudgetMonths).toHaveBeenCalledTimes(1);
+    expect(getBudgetMonth).toHaveBeenCalledWith("2026-01");
+  });
+
+  it("Direct budget writes run inside the browser budget batch and round minor-unit amounts", async () => {
+    const batchBudgetUpdates = jest.fn(async (fn: () => Promise<void>) => {
+      await fn();
+    });
+    const setBudgetAmount = jest.fn().mockResolvedValue(undefined);
+    mockGetBrowserApiRuntime.mockResolvedValue({
+      batchBudgetUpdates,
+      setBudgetAmount,
+    } as never);
+
+    const transport = getTransport(browserConnection);
+    await transport.batchBudgetUpdates(async () => {
+      await transport.setBudgetAmount("2026-01", "cat-1", 123.6);
+    });
+
+    expect(batchBudgetUpdates).toHaveBeenCalledTimes(1);
+    expect(setBudgetAmount).toHaveBeenCalledWith("2026-01", "cat-1", 124);
+  });
+
+  it("Direct category transfers bridge to final budget amounts", async () => {
+    const setBudgetAmount = jest.fn().mockResolvedValue(undefined);
+    const getBudgetMonth = jest.fn().mockResolvedValue({
+      month: "2026-01",
+      categoryGroups: [
+        {
+          id: "group-1",
+          name: "Expenses",
+          is_income: false,
+          hidden: false,
+          budgeted: 0,
+          spent: 0,
+          balance: 0,
+          categories: [
+            { id: "cat-from", name: "From", group_id: "group-1", is_income: false, budgeted: 1000 },
+            { id: "cat-to", name: "To", group_id: "group-1", is_income: false, budgeted: 250 },
+          ],
+        },
+      ],
+    });
+    mockGetBrowserApiRuntime.mockResolvedValue({
+      getBudgetMonth,
+      setBudgetAmount,
+    } as never);
+
+    await getTransport(browserConnection).transferBudget("2026-01", {
+      fromCategoryId: "cat-from",
+      toCategoryId: "cat-to",
+      amount: 125,
+    });
+
+    expect(setBudgetAmount).toHaveBeenCalledWith("2026-01", "cat-from", 875);
+    expect(setBudgetAmount).toHaveBeenCalledWith("2026-01", "cat-to", 375);
+  });
+
+  it("Direct runQuery adapts supported wrapped ActualQL JSON into browser q() calls", async () => {
+    const builder = {
+      options: jest.fn(),
+      filter: jest.fn(),
+      select: jest.fn(),
+      calculate: jest.fn(),
+      groupBy: jest.fn(),
+      orderBy: jest.fn(),
+      limit: jest.fn(),
+      offset: jest.fn(),
+    };
+    for (const method of Object.values(builder)) method.mockReturnValue(builder);
+    const q = jest.fn().mockReturnValue(builder);
+    const aqlQuery = jest.fn().mockResolvedValue({ data: [] });
+    mockGetBrowserApiRuntime.mockResolvedValue({ q, aqlQuery } as never);
+
+    const body = {
+      ActualQLquery: {
+        table: "transactions",
+        options: { splits: "inline" },
+        filter: { account: "account-1" },
+        select: ["id", "date"],
+        groupBy: ["account"],
+        orderBy: [{ date: "desc" }],
+        limit: 10,
+      },
+    };
+
+    await expect(getTransport(browserConnection).runQuery(body)).resolves.toEqual({ data: [] });
+
+    expect(q).toHaveBeenCalledWith("transactions");
+    expect(builder.options).toHaveBeenCalledWith({ splits: "inline" });
+    expect(builder.filter).toHaveBeenCalledWith({ account: "account-1" });
+    expect(builder.select).toHaveBeenCalledWith(["id", "date"]);
+    expect(builder.groupBy).toHaveBeenCalledWith(["account"]);
+    expect(builder.orderBy).toHaveBeenCalledWith([{ date: "desc" }]);
+    expect(builder.limit).toHaveBeenCalledWith(10);
+    expect(aqlQuery).toHaveBeenCalledWith(builder);
+  });
+
+  it("Direct runQuery rejects unsupported wrapped ActualQL fields explicitly", async () => {
+    const builder = {
+      options: jest.fn().mockReturnThis(),
+      filter: jest.fn().mockReturnThis(),
+      select: jest.fn().mockReturnThis(),
+      calculate: jest.fn().mockReturnThis(),
+      groupBy: jest.fn().mockReturnThis(),
+      orderBy: jest.fn().mockReturnThis(),
+      limit: jest.fn().mockReturnThis(),
+      offset: jest.fn().mockReturnThis(),
+    };
+    const aqlQuery = jest.fn();
+    mockGetBrowserApiRuntime.mockResolvedValue({
+      q: jest.fn().mockReturnValue(builder),
+      aqlQuery,
+    } as never);
+
+    await expect(
+      getTransport(browserConnection).runQuery({
+        ActualQLquery: { table: "transactions", join: ["accounts"] },
+      })
+    ).rejects.toThrow("Direct browser API query adapter does not support ActualQL field: join");
+    expect(aqlQuery).not.toHaveBeenCalled();
+  });
+
   it("Direct account balances are converted from cents without using fetch", async () => {
     const originalFetch = global.fetch;
     const fetchMock = jest.fn();

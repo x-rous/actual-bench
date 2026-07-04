@@ -3,7 +3,7 @@
 import { useCallback, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useConnectionStore, selectActiveInstance } from "@/store/connection";
-import { apiRequest } from "@/lib/api/client";
+import { getTransport, syncTransportAfterChanges } from "@/lib/actual";
 import type { NextMonthHoldInput } from "../types";
 
 type UseNextMonthHoldReturn = {
@@ -16,9 +16,8 @@ type UseNextMonthHoldReturn = {
 /**
  * Envelope-mode: immediate next-month budget hold management.
  *
- * setHold calls POST /months/{month}/nextmonthbudgethold.
- * clearHold calls DELETE /months/{month}/nextmonthbudgethold.
- * Both bypass the staged edits pipeline and take effect immediately on confirm.
+ * setHold and clearHold route through the active transport. They bypass
+ * the staged edits pipeline and take effect immediately on confirm.
  * Both invalidate the affected month's TanStack Query cache on success.
  */
 export function useNextMonthHold(): UseNextMonthHoldReturn {
@@ -46,10 +45,9 @@ export function useNextMonthHold(): UseNextMonthHoldReturn {
       setError(null);
 
       try {
-        await apiRequest(connection, `/months/${month}/nextmonthbudgethold`, {
-          method: "POST",
-          body: { amount: input.amount },
-        });
+        const transport = getTransport(connection);
+        await transport.holdBudgetForNextMonth(month, input.amount);
+        await syncTransportAfterChanges(transport, true);
         await invalidateMonth(month);
       } catch (err) {
         const message = err instanceof Error ? err.message : "Failed to set hold";
@@ -70,9 +68,9 @@ export function useNextMonthHold(): UseNextMonthHoldReturn {
       setError(null);
 
       try {
-        await apiRequest(connection, `/months/${month}/nextmonthbudgethold`, {
-          method: "DELETE",
-        });
+        const transport = getTransport(connection);
+        await transport.resetBudgetHold(month);
+        await syncTransportAfterChanges(transport, true);
         await invalidateMonth(month);
       } catch (err) {
         const message = err instanceof Error ? err.message : "Failed to clear hold";

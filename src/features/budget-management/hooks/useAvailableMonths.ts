@@ -2,7 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { useConnectionStore, selectActiveInstance } from "@/store/connection";
-import { apiRequest } from "@/lib/api/client";
+import { getTransport } from "@/lib/actual";
 
 /**
  * Fetches the list of available months from GET /months.
@@ -19,11 +19,8 @@ export function useAvailableMonths(): {
     queryKey: ["budget-months", connection?.id],
     queryFn: async () => {
       if (!connection) throw new Error("No active connection");
-      const result = await apiRequest<{ data: string[] }>(
-        connection,
-        "/months"
-      );
-      return [...result.data].sort();
+      const months = await getTransport(connection).getBudgetMonths();
+      return [...months].sort();
     },
     enabled: !!connection,
   });

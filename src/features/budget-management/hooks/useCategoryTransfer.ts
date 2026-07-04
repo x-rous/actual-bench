@@ -6,7 +6,7 @@
 import { useCallback, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useConnectionStore, selectActiveInstance } from "@/store/connection";
-import { apiRequest } from "@/lib/api/client";
+import { getTransport, syncTransportAfterChanges } from "@/lib/actual";
 import type { CategoryTransferInput } from "../types";
 
 type UseCategoryTransferReturn = {
@@ -18,9 +18,9 @@ type UseCategoryTransferReturn = {
 /**
  * Envelope-mode: immediate category-to-category budget transfer.
  *
- * Calls POST /months/{month}/categorytransfers directly — bypasses the staged
- * edits pipeline. On success, invalidates the affected month's TanStack Query
- * cache so the grid reloads with the updated balances.
+ * Routes through the active transport and bypasses the staged edits pipeline.
+ * On success, invalidates the affected month's TanStack Query cache so the grid
+ * reloads with the updated balances.
  *
  * This is an immediate action: it takes effect at the time the user confirms.
  * It does not go through the staged save panel.
@@ -40,14 +40,9 @@ export function useCategoryTransfer(): UseCategoryTransferReturn {
       setError(null);
 
       try {
-        await apiRequest(connection, `/months/${month}/categorytransfers`, {
-          method: "POST",
-          body: {
-            amount: input.amount,
-            categoryId: input.fromCategoryId,
-            transferCategoryId: input.toCategoryId,
-          },
-        });
+        const transport = getTransport(connection);
+        await transport.transferBudget(month, input);
+        await syncTransportAfterChanges(transport, true);
 
         await queryClient.invalidateQueries({
           queryKey: ["budget-month-data", connection.id, month],

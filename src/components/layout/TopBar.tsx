@@ -142,7 +142,6 @@ export function TopBar() {
     !hasChanges ||
     isSaving ||
     isOffline ||
-    (activeDirectInstance !== null && isBudgetPage) ||
     (isBudgetPage && budgetSaveReviewEdits !== null);
 
   function handleDiscardAll() {
@@ -201,11 +200,6 @@ export function TopBar() {
   // ── Handlers ──────────────────────────────────────────────────────────────────
 
   async function handleSave() {
-    if (activeDirectInstance && isBudgetPage) {
-      toast.info("Direct browser API mode does not support Budget Management saves yet.");
-      return;
-    }
-
     if (isBudgetPage) {
       const { edits, holds } = useBudgetEditsStore.getState();
       const editSnapshot = { ...edits };
@@ -355,7 +349,7 @@ export function TopBar() {
           {activeDirectInstance && (
             <span
               className="inline-flex items-center rounded-sm bg-emerald-100 px-1.5 py-0.5 text-[11px] font-medium text-emerald-800 ring-1 ring-emerald-200"
-              title="Direct browser API mode: entity reads and staged entity saves use the browser transport. Budget Management saves remain Classic-only."
+              title="Direct browser API mode: reads and staged saves use the browser transport."
             >
               Direct
             </span>
@@ -445,13 +439,7 @@ export function TopBar() {
             )}
             disabled={saveDisabled}
             onClick={handleSave}
-            title={
-              activeDirectInstance && isBudgetPage
-                ? "Direct browser API mode does not support Budget Management saves yet"
-                : isOffline
-                  ? "Cannot save - server is unreachable"
-                  : undefined
-            }
+            title={isOffline ? "Cannot save - server is unreachable" : undefined}
           >
             <Save className="mr-1 h-3.5 w-3.5" />
             {isSaving ? "Saving…" : "Save"}

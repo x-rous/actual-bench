@@ -38,7 +38,7 @@ import {
   type ActualBrowserApi,
 } from "./browser/runtime";
 import { prepareRuleForTransport, prepareRulePatchForTransport } from "./ruleMutation";
-import type { ActualBenchTransport, ScheduleWriteInput } from "./transport";
+import { unsupportedTransportOperation, type ActualBenchTransport, type ScheduleWriteInput, type TransportBudgetMonth } from "./transport";
 
 type RecordLike = Record<string, unknown>;
 
@@ -147,6 +147,131 @@ function responseRows<T>(response: unknown): T[] {
   if (Array.isArray(response)) return response as T[];
   if (isRecord(response) && Array.isArray(response.data)) return response.data as T[];
   return [];
+}
+
+function assertRecord(value: unknown, label: string): RecordLike {
+  if (!isRecord(value)) {
+    throw new Error("Direct browser API query adapter expected " + label + " to be an object.");
+  }
+  return value;
+}
+
+function getWrappedActualQuery(body: object): RecordLike {
+  const wrapped = assertRecord(body, "the query body");
+  return assertRecord(wrapped.ActualQLquery, "ActualQLquery");
+}
+
+function createBrowserQuery(api: ActualBrowserApi, body: object): unknown {
+  if (typeof api.q !== "function") {
+    throw unsupportedTransportOperation("browser-api", "ActualQL queries");
+  }
+
+  const query = getWrappedActualQuery(body);
+  const supportedKeys = new Set([
+    "table",
+    "options",
+    "filter",
+    "select",
+    "calculate",
+    "groupBy",
+    "orderBy",
+    "limit",
+    "offset",
+  ]);
+  for (const key of Object.keys(query)) {
+    if (!supportedKeys.has(key)) {
+      throw new Error(
+        "Direct browser API query adapter does not support ActualQL field: " + key
+      );
+    }
+  }
+
+  const table = asString(query.table);
+  if (!table) {
+    throw new Error("Direct browser API query adapter requires ActualQLquery.table.");
+  }
+
+  let browserQuery = api.q(table);
+  if (query.options !== undefined) {
+    browserQuery = browserQuery.options(assertRecord(query.options, "ActualQLquery.options"));
+  }
+  if (query.filter !== undefined) {
+    browserQuery = browserQuery.filter(assertRecord(query.filter, "ActualQLquery.filter"));
+  }
+  if (query.calculate !== undefined) {
+    if (query.select !== undefined) {
+      throw new Error(
+        "Direct browser API query adapter does not support using select and calculate together."
+      );
+    }
+    browserQuery = browserQuery.calculate(query.calculate);
+  } else if (query.select !== undefined) {
+    browserQuery = browserQuery.select(query.select);
+  }
+  if (query.groupBy !== undefined) browserQuery = browserQuery.groupBy(query.groupBy);
+  if (query.orderBy !== undefined) browserQuery = browserQuery.orderBy(query.orderBy);
+  if (query.limit !== undefined) {
+    const limit = query.limit;
+    if (typeof limit !== "number" || !Number.isInteger(limit) || limit < 0) {
+      throw new Error("Direct browser API query adapter requires a non-negative integer limit.");
+    }
+    browserQuery = browserQuery.limit(limit);
+  }
+  if (query.offset !== undefined) {
+    const offset = query.offset;
+    if (typeof offset !== "number" || !Number.isInteger(offset) || offset < 0) {
+      throw new Error("Direct browser API query adapter requires a non-negative integer offset.");
+    }
+    browserQuery = browserQuery.offset(offset);
+  }
+
+  return browserQuery;
+}
+
+async function runBrowserQuery<T>(
+  connection: BrowserApiConnection,
+  body: object
+): Promise<T> {
+  const api = await getBrowserApiRuntime(connection);
+  const runner = api.aqlQuery ?? api.runQuery;
+  if (!runner) throw unsupportedTransportOperation("browser-api", "ActualQL queries");
+  return (await runner(createBrowserQuery(api, body))) as T;
+}
+
+function toBudgetAmount(amount: number): number {
+  if (!Number.isFinite(amount)) {
+    throw new Error("Budget amount must be a finite number.");
+  }
+  return Math.round(amount);
+}
+
+function normalizeBudgetMonth(raw: unknown): TransportBudgetMonth {
+  if (!isRecord(raw)) throw new Error("Budget month response was not an object.");
+  return raw as TransportBudgetMonth;
+}
+
+function findBudgetedAmount(
+  month: TransportBudgetMonth,
+  categoryId: string
+): number {
+  for (const group of month.categoryGroups) {
+    for (const category of group.categories) {
+      if (category.id === categoryId) return category.budgeted ?? 0;
+    }
+  }
+  throw new Error("Category " + categoryId + " was not found in month " + month.month + ".");
+}
+
+async function runBrowserBudgetBatch<T>(
+  connection: BrowserApiConnection,
+  operation: () => Promise<T>
+): Promise<T> {
+  const api = await getBrowserApiRuntime(connection);
+  let result: T | undefined;
+  await api.batchBudgetUpdates(async () => {
+    result = await operation();
+  });
+  return result as T;
 }
 
 function buildActualQuery(
@@ -283,6 +408,8 @@ export function createBrowserApiTransport(
   return {
     mode: connection.mode,
     sync: () => syncBrowserApiRuntime(connection),
+    batchBudgetUpdates: (operation) => runBrowserBudgetBatch(connection, operation),
+    runQuery: (body) => runBrowserQuery(connection, body),
     getServerVersion: async () => {
       const api = await getBrowserApiRuntime(connection);
       if (typeof api.getServerVersion !== "function") return null;
@@ -458,6 +585,44 @@ export function createBrowserApiTransport(
     deleteSchedule: async (id) => {
       const api = await getBrowserApiRuntime(connection);
       await api.deleteSchedule(id);
+    },
+
+    getBudgetMonths: async () => {
+      const api = await getBrowserApiRuntime(connection);
+      return api.getBudgetMonths();
+    },
+    getBudgetMonth: async (month) => {
+      const api = await getBrowserApiRuntime(connection);
+      return normalizeBudgetMonth(await api.getBudgetMonth(month));
+    },
+    setBudgetAmount: async (month, categoryId, amount) => {
+      const api = await getBrowserApiRuntime(connection);
+      await api.setBudgetAmount(month, categoryId, toBudgetAmount(amount));
+    },
+    setBudgetCarryover: async (month, categoryId, flag) => {
+      const api = await getBrowserApiRuntime(connection);
+      await api.setBudgetCarryover(month, categoryId, flag);
+    },
+    transferBudget: async (month, input) => {
+      const api = await getBrowserApiRuntime(connection);
+      const monthData = normalizeBudgetMonth(await api.getBudgetMonth(month));
+      const fromBudgeted = findBudgetedAmount(monthData, input.fromCategoryId);
+      const toBudgeted = findBudgetedAmount(monthData, input.toCategoryId);
+      const amount = toBudgetAmount(input.amount);
+
+      // Actual's browser API does not expose the server's category-transfer
+      // endpoint. Inside a budget batch, setting both final budget values is
+      // the same persisted budget state for the Direct transport.
+      await api.setBudgetAmount(month, input.fromCategoryId, fromBudgeted - amount);
+      await api.setBudgetAmount(month, input.toCategoryId, toBudgeted + amount);
+    },
+    holdBudgetForNextMonth: async (month, amount) => {
+      const api = await getBrowserApiRuntime(connection);
+      await api.holdBudgetForNextMonth(month, toBudgetAmount(amount));
+    },
+    resetBudgetHold: async (month) => {
+      const api = await getBrowserApiRuntime(connection);
+      await api.resetBudgetHold(month);
     },
 
     getNotesIndex: async () => {

@@ -16,9 +16,66 @@ export type ScheduleWriteInput = Omit<
   "id" | "ruleId" | "nextDate" | "completed"
 >;
 
+export type TransportBudgetMonthCategory = {
+  id: string;
+  name: string;
+  is_income: boolean;
+  hidden?: boolean;
+  group_id: string;
+  budgeted?: number | null;
+  spent?: number | null;
+  balance?: number | null;
+  carryover?: boolean;
+  received?: number | null;
+};
+
+export type TransportBudgetMonthCategoryGroup =
+  | {
+      id: string;
+      name: string;
+      is_income: false;
+      hidden: boolean;
+      budgeted: number | null;
+      spent: number | null;
+      balance: number | null;
+      categories: TransportBudgetMonthCategory[];
+    }
+  | {
+      id: string;
+      name: string;
+      is_income: true;
+      hidden: boolean;
+      received: number | null;
+      budgeted?: number | null;
+      balance?: number | null;
+      categories: TransportBudgetMonthCategory[];
+    };
+
+export type TransportBudgetMonth = {
+  month: string;
+  incomeAvailable: number;
+  lastMonthOverspent: number;
+  forNextMonth: number;
+  totalBudgeted: number;
+  toBudget: number;
+  fromLastMonth: number;
+  totalIncome: number;
+  totalSpent: number;
+  totalBalance: number;
+  categoryGroups: TransportBudgetMonthCategoryGroup[];
+};
+
+export type BudgetTransferInput = {
+  fromCategoryId: string;
+  toCategoryId: string;
+  amount: number;
+};
+
 export interface ActualBenchTransport {
   readonly mode: ConnectionMode;
   sync(): Promise<void>;
+  batchBudgetUpdates<T>(operation: () => Promise<T>): Promise<T>;
+  runQuery<T>(body: object): Promise<T>;
 
   getServerVersion(): Promise<string | null>;
 
@@ -56,6 +113,14 @@ export interface ActualBenchTransport {
   createSchedule(input: ScheduleWriteInput): Promise<Schedule>;
   updateSchedule(id: string, input: ScheduleWriteInput): Promise<void>;
   deleteSchedule(id: string): Promise<void>;
+
+  getBudgetMonths(): Promise<string[]>;
+  getBudgetMonth(month: string): Promise<TransportBudgetMonth>;
+  setBudgetAmount(month: string, categoryId: string, amount: number): Promise<void>;
+  setBudgetCarryover(month: string, categoryId: string, flag: boolean): Promise<void>;
+  transferBudget(month: string, input: BudgetTransferInput): Promise<void>;
+  holdBudgetForNextMonth(month: string, amount: number): Promise<void>;
+  resetBudgetHold(month: string): Promise<void>;
 
   getNotesIndex(): Promise<NotesIndex>;
   getAccountNote(accountId: string): Promise<string>;

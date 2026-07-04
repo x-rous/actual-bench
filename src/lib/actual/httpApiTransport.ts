@@ -16,7 +16,7 @@ import {
   getCategoryGroups,
   updateCategoryGroup,
 } from "../api/categoryGroups";
-import { getServerVersion } from "../api/client";
+import { apiRequest, getServerVersion } from "../api/client";
 import {
   deleteAccountNote,
   deleteBudgetMonthNote,
@@ -56,7 +56,7 @@ import {
 } from "../api/tags";
 import type { HttpApiConnection } from "@/store/connection";
 import { prepareRuleForTransport, prepareRulePatchForTransport } from "./ruleMutation";
-import type { ActualBenchTransport } from "./transport";
+import type { ActualBenchTransport, TransportBudgetMonth } from "./transport";
 
 export function createHttpApiTransport(
   connection: HttpApiConnection
@@ -64,6 +64,12 @@ export function createHttpApiTransport(
   return {
     mode: "http-api",
     sync: () => Promise.resolve(),
+    batchBudgetUpdates: (operation) => operation(),
+    runQuery: (body) =>
+      apiRequest(connection, "/run-query", {
+        method: "POST",
+        body,
+      }),
     getServerVersion: async () => {
       try {
         return await getServerVersion(
@@ -110,6 +116,48 @@ export function createHttpApiTransport(
     createSchedule: (input) => createSchedule(connection, input),
     updateSchedule: (id, input) => updateSchedule(connection, id, input),
     deleteSchedule: (id) => deleteSchedule(connection, id),
+
+    getBudgetMonths: async () => {
+      const response = await apiRequest<{ data: string[] }>(connection, "/months");
+      return response.data;
+    },
+    getBudgetMonth: async (month) => {
+      const response = await apiRequest<{ data: TransportBudgetMonth }>(
+        connection,
+        "/months/" + month
+      );
+      return response.data;
+    },
+    setBudgetAmount: (month, categoryId, amount) =>
+      apiRequest(connection, "/months/" + month + "/categories/" + categoryId, {
+        method: "PATCH",
+        body: { category: { budgeted: amount } },
+      }),
+    setBudgetCarryover: (month, categoryId, flag) =>
+      apiRequest(connection, "/months/" + month + "/categories/" + categoryId, {
+        method: "PATCH",
+        body: { category: { carryover: flag } },
+      }),
+    transferBudget: (month, input) =>
+      apiRequest(connection, "/months/" + month + "/categorytransfers", {
+        method: "POST",
+        body: {
+          categorytransfer: {
+            fromCategoryId: input.fromCategoryId,
+            toCategoryId: input.toCategoryId,
+            amount: input.amount,
+          },
+        },
+      }),
+    holdBudgetForNextMonth: (month, amount) =>
+      apiRequest(connection, "/months/" + month + "/nextmonthbudgethold", {
+        method: "POST",
+        body: { amount },
+      }),
+    resetBudgetHold: (month) =>
+      apiRequest(connection, "/months/" + month + "/nextmonthbudgethold", {
+        method: "DELETE",
+      }),
 
     getNotesIndex: () => getNotesIndex(connection),
     getAccountNote: (accountId) => getAccountNote(connection, accountId),
