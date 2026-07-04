@@ -13,7 +13,7 @@ import type { Tag } from "@/types/entities";
 
 // ─── Normalization ────────────────────────────────────────────────────────────
 
-function normalizeTag(raw: ApiTag): Tag {
+export function normalizeTag(raw: ApiTag): Tag {
   return {
     id: raw.id,
     name: raw.tag,

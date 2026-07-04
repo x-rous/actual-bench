@@ -2,7 +2,7 @@
 
 import { useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { getRules } from "@/lib/api/rules";
+import { getTransport } from "@/lib/actual";
 import { useConnectionStore, selectActiveInstance } from "@/store/connection";
 import { useStagedStore } from "@/store/staged";
 
@@ -18,7 +18,7 @@ export function useRules(options: PreloadOptions = {}) {
     queryKey: ["rules", connection?.id],
     queryFn: () => {
       if (!connection) throw new Error("No active connection");
-      return getRules(connection);
+      return getTransport(connection).getRules();
     },
     enabled: !!connection && (options.enabled ?? true),
     // staleTime/gcTime/refetchOn* are set globally in queryClient.ts.

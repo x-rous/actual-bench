@@ -2,7 +2,7 @@
 
 import { useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { getCategoryGroups } from "@/lib/api/categoryGroups";
+import { getTransport } from "@/lib/actual";
 import { useConnectionStore, selectActiveInstance } from "@/store/connection";
 import { useStagedStore } from "@/store/staged";
 
@@ -22,7 +22,7 @@ export function useCategoryGroups(options: PreloadOptions = {}) {
     queryKey: ["categoryGroups", connection?.id],
     queryFn: () => {
       if (!connection) throw new Error("No active connection");
-      return getCategoryGroups(connection);
+      return getTransport(connection).getCategoryGroups();
     },
     enabled: !!connection && (options.enabled ?? true),
     // staleTime/gcTime/refetchOn* are set globally in queryClient.ts.

@@ -17,7 +17,7 @@ import type { Account } from "@/types/entities";
 
 // ─── Normalization ────────────────────────────────────────────────────────────
 
-function normalizeAccount(raw: ApiAccount): Account {
+export function normalizeAccount(raw: ApiAccount): Account {
   return {
     id: raw.id,
     name: raw.name,

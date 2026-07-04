@@ -173,8 +173,18 @@ export function useConnectForm() {
   // Does NOT handle errors — callers decide the UX (toast vs inline).
 
   async function reconnect(instance: ConnectionInstance) {
-    if (!isHttpApiConnection(instance)) {
-      toast.info("Direct connections are saved for the experimental transport path. Use a Classic connection for app pages for now.");
+    if (isBrowserApiConnection(instance)) {
+      setReconnectBusyId(instance.id);
+      try {
+        discardAll();
+        queryClient.clear();
+        setActiveInstance(instance.id);
+        toast.success("Direct read-only connection opened. Redirecting…");
+        await new Promise((r) => setTimeout(r, 600));
+        router.push("/accounts");
+      } finally {
+        setReconnectBusyId(null);
+      }
       return;
     }
 
@@ -345,8 +355,13 @@ export function useConnectForm() {
       } else {
         addInstance(directConnection);
       }
+      discardAll();
+      queryClient.clear();
+      setActiveInstance(directConnection.id);
       setConnectStatus({ kind: "success" });
-      toast.success("Direct connection saved. Feature pages still use Classic connections until the transport milestone lands.");
+      toast.success("Direct read-only connection opened. Redirecting…");
+      await new Promise((r) => setTimeout(r, 800));
+      router.push("/accounts");
       return;
     }
 

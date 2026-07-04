@@ -17,6 +17,7 @@ jest.mock("../lib/api/notes", () => ({
 jest.mock("../store/connection", () => ({
   useConnectionStore: jest.fn(() => ({ id: "conn-1" })),
   selectActiveInstance: jest.fn(),
+  isBrowserApiConnection: jest.fn((connection) => connection?.mode === "browser-api"),
 }));
 
 const notes = jest.requireMock("../lib/api/notes") as {

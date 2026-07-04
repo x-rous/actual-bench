@@ -11,7 +11,11 @@ import {
   toAccountNoteId,
   toBudgetNoteId,
 } from "@/lib/api/notes";
-import { useConnectionStore, selectActiveInstance } from "@/store/connection";
+import {
+  useConnectionStore,
+  selectActiveInstance,
+  isBrowserApiConnection,
+} from "@/store/connection";
 
 export type EntityNoteKind = "account" | "category" | "budgetMonth";
 
@@ -54,12 +58,20 @@ export function useNoteMutation(kind: EntityNoteKind, id: string) {
     void queryClient.invalidateQueries({ queryKey: ["allNotes", connection?.id] });
   }
 
-  function writeNote(note: string) {
+  function requireWritableConnection() {
     if (!connection) throw new Error("No active connection");
+    if (isBrowserApiConnection(connection)) {
+      throw new Error("Direct browser API mode is read-only in this milestone.");
+    }
+    return connection;
+  }
+
+  function writeNote(note: string) {
+    const writableConnection = requireWritableConnection();
     if (note.trim() === "") return clearNote();
-    if (kind === "account") return setAccountNote(connection, id, note);
-    if (kind === "budgetMonth") return setBudgetMonthNote(connection, id, note);
-    return setCategoryNote(connection, id, note);
+    if (kind === "account") return setAccountNote(writableConnection, id, note);
+    if (kind === "budgetMonth") return setBudgetMonthNote(writableConnection, id, note);
+    return setCategoryNote(writableConnection, id, note);
   }
 
   // The notes-table key for this entity, matching how getAllNotes indexes them.
@@ -83,14 +95,14 @@ export function useNoteMutation(kind: EntityNoteKind, id: string) {
   }
 
   function clearNote(): Promise<void> {
-    if (!connection) throw new Error("No active connection");
+    const writableConnection = requireWritableConnection();
     // Skip the DELETE only when the cache positively confirms there's nothing to
     // clear; an unguarded DELETE on a never-created note can 404 and surface a
     // false "could not clear" error. A cold cache isn't confirmation, so delete.
     if (noteKnownAbsent()) return Promise.resolve();
-    if (kind === "account") return deleteAccountNote(connection, id);
-    if (kind === "budgetMonth") return deleteBudgetMonthNote(connection, id);
-    return deleteCategoryNote(connection, id);
+    if (kind === "account") return deleteAccountNote(writableConnection, id);
+    if (kind === "budgetMonth") return deleteBudgetMonthNote(writableConnection, id);
+    return deleteCategoryNote(writableConnection, id);
   }
 
   const save = useMutation({ mutationFn: writeNote, onSuccess: invalidate });

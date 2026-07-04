@@ -147,10 +147,7 @@ export function migrateConnectionState(value: unknown): ConnectionState {
   return {
     instances,
     activeInstanceId:
-      activeInstanceId &&
-      instances.some(
-        (instance) => instance.id === activeInstanceId && isHttpApiConnection(instance)
-      )
+      activeInstanceId && instances.some((instance) => instance.id === activeInstanceId)
         ? activeInstanceId
         : null,
   };
@@ -175,8 +172,7 @@ export const useConnectionStore = create<ConnectionState & ConnectionActions>()(
       addInstance: (instance) =>
         set((state) => ({
           instances: [...state.instances, instance],
-          activeInstanceId:
-            state.activeInstanceId ?? (isHttpApiConnection(instance) ? instance.id : null),
+          activeInstanceId: state.activeInstanceId ?? instance.id,
         })),
 
       removeInstance: (id) =>
@@ -184,7 +180,7 @@ export const useConnectionStore = create<ConnectionState & ConnectionActions>()(
           const remaining = state.instances.filter((i) => i.id !== id);
           const nextActive =
             state.activeInstanceId === id
-              ? (remaining.find(isHttpApiConnection)?.id ?? null)
+              ? (remaining[0]?.id ?? null)
               : state.activeInstanceId;
           return { instances: remaining, activeInstanceId: nextActive };
         }),
@@ -192,10 +188,7 @@ export const useConnectionStore = create<ConnectionState & ConnectionActions>()(
       setActiveInstance: (id) =>
         set((state) => ({
           activeInstanceId:
-            id === null ||
-            state.instances.some(
-              (instance) => instance.id === id && isHttpApiConnection(instance)
-            )
+            id === null || state.instances.some((instance) => instance.id === id)
               ? id
               : state.activeInstanceId,
         })),

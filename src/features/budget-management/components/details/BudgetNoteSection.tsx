@@ -6,6 +6,11 @@ import { Button } from "@/components/ui/button";
 import { useAllNotes } from "@/hooks/useAllNotes";
 import { useNoteMutation, type EntityNoteKind } from "@/hooks/useNoteMutation";
 import { toAccountNoteId, toBudgetNoteId } from "@/lib/api/notes";
+import {
+  useConnectionStore,
+  selectActiveInstance,
+  isBrowserApiConnection,
+} from "@/store/connection";
 
 /** What the panel's note editor points at: the entity kind + its own id. */
 export type BudgetNoteTarget = { kind: EntityNoteKind; id: string };
@@ -29,6 +34,8 @@ function noteKeyFor({ kind, id }: BudgetNoteTarget): string {
  * set-state-in-effect rule forbids).
  */
 export function BudgetNoteSection({ target }: { target: BudgetNoteTarget }) {
+  const connection = useConnectionStore(selectActiveInstance);
+  const directReadOnly = isBrowserApiConnection(connection);
   const { data: allNotes } = useAllNotes();
   const note = allNotes?.get(noteKeyFor(target)) ?? "";
   const { save, remove } = useNoteMutation(target.kind, target.id);
@@ -45,6 +52,7 @@ export function BudgetNoteSection({ target }: { target: BudgetNoteTarget }) {
   const busy = save.isPending || remove.isPending;
 
   function enterEdit() {
+    if (directReadOnly) return;
     setDraft(note);
     save.reset();
     remove.reset();
@@ -58,6 +66,7 @@ export function BudgetNoteSection({ target }: { target: BudgetNoteTarget }) {
   }
 
   function handleSave() {
+    if (directReadOnly) return;
     // Blank draft on an entity that has no note: nothing to persist or clear, so
     // close without issuing a DELETE for a note that doesn't exist.
     if (!note && draft.trim() === "") {
@@ -68,6 +77,7 @@ export function BudgetNoteSection({ target }: { target: BudgetNoteTarget }) {
   }
 
   function handleClear() {
+    if (directReadOnly) return;
     remove.mutate(undefined, {
       onSuccess: () => {
         setDraft("");
@@ -88,6 +98,8 @@ export function BudgetNoteSection({ target }: { target: BudgetNoteTarget }) {
             size="xs"
             className="-mr-1 h-5 text-muted-foreground hover:text-foreground"
             onClick={enterEdit}
+            disabled={directReadOnly}
+            title={directReadOnly ? "Direct browser API mode is read-only" : undefined}
           >
             <Pencil className="h-3 w-3" />
             Edit
@@ -119,7 +131,8 @@ export function BudgetNoteSection({ target }: { target: BudgetNoteTarget }) {
                 size="xs"
                 className="-ml-1 h-5 text-destructive hover:text-destructive"
                 onClick={handleClear}
-                disabled={busy}
+                disabled={busy || directReadOnly}
+                title={directReadOnly ? "Direct browser API mode is read-only" : undefined}
               >
                 <Trash2 className="h-3 w-3" />
                 {remove.isPending ? "Clearing…" : "Clear"}
@@ -131,7 +144,13 @@ export function BudgetNoteSection({ target }: { target: BudgetNoteTarget }) {
               <Button variant="ghost" size="xs" className="h-5" onClick={cancel} disabled={save.isPending}>
                 Cancel
               </Button>
-              <Button size="xs" className="h-5" onClick={handleSave} disabled={!dirty || busy}>
+              <Button
+                size="xs"
+                className="h-5"
+                onClick={handleSave}
+                disabled={!dirty || busy || directReadOnly}
+                title={directReadOnly ? "Direct browser API mode is read-only" : undefined}
+              >
                 {save.isPending ? (
                   <>
                     <Loader2 className="h-3 w-3 animate-spin" />
@@ -152,6 +171,8 @@ export function BudgetNoteSection({ target }: { target: BudgetNoteTarget }) {
           size="xs"
           className="-ml-1 h-5 text-muted-foreground hover:text-foreground"
           onClick={enterEdit}
+          disabled={directReadOnly}
+          title={directReadOnly ? "Direct browser API mode is read-only" : undefined}
         >
           <Plus className="h-3 w-3" />
           Add note

@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { getAllNotes } from "@/lib/api/notes";
+import { getTransport } from "@/lib/actual";
 import { useConnectionStore, selectActiveInstance } from "@/store/connection";
 
 export function useAllNotes() {
@@ -11,7 +11,7 @@ export function useAllNotes() {
     queryKey: ["allNotes", connection?.id],
     queryFn: () => {
       if (!connection) throw new Error("No active connection");
-      return getAllNotes(connection);
+      return getTransport(connection).getAllNotes();
     },
     enabled: !!connection,
     staleTime: 300_000,

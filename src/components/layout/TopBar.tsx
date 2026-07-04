@@ -28,6 +28,7 @@ import {
   useConnectionStore,
   selectActiveInstance,
   isHttpApiConnection,
+  isBrowserApiConnection,
 } from "@/store/connection";
 import { useGlobalSearchStore } from "@/features/global-search/store/useGlobalSearchStore";
 import { useConnectionHealthContext } from "@/hooks/useConnectionHealth";
@@ -103,6 +104,7 @@ export function TopBar() {
 
   const activeInstance = useConnectionStore(selectActiveInstance);
   const activeHttpInstance = isHttpApiConnection(activeInstance) ? activeInstance : null;
+  const activeDirectInstance = isBrowserApiConnection(activeInstance) ? activeInstance : null;
   const instances = useConnectionStore((s) => s.instances);
   const setActive = useConnectionStore((s) => s.setActiveInstance);
   const clearAll = useConnectionStore((s) => s.clearAll);
@@ -137,7 +139,11 @@ export function TopBar() {
   const canRedo = isBudgetPage ? budgetCanRedo : stagedCanRedo;
   const isSaving = isBudgetPage ? (isBudgetSaving || budgetSaveEdits !== null) : isEntitySaving;
   const saveDisabled =
-    !hasChanges || isSaving || isOffline || (isBudgetPage && budgetSaveReviewEdits !== null);
+    !hasChanges ||
+    isSaving ||
+    isOffline ||
+    activeDirectInstance !== null ||
+    (isBudgetPage && budgetSaveReviewEdits !== null);
 
   function handleDiscardAll() {
     if (isBudgetPage) {
@@ -195,6 +201,11 @@ export function TopBar() {
   // ── Handlers ──────────────────────────────────────────────────────────────────
 
   async function handleSave() {
+    if (activeDirectInstance) {
+      toast.info("Direct browser API mode is read-only in this milestone.");
+      return;
+    }
+
     if (isBudgetPage) {
       const { edits, holds } = useBudgetEditsStore.getState();
       const editSnapshot = { ...edits };
@@ -340,6 +351,15 @@ export function TopBar() {
               )}
             </div>
           )}
+
+          {activeDirectInstance && (
+            <span
+              className="inline-flex items-center rounded-sm bg-amber-100 px-1.5 py-0.5 text-[11px] font-medium text-amber-800 ring-1 ring-amber-200"
+              title="Direct browser API mode is read-only in this milestone."
+            >
+              Direct read-only
+            </span>
+          )}
         </div>
 
         {/* Right: search + undo/redo + unsaved indicator + save/discard */}
@@ -425,7 +445,13 @@ export function TopBar() {
             )}
             disabled={saveDisabled}
             onClick={handleSave}
-            title={isOffline ? "Cannot save - server is unreachable" : undefined}
+            title={
+              activeDirectInstance
+                ? "Direct browser API mode is read-only in this milestone"
+                : isOffline
+                  ? "Cannot save - server is unreachable"
+                  : undefined
+            }
           >
             <Save className="mr-1 h-3.5 w-3.5" />
             {isSaving ? "Saving…" : "Save"}

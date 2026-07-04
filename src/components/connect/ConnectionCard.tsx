@@ -56,9 +56,9 @@ export function ConnectionCard({
       <div className="flex items-center gap-1.5 shrink-0">
         <button
           type="button"
-          disabled={anyBusy || isDirect}
+          disabled={anyBusy}
           onClick={() => onConnect(instance)}
-          title={isDirect ? "Direct app transport is not active yet" : "Connect"}
+          title={isDirect ? "Open Direct read-only connection" : "Connect"}
           className="flex h-8 items-center gap-1.5 rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
         >
           {busy ? (
@@ -67,7 +67,7 @@ export function ConnectionCard({
               Connecting…
             </>
           ) : isDirect ? (
-            "Saved"
+            "Open"
           ) : (
             "Connect"
           )}

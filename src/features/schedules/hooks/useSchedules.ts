@@ -2,7 +2,7 @@
 
 import { useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { getSchedules } from "@/lib/api/schedules";
+import { getTransport } from "@/lib/actual";
 import { useConnectionStore, selectActiveInstance } from "@/store/connection";
 import { useStagedStore } from "@/store/staged";
 
@@ -18,7 +18,7 @@ export function useSchedules(options: PreloadOptions = {}) {
     queryKey: ["schedules", connection?.id],
     queryFn: () => {
       if (!connection) throw new Error("No active connection");
-      return getSchedules(connection);
+      return getTransport(connection).getSchedules();
     },
     enabled: !!connection && (options.enabled ?? true),
   });

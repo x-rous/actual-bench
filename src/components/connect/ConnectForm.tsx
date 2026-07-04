@@ -7,7 +7,11 @@ import { Loader2, AlertCircle, CheckCircle2, Server, Plus, Check, KeyRound } fro
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
-import { useConnectionStore, selectActiveInstance } from "@/store/connection";
+import {
+  useConnectionStore,
+  selectActiveInstance,
+  isBrowserApiConnection,
+} from "@/store/connection";
 import { useIsHydrated } from "@/hooks/useIsHydrated";
 import { useConnectForm } from "./useConnectForm";
 import { ConnectionCard } from "./ConnectionCard";
@@ -63,7 +67,7 @@ export function ConnectForm() {
 
   useEffect(() => {
     if (hydrated && connectedInstance) {
-      router.replace("/overview");
+      router.replace(isBrowserApiConnection(connectedInstance) ? "/accounts" : "/overview");
     }
   }, [hydrated, connectedInstance, router]);
 
@@ -356,7 +360,7 @@ export function ConnectForm() {
       {connectStatus.kind === "success" && activeValidatedMode === "browser-api" && (
         <div className="flex items-start gap-2.5 rounded-lg bg-green-50 px-3.5 py-3 text-sm text-green-700">
           <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
-          <span>Direct connection saved. Classic connections still power app pages.</span>
+          <span>Direct read-only connection opened. Core entity pages now use the browser transport.</span>
         </div>
       )}
 
@@ -369,10 +373,10 @@ export function ConnectForm() {
         {connectBusy ? (
           <>
             <Loader2 className="h-4 w-4 animate-spin" />
-            {activeValidatedMode === "browser-api" ? "Saving…" : "Connecting…"}
+            {activeValidatedMode === "browser-api" ? "Opening…" : "Connecting…"}
           </>
         ) : activeValidatedMode === "browser-api" ? (
-          "Save Direct Connection"
+          "Open Direct Connection"
         ) : (
           "Connect"
         )}

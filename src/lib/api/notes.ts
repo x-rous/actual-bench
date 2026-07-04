@@ -20,7 +20,7 @@ type NotePayload =
   | null
   | undefined;
 
-function extractNote(payload: NotePayload): string {
+export function extractNote(payload: NotePayload): string {
   if (typeof payload === "string") return payload;
   if (!payload || typeof payload !== "object") return "";
 

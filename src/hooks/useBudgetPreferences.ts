@@ -1,7 +1,11 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { useConnectionStore, selectActiveInstance } from "@/store/connection";
+import {
+  useConnectionStore,
+  selectActiveInstance,
+  isHttpApiConnection,
+} from "@/store/connection";
 import { fetchBudgetPreferences } from "@/lib/api/preferences";
 import type { BudgetPreferences } from "@/lib/api/preferences";
 
@@ -20,14 +24,15 @@ const REFETCH_INTERVAL = 5 * 60 * 1000; // 5 minutes
  */
 export function useBudgetPreferences(): BudgetPreferences {
   const connection = useConnectionStore(selectActiveInstance);
+  const httpConnection = isHttpApiConnection(connection) ? connection : null;
 
   const { data } = useQuery({
-    queryKey: ["budgetPreferences", connection?.id],
+    queryKey: ["budgetPreferences", httpConnection?.id],
     queryFn: () => {
-      if (!connection) throw new Error("No active connection");
-      return fetchBudgetPreferences(connection);
+      if (!httpConnection) throw new Error("No active Classic connection");
+      return fetchBudgetPreferences(httpConnection);
     },
-    enabled: !!connection,
+    enabled: !!httpConnection,
     staleTime: REFETCH_INTERVAL,
     gcTime: REFETCH_INTERVAL * 2,
     refetchInterval: REFETCH_INTERVAL,
