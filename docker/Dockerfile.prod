@@ -1,6 +1,8 @@
 # ── Stage 1: full build ────────────────────────────────────────────────────────
 FROM node:20-alpine AS builder
 WORKDIR /app
+# Native modules such as better-sqlite3 may fall back to node-gyp on Alpine.
+RUN apk add --no-cache python3 make g++
 COPY package*.json ./
 COPY scripts/copy-sqlite-wasm.mjs ./scripts/copy-sqlite-wasm.mjs
 RUN npm ci
