@@ -16,6 +16,8 @@ type WorkerInitMessage = {
   args?: unknown;
 };
 
+let initializeActualApiTail: Promise<unknown> = Promise.resolve();
+
 export const DEFAULT_STEP_TIMEOUT_MS = 45_000;
 export const SHUTDOWN_STEP_TIMEOUT_MS = 15_000;
 
@@ -74,22 +76,41 @@ function rewriteActualInitMessage(message: unknown, assetsBaseUrl: string): unkn
   };
 }
 
-export async function initializeActualApi<TActual extends ActualInitCapable>(
+function isActualBackendWorkerUrl(
+  scriptURL: string | URL,
+  options?: WorkerOptions
+): boolean {
+  return (
+    scriptURL instanceof URL &&
+    options?.type === "module" &&
+    scriptURL.pathname.endsWith("/worker.js")
+  );
+}
+
+export function initializeActualApi<TActual extends ActualInitCapable>(
+  actual: TActual,
+  config: ActualInitConfig
+): Promise<Awaited<ReturnType<TActual["init"]>>> {
+  const run = () => initializeActualApiWithWorkerShim(actual, config);
+  const result = initializeActualApiTail.then(run, run);
+  initializeActualApiTail = result.catch(() => undefined);
+  return result;
+}
+
+async function initializeActualApiWithWorkerShim<TActual extends ActualInitCapable>(
   actual: TActual,
   config: ActualInitConfig
 ): Promise<Awaited<ReturnType<TActual["init"]>>> {
   const NativeWorker = window.Worker;
   const assetsBaseUrl = getActualAssetsBaseUrl();
-  let redirectedBackendWorker = false;
-
   const ActualBenchWorker = class extends NativeWorker {
     constructor(scriptURL: string | URL, options?: WorkerOptions) {
-      const actualBackendWorkerUrl = redirectedBackendWorker
-        ? scriptURL
-        : assetsBaseUrl + "worker.js";
-
-      redirectedBackendWorker = true;
-      super(actualBackendWorkerUrl, options);
+      super(
+        isActualBackendWorkerUrl(scriptURL, options)
+          ? assetsBaseUrl + "worker.js"
+          : scriptURL,
+        options
+      );
     }
 
     postMessage(message: unknown, transfer: Transferable[]): void;
@@ -110,8 +131,9 @@ export async function initializeActualApi<TActual extends ActualInitCapable>(
     }
   };
 
-  // Next/Turbopack cannot load the first Actual backend worker directly from
-  // node_modules, so this temporary shim redirects it to our asset route. The
+  // Next/Turbopack cannot load Actual's backend worker directly from
+  // node_modules, so this temporary shim redirects that worker URL to our asset
+  // route. Other Worker URLs pass through to the native constructor, and the
   // native Worker constructor is restored in the finally block below.
   window.Worker = ActualBenchWorker as typeof Worker;
 
