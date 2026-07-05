@@ -3,7 +3,11 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { AlertTriangle, X } from "lucide-react";
 import { toast } from "sonner";
-import { useConnectionStore, selectActiveInstance } from "@/store/connection";
+import {
+  useConnectionStore,
+  selectActiveInstance,
+  isHttpApiConnection,
+} from "@/store/connection";
 import { useStagedStore, selectHasChanges } from "@/store/staged";
 import { runQuery } from "@/lib/api/query";
 import { cn } from "@/lib/utils";
@@ -319,16 +323,28 @@ export function QueryWorkspace() {
       // changes that occur while the request is in flight.
       const capturedBudgetId = connection.budgetSyncId;
 
-      // Snapshot the current request before the async gap so it is available
-      // for cURL generation on both the success and the error path.
-      setLastExecutedRequest({
-        query: parsed.inner,
-        rawQuery: queryString,
-        baseUrl: connection.baseUrl,
-        budgetSyncId: connection.budgetSyncId,
-        apiKey: connection.apiKey,
-        encryptionPassword: connection.encryptionPassword,
-      });
+      // Snapshot the current request before the async gap so result actions can
+      // use the executed query, even if the editor changes afterward.
+      setLastExecutedRequest(
+        isHttpApiConnection(connection)
+          ? {
+              mode: "http-api",
+              query: parsed.inner,
+              rawQuery: queryString,
+              baseUrl: connection.baseUrl,
+              budgetSyncId: connection.budgetSyncId,
+              apiKey: connection.apiKey,
+              encryptionPassword: connection.encryptionPassword,
+            }
+          : {
+              mode: "browser-api",
+              query: parsed.inner,
+              rawQuery: queryString,
+              baseUrl: connection.baseUrl,
+              budgetSyncId: connection.budgetSyncId,
+              encryptionPassword: connection.encryptionPassword,
+            }
+      );
 
       const start = Date.now();
       try {

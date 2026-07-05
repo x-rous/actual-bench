@@ -3,7 +3,7 @@
 import { useCallback, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useConnectionStore, selectActiveInstance } from "@/store/connection";
-import { apiRequest } from "@/lib/api/client";
+import { getTransport } from "@/lib/actual";
 import { useBudgetEditsStore } from "@/store/budgetEdits";
 import { budgetMonthDataQueryOptions } from "./useMonthData";
 import { addMonths } from "@/lib/budget/monthMath";
@@ -101,14 +101,14 @@ export function useBudgetSave(): UseBudgetSaveReturn {
       holds: Record<string, StagedHold> = {}
     ): Promise<BudgetSaveResult[]> => {
       if (!connection) throw new Error("No active connection");
+      const transport = getTransport(connection);
 
       const entries = Object.entries(edits) as [BudgetCellKey, StagedBudgetEdit][];
       const holdEntries = Object.entries(holds) as [string, StagedHold][];
       if (entries.length === 0 && holdEntries.length === 0) return [];
 
-      // Pre-save guard: verify all target months still exist in GET /months.
-      const monthsResult = await apiRequest<{ data: string[] }>(connection, "/months");
-      const availableSet = new Set(monthsResult.data);
+      // Pre-save guard: verify all target months still exist.
+      const availableSet = new Set(await transport.getBudgetMonths());
 
       const monthValidEntries = entries.filter(([, edit]) => availableSet.has(edit.month));
       const monthInvalidEntries = entries.filter(([, edit]) => !availableSet.has(edit.month));
@@ -216,169 +216,158 @@ export function useBudgetSave(): UseBudgetSaveReturn {
       const successMonths = new Set<string>();
       let completedCalls = 0;
 
-      // ── 0. Staged holds ───────────────────────────────────────────────────────
-      for (const [month, hold] of holdEntries) {
-        if (!availableSet.has(month)) {
-          results.push({
-            month,
-            categoryId: "",
-            status: "error",
-            message: `Month ${month} is no longer available in this budget`,
-          });
-          continue;
+      await transport.batchBudgetUpdates(async () => {
+        // ── 0. Staged holds ─────────────────────────────────────────────────────
+        for (const [month, hold] of holdEntries) {
+          if (!availableSet.has(month)) {
+            results.push({
+              month,
+              categoryId: "",
+              status: "error",
+              message: `Month ${month} is no longer available in this budget`,
+            });
+            continue;
+          }
+
+          try {
+            if (hold.nextAmount === 0) {
+              await transport.resetBudgetHold(month);
+            } else {
+              // When the server already has a hold (previousAmount > 0), DELETE it
+              // first so the subsequent POST sets an absolute value rather than
+              // adding on top of whatever the server currently holds.
+              if (hold.previousAmount > 0) {
+                await transport.resetBudgetHold(month);
+              }
+              await transport.holdBudgetForNextMonth(month, hold.nextAmount);
+            }
+
+            // Optimistic cache update: apply the hold to the cached month state.
+            queryClient.setQueryData(
+              ["budget-month-data", connection.id, month],
+              (prev: LoadedMonthState | undefined) => {
+                if (!prev) return prev;
+                const holdDelta = hold.nextAmount - prev.summary.forNextMonth;
+                return {
+                  ...prev,
+                  summary: {
+                    ...prev.summary,
+                    forNextMonth: hold.nextAmount,
+                    toBudget: prev.summary.toBudget - holdDelta,
+                  },
+                };
+              }
+            );
+
+            succeededHoldMonths.push(month);
+            successMonths.add(month);
+            results.push({ month, categoryId: "", status: "success" });
+          } catch (err) {
+            const message =
+              err instanceof Error
+                ? err.message
+                : (err as { message?: string }).message ?? "Save failed";
+            setHoldSaveError(month, message);
+            results.push({ month, categoryId: "", status: "error", message });
+          }
+
+          completedCalls++;
+          setProgress({ completed: completedCalls, total: totalCalls });
         }
 
-        try {
-          if (hold.nextAmount === 0) {
-            // resetBudgetHold — DELETE /months/{month}/nextmonthbudgethold
-            await apiRequest(connection, `/months/${month}/nextmonthbudgethold`, {
-              method: "DELETE",
+        // ── 1. Complete transfer pairs via atomic transfer ─────────────────────
+        for (const { src, dst } of completePairs) {
+          const [srcKey, srcEdit] = src;
+          const [dstKey, dstEdit] = dst;
+          const amount = dstEdit.nextBudgeted - dstEdit.previousBudgeted;
+          const month = srcEdit.month;
+
+          try {
+            await transport.transferBudget(month, {
+              fromCategoryId: srcEdit.categoryId,
+              toCategoryId: dstEdit.categoryId,
+              amount,
             });
-          } else {
-            // When the server already has a hold (previousAmount > 0), DELETE it
-            // first so the subsequent POST sets an absolute value rather than
-            // adding on top of whatever the server currently holds.
-            if (hold.previousAmount > 0) {
-              await apiRequest(connection, `/months/${month}/nextmonthbudgethold`, {
-                method: "DELETE",
-              });
-            }
-            // holdBudgetForNextMonth — POST /months/{month}/nextmonthbudgethold
-            await apiRequest(connection, `/months/${month}/nextmonthbudgethold`, {
-              method: "POST",
-              body: { amount: hold.nextAmount },
+
+            // BM-11: Optimistic cache update for both legs together.
+            queryClient.setQueryData(
+              ["budget-month-data", connection.id, month],
+              (prev: LoadedMonthState | undefined) => {
+                if (!prev) return prev;
+                let next = applyBudgetedToMonthState(prev, srcEdit.categoryId, srcEdit.nextBudgeted);
+                next = applyBudgetedToMonthState(next, dstEdit.categoryId, dstEdit.nextBudgeted);
+                return next;
+              }
+            );
+
+            succeededKeys.push(srcKey, dstKey);
+            successMonths.add(month);
+            results.push(
+              { month, categoryId: srcEdit.categoryId, status: "success" },
+              { month, categoryId: dstEdit.categoryId, status: "success" }
+            );
+          } catch (err) {
+            const message =
+              err instanceof Error
+                ? err.message
+                : (err as { message?: string }).message ?? "Save failed";
+            setSaveError(srcKey, message);
+            setSaveError(dstKey, message);
+            results.push(
+              { month, categoryId: srcEdit.categoryId, status: "error", message },
+              { month, categoryId: dstEdit.categoryId, status: "error", message }
+            );
+          }
+
+          completedCalls++;
+          setProgress({ completed: completedCalls, total: totalCalls });
+        }
+
+        // ── 2. Incomplete transfer legs + standalone edits ───────────────────
+        const patchEntries = [...incompleteLegs, ...nonTransferEntries];
+
+        for (const [key, edit] of patchEntries) {
+          try {
+            await transport.setBudgetAmount(edit.month, edit.categoryId, edit.nextBudgeted);
+
+            // BM-11: Optimistically update the cached month state so the grid
+            // clears the amber "staged" styling immediately, without waiting for
+            // the invalidation refetch round trip.
+            queryClient.setQueryData(
+              ["budget-month-data", connection.id, edit.month],
+              (prev: LoadedMonthState | undefined) =>
+                prev ? applyBudgetedToMonthState(prev, edit.categoryId, edit.nextBudgeted) : prev
+            );
+
+            succeededKeys.push(key);
+            successMonths.add(edit.month);
+            results.push({
+              month: edit.month,
+              categoryId: edit.categoryId,
+              status: "success",
+            });
+          } catch (err) {
+            const message =
+              err instanceof Error
+                ? err.message
+                : (err as { message?: string }).message ?? "Save failed";
+            setSaveError(key, message);
+            results.push({
+              month: edit.month,
+              categoryId: edit.categoryId,
+              status: "error",
+              message,
             });
           }
 
-          // Optimistic cache update: apply the hold to the cached month state.
-          queryClient.setQueryData(
-            ["budget-month-data", connection.id, month],
-            (prev: LoadedMonthState | undefined) => {
-              if (!prev) return prev;
-              const holdDelta = hold.nextAmount - prev.summary.forNextMonth;
-              return {
-                ...prev,
-                summary: {
-                  ...prev.summary,
-                  forNextMonth: hold.nextAmount,
-                  toBudget: prev.summary.toBudget - holdDelta,
-                },
-              };
-            }
-          );
-
-          succeededHoldMonths.push(month);
-          successMonths.add(month);
-          results.push({ month, categoryId: "", status: "success" });
-        } catch (err) {
-          const message =
-            err instanceof Error
-              ? err.message
-              : (err as { message?: string }).message ?? "Save failed";
-          setHoldSaveError(month, message);
-          results.push({ month, categoryId: "", status: "error", message });
+          completedCalls++;
+          setProgress({ completed: completedCalls, total: totalCalls });
         }
+      });
 
-        completedCalls++;
-        setProgress({ completed: completedCalls, total: totalCalls });
-      }
-
-      // ── 1. Complete transfer pairs via atomic POST ────────────────────────────
-      for (const { src, dst } of completePairs) {
-        const [srcKey, srcEdit] = src;
-        const [dstKey, dstEdit] = dst;
-        const amount = dstEdit.nextBudgeted - dstEdit.previousBudgeted;
-        const month = srcEdit.month;
-
-        try {
-          await apiRequest(connection, `/months/${month}/categorytransfers`, {
-            method: "POST",
-            body: {
-              categorytransfer: {
-                fromCategoryId: srcEdit.categoryId,
-                toCategoryId: dstEdit.categoryId,
-                amount,
-              },
-            },
-          });
-
-          // BM-11: Optimistic cache update for both legs together.
-          queryClient.setQueryData(
-            ["budget-month-data", connection.id, month],
-            (prev: LoadedMonthState | undefined) => {
-              if (!prev) return prev;
-              let next = applyBudgetedToMonthState(prev, srcEdit.categoryId, srcEdit.nextBudgeted);
-              next = applyBudgetedToMonthState(next, dstEdit.categoryId, dstEdit.nextBudgeted);
-              return next;
-            }
-          );
-
-          succeededKeys.push(srcKey, dstKey);
-          successMonths.add(month);
-          results.push(
-            { month, categoryId: srcEdit.categoryId, status: "success" },
-            { month, categoryId: dstEdit.categoryId, status: "success" }
-          );
-        } catch (err) {
-          const message =
-            err instanceof Error
-              ? err.message
-              : (err as { message?: string }).message ?? "Save failed";
-          setSaveError(srcKey, message);
-          setSaveError(dstKey, message);
-          results.push(
-            { month, categoryId: srcEdit.categoryId, status: "error", message },
-            { month, categoryId: dstEdit.categoryId, status: "error", message }
-          );
-        }
-
-        completedCalls++;
-        setProgress({ completed: completedCalls, total: totalCalls });
-      }
-
-      // ── 2. Incomplete transfer legs + standalone edits via PATCH ─────────────
-      const patchEntries = [...incompleteLegs, ...nonTransferEntries];
-
-      for (const [key, edit] of patchEntries) {
-        try {
-          await apiRequest(connection, `/months/${edit.month}/categories/${edit.categoryId}`, {
-            method: "PATCH",
-            body: { category: { budgeted: edit.nextBudgeted } },
-          });
-
-          // BM-11: Optimistically update the cached month state so the grid
-          // clears the amber "staged" styling immediately, without waiting for
-          // the invalidation refetch round trip.
-          queryClient.setQueryData(
-            ["budget-month-data", connection.id, edit.month],
-            (prev: LoadedMonthState | undefined) =>
-              prev ? applyBudgetedToMonthState(prev, edit.categoryId, edit.nextBudgeted) : prev
-          );
-
-          succeededKeys.push(key);
-          successMonths.add(edit.month);
-          results.push({
-            month: edit.month,
-            categoryId: edit.categoryId,
-            status: "success",
-          });
-        } catch (err) {
-          const message =
-            err instanceof Error
-              ? err.message
-              : (err as { message?: string }).message ?? "Save failed";
-          setSaveError(key, message);
-          results.push({
-            month: edit.month,
-            categoryId: edit.categoryId,
-            status: "error",
-            message,
-          });
-        }
-
-        completedCalls++;
-        setProgress({ completed: completedCalls, total: totalCalls });
-      }
+      // Direct budget batches schedule their own Actual sync after the batch
+      // message flush. Forcing an immediate sync here can race that flush and
+      // pull the old remote budget state back over the just-written values.
 
       // Clear succeeded hold months from the store.
       if (succeededHoldMonths.length > 0) {

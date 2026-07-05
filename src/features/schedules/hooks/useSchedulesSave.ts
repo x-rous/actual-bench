@@ -4,7 +4,11 @@ import { useState, useMemo } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useStagedStore } from "@/store/staged";
 import { useConnectionStore, selectActiveInstance } from "@/store/connection";
-import { createSchedule, updateSchedule, deleteSchedule, getSchedules } from "@/lib/api/schedules";
+import {
+  getTransport,
+  settleTransportWrites,
+  syncTransportAfterChanges,
+} from "@/lib/actual";
 import {
   extractMessage,
   computeSaveOperations,
@@ -31,6 +35,7 @@ export function useSchedulesSave() {
     setIsSaving(true);
 
     try {
+      const transport = getTransport(connection);
       const ops = computeSaveOperations<Schedule>(staged);
       // Skip incomplete schedules (no date set)
       const toCreate = ops.toCreate.filter((s) => !!s.date);
@@ -43,9 +48,11 @@ export function useSchedulesSave() {
       const idMap: Record<string, string> = {};
 
       // ── Creates (parallel) ──────────────────────────────────────────────────
-      const createResults = await Promise.allSettled(
-        toCreate.map((s) =>
-          createSchedule(connection, {
+      const createResults = await settleTransportWrites(
+        transport,
+        toCreate,
+        (s) =>
+          transport.createSchedule({
             name: s.name,
             postsTransaction: s.postsTransaction,
             payeeId: s.payeeId,
@@ -54,7 +61,6 @@ export function useSchedulesSave() {
             amountOp: s.amountOp,
             date: s.date,
           })
-        )
       );
       for (let i = 0; i < toCreate.length; i++) {
         const stagedId = toCreate[i].id;
@@ -75,9 +81,11 @@ export function useSchedulesSave() {
       }
 
       // ── Updates (parallel) ──────────────────────────────────────────────────
-      const updateResults = await Promise.allSettled(
-        toUpdate.map((s) =>
-          updateSchedule(connection, s.id, {
+      const updateResults = await settleTransportWrites(
+        transport,
+        toUpdate,
+        (s) =>
+          transport.updateSchedule(s.id, {
             name: s.name,
             postsTransaction: s.postsTransaction,
             payeeId: s.payeeId,
@@ -86,7 +94,6 @@ export function useSchedulesSave() {
             amountOp: s.amountOp,
             date: s.date,
           })
-        )
       );
       for (let i = 0; i < toUpdate.length; i++) {
         const id = toUpdate[i].id;
@@ -103,8 +110,10 @@ export function useSchedulesSave() {
       }
 
       // ── Deletes (parallel) ──────────────────────────────────────────────────
-      const deleteResults = await Promise.allSettled(
-        toDelete.map((id) => deleteSchedule(connection, id))
+      const deleteResults = await settleTransportWrites(
+        transport,
+        toDelete,
+        (id) => transport.deleteSchedule(id)
       );
       for (let i = 0; i < toDelete.length; i++) {
         const id = toDelete[i];
@@ -148,6 +157,8 @@ export function useSchedulesSave() {
         store.setSaveErrors("schedules", {});
       }
 
+      await syncTransportAfterChanges(transport, succeeded.length > 0);
+
       const requiredVisibleIds = new Set<string>([
         ...succeededUpdatedIds,
         ...Object.values(idMap),
@@ -155,7 +166,7 @@ export function useSchedulesSave() {
 
       let refreshedSchedules: Schedule[] | null = null;
       for (let attempt = 0; attempt < 3; attempt++) {
-        const freshSchedules = await getSchedules(connection);
+        const freshSchedules = await transport.getSchedules();
         const freshIds = new Set(freshSchedules.map((schedule) => schedule.id));
         const hasAllRequiredRows = [...requiredVisibleIds].every((id) => freshIds.has(id));
 

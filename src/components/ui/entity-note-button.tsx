@@ -238,7 +238,11 @@ export function EntityNoteButton({
             <p aria-live="polite" className="text-sm text-muted-foreground">
               No note yet.
             </p>
-            <Button variant="outline" size="xs" onClick={enterEdit}>
+            <Button
+              variant="outline"
+              size="xs"
+              onClick={enterEdit}
+            >
               <Plus className="h-3.5 w-3.5" />
               Add note
             </Button>

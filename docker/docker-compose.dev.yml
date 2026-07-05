@@ -13,15 +13,15 @@ services:
     volumes:
       # Source code — edits on the host are reflected immediately via HMR
       - /opt/projects/actual-bench:/workspace
-      # Persist Turbopack's build cache across container restarts.
-      # Without this, every restart rebuilds from scratch and triggers
-      # an HMR loop while Turbopack writes its initial dev/types/*.ts files.
+      # Persist Turbopack's cache volume, but clear .next-build/dev on
+      # startup below so stale route manifests/locks cannot survive branch
+      # switches or host-side source updates.
       - next-build-cache:/workspace/.next-build
     # Do NOT run npm install here — install on the host once and let the
     # volume mount bring node_modules in. Installing inside the container on
     # every start is slow and compiles native addons for the wrong platform.
     #command: npm run dev -- --hostname 0.0.0.0
-    command: sh -c "npm run dev -- --hostname 0.0.0.0"
+    command: sh -c "rm -rf .next-build/dev && npm run dev -- --hostname 0.0.0.0"
     environment:
       - NODE_ENV=development
       - NEXT_TELEMETRY_DISABLED=1

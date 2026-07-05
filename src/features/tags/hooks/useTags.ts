@@ -2,7 +2,7 @@
 
 import { useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { getTags } from "@/lib/api/tags";
+import { getTransport } from "@/lib/actual";
 import { useConnectionStore, selectActiveInstance } from "@/store/connection";
 import { useStagedStore } from "@/store/staged";
 
@@ -18,7 +18,7 @@ export function useTags(options: PreloadOptions = {}) {
     queryKey: ["tags", connection?.id],
     queryFn: () => {
       if (!connection) throw new Error("No active connection");
-      return getTags(connection);
+      return getTransport(connection).getTags();
     },
     enabled: !!connection && (options.enabled ?? true),
   });

@@ -14,7 +14,7 @@ import type { Payee } from "@/types/entities";
 
 // ─── Normalization ────────────────────────────────────────────────────────────
 
-function normalizePayee(raw: ApiPayee): Payee {
+export function normalizePayee(raw: ApiPayee): Payee {
   return {
     id: raw.id!,
     name: raw.name,

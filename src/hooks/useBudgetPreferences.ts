@@ -1,7 +1,10 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { useConnectionStore, selectActiveInstance } from "@/store/connection";
+import {
+  useConnectionStore,
+  selectActiveInstance,
+} from "@/store/connection";
 import { fetchBudgetPreferences } from "@/lib/api/preferences";
 import type { BudgetPreferences } from "@/lib/api/preferences";
 

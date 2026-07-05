@@ -4,7 +4,11 @@ import { useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useStagedStore } from "@/store/staged";
 import { useConnectionStore, selectActiveInstance } from "@/store/connection";
-import { createCategory, updateCategory, deleteCategory } from "@/lib/api/categories";
+import {
+  getTransport,
+  settleTransportWrites,
+  syncTransportAfterChanges,
+} from "@/lib/actual";
 import {
   extractMessage,
   computeSaveOperations,
@@ -27,6 +31,7 @@ export function useCategoriesSave() {
     setIsSaving(true);
 
     try {
+      const transport = getTransport(connection);
       const { toCreate, toUpdate, toDelete } = computeSaveOperations<Category>(staged);
       const succeeded: SaveResult[] = [];
       const failed: SaveResult[] = [];
@@ -36,20 +41,22 @@ export function useCategoriesSave() {
       // ── Creates (parallel) ──────────────────────────────────────────────────
       // Substitute any client-UUID groupId with the server-assigned group ID so
       // that new categories correctly reference newly created groups.
-      const createResults = await Promise.allSettled(
-        toCreate.map((c) =>
-          createCategory(connection, {
+      const createResults = await settleTransportWrites(
+        transport,
+        toCreate,
+        (c) =>
+          transport.createCategory({
             name: c.name,
             groupId: groupIdMap[c.groupId] ?? c.groupId,
+            isIncome: c.isIncome,
             hidden: c.hidden,
           })
-        )
       );
       for (let i = 0; i < toCreate.length; i++) {
         const id = toCreate[i].id;
-        const r  = createResults[i];
+        const r = createResults[i];
         if (r.status === "fulfilled") {
-          idMap[id] = r.value; // createCategory returns the server ID string
+          idMap[id] = r.value;
           succeeded.push({ status: "success", id });
           succeededCreateIds.add(id);
         } else {
@@ -58,14 +65,14 @@ export function useCategoriesSave() {
       }
 
       // ── Updates (parallel) ──────────────────────────────────────────────────
-      const updateResults = await Promise.allSettled(
-        toUpdate.map((c) =>
-          updateCategory(connection, c.id, { name: c.name, hidden: c.hidden })
-        )
+      const updateResults = await settleTransportWrites(
+        transport,
+        toUpdate,
+        (c) => transport.updateCategory(c.id, { name: c.name, hidden: c.hidden })
       );
       for (let i = 0; i < toUpdate.length; i++) {
         const id = toUpdate[i].id;
-        const r  = updateResults[i];
+        const r = updateResults[i];
         if (r.status === "fulfilled") {
           succeeded.push({ status: "success", id });
         } else {
@@ -74,12 +81,14 @@ export function useCategoriesSave() {
       }
 
       // ── Deletes (parallel) ──────────────────────────────────────────────────
-      const deleteResults = await Promise.allSettled(
-        toDelete.map((id) => deleteCategory(connection, id))
+      const deleteResults = await settleTransportWrites(
+        transport,
+        toDelete,
+        (id) => transport.deleteCategory(id)
       );
       for (let i = 0; i < toDelete.length; i++) {
         const id = toDelete[i];
-        const r  = deleteResults[i];
+        const r = deleteResults[i];
         if (r.status === "fulfilled") {
           succeeded.push({ status: "success", id });
         } else {
@@ -110,6 +119,8 @@ export function useCategoriesSave() {
         }
         useStagedStore.getState().setSaveErrors("categories", errors);
       }
+
+      await syncTransportAfterChanges(transport, succeeded.length > 0);
 
       // Both entity types share one query key since they're loaded together
       await queryClient.invalidateQueries({ queryKey: ["categoryGroups", connection.id] });

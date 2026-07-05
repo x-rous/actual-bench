@@ -34,11 +34,11 @@ export function CopyCurlButton({ lastRequest }: CopyCurlButtonProps) {
         size="sm"
         variant="ghost"
         onClick={copyDefaultCurl}
-        title="Copy a cURL command with secrets replaced by placeholders - safe to share"
+        title="Copy an actual-http-api cURL command with secrets replaced by placeholders - safe to share"
         className="gap-1.5 text-xs text-muted-foreground"
       >
         <Terminal className="h-3 w-3" />
-        Copy cURL
+        Copy HTTP cURL
       </Button>
 
       {/* Dangerous version - amber styling signals risk */}
@@ -46,7 +46,7 @@ export function CopyCurlButton({ lastRequest }: CopyCurlButtonProps) {
         size="sm"
         variant="ghost"
         onClick={copyFullCurl}
-        title="Copy a cURL command with real API key and credentials - do not share publicly"
+        title="Copy an actual-http-api cURL command with real API key and credentials - do not share publicly"
         className="gap-1.5 text-xs text-amber-600 hover:bg-amber-50 hover:text-amber-700 dark:text-amber-500 dark:hover:bg-amber-950/40 dark:hover:text-amber-400"
       >
         <ShieldAlert className="h-3 w-3" />

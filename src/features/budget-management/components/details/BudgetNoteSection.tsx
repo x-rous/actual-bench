@@ -131,7 +131,12 @@ export function BudgetNoteSection({ target }: { target: BudgetNoteTarget }) {
               <Button variant="ghost" size="xs" className="h-5" onClick={cancel} disabled={save.isPending}>
                 Cancel
               </Button>
-              <Button size="xs" className="h-5" onClick={handleSave} disabled={!dirty || busy}>
+              <Button
+                size="xs"
+                className="h-5"
+                onClick={handleSave}
+                disabled={!dirty || busy}
+              >
                 {save.isPending ? (
                   <>
                     <Loader2 className="h-3 w-3 animate-spin" />

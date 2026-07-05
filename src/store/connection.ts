@@ -3,19 +3,35 @@ import { persist, createJSONStorage } from "zustand/middleware";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-export type ConnectionInstance = {
+export type ConnectionMode = "http-api" | "browser-api";
+
+type ConnectionBase = {
   id: string;
   label: string;
+  mode: ConnectionMode;
   baseUrl: string;
-  apiKey: string;
   budgetSyncId: string;
-  /** Optional: required by the jhonderson actual-http-api when the budget is encrypted */
+  /** Optional budget encryption password, kept in memory only. */
   encryptionPassword?: string;
-  /** actual-http-api wrapper version — fetched once on connect, stored in session */
+};
+
+export type HttpApiConnection = ConnectionBase & {
+  mode: "http-api";
+  apiKey: string;
+  /** actual-http-api wrapper version, held in memory for the active connection. */
   apiVersion?: string;
-  /** Actual Budget server version — fetched once on connect, stored in session */
+  /** Actual Budget server version, held in memory for the active connection. */
   serverVersion?: string;
 };
+
+export type BrowserApiConnection = ConnectionBase & {
+  mode: "browser-api";
+  serverPassword: string;
+  /** Actual Budget server version, held in memory for the active connection. */
+  serverVersion?: string;
+};
+
+export type ConnectionInstance = HttpApiConnection | BrowserApiConnection;
 
 type ConnectionState = {
   instances: ConnectionInstance[];
@@ -26,22 +42,51 @@ type ConnectionActions = {
   addInstance: (instance: ConnectionInstance) => void;
   removeInstance: (id: string) => void;
   setActiveInstance: (id: string | null) => void;
-  updateInstance: (id: string, patch: Partial<Omit<ConnectionInstance, "id">>) => void;
+  updateInstance: (id: string, patch: Partial<ConnectionInstance>) => void;
   clearAll: () => void;
 };
+
+export function isHttpApiConnection(
+  connection: ConnectionInstance | null | undefined
+): connection is HttpApiConnection {
+  return connection?.mode === "http-api";
+}
+
+export function isBrowserApiConnection(
+  connection: ConnectionInstance | null | undefined
+): connection is BrowserApiConnection {
+  return connection?.mode === "browser-api";
+}
+
+/**
+ * Active connections require credentials for every transport call. Persisted
+ * storage is now secret-free, so legacy persisted connections are intentionally
+ * dropped and users reconnect through saved server presets.
+ */
+export function normalizeConnectionInstance(_record: unknown): ConnectionInstance | null {
+  void _record;
+  return null;
+}
+
+export function migrateConnectionState(_value: unknown): ConnectionState {
+  void _value;
+  return { instances: [], activeInstanceId: null };
+}
+
+export function toPersistedConnectionState(_state: ConnectionState): ConnectionState {
+  void _state;
+  return { instances: [], activeInstanceId: null };
+}
 
 // ─── Store ────────────────────────────────────────────────────────────────────
 
 /**
- * Connection state is persisted to sessionStorage so it survives:
- *  - Next.js App Router client-side navigation
- *  - Turbopack HMR module re-initialization in dev mode
- *
- * sessionStorage (not localStorage) is intentional: credentials are cleared
- * when the browser tab is closed.
+ * Active connection state lives in memory only so API keys, server passwords,
+ * and budget encryption passwords are never written to browser storage. The
+ * persist middleware remains in place to migrate old sessionStorage records out.
  */
 export const useConnectionStore = create<ConnectionState & ConnectionActions>()(
-  persist(
+  persist<ConnectionState & ConnectionActions, [], [], ConnectionState>(
     (set) => ({
       instances: [],
       activeInstanceId: null,
@@ -62,12 +107,18 @@ export const useConnectionStore = create<ConnectionState & ConnectionActions>()(
           return { instances: remaining, activeInstanceId: nextActive };
         }),
 
-      setActiveInstance: (id) => set({ activeInstanceId: id }),
+      setActiveInstance: (id) =>
+        set((state) => ({
+          activeInstanceId:
+            id === null || state.instances.some((instance) => instance.id === id)
+              ? id
+              : state.activeInstanceId,
+        })),
 
       updateInstance: (id, patch) =>
         set((state) => ({
           instances: state.instances.map((i) =>
-            i.id === id ? { ...i, ...patch } : i
+            i.id === id ? ({ ...i, ...patch } as ConnectionInstance) : i
           ),
         })),
 
@@ -75,6 +126,9 @@ export const useConnectionStore = create<ConnectionState & ConnectionActions>()(
     }),
     {
       name: "actual-admin-connection",
+      version: 3,
+      migrate: (persistedState) => migrateConnectionState(persistedState),
+      partialize: toPersistedConnectionState,
       // Guard for SSR — sessionStorage is only available in the browser.
       // Returning null here causes Zustand to skip persistence on the server
       // without throwing, preventing hydration mismatches.

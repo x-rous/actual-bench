@@ -21,15 +21,11 @@
 
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import type { ConnectionInstance } from "@/store/connection";
 import { logger } from "@/lib/logger";
-import { queueServerRequest } from "./serverQueue";
+import { queueServerRequest, type HttpProxyConnection } from "./serverQueue";
 
 type ProxyRequestBody = {
-  connection: Pick<ConnectionInstance, "baseUrl" | "apiKey"> & {
-    budgetSyncId?: string;
-    encryptionPassword?: string;
-  };
+  connection: HttpProxyConnection;
   path: string;
   method?: string;
   body?: unknown;

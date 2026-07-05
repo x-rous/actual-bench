@@ -44,6 +44,10 @@ export function useDiagnosticsSnapshot() {
   const setSnapshot = useDiagnosticsCacheStore((s) => s.setSnapshot);
   const loadedAt = useDiagnosticsCacheStore((s) => s.loadedAt);
   const integrityRunGeneration = useRef(0);
+  const connectionApiKey =
+    connection?.mode === "http-api" ? connection.apiKey : undefined;
+  const connectionServerPassword =
+    connection?.mode === "browser-api" ? connection.serverPassword : undefined;
 
   const retry = useCallback(() => {
     // Force a fresh export: drop the cached snapshot and the loaded worker DB,
@@ -254,7 +258,8 @@ export function useDiagnosticsSnapshot() {
     };
   }, [
     connection,
-    connection?.apiKey,
+    connectionApiKey,
+    connectionServerPassword,
     connection?.baseUrl,
     connection?.budgetSyncId,
     connection?.encryptionPassword,

@@ -1,4 +1,4 @@
-import { getTransactionCountsForIds } from "./query";
+import { getTransactionCountsForIds, runQuery } from "./query";
 import type { ConnectionInstance } from "@/store/connection";
 
 // ─── Mock apiRequest ──────────────────────────────────────────────────────────
@@ -7,14 +7,34 @@ jest.mock("./client", () => ({
   apiRequest: jest.fn(),
 }));
 
+const mockTransportRunQuery = jest.fn();
+const mockGetTransport = jest.fn((connection: unknown) => {
+  void connection;
+  return { runQuery: mockTransportRunQuery };
+});
+
+jest.mock("../actual", () => ({
+  getTransport: (connection: unknown) => mockGetTransport(connection),
+}));
+
 import { apiRequest } from "./client";
 const mockApiRequest = apiRequest as jest.MockedFunction<typeof apiRequest>;
 
 const connection: ConnectionInstance = {
   id: "conn-1",
   label: "Test",
+  mode: "http-api",
   baseUrl: "http://localhost:5006",
   apiKey: "test-key",
+  budgetSyncId: "budget-1",
+};
+
+const directConnection: ConnectionInstance = {
+  id: "conn-2",
+  label: "Direct",
+  mode: "browser-api",
+  baseUrl: "https://actual.example.com",
+  serverPassword: "password",
   budgetSyncId: "budget-1",
 };
 
@@ -23,6 +43,19 @@ const connection: ConnectionInstance = {
 describe("getTransactionCountsForIds", () => {
   beforeEach(() => {
     mockApiRequest.mockReset();
+    mockTransportRunQuery.mockReset();
+    mockGetTransport.mockClear();
+  });
+
+  it("routes Direct runQuery calls through the active transport", async () => {
+    const body = { ActualQLquery: { table: "transactions", calculate: { $count: "$id" } } };
+    mockTransportRunQuery.mockResolvedValueOnce({ data: 9 });
+
+    await expect(runQuery(directConnection, body)).resolves.toEqual({ data: 9 });
+
+    expect(mockGetTransport).toHaveBeenCalledWith(directConnection);
+    expect(mockTransportRunQuery).toHaveBeenCalledWith(body);
+    expect(mockApiRequest).not.toHaveBeenCalled();
   });
 
   it("returns empty Map immediately when ids is empty — no network call", async () => {

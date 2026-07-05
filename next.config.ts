@@ -12,12 +12,12 @@ const nextConfig: NextConfig = {
   // production dependency tree. Output lands in `${distDir}/standalone`.
   output: "standalone",
   // Enable React Compiler via the Turbopack/SWC-native path (top-level in
-  // Next.js 16 — promoted out of experimental).
+  // Next.js 16 - promoted out of experimental).
   // babel-plugin-react-compiler remains in devDependencies for Jest only.
   reactCompiler: true,
   // Use a fresh output directory so Turbopack doesn't try to acquire a
   // lockfile on the root-owned .next/dev/cache from a prior container run.
-  // Exception: on Vercel, use the default ".next" — Vercel's Next.js builder
+  // Exception: on Vercel, use the default ".next" - Vercel's Next.js builder
   // hard-expects ".next" and fails to locate a custom distDir, so the demo
   // deployment needs the standard path. CI/Docker keep ".next-build".
   distDir: process.env.VERCEL ? ".next" : ".next-build",

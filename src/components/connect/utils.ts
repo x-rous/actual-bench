@@ -15,6 +15,16 @@ export function deriveLabel(baseUrl: string): string {
   }
 }
 
+// ─── Connection mode labels ───────────────────────────────────────────────────
+
+export function getConnectionModeLabel(mode: "http-api" | "browser-api"): string {
+  return mode === "browser-api" ? "Direct Actual Server" : "HTTP API Server";
+}
+
+export function getConnectionModeBadge(mode: "http-api" | "browser-api"): string {
+  return mode === "browser-api" ? "Direct" : "HTTP API";
+}
+
 // ─── Error parsing ────────────────────────────────────────────────────────────
 
 /**

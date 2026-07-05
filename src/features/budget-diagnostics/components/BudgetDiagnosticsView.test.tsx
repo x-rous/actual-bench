@@ -63,6 +63,7 @@ const mockResetSqliteWorkerClient = resetSqliteWorkerClient as jest.MockedFuncti
 const connection: ConnectionInstance = {
   id: "conn-1",
   label: "Household Budget",
+  mode: "http-api",
   baseUrl: "http://localhost:5006",
   apiKey: "key",
   budgetSyncId: "budget-1",
@@ -73,6 +74,15 @@ const secondConnection: ConnectionInstance = {
   id: "conn-2",
   label: "Business Budget",
   budgetSyncId: "budget-2",
+};
+
+const directConnection: ConnectionInstance = {
+  id: "direct-1",
+  label: "Direct Household",
+  mode: "browser-api",
+  baseUrl: "https://actual.example.com",
+  serverPassword: "secret",
+  budgetSyncId: "budget-1",
 };
 
 const download: DownloadResult = {
@@ -205,6 +215,15 @@ describe("BudgetDiagnosticsView", () => {
       useConnectionStore.setState({ instances: [], activeInstanceId: null });
     });
     jest.clearAllMocks();
+  });
+
+  it("opens Direct connection snapshots through the shared diagnostics workspace", async () => {
+    setActiveConnection(directConnection);
+
+    render(<BudgetDiagnosticsView />);
+
+    expect(await screen.findByText("Snapshot counts")).toBeInTheDocument();
+    expect(mockExportSnapshot).toHaveBeenCalledWith(directConnection, expect.any(Function));
   });
 
   it("opens the active budget snapshot and renders the tabbed diagnostics workspace", async () => {

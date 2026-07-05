@@ -46,7 +46,7 @@ function stageToApi(stage: RuleStage | null | undefined): string | null {
 
 // ─── Normalization ────────────────────────────────────────────────────────────
 
-function normalizeRule(raw: ApiRule): Rule {
+export function normalizeRule(raw: ApiRule): Rule {
   return {
     id: raw.id!,
     stage: stageFromApi(raw.stage),

@@ -4,75 +4,19 @@ import { useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useStagedStore } from "@/store/staged";
 import { useConnectionStore, selectActiveInstance } from "@/store/connection";
-import { createRule, updateRule, deleteRule } from "@/lib/api/rules";
+import {
+  getTransport,
+  settleTransportWrites,
+  syncTransportAfterChanges,
+} from "@/lib/actual";
+import { applyRuleEntityIdMap } from "@/lib/actual/ruleMutation";
 import {
   extractMessage,
   computeSaveOperations,
   hasPendingStagedChanges,
 } from "@/lib/saveUtils";
-import { CONDITION_FIELDS, ACTION_FIELDS } from "../utils/ruleFields";
 import type { SaveResult, SaveSummary } from "@/types/diff";
-import type { Rule, ConditionOrAction, AmountRange } from "@/types/entities";
-
-/** Fields whose values are entity IDs that may need client→server substitution */
-const ENTITY_REF_FIELDS = new Set(["payee", "account", "category", "category_group", "categoryGroup"]);
-
-/**
- * Substitute any client-generated UUID in entity reference fields with the
- * server-assigned ID, so that rules referencing new payees/accounts/categories
- * are saved with the correct IDs.
- */
-function applyEntityIdMap(
-  parts: ConditionOrAction[],
-  idMap: Record<string, string>
-): ConditionOrAction[] {
-  if (Object.keys(idMap).length === 0) return parts;
-  return parts.map((p) => {
-    if (!p.field || !ENTITY_REF_FIELDS.has(p.field)) return p;
-    const v = p.value;
-    if (typeof v === "string" && idMap[v]) return { ...p, value: idMap[v] };
-    if (Array.isArray(v)) {
-      const mapped = v.map((x) => (typeof x === "string" && idMap[x] ? idMap[x] : x));
-      return { ...p, value: mapped };
-    }
-    return p;
-  });
-}
-
-/**
- * Prepare condition/action values for the API:
- *  1. Coerce any string typed by the user in a number input to a JS number.
- *  2. Scale display-unit amounts back to Actual's internal ×100 representation.
- */
-function coerceParts(parts: ConditionOrAction[]): ConditionOrAction[] {
-  return parts.map((p) => {
-    const def = CONDITION_FIELDS[p.field ?? ""] ?? ACTION_FIELDS[p.field ?? ""];
-    if (def?.type !== "number") return p;
-
-    let value: ConditionOrAction["value"] = p.value;
-
-    // 1. Coerce string → number (HTML number inputs always yield strings)
-    if (typeof value === "string" && value !== "") value = Number(value);
-
-    // 2. Multiply by 100 to convert display units → Actual's internal format
-    if (typeof value === "number") {
-      value = Math.round(value * 100);
-    } else if (typeof value === "object" && value !== null && "num1" in value) {
-      const r = value as AmountRange;
-      value = { num1: Math.round(r.num1 * 100), num2: Math.round(r.num2 * 100) };
-    }
-
-    return { ...p, value };
-  });
-}
-
-function coerceRule(rule: Rule): Rule {
-  return {
-    ...rule,
-    conditions: coerceParts(rule.conditions),
-    actions: coerceParts(rule.actions),
-  };
-}
+import type { Rule } from "@/types/entities";
 
 export function useRulesSave() {
   const [isSaving, setIsSaving] = useState(false);
@@ -88,6 +32,7 @@ export function useRulesSave() {
     setIsSaving(true);
 
     try {
+      const transport = getTransport(connection);
       const { toCreate, toUpdate, toDelete } = computeSaveOperations<Rule>(staged);
       const mergeDeps = useStagedStore.getState().mergeDependencies;
 
@@ -99,20 +44,20 @@ export function useRulesSave() {
       const succeededCreateIds = new Set<string>();
 
       // ── Creates (parallel) ──────────────────────────────────────────────────
-      const createResults = await Promise.allSettled(
-        toCreate.map((raw) => {
-          const rule = coerceRule(raw);
-          return createRule(connection, {
+      const createResults = await settleTransportWrites(
+        transport,
+        toCreate,
+        (rule) =>
+          transport.createRule({
             stage: rule.stage,
             conditionsOp: rule.conditionsOp,
-            conditions: applyEntityIdMap(rule.conditions, entityIdMap),
-            actions: applyEntityIdMap(rule.actions, entityIdMap),
-          });
-        })
+            conditions: applyRuleEntityIdMap(rule.conditions, entityIdMap),
+            actions: applyRuleEntityIdMap(rule.actions, entityIdMap),
+          })
       );
       for (let i = 0; i < toCreate.length; i++) {
         const id = toCreate[i].id;
-        const r  = createResults[i];
+        const r = createResults[i];
         if (r.status === "fulfilled") {
           succeeded.push({ status: "success", id });
           succeededCreateIds.add(id);
@@ -122,20 +67,20 @@ export function useRulesSave() {
       }
 
       // ── Updates (parallel) ──────────────────────────────────────────────────
-      const updateResults = await Promise.allSettled(
-        toUpdate.map((raw) => {
-          const rule = coerceRule(raw);
-          return updateRule(connection, rule.id, {
+      const updateResults = await settleTransportWrites(
+        transport,
+        toUpdate,
+        (rule) =>
+          transport.updateRule(rule.id, {
             stage: rule.stage,
             conditionsOp: rule.conditionsOp,
-            conditions: applyEntityIdMap(rule.conditions, entityIdMap),
-            actions: applyEntityIdMap(rule.actions, entityIdMap),
-          });
-        })
+            conditions: applyRuleEntityIdMap(rule.conditions, entityIdMap),
+            actions: applyRuleEntityIdMap(rule.actions, entityIdMap),
+          })
       );
       for (let i = 0; i < toUpdate.length; i++) {
         const id = toUpdate[i].id;
-        const r  = updateResults[i];
+        const r = updateResults[i];
         if (r.status === "fulfilled") {
           succeeded.push({ status: "success", id });
         } else {
@@ -166,12 +111,14 @@ export function useRulesSave() {
         }
       }
 
-      const deleteResults = await Promise.allSettled(
-        safeToDelete.map((id) => deleteRule(connection, id))
+      const deleteResults = await settleTransportWrites(
+        transport,
+        safeToDelete,
+        (id) => transport.deleteRule(id)
       );
       for (let i = 0; i < safeToDelete.length; i++) {
         const id = safeToDelete[i];
-        const r  = deleteResults[i];
+        const r = deleteResults[i];
         if (r.status === "fulfilled") {
           succeeded.push({ status: "success", id });
         } else {
@@ -215,6 +162,8 @@ export function useRulesSave() {
         }
         useStagedStore.getState().setSaveErrors("rules", errors);
       }
+
+      await syncTransportAfterChanges(transport, succeeded.length > 0);
 
       await queryClient.invalidateQueries({ queryKey: ["rules", connection.id] });
       await queryClient.invalidateQueries({ queryKey: ["budget-overview", connection.id] });

@@ -4,7 +4,11 @@ import { useState, useMemo } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useStagedStore } from "@/store/staged";
 import { useConnectionStore, selectActiveInstance } from "@/store/connection";
-import { createPayee, updatePayee, deletePayee, getPayees, mergePayees } from "@/lib/api/payees";
+import {
+  getTransport,
+  settleTransportWrites,
+  syncTransportAfterChanges,
+} from "@/lib/actual";
 import {
   extractMessage,
   computeSaveOperations,
@@ -34,6 +38,7 @@ export function usePayeesSave() {
     setIsSaving(true);
 
     try {
+      const transport = getTransport(connection);
       const ops = computeSaveOperations<Payee>(staged);
       const toCreate = ops.toCreate.filter((p) => p.name.trim() !== "");
       const toUpdate = ops.toUpdate.filter((p) => p.name.trim() !== "");
@@ -46,46 +51,61 @@ export function usePayeesSave() {
       const idMap: Record<string, string> = {};
 
       // ── Creates (parallel) ──────────────────────────────────────────────────
-      const createResults = await Promise.allSettled(
-        toCreate.map((p) => createPayee(connection, { name: p.name }))
+      const createResults = await settleTransportWrites(
+        transport,
+        toCreate,
+        (p) => transport.createPayee({ name: p.name })
       );
       for (let i = 0; i < toCreate.length; i++) {
         const id = toCreate[i].id;
-        const r  = createResults[i];
+        const r = createResults[i];
         if (r.status === "fulfilled") {
           succeeded.push({ status: "success", id });
           succeededCreateIds.add(id);
+          if (r.value.id) idMap[id] = r.value.id;
         } else {
           failed.push({ status: "error", id, message: extractMessage(r.reason, "Create failed") });
         }
       }
 
       // ── Resolve server IDs for created payees ───────────────────────────────
-      // The Actual HTTP API does not return the new payee's ID in the create
-      // response. Fetch the fresh list and match by name to build the mapping
-      // so that rules referencing newly created payees get the correct server ID.
-      if (succeededCreateIds.size > 0) {
+      // Some transports/API versions may not return the new payee ID in the
+      // create response. Fetch the fresh list and match by name to build the
+      // mapping so rules referencing new payees use the correct server ID.
+      const unresolvedCreatedPayees = toCreate.filter(
+        (p) => succeededCreateIds.has(p.id) && !idMap[p.id]
+      );
+      if (unresolvedCreatedPayees.length > 0) {
         try {
-          const freshPayees = await getPayees(connection);
-          const serverIdByName = new Map(freshPayees.map((p) => [p.name, p.id]));
-          for (const p of toCreate) {
-            if (succeededCreateIds.has(p.id)) {
-              const serverId = serverIdByName.get(p.name);
-              if (serverId) idMap[p.id] = serverId;
+          const freshPayees = await transport.getPayees();
+          const serverIdByName = new Map<string, string>();
+          const duplicateNames = new Set<string>();
+          for (const fresh of freshPayees) {
+            if (serverIdByName.has(fresh.name)) {
+              duplicateNames.add(fresh.name);
+            } else {
+              serverIdByName.set(fresh.name, fresh.id);
             }
           }
+          for (const p of unresolvedCreatedPayees) {
+            if (duplicateNames.has(p.name)) continue;
+            const serverId = serverIdByName.get(p.name);
+            if (serverId) idMap[p.id] = serverId;
+          }
         } catch {
-          // idMap stays empty; rules will fall back to client UUIDs
+          // idMap stays partial; rules will fall back to client UUIDs
         }
       }
 
       // ── Updates (parallel) ──────────────────────────────────────────────────
-      const updateResults = await Promise.allSettled(
-        toUpdate.map((p) => updatePayee(connection, p.id, { name: p.name }))
+      const updateResults = await settleTransportWrites(
+        transport,
+        toUpdate,
+        (p) => transport.updatePayee(p.id, { name: p.name })
       );
       for (let i = 0; i < toUpdate.length; i++) {
         const id = toUpdate[i].id;
-        const r  = updateResults[i];
+        const r = updateResults[i];
         if (r.status === "fulfilled") {
           succeeded.push({ status: "success", id });
         } else {
@@ -94,12 +114,14 @@ export function usePayeesSave() {
       }
 
       // ── Deletes (parallel) ──────────────────────────────────────────────────
-      const deleteResults = await Promise.allSettled(
-        toDelete.map((id) => deletePayee(connection, id))
+      const deleteResults = await settleTransportWrites(
+        transport,
+        toDelete,
+        (id) => transport.deletePayee(id)
       );
       for (let i = 0; i < toDelete.length; i++) {
         const id = toDelete[i];
-        const r  = deleteResults[i];
+        const r = deleteResults[i];
         if (r.status === "fulfilled") {
           succeeded.push({ status: "success", id });
         } else {
@@ -111,7 +133,7 @@ export function usePayeesSave() {
       const succeededMergeTargetIds: string[] = [];
       for (const { targetId, mergeIds } of pendingPayeeMerges) {
         try {
-          await mergePayees(connection, targetId, mergeIds);
+          await transport.mergePayees(targetId, mergeIds);
           succeededMergeTargetIds.push(targetId);
           for (const id of mergeIds) {
             succeeded.push({ status: "success", id });
@@ -150,6 +172,8 @@ export function usePayeesSave() {
       } else {
         useStagedStore.getState().setSaveErrors("payees", {});
       }
+
+      await syncTransportAfterChanges(transport, succeeded.length > 0);
 
       await queryClient.invalidateQueries({ queryKey: ["payees", connection.id] });
       await queryClient.invalidateQueries({ queryKey: ["transactionCounts", "payee", connection.id] });

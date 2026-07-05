@@ -2,7 +2,7 @@
 
 import { useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { getPayees } from "@/lib/api/payees";
+import { getTransport } from "@/lib/actual";
 import { useConnectionStore, selectActiveInstance } from "@/store/connection";
 import { useStagedStore } from "@/store/staged";
 
@@ -22,7 +22,7 @@ export function usePayees(options: PreloadOptions = {}) {
     queryKey: ["payees", connection?.id],
     queryFn: () => {
       if (!connection) throw new Error("No active connection");
-      return getPayees(connection);
+      return getTransport(connection).getPayees();
     },
     enabled: !!connection && (options.enabled ?? true),
     // staleTime/gcTime/refetchOn* are set globally in queryClient.ts.

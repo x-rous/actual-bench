@@ -2,7 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { useConnectionStore, selectActiveInstance } from "@/store/connection";
-import { apiRequest } from "@/lib/api/client";
+import { runQuery } from "@/lib/api/query";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -52,22 +52,15 @@ export function useIncomeBudgets(
     queryFn: async () => {
       if (!connection) throw new Error("No active connection");
 
-      const response = await apiRequest<RunQueryResponse>(
-        connection,
-        "/run-query",
-        {
-          method: "POST",
-          body: {
-            ActualQLquery: {
-              table: "reflect_budgets",
-              filter: {
-                category: { $oneof: sortedIds },
-              },
-              select: ["month", "category", "amount"],
-            },
+      const response = await runQuery<RunQueryResponse>(connection, {
+        ActualQLquery: {
+          table: "reflect_budgets",
+          filter: {
+            category: { $oneof: sortedIds },
           },
-        }
-      );
+          select: ["month", "category", "amount"],
+        },
+      });
 
       // Build a two-level Map: YYYY-MM → categoryId → amount.
       const result = new Map<string, Map<string, number>>();

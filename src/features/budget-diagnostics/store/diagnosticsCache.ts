@@ -1,6 +1,10 @@
 import { create } from "zustand";
 import type { DownloadResult } from "@/lib/api/client";
-import type { ConnectionInstance } from "@/store/connection";
+import {
+  isBrowserApiConnection,
+  isHttpApiConnection,
+  type ConnectionInstance,
+} from "@/store/connection";
 import type { DiagnosticsPayload, OverviewPayload, ProgressStage } from "../types";
 
 /**
@@ -46,9 +50,11 @@ export const INITIAL_SNAPSHOT_STATE: SnapshotState = {
 export function connectionSignature(connection: ConnectionInstance): string {
   return [
     connection.id,
+    connection.mode,
     connection.baseUrl,
     connection.budgetSyncId ?? "",
-    connection.apiKey ?? "",
+    isHttpApiConnection(connection) ? connection.apiKey : "",
+    isBrowserApiConnection(connection) ? connection.serverPassword : "",
     connection.encryptionPassword ?? "",
   ].join("|");
 }

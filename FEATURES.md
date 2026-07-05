@@ -3,11 +3,14 @@
 ## Connection Management
 
 - Two-step connect flow: validate server credentials (URL + API key), then pick from the list of budgets returned by the server
-- Save multiple server connections and switch between them with one click from the top bar
+- Add multiple in-memory budget connections and switch between them with one click from the top bar
+- Saved server presets keep non-secret URLs/labels for reconnecting without retyping the server URL
 - Optional encryption password for end-to-end encrypted budgets
+- Direct Actual Server mode is the target architecture and opens a selected budget through the browser API worker without an `actual-http-api` proxy; core entity pages, Budget Management, Budget File Health, Data Browser, and ActualQL Queries support the Direct transport
+- HTTP API Server mode remains fully maintained as the `actual-http-api` compatibility path; HTTP-specific actions stay mode-aware, and ActualQL cURL generation is shown only for HTTP API Server query executions
 - Remove saved connections individually
 - Per-connection query cache and staged data scoping — switching connections never leaks data between sessions
-- Connections are stored in session storage and cleared automatically when the tab is closed
+- API keys, Actual Server passwords, and budget encryption passwords are kept in memory only; saved server presets in session storage contain non-secret connection details only
 
 ## Quick Create
 
@@ -349,7 +352,8 @@ Bare-letter shortcuts (`V`, `F`, `H`, `E`, `[`, `]`) are scoped so they never fi
 
 ## ActualQL Queries
 
-- Dedicated query workspace for running arbitrary ActualQL JSON queries against the open budget
+- Dedicated query workspace for running arbitrary ActualQL JSON queries against the open budget in HTTP API Server mode or Direct Actual Server mode
+- Accepts bare ActualQL query objects and the wrapped `{ "ActualQLquery": ... }` shape used by actual-http-api
 - Resizable editor / results split — drag the divider to adjust the balance; position persists across reloads via session storage
 - Syntax-highlighted JSON editor with line numbers, current-line highlight, and JetBrains Mono font; edit raw JSON directly with no normalization or auto-correction
 - Action bar: Run (or Ctrl/Cmd+Enter), Format JSON, Save, Explain, and ActualQL Reference buttons
@@ -362,8 +366,8 @@ Bare-letter shortcuts (`V`, `F`, `H`, `E`, `[`, `]`) are scoped so they never fi
   - **Tree** — collapsible recursive JSON tree; auto-selected for plain-object results; nodes with more than 5 children start collapsed
 - Smart cell formatting in the table view: ISO date strings displayed as human-readable dates (e.g. `Jan 15, 2024`); `amount` and `balance` integer columns formatted as decimal values (cents ÷ 100); raw value always accessible via hover tooltip
 - Execution metadata bar: OK / Error status chip, elapsed time, row count, and payload size shown inline with the result actions
-- Result actions: Copy result JSON, Copy query JSON, Copy sanitized cURL (secrets replaced with placeholders), and Copy full cURL (opt-in, clearly marked as containing real credentials)
-- cURL is always generated from the last successfully executed request, not the current editor state
+- Result actions: Copy result JSON and Copy query JSON in all modes; HTTP API Server executions also expose sanitized cURL (secrets replaced with placeholders) and full cURL (opt-in, clearly marked as containing real credentials)
+- HTTP cURL is always generated from the last HTTP API Server request, not the current editor state
 - **Explain this query** — one-click plain-English summary of what the current query does: target table, filters, grouping, aggregation, ordering, and whether the result is tabular or scalar
 - **ActualQL Reference** dialog — six-section quick reference covering basics, filter operators, joined fields, aggregates, transactions-specific options, and copyable snippets
 - Built-in example packs in four groups (Data inspection, Cleanup & validation, Aggregation, Targeted subset) — one-click insert into the editor
@@ -505,7 +509,7 @@ budget-bundle-<label>-<date>.zip
 - Help menu in the sidebar with links to the GitHub repository, issue tracker, and changelog; a separate standalone "Keyboard shortcuts" button below it opens an app-wide shortcuts cheatsheet
 - Top bar shows a compact version cluster beside the active connection with `API` and `Actual` version badges when available
 - **Dark mode toggle** in the sidebar footer: cycles System → Light → Dark; preference persists in `localStorage`; icon reflects the resolved appearance (Moon when OS is dark in System mode, Sun when OS is light)
-- **Connection health indicator**: a coloured dot inside the connection dropdown trigger in the top bar actively polls `GET /actualhttpapiversion` every 30 seconds. Green = healthy (with round-trip latency in the tooltip), pulsing amber = checking, solid amber = degraded (>3 s response), red = offline. When the server is unreachable for two consecutive checks, a non-blocking red strip appears below the top bar and the Save button is disabled with an explanatory tooltip. The banner and disabled state clear automatically as soon as a check succeeds. Polling pauses when the browser tab is hidden and resumes immediately on tab focus.
+- **Connection health indicator**: HTTP API Server connections poll `GET /actualhttpapiversion` every 30 seconds through the proxy. Green = healthy (with round-trip latency in the tooltip), pulsing amber = checking, solid amber = degraded (>3 s response), red = offline. Direct connections show a distinct Direct browser-session status without pinging HTTP API version endpoints. When an HTTP API Server is unreachable for two consecutive checks, a non-blocking red strip appears below the top bar and the Save button is disabled with an explanatory tooltip. The banner and disabled state clear automatically as soon as a check succeeds. Polling pauses when the browser tab is hidden and resumes immediately on tab focus.
 
 ---
 

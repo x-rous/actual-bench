@@ -1,14 +1,16 @@
 /**
  * Shared ActualQL query helper.
  *
- * Scope: intentionally narrow — RD-016 impact warnings only.
- * RD-007 (ActualQL console) will expand this file when it ships.
- *
- * All calls route through the proxy queue via apiRequest.
+ * Scope: intentionally narrow for internal app queries. The Query Console still
+ * gates itself to HTTP API Server mode; Direct mode support here adapts the known query
+ * shapes used by Budget Management, preferences, overview, and impact warnings.
  */
 
 import { apiRequest } from "./client";
-import type { ConnectionInstance } from "@/store/connection";
+import {
+  isHttpApiConnection,
+  type ConnectionInstance,
+} from "@/store/connection";
 
 // ─── Generic runner ───────────────────────────────────────────────────────────
 
@@ -16,10 +18,15 @@ export async function runQuery<T>(
   connection: ConnectionInstance,
   body: object
 ): Promise<T> {
-  return apiRequest<T>(connection, "/run-query", {
-    method: "POST",
-    body,
-  });
+  if (isHttpApiConnection(connection)) {
+    return apiRequest<T>(connection, "/run-query", {
+      method: "POST",
+      body,
+    });
+  }
+
+  const { getTransport } = await import("../actual");
+  return getTransport(connection).runQuery<T>(body);
 }
 
 // ─── Transaction counts ───────────────────────────────────────────────────────
@@ -38,10 +45,10 @@ type TransactionCountRow = Record<string, string | number> & {
  * Fetches transaction counts for a specific set of entity IDs via a single
  * $oneof-filtered ActualQL query. Returns Map<entityId, count>.
  *
- * Entities absent from the response have zero transactions — callers use
+ * Entities absent from the response have zero transactions; callers use
  * `map.get(id) ?? 0`.
  *
- * Guard: ids.length === 0 → returns empty Map immediately, no network call.
+ * Guard: ids.length === 0 returns empty Map immediately, no network call.
  */
 export async function getTransactionCountsForIds(
   connection: ConnectionInstance,
@@ -54,10 +61,10 @@ export async function getTransactionCountsForIds(
     ActualQLquery: {
       table: "transactions",
       filter: { [groupField]: { $oneof: ids } },
-      groupBy: [groupField, `${groupField}.name`],
+      groupBy: [groupField, groupField + ".name"],
       select: [
         groupField,
-        `${groupField}.name`,
+        groupField + ".name",
         { transactionCount: { $count: "$id" } },
       ],
     },

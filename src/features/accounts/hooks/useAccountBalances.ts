@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { getAccountBalances } from "@/lib/api/accounts";
+import { getTransport } from "@/lib/actual";
 import { useConnectionStore, selectActiveInstance } from "@/store/connection";
 
 /**
@@ -20,7 +20,7 @@ export function useAccountBalances() {
     queryKey: ["accountBalances", connection?.budgetSyncId],
     queryFn: () => {
       if (!connection) throw new Error("No active connection");
-      return getAccountBalances(connection);
+      return getTransport(connection).getAccountBalances();
     },
     enabled: !!connection,
     staleTime: 60_000,

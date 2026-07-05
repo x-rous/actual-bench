@@ -10,6 +10,7 @@ function statusLabel(status: HealthStatus, latencyMs: number | null): string {
     case "checking": return "Checking…";
     case "degraded": return `Slow${latency}`;
     case "offline":  return "Offline";
+    case "direct":   return "Direct browser session";
     case "unknown":  return "Unknown";
   }
 }
@@ -31,6 +32,7 @@ export function ConnectionHealthDot() {
         status === "checking" && "animate-pulse bg-amber-400",
         status === "degraded" && "bg-amber-400",
         status === "offline"  && "bg-red-500",
+        status === "direct"   && "bg-emerald-500",
       )}
     />
   );

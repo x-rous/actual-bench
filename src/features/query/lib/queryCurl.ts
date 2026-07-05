@@ -31,6 +31,10 @@ function buildCurl(
   req: LastExecutedRequest,
   sanitize: boolean
 ): string {
+  if (req.mode !== "http-api") {
+    throw new Error("cURL generation is only available for HTTP API Server connections.");
+  }
+
   const url = `${req.baseUrl.replace(/\/$/, "")}${ENDPOINT_PATH(req.budgetSyncId)}`;
   const body = JSON.stringify({ ActualQLquery: req.query }, null, 2);
   const apiKey = sanitize ? "{{API_KEY}}" : shellEscapeDoubleQuote(req.apiKey);

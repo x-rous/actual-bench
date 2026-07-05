@@ -16,7 +16,7 @@ import type { Schedule } from "@/types/entities";
 
 // ─── Normalization ────────────────────────────────────────────────────────────
 
-function normalizeSchedule(raw: ApiSchedule): Schedule {
+export function normalizeSchedule(raw: ApiSchedule): Schedule {
   return {
     id: raw.id!,
     name: raw.name ?? undefined,
