@@ -154,12 +154,9 @@ export function ConnectForm({ directBrowserApiEnabled }: ConnectFormProps) {
       {connectionMode === "browser-api" && (
         <div className="flex items-start gap-2.5 rounded-lg border border-emerald-200 bg-emerald-50/70 px-3.5 py-3 text-xs leading-5 text-emerald-950 dark:border-emerald-900/50 dark:bg-emerald-950/20 dark:text-emerald-100">
           <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
-          <div>
-            <p className="font-medium">Direct connects this browser to your Actual Server.</p>
-            <p className="mt-1 text-emerald-950/75 dark:text-emerald-100/80">
-              Your browser must be able to reach the Actual Server URL directly. Credentials stay in session storage for this tab.
-            </p>
-          </div>
+          <span>
+            Direct mode connects this browser to your Actual Server. Credentials are kept in memory and cleared when you refresh or close this tab.
+          </span>
         </div>
       )}
 
@@ -215,6 +212,7 @@ export function ConnectForm({ directBrowserApiEnabled }: ConnectFormProps) {
               onChange={(e) => {
                 setBaseUrl(e.target.value);
                 if (validateStatus.kind === "error") setValidateStatus({ kind: "idle" });
+                setSelectedServerId(null);
                 handleCredentialChange();
               }}
               onKeyDown={handleKeyDown}
@@ -240,7 +238,7 @@ export function ConnectForm({ directBrowserApiEnabled }: ConnectFormProps) {
                 disabled={anyBusy}
               />
               <p className="text-xs text-muted-foreground">
-                The <code>ACTUAL_API_KEY</code> on your API server.
+                The <code>ACTUAL_API_KEY</code> on your API server. Kept in memory only.
               </p>
             </div>
           ) : (
@@ -261,7 +259,7 @@ export function ConnectForm({ directBrowserApiEnabled }: ConnectFormProps) {
                 disabled={anyBusy}
               />
               <p className="text-xs text-muted-foreground">
-                Stored in session storage for this browser tab.
+                Kept in memory only for this browser tab.
               </p>
             </div>
           )}
@@ -371,6 +369,9 @@ export function ConnectForm({ directBrowserApiEnabled }: ConnectFormProps) {
           }}
           disabled={connectBusy || !!reconnectBusyId}
         />
+        <p className="text-xs text-muted-foreground">
+          Kept in memory only for this browser tab.
+        </p>
       </div>
 
       {connectStatus.kind === "error" && (

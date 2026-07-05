@@ -3,7 +3,7 @@
 import { useCallback, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useConnectionStore, selectActiveInstance } from "@/store/connection";
-import { getTransport, syncTransportAfterChanges } from "@/lib/actual";
+import { getTransport } from "@/lib/actual";
 import { addMonths } from "@/lib/budget/monthMath";
 
 export type CarryoverToggleInput = {
@@ -66,21 +66,21 @@ export function useCarryoverToggle(): UseCarryoverToggleReturn {
       const results: CarryoverToggleResult[] = [];
       const successMonths = new Set<string>();
 
-      for (let i = 0; i < pairs.length; i++) {
-        const { catId, m } = pairs[i]!;
-        try {
-          await transport.setBudgetCarryover(m, catId, input.newValue);
-          successMonths.add(m);
-          results.push({ categoryId: catId, month: m, status: "success" });
-        } catch (err) {
-          const message =
-            err instanceof Error ? err.message : "Carryover update failed";
-          results.push({ categoryId: catId, month: m, status: "error", message });
+      await transport.batchBudgetUpdates(async () => {
+        for (let i = 0; i < pairs.length; i++) {
+          const { catId, m } = pairs[i]!;
+          try {
+            await transport.setBudgetCarryover(m, catId, input.newValue);
+            successMonths.add(m);
+            results.push({ categoryId: catId, month: m, status: "success" });
+          } catch (err) {
+            const message =
+              err instanceof Error ? err.message : "Carryover update failed";
+            results.push({ categoryId: catId, month: m, status: "error", message });
+          }
+          setProgress({ completed: i + 1, total: pairs.length });
         }
-        setProgress({ completed: i + 1, total: pairs.length });
-      }
-
-      await syncTransportAfterChanges(transport, successMonths.size > 0);
+      });
 
       if (successMonths.size > 0) {
         await Promise.all(

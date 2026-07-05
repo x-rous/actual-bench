@@ -34,6 +34,7 @@ import { useGlobalSearchStore } from "@/features/global-search/store/useGlobalSe
 import { useConnectionHealthContext } from "@/hooks/useConnectionHealth";
 import { ConnectionHealthDot } from "./ConnectionHealthDot";
 import { useSavedServersStore } from "@/store/savedServers";
+import { removeSavedServerIfUnused } from "@/lib/savedServerCleanup";
 import {
   useStagedStore,
   selectHasChanges,
@@ -161,24 +162,6 @@ export function TopBar() {
     isOffline ||
     (isBudgetPage && budgetSaveReviewEdits !== null);
 
-  function removeSavedServerIfUnused(instance: typeof activeInstance) {
-    if (!instance) return;
-    const stillUsed = instances.some(
-      (other) =>
-        other.id !== instance.id &&
-        other.mode === instance.mode &&
-        other.baseUrl === instance.baseUrl
-    );
-
-    if (stillUsed) return;
-
-    const savedServer = savedServers.find(
-      (server) =>
-        server.mode === instance.mode && server.baseUrl === instance.baseUrl
-    );
-    if (savedServer) removeServer(savedServer.id);
-  }
-
   function handleDiscardAll() {
     if (isBudgetPage) {
       budgetDiscardAll();
@@ -212,7 +195,12 @@ export function TopBar() {
       handleDiscardAll();
       queryClient.clear();
       if (activeInstance) {
-        removeSavedServerIfUnused(activeInstance);
+        removeSavedServerIfUnused({
+          instance: activeInstance,
+          instances,
+          savedServers,
+          removeServer,
+        });
         removeInstance(activeInstance.id);
       }
       if (useConnectionStore.getState().instances.length === 0) {

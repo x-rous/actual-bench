@@ -16,17 +16,20 @@ export type ScheduleWriteInput = Omit<
   "id" | "ruleId" | "nextDate" | "completed"
 >;
 
+/** Integer minor currency units, matching Actual's cents-style amount fields. */
+export type MinorUnitAmount = number;
+
 export type TransportBudgetMonthCategory = {
   id: string;
   name: string;
   is_income: boolean;
   hidden?: boolean;
   group_id: string;
-  budgeted?: number | null;
-  spent?: number | null;
-  balance?: number | null;
+  budgeted?: MinorUnitAmount | null;
+  spent?: MinorUnitAmount | null;
+  balance?: MinorUnitAmount | null;
   carryover?: boolean;
-  received?: number | null;
+  received?: MinorUnitAmount | null;
 };
 
 export type TransportBudgetMonthCategoryGroup =
@@ -35,9 +38,9 @@ export type TransportBudgetMonthCategoryGroup =
       name: string;
       is_income: false;
       hidden: boolean;
-      budgeted: number | null;
-      spent: number | null;
-      balance: number | null;
+      budgeted: MinorUnitAmount | null;
+      spent: MinorUnitAmount | null;
+      balance: MinorUnitAmount | null;
       categories: TransportBudgetMonthCategory[];
     }
   | {
@@ -45,30 +48,31 @@ export type TransportBudgetMonthCategoryGroup =
       name: string;
       is_income: true;
       hidden: boolean;
-      received: number | null;
-      budgeted?: number | null;
-      balance?: number | null;
+      received: MinorUnitAmount | null;
+      budgeted?: MinorUnitAmount | null;
+      balance?: MinorUnitAmount | null;
       categories: TransportBudgetMonthCategory[];
     };
 
 export type TransportBudgetMonth = {
   month: string;
-  incomeAvailable: number;
-  lastMonthOverspent: number;
-  forNextMonth: number;
-  totalBudgeted: number;
-  toBudget: number;
-  fromLastMonth: number;
-  totalIncome: number;
-  totalSpent: number;
-  totalBalance: number;
+  incomeAvailable: MinorUnitAmount;
+  lastMonthOverspent: MinorUnitAmount;
+  forNextMonth: MinorUnitAmount;
+  totalBudgeted: MinorUnitAmount;
+  toBudget: MinorUnitAmount;
+  fromLastMonth: MinorUnitAmount;
+  totalIncome: MinorUnitAmount;
+  totalSpent: MinorUnitAmount;
+  totalBalance: MinorUnitAmount;
   categoryGroups: TransportBudgetMonthCategoryGroup[];
 };
 
 export type BudgetTransferInput = {
   fromCategoryId: string;
   toCategoryId: string;
-  amount: number;
+  /** Amount to move, in integer minor units. */
+  amount: MinorUnitAmount;
 };
 
 export interface ActualBenchTransport {
@@ -80,7 +84,9 @@ export interface ActualBenchTransport {
   getServerVersion(): Promise<string | null>;
 
   getAccounts(): Promise<Account[]>;
+  /** Account balances are returned in decimal currency units for entity pages. */
   getAccountBalances(): Promise<Map<string, number>>;
+  /** Account initialBalance follows Account.initialBalance: decimal currency units. */
   createAccount(input: Omit<Account, "id">): Promise<Account>;
   updateAccount(id: string, patch: Partial<Omit<Account, "id" | "initialBalance">>): Promise<void>;
   deleteAccount(id: string): Promise<void>;
@@ -115,11 +121,12 @@ export interface ActualBenchTransport {
   deleteSchedule(id: string): Promise<void>;
 
   getBudgetMonths(): Promise<string[]>;
+  /** Budget month amount fields are integer minor units. */
   getBudgetMonth(month: string): Promise<TransportBudgetMonth>;
-  setBudgetAmount(month: string, categoryId: string, amount: number): Promise<void>;
+  setBudgetAmount(month: string, categoryId: string, amount: MinorUnitAmount): Promise<void>;
   setBudgetCarryover(month: string, categoryId: string, flag: boolean): Promise<void>;
   transferBudget(month: string, input: BudgetTransferInput): Promise<void>;
-  holdBudgetForNextMonth(month: string, amount: number): Promise<void>;
+  holdBudgetForNextMonth(month: string, amount: MinorUnitAmount): Promise<void>;
   resetBudgetHold(month: string): Promise<void>;
 
   getNotesIndex(): Promise<NotesIndex>;

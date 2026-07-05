@@ -1,7 +1,7 @@
 /**
  * @jest-environment node
  */
-import { apiDownload } from "./client";
+import { apiDownload, apiRequest } from "./client";
 import type { ConnectionInstance } from "@/store/connection";
 import type { ApiError } from "@/types/errors";
 
@@ -11,6 +11,15 @@ const connection: ConnectionInstance = {
   mode: "http-api",
   baseUrl: "http://example.test",
   apiKey: "key",
+  budgetSyncId: "b1",
+};
+
+const browserConnection: ConnectionInstance = {
+  id: "direct-c",
+  label: "Direct test",
+  mode: "browser-api",
+  baseUrl: "http://actual.example.test",
+  serverPassword: "password",
   budgetSyncId: "b1",
 };
 
@@ -177,5 +186,23 @@ describe("apiDownload", () => {
         body: JSON.stringify({ connection, path: "/export", method: "GET" }),
       })
     );
+  });
+
+  it("rejects Direct browser-api connections before fetching", async () => {
+    await expect(apiDownload(browserConnection, "/export")).rejects.toMatchObject<Partial<ApiError>>({
+      kind: "api",
+      status: 400,
+      message: expect.stringContaining("Direct Actual Server transport"),
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("rejects apiRequest calls with Direct browser-api connections before fetching", async () => {
+    await expect(apiRequest(browserConnection, "/accounts")).rejects.toMatchObject<Partial<ApiError>>({
+      kind: "api",
+      status: 400,
+      message: expect.stringContaining("Direct Actual Server transport"),
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

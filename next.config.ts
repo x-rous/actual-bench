@@ -1,5 +1,10 @@
 import type { NextConfig } from "next";
-import pkg from "./package.json";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+
+const pkg = JSON.parse(
+  readFileSync(join(process.cwd(), "package.json"), "utf8")
+) as { version?: string };
 
 const nextConfig: NextConfig = {
   // Emit a self-contained standalone server (server.js + only the traced

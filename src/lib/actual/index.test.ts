@@ -287,7 +287,10 @@ describe("Actual transport factory", () => {
     expect(setBudgetAmount).toHaveBeenCalledWith("2026-01", "cat-1", 124);
   });
 
-  it("Direct category transfers bridge to final budget amounts", async () => {
+  it("Direct category transfers bridge to final budget amounts in one batch", async () => {
+    const batchBudgetUpdates = jest.fn(async (fn: () => Promise<void>) => {
+      await fn();
+    });
     const setBudgetAmount = jest.fn().mockResolvedValue(undefined);
     const getBudgetMonth = jest.fn().mockResolvedValue({
       month: "2026-01",
@@ -308,6 +311,7 @@ describe("Actual transport factory", () => {
       ],
     });
     mockGetBrowserApiRuntime.mockResolvedValue({
+      batchBudgetUpdates,
       getBudgetMonth,
       setBudgetAmount,
     } as never);
@@ -318,6 +322,7 @@ describe("Actual transport factory", () => {
       amount: 125,
     });
 
+    expect(batchBudgetUpdates).toHaveBeenCalledTimes(1);
     expect(setBudgetAmount).toHaveBeenCalledWith("2026-01", "cat-from", 875);
     expect(setBudgetAmount).toHaveBeenCalledWith("2026-01", "cat-to", 375);
   });

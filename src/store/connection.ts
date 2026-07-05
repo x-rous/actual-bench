@@ -11,23 +11,23 @@ type ConnectionBase = {
   mode: ConnectionMode;
   baseUrl: string;
   budgetSyncId: string;
-  /** Optional: required by the jhonderson actual-http-api when the budget is encrypted */
+  /** Optional budget encryption password, kept in memory only. */
   encryptionPassword?: string;
 };
 
 export type HttpApiConnection = ConnectionBase & {
   mode: "http-api";
   apiKey: string;
-  /** actual-http-api wrapper version — fetched once on connect, stored in session */
+  /** actual-http-api wrapper version, held in memory for the active connection. */
   apiVersion?: string;
-  /** Actual Budget server version — fetched once on connect, stored in session */
+  /** Actual Budget server version, held in memory for the active connection. */
   serverVersion?: string;
 };
 
 export type BrowserApiConnection = ConnectionBase & {
   mode: "browser-api";
   serverPassword: string;
-  /** Actual Budget server version — fetched once available, stored in session */
+  /** Actual Budget server version, held in memory for the active connection. */
   serverVersion?: string;
 };
 
@@ -46,40 +46,6 @@ type ConnectionActions = {
   clearAll: () => void;
 };
 
-type PersistedConnectionRecord = {
-  id?: unknown;
-  label?: unknown;
-  mode?: unknown;
-  baseUrl?: unknown;
-  apiKey?: unknown;
-  serverPassword?: unknown;
-  budgetSyncId?: unknown;
-  encryptionPassword?: unknown;
-  apiVersion?: unknown;
-  serverVersion?: unknown;
-};
-
-type PersistedConnectionState = {
-  instances?: unknown;
-  activeInstanceId?: unknown;
-};
-
-function asString(value: unknown): string | undefined {
-  return typeof value === "string" ? value : undefined;
-}
-
-function getPersistedState(value: unknown): PersistedConnectionState {
-  if (typeof value !== "object" || value === null) return {};
-  if (
-    "state" in value &&
-    typeof value.state === "object" &&
-    value.state !== null
-  ) {
-    return value.state as PersistedConnectionState;
-  }
-  return value as PersistedConnectionState;
-}
-
 export function isHttpApiConnection(
   connection: ConnectionInstance | null | undefined
 ): connection is HttpApiConnection {
@@ -92,79 +58,35 @@ export function isBrowserApiConnection(
   return connection?.mode === "browser-api";
 }
 
-export function normalizeConnectionInstance(
-  record: unknown
-): ConnectionInstance | null {
-  if (typeof record !== "object" || record === null) return null;
-  const persisted = record as PersistedConnectionRecord;
-  const id = asString(persisted.id);
-  const label = asString(persisted.label);
-  const baseUrl = asString(persisted.baseUrl);
-  const budgetSyncId = asString(persisted.budgetSyncId);
-
-  if (!id || !label || !baseUrl || !budgetSyncId) return null;
-
-  const common = {
-    id,
-    label,
-    baseUrl,
-    budgetSyncId,
-    ...(asString(persisted.encryptionPassword)
-      ? { encryptionPassword: asString(persisted.encryptionPassword) }
-      : {}),
-    ...(asString(persisted.serverVersion)
-      ? { serverVersion: asString(persisted.serverVersion) }
-      : {}),
-  };
-
-  if (persisted.mode === "browser-api") {
-    return {
-      ...common,
-      mode: "browser-api",
-      serverPassword: asString(persisted.serverPassword) ?? "",
-    };
-  }
-
-  return {
-    ...common,
-    mode: "http-api",
-    apiKey: asString(persisted.apiKey) ?? "",
-    ...(asString(persisted.apiVersion)
-      ? { apiVersion: asString(persisted.apiVersion) }
-      : {}),
-  };
+/**
+ * Active connections require credentials for every transport call. Persisted
+ * storage is now secret-free, so legacy persisted connections are intentionally
+ * dropped and users reconnect through saved server presets.
+ */
+export function normalizeConnectionInstance(_record: unknown): ConnectionInstance | null {
+  void _record;
+  return null;
 }
 
-export function migrateConnectionState(value: unknown): ConnectionState {
-  const persisted = getPersistedState(value);
-  const instances = Array.isArray(persisted.instances)
-    ? persisted.instances
-        .map(normalizeConnectionInstance)
-        .filter((instance): instance is ConnectionInstance => instance !== null)
-    : [];
-  const activeInstanceId = asString(persisted.activeInstanceId);
+export function migrateConnectionState(_value: unknown): ConnectionState {
+  void _value;
+  return { instances: [], activeInstanceId: null };
+}
 
-  return {
-    instances,
-    activeInstanceId:
-      activeInstanceId && instances.some((instance) => instance.id === activeInstanceId)
-        ? activeInstanceId
-        : null,
-  };
+export function toPersistedConnectionState(_state: ConnectionState): ConnectionState {
+  void _state;
+  return { instances: [], activeInstanceId: null };
 }
 
 // ─── Store ────────────────────────────────────────────────────────────────────
 
 /**
- * Connection state is persisted to sessionStorage so it survives:
- *  - Next.js App Router client-side navigation
- *  - Turbopack HMR module re-initialization in dev mode
- *
- * sessionStorage (not localStorage) is intentional: credentials are cleared
- * when the browser tab is closed.
+ * Active connection state lives in memory only so API keys, server passwords,
+ * and budget encryption passwords are never written to browser storage. The
+ * persist middleware remains in place to migrate old sessionStorage records out.
  */
 export const useConnectionStore = create<ConnectionState & ConnectionActions>()(
-  persist(
+  persist<ConnectionState & ConnectionActions, [], [], ConnectionState>(
     (set) => ({
       instances: [],
       activeInstanceId: null,
@@ -204,8 +126,9 @@ export const useConnectionStore = create<ConnectionState & ConnectionActions>()(
     }),
     {
       name: "actual-admin-connection",
-      version: 2,
+      version: 3,
       migrate: (persistedState) => migrateConnectionState(persistedState),
+      partialize: toPersistedConnectionState,
       // Guard for SSR — sessionStorage is only available in the browser.
       // Returning null here causes Zustand to skip persistence on the server
       // without throwing, preventing hydration mismatches.

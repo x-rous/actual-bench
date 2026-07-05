@@ -27,7 +27,7 @@
 
 ---
 
-**Actual Bench** is a companion app for [Actual Budget](https://github.com/actualbudget/actual). Its target architecture is Direct Actual Server access through Actual's browser API transport, while HTTP API Server mode through [actual-http-api](https://github.com/jhonderson/actual-http-api) remains fully supported for existing deployments and integrations. It gives power users a focused interface for the work that is hard to do in the native Actual Budget UI: bulk setup, master-data cleanup, advanced rule maintenance, full year view budget editing, diagnostics, and ad-hoc ActualQL analysis.
+**Actual Bench** is a companion app for [Actual Budget](https://github.com/actualbudget/actual). Its target architecture is Direct Actual Server access through Actual's browser API transport, while HTTP API Server mode through [actual-http-api](https://github.com/jhonderson/actual-http-api) remains fully supported for existing deployments and integrations. It gives power users a focused interface for the work that is cumbersome in the native Actual Budget UI: bulk setup, master-data cleanup, advanced rule maintenance, full-year view budget editing, diagnostics, and ad-hoc ActualQL analysis.
 
 It is not trying to replace Actual Budget's day-to-day transaction entry experience. It is the workbench you open when you need to inspect, repair, seed, audit, or reshape your budget data with confidence.
 
@@ -190,8 +190,8 @@ Direct mode currently supports core entity pages, Budget Management reads/staged
 
 ## Privacy and data handling
 
-- Saved connections are stored in **session storage** and are cleared when the browser tab is closed.
-- Direct mode credentials are also kept in session storage; use **Disconnect All Connections** or **Clear all data** to remove Actual Bench connection state in the current tab. Actual's browser worker cache may require clearing this site's browser data if it becomes stale or corrupt.
+- Saved server presets store only non-secret details in **session storage** and are cleared when the browser tab is closed.
+- API keys, Actual Server passwords, and budget encryption passwords are kept in memory only. Refreshing or reopening the tab requires reconnecting. Actual's browser worker cache may require clearing this site's browser data if it becomes stale or corrupt.
 - Staged data and query cache are scoped per connection so switching budgets does not leak local state between sessions.
 - Budget File Health and the Data Browser process exported snapshots locally in the browser and do not write changes back to the budget.
 - Exported budget ZIP files and diagnostic data may still contain personal financial information, so handle downloaded files carefully.

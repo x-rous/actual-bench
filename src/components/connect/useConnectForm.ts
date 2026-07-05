@@ -22,13 +22,9 @@ import {
   type ConnectionInstance,
   type ConnectionMode,
 } from "@/store/connection";
-import {
-  useSavedServersStore,
-  isHttpApiSavedServer,
-  isBrowserApiSavedServer,
-  type SavedServer,
-} from "@/store/savedServers";
+import { useSavedServersStore, type SavedServer } from "@/store/savedServers";
 import { useStagedStore } from "@/store/staged";
+import { removeSavedServerIfUnused } from "@/lib/savedServerCleanup";
 import { generateId } from "@/lib/uuid";
 import {
   normalizeUrl,
@@ -39,11 +35,12 @@ import {
 } from "@/components/connect/utils";
 
 function toBudgetFile(budget: Awaited<ReturnType<typeof listBrowserApiBudgets>>[number]): BudgetFile {
+  const syncId = budget.groupId ?? budget.id ?? budget.cloudFileId ?? "";
   return {
-    cloudFileId: budget.cloudFileId ?? budget.groupId ?? "",
-    name: budget.name ?? budget.groupId ?? "Unnamed budget",
+    cloudFileId: budget.cloudFileId ?? syncId,
+    name: (budget.name ?? syncId) || "Unnamed budget",
     state: budget.state,
-    groupId: budget.groupId,
+    groupId: syncId,
     encryptKeyId: budget.encryptKeyId,
     hasKey: budget.hasKey,
     owner: budget.owner,
@@ -99,9 +96,9 @@ export function useConnectForm() {
     [savedServers, connectionMode]
   );
 
-  // Show the manual credential form when there are no saved servers for this
-  // mode, or when the "New server" chip is explicitly selected.
-  const showManualForm = savedServersForMode.length === 0 || selectedServerId === null;
+  // Keep server URL and credential fields visible only until the budget
+  // list is loaded. The Change button resets step 1 if the user needs edits.
+  const showManualForm = !step1Complete;
 
   // Set of budgetSyncIds already connected for the validated server and mode.
   const connectedSyncIds = useMemo(
@@ -119,33 +116,18 @@ export function useConnectForm() {
 
   // ── State helpers ────────────────────────────────────────────────────────────
 
-  function removeSavedServerIfUnused(instance: ConnectionInstance) {
-    const stillUsed = useConnectionStore
-      .getState()
-      .instances.some(
-        (other) =>
-          other.id !== instance.id &&
-          other.mode === instance.mode &&
-          other.baseUrl === instance.baseUrl
-      );
-
-    if (stillUsed) return;
-
-    const savedServer = useSavedServersStore
-      .getState()
-      .servers.find(
-        (server) =>
-          server.mode === instance.mode && server.baseUrl === instance.baseUrl
-      );
-
-    if (savedServer) removeServer(savedServer.id);
-  }
-
   function handleRemoveInstance(id: string) {
     const instance = useConnectionStore
       .getState()
       .instances.find((candidate) => candidate.id === id);
-    if (instance) removeSavedServerIfUnused(instance);
+    if (instance) {
+      removeSavedServerIfUnused({
+        instance,
+        instances: useConnectionStore.getState().instances,
+        savedServers: useSavedServersStore.getState().servers,
+        removeServer,
+      });
+    }
     removeInstance(id);
   }
 
@@ -164,7 +146,6 @@ export function useConnectForm() {
 
   function handleCredentialChange() {
     resetStep2();
-    setSelectedServerId(null);
   }
 
   function handleModeChange(mode: ConnectionMode) {
@@ -195,14 +176,37 @@ export function useConnectForm() {
     setSelectedServerId(server.id);
     setBaseUrl(server.baseUrl);
 
-    if (isHttpApiSavedServer(server)) {
-      setApiKey(server.apiKey);
+    const reusableConnection = instances.find(
+      (instance) => instance.mode === server.mode && instance.baseUrl === server.baseUrl
+    );
+
+    if (server.mode === "http-api") {
+      const reusableApiKey = isHttpApiConnection(reusableConnection)
+        ? reusableConnection.apiKey
+        : "";
+      setApiKey(reusableApiKey);
       setServerPassword("");
-      validate({ mode: "http-api", baseUrl: server.baseUrl, apiKey: server.apiKey }).catch(console.error);
-    } else if (isBrowserApiSavedServer(server)) {
-      setServerPassword(server.serverPassword);
-      setApiKey("");
-      validate({ mode: "browser-api", baseUrl: server.baseUrl, serverPassword: server.serverPassword }).catch(console.error);
+      if (reusableApiKey) {
+        validate({
+          mode: "http-api",
+          baseUrl: server.baseUrl,
+          apiKey: reusableApiKey,
+        }).catch(console.error);
+      }
+      return;
+    }
+
+    const reusableServerPassword = isBrowserApiConnection(reusableConnection)
+      ? reusableConnection.serverPassword
+      : "";
+    setApiKey("");
+    setServerPassword(reusableServerPassword);
+    if (reusableServerPassword) {
+      validate({
+        mode: "browser-api",
+        baseUrl: server.baseUrl,
+        serverPassword: reusableServerPassword,
+      }).catch(console.error);
     }
   }
 
@@ -317,7 +321,7 @@ export function useConnectForm() {
         apiVersion =
           apiVersionResult.status === "fulfilled" ? apiVersionResult.value : null;
 
-        addServer({ mode: "http-api", label: deriveLabel(url), baseUrl: url, apiKey: key });
+        addServer({ mode: "http-api", label: deriveLabel(url), baseUrl: url });
       } else {
         const result = await loadBrowserApiBudgetList({
           serverUrl: url,
@@ -330,7 +334,6 @@ export function useConnectForm() {
           mode: "browser-api",
           label: deriveLabel(url),
           baseUrl: url,
-          serverPassword: password,
         });
       }
 

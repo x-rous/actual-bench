@@ -3,13 +3,14 @@
 ## Connection Management
 
 - Two-step connect flow: validate server credentials (URL + API key), then pick from the list of budgets returned by the server
-- Save multiple server connections and switch between them with one click from the top bar
+- Add multiple in-memory budget connections and switch between them with one click from the top bar
+- Saved server presets keep non-secret URLs/labels for reconnecting without retyping the server URL
 - Optional encryption password for end-to-end encrypted budgets
 - Direct Actual Server mode is the target architecture and opens a selected budget through the browser API worker without an `actual-http-api` proxy; core entity pages, Budget Management, Budget File Health, Data Browser, and ActualQL Queries support the Direct transport
 - HTTP API Server mode remains fully maintained as the `actual-http-api` compatibility path; HTTP-specific actions stay mode-aware, and ActualQL cURL generation is shown only for HTTP API Server query executions
 - Remove saved connections individually
 - Per-connection query cache and staged data scoping — switching connections never leaks data between sessions
-- Connections are stored in session storage and cleared automatically when the tab is closed
+- API keys, Actual Server passwords, and budget encryption passwords are kept in memory only; saved server presets in session storage contain non-secret connection details only
 
 ## Quick Create
 

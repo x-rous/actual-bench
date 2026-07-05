@@ -58,12 +58,10 @@ export function BrowserApiLabClient({ enabled }: BrowserApiLabClientProps) {
   const [result, setResult] = useState<BrowserApiLabResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isRunning, setIsRunning] = useState(false);
-  const [crossOriginIsolated, setCrossOriginIsolated] = useState<boolean | null>(null);
+  const [crossOriginIsolated] = useState<boolean | null>(() => getCrossOriginIsolated());
   const [browserEvents, setBrowserEvents] = useState<string[]>([]);
 
   useEffect(() => {
-    setCrossOriginIsolated(getCrossOriginIsolated());
-
     function addBrowserEvent(message: string) {
       setBrowserEvents((current) => [message, ...current].slice(0, 8));
     }

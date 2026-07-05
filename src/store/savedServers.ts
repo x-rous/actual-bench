@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
+import { asString, getPersistedState } from "@/lib/persist";
 import { generateId } from "@/lib/uuid";
 import type { ConnectionMode } from "@/store/connection";
 
@@ -15,12 +16,10 @@ type SavedServerBase = {
 
 export type SavedHttpApiServer = SavedServerBase & {
   mode: "http-api";
-  apiKey: string;
 };
 
 export type SavedBrowserApiServer = SavedServerBase & {
   mode: "browser-api";
-  serverPassword: string;
 };
 
 export type SavedServer = SavedHttpApiServer | SavedBrowserApiServer;
@@ -29,7 +28,7 @@ type SavedServersState = {
   servers: SavedServer[];
 };
 
-type SavedServerInput = Omit<SavedHttpApiServer, "id"> | Omit<SavedBrowserApiServer, "id">;
+type SavedServerInput = Omit<SavedServer, "id">;
 
 type SavedServersActions = {
   /**
@@ -55,22 +54,6 @@ type PersistedSavedServerRecord = {
 type PersistedSavedServersState = {
   servers?: unknown;
 };
-
-function asString(value: unknown): string | undefined {
-  return typeof value === "string" ? value : undefined;
-}
-
-function getPersistedState(value: unknown): PersistedSavedServersState {
-  if (typeof value !== "object" || value === null) return {};
-  if (
-    "state" in value &&
-    typeof value.state === "object" &&
-    value.state !== null
-  ) {
-    return value.state as PersistedSavedServersState;
-  }
-  return value as PersistedSavedServersState;
-}
 
 export function isHttpApiSavedServer(
   server: SavedServer | null | undefined
@@ -99,7 +82,6 @@ export function normalizeSavedServer(record: unknown): SavedServer | null {
       mode: "browser-api",
       label,
       baseUrl,
-      serverPassword: asString(persisted.serverPassword) ?? "",
     };
   }
 
@@ -108,12 +90,11 @@ export function normalizeSavedServer(record: unknown): SavedServer | null {
     mode: "http-api",
     label,
     baseUrl,
-    apiKey: asString(persisted.apiKey) ?? "",
   };
 }
 
 export function migrateSavedServersState(value: unknown): SavedServersState {
-  const persisted = getPersistedState(value);
+  const persisted = getPersistedState<PersistedSavedServersState>(value);
   return {
     servers: Array.isArray(persisted.servers)
       ? persisted.servers
@@ -123,14 +104,25 @@ export function migrateSavedServersState(value: unknown): SavedServersState {
   };
 }
 
+export function toPersistedSavedServersState(state: SavedServersState): SavedServersState {
+  return {
+    servers: state.servers.map(({ id, mode, label, baseUrl }) => ({
+      id,
+      mode,
+      label,
+      baseUrl,
+    })),
+  };
+}
+
 // ─── Store ────────────────────────────────────────────────────────────────────
 
 /**
- * Saved servers are persisted to sessionStorage so credentials are cleared
- * when the browser tab is closed — consistent with connection.ts behaviour.
+ * Saved server presets persist non-secret server metadata only. API keys,
+ * server passwords, and budget encryption passwords stay in memory only.
  */
 export const useSavedServersStore = create<SavedServersState & SavedServersActions>()(
-  persist(
+  persist<SavedServersState & SavedServersActions, [], [], SavedServersState>(
     (set) => ({
       servers: [],
 
@@ -158,8 +150,9 @@ export const useSavedServersStore = create<SavedServersState & SavedServersActio
     }),
     {
       name: "actual-admin-saved-servers",
-      version: 2,
+      version: 3,
       migrate: (persistedState) => migrateSavedServersState(persistedState),
+      partialize: toPersistedSavedServersState,
       storage: createJSONStorage(() =>
         typeof window !== "undefined" ? sessionStorage : (null as unknown as Storage)
       ),

@@ -1,6 +1,13 @@
 "use client";
 
 import { assertDirectBrowserApiEnvironment } from "./environment";
+import {
+  SHUTDOWN_STEP_TIMEOUT_MS,
+  initializeActualApi,
+  loadActualApi,
+  normalizeUrl,
+  withTimeout,
+} from "./setup";
 
 export type BrowserApiLabInput = {
   serverUrl: string;
@@ -15,6 +22,7 @@ export type BrowserApiBudgetListInput = {
 };
 
 export type BrowserApiLabBudget = {
+  id?: string;
   cloudFileId?: string;
   name?: string;
   state?: string;
@@ -55,9 +63,6 @@ export type BrowserApiLabStepId =
 
 export type BrowserApiLabStepStatus = "running" | "success" | "error";
 
-const DEFAULT_STEP_TIMEOUT_MS = 45_000;
-const SHUTDOWN_STEP_TIMEOUT_MS = 15_000;
-
 export type BrowserApiLabStepUpdate = {
   id: BrowserApiLabStepId;
   status: BrowserApiLabStepStatus;
@@ -65,6 +70,7 @@ export type BrowserApiLabStepUpdate = {
 };
 
 type ActualBudget = {
+  id?: string;
   cloudFileId?: string;
   name?: string;
   state?: string;
@@ -96,17 +102,9 @@ type ActualApiModule = {
   shutdown(): Promise<unknown>;
 };
 
-type WorkerInitMessage = {
-  name?: unknown;
-  args?: unknown;
-};
-
-function normalizeUrl(url: string): string {
-  return url.trim().replace(/\/+$/, "");
-}
-
 function normalizeBudget(budget: ActualBudget): BrowserApiLabBudget {
   return {
+    id: budget.id,
     cloudFileId: budget.cloudFileId,
     name: budget.name,
     state: budget.state,
@@ -131,11 +129,16 @@ function filterRemoteBudgets(budgets: BrowserApiLabBudget[]): BrowserApiLabBudge
   const seen = new Set<string>();
   return budgets.filter((budget) => {
     if (budget.state !== "remote") return false;
-    if (!budget.groupId) return false;
-    if (seen.has(budget.groupId)) return false;
-    seen.add(budget.groupId);
+    const syncId = getBudgetSyncId(budget);
+    if (!syncId) return false;
+    if (seen.has(syncId)) return false;
+    seen.add(syncId);
     return true;
   });
+}
+
+function getBudgetSyncId(budget: BrowserApiLabBudget): string | undefined {
+  return budget.groupId ?? budget.id;
 }
 
 function redactMessage(
@@ -168,109 +171,6 @@ function toErrorMessage(
   return redactMessage(message, input);
 }
 
-function withTimeout<T>(
-  promise: Promise<T>,
-  stepLabel: string,
-  timeoutMs = DEFAULT_STEP_TIMEOUT_MS
-): Promise<T> {
-  let timeoutId: ReturnType<typeof setTimeout> | null = null;
-
-  const timeout = new Promise<never>((_resolve, reject) => {
-    timeoutId = setTimeout(() => {
-      reject(
-        new Error(
-          stepLabel +
-            " did not finish within " +
-            Math.round(timeoutMs / 1000) +
-            " seconds."
-        )
-      );
-    }, timeoutMs);
-  });
-
-  return Promise.race([promise, timeout]).finally(() => {
-    if (timeoutId) clearTimeout(timeoutId);
-  });
-}
-
-function getActualAssetsBaseUrl(): string {
-  if (typeof window === "undefined") return "/actual-api-assets/";
-  return new URL("/actual-api-assets/", window.location.origin).href;
-}
-
-function isWorkerInitMessage(message: unknown): message is WorkerInitMessage {
-  return typeof message === "object" && message !== null && "name" in message;
-}
-
-function rewriteActualInitMessage(message: unknown, assetsBaseUrl: string): unknown {
-  if (!isWorkerInitMessage(message) || message.name !== "api-browser/init") {
-    return message;
-  }
-
-  const args =
-    typeof message.args === "object" && message.args !== null ? message.args : {};
-
-  return {
-    ...message,
-    args: {
-      ...args,
-      assetsBaseUrl,
-    },
-  };
-}
-
-async function initializeActualApi(
-  actual: ActualApiModule,
-  config: Parameters<ActualApiModule["init"]>[0]
-): Promise<unknown> {
-  const NativeWorker = window.Worker;
-  const assetsBaseUrl = getActualAssetsBaseUrl();
-  let redirectedBackendWorker = false;
-
-  const ActualBenchWorker = class extends NativeWorker {
-    constructor(scriptURL: string | URL, options?: WorkerOptions) {
-      const actualBackendWorkerUrl = redirectedBackendWorker
-        ? scriptURL
-        : assetsBaseUrl + "worker.js";
-
-      redirectedBackendWorker = true;
-      super(actualBackendWorkerUrl, options);
-    }
-
-    postMessage(message: unknown, transfer: Transferable[]): void;
-    postMessage(message: unknown, options?: StructuredSerializeOptions): void;
-    postMessage(
-      message: unknown,
-      options?: Transferable[] | StructuredSerializeOptions
-    ): void {
-      const rewrittenMessage = rewriteActualInitMessage(message, assetsBaseUrl);
-
-      if (options === undefined) {
-        super.postMessage(rewrittenMessage);
-      } else if (Array.isArray(options)) {
-        super.postMessage(rewrittenMessage, options);
-      } else {
-        super.postMessage(rewrittenMessage, options);
-      }
-    }
-  };
-
-  window.Worker = ActualBenchWorker as typeof Worker;
-
-  try {
-    return await withTimeout(actual.init(config), "Initializing browser API worker");
-  } finally {
-    if (window.Worker === (ActualBenchWorker as typeof Worker)) {
-      window.Worker = NativeWorker;
-    }
-  }
-}
-
-async function loadActualApi(): Promise<ActualApiModule> {
-  const actual = await import("@actual-app/api");
-  return actual as unknown as ActualApiModule;
-}
-
 export async function loadBrowserApiBudgetList(
   input: BrowserApiBudgetListInput
 ): Promise<BrowserApiBudgetListResult> {
@@ -285,7 +185,10 @@ export async function loadBrowserApiBudgetList(
   let initialized = false;
 
   try {
-    actual = await withTimeout(loadActualApi(), "Loading @actual-app/api");
+    actual = await withTimeout(
+      loadActualApi<ActualApiModule>(),
+      "Loading @actual-app/api"
+    );
     await initializeActualApi(actual, {
       dataDir: "/documents",
       serverURL: serverUrl,
@@ -359,7 +262,10 @@ export async function runBrowserApiLab(
 
   try {
     startStep("load");
-    actual = await withTimeout(loadActualApi(), "Loading @actual-app/api");
+    actual = await withTimeout(
+      loadActualApi<ActualApiModule>(),
+      "Loading @actual-app/api"
+    );
     completeStep("load", "Browser API module loaded.");
 
     startStep("init");
@@ -381,7 +287,9 @@ export async function runBrowserApiLab(
       budgets.length + " budget" + (budgets.length === 1 ? "" : "s") + " returned."
     );
 
-    const selectedBudget = budgets.find((budget) => budget.groupId === budgetSyncId);
+    const selectedBudget = budgets.find(
+      (budget) => getBudgetSyncId(budget) === budgetSyncId
+    );
 
     startStep("download");
     await withTimeout(
@@ -415,7 +323,6 @@ export async function runBrowserApiLab(
       selectedBudgetSyncId: budgetSyncId,
       accounts,
     };
-    return result;
   } catch (error) {
     const detail = toErrorMessage(error, input);
     if (activeStep) {
@@ -423,21 +330,24 @@ export async function runBrowserApiLab(
       activeStep = null;
     }
     throw new Error(detail);
-  } finally {
-    if (actual && initialized) {
-      onStep({ id: "shutdown", status: "running" });
-      try {
-        await withTimeout(
-          actual.shutdown(),
-          "Shutting down browser API",
-          SHUTDOWN_STEP_TIMEOUT_MS
-        );
-        onStep({ id: "shutdown", status: "success", detail: "Runtime shut down." });
-      } catch (error) {
-        const detail = toErrorMessage(error, input);
-        onStep({ id: "shutdown", status: "error", detail });
-        if (result) throw new Error(detail);
-      }
+  }
+
+  if (actual && initialized) {
+    onStep({ id: "shutdown", status: "running" });
+    try {
+      await withTimeout(
+        actual.shutdown(),
+        "Shutting down browser API",
+        SHUTDOWN_STEP_TIMEOUT_MS
+      );
+      onStep({ id: "shutdown", status: "success", detail: "Runtime shut down." });
+    } catch (error) {
+      const detail = toErrorMessage(error, input);
+      onStep({ id: "shutdown", status: "error", detail });
+      throw new Error(detail);
     }
   }
+
+  if (!result) throw new Error("Browser API lab did not produce a result.");
+  return result;
 }

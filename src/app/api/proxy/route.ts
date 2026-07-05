@@ -22,17 +22,10 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { logger } from "@/lib/logger";
-import { queueServerRequest } from "./serverQueue";
-
-type ProxyConnection = {
-  baseUrl: string;
-  apiKey: string;
-  budgetSyncId?: string;
-  encryptionPassword?: string;
-};
+import { queueServerRequest, type HttpProxyConnection } from "./serverQueue";
 
 type ProxyRequestBody = {
-  connection: ProxyConnection;
+  connection: HttpProxyConnection;
   path: string;
   method?: string;
   body?: unknown;

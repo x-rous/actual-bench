@@ -15,6 +15,7 @@
  */
 import type { NextResponse } from "next/server";
 import { logger } from "@/lib/logger";
+import type { HttpApiConnection } from "@/store/connection";
 
 // Each entry in the map is the tail of a server's request chain — a void
 // promise that resolves when the previous request finishes. A new request
@@ -52,11 +53,10 @@ async function tryCloseBudget(
   }
 }
 
-type QueueConnection = {
-  baseUrl: string;
-  budgetSyncId?: string;
-  apiKey: string;
-};
+export type HttpProxyConnection = Pick<HttpApiConnection, "baseUrl" | "apiKey"> &
+  Partial<Pick<HttpApiConnection, "budgetSyncId" | "encryptionPassword">>;
+
+type QueueConnection = Pick<HttpProxyConnection, "baseUrl" | "budgetSyncId" | "apiKey">;
 
 /**
  * Enqueue a request operation against a server. Returns the operation's

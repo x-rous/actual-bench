@@ -13,17 +13,10 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { logger } from "@/lib/logger";
-import { queueServerRequest } from "../serverQueue";
-
-type DownloadConnection = {
-  baseUrl: string;
-  apiKey: string;
-  budgetSyncId?: string;
-  encryptionPassword?: string;
-};
+import { queueServerRequest, type HttpProxyConnection } from "../serverQueue";
 
 type DownloadRequestBody = {
-  connection: DownloadConnection;
+  connection: HttpProxyConnection;
   path: string;
   method?: string;
 };

@@ -78,8 +78,17 @@ export function usePayeesSave() {
       if (unresolvedCreatedPayees.length > 0) {
         try {
           const freshPayees = await transport.getPayees();
-          const serverIdByName = new Map(freshPayees.map((p) => [p.name, p.id]));
+          const serverIdByName = new Map<string, string>();
+          const duplicateNames = new Set<string>();
+          for (const fresh of freshPayees) {
+            if (serverIdByName.has(fresh.name)) {
+              duplicateNames.add(fresh.name);
+            } else {
+              serverIdByName.set(fresh.name, fresh.id);
+            }
+          }
           for (const p of unresolvedCreatedPayees) {
+            if (duplicateNames.has(p.name)) continue;
             const serverId = serverIdByName.get(p.name);
             if (serverId) idMap[p.id] = serverId;
           }

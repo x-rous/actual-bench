@@ -387,14 +387,23 @@ function findBudgetedAmount(
   throw new Error("Category " + categoryId + " was not found in month " + month.month + ".");
 }
 
+let browserBudgetBatchDepth = 0;
+
 async function runBrowserBudgetBatch<T>(
   connection: BrowserApiConnection,
   operation: () => Promise<T>
 ): Promise<T> {
+  if (browserBudgetBatchDepth > 0) return operation();
+
   const api = await getBrowserApiRuntime(connection);
   let result: T | undefined;
   await api.batchBudgetUpdates(async () => {
-    result = await operation();
+    browserBudgetBatchDepth++;
+    try {
+      result = await operation();
+    } finally {
+      browserBudgetBatchDepth--;
+    }
   });
   return result as T;
 }
@@ -549,9 +558,14 @@ async function getBrowserAllNotes(
   const api = await getBrowserApiRuntime(connection);
   const query = buildActualQuery(api, "notes", "*");
   const runner = api.aqlQuery?.bind(api) ?? api.runQuery?.bind(api);
-  const rows = runner
-    ? responseRows<NoteRow>(await runner(query).catch(() => []))
-    : [];
+  let rows: NoteRow[] = [];
+  if (runner) {
+    try {
+      rows = responseRows<NoteRow>(await runner(query));
+    } catch (err) {
+      throw cleanBrowserQueryError(err);
+    }
+  }
 
   const map = new Map<string, string>();
   for (const row of rows) {
@@ -762,17 +776,19 @@ export function createBrowserApiTransport(
       await api.setBudgetCarryover(month, categoryId, flag);
     },
     transferBudget: async (month, input) => {
-      const api = await getBrowserApiRuntime(connection);
-      const monthData = normalizeBudgetMonth(await api.getBudgetMonth(month));
-      const fromBudgeted = findBudgetedAmount(monthData, input.fromCategoryId);
-      const toBudgeted = findBudgetedAmount(monthData, input.toCategoryId);
-      const amount = toBudgetAmount(input.amount);
+      await runBrowserBudgetBatch(connection, async () => {
+        const api = await getBrowserApiRuntime(connection);
+        const monthData = normalizeBudgetMonth(await api.getBudgetMonth(month));
+        const fromBudgeted = findBudgetedAmount(monthData, input.fromCategoryId);
+        const toBudgeted = findBudgetedAmount(monthData, input.toCategoryId);
+        const amount = toBudgetAmount(input.amount);
 
-      // Actual's browser API does not expose the server's category-transfer
-      // endpoint. Inside a budget batch, setting both final budget values is
-      // the same persisted budget state for the Direct transport.
-      await api.setBudgetAmount(month, input.fromCategoryId, fromBudgeted - amount);
-      await api.setBudgetAmount(month, input.toCategoryId, toBudgeted + amount);
+        // Actual's browser API does not expose the server's category-transfer
+        // endpoint. Setting both final budget values inside one batch keeps
+        // the transfer atomic for the Direct transport.
+        await api.setBudgetAmount(month, input.fromCategoryId, fromBudgeted - amount);
+        await api.setBudgetAmount(month, input.toCategoryId, toBudgeted + amount);
+      });
     },
     holdBudgetForNextMonth: async (month, amount) => {
       const api = await getBrowserApiRuntime(connection);
