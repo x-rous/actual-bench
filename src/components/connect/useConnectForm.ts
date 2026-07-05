@@ -9,7 +9,7 @@ import {
   getServerVersion,
   type BudgetFile,
 } from "@/lib/api/client";
-import { getTransport } from "@/lib/actual";
+import { ensureTransportReady, getTransport } from "@/lib/actual";
 import {
   listBrowserApiBudgets,
   loadBrowserApiBudgetList,
@@ -213,14 +213,15 @@ export function useConnectForm() {
     if (isBrowserApiConnection(instance)) {
       setReconnectBusyId(instance.id);
       try {
-        discardAll();
-        queryClient.clear();
+        await ensureTransportReady(instance);
         const version = await getTransport(instance).getServerVersion().catch(() => null);
         if (version) updateInstance(instance.id, { serverVersion: version });
+        discardAll();
+        queryClient.clear();
         setActiveInstance(instance.id);
         toast.success("Direct connection opened. Redirecting…");
         await new Promise((r) => setTimeout(r, 600));
-        router.push("/accounts");
+        router.push("/overview");
       } finally {
         setReconnectBusyId(null);
       }
@@ -394,18 +395,23 @@ export function useConnectForm() {
       };
 
       setConnectStatus({ kind: "busy" });
-      if (existing) {
-        updateInstance(existing.id, directConnection);
-      } else {
-        addInstance(directConnection);
+      try {
+        await ensureTransportReady(directConnection);
+        if (existing) {
+          updateInstance(existing.id, directConnection);
+        } else {
+          addInstance(directConnection);
+        }
+        discardAll();
+        queryClient.clear();
+        setActiveInstance(directConnection.id);
+        setConnectStatus({ kind: "success" });
+        toast.success("Direct connection opened. Redirecting…");
+        await new Promise((r) => setTimeout(r, 800));
+        router.push("/overview");
+      } catch (err) {
+        setConnectStatus({ kind: "error", message: parseApiError(err) });
       }
-      discardAll();
-      queryClient.clear();
-      setActiveInstance(directConnection.id);
-      setConnectStatus({ kind: "success" });
-      toast.success("Direct connection opened. Redirecting…");
-      await new Promise((r) => setTimeout(r, 800));
-      router.push("/accounts");
       return;
     }
 

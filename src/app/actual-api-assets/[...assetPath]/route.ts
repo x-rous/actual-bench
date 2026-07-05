@@ -1,6 +1,8 @@
+import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
-import { extname, resolve, sep } from "node:path";
+import { extname, join } from "node:path";
 import { NextResponse } from "next/server";
+import { DIRECT_MODE_HEADERS, isDirectBrowserApiEnabled } from "@/lib/directMode";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -11,21 +13,86 @@ type RouteContext = {
   }>;
 };
 
-const API_DIST_DIR = resolve(process.cwd(), "node_modules/@actual-app/api/dist");
+const CACHE_CONTROL = "public, max-age=86400, must-revalidate";
 
-const ASSET_HEADERS = {
-  "Cross-Origin-Opener-Policy": "same-origin",
-  "Cross-Origin-Embedder-Policy": "require-corp",
-  "Cross-Origin-Resource-Policy": "same-origin",
-};
+const WORKER_CLONE_GUARD = `
+(() => {
+  const scope = self;
+  const nativePostMessage = scope.postMessage.bind(scope);
 
-const WORKER_CLONE_GUARD = "\n(() => {\n  const scope = self;\n  const nativePostMessage = scope.postMessage.bind(scope);\n\n  function cloneSafe(value, seen = new WeakMap()) {\n    if (typeof value === \"function\") return undefined;\n    if (typeof value === \"bigint\") return String(value);\n    if (value instanceof Error) {\n      return { name: value.name, message: value.message, stack: value.stack };\n    }\n    if (value instanceof Date) return value.toISOString();\n    if (value instanceof RegExp) return String(value);\n    if (value instanceof ArrayBuffer) return value.slice(0);\n    if (ArrayBuffer.isView(value)) return new value.constructor(value);\n    if (value instanceof Map) {\n      return Array.from(value.entries()).map(([key, item]) => [\n        cloneSafe(key, seen),\n        cloneSafe(item, seen),\n      ]);\n    }\n    if (value instanceof Set) {\n      return Array.from(value.values()).map((item) => cloneSafe(item, seen));\n    }\n    if (Array.isArray(value)) return value.map((item) => cloneSafe(item, seen));\n    if (value && typeof value === \"object\") {\n      if (seen.has(value)) return seen.get(value);\n\n      const output = {};\n      seen.set(value, output);\n\n      for (const [key, item] of Object.entries(value)) {\n        const safeItem = cloneSafe(item, seen);\n        if (safeItem !== undefined) output[key] = safeItem;\n      }\n      return output;\n    }\n    return value;\n  }\n\n  function safePostMessage(message, transfer) {\n    try {\n      if (transfer === undefined) {\n        nativePostMessage(message);\n      } else {\n        nativePostMessage(message, transfer);\n      }\n    } catch (error) {\n      if (!(error instanceof DOMException) || error.name !== \"DataCloneError\") {\n        throw error;\n      }\n\n      nativePostMessage(cloneSafe(message));\n    }\n  }\n\n  try {\n    Object.defineProperty(scope, \"postMessage\", {\n      configurable: true,\n      value: safePostMessage,\n      writable: true,\n    });\n  } catch {\n    scope.postMessage = safePostMessage;\n  }\n\n  const scopePrototype = Object.getPrototypeOf(scope);\n  if (scopePrototype?.postMessage) {\n    try {\n      Object.defineProperty(scopePrototype, \"postMessage\", {\n        configurable: true,\n        value: safePostMessage,\n        writable: true,\n      });\n    } catch {}\n  }\n})();\n";
+  function cloneSafe(value, seen = new WeakMap()) {
+    if (typeof value === "function") return undefined;
+    if (typeof value === "bigint") return String(value);
+    if (value instanceof Error) {
+      return { name: value.name, message: value.message, stack: value.stack };
+    }
+    if (value instanceof Date) return value.toISOString();
+    if (value instanceof RegExp) return String(value);
+    if (value instanceof ArrayBuffer) return value.slice(0);
+    if (ArrayBuffer.isView(value)) return new value.constructor(value);
+    if (value instanceof Map) {
+      return Array.from(value.entries()).map(([key, item]) => [
+        cloneSafe(key, seen),
+        cloneSafe(item, seen),
+      ]);
+    }
+    if (value instanceof Set) {
+      return Array.from(value.values()).map((item) => cloneSafe(item, seen));
+    }
+    if (Array.isArray(value)) return value.map((item) => cloneSafe(item, seen));
+    if (value && typeof value === "object") {
+      if (seen.has(value)) return seen.get(value);
 
+      const output = {};
+      seen.set(value, output);
 
-function isDirectBrowserApiDisabled(value: string | undefined): boolean {
-  const normalized = value?.trim().toLowerCase();
-  return normalized === "0" || normalized === "false" || normalized === "off";
-}
+      for (const [key, item] of Object.entries(value)) {
+        const safeItem = cloneSafe(item, seen);
+        if (safeItem !== undefined) output[key] = safeItem;
+      }
+      return output;
+    }
+    return value;
+  }
+
+  function safePostMessage(message, transfer) {
+    try {
+      if (transfer === undefined) {
+        nativePostMessage(message);
+      } else {
+        nativePostMessage(message, transfer);
+      }
+    } catch (error) {
+      if (!(error instanceof DOMException) || error.name !== "DataCloneError") {
+        throw error;
+      }
+
+      nativePostMessage(cloneSafe(message));
+    }
+  }
+
+  try {
+    Object.defineProperty(scope, "postMessage", {
+      configurable: true,
+      value: safePostMessage,
+      writable: true,
+    });
+  } catch {
+    scope.postMessage = safePostMessage;
+  }
+
+  const scopePrototype = Object.getPrototypeOf(scope);
+  if (scopePrototype?.postMessage) {
+    try {
+      Object.defineProperty(scopePrototype, "postMessage", {
+        configurable: true,
+        value: safePostMessage,
+        writable: true,
+      });
+    } catch {}
+  }
+})();
+`;
 
 function contentTypeFor(pathname: string): string {
   switch (extname(pathname)) {
@@ -47,38 +114,102 @@ function contentTypeFor(pathname: string): string {
   }
 }
 
-function isAllowedAsset(assetPath: string): boolean {
+const STATIC_ASSET_PATHS = new Map([
+  [
+    "worker.js",
+    join(
+      /*turbopackIgnore: true*/ process.cwd(),
+      "node_modules",
+      "@actual-app",
+      "api",
+      "dist",
+      "worker.js"
+    ),
+  ],
+  [
+    "worker.js.map",
+    join(
+      /*turbopackIgnore: true*/ process.cwd(),
+      "node_modules",
+      "@actual-app",
+      "api",
+      "dist",
+      "worker.js.map"
+    ),
+  ],
+  [
+    "sql-wasm.wasm",
+    join(
+      /*turbopackIgnore: true*/ process.cwd(),
+      "node_modules",
+      "@actual-app",
+      "api",
+      "dist",
+      "sql-wasm.wasm"
+    ),
+  ],
+  [
+    "data-file-index.txt",
+    join(
+      /*turbopackIgnore: true*/ process.cwd(),
+      "node_modules",
+      "@actual-app",
+      "api",
+      "dist",
+      "data-file-index.txt"
+    ),
+  ],
+]);
+
+function isUnsafePathPart(part: string): boolean {
   return (
-    assetPath === "worker.js" ||
-    assetPath === "worker.js.map" ||
-    assetPath === "sql-wasm.wasm" ||
-    assetPath === "data-file-index.txt" ||
-    assetPath.startsWith("data/")
+    part === "" ||
+    part === "." ||
+    part === ".." ||
+    part.includes("\0") ||
+    part.includes("/") ||
+    part.includes("\\")
   );
 }
 
 function resolveAssetPath(parts: string[]): string | null {
-  if (parts.length === 0) return null;
-  if (parts.some((part) => part === ".." || part.includes("\0"))) return null;
+  if (parts.length === 0 || parts.some(isUnsafePathPart)) return null;
 
   const assetPath = parts.join("/");
-  if (!isAllowedAsset(assetPath)) return null;
+  const staticFilePath = STATIC_ASSET_PATHS.get(assetPath);
+  if (staticFilePath) return staticFilePath;
 
-  const filePath = resolve(API_DIST_DIR, ...parts);
-  if (filePath !== API_DIST_DIR && !filePath.startsWith(API_DIST_DIR + sep)) {
-    return null;
-  }
+  if (parts[0] !== "data" || parts.length === 1) return null;
 
-  return filePath;
+  return join(
+    /*turbopackIgnore: true*/ process.cwd(),
+    "node_modules",
+    "@actual-app",
+    "api",
+    "dist",
+    "data",
+    ...parts.slice(1)
+  );
 }
 
-export async function GET(_request: Request, context: RouteContext) {
-  const enabled =
-    !isDirectBrowserApiDisabled(process.env["DIRECT_BROWSER_API"]) &&
-    !isDirectBrowserApiDisabled(process.env["NEXT_PUBLIC_DIRECT_BROWSER_API"]);
+function etagFor(body: string | Uint8Array): string {
+  const hash = createHash("sha256");
+  hash.update(typeof body === "string" ? Buffer.from(body, "utf8") : Buffer.from(body));
+  return '"sha256-' + hash.digest("base64url") + '"';
+}
 
-  if (!enabled) {
-    return new NextResponse(null, { status: 404, headers: ASSET_HEADERS });
+function responseHeaders(filePath: string, etag: string): Record<string, string> {
+  return {
+    ...DIRECT_MODE_HEADERS,
+    "Content-Type": contentTypeFor(filePath),
+    "Cache-Control": CACHE_CONTROL,
+    ETag: etag,
+  };
+}
+
+export async function GET(request: Request, context: RouteContext) {
+  if (!isDirectBrowserApiEnabled()) {
+    return new NextResponse(null, { status: 404 });
   }
 
   const params = await context.params;
@@ -86,7 +217,7 @@ export async function GET(_request: Request, context: RouteContext) {
   const filePath = resolveAssetPath(assetPath);
 
   if (!filePath) {
-    return new NextResponse(null, { status: 404, headers: ASSET_HEADERS });
+    return new NextResponse(null, { status: 404, headers: DIRECT_MODE_HEADERS });
   }
 
   try {
@@ -95,15 +226,15 @@ export async function GET(_request: Request, context: RouteContext) {
       assetPath.join("/") === "worker.js"
         ? WORKER_CLONE_GUARD + body.toString("utf8")
         : new Uint8Array(body);
+    const etag = etagFor(responseBody);
+    const headers = responseHeaders(filePath, etag);
 
-    return new NextResponse(responseBody, {
-      headers: {
-        ...ASSET_HEADERS,
-        "Content-Type": contentTypeFor(filePath),
-        "Cache-Control": "no-store",
-      },
-    });
+    if (request.headers.get("if-none-match") === etag) {
+      return new NextResponse(null, { status: 304, headers });
+    }
+
+    return new NextResponse(responseBody, { headers });
   } catch {
-    return new NextResponse(null, { status: 404, headers: ASSET_HEADERS });
+    return new NextResponse(null, { status: 404, headers: DIRECT_MODE_HEADERS });
   }
 }

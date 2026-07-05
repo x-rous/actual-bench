@@ -4,7 +4,11 @@ import { useState, useMemo } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useStagedStore } from "@/store/staged";
 import { useConnectionStore, selectActiveInstance } from "@/store/connection";
-import { getTransport, syncTransportAfterChanges } from "@/lib/actual";
+import {
+  getTransport,
+  settleTransportWrites,
+  syncTransportAfterChanges,
+} from "@/lib/actual";
 import {
   extractMessage,
   computeSaveOperations,
@@ -39,15 +43,16 @@ export function useAccountsSave() {
       const idMap: Record<string, string> = {};
 
       // ── Creates (parallel) ──────────────────────────────────────────────────
-      const createResults = await Promise.allSettled(
-        toCreate.map((a) =>
+      const createResults = await settleTransportWrites(
+        transport,
+        toCreate,
+        (a) =>
           transport.createAccount({
             name: a.name,
             offBudget: a.offBudget,
             closed: a.closed,
             initialBalance: a.initialBalance,
           })
-        )
       );
       for (let i = 0; i < toCreate.length; i++) {
         const id = toCreate[i].id;
@@ -62,14 +67,15 @@ export function useAccountsSave() {
       }
 
       // ── Updates (parallel) ──────────────────────────────────────────────────
-      const updateResults = await Promise.allSettled(
-        toUpdate.map((a) =>
+      const updateResults = await settleTransportWrites(
+        transport,
+        toUpdate,
+        (a) =>
           transport.updateAccount(a.id, {
             name: a.name,
             offBudget: a.offBudget,
             closed: a.closed,
           })
-        )
       );
       for (let i = 0; i < toUpdate.length; i++) {
         const id = toUpdate[i].id;
@@ -82,8 +88,10 @@ export function useAccountsSave() {
       }
 
       // ── Deletes (parallel) ──────────────────────────────────────────────────
-      const deleteResults = await Promise.allSettled(
-        toDelete.map((id) => transport.deleteAccount(id))
+      const deleteResults = await settleTransportWrites(
+        transport,
+        toDelete,
+        (id) => transport.deleteAccount(id)
       );
       for (let i = 0; i < toDelete.length; i++) {
         const id = toDelete[i];

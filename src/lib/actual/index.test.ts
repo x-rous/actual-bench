@@ -1,8 +1,13 @@
 import { getAccounts } from "../api/accounts";
-import { getBrowserApiRuntime, syncBrowserApiRuntime } from "./browser/runtime";
-import { getTransport } from "./index";
+import {
+  ensureBrowserApiBudgetOpen,
+  getBrowserApiRuntime,
+  syncBrowserApiRuntime,
+} from "./browser/runtime";
+import { ensureTransportReady, getTransport, settleTransportWrites } from "./index";
 import type { BrowserApiConnection, HttpApiConnection } from "@/store/connection";
 import type { Account, Rule } from "@/types/entities";
+import type { ActualBenchTransport } from "./transport";
 
 jest.mock("../api/accounts", () => ({
   ...jest.requireActual("../api/accounts"),
@@ -10,11 +15,14 @@ jest.mock("../api/accounts", () => ({
 }));
 
 jest.mock("./browser/runtime", () => ({
+  ensureBrowserApiBudgetOpen: jest.fn(),
   getBrowserApiRuntime: jest.fn(),
   syncBrowserApiRuntime: jest.fn(),
 }));
 
 const mockGetAccounts = getAccounts as jest.MockedFunction<typeof getAccounts>;
+const mockEnsureBrowserApiBudgetOpen =
+  ensureBrowserApiBudgetOpen as jest.MockedFunction<typeof ensureBrowserApiBudgetOpen>;
 const mockGetBrowserApiRuntime = getBrowserApiRuntime as jest.MockedFunction<
   typeof getBrowserApiRuntime
 >;
@@ -62,6 +70,7 @@ function createMockQueryBuilder() {
 describe("Actual transport factory", () => {
   beforeEach(() => {
     mockGetAccounts.mockReset();
+    mockEnsureBrowserApiBudgetOpen.mockReset();
     mockGetBrowserApiRuntime.mockReset();
     mockSyncBrowserApiRuntime.mockReset();
   });
@@ -72,6 +81,63 @@ describe("Actual transport factory", () => {
 
   it("dispatches Direct connections to the browser API transport", () => {
     expect(getTransport(browserConnection).mode).toBe("browser-api");
+  });
+
+  it("ensures Direct readiness by opening the browser budget", async () => {
+    mockEnsureBrowserApiBudgetOpen.mockResolvedValueOnce(undefined);
+
+    await expect(ensureTransportReady(browserConnection)).resolves.toBeUndefined();
+
+    expect(mockEnsureBrowserApiBudgetOpen).toHaveBeenCalledWith(browserConnection);
+  });
+
+  it("does not open a browser budget for HTTP API readiness", async () => {
+    await expect(ensureTransportReady(httpConnection)).resolves.toBeUndefined();
+
+    expect(mockEnsureBrowserApiBudgetOpen).not.toHaveBeenCalled();
+  });
+
+  it("settles HTTP transport writes in parallel", async () => {
+    const transport = { mode: "http-api" } as ActualBenchTransport;
+    let active = 0;
+    let maxActive = 0;
+
+    const results = await settleTransportWrites(transport, [1, 2], async (value) => {
+      active += 1;
+      maxActive = Math.max(maxActive, active);
+      await new Promise((resolve) => setTimeout(resolve, value === 1 ? 15 : 0));
+      active -= 1;
+      return value * 2;
+    });
+
+    expect(maxActive).toBe(2);
+    expect(results).toEqual([
+      { status: "fulfilled", value: 2 },
+      { status: "fulfilled", value: 4 },
+    ]);
+  });
+
+  it("settles Direct transport writes sequentially without short-circuiting failures", async () => {
+    const transport = { mode: "browser-api" } as ActualBenchTransport;
+    const starts: number[] = [];
+    const activeAtStart: number[] = [];
+    let active = 0;
+
+    const results = await settleTransportWrites(transport, [1, 2, 3], async (value) => {
+      starts.push(value);
+      activeAtStart.push(active);
+      active += 1;
+      await Promise.resolve();
+      active -= 1;
+      if (value === 2) throw new Error("boom");
+      return value * 2;
+    });
+
+    expect(starts).toEqual([1, 2, 3]);
+    expect(activeAtStart).toEqual([0, 0, 0]);
+    expect(results[0]).toEqual({ status: "fulfilled", value: 2 });
+    expect(results[1].status).toBe("rejected");
+    expect(results[2]).toEqual({ status: "fulfilled", value: 6 });
   });
 
   it("HTTP API account reads delegate to the existing accounts API helper", async () => {

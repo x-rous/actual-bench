@@ -141,6 +141,26 @@ export async function syncTransportAfterChanges(
   if (changed && transport.mode === "browser-api") await transport.sync();
 }
 
+export async function settleTransportWrites<TInput, TResult>(
+  transport: ActualBenchTransport,
+  inputs: TInput[],
+  write: (input: TInput) => Promise<TResult>
+): Promise<PromiseSettledResult<TResult>[]> {
+  if (transport.mode !== "browser-api") {
+    return Promise.allSettled(inputs.map(write));
+  }
+
+  const results: PromiseSettledResult<TResult>[] = [];
+  for (const input of inputs) {
+    try {
+      results.push({ status: "fulfilled", value: await write(input) });
+    } catch (reason) {
+      results.push({ status: "rejected", reason });
+    }
+  }
+  return results;
+}
+
 export function unsupportedTransportOperation(
   mode: ConnectionMode,
   operation: string

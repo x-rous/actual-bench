@@ -11,6 +11,7 @@ import type {
 } from "@/types/api";
 import type { BrowserApiConnection } from "@/store/connection";
 import type { NoteRow } from "@/lib/api/notes";
+import { assertDirectBrowserApiEnvironment } from "./environment";
 
 export type ActualQueryBuilder = {
   filter(expr: unknown): ActualQueryBuilder;
@@ -316,12 +317,16 @@ export async function exportBrowserApiBudgetZip(
   return exportedZipToArrayBuffer(result.data);
 }
 
+export async function ensureBrowserApiBudgetOpen(
+  connection: BrowserApiConnection
+): Promise<void> {
+  await getBrowserApiRuntime(connection);
+}
+
 export async function getBrowserApiRuntime(
   connection: BrowserApiConnection
 ): Promise<ActualBrowserApiRuntime> {
-  if (typeof window === "undefined") {
-    throw new Error("Direct browser API transport can only run in the browser.");
-  }
+  assertDirectBrowserApiEnvironment();
 
   const key = runtimeKey(connection);
   if (activeRuntime?.key === key) return activeRuntime.promise;

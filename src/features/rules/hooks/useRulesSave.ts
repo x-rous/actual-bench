@@ -4,7 +4,11 @@ import { useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useStagedStore } from "@/store/staged";
 import { useConnectionStore, selectActiveInstance } from "@/store/connection";
-import { getTransport, syncTransportAfterChanges } from "@/lib/actual";
+import {
+  getTransport,
+  settleTransportWrites,
+  syncTransportAfterChanges,
+} from "@/lib/actual";
 import { applyRuleEntityIdMap } from "@/lib/actual/ruleMutation";
 import {
   extractMessage,
@@ -40,15 +44,16 @@ export function useRulesSave() {
       const succeededCreateIds = new Set<string>();
 
       // ── Creates (parallel) ──────────────────────────────────────────────────
-      const createResults = await Promise.allSettled(
-        toCreate.map((rule) =>
+      const createResults = await settleTransportWrites(
+        transport,
+        toCreate,
+        (rule) =>
           transport.createRule({
             stage: rule.stage,
             conditionsOp: rule.conditionsOp,
             conditions: applyRuleEntityIdMap(rule.conditions, entityIdMap),
             actions: applyRuleEntityIdMap(rule.actions, entityIdMap),
           })
-        )
       );
       for (let i = 0; i < toCreate.length; i++) {
         const id = toCreate[i].id;
@@ -62,15 +67,16 @@ export function useRulesSave() {
       }
 
       // ── Updates (parallel) ──────────────────────────────────────────────────
-      const updateResults = await Promise.allSettled(
-        toUpdate.map((rule) =>
+      const updateResults = await settleTransportWrites(
+        transport,
+        toUpdate,
+        (rule) =>
           transport.updateRule(rule.id, {
             stage: rule.stage,
             conditionsOp: rule.conditionsOp,
             conditions: applyRuleEntityIdMap(rule.conditions, entityIdMap),
             actions: applyRuleEntityIdMap(rule.actions, entityIdMap),
           })
-        )
       );
       for (let i = 0; i < toUpdate.length; i++) {
         const id = toUpdate[i].id;
@@ -105,8 +111,10 @@ export function useRulesSave() {
         }
       }
 
-      const deleteResults = await Promise.allSettled(
-        safeToDelete.map((id) => transport.deleteRule(id))
+      const deleteResults = await settleTransportWrites(
+        transport,
+        safeToDelete,
+        (id) => transport.deleteRule(id)
       );
       for (let i = 0; i < safeToDelete.length; i++) {
         const id = safeToDelete[i];

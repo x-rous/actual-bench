@@ -4,7 +4,11 @@ import { useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useStagedStore } from "@/store/staged";
 import { useConnectionStore, selectActiveInstance } from "@/store/connection";
-import { getTransport, syncTransportAfterChanges } from "@/lib/actual";
+import {
+  getTransport,
+  settleTransportWrites,
+  syncTransportAfterChanges,
+} from "@/lib/actual";
 import {
   extractMessage,
   computeSaveOperations,
@@ -35,10 +39,11 @@ export function useCategoryGroupsSave() {
       const idMap: Record<string, string> = {};
 
       // ── Creates (parallel) ──────────────────────────────────────────────────
-      const createResults = await Promise.allSettled(
-        toCreate.map((g) =>
+      const createResults = await settleTransportWrites(
+        transport,
+        toCreate,
+        (g) =>
           transport.createCategoryGroup({ name: g.name, isIncome: g.isIncome, hidden: g.hidden })
-        )
       );
       for (let i = 0; i < toCreate.length; i++) {
         const id = toCreate[i].id;
@@ -53,10 +58,10 @@ export function useCategoryGroupsSave() {
       }
 
       // ── Updates (parallel) ──────────────────────────────────────────────────
-      const updateResults = await Promise.allSettled(
-        toUpdate.map((g) =>
-          transport.updateCategoryGroup(g.id, { name: g.name, hidden: g.hidden })
-        )
+      const updateResults = await settleTransportWrites(
+        transport,
+        toUpdate,
+        (g) => transport.updateCategoryGroup(g.id, { name: g.name, hidden: g.hidden })
       );
       for (let i = 0; i < toUpdate.length; i++) {
         const id = toUpdate[i].id;
@@ -69,8 +74,10 @@ export function useCategoryGroupsSave() {
       }
 
       // ── Deletes (parallel) ──────────────────────────────────────────────────
-      const deleteResults = await Promise.allSettled(
-        toDelete.map((id) => transport.deleteCategoryGroup(id))
+      const deleteResults = await settleTransportWrites(
+        transport,
+        toDelete,
+        (id) => transport.deleteCategoryGroup(id)
       );
       for (let i = 0; i < toDelete.length; i++) {
         const id = toDelete[i];

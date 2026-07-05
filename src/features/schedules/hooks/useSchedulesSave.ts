@@ -4,7 +4,11 @@ import { useState, useMemo } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useStagedStore } from "@/store/staged";
 import { useConnectionStore, selectActiveInstance } from "@/store/connection";
-import { getTransport, syncTransportAfterChanges } from "@/lib/actual";
+import {
+  getTransport,
+  settleTransportWrites,
+  syncTransportAfterChanges,
+} from "@/lib/actual";
 import {
   extractMessage,
   computeSaveOperations,
@@ -44,8 +48,10 @@ export function useSchedulesSave() {
       const idMap: Record<string, string> = {};
 
       // ── Creates (parallel) ──────────────────────────────────────────────────
-      const createResults = await Promise.allSettled(
-        toCreate.map((s) =>
+      const createResults = await settleTransportWrites(
+        transport,
+        toCreate,
+        (s) =>
           transport.createSchedule({
             name: s.name,
             postsTransaction: s.postsTransaction,
@@ -55,7 +61,6 @@ export function useSchedulesSave() {
             amountOp: s.amountOp,
             date: s.date,
           })
-        )
       );
       for (let i = 0; i < toCreate.length; i++) {
         const stagedId = toCreate[i].id;
@@ -76,8 +81,10 @@ export function useSchedulesSave() {
       }
 
       // ── Updates (parallel) ──────────────────────────────────────────────────
-      const updateResults = await Promise.allSettled(
-        toUpdate.map((s) =>
+      const updateResults = await settleTransportWrites(
+        transport,
+        toUpdate,
+        (s) =>
           transport.updateSchedule(s.id, {
             name: s.name,
             postsTransaction: s.postsTransaction,
@@ -87,7 +94,6 @@ export function useSchedulesSave() {
             amountOp: s.amountOp,
             date: s.date,
           })
-        )
       );
       for (let i = 0; i < toUpdate.length; i++) {
         const id = toUpdate[i].id;
@@ -104,8 +110,10 @@ export function useSchedulesSave() {
       }
 
       // ── Deletes (parallel) ──────────────────────────────────────────────────
-      const deleteResults = await Promise.allSettled(
-        toDelete.map((id) => transport.deleteSchedule(id))
+      const deleteResults = await settleTransportWrites(
+        transport,
+        toDelete,
+        (id) => transport.deleteSchedule(id)
       );
       for (let i = 0; i < toDelete.length; i++) {
         const id = toDelete[i];

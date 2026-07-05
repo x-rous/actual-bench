@@ -42,6 +42,7 @@ import { prepareRuleForTransport, prepareRulePatchForTransport } from "./ruleMut
 import { unsupportedTransportOperation, type ActualBenchTransport, type ScheduleWriteInput, type TransportBudgetMonth } from "./transport";
 
 type RecordLike = Record<string, unknown>;
+type ApiCategoryGroupWithId = ApiCategoryGroup & { id: string };
 
 function isRecord(value: unknown): value is RecordLike {
   return typeof value === "object" && value !== null;
@@ -461,17 +462,35 @@ async function getBrowserAccounts(
     .filter((account): account is Account => account !== null);
 }
 
+async function mapWithConcurrency<TInput, TResult>(
+  inputs: TInput[],
+  limit: number,
+  mapper: (input: TInput) => Promise<TResult>
+): Promise<TResult[]> {
+  const results = new Array<TResult>(inputs.length);
+  let nextIndex = 0;
+
+  async function worker(): Promise<void> {
+    while (nextIndex < inputs.length) {
+      const index = nextIndex++;
+      results[index] = await mapper(inputs[index]);
+    }
+  }
+
+  const workerCount = Math.min(limit, inputs.length);
+  await Promise.all(Array.from({ length: workerCount }, () => worker()));
+  return results;
+}
+
 async function getBrowserAccountBalances(
   connection: BrowserApiConnection
 ): Promise<Map<string, number>> {
   const api = await getBrowserApiRuntime(connection);
   const accounts = await getBrowserAccounts(connection);
-  const entries = await Promise.all(
-    accounts.map(async (account) => {
-      const balance = await api.getAccountBalance(account.id);
-      return [account.id, balance / 100] as const;
-    })
-  );
+  const entries = await mapWithConcurrency(accounts, 6, async (account) => {
+    const balance = await api.getAccountBalance(account.id);
+    return [account.id, balance / 100] as const;
+  });
 
   return new Map(entries);
 }
@@ -482,7 +501,10 @@ async function getBrowserCategoryGroups(
   const api = await getBrowserApiRuntime(connection);
   const groupRows = (await api.getCategoryGroups())
     .map(toDirectCategoryGroup)
-    .filter((group): group is ApiCategoryGroup => group !== null);
+    .filter(
+      (group): group is ApiCategoryGroupWithId =>
+        group !== null && typeof group.id === "string"
+    );
 
   let categoryRows = groupRows.flatMap((group) => group.categories ?? []);
   const hasGroupsWithoutNestedCategories = groupRows.some(
@@ -496,15 +518,27 @@ async function getBrowserCategoryGroups(
     if (categoriesFromApi.length > 0) categoryRows = categoriesFromApi;
   }
 
-  const groups = groupRows.map((group) => {
-    const categoriesForGroup = categoryRows.filter(
-      (category) => category.group_id === group.id
-    );
-    return normalizeCategoryGroup({ ...group, categories: categoriesForGroup });
-  });
-  const categories = categoryRows.map((category) =>
-    normalizeCategory(category, category.group_id)
+  const categoriesByGroupId = new Map<string, ApiCategory[]>();
+  for (const category of categoryRows) {
+    const groupCategories = categoriesByGroupId.get(category.group_id);
+    if (groupCategories) {
+      groupCategories.push(category);
+    } else {
+      categoriesByGroupId.set(category.group_id, [category]);
+    }
+  }
+
+  const groups = groupRows.map((group) =>
+    normalizeCategoryGroup({
+      ...group,
+      categories: categoriesByGroupId.get(group.id) ?? [],
+    })
   );
+  const categories = categoryRows
+    .filter((category): category is ApiCategory & { group_id: string } =>
+      typeof category.group_id === "string"
+    )
+    .map((category) => normalizeCategory(category, category.group_id));
 
   return { groups, categories };
 }
@@ -514,7 +548,7 @@ async function getBrowserAllNotes(
 ): Promise<Map<string, string>> {
   const api = await getBrowserApiRuntime(connection);
   const query = buildActualQuery(api, "notes", "*");
-  const runner = api.aqlQuery ?? api.runQuery;
+  const runner = api.aqlQuery?.bind(api) ?? api.runQuery?.bind(api);
   const rows = runner
     ? responseRows<NoteRow>(await runner(query).catch(() => []))
     : [];

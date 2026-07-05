@@ -15,6 +15,22 @@ const mockSyncTransportAfterChanges = jest.fn(
 
 jest.mock("../../../lib/actual", () => ({
   getTransport: (connection: unknown) => (mockGetTransport as jest.Mock)(connection),
+  settleTransportWrites: async <TInput, TResult>(
+    transport: { mode: string },
+    inputs: TInput[],
+    write: (input: TInput) => Promise<TResult>
+  ) => {
+    if (transport.mode !== "browser-api") return Promise.allSettled(inputs.map(write));
+    const results: PromiseSettledResult<TResult>[] = [];
+    for (const input of inputs) {
+      try {
+        results.push({ status: "fulfilled", value: await write(input) });
+      } catch (reason) {
+        results.push({ status: "rejected", reason });
+      }
+    }
+    return results;
+  },
   syncTransportAfterChanges: (transport: unknown, changed: unknown) =>
     (mockSyncTransportAfterChanges as jest.Mock)(transport, changed),
 }));

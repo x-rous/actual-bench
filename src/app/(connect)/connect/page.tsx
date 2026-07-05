@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { ConnectForm } from "@/components/connect/ConnectForm";
 import { DemoButton } from "@/components/connect/DemoButton";
+import { isDirectBrowserApiEnabled } from "@/lib/directMode";
 
 export const dynamic = "force-dynamic";
 
@@ -23,7 +24,7 @@ export default function ConnectPage() {
   return (
     <div className="w-full flex flex-col items-center gap-4">
       {isDemoConfigured() && <DemoButton />}
-      <ConnectForm />
+      <ConnectForm directBrowserApiEnabled={isDirectBrowserApiEnabled()} />
     </div>
   );
 }

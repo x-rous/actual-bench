@@ -7,17 +7,17 @@ import { Loader2, AlertCircle, CheckCircle2, Server, Plus, Check, KeyRound } fro
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
-import {
-  useConnectionStore,
-  selectActiveInstance,
-  isBrowserApiConnection,
-} from "@/store/connection";
+import { useConnectionStore, selectActiveInstance } from "@/store/connection";
 import { useIsHydrated } from "@/hooks/useIsHydrated";
 import { useConnectForm } from "./useConnectForm";
 import { ConnectionCard } from "./ConnectionCard";
 import { deriveLabel, getConnectionModeBadge } from "./utils";
 
-export function ConnectForm() {
+type ConnectFormProps = {
+  directBrowserApiEnabled: boolean;
+};
+
+export function ConnectForm({ directBrowserApiEnabled }: ConnectFormProps) {
   const router = useRouter();
   const hydrated = useIsHydrated();
   const connectedInstance = useConnectionStore(selectActiveInstance);
@@ -68,7 +68,7 @@ export function ConnectForm() {
 
   useEffect(() => {
     if (hydrated && connectedInstance) {
-      router.replace(isBrowserApiConnection(connectedInstance) ? "/accounts" : "/overview");
+      router.replace("/overview");
     }
   }, [hydrated, connectedInstance, router]);
 
@@ -77,8 +77,6 @@ export function ConnectForm() {
   }
 
   const activeValidatedMode = validatedMode ?? connectionMode;
-  const directBrowserApiEnabled =
-    process.env.NEXT_PUBLIC_DIRECT_BROWSER_API_ENABLED === "1";
 
   // ── Panels ──────────────────────────────────────────────────────────────────
 

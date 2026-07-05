@@ -4,7 +4,11 @@ import { useState, useMemo } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useStagedStore } from "@/store/staged";
 import { useConnectionStore, selectActiveInstance } from "@/store/connection";
-import { getTransport, syncTransportAfterChanges } from "@/lib/actual";
+import {
+  getTransport,
+  settleTransportWrites,
+  syncTransportAfterChanges,
+} from "@/lib/actual";
 import {
   extractMessage,
   computeSaveOperations,
@@ -42,10 +46,11 @@ export function useTagsSave() {
       const idMap: Record<string, string> = {};
 
       // ── Creates (parallel) ──────────────────────────────────────────────────
-      const createResults = await Promise.allSettled(
-        toCreate.map((t) =>
+      const createResults = await settleTransportWrites(
+        transport,
+        toCreate,
+        (t) =>
           transport.createTag({ name: t.name, color: t.color, description: t.description })
-        )
       );
       for (let i = 0; i < toCreate.length; i++) {
         const id = toCreate[i].id;
@@ -76,10 +81,11 @@ export function useTagsSave() {
       }
 
       // ── Updates (parallel) ──────────────────────────────────────────────────
-      const updateResults = await Promise.allSettled(
-        toUpdate.map((t) =>
+      const updateResults = await settleTransportWrites(
+        transport,
+        toUpdate,
+        (t) =>
           transport.updateTag(t.id, { name: t.name, color: t.color, description: t.description })
-        )
       );
       for (let i = 0; i < toUpdate.length; i++) {
         const id = toUpdate[i].id;
@@ -92,8 +98,10 @@ export function useTagsSave() {
       }
 
       // ── Deletes (parallel) ──────────────────────────────────────────────────
-      const deleteResults = await Promise.allSettled(
-        toDelete.map((id) => transport.deleteTag(id))
+      const deleteResults = await settleTransportWrites(
+        transport,
+        toDelete,
+        (id) => transport.deleteTag(id)
       );
       for (let i = 0; i < toDelete.length; i++) {
         const id = toDelete[i];

@@ -1,5 +1,7 @@
 "use client";
 
+import { assertDirectBrowserApiEnvironment } from "./environment";
+
 export type BrowserApiLabInput = {
   serverUrl: string;
   serverPassword: string;
@@ -277,6 +279,7 @@ export async function loadBrowserApiBudgetList(
 
   if (!serverUrl) throw new Error("Actual Server URL is required.");
   if (!serverPassword) throw new Error("Actual Server password is required.");
+  assertDirectBrowserApiEnvironment();
 
   let actual: ActualApiModule | null = null;
   let initialized = false;
@@ -337,6 +340,7 @@ export async function runBrowserApiLab(
   if (!serverUrl) throw new Error("Actual Server URL is required.");
   if (!serverPassword) throw new Error("Actual Server password is required.");
   if (!budgetSyncId) throw new Error("Budget Sync ID is required.");
+  assertDirectBrowserApiEnvironment();
 
   let actual: ActualApiModule | null = null;
   let initialized = false;
