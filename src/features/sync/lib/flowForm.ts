@@ -181,11 +181,23 @@ export function buildFlowPayload(
     copySourceNotes: form.transform.copySourceNotes,
   };
 
+  // Each leg ref/filter/transform must be a versioned JSON envelope, matching
+  // what the flow repository normalizes and what the Slice 3 decoders read.
+  const envelope = (data: JsonObject) => ({ version: 1, data });
+
   return {
     name: form.name.trim(),
     enabled: form.enabled,
     flowType: "transaction_sync",
-    legs: [{ sourceRef, targetRef, filter, transform, options: {} }],
+    legs: [
+      {
+        sourceRef: envelope(sourceRef),
+        targetRef: envelope(targetRef),
+        filter: envelope(filter),
+        transform: envelope(transform),
+        options: envelope({}),
+      },
+    ],
   };
 }
 

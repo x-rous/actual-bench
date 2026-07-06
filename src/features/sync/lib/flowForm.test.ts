@@ -1,4 +1,9 @@
+import { mkdtempSync, rmSync } from "node:fs";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 import { connectionFingerprint } from "@/lib/sync/connectionRef";
+import { getAppDb, resetAppDbForTests } from "@/lib/app-db/connection";
+import { createSyncFlow, getSyncFlow } from "@/lib/app-db/syncFlowRepository";
 import {
   buildFlowPayload,
   emptyFlowForm,
@@ -54,12 +59,14 @@ describe("validation", () => {
 describe("buildFlowPayload", () => {
   it("encodes non-secret refs, filter, and transform into leg envelopes", () => {
     const payload = buildFlowPayload(filledForm(), instances) as JsonObject & { legs: JsonObject[] };
-    const leg = payload.legs[0] as Record<string, JsonObject>;
+    const leg = payload.legs[0] as Record<string, { version: number; data: JsonObject }>;
     expect(payload.name).toBe("Card sync");
-    expect(leg.sourceRef).toMatchObject({ connectionFingerprint: connectionFingerprint(sourceConn), accountId: "acct-src", budgetId: "budget-src" });
-    expect(leg.targetRef).toMatchObject({ connectionFingerprint: connectionFingerprint(targetConn), accountId: "acct-tgt" });
-    expect(leg.filter).toMatchObject({ startDate: "2026-07-01", payeeInclude: ["Coffee Bar", "Market"], excludeGeneratedSyncTransactions: true });
-    expect(leg.transform).toMatchObject({ amountDirection: "reverse", missingPayee: "create", notesMarkerEnabled: true });
+    // Each leg ref must be a versioned envelope, or the flow repository rejects it.
+    expect(leg.sourceRef.version).toBe(1);
+    expect(leg.sourceRef.data).toMatchObject({ connectionFingerprint: connectionFingerprint(sourceConn), accountId: "acct-src", budgetId: "budget-src" });
+    expect(leg.targetRef.data).toMatchObject({ connectionFingerprint: connectionFingerprint(targetConn), accountId: "acct-tgt" });
+    expect(leg.filter.data).toMatchObject({ startDate: "2026-07-01", payeeInclude: ["Coffee Bar", "Market"], excludeGeneratedSyncTransactions: true });
+    expect(leg.transform.data).toMatchObject({ amountDirection: "reverse", missingPayee: "create", notesMarkerEnabled: true });
     // no secret fields leak
     expect(JSON.stringify(payload)).not.toContain("serverPassword");
     expect(JSON.stringify(payload)).not.toContain("pw");
@@ -69,14 +76,14 @@ describe("buildFlowPayload", () => {
 describe("flowToFormState", () => {
   it("round-trips through a persisted flow, resolving live connections by fingerprint", () => {
     const payload = buildFlowPayload(filledForm(), instances) as JsonObject & { legs: JsonObject[] };
-    const legIn = payload.legs[0] as Record<string, JsonObject>;
+    const legIn = payload.legs[0] as Record<string, { version: number; data: JsonObject }>;
     const flow: SyncFlow = {
       id: "flow-1", name: "Card sync", enabled: true, flowType: "transaction_sync", description: null,
       createdAt: "", updatedAt: "",
       legs: [{
         id: "leg-1", flowId: "flow-1", position: 0,
-        sourceRef: { version: 1, data: legIn.sourceRef }, targetRef: { version: 1, data: legIn.targetRef },
-        filter: { version: 1, data: legIn.filter }, transform: { version: 1, data: legIn.transform }, options: { version: 1, data: {} },
+        sourceRef: legIn.sourceRef, targetRef: legIn.targetRef,
+        filter: legIn.filter, transform: legIn.transform, options: { version: 1, data: {} },
         createdAt: "", updatedAt: "",
       }],
     };
@@ -88,5 +95,23 @@ describe("flowToFormState", () => {
     expect(form.target.connectionId).toBe("c-tgt");
     expect(form.transform.amountDirection).toBe("reverse");
     expect(form.filter.payeeInclude).toBe("coffee bar, market");
+  });
+
+  it("persists through the real repository and round-trips (regression: envelope shape)", () => {
+    const root = mkdtempSync(join(tmpdir(), "actual-bench-flowform-db-"));
+    try {
+      const db = getAppDb(join(root, "metadata.sqlite"));
+      // The payload the Save button sends must be accepted by the flow repo.
+      const created = createSyncFlow(db, buildFlowPayload(filledForm(), instances));
+      const reloaded = getSyncFlow(db, created.id);
+      expect(reloaded?.legs[0]?.sourceRef.data).toMatchObject({ accountId: "acct-src" });
+
+      const form = flowToFormState(reloaded as SyncFlow, instances);
+      expect(form.source.connectionId).toBe("c-src");
+      expect(form.target.accountId).toBe("acct-tgt");
+    } finally {
+      resetAppDbForTests();
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });
