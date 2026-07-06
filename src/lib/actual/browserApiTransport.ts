@@ -36,10 +36,27 @@ import {
   getBrowserApiRuntime,
   syncBrowserApiRuntime,
   type ActualBrowserApi,
+  type ApiImportTransaction,
+  type ApiTransaction,
   type ActualQueryBuilder,
 } from "./browser/runtime";
 import { prepareRuleForTransport, prepareRulePatchForTransport } from "./ruleMutation";
-import { unsupportedTransportOperation, type ActualBenchTransport, type ScheduleWriteInput, type TransportBudgetMonth } from "./transport";
+import {
+  unsupportedTransportOperation,
+  type ActualBenchTransport,
+  type CreateTransactionsForSyncResult,
+  type ListTransactionsForSyncInput,
+  type ResolvedSyncPayee,
+  type ScheduleWriteInput,
+  type SyncCreatedTransaction,
+  type SyncSourceSplitLine,
+  type SyncSourceTransaction,
+  type SyncTargetLookup,
+  type SyncTargetTransactionInput,
+  type TransportBudgetMonth,
+} from "./transport";
+import { getBudgetFileSyncCapabilities } from "@/lib/sync/capabilities";
+import { normalizeName } from "@/lib/sync/normalize";
 
 type RecordLike = Record<string, unknown>;
 type ApiCategoryGroupWithId = ApiCategoryGroup & { id: string };
@@ -574,6 +591,205 @@ async function getBrowserAllNotes(
   return map;
 }
 
+// --- Budget File Sync transaction primitives (RD-053 / PR-019) -------------
+
+type NameLookup = {
+  payeeNames: Map<string, string>;
+  categoryNames: Map<string, string>;
+};
+
+async function loadSyncNameLookup(
+  api: ActualBrowserApi
+): Promise<NameLookup> {
+  const payeeNames = new Map<string, string>();
+  for (const raw of await api.getPayees()) {
+    const payee = normalizeDirectPayee(raw);
+    if (payee) payeeNames.set(payee.id, payee.name);
+  }
+
+  const categoryNames = new Map<string, string>();
+  for (const raw of await api.getCategories().catch(() => [])) {
+    const category = toDirectCategory(raw);
+    if (category?.id) categoryNames.set(category.id, category.name);
+  }
+
+  return { payeeNames, categoryNames };
+}
+
+function toSyncSplitLine(
+  raw: ApiTransaction,
+  lookup: NameLookup
+): SyncSourceSplitLine {
+  const payeeId = asString(raw.payee) ?? null;
+  const categoryId = asString(raw.category) ?? null;
+  return {
+    id: asString(raw.id) ?? null,
+    amount: typeof raw.amount === "number" ? raw.amount : 0,
+    payeeId,
+    payeeName: payeeId ? lookup.payeeNames.get(payeeId) ?? null : null,
+    categoryId,
+    categoryName: categoryId ? lookup.categoryNames.get(categoryId) ?? null : null,
+    notes: asString(raw.notes) ?? null,
+  };
+}
+
+function toSyncSourceTransaction(
+  raw: ApiTransaction,
+  lookup: NameLookup
+): SyncSourceTransaction {
+  const payeeId = asString(raw.payee) ?? null;
+  const categoryId = asString(raw.category) ?? null;
+  const isParent = raw.is_parent === true;
+  const splitLines = isParent && Array.isArray(raw.subtransactions)
+    ? raw.subtransactions.map((child) => toSyncSplitLine(child, lookup))
+    : [];
+
+  return {
+    id: raw.id,
+    accountId: raw.account,
+    date: raw.date,
+    amount: typeof raw.amount === "number" ? raw.amount : 0,
+    payeeId,
+    payeeName: payeeId ? lookup.payeeNames.get(payeeId) ?? null : null,
+    categoryId,
+    categoryName: categoryId ? lookup.categoryNames.get(categoryId) ?? null : null,
+    notes: asString(raw.notes) ?? null,
+    cleared: raw.cleared === true,
+    reconciled: raw.reconciled === true,
+    importedId: asString(raw.imported_id) ?? null,
+    isParent,
+    isChild: raw.is_child === true,
+    parentId: asString(raw.parent_id) ?? null,
+    splitLines,
+  };
+}
+
+async function listBrowserTransactionsForSync(
+  connection: BrowserApiConnection,
+  input: ListTransactionsForSyncInput
+): Promise<SyncSourceTransaction[]> {
+  const api = await getBrowserApiRuntime(connection);
+  const lookup = await loadSyncNameLookup(api);
+  // Empty date bounds are treated as open-ended by the runtime's grouped query.
+  const rows = await api.getTransactions(
+    input.accountId,
+    input.startDate ?? "",
+    input.endDate ?? ""
+  );
+  return rows
+    .filter((row): row is ApiTransaction => isRecord(row) && typeof row.id === "string")
+    // Split children arrive inline under their parent; skip any that also leak
+    // in at the top level so we never double-count a split line.
+    .filter((row) => row.is_child !== true)
+    .map((row) => toSyncSourceTransaction(row, lookup));
+}
+
+async function createOrResolveBrowserPayee(
+  connection: BrowserApiConnection,
+  name: string
+): Promise<ResolvedSyncPayee> {
+  const api = await getBrowserApiRuntime(connection);
+  const target = normalizeName(name);
+  for (const raw of await api.getPayees()) {
+    const payee = normalizeDirectPayee(raw);
+    if (payee && normalizeName(payee.name) === target) {
+      return { id: payee.id, name: payee.name, created: false };
+    }
+  }
+  const id = await api.createPayee({ name });
+  return { id, name, created: true };
+}
+
+async function resolveCreatedTransactionId(
+  api: ActualBrowserApi,
+  accountId: string,
+  date: string,
+  importedId: string
+): Promise<string | null> {
+  // addTransactions returns only "ok"; recover the id via the durable marker.
+  const rows = await api.getTransactions(accountId, date, date);
+  for (const row of rows) {
+    if (isRecord(row) && asString(row.imported_id) === importedId) {
+      return asString(row.id) ?? null;
+    }
+  }
+  return null;
+}
+
+async function createBrowserTransactionsForSync(
+  connection: BrowserApiConnection,
+  inputs: SyncTargetTransactionInput[]
+): Promise<CreateTransactionsForSyncResult> {
+  const api = await getBrowserApiRuntime(connection);
+  const created: SyncCreatedTransaction[] = [];
+
+  // Writes to the same target budget are serialized to keep the single runtime
+  // consistent and to make per-item apply-state deterministic.
+  for (let requestIndex = 0; requestIndex < inputs.length; requestIndex++) {
+    const input = inputs[requestIndex];
+
+    let payeeId = input.payeeId ?? null;
+    if (!payeeId && input.payeeName) {
+      payeeId = (await createOrResolveBrowserPayee(connection, input.payeeName)).id;
+    }
+
+    const importedId = input.importedId ?? null;
+    const payload: ApiImportTransaction = {
+      date: input.date,
+      amount: input.amount,
+      payee: payeeId,
+      category: input.categoryId ?? null,
+      notes: input.notes ?? null,
+      // Actual defaults missing `cleared` to true; be explicit for synced rows.
+      cleared: input.cleared ?? false,
+    };
+    if (importedId) payload.imported_id = importedId;
+
+    // addTransactions performs a plain insert (no dedupe/reconcile), so the
+    // created row matches the planned payload. See the Slice 1 spike notes for
+    // why this is preferred over importTransactions for the MVP.
+    await api.addTransactions(input.accountId, [payload], {
+      learnCategories: false,
+      runTransfers: false,
+    });
+
+    const transactionId = importedId
+      ? await resolveCreatedTransactionId(api, input.accountId, input.date, importedId)
+      : null;
+
+    created.push({ requestIndex, transactionId, importedId });
+  }
+
+  return { created };
+}
+
+async function getBrowserTargetLookupForSync(
+  connection: BrowserApiConnection,
+  input: ListTransactionsForSyncInput
+): Promise<SyncTargetLookup> {
+  const api = await getBrowserApiRuntime(connection);
+  const payees = (await api.getPayees())
+    .map(normalizeDirectPayee)
+    .filter((payee): payee is Payee => payee !== null);
+
+  const importedIdIndex = new Map<string, string>();
+  const rows = await api.getTransactions(
+    input.accountId,
+    input.startDate ?? "",
+    input.endDate ?? ""
+  );
+  for (const row of rows) {
+    if (!isRecord(row)) continue;
+    const importedId = asString(row.imported_id);
+    const id = asString(row.id);
+    if (importedId && id && !importedIdIndex.has(importedId)) {
+      importedIdIndex.set(importedId, id);
+    }
+  }
+
+  return { payees, importedIdIndex };
+}
+
 export function createBrowserApiTransport(
   connection: BrowserApiConnection
 ): ActualBenchTransport {
@@ -798,6 +1014,16 @@ export function createBrowserApiTransport(
       const api = await getBrowserApiRuntime(connection);
       await api.resetBudgetHold(month);
     },
+
+    getSyncCapabilities: () => getBudgetFileSyncCapabilities(connection),
+    listTransactionsForSync: (input) =>
+      listBrowserTransactionsForSync(connection, input),
+    createOrResolvePayee: (input) =>
+      createOrResolveBrowserPayee(connection, input.name),
+    createTransactionsForSync: (inputs) =>
+      createBrowserTransactionsForSync(connection, inputs),
+    getTargetLookupForSync: (input) =>
+      getBrowserTargetLookupForSync(connection, input),
 
     getNotesIndex: async () => {
       const notes = await getBrowserAllNotes(connection);

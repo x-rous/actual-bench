@@ -84,7 +84,22 @@ export type SyncCapabilitySet = {
   readSplitLines: boolean;
   createPayee: boolean;
   createTransaction: boolean;
-  setImportedId: boolean;
+  /**
+   * Can create a NEW target transaction that carries a durable imported/sync
+   * marker (Actual `imported_id`). This is not the ability to mutate an
+   * existing transaction — that would be `updateTransaction`.
+   */
+  createTransactionWithImportedId: boolean;
+  /** Can create a target transaction whose notes carry the visible sync marker. */
+  createTransactionWithNotesMarker: boolean;
+  /** Can explode source split lines into separate normal target transactions. */
+  createSplitLinesAsSeparateTransactions: boolean;
+  /**
+   * Whether source and target budgets can be held open simultaneously in
+   * isolated runtimes (Pattern B). When false, cross-budget sync must switch
+   * budgets sequentially through a single runtime (Pattern A).
+   */
+  supportsMultiRuntimeBudgetAccess: boolean;
   updateTransaction: boolean;
   deleteTransaction: boolean;
 };

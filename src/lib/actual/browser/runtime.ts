@@ -20,6 +20,41 @@ import {
   withTimeout,
 } from "./setup";
 
+/**
+ * Raw transaction shape returned by the `@actual-app/api` browser runtime.
+ * `getTransactions` runs with `{ splits: "grouped" }`, so split parents carry
+ * their children inline under `subtransactions`. snake_case matches the runtime.
+ */
+export type ApiTransaction = {
+  id: string;
+  account: string;
+  date: string;
+  amount: number;
+  payee?: string | null;
+  category?: string | null;
+  notes?: string | null;
+  cleared?: boolean;
+  reconciled?: boolean;
+  imported_id?: string | null;
+  is_parent?: boolean;
+  is_child?: boolean;
+  parent_id?: string | null;
+  subtransactions?: ApiTransaction[];
+};
+
+/** Raw create/import payload for the browser runtime's transaction writers. */
+export type ApiImportTransaction = {
+  account?: string;
+  date: string;
+  amount: number;
+  payee?: string | null;
+  payee_name?: string;
+  category?: string | null;
+  notes?: string | null;
+  cleared?: boolean;
+  imported_id?: string;
+};
+
 export type ActualQueryBuilder = {
   filter(expr: unknown): ActualQueryBuilder;
   unfilter(exprs?: unknown): ActualQueryBuilder;
@@ -94,6 +129,21 @@ export type ActualBrowserApi = {
   createSchedule(schedule: Omit<ApiSchedule, "id">): Promise<string>;
   updateSchedule(scheduleId: string, fields: Partial<ApiSchedule>): Promise<string>;
   deleteSchedule(scheduleId: string): Promise<void>;
+  getTransactions(
+    accountId: string,
+    startDate: string,
+    endDate: string
+  ): Promise<ApiTransaction[]>;
+  addTransactions(
+    accountId: string,
+    transactions: ApiImportTransaction[],
+    opts?: { learnCategories?: boolean; runTransfers?: boolean }
+  ): Promise<"ok">;
+  importTransactions(
+    accountId: string,
+    transactions: ApiImportTransaction[],
+    opts?: Record<string, unknown>
+  ): Promise<unknown>;
   getNote(id: string): Promise<NoteRow | null>;
   updateNote(id: string, note: string | null): Promise<void>;
   q?(table: string): ActualQueryBuilder;

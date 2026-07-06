@@ -8,19 +8,39 @@ const NO_SYNC_CAPABILITIES: SyncCapabilitySet = {
   readSplitLines: false,
   createPayee: false,
   createTransaction: false,
-  setImportedId: false,
+  createTransactionWithImportedId: false,
+  createTransactionWithNotesMarker: false,
+  createSplitLinesAsSeparateTransactions: false,
+  supportsMultiRuntimeBudgetAccess: false,
   updateTransaction: false,
   deleteTransaction: false,
 };
 
+/**
+ * Direct-mode capabilities proven by the PR-019 Slice 1 capability spike.
+ *
+ * Only operations verified against the `@actual-app/api` browser transport are
+ * marked `true`. See `agents/pr-specs/notes/pr-019-slice1-direct-capability-spike.md`
+ * for the supporting evidence (create path, imported_id marker, split handling,
+ * and runtime-model findings).
+ */
 const CURRENT_DIRECT_CAPABILITIES: SyncCapabilitySet = {
+  // Budget listing is not exercised by the sync transport layer yet.
   listBudgets: false,
   listAccounts: true,
   listTransactions: true,
   readSplitLines: true,
   createPayee: true,
-  createTransaction: false,
-  setImportedId: false,
+  createTransaction: true,
+  createTransactionWithImportedId: true,
+  createTransactionWithNotesMarker: true,
+  createSplitLinesAsSeparateTransactions: true,
+  // Actual's browser API keeps a single process-global budget open at a time,
+  // so two budgets cannot be held open concurrently in one JS realm. Pattern B
+  // (isolated worker per budget) is not proven, so cross-budget sync uses
+  // sequential Pattern A switching for the MVP.
+  supportsMultiRuntimeBudgetAccess: false,
+  // MVP is create-only; no target updates/deletes.
   updateTransaction: false,
   deleteTransaction: false,
 };

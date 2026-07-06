@@ -56,7 +56,12 @@ import {
 } from "../api/tags";
 import type { HttpApiConnection } from "@/store/connection";
 import { prepareRuleForTransport, prepareRulePatchForTransport } from "./ruleMutation";
-import type { ActualBenchTransport, TransportBudgetMonth } from "./transport";
+import {
+  unsupportedTransportOperation,
+  type ActualBenchTransport,
+  type TransportBudgetMonth,
+} from "./transport";
+import { getBudgetFileSyncCapabilities } from "@/lib/sync/capabilities";
 
 export function createHttpApiTransport(
   connection: HttpApiConnection
@@ -158,6 +163,22 @@ export function createHttpApiTransport(
       apiRequest(connection, "/months/" + month + "/nextmonthbudgethold", {
         method: "DELETE",
       }),
+
+    // Budget File Sync is Direct-mode only in the MVP. Report the unsupported
+    // capability set and refuse the write/read primitives explicitly.
+    getSyncCapabilities: () => getBudgetFileSyncCapabilities({ mode: "http-api" }),
+    listTransactionsForSync: () => {
+      throw unsupportedTransportOperation("http-api", "Budget File Sync transaction reads");
+    },
+    createOrResolvePayee: () => {
+      throw unsupportedTransportOperation("http-api", "Budget File Sync payee resolution");
+    },
+    createTransactionsForSync: () => {
+      throw unsupportedTransportOperation("http-api", "Budget File Sync transaction creation");
+    },
+    getTargetLookupForSync: () => {
+      throw unsupportedTransportOperation("http-api", "Budget File Sync target lookup");
+    },
 
     getNotesIndex: () => getNotesIndex(connection),
     getAccountNote: (accountId) => getAccountNote(connection, accountId),
