@@ -370,3 +370,102 @@ export function listSyncFlowRunItems(db: SqliteDatabase, options: { runId: strin
     .all<SyncFlowRunItemRow>(options.runId, limit)
     .map(rowToRunItem);
 }
+
+export type UpdateSyncFlowRunPatch = {
+  status?: SyncRunStatus;
+  finishedAt?: string | null;
+  summary?: JsonEnvelope;
+  error?: JsonEnvelope | null;
+  counts?: JsonEnvelope | null;
+};
+
+export function updateSyncFlowRun(
+  db: SqliteDatabase,
+  runId: string,
+  patch: UpdateSyncFlowRunPatch
+): SyncFlowRun | null {
+  const existing = getSyncFlowRun(db, runId);
+  if (!existing) return null;
+
+  const summary = patch.summary === undefined ? existing.summary : normalizeEnvelope(patch.summary, "summary");
+  const error = patch.error === undefined ? existing.error : normalizeOptionalEnvelope(patch.error, "error");
+  const counts = patch.counts === undefined ? existing.counts : normalizeOptionalEnvelope(patch.counts, "counts");
+
+  db.prepare(
+    `UPDATE sync_flow_runs
+     SET status = ?,
+         finished_at = ?,
+         summary_json = ?,
+         error_json = ?,
+         counts_json = ?
+     WHERE id = ?`
+  ).run(
+    patch.status ?? existing.status,
+    patch.finishedAt === undefined ? existing.finishedAt : patch.finishedAt,
+    stringifyEnvelope(summary),
+    stringifyEnvelope(error),
+    stringifyEnvelope(counts),
+    runId
+  );
+
+  return getSyncFlowRun(db, runId);
+}
+
+export type UpdateSyncFlowRunItemPatch = {
+  status?: string;
+  message?: string | null;
+  applyState?: SyncApplyState | null;
+  warnings?: JsonEnvelope | null;
+  errors?: JsonEnvelope | null;
+  targetItemRef?: JsonEnvelope | null;
+  selectedForApply?: boolean;
+  createdTargetTransactionId?: string | null;
+  createdTargetMarker?: string | null;
+};
+
+export function updateSyncFlowRunItem(
+  db: SqliteDatabase,
+  itemId: string,
+  patch: UpdateSyncFlowRunItemPatch
+): SyncFlowRunItem | null {
+  const existing = getSyncFlowRunItem(db, itemId);
+  if (!existing) return null;
+
+  const warnings = patch.warnings === undefined ? existing.warnings : normalizeOptionalEnvelope(patch.warnings, "warnings");
+  const errors = patch.errors === undefined ? existing.errors : normalizeOptionalEnvelope(patch.errors, "errors");
+  const targetItemRef =
+    patch.targetItemRef === undefined ? existing.targetItemRef : normalizeOptionalEnvelope(patch.targetItemRef, "targetItemRef");
+
+  db.prepare(
+    `UPDATE sync_flow_run_items
+     SET status = ?,
+         message = ?,
+         apply_state = ?,
+         warnings_json = ?,
+         errors_json = ?,
+         target_item_ref_json = ?,
+         selected_for_apply = ?,
+         created_target_transaction_id = ?,
+         created_target_marker = ?,
+         updated_at = ?
+     WHERE id = ?`
+  ).run(
+    patch.status ?? existing.status,
+    patch.message === undefined ? existing.message : normalizeOptionalText(patch.message, "message"),
+    patch.applyState === undefined ? existing.applyState : patch.applyState,
+    stringifyEnvelope(warnings),
+    stringifyEnvelope(errors),
+    stringifyEnvelope(targetItemRef),
+    (patch.selectedForApply === undefined ? existing.selectedForApply : patch.selectedForApply) ? 1 : 0,
+    patch.createdTargetTransactionId === undefined
+      ? existing.createdTargetTransactionId
+      : normalizeOptionalText(patch.createdTargetTransactionId, "createdTargetTransactionId"),
+    patch.createdTargetMarker === undefined
+      ? existing.createdTargetMarker
+      : normalizeOptionalText(patch.createdTargetMarker, "createdTargetMarker"),
+    new Date().toISOString(),
+    itemId
+  );
+
+  return getSyncFlowRunItem(db, itemId);
+}
