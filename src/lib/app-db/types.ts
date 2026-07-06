@@ -59,14 +59,20 @@ export type SyncRunStatus =
 
 export type SyncRunTrigger = "manual_preview" | "manual_apply" | "background_future";
 
+/**
+ * Primary, mutually-exclusive lifecycle/dedupe state persisted for each run
+ * item. Non-exclusive annotations (missing payee/category, "rules may modify",
+ * split fallback key, etc.) are carried as flags in the run item's warnings
+ * envelope rather than crammed into this enum — see `SyncPlanFlag`.
+ */
 export type SyncItemClassification =
   | "new"
-  | "already_mapped"
+  | "already_synced"
   | "target_marker_match"
+  | "source_changed_since_sync"
   | "exact_duplicate"
   | "strong_duplicate"
   | "weak_duplicate"
-  | "changed_since_sync"
   | "source_missing"
   | "blocked"
   | "warning";

@@ -1,0 +1,274 @@
+import { getBudgetFileSyncCapabilities } from "./capabilities";
+import { buildPlanConfig } from "./flowConfig";
+import { generateSyncMarker } from "./marker";
+import { transactionFingerprint } from "./sourceItems";
+import { planSyncFlow } from "./syncPlanner";
+import type { SyncSourceTransaction } from "@/lib/actual/transport";
+import type { SyncMapping } from "@/lib/app-db/types";
+import type { SyncPlannerInput, SyncPlannerTargetSnapshot } from "./plannedChanges";
+
+const FLOW_ID = "flow-1";
+
+const config = buildPlanConfig({
+  flowId: FLOW_ID,
+  targetAccountId: "acct-tgt",
+  sourceBudgetName: "Home",
+  sourceAccountName: "Checking",
+});
+
+const browserCaps = getBudgetFileSyncCapabilities({ mode: "browser-api" });
+const httpCaps = getBudgetFileSyncCapabilities({ mode: "http-api" });
+
+function txn(overrides: Partial<SyncSourceTransaction> = {}): SyncSourceTransaction {
+  return {
+    id: "t1",
+    accountId: "acct-src",
+    date: "2026-07-01",
+    amount: -1250,
+    payeeId: "sp1",
+    payeeName: "Coffee Bar",
+    categoryId: "sc1",
+    categoryName: "Dining",
+    notes: "flat white",
+    cleared: true,
+    reconciled: false,
+    importedId: null,
+    isParent: false,
+    isChild: false,
+    parentId: null,
+    splitLines: [],
+    ...overrides,
+  };
+}
+
+function emptyTarget(overrides: Partial<SyncPlannerTargetSnapshot> = {}): SyncPlannerTargetSnapshot {
+  return {
+    payees: [],
+    categories: [],
+    importedIdIndex: new Map(),
+    transactions: [],
+    ...overrides,
+  };
+}
+
+function baseInput(overrides: Partial<SyncPlannerInput> = {}): SyncPlannerInput {
+  return {
+    config,
+    capabilities: browserCaps,
+    sourceTransactions: [txn()],
+    target: emptyTarget(),
+    existingMappings: [],
+    ...overrides,
+  };
+}
+
+function mapping(overrides: Partial<SyncMapping> = {}): SyncMapping {
+  return {
+    id: "m1",
+    flowId: FLOW_ID,
+    sourceConnectionFingerprint: "src-fp",
+    sourceBudgetId: "budget-src",
+    sourceAccountId: "acct-src",
+    sourceEntityType: "transaction",
+    sourceTransactionId: "t1",
+    sourceSplitId: null,
+    sourceItemKey: "txn:t1",
+    sourceFingerprint: "fp",
+    targetConnectionFingerprint: "tgt-fp",
+    targetBudgetId: "budget-tgt",
+    targetAccountId: "acct-tgt",
+    targetEntityType: "transaction",
+    targetTransactionId: "tt1",
+    targetItemKey: "txn:tt1",
+    targetFingerprint: null,
+    targetMarker: null,
+    createdRunId: "run-0",
+    status: "active",
+    lastSeenAt: null,
+    lastAppliedAt: null,
+    createdAt: "2026-07-01T00:00:00.000Z",
+    updatedAt: "2026-07-01T00:00:00.000Z",
+    ...overrides,
+  };
+}
+
+describe("planSyncFlow — new create", () => {
+  it("plans a new reversed, marker-tagged create with pre-selection", () => {
+    const target = emptyTarget({
+      payees: [{ id: "tp1", name: "Coffee Bar" }],
+      categories: [{ id: "tc1", name: "Dining" }],
+    });
+    const plan = planSyncFlow(baseInput({ target }));
+
+    expect(plan.items).toHaveLength(1);
+    const item = plan.items[0];
+    expect(item.classification).toBe("new");
+    expect(item.action).toBe("create");
+    expect(item.selectedForApply).toBe(true);
+    expect(item.plannedTargetPayload).toMatchObject({
+      amount: 1250,
+      payeeId: "tp1",
+      categoryId: "tc1",
+      notes: "flat white [Synced from Home / Checking]",
+      importedId: generateSyncMarker(FLOW_ID, "txn:t1"),
+    });
+    expect(item.flags).toContain("target_rules_may_modify");
+    expect(plan.counts.new).toBe(1);
+  });
+
+  it("flags missing payee create-on-apply and missing category left empty", () => {
+    const plan = planSyncFlow(baseInput({ target: emptyTarget() }));
+    const item = plan.items[0];
+    expect(item.classification).toBe("new");
+    expect(item.plannedTargetPayload?.payeeName).toBe("Coffee Bar");
+    expect(item.plannedTargetPayload?.payeeId).toBeNull();
+    expect(item.plannedTargetPayload?.categoryId).toBeNull();
+    expect(item.flags).toEqual(
+      expect.arrayContaining(["missing_payee_created_on_apply", "missing_category_left_empty"])
+    );
+  });
+
+  it("leaves payee empty when policy is leave_empty", () => {
+    const leaveEmpty = buildPlanConfig({
+      flowId: FLOW_ID,
+      targetAccountId: "acct-tgt",
+      sourceBudgetName: "Home",
+      sourceAccountName: "Checking",
+      missingPayee: "leave_empty",
+    });
+    const plan = planSyncFlow(baseInput({ config: leaveEmpty }));
+    const item = plan.items[0];
+    expect(item.plannedTargetPayload?.payeeName).toBeNull();
+    expect(item.flags).toContain("missing_payee_left_empty");
+  });
+});
+
+describe("planSyncFlow — mappings and markers", () => {
+  it("skips an already-synced item whose fingerprint is unchanged", () => {
+    const fingerprint = transactionFingerprint(txn());
+    const plan = planSyncFlow(
+      baseInput({ existingMappings: [mapping({ sourceFingerprint: fingerprint })] })
+    );
+    const item = plan.items[0];
+    expect(item.classification).toBe("already_synced");
+    expect(item.action).toBe("skip");
+    expect(item.targetTransactionId).toBe("tt1");
+  });
+
+  it("warns (only) when the source changed after mapping", () => {
+    const plan = planSyncFlow(
+      baseInput({ existingMappings: [mapping({ sourceFingerprint: "stale-fingerprint" })] })
+    );
+    const item = plan.items[0];
+    expect(item.classification).toBe("source_changed_since_sync");
+    expect(item.action).toBe("skip");
+    expect(item.flags).toContain("source_changed_since_sync");
+    expect(item.plannedTargetPayload).toBeNull();
+  });
+
+  it("detects a target marker match when the DB mapping is missing (repairable)", () => {
+    const marker = generateSyncMarker(FLOW_ID, "txn:t1")!;
+    const target = emptyTarget({ importedIdIndex: new Map([[marker, "tt-existing"]]) });
+    const plan = planSyncFlow(baseInput({ target }));
+    const item = plan.items[0];
+    expect(item.classification).toBe("target_marker_match");
+    expect(item.action).toBe("skip");
+    expect(item.targetTransactionId).toBe("tt-existing");
+    expect(item.flags).toContain("target_marker_match_repair");
+  });
+});
+
+describe("planSyncFlow — duplicates", () => {
+  it("skips an exact duplicate", () => {
+    const target = emptyTarget({
+      payees: [{ id: "tp1", name: "Coffee Bar" }],
+      categories: [{ id: "tc1", name: "Dining" }],
+      transactions: [
+        { id: "d1", date: "2026-07-01", amount: 1250, payeeName: "Coffee Bar", categoryId: "tc1" },
+      ],
+    });
+    const plan = planSyncFlow(baseInput({ target }));
+    const item = plan.items[0];
+    expect(item.classification).toBe("exact_duplicate");
+    expect(item.duplicateConfidence).toBe("exact");
+    expect(item.action).toBe("skip");
+  });
+
+  it("skips a strong duplicate (payee matches, category differs)", () => {
+    const target = emptyTarget({
+      payees: [{ id: "tp1", name: "Coffee Bar" }],
+      transactions: [
+        { id: "d1", date: "2026-07-01", amount: 1250, payeeName: "Coffee Bar", categoryId: "other" },
+      ],
+    });
+    const plan = planSyncFlow(baseInput({ target }));
+    expect(plan.items[0].classification).toBe("strong_duplicate");
+  });
+
+  it("skips a weak duplicate (date + amount only)", () => {
+    const target = emptyTarget({
+      transactions: [
+        { id: "d1", date: "2026-07-01", amount: 1250, payeeName: "Someone Else", categoryId: null },
+      ],
+    });
+    const plan = planSyncFlow(baseInput({ target }));
+    expect(plan.items[0].classification).toBe("weak_duplicate");
+  });
+});
+
+describe("planSyncFlow — splits", () => {
+  it("explodes a split parent into separate planned creates with split keys", () => {
+    const parent = txn({
+      id: "p",
+      amount: -3000,
+      categoryId: null,
+      categoryName: null,
+      isParent: true,
+      splitLines: [
+        { id: "s1", amount: -1000, payeeId: null, payeeName: null, categoryId: "sc-a", categoryName: "Groceries", notes: null },
+        { id: "s2", amount: -2000, payeeId: null, payeeName: null, categoryId: "sc-b", categoryName: "Household", notes: "soap" },
+      ],
+    });
+    const target = emptyTarget({
+      payees: [{ id: "tp1", name: "Coffee Bar" }],
+      categories: [
+        { id: "tc-a", name: "Groceries" },
+        { id: "tc-b", name: "Household" },
+      ],
+    });
+    const plan = planSyncFlow(baseInput({ sourceTransactions: [parent], target }));
+
+    expect(plan.items).toHaveLength(2);
+    expect(plan.items.map((i) => i.sourceItemKey)).toEqual(["split:p:s1", "split:p:s2"]);
+    expect(plan.items[0].sourceEntityType).toBe("split_line");
+    expect(plan.items[0].plannedTargetPayload?.amount).toBe(1000);
+    expect(plan.items[0].plannedTargetPayload?.categoryId).toBe("tc-a");
+    // split children inherit the parent payee
+    expect(plan.items[1].plannedTargetPayload?.payeeId).toBe("tp1");
+    expect(plan.items[1].plannedTargetPayload?.importedId).toBe(generateSyncMarker(FLOW_ID, "split:p:s2"));
+  });
+
+  it("flags a split-line fallback key when the child has no id", () => {
+    const parent = txn({
+      id: "p",
+      isParent: true,
+      splitLines: [
+        { id: null, amount: -500, payeeId: null, payeeName: null, categoryId: null, categoryName: null, notes: null },
+      ],
+    });
+    const plan = planSyncFlow(baseInput({ sourceTransactions: [parent] }));
+    expect(plan.items[0].usedFallbackKey).toBe(true);
+    expect(plan.items[0].flags).toContain("split_fallback_key");
+  });
+});
+
+describe("planSyncFlow — blocked", () => {
+  it("blocks creates when the target cannot store a durable marker (HTTP mode)", () => {
+    const plan = planSyncFlow(baseInput({ capabilities: httpCaps }));
+    const item = plan.items[0];
+    expect(item.classification).toBe("blocked");
+    expect(item.action).toBe("blocked");
+    expect(item.flags).toContain("blocked_no_marker");
+    expect(item.plannedTargetPayload).toBeNull();
+  });
+});
