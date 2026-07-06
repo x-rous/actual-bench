@@ -101,6 +101,13 @@ function baseItem(
     sourceSplitId: item.sourceSplitId,
     sourceFingerprint: item.fingerprint,
     usedFallbackKey: item.usedFallbackKey,
+    source: {
+      date: item.date,
+      amount: item.amount,
+      payeeName: item.payeeName,
+      categoryName: item.categoryName,
+      notes: item.notes,
+    },
     classification: fields.classification,
     duplicateConfidence: fields.duplicateConfidence ?? "none",
     action: fields.action,

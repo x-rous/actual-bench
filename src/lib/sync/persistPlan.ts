@@ -53,6 +53,14 @@ function sourceItemRef(item: SyncPlannedItem): JsonObject {
     splitId: item.sourceSplitId,
     fingerprint: item.sourceFingerprint,
     usedFallbackKey: item.usedFallbackKey,
+    // Source display snapshot so the preview can show source vs target.
+    source: {
+      date: item.source.date,
+      amount: item.source.amount,
+      payeeName: item.source.payeeName,
+      categoryName: item.source.categoryName,
+      notes: item.source.notes,
+    },
   };
 }
 

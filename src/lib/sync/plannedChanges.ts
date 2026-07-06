@@ -47,6 +47,15 @@ export type PlannedTargetPayload = {
   importedId: string | null;
 };
 
+/** Source-side display snapshot, persisted so the preview can show both sides. */
+export type PlannedSourceSnapshot = {
+  date: string;
+  amount: number;
+  payeeName: string | null;
+  categoryName: string | null;
+  notes: string | null;
+};
+
 export type SyncPlannedItem = {
   sourceItemKey: string;
   sourceEntityType: SyncEntityType;
@@ -54,6 +63,7 @@ export type SyncPlannedItem = {
   sourceSplitId: string | null;
   sourceFingerprint: string;
   usedFallbackKey: boolean;
+  source: PlannedSourceSnapshot;
   classification: SyncItemClassification;
   duplicateConfidence: SyncDuplicateConfidence;
   action: SyncPlannedAction;

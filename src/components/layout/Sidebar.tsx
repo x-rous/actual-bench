@@ -30,6 +30,7 @@ import {
   Sun,
   Moon,
   ArrowUpCircle,
+  ArrowLeftRight,
   Keyboard,
   Settings,
 } from "lucide-react";
@@ -106,6 +107,7 @@ const SIDEBAR_SECTIONS: SidebarSection[] = [
           href: "/budget-diagnostics",
           icon: Stethoscope,
         },
+        { id: "sync", label: "Budget File Sync", href: "/sync", icon: ArrowLeftRight },
         { id: "data-browser", label: "Data Browser", href: "/data-browser", icon: Database },
         { id: "app-health", label: "App Health", href: "/app-health", icon: Settings },
         { id: "rule-diagnostics", label: "Rule Diagnostics", href: "/rules/diagnostics", icon: ShieldCheck },
