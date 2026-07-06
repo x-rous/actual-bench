@@ -40,6 +40,72 @@ export type AppDbHealth = {
   error?: string;
 };
 
+export type SyncDomain =
+  | "transaction_sync"
+  | "payee_sync"
+  | "category_sync"
+  | "master_data_sync"
+  | "consolidation_sync";
+
+export type SyncEntityType = "transaction" | "split_line" | "payee" | "category" | "category_group";
+
+export type SyncRunStatus =
+  | "draft_preview"
+  | "applying"
+  | "applied"
+  | "partial"
+  | "failed"
+  | "cancelled";
+
+export type SyncRunTrigger = "manual_preview" | "manual_apply" | "background_future";
+
+export type SyncItemClassification =
+  | "new"
+  | "already_mapped"
+  | "target_marker_match"
+  | "exact_duplicate"
+  | "strong_duplicate"
+  | "weak_duplicate"
+  | "changed_since_sync"
+  | "source_missing"
+  | "blocked"
+  | "warning";
+
+export type SyncDuplicateConfidence = "none" | "exact" | "strong" | "weak";
+
+export type SyncApplyState = "pending" | "applied" | "failed" | "skipped";
+
+export type SyncMappingStatus = "active" | "source_missing" | "target_missing" | "disabled";
+
+export type SyncCapabilitySet = {
+  listBudgets: boolean;
+  listAccounts: boolean;
+  listTransactions: boolean;
+  readSplitLines: boolean;
+  createPayee: boolean;
+  createTransaction: boolean;
+  setImportedId: boolean;
+  updateTransaction: boolean;
+  deleteTransaction: boolean;
+};
+
+export type SyncCapabilityReport = {
+  mode: "http-api" | "browser-api";
+  supported: boolean;
+  reason: string | null;
+  capabilities: SyncCapabilitySet;
+};
+
+export type SyncConnectionReference = {
+  mode: "http-api" | "browser-api";
+  fingerprint: string;
+  label?: string;
+  budgetSyncId?: string;
+  budgetName?: string;
+  accountId?: string;
+  accountName?: string;
+};
+
 export type SyncFlowLeg = {
   id: string;
   flowId: string;
@@ -57,6 +123,7 @@ export type SyncFlow = {
   id: string;
   name: string;
   enabled: boolean;
+  flowType: SyncDomain;
   description: string | null;
   createdAt: string;
   updatedAt: string;
@@ -71,4 +138,85 @@ export type SyncFlowRun = {
   finishedAt: string | null;
   summary: JsonEnvelope;
   error: JsonEnvelope | null;
+  createdByTrigger: SyncRunTrigger;
+  sourceSnapshotSummary: JsonEnvelope | null;
+  targetSnapshotSummary: JsonEnvelope | null;
+  counts: JsonEnvelope | null;
 };
+
+export type SyncFlowRunItem = {
+  id: string;
+  runId: string;
+  flowId: string | null;
+  legId: string | null;
+  sourceItemRef: JsonEnvelope;
+  targetItemRef: JsonEnvelope | null;
+  status: string;
+  message: string | null;
+  sourceEntityType: SyncEntityType | null;
+  sourceItemKey: string | null;
+  sourceTransactionId: string | null;
+  sourceSplitId: string | null;
+  sourceFingerprint: string | null;
+  plannedAction: string | null;
+  plannedTargetPayload: JsonEnvelope | null;
+  classification: SyncItemClassification | null;
+  duplicateConfidence: SyncDuplicateConfidence | null;
+  warnings: JsonEnvelope | null;
+  errors: JsonEnvelope | null;
+  selectedForApply: boolean;
+  applyState: SyncApplyState | null;
+  createdTargetTransactionId: string | null;
+  createdTargetMarker: string | null;
+  createdAt: string;
+  updatedAt: string | null;
+};
+
+export type SyncMapping = {
+  id: string;
+  flowId: string;
+  sourceConnectionFingerprint: string;
+  sourceBudgetId: string;
+  sourceAccountId: string | null;
+  sourceEntityType: SyncEntityType;
+  sourceTransactionId: string | null;
+  sourceSplitId: string | null;
+  sourceItemKey: string;
+  sourceFingerprint: string;
+  targetConnectionFingerprint: string;
+  targetBudgetId: string;
+  targetAccountId: string | null;
+  targetEntityType: SyncEntityType;
+  targetTransactionId: string | null;
+  targetItemKey: string | null;
+  targetFingerprint: string | null;
+  targetMarker: string | null;
+  createdRunId: string | null;
+  status: SyncMappingStatus;
+  lastSeenAt: string | null;
+  lastAppliedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type SyncMappingInput = Omit<SyncMapping, "id" | "createdAt" | "updatedAt" | "status" | "lastSeenAt" | "lastAppliedAt"> & {
+  id?: string;
+  status?: SyncMappingStatus;
+  lastSeenAt?: string | null;
+  lastAppliedAt?: string | null;
+};
+
+export type SyncMappingPatch = Partial<
+  Pick<
+    SyncMapping,
+    | "sourceFingerprint"
+    | "targetTransactionId"
+    | "targetItemKey"
+    | "targetFingerprint"
+    | "targetMarker"
+    | "createdRunId"
+    | "status"
+    | "lastSeenAt"
+    | "lastAppliedAt"
+  >
+>;

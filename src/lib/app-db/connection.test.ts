@@ -1,3 +1,4 @@
+import Database from "better-sqlite3";
 import { mkdtempSync, rmSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
@@ -8,6 +9,15 @@ import {
   resetAppDbForTests,
   resolveAppDbPath,
 } from "./connection";
+import {
+  APP_META_TABLE_SQL,
+  SYNC_FLOW_INDEX_SQL,
+  SYNC_FLOW_LEG_TABLE_SQL,
+  SYNC_FLOW_RUN_ITEM_TABLE_SQL,
+  SYNC_FLOW_RUN_TABLE_SQL,
+  SYNC_FLOW_TABLE_SQL,
+} from "./schema";
+import type { SqliteDatabase } from "./types";
 
 function tempDbPath(): { root: string; dbPath: string } {
   const root = mkdtempSync(join(tmpdir(), "actual-bench-db-"));
@@ -36,7 +46,7 @@ describe("app DB connection", () => {
       const version = db
         .prepare("SELECT value FROM app_meta WHERE key = ?")
         .get<{ value: string }>("schema_version");
-      expect(version?.value).toBe("1");
+      expect(version?.value).toBe("2");
 
       const sameDb = getAppDb(dbPath);
       expect(sameDb).toBe(db);
@@ -44,8 +54,41 @@ describe("app DB connection", () => {
       const health = getAppDbHealth(dbPath);
       expect(health.ready).toBe(true);
       expect(health.writable).toBe(true);
-      expect(health.schemaVersion).toBe(1);
+      expect(health.schemaVersion).toBe(2);
       expect(health.configuredPath).toBe(dbPath);
+    } finally {
+      resetAppDbForTests();
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+
+  it("migrates an existing schema v1 database to the sync platform schema", () => {
+    const { root, dbPath } = tempDbPath();
+
+    try {
+      const db = new Database(dbPath) as SqliteDatabase;
+      db.exec(APP_META_TABLE_SQL);
+      db.exec(SYNC_FLOW_TABLE_SQL);
+      db.exec(SYNC_FLOW_LEG_TABLE_SQL);
+      db.exec(SYNC_FLOW_RUN_TABLE_SQL);
+      db.exec(SYNC_FLOW_RUN_ITEM_TABLE_SQL);
+      for (const statement of SYNC_FLOW_INDEX_SQL) db.exec(statement);
+      db.prepare("INSERT INTO app_meta (key, value, updated_at) VALUES (?, ?, ?)").run("schema_version", "1", "2026-01-01T00:00:00.000Z");
+      db.prepare("INSERT INTO app_meta (key, value, updated_at) VALUES (?, ?, ?)").run("created_at", "2026-01-01T00:00:00.000Z", "2026-01-01T00:00:00.000Z");
+      db.prepare("INSERT INTO app_meta (key, value, updated_at) VALUES (?, ?, ?)").run("last_migrated_at", "2026-01-01T00:00:00.000Z", "2026-01-01T00:00:00.000Z");
+      db.close();
+
+      const migrated = getAppDb(dbPath);
+      const version = migrated.prepare("SELECT value FROM app_meta WHERE key = ?").get<{ value: string }>("schema_version");
+      const flowTypeColumn = migrated.pragma("table_info(sync_flows)") as Array<{ name: string }>;
+      const mappingTable = migrated
+        .prepare("SELECT COUNT(*) AS count FROM sqlite_schema WHERE type = 'table' AND name = ?")
+        .get<{ count: number }>("sync_mappings");
+
+      expect(version?.value).toBe("2");
+      expect(flowTypeColumn.some((column) => column.name === "flow_type")).toBe(true);
+      expect(mappingTable?.count).toBe(1);
     } finally {
       resetAppDbForTests();
       rmSync(root, { recursive: true, force: true });

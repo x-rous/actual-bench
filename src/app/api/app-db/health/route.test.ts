@@ -33,6 +33,6 @@ describe("GET /api/app-db/health", () => {
 
     expect(response.status).toBe(200);
     expect(body.ready).toBe(true);
-    expect(body.schemaVersion).toBe(1);
+    expect(body.schemaVersion).toBe(2);
   });
 });

@@ -6,14 +6,17 @@ import {
   SYNC_FLOW_RUN_ITEM_TABLE_SQL,
   SYNC_FLOW_RUN_TABLE_SQL,
   SYNC_FLOW_TABLE_SQL,
+  SYNC_MAPPING_TABLE_SQL,
+  SYNC_PLATFORM_V2_INDEX_SQL,
 } from "./schema";
 import { AppDbUnavailableError } from "./errors";
 
-export const LATEST_SCHEMA_VERSION = 1;
+export const LATEST_SCHEMA_VERSION = 2;
 
 type Migration = {
   version: number;
-  statements: readonly string[];
+  statements?: readonly string[];
+  apply?: (db: SqliteDatabase) => void;
 };
 
 export type AppDbMigrationMeta = {
@@ -21,6 +24,52 @@ export type AppDbMigrationMeta = {
   createdAt: string | null;
   lastMigratedAt: string | null;
 };
+
+function columnExists(db: SqliteDatabase, tableName: string, columnName: string): boolean {
+  const rows = db.pragma(`table_info(${tableName})`) as Array<{ name: string }>;
+  return rows.some((row) => row.name === columnName);
+}
+
+function addColumnIfMissing(
+  db: SqliteDatabase,
+  tableName: string,
+  columnName: string,
+  definition: string
+): void {
+  if (!columnExists(db, tableName, columnName)) {
+    db.exec(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${definition}`);
+  }
+}
+
+function applySyncPlatformV2(db: SqliteDatabase): void {
+  addColumnIfMissing(db, "sync_flows", "flow_type", "text NOT NULL DEFAULT 'transaction_sync'");
+
+  addColumnIfMissing(db, "sync_flow_runs", "created_by_trigger", "text NOT NULL DEFAULT 'manual_preview'");
+  addColumnIfMissing(db, "sync_flow_runs", "source_snapshot_summary_json", "text");
+  addColumnIfMissing(db, "sync_flow_runs", "target_snapshot_summary_json", "text");
+  addColumnIfMissing(db, "sync_flow_runs", "counts_json", "text");
+
+  addColumnIfMissing(db, "sync_flow_run_items", "flow_id", "text REFERENCES sync_flows(id) ON DELETE SET NULL");
+  addColumnIfMissing(db, "sync_flow_run_items", "source_entity_type", "text");
+  addColumnIfMissing(db, "sync_flow_run_items", "source_item_key", "text");
+  addColumnIfMissing(db, "sync_flow_run_items", "source_transaction_id", "text");
+  addColumnIfMissing(db, "sync_flow_run_items", "source_split_id", "text");
+  addColumnIfMissing(db, "sync_flow_run_items", "source_fingerprint", "text");
+  addColumnIfMissing(db, "sync_flow_run_items", "planned_action", "text");
+  addColumnIfMissing(db, "sync_flow_run_items", "planned_target_payload_json", "text");
+  addColumnIfMissing(db, "sync_flow_run_items", "classification", "text");
+  addColumnIfMissing(db, "sync_flow_run_items", "duplicate_confidence", "text");
+  addColumnIfMissing(db, "sync_flow_run_items", "warnings_json", "text");
+  addColumnIfMissing(db, "sync_flow_run_items", "errors_json", "text");
+  addColumnIfMissing(db, "sync_flow_run_items", "selected_for_apply", "integer NOT NULL DEFAULT 0");
+  addColumnIfMissing(db, "sync_flow_run_items", "apply_state", "text");
+  addColumnIfMissing(db, "sync_flow_run_items", "created_target_transaction_id", "text");
+  addColumnIfMissing(db, "sync_flow_run_items", "created_target_marker", "text");
+  addColumnIfMissing(db, "sync_flow_run_items", "updated_at", "text");
+
+  db.exec(SYNC_MAPPING_TABLE_SQL);
+  for (const statement of SYNC_PLATFORM_V2_INDEX_SQL) db.exec(statement);
+}
 
 const MIGRATIONS: readonly Migration[] = [
   {
@@ -33,6 +82,10 @@ const MIGRATIONS: readonly Migration[] = [
       SYNC_FLOW_RUN_ITEM_TABLE_SQL,
       ...SYNC_FLOW_INDEX_SQL,
     ],
+  },
+  {
+    version: 2,
+    apply: applySyncPlatformV2,
   },
 ];
 
@@ -107,8 +160,12 @@ export function runMigrations(db: SqliteDatabase): AppDbMigrationMeta {
 
   const migrate = db.transaction(() => {
     for (const migration of pending) {
-      for (const statement of migration.statements) {
-        db.exec(statement);
+      if (migration.apply) {
+        migration.apply(db);
+      } else {
+        for (const statement of migration.statements ?? []) {
+          db.exec(statement);
+        }
       }
 
       const migratedAt = nowIso();

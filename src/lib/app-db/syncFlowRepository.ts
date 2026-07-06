@@ -1,11 +1,12 @@
 import { generateId } from "@/lib/uuid";
 import { AppDbValidationError } from "./errors";
-import type { JsonEnvelope, JsonObject, JsonValue, SqliteDatabase, SyncFlow, SyncFlowLeg } from "./types";
+import type { JsonEnvelope, JsonObject, JsonValue, SqliteDatabase, SyncDomain, SyncFlow, SyncFlowLeg } from "./types";
 
 type SyncFlowRow = {
   id: string;
   name: string;
   enabled: number;
+  flow_type?: string;
   description: string | null;
   created_at: string;
   updated_at: string;
@@ -36,6 +37,7 @@ type NormalizedLegInput = {
 type NormalizedFlowInput = {
   name?: string;
   enabled?: boolean;
+  flowType?: SyncDomain;
   description?: string | null;
   legs?: NormalizedLegInput[];
 };
@@ -165,6 +167,14 @@ function normalizeEnabled(value: unknown, defaultValue?: boolean): boolean | und
   return value;
 }
 
+function normalizeFlowType(value: unknown): SyncDomain | undefined {
+  if (value === undefined) return undefined;
+  if (value !== "transaction_sync" && value !== "payee_sync" && value !== "category_sync" && value !== "master_data_sync" && value !== "consolidation_sync") {
+    throw new AppDbValidationError("Flow type is not supported");
+  }
+  return value;
+}
+
 function normalizeLegInputs(value: unknown): NormalizedLegInput[] | undefined {
   if (value === undefined) return undefined;
   if (!Array.isArray(value)) {
@@ -202,6 +212,7 @@ function normalizeFlowInput(input: unknown, mode: "create" | "update"): Normaliz
   return {
     name: normalizeName(input.name, mode === "create"),
     enabled: normalizeEnabled(input.enabled, mode === "create" ? true : undefined),
+    flowType: normalizeFlowType(input.flowType),
     description: normalizeDescription(input.description),
     legs: normalizeLegInputs(input.legs),
   };
@@ -234,6 +245,7 @@ function rowToSyncFlow(db: SqliteDatabase, row: SyncFlowRow): SyncFlow {
     id: row.id,
     name: row.name,
     enabled: row.enabled === 1,
+    flowType: (row.flow_type ?? "transaction_sync") as SyncDomain,
     description: row.description,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -293,12 +305,13 @@ export function createSyncFlow(db: SqliteDatabase, input: unknown): SyncFlow {
 
   const create = db.transaction(() => {
     db.prepare(
-      `INSERT INTO sync_flows (id, name, enabled, description, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?)`
+      `INSERT INTO sync_flows (id, name, enabled, flow_type, description, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`
     ).run(
       flowId,
       normalized.name,
       normalized.enabled === false ? 0 : 1,
+      normalized.flowType ?? "transaction_sync",
       normalized.description ?? null,
       now,
       now
@@ -322,11 +335,12 @@ export function updateSyncFlow(db: SqliteDatabase, flowId: string, input: unknow
   const update = db.transaction(() => {
     db.prepare(
       `UPDATE sync_flows
-       SET name = ?, enabled = ?, description = ?, updated_at = ?
+       SET name = ?, enabled = ?, flow_type = ?, description = ?, updated_at = ?
        WHERE id = ?`
     ).run(
       normalized.name ?? existing.name,
       normalized.enabled === undefined ? (existing.enabled ? 1 : 0) : normalized.enabled ? 1 : 0,
+      normalized.flowType ?? existing.flowType,
       normalized.description === undefined ? existing.description : normalized.description,
       now,
       flowId

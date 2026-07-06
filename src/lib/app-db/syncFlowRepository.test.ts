@@ -46,6 +46,7 @@ describe("sync flow repository", () => {
 
       expect(created.name).toBe("Rent reimbursement");
       expect(created.enabled).toBe(true);
+      expect(created.flowType).toBe("transaction_sync");
       expect(created.legs).toHaveLength(1);
       expect(created.legs[0]?.position).toBe(0);
 
@@ -54,6 +55,7 @@ describe("sync flow repository", () => {
       const updated = updateSyncFlow(db, created.id, {
         name: "Rent mirror",
         enabled: false,
+        flowType: "payee_sync",
         description: null,
         legs: [
           {
@@ -67,6 +69,7 @@ describe("sync flow repository", () => {
 
       expect(updated?.name).toBe("Rent mirror");
       expect(updated?.enabled).toBe(false);
+      expect(updated?.flowType).toBe("payee_sync");
       expect(updated?.description).toBeNull();
       expect(updated?.legs[0]?.options).toEqual(emptyEnvelope);
 
