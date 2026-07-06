@@ -34,6 +34,7 @@ type SyncFlowRunItemRow = {
   run_id: string;
   flow_id: string | null;
   leg_id: string | null;
+  sequence?: number | null;
   source_item_ref_json: string;
   target_item_ref_json: string | null;
   status: string;
@@ -76,6 +77,7 @@ type CreateSyncFlowRunItemInput = {
   runId: string;
   flowId?: string | null;
   legId?: string | null;
+  sequence?: number | null;
   sourceItemRef?: JsonEnvelope;
   targetItemRef?: JsonEnvelope | null;
   status?: string;
@@ -189,6 +191,7 @@ function rowToRunItem(row: SyncFlowRunItemRow): SyncFlowRunItem {
     runId: row.run_id,
     flowId: row.flow_id,
     legId: row.leg_id,
+    sequence: row.sequence ?? null,
     sourceItemRef: parseEnvelope(row.source_item_ref_json, "sourceItemRef"),
     targetItemRef: parseOptionalEnvelope(row.target_item_ref_json, "targetItemRef"),
     status: row.status,
@@ -291,6 +294,7 @@ export function createSyncFlowRunItem(db: SqliteDatabase, input: CreateSyncFlowR
       run_id,
       flow_id,
       leg_id,
+      sequence,
       source_item_ref_json,
       target_item_ref_json,
       status,
@@ -312,12 +316,13 @@ export function createSyncFlowRunItem(db: SqliteDatabase, input: CreateSyncFlowR
       created_target_marker,
       created_at,
       updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
     id,
     input.runId,
     input.flowId ?? null,
     input.legId ?? null,
+    input.sequence ?? null,
     stringifyEnvelope(sourceItemRef),
     stringifyEnvelope(targetItemRef),
     input.status ?? "planned",
@@ -353,8 +358,15 @@ export function getSyncFlowRunItem(db: SqliteDatabase, itemId: string): SyncFlow
 
 export function listSyncFlowRunItems(db: SqliteDatabase, options: { runId: string; limit?: number }): SyncFlowRunItem[] {
   const limit = Math.min(Math.max(options.limit ?? 200, 1), 500);
+  // Order by explicit planner sequence first (nulls last for legacy rows),
+  // then fall back to creation order for stability.
   return db
-    .prepare("SELECT * FROM sync_flow_run_items WHERE run_id = ? ORDER BY created_at ASC, id ASC LIMIT ?")
+    .prepare(
+      `SELECT * FROM sync_flow_run_items
+       WHERE run_id = ?
+       ORDER BY sequence IS NULL, sequence ASC, created_at ASC, id ASC
+       LIMIT ?`
+    )
     .all<SyncFlowRunItemRow>(options.runId, limit)
     .map(rowToRunItem);
 }

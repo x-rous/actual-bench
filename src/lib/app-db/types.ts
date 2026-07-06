@@ -170,6 +170,8 @@ export type SyncFlowRunItem = {
   runId: string;
   flowId: string | null;
   legId: string | null;
+  /** Stable render order within a run (planner output order); null on legacy rows. */
+  sequence: number | null;
   sourceItemRef: JsonEnvelope;
   targetItemRef: JsonEnvelope | null;
   status: string;

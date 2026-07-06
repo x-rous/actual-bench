@@ -24,6 +24,13 @@ export type PersistDraftPreviewResult = {
   items: SyncFlowRunItem[];
 };
 
+export type PersistDraftPreviewOptions = {
+  /** Extra run-summary fields merged with the item total (e.g. scan/filter counts). */
+  summary?: JsonObject;
+  /** Source snapshot summary stored on the run. */
+  sourceSnapshotSummary?: JsonObject;
+};
+
 function payloadToJsonObject(payload: PlannedTargetPayload): JsonObject {
   return {
     accountId: payload.accountId,
@@ -51,20 +58,25 @@ function sourceItemRef(item: SyncPlannedItem): JsonObject {
 
 export function persistDraftPreviewRun(
   db: SqliteDatabase,
-  plan: SyncPlanResult
+  plan: SyncPlanResult,
+  options: PersistDraftPreviewOptions = {}
 ): PersistDraftPreviewResult {
   const run = createSyncFlowRun(db, {
     flowId: plan.flowId,
     status: "draft_preview",
     createdByTrigger: "manual_preview",
-    summary: { version: 1, data: { totalItems: plan.items.length } },
+    summary: { version: 1, data: { totalItems: plan.items.length, ...options.summary } },
     counts: { version: 1, data: { ...plan.counts } },
+    sourceSnapshotSummary: options.sourceSnapshotSummary
+      ? { version: 1, data: options.sourceSnapshotSummary }
+      : null,
   });
 
-  const items = plan.items.map((item) =>
+  const items = plan.items.map((item, index) =>
     createSyncFlowRunItem(db, {
       runId: run.id,
       flowId: plan.flowId,
+      sequence: index,
       status: "planned",
       message: item.message,
       sourceItemRef: { version: 1, data: sourceItemRef(item) },

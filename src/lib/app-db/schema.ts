@@ -101,3 +101,8 @@ export const SYNC_PLATFORM_V2_INDEX_SQL = [
   "CREATE INDEX IF NOT EXISTS idx_sync_mappings_target_marker ON sync_mappings(target_marker)",
   "CREATE INDEX IF NOT EXISTS idx_sync_mappings_source_entity ON sync_mappings(source_entity_type, source_transaction_id)",
 ] as const;
+
+// v3: stable run-item ordering for preview rendering.
+export const SYNC_PLATFORM_V3_INDEX_SQL = [
+  "CREATE INDEX IF NOT EXISTS idx_sync_flow_run_items_run_sequence ON sync_flow_run_items(run_id, sequence)",
+] as const;

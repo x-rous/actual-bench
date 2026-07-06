@@ -115,9 +115,9 @@ describe("persistDraftPreviewRun", () => {
 
       const { run } = persistDraftPreviewRun(db, plan);
       const stored = listSyncFlowRunItems(db, { runId: run.id });
-      // Run-item ordering is not guaranteed by the repo (same-ms created_at),
-      // so assert set membership rather than sequence.
-      expect(stored.map((i) => i.sourceItemKey).sort()).toEqual(["split:p:s1", "split:p:s2"]);
+      // Stable ordering via the persisted `sequence` column (migration v3).
+      expect(stored.map((i) => i.sourceItemKey)).toEqual(["split:p:s1", "split:p:s2"]);
+      expect(stored.map((i) => i.sequence)).toEqual([0, 1]);
       expect(stored.every((i) => i.sourceEntityType === "split_line")).toBe(true);
     } finally {
       rmSync(root, { recursive: true, force: true });

@@ -8,10 +8,11 @@ import {
   SYNC_FLOW_TABLE_SQL,
   SYNC_MAPPING_TABLE_SQL,
   SYNC_PLATFORM_V2_INDEX_SQL,
+  SYNC_PLATFORM_V3_INDEX_SQL,
 } from "./schema";
 import { AppDbUnavailableError } from "./errors";
 
-export const LATEST_SCHEMA_VERSION = 2;
+export const LATEST_SCHEMA_VERSION = 3;
 
 type Migration = {
   version: number;
@@ -71,6 +72,12 @@ function applySyncPlatformV2(db: SqliteDatabase): void {
   for (const statement of SYNC_PLATFORM_V2_INDEX_SQL) db.exec(statement);
 }
 
+function applySyncPlatformV3(db: SqliteDatabase): void {
+  // Stable preview ordering: planner output order persisted per run item.
+  addColumnIfMissing(db, "sync_flow_run_items", "sequence", "integer");
+  for (const statement of SYNC_PLATFORM_V3_INDEX_SQL) db.exec(statement);
+}
+
 const MIGRATIONS: readonly Migration[] = [
   {
     version: 1,
@@ -86,6 +93,10 @@ const MIGRATIONS: readonly Migration[] = [
   {
     version: 2,
     apply: applySyncPlatformV2,
+  },
+  {
+    version: 3,
+    apply: applySyncPlatformV3,
   },
 ];
 

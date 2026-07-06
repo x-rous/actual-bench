@@ -33,7 +33,25 @@ import type {
  *   4. else -> new (create), unless no marker can be produced -> blocked
  * DB mappings are the primary source of truth; the marker is secondary.
  */
+/**
+ * Plan from raw source transactions — expands splits internally. Convenience
+ * entry point for headless/fixture use.
+ */
 export function planSyncFlow(input: SyncPlannerInput): SyncPlanResult {
+  return planExpandedItems({
+    ...input,
+    sourceItems: expandSourceTransactions(input.sourceTransactions),
+  });
+}
+
+/**
+ * Plan from already-expanded, already-filtered source items. The live
+ * orchestrator (Slice 3) filters + materializes source items first, then calls
+ * this so filtering semantics apply per split line.
+ */
+export function planExpandedItems(
+  input: Omit<SyncPlannerInput, "sourceTransactions"> & { sourceItems: SyncSourceItem[] }
+): SyncPlanResult {
   const { config, capabilities } = input;
   const mappingByKey = new Map<string, SyncMapping>();
   for (const mapping of input.existingMappings) {
@@ -43,7 +61,7 @@ export function planSyncFlow(input: SyncPlannerInput): SyncPlanResult {
   const canWriteMarker =
     capabilities.supported && capabilities.capabilities.createTransactionWithImportedId;
 
-  const items = expandSourceTransactions(input.sourceTransactions).map((sourceItem) =>
+  const items = input.sourceItems.map((sourceItem) =>
     planSourceItem(sourceItem, input, mappingByKey, canWriteMarker)
   );
 
@@ -96,7 +114,7 @@ function baseItem(
 
 function planSourceItem(
   item: SyncSourceItem,
-  input: SyncPlannerInput,
+  input: Pick<SyncPlannerInput, "config" | "target">,
   mappingByKey: Map<string, SyncMapping>,
   canWriteMarker: boolean
 ): SyncPlannedItem {
