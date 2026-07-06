@@ -11,6 +11,7 @@
 - Remove saved connections individually
 - Per-connection query cache and staged data scoping — switching connections never leaks data between sessions
 - API keys, Actual Server passwords, and budget encryption passwords are kept in memory only; saved server presets in session storage contain non-secret connection details only
+- App Health shows the server-side metadata database path, writable state, schema version, and migration status for self-hosted deployments
 
 ## Quick Create
 
@@ -49,6 +50,10 @@
 - Snapshot opening shows a staged progress rail with retry on export/open failures, plus a persistent privacy reminder that exported contents stay local but may include personal budget data
 - Overview tab summarizes export metadata, snapshot counts, ZIP/database sizes, and source details, with a download action for the exported ZIP
 - Diagnostics tab runs deterministic snapshot checks, summarizes finding severity, supports a long-running full SQLite integrity check, and exports findings to CSV
+
+## App Health
+
+A compact diagnostics page for Actual Bench's own server-side metadata database. It shows the configured SQLite path, writable state, schema version, migration status, and persistence reminder for the `/data` volume. The database stores app workflow metadata only and does not store Actual credentials.
 
 ## Data Browser
 

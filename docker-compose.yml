@@ -6,4 +6,10 @@ services:
     environment:
       NODE_ENV: production
       NEXT_TELEMETRY_DISABLED: "1"
+      ACTUAL_BENCH_DB_PATH: /data/actual-bench.sqlite
+    volumes:
+      - actual-bench-data:/data
     restart: unless-stopped
+
+volumes:
+  actual-bench-data:

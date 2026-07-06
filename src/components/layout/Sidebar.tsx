@@ -31,6 +31,7 @@ import {
   Moon,
   ArrowUpCircle,
   Keyboard,
+  Settings,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useConnectionStore } from "@/store/connection";
@@ -106,6 +107,7 @@ const SIDEBAR_SECTIONS: SidebarSection[] = [
           icon: Stethoscope,
         },
         { id: "data-browser", label: "Data Browser", href: "/data-browser", icon: Database },
+        { id: "app-health", label: "App Health", href: "/app-health", icon: Settings },
         { id: "rule-diagnostics", label: "Rule Diagnostics", href: "/rules/diagnostics", icon: ShieldCheck },
         { id: "query", label: "ActualQL Queries", href: "/query", icon: Terminal },
       ],

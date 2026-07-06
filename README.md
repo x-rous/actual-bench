@@ -192,6 +192,7 @@ Direct mode currently supports core entity pages, Budget Management reads/staged
 
 - Saved server presets store only non-secret details in **session storage** and are cleared when the browser tab is closed.
 - API keys, Actual Server passwords, and budget encryption passwords are kept in memory only. Refreshing or reopening the tab requires reconnecting. Actual's browser worker cache may require clearing this site's browser data if it becomes stale or corrupt.
+- App workflow metadata is stored server-side in SQLite at `/data/actual-bench.sqlite` by default. It is for Actual Bench metadata only and does not store Actual credentials or copied budget data.
 - Staged data and query cache are scoped per connection so switching budgets does not leak local state between sessions.
 - Budget File Health and the Data Browser process exported snapshots locally in the browser and do not write changes back to the budget.
 - Exported budget ZIP files and diagnostic data may still contain personal financial information, so handle downloaded files carefully.
@@ -203,7 +204,7 @@ Direct mode currently supports core entity pages, Budget Management reads/staged
 - A running [Actual Budget](https://github.com/actualbudget/actual) server
 - For Direct mode: browser access from Actual Bench to Actual Server, plus cross-origin isolation/CORS support. Direct mode is enabled by default; set `DIRECT_BROWSER_API=0` or `NEXT_PUBLIC_DIRECT_BROWSER_API=0` to hide it when a deployment cannot support it
 - For HTTP API Server mode: a running [actual-http-api](https://github.com/jhonderson/actual-http-api) instance and an `ACTUAL_API_KEY`
-- Docker, Docker Compose, or Node.js 20+ for local development
+- Docker, Docker Compose, or Node.js 22.23.1 recommended for local development
 
 
 ## Quick start
@@ -216,6 +217,7 @@ docker run -d \
   --name actual-bench \
   --restart unless-stopped \
   -p 3000:3000 \
+  -v actual-bench-data:/data \
   xrous/actual-bench:latest
 
 # Latest unreleased build from main. Useful for testing, but may be unstable.
@@ -223,6 +225,7 @@ docker run -d \
   --name actual-bench-edge \
   --restart unless-stopped \
   -p 3000:3000 \
+  -v actual-bench-edge-data:/data \
   xrous/actual-bench:edge
 ```
 
@@ -237,7 +240,14 @@ services:
     container_name: actual-bench
     ports:
       - "3000:3000"
+    environment:
+      ACTUAL_BENCH_DB_PATH: /data/actual-bench.sqlite
+    volumes:
+      - actual-bench-data:/data
     restart: unless-stopped
+
+volumes:
+  actual-bench-data:
 ```
 
 Start it with:
@@ -245,6 +255,12 @@ Start it with:
 ```bash
 docker compose up -d
 ```
+
+### App metadata database
+
+Actual Bench stores app-owned workflow metadata in a server-side SQLite database. The default path is `/data/actual-bench.sqlite`; set `ACTUAL_BENCH_DB_PATH` to use another file. Persist and back up the `/data` volume if you want to keep saved app metadata across container recreation.
+
+The metadata database is not an Actual Budget data replica and does not store API keys, Actual Server passwords, budget encryption passwords, or session tokens.
 
 ### Docker networking note
 
@@ -331,7 +347,7 @@ CSV exports include a UTF-8 BOM for better compatibility with Excel and Google S
 
 ### Prerequisites
 
-- Node.js 20+
+- Node.js 22.23.1 recommended
 - npm
 - A running `actual-http-api` instance for integration testing
 
