@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { CheckCircle2, Info, XCircle } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -30,9 +30,23 @@ type PreviewPanelProps = {
   onApply: () => void;
   applying: boolean;
   applyResult: ApplyRunResult | null;
+  /** ISO timestamp of when this run was generated, for the freshness cue. */
+  previewedAt: string | null;
   /** Viewing a past/applied run: no selection or apply. */
   readOnly: boolean;
 };
+
+/** A preview reflects a point-in-time source snapshot; warn once it's this old. */
+const STALE_AFTER_MS = 120_000;
+
+function formatAge(ms: number): string {
+  const mins = Math.round(ms / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.round(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  return `${Math.round(hours / 24)}d ago`;
+}
 
 const TILE_BORDER: Record<string, string> = {
   new: "border-green-500/30", warn: "border-amber-400/30", bad: "border-destructive/40",
@@ -76,6 +90,7 @@ export function PreviewPanel(props: PreviewPanelProps) {
       </div>
       <p className="text-xs tabular-nums text-muted-foreground">
         {summary.sourceItemsScanned} items scanned · {summary.generatedTransactionsExcluded} sync-generated excluded · {summary.sourceItemsFilteredOut} filtered out
+        <PreviewFreshness previewedAt={props.previewedAt} readOnly={props.readOnly} />
       </p>
 
       <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
@@ -183,6 +198,30 @@ export function PreviewPanel(props: PreviewPanelProps) {
         </div>
       </div>
     </div>
+  );
+}
+
+function PreviewFreshness({ previewedAt, readOnly }: { previewedAt: string | null; readOnly: boolean }) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 30_000);
+    return () => clearInterval(id);
+  }, []);
+
+  if (!previewedAt) return null;
+  const ts = new Date(previewedAt).getTime();
+  if (Number.isNaN(ts)) return null;
+
+  const age = Math.max(0, now - ts);
+  const stale = !readOnly && age >= STALE_AFTER_MS;
+  const label = formatAge(age);
+
+  return (
+    <span className={cn(stale && "font-medium text-amber-600 dark:text-amber-400")}>
+      {" · "}
+      {readOnly ? `Run from ${label}` : `Previewed ${label}`}
+      {stale && " — source may have changed, re-run Sync Preview"}
+    </span>
   );
 }
 

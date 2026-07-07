@@ -218,6 +218,7 @@ export function SyncView() {
   }
 
   const summary = deriveSummary(runQuery.data?.run);
+  const previewedAt = runQuery.data?.run.startedAt ?? null;
   const blockReason = previewBlockReason();
 
   if (connections.length < 2) {
@@ -295,6 +296,7 @@ export function SyncView() {
                         rows={rows}
                         selectedIds={new Set()}
                         readOnly
+                        previewedAt={previewedAt}
                         onToggle={() => {}}
                         onSelectAllSafeNew={() => {}}
                         onClearSelection={() => {}}
@@ -322,6 +324,7 @@ export function SyncView() {
                   rows={rows}
                   selectedIds={selectedIds}
                   readOnly={readOnly}
+                  previewedAt={previewedAt}
                   onToggle={(id) => setSelectedIds((prev) => { const next = new Set(prev); if (next.has(id)) next.delete(id); else next.add(id); return next; })}
                   onSelectAllSafeNew={() => setSelectedIds(new Set(selectableRowIds(rows)))}
                   onClearSelection={() => setSelectedIds(new Set())}
