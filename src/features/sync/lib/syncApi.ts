@@ -78,6 +78,11 @@ export function listRuns(flowId: string, limit = 20): Promise<{ runs: SyncFlowRu
   return jsonFetch(`/api/sync-flow-runs?flowId=${encodeURIComponent(flowId)}&limit=${limit}`);
 }
 
+/** All recent runs across flows — used to show each flow's latest-run status. */
+export function listAllRuns(limit = 100): Promise<{ runs: SyncFlowRun[] }> {
+  return jsonFetch(`/api/sync-flow-runs?limit=${limit}`);
+}
+
 export function getRun(runId: string): Promise<{ run: SyncFlowRun; items: SyncFlowRunItem[] }> {
   return jsonFetch(`/api/sync-flow-runs/${runId}`);
 }

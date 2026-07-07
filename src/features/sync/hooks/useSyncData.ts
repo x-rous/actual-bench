@@ -48,3 +48,19 @@ export function useFlowRuns(flowId: string | null) {
     enabled: !!flowId,
   });
 }
+
+/** Latest run per flow, for the flow-list status line. */
+export function useLatestRunByFlow() {
+  return useQuery({
+    queryKey: ["sync-recent-runs"],
+    queryFn: async () => {
+      const { runs } = await api.listAllRuns(100);
+      // Runs come back newest-first, so the first per flow is the latest.
+      const latest = new Map<string, (typeof runs)[number]>();
+      for (const run of runs) {
+        if (run.flowId && !latest.has(run.flowId)) latest.set(run.flowId, run);
+      }
+      return latest;
+    },
+  });
+}

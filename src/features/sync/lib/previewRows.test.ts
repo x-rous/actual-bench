@@ -1,4 +1,4 @@
-import { classificationGroup, formatAmount, selectableRowIds, toPreviewRow } from "./previewRows";
+import { classificationGroup, filterCount, formatAmount, selectableRowIds, splitPositions, toPreviewRow } from "./previewRows";
 import type { SyncFlowRunItem } from "@/lib/app-db/types";
 
 function item(overrides: Partial<SyncFlowRunItem> = {}): SyncFlowRunItem {
@@ -66,10 +66,39 @@ describe("selectableRowIds", () => {
   });
 });
 
+describe("filterCount", () => {
+  it("counts by group, with needs_review spanning the review groups", () => {
+    const rows = [
+      toPreviewRow(item({ id: "a", classification: "new" })),
+      toPreviewRow(item({ id: "b", classification: "exact_duplicate", plannedAction: "skip" })),
+      toPreviewRow(item({ id: "c", classification: "source_changed_since_sync", plannedAction: "skip" })),
+    ];
+    expect(filterCount(rows, "all")).toBe(3);
+    expect(filterCount(rows, "new")).toBe(1);
+    expect(filterCount(rows, "needs_review")).toBe(2);
+    expect(filterCount(rows, "blocked")).toBe(0);
+  });
+});
+
+describe("splitPositions", () => {
+  it("numbers split lines within their parent transaction", () => {
+    const rows = [
+      toPreviewRow(item({ id: "s1", sourceEntityType: "split_line", sourceItemKey: "split:p:a" })),
+      toPreviewRow(item({ id: "s2", sourceEntityType: "split_line", sourceItemKey: "split:p:b" })),
+      toPreviewRow(item({ id: "n1", sourceEntityType: "transaction", sourceItemKey: "txn:t1" })),
+    ];
+    const pos = splitPositions(rows);
+    expect(pos.get("s1")).toEqual({ index: 1, total: 2 });
+    expect(pos.get("s2")).toEqual({ index: 2, total: 2 });
+    expect(pos.get("n1")).toBeUndefined();
+  });
+});
+
 describe("formatAmount", () => {
-  it("formats minor units with sign", () => {
+  it("formats minor units with sign and thousands grouping", () => {
     expect(formatAmount(-1250)).toBe("-12.50");
     expect(formatAmount(1205)).toBe("12.05");
-    expect(formatAmount(null)).toBe("—");
+    expect(formatAmount(-125000)).toBe("-1,250.00");
+    expect(formatAmount(null)).toBe("-");
   });
 });
