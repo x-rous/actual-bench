@@ -18,8 +18,10 @@ export type PreviewRow = {
   id: string;
   classification: SyncItemClassification | null;
   group: PreviewGroup;
-  /** Only `new` create candidates may be applied. */
+  /** Checkbox-enabled: safe-new create candidates or repairable marker matches. */
   selectable: boolean;
+  /** Included in "select all safe new" (new create candidates only). */
+  isSafeNew: boolean;
   sourceItemKey: string;
   isSplit: boolean;
   flags: string[];
@@ -69,11 +71,14 @@ export function toPreviewRow(item: SyncFlowRunItem): PreviewRow {
     ? ((record(item.warnings?.data).flags as unknown[]).filter((f): f is string => typeof f === "string"))
     : [];
 
+  const isSafeNew = item.classification === "new" && item.plannedAction === "create";
   return {
     id: item.id,
     classification: item.classification,
     group: classificationGroup(item.classification),
-    selectable: item.classification === "new" && item.plannedAction === "create",
+    // Marker-match rows are selectable for mapping repair (no target write).
+    selectable: isSafeNew || item.classification === "target_marker_match",
+    isSafeNew,
     sourceItemKey: item.sourceItemKey ?? "",
     isSplit: item.sourceEntityType === "split_line",
     flags,
@@ -94,8 +99,9 @@ export function toPreviewRow(item: SyncFlowRunItem): PreviewRow {
   };
 }
 
+/** Ids for "select all safe new" — excludes repair (marker-match) rows. */
 export function selectableRowIds(rows: PreviewRow[]): string[] {
-  return rows.filter((r) => r.selectable).map((r) => r.id);
+  return rows.filter((r) => r.isSafeNew).map((r) => r.id);
 }
 
 const GROUP_LABELS: Record<PreviewGroup, string> = {

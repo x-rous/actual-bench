@@ -124,6 +124,16 @@ A read-only local diagnostics workspace for the exported budget snapshots.
 - Supports a full SQLite integrity check
 - Includes a Data Browser for tables, views, indexes, triggers, schema inspection, row details, relationship drill-in, and full table/view CSV export
 
+### Budget File Sync
+
+Copy transactions from an account in one budget file to an account in another, as saved one-way flows. The MVP is **Direct mode only, cross-budget, create-only, and preview-first**.
+
+- Compact flow editor: source/target Direct connection + account, filters, and transforms (reverse-sign by default, payee/category match-by-name, clean notes marker)
+- Required dry-run preview classifies each item (new, already synced, duplicate, changed since sync, marker match, blocked) with source and transformed target amounts side by side — no writes to Actual
+- Apply creates only the selected safe new transactions with a durable `imported_id` marker and records app-owned mappings, so reruns skip already-synced items instead of creating duplicates
+- Eligible split lines are exploded into separate target transactions; a reverse-flow helper mirrors a flow for two-way sync
+- Target-budget rules may post-process created transactions; this is surfaced as a warning. Not in the MVP: HTTP mode, same-budget sync, updates/deletes, category auto-create, background sync, and FX conversion
+
 ### ActualQL Queries
 
 A dedicated query console using ActualQL for advanced queries and analysis, available in HTTP API Server mode and Direct Actual Server mode.

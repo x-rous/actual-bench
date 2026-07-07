@@ -19,6 +19,7 @@ import {
   type SyncFlowFormState,
 } from "../lib/flowForm";
 import { selectableRowIds, toPreviewRow } from "../lib/previewRows";
+import { buildReverseFlowForm, canCreateReverseFlow } from "../lib/reverseFlow";
 import type { SyncFlowRun } from "@/lib/app-db/types";
 import type { DryRunError, DryRunSummary } from "@/lib/sync/previewOrchestrator";
 import type { ApplyRunResult } from "@/lib/sync/applyOrchestrator";
@@ -157,6 +158,18 @@ export function SyncView() {
     );
   }
 
+  function handleCreateReverse() {
+    const reverse = buildReverseFlowForm(form, connections);
+    flowMutations.create.mutate(buildFlowPayload(reverse, connections), {
+      onSuccess: ({ flow }) => {
+        setSelectedFlowId(flow.id);
+        setForm(reverse);
+        setSavedSnapshot(JSON.stringify(reverse));
+        resetPreview();
+      },
+    });
+  }
+
   function handleApply() {
     if (!runId || !targetConn) return;
     applyMutation.mutate(
@@ -203,10 +216,12 @@ export function SyncView() {
               onChange={setForm}
               onSave={handleSave}
               onPreview={handlePreview}
+              onCreateReverse={handleCreateReverse}
               saving={flowMutations.create.isPending || flowMutations.update.isPending}
               previewing={previewMutation.isPending}
               dirty={dirty}
               canPreview={canPreview}
+              canCreateReverse={!!selectedFlowId && !dirty && canCreateReverseFlow(form)}
             />
             <PreviewPanel
               summary={summary}

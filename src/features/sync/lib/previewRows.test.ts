@@ -32,10 +32,16 @@ describe("toPreviewRow", () => {
     expect(row.selectable).toBe(true);
   });
 
-  it("marks split-line items and only new items selectable", () => {
+  it("marks split-line items and controls selectability", () => {
     expect(toPreviewRow(item({ sourceEntityType: "split_line" })).isSplit).toBe(true);
     expect(toPreviewRow(item({ classification: "already_synced", plannedAction: "skip" })).selectable).toBe(false);
     expect(toPreviewRow(item({ classification: "blocked", plannedAction: "blocked" })).selectable).toBe(false);
+  });
+
+  it("makes marker-match rows selectable for repair but not part of safe-new", () => {
+    const row = toPreviewRow(item({ classification: "target_marker_match", plannedAction: "skip" }));
+    expect(row.selectable).toBe(true);
+    expect(row.isSafeNew).toBe(false);
   });
 });
 
@@ -50,8 +56,12 @@ describe("classificationGroup", () => {
 });
 
 describe("selectableRowIds", () => {
-  it("returns only selectable ids", () => {
-    const rows = [toPreviewRow(item({ id: "a" })), toPreviewRow(item({ id: "b", classification: "blocked", plannedAction: "blocked" }))];
+  it("returns only safe-new ids (excludes blocked and marker-match)", () => {
+    const rows = [
+      toPreviewRow(item({ id: "a" })),
+      toPreviewRow(item({ id: "b", classification: "blocked", plannedAction: "blocked" })),
+      toPreviewRow(item({ id: "c", classification: "target_marker_match", plannedAction: "skip" })),
+    ];
     expect(selectableRowIds(rows)).toEqual(["a"]);
   });
 });

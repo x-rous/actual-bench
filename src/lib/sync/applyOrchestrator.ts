@@ -1,6 +1,7 @@
 import { getBudgetFileSyncCapabilities } from "./capabilities";
 import { connectionFingerprint } from "./connectionRef";
 import { decodeFlowPlanConfig, type SyncFlowPlanConfig } from "./flowConfig";
+import { generateSyncMarker } from "./marker";
 import { transactionFingerprint } from "./sourceItems";
 import type {
   ActualBenchTransport,
@@ -190,7 +191,7 @@ export async function applySyncRun(
     items.push(result);
     tally(counts, result.outcome);
     // A create adds a live marker; guard against intra-run duplicates.
-    if (result.outcome !== "failed" && result.targetTransactionId && item.payload.importedId) {
+    if (result.outcome !== "failed" && result.targetTransactionId && item.payload?.importedId) {
       markerIndex.set(item.payload.importedId, result.targetTransactionId);
     }
   }
@@ -207,9 +208,15 @@ export async function applySyncRun(
 
 // --- Validation / preparation ----------------------------------------------
 
+type ApplyItemMode = "create" | "repair";
+
 type EligibleItem = {
   item: SyncFlowRunItem;
-  payload: PlannedTargetPayload;
+  mode: ApplyItemMode;
+  /** Present for create items; null for repair. */
+  payload: PlannedTargetPayload | null;
+  /** Existing target transaction id for repair items; null for create. */
+  targetTransactionId: string | null;
 };
 
 type PreparedApply = {
@@ -225,6 +232,18 @@ function isEligibleNew(item: SyncFlowRunItem): boolean {
     item.applyState !== "applied" &&
     item.plannedTargetPayload != null
   );
+}
+
+/** A target_marker_match item whose target transaction id was resolved at preview. */
+function isRepairable(item: SyncFlowRunItem): boolean {
+  return item.classification === "target_marker_match" && readTargetTxnId(item) != null;
+}
+
+function readTargetTxnId(item: SyncFlowRunItem): string | null {
+  const data = item.targetItemRef?.data as Record<string, unknown> | undefined;
+  const id = data?.targetTransactionId;
+  if (typeof id === "string") return id;
+  return item.createdTargetTransactionId ?? null;
 }
 
 function readPayload(item: SyncFlowRunItem): PlannedTargetPayload | null {
@@ -283,51 +302,58 @@ async function validateAndPrepare(
   const allItems = await store.loadRunItems(input.runId);
   const byId = new Map(allItems.map((item) => [item.id, item]));
 
-  let candidates: SyncFlowRunItem[];
+  // Resolve each selected item to a create or repair candidate. Explicit
+  // selection may include target_marker_match rows (repair); "all_safe_new"
+  // only ever includes new create candidates.
+  const eligible: EligibleItem[] = [];
   if (input.selection && "selectedItemIds" in input.selection) {
-    candidates = [];
     for (const id of input.selection.selectedItemIds) {
       const item = byId.get(id);
       if (!item) {
         throw new ApplyPreflightError("ineligible_selection", `Selected item ${id} does not belong to this run.`);
       }
-      if (!isEligibleNew(item)) {
-        throw new ApplyPreflightError("ineligible_selection", `Selected item ${id} is not an applyable create candidate.`);
+      if (isEligibleNew(item)) {
+        eligible.push(toCreateCandidate(item));
+      } else if (isRepairable(item)) {
+        eligible.push({ item, mode: "repair", payload: null, targetTransactionId: readTargetTxnId(item) });
+      } else {
+        throw new ApplyPreflightError("ineligible_selection", `Selected item ${id} is not an applyable create or repair candidate.`);
       }
-      candidates.push(item);
     }
   } else {
-    // Default / "all_safe_new": every eligible new create candidate.
-    candidates = allItems.filter(isEligibleNew);
-  }
-
-  const eligible: EligibleItem[] = [];
-  for (const item of candidates) {
-    const payload = readPayload(item);
-    if (!payload) {
-      throw new ApplyPreflightError("ineligible_selection", `Item ${item.id} has no usable planned payload.`);
-    }
-    if (!payload.importedId) {
-      // No deterministic marker ⇒ never create (idempotency guarantee).
-      throw new ApplyPreflightError("ineligible_selection", `Item ${item.id} has no imported_id marker; refusing to create.`);
-    }
-    eligible.push({ item, payload });
+    for (const item of allItems.filter(isEligibleNew)) eligible.push(toCreateCandidate(item));
   }
 
   if (eligible.length === 0) {
-    throw new ApplyPreflightError("no_eligible_items", "No eligible create candidates were selected.");
+    throw new ApplyPreflightError("no_eligible_items", "No eligible create or repair candidates were selected.");
   }
 
-  // Write-capability gate (mode-derived; no runtime needed).
-  if (!caps.capabilities.createTransaction || !caps.capabilities.createTransactionWithImportedId) {
-    throw new ApplyPreflightError("unsupported_connection", "Target cannot create transactions with a durable marker.");
-  }
-  const needsPayeeCreate = eligible.some((e) => !e.payload.payeeId && e.payload.payeeName);
-  if (needsPayeeCreate && !caps.capabilities.createPayee) {
-    throw new ApplyPreflightError("unsupported_connection", "Target cannot create the payees this run requires.");
+  // Write-capability gate only matters when we actually create (repair writes no
+  // Actual transaction — it only records a mapping to an existing target row).
+  const createItems = eligible.filter((e) => e.mode === "create");
+  if (createItems.length > 0) {
+    if (!caps.capabilities.createTransaction || !caps.capabilities.createTransactionWithImportedId) {
+      throw new ApplyPreflightError("unsupported_connection", "Target cannot create transactions with a durable marker.");
+    }
+    const needsPayeeCreate = createItems.some((e) => e.payload && !e.payload.payeeId && e.payload.payeeName);
+    if (needsPayeeCreate && !caps.capabilities.createPayee) {
+      throw new ApplyPreflightError("unsupported_connection", "Target cannot create the payees this run requires.");
+    }
   }
 
   return { flow, config, eligible };
+}
+
+function toCreateCandidate(item: SyncFlowRunItem): EligibleItem {
+  const payload = readPayload(item);
+  if (!payload) {
+    throw new ApplyPreflightError("ineligible_selection", `Item ${item.id} has no usable planned payload.`);
+  }
+  if (!payload.importedId) {
+    // No deterministic marker ⇒ never create (idempotency guarantee).
+    throw new ApplyPreflightError("ineligible_selection", `Item ${item.id} has no imported_id marker; refusing to create.`);
+  }
+  return { item, mode: "create", payload, targetTransactionId: null };
 }
 
 // --- Per-item apply ---------------------------------------------------------
@@ -343,7 +369,10 @@ async function applyOneItem(
   ctx: ItemContext,
   store: ApplyStore
 ): Promise<ApplyItemResult> {
-  const { item, payload } = eligible;
+  if (eligible.mode === "repair") return repairOneItem(eligible, ctx, store);
+
+  const { item } = eligible;
+  const payload = eligible.payload as PlannedTargetPayload;
   const marker = payload.importedId as string;
   const base = { itemId: item.id, sourceItemKey: item.sourceItemKey ?? "" };
 
@@ -362,7 +391,7 @@ async function applyOneItem(
     // 2. Marker already on target (mapping lost) ⇒ repair, do not duplicate.
     const markerHit = ctx.markerIndex.get(marker);
     if (markerHit) {
-      await recordMapping(store, ctx.config, item, payload, markerHit, null);
+      await recordMapping(store, ctx.config, item, markerHit, marker, null);
       await store.updateRunItemStatus(item.id, {
         status: "skipped",
         applyState: "skipped",
@@ -416,7 +445,7 @@ async function applyOneItem(
     const targetFingerprint = actual ? transactionFingerprint(actual) : null;
 
     // 5. Record the mapping immediately (before touching later items).
-    await recordMapping(store, ctx.config, item, payload, targetId, targetFingerprint);
+    await recordMapping(store, ctx.config, item, targetId, marker, targetFingerprint);
 
     const hasWarnings = changedFields.length > 0;
     await store.updateRunItemStatus(item.id, {
@@ -475,8 +504,8 @@ async function recordMapping(
   store: ApplyStore,
   config: SyncFlowPlanConfig,
   item: SyncFlowRunItem,
-  payload: PlannedTargetPayload,
   targetTransactionId: string,
+  targetMarker: string | null,
   targetFingerprint: string | null
 ): Promise<void> {
   const entityType: SyncEntityType = item.sourceEntityType ?? "transaction";
@@ -497,10 +526,67 @@ async function recordMapping(
     targetTransactionId,
     targetItemKey: "txn:" + targetTransactionId,
     targetFingerprint,
-    targetMarker: payload.importedId,
+    targetMarker,
     createdRunId: item.runId,
     lastAppliedAt: nowIso(),
   });
+}
+
+/**
+ * Repair a lost DB mapping for a `target_marker_match` item: the target already
+ * has our deterministic marker, so we map the source item to that existing
+ * target transaction — no Actual write, no duplicate.
+ */
+async function repairOneItem(
+  eligible: EligibleItem,
+  ctx: ItemContext,
+  store: ApplyStore
+): Promise<ApplyItemResult> {
+  const { item } = eligible;
+  const base = { itemId: item.id, sourceItemKey: item.sourceItemKey ?? "" };
+  const marker = generateSyncMarker(ctx.config.flowId, item.sourceItemKey ?? "");
+  const targetId = eligible.targetTransactionId as string;
+
+  try {
+    const existingMapping = await store.getMappingBySource(ctx.config.flowId, item.sourceItemKey ?? "");
+    if (existingMapping) {
+      await store.updateRunItemStatus(item.id, {
+        status: "skipped",
+        applyState: "skipped",
+        message: "Already mapped; nothing to repair.",
+      });
+      return { ...base, outcome: "skipped", targetTransactionId: existingMapping.targetTransactionId, message: "already mapped" };
+    }
+
+    // Only repair if the marker still maps to the same target we previewed.
+    if (!marker || ctx.markerIndex.get(marker) !== targetId) {
+      await store.updateRunItemStatus(item.id, {
+        status: "skipped",
+        applyState: "skipped",
+        message: "Target marker no longer matches; mapping not repaired.",
+      });
+      return { ...base, outcome: "skipped", targetTransactionId: null, message: "marker no longer present" };
+    }
+
+    await recordMapping(store, ctx.config, item, targetId, marker, null);
+    await store.updateRunItemStatus(item.id, {
+      status: "repaired",
+      applyState: "skipped",
+      message: "Repaired mapping to the existing target transaction.",
+      warnings: flagEnvelope(["target_marker_match_repair"]),
+      createdTargetTransactionId: targetId,
+      createdTargetMarker: marker,
+    });
+    return { ...base, outcome: "repaired", targetTransactionId: targetId, message: "repaired mapping" };
+  } catch (err) {
+    await store.updateRunItemStatus(item.id, {
+      status: "failed",
+      applyState: "failed",
+      message: describe(err, "Repair failed for this item."),
+      errors: envelope({ code: "repair_failed", message: describe(err, "unknown error") }),
+    });
+    return { ...base, outcome: "failed", targetTransactionId: null, message: describe(err, "repair failed") };
+  }
 }
 
 // --- Small helpers ----------------------------------------------------------

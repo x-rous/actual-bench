@@ -1,6 +1,6 @@
 "use client";
 
-import { Play, Save } from "lucide-react";
+import { ArrowLeftRight, Play, Save } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { EndpointPicker } from "./EndpointPicker";
@@ -13,10 +13,12 @@ type FlowEditorProps = {
   onChange: (next: SyncFlowFormState) => void;
   onSave: () => void;
   onPreview: () => void;
+  onCreateReverse: () => void;
   saving: boolean;
   previewing: boolean;
   dirty: boolean;
   canPreview: boolean;
+  canCreateReverse: boolean;
 };
 
 const selectClass = "rounded-md border border-border bg-background px-2 py-1.5 text-sm";
@@ -27,10 +29,12 @@ export function FlowEditor({
   onChange,
   onSave,
   onPreview,
+  onCreateReverse,
   saving,
   previewing,
   dirty,
   canPreview,
+  canCreateReverse,
 }: FlowEditorProps) {
   const routeMissing = missingRouteFields(form);
   const sameBudget = isSameBudget(form);
@@ -183,6 +187,9 @@ export function FlowEditor({
         </Button>
         <Button variant="outline" onClick={onPreview} disabled={!canPreview || previewing}>
           <Play className="h-4 w-4" /> {previewing ? "Running preview…" : "Run preview"}
+        </Button>
+        <Button variant="ghost" onClick={onCreateReverse} disabled={!canCreateReverse} title="Create a mirror flow with source and target swapped">
+          <ArrowLeftRight className="h-4 w-4" /> Create reverse flow
         </Button>
         {dirty && <span className="text-xs text-muted-foreground">Unsaved changes — save before previewing.</span>}
       </div>

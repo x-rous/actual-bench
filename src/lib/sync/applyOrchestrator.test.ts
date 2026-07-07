@@ -298,6 +298,53 @@ describe("applySyncRun — idempotency & duplicates", () => {
   });
 });
 
+describe("applySyncRun — marker-match repair", () => {
+  function markerMatchItem(): SyncFlowRunItem {
+    return runItem({
+      id: "mm-1",
+      classification: "target_marker_match",
+      plannedAction: "skip",
+      plannedTargetPayload: null,
+      targetItemRef: { version: 1, data: { targetTransactionId: "pre-existing" } },
+    });
+  }
+
+  it("repairs a selected marker-match item without creating a transaction", async () => {
+    const { store, createdMappings } = makeStore({ items: [markerMatchItem()] });
+    const { transport, createTransactionsForSync } = makeTargetTransport({
+      preloaded: [targetRow({ id: "pre-existing", importedId: "absync:flow-1:txn:t1" })],
+    });
+    const result = await applySyncRun(
+      { runId: "run-1", targetConnection: targetConn, selection: { selectedItemIds: ["mm-1"] } },
+      { transport: provider(transport), store }
+    );
+    expect(result.items[0].outcome).toBe("repaired");
+    expect(result.counts.repaired).toBe(1);
+    expect(createTransactionsForSync).not.toHaveBeenCalled();
+    expect(createdMappings[0]).toMatchObject({ sourceItemKey: "txn:t1", targetTransactionId: "pre-existing" });
+    expect(result.status).toBe("applied");
+  });
+
+  it("does not repair when the target marker is no longer present", async () => {
+    const { store, createdMappings } = makeStore({ items: [markerMatchItem()] });
+    const { transport } = makeTargetTransport({ preloaded: [] }); // marker gone from target
+    const result = await applySyncRun(
+      { runId: "run-1", targetConnection: targetConn, selection: { selectedItemIds: ["mm-1"] } },
+      { transport: provider(transport), store }
+    );
+    expect(result.items[0].outcome).toBe("skipped");
+    expect(createdMappings).toHaveLength(0);
+  });
+
+  it("excludes marker-match items from the default all_safe_new selection", async () => {
+    const { store } = makeStore({ items: [markerMatchItem()] });
+    const { transport } = makeTargetTransport();
+    const result = await applySyncRun({ runId: "run-1", targetConnection: targetConn }, { transport: provider(transport), store });
+    // No new create candidates and marker-match is not auto-selected → nothing to do.
+    expect(result).toMatchObject({ status: "failed", error: { code: "no_eligible_items" } });
+  });
+});
+
 describe("applySyncRun — partial failure & splits", () => {
   it("reports partial when one item applies and another fails to resolve", async () => {
     const good = runItem({ id: "good", sourceItemKey: "txn:t1", payloadData: { importedId: "absync:flow-1:txn:t1" } } as unknown as Partial<SyncFlowRunItem>);

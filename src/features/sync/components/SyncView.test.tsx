@@ -137,6 +137,30 @@ describe("SyncView", () => {
     expect(await screen.findByText(/Apply applied/i)).toBeInTheDocument();
   });
 
+  it("creates a reverse flow with source and target swapped", async () => {
+    setup([conn1, conn2]);
+    const createMutate = jest.fn();
+    (flowsHook.useSyncFlowMutations as jest.Mock).mockReturnValue({
+      create: { mutate: createMutate, isPending: false },
+      update: { mutate: jest.fn(), isPending: false },
+      remove: { mutate: jest.fn(), isPending: false },
+    });
+    render(<SyncView />);
+    fireEvent.click(screen.getByText("Card sync"));
+
+    const reverseButton = await screen.findByRole("button", { name: /create reverse flow/i });
+    await waitFor(() => expect(reverseButton).toBeEnabled());
+    fireEvent.click(reverseButton);
+
+    expect(createMutate).toHaveBeenCalledTimes(1);
+    const payload = createMutate.mock.calls[0][0] as { name: string; enabled: boolean; legs: Array<Record<string, { data: Record<string, unknown> }>> };
+    expect(payload.name).toBe("Card sync (reverse)");
+    expect(payload.enabled).toBe(false);
+    // swapped: reverse source account = original target account
+    expect(payload.legs[0].sourceRef.data.accountId).toBe("acct-tgt");
+    expect(payload.legs[0].targetRef.data.accountId).toBe("acct-src");
+  });
+
   it("renders run history for the selected flow", async () => {
     setup([conn1, conn2]);
     render(<SyncView />);

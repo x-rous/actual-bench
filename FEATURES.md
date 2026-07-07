@@ -55,6 +55,23 @@
 
 A compact diagnostics page for Actual Bench's own server-side metadata database. It shows the configured SQLite path, writable state, schema version, migration status, and persistence reminder for the `/data` volume. The database stores app workflow metadata only and does not store Actual credentials.
 
+## Budget File Sync (MVP)
+
+A workspace for copying transactions from an account in one budget file to an account in another, as saved one-way flows. This first MVP is deliberately conservative: **Direct mode only, cross-budget only, create-only, preview-first.**
+
+- Saved sync flows list with a compact editor: source/target Direct connection + account, filters, and transforms
+- Transforms: amount direction (reverse sign by default, same-sign optional), payee match-by-name (create missing by default, or leave empty), category match-by-name (missing categories are left empty — never auto-created), and a clean visible notes marker (`[Synced from <budget> / <account>]`, on by default)
+- Filters: date range, cleared/reconciled status, amount sign, payee/category include-exclude, and notes-contains; sync-generated transactions are always excluded to prevent loops
+- Eligible split lines are exploded into separate normal target transactions (no target split transaction is created)
+- Preview is required before any write: a dry-run produces a persisted run with classified rows — new, already synced, duplicate candidate, changed since sync, marker match, or blocked — showing source and transformed target amounts side by side, with no writes to Actual
+- Apply writes only the selected safe `new` create candidates, creates/resolves payees per policy, stamps a durable target-side marker (`imported_id`), and records a mapping immediately after each success; partial failures are reported and never lose earlier successes
+- Idempotent reruns: app-owned mappings are the source of truth (with the target marker as a secondary recovery aid), so re-previewing after apply shows already-synced items instead of creating duplicates
+- Marker-match repair: if a target already carries a flow's marker but the mapping was lost, the row can be selected to repair the mapping without creating a duplicate
+- Reverse-flow helper: one click mirrors a flow (source/target swapped, created disabled for review) so two one-way flows form a two-way sync
+- Run history per flow with counts and item-level detail
+- Because Actual rules run on transaction create, the applied target transaction may differ from the preview (payee/category/notes/cleared); this is surfaced as a warning, not an error
+- Not in this MVP: HTTP API Server mode, same-budget sync, target updates/deletes, category auto-create, background/scheduled sync, and multi-currency conversion
+
 ## Data Browser
 
 A standalone page (own navigation item) for browsing the active budget's exported SQLite directly. Reuses the cached Budget File Health snapshot, so it opens instantly once the budget has been loaded anywhere.
