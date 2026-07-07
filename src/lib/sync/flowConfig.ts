@@ -28,6 +28,8 @@ export type SyncFlowPlanConfig = {
   targetConnectionFingerprint: string;
   targetBudgetId: string;
   targetAccountId: string;
+  targetBudgetName: string;
+  targetAccountName: string;
   // Transform options.
   amountDirection: SyncAmountDirection;
   missingPayee: SyncMissingPayeePolicy;
@@ -56,6 +58,8 @@ type PartialRoute = Partial<
     | "targetConnectionFingerprint"
     | "targetBudgetId"
     | "targetAccountId"
+    | "targetBudgetName"
+    | "targetAccountName"
   >
 >;
 
@@ -79,6 +83,8 @@ export function buildPlanConfig(
     targetConnectionFingerprint: input.targetConnectionFingerprint ?? "",
     targetBudgetId: input.targetBudgetId ?? "",
     targetAccountId: input.targetAccountId ?? "",
+    targetBudgetName: input.targetBudgetName ?? "",
+    targetAccountName: input.targetAccountName ?? "",
     amountDirection: input.amountDirection ?? SYNC_PLAN_CONFIG_DEFAULTS.amountDirection,
     missingPayee: input.missingPayee ?? SYNC_PLAN_CONFIG_DEFAULTS.missingPayee,
     notesMarkerEnabled:
@@ -119,6 +125,8 @@ export function decodeFlowPlanConfig(flow: SyncFlow): SyncFlowPlanConfig {
     targetConnectionFingerprint: str(target.connectionFingerprint),
     targetBudgetId: str(target.budgetId),
     targetAccountId: str(target.accountId),
+    targetBudgetName: str(target.budgetName),
+    targetAccountName: str(target.accountName),
     amountDirection: direction === "same" || direction === "reverse" ? direction : undefined,
     missingPayee:
       missingPayee === "create" || missingPayee === "leave_empty" ? missingPayee : undefined,

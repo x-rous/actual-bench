@@ -230,9 +230,9 @@ export function flowToFormState(
   form.target = {
     connectionId: resolveConnectionId(config.targetConnectionFingerprint, config.targetBudgetId),
     budgetSyncId: config.targetBudgetId,
-    budgetName: "",
+    budgetName: config.targetBudgetName,
     accountId: config.targetAccountId,
-    accountName: "",
+    accountName: config.targetAccountName,
   };
   form.transform = {
     amountDirection: config.amountDirection,

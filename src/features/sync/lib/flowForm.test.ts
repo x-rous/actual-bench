@@ -93,6 +93,10 @@ describe("flowToFormState", () => {
     expect(form.source.connectionId).toBe("c-src");
     expect(form.source.accountId).toBe("acct-src");
     expect(form.target.connectionId).toBe("c-tgt");
+    // Target display names must survive the round-trip (flow list shows them,
+    // not the raw budget UUID).
+    expect(form.target.budgetName).toBe("Family");
+    expect(form.target.accountName).toBe("Joint");
     expect(form.transform.amountDirection).toBe("reverse");
     expect(form.filter.payeeInclude).toBe("coffee bar, market");
   });

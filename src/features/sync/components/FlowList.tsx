@@ -56,7 +56,7 @@ export function FlowList({ flows, selectedFlowId, onSelect, onCreate, onDelete }
                     <span className="mt-0.5 block truncate text-xs text-muted-foreground">
                       {config.sourceBudgetName || config.sourceBudgetId || "?"}
                       {" → "}
-                      {config.targetBudgetId || "?"}
+                      {config.targetBudgetName || config.targetBudgetId || "?"}
                     </span>
                   </button>
                   <Button
