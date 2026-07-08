@@ -11,10 +11,21 @@ const FLOW_ID = "flow-1";
 
 const config = buildPlanConfig({
   flowId: FLOW_ID,
+  sourceBudgetId: "budget-src",
+  targetBudgetId: "budget-tgt",
   targetAccountId: "acct-tgt",
   sourceBudgetName: "Home",
   sourceAccountName: "Checking",
 });
+
+/** Expected portable marker for a source item under the test config's route. */
+const marker = (sourceItemKey: string) =>
+  generateSyncMarker({
+    sourceBudgetId: config.sourceBudgetId,
+    targetBudgetId: config.targetBudgetId,
+    targetAccountId: config.targetAccountId,
+    sourceItemKey,
+  });
 
 const browserCaps = getBudgetFileSyncCapabilities({ mode: "browser-api" });
 const httpCaps = getBudgetFileSyncCapabilities({ mode: "http-api" });
@@ -110,7 +121,7 @@ describe("planSyncFlow — new create", () => {
       payeeId: "tp1",
       categoryId: "tc1",
       notes: "flat white [Synced from Home / Checking]",
-      importedId: generateSyncMarker(FLOW_ID, "txn:t1"),
+      importedId: marker("txn:t1"),
     });
     expect(item.flags).toContain("target_rules_may_modify");
     expect(plan.counts.new).toBe(1);
@@ -131,6 +142,8 @@ describe("planSyncFlow — new create", () => {
   it("leaves payee empty when policy is leave_empty", () => {
     const leaveEmpty = buildPlanConfig({
       flowId: FLOW_ID,
+      sourceBudgetId: "budget-src",
+      targetBudgetId: "budget-tgt",
       targetAccountId: "acct-tgt",
       sourceBudgetName: "Home",
       sourceAccountName: "Checking",
@@ -167,8 +180,8 @@ describe("planSyncFlow — mappings and markers", () => {
   });
 
   it("detects a target marker match when the DB mapping is missing (repairable)", () => {
-    const marker = generateSyncMarker(FLOW_ID, "txn:t1")!;
-    const target = emptyTarget({ importedIdIndex: new Map([[marker, "tt-existing"]]) });
+    const expectedMarker = marker("txn:t1")!;
+    const target = emptyTarget({ importedIdIndex: new Map([[expectedMarker, "tt-existing"]]) });
     const plan = planSyncFlow(baseInput({ target }));
     const item = plan.items[0];
     expect(item.classification).toBe("target_marker_match");
@@ -245,7 +258,7 @@ describe("planSyncFlow — splits", () => {
     expect(plan.items[0].plannedTargetPayload?.categoryId).toBe("tc-a");
     // split children inherit the parent payee
     expect(plan.items[1].plannedTargetPayload?.payeeId).toBe("tp1");
-    expect(plan.items[1].plannedTargetPayload?.importedId).toBe(generateSyncMarker(FLOW_ID, "split:p:s2"));
+    expect(plan.items[1].plannedTargetPayload?.importedId).toBe(marker("split:p:s2"));
   });
 
   it("flags a split-line fallback key when the child has no id", () => {

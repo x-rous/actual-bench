@@ -1,8 +1,17 @@
 import { connectionFingerprint } from "./connectionRef";
+import { generateSyncMarker } from "./marker";
 import { applySyncRun, type ApplyStore, type ApplyTransportProvider } from "./applyOrchestrator";
 import type { ActualBenchTransport, SyncSourceTransaction } from "@/lib/actual/transport";
 import type { BrowserApiConnection, HttpApiConnection } from "@/store/connection";
 import type { JsonObject, SyncFlow, SyncFlowRun, SyncFlowRunItem, SyncMapping, SyncMappingInput } from "@/lib/app-db/types";
+
+// Portable markers the apply engine computes for the makeFlow() route
+// (source budget-src → target budget-tgt / acct-tgt).
+const mk = (sourceItemKey: string) =>
+  generateSyncMarker({ sourceBudgetId: "budget-src", targetBudgetId: "budget-tgt", targetAccountId: "acct-tgt", sourceItemKey })!;
+const MARKER_T1 = mk("txn:t1");
+const MARKER_T2 = mk("txn:t2");
+const MARKER_SPLIT = mk("split:t1:s1");
 
 const targetConn: BrowserApiConnection = {
   id: "tgt", label: "Family", mode: "browser-api", baseUrl: "https://tgt.example.com", serverPassword: "pw", budgetSyncId: "budget-tgt",
@@ -34,7 +43,7 @@ function runItem(overrides: Partial<SyncFlowRunItem> = {}): SyncFlowRunItem {
     accountId: "acct-tgt", date: "2026-07-10", amount: 1250,
     payeeId: null, payeeName: "Coffee Bar", categoryId: "tc1",
     notes: "flat white [Synced from Home / Checking]", cleared: false,
-    importedId: "absync:flow-1:txn:t1",
+    importedId: MARKER_T1,
     ...(overrides as { payloadData?: JsonObject }).payloadData,
   };
   return {
@@ -213,14 +222,14 @@ describe("applySyncRun — create path", () => {
     // create used the marker; payee was resolved from name
     expect(createPayee).toHaveBeenCalledWith({ name: "Coffee Bar" });
     expect(createTransactionsForSync.mock.calls[0][0][0]).toMatchObject({
-      importedId: "absync:flow-1:txn:t1", payeeId: "payee-Coffee Bar", categoryId: "tc1", amount: 1250,
+      importedId: MARKER_T1, payeeId: "payee-Coffee Bar", categoryId: "tc1", amount: 1250,
     });
 
     // mapping recorded with target id + marker
     expect(createdMappings).toHaveLength(1);
     expect(createdMappings[0]).toMatchObject({
       flowId: "flow-1", sourceItemKey: "txn:t1", targetTransactionId: "tt1",
-      targetMarker: "absync:flow-1:txn:t1", sourceEntityType: "transaction",
+      targetMarker: MARKER_T1, sourceEntityType: "transaction",
     });
     expect(itemPatches.get("item-1")).toMatchObject({ applyState: "applied" });
   });
@@ -278,7 +287,7 @@ describe("applySyncRun — idempotency & duplicates", () => {
   it("repairs the mapping when the marker exists on target but the DB mapping is missing", async () => {
     const { store, createdMappings } = makeStore();
     const { transport, createTransactionsForSync } = makeTargetTransport({
-      preloaded: [targetRow({ id: "pre-existing", importedId: "absync:flow-1:txn:t1" })],
+      preloaded: [targetRow({ id: "pre-existing", importedId: MARKER_T1 })],
     });
     const result = await applySyncRun({ runId: "run-1", targetConnection: targetConn }, { transport: provider(transport), store });
     expect(result.items[0].outcome).toBe("repaired");
@@ -312,7 +321,7 @@ describe("applySyncRun — marker-match repair", () => {
   it("repairs a selected marker-match item without creating a transaction", async () => {
     const { store, createdMappings } = makeStore({ items: [markerMatchItem()] });
     const { transport, createTransactionsForSync } = makeTargetTransport({
-      preloaded: [targetRow({ id: "pre-existing", importedId: "absync:flow-1:txn:t1" })],
+      preloaded: [targetRow({ id: "pre-existing", importedId: MARKER_T1 })],
     });
     const result = await applySyncRun(
       { runId: "run-1", targetConnection: targetConn, selection: { selectedItemIds: ["mm-1"] } },
@@ -347,8 +356,8 @@ describe("applySyncRun — marker-match repair", () => {
 
 describe("applySyncRun — partial failure & splits", () => {
   it("reports partial when one item applies and another fails to resolve", async () => {
-    const good = runItem({ id: "good", sourceItemKey: "txn:t1", payloadData: { importedId: "absync:flow-1:txn:t1" } } as unknown as Partial<SyncFlowRunItem>);
-    const bad = runItem({ id: "bad", sourceItemKey: "txn:t2", sourceTransactionId: "t2", payloadData: { importedId: "absync:flow-1:txn:t2" } } as unknown as Partial<SyncFlowRunItem>);
+    const good = runItem({ id: "good", sourceItemKey: "txn:t1", payloadData: { importedId: MARKER_T1 } } as unknown as Partial<SyncFlowRunItem>);
+    const bad = runItem({ id: "bad", sourceItemKey: "txn:t2", sourceTransactionId: "t2", payloadData: { importedId: MARKER_T2 } } as unknown as Partial<SyncFlowRunItem>);
     const { store, createdMappings } = makeStore({ items: [good, bad] });
     // Fail resolution only for the second create by toggling after first success.
     const target = makeTargetTransport();
@@ -372,7 +381,7 @@ describe("applySyncRun — partial failure & splits", () => {
     const split = runItem({
       id: "split-item", sourceEntityType: "split_line",
       sourceItemKey: "split:t1:s1", sourceTransactionId: "t1", sourceSplitId: "s1",
-      payloadData: { importedId: "absync:flow-1:split:t1:s1" } as JsonObject,
+      payloadData: { importedId: MARKER_SPLIT } as JsonObject,
     } as unknown as Partial<SyncFlowRunItem>);
     const { store, createdMappings } = makeStore({ items: [split] });
     const { transport } = makeTargetTransport();

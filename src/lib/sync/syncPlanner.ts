@@ -151,7 +151,12 @@ function planSourceItem(
   // Resolve entities + build the intended payload/marker up front.
   const payee = resolvePayee(item, config, target.payees);
   const category = resolveCategory(item, target.categories);
-  const importedId = generateSyncMarker(config.flowId, item.itemKey);
+  const importedId = generateSyncMarker({
+    sourceBudgetId: config.sourceBudgetId,
+    targetBudgetId: config.targetBudgetId,
+    targetAccountId: config.targetAccountId,
+    sourceItemKey: item.itemKey,
+  });
   const payload = buildPlannedTargetPayload({ item, config, payee, category, importedId });
   const effectivePayeeName = resolveEffectivePayeeName(item, payee, target);
 
