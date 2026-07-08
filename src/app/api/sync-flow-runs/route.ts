@@ -13,7 +13,14 @@ export function GET(request: NextRequest) {
   try {
     const flowId = request.nextUrl.searchParams.get("flowId") ?? undefined;
     const rawLimit = request.nextUrl.searchParams.get("limit");
-    const limit = rawLimit ? Number(rawLimit) : undefined;
+    let limit: number | undefined;
+    if (rawLimit !== null) {
+      const parsed = Number(rawLimit);
+      if (!Number.isFinite(parsed) || parsed < 1) {
+        return NextResponse.json({ error: "limit must be a positive number" }, { status: 400 });
+      }
+      limit = parsed;
+    }
     return NextResponse.json({ runs: listSyncFlowRuns(getAppDb(), { flowId, limit }) });
   } catch (error) {
     return appDbErrorResponse(error);

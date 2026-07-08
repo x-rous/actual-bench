@@ -88,7 +88,8 @@ export type ApplyErrorCode =
   | "unsupported_connection"
   | "ineligible_selection"
   | "no_eligible_items"
-  | "target_open_failed";
+  | "target_open_failed"
+  | "finalize_failed";
 
 export type ApplyError = { code: ApplyErrorCode; message: string };
 
@@ -197,11 +198,21 @@ export async function applySyncRun(
   }
 
   const status = deriveRunStatus(counts);
-  await deps.store.updateRunStatus(runId, {
-    status,
-    finishedAt: nowIso(),
-    counts: { version: 1, data: applyCountsToJson(counts) },
-  });
+  // Per-item mappings/statuses are already persisted; a failure to write the
+  // final run summary must not throw away the completed work or leave the run
+  // stuck "applying" without explanation. Record the finalize error best-effort.
+  try {
+    await deps.store.updateRunStatus(runId, {
+      status,
+      finishedAt: nowIso(),
+      counts: { version: 1, data: applyCountsToJson(counts) },
+    });
+  } catch (err) {
+    await safePersistFailure(deps.store, runId, {
+      code: "finalize_failed",
+      message: describe(err, "Apply completed but the run status could not be finalized."),
+    });
+  }
 
   return { status, runId, counts, items };
 }

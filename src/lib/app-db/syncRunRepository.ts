@@ -1,5 +1,6 @@
 import { generateId } from "@/lib/uuid";
 import { AppDbValidationError } from "./errors";
+import { clampLimit } from "./pagination";
 import type {
   JsonEnvelope,
   JsonObject,
@@ -138,12 +139,15 @@ function normalizeOptionalEnvelope(value: JsonEnvelope | null | undefined, label
 }
 
 function parseEnvelope(raw: string, label: string): JsonEnvelope {
+  let parsed: JsonEnvelope;
   try {
-    const parsed = JSON.parse(raw) as JsonEnvelope;
-    return normalizeEnvelope(parsed, label);
+    parsed = JSON.parse(raw) as JsonEnvelope;
   } catch {
     throw new AppDbValidationError(`${label} contains invalid JSON`);
   }
+  // Envelope-shape validation errors carry their own precise message; only the
+  // JSON.parse failure above should be reported as "invalid JSON".
+  return normalizeEnvelope(parsed, label);
 }
 
 function parseOptionalEnvelope(raw: string | null | undefined, label: string): JsonEnvelope | null {
@@ -264,7 +268,7 @@ export function getSyncFlowRun(db: SqliteDatabase, runId: string): SyncFlowRun |
 }
 
 export function listSyncFlowRuns(db: SqliteDatabase, options: { flowId?: string; limit?: number } = {}): SyncFlowRun[] {
-  const limit = Math.min(Math.max(options.limit ?? 50, 1), 200);
+  const limit = clampLimit(options.limit, 50, 200);
 
   if (options.flowId) {
     return db
@@ -356,18 +360,27 @@ export function getSyncFlowRunItem(db: SqliteDatabase, itemId: string): SyncFlow
   return row ? rowToRunItem(row) : null;
 }
 
+// Order by explicit planner sequence first (nulls last for legacy rows), then
+// fall back to creation order for stability.
+const RUN_ITEMS_ORDER = "ORDER BY sequence IS NULL, sequence ASC, created_at ASC, id ASC";
+
 export function listSyncFlowRunItems(db: SqliteDatabase, options: { runId: string; limit?: number }): SyncFlowRunItem[] {
-  const limit = Math.min(Math.max(options.limit ?? 200, 1), 500);
-  // Order by explicit planner sequence first (nulls last for legacy rows),
-  // then fall back to creation order for stability.
+  const limit = clampLimit(options.limit, 200, 500);
   return db
-    .prepare(
-      `SELECT * FROM sync_flow_run_items
-       WHERE run_id = ?
-       ORDER BY sequence IS NULL, sequence ASC, created_at ASC, id ASC
-       LIMIT ?`
-    )
+    .prepare(`SELECT * FROM sync_flow_run_items WHERE run_id = ? ${RUN_ITEMS_ORDER} LIMIT ?`)
     .all<SyncFlowRunItemRow>(options.runId, limit)
+    .map(rowToRunItem);
+}
+
+/**
+ * Every item for a run, uncapped. Apply must process the run's full item set —
+ * a capped page would silently skip planned items — and the run's items are a
+ * bounded, one-time snapshot, so returning them all is safe.
+ */
+export function getAllSyncFlowRunItems(db: SqliteDatabase, runId: string): SyncFlowRunItem[] {
+  return db
+    .prepare(`SELECT * FROM sync_flow_run_items WHERE run_id = ? ${RUN_ITEMS_ORDER}`)
+    .all<SyncFlowRunItemRow>(runId)
     .map(rowToRunItem);
 }
 

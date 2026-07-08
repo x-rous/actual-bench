@@ -34,7 +34,19 @@ export function RunHistory({ runs, onSelectRun }: RunHistoryProps) {
             {runs.map((run) => {
               const r = toRunRow(run);
               return (
-                <tr key={r.id} className="cursor-pointer border-t border-border/60 hover:bg-muted/50" onClick={() => onSelectRun(r.id)}>
+                <tr
+                  key={r.id}
+                  tabIndex={0}
+                  role="button"
+                  className="cursor-pointer border-t border-border/60 hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                  onClick={() => onSelectRun(r.id)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      onSelectRun(r.id);
+                    }
+                  }}
+                >
                   <td className="px-3 py-2"><Badge variant={TONE_VARIANT[r.tone]} className="text-[10px]">{r.statusLabel}</Badge></td>
                   <td className="px-3 py-2">{r.trigger}</td>
                   <td className="px-3 py-2 text-right tabular-nums">{r.planned ?? "-"}</td>

@@ -3,6 +3,7 @@ import { getAppDb } from "@/lib/app-db/connection";
 import { appDbErrorResponse, readJsonBody } from "@/lib/app-db/routeResponses";
 import {
   createSyncMapping,
+  getAllSyncMappingsForFlow,
   getSyncMappingBySource,
   listSyncMappings,
 } from "@/lib/app-db/syncMappingRepository";
@@ -20,7 +21,12 @@ export function GET(request: NextRequest) {
     if (flowId && sourceItemKey) {
       return NextResponse.json({ mapping: getSyncMappingBySource(getAppDb(), flowId, sourceItemKey) });
     }
-    return NextResponse.json({ mappings: listSyncMappings(getAppDb(), { flowId, limit: 500 }) });
+    // A flow's mappings must be returned complete: preview classification and
+    // apply de-duplication rely on the full history to avoid re-creating dupes.
+    if (flowId) {
+      return NextResponse.json({ mappings: getAllSyncMappingsForFlow(getAppDb(), flowId) });
+    }
+    return NextResponse.json({ mappings: listSyncMappings(getAppDb()) });
   } catch (error) {
     return appDbErrorResponse(error);
   }

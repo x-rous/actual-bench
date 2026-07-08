@@ -50,7 +50,8 @@ function deriveSummary(run: SyncFlowRun | undefined): DryRunSummary | null {
 export function SyncView() {
   const connections = useDirectConnections();
   const flowsQuery = useSyncFlows();
-  const latestRunsQuery = useLatestRunByFlow();
+  const flowIds = useMemo(() => (flowsQuery.data ?? []).map((f) => f.id), [flowsQuery.data]);
+  const latestRunsQuery = useLatestRunByFlow(flowIds);
   const flowMutations = useSyncFlowMutations();
   const previewMutation = usePreviewMutation();
   const applyMutation = useApplyMutation();

@@ -27,9 +27,17 @@ async function jsonFetch<T>(input: string, init?: RequestInit): Promise<T> {
     ...init,
   });
   const text = await response.text();
-  const data = (text ? JSON.parse(text) : {}) as T & { error?: string };
+  let data: (T & { error?: string }) | null = null;
+  try {
+    data = (text ? JSON.parse(text) : {}) as T & { error?: string };
+  } catch {
+    // Non-JSON body (e.g. an HTML 500 page): fall through to a status-based error.
+  }
   if (!response.ok) {
-    throw new Error(data.error ?? `Request to ${input} failed (${response.status})`);
+    throw new Error(data?.error ?? `Request to ${input} failed (${response.status})`);
+  }
+  if (data === null) {
+    throw new Error(`Request to ${input} returned a malformed response.`);
   }
   return data;
 }
@@ -76,11 +84,6 @@ export function createMapping(input: SyncMappingInput): Promise<{ mapping: SyncM
 
 export function listRuns(flowId: string, limit = 20): Promise<{ runs: SyncFlowRun[] }> {
   return jsonFetch(`/api/sync-flow-runs?flowId=${encodeURIComponent(flowId)}&limit=${limit}`);
-}
-
-/** All recent runs across flows — used to show each flow's latest-run status. */
-export function listAllRuns(limit = 100): Promise<{ runs: SyncFlowRun[] }> {
-  return jsonFetch(`/api/sync-flow-runs?limit=${limit}`);
 }
 
 export function getRun(runId: string): Promise<{ run: SyncFlowRun; items: SyncFlowRunItem[] }> {

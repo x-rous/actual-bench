@@ -2,8 +2,8 @@ import { NextResponse } from "next/server";
 import { getAppDb } from "@/lib/app-db/connection";
 import { appDbErrorResponse, readJsonBody } from "@/lib/app-db/routeResponses";
 import {
+  getAllSyncFlowRunItems,
   getSyncFlowRun,
-  listSyncFlowRunItems,
   updateSyncFlowRun,
   type UpdateSyncFlowRunPatch,
 } from "@/lib/app-db/syncRunRepository";
@@ -19,7 +19,8 @@ export async function GET(_request: Request, context: RouteContext) {
     const db = getAppDb();
     const run = getSyncFlowRun(db, runId);
     if (!run) return NextResponse.json({ error: "Run not found" }, { status: 404 });
-    return NextResponse.json({ run, items: listSyncFlowRunItems(db, { runId, limit: 500 }) });
+    // Complete item set: apply reads this route and must see every planned item.
+    return NextResponse.json({ run, items: getAllSyncFlowRunItems(db, runId) });
   } catch (error) {
     return appDbErrorResponse(error);
   }

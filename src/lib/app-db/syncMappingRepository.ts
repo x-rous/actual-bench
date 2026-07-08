@@ -1,5 +1,6 @@
 import { generateId } from "@/lib/uuid";
 import { AppDbValidationError } from "./errors";
+import { clampLimit } from "./pagination";
 import type {
   SqliteDatabase,
   SyncEntityType,
@@ -175,11 +176,23 @@ export function getSyncMappingBySource(db: SqliteDatabase, flowId: string, sourc
   return row ? rowToMapping(row) : null;
 }
 
+/**
+ * Every mapping for a flow, uncapped. Idempotency (preview classification and
+ * apply de-duplication) must see the flow's full mapping history — a capped
+ * page would silently miss older mappings and risk re-creating duplicates.
+ */
+export function getAllSyncMappingsForFlow(db: SqliteDatabase, flowId: string): SyncMapping[] {
+  return db
+    .prepare("SELECT * FROM sync_mappings WHERE flow_id = ? ORDER BY updated_at DESC, created_at DESC")
+    .all<SyncMappingRow>(flowId)
+    .map(rowToMapping);
+}
+
 export function listSyncMappings(
   db: SqliteDatabase,
   options: { flowId?: string; status?: SyncMappingStatus; limit?: number } = {}
 ): SyncMapping[] {
-  const limit = Math.min(Math.max(options.limit ?? 100, 1), 500);
+  const limit = clampLimit(options.limit, 100, 500);
   const conditions: string[] = [];
   const params: unknown[] = [];
 

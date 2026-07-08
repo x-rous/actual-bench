@@ -1,5 +1,5 @@
 import { getSyncFlow } from "@/lib/app-db/syncFlowRepository";
-import { listSyncMappings } from "@/lib/app-db/syncMappingRepository";
+import { getAllSyncMappingsForFlow } from "@/lib/app-db/syncMappingRepository";
 import { createSyncFlowRun } from "@/lib/app-db/syncRunRepository";
 import { persistDraftPreviewRun } from "./persistPlan";
 import type { SqliteDatabase } from "@/lib/app-db/types";
@@ -17,7 +17,7 @@ import type { PreviewStore } from "./previewOrchestrator";
 export function createAppDbPreviewStore(db: SqliteDatabase): PreviewStore {
   return {
     loadFlow: async (flowId) => getSyncFlow(db, flowId),
-    loadMappings: async (flowId) => listSyncMappings(db, { flowId, limit: 500 }),
+    loadMappings: async (flowId) => getAllSyncMappingsForFlow(db, flowId),
     persistPlan: async (plan, meta) => {
       const { run } = persistDraftPreviewRun(db, plan, {
         summary: meta.summary,

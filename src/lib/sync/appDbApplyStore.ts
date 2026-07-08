@@ -1,8 +1,8 @@
 import { getSyncFlow } from "@/lib/app-db/syncFlowRepository";
 import { createSyncMapping, getSyncMappingBySource } from "@/lib/app-db/syncMappingRepository";
 import {
+  getAllSyncFlowRunItems,
   getSyncFlowRun,
-  listSyncFlowRunItems,
   updateSyncFlowRun,
   updateSyncFlowRunItem,
 } from "@/lib/app-db/syncRunRepository";
@@ -18,7 +18,7 @@ import type { ApplyStore } from "./applyOrchestrator";
 export function createAppDbApplyStore(db: SqliteDatabase): ApplyStore {
   return {
     loadRun: async (runId) => getSyncFlowRun(db, runId),
-    loadRunItems: async (runId) => listSyncFlowRunItems(db, { runId, limit: 500 }),
+    loadRunItems: async (runId) => getAllSyncFlowRunItems(db, runId),
     loadFlow: async (flowId) => getSyncFlow(db, flowId),
     getMappingBySource: async (flowId, sourceItemKey) => getSyncMappingBySource(db, flowId, sourceItemKey),
     createMapping: async (input) => {

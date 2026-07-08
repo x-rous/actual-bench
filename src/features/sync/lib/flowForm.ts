@@ -108,13 +108,13 @@ export function missingRouteFields(form: SyncFlowFormState): string[] {
   return missing;
 }
 
-/** MVP requires two *different* budgets (cross-budget only). */
+/**
+ * MVP is cross-budget only. Two accounts in the *same* budget file is not
+ * supported, so any flow whose source and target resolve to the same budget is
+ * blocked — regardless of account.
+ */
 export function isSameBudget(form: SyncFlowFormState): boolean {
-  return (
-    !!form.source.budgetSyncId &&
-    form.source.budgetSyncId === form.target.budgetSyncId &&
-    form.source.accountId === form.target.accountId
-  );
+  return !!form.source.budgetSyncId && form.source.budgetSyncId === form.target.budgetSyncId;
 }
 
 function splitNames(value: string): string[] {

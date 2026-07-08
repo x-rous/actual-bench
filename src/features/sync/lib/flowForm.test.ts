@@ -48,10 +48,17 @@ describe("validation", () => {
     expect(missingRouteFields(filledForm())).toEqual([]);
   });
 
-  it("flags same-budget same-account selection", () => {
-    const form = filledForm();
-    form.target = { ...form.source };
-    expect(isSameBudget(form)).toBe(true);
+  it("blocks any same-budget flow, including a different account in the same budget", () => {
+    const sameAccount = filledForm();
+    sameAccount.target = { ...sameAccount.source };
+    expect(isSameBudget(sameAccount)).toBe(true);
+
+    // Same budget file, different account — still blocked (cross-budget only).
+    const sameBudget = filledForm();
+    sameBudget.target = { ...sameBudget.source, accountId: "acct-other", accountName: "Savings" };
+    expect(isSameBudget(sameBudget)).toBe(true);
+
+    // Different budgets — allowed.
     expect(isSameBudget(filledForm())).toBe(false);
   });
 });

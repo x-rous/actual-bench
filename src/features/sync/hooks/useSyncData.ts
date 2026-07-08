@@ -1,11 +1,12 @@
 "use client";
 
 import { useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQueries, useQuery } from "@tanstack/react-query";
 import { getTransport } from "@/lib/actual";
 import { isBrowserApiConnection, useConnectionStore } from "@/store/connection";
 import * as api from "../lib/syncApi";
 import type { BrowserApiConnection } from "@/store/connection";
+import type { SyncFlowRun } from "@/lib/app-db/types";
 
 /** Direct (browser-api) connections available for source/target selection. */
 export function useDirectConnections(): BrowserApiConnection[] {
@@ -49,18 +50,31 @@ export function useFlowRuns(flowId: string | null) {
   });
 }
 
-/** Latest run per flow, for the flow-list status line. */
-export function useLatestRunByFlow() {
-  return useQuery({
-    queryKey: ["sync-recent-runs"],
-    queryFn: async () => {
-      const { runs } = await api.listAllRuns(100);
-      // Runs come back newest-first, so the first per flow is the latest.
-      const latest = new Map<string, (typeof runs)[number]>();
-      for (const run of runs) {
-        if (run.flowId && !latest.has(run.flowId)) latest.set(run.flowId, run);
-      }
-      return latest;
+/**
+ * Latest run per flow, for the flow-list status line.
+ *
+ * Queried per flow (newest run each) rather than sampling a global recent-runs
+ * window: with many flows and a long history, a global cap could omit a flow's
+ * latest run and make it look like it had never run.
+ */
+export function useLatestRunByFlow(flowIds: string[]) {
+  return useQueries({
+    queries: flowIds.map((flowId) => ({
+      queryKey: ["sync-latest-run", flowId],
+      queryFn: async (): Promise<SyncFlowRun | null> => {
+        const { runs } = await api.listRuns(flowId, 1);
+        return runs[0] ?? null;
+      },
+    })),
+    combine: (results) => {
+      const data = new Map<string, SyncFlowRun>();
+      results.forEach((result, i) => {
+        if (result.data) data.set(flowIds[i], result.data);
+      });
+      return {
+        data,
+        refetch: () => results.forEach((result) => result.refetch()),
+      };
     },
   });
 }
