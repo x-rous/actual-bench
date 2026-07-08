@@ -30,7 +30,9 @@ import {
   Sun,
   Moon,
   ArrowUpCircle,
+  ArrowLeftRight,
   Keyboard,
+  Settings,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useConnectionStore } from "@/store/connection";
@@ -99,15 +101,17 @@ const SIDEBAR_SECTIONS: SidebarSection[] = [
       id: "tools",
       label: "Tools",
       items: [
+        { id: "rule-diagnostics", label: "Rule Diagnostics", href: "/rules/diagnostics", icon: ShieldCheck },
+        { id: "sync", label: "Budget File Sync", href: "/sync", icon: ArrowLeftRight },
+        { id: "query", label: "ActualQL Queries", href: "/query", icon: Terminal },
+        { id: "data-browser", label: "Data Browser", href: "/data-browser", icon: Database },
         {
           id: "budget-diagnostics",
           label: "Budget File Health",
           href: "/budget-diagnostics",
           icon: Stethoscope,
         },
-        { id: "data-browser", label: "Data Browser", href: "/data-browser", icon: Database },
-        { id: "rule-diagnostics", label: "Rule Diagnostics", href: "/rules/diagnostics", icon: ShieldCheck },
-        { id: "query", label: "ActualQL Queries", href: "/query", icon: Terminal },
+        { id: "app-health", label: "App Health", href: "/app-health", icon: Settings },
       ],
     },
   },

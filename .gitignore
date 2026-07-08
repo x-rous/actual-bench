@@ -55,3 +55,5 @@ agents/
 .claude/
 specs/
 .specify/
+# Local app metadata database for dev/self-hosted mounts
+.actual-bench-data/

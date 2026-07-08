@@ -1,5 +1,6 @@
 import type { CategoryGroupsResponse } from "../api/categoryGroups";
 import type { NotesIndex } from "../api/notes";
+import type { SyncCapabilityReport } from "@/lib/app-db/types";
 import type { ConnectionMode } from "@/store/connection";
 import type {
   Account,
@@ -75,6 +76,105 @@ export type BudgetTransferInput = {
   amount: MinorUnitAmount;
 };
 
+// ---------------------------------------------------------------------------
+// Budget File Sync transaction primitives (RD-053 / PR-019).
+//
+// These are app-level shapes for the sync engine. They intentionally do NOT
+// leak `@actual-app/api` concepts (`addTransactions`, `importTransactions`,
+// `imported_id`, `subtransactions`). The transport decides how to satisfy them.
+// All amounts are integer minor units, matching Actual's transaction amounts.
+// ---------------------------------------------------------------------------
+
+/** A split child line read from a source transaction. */
+export type SyncSourceSplitLine = {
+  /** Actual subtransaction id, or null if the API did not expose a stable id. */
+  id: string | null;
+  amount: MinorUnitAmount;
+  payeeId: string | null;
+  payeeName: string | null;
+  categoryId: string | null;
+  categoryName: string | null;
+  notes: string | null;
+};
+
+/** A source transaction with the fields Budget File Sync needs. */
+export type SyncSourceTransaction = {
+  id: string;
+  accountId: string;
+  /** ISO `YYYY-MM-DD`. */
+  date: string;
+  amount: MinorUnitAmount;
+  payeeId: string | null;
+  payeeName: string | null;
+  categoryId: string | null;
+  categoryName: string | null;
+  notes: string | null;
+  cleared: boolean;
+  reconciled: boolean;
+  /** Actual `imported_id` if the source transaction carries one. */
+  importedId: string | null;
+  /** True when this transaction is a split parent that owns `splitLines`. */
+  isParent: boolean;
+  /** True when this transaction is itself a split child of another parent. */
+  isChild: boolean;
+  parentId: string | null;
+  /** Inline split children when `isParent`; empty otherwise. */
+  splitLines: SyncSourceSplitLine[];
+};
+
+export type ListTransactionsForSyncInput = {
+  accountId: string;
+  /** Inclusive ISO `YYYY-MM-DD`; omit for open-ended. */
+  startDate?: string;
+  endDate?: string;
+};
+
+/** A target transaction the sync engine wants created (create-only, no splits). */
+export type SyncTargetTransactionInput = {
+  accountId: string;
+  date: string;
+  amount: MinorUnitAmount;
+  /** Existing target payee id; wins over `payeeName` when set. */
+  payeeId?: string | null;
+  /** Resolve/create a payee by name when no `payeeId` is given. */
+  payeeName?: string | null;
+  categoryId?: string | null;
+  notes?: string | null;
+  cleared?: boolean;
+  /**
+   * Durable target-side marker (Actual `imported_id`). The sync engine's own
+   * mappings remain the source of truth; this is a recovery/dedupe safety net.
+   */
+  importedId?: string | null;
+};
+
+export type SyncCreatedTransaction = {
+  /** Index into the input array this result corresponds to. */
+  requestIndex: number;
+  /** Resolved target transaction id, or null if it could not be recovered. */
+  transactionId: string | null;
+  /** The marker actually written, echoed back for mapping records. */
+  importedId: string | null;
+};
+
+export type CreateTransactionsForSyncResult = {
+  created: SyncCreatedTransaction[];
+};
+
+export type ResolvedSyncPayee = {
+  id: string;
+  name: string;
+  /** True when this call created the payee, false when an existing one matched. */
+  created: boolean;
+};
+
+/** Lightweight target lookup used for marker-match dedupe before applying. */
+export type SyncTargetLookup = {
+  payees: Payee[];
+  /** Map of existing target `imported_id` -> target transaction id. */
+  importedIdIndex: Map<string, string>;
+};
+
 export interface ActualBenchTransport {
   readonly mode: ConnectionMode;
   sync(): Promise<void>;
@@ -128,6 +228,24 @@ export interface ActualBenchTransport {
   transferBudget(month: string, input: BudgetTransferInput): Promise<void>;
   holdBudgetForNextMonth(month: string, amount: MinorUnitAmount): Promise<void>;
   resetBudgetHold(month: string): Promise<void>;
+
+  // --- Budget File Sync (RD-053 / PR-019) ---------------------------------
+  /** Report which Budget File Sync operations this transport can perform. */
+  getSyncCapabilities(): SyncCapabilityReport;
+  /** Read source transactions with split lines inline and names resolved. */
+  listTransactionsForSync(
+    input: ListTransactionsForSyncInput
+  ): Promise<SyncSourceTransaction[]>;
+  /** Match an existing payee by normalized name, or create it if missing. */
+  createOrResolvePayee(input: { name: string }): Promise<ResolvedSyncPayee>;
+  /** Create target transactions (create-only; splits are pre-exploded). */
+  createTransactionsForSync(
+    inputs: SyncTargetTransactionInput[]
+  ): Promise<CreateTransactionsForSyncResult>;
+  /** Load target payees + existing sync markers for dedupe/apply checks. */
+  getTargetLookupForSync(
+    input: ListTransactionsForSyncInput
+  ): Promise<SyncTargetLookup>;
 
   getNotesIndex(): Promise<NotesIndex>;
   getAccountNote(accountId: string): Promise<string>;

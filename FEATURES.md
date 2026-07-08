@@ -11,6 +11,7 @@
 - Remove saved connections individually
 - Per-connection query cache and staged data scoping — switching connections never leaks data between sessions
 - API keys, Actual Server passwords, and budget encryption passwords are kept in memory only; saved server presets in session storage contain non-secret connection details only
+- App Health shows the server-side metadata database path, writable state, schema version, and migration status for self-hosted deployments
 
 ## Quick Create
 
@@ -49,6 +50,27 @@
 - Snapshot opening shows a staged progress rail with retry on export/open failures, plus a persistent privacy reminder that exported contents stay local but may include personal budget data
 - Overview tab summarizes export metadata, snapshot counts, ZIP/database sizes, and source details, with a download action for the exported ZIP
 - Diagnostics tab runs deterministic snapshot checks, summarizes finding severity, supports a long-running full SQLite integrity check, and exports findings to CSV
+
+## App Health
+
+A compact diagnostics page for Actual Bench's own server-side metadata database. It shows the configured SQLite path, writable state, schema version, migration status, and persistence reminder for the `/data` volume. The database stores app workflow metadata only and does not store Actual credentials.
+
+## Budget File Sync (MVP)
+
+A workspace for copying transactions from an account in one budget file to an account in another, as saved one-way flows. This first MVP is deliberately conservative: **Direct mode only, cross-budget only, create-only, preview-first.**
+
+- Saved sync flows list with a compact editor: source/target Direct connection + account, filters, and transforms
+- Transforms: amount direction (reverse sign by default, same-sign optional), payee match-by-name (create missing by default, or leave empty), category match-by-name (missing categories are left empty — never auto-created), and a clean visible notes marker (`[Synced from <budget> / <account>]`, on by default)
+- Filters: date range, cleared/reconciled status, amount sign, payee/category include-exclude, and notes-contains; sync-generated transactions are always excluded to prevent loops
+- Eligible split lines are exploded into separate normal target transactions (no target split transaction is created)
+- Preview is required before any write: a dry-run produces a persisted run with classified rows — new, already synced, duplicate candidate, changed since sync, marker match, or blocked — showing source and transformed target amounts side by side, with no writes to Actual
+- Apply writes only the selected safe `new` create candidates, creates/resolves payees per policy, stamps a durable target-side marker (`imported_id`), and records a mapping immediately after each success; partial failures are reported and never lose earlier successes
+- Idempotent reruns: app-owned mappings are the source of truth (with the target marker as a secondary recovery aid), so re-previewing after apply shows already-synced items instead of creating duplicates
+- Marker-match repair: if a target already carries a flow's marker but the mapping was lost, the row can be selected to repair the mapping without creating a duplicate
+- Reverse-flow helper: one click mirrors a flow (source/target swapped, created disabled for review) so two one-way flows form a two-way sync
+- Run history per flow with counts and item-level detail
+- Because Actual rules run on transaction create, the applied target transaction may differ from the preview (payee/category/notes/cleared); this is surfaced as a warning, not an error
+- Not in this MVP: HTTP API Server mode, same-budget sync, target updates/deletes, category auto-create, background/scheduled sync, and multi-currency conversion
 
 ## Data Browser
 

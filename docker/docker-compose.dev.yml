@@ -1,30 +1,37 @@
-# Dev server — runs 24/7, hot-reload via Turbopack.
-# Usage: docker compose -f docker/docker-compose.dev.yml up -d
+# Dev server - runs 24/7, hot-reload via Turbopack.
+# Usage: docker compose -f docker/docker-compose.dev.yml up -d --build
 #
-# First-time setup (run once on the host before starting the container):
-#   cd /opt/projects/actual-admin-panel && npm install
+# Dependency commands must run in this container, not in code-server, because
+# native modules such as better-sqlite3 are compiled for the Node runtime that
+# serves the app. This dev image uses Node 22.23.1 to match the code-server major
+# version and avoid Node 20 native addon ABI mismatches:
+#   docker compose -f docker/docker-compose.dev.yml exec actual-bench-dev npm install
 
 services:
   actual-bench-dev:
-    image: node:20-alpine
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.dev
     container_name: actual-bench-dev
     working_dir: /workspace
     user: "1000:1000"
     volumes:
-      # Source code — edits on the host are reflected immediately via HMR
+      # Source code - edits on the host are reflected immediately via HMR.
       - /opt/projects/actual-bench:/workspace
-      # Persist Turbopack's cache volume, but clear .next-build/dev on
-      # startup below so stale route manifests/locks cannot survive branch
-      # switches or host-side source updates.
-      - next-build-cache:/workspace/.next-build
-    # Do NOT run npm install here — install on the host once and let the
-    # volume mount bring node_modules in. Installing inside the container on
-    # every start is slow and compiles native addons for the wrong platform.
-    #command: npm run dev -- --hostname 0.0.0.0
-    command: sh -c "rm -rf .next-build/dev && npm run dev -- --hostname 0.0.0.0"
+      # Persist Actual Bench app metadata used by /app-health and future flows.
+      - /opt/projects/actual-bench/.actual-bench-data:/data
+    command: >
+      sh -c "
+        if [ ! -d node_modules/.bin ] || [ ! -d node_modules/better-sqlite3 ]; then npm install; fi &&
+        npm rebuild better-sqlite3 &&
+        rm -rf .next-build/dev &&
+        npm run dev -- --hostname 0.0.0.0
+      "
     environment:
       - NODE_ENV=development
       - NEXT_TELEMETRY_DISABLED=1
+      - ACTUAL_BENCH_DB_PATH=/data/actual-bench.sqlite
+      - NEXT_DEV_ALLOWED_ORIGINS=actual-bench-dev.nafverse.com,*.nafverse.com
     ports:
       - "3001:3000"
     labels:
@@ -41,8 +48,3 @@ services:
 networks:
   proxy:
     external: true
-
-volumes:
-  # Docker-managed named volume — survives container restarts and recreations.
-  # To clear the Turbopack cache manually: docker volume rm next-build-cache
-  next-build-cache:
