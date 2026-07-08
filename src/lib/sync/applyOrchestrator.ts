@@ -555,7 +555,12 @@ async function repairOneItem(
 ): Promise<ApplyItemResult> {
   const { item } = eligible;
   const base = { itemId: item.id, sourceItemKey: item.sourceItemKey ?? "" };
-  const marker = generateSyncMarker(ctx.config.flowId, item.sourceItemKey ?? "");
+  const marker = generateSyncMarker({
+    sourceBudgetId: ctx.config.sourceBudgetId,
+    targetBudgetId: ctx.config.targetBudgetId,
+    targetAccountId: ctx.config.targetAccountId,
+    sourceItemKey: item.sourceItemKey ?? "",
+  });
   const targetId = eligible.targetTransactionId as string;
 
   try {

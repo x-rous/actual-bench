@@ -7,6 +7,7 @@ import { getSyncFlowRun, listSyncFlowRunItems } from "@/lib/app-db/syncRunReposi
 import type { SqliteDatabase } from "@/lib/app-db/types";
 import { getBudgetFileSyncCapabilities } from "./capabilities";
 import { buildPlanConfig } from "./flowConfig";
+import { generateSyncMarker } from "./marker";
 import { persistDraftPreviewRun } from "./persistPlan";
 import { planSyncFlow } from "./syncPlanner";
 import type { SyncSourceTransaction } from "@/lib/actual/transport";
@@ -57,7 +58,7 @@ describe("persistDraftPreviewRun", () => {
     try {
       const flowId = createFlow(db);
       const plan = planSyncFlow({
-        config: buildPlanConfig({ flowId, targetAccountId: "acct-tgt", sourceBudgetName: "Home", sourceAccountName: "Checking" }),
+        config: buildPlanConfig({ flowId, sourceBudgetId: "budget-src", targetBudgetId: "budget-tgt", targetAccountId: "acct-tgt", sourceBudgetName: "Home", sourceAccountName: "Checking" }),
         capabilities: getBudgetFileSyncCapabilities({ mode: "browser-api" }),
         sourceTransactions: [source],
         target: { payees: [], categories: [], importedIdIndex: new Map(), transactions: [] },
@@ -84,7 +85,9 @@ describe("persistDraftPreviewRun", () => {
       expect(item.sourceEntityType).toBe("transaction");
       expect(item.selectedForApply).toBe(true);
       expect(item.applyState).toBe("pending");
-      expect(item.createdTargetMarker).toBe("absync:" + flowId + ":txn:t1");
+      expect(item.createdTargetMarker).toBe(
+        generateSyncMarker({ sourceBudgetId: "budget-src", targetBudgetId: "budget-tgt", targetAccountId: "acct-tgt", sourceItemKey: "txn:t1" })
+      );
       expect(item.plannedTargetPayload?.data).toMatchObject({ amount: 1250 });
       expect((item.warnings?.data as { flags: string[] }).flags).toContain("target_rules_may_modify");
     } finally {
@@ -106,7 +109,7 @@ describe("persistDraftPreviewRun", () => {
         ],
       };
       const plan = planSyncFlow({
-        config: buildPlanConfig({ flowId, targetAccountId: "acct-tgt", sourceBudgetName: "Home", sourceAccountName: "Checking" }),
+        config: buildPlanConfig({ flowId, sourceBudgetId: "budget-src", targetBudgetId: "budget-tgt", targetAccountId: "acct-tgt", sourceBudgetName: "Home", sourceAccountName: "Checking" }),
         capabilities: getBudgetFileSyncCapabilities({ mode: "browser-api" }),
         sourceTransactions: [parent],
         target: { payees: [], categories: [], importedIdIndex: new Map(), transactions: [] },

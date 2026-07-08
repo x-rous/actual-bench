@@ -42,13 +42,13 @@ function itemsOf(txns: SyncSourceTransaction[], f: SyncSourceFilter) {
 
 describe("generated-transaction exclusion", () => {
   it("detects our own imported_id marker and notes marker", () => {
-    expect(isGeneratedSourceTransaction(txn({ importedId: generateSyncMarker("f", "txn:x") }))).toBe(true);
+    expect(isGeneratedSourceTransaction(txn({ importedId: generateSyncMarker({ sourceBudgetId: "b1", targetBudgetId: "b2", targetAccountId: "a2", sourceItemKey: "txn:x" }) }))).toBe(true);
     expect(isGeneratedSourceTransaction(txn({ notes: "hi [Synced from Home / Checking]" }))).toBe(true);
     expect(isGeneratedSourceTransaction(txn({ importedId: "bank-123", notes: "groceries" }))).toBe(false);
   });
 
   it("excludes generated transactions by default and keeps them when disabled", () => {
-    const txns = [txn({ id: "a" }), txn({ id: "b", importedId: generateSyncMarker("f", "txn:b") })];
+    const txns = [txn({ id: "a" }), txn({ id: "b", importedId: generateSyncMarker({ sourceBudgetId: "b1", targetBudgetId: "b2", targetAccountId: "a2", sourceItemKey: "txn:b" }) })];
     expect(filterSourceTransactions(txns, filter()).map((t) => t.id)).toEqual(["a"]);
     expect(
       filterSourceTransactions(txns, filter({ excludeGeneratedSyncTransactions: false })).map((t) => t.id)
