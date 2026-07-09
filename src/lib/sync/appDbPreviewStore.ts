@@ -22,6 +22,7 @@ export function createAppDbPreviewStore(db: SqliteDatabase): PreviewStore {
       const { run } = persistDraftPreviewRun(db, plan, {
         summary: meta.summary,
         sourceSnapshotSummary: meta.sourceSnapshotSummary,
+        trigger: meta.trigger,
       });
       return { runId: run.id };
     },

@@ -48,10 +48,12 @@ import {
   type ListTransactionsForSyncInput,
   type ResolvedSyncPayee,
   type ScheduleWriteInput,
+  type SyncAppliedSnapshot,
   type SyncCreatedTransaction,
   type SyncSourceSplitLine,
   type SyncSourceTransaction,
   type SyncTargetLookup,
+  type SyncTargetLookupTransaction,
   type SyncTargetTransactionInput,
   type TransportBudgetMonth,
 } from "./transport";
@@ -700,40 +702,38 @@ async function createOrResolveBrowserPayee(
   return { id, name, created: true };
 }
 
-async function resolveCreatedTransactionId(
-  api: ActualBrowserApi,
-  accountId: string,
-  date: string,
-  importedId: string
-): Promise<string | null> {
-  // addTransactions returns only "ok"; recover the id via the durable marker.
-  const rows = await api.getTransactions(accountId, date, date);
-  for (const row of rows) {
-    if (isRecord(row) && asString(row.imported_id) === importedId) {
-      return asString(row.id) ?? null;
-    }
-  }
-  return null;
-}
-
 async function createBrowserTransactionsForSync(
   connection: BrowserApiConnection,
   inputs: SyncTargetTransactionInput[]
 ): Promise<CreateTransactionsForSyncResult> {
   const api = await getBrowserApiRuntime(connection);
-  const created: SyncCreatedTransaction[] = [];
+  if (inputs.length === 0) return { created: [] };
 
-  // Writes to the same target budget are serialized to keep the single runtime
-  // consistent and to make per-item apply-state deterministic.
-  for (let requestIndex = 0; requestIndex < inputs.length; requestIndex++) {
-    const input = inputs[requestIndex];
+  // 1. Resolve/create every payee ONCE for the whole batch (load payees once,
+  //    create missing ones on demand), instead of a lookup per transaction.
+  const payeeIdByName = new Map<string, string>();
+  for (const raw of await api.getPayees()) {
+    const payee = normalizeDirectPayee(raw);
+    if (payee) payeeIdByName.set(normalizeName(payee.name), payee.id);
+  }
+  async function resolvePayeeId(input: SyncTargetTransactionInput): Promise<string | null> {
+    if (input.payeeId) return input.payeeId;
+    if (!input.payeeName) return null;
+    const key = normalizeName(input.payeeName);
+    const existing = payeeIdByName.get(key);
+    if (existing) return existing;
+    const id = await api.createPayee({ name: input.payeeName });
+    payeeIdByName.set(key, id);
+    return id;
+  }
 
-    let payeeId = input.payeeId ?? null;
-    if (!payeeId && input.payeeName) {
-      payeeId = (await createOrResolveBrowserPayee(connection, input.payeeName)).id;
-    }
-
-    const importedId = input.importedId ?? null;
+  // 2. Build payloads with resolved payees, grouped by target account (Budget
+  //    File Sync uses a single account, but grouping keeps this general).
+  type Entry = { index: number; input: SyncTargetTransactionInput; payload: ApiImportTransaction; payeeId: string | null };
+  const byAccount = new Map<string, { entries: Entry[]; minDate: string; maxDate: string }>();
+  for (let index = 0; index < inputs.length; index++) {
+    const input = inputs[index];
+    const payeeId = await resolvePayeeId(input);
     const payload: ApiImportTransaction = {
       date: input.date,
       amount: input.amount,
@@ -743,24 +743,62 @@ async function createBrowserTransactionsForSync(
       // Actual defaults missing `cleared` to true; be explicit for synced rows.
       cleared: input.cleared ?? false,
     };
-    if (importedId) payload.imported_id = importedId;
+    if (input.importedId) payload.imported_id = input.importedId;
 
-    // addTransactions performs a plain insert (no dedupe/reconcile), so the
-    // created row matches the planned payload. See the Slice 1 spike notes for
-    // why this is preferred over importTransactions for the MVP.
-    await api.addTransactions(input.accountId, [payload], {
+    const group = byAccount.get(input.accountId);
+    if (group) {
+      group.entries.push({ index, input, payload, payeeId });
+      if (input.date < group.minDate) group.minDate = input.date;
+      if (input.date > group.maxDate) group.maxDate = input.date;
+    } else {
+      byAccount.set(input.accountId, { entries: [{ index, input, payload, payeeId }], minDate: input.date, maxDate: input.date });
+    }
+  }
+
+  // 3. One addTransactions per account (a plain insert — no dedupe/reconcile, so
+  //    created rows match the planned payloads; see the Slice 1 spike notes for
+  //    why this is preferred over importTransactions), then ONE range read per
+  //    account to recover ids + persisted fields by marker.
+  const created: SyncCreatedTransaction[] = new Array(inputs.length);
+  for (const [accountId, group] of byAccount) {
+    await api.addTransactions(accountId, group.entries.map((e) => e.payload), {
       learnCategories: false,
       runTransfers: false,
     });
 
-    const transactionId = importedId
-      ? await resolveCreatedTransactionId(api, input.accountId, input.date, importedId)
-      : null;
+    const rowByMarker = new Map<string, ApiTransaction>();
+    const rows = await api.getTransactions(accountId, group.minDate, group.maxDate);
+    for (const row of rows) {
+      if (!isRecord(row)) continue;
+      const marker = asString(row.imported_id);
+      if (marker && !rowByMarker.has(marker)) rowByMarker.set(marker, row as ApiTransaction);
+    }
 
-    created.push({ requestIndex, transactionId, importedId });
+    for (const entry of group.entries) {
+      const marker = entry.input.importedId ?? null;
+      const row = marker ? rowByMarker.get(marker) : undefined;
+      created[entry.index] = {
+        requestIndex: entry.index,
+        transactionId: row ? asString(row.id) ?? null : null,
+        importedId: marker,
+        resolvedPayeeId: entry.payeeId,
+        applied: row ? appliedFromRow(row, entry.input.date) : null,
+      };
+    }
   }
 
   return { created };
+}
+
+function appliedFromRow(row: ApiTransaction, fallbackDate: string): SyncAppliedSnapshot {
+  return {
+    amount: typeof row.amount === "number" ? row.amount : 0,
+    date: asString(row.date) ?? fallbackDate,
+    cleared: row.cleared === true,
+    categoryId: asString(row.category) ?? null,
+    payeeId: asString(row.payee) ?? null,
+    notes: asString(row.notes) ?? null,
+  };
 }
 
 async function getBrowserTargetLookupForSync(
@@ -771,23 +809,35 @@ async function getBrowserTargetLookupForSync(
   const payees = (await api.getPayees())
     .map(normalizeDirectPayee)
     .filter((payee): payee is Payee => payee !== null);
+  const payeeNameById = new Map(payees.map((p) => [p.id, p.name]));
 
+  // Single range read serves BOTH the marker index and the dedupe transaction
+  // list, so the caller does not need a second listTransactionsForSync (which
+  // would reload payees + categories again).
   const importedIdIndex = new Map<string, string>();
+  const transactions: SyncTargetLookupTransaction[] = [];
   const rows = await api.getTransactions(
     input.accountId,
     input.startDate ?? "",
     input.endDate ?? ""
   );
   for (const row of rows) {
-    if (!isRecord(row)) continue;
-    const importedId = asString(row.imported_id);
+    if (!isRecord(row) || row.is_child === true) continue;
     const id = asString(row.id);
-    if (importedId && id && !importedIdIndex.has(importedId)) {
-      importedIdIndex.set(importedId, id);
-    }
+    if (!id) continue;
+    const importedId = asString(row.imported_id);
+    if (importedId && !importedIdIndex.has(importedId)) importedIdIndex.set(importedId, id);
+    const payeeId = asString(row.payee);
+    transactions.push({
+      id,
+      date: asString(row.date) ?? "",
+      amount: typeof row.amount === "number" ? row.amount : 0,
+      payeeName: payeeId ? payeeNameById.get(payeeId) ?? null : null,
+      categoryId: asString(row.category) ?? null,
+    });
   }
 
-  return { payees, importedIdIndex };
+  return { payees, importedIdIndex, transactions };
 }
 
 export function createBrowserApiTransport(

@@ -29,6 +29,7 @@ export type SyncPlanFlag =
   | "source_changed_since_sync"
   | "target_marker_match_repair"
   | "duplicate_review"
+  | "exact_duplicate_auto_map"
   | "blocked_no_marker"
   | "split_fallback_key";
 

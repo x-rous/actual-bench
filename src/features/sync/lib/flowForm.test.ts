@@ -40,6 +40,11 @@ describe("form defaults", () => {
     expect(form.transform.missingPayee).toBe("create");
     expect(form.transform.notesMarkerEnabled).toBe(true);
   });
+
+  it("defaults automation to manual preview (RD-053 behavior preserved)", () => {
+    expect(emptyFlowForm().automation.reviewPolicy).toBe("manual_preview_required");
+    expect(emptyFlowForm().automation.intervalMinutes).toBe("60");
+  });
 });
 
 describe("validation", () => {
@@ -78,6 +83,27 @@ describe("buildFlowPayload", () => {
     expect(JSON.stringify(payload)).not.toContain("serverPassword");
     expect(JSON.stringify(payload)).not.toContain("pw");
   });
+
+  it("encodes the automation review policy into the leg options envelope", () => {
+    const form = filledForm();
+    form.automation.reviewPolicy = "auto_sync_on_interval";
+    const payload = buildFlowPayload(form, instances) as JsonObject & { legs: JsonObject[] };
+    const leg = payload.legs[0] as Record<string, { version: number; data: JsonObject }>;
+    expect(leg.options.data).toMatchObject({ reviewPolicy: "auto_sync_on_interval" });
+  });
+
+  it("clamps the interval to its floor on save", () => {
+    const form = filledForm();
+    form.automation.intervalMinutes = "5"; // below the 15-minute floor
+    const payload = buildFlowPayload(form, instances) as JsonObject & { legs: JsonObject[] };
+    const leg = payload.legs[0] as Record<string, { version: number; data: JsonObject }>;
+    expect(leg.options.data.intervalMinutes).toBe(15);
+
+    form.automation.intervalMinutes = "";
+    const blank = buildFlowPayload(form, instances) as JsonObject & { legs: JsonObject[] };
+    const blankLeg = blank.legs[0] as Record<string, { version: number; data: JsonObject }>;
+    expect(blankLeg.options.data.intervalMinutes).toBe(60); // default when unparseable
+  });
 });
 
 describe("flowToFormState", () => {
@@ -106,6 +132,29 @@ describe("flowToFormState", () => {
     expect(form.target.accountName).toBe("Joint");
     expect(form.transform.amountDirection).toBe("reverse");
     expect(form.filter.payeeInclude).toBe("coffee bar, market");
+    // Automation policy survives the round-trip via the options envelope.
+    expect(form.automation.reviewPolicy).toBe("manual_preview_required");
+  });
+
+  it("round-trips a non-default policy and falls back to manual for an unknown value", () => {
+    const auto = filledForm();
+    auto.automation.reviewPolicy = "auto_apply_safe_only";
+    const payload = buildFlowPayload(auto, instances) as JsonObject & { legs: JsonObject[] };
+    const legIn = payload.legs[0] as Record<string, { version: number; data: JsonObject }>;
+    const baseFlow = (options: JsonObject): SyncFlow => ({
+      id: "flow-1", name: "Card sync", enabled: true, flowType: "transaction_sync", description: null,
+      createdAt: "", updatedAt: "",
+      legs: [{
+        id: "leg-1", flowId: "flow-1", position: 0,
+        sourceRef: legIn.sourceRef, targetRef: legIn.targetRef,
+        filter: legIn.filter, transform: legIn.transform, options: { version: 1, data: options },
+        createdAt: "", updatedAt: "",
+      }],
+    });
+
+    expect(flowToFormState(baseFlow({ reviewPolicy: "auto_apply_safe_only" }), instances).automation.reviewPolicy).toBe("auto_apply_safe_only");
+    // Garbage policy value decodes to the safe manual default.
+    expect(flowToFormState(baseFlow({ reviewPolicy: "nonsense" }), instances).automation.reviewPolicy).toBe("manual_preview_required");
   });
 
   it("persists through the real repository and round-trips (regression: envelope shape)", () => {

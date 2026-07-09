@@ -100,6 +100,15 @@ export function FlowEditDialog({
   const set = (patch: Partial<SyncFlowFormState>) => onChange({ ...form, ...patch });
   const setFilter = (patch: Partial<SyncFlowFormState["filter"]>) => onChange({ ...form, filter: { ...form.filter, ...patch } });
   const setTransform = (patch: Partial<SyncFlowFormState["transform"]>) => onChange({ ...form, transform: { ...form.transform, ...patch } });
+  const setAutomation = (patch: Partial<SyncFlowFormState["automation"]>) => onChange({ ...form, automation: { ...form.automation, ...patch } });
+
+  const automationHelp: Record<SyncFlowFormState["automation"]["reviewPolicy"], string> = {
+    manual_preview_required: "Preview only. You review and apply every change yourself.",
+    auto_apply_safe_only:
+      "When you run a preview, safe new transactions and mapping repairs are applied automatically. Duplicates, changed, and other uncertain items still wait in the review queue.",
+    auto_sync_on_interval:
+      "Re-runs safe sync on a schedule while Actual Bench is open and this connection is unlocked. Applies only safe items; uncertain items go to the review queue. It does not run in the background when the app is closed.",
+  };
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
@@ -130,6 +139,55 @@ export function FlowEditDialog({
             </div>
             {sameBudget && <p className="text-xs text-destructive">Source and target must be different budgets (cross-budget only).</p>}
             <p className="text-xs text-muted-foreground">Source budget · account → target budget · account.</p>
+          </section>
+
+          {/* Automation policy (RD-054 / PR-020) */}
+          <section className="flex flex-col gap-2 border-t border-border py-4">
+            <h4 className="text-sm font-semibold">Automation</h4>
+            <label className="flex max-w-md flex-col gap-1 text-xs text-muted-foreground">
+              Review policy
+              <select
+                aria-label="Review policy"
+                className={selectClass}
+                value={form.automation.reviewPolicy}
+                onChange={(e) => setAutomation({ reviewPolicy: e.target.value as SyncFlowFormState["automation"]["reviewPolicy"] })}
+              >
+                <option value="manual_preview_required">Manual — preview &amp; apply yourself (default)</option>
+                <option value="auto_apply_safe_only">Auto-apply safe items on preview</option>
+                <option value="auto_sync_on_interval">Auto-sync on a schedule (while app is open)</option>
+              </select>
+            </label>
+            <p className="text-xs text-muted-foreground">{automationHelp[form.automation.reviewPolicy]}</p>
+            {form.automation.reviewPolicy === "auto_sync_on_interval" && (
+              <label className="flex max-w-md flex-col gap-1 text-xs text-muted-foreground">
+                Run every (minutes)
+                <Input
+                  type="number"
+                  min={15}
+                  step={5}
+                  aria-label="Auto-sync interval in minutes"
+                  value={form.automation.intervalMinutes}
+                  onChange={(e) => setAutomation({ intervalMinutes: e.target.value })}
+                />
+                <span className="text-[11px]">Minimum 15 minutes. Each run re-opens and syncs the whole budget.</span>
+              </label>
+            )}
+            {form.automation.reviewPolicy !== "manual_preview_required" && (
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  aria-label="Auto-map exact duplicates"
+                  checked={form.automation.exactDuplicateAutoMap}
+                  onChange={(e) => setAutomation({ exactDuplicateAutoMap: e.target.checked })}
+                />
+                Auto-map exact duplicates to the existing transaction
+              </label>
+            )}
+            {form.automation.reviewPolicy !== "manual_preview_required" && (
+              <p className="text-xs text-muted-foreground">
+                When on, a transaction that already exists on the target with the same date, amount, payee and category is linked to it (no new transaction). Uncertain (fuzzy) duplicates still go to the review queue.
+              </p>
+            )}
           </section>
 
           {/* Transform + Filters, side by side at wide widths */}

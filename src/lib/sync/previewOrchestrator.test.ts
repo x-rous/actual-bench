@@ -73,7 +73,13 @@ function makeTransport(kind: "source" | "target", fx: TransportFixture): ActualB
     }),
     getTargetLookupForSync: jest.fn(async () => {
       events.push(`lookup:${kind}`);
-      return { payees: fx.targetPayees ?? [], importedIdIndex: fx.importedIdIndex ?? new Map() };
+      return {
+        payees: fx.targetPayees ?? [],
+        importedIdIndex: fx.importedIdIndex ?? new Map(),
+        transactions: (fx.targetTransactions ?? []).map((t) => ({
+          id: t.id, date: t.date, amount: t.amount, payeeName: t.payeeName, categoryId: t.categoryId,
+        })),
+      };
     }),
     getCategoryGroups: jest.fn(async () => categoryGroups),
   } as unknown as ActualBenchTransport;

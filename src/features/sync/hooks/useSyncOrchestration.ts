@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation } from "@tanstack/react-query";
-import { runClientApply, runClientPreview } from "../lib/clientOrchestration";
+import { runClientApply, runClientPreview, runClientSafeSync } from "../lib/clientOrchestration";
 import type { ConnectionInstance } from "@/store/connection";
 import type { ApplySelection } from "@/lib/sync/applyOrchestrator";
 
@@ -26,4 +26,16 @@ export type ApplyArgs = {
 /** Runs the Slice 4 apply via the client orchestrator (browser transport). */
 export function useApplyMutation() {
   return useMutation({ mutationFn: (args: ApplyArgs) => runClientApply(args) });
+}
+
+export type SafeSyncArgs = {
+  flowId: string;
+  sourceConnection: ConnectionInstance;
+  targetConnection: ConnectionInstance;
+  allowDisabled?: boolean;
+};
+
+/** "Run safe sync now" (RD-054 / PR-020): policy-gated preview + safe-only apply. */
+export function useSafeSyncMutation() {
+  return useMutation({ mutationFn: (args: SafeSyncArgs) => runClientSafeSync(args) });
 }

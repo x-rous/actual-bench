@@ -91,12 +91,17 @@ function makeTargetTransport(opts: TargetOptions = {}) {
       counter += 1;
       const id = "tt" + counter;
       const ruled = opts.ruleMutate ? opts.ruleMutate({ categoryId: inp.categoryId ?? null, payeeId: inp.payeeId ?? null, notes: inp.notes ?? null }) : {};
-      rows.push(targetRow({
+      const row = targetRow({
         id, date: inp.date, amount: inp.amount, payeeId: inp.payeeId ?? null,
         categoryId: inp.categoryId ?? null, notes: inp.notes ?? null, cleared: inp.cleared ?? false,
         importedId: inp.importedId ?? null, ...ruled,
-      }));
-      return { requestIndex: i, transactionId: id, importedId: inp.importedId ?? null };
+      });
+      rows.push(row);
+      // Mirror the Direct transport: the persisted fields come back with the id.
+      return {
+        requestIndex: i, transactionId: id, importedId: inp.importedId ?? null,
+        applied: { amount: row.amount, date: row.date, cleared: row.cleared, categoryId: row.categoryId, payeeId: row.payeeId, notes: row.notes },
+      };
     });
     return { created };
   });
@@ -211,7 +216,7 @@ describe("applySyncRun — validation", () => {
 describe("applySyncRun — create path", () => {
   it("creates a target transaction, resolves the id, and records a mapping immediately", async () => {
     const { store, createdMappings, itemPatches } = makeStore();
-    const { transport, createTransactionsForSync, createPayee } = makeTargetTransport();
+    const { transport, createTransactionsForSync } = makeTargetTransport();
 
     const result = await applySyncRun({ runId: "run-1", targetConnection: targetConn }, { transport: provider(transport), store });
 
@@ -219,10 +224,10 @@ describe("applySyncRun — create path", () => {
     expect(result.counts).toMatchObject({ selected: 1, applied: 1, failed: 0 });
     expect(result.items[0]).toMatchObject({ outcome: "applied", targetTransactionId: "tt1" });
 
-    // create used the marker; payee was resolved from name
-    expect(createPayee).toHaveBeenCalledWith({ name: "Coffee Bar" });
+    // Orchestrator forwards the marker + payee name to the batch create; payee
+    // resolution is the transport's job (covered in the transport tests).
     expect(createTransactionsForSync.mock.calls[0][0][0]).toMatchObject({
-      importedId: MARKER_T1, payeeId: "payee-Coffee Bar", categoryId: "tc1", amount: 1250,
+      importedId: MARKER_T1, payeeName: "Coffee Bar", categoryId: "tc1", amount: 1250,
     });
 
     // mapping recorded with target id + marker
@@ -232,6 +237,24 @@ describe("applySyncRun — create path", () => {
       targetMarker: MARKER_T1, sourceEntityType: "transaction",
     });
     expect(itemPatches.get("item-1")).toMatchObject({ applyState: "applied" });
+  });
+
+  it("creates every selected item in a single batched transport call", async () => {
+    const items = [
+      runItem({ id: "a", sourceItemKey: "txn:t1", payloadData: { importedId: MARKER_T1 } } as unknown as Partial<SyncFlowRunItem>),
+      runItem({ id: "b", sourceItemKey: "txn:t2", sourceTransactionId: "t2", payloadData: { importedId: MARKER_T2 } } as unknown as Partial<SyncFlowRunItem>),
+      runItem({ id: "c", sourceItemKey: "split:t1:s1", payloadData: { importedId: MARKER_SPLIT } } as unknown as Partial<SyncFlowRunItem>),
+    ];
+    const { store, createdMappings } = makeStore({ items });
+    const { transport, createTransactionsForSync } = makeTargetTransport();
+
+    const result = await applySyncRun({ runId: "run-1", targetConnection: targetConn }, { transport: provider(transport), store });
+
+    expect(result.counts).toMatchObject({ selected: 3, applied: 3, failed: 0 });
+    // The whole batch is ONE insert call, not one round-trip per transaction.
+    expect(createTransactionsForSync).toHaveBeenCalledTimes(1);
+    expect(createTransactionsForSync.mock.calls[0][0]).toHaveLength(3);
+    expect(createdMappings).toHaveLength(3);
   });
 
   it("does not create a payee when policy left it empty", async () => {
@@ -352,6 +375,113 @@ describe("applySyncRun — marker-match repair", () => {
     // No new create candidates and marker-match is not auto-selected → nothing to do.
     expect(result).toMatchObject({ status: "failed", error: { code: "no_eligible_items" } });
   });
+
+  it("all_safe auto-selects both new creates and repairable marker matches", async () => {
+    const create = runItem(); // item-1: new create, txn:t1
+    const repair = runItem({
+      id: "mm-2", sourceItemKey: "txn:t2", sourceTransactionId: "t2",
+      classification: "target_marker_match", plannedAction: "skip", plannedTargetPayload: null,
+      targetItemRef: { version: 1, data: { targetTransactionId: "pre-existing" } },
+    });
+    const { store, createdMappings } = makeStore({ items: [create, repair] });
+    const { transport, createTransactionsForSync } = makeTargetTransport({
+      preloaded: [targetRow({ id: "pre-existing", importedId: MARKER_T2 })],
+    });
+
+    const result = await applySyncRun(
+      { runId: "run-1", targetConnection: targetConn, selection: { selection: "all_safe" } },
+      { transport: provider(transport), store }
+    );
+
+    expect(result.status).toBe("applied");
+    expect(result.counts).toMatchObject({ selected: 2, applied: 1, repaired: 1 });
+    // Only the create performs an Actual write; the repair just records a mapping.
+    expect(createTransactionsForSync).toHaveBeenCalledTimes(1);
+    expect(createdMappings.map((m) => m.sourceItemKey).sort()).toEqual(["txn:t1", "txn:t2"]);
+  });
+});
+
+describe("applySyncRun — exact-duplicate auto-map", () => {
+  function autoMapItem(): SyncFlowRunItem {
+    return runItem({
+      id: "dup-1",
+      classification: "exact_duplicate",
+      plannedAction: "skip",
+      warnings: { version: 1, data: { flags: ["exact_duplicate_auto_map"] } },
+      targetItemRef: { version: 1, data: { targetTransactionId: "existing-1" } },
+    });
+  }
+
+  it("maps an exact duplicate to the existing target without creating a transaction", async () => {
+    const { store, createdMappings } = makeStore({ items: [autoMapItem()] });
+    const { transport, createTransactionsForSync } = makeTargetTransport({
+      preloaded: [targetRow({ id: "existing-1", date: "2026-07-10" })],
+    });
+    const result = await applySyncRun(
+      { runId: "run-1", targetConnection: targetConn, selection: { selection: "all_safe" } },
+      { transport: provider(transport), store }
+    );
+    expect(createTransactionsForSync).not.toHaveBeenCalled();
+    expect(result.counts.repaired).toBe(1);
+    expect(result.items[0]).toMatchObject({ outcome: "repaired", targetTransactionId: "existing-1" });
+    expect(createdMappings[0]).toMatchObject({ sourceItemKey: "txn:t1", targetTransactionId: "existing-1", targetMarker: null });
+    expect(result.status).toBe("applied");
+  });
+
+  it("does not map when the exact-duplicate target has disappeared from the budget", async () => {
+    const { store, createdMappings } = makeStore({ items: [autoMapItem()] });
+    const { transport } = makeTargetTransport({ preloaded: [] });
+    const result = await applySyncRun(
+      { runId: "run-1", targetConnection: targetConn, selection: { selection: "all_safe" } },
+      { transport: provider(transport), store }
+    );
+    expect(result.items[0].outcome).toBe("skipped");
+    expect(createdMappings).toHaveLength(0);
+  });
+
+  it("never auto-maps under the default all_safe_new selection", async () => {
+    const { store } = makeStore({ items: [autoMapItem()] });
+    const { transport } = makeTargetTransport({ preloaded: [targetRow({ id: "existing-1", date: "2026-07-10" })] });
+    const result = await applySyncRun({ runId: "run-1", targetConnection: targetConn }, { transport: provider(transport), store });
+    expect(result).toMatchObject({ status: "failed", error: { code: "no_eligible_items" } });
+  });
+});
+
+describe("applySyncRun — retry failed", () => {
+  it("re-attempts only the previously-failed items on a partial run", async () => {
+    const failed = runItem({ id: "f1", sourceItemKey: "txn:t1", applyState: "failed", payloadData: { importedId: MARKER_T1 } } as unknown as Partial<SyncFlowRunItem>);
+    const done = runItem({ id: "ok1", sourceItemKey: "txn:t2", applyState: "applied", payloadData: { importedId: MARKER_T2 } } as unknown as Partial<SyncFlowRunItem>);
+    const { store, createdMappings } = makeStore({ runStatus: "partial", items: [failed, done] });
+    const { transport, createTransactionsForSync } = makeTargetTransport();
+
+    const result = await applySyncRun(
+      { runId: "run-1", targetConnection: targetConn, selection: { selection: "retry_failed" } },
+      { transport: provider(transport), store }
+    );
+
+    expect(result.status).toBe("applied");
+    expect(result.counts).toMatchObject({ selected: 1, applied: 1 });
+    // Only the failed item was re-created; the applied one was left alone.
+    expect(createTransactionsForSync).toHaveBeenCalledTimes(1);
+    expect(createdMappings.map((m) => m.sourceItemKey)).toEqual(["txn:t1"]);
+  });
+
+  it("refuses a normal apply on a non-draft run, but allows retry", async () => {
+    const { store } = makeStore({ runStatus: "failed", items: [runItem({ applyState: "failed" })] });
+    const { transport } = makeTargetTransport();
+    const normal = await applySyncRun({ runId: "run-1", targetConnection: targetConn }, { transport: provider(transport), store });
+    expect(normal).toMatchObject({ status: "failed", error: { code: "run_not_applyable" } });
+  });
+
+  it("reports no eligible items when a failed run has nothing left to retry", async () => {
+    const { store } = makeStore({ runStatus: "failed", items: [runItem({ applyState: "applied" })] });
+    const { transport } = makeTargetTransport();
+    const result = await applySyncRun(
+      { runId: "run-1", targetConnection: targetConn, selection: { selection: "retry_failed" } },
+      { transport: provider(transport), store }
+    );
+    expect(result).toMatchObject({ status: "failed", error: { code: "no_eligible_items" } });
+  });
 });
 
 describe("applySyncRun — partial failure & splits", () => {
@@ -359,15 +489,15 @@ describe("applySyncRun — partial failure & splits", () => {
     const good = runItem({ id: "good", sourceItemKey: "txn:t1", payloadData: { importedId: MARKER_T1 } } as unknown as Partial<SyncFlowRunItem>);
     const bad = runItem({ id: "bad", sourceItemKey: "txn:t2", sourceTransactionId: "t2", payloadData: { importedId: MARKER_T2 } } as unknown as Partial<SyncFlowRunItem>);
     const { store, createdMappings } = makeStore({ items: [good, bad] });
-    // Fail resolution only for the second create by toggling after first success.
+    // The whole batch is created in one call; only MARKER_T2's id fails to resolve.
     const target = makeTargetTransport();
-    let call = 0;
-    (target.transport.createTransactionsForSync as jest.Mock).mockImplementation(async (inputs: Array<{ importedId?: string | null; date: string; amount: number }>) => {
-      call += 1;
-      if (call === 2) return { created: [{ requestIndex: 0, transactionId: null, importedId: inputs[0].importedId ?? null }] };
-      target.rows.push(targetRow({ id: "tt-good", importedId: inputs[0].importedId ?? null }));
-      return { created: [{ requestIndex: 0, transactionId: "tt-good", importedId: inputs[0].importedId ?? null }] };
-    });
+    (target.transport.createTransactionsForSync as jest.Mock).mockImplementation(async (inputs: Array<{ importedId?: string | null; date: string; amount: number }>) =>
+      ({ created: inputs.map((inp, i) => {
+        if (inp.importedId === MARKER_T2) return { requestIndex: i, transactionId: null, importedId: inp.importedId ?? null, applied: null };
+        target.rows.push(targetRow({ id: "tt-good", importedId: inp.importedId ?? null }));
+        return { requestIndex: i, transactionId: "tt-good", importedId: inp.importedId ?? null, applied: null };
+      }) })
+    );
 
     const result = await applySyncRun({ runId: "run-1", targetConnection: targetConn }, { transport: provider(target.transport), store });
     expect(result.status).toBe("partial");

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { CheckCircle2, Info, XCircle } from "lucide-react";
+import { CheckCircle2, Info, ListChecks, Loader2, XCircle } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -11,6 +11,7 @@ import {
   groupLabel,
   matchesPreviewFilter,
   PREVIEW_FILTERS,
+  reviewQueueCount,
   splitPositions,
   tileCounts,
   type PreviewFilter,
@@ -76,10 +77,17 @@ export function PreviewPanel(props: PreviewPanelProps) {
   const visible = rows.filter((r) => matchesPreviewFilter(r, filter));
   const selectedCount = rows.filter((r) => selectedIds.has(r.id)).length;
   const splits = splitPositions(rows);
+  const reviewCount = reviewQueueCount(rows);
 
   return (
     <div className="flex flex-col gap-3.5">
-      {props.applyResult && <ApplyResultBanner result={props.applyResult} />}
+      {props.applying && (
+        <div className="flex items-center gap-2 rounded-md border border-blue-400/40 bg-blue-50/70 px-3.5 py-2.5 text-sm dark:bg-blue-950/20">
+          <Loader2 className="h-4 w-4 shrink-0 animate-spin text-blue-600 dark:text-blue-400" />
+          <span>Syncing selected changes to the target budget… this can take a while on large budgets.</span>
+        </div>
+      )}
+      {!props.applying && props.applyResult && <ApplyResultBanner result={props.applyResult} />}
 
       {/* Four grouped tiles — click to filter the table */}
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
@@ -92,6 +100,26 @@ export function PreviewPanel(props: PreviewPanelProps) {
         {summary.sourceItemsScanned} items scanned · {summary.generatedTransactionsExcluded} sync-generated excluded · {summary.sourceItemsFilteredOut} filtered out
         <PreviewFreshness previewedAt={props.previewedAt} readOnly={props.readOnly} />
       </p>
+
+      {reviewCount > 0 && (
+        <button
+          type="button"
+          aria-pressed={filter === "review_queue"}
+          onClick={() => setFilter(filter === "review_queue" ? "all" : "review_queue")}
+          className={cn(
+            "flex items-start gap-2 rounded-md border border-amber-400/40 bg-amber-50/60 px-3 py-2 text-left text-sm transition-colors hover:bg-amber-100/60 dark:bg-amber-950/20 dark:hover:bg-amber-950/40",
+            filter === "review_queue" && "ring-2 ring-ring"
+          )}
+        >
+          <ListChecks className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
+          <span>
+            <strong className="font-semibold">Review queue · {reviewCount}</strong>
+            <span className="block text-xs text-muted-foreground">
+              Automated sync can&apos;t apply these safely (duplicates, source changed or missing, blocked). Review and handle them yourself.
+            </span>
+          </span>
+        </button>
+      )}
 
       <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
         <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
@@ -135,12 +163,19 @@ export function PreviewPanel(props: PreviewPanelProps) {
           ) : (
             <>
               {selectedCount > 0 && (
-                <Button size="sm" variant="ghost" onClick={props.onClearSelection}>Clear</Button>
+                <Button size="sm" variant="ghost" onClick={props.onClearSelection} disabled={props.applying}>Clear</Button>
               )}
-              <Button size="sm" variant="outline" onClick={props.onSelectAllSafeNew}>Select all safe new</Button>
+              <Button size="sm" variant="outline" onClick={props.onSelectAllSafeNew} disabled={props.applying}>Select all safe new</Button>
               <Button size="sm" onClick={props.onApply} disabled={selectedCount === 0 || props.applying}>
-                {props.applying ? "Syncing…" : "Sync selected"}
-                {selectedCount > 0 && <span className="tabular-nums"> · {selectedCount}</span>}
+                {props.applying ? (
+                  <>
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" /> Syncing…
+                  </>
+                ) : (
+                  <>
+                    Sync selected{selectedCount > 0 && <span className="tabular-nums"> · {selectedCount}</span>}
+                  </>
+                )}
               </Button>
             </>
           )}

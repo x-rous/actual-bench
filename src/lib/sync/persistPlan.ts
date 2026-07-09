@@ -7,6 +7,7 @@ import type {
   SqliteDatabase,
   SyncFlowRun,
   SyncFlowRunItem,
+  SyncRunTrigger,
 } from "@/lib/app-db/types";
 import type { PlannedTargetPayload, SyncPlannedItem, SyncPlanResult } from "./plannedChanges";
 
@@ -29,6 +30,8 @@ export type PersistDraftPreviewOptions = {
   summary?: JsonObject;
   /** Source snapshot summary stored on the run. */
   sourceSnapshotSummary?: JsonObject;
+  /** What created this run; defaults to a manual preview (RD-054). */
+  trigger?: SyncRunTrigger;
 };
 
 function payloadToJsonObject(payload: PlannedTargetPayload): JsonObject {
@@ -69,45 +72,51 @@ export function persistDraftPreviewRun(
   plan: SyncPlanResult,
   options: PersistDraftPreviewOptions = {}
 ): PersistDraftPreviewResult {
-  const run = createSyncFlowRun(db, {
-    flowId: plan.flowId,
-    status: "draft_preview",
-    createdByTrigger: "manual_preview",
-    summary: { version: 1, data: { totalItems: plan.items.length, ...options.summary } },
-    counts: { version: 1, data: { ...plan.counts } },
-    sourceSnapshotSummary: options.sourceSnapshotSummary
-      ? { version: 1, data: options.sourceSnapshotSummary }
-      : null,
+  // Persist the run + all its items in ONE transaction: 1 commit instead of
+  // N+1, which is the difference between one fsync and hundreds for a big run.
+  const persist = db.transaction((): PersistDraftPreviewResult => {
+    const run = createSyncFlowRun(db, {
+      flowId: plan.flowId,
+      status: "draft_preview",
+      createdByTrigger: options.trigger ?? "manual_preview",
+      summary: { version: 1, data: { totalItems: plan.items.length, ...options.summary } },
+      counts: { version: 1, data: { ...plan.counts } },
+      sourceSnapshotSummary: options.sourceSnapshotSummary
+        ? { version: 1, data: options.sourceSnapshotSummary }
+        : null,
+    });
+
+    const items = plan.items.map((item, index) =>
+      createSyncFlowRunItem(db, {
+        runId: run.id,
+        flowId: plan.flowId,
+        sequence: index,
+        status: "planned",
+        message: item.message,
+        sourceItemRef: { version: 1, data: sourceItemRef(item) },
+        targetItemRef: item.targetTransactionId
+          ? { version: 1, data: { targetTransactionId: item.targetTransactionId } }
+          : null,
+        sourceEntityType: item.sourceEntityType,
+        sourceItemKey: item.sourceItemKey,
+        sourceTransactionId: item.sourceTransactionId,
+        sourceSplitId: item.sourceSplitId,
+        sourceFingerprint: item.sourceFingerprint,
+        plannedAction: item.action,
+        plannedTargetPayload: item.plannedTargetPayload
+          ? { version: 1, data: payloadToJsonObject(item.plannedTargetPayload) }
+          : null,
+        classification: item.classification,
+        duplicateConfidence: item.duplicateConfidence,
+        warnings: { version: 1, data: { flags: [...item.flags] } },
+        selectedForApply: item.selectedForApply,
+        applyState: "pending",
+        createdTargetMarker: item.plannedTargetPayload?.importedId ?? null,
+      })
+    );
+
+    return { run, items };
   });
 
-  const items = plan.items.map((item, index) =>
-    createSyncFlowRunItem(db, {
-      runId: run.id,
-      flowId: plan.flowId,
-      sequence: index,
-      status: "planned",
-      message: item.message,
-      sourceItemRef: { version: 1, data: sourceItemRef(item) },
-      targetItemRef: item.targetTransactionId
-        ? { version: 1, data: { targetTransactionId: item.targetTransactionId } }
-        : null,
-      sourceEntityType: item.sourceEntityType,
-      sourceItemKey: item.sourceItemKey,
-      sourceTransactionId: item.sourceTransactionId,
-      sourceSplitId: item.sourceSplitId,
-      sourceFingerprint: item.sourceFingerprint,
-      plannedAction: item.action,
-      plannedTargetPayload: item.plannedTargetPayload
-        ? { version: 1, data: payloadToJsonObject(item.plannedTargetPayload) }
-        : null,
-      classification: item.classification,
-      duplicateConfidence: item.duplicateConfidence,
-      warnings: { version: 1, data: { flags: [...item.flags] } },
-      selectedForApply: item.selectedForApply,
-      applyState: "pending",
-      createdTargetMarker: item.plannedTargetPayload?.importedId ?? null,
-    })
-  );
-
-  return { run, items };
+  return persist();
 }

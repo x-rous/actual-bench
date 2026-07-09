@@ -76,6 +76,10 @@ export function getAppDb(dbPath = resolveAppDbPath()): SqliteDatabase {
   try {
     db.pragma("foreign_keys = ON");
     db.pragma("journal_mode = WAL");
+    // NORMAL is durable under WAL (only risks the last commit on OS crash, not
+    // corruption) and avoids an fsync per write — a large win for the many small
+    // writes a sync run makes.
+    db.pragma("synchronous = NORMAL");
     runMigrations(db);
     cachedDb = { path: dbPath, db };
     return db;

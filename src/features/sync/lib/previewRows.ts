@@ -1,4 +1,4 @@
-import type { SyncFlowRunItem, SyncItemClassification } from "@/lib/app-db/types";
+import type { SyncApplyState, SyncFlowRunItem, SyncItemClassification } from "@/lib/app-db/types";
 
 /**
  * Read persisted run items into display rows for the preview table
@@ -22,6 +22,14 @@ export type PreviewRow = {
   selectable: boolean;
   /** Included in "select all safe new" (new create candidates only). */
   isSafeNew: boolean;
+  /**
+   * Item an automated safe-only run could not apply and left for a human
+   * (RD-054 review queue): an uncertain class that is neither safe (new /
+   * marker-match) nor already resolved (already-synced).
+   */
+  reviewRequired: boolean;
+  /** Persisted apply lifecycle state (null on a never-applied draft preview). */
+  applyState: SyncApplyState | null;
   sourceItemKey: string;
   isSplit: boolean;
   flags: string[];
@@ -40,6 +48,25 @@ function str(value: unknown): string | null {
 
 function numOrNull(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+/**
+ * Classes a safe-only automated run cannot apply and routes to the review queue
+ * (RD-054). Deliberately excludes `new` and `target_marker_match` (both safe →
+ * auto-applied) and `already_synced` (already resolved, no action needed).
+ */
+const REVIEW_REQUIRED_CLASSIFICATIONS: readonly SyncItemClassification[] = [
+  "exact_duplicate",
+  "strong_duplicate",
+  "weak_duplicate",
+  "source_changed_since_sync",
+  "source_missing",
+  "blocked",
+  "warning",
+];
+
+export function isReviewRequired(classification: SyncItemClassification | null): boolean {
+  return classification != null && REVIEW_REQUIRED_CLASSIFICATIONS.includes(classification);
 }
 
 export function classificationGroup(classification: SyncItemClassification | null): PreviewGroup {
@@ -72,13 +99,18 @@ export function toPreviewRow(item: SyncFlowRunItem): PreviewRow {
     : [];
 
   const isSafeNew = item.classification === "new" && item.plannedAction === "create";
+  // An exact duplicate the flow opted to auto-map is safe (mapping-only, no write).
+  const isExactDupAutoMap =
+    item.classification === "exact_duplicate" && flags.includes("exact_duplicate_auto_map");
   return {
     id: item.id,
     classification: item.classification,
     group: classificationGroup(item.classification),
-    // Marker-match rows are selectable for mapping repair (no target write).
-    selectable: isSafeNew || item.classification === "target_marker_match",
+    // Selectable: safe creates, marker-match repairs, or auto-mappable exact dups.
+    selectable: isSafeNew || item.classification === "target_marker_match" || isExactDupAutoMap,
     isSafeNew,
+    reviewRequired: isReviewRequired(item.classification) && !isExactDupAutoMap,
+    applyState: item.applyState,
     sourceItemKey: item.sourceItemKey ?? "",
     isSplit: item.sourceEntityType === "split_line",
     flags,
@@ -105,6 +137,24 @@ export function selectableRowIds(rows: PreviewRow[]): string[] {
   return rows.filter((r) => r.isSafeNew).map((r) => r.id);
 }
 
+/** Row is a live review-queue member: review-required and still pending. */
+export function isInReviewQueue(row: PreviewRow): boolean {
+  return row.reviewRequired && (row.applyState == null || row.applyState === "pending");
+}
+
+/**
+ * The RD-054 review queue: review-required items an automated run did not apply
+ * and that still await a human decision. Applied/skipped items have been
+ * resolved and drop out; a never-applied draft preview keeps its pending rows.
+ */
+export function reviewQueueRows(rows: PreviewRow[]): PreviewRow[] {
+  return rows.filter(isInReviewQueue);
+}
+
+export function reviewQueueCount(rows: PreviewRow[]): number {
+  return reviewQueueRows(rows).length;
+}
+
 const GROUP_LABELS: Record<PreviewGroup, string> = {
   new: "New",
   already_synced: "Already synced",
@@ -121,7 +171,7 @@ export function groupLabel(group: PreviewGroup): string {
 
 // --- Preview table filtering (detailed statuses) ---------------------------
 
-export type PreviewFilter = "all" | "needs_review" | PreviewGroup;
+export type PreviewFilter = "all" | "needs_review" | "review_queue" | PreviewGroup;
 
 /** The three groups the "Needs review" tile/filter covers. */
 const NEEDS_REVIEW_GROUPS: PreviewGroup[] = ["duplicate", "source_changed", "marker_match"];
@@ -140,6 +190,7 @@ export const PREVIEW_FILTERS: { key: PreviewFilter; label: string }[] = [
 export function matchesPreviewFilter(row: PreviewRow, filter: PreviewFilter): boolean {
   if (filter === "all") return true;
   if (filter === "needs_review") return NEEDS_REVIEW_GROUPS.includes(row.group);
+  if (filter === "review_queue") return isInReviewQueue(row);
   return row.group === filter;
 }
 

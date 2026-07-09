@@ -1,6 +1,7 @@
 "use client";
 
 import { Badge } from "@/components/ui/badge";
+import { cn } from "@/lib/utils";
 import { relativeTime, toRunRow, type RunTone } from "../lib/runsView";
 import type { SyncFlowRun } from "@/lib/app-db/types";
 
@@ -26,7 +27,8 @@ export function RunHistory({ runs, onSelectRun }: RunHistoryProps) {
             <tr>
               <th className="px-3 py-2">Status</th><th className="px-3 py-2">Trigger</th>
               <th className="px-3 py-2 text-right">Planned</th><th className="px-3 py-2 text-right">Created</th>
-              <th className="px-3 py-2 text-right">Re-linked</th><th className="px-3 py-2 text-right">Failed</th>
+              <th className="px-3 py-2 text-right">Re-linked</th><th className="px-3 py-2 text-right">Queued</th>
+              <th className="px-3 py-2 text-right">Failed</th>
               <th className="px-3 py-2">When</th>
             </tr>
           </thead>
@@ -52,7 +54,8 @@ export function RunHistory({ runs, onSelectRun }: RunHistoryProps) {
                   <td className="px-3 py-2 text-right tabular-nums">{r.planned ?? "-"}</td>
                   <td className="px-3 py-2 text-right tabular-nums">{r.created ?? "-"}</td>
                   <td className="px-3 py-2 text-right tabular-nums">{r.relinked ?? "-"}</td>
-                  <td className="px-3 py-2 text-right tabular-nums">{r.failed ?? "-"}</td>
+                  <td className={cn("px-3 py-2 text-right tabular-nums", r.queued && "font-medium text-amber-600 dark:text-amber-400")}>{r.queued ?? "-"}</td>
+                  <td className={cn("px-3 py-2 text-right tabular-nums", r.failed ? "font-medium text-destructive" : "")}>{r.failed ?? "-"}</td>
                   <td className="px-3 py-2 text-muted-foreground" title={new Date(r.when).toLocaleString()}>{relativeTime(r.when)}</td>
                 </tr>
               );

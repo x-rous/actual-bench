@@ -57,7 +57,31 @@ export type SyncRunStatus =
   | "failed"
   | "cancelled";
 
-export type SyncRunTrigger = "manual_preview" | "manual_apply" | "background_future";
+export type SyncRunTrigger =
+  | "manual_preview"
+  | "manual_apply"
+  /**
+   * A safe-only automated run (RD-054 / PR-020): the "Run safe sync now" action
+   * or the client-side interval timer. Stamped on the run so history can
+   * distinguish automated from hand-applied runs. (Client-side only — there is
+   * no unattended server daemon; that is RD-058.)
+   */
+  | "interval_safe_only";
+
+/**
+ * Per-flow automation policy (RD-054 / PR-020). Gates how much of a run is
+ * applied without a human:
+ * - `manual_preview_required`: preview only; the human selects and applies (RD-053 default).
+ * - `auto_apply_safe_only`: a user-initiated run auto-applies only safe classes.
+ * - `auto_sync_on_interval`: a client-side interval re-runs safe sync while the app is
+ *   open and the connection is unlocked (Tier 1; not a server daemon — see PR-020).
+ *
+ * Uncertain items are never auto-applied under any policy; they go to the review queue.
+ */
+export type SyncReviewPolicy =
+  | "manual_preview_required"
+  | "auto_apply_safe_only"
+  | "auto_sync_on_interval";
 
 /**
  * Primary, mutually-exclusive lifecycle/dedupe state persisted for each run

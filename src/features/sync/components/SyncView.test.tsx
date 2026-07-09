@@ -10,6 +10,8 @@ import type { SyncFlow, SyncFlowRunItem } from "@/lib/app-db/types";
 jest.mock("../hooks/useSyncFlows");
 jest.mock("../hooks/useSyncData");
 jest.mock("../hooks/useSyncOrchestration");
+// The interval scheduler starts real timers; stub it out for component tests.
+jest.mock("../hooks/useSyncScheduler", () => ({ useSyncScheduler: jest.fn() }));
 
 const conn1: BrowserApiConnection = { id: "c1", label: "Home", mode: "browser-api", baseUrl: "https://s.example.com", serverPassword: "pw", budgetSyncId: "b-src" };
 const conn2: BrowserApiConnection = { id: "c2", label: "Family", mode: "browser-api", baseUrl: "https://t.example.com", serverPassword: "pw", budgetSyncId: "b-tgt" };
@@ -75,6 +77,7 @@ function setup(connections: BrowserApiConnection[]) {
   });
   (orchestrationHook.usePreviewMutation as jest.Mock).mockReturnValue({ mutate: previewMutate, isPending: false });
   (orchestrationHook.useApplyMutation as jest.Mock).mockReturnValue({ mutate: applyMutate, isPending: false });
+  (orchestrationHook.useSafeSyncMutation as jest.Mock).mockReturnValue({ mutate: jest.fn(), isPending: false });
 }
 
 beforeEach(() => jest.clearAllMocks());

@@ -1,4 +1,15 @@
-import { classificationGroup, filterCount, formatAmount, selectableRowIds, splitPositions, toPreviewRow } from "./previewRows";
+import {
+  classificationGroup,
+  filterCount,
+  formatAmount,
+  isReviewRequired,
+  matchesPreviewFilter,
+  reviewQueueCount,
+  reviewQueueRows,
+  selectableRowIds,
+  splitPositions,
+  toPreviewRow,
+} from "./previewRows";
 import type { SyncFlowRunItem } from "@/lib/app-db/types";
 
 function item(overrides: Partial<SyncFlowRunItem> = {}): SyncFlowRunItem {
@@ -52,6 +63,72 @@ describe("classificationGroup", () => {
     expect(classificationGroup("source_changed_since_sync")).toBe("source_changed");
     expect(classificationGroup("target_marker_match")).toBe("marker_match");
     expect(classificationGroup("blocked")).toBe("blocked");
+  });
+});
+
+describe("review queue (RD-054)", () => {
+  it("classifies only uncertain, non-safe, non-resolved items as review-required", () => {
+    expect(isReviewRequired("exact_duplicate")).toBe(true);
+    expect(isReviewRequired("strong_duplicate")).toBe(true);
+    expect(isReviewRequired("weak_duplicate")).toBe(true);
+    expect(isReviewRequired("source_changed_since_sync")).toBe(true);
+    expect(isReviewRequired("source_missing")).toBe(true);
+    expect(isReviewRequired("blocked")).toBe(true);
+    expect(isReviewRequired("warning")).toBe(true);
+    // Safe (auto-applied) and resolved classes are NOT review-required.
+    expect(isReviewRequired("new")).toBe(false);
+    expect(isReviewRequired("target_marker_match")).toBe(false);
+    expect(isReviewRequired("already_synced")).toBe(false);
+    expect(isReviewRequired(null)).toBe(false);
+  });
+
+  it("queues review-required pending rows and never the auto-applied safe set", () => {
+    const rows = [
+      toPreviewRow(item({ id: "new-1", classification: "new" })),
+      toPreviewRow(item({ id: "mm-1", classification: "target_marker_match" })),
+      toPreviewRow(item({ id: "dup-1", classification: "strong_duplicate", plannedAction: "skip", applyState: "pending" })),
+      toPreviewRow(item({ id: "chg-1", classification: "source_changed_since_sync", applyState: null })),
+      toPreviewRow(item({ id: "blk-1", classification: "blocked", plannedAction: "blocked" })),
+      toPreviewRow(item({ id: "done-1", classification: "already_synced", plannedAction: "skip" })),
+    ];
+    const queued = reviewQueueRows(rows).map((r) => r.id).sort();
+    expect(queued).toEqual(["blk-1", "chg-1", "dup-1"]);
+    expect(reviewQueueCount(rows)).toBe(3);
+    // The safe set (new + marker-match) is exactly what automation applies — never queued.
+    expect(queued).not.toContain("new-1");
+    expect(queued).not.toContain("mm-1");
+  });
+
+  it("drops items once they have been applied or skipped by a human", () => {
+    const applied = toPreviewRow(item({ id: "dup-applied", classification: "exact_duplicate", applyState: "applied" }));
+    const skipped = toPreviewRow(item({ id: "dup-skipped", classification: "weak_duplicate", applyState: "skipped" }));
+    const pending = toPreviewRow(item({ id: "dup-pending", classification: "weak_duplicate", applyState: "pending" }));
+    expect(reviewQueueRows([applied, skipped, pending]).map((r) => r.id)).toEqual(["dup-pending"]);
+  });
+
+  it("treats an auto-mapped exact duplicate as safe: selectable, not queued", () => {
+    const autoMap = toPreviewRow(item({
+      classification: "exact_duplicate",
+      plannedAction: "skip",
+      warnings: { version: 1, data: { flags: ["exact_duplicate_auto_map"] } },
+    }));
+    expect(autoMap.selectable).toBe(true);
+    expect(autoMap.reviewRequired).toBe(false);
+    expect(reviewQueueRows([autoMap])).toHaveLength(0);
+
+    // Without the flag, the same exact duplicate stays review-required.
+    const review = toPreviewRow(item({ classification: "exact_duplicate", plannedAction: "skip", warnings: { version: 1, data: { flags: ["duplicate_review"] } } }));
+    expect(review.reviewRequired).toBe(true);
+    expect(review.selectable).toBe(false);
+  });
+
+  it("matches the review_queue filter for pending review-required rows only", () => {
+    const dup = toPreviewRow(item({ classification: "strong_duplicate", applyState: "pending" }));
+    const dupApplied = toPreviewRow(item({ classification: "strong_duplicate", applyState: "applied" }));
+    const fresh = toPreviewRow(item({ classification: "new" }));
+    expect(matchesPreviewFilter(dup, "review_queue")).toBe(true);
+    expect(matchesPreviewFilter(dupApplied, "review_queue")).toBe(false);
+    expect(matchesPreviewFilter(fresh, "review_queue")).toBe(false);
   });
 });
 

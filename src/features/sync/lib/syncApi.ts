@@ -5,6 +5,7 @@ import type {
   SyncFlowRunItem,
   SyncMapping,
   SyncMappingInput,
+  SyncRunTrigger,
 } from "@/lib/app-db/types";
 import type { SyncPlanResult } from "@/lib/sync/plannedChanges";
 import type {
@@ -80,6 +81,11 @@ export function createMapping(input: SyncMappingInput): Promise<{ mapping: SyncM
   return jsonFetch("/api/sync-mappings", { method: "POST", body: JSON.stringify(input) });
 }
 
+/** Bulk-create mappings in one request/transaction (apply-run flush). */
+export function createMappings(inputs: SyncMappingInput[]): Promise<{ mappings: SyncMapping[] }> {
+  return jsonFetch("/api/sync-mappings", { method: "POST", body: JSON.stringify(inputs) });
+}
+
 // --- Runs -------------------------------------------------------------------
 
 export function listRuns(flowId: string, limit = 20): Promise<{ runs: SyncFlowRun[] }> {
@@ -94,6 +100,7 @@ export function persistDraftRun(body: {
   plan: SyncPlanResult;
   summary?: JsonObject;
   sourceSnapshotSummary?: JsonObject;
+  trigger?: SyncRunTrigger;
 }): Promise<{ runId: string }> {
   return jsonFetch("/api/sync-flow-runs", {
     method: "POST",
@@ -118,4 +125,11 @@ export function updateRun(runId: string, patch: UpdateSyncFlowRunPatch): Promise
 
 export function updateRunItem(itemId: string, patch: UpdateSyncFlowRunItemPatch): Promise<{ item: SyncFlowRunItem }> {
   return jsonFetch(`/api/sync-flow-run-items/${itemId}`, { method: "PATCH", body: JSON.stringify(patch) });
+}
+
+/** Bulk-update run item statuses in one request/transaction (apply-run flush). */
+export function updateRunItems(
+  items: { itemId: string; patch: UpdateSyncFlowRunItemPatch }[]
+): Promise<{ updated: number }> {
+  return jsonFetch("/api/sync-flow-run-items", { method: "PATCH", body: JSON.stringify({ items }) });
 }

@@ -148,6 +148,20 @@ export type SyncTargetTransactionInput = {
   importedId?: string | null;
 };
 
+/**
+ * The persisted fields of a just-created target transaction, captured while the
+ * id is recovered so callers can diff planned-vs-actual (e.g. target rules that
+ * ran on create) without a second read.
+ */
+export type SyncAppliedSnapshot = {
+  amount: number;
+  date: string;
+  cleared: boolean;
+  categoryId: string | null;
+  payeeId: string | null;
+  notes: string | null;
+};
+
 export type SyncCreatedTransaction = {
   /** Index into the input array this result corresponds to. */
   requestIndex: number;
@@ -155,6 +169,10 @@ export type SyncCreatedTransaction = {
   transactionId: string | null;
   /** The marker actually written, echoed back for mapping records. */
   importedId: string | null;
+  /** The payee id the transport resolved/created for this row (for diffing). */
+  resolvedPayeeId?: string | null;
+  /** The persisted row's fields, when recovered alongside the id. */
+  applied?: SyncAppliedSnapshot | null;
 };
 
 export type CreateTransactionsForSyncResult = {
@@ -168,11 +186,26 @@ export type ResolvedSyncPayee = {
   created: boolean;
 };
 
+/** Minimal target transaction shape for the planner's duplicate heuristic. */
+export type SyncTargetLookupTransaction = {
+  id: string;
+  date: string;
+  amount: number;
+  payeeName: string | null;
+  categoryId: string | null;
+};
+
 /** Lightweight target lookup used for marker-match dedupe before applying. */
 export type SyncTargetLookup = {
   payees: Payee[];
   /** Map of existing target `imported_id` -> target transaction id. */
   importedIdIndex: Map<string, string>;
+  /**
+   * Target transactions in range for the duplicate heuristic. Returned here so
+   * a single read + payee load covers both the marker index and dedupe, instead
+   * of a second full `listTransactionsForSync` (which reloads payees+categories).
+   */
+  transactions: SyncTargetLookupTransaction[];
 };
 
 export interface ActualBenchTransport {
