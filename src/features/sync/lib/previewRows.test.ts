@@ -4,10 +4,14 @@ import {
   formatAmount,
   isReviewRequired,
   matchesPreviewFilter,
+  previewFilters,
+  previewTiles,
   reviewQueueCount,
   reviewQueueRows,
   selectableRowIds,
   splitPositions,
+  statusLabel,
+  syncKindOf,
   toPreviewRow,
 } from "./previewRows";
 import type { SyncFlowRunItem } from "@/lib/app-db/types";
@@ -129,6 +133,37 @@ describe("review queue (RD-054)", () => {
     expect(matchesPreviewFilter(dup, "review_queue")).toBe(true);
     expect(matchesPreviewFilter(dupApplied, "review_queue")).toBe(false);
     expect(matchesPreviewFilter(fresh, "review_queue")).toBe(false);
+  });
+});
+
+describe("kind-aware rendering (RD-055 UI)", () => {
+  it("maps flow types to a data-type kind", () => {
+    expect(syncKindOf("transaction_sync")).toBe("transaction");
+    expect(syncKindOf("payee_sync")).toBe("payee");
+    expect(syncKindOf("category_sync")).toBe("category");
+  });
+
+  it("carries the entity type onto the row", () => {
+    expect(toPreviewRow(item({ sourceEntityType: "payee" })).entityType).toBe("payee");
+    expect(toPreviewRow(item()).entityType).toBe("transaction");
+  });
+
+  it("labels an entity name match as 'Name match', not 'Marker match'", () => {
+    const row = toPreviewRow(item({ sourceEntityType: "payee", classification: "target_name_match" }));
+    expect(statusLabel(row)).toBe("Name match");
+    expect(statusLabel(toPreviewRow(item({ classification: "new" })))).toBe("New");
+  });
+
+  it("words tiles and filters per data type", () => {
+    const rows = [toPreviewRow(item({ sourceEntityType: "payee", classification: "new" }))];
+    const txn = previewTiles(rows, "transaction").map((t) => t.label);
+    expect(txn).toContain("Needs review");
+    const payee = previewTiles(rows, "payee").map((t) => t.label);
+    expect(payee).toContain("New payees");
+    expect(payee).not.toContain("Needs review");
+    // Entity filters drop transaction-only groups.
+    expect(previewFilters("payee").map((f) => f.key)).not.toContain("duplicate");
+    expect(previewFilters("transaction").map((f) => f.key)).toContain("duplicate");
   });
 });
 

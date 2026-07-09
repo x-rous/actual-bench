@@ -35,7 +35,7 @@ function hostOf(connection: BrowserApiConnection | undefined): string {
   }
 }
 
-function Endpoint({ endpoint, connection }: { endpoint: SyncEndpointForm; connection?: BrowserApiConnection }) {
+function Endpoint({ endpoint, connection, showAccount }: { endpoint: SyncEndpointForm; connection?: BrowserApiConnection; showAccount: boolean }) {
   return (
     <div className="flex w-[22rem] shrink-0 flex-col gap-0.5 rounded-md border border-border bg-muted/30 px-3 py-2">
       <span className={cn("truncate font-mono text-[11px]", connection ? "text-muted-foreground" : "text-amber-600 dark:text-amber-400")}>
@@ -43,7 +43,7 @@ function Endpoint({ endpoint, connection }: { endpoint: SyncEndpointForm; connec
       </span>
       <span className="truncate text-[13px] font-semibold">
         {endpoint.budgetName || endpoint.budgetSyncId || "-"}
-        <span className="font-medium text-muted-foreground"> / {endpoint.accountName || "-"}</span>
+        {showAccount && <span className="font-medium text-muted-foreground"> / {endpoint.accountName || "-"}</span>}
       </span>
     </div>
   );
@@ -60,8 +60,13 @@ function automationChip(form: SyncFlowFormState): string {
   }
 }
 
+function typeLabel(form: SyncFlowFormState): string {
+  return form.flowType === "payee_sync" ? "Payees" : form.flowType === "category_sync" ? "Categories" : "Transactions";
+}
+
 function summaryChips(form: SyncFlowFormState): string[] {
-  const chips = ["Transactions", automationChip(form)]; // flow type + automation policy
+  const chips = [typeLabel(form), automationChip(form)]; // data type + automation policy
+  if (form.flowType !== "transaction_sync") return chips;
   chips.push(form.transform.amountDirection === "reverse" ? "Reverse sign" : "Same sign");
   chips.push(form.transform.missingPayee === "create" ? "Create missing payees" : "Leave payee empty");
   if (form.transform.notesMarkerEnabled) chips.push("Notes marker on");
@@ -94,9 +99,9 @@ export function FlowHeader({
     <header className="flex h-28 shrink-0 flex-col justify-center gap-2 border-b border-border px-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex min-w-0 flex-wrap items-center gap-3">
-          <Endpoint endpoint={form.source} connection={sourceConn} />
+          <Endpoint endpoint={form.source} connection={sourceConn} showAccount={form.flowType === "transaction_sync"} />
           <ArrowRight className="h-5 w-5 shrink-0 text-muted-foreground" />
-          <Endpoint endpoint={form.target} connection={targetConn} />
+          <Endpoint endpoint={form.target} connection={targetConn} showAccount={form.flowType === "transaction_sync"} />
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <Button

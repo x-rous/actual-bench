@@ -14,9 +14,20 @@ export type PreviewGroup =
   | "blocked"
   | "other";
 
+/** The data type a sync flow operates on, for kind-aware rendering. */
+export type SyncKind = "transaction" | "payee" | "category";
+
+export function syncKindOf(flowType: string): SyncKind {
+  if (flowType === "payee_sync") return "payee";
+  if (flowType === "category_sync") return "category";
+  return "transaction";
+}
+
 export type PreviewRow = {
   id: string;
   classification: SyncItemClassification | null;
+  /** Data type of the item, for kind-aware columns/labels. */
+  entityType: "payee" | "category" | "transaction";
   group: PreviewGroup;
   /** Checkbox-enabled: safe-new create candidates or repairable marker matches. */
   selectable: boolean;
@@ -103,9 +114,11 @@ export function toPreviewRow(item: SyncFlowRunItem): PreviewRow {
   // An exact duplicate the flow opted to auto-map is safe (mapping-only, no write).
   const isExactDupAutoMap =
     item.classification === "exact_duplicate" && flags.includes("exact_duplicate_auto_map");
+  const entityType = item.sourceEntityType === "payee" || item.sourceEntityType === "category" ? item.sourceEntityType : "transaction";
   return {
     id: item.id,
     classification: item.classification,
+    entityType,
     group: classificationGroup(item.classification),
     // Selectable: safe creates, marker/name-match repairs, or auto-mappable dups.
     selectable:
@@ -172,6 +185,47 @@ const GROUP_LABELS: Record<PreviewGroup, string> = {
 
 export function groupLabel(group: PreviewGroup): string {
   return GROUP_LABELS[group];
+}
+
+/** Human status for a row, in the noun of its data type (e.g. "Name match"). */
+export function statusLabel(row: PreviewRow): string {
+  if (row.classification === "target_name_match") return "Name match";
+  return GROUP_LABELS[row.group];
+}
+
+export type PreviewTile = { key: string; label: string; value: number; tone?: "new" | "warn" | "bad"; filter: PreviewFilter };
+
+/** The summary tiles for a run, worded for its data type. */
+export function previewTiles(rows: PreviewRow[], kind: SyncKind): PreviewTile[] {
+  const tiles = tileCounts(rows);
+  const matched = rows.filter((r) => r.classification === "target_name_match").length;
+  if (kind === "transaction") {
+    return [
+      { key: "new", label: "New — ready to sync", value: tiles.new, tone: "new", filter: "new" },
+      { key: "needs_review", label: "Needs review", value: tiles.needsReview, tone: "warn", filter: "needs_review" },
+      { key: "already", label: "Already synced", value: tiles.alreadySynced, filter: "already_synced" },
+      { key: "blocked", label: "Blocked", value: tiles.blocked, tone: "bad", filter: "blocked" },
+    ];
+  }
+  const noun = kind === "payee" ? "payees" : "categories";
+  return [
+    { key: "new", label: `New ${noun}`, value: tiles.new, tone: "new", filter: "new" },
+    { key: "name_match", label: "Match on target", value: matched, filter: "marker_match" },
+    { key: "already", label: "Already synced", value: tiles.alreadySynced, filter: "already_synced" },
+    { key: "blocked", label: "Needs a group", value: tiles.blocked, tone: "bad", filter: "blocked" },
+  ];
+}
+
+/** The table filter chips relevant to a data type. */
+export function previewFilters(kind: SyncKind): { key: PreviewFilter; label: string }[] {
+  if (kind === "transaction") return PREVIEW_FILTERS;
+  return [
+    { key: "all", label: "All" },
+    { key: "new", label: "New" },
+    { key: "marker_match", label: "Name match" },
+    { key: "already_synced", label: "Already synced" },
+    { key: "blocked", label: "Blocked" },
+  ];
 }
 
 // --- Preview table filtering (detailed statuses) ---------------------------

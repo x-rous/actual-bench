@@ -63,9 +63,13 @@ export function FlowList({ flows, selectedFlowId, latestRuns, connections, onSel
 
       <div className="min-h-0 flex-1 overflow-y-auto p-2">
         {flows.length === 0 ? (
-          <p className="px-2 py-8 text-center text-sm text-muted-foreground">No sync flows yet.</p>
+          <div className="px-3 py-8 text-center">
+            <p className="text-sm font-medium">No sync flows yet</p>
+            <p className="mt-1 text-xs text-muted-foreground">Create one to copy data between two budgets.</p>
+            <Button size="sm" variant="outline" className="mt-3 text-xs" onClick={onCreate}><Plus className="h-3.5 w-3.5" /> New flow</Button>
+          </div>
         ) : filtered.length === 0 ? (
-          <p className="px-2 py-8 text-center text-sm text-muted-foreground">No flows match your search.</p>
+          <p className="px-2 py-8 text-center text-sm text-muted-foreground">No flows match “{search}”.</p>
         ) : (
           <div className="flex flex-col gap-0.5">
             {filtered.map((flow) => {

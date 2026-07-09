@@ -107,7 +107,7 @@ describe("SyncView", () => {
     fireEvent.click(previewButtons[0]);
 
     expect(previewMutate).toHaveBeenCalledTimes(1);
-    expect(await screen.findByText("Planned changes")).toBeInTheDocument();
+    expect(await screen.findByText("Change plan")).toBeInTheDocument();
 
     const rows = screen.getAllByTestId("preview-row");
     expect(rows).toHaveLength(2);

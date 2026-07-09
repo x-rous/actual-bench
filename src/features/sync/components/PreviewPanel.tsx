@@ -8,19 +8,21 @@ import { cn } from "@/lib/utils";
 import {
   filterCount,
   formatAmount,
-  groupLabel,
   matchesPreviewFilter,
-  PREVIEW_FILTERS,
+  previewFilters,
+  previewTiles,
   reviewQueueCount,
   splitPositions,
-  tileCounts,
+  statusLabel,
   type PreviewFilter,
   type PreviewRow,
+  type SyncKind,
 } from "../lib/previewRows";
 import type { ApplyRunResult } from "@/lib/sync/applyOrchestrator";
 import type { DryRunError, DryRunSummary } from "@/lib/sync/previewOrchestrator";
 
 type PreviewPanelProps = {
+  kind: SyncKind;
   summary: DryRunSummary | null;
   previewError: DryRunError | null;
   rows: PreviewRow[];
@@ -40,6 +42,18 @@ type PreviewPanelProps = {
 /** A preview reflects a point-in-time source snapshot; warn once it's this old. */
 const STALE_AFTER_MS = 120_000;
 
+/** The unit noun for a data type, used throughout the copy. */
+function noun(kind: SyncKind, plural = false): string {
+  const base = kind === "payee" ? "payee" : kind === "category" ? "category" : "change";
+  if (!plural) return base;
+  return kind === "category" ? "categories" : `${base}s`;
+}
+
+/** What the source scan counts, per data type. */
+function scannedNoun(kind: SyncKind): string {
+  return kind === "payee" ? "payees" : kind === "category" ? "categories" : "transactions";
+}
+
 function formatAge(ms: number): string {
   const mins = Math.round(ms / 60000);
   if (mins < 1) return "just now";
@@ -53,10 +67,8 @@ const TILE_BORDER: Record<string, string> = {
   new: "border-green-500/30", warn: "border-amber-400/30", bad: "border-destructive/40",
 };
 
-const COLUMN_COUNT = 10;
-
 export function PreviewPanel(props: PreviewPanelProps) {
-  const { summary, previewError, rows, selectedIds } = props;
+  const { kind, summary, previewError, rows, selectedIds } = props;
   const [filter, setFilter] = useState<PreviewFilter>("all");
 
   if (previewError) {
@@ -64,7 +76,7 @@ export function PreviewPanel(props: PreviewPanelProps) {
       <div className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm">
         <XCircle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
         <div>
-          <p className="font-medium">Preview failed ({previewError.code})</p>
+          <p className="font-medium">Preview couldn&apos;t run</p>
           <p className="text-muted-foreground">{previewError.message}</p>
         </div>
       </div>
@@ -73,31 +85,33 @@ export function PreviewPanel(props: PreviewPanelProps) {
 
   if (!summary) return null;
 
-  const tiles = tileCounts(rows);
+  const tiles = previewTiles(rows, kind);
+  const filters = previewFilters(kind);
   const visible = rows.filter((r) => matchesPreviewFilter(r, filter));
   const selectedCount = rows.filter((r) => selectedIds.has(r.id)).length;
   const splits = splitPositions(rows);
   const reviewCount = reviewQueueCount(rows);
+  const columnCount = kind === "transaction" ? 10 : kind === "category" ? 5 : 4;
 
   return (
     <div className="flex flex-col gap-3.5">
       {props.applying && (
         <div className="flex items-center gap-2 rounded-md border border-blue-400/40 bg-blue-50/70 px-3.5 py-2.5 text-sm dark:bg-blue-950/20">
           <Loader2 className="h-4 w-4 shrink-0 animate-spin text-blue-600 dark:text-blue-400" />
-          <span>Syncing selected changes to the target budget… this can take a while on large budgets.</span>
+          <span>Syncing selected {noun(kind, true)} to the target budget… this can take a while on large budgets.</span>
         </div>
       )}
-      {!props.applying && props.applyResult && <ApplyResultBanner result={props.applyResult} />}
+      {!props.applying && props.applyResult && <ApplyResultBanner result={props.applyResult} kind={kind} />}
 
-      {/* Four grouped tiles — click to filter the table */}
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-        <Tile value={tiles.new} label="New - ready to sync" tone="new" active={filter === "new"} onClick={() => setFilter("new")} />
-        <Tile value={tiles.needsReview} label="Needs review" tone="warn" active={filter === "needs_review"} onClick={() => setFilter("needs_review")} />
-        <Tile value={tiles.alreadySynced} label="Already synced" active={filter === "already_synced"} onClick={() => setFilter("already_synced")} />
-        <Tile value={tiles.blocked} label="Blocked" tone="bad" active={filter === "blocked"} onClick={() => setFilter("blocked")} />
+      {/* Grouped tiles — worded for the data type; click to filter the table */}
+      <div className={cn("grid gap-2", tiles.length === 4 ? "grid-cols-2 sm:grid-cols-4" : "grid-cols-2 sm:grid-cols-4")}>
+        {tiles.map((tile) => (
+          <Tile key={tile.key} value={tile.value} label={tile.label} tone={tile.tone} active={filter === tile.filter} onClick={() => setFilter(filter === tile.filter ? "all" : tile.filter)} />
+        ))}
       </div>
       <p className="text-xs tabular-nums text-muted-foreground">
-        {summary.sourceItemsScanned} items scanned · {summary.generatedTransactionsExcluded} sync-generated excluded · {summary.sourceItemsFilteredOut} filtered out
+        {summary.sourceItemsScanned} {scannedNoun(kind)} scanned
+        {kind === "transaction" && ` · ${summary.generatedTransactionsExcluded} sync-generated excluded · ${summary.sourceItemsFilteredOut} filtered out`}
         <PreviewFreshness previewedAt={props.previewedAt} readOnly={props.readOnly} />
       </p>
 
@@ -115,25 +129,27 @@ export function PreviewPanel(props: PreviewPanelProps) {
           <span>
             <strong className="font-semibold">Review queue · {reviewCount}</strong>
             <span className="block text-xs text-muted-foreground">
-              Automated sync can&apos;t apply these safely (duplicates, source changed or missing, blocked). Review and handle them yourself.
+              Automated sync leaves these for you — decide and apply them by hand.
             </span>
           </span>
         </button>
       )}
 
-      <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
-        <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-        Target budget rules can adjust a created transaction&apos;s payee, category or notes.
-        {!props.readOnly && " Items that need review are skipped unless you select them."}
-      </p>
+      {kind === "transaction" && (
+        <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
+          <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+          Target-budget rules can adjust a created transaction&apos;s payee, category, or notes.
+          {!props.readOnly && " Items that need review stay unchecked until you pick them."}
+        </p>
+      )}
 
-      {/* Table */}
+      {/* Change plan table */}
       <div className="overflow-hidden rounded-md border border-border">
         <div className="flex flex-wrap items-center gap-2 border-b border-border px-3 py-2">
-          <strong className="text-[13px]">Planned changes</strong>
+          <strong className="text-[13px]">Change plan</strong>
           <span className="text-xs tabular-nums text-muted-foreground">{visible.length} shown</span>
           <div className="flex flex-wrap gap-1">
-            {PREVIEW_FILTERS.map((f) => {
+            {filters.map((f) => {
               const count = filterCount(rows, f.key);
               const disabled = count === 0 && f.key !== "all";
               return (
@@ -144,7 +160,7 @@ export function PreviewPanel(props: PreviewPanelProps) {
                   disabled={disabled}
                   onClick={() => setFilter(f.key)}
                   className={cn(
-                    "rounded-full border px-2.5 py-0.5 text-xs",
+                    "rounded-full border px-2.5 py-0.5 text-xs transition-colors",
                     filter === f.key
                       ? "border-foreground bg-foreground text-background"
                       : "border-border bg-background text-muted-foreground hover:bg-muted",
@@ -159,22 +175,18 @@ export function PreviewPanel(props: PreviewPanelProps) {
           </div>
           <div className="flex-1" />
           {props.readOnly ? (
-            <span className="text-xs text-muted-foreground">Read-only - viewing a past run</span>
+            <span className="text-xs text-muted-foreground">Read-only — a past run</span>
           ) : (
             <>
               {selectedCount > 0 && (
                 <Button size="sm" variant="ghost" onClick={props.onClearSelection} disabled={props.applying}>Clear</Button>
               )}
-              <Button size="sm" variant="outline" onClick={props.onSelectAllSafeNew} disabled={props.applying}>Select all safe new</Button>
+              <Button size="sm" variant="outline" onClick={props.onSelectAllSafeNew} disabled={props.applying}>Select all new</Button>
               <Button size="sm" onClick={props.onApply} disabled={selectedCount === 0 || props.applying}>
                 {props.applying ? (
-                  <>
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" /> Syncing…
-                  </>
+                  <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Syncing…</>
                 ) : (
-                  <>
-                    Sync selected{selectedCount > 0 && <span className="tabular-nums"> · {selectedCount}</span>}
-                  </>
+                  <>Sync selected{selectedCount > 0 && <span className="tabular-nums"> · {selectedCount}</span>}</>
                 )}
               </Button>
             </>
@@ -187,13 +199,28 @@ export function PreviewPanel(props: PreviewPanelProps) {
               <tr className="[&>th]:whitespace-nowrap [&>th]:px-2 [&>th]:py-1.5 [&>th]:font-medium">
                 <th className="w-8" />
                 <th>Status</th>
-                <th>Date</th>
-                <th>Payee</th>
-                <th>Category</th>
-                <th>Notes</th>
-                <th className="text-right">Source</th>
-                <th className="text-right">Target</th>
-                <th>Target payee</th>
+                {kind === "transaction" ? (
+                  <>
+                    <th>Date</th>
+                    <th>Payee</th>
+                    <th>Category</th>
+                    <th>Notes</th>
+                    <th className="text-right">Source</th>
+                    <th className="text-right">Target</th>
+                    <th>Target payee</th>
+                  </>
+                ) : kind === "category" ? (
+                  <>
+                    <th>Category</th>
+                    <th>Group</th>
+                    <th>On target</th>
+                  </>
+                ) : (
+                  <>
+                    <th>Payee</th>
+                    <th>On target</th>
+                  </>
+                )}
                 <th>Details</th>
               </tr>
             </thead>
@@ -201,6 +228,7 @@ export function PreviewPanel(props: PreviewPanelProps) {
               {visible.map((row) => {
                 const pos = splits.get(row.id);
                 const details = row.message ?? row.flags.join(", ");
+                const onTarget = row.classification === "already_synced" || row.classification === "target_name_match" ? "Linked" : row.group === "new" ? "New" : "—";
                 return (
                   <tr
                     key={row.id}
@@ -208,25 +236,40 @@ export function PreviewPanel(props: PreviewPanelProps) {
                     className={cn("border-t border-border/60 [&>td]:whitespace-nowrap [&>td]:px-2 [&>td]:py-1.5", !row.selectable && "text-muted-foreground")}
                   >
                     <td>
-                      <input type="checkbox" aria-label={`Select ${row.sourceItemKey}`} disabled={!row.selectable || props.readOnly} checked={selectedIds.has(row.id)} onChange={() => props.onToggle(row.id)} />
+                      <input type="checkbox" aria-label={`Select ${row.source.payeeName ?? row.sourceItemKey}`} disabled={!row.selectable || props.readOnly} checked={selectedIds.has(row.id)} onChange={() => props.onToggle(row.id)} />
                     </td>
                     <td>
-                      <Badge variant={badgeVariant(row.group)} className="text-[10px]">{groupLabel(row.group)}</Badge>
+                      <Badge variant={badgeVariant(row)} className="text-[10px]">{statusLabel(row)}</Badge>
                       {row.isSplit && <span className="ml-1 text-[10px] text-muted-foreground">split{pos ? ` ${pos.index}/${pos.total}` : ""}</span>}
                     </td>
-                    <td className="tabular-nums">{row.source.date}</td>
-                    <td><span className="block max-w-[10rem] truncate" title={row.source.payeeName ?? undefined}>{row.source.payeeName ?? "-"}</span></td>
-                    <td><span className="block max-w-[9rem] truncate" title={row.source.categoryName ?? undefined}>{row.source.categoryName ?? "-"}</span></td>
-                    <td><span className="block max-w-[12rem] truncate" title={row.source.notes ?? undefined}>{row.source.notes ?? "-"}</span></td>
-                    <td className="text-right tabular-nums">{formatAmount(row.source.amount)}</td>
-                    <td className="text-right tabular-nums">{formatAmount(row.target.amount)}</td>
-                    <td><span className="block max-w-[10rem] truncate" title={row.target.payeeName ?? undefined}>{row.target.payeeName ?? "-"}</span></td>
-                    <td className="text-[11px] text-muted-foreground"><span className="block max-w-[12rem] truncate" title={details || undefined}>{details || "-"}</span></td>
+                    {kind === "transaction" ? (
+                      <>
+                        <td className="tabular-nums">{row.source.date}</td>
+                        <td><Truncate text={row.source.payeeName} width="10rem" /></td>
+                        <td><Truncate text={row.source.categoryName} width="9rem" /></td>
+                        <td><Truncate text={row.source.notes} width="12rem" /></td>
+                        <td className="text-right tabular-nums">{formatAmount(row.source.amount)}</td>
+                        <td className="text-right tabular-nums">{formatAmount(row.target.amount)}</td>
+                        <td><Truncate text={row.target.payeeName} width="10rem" /></td>
+                      </>
+                    ) : kind === "category" ? (
+                      <>
+                        <td><Truncate text={row.source.payeeName} width="12rem" /></td>
+                        <td><Truncate text={row.source.categoryName} width="10rem" /></td>
+                        <td className="text-muted-foreground">{onTarget}</td>
+                      </>
+                    ) : (
+                      <>
+                        <td><Truncate text={row.source.payeeName} width="16rem" /></td>
+                        <td className="text-muted-foreground">{onTarget}</td>
+                      </>
+                    )}
+                    <td className="text-[11px] text-muted-foreground"><Truncate text={details || null} width="12rem" /></td>
                   </tr>
                 );
               })}
               {visible.length === 0 && (
-                <tr><td colSpan={COLUMN_COUNT} className="px-3 py-6 text-center text-sm text-muted-foreground">No items in this group.</td></tr>
+                <tr><td colSpan={columnCount} className="px-3 py-8 text-center text-sm text-muted-foreground">Nothing here — try another filter.</td></tr>
               )}
             </tbody>
           </table>
@@ -234,6 +277,10 @@ export function PreviewPanel(props: PreviewPanelProps) {
       </div>
     </div>
   );
+}
+
+function Truncate({ text, width }: { text: string | null | undefined; width: string }) {
+  return <span className="block truncate" style={{ maxWidth: width }} title={text ?? undefined}>{text ?? "—"}</span>;
 }
 
 function PreviewFreshness({ previewedAt, readOnly }: { previewedAt: string | null; readOnly: boolean }) {
@@ -255,7 +302,7 @@ function PreviewFreshness({ previewedAt, readOnly }: { previewedAt: string | nul
     <span className={cn(stale && "font-medium text-amber-600 dark:text-amber-400")}>
       {" · "}
       {readOnly ? `Run from ${label}` : `Previewed ${label}`}
-      {stale && " — source may have changed, re-run Sync Preview"}
+      {stale && " — source may have changed; preview again"}
     </span>
   );
 }
@@ -278,27 +325,30 @@ function Tile({ value, label, tone, active, onClick }: { value: number; label: s
   );
 }
 
-function badgeVariant(group: PreviewRow["group"]): "status-active" | "status-warning" | "secondary" {
-  if (group === "new") return "status-active";
-  if (group === "duplicate" || group === "source_changed" || group === "marker_match" || group === "blocked") return "status-warning";
+function badgeVariant(row: PreviewRow): "status-active" | "status-warning" | "secondary" {
+  if (row.group === "new") return "status-active";
+  if (row.classification === "target_name_match" || row.group === "marker_match") return "secondary";
+  if (row.group === "duplicate" || row.group === "source_changed" || row.group === "blocked") return "status-warning";
   return "secondary";
 }
 
-function ApplyResultBanner({ result }: { result: ApplyRunResult }) {
+function ApplyResultBanner({ result, kind }: { result: ApplyRunResult; kind: SyncKind }) {
   const tone = result.status === "applied" ? "border-green-500/30 bg-green-50 text-green-700 dark:bg-green-950/20 dark:text-green-400"
     : result.status === "partial" ? "border-amber-400/30 bg-amber-50 text-amber-700 dark:bg-amber-950/20 dark:text-amber-400"
     : "border-destructive/40 bg-destructive/10 text-destructive";
   const Icon = result.status === "failed" ? XCircle : CheckCircle2;
   const unresolved = result.items.filter((i) => i.outcome === "failed").length;
+  const created = kind === "transaction" ? "created" : `${noun(kind, true)} created`;
+  const linked = kind === "transaction" ? "re-linked to an existing transaction" : "linked to an existing one";
   const headline =
     result.status === "applied" ? "Synced." : result.status === "partial" ? "Partially synced." : "Sync failed.";
   return (
     <div className={cn("flex items-start gap-2 rounded-md border px-3.5 py-2.5 text-sm", tone)}>
       <Icon className="mt-0.5 h-4 w-4 shrink-0" />
       <div>
-        <p><strong className="font-semibold">{headline}</strong> {result.counts.applied} created · {result.counts.repaired} re-linked to an existing transaction · {result.counts.failed} failed.</p>
-        {result.counts.appliedWithWarnings > 0 && <p className="text-xs opacity-90">{result.counts.appliedWithWarnings} were adjusted by target-budget rules. Synced items now show as “Already synced” on the next preview.</p>}
-        {unresolved > 0 && <p className="text-xs opacity-90">{unresolved} could not be confirmed - a transaction may have been created but was not linked.</p>}
+        <p><strong className="font-semibold">{headline}</strong> {result.counts.applied} {created} · {result.counts.repaired} {linked} · {result.counts.failed} failed.</p>
+        {result.counts.appliedWithWarnings > 0 && <p className="text-xs opacity-90">{result.counts.appliedWithWarnings} were adjusted by target-budget rules. They show as “Already synced” next time.</p>}
+        {unresolved > 0 && <p className="text-xs opacity-90">{unresolved} couldn&apos;t be confirmed on the target.</p>}
       </div>
     </div>
   );
