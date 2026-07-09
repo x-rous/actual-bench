@@ -159,11 +159,22 @@ export async function runLiveDryRunPreview(
   // Everything past validation can create a run; on failure persist a failed run.
   try {
     // 3. Source phase (Pattern A): the adapter reads + materializes.
-    const sourceTransport = await deps.transport.openTransport(input.context.sourceConnection);
+    let sourceTransport: ActualBenchTransport;
+    try {
+      sourceTransport = await deps.transport.openTransport(input.context.sourceConnection);
+    } catch (err) {
+      throw new SyncKindError("source_load_failed", describe(err, "Failed to open the source budget."));
+    }
     const source = await adapter.loadSource(sourceTransport, flow);
 
     // 4. Target phase: open target (may close source), load its snapshot + mappings.
-    const targetTransport = await deps.transport.openTransport(input.context.targetConnection);
+    // Opening the target must surface as a target failure, not the source fallback.
+    let targetTransport: ActualBenchTransport;
+    try {
+      targetTransport = await deps.transport.openTransport(input.context.targetConnection);
+    } catch (err) {
+      throw new SyncKindError("target_load_failed", describe(err, "Failed to open the target budget."));
+    }
     const target = await adapter.loadTarget(targetTransport, flow);
     let mappings: SyncMapping[];
     try {

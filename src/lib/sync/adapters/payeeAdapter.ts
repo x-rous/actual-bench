@@ -149,12 +149,16 @@ export const payeeAdapter: SyncKindAdapter = {
   ): Promise<AdapterCreateResult[]> {
     void flow;
     const results: AdapterCreateResult[] = [];
-    // Payee creates are sequential (no batch primitive), but there are typically
-    // few of them and each is a single cheap write.
+    // Sequential (no batch primitive) but cheap. Isolate per item so one failure
+    // doesn't abort the batch and lose the successes recorded before it.
     for (const { itemId, payload } of inputs) {
-      const name = String(payload.name ?? "");
-      const created = await transport.createPayee({ name });
-      results.push({ itemId, targetId: created.id, changedFields: [] });
+      try {
+        const name = String(payload.name ?? "");
+        const created = await transport.createPayee({ name });
+        results.push({ itemId, targetId: created.id, changedFields: [] });
+      } catch {
+        results.push({ itemId, targetId: null, changedFields: [] });
+      }
     }
     return results;
   },

@@ -43,6 +43,22 @@ describe("payeeAdapter.plan", () => {
     expect(createPayee).toHaveBeenCalledWith({ name: "New Vendor" });
     expect(results[0]).toMatchObject({ itemId: "i1", targetId: "created-New Vendor" });
   });
+
+  it("createBatch isolates a per-item failure and keeps the successes", async () => {
+    const createPayee = jest.fn(async ({ name }: { name: string }) => {
+      if (name === "Boom") throw new Error("create failed");
+      return { id: "created-" + name, name, created: true };
+    });
+    const transport = { createPayee } as unknown as ActualBenchTransport;
+    const results = await payeeAdapter.createBatch(transport, flow("payee_sync"), [
+      { itemId: "ok", payload: { entity: "payee", name: "Good" } as JsonObject },
+      { itemId: "bad", payload: { entity: "payee", name: "Boom" } as JsonObject },
+    ]);
+    expect(results).toEqual([
+      { itemId: "ok", targetId: "created-Good", changedFields: [] },
+      { itemId: "bad", targetId: null, changedFields: [] },
+    ]);
+  });
 });
 
 describe("categoryAdapter.plan", () => {
