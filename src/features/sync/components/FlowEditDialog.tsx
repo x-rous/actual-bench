@@ -11,6 +11,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { clampSyncInterval } from "@/lib/sync/flowConfig";
 import { useFlowAccounts } from "../hooks/useSyncData";
 import { isSameBudget, missingRouteFields, type SyncEndpointForm, type SyncFlowFormState } from "../lib/flowForm";
 import type { BrowserApiConnection } from "@/store/connection";
@@ -168,6 +169,8 @@ export function FlowEditDialog({
                   aria-label="Auto-sync interval in minutes"
                   value={form.automation.intervalMinutes}
                   onChange={(e) => setAutomation({ intervalMinutes: e.target.value })}
+                  // Clamp on blur so the shown value matches what save persists.
+                  onBlur={(e) => setAutomation({ intervalMinutes: String(clampSyncInterval(e.target.value)) })}
                 />
                 <span className="text-[11px]">Minimum 15 minutes. Each run re-opens and syncs the whole budget.</span>
               </label>

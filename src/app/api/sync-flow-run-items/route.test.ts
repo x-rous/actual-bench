@@ -64,4 +64,11 @@ describe("/api/sync-flow-run-items batch PATCH", () => {
     const body = (await response.json()) as { updated: number };
     expect(body.updated).toBe(0);
   });
+
+  it("rejects a malformed item with a 400 before touching the database", async () => {
+    const bad = await PATCH(request({ items: [{ itemId: "x" }] }));
+    expect(bad.status).toBe(400);
+    const nullEntry = await PATCH(request({ items: [null] }));
+    expect(nullEntry.status).toBe(400);
+  });
 });
