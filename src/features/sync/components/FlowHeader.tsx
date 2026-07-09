@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeftRight, ArrowRight, History, Pencil, Play } from "lucide-react";
+import { ArrowLeftRight, ArrowRight, History, Loader2, Pencil, Play, Zap } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -14,8 +14,13 @@ type FlowHeaderProps = {
   canPreview: boolean;
   /** Shown as a tooltip on the disabled Run preview button. */
   previewDisabledReason: string | null;
+  /** Show the "Run safe sync now" action (flow opted into automation). */
+  showRunSafeSync: boolean;
+  canRunSafeSync: boolean;
+  runningSafeSync: boolean;
   onToggleEnabled: () => void;
   onRunPreview: () => void;
+  onRunSafeSyncNow: () => void;
   onEdit: () => void;
   onCreateReverse: () => void;
   onShowHistory: () => void;
@@ -44,8 +49,19 @@ function Endpoint({ endpoint, connection }: { endpoint: SyncEndpointForm; connec
   );
 }
 
+function automationChip(form: SyncFlowFormState): string {
+  switch (form.automation.reviewPolicy) {
+    case "auto_apply_safe_only":
+      return "Auto-apply safe";
+    case "auto_sync_on_interval":
+      return `Auto-sync ${form.automation.intervalMinutes}m`;
+    default:
+      return "Manual";
+  }
+}
+
 function summaryChips(form: SyncFlowFormState): string[] {
-  const chips = ["Transactions", "Manual"]; // flow type + trigger (RD-054/055 forward-looking)
+  const chips = ["Transactions", automationChip(form)]; // flow type + automation policy
   chips.push(form.transform.amountDirection === "reverse" ? "Reverse sign" : "Same sign");
   chips.push(form.transform.missingPayee === "create" ? "Create missing payees" : "Leave payee empty");
   if (form.transform.notesMarkerEnabled) chips.push("Notes marker on");
@@ -61,8 +77,12 @@ export function FlowHeader({
   previewing,
   canPreview,
   previewDisabledReason,
+  showRunSafeSync,
+  canRunSafeSync,
+  runningSafeSync,
   onToggleEnabled,
   onRunPreview,
+  onRunSafeSyncNow,
   onEdit,
   onCreateReverse,
   onShowHistory,
@@ -88,6 +108,19 @@ export function FlowHeader({
           >
             <Play className="h-3.5 w-3.5" /> {previewing ? "Previewing…" : "Sync Preview"}
           </Button>
+          {showRunSafeSync && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="text-xs"
+              onClick={onRunSafeSyncNow}
+              disabled={!canRunSafeSync || runningSafeSync}
+              title="Preview and apply only safe changes now; uncertain items go to the review queue"
+            >
+              {runningSafeSync ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Zap className="h-3.5 w-3.5" />}
+              {runningSafeSync ? "Syncing…" : "Run safe sync now"}
+            </Button>
+          )}
           <Button size="sm" variant="outline" className="text-xs" onClick={onEdit}>
             <Pencil className="h-3.5 w-3.5" /> Edit Flow
           </Button>
@@ -115,6 +148,11 @@ export function FlowHeader({
           <span className={cn("absolute top-0.5 h-[13px] w-[13px] rounded-full bg-white transition-all", form.enabled ? "left-[15px]" : "left-0.5")} />
         </button>
         <span className="mr-1 text-xs text-muted-foreground">{form.enabled ? "Enabled" : "Disabled"}</span>
+        {!form.enabled && form.automation.autoPausedAt && (
+          <Badge variant="status-warning" className="text-[11px] font-normal" title="Auto-sync paused after repeated failures. Re-enable to resume.">
+            Auto-paused
+          </Badge>
+        )}
         {summaryChips(form).map((chip, i) => (
           <Badge key={i} variant="secondary" className="text-[11px] font-normal">
             {chip}

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, Loader2, Play, XCircle } from "lucide-react";
+import { ArrowLeft, Bell, Loader2, Play, XCircle } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { DirectOnlyNotice } from "./DirectOnlyNotice";
@@ -12,7 +12,8 @@ import { PreviewPanel } from "./PreviewPanel";
 import { RunHistory } from "./RunHistory";
 import { useSyncFlows, useSyncFlowMutations } from "../hooks/useSyncFlows";
 import { useDirectConnections, useFlowRuns, useLatestRunByFlow, useSyncRun } from "../hooks/useSyncData";
-import { useApplyMutation, usePreviewMutation } from "../hooks/useSyncOrchestration";
+import { useApplyMutation, usePreviewMutation, useSafeSyncMutation } from "../hooks/useSyncOrchestration";
+import { useSyncScheduler } from "../hooks/useSyncScheduler";
 import {
   buildFlowPayload,
   emptyFlowForm,
@@ -27,6 +28,7 @@ import { relativeTime, toRunRow } from "../lib/runsView";
 import type { SyncFlowRun } from "@/lib/app-db/types";
 import type { DryRunError, DryRunSummary } from "@/lib/sync/previewOrchestrator";
 import type { ApplyRunResult } from "@/lib/sync/applyOrchestrator";
+import type { SafeSyncResult } from "@/lib/sync/safeSyncOrchestrator";
 
 function deriveSummary(run: SyncFlowRun | undefined): DryRunSummary | null {
   const data = run?.summary?.data;
@@ -41,6 +43,7 @@ function deriveSummary(run: SyncFlowRun | undefined): DryRunSummary | null {
     createCandidates: n("createCandidates"),
     alreadySynced: n("alreadySynced"),
     duplicatesSkipped: n("duplicatesSkipped"),
+    exactDuplicatesAutoMapped: n("exactDuplicatesAutoMapped"),
     sourceChangedWarnings: n("sourceChangedWarnings"),
     targetMarkerMatches: n("targetMarkerMatches"),
     blocked: n("blocked"),
@@ -55,6 +58,17 @@ export function SyncView() {
   const flowMutations = useSyncFlowMutations();
   const previewMutation = usePreviewMutation();
   const applyMutation = useApplyMutation();
+  const safeSyncMutation = useSafeSyncMutation();
+
+  // Client-side interval auto-sync (RD-054): only acts on flows whose policy is
+  // `auto_sync_on_interval`, and only while their connections are unlocked here.
+  useSyncScheduler({
+    flows: flowsQuery.data ?? [],
+    connections,
+    latestRuns: latestRunsQuery.data ?? new Map(),
+    onRunComplete: (flowId, result) => handleAutoRunComplete(flowId, result),
+    onFlowPaused: (flowId) => pauseFlowForHealth(flowId),
+  });
 
   const [selectedFlowId, setSelectedFlowId] = useState<string | null>(null);
   const [form, setForm] = useState<SyncFlowFormState>(() => emptyFlowForm());
@@ -67,6 +81,7 @@ export function SyncView() {
   const [previewError, setPreviewError] = useState<DryRunError | null>(null);
   const [applyResult, setApplyResult] = useState<ApplyRunResult | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [autoNotice, setAutoNotice] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   // In history view we show the run the user picked; otherwise the live preview.
@@ -160,7 +175,13 @@ export function SyncView() {
 
   function handleToggleEnabled() {
     if (!selectedFlowId) return;
-    const next = { ...form, enabled: !form.enabled };
+    const enabling = !form.enabled;
+    // Re-enabling clears any health auto-pause so the scheduler can resume.
+    const next = {
+      ...form,
+      enabled: enabling,
+      automation: { ...form.automation, autoPausedAt: enabling ? null : form.automation.autoPausedAt },
+    };
     setForm(next);
     flowMutations.update.mutate(
       { flowId: selectedFlowId, payload: buildFlowPayload(next, connections) },
@@ -202,6 +223,81 @@ export function SyncView() {
           else setPreviewError(result.error);
         },
         onError: (err) => setActionError(err instanceof Error ? err.message : "Preview could not be run."),
+      }
+    );
+  }
+
+  function flowName(flowId: string): string {
+    return (flowsQuery.data ?? []).find((f) => f.id === flowId)?.name ?? "a flow";
+  }
+
+  // Notify on automated (scheduler) run outcomes: failures/partials, or items
+  // left in the review queue. Successful, empty-queue runs stay quiet.
+  function handleAutoRunComplete(flowId: string, result: SafeSyncResult) {
+    latestRunsQuery.refetch();
+    flowsQuery.refetch();
+    const name = flowName(flowId);
+    if (result.status === "failed" || result.status === "partial") {
+      setAutoNotice(`Auto-sync for “${name}” ${result.status === "partial" ? "partially applied — some items failed" : "failed"}.`);
+    } else if (result.status === "preview_failed") {
+      setAutoNotice(`Auto-sync preview for “${name}” failed: ${result.error.message}`);
+    } else if (result.status === "applied" || result.status === "no_safe_items") {
+      const s = result.preview;
+      const queued = s.duplicatesSkipped + s.sourceChangedWarnings + s.blocked;
+      if (queued > 0) setAutoNotice(`Auto-sync for “${name}” left ${queued} item${queued === 1 ? "" : "s"} to review.`);
+    }
+  }
+
+  // Flow health: persist an auto-pause (disable + timestamp) after repeated
+  // automated failures, so the scheduler stops until the user re-enables it.
+  function pauseFlowForHealth(flowId: string) {
+    const flow = (flowsQuery.data ?? []).find((f) => f.id === flowId);
+    if (!flow) return;
+    const paused = flowToFormState(flow, connections);
+    paused.enabled = false;
+    paused.automation = { ...paused.automation, autoPausedAt: new Date().toISOString() };
+    flowMutations.update.mutate(
+      { flowId, payload: buildFlowPayload(paused, connections) },
+      { onSuccess: () => { flowsQuery.refetch(); latestRunsQuery.refetch(); } }
+    );
+    setAutoNotice(`Auto-sync paused for “${flow.name}” after repeated failures. Re-enable it when you're ready.`);
+  }
+
+  function handleRunSafeSyncNow() {
+    if (!selectedFlowId || !sourceConn || !targetConn) return;
+    setActionError(null);
+    safeSyncMutation.mutate(
+      { flowId: selectedFlowId, sourceConnection: sourceConn, targetConnection: targetConn, allowDisabled: true },
+      {
+        onSuccess: (result) => {
+          runsQuery.refetch();
+          flowsQuery.refetch();
+          latestRunsQuery.refetch();
+          if (result.status === "skipped_manual_policy") {
+            setActionError("This flow is set to manual review, so safe sync did not run. Switch its policy to auto to enable it.");
+            return;
+          }
+          if (result.status === "preview_failed") {
+            setActionError(`Safe sync preview failed: ${result.error.message}`);
+            return;
+          }
+          // Show the resulting (already-applied) run read-only, including its review queue.
+          setView("history");
+          setHistoryRunId(result.runId);
+        },
+        onError: (err) => setActionError(err instanceof Error ? err.message : "Safe sync could not be run."),
+      }
+    );
+  }
+
+  function handleRetryFailed() {
+    if (!historyRunId || !targetConn) return;
+    setActionError(null);
+    applyMutation.mutate(
+      { runId: historyRunId, targetConnection: targetConn, selection: { selection: "retry_failed" } },
+      {
+        onSuccess: () => { runQuery.refetch(); runsQuery.refetch(); latestRunsQuery.refetch(); flowsQuery.refetch(); },
+        onError: (err) => setActionError(err instanceof Error ? err.message : "Retry could not be completed."),
       }
     );
   }
@@ -256,8 +352,12 @@ export function SyncView() {
               previewing={previewMutation.isPending}
               canPreview={canPreview}
               previewDisabledReason={blockReason}
+              showRunSafeSync={form.automation.reviewPolicy !== "manual_preview_required"}
+              canRunSafeSync={!!sourceConn && !!targetConn && routeReady && !dirty}
+              runningSafeSync={safeSyncMutation.isPending}
               onToggleEnabled={handleToggleEnabled}
               onRunPreview={handlePreview}
+              onRunSafeSyncNow={handleRunSafeSyncNow}
               onEdit={() => setEditorOpen(true)}
               onCreateReverse={handleCreateReverse}
               onShowHistory={() => { setView("history"); setHistoryRunId(null); }}
@@ -268,6 +368,15 @@ export function SyncView() {
                 <div className="mb-4 flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/10 px-3.5 py-2.5 text-sm">
                   <XCircle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
                   <span>{actionError}</span>
+                </div>
+              )}
+              {autoNotice && (
+                <div className="mb-4 flex items-start gap-2 rounded-md border border-amber-400/40 bg-amber-50/70 px-3.5 py-2.5 text-sm dark:bg-amber-950/20">
+                  <Bell className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
+                  <span className="flex-1">{autoNotice}</span>
+                  <button type="button" className="text-xs text-muted-foreground hover:text-foreground" onClick={() => setAutoNotice(null)}>
+                    Dismiss
+                  </button>
                 </div>
               )}
               {view === "history" ? (
@@ -290,6 +399,12 @@ export function SyncView() {
                       <div className="flex items-center gap-2">
                         <Badge variant="secondary" className="text-[10px]">{toRunRow(runQuery.data.run).statusLabel}</Badge>
                         <span className="text-xs text-muted-foreground" title={new Date(toRunRow(runQuery.data.run).when).toLocaleString()}>{relativeTime(toRunRow(runQuery.data.run).when)}</span>
+                        {(runQuery.data.run.status === "partial" || runQuery.data.run.status === "failed") && !!targetConn && (
+                          <Button size="sm" variant="outline" className="ml-auto text-xs" onClick={handleRetryFailed} disabled={applyMutation.isPending}>
+                            {applyMutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                            {applyMutation.isPending ? "Retrying…" : "Retry failed"}
+                          </Button>
+                        )}
                       </div>
                       <PreviewPanel
                         summary={summary}

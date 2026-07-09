@@ -126,13 +126,14 @@ A read-only local diagnostics workspace for the exported budget snapshots.
 
 ### Budget File Sync
 
-Copy transactions from an account in one budget file to an account in another, as saved one-way flows. The MVP is **Direct mode only, cross-budget, create-only, and preview-first**.
+Copy transactions from an account in one budget file to an account in another, as saved one-way flows. It is **Direct mode only, cross-budget, create-only, and preview-first**, with opt-in safe-only automation.
 
 - Compact flow editor: source/target Direct connection + account, filters, and transforms (reverse-sign by default, payee/category match-by-name, clean notes marker)
 - Required dry-run preview classifies each item (new, already synced, duplicate, changed since sync, marker match, blocked) with source and transformed target amounts side by side — no writes to Actual
 - Apply creates only the selected safe new transactions with a durable `imported_id` marker and records app-owned mappings, so reruns skip already-synced items instead of creating duplicates
 - Eligible split lines are exploded into separate target transactions; a reverse-flow helper mirrors a flow for two-way sync
-- Target-budget rules may post-process created transactions; this is surfaced as a warning. Not in the MVP: HTTP mode, same-budget sync, updates/deletes, category auto-create, background sync, and FX conversion
+- Opt-in automation per flow: auto-apply safe items, or auto-sync on a schedule **while the app is open and the connection is unlocked** (client-side, minimum 15 min — not an unattended daemon). Uncertain items collect in a review queue; exact duplicates can be auto-mapped (opt-in); failed items can be retried; and a flow auto-pauses after repeated failures
+- Target-budget rules may post-process created transactions; this is surfaced as a warning. Not in scope: HTTP mode, same-budget sync, updates/deletes, category auto-create, fuzzy duplicate auto-map, unattended server-side sync, and FX conversion
 
 ### ActualQL Queries
 

@@ -1,4 +1,4 @@
-import type { SyncFlow } from "@/lib/app-db/types";
+import type { SyncFlow, SyncReviewPolicy } from "@/lib/app-db/types";
 
 /**
  * Typed planner view of a saved sync flow (RD-053 / PR-019).
@@ -37,7 +37,55 @@ export type SyncFlowPlanConfig = {
   notesMarkerEnabled: boolean;
   /** Copy the source notes before appending the visible marker. */
   copySourceNotes: boolean;
+  /**
+   * Automation policy (RD-054). Carried here so the single flow-decode point also
+   * yields the policy for the safe-only executor; the planner itself ignores it.
+   */
+  reviewPolicy: SyncReviewPolicy;
+  /**
+   * Interval, in minutes, for `auto_sync_on_interval` flows. Clamped to a floor
+   * because each run re-opens/syncs the whole budget. Ignored for other policies.
+   */
+  intervalMinutes: number;
+  /**
+   * ISO timestamp set when automation paused the flow after repeated failures
+   * (RD-054 flow health); cleared when the user re-enables it. Null when healthy.
+   */
+  autoPausedAt: string | null;
+  /**
+   * When true, an exact duplicate on the target is auto-mapped to that existing
+   * transaction (mapping recorded, no write) instead of waiting for review
+   * (RD-054). Fuzzy (strong/weak) duplicates are never auto-mapped.
+   */
+  exactDuplicateAutoMap: boolean;
 };
+
+/** Smallest allowed auto-sync interval — a budget sync per run is expensive. */
+export const MIN_SYNC_INTERVAL_MINUTES = 15;
+/** Default auto-sync interval when a flow opts in without choosing one. */
+export const DEFAULT_SYNC_INTERVAL_MINUTES = 60;
+
+/** Coerce a stored/user interval to a finite value at or above the floor. */
+export function clampSyncInterval(value: unknown): number {
+  // Blank/whitespace strings mean "unset" → default (Number("") is 0, not NaN).
+  if (typeof value === "string" && value.trim() === "") return DEFAULT_SYNC_INTERVAL_MINUTES;
+  const n = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(n)) return DEFAULT_SYNC_INTERVAL_MINUTES;
+  return Math.max(MIN_SYNC_INTERVAL_MINUTES, Math.round(n));
+}
+
+/** Recognised review-policy values; anything else decodes to the safe default. */
+const REVIEW_POLICIES: readonly SyncReviewPolicy[] = [
+  "manual_preview_required",
+  "auto_apply_safe_only",
+  "auto_sync_on_interval",
+];
+
+function reviewPolicy(value: unknown): SyncReviewPolicy | undefined {
+  return typeof value === "string" && (REVIEW_POLICIES as readonly string[]).includes(value)
+    ? (value as SyncReviewPolicy)
+    : undefined;
+}
 
 /** Product defaults (RD-053 §2 / PR-019 Product Defaults table). */
 export const SYNC_PLAN_CONFIG_DEFAULTS = {
@@ -45,6 +93,11 @@ export const SYNC_PLAN_CONFIG_DEFAULTS = {
   missingPayee: "create" as SyncMissingPayeePolicy,
   notesMarkerEnabled: true,
   copySourceNotes: true,
+  // RD-053 behavior is unchanged unless the user opts a flow into automation.
+  reviewPolicy: "manual_preview_required" as SyncReviewPolicy,
+  intervalMinutes: DEFAULT_SYNC_INTERVAL_MINUTES,
+  autoPausedAt: null as string | null,
+  exactDuplicateAutoMap: false,
 };
 
 type PartialRoute = Partial<
@@ -69,7 +122,14 @@ export function buildPlanConfig(
     Partial<
       Pick<
         SyncFlowPlanConfig,
-        "amountDirection" | "missingPayee" | "notesMarkerEnabled" | "copySourceNotes"
+        | "amountDirection"
+        | "missingPayee"
+        | "notesMarkerEnabled"
+        | "copySourceNotes"
+        | "reviewPolicy"
+        | "intervalMinutes"
+        | "autoPausedAt"
+        | "exactDuplicateAutoMap"
       >
     >
 ): SyncFlowPlanConfig {
@@ -90,6 +150,14 @@ export function buildPlanConfig(
     notesMarkerEnabled:
       input.notesMarkerEnabled ?? SYNC_PLAN_CONFIG_DEFAULTS.notesMarkerEnabled,
     copySourceNotes: input.copySourceNotes ?? SYNC_PLAN_CONFIG_DEFAULTS.copySourceNotes,
+    reviewPolicy: input.reviewPolicy ?? SYNC_PLAN_CONFIG_DEFAULTS.reviewPolicy,
+    intervalMinutes:
+      input.intervalMinutes != null
+        ? clampSyncInterval(input.intervalMinutes)
+        : SYNC_PLAN_CONFIG_DEFAULTS.intervalMinutes,
+    autoPausedAt: input.autoPausedAt ?? SYNC_PLAN_CONFIG_DEFAULTS.autoPausedAt,
+    exactDuplicateAutoMap:
+      input.exactDuplicateAutoMap ?? SYNC_PLAN_CONFIG_DEFAULTS.exactDuplicateAutoMap,
   };
 }
 
@@ -111,6 +179,7 @@ export function decodeFlowPlanConfig(flow: SyncFlow): SyncFlowPlanConfig {
   const source = (leg?.sourceRef.data ?? {}) as Record<string, unknown>;
   const target = (leg?.targetRef.data ?? {}) as Record<string, unknown>;
   const transform = (leg?.transform.data ?? {}) as Record<string, unknown>;
+  const options = (leg?.options.data ?? {}) as Record<string, unknown>;
 
   const direction = str(transform.amountDirection);
   const missingPayee = str(transform.missingPayee);
@@ -132,5 +201,9 @@ export function decodeFlowPlanConfig(flow: SyncFlow): SyncFlowPlanConfig {
       missingPayee === "create" || missingPayee === "leave_empty" ? missingPayee : undefined,
     notesMarkerEnabled: bool(transform.notesMarkerEnabled),
     copySourceNotes: bool(transform.copySourceNotes),
+    reviewPolicy: reviewPolicy(options.reviewPolicy),
+    intervalMinutes: options.intervalMinutes != null ? clampSyncInterval(options.intervalMinutes) : undefined,
+    autoPausedAt: str(options.autoPausedAt) ?? null,
+    exactDuplicateAutoMap: bool(options.exactDuplicateAutoMap),
   });
 }

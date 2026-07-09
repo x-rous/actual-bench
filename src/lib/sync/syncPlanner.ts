@@ -172,8 +172,26 @@ function planSourceItem(
   }
 
   // 3. Duplicate heuristic (skipped by default when uncertain).
-  const confidence = classifyDuplicate(payload, target.transactions, effectivePayeeName);
+  const { confidence, targetTransactionId: dupTargetId } = classifyDuplicate(
+    payload,
+    target.transactions,
+    effectivePayeeName
+  );
   if (confidence !== "none") {
+    // Exact duplicates can be auto-mapped to the existing target when the flow
+    // opts in: record a mapping (no write), instead of routing to review. Fuzzy
+    // (strong/weak) duplicates always stay review-required.
+    if (confidence === "exact" && config.exactDuplicateAutoMap && dupTargetId) {
+      return baseItem(item, {
+        classification: "exact_duplicate",
+        action: "skip",
+        duplicateConfidence: confidence,
+        flags: ["exact_duplicate_auto_map"],
+        plannedTargetPayload: payload,
+        targetTransactionId: dupTargetId,
+        message: "Exact duplicate on the target; will be mapped to the existing transaction.",
+      });
+    }
     return baseItem(item, {
       classification: duplicateClassification(confidence),
       action: "skip",

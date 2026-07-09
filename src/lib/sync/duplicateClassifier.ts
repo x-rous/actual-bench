@@ -19,15 +19,23 @@ import type {
  * - weak:   payee differs/absent (date + amount only).
  * - none:   no date+amount match at all.
  */
+/** Result of duplicate detection: confidence plus the best-matching target id. */
+export type DuplicateMatch = {
+  confidence: SyncDuplicateConfidence;
+  /** The matched target transaction id for the strongest match, else null. */
+  targetTransactionId: string | null;
+};
+
 export function classifyDuplicate(
   payload: Pick<PlannedTargetPayload, "date" | "amount" | "categoryId">,
   targetTransactions: SyncTargetTransactionForDedupe[],
   /** Effective target payee name (resolved match, create name, or source name). */
   plannedPayeeName: string | null
-): SyncDuplicateConfidence {
+): DuplicateMatch {
   const plannedPayee = normalizeName(plannedPayeeName);
 
   let best: SyncDuplicateConfidence = "none";
+  let bestId: string | null = null;
   for (const txn of targetTransactions) {
     if (txn.date !== payload.date || txn.amount !== payload.amount) continue;
 
@@ -41,11 +49,14 @@ export function classifyDuplicate(
     else if (samePayee) confidence = "strong";
     else confidence = "weak";
 
-    best = strongest(best, confidence);
+    if (RANK[confidence] > RANK[best]) {
+      best = confidence;
+      bestId = txn.id;
+    }
     if (best === "exact") break;
   }
 
-  return best;
+  return { confidence: best, targetTransactionId: bestId };
 }
 
 const RANK: Record<SyncDuplicateConfidence, number> = {
@@ -54,10 +65,3 @@ const RANK: Record<SyncDuplicateConfidence, number> = {
   strong: 2,
   exact: 3,
 };
-
-function strongest(
-  a: SyncDuplicateConfidence,
-  b: SyncDuplicateConfidence
-): SyncDuplicateConfidence {
-  return RANK[b] > RANK[a] ? b : a;
-}

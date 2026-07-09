@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { connectionFingerprint } from "@/lib/sync/connectionRef";
 import { decodeFlowPlanConfig } from "@/lib/sync/flowConfig";
-import { latestRunLabel } from "../lib/runsView";
+import { latestRunLabel, runNeedsAttention, runQueuedCount } from "../lib/runsView";
 import type { BrowserApiConnection } from "@/store/connection";
 import type { SyncFlow, SyncFlowRun } from "@/lib/app-db/types";
 
@@ -74,6 +74,15 @@ export function FlowList({ flows, selectedFlowId, latestRuns, connections, onSel
               const connected =
                 connectionAvailable(config.sourceConnectionFingerprint, connections) &&
                 connectionAvailable(config.targetConnectionFingerprint, connections);
+              const latestRun = latestRuns.get(flow.id);
+              const autoPaused = !flow.enabled && !!config.autoPausedAt;
+              const attentionBadge = autoPaused
+                ? "Auto-paused"
+                : latestRun && runNeedsAttention(latestRun)
+                  ? latestRun.status === "failed" || latestRun.status === "partial"
+                    ? "Failed"
+                    : `${runQueuedCount(latestRun)} to review`
+                  : null;
               return (
                 <button
                   key={flow.id}
@@ -92,9 +101,16 @@ export function FlowList({ flows, selectedFlowId, latestRuns, connections, onSel
                     />
                     <span className="sr-only">{flow.enabled ? "Enabled" : "Disabled"}</span>
                   </div>
-                  <div className="mt-0.5 text-[11.5px] text-muted-foreground">
+                  <div className="mt-0.5 flex items-center gap-1.5 text-[11.5px] text-muted-foreground">
                     {connected ? (
-                      latestRunLabel(latestRuns.get(flow.id))
+                      <>
+                        <span className="truncate">{latestRunLabel(latestRun)}</span>
+                        {attentionBadge && (
+                          <span className="shrink-0 rounded-full border border-amber-400/40 bg-amber-50 px-1.5 py-px text-[10px] font-medium text-amber-700 dark:bg-amber-950/30 dark:text-amber-400">
+                            {attentionBadge}
+                          </span>
+                        )}
+                      </>
                     ) : (
                       <span className="text-amber-600 dark:text-amber-400">Needs connection</span>
                     )}

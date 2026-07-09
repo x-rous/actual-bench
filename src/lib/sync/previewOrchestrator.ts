@@ -12,7 +12,7 @@ import {
 } from "./sourceFilter";
 import type { ActualBenchTransport } from "@/lib/actual/transport";
 import type { ConnectionInstance } from "@/store/connection";
-import type { JsonObject, SyncFlow, SyncMapping } from "@/lib/app-db/types";
+import type { JsonObject, SyncFlow, SyncMapping, SyncRunTrigger } from "@/lib/app-db/types";
 import type {
   SyncPlannerTargetSnapshot,
   SyncPlanResult,
@@ -44,6 +44,8 @@ export type PreviewTransportProvider = {
 export type PreviewPersistMeta = {
   summary: JsonObject;
   sourceSnapshotSummary: JsonObject;
+  /** What created this run; defaults to a manual preview when unset (RD-054). */
+  trigger?: SyncRunTrigger;
 };
 
 export type PreviewStore = {
@@ -67,6 +69,8 @@ export type LiveDryRunInput = {
   context: LiveDryRunContext;
   /** Allow running a disabled flow (e.g. preview-before-enable). Default false. */
   allowDisabled?: boolean;
+  /** What created this run; stamped on the persisted run (RD-054). */
+  trigger?: SyncRunTrigger;
 };
 
 // --- Result / error shapes --------------------------------------------------
@@ -95,6 +99,8 @@ export type DryRunSummary = {
   createCandidates: number;
   alreadySynced: number;
   duplicatesSkipped: number;
+  /** Exact duplicates the flow will auto-map (safe; excluded from duplicatesSkipped). */
+  exactDuplicatesAutoMapped: number;
   sourceChangedWarnings: number;
   targetMarkerMatches: number;
   blocked: number;
@@ -233,6 +239,7 @@ export async function runLiveDryRunPreview(
           budgetId: config.sourceBudgetId,
           connectionFingerprint: config.sourceConnectionFingerprint,
         },
+        trigger: input.trigger,
       }));
     } catch (err) {
       throw new DryRunPreviewError("persistence_failed", describe(err, "Failed to persist the preview run."));
@@ -343,16 +350,17 @@ async function loadTargetSnapshot(
   config: SyncFlowPlanConfig,
   filter: SyncSourceFilter
 ): Promise<SyncPlannerTargetSnapshot> {
+  // One lookup covers payees, the marker index, and the dedupe transaction list
+  // (single range read); categories still come from the category-group query.
   const range = { accountId: config.targetAccountId, startDate: filter.startDate ?? undefined, endDate: filter.endDate ?? undefined };
   const lookup = await transport.getTargetLookupForSync(range);
   const categoryGroups = await transport.getCategoryGroups();
-  const targetTxns = await transport.listTransactionsForSync(range);
 
   return {
     payees: lookup.payees.map((p) => ({ id: p.id, name: p.name })),
     categories: categoryGroups.categories.map((c) => ({ id: c.id, name: c.name })),
     importedIdIndex: lookup.importedIdIndex,
-    transactions: targetTxns.map((t) => ({
+    transactions: lookup.transactions.map((t) => ({
       id: t.id,
       date: t.date,
       amount: t.amount,
@@ -367,7 +375,11 @@ function buildSummary(
   source: { scanned: number; generatedExcluded: number; expandedCount: number; keptCount: number }
 ): DryRunSummary {
   const c = plan.counts;
-  const dup = (c.exact_duplicate ?? 0) + (c.strong_duplicate ?? 0) + (c.weak_duplicate ?? 0);
+  // Auto-mapped exact duplicates are safe (mapping-only), so they are reported
+  // separately and excluded from the review-queue "duplicatesSkipped" count.
+  const autoMapped = plan.items.filter((i) => i.flags.includes("exact_duplicate_auto_map")).length;
+  const dup =
+    (c.exact_duplicate ?? 0) + (c.strong_duplicate ?? 0) + (c.weak_duplicate ?? 0) - autoMapped;
   return {
     sourceTransactionsScanned: source.scanned,
     generatedTransactionsExcluded: source.generatedExcluded,
@@ -376,7 +388,8 @@ function buildSummary(
     plannedItems: plan.items.length,
     createCandidates: c.new ?? 0,
     alreadySynced: c.already_synced ?? 0,
-    duplicatesSkipped: dup,
+    duplicatesSkipped: Math.max(0, dup),
+    exactDuplicatesAutoMapped: autoMapped,
     sourceChangedWarnings: c.source_changed_since_sync ?? 0,
     targetMarkerMatches: c.target_marker_match ?? 0,
     blocked: c.blocked ?? 0,

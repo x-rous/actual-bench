@@ -13,15 +13,52 @@ export type RunRowView = {
   statusLabel: string;
   tone: RunTone;
   trigger: string;
+  /** True for an automated safe-only run (interval / "Run safe sync now"). */
+  isAuto: boolean;
   planned: number | null;
   created: number | null;
   relinked: number | null;
   failed: number | null;
+  /** Review-required items this run did not apply (the review queue). */
+  queued: number | null;
   when: string;
 };
 
 function num(value: unknown): number | null {
   return typeof value === "number" ? value : null;
+}
+
+function n0(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+/** True for an automated safe-only run. */
+export function isAutoRun(run: SyncFlowRun): boolean {
+  return run.createdByTrigger === "interval_safe_only";
+}
+
+/**
+ * Count of review-required items a run left for the human (the review queue),
+ * derived from the persisted preview summary: duplicates + source-changed +
+ * blocked. Zero on runs without a stored summary.
+ */
+export function runQueuedCount(run: SyncFlowRun): number {
+  const s = run.summary?.data ?? {};
+  return n0(s.duplicatesSkipped) + n0(s.sourceChangedWarnings) + n0(s.blocked);
+}
+
+/** Auto-applied count for an applied run: creates plus mapping repairs. */
+export function runAutoAppliedCount(run: SyncFlowRun): number {
+  const c = run.counts?.data ?? {};
+  return n0(c.applied) + n0(c.repaired);
+}
+
+/**
+ * A run needs the user's attention when it failed/partially applied, or left
+ * items in the review queue. Used for the flow-list notification badge.
+ */
+export function runNeedsAttention(run: SyncFlowRun): boolean {
+  return run.status === "failed" || run.status === "partial" || runQueuedCount(run) > 0;
 }
 
 function statusView(status: string): { label: string; tone: RunTone } {
@@ -44,7 +81,7 @@ function statusView(status: string): { label: string; tone: RunTone } {
 }
 
 function triggerLabel(trigger: string): string {
-  return trigger === "background_future" ? "Automated" : "Manual";
+  return trigger === "interval_safe_only" ? "Auto-sync" : "Manual";
 }
 
 export function toRunRow(run: SyncFlowRun): RunRowView {
@@ -52,15 +89,18 @@ export function toRunRow(run: SyncFlowRun): RunRowView {
   const counts = run.counts?.data ?? {};
   const summary = run.summary?.data ?? {};
   const applied = run.status !== "draft_preview";
+  const queued = runQueuedCount(run);
   return {
     id: run.id,
     statusLabel: status.label,
     tone: status.tone,
     trigger: triggerLabel(run.createdByTrigger),
+    isAuto: isAutoRun(run),
     planned: num(summary.totalItems) ?? num(counts.new),
     created: applied ? num(counts.applied) ?? 0 : null,
     relinked: applied ? num(counts.repaired) ?? 0 : null,
     failed: applied ? num(counts.failed) ?? 0 : null,
+    queued: queued > 0 ? queued : null,
     when: run.finishedAt ?? run.startedAt,
   };
 }

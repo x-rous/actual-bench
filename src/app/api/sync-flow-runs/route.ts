@@ -3,8 +3,17 @@ import { getAppDb } from "@/lib/app-db/connection";
 import { appDbErrorResponse, readJsonBody } from "@/lib/app-db/routeResponses";
 import { createSyncFlowRun, listSyncFlowRuns } from "@/lib/app-db/syncRunRepository";
 import { persistDraftPreviewRun } from "@/lib/sync/persistPlan";
-import type { JsonObject } from "@/lib/app-db/types";
+import type { JsonObject, SyncRunTrigger } from "@/lib/app-db/types";
 import type { SyncPlanResult } from "@/lib/sync/plannedChanges";
+
+/** Triggers a client orchestrator is allowed to stamp on a persisted run. */
+const ALLOWED_TRIGGERS: readonly SyncRunTrigger[] = ["manual_preview", "interval_safe_only"];
+
+function normalizeTrigger(value: unknown): SyncRunTrigger {
+  return typeof value === "string" && (ALLOWED_TRIGGERS as readonly string[]).includes(value)
+    ? (value as SyncRunTrigger)
+    : "manual_preview";
+}
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -28,7 +37,7 @@ export function GET(request: NextRequest) {
 }
 
 type PreviewRunBody =
-  | { kind: "draft"; plan: SyncPlanResult; summary?: JsonObject; sourceSnapshotSummary?: JsonObject }
+  | { kind: "draft"; plan: SyncPlanResult; summary?: JsonObject; sourceSnapshotSummary?: JsonObject; trigger?: SyncRunTrigger }
   | { kind: "failed"; flowId: string | null; summary?: JsonObject; error?: JsonObject };
 
 /**
@@ -56,6 +65,7 @@ export async function POST(request: Request) {
     const { run } = persistDraftPreviewRun(db, body.plan, {
       summary: body.summary,
       sourceSnapshotSummary: body.sourceSnapshotSummary,
+      trigger: normalizeTrigger(body.trigger),
     });
     return NextResponse.json({ runId: run.id }, { status: 201 });
   } catch (error) {

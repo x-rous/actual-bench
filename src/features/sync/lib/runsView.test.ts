@@ -1,4 +1,11 @@
-import { latestRunLabel, toRunRow } from "./runsView";
+import {
+  isAutoRun,
+  latestRunLabel,
+  runAutoAppliedCount,
+  runNeedsAttention,
+  runQueuedCount,
+  toRunRow,
+} from "./runsView";
 import type { SyncFlowRun } from "@/lib/app-db/types";
 
 function run(overrides: Partial<SyncFlowRun> = {}): SyncFlowRun {
@@ -23,7 +30,41 @@ describe("toRunRow", () => {
   });
 
   it("marks a background run as automated", () => {
-    expect(toRunRow(run({ createdByTrigger: "background_future" })).trigger).toBe("Automated");
+    const r = toRunRow(run({ createdByTrigger: "interval_safe_only" }));
+    expect(r.trigger).toBe("Auto-sync");
+    expect(r.isAuto).toBe(true);
+  });
+
+  it("exposes the review-queue count from the preview summary", () => {
+    const r = toRunRow(run({
+      status: "applied",
+      counts: { version: 1, data: { applied: 5, repaired: 0, failed: 0 } },
+      summary: { version: 1, data: { totalItems: 12, duplicatesSkipped: 2, sourceChangedWarnings: 1, blocked: 1 } },
+    }));
+    expect(r.queued).toBe(4);
+  });
+});
+
+describe("run summary helpers (RD-054)", () => {
+  it("isAutoRun distinguishes automated runs", () => {
+    expect(isAutoRun(run({ createdByTrigger: "interval_safe_only" }))).toBe(true);
+    expect(isAutoRun(run({ createdByTrigger: "manual_preview" }))).toBe(false);
+  });
+
+  it("runQueuedCount sums the review-required summary fields", () => {
+    expect(runQueuedCount(run({ summary: { version: 1, data: { duplicatesSkipped: 3, sourceChangedWarnings: 2, blocked: 1 } } }))).toBe(6);
+    expect(runQueuedCount(run({ summary: null as unknown as SyncFlowRun["summary"] }))).toBe(0);
+  });
+
+  it("runAutoAppliedCount adds creates and repairs", () => {
+    expect(runAutoAppliedCount(run({ counts: { version: 1, data: { applied: 4, repaired: 3 } } }))).toBe(7);
+  });
+
+  it("runNeedsAttention flags failed/partial runs or queued items", () => {
+    expect(runNeedsAttention(run({ status: "failed" }))).toBe(true);
+    expect(runNeedsAttention(run({ status: "partial" }))).toBe(true);
+    expect(runNeedsAttention(run({ status: "applied", summary: { version: 1, data: { blocked: 2 } } }))).toBe(true);
+    expect(runNeedsAttention(run({ status: "applied", summary: { version: 1, data: { totalItems: 3 } } }))).toBe(false);
   });
 });
 

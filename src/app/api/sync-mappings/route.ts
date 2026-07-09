@@ -34,8 +34,15 @@ export function GET(request: NextRequest) {
 
 export async function POST(request: Request) {
   try {
-    const body = (await readJsonBody(request)) as SyncMappingInput;
-    const mapping = createSyncMapping(getAppDb(), body);
+    const body = (await readJsonBody(request)) as SyncMappingInput | SyncMappingInput[];
+    const db = getAppDb();
+    // A batch (array) is written in ONE transaction — one commit for the whole
+    // apply run instead of an HTTP round-trip + commit per mapping.
+    if (Array.isArray(body)) {
+      const createAll = db.transaction(() => body.map((input) => createSyncMapping(db, input)));
+      return NextResponse.json({ mappings: createAll() }, { status: 201 });
+    }
+    const mapping = createSyncMapping(db, body);
     return NextResponse.json({ mapping }, { status: 201 });
   } catch (error) {
     return appDbErrorResponse(error);

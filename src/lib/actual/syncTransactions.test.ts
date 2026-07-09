@@ -217,8 +217,16 @@ describe("createTransactionsForSync (Direct)", () => {
 
     // The id-recovery lookup is a same-day query filtered by the marker.
     expect(getTransactions).toHaveBeenCalledWith("acct-tgt", "2026-07-01", "2026-07-01");
+    // The id and the persisted fields are recovered from the same read (no
+    // second fetch), so callers can diff planned vs actual cheaply.
     expect(result.created).toEqual([
-      { requestIndex: 0, transactionId: "created-1", importedId: "sync-marker-1" },
+      {
+        requestIndex: 0,
+        transactionId: "created-1",
+        importedId: "sync-marker-1",
+        resolvedPayeeId: "tp1",
+        applied: { amount: 1250, date: "2026-07-01", cleared: false, categoryId: null, payeeId: null, notes: null },
+      },
     ]);
   });
 
@@ -243,7 +251,7 @@ describe("createTransactionsForSync (Direct)", () => {
       { accountId: "acct-tgt", date: "2026-07-03", amount: 500 },
     ]);
     expect(result.created).toEqual([
-      { requestIndex: 0, transactionId: null, importedId: null },
+      { requestIndex: 0, transactionId: null, importedId: null, resolvedPayeeId: null, applied: null },
     ]);
   });
 });

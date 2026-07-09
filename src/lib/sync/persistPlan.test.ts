@@ -95,6 +95,28 @@ describe("persistDraftPreviewRun", () => {
     }
   });
 
+  it("defaults the run trigger to manual_preview and honors an explicit trigger", () => {
+    const { root, db } = tempDb();
+    try {
+      const flowId = createFlow(db);
+      const plan = planSyncFlow({
+        config: buildPlanConfig({ flowId, sourceBudgetId: "budget-src", targetBudgetId: "budget-tgt", targetAccountId: "acct-tgt", sourceBudgetName: "Home", sourceAccountName: "Checking" }),
+        capabilities: getBudgetFileSyncCapabilities({ mode: "browser-api" }),
+        sourceTransactions: [source],
+        target: { payees: [], categories: [], importedIdIndex: new Map(), transactions: [] },
+        existingMappings: [],
+      });
+
+      const manual = persistDraftPreviewRun(db, plan);
+      expect(getSyncFlowRun(db, manual.run.id)?.createdByTrigger).toBe("manual_preview");
+
+      const auto = persistDraftPreviewRun(db, plan, { trigger: "interval_safe_only" });
+      expect(getSyncFlowRun(db, auto.run.id)?.createdByTrigger).toBe("interval_safe_only");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("persists one item per exploded split line", () => {
     const { root, db } = tempDb();
     try {

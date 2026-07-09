@@ -2,9 +2,9 @@ import { getBudgetFileSyncCapabilities } from "./capabilities";
 import { connectionFingerprint } from "./connectionRef";
 import { decodeFlowPlanConfig, type SyncFlowPlanConfig } from "./flowConfig";
 import { generateSyncMarker } from "./marker";
-import { transactionFingerprint } from "./sourceItems";
 import type {
   ActualBenchTransport,
+  SyncCreatedTransaction,
   SyncTargetTransactionInput,
 } from "@/lib/actual/transport";
 import type { ConnectionInstance } from "@/store/connection";
@@ -71,7 +71,20 @@ export type RunItemStatusPatch = {
 
 export type ApplySelection =
   | { selectedItemIds: string[] }
-  | { selection: "all_safe_new" };
+  /** Auto-select every new create candidate (RD-053 default). */
+  | { selection: "all_safe_new" }
+  /**
+   * Auto-select every safe item: new create candidates **and** repairable
+   * `target_marker_match` rows. Used by RD-054 safe-only automation so an
+   * auto run also self-heals a lost DB mapping when the marker already exists
+   * on the target (no Actual write for the repair).
+   */
+  | { selection: "all_safe" }
+  /**
+   * Re-attempt every item that previously failed on this run (RD-054 retry).
+   * Permitted on a partial/failed run, not only a fresh draft preview.
+   */
+  | { selection: "retry_failed" };
 
 export type ApplySyncRunInput = {
   runId: string;
@@ -186,15 +199,19 @@ export async function applySyncRun(
     return { status: "failed", runId, error, counts, items };
   }
 
-  // Writes to the same target are serialized (single-runtime, deterministic).
-  for (const item of eligible) {
-    const result = await applyOneItem(item, { config, transport, markerIndex }, deps.store);
+  const ctx: ItemContext = { config, transport, markerIndex };
+
+  // Repair/map items write nothing, so they stay per-item (cheap). Creates are
+  // batched into ONE insert + ONE id-recovery read instead of one round-trip per
+  // transaction — the dominant cost on large runs.
+  for (const eligibleItem of eligible.filter((e) => e.mode !== "create")) {
+    const result = await applyOneItem(eligibleItem, ctx, deps.store);
     items.push(result);
     tally(counts, result.outcome);
-    // A create adds a live marker; guard against intra-run duplicates.
-    if (result.outcome !== "failed" && result.targetTransactionId && item.payload?.importedId) {
-      markerIndex.set(item.payload.importedId, result.targetTransactionId);
-    }
+  }
+  for (const result of await applyCreateBatch(eligible.filter((e) => e.mode === "create"), ctx, deps.store)) {
+    items.push(result);
+    tally(counts, result.outcome);
   }
 
   const status = deriveRunStatus(counts);
@@ -219,7 +236,7 @@ export async function applySyncRun(
 
 // --- Validation / preparation ----------------------------------------------
 
-type ApplyItemMode = "create" | "repair";
+type ApplyItemMode = "create" | "repair" | "map";
 
 type EligibleItem = {
   item: SyncFlowRunItem;
@@ -242,6 +259,20 @@ function isEligibleNew(item: SyncFlowRunItem): boolean {
     item.plannedAction === "create" &&
     item.applyState !== "applied" &&
     item.plannedTargetPayload != null
+  );
+}
+
+function itemHasFlag(item: SyncFlowRunItem, flag: string): boolean {
+  const flags = (item.warnings?.data as { flags?: unknown } | undefined)?.flags;
+  return Array.isArray(flags) && flags.includes(flag);
+}
+
+/** An exact duplicate the flow opted to auto-map to its existing target (no write). */
+function isExactDupAutoMap(item: SyncFlowRunItem): boolean {
+  return (
+    item.classification === "exact_duplicate" &&
+    itemHasFlag(item, "exact_duplicate_auto_map") &&
+    readTargetTxnId(item) != null
   );
 }
 
@@ -281,10 +312,20 @@ async function validateAndPrepare(
   input: ApplySyncRunInput,
   store: ApplyStore
 ): Promise<PreparedApply> {
+  const isRetry =
+    !!input.selection && "selection" in input.selection && input.selection.selection === "retry_failed";
+
   const run = await store.loadRun(input.runId);
   if (!run) throw new ApplyPreflightError("run_not_found", `Run ${input.runId} was not found.`);
-  if (run.status !== "draft_preview") {
-    throw new ApplyPreflightError("run_not_applyable", `Run is ${run.status}; only draft_preview runs can be applied.`);
+  // A retry may run on a partial/failed run; a normal apply only on a fresh draft.
+  const applyableStatuses = isRetry ? ["draft_preview", "partial", "failed"] : ["draft_preview"];
+  if (!applyableStatuses.includes(run.status)) {
+    throw new ApplyPreflightError(
+      "run_not_applyable",
+      isRetry
+        ? `Run is ${run.status}; only partial/failed runs can be retried.`
+        : `Run is ${run.status}; only draft_preview runs can be applied.`
+    );
   }
   if (!run.flowId) throw new ApplyPreflightError("flow_not_found", "Run has no associated flow.");
 
@@ -314,8 +355,9 @@ async function validateAndPrepare(
   const byId = new Map(allItems.map((item) => [item.id, item]));
 
   // Resolve each selected item to a create or repair candidate. Explicit
-  // selection may include target_marker_match rows (repair); "all_safe_new"
-  // only ever includes new create candidates.
+  // selection may include target_marker_match rows (repair). Bulk modes:
+  //   "all_safe_new" (and undefined) → new create candidates only;
+  //   "all_safe"                     → new creates + repairable marker matches.
   const eligible: EligibleItem[] = [];
   if (input.selection && "selectedItemIds" in input.selection) {
     for (const id of input.selection.selectedItemIds) {
@@ -327,12 +369,31 @@ async function validateAndPrepare(
         eligible.push(toCreateCandidate(item));
       } else if (isRepairable(item)) {
         eligible.push({ item, mode: "repair", payload: null, targetTransactionId: readTargetTxnId(item) });
+      } else if (isExactDupAutoMap(item)) {
+        eligible.push({ item, mode: "map", payload: null, targetTransactionId: readTargetTxnId(item) });
       } else {
-        throw new ApplyPreflightError("ineligible_selection", `Selected item ${id} is not an applyable create or repair candidate.`);
+        throw new ApplyPreflightError("ineligible_selection", `Selected item ${id} is not an applyable create, repair, or map candidate.`);
       }
     }
+  } else if (isRetry) {
+    // Re-attempt only items that previously failed, routed to their normal mode.
+    for (const item of allItems) {
+      if (item.applyState !== "failed") continue;
+      if (isEligibleNew(item)) eligible.push(toCreateCandidate(item));
+      else if (isRepairable(item)) eligible.push({ item, mode: "repair", payload: null, targetTransactionId: readTargetTxnId(item) });
+      else if (isExactDupAutoMap(item)) eligible.push({ item, mode: "map", payload: null, targetTransactionId: readTargetTxnId(item) });
+    }
   } else {
-    for (const item of allItems.filter(isEligibleNew)) eligible.push(toCreateCandidate(item));
+    const includeRepairs = input.selection?.selection === "all_safe";
+    for (const item of allItems) {
+      if (isEligibleNew(item)) {
+        eligible.push(toCreateCandidate(item));
+      } else if (includeRepairs && isRepairable(item)) {
+        eligible.push({ item, mode: "repair", payload: null, targetTransactionId: readTargetTxnId(item) });
+      } else if (includeRepairs && isExactDupAutoMap(item)) {
+        eligible.push({ item, mode: "map", payload: null, targetTransactionId: readTargetTxnId(item) });
+      }
+    }
   }
 
   if (eligible.length === 0) {
@@ -375,64 +436,111 @@ type ItemContext = {
   markerIndex: Map<string, string>;
 };
 
+/** Repair/map items perform no Actual write; they are applied one at a time. */
 async function applyOneItem(
   eligible: EligibleItem,
   ctx: ItemContext,
   store: ApplyStore
 ): Promise<ApplyItemResult> {
-  if (eligible.mode === "repair") return repairOneItem(eligible, ctx, store);
+  if (eligible.mode === "map") return mapExactDuplicateItem(eligible, ctx, store);
+  return repairOneItem(eligible, ctx, store);
+}
 
-  const { item } = eligible;
-  const payload = eligible.payload as PlannedTargetPayload;
-  const marker = payload.importedId as string;
-  const base = { itemId: item.id, sourceItemKey: item.sourceItemKey ?? "" };
+/**
+ * Apply create candidates as a batch: resolve which items still need a write
+ * (skipping already-mapped items and repairing marker hits — no writes), then
+ * create the remainder in **one** `createTransactionsForSync` call (one insert +
+ * one id-recovery read in the transport) instead of a round-trip per item.
+ */
+async function applyCreateBatch(
+  createItems: EligibleItem[],
+  ctx: ItemContext,
+  store: ApplyStore
+): Promise<ApplyItemResult[]> {
+  const results: ApplyItemResult[] = [];
+  const toCreate: { item: SyncFlowRunItem; payload: PlannedTargetPayload }[] = [];
 
+  // Phase A — no writes: skip already-mapped items; repair a lost mapping when
+  // the marker is already on the target; queue the rest for the batch insert.
+  for (const eligible of createItems) {
+    const item = eligible.item;
+    const payload = eligible.payload as PlannedTargetPayload;
+    const marker = payload.importedId as string;
+    const base = { itemId: item.id, sourceItemKey: item.sourceItemKey ?? "" };
+    try {
+      const existingMapping = await store.getMappingBySource(ctx.config.flowId, item.sourceItemKey ?? "");
+      if (existingMapping) {
+        await store.updateRunItemStatus(item.id, {
+          status: "skipped",
+          applyState: "skipped",
+          message: "Already mapped; skipped to avoid a duplicate.",
+        });
+        results.push({ ...base, outcome: "skipped", targetTransactionId: existingMapping.targetTransactionId, message: "already mapped" });
+        continue;
+      }
+      const markerHit = ctx.markerIndex.get(marker);
+      if (markerHit) {
+        await recordMapping(store, ctx.config, item, markerHit, marker, null);
+        await store.updateRunItemStatus(item.id, {
+          status: "skipped",
+          applyState: "skipped",
+          message: "Target already has this marker; repaired mapping without creating a duplicate.",
+          warnings: flagEnvelope(["target_marker_match_repair"]),
+          createdTargetTransactionId: markerHit,
+          createdTargetMarker: marker,
+        });
+        results.push({ ...base, outcome: "repaired", targetTransactionId: markerHit, message: "repaired mapping" });
+        continue;
+      }
+      toCreate.push({ item, payload });
+    } catch (err) {
+      await store.updateRunItemStatus(item.id, {
+        status: "failed",
+        applyState: "failed",
+        message: describe(err, "Apply failed for this item."),
+        errors: envelope({ code: "create_failed", message: describe(err, "unknown error") }),
+      });
+      results.push({ ...base, outcome: "failed", targetTransactionId: null, message: describe(err, "apply failed") });
+    }
+  }
+
+  if (toCreate.length === 0) return results;
+
+  // Phase B — one batched insert (+ one id-recovery read inside the transport).
+  let created: SyncCreatedTransaction[];
   try {
-    // 1. Existing DB mapping ⇒ already applied; skip (idempotent rerun).
-    const existingMapping = await store.getMappingBySource(ctx.config.flowId, item.sourceItemKey ?? "");
-    if (existingMapping) {
-      await store.updateRunItemStatus(item.id, {
-        status: "skipped",
-        applyState: "skipped",
-        message: "Already mapped; skipped to avoid a duplicate.",
-      });
-      return { ...base, outcome: "skipped", targetTransactionId: existingMapping.targetTransactionId, message: "already mapped" };
-    }
-
-    // 2. Marker already on target (mapping lost) ⇒ repair, do not duplicate.
-    const markerHit = ctx.markerIndex.get(marker);
-    if (markerHit) {
-      await recordMapping(store, ctx.config, item, markerHit, marker, null);
-      await store.updateRunItemStatus(item.id, {
-        status: "skipped",
-        applyState: "skipped",
-        message: "Target already has this marker; repaired mapping without creating a duplicate.",
-        warnings: flagEnvelope(["target_marker_match_repair"]),
-        createdTargetTransactionId: markerHit,
-        createdTargetMarker: marker,
-      });
-      return { ...base, outcome: "repaired", targetTransactionId: markerHit, message: "repaired mapping" };
-    }
-
-    // 3. Resolve payee per policy, then create.
-    let payeeId = payload.payeeId;
-    if (!payeeId && payload.payeeName) {
-      payeeId = (await ctx.transport.createOrResolvePayee({ name: payload.payeeName })).id;
-    }
-
-    const createInput: SyncTargetTransactionInput = {
+    const inputs: SyncTargetTransactionInput[] = toCreate.map(({ payload }) => ({
       accountId: ctx.config.targetAccountId,
       date: payload.date,
       amount: payload.amount,
-      payeeId: payeeId ?? null,
+      payeeId: payload.payeeId,
+      payeeName: payload.payeeName,
       categoryId: payload.categoryId,
       notes: payload.notes,
       cleared: payload.cleared,
-      importedId: marker,
-    };
+      importedId: payload.importedId,
+    }));
+    ({ created } = await ctx.transport.createTransactionsForSync(inputs));
+  } catch (err) {
+    for (const { item } of toCreate) {
+      await store.updateRunItemStatus(item.id, {
+        status: "failed",
+        applyState: "failed",
+        message: describe(err, "Batch create failed."),
+        errors: envelope({ code: "create_failed", message: describe(err, "unknown error") }),
+      });
+      results.push({ itemId: item.id, sourceItemKey: item.sourceItemKey ?? "", outcome: "failed", targetTransactionId: null, message: describe(err, "apply failed") });
+    }
+    return results;
+  }
 
-    const created = await ctx.transport.createTransactionsForSync([createInput]);
-    const targetId = created.created[0]?.transactionId ?? null;
+  // Phase C — per created row: verify id, diff vs planned, record the mapping.
+  for (let i = 0; i < toCreate.length; i++) {
+    const { item, payload } = toCreate[i];
+    const marker = payload.importedId as string;
+    const base = { itemId: item.id, sourceItemKey: item.sourceItemKey ?? "" };
+    const res = created[i];
+    const targetId = res?.transactionId ?? null;
 
     if (!targetId) {
       await store.updateRunItemStatus(item.id, {
@@ -442,58 +550,48 @@ async function applyOneItem(
         errors: envelope({ code: "unresolved_target_id", marker }),
         createdTargetMarker: marker,
       });
-      return {
-        ...base,
-        outcome: "failed",
-        targetTransactionId: null,
-        message: "target id unresolved; a transaction may exist but was not confirmed",
-      };
+      results.push({ ...base, outcome: "failed", targetTransactionId: null, message: "target id unresolved; a transaction may exist but was not confirmed" });
+      continue;
     }
 
-    // 4. Compare planned vs actual (target rules run on create).
-    const actual = await findCreatedTransaction(ctx.transport, ctx.config.targetAccountId, payload.date, marker);
-    const changedFields = actual ? diffPlannedVsActual(payload, payeeId ?? null, actual) : [];
-    const targetFingerprint = actual ? transactionFingerprint(actual) : null;
+    // Target rules can run on create; the actual row + resolved payee come back
+    // with the id, so the diff needs no extra read.
+    const actual = res?.applied ?? null;
+    const changedFields = actual ? diffPlannedVsActual(payload, res?.resolvedPayeeId ?? payload.payeeId ?? null, actual) : [];
 
-    // 5. Record the mapping immediately (before touching later items).
-    await recordMapping(store, ctx.config, item, targetId, marker, targetFingerprint);
+    try {
+      // Fingerprint is unused downstream, so it is not recomputed here.
+      await recordMapping(store, ctx.config, item, targetId, marker, null);
+    } catch (err) {
+      await store.updateRunItemStatus(item.id, {
+        status: "failed",
+        applyState: "failed",
+        message: describe(err, "Mapping failed after create."),
+        errors: envelope({ code: "map_failed", message: describe(err, "unknown error") }),
+        createdTargetTransactionId: targetId,
+        createdTargetMarker: marker,
+      });
+      results.push({ ...base, outcome: "failed", targetTransactionId: targetId, message: describe(err, "mapping failed") });
+      continue;
+    }
+
+    // New live marker on the target — guard later items against duplicating it.
+    ctx.markerIndex.set(marker, targetId);
 
     const hasWarnings = changedFields.length > 0;
     await store.updateRunItemStatus(item.id, {
       status: "applied",
       applyState: "applied",
-      message: hasWarnings ? "Applied; target rules modified some fields." : "Applied.",
+      message: hasWarnings ? "Synced; target rules modified some fields." : "Synced.",
       warnings: hasWarnings ? flagEnvelope(["target_rules_modified"], { changedFields }) : null,
       createdTargetTransactionId: targetId,
       createdTargetMarker: marker,
       targetItemRef: { version: 1, data: { targetTransactionId: targetId } },
     });
-
-    return {
-      ...base,
-      outcome: hasWarnings ? "applied_with_warnings" : "applied",
-      targetTransactionId: targetId,
-      changedFields: hasWarnings ? changedFields : undefined,
-    };
-  } catch (err) {
-    await store.updateRunItemStatus(item.id, {
-      status: "failed",
-      applyState: "failed",
-      message: describe(err, "Apply failed for this item."),
-      errors: envelope({ code: "create_failed", message: describe(err, "unknown error") }),
-    });
-    return { ...base, outcome: "failed", targetTransactionId: null, message: describe(err, "apply failed") };
+    results.push({ ...base, outcome: hasWarnings ? "applied_with_warnings" : "applied", targetTransactionId: targetId, changedFields: hasWarnings ? changedFields : undefined });
   }
-}
 
-async function findCreatedTransaction(
-  transport: ActualBenchTransport,
-  accountId: string,
-  date: string,
-  marker: string
-) {
-  const rows = await transport.listTransactionsForSync({ accountId, startDate: date, endDate: date });
-  return rows.find((row) => row.importedId === marker) ?? null;
+  return results;
 }
 
 function diffPlannedVsActual(
@@ -602,6 +700,66 @@ async function repairOneItem(
       errors: envelope({ code: "repair_failed", message: describe(err, "unknown error") }),
     });
     return { ...base, outcome: "failed", targetTransactionId: null, message: describe(err, "repair failed") };
+  }
+}
+
+/**
+ * Auto-map an exact-duplicate item to its existing target transaction (RD-054):
+ * record a mapping to the previewed target, with no Actual write. Unlike a
+ * marker repair there is no sync marker on the target (it is a coincidental
+ * match), so existence is re-validated against the live target instead.
+ */
+async function mapExactDuplicateItem(
+  eligible: EligibleItem,
+  ctx: ItemContext,
+  store: ApplyStore
+): Promise<ApplyItemResult> {
+  const { item } = eligible;
+  const base = { itemId: item.id, sourceItemKey: item.sourceItemKey ?? "" };
+  const targetId = eligible.targetTransactionId as string;
+  const date = readPayload(item)?.date ?? null;
+
+  try {
+    const existingMapping = await store.getMappingBySource(ctx.config.flowId, item.sourceItemKey ?? "");
+    if (existingMapping) {
+      await store.updateRunItemStatus(item.id, {
+        status: "skipped",
+        applyState: "skipped",
+        message: "Already mapped; nothing to map.",
+      });
+      return { ...base, outcome: "skipped", targetTransactionId: existingMapping.targetTransactionId, message: "already mapped" };
+    }
+
+    // Re-validate the matched target still exists before linking to it.
+    const stillPresent = date
+      ? (await ctx.transport.listTransactionsForSync({ accountId: ctx.config.targetAccountId, startDate: date, endDate: date })).some((t) => t.id === targetId)
+      : false;
+    if (!stillPresent) {
+      await store.updateRunItemStatus(item.id, {
+        status: "skipped",
+        applyState: "skipped",
+        message: "Exact-duplicate target is no longer present; not mapped.",
+      });
+      return { ...base, outcome: "skipped", targetTransactionId: null, message: "duplicate target gone" };
+    }
+
+    await recordMapping(store, ctx.config, item, targetId, null, null);
+    await store.updateRunItemStatus(item.id, {
+      status: "mapped",
+      applyState: "skipped",
+      message: "Mapped to the existing exact-duplicate transaction.",
+      warnings: flagEnvelope(["exact_duplicate_auto_mapped"]),
+      createdTargetTransactionId: targetId,
+    });
+    return { ...base, outcome: "repaired", targetTransactionId: targetId, message: "mapped to exact duplicate" };
+  } catch (err) {
+    await store.updateRunItemStatus(item.id, {
+      status: "failed",
+      applyState: "failed",
+      message: describe(err, "Mapping failed for this item."),
+      errors: envelope({ code: "map_failed", message: describe(err, "unknown error") }),
+    });
+    return { ...base, outcome: "failed", targetTransactionId: null, message: describe(err, "map failed") };
   }
 }
 

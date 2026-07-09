@@ -227,6 +227,32 @@ describe("planSyncFlow — duplicates", () => {
     const plan = planSyncFlow(baseInput({ target }));
     expect(plan.items[0].classification).toBe("weak_duplicate");
   });
+
+  it("auto-maps an exact duplicate when the flow opts in (target id + flag, no create)", () => {
+    const target = emptyTarget({
+      payees: [{ id: "tp1", name: "Coffee Bar" }],
+      categories: [{ id: "tc1", name: "Dining" }],
+      transactions: [
+        { id: "existing-1", date: "2026-07-01", amount: 1250, payeeName: "Coffee Bar", categoryId: "tc1" },
+      ],
+    });
+    const autoMapConfig = buildPlanConfig({ ...config, exactDuplicateAutoMap: true });
+    const plan = planSyncFlow(baseInput({ config: autoMapConfig, target }));
+    const item = plan.items[0];
+    expect(item.classification).toBe("exact_duplicate");
+    expect(item.flags).toContain("exact_duplicate_auto_map");
+    expect(item.targetTransactionId).toBe("existing-1");
+    expect(item.action).toBe("skip"); // mapping only; no create
+
+    // A strong (fuzzy) duplicate is never auto-mapped, even with the option on.
+    const strongTarget = emptyTarget({
+      payees: [{ id: "tp1", name: "Coffee Bar" }],
+      transactions: [{ id: "s1", date: "2026-07-01", amount: 1250, payeeName: "Coffee Bar", categoryId: "other" }],
+    });
+    const strong = planSyncFlow(baseInput({ config: autoMapConfig, target: strongTarget })).items[0];
+    expect(strong.classification).toBe("strong_duplicate");
+    expect(strong.flags).not.toContain("exact_duplicate_auto_map");
+  });
 });
 
 describe("planSyncFlow — splits", () => {

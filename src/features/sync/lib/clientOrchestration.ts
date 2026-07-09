@@ -11,9 +11,11 @@ import {
   type ApplyStore,
   type ApplySelection,
   type ApplyTransportProvider,
+  type RunItemStatusPatch,
 } from "@/lib/sync/applyOrchestrator";
+import { runSafeSync, type SafeSyncResult } from "@/lib/sync/safeSyncOrchestrator";
 import type { ConnectionInstance } from "@/store/connection";
-import type { SyncMapping } from "@/lib/app-db/types";
+import type { SyncMapping, SyncMappingInput } from "@/lib/app-db/types";
 import * as api from "./syncApi";
 
 /**
@@ -37,7 +39,7 @@ function previewStore(): PreviewStore {
     loadFlow: async (flowId) => (await api.getFlow(flowId)).flow,
     loadMappings: async (flowId) => (await api.listMappings(flowId)).mappings,
     persistPlan: async (plan, meta) =>
-      api.persistDraftRun({ plan, summary: meta.summary, sourceSnapshotSummary: meta.sourceSnapshotSummary }),
+      api.persistDraftRun({ plan, summary: meta.summary, sourceSnapshotSummary: meta.sourceSnapshotSummary, trigger: meta.trigger }),
     persistFailedRun: async (flowId, error, meta) => {
       const { runId } = await api.persistFailedRun({
         flowId,
@@ -60,6 +62,25 @@ function applyStore(): ApplyStore {
     return mappingCache;
   }
 
+  // Per-item mapping creates and status updates are buffered and flushed in one
+  // request each (one insert-transaction + one update-transaction) instead of an
+  // HTTP round-trip per item — the dominant apply cost on large runs. The
+  // durable target `imported_id` marker is the real idempotency guarantee, so a
+  // deferred flush cannot cause duplicates even if the tab closes mid-run.
+  const pendingMappings: SyncMappingInput[] = [];
+  const pendingItemPatches: { itemId: string; patch: RunItemStatusPatch }[] = [];
+
+  async function flush(): Promise<void> {
+    if (pendingMappings.length > 0) {
+      await api.createMappings(pendingMappings);
+      pendingMappings.length = 0;
+    }
+    if (pendingItemPatches.length > 0) {
+      await api.updateRunItems(pendingItemPatches);
+      pendingItemPatches.length = 0;
+    }
+  }
+
   return {
     loadRun: async (runId) => (await api.getRun(runId)).run,
     loadRunItems: async (runId) => (await api.getRun(runId)).items,
@@ -67,17 +88,22 @@ function applyStore(): ApplyStore {
     getMappingBySource: async (flowId, sourceItemKey) =>
       (await ensureMappingCache(flowId)).get(sourceItemKey) ?? null,
     createMapping: async (input) => {
-      const { mapping } = await api.createMapping(input);
-      // Keep the cache coherent for the rest of this apply run.
-      if (mappingCache) mappingCache.set(mapping.sourceItemKey, mapping);
+      pendingMappings.push(input);
+      // Keep the in-memory cache coherent immediately (the DB write is deferred).
+      if (mappingCache) mappingCache.set(input.sourceItemKey, input as unknown as SyncMapping);
     },
     updateRunStatus: async (runId, patch) => {
+      // A terminal status marks the end of the run: flush buffered item writes
+      // first so the finalized run reflects them, then update the run itself.
+      if (patch.status !== "applying") await flush();
       await api.updateRun(runId, { status: patch.status, finishedAt: patch.finishedAt, counts: patch.counts });
     },
     updateRunItemStatus: async (itemId, patch) => {
-      await api.updateRunItem(itemId, patch);
+      pendingItemPatches.push({ itemId, patch });
     },
     persistApplyFailure: async (runId, error) => {
+      // Persist whatever succeeded before the failure, then record the error.
+      await flush();
       await api.updateRun(runId, {
         status: "failed",
         finishedAt: new Date().toISOString(),
@@ -111,5 +137,26 @@ export function runClientApply(input: {
   return applySyncRun(
     { runId: input.runId, targetConnection: input.targetConnection, selection: input.selection },
     { transport: browserTransportProvider, store: applyStore() }
+  );
+}
+
+/**
+ * Run a safe-only automated sync (RD-054 / PR-020) end to end via the browser
+ * transport: policy-gated preview → apply of safe classes only. Used by both the
+ * "Run safe sync now" action and the client interval scheduler.
+ */
+export function runClientSafeSync(input: {
+  flowId: string;
+  sourceConnection: ConnectionInstance;
+  targetConnection: ConnectionInstance;
+  allowDisabled?: boolean;
+}): Promise<SafeSyncResult> {
+  return runSafeSync(
+    {
+      flowId: input.flowId,
+      context: { sourceConnection: input.sourceConnection, targetConnection: input.targetConnection },
+      allowDisabled: input.allowDisabled,
+    },
+    { transport: browserTransportProvider, previewStore: previewStore(), applyStore: applyStore() }
   );
 }

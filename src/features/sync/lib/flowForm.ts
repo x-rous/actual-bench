@@ -1,8 +1,8 @@
 import { connectionFingerprint } from "@/lib/sync/connectionRef";
-import { decodeFlowPlanConfig } from "@/lib/sync/flowConfig";
+import { clampSyncInterval, decodeFlowPlanConfig, DEFAULT_SYNC_INTERVAL_MINUTES } from "@/lib/sync/flowConfig";
 import { decodeSourceFilter } from "@/lib/sync/sourceFilter";
 import type { ConnectionInstance } from "@/store/connection";
-import type { JsonObject, SyncFlow } from "@/lib/app-db/types";
+import type { JsonObject, SyncFlow, SyncReviewPolicy } from "@/lib/app-db/types";
 import type {
   SyncAmountDirection,
   SyncMissingPayeePolicy,
@@ -53,6 +53,17 @@ export type SyncTransformForm = {
   copySourceNotes: boolean;
 };
 
+/** Automation policy for the flow (RD-054 / PR-020). */
+export type SyncAutomationForm = {
+  reviewPolicy: SyncReviewPolicy;
+  /** Interval for `auto_sync_on_interval`; free text in the form, clamped on save. */
+  intervalMinutes: string;
+  /** Set when flow health paused the flow; cleared on re-enable. */
+  autoPausedAt: string | null;
+  /** Auto-map exact duplicates to their existing target instead of queuing them. */
+  exactDuplicateAutoMap: boolean;
+};
+
 export type SyncFlowFormState = {
   name: string;
   enabled: boolean;
@@ -60,6 +71,7 @@ export type SyncFlowFormState = {
   target: SyncEndpointForm;
   filter: SyncFilterForm;
   transform: SyncTransformForm;
+  automation: SyncAutomationForm;
 };
 
 export const EMPTY_ENDPOINT: SyncEndpointForm = {
@@ -95,6 +107,13 @@ export function emptyFlowForm(): SyncFlowFormState {
       missingPayee: "create",
       notesMarkerEnabled: true,
       copySourceNotes: true,
+    },
+    automation: {
+      // Existing/new flows stay manual — RD-053 behavior — until opted in.
+      reviewPolicy: "manual_preview_required",
+      intervalMinutes: String(DEFAULT_SYNC_INTERVAL_MINUTES),
+      autoPausedAt: null,
+      exactDuplicateAutoMap: false,
     },
   };
 }
@@ -181,6 +200,15 @@ export function buildFlowPayload(
     copySourceNotes: form.transform.copySourceNotes,
   };
 
+  // Automation/policy metadata lives in the leg `options` envelope (non-secret).
+  // The interval is clamped to its floor on save so a stored value is always valid.
+  const options: JsonObject = {
+    reviewPolicy: form.automation.reviewPolicy,
+    intervalMinutes: clampSyncInterval(form.automation.intervalMinutes),
+    autoPausedAt: form.automation.autoPausedAt,
+    exactDuplicateAutoMap: form.automation.exactDuplicateAutoMap,
+  };
+
   // Each leg ref/filter/transform must be a versioned JSON envelope, matching
   // what the flow repository normalizes and what the Slice 3 decoders read.
   const envelope = (data: JsonObject) => ({ version: 1, data });
@@ -195,7 +223,7 @@ export function buildFlowPayload(
         targetRef: envelope(targetRef),
         filter: envelope(filter),
         transform: envelope(transform),
-        options: envelope({}),
+        options: envelope(options),
       },
     ],
   };
@@ -239,6 +267,12 @@ export function flowToFormState(
     missingPayee: config.missingPayee,
     notesMarkerEnabled: config.notesMarkerEnabled,
     copySourceNotes: config.copySourceNotes,
+  };
+  form.automation = {
+    reviewPolicy: config.reviewPolicy,
+    intervalMinutes: String(config.intervalMinutes),
+    autoPausedAt: config.autoPausedAt,
+    exactDuplicateAutoMap: config.exactDuplicateAutoMap,
   };
   form.filter = {
     startDate: filter.startDate ?? "",

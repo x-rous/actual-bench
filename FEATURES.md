@@ -55,9 +55,9 @@
 
 A compact diagnostics page for Actual Bench's own server-side metadata database. It shows the configured SQLite path, writable state, schema version, migration status, and persistence reminder for the `/data` volume. The database stores app workflow metadata only and does not store Actual credentials.
 
-## Budget File Sync (MVP)
+## Budget File Sync
 
-A workspace for copying transactions from an account in one budget file to an account in another, as saved one-way flows. This first MVP is deliberately conservative: **Direct mode only, cross-budget only, create-only, preview-first.**
+A workspace for copying transactions from an account in one budget file to an account in another, as saved one-way flows. It is deliberately conservative: **Direct mode only, cross-budget only, create-only, preview-first** — with an opt-in safe-only automation layer on top.
 
 - Saved sync flows list with a compact editor: source/target Direct connection + account, filters, and transforms
 - Transforms: amount direction (reverse sign by default, same-sign optional), payee match-by-name (create missing by default, or leave empty), category match-by-name (missing categories are left empty — never auto-created), and a clean visible notes marker (`[Synced from <budget> / <account>]`, on by default)
@@ -68,9 +68,23 @@ A workspace for copying transactions from an account in one budget file to an ac
 - Idempotent reruns: app-owned mappings are the source of truth (with the target marker as a secondary recovery aid), so re-previewing after apply shows already-synced items instead of creating duplicates
 - Marker-match repair: if a target already carries a flow's marker but the mapping was lost, the row can be selected to repair the mapping without creating a duplicate
 - Reverse-flow helper: one click mirrors a flow (source/target swapped, created disabled for review) so two one-way flows form a two-way sync
-- Run history per flow with counts and item-level detail
+- Run history per flow with counts and item-level detail, including how many items were auto-applied vs. left in the review queue vs. failed
 - Because Actual rules run on transaction create, the applied target transaction may differ from the preview (payee/category/notes/cleared); this is surfaced as a warning, not an error
-- Not in this MVP: HTTP API Server mode, same-budget sync, target updates/deletes, category auto-create, background/scheduled sync, and multi-currency conversion
+
+### Safe-only automation (opt-in)
+
+The same engine can run without hand-picking every change — but only for provably safe work. Each flow has a **review policy**:
+
+- **Manual** (default): preview and apply yourself, exactly as above — no behavior change
+- **Auto-apply safe items on preview**: a run auto-applies only safe items (new creates and marker-match repairs); everything uncertain is left for you
+- **Auto-sync on a schedule**: a client-side timer re-runs a safe-only sync at a chosen interval (minimum 15 minutes) **while Actual Bench is open and the connection is unlocked** — this is not an unattended background daemon (that is a future item; nothing runs when the app is closed)
+- **Run safe sync now**: a one-click safe-only run for any automated flow
+- **Review queue**: duplicates, source-changed, source-missing, and blocked items are never auto-applied — they collect in a review queue for you to handle
+- **Exact-duplicate auto-map** (opt-in, off by default): a transaction that already exists on the target with the same date, amount, payee and category is linked to it (mapping only, no new transaction); fuzzy duplicates always stay in the review queue
+- **Retry failed items**: re-attempt just the failed items of a run (marker-based idempotency prevents duplicates on retry)
+- **Flow health**: after repeated failed/partial automated runs a flow auto-pauses (and is badged) so it stops firing until you re-enable it; auto-run outcomes that fail or leave items to review raise an in-app notice
+
+- Not in scope: HTTP API Server mode, same-budget sync, automatic target updates/deletes, category auto-create, fuzzy duplicate auto-mapping, unattended server-side scheduled sync, and multi-currency conversion
 
 ## Data Browser
 
