@@ -2,7 +2,7 @@ import type { SyncFlowRun } from "@/lib/app-db/types";
 
 /**
  * Display helpers for run history (RD-053 / PR-019 Slice 5 UI). Pure and
- * testable. Structured for RD-054's automated runs — `trigger` already
+ * testable. Structured for RD-054's automated runs - `trigger` already
  * distinguishes manual vs background.
  */
 

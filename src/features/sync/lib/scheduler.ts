@@ -5,8 +5,8 @@ import type { SyncReviewPolicy } from "@/lib/app-db/types";
  * (RD-054 / PR-020 Slice 4).
  *
  * This is intentionally a plain function, not a hook: all the rules that matter
- * — policy gate, enabled gate, connection availability, the interval floor, and
- * non-overlap — are decided here so they can be unit-tested without React or a
+ * - policy gate, enabled gate, connection availability, the interval floor, and
+ * non-overlap - are decided here so they can be unit-tested without React or a
  * live timer. `useSyncScheduler` is only a thin timer wrapper around this.
  *
  * There is no server here: the engine and credentials live in the browser, so a
@@ -28,7 +28,7 @@ export type SchedulableFlow = {
 
 export type AutoRunSelectionInput = {
   flows: SchedulableFlow[];
-  /** Flows whose auto run is currently in progress — never started twice. */
+  /** Flows whose auto run is currently in progress - never started twice. */
   inFlight: ReadonlySet<string>;
   nowMs: number;
 };

@@ -48,6 +48,23 @@ export type PlannedTargetPayload = {
   importedId: string | null;
 };
 
+/**
+ * The master-data entity the engine would create on the target (RD-055). A
+ * discriminated alternative to the transaction payload; both are stored as plain
+ * JSON on the run item and read back by the kind-specific apply adapter.
+ */
+export type EntityTargetPayload = {
+  entity: "payee" | "category";
+  name: string;
+  /** Category kind; carried so income/expense stay distinct. */
+  incomeKind?: "income" | "expense";
+  /** Resolved target group id a category will be created under (categories only). */
+  groupId?: string | null;
+  /** Target group display name (categories only). */
+  groupName?: string | null;
+};
+
+
 /** Source-side display snapshot, persisted so the preview can show both sides. */
 export type PlannedSourceSnapshot = {
   date: string;
@@ -70,9 +87,11 @@ export type SyncPlannedItem = {
   action: SyncPlannedAction;
   flags: SyncPlanFlag[];
   selectedForApply: boolean;
-  /** Present for create candidates; null for skip/blocked. */
+  /** Transaction create payload; present for transaction create candidates. */
   plannedTargetPayload: PlannedTargetPayload | null;
-  /** Known target transaction id for already-synced / marker-match items. */
+  /** Master-data entity create payload (RD-055); present for entity candidates. */
+  entityPayload?: EntityTargetPayload | null;
+  /** Known target transaction/entity id for already-synced / matched items. */
   targetTransactionId: string | null;
   message: string | null;
 };

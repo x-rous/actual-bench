@@ -102,12 +102,12 @@ describe("SyncView", () => {
     render(<SyncView />);
     fireEvent.click(screen.getByText("Card sync"));
 
-    const previewButtons = await screen.findAllByRole("button", { name: /sync preview/i });
+    const previewButtons = await screen.findAllByRole("button", { name: /^preview$/i });
     await waitFor(() => expect(previewButtons[0]).toBeEnabled());
     fireEvent.click(previewButtons[0]);
 
     expect(previewMutate).toHaveBeenCalledTimes(1);
-    expect(await screen.findByText("Planned changes")).toBeInTheDocument();
+    expect(await screen.findByText("Change plan")).toBeInTheDocument();
 
     const rows = screen.getAllByTestId("preview-row");
     expect(rows).toHaveLength(2);
@@ -120,7 +120,7 @@ describe("SyncView", () => {
     setup([conn1, conn2]);
     render(<SyncView />);
     fireEvent.click(screen.getByText("Card sync"));
-    const previewButtons = await screen.findAllByRole("button", { name: /sync preview/i });
+    const previewButtons = await screen.findAllByRole("button", { name: /^preview$/i });
     await waitFor(() => expect(previewButtons[0]).toBeEnabled());
     fireEvent.click(previewButtons[0]);
 

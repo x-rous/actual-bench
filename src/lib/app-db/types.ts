@@ -93,6 +93,12 @@ export type SyncItemClassification =
   | "new"
   | "already_synced"
   | "target_marker_match"
+  /**
+   * Marker-less analogue of target_marker_match for master-data entities
+   * (RD-055): no DB mapping, but a target entity matches by normalized name, so
+   * apply records a mapping to it instead of creating a duplicate.
+   */
+  | "target_name_match"
   | "source_changed_since_sync"
   | "exact_duplicate"
   | "strong_duplicate"

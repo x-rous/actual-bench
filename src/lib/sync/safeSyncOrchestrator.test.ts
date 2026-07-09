@@ -68,7 +68,7 @@ function makeDeps(
   };
 }
 
-describe("runSafeSync — policy gate", () => {
+describe("runSafeSync - policy gate", () => {
   it("refuses to auto-apply a manual_preview_required flow (never previews or applies)", async () => {
     const runPreview = jest.fn();
     const runApply = jest.fn();
@@ -113,7 +113,7 @@ describe("runSafeSync — policy gate", () => {
   );
 });
 
-describe("runSafeSync — composition", () => {
+describe("runSafeSync - composition", () => {
   it("returns preview_failed and never applies when preview fails", async () => {
     const runPreview = jest.fn(async (): Promise<LiveDryRunResult> => ({
       status: "failed", runId: "run-1", flowId: "flow-1",

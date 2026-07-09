@@ -41,7 +41,7 @@ export type SyncSourceItem = {
 };
 
 const FINGERPRINT_VERSION = "v1";
-const FIELD_SEP = "␟"; // ␟ SYMBOL FOR UNIT SEPARATOR — safe against field collisions.
+const FIELD_SEP = "␟"; // ␟ SYMBOL FOR UNIT SEPARATOR - safe against field collisions.
 
 export function sourceTransactionItemKey(sourceTransactionId: string): string {
   return "txn:" + sourceTransactionId;
@@ -129,8 +129,8 @@ export function splitLineFingerprint(
  *   synced as its own item).
  * - Any other transaction contributes a single `transaction` item.
  *
- * Split children inherit the parent's date and — when the child has no payee of
- * its own — the parent's payee, since Actual split children commonly omit it.
+ * Split children inherit the parent's date and - when the child has no payee of
+ * its own - the parent's payee, since Actual split children commonly omit it.
  */
 export function expandSourceTransaction(
   txn: SyncSourceTransaction

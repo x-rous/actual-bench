@@ -35,7 +35,7 @@ function hostOf(connection: BrowserApiConnection | undefined): string {
   }
 }
 
-function Endpoint({ endpoint, connection }: { endpoint: SyncEndpointForm; connection?: BrowserApiConnection }) {
+function Endpoint({ endpoint, connection, showAccount }: { endpoint: SyncEndpointForm; connection?: BrowserApiConnection; showAccount: boolean }) {
   return (
     <div className="flex w-[22rem] shrink-0 flex-col gap-0.5 rounded-md border border-border bg-muted/30 px-3 py-2">
       <span className={cn("truncate font-mono text-[11px]", connection ? "text-muted-foreground" : "text-amber-600 dark:text-amber-400")}>
@@ -43,7 +43,7 @@ function Endpoint({ endpoint, connection }: { endpoint: SyncEndpointForm; connec
       </span>
       <span className="truncate text-[13px] font-semibold">
         {endpoint.budgetName || endpoint.budgetSyncId || "-"}
-        <span className="font-medium text-muted-foreground"> / {endpoint.accountName || "-"}</span>
+        {showAccount && <span className="font-medium text-muted-foreground"> / {endpoint.accountName || "-"}</span>}
       </span>
     </div>
   );
@@ -60,8 +60,13 @@ function automationChip(form: SyncFlowFormState): string {
   }
 }
 
+function typeLabel(form: SyncFlowFormState): string {
+  return form.flowType === "payee_sync" ? "Payees" : form.flowType === "category_sync" ? "Categories" : "Transactions";
+}
+
 function summaryChips(form: SyncFlowFormState): string[] {
-  const chips = ["Transactions", automationChip(form)]; // flow type + automation policy
+  const chips = [typeLabel(form), automationChip(form)]; // data type + automation policy
+  if (form.flowType !== "transaction_sync") return chips;
   chips.push(form.transform.amountDirection === "reverse" ? "Reverse sign" : "Same sign");
   chips.push(form.transform.missingPayee === "create" ? "Create missing payees" : "Leave payee empty");
   if (form.transform.notesMarkerEnabled) chips.push("Notes marker on");
@@ -91,14 +96,16 @@ export function FlowHeader({
   const targetConn = connections.find((c) => c.id === form.target.connectionId);
 
   return (
-    <header className="flex h-28 shrink-0 flex-col justify-center gap-2 border-b border-border px-5">
+    <header className="flex min-h-28 shrink-0 flex-col justify-center gap-2 border-b border-border px-5 py-3">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex min-w-0 flex-wrap items-center gap-3">
-          <Endpoint endpoint={form.source} connection={sourceConn} />
+          <Endpoint endpoint={form.source} connection={sourceConn} showAccount={form.flowType === "transaction_sync"} />
           <ArrowRight className="h-5 w-5 shrink-0 text-muted-foreground" />
-          <Endpoint endpoint={form.target} connection={targetConn} />
+          <Endpoint endpoint={form.target} connection={targetConn} showAccount={form.flowType === "transaction_sync"} />
         </div>
-        <div className="flex flex-wrap items-center gap-2">
+        {/* Primary actions keep labels; secondary actions are icon-only so the
+            row never wraps and overflows the header. */}
+        <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
           <Button
             size="sm"
             className="text-xs"
@@ -106,7 +113,7 @@ export function FlowHeader({
             disabled={!canPreview || previewing}
             title={!canPreview && previewDisabledReason ? previewDisabledReason : undefined}
           >
-            <Play className="h-3.5 w-3.5" /> {previewing ? "Previewing…" : "Sync Preview"}
+            <Play className="h-3.5 w-3.5" /> {previewing ? "Previewing…" : "Preview"}
           </Button>
           {showRunSafeSync && (
             <Button
@@ -118,17 +125,18 @@ export function FlowHeader({
               title="Preview and apply only safe changes now; uncertain items go to the review queue"
             >
               {runningSafeSync ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Zap className="h-3.5 w-3.5" />}
-              {runningSafeSync ? "Syncing…" : "Run safe sync now"}
+              {runningSafeSync ? "Syncing…" : "Run safe sync"}
             </Button>
           )}
-          <Button size="sm" variant="outline" className="text-xs" onClick={onEdit}>
-            <Pencil className="h-3.5 w-3.5" /> Edit Flow
+          <span className="mx-0.5 h-5 w-px bg-border" aria-hidden />
+          <Button size="icon" variant="outline" className="h-8 w-8" onClick={onEdit} aria-label="Edit flow" title="Edit flow">
+            <Pencil className="h-3.5 w-3.5" />
           </Button>
-          <Button size="sm" variant="outline" className="text-xs" onClick={onCreateReverse} title="Create a mirror flow with source and target swapped">
-            <ArrowLeftRight className="h-3.5 w-3.5" /> Create Reverse Flow
+          <Button size="icon" variant="outline" className="h-8 w-8" onClick={onCreateReverse} aria-label="Create reverse flow" title="Create a mirror flow with source and target swapped">
+            <ArrowLeftRight className="h-3.5 w-3.5" />
           </Button>
-          <Button size="sm" variant="outline" className="text-xs" onClick={onShowHistory}>
-            <History className="h-3.5 w-3.5" /> History
+          <Button size="icon" variant="outline" className="h-8 w-8" onClick={onShowHistory} aria-label="Run history" title="Run history">
+            <History className="h-3.5 w-3.5" />
           </Button>
         </div>
       </div>

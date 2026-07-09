@@ -4,6 +4,7 @@ import { useState } from "react";
 import { ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { cn } from "@/lib/utils";
 import {
   Dialog,
   DialogContent,
@@ -13,7 +14,7 @@ import {
 } from "@/components/ui/dialog";
 import { clampSyncInterval } from "@/lib/sync/flowConfig";
 import { useFlowAccounts } from "../hooks/useSyncData";
-import { isSameBudget, missingRouteFields, type SyncEndpointForm, type SyncFlowFormState } from "../lib/flowForm";
+import { isEntityFlow, isSameBudget, missingRouteFields, type SyncEndpointForm, type SyncFlowFormState } from "../lib/flowForm";
 import type { BrowserApiConnection } from "@/store/connection";
 
 type FlowEditDialogProps = {
@@ -34,11 +35,14 @@ function InlineEndpoint({
   label,
   endpoint,
   connections,
+  entityMode,
   onChange,
 }: {
   label: string;
   endpoint: SyncEndpointForm;
   connections: BrowserApiConnection[];
+  /** Entity (payee/category) flows pick a budget only - no account. */
+  entityMode?: boolean;
   onChange: (next: SyncEndpointForm) => void;
 }) {
   const accounts = useFlowAccounts(endpoint.connectionId);
@@ -58,6 +62,7 @@ function InlineEndpoint({
           <option key={c.id} value={c.id}>{c.label}</option>
         ))}
       </select>
+      {entityMode ? null : (
       <select
         aria-label={`${label} account`}
         className={`${selectClass} flex-1`}
@@ -73,6 +78,7 @@ function InlineEndpoint({
           <option key={a.id} value={a.id}>{a.name}</option>
         ))}
       </select>
+      )}
     </div>
   );
 }
@@ -102,13 +108,13 @@ export function FlowEditDialog({
   const setFilter = (patch: Partial<SyncFlowFormState["filter"]>) => onChange({ ...form, filter: { ...form.filter, ...patch } });
   const setTransform = (patch: Partial<SyncFlowFormState["transform"]>) => onChange({ ...form, transform: { ...form.transform, ...patch } });
   const setAutomation = (patch: Partial<SyncFlowFormState["automation"]>) => onChange({ ...form, automation: { ...form.automation, ...patch } });
+  const setEntity = (patch: Partial<SyncFlowFormState["entity"]>) => onChange({ ...form, entity: { ...form.entity, ...patch } });
+  const entityMode = isEntityFlow(form.flowType);
 
   const automationHelp: Record<SyncFlowFormState["automation"]["reviewPolicy"], string> = {
-    manual_preview_required: "Preview only. You review and apply every change yourself.",
-    auto_apply_safe_only:
-      "When you run a preview, safe new transactions and mapping repairs are applied automatically. Duplicates, changed, and other uncertain items still wait in the review queue.",
-    auto_sync_on_interval:
-      "Re-runs safe sync on a schedule while Actual Bench is open and this connection is unlocked. Applies only safe items; uncertain items go to the review queue. It does not run in the background when the app is closed.",
+    manual_preview_required: "You review and apply every change.",
+    auto_apply_safe_only: "Safe items apply on preview; uncertain ones wait in the review queue.",
+    auto_sync_on_interval: "Runs on a schedule while the app is open. Safe items only; nothing runs in the background.",
   };
 
   return (
@@ -118,32 +124,52 @@ export function FlowEditDialog({
           <DialogTitle>{isNew ? "New sync flow" : "Edit sync flow"}</DialogTitle>
         </DialogHeader>
 
-        <div className="max-h-[72vh] overflow-y-auto pr-1">
-          {/* Name */}
-          <div className="flex max-w-md flex-col gap-1 pb-4">
-            <span className="text-[11px] font-semibold uppercase text-muted-foreground">Sync flow name</span>
-            <Input aria-label="Flow name" value={form.name} onChange={(e) => set({ name: e.target.value })} placeholder="e.g. Joint card → Personal budget" />
+        <div className="flex max-h-[72vh] flex-col gap-4 overflow-y-auto pr-1">
+          {/* What to sync — the choice that reshapes the rest of the form */}
+          <div className="flex flex-col gap-1.5">
+            <span className="text-[11px] font-semibold uppercase text-muted-foreground">What to sync</span>
+            <div className="inline-flex w-fit rounded-md border border-border p-0.5">
+              {([["transaction_sync", "Transactions"], ["payee_sync", "Payees"], ["category_sync", "Categories"]] as const).map(([value, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  aria-pressed={form.flowType === value}
+                  onClick={() => set({ flowType: value })}
+                  className={cn(
+                    "rounded px-3 py-1 text-xs font-medium transition-colors",
+                    form.flowType === value ? "bg-foreground text-background" : "text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
           </div>
 
-          {/* Route (full width) */}
-          <section className="flex flex-col gap-2 border-t border-border py-4">
+          <div className="flex flex-col gap-1.5">
+            <span className="text-[11px] font-semibold uppercase text-muted-foreground">Name</span>
+            <Input aria-label="Flow name" value={form.name} onChange={(e) => set({ name: e.target.value })} placeholder={entityMode ? "e.g. Shared payees" : "e.g. Joint card → Personal"} />
+          </div>
+
+          {/* Route */}
+          <section className="flex flex-col gap-2 border-t border-border pt-4">
             <div className="flex items-center gap-2">
-              <h4 className="text-sm font-semibold">Route</h4>
-              {!sameBudget && routeMissing.length === 0 && (
-                <span className="rounded-full border border-green-500/30 bg-green-50 px-2 py-0.5 text-[11px] text-green-700 dark:bg-green-950/20 dark:text-green-400">Cross-budget OK</span>
-              )}
+              <h4 className="text-sm font-semibold">From → to</h4>
+              {sameBudget ? (
+                <span className="text-xs text-destructive">Pick two different budgets.</span>
+              ) : routeMissing.length === 0 ? (
+                <span className="text-xs text-muted-foreground">{entityMode ? "budget → budget" : "budget · account → budget · account"}</span>
+              ) : null}
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              <div className="min-w-0 flex-1"><InlineEndpoint label="Source" endpoint={form.source} connections={connections} onChange={(source) => set({ source })} /></div>
+              <div className="min-w-0 flex-1"><InlineEndpoint label="Source" endpoint={form.source} connections={connections} entityMode={entityMode} onChange={(source) => set({ source })} /></div>
               <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground" />
-              <div className="min-w-0 flex-1"><InlineEndpoint label="Target" endpoint={form.target} connections={connections} onChange={(target) => set({ target })} /></div>
+              <div className="min-w-0 flex-1"><InlineEndpoint label="Target" endpoint={form.target} connections={connections} entityMode={entityMode} onChange={(target) => set({ target })} /></div>
             </div>
-            {sameBudget && <p className="text-xs text-destructive">Source and target must be different budgets (cross-budget only).</p>}
-            <p className="text-xs text-muted-foreground">Source budget · account → target budget · account.</p>
           </section>
 
           {/* Automation policy (RD-054 / PR-020) */}
-          <section className="flex flex-col gap-2 border-t border-border py-4">
+          <section className="flex flex-col gap-2 border-t border-border pt-4">
             <h4 className="text-sm font-semibold">Automation</h4>
             <label className="flex max-w-md flex-col gap-1 text-xs text-muted-foreground">
               Review policy
@@ -153,7 +179,7 @@ export function FlowEditDialog({
                 value={form.automation.reviewPolicy}
                 onChange={(e) => setAutomation({ reviewPolicy: e.target.value as SyncFlowFormState["automation"]["reviewPolicy"] })}
               >
-                <option value="manual_preview_required">Manual — preview &amp; apply yourself (default)</option>
+                <option value="manual_preview_required">Manual - preview &amp; apply yourself (default)</option>
                 <option value="auto_apply_safe_only">Auto-apply safe items on preview</option>
                 <option value="auto_sync_on_interval">Auto-sync on a schedule (while app is open)</option>
               </select>
@@ -175,25 +201,56 @@ export function FlowEditDialog({
                 <span className="text-[11px]">Minimum 15 minutes. Each run re-opens and syncs the whole budget.</span>
               </label>
             )}
-            {form.automation.reviewPolicy !== "manual_preview_required" && (
-              <label className="flex items-center gap-2 text-sm">
+            {form.automation.reviewPolicy !== "manual_preview_required" && !entityMode && (
+              <label className="flex items-center gap-2 text-sm" title="An exact match on date, amount, payee and category is linked instead of duplicated. Fuzzy matches still go to review.">
                 <input
                   type="checkbox"
                   aria-label="Auto-map exact duplicates"
                   checked={form.automation.exactDuplicateAutoMap}
                   onChange={(e) => setAutomation({ exactDuplicateAutoMap: e.target.checked })}
                 />
-                Auto-map exact duplicates to the existing transaction
+                Link exact duplicates instead of creating them
               </label>
-            )}
-            {form.automation.reviewPolicy !== "manual_preview_required" && (
-              <p className="text-xs text-muted-foreground">
-                When on, a transaction that already exists on the target with the same date, amount, payee and category is linked to it (no new transaction). Uncertain (fuzzy) duplicates still go to the review queue.
-              </p>
             )}
           </section>
 
-          {/* Transform + Filters, side by side at wide widths */}
+          {/* Master-data (entity) options */}
+          {entityMode && (
+            <section className="flex flex-col gap-2.5 border-t border-border pt-4">
+              <h4 className="text-sm font-semibold">{form.flowType === "payee_sync" ? "Payees" : "Categories"}</h4>
+              <p className="text-xs text-muted-foreground">
+                Creates missing {form.flowType === "payee_sync" ? "payees" : "categories"}, matches existing ones by name, and never renames or deletes.
+              </p>
+              {form.flowType === "category_sync" && (
+                <>
+                  <label className="flex max-w-xs flex-col gap-1 text-xs text-muted-foreground">
+                    Default group
+                    <Input
+                      aria-label="Default target group"
+                      value={form.entity.defaultGroupName}
+                      onChange={(e) => setEntity({ defaultGroupName: e.target.value })}
+                      placeholder="e.g. Uncategorized"
+                    />
+                  </label>
+                  <label className="flex items-center gap-2 text-sm" title="Create the source group on the target when it doesn't exist there.">
+                    <input
+                      type="checkbox"
+                      aria-label="Create missing groups"
+                      checked={form.entity.createMissingGroup}
+                      onChange={(e) => setEntity({ createMissingGroup: e.target.checked })}
+                    />
+                    Create missing groups too
+                  </label>
+                  <p className="text-xs text-muted-foreground">
+                    A category with no group match - and no default or group creation - is held for review.
+                  </p>
+                </>
+              )}
+            </section>
+          )}
+
+          {/* Transform + Filters (transactions only), side by side at wide widths */}
+          {!entityMode && (
           <div className="grid gap-6 border-t border-border pt-4 lg:grid-cols-2">
             <section className="flex flex-col gap-3">
               <h4 className="text-sm font-semibold">Transform</h4>
@@ -215,7 +272,7 @@ export function FlowEditDialog({
                 <input type="checkbox" aria-label="Add notes marker" checked={form.transform.notesMarkerEnabled} onChange={(e) => setTransform({ notesMarkerEnabled: e.target.checked })} />
                 Add visible notes marker
               </label>
-              <p className="text-xs text-muted-foreground">Categories match by name; missing categories are left empty. Eligible split lines are copied as separate transactions.</p>
+              <p className="text-xs text-muted-foreground">Categories match by name; splits become separate transactions.</p>
             </section>
 
             <section className="flex flex-col gap-3">
@@ -240,6 +297,7 @@ export function FlowEditDialog({
               <p className="text-xs text-muted-foreground">Sync-generated transactions are always excluded to prevent loops.</p>
             </section>
           </div>
+          )}
         </div>
 
         <DialogFooter className="flex-row items-center gap-2">

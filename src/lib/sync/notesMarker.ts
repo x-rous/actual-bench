@@ -3,7 +3,7 @@
  *
  * The marker is a clean, human-readable line appended to target notes so a user
  * can see a transaction came from a sync flow. Technical source IDs are NOT put
- * here — those live in app metadata and the target-side `imported_id` marker.
+ * here - those live in app metadata and the target-side `imported_id` marker.
  */
 
 export type SyncNotesMarkerContext = {

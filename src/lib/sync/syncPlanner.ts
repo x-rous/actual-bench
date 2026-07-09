@@ -23,7 +23,7 @@ import type {
  *
  * Takes a flow config, a materialized source snapshot, target lookup data, and
  * existing mappings; produces classified planned items with target payloads.
- * Performs NO Actual writes and NO DB access — persistence is a separate step
+ * Performs NO Actual writes and NO DB access - persistence is a separate step
  * (`persistDraftPreviewRun`).
  *
  * Decision order per source item:
@@ -34,7 +34,7 @@ import type {
  * DB mappings are the primary source of truth; the marker is secondary.
  */
 /**
- * Plan from raw source transactions — expands splits internally. Convenience
+ * Plan from raw source transactions - expands splits internally. Convenience
  * entry point for headless/fixture use.
  */
 export function planSyncFlow(input: SyncPlannerInput): SyncPlanResult {
@@ -127,7 +127,7 @@ function planSourceItem(
 ): SyncPlannedItem {
   const { config, target } = input;
 
-  // 1. Existing mapping wins — this item was synced before.
+  // 1. Existing mapping wins - this item was synced before.
   const mapping = mappingByKey.get(item.itemKey);
   if (mapping) {
     if (mapping.sourceFingerprint === item.fingerprint) {

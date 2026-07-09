@@ -25,6 +25,9 @@ export function buildReverseFlowForm(
 
   reverse.name = `${form.name} (reverse)`;
   reverse.enabled = false;
+  // Preserve the data type + entity options; only the direction is mirrored.
+  reverse.flowType = form.flowType;
+  reverse.entity = { ...form.entity };
 
   // New source = old target. Backfill the budget display name from the live
   // connection when the loaded form did not carry it (cosmetic; self-heals).

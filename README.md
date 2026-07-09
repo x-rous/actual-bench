@@ -126,7 +126,9 @@ A read-only local diagnostics workspace for the exported budget snapshots.
 
 ### Budget File Sync
 
-Copy transactions from an account in one budget file to an account in another, as saved one-way flows. It is **Direct mode only, cross-budget, create-only, and preview-first**, with opt-in safe-only automation.
+Sync data between budget files as saved one-way flows. One unified engine covers **transactions, payees, and categories** — preview, apply, run history, the review queue, and the safe-only automation layer work identically for each. It is **Direct mode only, cross-budget, create-only, and preview-first**.
+
+- **Master data:** pick a flow's data type (Transactions / Payees / Categories). Payee and category flows create missing entities on the target and match existing ones by name (no renames/deletes); categories place under the matching or a chosen default group, and block ambiguous placement for review.
 
 - Compact flow editor: source/target Direct connection + account, filters, and transforms (reverse-sign by default, payee/category match-by-name, clean notes marker)
 - Required dry-run preview classifies each item (new, already synced, duplicate, changed since sync, marker match, blocked) with source and transformed target amounts side by side — no writes to Actual

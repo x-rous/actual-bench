@@ -22,7 +22,7 @@ import * as api from "./syncApi";
  * Client-side wiring for the Budget File Sync orchestrators (RD-053 / PR-019
  * Slice 5). The preview/apply orchestrators run in the browser (they need the
  * Direct transport); their DB ports are satisfied by the server routes via
- * `syncApi`. No planner/apply logic is duplicated here — this only assembles
+ * `syncApi`. No planner/apply logic is duplicated here - this only assembles
  * ports and calls the existing orchestrators.
  */
 
@@ -64,7 +64,7 @@ function applyStore(): ApplyStore {
 
   // Per-item mapping creates and status updates are buffered and flushed in one
   // request each (one insert-transaction + one update-transaction) instead of an
-  // HTTP round-trip per item — the dominant apply cost on large runs. The
+  // HTTP round-trip per item - the dominant apply cost on large runs. The
   // durable target `imported_id` marker is the real idempotency guarantee, so a
   // deferred flush cannot cause duplicates even if the tab closes mid-run.
   const pendingMappings: SyncMappingInput[] = [];

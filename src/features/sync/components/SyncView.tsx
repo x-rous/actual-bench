@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, Bell, Loader2, Play, XCircle } from "lucide-react";
+import { ArrowLeft, ArrowLeftRight, Bell, Loader2, Play, Plus, XCircle } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { DirectOnlyNotice } from "./DirectOnlyNotice";
@@ -22,7 +22,7 @@ import {
   missingRouteFields,
   type SyncFlowFormState,
 } from "../lib/flowForm";
-import { selectableRowIds, toPreviewRow } from "../lib/previewRows";
+import { selectableRowIds, syncKindOf, toPreviewRow } from "../lib/previewRows";
 import { buildReverseFlowForm } from "../lib/reverseFlow";
 import { relativeTime, toRunRow } from "../lib/runsView";
 import type { SyncFlowRun } from "@/lib/app-db/types";
@@ -90,6 +90,8 @@ export function SyncView() {
   const runsQuery = useFlowRuns(selectedFlowId);
 
   const flows = flowsQuery.data ?? [];
+  const selectedFlow = flows.find((f) => f.id === selectedFlowId);
+  const kind = syncKindOf(selectedFlow?.flowType ?? "transaction_sync");
   useEffect(() => {
     if (!selectedFlowId) return;
     const flow = flows.find((f) => f.id === selectedFlowId);
@@ -238,7 +240,7 @@ export function SyncView() {
     flowsQuery.refetch();
     const name = flowName(flowId);
     if (result.status === "failed" || result.status === "partial") {
-      setAutoNotice(`Auto-sync for “${name}” ${result.status === "partial" ? "partially applied — some items failed" : "failed"}.`);
+      setAutoNotice(`Auto-sync for “${name}” ${result.status === "partial" ? "partially applied - some items failed" : "failed"}.`);
     } else if (result.status === "preview_failed") {
       setAutoNotice(`Auto-sync preview for “${name}” failed: ${result.error.message}`);
     } else if (result.status === "applied" || result.status === "no_safe_items") {
@@ -341,8 +343,17 @@ export function SyncView() {
 
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
         {!selectedFlowId ? (
-          <div className="flex min-h-0 flex-1 items-center justify-center p-8 text-center text-sm text-muted-foreground">
-            Budget File Sync - select a sync flow, or create one to get started.
+          <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 p-8 text-center">
+            <div className="flex h-11 w-11 items-center justify-center rounded-full border border-border bg-muted/50">
+              <ArrowLeftRight className="h-5 w-5 text-muted-foreground" />
+            </div>
+            <div>
+              <h3 className="text-base font-semibold">Budget File Sync</h3>
+              <p className="mt-1 max-w-sm text-sm text-muted-foreground">
+                Copy transactions, payees, or categories from one budget to another - preview first, apply what you choose. Pick a flow on the left, or create one.
+              </p>
+            </div>
+            <Button size="sm" onClick={handleCreate}><Plus className="h-4 w-4" /> New sync flow</Button>
           </div>
         ) : (
           <>
@@ -407,6 +418,7 @@ export function SyncView() {
                         )}
                       </div>
                       <PreviewPanel
+                        kind={kind}
                         summary={summary}
                         previewError={null}
                         rows={rows}
@@ -435,6 +447,7 @@ export function SyncView() {
                 </div>
               ) : runId || previewError ? (
                 <PreviewPanel
+                  kind={kind}
                   summary={summary}
                   previewError={previewError}
                   rows={rows}
@@ -449,15 +462,15 @@ export function SyncView() {
                   applyResult={applyResult}
                 />
               ) : (
-                <div className="flex flex-col items-center gap-3 rounded-md border border-border bg-background px-6 py-14 text-center shadow-sm">
+                <div className="flex flex-col items-center gap-3 rounded-md border border-dashed border-border bg-background px-6 py-16 text-center">
                   <Play className="h-6 w-6 text-muted-foreground" />
-                  <h3 className="text-base font-semibold">Preview this flow</h3>
+                  <h3 className="text-base font-semibold">See what will change first</h3>
                   <p className="max-w-md text-sm text-muted-foreground">
-                    Use <strong>Sync Preview</strong> (top right) to see exactly which transactions would be created in{" "}
-                    <strong>{form.target.budgetName || "the target"} / {form.target.accountName || "account"}</strong> from{" "}
-                    <strong>{form.source.budgetName || "the source"} / {form.source.accountName || "account"}</strong>. Nothing is written to Actual until you review and sync.
+                    <strong>Preview</strong> (top right) builds a change plan - every {kind === "transaction" ? "transaction" : kind} that would be created in{" "}
+                    <strong>{form.target.budgetName || "the target"}</strong> from{" "}
+                    <strong>{form.source.budgetName || "the source"}</strong> - with nothing written to Actual until you review and sync.
                   </p>
-                  {blockReason && <p className="text-xs text-muted-foreground">{blockReason}</p>}
+                  {blockReason && <p className="text-xs font-medium text-amber-600 dark:text-amber-400">{blockReason}</p>}
                 </div>
               )}
             </div>
