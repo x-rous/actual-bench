@@ -30,7 +30,7 @@ import type { SyncPlannerTargetSnapshot, SyncPlanResult } from "../plannedChange
 
 /**
  * Transaction data-type adapter for the unified sync engine (RD-053 behavior,
- * unchanged — this is the behavior-preserving extraction of the original
+ * unchanged - this is the behavior-preserving extraction of the original
  * inline transaction logic behind the `SyncKindAdapter` interface).
  */
 

@@ -24,7 +24,7 @@ import type { PlannedTargetPayload } from "./plannedChanges";
  * Takes a persisted `draft_preview` run and applies its safe `new` create
  * candidates to the target budget in Direct mode. It re-validates target-side
  * safety before every create, records a mapping immediately after each success,
- * and reports partial failures cleanly. It never opens the source budget — apply
+ * and reports partial failures cleanly. It never opens the source budget - apply
  * works entirely from the persisted preview payload plus live target lookups.
  *
  * Ports keep the browser transport and server SQLite decoupled, mirroring the
@@ -200,7 +200,7 @@ export async function applySyncRun(
 
   // Repair/map items write nothing, so they stay per-item (cheap). Creates are
   // batched into ONE insert + ONE id-recovery read instead of one round-trip per
-  // transaction — the dominant cost on large runs.
+  // transaction - the dominant cost on large runs.
   for (const eligibleItem of eligible.filter((e) => e.mode !== "create")) {
     const result = await applyOneItem(eligibleItem, ctx, deps.store);
     items.push(result);
@@ -343,7 +343,7 @@ async function validateAndPrepare(
   }
   const config = decodeFlowPlanConfig(flow);
 
-  // Direct-only support gate first — an unsupported mode can never apply,
+  // Direct-only support gate first - an unsupported mode can never apply,
   // regardless of route. (Create-capability checks come after eligibility.)
   const caps = getBudgetFileSyncCapabilities({ mode: input.targetConnection.mode });
   if (!caps.supported) {
@@ -407,7 +407,7 @@ async function validateAndPrepare(
   }
 
   // Write-capability gate only matters when we actually create (repair/map write
-  // no Actual entity — they only record a mapping to an existing target).
+  // no Actual entity - they only record a mapping to an existing target).
   const willCreate = eligible.some((e) => e.mode === "create");
   try {
     adapter.assertCanApply(caps.capabilities, willCreate);
@@ -422,7 +422,7 @@ async function validateAndPrepare(
 function toCreateCandidate(item: SyncFlowRunItem): EligibleItem {
   // The persisted create payload (transaction has an imported_id; entity has a
   // name). The planner already blocked transaction items lacking a marker, so no
-  // marker check is needed here — the adapter's createBatch consumes the JSON.
+  // marker check is needed here - the adapter's createBatch consumes the JSON.
   const payloadJson = (item.plannedTargetPayload?.data as JsonObject | undefined) ?? null;
   if (!payloadJson) {
     throw new ApplyPreflightError("ineligible_selection", `Item ${item.id} has no usable planned payload.`);
@@ -452,7 +452,7 @@ async function applyOneItem(
 
 /**
  * Apply create candidates as a batch: resolve which items still need a write
- * (skipping already-mapped items and repairing marker hits — no writes), then
+ * (skipping already-mapped items and repairing marker hits - no writes), then
  * create the remainder in **one** `createTransactionsForSync` call (one insert +
  * one id-recovery read in the transport) instead of a round-trip per item.
  */
@@ -464,7 +464,7 @@ async function applyCreateBatch(
   const results: ApplyItemResult[] = [];
   const toCreate: { item: SyncFlowRunItem; payloadJson: JsonObject; marker: string | null }[] = [];
 
-  // Phase A — no writes: skip already-mapped items; for transactions, repair a
+  // Phase A - no writes: skip already-mapped items; for transactions, repair a
   // lost mapping when the marker is already on the target; queue the rest.
   for (const eligible of createItems) {
     const item = eligible.item;
@@ -511,7 +511,7 @@ async function applyCreateBatch(
 
   if (toCreate.length === 0) return results;
 
-  // Phase B — the adapter creates the batch (transactions: one insert + one
+  // Phase B - the adapter creates the batch (transactions: one insert + one
   // id-recovery read; entities: create payees/categories) and returns per-item ids.
   let created: AdapterCreateResult[];
   try {
@@ -534,7 +534,7 @@ async function applyCreateBatch(
   }
   const resultByItem = new Map(created.map((r) => [r.itemId, r]));
 
-  // Phase C — per created item: verify id, record the mapping, set status.
+  // Phase C - per created item: verify id, record the mapping, set status.
   for (const { item, marker } of toCreate) {
     const base = { itemId: item.id, sourceItemKey: item.sourceItemKey ?? "" };
     const res = resultByItem.get(item.id);
@@ -569,7 +569,7 @@ async function applyCreateBatch(
       continue;
     }
 
-    // New live marker on the target — guard later items against duplicating it.
+    // New live marker on the target - guard later items against duplicating it.
     if (marker) ctx.markerIndex.set(marker, targetId);
 
     const hasWarnings = changedFields.length > 0;
@@ -627,7 +627,7 @@ async function recordMapping(
 /**
  * Repair a lost DB mapping for a `target_marker_match` item: the target already
  * has our deterministic marker, so we map the source item to that existing
- * target transaction — no Actual write, no duplicate.
+ * target transaction - no Actual write, no duplicate.
  */
 async function repairOneItem(
   eligible: EligibleItem,
@@ -638,7 +638,7 @@ async function repairOneItem(
   const base = { itemId: item.id, sourceItemKey: item.sourceItemKey ?? "" };
   const targetId = eligible.targetTransactionId as string;
   // Transactions carry a deterministic marker to re-validate; entity name matches
-  // (target_name_match) do not — the planner already resolved the target id.
+  // (target_name_match) do not - the planner already resolved the target id.
   const isNameMatch = item.classification === "target_name_match";
   const marker = isNameMatch
     ? null

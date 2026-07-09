@@ -12,7 +12,7 @@ import type { SyncSourceItem } from "./sourceItems";
  *      Only the parent/normal transaction carries an `imported_id` marker, so
  *      this must run before splits are exploded.
  *   2. item-level: date, cleared/reconciled, amount sign/range, payee/category
- *      include-exclude, notes-contains — applied per source item so each split
+ *      include-exclude, notes-contains - applied per source item so each split
  *      line is judged on its own fields.
  */
 
@@ -64,7 +64,7 @@ export function isGeneratedSourceTransaction(txn: SyncSourceTransaction): boolea
   return typeof txn.notes === "string" && txn.notes.toLowerCase().includes(NOTES_MARKER_HINT);
 }
 
-/** Phase 1 — drop sync-generated transactions before expansion. */
+/** Phase 1 - drop sync-generated transactions before expansion. */
 export function filterSourceTransactions(
   txns: SyncSourceTransaction[],
   filter: SyncSourceFilter
@@ -121,7 +121,7 @@ function matchesNotes(item: SyncSourceItem, filter: SyncSourceFilter): boolean {
   return typeof item.notes === "string" && item.notes.toLowerCase().includes(needle);
 }
 
-/** Phase 2 — item-level filtering after split expansion. */
+/** Phase 2 - item-level filtering after split expansion. */
 export function filterSourceItems(
   items: SyncSourceItem[],
   filter: SyncSourceFilter

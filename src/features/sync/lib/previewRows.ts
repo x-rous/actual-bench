@@ -150,7 +150,7 @@ export function toPreviewRow(item: SyncFlowRunItem): PreviewRow {
   };
 }
 
-/** Ids for "select all safe new" — excludes repair (marker-match) rows. */
+/** Ids for "select all safe new" - excludes repair (marker-match) rows. */
 export function selectableRowIds(rows: PreviewRow[]): string[] {
   return rows.filter((r) => r.isSafeNew).map((r) => r.id);
 }
@@ -201,31 +201,35 @@ export function previewTiles(rows: PreviewRow[], kind: SyncKind): PreviewTile[] 
   const matched = rows.filter((r) => r.classification === "target_name_match").length;
   if (kind === "transaction") {
     return [
-      { key: "new", label: "New — ready to sync", value: tiles.new, tone: "new", filter: "new" },
+      { key: "new", label: "New - ready to sync", value: tiles.new, tone: "new", filter: "new" },
       { key: "needs_review", label: "Needs review", value: tiles.needsReview, tone: "warn", filter: "needs_review" },
       { key: "already", label: "Already synced", value: tiles.alreadySynced, filter: "already_synced" },
       { key: "blocked", label: "Blocked", value: tiles.blocked, tone: "bad", filter: "blocked" },
     ];
   }
   const noun = kind === "payee" ? "payees" : "categories";
-  return [
+  const base: PreviewTile[] = [
     { key: "new", label: `New ${noun}`, value: tiles.new, tone: "new", filter: "new" },
     { key: "name_match", label: "Match on target", value: matched, filter: "marker_match" },
     { key: "already", label: "Already synced", value: tiles.alreadySynced, filter: "already_synced" },
-    { key: "blocked", label: "Needs a group", value: tiles.blocked, tone: "bad", filter: "blocked" },
   ];
+  // Only categories can be blocked (on ambiguous group placement); payees can't.
+  if (kind === "category") base.push({ key: "blocked", label: "Needs a group", value: tiles.blocked, tone: "bad", filter: "blocked" });
+  return base;
 }
 
 /** The table filter chips relevant to a data type. */
 export function previewFilters(kind: SyncKind): { key: PreviewFilter; label: string }[] {
   if (kind === "transaction") return PREVIEW_FILTERS;
-  return [
+  const chips: { key: PreviewFilter; label: string }[] = [
     { key: "all", label: "All" },
     { key: "new", label: "New" },
     { key: "marker_match", label: "Name match" },
     { key: "already_synced", label: "Already synced" },
-    { key: "blocked", label: "Blocked" },
   ];
+  // Only categories can be blocked (ambiguous group); payees never are.
+  if (kind === "category") chips.push({ key: "blocked", label: "Blocked" });
+  return chips;
 }
 
 // --- Preview table filtering (detailed statuses) ---------------------------

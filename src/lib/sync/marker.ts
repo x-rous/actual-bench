@@ -2,9 +2,9 @@
  * Deterministic target-side sync marker (Actual `imported_id`) for Budget File
  * Sync (RD-053 / PR-019).
  *
- * The marker is derived only from **globally stable identity** — the source and
+ * The marker is derived only from **globally stable identity** - the source and
  * target Actual budget sync ids, the target account id, and the source item key
- * — never from the (random, per-instance) flow id or the server URL. That makes
+ * - never from the (random, per-instance) flow id or the server URL. That makes
  * it **portable across Actual Bench instances**: any instance, on any host,
  * computes the identical marker for the same source item → target account. So if
  * one instance syncs a transaction, another instance recognises it on the target

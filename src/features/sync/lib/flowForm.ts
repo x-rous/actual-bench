@@ -19,7 +19,7 @@ import type {
  * The persisted flow stores only non-secret references (connection fingerprint,
  * budget sync id, account id, display names). The live connection (with its
  * password) is resolved at preview/apply time from the in-memory connection
- * store by fingerprint — never persisted here.
+ * store by fingerprint - never persisted here.
  */
 
 export type SyncEndpointForm = {
@@ -128,7 +128,7 @@ export function emptyFlowForm(): SyncFlowFormState {
       copySourceNotes: true,
     },
     automation: {
-      // Existing/new flows stay manual — RD-053 behavior — until opted in.
+      // Existing/new flows stay manual - RD-053 behavior - until opted in.
       reviewPolicy: "manual_preview_required",
       intervalMinutes: String(DEFAULT_SYNC_INTERVAL_MINUTES),
       autoPausedAt: null,
@@ -156,7 +156,7 @@ export function missingRouteFields(form: SyncFlowFormState): string[] {
 /**
  * MVP is cross-budget only. Two accounts in the *same* budget file is not
  * supported, so any flow whose source and target resolve to the same budget is
- * blocked — regardless of account.
+ * blocked - regardless of account.
  */
 export function isSameBudget(form: SyncFlowFormState): boolean {
   return !!form.source.budgetSyncId && form.source.budgetSyncId === form.target.budgetSyncId;
@@ -233,7 +233,7 @@ export function buildFlowPayload(
     intervalMinutes: clampSyncInterval(form.automation.intervalMinutes),
     autoPausedAt: form.automation.autoPausedAt,
     exactDuplicateAutoMap: form.automation.exactDuplicateAutoMap,
-    // Master-data (entity) options — ignored by transaction flows.
+    // Master-data (entity) options - ignored by transaction flows.
     defaultGroupName: form.entity.defaultGroupName.trim() || null,
     createMissingGroup: form.entity.createMissingGroup,
   };

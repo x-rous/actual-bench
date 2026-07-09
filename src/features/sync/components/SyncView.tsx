@@ -240,7 +240,7 @@ export function SyncView() {
     flowsQuery.refetch();
     const name = flowName(flowId);
     if (result.status === "failed" || result.status === "partial") {
-      setAutoNotice(`Auto-sync for “${name}” ${result.status === "partial" ? "partially applied — some items failed" : "failed"}.`);
+      setAutoNotice(`Auto-sync for “${name}” ${result.status === "partial" ? "partially applied - some items failed" : "failed"}.`);
     } else if (result.status === "preview_failed") {
       setAutoNotice(`Auto-sync preview for “${name}” failed: ${result.error.message}`);
     } else if (result.status === "applied" || result.status === "no_safe_items") {
@@ -350,7 +350,7 @@ export function SyncView() {
             <div>
               <h3 className="text-base font-semibold">Budget File Sync</h3>
               <p className="mt-1 max-w-sm text-sm text-muted-foreground">
-                Copy transactions, payees, or categories from one budget to another — preview first, apply what you choose. Pick a flow on the left, or create one.
+                Copy transactions, payees, or categories from one budget to another - preview first, apply what you choose. Pick a flow on the left, or create one.
               </p>
             </div>
             <Button size="sm" onClick={handleCreate}><Plus className="h-4 w-4" /> New sync flow</Button>
@@ -466,9 +466,9 @@ export function SyncView() {
                   <Play className="h-6 w-6 text-muted-foreground" />
                   <h3 className="text-base font-semibold">See what will change first</h3>
                   <p className="max-w-md text-sm text-muted-foreground">
-                    <strong>Sync Preview</strong> (top right) builds a change plan — every {kind === "transaction" ? "transaction" : kind} that would be created in{" "}
+                    <strong>Preview</strong> (top right) builds a change plan - every {kind === "transaction" ? "transaction" : kind} that would be created in{" "}
                     <strong>{form.target.budgetName || "the target"}</strong> from{" "}
-                    <strong>{form.source.budgetName || "the source"}</strong> — with nothing written to Actual until you review and sync.
+                    <strong>{form.source.budgetName || "the source"}</strong> - with nothing written to Actual until you review and sync.
                   </p>
                   {blockReason && <p className="text-xs font-medium text-amber-600 dark:text-amber-400">{blockReason}</p>}
                 </div>

@@ -5,13 +5,13 @@ import type { SyncPlanResult } from "./plannedChanges";
 
 /**
  * The unified Budget File Sync engine (RD-055): ONE preview/apply/automation
- * pipeline across every data type. All type-specific behavior — what to read,
- * how to match/classify, how to create — lives in a `SyncKindAdapter`, resolved
+ * pipeline across every data type. All type-specific behavior - what to read,
+ * how to match/classify, how to create - lives in a `SyncKindAdapter`, resolved
  * by `flow.flowType`. The orchestrators (preview, apply, safe-sync, scheduler,
  * review queue, flow health, history) stay generic and therefore work
  * identically for transactions, payees, and categories.
  *
- * Do NOT add a parallel engine for a new data type — add an adapter.
+ * Do NOT add a parallel engine for a new data type - add an adapter.
  */
 
 /** Error thrown by an adapter; the orchestrator maps `code` to its result. */

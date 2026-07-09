@@ -130,7 +130,7 @@ export const categoryAdapter: SyncKindAdapter = {
         if (config.createMissingGroup && placedGroupName.trim()) {
           return buildEntityPlannedItem({ ...common, classification: "new", action: "create", targetId: null, entityPayload: { ...payload, groupId: null }, selectedForApply: true, flags: [], message: `Will create group “${placedGroupName}”.` });
         }
-        // Ambiguous placement — no matching group and no default → review-required.
+        // Ambiguous placement - no matching group and no default → review-required.
         return buildEntityPlannedItem({ ...common, classification: "blocked", action: "blocked", targetId: null, entityPayload: null, selectedForApply: false, message: "No matching target group; choose a default group or enable group creation." });
       });
 

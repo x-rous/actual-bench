@@ -20,7 +20,7 @@ import type { SafeSyncResult } from "@/lib/sync/safeSyncOrchestrator";
  * connections are unlocked**. All the actual gating lives in the pure
  * `selectFlowsToAutoRun`; this hook is just the timer + non-overlap bookkeeping.
  *
- * Not a background daemon — nothing runs when the app is closed (that is RD-058).
+ * Not a background daemon - nothing runs when the app is closed (that is RD-058).
  */
 
 const TICK_MS = 60_000;
@@ -46,7 +46,7 @@ export function useSyncScheduler(params: {
   const inFlightRef = useRef<Set<string>>(new Set());
   const lastRunRef = useRef<Map<string, number>>(new Map());
   const failuresRef = useRef<Map<string, number>>(new Map());
-  // Flows paused this session — a local guard so a slow enabled=false persist
+  // Flows paused this session - a local guard so a slow enabled=false persist
   // can't let one more auto run slip through before the DB reflects the pause.
   const pausedRef = useRef<Set<string>>(new Set());
 

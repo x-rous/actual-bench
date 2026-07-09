@@ -126,7 +126,7 @@ beforeEach(() => {
   events.length = 0;
 });
 
-describe("runLiveDryRunPreview — happy path", () => {
+describe("runLiveDryRunPreview - happy path", () => {
   it("reads source fully before opening the target, then plans and persists", async () => {
     const source = makeTransport("source", { sourceTransactions: [srcTxn()] });
     const target = makeTransport("target", { targetPayees: [{ id: "tp1", name: "Coffee Bar" }], targetCategories: [{ id: "tc1", name: "Dining" }] });
@@ -207,7 +207,7 @@ describe("runLiveDryRunPreview — happy path", () => {
   });
 });
 
-describe("runLiveDryRunPreview — validation", () => {
+describe("runLiveDryRunPreview - validation", () => {
   it("returns flow_not_found with no run when the flow is missing", async () => {
     const { store, persistPlan, persistFailedRun } = makeStore(null);
     const result = await runLiveDryRunPreview(
@@ -250,7 +250,7 @@ describe("runLiveDryRunPreview — validation", () => {
   });
 });
 
-describe("runLiveDryRunPreview — failure handling", () => {
+describe("runLiveDryRunPreview - failure handling", () => {
   it("persists a failed run when source reads throw after validation", async () => {
     const source = makeTransport("source", { failSourceRead: true });
     const { store, persistFailedRun } = makeStore(makeFlow());

@@ -103,7 +103,7 @@ function mapping(overrides: Partial<SyncMapping> = {}): SyncMapping {
   };
 }
 
-describe("planSyncFlow — new create", () => {
+describe("planSyncFlow - new create", () => {
   it("plans a new reversed, marker-tagged create with pre-selection", () => {
     const target = emptyTarget({
       payees: [{ id: "tp1", name: "Coffee Bar" }],
@@ -156,7 +156,7 @@ describe("planSyncFlow — new create", () => {
   });
 });
 
-describe("planSyncFlow — mappings and markers", () => {
+describe("planSyncFlow - mappings and markers", () => {
   it("skips an already-synced item whose fingerprint is unchanged", () => {
     const fingerprint = transactionFingerprint(txn());
     const plan = planSyncFlow(
@@ -191,7 +191,7 @@ describe("planSyncFlow — mappings and markers", () => {
   });
 });
 
-describe("planSyncFlow — duplicates", () => {
+describe("planSyncFlow - duplicates", () => {
   it("skips an exact duplicate", () => {
     const target = emptyTarget({
       payees: [{ id: "tp1", name: "Coffee Bar" }],
@@ -255,7 +255,7 @@ describe("planSyncFlow — duplicates", () => {
   });
 });
 
-describe("planSyncFlow — splits", () => {
+describe("planSyncFlow - splits", () => {
   it("explodes a split parent into separate planned creates with split keys", () => {
     const parent = txn({
       id: "p",
@@ -301,7 +301,7 @@ describe("planSyncFlow — splits", () => {
   });
 });
 
-describe("planSyncFlow — blocked", () => {
+describe("planSyncFlow - blocked", () => {
   it("blocks creates when the target cannot store a durable marker (HTTP mode)", () => {
     const plan = planSyncFlow(baseInput({ capabilities: httpCaps }));
     const item = plan.items[0];

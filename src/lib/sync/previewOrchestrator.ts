@@ -10,7 +10,7 @@ import type { SyncPlanResult } from "./plannedChanges";
  * Live dry-run orchestration for Budget File Sync (RD-053 / PR-019 Slice 3).
  *
  * Connects the Slice 1 transport primitives with the Slice 2 planner to produce
- * a real, persisted `draft_preview` — with NO Actual writes. Cross-budget access
+ * a real, persisted `draft_preview` - with NO Actual writes. Cross-budget access
  * follows Pattern A: the source snapshot is fully materialized before the target
  * budget is opened, because the browser runtime holds only one budget at a time.
  *

@@ -19,8 +19,8 @@ import type { SyncReviewPolicy, SyncRunTrigger } from "@/lib/app-db/types";
  * Safe-only run executor for Budget File Sync automation (RD-054 / PR-020 Slice 2).
  *
  * This is **not a second sync engine**. It composes the two existing RD-053
- * orchestrators — `runLiveDryRunPreview` (plan, no writes) then `applySyncRun`
- * with `{ selection: "all_safe" }` (apply only safe classes) — behind a single
+ * orchestrators - `runLiveDryRunPreview` (plan, no writes) then `applySyncRun`
+ * with `{ selection: "all_safe" }` (apply only safe classes) - behind a single
  * headless call, gated by the flow's automation policy.
  *
  * Safety guarantees:
@@ -61,7 +61,7 @@ export type SafeSyncResult =
   | { status: "skipped_manual_policy"; flowId: string; reviewPolicy: SyncReviewPolicy }
   /** Preview never produced an applyable run. */
   | { status: "preview_failed"; flowId: string; runId: string | null; error: DryRunError }
-  /** Preview succeeded but there was nothing safe to apply — a benign no-op. */
+  /** Preview succeeded but there was nothing safe to apply - a benign no-op. */
   | {
       status: "no_safe_items";
       flowId: string;
@@ -87,7 +87,7 @@ export async function runSafeSync(
   const runPreview = deps.runPreview ?? runLiveDryRunPreview;
   const runApply = deps.runApply ?? applySyncRun;
 
-  // 1. Policy gate — authoritative and first. A flow that has not opted into
+  // 1. Policy gate - authoritative and first. A flow that has not opted into
   //    automation is never auto-applied here, regardless of caller intent. A
   //    missing flow is reported as a preview failure (the preview would fail the
   //    same way) rather than silently skipped.
@@ -105,7 +105,7 @@ export async function runSafeSync(
     return { status: "skipped_manual_policy", flowId, reviewPolicy };
   }
 
-  // 2. Preview (no Actual writes) — the RD-053 planner, unchanged. The run is
+  // 2. Preview (no Actual writes) - the RD-053 planner, unchanged. The run is
   //    stamped so history shows it was automated (default: interval_safe_only).
   const preview = await runPreview(
     {
@@ -142,7 +142,7 @@ export async function runSafeSync(
 
   // A "no eligible items" apply after a non-zero preview is still a benign no-op
   // (e.g. the only safe rows resolved away between preview and apply), not a real
-  // failure — report it as such rather than surfacing an error.
+  // failure - report it as such rather than surfacing an error.
   if (apply.status === "failed" && apply.error?.code === "no_eligible_items") {
     return { status: "no_safe_items", flowId, runId: preview.runId, reviewPolicy, preview: preview.summary };
   }

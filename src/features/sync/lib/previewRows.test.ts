@@ -98,7 +98,7 @@ describe("review queue (RD-054)", () => {
     const queued = reviewQueueRows(rows).map((r) => r.id).sort();
     expect(queued).toEqual(["blk-1", "chg-1", "dup-1"]);
     expect(reviewQueueCount(rows)).toBe(3);
-    // The safe set (new + marker-match) is exactly what automation applies — never queued.
+    // The safe set (new + marker-match) is exactly what automation applies - never queued.
     expect(queued).not.toContain("new-1");
     expect(queued).not.toContain("mm-1");
   });

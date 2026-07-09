@@ -103,8 +103,8 @@ export function PreviewPanel(props: PreviewPanelProps) {
       )}
       {!props.applying && props.applyResult && <ApplyResultBanner result={props.applyResult} kind={kind} />}
 
-      {/* Grouped tiles — worded for the data type; click to filter the table */}
-      <div className={cn("grid gap-2", tiles.length === 4 ? "grid-cols-2 sm:grid-cols-4" : "grid-cols-2 sm:grid-cols-4")}>
+      {/* Grouped tiles - worded for the data type; click to filter the table */}
+      <div className={cn("grid grid-cols-2 gap-2", tiles.length === 3 ? "sm:grid-cols-3" : "sm:grid-cols-4")}>
         {tiles.map((tile) => (
           <Tile key={tile.key} value={tile.value} label={tile.label} tone={tile.tone} active={filter === tile.filter} onClick={() => setFilter(filter === tile.filter ? "all" : tile.filter)} />
         ))}
@@ -129,7 +129,7 @@ export function PreviewPanel(props: PreviewPanelProps) {
           <span>
             <strong className="font-semibold">Review queue · {reviewCount}</strong>
             <span className="block text-xs text-muted-foreground">
-              Automated sync leaves these for you — decide and apply them by hand.
+              Automated sync leaves these for you - decide and apply them by hand.
             </span>
           </span>
         </button>
@@ -175,7 +175,7 @@ export function PreviewPanel(props: PreviewPanelProps) {
           </div>
           <div className="flex-1" />
           {props.readOnly ? (
-            <span className="text-xs text-muted-foreground">Read-only — a past run</span>
+            <span className="text-xs text-muted-foreground">Read-only - a past run</span>
           ) : (
             <>
               {selectedCount > 0 && (
@@ -228,7 +228,7 @@ export function PreviewPanel(props: PreviewPanelProps) {
               {visible.map((row) => {
                 const pos = splits.get(row.id);
                 const details = row.message ?? row.flags.join(", ");
-                const onTarget = row.classification === "already_synced" || row.classification === "target_name_match" ? "Linked" : row.group === "new" ? "New" : "—";
+                const onTarget = row.classification === "already_synced" || row.classification === "target_name_match" ? "Linked" : row.group === "new" ? "New" : "-";
                 return (
                   <tr
                     key={row.id}
@@ -269,7 +269,7 @@ export function PreviewPanel(props: PreviewPanelProps) {
                 );
               })}
               {visible.length === 0 && (
-                <tr><td colSpan={columnCount} className="px-3 py-8 text-center text-sm text-muted-foreground">Nothing here — try another filter.</td></tr>
+                <tr><td colSpan={columnCount} className="px-3 py-8 text-center text-sm text-muted-foreground">Nothing here - try another filter.</td></tr>
               )}
             </tbody>
           </table>
@@ -280,7 +280,7 @@ export function PreviewPanel(props: PreviewPanelProps) {
 }
 
 function Truncate({ text, width }: { text: string | null | undefined; width: string }) {
-  return <span className="block truncate" style={{ maxWidth: width }} title={text ?? undefined}>{text ?? "—"}</span>;
+  return <span className="block truncate" style={{ maxWidth: width }} title={text ?? undefined}>{text ?? "-"}</span>;
 }
 
 function PreviewFreshness({ previewedAt, readOnly }: { previewedAt: string | null; readOnly: boolean }) {
@@ -302,7 +302,7 @@ function PreviewFreshness({ previewedAt, readOnly }: { previewedAt: string | nul
     <span className={cn(stale && "font-medium text-amber-600 dark:text-amber-400")}>
       {" · "}
       {readOnly ? `Run from ${label}` : `Previewed ${label}`}
-      {stale && " — source may have changed; preview again"}
+      {stale && " - source may have changed; preview again"}
     </span>
   );
 }

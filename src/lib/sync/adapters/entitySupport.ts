@@ -6,7 +6,7 @@ import type { EntityTargetPayload, SyncPlannedItem, SyncPlanResult } from "../pl
  * Shared helpers for master-data (entity) sync adapters (RD-055): entity flow
  * config decode, normalized-name matching, and planned-item construction. Entity
  * flows sync at the **budget** level (no account) and have no `imported_id`
- * marker — matching is by normalized name, idempotency by the app-DB mapping.
+ * marker - matching is by normalized name, idempotency by the app-DB mapping.
  */
 
 export type EntityFlowConfig = {

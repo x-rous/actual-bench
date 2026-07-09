@@ -162,7 +162,7 @@ const provider = (transport: ActualBenchTransport): ApplyTransportProvider => ({
 
 // --- Tests ------------------------------------------------------------------
 
-describe("applySyncRun — validation", () => {
+describe("applySyncRun - validation", () => {
   it("fails when the run does not exist", async () => {
     const store = makeStore();
     store.store.loadRun = jest.fn(async () => null);
@@ -213,7 +213,7 @@ describe("applySyncRun — validation", () => {
   });
 });
 
-describe("applySyncRun — create path", () => {
+describe("applySyncRun - create path", () => {
   it("creates a target transaction, resolves the id, and records a mapping immediately", async () => {
     const { store, createdMappings, itemPatches } = makeStore();
     const { transport, createTransactionsForSync } = makeTargetTransport();
@@ -295,7 +295,7 @@ describe("applySyncRun — create path", () => {
   });
 });
 
-describe("applySyncRun — idempotency & duplicates", () => {
+describe("applySyncRun - idempotency & duplicates", () => {
   it("skips an item that already has a DB mapping (no duplicate create)", async () => {
     const seed = { flowId: "flow-1", sourceItemKey: "txn:t1", targetTransactionId: "existing" } as unknown as SyncMapping;
     const { store, createdMappings } = makeStore({ seedMappings: [seed] });
@@ -330,7 +330,7 @@ describe("applySyncRun — idempotency & duplicates", () => {
   });
 });
 
-describe("applySyncRun — marker-match repair", () => {
+describe("applySyncRun - marker-match repair", () => {
   function markerMatchItem(): SyncFlowRunItem {
     return runItem({
       id: "mm-1",
@@ -401,7 +401,7 @@ describe("applySyncRun — marker-match repair", () => {
   });
 });
 
-describe("applySyncRun — exact-duplicate auto-map", () => {
+describe("applySyncRun - exact-duplicate auto-map", () => {
   function autoMapItem(): SyncFlowRunItem {
     return runItem({
       id: "dup-1",
@@ -447,7 +447,7 @@ describe("applySyncRun — exact-duplicate auto-map", () => {
   });
 });
 
-describe("applySyncRun — retry failed", () => {
+describe("applySyncRun - retry failed", () => {
   it("re-attempts only the previously-failed items on a partial run", async () => {
     const failed = runItem({ id: "f1", sourceItemKey: "txn:t1", applyState: "failed", payloadData: { importedId: MARKER_T1 } } as unknown as Partial<SyncFlowRunItem>);
     const done = runItem({ id: "ok1", sourceItemKey: "txn:t2", applyState: "applied", payloadData: { importedId: MARKER_T2 } } as unknown as Partial<SyncFlowRunItem>);
@@ -484,7 +484,7 @@ describe("applySyncRun — retry failed", () => {
   });
 });
 
-describe("applySyncRun — partial failure & splits", () => {
+describe("applySyncRun - partial failure & splits", () => {
   it("reports partial when one item applies and another fails to resolve", async () => {
     const good = runItem({ id: "good", sourceItemKey: "txn:t1", payloadData: { importedId: MARKER_T1 } } as unknown as Partial<SyncFlowRunItem>);
     const bad = runItem({ id: "bad", sourceItemKey: "txn:t2", sourceTransactionId: "t2", payloadData: { importedId: MARKER_T2 } } as unknown as Partial<SyncFlowRunItem>);

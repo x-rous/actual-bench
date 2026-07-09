@@ -7,7 +7,7 @@ import type { SyncFlow, SyncReviewPolicy } from "@/lib/app-db/types";
  * versioned JSON envelopes (flexible for future domains). The planner needs a
  * concrete, defaulted shape; this module is the single decode point from the
  * loose envelope model into that typed config. Filters are intentionally out of
- * scope here — the planner operates on an already-filtered source snapshot
+ * scope here - the planner operates on an already-filtered source snapshot
  * (source filtering happens during load in Slice 3).
  */
 
@@ -60,7 +60,7 @@ export type SyncFlowPlanConfig = {
   exactDuplicateAutoMap: boolean;
 };
 
-/** Smallest allowed auto-sync interval — a budget sync per run is expensive. */
+/** Smallest allowed auto-sync interval - a budget sync per run is expensive. */
 export const MIN_SYNC_INTERVAL_MINUTES = 15;
 /** Default auto-sync interval when a flow opts in without choosing one. */
 export const DEFAULT_SYNC_INTERVAL_MINUTES = 60;

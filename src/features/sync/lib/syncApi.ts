@@ -17,7 +17,7 @@ import type {
  * Thin client for the Budget File Sync server routes (RD-053 / PR-019 Slice 5).
  *
  * The Direct transport runs in the browser; the app DB runs server-side. These
- * helpers are the only bridge — the preview/apply orchestrators run client-side
+ * helpers are the only bridge - the preview/apply orchestrators run client-side
  * and reach the DB exclusively through here. No sync logic lives in this module.
  */
 
