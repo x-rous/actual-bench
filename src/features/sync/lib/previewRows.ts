@@ -82,6 +82,7 @@ export function classificationGroup(classification: SyncItemClassification | nul
     case "source_changed_since_sync":
       return "source_changed";
     case "target_marker_match":
+    case "target_name_match":
       return "marker_match";
     case "blocked":
       return "blocked";
@@ -106,8 +107,12 @@ export function toPreviewRow(item: SyncFlowRunItem): PreviewRow {
     id: item.id,
     classification: item.classification,
     group: classificationGroup(item.classification),
-    // Selectable: safe creates, marker-match repairs, or auto-mappable exact dups.
-    selectable: isSafeNew || item.classification === "target_marker_match" || isExactDupAutoMap,
+    // Selectable: safe creates, marker/name-match repairs, or auto-mappable dups.
+    selectable:
+      isSafeNew ||
+      item.classification === "target_marker_match" ||
+      item.classification === "target_name_match" ||
+      isExactDupAutoMap,
     isSafeNew,
     reviewRequired: isReviewRequired(item.classification) && !isExactDupAutoMap,
     applyState: item.applyState,

@@ -95,6 +95,11 @@ export function FlowList({ flows, selectedFlowId, latestRuns, connections, onSel
                 >
                   <div className="flex items-center gap-2">
                     <span className="min-w-0 flex-1 truncate text-sm font-medium">{flow.name}</span>
+                    {flow.flowType !== "transaction_sync" && (
+                      <span className="shrink-0 rounded-full border border-border bg-muted px-1.5 py-px text-[10px] text-muted-foreground">
+                        {flow.flowType === "payee_sync" ? "Payees" : "Categories"}
+                      </span>
+                    )}
                     <span
                       className={cn("h-2 w-2 shrink-0 rounded-full", flow.enabled ? "bg-green-500" : "bg-muted-foreground/40")}
                       aria-hidden

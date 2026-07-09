@@ -64,15 +64,33 @@ export type SyncAutomationForm = {
   exactDuplicateAutoMap: boolean;
 };
 
+/** Which data type the flow syncs (RD-055). Determines the engine adapter. */
+export type SyncFlowType = "transaction_sync" | "payee_sync" | "category_sync";
+
+/** Master-data (entity) options; only meaningful for payee/category flows. */
+export type SyncEntityForm = {
+  /** Category-only: create categories under this group when none matches. */
+  defaultGroupName: string;
+  /** Category-only: create a missing target group instead of blocking. */
+  createMissingGroup: boolean;
+};
+
 export type SyncFlowFormState = {
   name: string;
   enabled: boolean;
+  flowType: SyncFlowType;
   source: SyncEndpointForm;
   target: SyncEndpointForm;
   filter: SyncFilterForm;
   transform: SyncTransformForm;
   automation: SyncAutomationForm;
+  entity: SyncEntityForm;
 };
+
+/** True for a master-data (payee/category) flow. */
+export function isEntityFlow(flowType: SyncFlowType): boolean {
+  return flowType === "payee_sync" || flowType === "category_sync";
+}
 
 export const EMPTY_ENDPOINT: SyncEndpointForm = {
   connectionId: "",
@@ -86,6 +104,7 @@ export function emptyFlowForm(): SyncFlowFormState {
   return {
     name: "",
     enabled: true,
+    flowType: "transaction_sync",
     source: { ...EMPTY_ENDPOINT },
     target: { ...EMPTY_ENDPOINT },
     filter: {
@@ -115,6 +134,7 @@ export function emptyFlowForm(): SyncFlowFormState {
       autoPausedAt: null,
       exactDuplicateAutoMap: false,
     },
+    entity: { defaultGroupName: "", createMissingGroup: false },
   };
 }
 
@@ -122,6 +142,12 @@ export function emptyFlowForm(): SyncFlowFormState {
 export function missingRouteFields(form: SyncFlowFormState): string[] {
   const missing: string[] = [];
   if (!form.name.trim()) missing.push("name");
+  // Entity flows sync at the budget level (no account); transactions need an account.
+  if (isEntityFlow(form.flowType)) {
+    if (!form.source.connectionId) missing.push("source budget");
+    if (!form.target.connectionId) missing.push("target budget");
+    return missing;
+  }
   if (!form.source.connectionId || !form.source.accountId) missing.push("source account");
   if (!form.target.connectionId || !form.target.accountId) missing.push("target account");
   return missing;
@@ -207,6 +233,9 @@ export function buildFlowPayload(
     intervalMinutes: clampSyncInterval(form.automation.intervalMinutes),
     autoPausedAt: form.automation.autoPausedAt,
     exactDuplicateAutoMap: form.automation.exactDuplicateAutoMap,
+    // Master-data (entity) options — ignored by transaction flows.
+    defaultGroupName: form.entity.defaultGroupName.trim() || null,
+    createMissingGroup: form.entity.createMissingGroup,
   };
 
   // Each leg ref/filter/transform must be a versioned JSON envelope, matching
@@ -216,7 +245,7 @@ export function buildFlowPayload(
   return {
     name: form.name.trim(),
     enabled: form.enabled,
-    flowType: "transaction_sync",
+    flowType: form.flowType,
     legs: [
       {
         sourceRef: envelope(sourceRef),
@@ -248,6 +277,12 @@ export function flowToFormState(
 
   form.name = flow.name;
   form.enabled = flow.enabled;
+  form.flowType = flow.flowType === "payee_sync" || flow.flowType === "category_sync" ? flow.flowType : "transaction_sync";
+  const options = (flow.legs[0]?.options.data ?? {}) as Record<string, unknown>;
+  form.entity = {
+    defaultGroupName: typeof options.defaultGroupName === "string" ? options.defaultGroupName : "",
+    createMissingGroup: options.createMissingGroup === true,
+  };
   form.source = {
     connectionId: resolveConnectionId(config.sourceConnectionFingerprint, config.sourceBudgetId),
     budgetSyncId: config.sourceBudgetId,

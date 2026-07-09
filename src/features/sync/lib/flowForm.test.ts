@@ -45,6 +45,44 @@ describe("form defaults", () => {
     expect(emptyFlowForm().automation.reviewPolicy).toBe("manual_preview_required");
     expect(emptyFlowForm().automation.intervalMinutes).toBe("60");
   });
+
+  it("defaults to a transaction flow", () => {
+    expect(emptyFlowForm().flowType).toBe("transaction_sync");
+  });
+});
+
+describe("entity (master-data) flows", () => {
+  function entityForm(): SyncFlowFormState {
+    const form = emptyFlowForm();
+    form.name = "Payee sync";
+    form.flowType = "category_sync";
+    form.source = { connectionId: "c-src", budgetSyncId: "budget-src", budgetName: "Home", accountId: "", accountName: "" };
+    form.target = { connectionId: "c-tgt", budgetSyncId: "budget-tgt", budgetName: "Family", accountId: "", accountName: "" };
+    form.entity = { defaultGroupName: "Uncategorized", createMissingGroup: true };
+    return form;
+  }
+
+  it("requires only budgets (not accounts) for an entity flow", () => {
+    expect(missingRouteFields(entityForm())).toEqual([]);
+    const noBudget = entityForm();
+    noBudget.source.connectionId = "";
+    expect(missingRouteFields(noBudget)).toContain("source budget");
+  });
+
+  it("round-trips flow type and entity options through the payload", () => {
+    const payload = buildFlowPayload(entityForm(), instances) as JsonObject & { legs: JsonObject[]; flowType: string };
+    expect(payload.flowType).toBe("category_sync");
+    const leg = payload.legs[0] as Record<string, { version: number; data: JsonObject }>;
+    expect(leg.options.data).toMatchObject({ defaultGroupName: "Uncategorized", createMissingGroup: true });
+
+    const flow: SyncFlow = {
+      id: "flow-1", name: "Payee sync", enabled: true, flowType: "category_sync", description: null, createdAt: "", updatedAt: "",
+      legs: [{ id: "leg-1", flowId: "flow-1", position: 0, sourceRef: leg.sourceRef, targetRef: leg.targetRef, filter: leg.filter, transform: leg.transform, options: leg.options, createdAt: "", updatedAt: "" }],
+    };
+    const form = flowToFormState(flow, instances);
+    expect(form.flowType).toBe("category_sync");
+    expect(form.entity).toEqual({ defaultGroupName: "Uncategorized", createMissingGroup: true });
+  });
 });
 
 describe("validation", () => {

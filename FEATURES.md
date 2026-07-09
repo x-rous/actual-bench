@@ -57,7 +57,17 @@ A compact diagnostics page for Actual Bench's own server-side metadata database.
 
 ## Budget File Sync
 
-A workspace for copying transactions from an account in one budget file to an account in another, as saved one-way flows. It is deliberately conservative: **Direct mode only, cross-budget only, create-only, preview-first** — with an opt-in safe-only automation layer on top.
+A workspace for syncing data between budget files as saved one-way flows. One unified engine covers every data type — **transactions, payees, and categories** — so preview, apply, run history, the review queue, and the whole safe-only automation layer work identically for each. It is deliberately conservative: **Direct mode only, cross-budget only, create-only, preview-first.**
+
+### Master data (payees & categories)
+
+- Choose a flow's **data type** — Transactions, Payees, or Categories — in the flow editor. Payee/category flows sync at the **budget** level (no account).
+- **Payees:** missing payees are created on the target; existing ones are matched by normalized name and mapped without duplicating.
+- **Categories:** matched by name within a group; missing categories are created under the matching target group, or a chosen **default group**; a category whose group can't be placed is **blocked for review** unless you enable **create missing groups**. Income and expense categories stay distinct.
+- **No renames, deletes, or hides** — create-only. Mappings are recorded so reruns skip already-synced entities.
+- Everything else — the review queue, run history, auto-apply/auto-sync/flow-health automation — applies to entity flows exactly as it does to transactions.
+
+### Transactions
 
 - Saved sync flows list with a compact editor: source/target Direct connection + account, filters, and transforms
 - Transforms: amount direction (reverse sign by default, same-sign optional), payee match-by-name (create missing by default, or leave empty), category match-by-name (missing categories are left empty — never auto-created), and a clean visible notes marker (`[Synced from <budget> / <account>]`, on by default)

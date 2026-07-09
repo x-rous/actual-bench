@@ -9,7 +9,7 @@ import type {
   SyncFlowRunItem,
   SyncRunTrigger,
 } from "@/lib/app-db/types";
-import type { PlannedTargetPayload, SyncPlannedItem, SyncPlanResult } from "./plannedChanges";
+import type { SyncPlannedItem, SyncPlanResult } from "./plannedChanges";
 
 /**
  * Persist a dry-run plan into the PR-018 run/run-item repositories
@@ -34,18 +34,11 @@ export type PersistDraftPreviewOptions = {
   trigger?: SyncRunTrigger;
 };
 
-function payloadToJsonObject(payload: PlannedTargetPayload): JsonObject {
-  return {
-    accountId: payload.accountId,
-    date: payload.date,
-    amount: payload.amount,
-    payeeId: payload.payeeId,
-    payeeName: payload.payeeName,
-    categoryId: payload.categoryId,
-    notes: payload.notes,
-    cleared: payload.cleared,
-    importedId: payload.importedId,
-  };
+/** Serialize whichever create payload the planned item carries (transaction or entity). */
+function payloadToJsonObject(item: SyncPlannedItem): JsonObject | null {
+  const payload = item.plannedTargetPayload ?? item.entityPayload ?? null;
+  // Both transaction and entity payloads are flat, JSON-safe data; store as-is.
+  return payload ? ({ ...payload } as JsonObject) : null;
 }
 
 function sourceItemRef(item: SyncPlannedItem): JsonObject {
@@ -103,9 +96,10 @@ export function persistDraftPreviewRun(
         sourceSplitId: item.sourceSplitId,
         sourceFingerprint: item.sourceFingerprint,
         plannedAction: item.action,
-        plannedTargetPayload: item.plannedTargetPayload
-          ? { version: 1, data: payloadToJsonObject(item.plannedTargetPayload) }
-          : null,
+        plannedTargetPayload: (() => {
+          const data = payloadToJsonObject(item);
+          return data ? { version: 1, data } : null;
+        })(),
         classification: item.classification,
         duplicateConfidence: item.duplicateConfidence,
         warnings: { version: 1, data: { flags: [...item.flags] } },

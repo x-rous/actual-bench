@@ -13,7 +13,7 @@ import {
 } from "@/components/ui/dialog";
 import { clampSyncInterval } from "@/lib/sync/flowConfig";
 import { useFlowAccounts } from "../hooks/useSyncData";
-import { isSameBudget, missingRouteFields, type SyncEndpointForm, type SyncFlowFormState } from "../lib/flowForm";
+import { isEntityFlow, isSameBudget, missingRouteFields, type SyncEndpointForm, type SyncFlowFormState } from "../lib/flowForm";
 import type { BrowserApiConnection } from "@/store/connection";
 
 type FlowEditDialogProps = {
@@ -34,11 +34,14 @@ function InlineEndpoint({
   label,
   endpoint,
   connections,
+  entityMode,
   onChange,
 }: {
   label: string;
   endpoint: SyncEndpointForm;
   connections: BrowserApiConnection[];
+  /** Entity (payee/category) flows pick a budget only — no account. */
+  entityMode?: boolean;
   onChange: (next: SyncEndpointForm) => void;
 }) {
   const accounts = useFlowAccounts(endpoint.connectionId);
@@ -58,6 +61,7 @@ function InlineEndpoint({
           <option key={c.id} value={c.id}>{c.label}</option>
         ))}
       </select>
+      {entityMode ? null : (
       <select
         aria-label={`${label} account`}
         className={`${selectClass} flex-1`}
@@ -73,6 +77,7 @@ function InlineEndpoint({
           <option key={a.id} value={a.id}>{a.name}</option>
         ))}
       </select>
+      )}
     </div>
   );
 }
@@ -102,6 +107,8 @@ export function FlowEditDialog({
   const setFilter = (patch: Partial<SyncFlowFormState["filter"]>) => onChange({ ...form, filter: { ...form.filter, ...patch } });
   const setTransform = (patch: Partial<SyncFlowFormState["transform"]>) => onChange({ ...form, transform: { ...form.transform, ...patch } });
   const setAutomation = (patch: Partial<SyncFlowFormState["automation"]>) => onChange({ ...form, automation: { ...form.automation, ...patch } });
+  const setEntity = (patch: Partial<SyncFlowFormState["entity"]>) => onChange({ ...form, entity: { ...form.entity, ...patch } });
+  const entityMode = isEntityFlow(form.flowType);
 
   const automationHelp: Record<SyncFlowFormState["automation"]["reviewPolicy"], string> = {
     manual_preview_required: "Preview only. You review and apply every change yourself.",
@@ -119,10 +126,25 @@ export function FlowEditDialog({
         </DialogHeader>
 
         <div className="max-h-[72vh] overflow-y-auto pr-1">
-          {/* Name */}
-          <div className="flex max-w-md flex-col gap-1 pb-4">
-            <span className="text-[11px] font-semibold uppercase text-muted-foreground">Sync flow name</span>
-            <Input aria-label="Flow name" value={form.name} onChange={(e) => set({ name: e.target.value })} placeholder="e.g. Joint card → Personal budget" />
+          {/* Name + data type */}
+          <div className="flex flex-wrap gap-4 pb-4">
+            <div className="flex min-w-[16rem] flex-1 flex-col gap-1">
+              <span className="text-[11px] font-semibold uppercase text-muted-foreground">Sync flow name</span>
+              <Input aria-label="Flow name" value={form.name} onChange={(e) => set({ name: e.target.value })} placeholder="e.g. Joint card → Personal budget" />
+            </div>
+            <div className="flex flex-col gap-1">
+              <span className="text-[11px] font-semibold uppercase text-muted-foreground">Data type</span>
+              <select
+                aria-label="Sync data type"
+                className={selectClass}
+                value={form.flowType}
+                onChange={(e) => set({ flowType: e.target.value as SyncFlowFormState["flowType"] })}
+              >
+                <option value="transaction_sync">Transactions</option>
+                <option value="payee_sync">Payees</option>
+                <option value="category_sync">Categories</option>
+              </select>
+            </div>
           </div>
 
           {/* Route (full width) */}
@@ -134,12 +156,12 @@ export function FlowEditDialog({
               )}
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              <div className="min-w-0 flex-1"><InlineEndpoint label="Source" endpoint={form.source} connections={connections} onChange={(source) => set({ source })} /></div>
+              <div className="min-w-0 flex-1"><InlineEndpoint label="Source" endpoint={form.source} connections={connections} entityMode={entityMode} onChange={(source) => set({ source })} /></div>
               <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground" />
-              <div className="min-w-0 flex-1"><InlineEndpoint label="Target" endpoint={form.target} connections={connections} onChange={(target) => set({ target })} /></div>
+              <div className="min-w-0 flex-1"><InlineEndpoint label="Target" endpoint={form.target} connections={connections} entityMode={entityMode} onChange={(target) => set({ target })} /></div>
             </div>
             {sameBudget && <p className="text-xs text-destructive">Source and target must be different budgets (cross-budget only).</p>}
-            <p className="text-xs text-muted-foreground">Source budget · account → target budget · account.</p>
+            <p className="text-xs text-muted-foreground">{entityMode ? "Source budget → target budget." : "Source budget · account → target budget · account."}</p>
           </section>
 
           {/* Automation policy (RD-054 / PR-020) */}
@@ -193,7 +215,44 @@ export function FlowEditDialog({
             )}
           </section>
 
-          {/* Transform + Filters, side by side at wide widths */}
+          {/* Master-data (entity) options */}
+          {entityMode && (
+            <section className="flex flex-col gap-3 border-t border-border py-4">
+              <h4 className="text-sm font-semibold">{form.flowType === "payee_sync" ? "Payees" : "Categories"}</h4>
+              <p className="text-xs text-muted-foreground">
+                Missing {form.flowType === "payee_sync" ? "payees" : "categories"} are created on the target; existing ones are matched by name. Nothing is renamed, deleted, or hidden.
+              </p>
+              {form.flowType === "category_sync" && (
+                <>
+                  <label className="flex max-w-md flex-col gap-1 text-xs text-muted-foreground">
+                    Default target group (optional)
+                    <Input
+                      aria-label="Default target group"
+                      value={form.entity.defaultGroupName}
+                      onChange={(e) => setEntity({ defaultGroupName: e.target.value })}
+                      placeholder="e.g. Uncategorized"
+                    />
+                    <span className="text-[11px]">Used when a category&apos;s source group has no matching group on the target.</span>
+                  </label>
+                  <label className="flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      aria-label="Create missing groups"
+                      checked={form.entity.createMissingGroup}
+                      onChange={(e) => setEntity({ createMissingGroup: e.target.checked })}
+                    />
+                    Create missing groups on the target
+                  </label>
+                  <p className="text-xs text-muted-foreground">
+                    Without a default group or this option, a category with no matching target group is blocked for review.
+                  </p>
+                </>
+              )}
+            </section>
+          )}
+
+          {/* Transform + Filters (transactions only), side by side at wide widths */}
+          {!entityMode && (
           <div className="grid gap-6 border-t border-border pt-4 lg:grid-cols-2">
             <section className="flex flex-col gap-3">
               <h4 className="text-sm font-semibold">Transform</h4>
@@ -240,6 +299,7 @@ export function FlowEditDialog({
               <p className="text-xs text-muted-foreground">Sync-generated transactions are always excluded to prevent loops.</p>
             </section>
           </div>
+          )}
         </div>
 
         <DialogFooter className="flex-row items-center gap-2">
