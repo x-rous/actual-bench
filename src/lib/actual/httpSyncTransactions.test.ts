@@ -186,4 +186,29 @@ describe("createHttpTransactionsForSync", () => {
     expect(result.created).toEqual([]);
     expect(mockApiRequest).not.toHaveBeenCalled();
   });
+
+  it("groups inputs by account: one batch POST per account with correct rows and indices", async () => {
+    mockApi({ payees: [{ id: "p1", name: "Grocer" }] });
+
+    const result = await createHttpTransactionsForSync(connection, [
+      { accountId: "acct-a", date: "2026-01-05", amount: -100, payeeName: "Grocer", importedId: "a1" },
+      { accountId: "acct-b", date: "2026-01-06", amount: -200, payeeName: "Grocer", importedId: "b1" },
+      { accountId: "acct-a", date: "2026-01-07", amount: -300, payeeName: "Grocer", importedId: "a2" },
+    ]);
+
+    // Results are keyed back to the original request index regardless of account.
+    expect(result.created.map((c) => c.requestIndex)).toEqual([0, 1, 2]);
+    expect(result.created.map((c) => c.importedId)).toEqual(["a1", "b1", "a2"]);
+    expect(result.created.every((c) => (c.transactionId ?? "").startsWith("txn-"))).toBe(true);
+    expect(result.created[0].applied).toMatchObject({ amount: -100, date: "2026-01-05" });
+    expect(result.created[1].applied).toMatchObject({ amount: -200, date: "2026-01-06" });
+
+    // One batch POST per account, each carrying only that account's rows.
+    const batchCalls = mockApiRequest.mock.calls.filter(
+      ([, path, opts]) => path.endsWith("/transactions/batch") && opts?.method === "POST"
+    );
+    const byPath = new Map(batchCalls.map(([, path, opts]) => [path, (opts?.body as { transactions: { imported_id: string }[] }).transactions]));
+    expect(byPath.get("/accounts/acct-a/transactions/batch")?.map((t) => t.imported_id)).toEqual(["a1", "a2"]);
+    expect(byPath.get("/accounts/acct-b/transactions/batch")?.map((t) => t.imported_id)).toEqual(["b1"]);
+  });
 });
