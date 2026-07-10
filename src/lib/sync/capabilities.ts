@@ -48,24 +48,24 @@ const CURRENT_DIRECT_CAPABILITIES: SyncCapabilitySet = {
 /**
  * HTTP-API Server mode capabilities (RD-060).
  *
- * Phase 1 enables master-data (payee/category) sync only: the HTTP transport
- * already implements `getPayees`/`createPayee`/`getCategoryGroups`/
- * `createCategory`/`createCategoryGroup`. Transaction sync stays off
- * (`listTransactions`/`createTransactionWithImportedId` false) until the
- * transaction endpoints are implemented and the `imported_id` round-trip is
- * verified (Phase 2). Two HTTP connections are independent servers, so budgets
- * can be read concurrently without single-runtime switching.
+ * Both master-data (payee/category) and transaction sync are enabled. The HTTP
+ * transport implements the transaction primitives against actual-http-api's
+ * `/transactions/batch` (plain insert preserving `imported_id`, ids recovered by
+ * marker read-back, split children inline as `subtransactions`) - verified
+ * against a live server in the Phase 2 spike. Two HTTP connections are
+ * independent servers, so budgets can be read concurrently without the
+ * single-runtime switching Direct mode needs.
  */
-const HTTP_ENTITY_CAPABILITIES: SyncCapabilitySet = {
+const HTTP_SYNC_CAPABILITIES: SyncCapabilitySet = {
   listBudgets: false,
   listAccounts: true,
-  listTransactions: false,
-  readSplitLines: false,
+  listTransactions: true,
+  readSplitLines: true,
   createPayee: true,
-  createTransaction: false,
-  createTransactionWithImportedId: false,
-  createTransactionWithNotesMarker: false,
-  createSplitLinesAsSeparateTransactions: false,
+  createTransaction: true,
+  createTransactionWithImportedId: true,
+  createTransactionWithNotesMarker: true,
+  createSplitLinesAsSeparateTransactions: true,
   supportsMultiRuntimeBudgetAccess: true,
   updateTransaction: false,
   deleteTransaction: false,
@@ -81,7 +81,7 @@ export function getBudgetFileSyncCapabilities(
       mode: "http-api",
       supported: true,
       reason: null,
-      capabilities: { ...HTTP_ENTITY_CAPABILITIES },
+      capabilities: { ...HTTP_SYNC_CAPABILITIES },
     };
   }
   if (connection.mode !== "browser-api") {

@@ -28,7 +28,16 @@ const marker = (sourceItemKey: string) =>
   });
 
 const browserCaps = getBudgetFileSyncCapabilities({ mode: "browser-api" });
-const httpCaps = getBudgetFileSyncCapabilities({ mode: "http-api" });
+// A hypothetical target whose transport cannot persist a durable marker. (Both
+// shipping transports - Direct and HTTP - now can, so this is synthetic.)
+const noMarkerCaps: typeof browserCaps = {
+  ...browserCaps,
+  capabilities: {
+    ...browserCaps.capabilities,
+    createTransactionWithImportedId: false,
+    createTransactionWithNotesMarker: false,
+  },
+};
 
 function txn(overrides: Partial<SyncSourceTransaction> = {}): SyncSourceTransaction {
   return {
@@ -302,8 +311,8 @@ describe("planSyncFlow - splits", () => {
 });
 
 describe("planSyncFlow - blocked", () => {
-  it("blocks creates when the target cannot store a durable marker (HTTP mode)", () => {
-    const plan = planSyncFlow(baseInput({ capabilities: httpCaps }));
+  it("blocks creates when the target cannot store a durable marker", () => {
+    const plan = planSyncFlow(baseInput({ capabilities: noMarkerCaps }));
     const item = plan.items[0];
     expect(item.classification).toBe("blocked");
     expect(item.action).toBe("blocked");

@@ -282,17 +282,19 @@ describe("getSyncCapabilities", () => {
     expect(report.capabilities.createTransactionWithImportedId).toBe(true);
   });
 
-  it("supports entity sync over HTTP but still refuses transaction primitives", async () => {
+  it("supports both entity and transaction sync over HTTP", () => {
     const transport = createHttpApiTransport(httpConnection);
     const caps = transport.getSyncCapabilities();
-    // HTTP now supports master-data sync (payees/categories)…
     expect(caps.supported).toBe(true);
     expect(caps.capabilities.createPayee).toBe(true);
-    // …but transaction sync is not implemented yet (RD-060 Phase 2).
-    expect(caps.capabilities.listTransactions).toBe(false);
-    expect(() => transport.listTransactionsForSync({ accountId: "a" })).toThrow();
-    expect(() => transport.createOrResolvePayee({ name: "x" })).toThrow();
-    expect(() => transport.createTransactionsForSync([])).toThrow();
-    expect(() => transport.getTargetLookupForSync({ accountId: "a" })).toThrow();
+    // Transaction sync is now implemented over HTTP (RD-060 Phase 2).
+    expect(caps.capabilities.listTransactions).toBe(true);
+    expect(caps.capabilities.createTransactionWithImportedId).toBe(true);
+    // The transaction primitives are wired (behaviour covered in
+    // httpSyncTransactions.test.ts).
+    expect(typeof transport.listTransactionsForSync).toBe("function");
+    expect(typeof transport.createOrResolvePayee).toBe("function");
+    expect(typeof transport.createTransactionsForSync).toBe("function");
+    expect(typeof transport.getTargetLookupForSync).toBe("function");
   });
 });

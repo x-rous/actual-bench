@@ -7,19 +7,19 @@ import { cn } from "@/lib/utils";
 import { connectionFingerprint } from "@/lib/sync/connectionRef";
 import { decodeFlowPlanConfig } from "@/lib/sync/flowConfig";
 import { latestRunLabel, runNeedsAttention, runQueuedCount } from "../lib/runsView";
-import type { BrowserApiConnection } from "@/store/connection";
+import type { ConnectionInstance } from "@/store/connection";
 import type { SyncFlow, SyncFlowRun } from "@/lib/app-db/types";
 
 type FlowListProps = {
   flows: SyncFlow[];
   selectedFlowId: string | null;
   latestRuns: Map<string, SyncFlowRun>;
-  connections: BrowserApiConnection[];
+  connections: ConnectionInstance[];
   onSelect: (flowId: string) => void;
   onCreate: () => void;
 };
 
-function connectionAvailable(fingerprint: string, connections: BrowserApiConnection[]): boolean {
+function connectionAvailable(fingerprint: string, connections: ConnectionInstance[]): boolean {
   if (!fingerprint) return false;
   return connections.some((c) => connectionFingerprint(c) === fingerprint);
 }

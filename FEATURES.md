@@ -57,7 +57,7 @@ A compact diagnostics page for Actual Bench's own server-side metadata database.
 
 ## Budget File Sync
 
-A workspace for syncing data between budget files as saved one-way flows. One unified engine covers every data type — **transactions, payees, and categories** — so preview, apply, run history, the review queue, and the whole safe-only automation layer work identically for each. It is deliberately conservative: **cross-budget only, create-only, preview-first.** Transactions sync in Direct mode; **payee and category sync also works over HTTP API Server mode** (transaction sync over HTTP is planned).
+A workspace for syncing data between budget files as saved one-way flows. One unified engine covers every data type — **transactions, payees, and categories** — so preview, apply, run history, the review queue, and the whole safe-only automation layer work identically for each. It is deliberately conservative: **cross-budget only, create-only, preview-first.** Every data type - transactions, payees, and categories - syncs in **both Direct and HTTP API Server mode**, in any combination (Direct-to-HTTP, HTTP-to-Direct, and same-mode).
 
 ### Master data (payees & categories)
 
@@ -94,7 +94,7 @@ The same engine can run without hand-picking every change — but only for prova
 - **Retry failed items**: re-attempt just the failed items of a run (marker-based idempotency prevents duplicates on retry)
 - **Flow health**: after repeated failed/partial automated runs a flow auto-pauses (and is badged) so it stops firing until you re-enable it; auto-run outcomes that fail or leave items to review raise an in-app notice
 
-- Not in scope: HTTP API Server mode, same-budget sync, automatic target updates/deletes, category auto-create, fuzzy duplicate auto-mapping, unattended server-side scheduled sync, and multi-currency conversion
+- Not in scope: same-budget sync, automatic target updates/deletes, category auto-create, fuzzy duplicate auto-mapping, unattended server-side scheduled sync, and multi-currency conversion
 
 ## Data Browser
 

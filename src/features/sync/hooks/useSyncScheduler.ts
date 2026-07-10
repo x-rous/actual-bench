@@ -10,7 +10,7 @@ import {
   shouldPauseForHealth,
 } from "../lib/flowHealth";
 import { selectFlowsToAutoRun, type SchedulableFlow } from "../lib/scheduler";
-import type { BrowserApiConnection } from "@/store/connection";
+import type { ConnectionInstance } from "@/store/connection";
 import type { SyncFlow, SyncFlowRun } from "@/lib/app-db/types";
 import type { SafeSyncResult } from "@/lib/sync/safeSyncOrchestrator";
 
@@ -34,7 +34,7 @@ function runTimeMs(run: SyncFlowRun | undefined): number | null {
 
 export function useSyncScheduler(params: {
   flows: SyncFlow[];
-  connections: BrowserApiConnection[];
+  connections: ConnectionInstance[];
   latestRuns: Map<string, SyncFlowRun>;
   /** Master switch (default on); the per-flow opt-in is the review policy. */
   enabled?: boolean;
@@ -61,7 +61,7 @@ export function useSyncScheduler(params: {
 
     function tick() {
       const { flows, connections, latestRuns, onRunComplete, onFlowPaused } = stateRef.current;
-      const resolved = new Map<string, { source: BrowserApiConnection; target: BrowserApiConnection }>();
+      const resolved = new Map<string, { source: ConnectionInstance; target: ConnectionInstance }>();
 
       const schedulable: SchedulableFlow[] = flows.map((flow) => {
         const config = decodeFlowPlanConfig(flow);

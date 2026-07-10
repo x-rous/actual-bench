@@ -3,23 +3,30 @@
 import { useMemo } from "react";
 import { useQueries, useQuery } from "@tanstack/react-query";
 import { getTransport } from "@/lib/actual";
-import { isBrowserApiConnection, useConnectionStore } from "@/store/connection";
+import { useConnectionStore } from "@/store/connection";
+import { getBudgetFileSyncCapabilities } from "@/lib/sync/capabilities";
 import * as api from "../lib/syncApi";
-import type { BrowserApiConnection } from "@/store/connection";
+import type { ConnectionInstance } from "@/store/connection";
 import type { SyncFlowRun } from "@/lib/app-db/types";
 
-/** Direct (browser-api) connections available for source/target selection. */
-export function useDirectConnections(): BrowserApiConnection[] {
+/**
+ * Connections eligible for Budget File Sync source/target selection - any mode
+ * whose capability report is `supported` (Direct and HTTP API Server today).
+ */
+export function useSyncConnections(): ConnectionInstance[] {
   const instances = useConnectionStore((s) => s.instances);
-  return useMemo(() => instances.filter(isBrowserApiConnection), [instances]);
+  return useMemo(
+    () => instances.filter((c) => getBudgetFileSyncCapabilities({ mode: c.mode }).supported),
+    [instances]
+  );
 }
 
-export function useConnectionById(connectionId: string): BrowserApiConnection | undefined {
-  const connections = useDirectConnections();
+export function useConnectionById(connectionId: string): ConnectionInstance | undefined {
+  const connections = useSyncConnections();
   return connections.find((c) => c.id === connectionId);
 }
 
-/** Accounts for a chosen Direct connection (opens that budget via the transport). */
+/** Accounts for a chosen connection (opens that budget via the transport). */
 export function useFlowAccounts(connectionId: string) {
   const connection = useConnectionById(connectionId);
   return useQuery({

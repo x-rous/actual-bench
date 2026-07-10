@@ -1,15 +1,15 @@
 import { getBudgetFileSyncCapabilities, hasSyncCapabilities, missingSyncCapabilities } from "./capabilities";
 
 describe("budget file sync capabilities", () => {
-  it("supports master-data (but not transaction) sync over HTTP API mode", () => {
+  it("supports both master-data and transaction sync over HTTP API mode", () => {
     const report = getBudgetFileSyncCapabilities({ mode: "http-api" });
 
     expect(report.supported).toBe(true);
     // Entity sync primitives are available…
     expect(report.capabilities.createPayee).toBe(true);
-    // …but transaction sync is not yet (RD-060 Phase 2).
-    expect(report.capabilities.listTransactions).toBe(false);
-    expect(report.capabilities.createTransactionWithImportedId).toBe(false);
+    // …and so is transaction sync (RD-060 Phase 2).
+    expect(report.capabilities.listTransactions).toBe(true);
+    expect(report.capabilities.createTransactionWithImportedId).toBe(true);
   });
 
   it("reports the Direct-mode capabilities proven by the Slice 1 spike", () => {
@@ -34,12 +34,17 @@ describe("budget file sync capabilities", () => {
     expect(hasSyncCapabilities(report, ["listTransactions", "createTransactionWithImportedId"])).toBe(true);
   });
 
-  it("enables only the entity-create capabilities for HTTP API mode", () => {
+  it("enables transaction sync capabilities for HTTP API mode", () => {
     const report = getBudgetFileSyncCapabilities({ mode: "http-api" });
-    // Transaction-write capabilities stay off until Phase 2.
-    expect(report.capabilities.createTransaction).toBe(false);
-    expect(report.capabilities.readSplitLines).toBe(false);
+    expect(report.capabilities.createTransaction).toBe(true);
+    expect(report.capabilities.readSplitLines).toBe(true);
+    expect(report.capabilities.createSplitLinesAsSeparateTransactions).toBe(true);
+    // Independent servers can hold two budgets open at once (unlike Direct mode).
+    expect(report.capabilities.supportsMultiRuntimeBudgetAccess).toBe(true);
+    // Still create-only.
+    expect(report.capabilities.updateTransaction).toBe(false);
+    expect(report.capabilities.deleteTransaction).toBe(false);
     expect(hasSyncCapabilities(report, ["createPayee"])).toBe(true);
-    expect(hasSyncCapabilities(report, ["listTransactions"])).toBe(false);
+    expect(hasSyncCapabilities(report, ["listTransactions"])).toBe(true);
   });
 });

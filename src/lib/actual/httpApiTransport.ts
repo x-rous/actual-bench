@@ -57,11 +57,16 @@ import {
 import type { HttpApiConnection } from "@/store/connection";
 import { prepareRuleForTransport, prepareRulePatchForTransport } from "./ruleMutation";
 import {
-  unsupportedTransportOperation,
   type ActualBenchTransport,
   type TransportBudgetMonth,
 } from "./transport";
 import { getBudgetFileSyncCapabilities } from "@/lib/sync/capabilities";
+import {
+  createHttpTransactionsForSync,
+  createOrResolveHttpPayee,
+  getHttpTargetLookupForSync,
+  listHttpTransactionsForSync,
+} from "./httpSyncTransactions";
 
 export function createHttpApiTransport(
   connection: HttpApiConnection
@@ -164,21 +169,13 @@ export function createHttpApiTransport(
         method: "DELETE",
       }),
 
-    // Budget File Sync is Direct-mode only in the MVP. Report the unsupported
-    // capability set and refuse the write/read primitives explicitly.
+    // Budget File Sync over HTTP API mode (RD-060): entity primitives above,
+    // transaction primitives via actual-http-api below.
     getSyncCapabilities: () => getBudgetFileSyncCapabilities({ mode: "http-api" }),
-    listTransactionsForSync: () => {
-      throw unsupportedTransportOperation("http-api", "Budget File Sync transaction reads");
-    },
-    createOrResolvePayee: () => {
-      throw unsupportedTransportOperation("http-api", "Budget File Sync payee resolution");
-    },
-    createTransactionsForSync: () => {
-      throw unsupportedTransportOperation("http-api", "Budget File Sync transaction creation");
-    },
-    getTargetLookupForSync: () => {
-      throw unsupportedTransportOperation("http-api", "Budget File Sync target lookup");
-    },
+    listTransactionsForSync: (input) => listHttpTransactionsForSync(connection, input),
+    createOrResolvePayee: (input) => createOrResolveHttpPayee(connection, input.name),
+    createTransactionsForSync: (inputs) => createHttpTransactionsForSync(connection, inputs),
+    getTargetLookupForSync: (input) => getHttpTargetLookupForSync(connection, input),
 
     getNotesIndex: () => getNotesIndex(connection),
     getAccountNote: (accountId) => getAccountNote(connection, accountId),

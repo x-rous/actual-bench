@@ -45,8 +45,8 @@ describe("entity sync over HTTP (RD-060)", () => {
     expect(() => categoryAdapter.validate({ flow: routeFlow("category_sync"), sourceConnection: httpConn("a"), targetConnection: httpConn("b") })).not.toThrow();
   });
 
-  it("blocks transaction flows on HTTP-API connections with a specific reason", () => {
-    expect(() => transactionAdapter.validate({ flow: routeFlow("transaction_sync", true), sourceConnection: httpConn("a"), targetConnection: httpConn("b") })).toThrow(/HTTP/i);
+  it("validates transaction flows on HTTP-API connections (RD-060 Phase 2)", () => {
+    expect(() => transactionAdapter.validate({ flow: routeFlow("transaction_sync", true), sourceConnection: httpConn("a"), targetConnection: httpConn("b") })).not.toThrow();
   });
 
   it("plans + creates payees through an HTTP-style transport", async () => {

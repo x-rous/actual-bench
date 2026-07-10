@@ -180,10 +180,10 @@ describe("applySyncRun - validation", () => {
     expect(createTransactionsForSync).not.toHaveBeenCalled();
   });
 
-  it("rejects transaction sync over an HTTP target (capability gate)", async () => {
+  it("applies transaction sync over an HTTP target (RD-060 Phase 2)", async () => {
     const s = makeStore();
-    // Flow saved for the HTTP target so the route matches; the capability gate,
-    // not the route check, must reject transaction sync over HTTP.
+    // Flow saved for the HTTP target so the route matches; HTTP now passes the
+    // capability gate (transaction sync is supported), so the apply proceeds.
     s.store.loadFlow = jest.fn(async () => {
       const flow = makeFlow();
       (flow.legs[0].targetRef.data as Record<string, unknown>).connectionFingerprint = connectionFingerprint(httpTarget);
@@ -191,7 +191,7 @@ describe("applySyncRun - validation", () => {
     });
     const { transport } = makeTargetTransport();
     const result = await applySyncRun({ runId: "run-1", targetConnection: httpTarget }, { transport: provider(transport), store: s.store });
-    expect(result).toMatchObject({ status: "failed", error: { code: "unsupported_connection" } });
+    expect(result.status).toBe("applied");
   });
 
   it("rejects a target that no longer matches the saved route", async () => {

@@ -4,12 +4,12 @@ import { ArrowLeftRight, ArrowRight, History, Loader2, Pencil, Play, Zap } from 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import type { BrowserApiConnection } from "@/store/connection";
+import type { ConnectionInstance } from "@/store/connection";
 import type { SyncEndpointForm, SyncFlowFormState } from "../lib/flowForm";
 
 type FlowHeaderProps = {
   form: SyncFlowFormState;
-  connections: BrowserApiConnection[];
+  connections: ConnectionInstance[];
   previewing: boolean;
   canPreview: boolean;
   /** Shown as a tooltip on the disabled Run preview button. */
@@ -26,7 +26,7 @@ type FlowHeaderProps = {
   onShowHistory: () => void;
 };
 
-function hostOf(connection: BrowserApiConnection | undefined): string {
+function hostOf(connection: ConnectionInstance | undefined): string {
   if (!connection) return "connection not available";
   try {
     return new URL(connection.baseUrl).host;
@@ -35,7 +35,7 @@ function hostOf(connection: BrowserApiConnection | undefined): string {
   }
 }
 
-function Endpoint({ endpoint, connection, showAccount }: { endpoint: SyncEndpointForm; connection?: BrowserApiConnection; showAccount: boolean }) {
+function Endpoint({ endpoint, connection, showAccount }: { endpoint: SyncEndpointForm; connection?: ConnectionInstance; showAccount: boolean }) {
   return (
     <div className="flex w-[22rem] shrink-0 flex-col gap-0.5 rounded-md border border-border bg-muted/30 px-3 py-2">
       <span className={cn("truncate font-mono text-[11px]", connection ? "text-muted-foreground" : "text-amber-600 dark:text-amber-400")}>

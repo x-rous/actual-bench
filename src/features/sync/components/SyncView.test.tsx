@@ -4,7 +4,7 @@ import { SyncView } from "./SyncView";
 import * as flowsHook from "../hooks/useSyncFlows";
 import * as dataHook from "../hooks/useSyncData";
 import * as orchestrationHook from "../hooks/useSyncOrchestration";
-import type { BrowserApiConnection } from "@/store/connection";
+import type { BrowserApiConnection, ConnectionInstance } from "@/store/connection";
 import type { SyncFlow, SyncFlowRunItem } from "@/lib/app-db/types";
 
 jest.mock("../hooks/useSyncFlows");
@@ -62,9 +62,9 @@ const applyMutate = jest.fn((_args, opts?: { onSuccess?: (r: unknown) => void })
 );
 let createMutate: jest.Mock;
 
-function setup(connections: BrowserApiConnection[]) {
+function setup(connections: ConnectionInstance[]) {
   createMutate = jest.fn();
-  (dataHook.useDirectConnections as jest.Mock).mockReturnValue(connections);
+  (dataHook.useSyncConnections as jest.Mock).mockReturnValue(connections);
   (dataHook.useFlowAccounts as jest.Mock).mockReturnValue({ data: [{ id: "acct-src", name: "Checking" }, { id: "acct-tgt", name: "Joint" }], isLoading: false });
   (dataHook.useSyncRun as jest.Mock).mockImplementation((runId: string | null) => ({ data: runId ? runFixture : undefined, refetch: jest.fn() }));
   (dataHook.useFlowRuns as jest.Mock).mockImplementation((flowId: string | null) => ({ data: flowId ? [runFixture.run] : [], refetch: jest.fn() }));
@@ -83,10 +83,17 @@ function setup(connections: BrowserApiConnection[]) {
 beforeEach(() => jest.clearAllMocks());
 
 describe("SyncView", () => {
-  it("shows the Direct-only notice when fewer than two Direct connections exist", () => {
+  it("shows the needs-connections notice when fewer than two connections exist", () => {
     setup([conn1]);
     render(<SyncView />);
-    expect(screen.getByText(/supports Direct mode only/i)).toBeInTheDocument();
+    expect(screen.getByText(/needs at least two connections/i)).toBeInTheDocument();
+  });
+
+  it("counts HTTP API Server connections toward the two-connection minimum", () => {
+    const httpConn: ConnectionInstance = { id: "c3", label: "Cloud", mode: "http-api", baseUrl: "https://api.example.com", apiKey: "k", budgetSyncId: "b-http" };
+    setup([conn1, httpConn]);
+    render(<SyncView />);
+    expect(screen.queryByText(/needs at least two connections/i)).not.toBeInTheDocument();
   });
 
   it("opens the editor dialog with default transform (reverse sign, create payee)", async () => {
