@@ -1,12 +1,15 @@
 import { getBudgetFileSyncCapabilities, hasSyncCapabilities, missingSyncCapabilities } from "./capabilities";
 
 describe("budget file sync capabilities", () => {
-  it("marks HTTP API mode unsupported for the Direct-only MVP", () => {
+  it("supports master-data (but not transaction) sync over HTTP API mode", () => {
     const report = getBudgetFileSyncCapabilities({ mode: "http-api" });
 
-    expect(report.supported).toBe(false);
-    expect(report.reason).toMatch(/Direct mode/i);
-    expect(report.capabilities.createPayee).toBe(false);
+    expect(report.supported).toBe(true);
+    // Entity sync primitives are available…
+    expect(report.capabilities.createPayee).toBe(true);
+    // …but transaction sync is not yet (RD-060 Phase 2).
+    expect(report.capabilities.listTransactions).toBe(false);
+    expect(report.capabilities.createTransactionWithImportedId).toBe(false);
   });
 
   it("reports the Direct-mode capabilities proven by the Slice 1 spike", () => {
@@ -31,8 +34,12 @@ describe("budget file sync capabilities", () => {
     expect(hasSyncCapabilities(report, ["listTransactions", "createTransactionWithImportedId"])).toBe(true);
   });
 
-  it("reports HTTP API mode with no sync capabilities at all", () => {
+  it("enables only the entity-create capabilities for HTTP API mode", () => {
     const report = getBudgetFileSyncCapabilities({ mode: "http-api" });
-    expect(Object.values(report.capabilities).every((v) => v === false)).toBe(true);
+    // Transaction-write capabilities stay off until Phase 2.
+    expect(report.capabilities.createTransaction).toBe(false);
+    expect(report.capabilities.readSplitLines).toBe(false);
+    expect(hasSyncCapabilities(report, ["createPayee"])).toBe(true);
+    expect(hasSyncCapabilities(report, ["listTransactions"])).toBe(false);
   });
 });

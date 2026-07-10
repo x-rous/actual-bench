@@ -57,7 +57,7 @@ A compact diagnostics page for Actual Bench's own server-side metadata database.
 
 ## Budget File Sync
 
-A workspace for syncing data between budget files as saved one-way flows. One unified engine covers every data type — **transactions, payees, and categories** — so preview, apply, run history, the review queue, and the whole safe-only automation layer work identically for each. It is deliberately conservative: **Direct mode only, cross-budget only, create-only, preview-first.**
+A workspace for syncing data between budget files as saved one-way flows. One unified engine covers every data type — **transactions, payees, and categories** — so preview, apply, run history, the review queue, and the whole safe-only automation layer work identically for each. It is deliberately conservative: **cross-budget only, create-only, preview-first.** Transactions sync in Direct mode; **payee and category sync also works over HTTP API Server mode** (transaction sync over HTTP is planned).
 
 ### Master data (payees & categories)
 

@@ -97,6 +97,11 @@ export const transactionAdapter: SyncKindAdapter = {
     const targetCaps = getBudgetFileSyncCapabilities({ mode: targetConnection.mode });
     if (!sourceCaps.supported) throw new SyncKindError("unsupported_connection", sourceCaps.reason ?? "Source connection is unsupported.");
     if (!targetCaps.supported) throw new SyncKindError("unsupported_connection", targetCaps.reason ?? "Target connection is unsupported.");
+    // HTTP-API connections support master-data sync but not transaction sync yet
+    // (RD-060 Phase 2); give a specific reason rather than a generic capability error.
+    if (sourceConnection.mode === "http-api" || targetConnection.mode === "http-api") {
+      throw new SyncKindError("unsupported_connection", "Transaction sync isn't available over HTTP API connections yet - use Direct mode, or sync payees/categories instead.");
+    }
     if (!sourceCaps.capabilities.listTransactions || !sourceCaps.capabilities.readSplitLines) {
       throw new SyncKindError("unsupported_connection", "Source connection cannot list transactions or split lines.");
     }
