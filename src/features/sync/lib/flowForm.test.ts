@@ -9,6 +9,7 @@ import {
   emptyFlowForm,
   flowToFormState,
   isSameBudget,
+  isSelfSync,
   missingRouteFields,
   type SyncFlowFormState,
 } from "./flowForm";
@@ -91,18 +92,22 @@ describe("validation", () => {
     expect(missingRouteFields(filledForm())).toEqual([]);
   });
 
-  it("blocks any same-budget flow, including a different account in the same budget", () => {
+  it("allows same-budget different-account flows but blocks a self-sync (RD-057 §3)", () => {
+    // Same account → same account is a no-op: blocked.
     const sameAccount = filledForm();
     sameAccount.target = { ...sameAccount.source };
     expect(isSameBudget(sameAccount)).toBe(true);
+    expect(isSelfSync(sameAccount)).toBe(true);
 
-    // Same budget file, different account - still blocked (cross-budget only).
+    // Same budget file, different account - now allowed (not a self-sync).
     const sameBudget = filledForm();
     sameBudget.target = { ...sameBudget.source, accountId: "acct-other", accountName: "Savings" };
     expect(isSameBudget(sameBudget)).toBe(true);
+    expect(isSelfSync(sameBudget)).toBe(false);
 
     // Different budgets - allowed.
     expect(isSameBudget(filledForm())).toBe(false);
+    expect(isSelfSync(filledForm())).toBe(false);
   });
 });
 

@@ -18,7 +18,7 @@ import {
   buildFlowPayload,
   emptyFlowForm,
   flowToFormState,
-  isSameBudget,
+  isSelfSync,
   missingRouteFields,
   type SyncFlowFormState,
 } from "../lib/flowForm";
@@ -119,7 +119,7 @@ export function SyncView() {
   const dirty = JSON.stringify(form) !== savedSnapshot;
   const sourceConn = connections.find((c) => c.id === form.source.connectionId);
   const targetConn = connections.find((c) => c.id === form.target.connectionId);
-  const routeReady = missingRouteFields(form).length === 0 && !isSameBudget(form);
+  const routeReady = missingRouteFields(form).length === 0 && !isSelfSync(form);
   const canPreview = !!selectedFlowId && !dirty && !!sourceConn && !!targetConn && routeReady;
 
   function previewBlockReason(): string | null {

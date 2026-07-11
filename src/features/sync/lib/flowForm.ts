@@ -162,13 +162,22 @@ export function missingRouteFields(form: SyncFlowFormState): string[] {
   return missing;
 }
 
-/**
- * MVP is cross-budget only. Two accounts in the *same* budget file is not
- * supported, so any flow whose source and target resolve to the same budget is
- * blocked - regardless of account.
- */
+/** True when source and target resolve to the same budget file. */
 export function isSameBudget(form: SyncFlowFormState): boolean {
   return !!form.source.budgetSyncId && form.source.budgetSyncId === form.target.budgetSyncId;
+}
+
+/**
+ * A flow that syncs an account to itself is a no-op and is always blocked. Same
+ * budget but *different* accounts is allowed (RD-057 §3 same-budget sync);
+ * cross-budget remains the common case.
+ */
+export function isSelfSync(form: SyncFlowFormState): boolean {
+  return (
+    isSameBudget(form) &&
+    !!form.source.accountId &&
+    form.source.accountId === form.target.accountId
+  );
 }
 
 function splitNames(value: string): string[] {

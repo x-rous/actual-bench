@@ -14,7 +14,7 @@ import {
 } from "@/components/ui/dialog";
 import { clampSyncInterval } from "@/lib/sync/flowConfig";
 import { useFlowAccounts } from "../hooks/useSyncData";
-import { isEntityFlow, isSameBudget, missingRouteFields, type SyncEndpointForm, type SyncFlowFormState } from "../lib/flowForm";
+import { isEntityFlow, isSameBudget, isSelfSync, missingRouteFields, type SyncEndpointForm, type SyncFlowFormState } from "../lib/flowForm";
 import type { ConnectionInstance } from "@/store/connection";
 
 type FlowEditDialogProps = {
@@ -101,15 +101,19 @@ export function FlowEditDialog({
   }
 
   const routeMissing = missingRouteFields(form);
+  const entityMode = isEntityFlow(form.flowType);
+  // Entity flows are budget-level, so they must target two different budgets.
+  // Transaction flows allow same budget with different accounts (RD-057 §3), so
+  // only a true self-sync (same account) is blocked.
   const sameBudget = isSameBudget(form);
-  const canSave = routeMissing.length === 0 && !sameBudget;
+  const blockedRoute = entityMode ? sameBudget : isSelfSync(form);
+  const canSave = routeMissing.length === 0 && !blockedRoute;
 
   const set = (patch: Partial<SyncFlowFormState>) => onChange({ ...form, ...patch });
   const setFilter = (patch: Partial<SyncFlowFormState["filter"]>) => onChange({ ...form, filter: { ...form.filter, ...patch } });
   const setTransform = (patch: Partial<SyncFlowFormState["transform"]>) => onChange({ ...form, transform: { ...form.transform, ...patch } });
   const setAutomation = (patch: Partial<SyncFlowFormState["automation"]>) => onChange({ ...form, automation: { ...form.automation, ...patch } });
   const setEntity = (patch: Partial<SyncFlowFormState["entity"]>) => onChange({ ...form, entity: { ...form.entity, ...patch } });
-  const entityMode = isEntityFlow(form.flowType);
 
   const automationHelp: Record<SyncFlowFormState["automation"]["reviewPolicy"], string> = {
     manual_preview_required: "You review and apply every change.",
@@ -155,8 +159,8 @@ export function FlowEditDialog({
           <section className="flex flex-col gap-2 border-t border-border pt-4">
             <div className="flex items-center gap-2">
               <h4 className="text-sm font-semibold">From → to</h4>
-              {sameBudget ? (
-                <span className="text-xs text-destructive">Pick two different budgets.</span>
+              {blockedRoute ? (
+                <span className="text-xs text-destructive">{entityMode ? "Pick two different budgets." : "Pick two different accounts."}</span>
               ) : routeMissing.length === 0 ? (
                 <span className="text-xs text-muted-foreground">{entityMode ? "budget → budget" : "budget · account → budget · account"}</span>
               ) : null}
