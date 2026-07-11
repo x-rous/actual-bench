@@ -165,6 +165,16 @@ function planSourceItem(
   // 1. Existing mapping wins - this item was synced before.
   const mapping = mappingByKey.get(item.itemKey);
   if (mapping) {
+    // A disabled mapping (RD-057 §7 repair tool) means "stop syncing this item":
+    // skip it and never re-create, regardless of source changes.
+    if (mapping.status === "disabled") {
+      return baseItem(item, {
+        classification: "already_synced",
+        action: "skip",
+        targetTransactionId: mapping.targetTransactionId,
+        message: "Sync disabled for this item.",
+      });
+    }
     if (mapping.sourceFingerprint === item.fingerprint) {
       return baseItem(item, {
         classification: "already_synced",

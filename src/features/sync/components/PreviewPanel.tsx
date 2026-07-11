@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { CheckCircle2, Info, ListChecks, Loader2, XCircle } from "lucide-react";
+import { CheckCircle2, Download, Info, ListChecks, Loader2, XCircle } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -18,6 +18,7 @@ import {
   type PreviewRow,
   type SyncKind,
 } from "../lib/previewRows";
+import { auditFileName, buildRunAuditCsv } from "../lib/runAudit";
 import type { ApplyRunResult } from "@/lib/sync/applyOrchestrator";
 import type { DryRunError, DryRunSummary } from "@/lib/sync/previewOrchestrator";
 
@@ -37,7 +38,22 @@ type PreviewPanelProps = {
   previewedAt: string | null;
   /** Viewing a past/applied run: no selection or apply. */
   readOnly: boolean;
+  /** Run id, used to name the audit export file (RD-057 §7). */
+  runId?: string | null;
 };
+
+/** Trigger a client-side file download of `content` (RD-057 §7 audit export). */
+function downloadTextFile(content: string, fileName: string, mime: string): void {
+  const blob = new Blob([content], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = fileName;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
+}
 
 /** A preview reflects a point-in-time source snapshot; warn once it's this old. */
 const STALE_AFTER_MS = 120_000;
@@ -174,6 +190,16 @@ export function PreviewPanel(props: PreviewPanelProps) {
             })}
           </div>
           <div className="flex-1" />
+          {rows.length > 0 && (
+            <Button
+              size="sm"
+              variant="ghost"
+              title="Export this run's audit (CSV)"
+              onClick={() => downloadTextFile(buildRunAuditCsv(rows), auditFileName(props.runId ?? "run", "csv"), "text/csv")}
+            >
+              <Download className="h-3.5 w-3.5" /> Export
+            </Button>
+          )}
           {props.readOnly ? (
             <span className="text-xs text-muted-foreground">Read-only - a past run</span>
           ) : (

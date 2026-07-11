@@ -237,6 +237,14 @@ describe("planSyncFlow - mappings and markers", () => {
     expect(gone!.targetTransactionId).toBe("tgt-1");
   });
 
+  it("skips an item whose mapping was disabled (RD-057 §7)", () => {
+    const plan = planSyncFlow(
+      baseInput({ existingMappings: [mapping({ sourceFingerprint: "anything", status: "disabled" })] })
+    );
+    expect(plan.items[0].action).toBe("skip");
+    expect(plan.items[0].message).toMatch(/disabled/i);
+  });
+
   it("does not flag deletions when detection is off", () => {
     const plan = planSyncFlow(
       baseInput({

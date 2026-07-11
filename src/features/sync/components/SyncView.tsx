@@ -431,6 +431,7 @@ export function SyncView() {
                         onApply={() => {}}
                         applying={false}
                         applyResult={null}
+                        runId={historyRunId}
                       />
                     </div>
                   ) : (
@@ -460,6 +461,7 @@ export function SyncView() {
                   onApply={handleApply}
                   applying={applyMutation.isPending}
                   applyResult={applyResult}
+                  runId={activeRunId}
                 />
               ) : (
                 <div className="flex flex-col items-center gap-3 rounded-md border border-dashed border-border bg-background px-6 py-16 text-center">
