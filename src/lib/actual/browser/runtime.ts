@@ -281,16 +281,52 @@ export async function getBrowserApiRuntime(
   const serverUrl = normalizeUrl(connection.baseUrl);
   const encryptionPassword = connection.encryptionPassword?.trim() || undefined;
 
-  // SPIKE (RD-059): is the previous runtime on the SAME server (only the budget
-  // differs)? That's the exact case RD-059 would optimize, so we tag the timing.
+  // RD-059: is the previous runtime on the SAME server, with only the budget
+  // differing? Then we can keep the initialized API + server connection alive and
+  // just swap the open budget - skipping the teardown/re-init/reconnect entirely.
   const sameServerAsPrevious =
     !!previousRuntime && serverSignatureFromKey(previousRuntime.key) === serverSignature(connection);
+
+  const openBudgetAndSync = async (
+    runtime: ActualBrowserApiRuntime,
+    timing: RuntimeTiming
+  ): Promise<void> => {
+    await timing.phase("download", () =>
+      withTimeout(
+        runtime.downloadBudget(connection.budgetSyncId, { password: encryptionPassword }),
+        "Opening budget"
+      )
+    );
+    await timing.phase("sync", () => withTimeout(runtime.sync(), "Syncing budget"));
+  };
 
   const promise = (async () => {
     const timing = runtimeTiming();
 
-    if (previousRuntime) await timing.phase("shutdown", () => shutdownRuntime(previousRuntime));
+    // ── Fast path (RD-059): same server → swap the budget on the live runtime.
+    // Any failure falls through to a clean full re-init, so correctness is never
+    // at the mercy of the switch working.
+    if (previousRuntime && sameServerAsPrevious) {
+      try {
+        const runtime = await previousRuntime.promise;
+        await openBudgetAndSync(runtime, timing);
+        timing.report({ budgetSyncId: connection.budgetSyncId, sameServerAsPrevious, switched: true });
+        return runtime;
+      } catch {
+        // Live budget swap failed - tear the runtime down and re-init cleanly.
+        await shutdownRuntime(previousRuntime).catch(() => {});
+        return fullInit(timing, /* alreadyShutDown */ true);
+      }
+    }
 
+    return fullInit(timing, /* alreadyShutDown */ false);
+  })();
+
+  // Full teardown + boot: different server, first open, or a fast-switch fallback.
+  async function fullInit(timing: RuntimeTiming, alreadyShutDown: boolean): Promise<ActualBrowserApiRuntime> {
+    if (previousRuntime && !alreadyShutDown) {
+      await timing.phase("shutdown", () => shutdownRuntime(previousRuntime));
+    }
     const actual = await timing.phase("load", () =>
       withTimeout(loadActualApi<ActualBrowserApi>(), "Loading @actual-app/api")
     );
@@ -303,17 +339,10 @@ export async function getBrowserApiRuntime(
       })
     );
     const runtime: ActualBrowserApiRuntime = { ...actual, send: initResult.send };
-    await timing.phase("download", () =>
-      withTimeout(
-        runtime.downloadBudget(connection.budgetSyncId, { password: encryptionPassword }),
-        "Opening budget"
-      )
-    );
-    await timing.phase("sync", () => withTimeout(runtime.sync(), "Syncing budget"));
-
-    timing.report({ budgetSyncId: connection.budgetSyncId, sameServerAsPrevious });
+    await openBudgetAndSync(runtime, timing);
+    timing.report({ budgetSyncId: connection.budgetSyncId, sameServerAsPrevious, switched: false });
     return runtime;
-  })();
+  }
 
   activeRuntime = { key, promise };
   promise.catch(() => {
@@ -344,6 +373,7 @@ function runtimeTimingEnabled(): boolean {
 }
 
 type PhaseName = "shutdown" | "load" | "init" | "download" | "sync";
+type RuntimeTiming = ReturnType<typeof runtimeTiming>;
 
 function runtimeTiming() {
   const enabled = runtimeTimingEnabled();
@@ -358,18 +388,18 @@ function runtimeTiming() {
         ms[name] = Math.round(performance.now() - t);
       }
     },
-    report(meta: { budgetSyncId: string; sameServerAsPrevious: boolean }) {
+    report(meta: { budgetSyncId: string; sameServerAsPrevious: boolean; switched: boolean }) {
       if (!enabled) return;
       const total = ms.shutdown + ms.load + ms.init + ms.download + ms.sync;
-      // What RD-059 would eliminate on a same-server switch: teardown + re-init.
-      const savableByRd059 = meta.sameServerAsPrevious ? ms.shutdown + ms.load + ms.init : 0;
+      // `switched: true` = RD-059 fast path taken, so shutdown/load/init are ~0
+      // and totalMs is the realized (post-optimization) cost. `sameServerSwitch`
+      // true with `switched: false` means the fast path fell back to a re-init.
       console.info("[RD-059 timing]", {
         budget: meta.budgetSyncId.slice(0, 8),
         sameServerSwitch: meta.sameServerAsPrevious,
+        switched: meta.switched,
         ms,
         totalMs: total,
-        savableByRd059Ms: savableByRd059,
-        savablePct: total ? Math.round((savableByRd059 / total) * 100) : 0,
       });
     },
   };
