@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { ArrowRight } from "lucide-react";
+import { useRef, useState } from "react";
+import { ArrowRight, Download, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
@@ -15,6 +15,7 @@ import {
 import { clampSyncInterval } from "@/lib/sync/flowConfig";
 import { useFlowAccounts } from "../hooks/useSyncData";
 import { isEntityFlow, isSameBudget, isSelfSync, missingRouteFields, type SyncEndpointForm, type SyncFlowFormState } from "../lib/flowForm";
+import { exportFlowDefinition, importFlowDefinition, FlowImportError, FLOW_TEMPLATES } from "../lib/flowPortability";
 import type { ConnectionInstance } from "@/store/connection";
 
 type FlowEditDialogProps = {
@@ -95,8 +96,36 @@ export function FlowEditDialog({
   isNew,
 }: FlowEditDialogProps) {
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [importError, setImportError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  function handleExport() {
+    const json = exportFlowDefinition(form);
+    const blob = new Blob([json], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `sync-flow-${(form.name || "flow").replace(/[^a-zA-Z0-9_-]/g, "-").slice(0, 40)}.json`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  async function handleImportFile(file: File) {
+    setImportError(null);
+    try {
+      onChange(importFlowDefinition(await file.text()));
+    } catch (err) {
+      setImportError(err instanceof FlowImportError ? err.message : "Could not import that file.");
+    }
+  }
+
   function handleOpenChange(next: boolean) {
-    if (!next) setConfirmingDelete(false);
+    if (!next) {
+      setConfirmingDelete(false);
+      setImportError(null);
+    }
     onOpenChange(next);
   }
 
@@ -149,6 +178,25 @@ export function FlowEditDialog({
               ))}
             </div>
           </div>
+
+          {isNew && (
+            <div className="flex flex-col gap-1.5">
+              <span className="text-[11px] font-semibold uppercase text-muted-foreground">Start from a template</span>
+              <div className="flex flex-wrap gap-1.5">
+                {FLOW_TEMPLATES.map((t) => (
+                  <button
+                    key={t.key}
+                    type="button"
+                    title={t.description}
+                    onClick={() => onChange(t.apply(form))}
+                    className="rounded-full border border-border px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
+                  >
+                    {t.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
           <div className="flex flex-col gap-1.5">
             <span className="text-[11px] font-semibold uppercase text-muted-foreground">Name</span>
@@ -350,6 +398,25 @@ export function FlowEditDialog({
               <Button size="sm" className="bg-destructive text-white hover:bg-destructive/90" onClick={onDelete}>Delete flow</Button>
             </div>
           )}
+          {importError && <span className="text-xs text-destructive">{importError}</span>}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="application/json,.json"
+            className="hidden"
+            aria-hidden
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) void handleImportFile(file);
+              e.target.value = "";
+            }}
+          />
+          <Button variant="ghost" size="sm" title="Import a flow definition" onClick={() => fileInputRef.current?.click()}>
+            <Upload className="h-3.5 w-3.5" /> Import
+          </Button>
+          <Button variant="ghost" size="sm" title="Export this flow definition" onClick={handleExport}>
+            <Download className="h-3.5 w-3.5" /> Export
+          </Button>
           <span className="flex-1" />
           <Button variant="outline" onClick={() => handleOpenChange(false)}>Cancel</Button>
           <Button onClick={onSave} disabled={!canSave || saving}>{saving ? "Saving…" : "Save flow"}</Button>
