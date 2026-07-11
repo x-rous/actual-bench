@@ -7,12 +7,14 @@ import type {
   CreateTransactionsForSyncResult,
   ListTransactionsForSyncInput,
   ResolvedSyncPayee,
+  SyncAppliedSnapshot,
   SyncCreatedTransaction,
   SyncSourceSplitLine,
   SyncSourceTransaction,
   SyncTargetLookup,
   SyncTargetLookupTransaction,
   SyncTargetTransactionInput,
+  UpdateTransactionForSyncInput,
 } from "./transport";
 
 /**
@@ -150,6 +152,69 @@ export async function createOrResolveHttpPayee(
   }
   const created = await createPayee(connection, { name });
   return { id: created.id, name, created: true };
+}
+
+function appliedFromRaw(row: RawHttpTransaction): SyncAppliedSnapshot {
+  return {
+    amount: num(row.amount),
+    date: row.date,
+    cleared: row.cleared === true,
+    categoryId: row.category ?? null,
+    payeeId: row.payee ?? null,
+    notes: row.notes ?? null,
+  };
+}
+
+export async function readHttpTargetTransactionForSync(
+  connection: ConnectionInstance,
+  input: { accountId: string; transactionId: string; date?: string }
+): Promise<SyncAppliedSnapshot | null> {
+  // The account-scoped list is the only read that returns the marker + fields;
+  // find the row by id (a since_date hint narrows the scan when available).
+  for (const r of await fetchTransactions(connection, input.accountId, input.date)) {
+    if (r.id === input.transactionId) return appliedFromRaw(r);
+    if (Array.isArray(r.subtransactions)) {
+      const child = r.subtransactions.find((s) => s.id === input.transactionId);
+      if (child) return appliedFromRaw(child);
+    }
+  }
+  return null;
+}
+
+export async function updateHttpTransactionForSync(
+  connection: ConnectionInstance,
+  input: UpdateTransactionForSyncInput
+): Promise<SyncAppliedSnapshot | null> {
+  // Resolve/create the payee by name when only a name was supplied.
+  let payeeId = input.payeeId ?? null;
+  if (!payeeId && input.payeeName) {
+    payeeId = (await createOrResolveHttpPayee(connection, input.payeeName)).id;
+  }
+  await apiRequest(connection, `/transactions/${input.transactionId}`, {
+    method: "PATCH",
+    body: {
+      transaction: {
+        date: input.date,
+        amount: input.amount,
+        payee: payeeId,
+        category: input.categoryId ?? null,
+        notes: input.notes ?? null,
+        cleared: input.cleared ?? false,
+      },
+    },
+  });
+  return readHttpTargetTransactionForSync(connection, {
+    accountId: input.accountId,
+    transactionId: input.transactionId,
+    date: input.date,
+  });
+}
+
+export async function deleteHttpTransactionForSync(
+  connection: ConnectionInstance,
+  input: { transactionId: string }
+): Promise<void> {
+  await apiRequest(connection, `/transactions/${input.transactionId}`, { method: "DELETE" });
 }
 
 export async function createHttpTransactionsForSync(

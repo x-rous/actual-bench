@@ -14,7 +14,7 @@ import type { SyncFlowPlanConfig } from "./flowConfig";
  */
 
 /** What apply would do for a planned item. */
-export type SyncPlannedAction = "create" | "skip" | "blocked";
+export type SyncPlannedAction = "create" | "skip" | "blocked" | "update" | "delete";
 
 /**
  * Non-exclusive annotations attached to a planned item. These are the "rich
@@ -31,7 +31,11 @@ export type SyncPlanFlag =
   | "duplicate_review"
   | "exact_duplicate_auto_map"
   | "blocked_no_marker"
-  | "split_fallback_key";
+  | "split_fallback_key"
+  /** Source changed and the flow opted into updating the mapped target (RD-057 §4). */
+  | "source_changed_update"
+  /** Mapped source item was deleted; target still exists, awaiting review (RD-057 §5). */
+  | "source_deleted_review";
 
 /** The transaction the engine would create on the target (create-only, no splits). */
 export type PlannedTargetPayload = {

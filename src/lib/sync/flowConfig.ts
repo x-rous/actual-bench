@@ -58,6 +58,13 @@ export type SyncFlowPlanConfig = {
    * (RD-054). Fuzzy (strong/weak) duplicates are never auto-mapped.
    */
   exactDuplicateAutoMap: boolean;
+  /**
+   * When true, a mapped item whose source changed since the last sync becomes an
+   * opt-in `update` candidate that overwrites the target (RD-057 §4). Off by
+   * default: the safe behavior is to warn and leave the target unchanged. Apply
+   * never overwrites a target that was edited outside sync, regardless.
+   */
+  updateMappedTargets: boolean;
 };
 
 /** Smallest allowed auto-sync interval - a budget sync per run is expensive. */
@@ -98,6 +105,7 @@ export const SYNC_PLAN_CONFIG_DEFAULTS = {
   intervalMinutes: DEFAULT_SYNC_INTERVAL_MINUTES,
   autoPausedAt: null as string | null,
   exactDuplicateAutoMap: false,
+  updateMappedTargets: false,
 };
 
 type PartialRoute = Partial<
@@ -130,6 +138,7 @@ export function buildPlanConfig(
         | "intervalMinutes"
         | "autoPausedAt"
         | "exactDuplicateAutoMap"
+        | "updateMappedTargets"
       >
     >
 ): SyncFlowPlanConfig {
@@ -158,6 +167,8 @@ export function buildPlanConfig(
     autoPausedAt: input.autoPausedAt ?? SYNC_PLAN_CONFIG_DEFAULTS.autoPausedAt,
     exactDuplicateAutoMap:
       input.exactDuplicateAutoMap ?? SYNC_PLAN_CONFIG_DEFAULTS.exactDuplicateAutoMap,
+    updateMappedTargets:
+      input.updateMappedTargets ?? SYNC_PLAN_CONFIG_DEFAULTS.updateMappedTargets,
   };
 }
 
@@ -205,5 +216,6 @@ export function decodeFlowPlanConfig(flow: SyncFlow): SyncFlowPlanConfig {
     intervalMinutes: options.intervalMinutes != null ? clampSyncInterval(options.intervalMinutes) : undefined,
     autoPausedAt: str(options.autoPausedAt) ?? null,
     exactDuplicateAutoMap: bool(options.exactDuplicateAutoMap),
+    updateMappedTargets: bool(options.updateMappedTargets),
   });
 }

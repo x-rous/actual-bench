@@ -48,7 +48,7 @@ function previewOk(summaryOverrides: Partial<DryRunSummary> = {}): LiveDryRunRes
 function applyOk(overrides: Partial<ApplyRunResult> = {}): ApplyRunResult {
   return {
     status: "applied", runId: "run-1",
-    counts: { selected: 1, applied: 1, appliedWithWarnings: 0, repaired: 0, skipped: 0, failed: 0 },
+    counts: { selected: 1, applied: 1, appliedWithWarnings: 0, repaired: 0, updated: 0, deleted: 0, skipped: 0, failed: 0 },
     items: [], ...overrides,
   };
 }
@@ -139,7 +139,7 @@ describe("runSafeSync - composition", () => {
 
   it("applies when a marker match is the only safe item", async () => {
     const runPreview = jest.fn(async () => previewOk({ createCandidates: 0, targetMarkerMatches: 1 }));
-    const runApply = jest.fn(async () => applyOk({ counts: { selected: 1, applied: 0, appliedWithWarnings: 0, repaired: 1, skipped: 0, failed: 0 } }));
+    const runApply = jest.fn(async () => applyOk({ counts: { selected: 1, applied: 0, appliedWithWarnings: 0, repaired: 1, updated: 0, deleted: 0, skipped: 0, failed: 0 } }));
     const deps = makeDeps(flowWithPolicy("auto_sync_on_interval"), { runPreview, runApply });
 
     const result = await runSafeSync({ flowId: "flow-1", context }, deps);
@@ -148,7 +148,7 @@ describe("runSafeSync - composition", () => {
   });
 
   it("maps a benign no_eligible_items apply failure to a no-op", async () => {
-    const runApply = jest.fn(async () => applyOk({ status: "failed", error: { code: "no_eligible_items", message: "none" }, counts: { selected: 0, applied: 0, appliedWithWarnings: 0, repaired: 0, skipped: 0, failed: 0 } }));
+    const runApply = jest.fn(async () => applyOk({ status: "failed", error: { code: "no_eligible_items", message: "none" }, counts: { selected: 0, applied: 0, appliedWithWarnings: 0, repaired: 0, updated: 0, deleted: 0, skipped: 0, failed: 0 } }));
     const deps = makeDeps(flowWithPolicy("auto_apply_safe_only"), { runApply });
 
     const result = await runSafeSync({ flowId: "flow-1", context }, deps);
@@ -156,7 +156,7 @@ describe("runSafeSync - composition", () => {
   });
 
   it("surfaces a partial apply with its detail", async () => {
-    const runApply = jest.fn(async () => applyOk({ status: "partial", counts: { selected: 2, applied: 1, appliedWithWarnings: 0, repaired: 0, skipped: 0, failed: 1 } }));
+    const runApply = jest.fn(async () => applyOk({ status: "partial", counts: { selected: 2, applied: 1, appliedWithWarnings: 0, repaired: 0, updated: 0, deleted: 0, skipped: 0, failed: 1 } }));
     const deps = makeDeps(flowWithPolicy("auto_apply_safe_only"), { runApply });
 
     const result = await runSafeSync({ flowId: "flow-1", context }, deps);

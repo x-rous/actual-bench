@@ -6,8 +6,9 @@ import {
   getAllSyncMappingsForFlow,
   getSyncMappingBySource,
   listSyncMappings,
+  updateSyncMapping,
 } from "@/lib/app-db/syncMappingRepository";
-import type { SyncMappingInput } from "@/lib/app-db/types";
+import type { SyncMappingInput, SyncMappingPatch } from "@/lib/app-db/types";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -44,6 +45,25 @@ export async function POST(request: Request) {
     }
     const mapping = createSyncMapping(db, body);
     return NextResponse.json({ mapping }, { status: 201 });
+  } catch (error) {
+    return appDbErrorResponse(error);
+  }
+}
+
+// Patch a single mapping (RD-057): refresh fingerprints after an update, or mark
+// it disabled after a delete/repair. `mappingId` in the query string; patch body.
+export async function PATCH(request: NextRequest) {
+  try {
+    const mappingId = request.nextUrl.searchParams.get("mappingId");
+    if (!mappingId) {
+      return NextResponse.json({ error: "mappingId is required." }, { status: 400 });
+    }
+    const patch = (await readJsonBody(request)) as SyncMappingPatch;
+    const mapping = updateSyncMapping(getAppDb(), mappingId, patch);
+    if (!mapping) {
+      return NextResponse.json({ error: "Mapping not found." }, { status: 404 });
+    }
+    return NextResponse.json({ mapping });
   } catch (error) {
     return appDbErrorResponse(error);
   }

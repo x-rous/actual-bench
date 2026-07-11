@@ -15,8 +15,10 @@ import type {
   SyncFlowRunItem,
   SyncMapping,
   SyncMappingInput,
+  SyncMappingPatch,
 } from "@/lib/app-db/types";
 import type { PlannedTargetPayload } from "./plannedChanges";
+import type { AdapterMutateInput } from "./syncKind";
 
 /**
  * Headless apply engine for Budget File Sync (RD-053 / PR-019 Slice 4).
@@ -43,6 +45,8 @@ export type ApplyStore = {
   loadFlow(flowId: string): Promise<SyncFlow | null>;
   getMappingBySource(flowId: string, sourceItemKey: string): Promise<SyncMapping | null>;
   createMapping(input: SyncMappingInput): Promise<void>;
+  /** Patch an existing mapping (RD-057: refresh fingerprints, mark disabled/gone). */
+  updateMapping(mappingId: string, patch: SyncMappingPatch): Promise<void>;
   updateRunStatus(runId: string, patch: RunStatusPatch): Promise<void>;
   updateRunItemStatus(itemId: string, patch: RunItemStatusPatch): Promise<void>;
   persistApplyFailure(runId: string, error: ApplyError): Promise<void>;
@@ -108,6 +112,8 @@ export type ApplyItemOutcome =
   | "applied"
   | "applied_with_warnings"
   | "repaired"
+  | "updated"
+  | "deleted"
   | "skipped"
   | "failed";
 
@@ -125,6 +131,8 @@ export type ApplyCounts = {
   applied: number;
   appliedWithWarnings: number;
   repaired: number;
+  updated: number;
+  deleted: number;
   skipped: number;
   failed: number;
 };
@@ -152,6 +160,8 @@ const EMPTY_COUNTS: ApplyCounts = {
   applied: 0,
   appliedWithWarnings: 0,
   repaired: 0,
+  updated: 0,
+  deleted: 0,
   skipped: 0,
   failed: 0,
 };
@@ -201,12 +211,20 @@ export async function applySyncRun(
   // Repair/map items write nothing, so they stay per-item (cheap). Creates are
   // batched into ONE insert + ONE id-recovery read instead of one round-trip per
   // transaction - the dominant cost on large runs.
-  for (const eligibleItem of eligible.filter((e) => e.mode !== "create")) {
+  for (const eligibleItem of eligible.filter((e) => e.mode === "repair" || e.mode === "map")) {
     const result = await applyOneItem(eligibleItem, ctx, deps.store);
     items.push(result);
     tally(counts, result.outcome);
   }
   for (const result of await applyCreateBatch(eligible.filter((e) => e.mode === "create"), ctx, deps.store)) {
+    items.push(result);
+    tally(counts, result.outcome);
+  }
+  for (const result of await applyMutateBatch("update", eligible.filter((e) => e.mode === "update"), ctx, deps.store)) {
+    items.push(result);
+    tally(counts, result.outcome);
+  }
+  for (const result of await applyMutateBatch("delete", eligible.filter((e) => e.mode === "delete"), ctx, deps.store)) {
     items.push(result);
     tally(counts, result.outcome);
   }
@@ -233,7 +251,7 @@ export async function applySyncRun(
 
 // --- Validation / preparation ----------------------------------------------
 
-type ApplyItemMode = "create" | "repair" | "map";
+type ApplyItemMode = "create" | "repair" | "map" | "update" | "delete";
 
 type EligibleItem = {
   item: SyncFlowRunItem;
@@ -258,6 +276,32 @@ function isEligibleNew(item: SyncFlowRunItem): boolean {
     item.applyState !== "applied" &&
     item.plannedTargetPayload != null
   );
+}
+
+/** A drifted item the flow opted to push to its mapped target (RD-057 §4). */
+function isEligibleUpdate(item: SyncFlowRunItem): boolean {
+  return (
+    item.classification === "source_changed_since_sync" &&
+    item.plannedAction === "update" &&
+    item.applyState !== "applied" &&
+    item.plannedTargetPayload != null &&
+    readTargetTxnId(item) != null
+  );
+}
+
+/** A source-deleted item whose target still exists (RD-057 §5), review-first. */
+function isEligibleDelete(item: SyncFlowRunItem): boolean {
+  return (
+    item.classification === "source_missing" &&
+    item.plannedAction === "delete" &&
+    item.applyState !== "applied" &&
+    readTargetTxnId(item) != null
+  );
+}
+
+function toMutateCandidate(item: SyncFlowRunItem, mode: "update" | "delete"): EligibleItem {
+  const payloadJson = (item.plannedTargetPayload?.data as JsonObject | undefined) ?? null;
+  return { item, mode, payloadJson, targetTransactionId: readTargetTxnId(item) };
 }
 
 function itemHasFlag(item: SyncFlowRunItem, flag: string): boolean {
@@ -377,8 +421,12 @@ async function validateAndPrepare(
         eligible.push({ item, mode: "repair", payloadJson: null, targetTransactionId: readTargetTxnId(item) });
       } else if (isExactDupAutoMap(item)) {
         eligible.push({ item, mode: "map", payloadJson: null, targetTransactionId: readTargetTxnId(item) });
+      } else if (isEligibleUpdate(item)) {
+        eligible.push(toMutateCandidate(item, "update"));
+      } else if (isEligibleDelete(item)) {
+        eligible.push(toMutateCandidate(item, "delete"));
       } else {
-        throw new ApplyPreflightError("ineligible_selection", `Selected item ${id} is not an applyable create, repair, or map candidate.`);
+        throw new ApplyPreflightError("ineligible_selection", `Selected item ${id} is not an applyable create, repair, map, update, or delete candidate.`);
       }
     }
   } else if (isRetry) {
@@ -388,9 +436,15 @@ async function validateAndPrepare(
       if (isEligibleNew(item)) eligible.push(toCreateCandidate(item));
       else if (isRepairable(item)) eligible.push({ item, mode: "repair", payloadJson: null, targetTransactionId: readTargetTxnId(item) });
       else if (isExactDupAutoMap(item)) eligible.push({ item, mode: "map", payloadJson: null, targetTransactionId: readTargetTxnId(item) });
+      else if (isEligibleUpdate(item)) eligible.push(toMutateCandidate(item, "update"));
+      else if (isEligibleDelete(item)) eligible.push(toMutateCandidate(item, "delete"));
     }
   } else {
     const includeRepairs = input.selection?.selection === "all_safe";
+    // A manual apply (default / all_safe_new) pushes opted-in drift updates; the
+    // "all_safe" automation path never overwrites, and deletes are always
+    // review-first (explicit selection only) - so neither is included here.
+    const includeUpdates = input.selection?.selection !== "all_safe";
     for (const item of allItems) {
       if (isEligibleNew(item)) {
         eligible.push(toCreateCandidate(item));
@@ -398,6 +452,8 @@ async function validateAndPrepare(
         eligible.push({ item, mode: "repair", payloadJson: null, targetTransactionId: readTargetTxnId(item) });
       } else if (includeRepairs && isExactDupAutoMap(item)) {
         eligible.push({ item, mode: "map", payloadJson: null, targetTransactionId: readTargetTxnId(item) });
+      } else if (includeUpdates && isEligibleUpdate(item)) {
+        eligible.push(toMutateCandidate(item, "update"));
       }
     }
   }
@@ -414,6 +470,25 @@ async function validateAndPrepare(
   } catch (err) {
     if (err instanceof SyncKindError) throw new ApplyPreflightError("unsupported_connection", err.message);
     throw err;
+  }
+
+  // Update/delete need both the target capability and an adapter that implements
+  // the mutation (RD-057). Fail fast with a clear reason if either is missing.
+  if (eligible.some((e) => e.mode === "update")) {
+    if (!caps.capabilities.updateTransaction) {
+      throw new ApplyPreflightError("unsupported_connection", "Target connection cannot update existing transactions.");
+    }
+    if (!adapter.updateBatch) {
+      throw new ApplyPreflightError("ineligible_selection", "This sync type does not support updating targets.");
+    }
+  }
+  if (eligible.some((e) => e.mode === "delete")) {
+    if (!caps.capabilities.deleteTransaction) {
+      throw new ApplyPreflightError("unsupported_connection", "Target connection cannot delete transactions.");
+    }
+    if (!adapter.deleteBatch) {
+      throw new ApplyPreflightError("ineligible_selection", "This sync type does not support deleting targets.");
+    }
   }
 
   return { flow, config, adapter, eligible };
@@ -554,8 +629,9 @@ async function applyCreateBatch(
 
     const changedFields = res?.changedFields ?? [];
     try {
-      // Fingerprint is unused downstream, so it is not recomputed here.
-      await recordMapping(store, ctx.config, item, targetId, marker, null);
+      // Store the persisted target field hash so a later update can detect a
+      // manual edit before overwriting (RD-057 §4).
+      await recordMapping(store, ctx.config, item, targetId, marker, res?.targetFingerprint ?? null);
     } catch (err) {
       await store.updateRunItemStatus(item.id, {
         status: "failed",
@@ -585,6 +661,111 @@ async function applyCreateBatch(
     results.push({ ...base, outcome: hasWarnings ? "applied_with_warnings" : "applied", targetTransactionId: targetId, changedFields: hasWarnings ? changedFields : undefined });
   }
 
+  return results;
+}
+
+/**
+ * Apply update or delete candidates as a batch (RD-057 §4/§5). The adapter
+ * re-reads each live target and skips any that was edited outside sync, so a
+ * manual edit is never overwritten or deleted. On success the mapping is
+ * refreshed (update) or disabled (delete) so a re-run is a clean no-op.
+ */
+async function applyMutateBatch(
+  mode: "update" | "delete",
+  mutateItems: EligibleItem[],
+  ctx: ItemContext,
+  store: ApplyStore
+): Promise<ApplyItemResult[]> {
+  const results: ApplyItemResult[] = [];
+  if (mutateItems.length === 0) return results;
+  const batch = mode === "update" ? ctx.adapter.updateBatch : ctx.adapter.deleteBatch;
+  if (!batch) return results; // preflight already guarded this; defensive.
+
+  // Resolve each item's mapping (for the expected fingerprint + patch target).
+  const meta = new Map<string, { item: SyncFlowRunItem; mapping: SyncMapping | null }>();
+  const inputs: AdapterMutateInput[] = [];
+  for (const eligible of mutateItems) {
+    const item = eligible.item;
+    const mapping = await store.getMappingBySource(ctx.config.flowId, item.sourceItemKey ?? "");
+    meta.set(item.id, { item, mapping });
+    inputs.push({
+      itemId: item.id,
+      targetId: eligible.targetTransactionId ?? "",
+      expectedTargetFingerprint: mapping?.targetFingerprint ?? null,
+      payload: eligible.payloadJson ?? undefined,
+    });
+  }
+
+  let mutated;
+  try {
+    mutated = await batch(ctx.transport, ctx.flow, inputs);
+  } catch (err) {
+    for (const { item } of meta.values()) {
+      await store.updateRunItemStatus(item.id, {
+        status: "failed",
+        applyState: "failed",
+        message: describe(err, `Batch ${mode} failed.`),
+        errors: envelope({ code: `${mode}_failed`, message: describe(err, "unknown error") }),
+      });
+      results.push({ itemId: item.id, sourceItemKey: item.sourceItemKey ?? "", outcome: "failed", targetTransactionId: null, message: describe(err, `${mode} failed`) });
+    }
+    return results;
+  }
+
+  for (const res of mutated) {
+    const entry = meta.get(res.itemId);
+    if (!entry) continue;
+    const { item, mapping } = entry;
+    const base = { itemId: item.id, sourceItemKey: item.sourceItemKey ?? "" };
+    try {
+      if (res.outcome === "skipped") {
+        await store.updateRunItemStatus(item.id, {
+          status: "skipped",
+          applyState: "skipped",
+          message: res.message ?? "Target left unchanged.",
+          warnings: flagEnvelope(["target_changed_since_sync"]),
+        });
+        results.push({ ...base, outcome: "skipped", targetTransactionId: res.targetId, message: res.message });
+        continue;
+      }
+      if (mode === "update") {
+        if (mapping) {
+          await store.updateMapping(mapping.id, {
+            sourceFingerprint: item.sourceFingerprint ?? mapping.sourceFingerprint,
+            targetFingerprint: res.targetFingerprint ?? null,
+            lastAppliedAt: nowIso(),
+          });
+        }
+        await store.updateRunItemStatus(item.id, {
+          status: "updated",
+          applyState: "applied",
+          message: "Target updated to match the changed source.",
+          createdTargetTransactionId: res.targetId,
+          targetItemRef: { version: 1, data: { targetTransactionId: res.targetId } },
+        });
+        results.push({ ...base, outcome: "updated", targetTransactionId: res.targetId });
+      } else {
+        if (mapping) {
+          await store.updateMapping(mapping.id, { status: "disabled", lastAppliedAt: nowIso() });
+        }
+        await store.updateRunItemStatus(item.id, {
+          status: "deleted",
+          applyState: "applied",
+          message: "Target deleted; source no longer exists.",
+          createdTargetTransactionId: res.targetId,
+        });
+        results.push({ ...base, outcome: "deleted", targetTransactionId: res.targetId });
+      }
+    } catch (err) {
+      await store.updateRunItemStatus(item.id, {
+        status: "failed",
+        applyState: "failed",
+        message: describe(err, `Post-${mode} bookkeeping failed.`),
+        errors: envelope({ code: `${mode}_failed`, message: describe(err, "unknown error") }),
+      });
+      results.push({ ...base, outcome: "failed", targetTransactionId: res.targetId, message: describe(err, `${mode} failed`) });
+    }
+  }
   return results;
 }
 
@@ -760,13 +941,15 @@ function tally(counts: ApplyCounts, outcome: ApplyItemOutcome): void {
     counts.applied += 1;
     counts.appliedWithWarnings += 1;
   } else if (outcome === "repaired") counts.repaired += 1;
+  else if (outcome === "updated") counts.updated += 1;
+  else if (outcome === "deleted") counts.deleted += 1;
   else if (outcome === "skipped") counts.skipped += 1;
   else counts.failed += 1;
 }
 
 function deriveRunStatus(counts: ApplyCounts): "applied" | "partial" | "failed" {
   if (counts.failed === 0) return "applied";
-  if (counts.applied + counts.repaired > 0) return "partial";
+  if (counts.applied + counts.repaired + counts.updated + counts.deleted > 0) return "partial";
   return "failed";
 }
 

@@ -55,6 +55,7 @@ import {
   type SyncTargetLookup,
   type SyncTargetLookupTransaction,
   type SyncTargetTransactionInput,
+  type UpdateTransactionForSyncInput,
   type TransportBudgetMonth,
 } from "./transport";
 import { getBudgetFileSyncCapabilities } from "@/lib/sync/capabilities";
@@ -790,6 +791,64 @@ async function createBrowserTransactionsForSync(
   return { created };
 }
 
+async function updateBrowserTransactionForSync(
+  connection: BrowserApiConnection,
+  input: UpdateTransactionForSyncInput
+): Promise<SyncAppliedSnapshot | null> {
+  const api = await getBrowserApiRuntime(connection);
+  // Resolve/create the payee by name when only a name was given.
+  let payeeId = input.payeeId ?? null;
+  if (!payeeId && input.payeeName) {
+    const key = normalizeName(input.payeeName);
+    for (const raw of await api.getPayees()) {
+      const payee = normalizeDirectPayee(raw);
+      if (payee && normalizeName(payee.name) === key) {
+        payeeId = payee.id;
+        break;
+      }
+    }
+    if (!payeeId) payeeId = await api.createPayee({ name: input.payeeName });
+  }
+  await api.updateTransaction(input.transactionId, {
+    date: input.date,
+    amount: input.amount,
+    payee: payeeId,
+    category: input.categoryId ?? null,
+    notes: input.notes ?? null,
+    cleared: input.cleared ?? false,
+  });
+  return readBrowserTargetTransaction(connection, {
+    accountId: input.accountId,
+    transactionId: input.transactionId,
+    date: input.date,
+  });
+}
+
+async function readBrowserTargetTransaction(
+  connection: BrowserApiConnection,
+  input: { accountId: string; transactionId: string; date?: string }
+): Promise<SyncAppliedSnapshot | null> {
+  const api = await getBrowserApiRuntime(connection);
+  // A date hint narrows the range read; otherwise scan a wide window.
+  const start = input.date ?? "0001-01-01";
+  const end = input.date ?? "9999-12-31";
+  const rows = await api.getTransactions(input.accountId, start, end);
+  for (const row of rows) {
+    if (isRecord(row) && asString(row.id) === input.transactionId) {
+      return appliedFromRow(row as ApiTransaction, input.date ?? asString(row.date) ?? "");
+    }
+  }
+  return null;
+}
+
+async function deleteBrowserTransactionForSync(
+  connection: BrowserApiConnection,
+  input: { transactionId: string }
+): Promise<void> {
+  const api = await getBrowserApiRuntime(connection);
+  await api.deleteTransaction(input.transactionId);
+}
+
 function appliedFromRow(row: ApiTransaction, fallbackDate: string): SyncAppliedSnapshot {
   return {
     amount: typeof row.amount === "number" ? row.amount : 0,
@@ -1072,6 +1131,12 @@ export function createBrowserApiTransport(
       createOrResolveBrowserPayee(connection, input.name),
     createTransactionsForSync: (inputs) =>
       createBrowserTransactionsForSync(connection, inputs),
+    updateTransactionForSync: (input) =>
+      updateBrowserTransactionForSync(connection, input),
+    readTargetTransactionForSync: (input) =>
+      readBrowserTargetTransaction(connection, input),
+    deleteTransactionForSync: (input) =>
+      deleteBrowserTransactionForSync(connection, input),
     getTargetLookupForSync: (input) =>
       getBrowserTargetLookupForSync(connection, input),
 

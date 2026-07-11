@@ -138,7 +138,36 @@ function planSourceItem(
         message: "Already synced.",
       });
     }
-    // Source content changed after sync: warn only, never auto-update target.
+    // Source content changed after sync. When the flow opts into updating mapped
+    // targets (RD-057 §4), build an update candidate that overwrites the target;
+    // otherwise warn only and leave the target unchanged. Apply re-checks that
+    // the target was not edited outside sync before overwriting.
+    if (config.updateMappedTargets && mapping.targetTransactionId) {
+      const upPayee = resolvePayee(item, config, input.target.payees);
+      const upCategory = resolveCategory(item, input.target.categories);
+      const upImportedId = generateSyncMarker({
+        sourceBudgetId: config.sourceBudgetId,
+        targetBudgetId: config.targetBudgetId,
+        targetAccountId: config.targetAccountId,
+        sourceItemKey: item.itemKey,
+      });
+      const upPayload = buildPlannedTargetPayload({
+        item,
+        config,
+        payee: upPayee,
+        category: upCategory,
+        importedId: upImportedId,
+      });
+      return baseItem(item, {
+        classification: "source_changed_since_sync",
+        action: "update",
+        flags: ["source_changed_since_sync", "source_changed_update"],
+        selectedForApply: true,
+        plannedTargetPayload: upPayload,
+        targetTransactionId: mapping.targetTransactionId,
+        message: "Source changed since last sync; target will be updated to match.",
+      });
+    }
     return baseItem(item, {
       classification: "source_changed_since_sync",
       action: "skip",

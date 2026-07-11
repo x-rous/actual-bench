@@ -16,13 +16,17 @@ import {
   type AdapterApplyContext,
   type AdapterCreateInput,
   type AdapterCreateResult,
+  type AdapterMutateInput,
+  type AdapterMutateResult,
   type AdapterSourceResult,
   type AdapterSummary,
   type AdapterValidateInput,
   type SyncKindAdapter,
 } from "../syncKind";
+import { hashTargetFields } from "../targetFingerprint";
 import type {
   ActualBenchTransport,
+  SyncAppliedSnapshot,
   SyncTargetTransactionInput,
 } from "@/lib/actual/transport";
 import type { JsonObject, SyncCapabilitySet, SyncFlow, SyncMapping } from "@/lib/app-db/types";
@@ -217,8 +221,86 @@ export const transactionAdapter: SyncKindAdapter = {
       const changedFields = actual
         ? diffPlannedVsActual(input.payload, res?.resolvedPayeeId ?? (input.payload.payeeId as string | null) ?? null, actual)
         : [];
-      return { itemId: input.itemId, targetId: res?.transactionId ?? null, changedFields };
+      return {
+        itemId: input.itemId,
+        targetId: res?.transactionId ?? null,
+        changedFields,
+        targetFingerprint: actual ? hashTargetFields(actual) : null,
+      };
     });
+  },
+
+  async updateBatch(
+    transport: ActualBenchTransport,
+    flow: SyncFlow,
+    inputs: AdapterMutateInput[]
+  ): Promise<AdapterMutateResult[]> {
+    const config = decodeFlowPlanConfig(flow);
+    const results: AdapterMutateResult[] = [];
+    for (const input of inputs) {
+      const payload = input.payload ?? {};
+      // Guard: if the live target no longer matches what sync last wrote, it was
+      // edited outside sync - never overwrite a manual edit (RD-057 §4).
+      const live = await transport.readTargetTransactionForSync({
+        accountId: config.targetAccountId,
+        transactionId: input.targetId,
+        date: typeof payload.date === "string" ? payload.date : undefined,
+      });
+      if (!live) {
+        results.push({ itemId: input.itemId, outcome: "skipped", targetId: null, message: "Target no longer exists; not updated." });
+        continue;
+      }
+      if (input.expectedTargetFingerprint && hashTargetFields(live) !== input.expectedTargetFingerprint) {
+        results.push({ itemId: input.itemId, outcome: "skipped", targetId: input.targetId, message: "Target was edited outside sync; left unchanged." });
+        continue;
+      }
+      const applied: SyncAppliedSnapshot | null = await transport.updateTransactionForSync({
+        transactionId: input.targetId,
+        accountId: config.targetAccountId,
+        date: String(payload.date ?? live.date),
+        amount: Number(payload.amount ?? live.amount),
+        payeeId: (payload.payeeId as string | null) ?? null,
+        payeeName: (payload.payeeName as string | null) ?? null,
+        categoryId: (payload.categoryId as string | null) ?? null,
+        notes: (payload.notes as string | null) ?? null,
+        cleared: payload.cleared === true,
+      });
+      results.push({
+        itemId: input.itemId,
+        outcome: "updated",
+        targetId: input.targetId,
+        targetFingerprint: applied ? hashTargetFields(applied) : null,
+      });
+    }
+    return results;
+  },
+
+  async deleteBatch(
+    transport: ActualBenchTransport,
+    flow: SyncFlow,
+    inputs: AdapterMutateInput[]
+  ): Promise<AdapterMutateResult[]> {
+    const config = decodeFlowPlanConfig(flow);
+    const results: AdapterMutateResult[] = [];
+    for (const input of inputs) {
+      // Guard: only delete a target that still matches what sync last wrote, so a
+      // target re-used or edited outside sync is never removed (RD-057 §5).
+      const live = await transport.readTargetTransactionForSync({
+        accountId: config.targetAccountId,
+        transactionId: input.targetId,
+      });
+      if (!live) {
+        results.push({ itemId: input.itemId, outcome: "skipped", targetId: null, message: "Target already gone." });
+        continue;
+      }
+      if (input.expectedTargetFingerprint && hashTargetFields(live) !== input.expectedTargetFingerprint) {
+        results.push({ itemId: input.itemId, outcome: "skipped", targetId: input.targetId, message: "Target was edited outside sync; not deleted." });
+        continue;
+      }
+      await transport.deleteTransactionForSync({ transactionId: input.targetId });
+      results.push({ itemId: input.itemId, outcome: "deleted", targetId: input.targetId });
+    }
+    return results;
   },
 };
 

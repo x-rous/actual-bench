@@ -40,9 +40,9 @@ const CURRENT_DIRECT_CAPABILITIES: SyncCapabilitySet = {
   // (isolated worker per budget) is not proven, so cross-budget sync uses
   // sequential Pattern A switching for the MVP.
   supportsMultiRuntimeBudgetAccess: false,
-  // MVP is create-only; no target updates/deletes.
-  updateTransaction: false,
-  deleteTransaction: false,
+  // RD-057: the browser API can update/delete an existing transaction by id.
+  updateTransaction: true,
+  deleteTransaction: true,
 };
 
 /**
@@ -67,8 +67,9 @@ const HTTP_SYNC_CAPABILITIES: SyncCapabilitySet = {
   createTransactionWithNotesMarker: true,
   createSplitLinesAsSeparateTransactions: true,
   supportsMultiRuntimeBudgetAccess: true,
-  updateTransaction: false,
-  deleteTransaction: false,
+  // RD-057: actual-http-api exposes updateTransaction / deleteTransaction.
+  updateTransaction: true,
+  deleteTransaction: true,
 };
 
 export type SyncCapabilityKey = keyof SyncCapabilitySet;

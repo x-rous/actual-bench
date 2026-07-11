@@ -70,6 +70,28 @@ export type AdapterCreateResult = {
   targetId: string | null;
   /** Fields the target changed vs. the plan (e.g. rules); drives the warning. */
   changedFields?: string[];
+  /** Hash of the persisted target fields, stored on the mapping (RD-057 §4). */
+  targetFingerprint?: string | null;
+};
+
+/** One update/delete request against an existing target (RD-057 §4/§5). */
+export type AdapterMutateInput = {
+  itemId: string;
+  /** Existing target transaction/entity id to mutate. */
+  targetId: string;
+  /** Persisted target field hash from the mapping, to guard manual edits. */
+  expectedTargetFingerprint: string | null;
+  /** The planned payload (update only); absent for delete. */
+  payload?: JsonObject;
+};
+
+export type AdapterMutateResult = {
+  itemId: string;
+  /** "updated" / "deleted" on success; "skipped" when a guard blocked it. */
+  outcome: "updated" | "deleted" | "skipped";
+  targetId: string | null;
+  targetFingerprint?: string | null;
+  message?: string;
 };
 
 export type AdapterValidateInput = {
@@ -122,6 +144,28 @@ export interface SyncKindAdapter {
     flow: SyncFlow,
     inputs: AdapterCreateInput[]
   ): Promise<AdapterCreateResult[]>;
+
+  /**
+   * Overwrite existing targets whose source drifted (RD-057 §4). Optional: only
+   * data types that support in-place update implement it. Each item re-checks the
+   * live target against `expectedTargetFingerprint` and skips (never overwrites)
+   * a target edited outside sync.
+   */
+  updateBatch?(
+    transport: ActualBenchTransport,
+    flow: SyncFlow,
+    inputs: AdapterMutateInput[]
+  ): Promise<AdapterMutateResult[]>;
+
+  /**
+   * Delete/void targets whose source item was removed (RD-057 §5). Optional and
+   * review-first: only invoked for explicitly selected `source_missing` items.
+   */
+  deleteBatch?(
+    transport: ActualBenchTransport,
+    flow: SyncFlow,
+    inputs: AdapterMutateInput[]
+  ): Promise<AdapterMutateResult[]>;
 }
 
 const registry = new Map<SyncDomain, SyncKindAdapter>();

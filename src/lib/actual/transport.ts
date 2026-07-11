@@ -148,6 +148,21 @@ export type SyncTargetTransactionInput = {
   importedId?: string | null;
 };
 
+/** Fields of an existing target transaction to overwrite (RD-057 §4). */
+export type UpdateTransactionForSyncInput = {
+  transactionId: string;
+  accountId: string;
+  date: string;
+  amount: MinorUnitAmount;
+  /** Existing target payee id; wins over `payeeName` when set. */
+  payeeId?: string | null;
+  /** Resolve/create a payee by name when no `payeeId` is given. */
+  payeeName?: string | null;
+  categoryId?: string | null;
+  notes?: string | null;
+  cleared?: boolean;
+};
+
 /**
  * The persisted fields of a just-created target transaction, captured while the
  * id is recovered so callers can diff planned-vs-actual (e.g. target rules that
@@ -275,6 +290,24 @@ export interface ActualBenchTransport {
   createTransactionsForSync(
     inputs: SyncTargetTransactionInput[]
   ): Promise<CreateTransactionsForSyncResult>;
+  /**
+   * Update a previously-synced target transaction (RD-057 §4). Returns the
+   * persisted fields after the update so the caller can refresh its mapping
+   * fingerprint. Only the fields present in `patch` are changed.
+   */
+  updateTransactionForSync(
+    input: UpdateTransactionForSyncInput
+  ): Promise<SyncAppliedSnapshot | null>;
+  /**
+   * Read a single target transaction's syncable fields, or null if it no longer
+   * exists (RD-057 §4/§5). Used to guard against overwriting manual edits and to
+   * detect source-deleted mappings.
+   */
+  readTargetTransactionForSync(
+    input: { accountId: string; transactionId: string; date?: string }
+  ): Promise<SyncAppliedSnapshot | null>;
+  /** Delete a previously-synced target transaction (RD-057 §5). */
+  deleteTransactionForSync(input: { transactionId: string }): Promise<void>;
   /** Load target payees + existing sync markers for dedupe/apply checks. */
   getTargetLookupForSync(
     input: ListTransactionsForSyncInput

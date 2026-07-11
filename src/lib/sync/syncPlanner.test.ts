@@ -188,6 +188,39 @@ describe("planSyncFlow - mappings and markers", () => {
     expect(item.plannedTargetPayload).toBeNull();
   });
 
+  it("plans an update candidate when the source changed and the flow opts in (RD-057 §4)", () => {
+    const updateConfig = buildPlanConfig({
+      flowId: FLOW_ID,
+      sourceBudgetId: "budget-src",
+      targetBudgetId: "budget-tgt",
+      targetAccountId: "acct-tgt",
+      sourceBudgetName: "Home",
+      sourceAccountName: "Checking",
+      updateMappedTargets: true,
+    });
+    const plan = planSyncFlow(
+      baseInput({
+        config: updateConfig,
+        existingMappings: [mapping({ sourceFingerprint: "stale-fingerprint", targetTransactionId: "tgt-txn-9" })],
+      })
+    );
+    const item = plan.items[0];
+    expect(item.classification).toBe("source_changed_since_sync");
+    expect(item.action).toBe("update");
+    expect(item.flags).toContain("source_changed_update");
+    expect(item.selectedForApply).toBe(true);
+    expect(item.targetTransactionId).toBe("tgt-txn-9");
+    expect(item.plannedTargetPayload).not.toBeNull();
+  });
+
+  it("still only warns when the source changed but the flow did not opt into updates", () => {
+    const plan = planSyncFlow(
+      baseInput({ existingMappings: [mapping({ sourceFingerprint: "stale-fingerprint", targetTransactionId: "tgt-txn-9" })] })
+    );
+    expect(plan.items[0].action).toBe("skip");
+    expect(plan.items[0].plannedTargetPayload).toBeNull();
+  });
+
   it("detects a target marker match when the DB mapping is missing (repairable)", () => {
     const expectedMarker = marker("txn:t1")!;
     const target = emptyTarget({ importedIdIndex: new Map([[expectedMarker, "tt-existing"]]) });

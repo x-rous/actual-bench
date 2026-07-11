@@ -139,6 +139,8 @@ export type ActualBrowserApi = {
     transactions: ApiImportTransaction[],
     opts?: { learnCategories?: boolean; runTransfers?: boolean }
   ): Promise<"ok">;
+  updateTransaction(id: string, fields: Partial<ApiImportTransaction>): Promise<unknown>;
+  deleteTransaction(id: string): Promise<unknown>;
   importTransactions(
     accountId: string,
     transactions: ApiImportTransaction[],
