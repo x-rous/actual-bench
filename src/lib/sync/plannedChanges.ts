@@ -137,4 +137,11 @@ export type SyncPlannerInput = {
   sourceTransactions: SyncSourceTransaction[];
   target: SyncPlannerTargetSnapshot;
   existingMappings: SyncMapping[];
+  /**
+   * When true, active mappings with no matching source item are emitted as
+   * review-first `source_missing` delete candidates (RD-057 §5). The adapter
+   * only sets this for a whole-account scan, so an item outside a date window is
+   * never mistaken for a deletion.
+   */
+  detectDeletedSource?: boolean;
 };

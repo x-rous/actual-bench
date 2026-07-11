@@ -53,6 +53,17 @@ describe("toPreviewRow", () => {
     expect(toPreviewRow(item({ classification: "blocked", plannedAction: "blocked" })).selectable).toBe(false);
   });
 
+  it("makes opt-in update and review-first delete rows selectable (RD-057)", () => {
+    const upd = toPreviewRow(item({ classification: "source_changed_since_sync", plannedAction: "update" }));
+    expect(upd.selectable).toBe(true);
+    expect(upd.isSafeNew).toBe(false);
+    expect(upd.group).toBe("source_changed");
+    const del = toPreviewRow(item({ classification: "source_missing", plannedAction: "delete" }));
+    expect(del.selectable).toBe(true);
+    expect(del.isSafeNew).toBe(false);
+    expect(del.group).toBe("source_deleted");
+  });
+
   it("makes marker-match rows selectable for repair but not part of safe-new", () => {
     const row = toPreviewRow(item({ classification: "target_marker_match", plannedAction: "skip" }));
     expect(row.selectable).toBe(true);

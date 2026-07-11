@@ -146,12 +146,16 @@ export const transactionAdapter: SyncKindAdapter = {
   plan({ flow, materialized, target, mappings, targetCapabilities }): SyncPlanResult {
     const source = materialized as MaterializedSource;
     void flow;
+    // Deleted-source detection is only safe for a whole-account scan: with a date
+    // window, a source item outside the range would look "missing" (RD-057 §5).
+    const wholeAccount = !source.filter.startDate && !source.filter.endDate;
     return planExpandedItems({
       config: source.config,
       capabilities: { mode: "browser-api", supported: true, reason: null, capabilities: targetCapabilities },
       sourceItems: source.items,
       target: target as SyncPlannerTargetSnapshot,
       existingMappings: mappings as SyncMapping[],
+      detectDeletedSource: source.config.detectDeletedSource && wholeAccount,
     });
   },
 

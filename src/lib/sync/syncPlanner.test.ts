@@ -221,6 +221,32 @@ describe("planSyncFlow - mappings and markers", () => {
     expect(plan.items[0].plannedTargetPayload).toBeNull();
   });
 
+  it("emits a review-first delete candidate for a mapping whose source is gone (RD-057 §5)", () => {
+    const plan = planSyncFlow(
+      baseInput({
+        sourceTransactions: [], // source item t1 no longer exists
+        existingMappings: [mapping({ sourceItemKey: "txn:t1", targetTransactionId: "tgt-1", status: "active" })],
+        detectDeletedSource: true,
+      })
+    );
+    const gone = plan.items.find((i) => i.classification === "source_missing");
+    expect(gone).toBeDefined();
+    expect(gone!.action).toBe("delete");
+    expect(gone!.selectedForApply).toBe(false);
+    expect(gone!.flags).toContain("source_deleted_review");
+    expect(gone!.targetTransactionId).toBe("tgt-1");
+  });
+
+  it("does not flag deletions when detection is off", () => {
+    const plan = planSyncFlow(
+      baseInput({
+        sourceTransactions: [],
+        existingMappings: [mapping({ sourceItemKey: "txn:t1", targetTransactionId: "tgt-1", status: "active" })],
+      })
+    );
+    expect(plan.items.some((i) => i.classification === "source_missing")).toBe(false);
+  });
+
   it("detects a target marker match when the DB mapping is missing (repairable)", () => {
     const expectedMarker = marker("txn:t1")!;
     const target = emptyTarget({ importedIdIndex: new Map([[expectedMarker, "tt-existing"]]) });

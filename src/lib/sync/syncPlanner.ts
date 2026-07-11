@@ -65,12 +65,45 @@ export function planExpandedItems(
     planSourceItem(sourceItem, input, mappingByKey, canWriteMarker)
   );
 
+  // RD-057 §5: an active mapping whose source item is no longer present means the
+  // source transaction was deleted. Surfaced only when the flow opts in (whole
+  // account scans), as review-first delete candidates the user must select.
+  if (input.detectDeletedSource) {
+    const presentKeys = new Set(input.sourceItems.map((item) => item.itemKey));
+    for (const mapping of input.existingMappings) {
+      if (mapping.status !== "active") continue;
+      if (presentKeys.has(mapping.sourceItemKey)) continue;
+      items.push(deletedSourceItem(mapping));
+    }
+  }
+
   const counts: Record<string, number> = {};
   for (const item of items) {
     counts[item.classification] = (counts[item.classification] ?? 0) + 1;
   }
 
   return { flowId: config.flowId, items, counts };
+}
+
+/** A review-first delete candidate for a mapping whose source was deleted. */
+function deletedSourceItem(mapping: SyncMapping): SyncPlannedItem {
+  return {
+    sourceItemKey: mapping.sourceItemKey,
+    sourceEntityType: mapping.sourceEntityType,
+    sourceTransactionId: mapping.sourceTransactionId ?? "",
+    sourceSplitId: mapping.sourceSplitId,
+    sourceFingerprint: mapping.sourceFingerprint,
+    usedFallbackKey: false,
+    source: { date: "", amount: 0, payeeName: null, categoryName: null, notes: null },
+    classification: "source_missing",
+    duplicateConfidence: "none",
+    action: "delete",
+    flags: ["source_deleted_review"],
+    selectedForApply: false,
+    plannedTargetPayload: null,
+    targetTransactionId: mapping.targetTransactionId,
+    message: "Source transaction was deleted; select to delete the mapped target.",
+  };
 }
 
 function entityType(item: SyncSourceItem): SyncEntityType {

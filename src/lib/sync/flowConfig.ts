@@ -65,6 +65,14 @@ export type SyncFlowPlanConfig = {
    * never overwrites a target that was edited outside sync, regardless.
    */
   updateMappedTargets: boolean;
+  /**
+   * When true, a mapped item whose source transaction was deleted is surfaced as
+   * a review-first `source_missing` delete candidate (RD-057 §5). Off by default,
+   * and only acted on for whole-account flows (no date filter) so a transaction
+   * merely outside the synced window is never mistaken for a deletion. Deletes
+   * always require explicit selection - they are never applied in bulk.
+   */
+  detectDeletedSource: boolean;
 };
 
 /** Smallest allowed auto-sync interval - a budget sync per run is expensive. */
@@ -106,6 +114,7 @@ export const SYNC_PLAN_CONFIG_DEFAULTS = {
   autoPausedAt: null as string | null,
   exactDuplicateAutoMap: false,
   updateMappedTargets: false,
+  detectDeletedSource: false,
 };
 
 type PartialRoute = Partial<
@@ -139,6 +148,7 @@ export function buildPlanConfig(
         | "autoPausedAt"
         | "exactDuplicateAutoMap"
         | "updateMappedTargets"
+        | "detectDeletedSource"
       >
     >
 ): SyncFlowPlanConfig {
@@ -169,6 +179,8 @@ export function buildPlanConfig(
       input.exactDuplicateAutoMap ?? SYNC_PLAN_CONFIG_DEFAULTS.exactDuplicateAutoMap,
     updateMappedTargets:
       input.updateMappedTargets ?? SYNC_PLAN_CONFIG_DEFAULTS.updateMappedTargets,
+    detectDeletedSource:
+      input.detectDeletedSource ?? SYNC_PLAN_CONFIG_DEFAULTS.detectDeletedSource,
   };
 }
 
@@ -217,5 +229,6 @@ export function decodeFlowPlanConfig(flow: SyncFlow): SyncFlowPlanConfig {
     autoPausedAt: str(options.autoPausedAt) ?? null,
     exactDuplicateAutoMap: bool(options.exactDuplicateAutoMap),
     updateMappedTargets: bool(options.updateMappedTargets),
+    detectDeletedSource: bool(options.detectDeletedSource),
   });
 }

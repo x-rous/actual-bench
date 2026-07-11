@@ -212,6 +212,28 @@ export function FlowEditDialog({
                 Link exact duplicates instead of creating them
               </label>
             )}
+            {!entityMode && (
+              <label className="flex items-center gap-2 text-sm" title="When a source transaction changes after it was synced, overwrite the mapped target to match. A target edited outside sync is never overwritten.">
+                <input
+                  type="checkbox"
+                  aria-label="Update mapped targets when the source changes"
+                  checked={form.automation.updateMappedTargets}
+                  onChange={(e) => setAutomation({ updateMappedTargets: e.target.checked })}
+                />
+                Update the target when the source changes
+              </label>
+            )}
+            {!entityMode && (
+              <label className="flex items-center gap-2 text-sm" title="When a synced source transaction is deleted, offer to delete its mapped target. Review-first: deletions are never applied automatically, and only for whole-account flows (no date range).">
+                <input
+                  type="checkbox"
+                  aria-label="Offer to delete targets when the source is deleted"
+                  checked={form.automation.detectDeletedSource}
+                  onChange={(e) => setAutomation({ detectDeletedSource: e.target.checked })}
+                />
+                Offer to delete the target when the source is deleted
+              </label>
+            )}
           </section>
 
           {/* Master-data (entity) options */}

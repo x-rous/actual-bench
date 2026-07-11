@@ -62,6 +62,10 @@ export type SyncAutomationForm = {
   autoPausedAt: string | null;
   /** Auto-map exact duplicates to their existing target instead of queuing them. */
   exactDuplicateAutoMap: boolean;
+  /** Push a changed source transaction to its mapped target (RD-057 §4). */
+  updateMappedTargets: boolean;
+  /** Offer to delete a mapped target when its source was deleted (RD-057 §5). */
+  detectDeletedSource: boolean;
 };
 
 /** Which data type the flow syncs (RD-055). Determines the engine adapter. */
@@ -133,6 +137,8 @@ export function emptyFlowForm(): SyncFlowFormState {
       intervalMinutes: String(DEFAULT_SYNC_INTERVAL_MINUTES),
       autoPausedAt: null,
       exactDuplicateAutoMap: false,
+      updateMappedTargets: false,
+      detectDeletedSource: false,
     },
     entity: { defaultGroupName: "", createMissingGroup: false },
   };
@@ -233,6 +239,8 @@ export function buildFlowPayload(
     intervalMinutes: clampSyncInterval(form.automation.intervalMinutes),
     autoPausedAt: form.automation.autoPausedAt,
     exactDuplicateAutoMap: form.automation.exactDuplicateAutoMap,
+    updateMappedTargets: form.automation.updateMappedTargets,
+    detectDeletedSource: form.automation.detectDeletedSource,
     // Master-data (entity) options - ignored by transaction flows.
     defaultGroupName: form.entity.defaultGroupName.trim() || null,
     createMissingGroup: form.entity.createMissingGroup,
@@ -308,6 +316,8 @@ export function flowToFormState(
     intervalMinutes: String(config.intervalMinutes),
     autoPausedAt: config.autoPausedAt,
     exactDuplicateAutoMap: config.exactDuplicateAutoMap,
+    updateMappedTargets: config.updateMappedTargets,
+    detectDeletedSource: config.detectDeletedSource,
   };
   form.filter = {
     startDate: filter.startDate ?? "",
