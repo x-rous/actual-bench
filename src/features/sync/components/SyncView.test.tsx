@@ -83,24 +83,30 @@ function setup(connections: ConnectionInstance[]) {
 beforeEach(() => jest.clearAllMocks());
 
 describe("SyncView", () => {
-  it("shows the needs-connections notice when fewer than two connections exist", () => {
-    setup([conn1]);
+  it("shows the needs-connections notice only when there are no connections", () => {
+    setup([]);
     render(<SyncView />);
-    expect(screen.getByText(/needs at least two connections/i)).toBeInTheDocument();
+    expect(screen.getByText(/needs a connection/i)).toBeInTheDocument();
   });
 
-  it("counts HTTP API Server connections toward the two-connection minimum", () => {
+  it("opens the workspace with a single connection (same-budget sync needs only one)", () => {
+    setup([conn1]);
+    render(<SyncView />);
+    expect(screen.queryByText(/needs a connection/i)).not.toBeInTheDocument();
+  });
+
+  it("opens the workspace with an HTTP API Server connection", () => {
     const httpConn: ConnectionInstance = { id: "c3", label: "Cloud", mode: "http-api", baseUrl: "https://api.example.com", apiKey: "k", budgetSyncId: "b-http" };
     setup([conn1, httpConn]);
     render(<SyncView />);
-    expect(screen.queryByText(/needs at least two connections/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/needs a connection/i)).not.toBeInTheDocument();
   });
 
-  it("opens the editor dialog with default transform (reverse sign, create payee)", async () => {
+  it("opens the editor dialog with default transform (same sign, create payee)", async () => {
     setup([conn1, conn2]);
     render(<SyncView />);
     fireEvent.click(screen.getByRole("button", { name: /create sync flow/i }));
-    expect((await screen.findByLabelText("Amount direction") as HTMLSelectElement).value).toBe("reverse");
+    expect((await screen.findByLabelText("Amount direction") as HTMLSelectElement).value).toBe("same");
     expect((screen.getByLabelText("Missing payee policy") as HTMLSelectElement).value).toBe("create");
   });
 
@@ -114,7 +120,7 @@ describe("SyncView", () => {
     fireEvent.click(previewButtons[0]);
 
     expect(previewMutate).toHaveBeenCalledTimes(1);
-    expect(await screen.findByText("Change plan")).toBeInTheDocument();
+    expect(await screen.findByText("Planned changes")).toBeInTheDocument();
 
     const rows = screen.getAllByTestId("preview-row");
     expect(rows).toHaveLength(2);

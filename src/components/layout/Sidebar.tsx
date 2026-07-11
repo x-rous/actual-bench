@@ -111,11 +111,14 @@ const SIDEBAR_SECTIONS: SidebarSection[] = [
           href: "/budget-diagnostics",
           icon: Stethoscope,
         },
-        { id: "app-health", label: "App Health", href: "/app-health", icon: Settings },
       ],
     },
   },
 ];
+
+// App Health is app-wide (not a budget tool), so it lives in the footer rather
+// than the Tools group.
+const APP_HEALTH_ITEM: NavItem = { id: "app-health", label: "App Health", href: "/app-health", icon: Settings };
 
 type SidebarNavLinkProps = {
   item: NavItem;
@@ -279,6 +282,21 @@ export function Sidebar() {
       </nav>
 
       <div className="shrink-0 border-t border-border p-2 flex flex-col gap-0.5">
+        <Link
+          href={APP_HEALTH_ITEM.href}
+          title={collapsed ? APP_HEALTH_ITEM.label : undefined}
+          aria-current={pathname === APP_HEALTH_ITEM.href ? "page" : undefined}
+          className={cn(
+            "flex w-full items-center rounded-md px-2 py-1.5 text-xs transition-colors",
+            collapsed ? "justify-center" : "gap-2",
+            pathname === APP_HEALTH_ITEM.href
+              ? "bg-accent text-accent-foreground"
+              : "text-muted-foreground hover:bg-accent/50 hover:text-accent-foreground"
+          )}
+        >
+          <APP_HEALTH_ITEM.icon className="h-4 w-4 shrink-0" />
+          {!collapsed && <span>{APP_HEALTH_ITEM.label}</span>}
+        </Link>
         <DropdownMenu>
           <DropdownMenuTrigger
             title="Help & feedback"

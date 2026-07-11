@@ -14,7 +14,7 @@ import type { SyncFlowPlanConfig } from "./flowConfig";
  */
 
 /** What apply would do for a planned item. */
-export type SyncPlannedAction = "create" | "skip" | "blocked";
+export type SyncPlannedAction = "create" | "skip" | "blocked" | "update" | "delete";
 
 /**
  * Non-exclusive annotations attached to a planned item. These are the "rich
@@ -31,7 +31,11 @@ export type SyncPlanFlag =
   | "duplicate_review"
   | "exact_duplicate_auto_map"
   | "blocked_no_marker"
-  | "split_fallback_key";
+  | "split_fallback_key"
+  /** Source changed and the flow opted into updating the mapped target (RD-057 §4). */
+  | "source_changed_update"
+  /** Mapped source item was deleted; target still exists, awaiting review (RD-057 §5). */
+  | "source_deleted_review";
 
 /** The transaction the engine would create on the target (create-only, no splits). */
 export type PlannedTargetPayload = {
@@ -46,6 +50,21 @@ export type PlannedTargetPayload = {
   cleared: boolean;
   /** Deterministic durable marker; required for every create candidate. */
   importedId: string | null;
+  /**
+   * Child lines for a grouped split target (RD-057 §6). Present only when the
+   * flow syncs splits as one parent; amounts already have the flow's sign
+   * direction applied and sum to `amount`.
+   */
+  subtransactions?: PlannedSplitChild[] | null;
+};
+
+/** A resolved split child line to create under a grouped target split. */
+export type PlannedSplitChild = {
+  amount: number;
+  categoryId: string | null;
+  payeeId: string | null;
+  payeeName: string | null;
+  notes: string | null;
 };
 
 /**
@@ -133,4 +152,11 @@ export type SyncPlannerInput = {
   sourceTransactions: SyncSourceTransaction[];
   target: SyncPlannerTargetSnapshot;
   existingMappings: SyncMapping[];
+  /**
+   * When true, active mappings with no matching source item are emitted as
+   * review-first `source_missing` delete candidates (RD-057 §5). The adapter
+   * only sets this for a whole-account scan, so an item outside a date window is
+   * never mistaken for a deletion.
+   */
+  detectDeletedSource?: boolean;
 };

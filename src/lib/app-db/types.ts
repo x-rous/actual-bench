@@ -130,6 +130,8 @@ export type SyncCapabilitySet = {
   createTransactionWithNotesMarker: boolean;
   /** Can explode source split lines into separate normal target transactions. */
   createSplitLinesAsSeparateTransactions: boolean;
+  /** Can create a grouped split target (parent + child lines) in one write. */
+  createTargetSplitTransaction: boolean;
   /**
    * Whether source and target budgets can be held open simultaneously in
    * isolated runtimes (Pattern B). When false, cross-budget sync must switch

@@ -40,7 +40,9 @@ import type {
 export function planSyncFlow(input: SyncPlannerInput): SyncPlanResult {
   return planExpandedItems({
     ...input,
-    sourceItems: expandSourceTransactions(input.sourceTransactions),
+    sourceItems: expandSourceTransactions(input.sourceTransactions, {
+      groupSplits: input.config.createTargetSplits,
+    }),
   });
 }
 
@@ -65,12 +67,45 @@ export function planExpandedItems(
     planSourceItem(sourceItem, input, mappingByKey, canWriteMarker)
   );
 
+  // RD-057 §5: an active mapping whose source item is no longer present means the
+  // source transaction was deleted. Surfaced only when the flow opts in (whole
+  // account scans), as review-first delete candidates the user must select.
+  if (input.detectDeletedSource) {
+    const presentKeys = new Set(input.sourceItems.map((item) => item.itemKey));
+    for (const mapping of input.existingMappings) {
+      if (mapping.status !== "active") continue;
+      if (presentKeys.has(mapping.sourceItemKey)) continue;
+      items.push(deletedSourceItem(mapping));
+    }
+  }
+
   const counts: Record<string, number> = {};
   for (const item of items) {
     counts[item.classification] = (counts[item.classification] ?? 0) + 1;
   }
 
   return { flowId: config.flowId, items, counts };
+}
+
+/** A review-first delete candidate for a mapping whose source was deleted. */
+function deletedSourceItem(mapping: SyncMapping): SyncPlannedItem {
+  return {
+    sourceItemKey: mapping.sourceItemKey,
+    sourceEntityType: mapping.sourceEntityType,
+    sourceTransactionId: mapping.sourceTransactionId ?? "",
+    sourceSplitId: mapping.sourceSplitId,
+    sourceFingerprint: mapping.sourceFingerprint,
+    usedFallbackKey: false,
+    source: { date: "", amount: 0, payeeName: null, categoryName: null, notes: null },
+    classification: "source_missing",
+    duplicateConfidence: "none",
+    action: "delete",
+    flags: ["source_deleted_review"],
+    selectedForApply: false,
+    plannedTargetPayload: null,
+    targetTransactionId: mapping.targetTransactionId,
+    message: "Source transaction was deleted; select to delete the mapped target.",
+  };
 }
 
 function entityType(item: SyncSourceItem): SyncEntityType {
@@ -130,6 +165,16 @@ function planSourceItem(
   // 1. Existing mapping wins - this item was synced before.
   const mapping = mappingByKey.get(item.itemKey);
   if (mapping) {
+    // A disabled mapping (RD-057 §7 repair tool) means "stop syncing this item":
+    // skip it and never re-create, regardless of source changes.
+    if (mapping.status === "disabled") {
+      return baseItem(item, {
+        classification: "already_synced",
+        action: "skip",
+        targetTransactionId: mapping.targetTransactionId,
+        message: "Sync disabled for this item.",
+      });
+    }
     if (mapping.sourceFingerprint === item.fingerprint) {
       return baseItem(item, {
         classification: "already_synced",
@@ -138,7 +183,41 @@ function planSourceItem(
         message: "Already synced.",
       });
     }
-    // Source content changed after sync: warn only, never auto-update target.
+    // Source content changed after sync. When the flow opts into updating mapped
+    // targets (RD-057 §4), build an update candidate that overwrites the target;
+    // otherwise warn only and leave the target unchanged. Apply re-checks that
+    // the target was not edited outside sync before overwriting.
+    //
+    // Grouped split parents are excluded: the update path patches only the parent
+    // fields and cannot rewrite child lines, so updating one would leave the split
+    // totals inconsistent. Warn instead until updates can carry subtransactions.
+    const isGroupedSplit = !!item.splitLines && item.splitLines.length > 0;
+    if (config.updateMappedTargets && mapping.targetTransactionId && !isGroupedSplit) {
+      const upPayee = resolvePayee(item, config, input.target.payees);
+      const upCategory = resolveCategory(item, input.target.categories);
+      const upImportedId = generateSyncMarker({
+        sourceBudgetId: config.sourceBudgetId,
+        targetBudgetId: config.targetBudgetId,
+        targetAccountId: config.targetAccountId,
+        sourceItemKey: item.itemKey,
+      });
+      const upPayload = buildPlannedTargetPayload({
+        item,
+        config,
+        payee: upPayee,
+        category: upCategory,
+        importedId: upImportedId,
+      });
+      return baseItem(item, {
+        classification: "source_changed_since_sync",
+        action: "update",
+        flags: ["source_changed_since_sync", "source_changed_update"],
+        selectedForApply: true,
+        plannedTargetPayload: upPayload,
+        targetTransactionId: mapping.targetTransactionId,
+        message: "Source changed since last sync; target will be updated to match.",
+      });
+    }
     return baseItem(item, {
       classification: "source_changed_since_sync",
       action: "skip",
@@ -157,7 +236,20 @@ function planSourceItem(
     targetAccountId: config.targetAccountId,
     sourceItemKey: item.itemKey,
   });
-  const payload = buildPlannedTargetPayload({ item, config, payee, category, importedId });
+  // Grouped split (RD-057 §6): resolve each child's payee/category by name and
+  // apply the flow's amount direction, so the parent creates as one target split.
+  const subtransactions = item.splitLines?.map((line) => {
+    const childPayee = resolvePayee({ payeeName: line.payeeName ?? item.payeeName }, config, target.payees);
+    const childCategory = resolveCategory({ categoryName: line.categoryName }, target.categories);
+    return {
+      amount: config.amountDirection === "same" ? line.amount : -line.amount,
+      categoryId: childCategory.categoryId,
+      payeeId: childPayee.payeeId,
+      payeeName: childPayee.payeeName,
+      notes: line.notes,
+    };
+  }) ?? null;
+  const payload = buildPlannedTargetPayload({ item, config, payee, category, importedId, subtransactions });
   const effectivePayeeName = resolveEffectivePayeeName(item, payee, target);
 
   // 2. No mapping, but our marker already exists on the target → repairable.

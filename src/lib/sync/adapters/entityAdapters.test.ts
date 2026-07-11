@@ -24,10 +24,10 @@ const caps = {} as SyncCapabilitySet;
 const mapping = (sourceItemKey: string, targetTransactionId: string): SyncMapping =>
   ({ sourceItemKey, targetTransactionId } as unknown as SyncMapping);
 
-const httpConn = (id: string): ConnectionInstance =>
-  ({ id, label: id, mode: "http-api", baseUrl: "https://api.example.com", apiKey: "k", budgetSyncId: `b-${id}` } as unknown as ConnectionInstance);
+const httpConn = (id: string, budgetSyncId = `b-${id}`): ConnectionInstance =>
+  ({ id, label: id, mode: "http-api", baseUrl: "https://api.example.com", apiKey: "k", budgetSyncId } as unknown as ConnectionInstance);
 
-/** A flow with no saved fingerprints (validation skips the strict fp check). */
+/** A flow whose route is validated by budget id (mode/URL-independent). */
 function routeFlow(flowType: SyncFlow["flowType"], withAccount = false): SyncFlow {
   const ref = (budgetId: string, budgetName: string): JsonObject => ({
     connectionFingerprint: "", budgetId, budgetName,
@@ -41,12 +41,29 @@ function routeFlow(flowType: SyncFlow["flowType"], withAccount = false): SyncFlo
 
 describe("entity sync over HTTP (RD-060)", () => {
   it("validates payee and category flows on HTTP-API connections", () => {
-    expect(() => payeeAdapter.validate({ flow: routeFlow("payee_sync"), sourceConnection: httpConn("a"), targetConnection: httpConn("b") })).not.toThrow();
-    expect(() => categoryAdapter.validate({ flow: routeFlow("category_sync"), sourceConnection: httpConn("a"), targetConnection: httpConn("b") })).not.toThrow();
+    expect(() => payeeAdapter.validate({ flow: routeFlow("payee_sync"), sourceConnection: httpConn("a", "budget-src"), targetConnection: httpConn("b", "budget-tgt") })).not.toThrow();
+    expect(() => categoryAdapter.validate({ flow: routeFlow("category_sync"), sourceConnection: httpConn("a", "budget-src"), targetConnection: httpConn("b", "budget-tgt") })).not.toThrow();
   });
 
   it("validates transaction flows on HTTP-API connections (RD-060 Phase 2)", () => {
-    expect(() => transactionAdapter.validate({ flow: routeFlow("transaction_sync", true), sourceConnection: httpConn("a"), targetConnection: httpConn("b") })).not.toThrow();
+    expect(() => transactionAdapter.validate({ flow: routeFlow("transaction_sync", true), sourceConnection: httpConn("a", "budget-src"), targetConnection: httpConn("b", "budget-tgt") })).not.toThrow();
+  });
+
+  it("accepts any connection reaching the saved budget, regardless of mode/URL", () => {
+    // Direct-mode connections to the same budgets - a flow saved in either mode
+    // validates against either, because matching is by budget id.
+    const directSrc = { id: "d1", label: "d1", mode: "browser-api", baseUrl: "https://budget.example.com", serverPassword: "pw", budgetSyncId: "budget-src" } as unknown as ConnectionInstance;
+    const directTgt = { id: "d2", label: "d2", mode: "browser-api", baseUrl: "https://budget.example.com", serverPassword: "pw", budgetSyncId: "budget-tgt" } as unknown as ConnectionInstance;
+    expect(() => transactionAdapter.validate({ flow: routeFlow("transaction_sync", true), sourceConnection: directSrc, targetConnection: directTgt })).not.toThrow();
+  });
+
+  it("rejects a connection that reaches a different budget", () => {
+    expect(() =>
+      transactionAdapter.validate({ flow: routeFlow("transaction_sync", true), sourceConnection: httpConn("a", "budget-OTHER"), targetConnection: httpConn("b", "budget-tgt") })
+    ).toThrow(/is not the budget this flow was saved for/i);
+    expect(() =>
+      payeeAdapter.validate({ flow: routeFlow("payee_sync"), sourceConnection: httpConn("a", "budget-src"), targetConnection: httpConn("b", "budget-OTHER") })
+    ).toThrow(/is not the budget this flow was saved for/i);
   });
 
   it("plans + creates payees through an HTTP-style transport", async () => {

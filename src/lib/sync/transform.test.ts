@@ -93,6 +93,7 @@ describe("buildPlannedTargetPayload", () => {
       notes: "flat white [Synced from Home / Checking]",
       cleared: false,
       importedId: "absync:flow-1:txn:t1",
+      subtransactions: null,
     });
   });
 });

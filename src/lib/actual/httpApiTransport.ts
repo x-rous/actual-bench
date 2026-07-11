@@ -64,8 +64,11 @@ import { getBudgetFileSyncCapabilities } from "@/lib/sync/capabilities";
 import {
   createHttpTransactionsForSync,
   createOrResolveHttpPayee,
+  deleteHttpTransactionForSync,
   getHttpTargetLookupForSync,
   listHttpTransactionsForSync,
+  readHttpTargetTransactionForSync,
+  updateHttpTransactionForSync,
 } from "./httpSyncTransactions";
 
 export function createHttpApiTransport(
@@ -175,6 +178,9 @@ export function createHttpApiTransport(
     listTransactionsForSync: (input) => listHttpTransactionsForSync(connection, input),
     createOrResolvePayee: (input) => createOrResolveHttpPayee(connection, input.name),
     createTransactionsForSync: (inputs) => createHttpTransactionsForSync(connection, inputs),
+    updateTransactionForSync: (input) => updateHttpTransactionForSync(connection, input),
+    readTargetTransactionForSync: (input) => readHttpTargetTransactionForSync(connection, input),
+    deleteTransactionForSync: (input) => deleteHttpTransactionForSync(connection, input),
     getTargetLookupForSync: (input) => getHttpTargetLookupForSync(connection, input),
 
     getNotesIndex: () => getNotesIndex(connection),

@@ -7,12 +7,14 @@ import type {
   CreateTransactionsForSyncResult,
   ListTransactionsForSyncInput,
   ResolvedSyncPayee,
+  SyncAppliedSnapshot,
   SyncCreatedTransaction,
   SyncSourceSplitLine,
   SyncSourceTransaction,
   SyncTargetLookup,
   SyncTargetLookupTransaction,
   SyncTargetTransactionInput,
+  UpdateTransactionForSyncInput,
 } from "./transport";
 
 /**
@@ -152,6 +154,69 @@ export async function createOrResolveHttpPayee(
   return { id: created.id, name, created: true };
 }
 
+function appliedFromRaw(row: RawHttpTransaction): SyncAppliedSnapshot {
+  return {
+    amount: num(row.amount),
+    date: row.date,
+    cleared: row.cleared === true,
+    categoryId: row.category ?? null,
+    payeeId: row.payee ?? null,
+    notes: row.notes ?? null,
+  };
+}
+
+export async function readHttpTargetTransactionForSync(
+  connection: ConnectionInstance,
+  input: { accountId: string; transactionId: string; date?: string }
+): Promise<SyncAppliedSnapshot | null> {
+  // The account-scoped list is the only read that returns the marker + fields;
+  // find the row by id (a since_date hint narrows the scan when available).
+  for (const r of await fetchTransactions(connection, input.accountId, input.date)) {
+    if (r.id === input.transactionId) return appliedFromRaw(r);
+    if (Array.isArray(r.subtransactions)) {
+      const child = r.subtransactions.find((s) => s.id === input.transactionId);
+      if (child) return appliedFromRaw(child);
+    }
+  }
+  return null;
+}
+
+export async function updateHttpTransactionForSync(
+  connection: ConnectionInstance,
+  input: UpdateTransactionForSyncInput
+): Promise<SyncAppliedSnapshot | null> {
+  // Resolve/create the payee by name when only a name was supplied.
+  let payeeId = input.payeeId ?? null;
+  if (!payeeId && input.payeeName) {
+    payeeId = (await createOrResolveHttpPayee(connection, input.payeeName)).id;
+  }
+  await apiRequest(connection, `/transactions/${input.transactionId}`, {
+    method: "PATCH",
+    body: {
+      transaction: {
+        date: input.date,
+        amount: input.amount,
+        payee: payeeId,
+        category: input.categoryId ?? null,
+        notes: input.notes ?? null,
+        cleared: input.cleared ?? false,
+      },
+    },
+  });
+  return readHttpTargetTransactionForSync(connection, {
+    accountId: input.accountId,
+    transactionId: input.transactionId,
+    date: input.date,
+  });
+}
+
+export async function deleteHttpTransactionForSync(
+  connection: ConnectionInstance,
+  input: { transactionId: string }
+): Promise<void> {
+  await apiRequest(connection, `/transactions/${input.transactionId}`, { method: "DELETE" });
+}
+
 export async function createHttpTransactionsForSync(
   connection: ConnectionInstance,
   inputs: SyncTargetTransactionInput[]
@@ -172,7 +237,8 @@ export async function createHttpTransactionsForSync(
     return created.id;
   }
 
-  type ApiInsert = { date: string; amount: number; payee: string | null; category: string | null; notes: string | null; cleared: boolean; imported_id: string | null };
+  type ApiSub = { amount: number; category: string | null; payee: string | null; notes: string | null };
+  type ApiInsert = { date: string; amount: number; payee: string | null; category: string | null; notes: string | null; cleared: boolean; imported_id: string | null; subtransactions?: ApiSub[] };
   type Entry = { index: number; input: SyncTargetTransactionInput; payload: ApiInsert; payeeId: string | null };
   const byAccount = new Map<string, { entries: Entry[]; minDate: string; maxDate: string }>();
   for (let index = 0; index < inputs.length; index++) {
@@ -188,6 +254,18 @@ export async function createHttpTransactionsForSync(
       cleared: input.cleared ?? false,
       imported_id: input.importedId ?? null,
     };
+    // Grouped split (RD-057 §6): actual-http-api accepts inline subtransactions.
+    if (input.subtransactions && input.subtransactions.length > 0) {
+      payload.subtransactions = [];
+      for (const child of input.subtransactions) {
+        payload.subtransactions.push({
+          amount: child.amount,
+          category: child.categoryId ?? null,
+          payee: await resolvePayeeId({ accountId: input.accountId, date: input.date, amount: child.amount, payeeId: child.payeeId, payeeName: child.payeeName }),
+          notes: child.notes ?? null,
+        });
+      }
+    }
     const group = byAccount.get(input.accountId);
     if (group) {
       group.entries.push({ index, input, payload, payeeId });

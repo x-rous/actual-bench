@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { CheckCircle2, Info, ListChecks, Loader2, XCircle } from "lucide-react";
+import { CheckCircle2, Download, Info, ListChecks, Loader2, XCircle } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -18,6 +18,7 @@ import {
   type PreviewRow,
   type SyncKind,
 } from "../lib/previewRows";
+import { auditFileName, buildRunAuditCsv } from "../lib/runAudit";
 import type { ApplyRunResult } from "@/lib/sync/applyOrchestrator";
 import type { DryRunError, DryRunSummary } from "@/lib/sync/previewOrchestrator";
 
@@ -37,7 +38,22 @@ type PreviewPanelProps = {
   previewedAt: string | null;
   /** Viewing a past/applied run: no selection or apply. */
   readOnly: boolean;
+  /** Run id, used to name the audit export file (RD-057 §7). */
+  runId?: string | null;
 };
+
+/** Trigger a client-side file download of `content` (RD-057 §7 audit export). */
+function downloadTextFile(content: string, fileName: string, mime: string): void {
+  const blob = new Blob([content], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = fileName;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
+}
 
 /** A preview reflects a point-in-time source snapshot; warn once it's this old. */
 const STALE_AFTER_MS = 120_000;
@@ -73,11 +89,13 @@ export function PreviewPanel(props: PreviewPanelProps) {
 
   if (previewError) {
     return (
-      <div className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm">
-        <XCircle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
-        <div>
-          <p className="font-medium">Preview couldn&apos;t run</p>
-          <p className="text-muted-foreground">{previewError.message}</p>
+      <div className="p-5">
+        <div className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm">
+          <XCircle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
+          <div>
+            <p className="font-medium">Preview couldn&apos;t run</p>
+            <p className="text-muted-foreground">{previewError.message}</p>
+          </div>
         </div>
       </div>
     );
@@ -86,7 +104,9 @@ export function PreviewPanel(props: PreviewPanelProps) {
   if (!summary) return null;
 
   const tiles = previewTiles(rows, kind);
-  const filters = previewFilters(kind);
+  // Only show a filter chip when it would actually match something; "All" always
+  // stays. Keeps the chip row focused on the classes a run really produced.
+  const filters = previewFilters(kind).filter((f) => f.key === "all" || filterCount(rows, f.key) > 0);
   const visible = rows.filter((r) => matchesPreviewFilter(r, filter));
   const selectedCount = rows.filter((r) => selectedIds.has(r.id)).length;
   const splits = splitPositions(rows);
@@ -94,77 +114,110 @@ export function PreviewPanel(props: PreviewPanelProps) {
   const columnCount = kind === "transaction" ? 10 : kind === "category" ? 5 : 4;
 
   return (
-    <div className="flex flex-col gap-3.5">
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
       {props.applying && (
-        <div className="flex items-center gap-2 rounded-md border border-blue-400/40 bg-blue-50/70 px-3.5 py-2.5 text-sm dark:bg-blue-950/20">
+        <div className="mx-5 mt-4 flex items-center gap-2 rounded-md border border-blue-400/40 bg-blue-50/70 px-3.5 py-2.5 text-sm dark:bg-blue-950/20">
           <Loader2 className="h-4 w-4 shrink-0 animate-spin text-blue-600 dark:text-blue-400" />
           <span>Syncing selected {noun(kind, true)} to the target budget… this can take a while on large budgets.</span>
         </div>
       )}
-      {!props.applying && props.applyResult && <ApplyResultBanner result={props.applyResult} kind={kind} />}
+      {!props.applying && props.applyResult && (
+        <div className="mx-5 mt-4">
+          <ApplyResultBanner result={props.applyResult} kind={kind} />
+        </div>
+      )}
 
-      {/* Grouped tiles - worded for the data type; click to filter the table */}
-      <div className={cn("grid grid-cols-2 gap-2", tiles.length === 3 ? "sm:grid-cols-3" : "sm:grid-cols-4")}>
-        {tiles.map((tile) => (
-          <Tile key={tile.key} value={tile.value} label={tile.label} tone={tile.tone} active={filter === tile.filter} onClick={() => setFilter(filter === tile.filter ? "all" : tile.filter)} />
-        ))}
-      </div>
-      <p className="text-xs tabular-nums text-muted-foreground">
-        {summary.sourceItemsScanned} {scannedNoun(kind)} scanned
-        {kind === "transaction" && ` · ${summary.generatedTransactionsExcluded} sync-generated excluded · ${summary.sourceItemsFilteredOut} filtered out`}
-        <PreviewFreshness previewedAt={props.previewedAt} readOnly={props.readOnly} />
-      </p>
+      {/* Fixed header: stats + controls stay put while the table scrolls below. */}
+      <div className="flex shrink-0 flex-col gap-2.5 px-5 pb-3 pt-4">
+          {/* Result tiles - worded for the data type; click to filter the table */}
+          <div className={cn("grid grid-cols-2 gap-2", tiles.length === 3 ? "sm:grid-cols-3" : "sm:grid-cols-4")}>
+            {tiles.map((tile) => (
+              <Tile key={tile.key} value={tile.value} label={tile.label} tone={tile.tone} active={filter === tile.filter} onClick={() => setFilter(filter === tile.filter ? "all" : tile.filter)} />
+            ))}
+          </div>
 
-      {reviewCount > 0 && (
-        <button
-          type="button"
-          aria-pressed={filter === "review_queue"}
-          onClick={() => setFilter(filter === "review_queue" ? "all" : "review_queue")}
-          className={cn(
-            "flex items-start gap-2 rounded-md border border-amber-400/40 bg-amber-50/60 px-3 py-2 text-left text-sm transition-colors hover:bg-amber-100/60 dark:bg-amber-950/20 dark:hover:bg-amber-950/40",
-            filter === "review_queue" && "ring-2 ring-ring"
-          )}
-        >
-          <ListChecks className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
-          <span>
-            <strong className="font-semibold">Review queue · {reviewCount}</strong>
-            <span className="block text-xs text-muted-foreground">
-              Automated sync leaves these for you - decide and apply them by hand.
+          {/* Scan meta, a compact review-queue shortcut, and the rules caveat */}
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+            <span className="tabular-nums">
+              {summary.sourceItemsScanned} {scannedNoun(kind)} scanned
+              {kind === "transaction" && ` · ${summary.generatedTransactionsExcluded} sync-generated excluded · ${summary.sourceItemsFilteredOut} filtered out`}
+              <PreviewFreshness previewedAt={props.previewedAt} readOnly={props.readOnly} />
             </span>
-          </span>
-        </button>
-      )}
+            <div className="flex-1" />
+            {reviewCount > 0 && (
+              <button
+                type="button"
+                aria-pressed={filter === "review_queue"}
+                onClick={() => setFilter(filter === "review_queue" ? "all" : "review_queue")}
+                title="Automated sync leaves these for you - decide and apply them by hand."
+                className={cn(
+                  "inline-flex items-center gap-1.5 rounded-full border border-amber-400/50 bg-amber-50/70 px-2.5 py-0.5 font-medium text-amber-700 transition-colors hover:bg-amber-100/70 dark:bg-amber-950/30 dark:text-amber-300 dark:hover:bg-amber-950/50",
+                  filter === "review_queue" && "ring-2 ring-ring"
+                )}
+              >
+                <ListChecks className="h-3.5 w-3.5" /> {reviewCount} to review
+              </button>
+            )}
+            {kind === "transaction" && (
+              <span
+                className="inline-flex items-center gap-1"
+                title={`Target-budget rules can adjust a created transaction's payee, category, or notes.${props.readOnly ? "" : " Items that need review stay unchecked until you pick them."}`}
+              >
+                <Info className="h-3.5 w-3.5" /> Rules may adjust resulting transactions
+              </span>
+            )}
+          </div>
 
-      {kind === "transaction" && (
-        <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
-          <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-          Target-budget rules can adjust a created transaction&apos;s payee, category, or notes.
-          {!props.readOnly && " Items that need review stay unchecked until you pick them."}
-        </p>
-      )}
+          {/* Toolbar: title + shown count + actions, separated from the chips so
+              the buttons never reflow when selecting a row adds "Clear". */}
+          <div className="flex flex-wrap items-center gap-2 border-t border-border pt-2.5">
+            <strong className="text-[13px]">Planned changes</strong>
+            <span className="text-xs tabular-nums text-muted-foreground">{visible.length} shown</span>
+            <div className="flex-1" />
+            {rows.length > 0 && (
+              <Button
+                size="sm"
+                variant="ghost"
+                title="Export this run's audit (CSV)"
+                onClick={() => downloadTextFile(buildRunAuditCsv(rows), auditFileName(props.runId ?? "run", "csv"), "text/csv")}
+              >
+                <Download className="h-3.5 w-3.5" /> Export
+              </Button>
+            )}
+            {props.readOnly ? (
+              <span className="text-xs text-muted-foreground">Read-only - a past run</span>
+            ) : (
+              <>
+                {selectedCount > 0 && (
+                  <Button size="sm" variant="ghost" onClick={props.onClearSelection} disabled={props.applying}>Clear</Button>
+                )}
+                <Button size="sm" variant="outline" onClick={props.onSelectAllSafeNew} disabled={props.applying}>Select all new</Button>
+                <Button size="sm" onClick={props.onApply} disabled={selectedCount === 0 || props.applying}>
+                  {props.applying ? (
+                    <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Syncing…</>
+                  ) : (
+                    <>Sync selected{selectedCount > 0 && <span className="tabular-nums"> · {selectedCount}</span>}</>
+                  )}
+                </Button>
+              </>
+            )}
+          </div>
 
-      {/* Change plan table */}
-      <div className="overflow-hidden rounded-md border border-border">
-        <div className="flex flex-wrap items-center gap-2 border-b border-border px-3 py-2">
-          <strong className="text-[13px]">Change plan</strong>
-          <span className="text-xs tabular-nums text-muted-foreground">{visible.length} shown</span>
+          {/* Filter chips - only the classes this run actually produced */}
           <div className="flex flex-wrap gap-1">
             {filters.map((f) => {
               const count = filterCount(rows, f.key);
-              const disabled = count === 0 && f.key !== "all";
               return (
                 <button
                   key={f.key}
                   type="button"
                   aria-pressed={filter === f.key}
-                  disabled={disabled}
                   onClick={() => setFilter(f.key)}
                   className={cn(
                     "rounded-full border px-2.5 py-0.5 text-xs transition-colors",
                     filter === f.key
                       ? "border-foreground bg-foreground text-background"
-                      : "border-border bg-background text-muted-foreground hover:bg-muted",
-                    disabled && "cursor-not-allowed opacity-40 hover:bg-background"
+                      : "border-border bg-background text-muted-foreground hover:bg-muted"
                   )}
                 >
                   {f.label}
@@ -173,29 +226,12 @@ export function PreviewPanel(props: PreviewPanelProps) {
               );
             })}
           </div>
-          <div className="flex-1" />
-          {props.readOnly ? (
-            <span className="text-xs text-muted-foreground">Read-only - a past run</span>
-          ) : (
-            <>
-              {selectedCount > 0 && (
-                <Button size="sm" variant="ghost" onClick={props.onClearSelection} disabled={props.applying}>Clear</Button>
-              )}
-              <Button size="sm" variant="outline" onClick={props.onSelectAllSafeNew} disabled={props.applying}>Select all new</Button>
-              <Button size="sm" onClick={props.onApply} disabled={selectedCount === 0 || props.applying}>
-                {props.applying ? (
-                  <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Syncing…</>
-                ) : (
-                  <>Sync selected{selectedCount > 0 && <span className="tabular-nums"> · {selectedCount}</span>}</>
-                )}
-              </Button>
-            </>
-          )}
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-xs">
-            <thead className="bg-muted/60 text-left text-[11px] uppercase tracking-wide text-muted-foreground">
+      {/* Scrolling table, edge-to-edge with the section - only the rows move. */}
+      <div className="min-h-0 flex-1 overflow-auto border-t border-border">
+        <table className="w-full text-xs">
+          <thead className="sticky top-0 z-10 bg-muted text-left text-[11px] uppercase tracking-wide text-muted-foreground">
               <tr className="[&>th]:whitespace-nowrap [&>th]:px-2 [&>th]:py-1.5 [&>th]:font-medium">
                 <th className="w-8" />
                 <th>Status</th>
@@ -273,7 +309,6 @@ export function PreviewPanel(props: PreviewPanelProps) {
               )}
             </tbody>
           </table>
-        </div>
       </div>
     </div>
   );

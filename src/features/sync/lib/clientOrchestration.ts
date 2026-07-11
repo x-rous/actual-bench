@@ -92,6 +92,12 @@ function applyStore(): ApplyStore {
       // Keep the in-memory cache coherent immediately (the DB write is deferred).
       if (mappingCache) mappingCache.set(input.sourceItemKey, input as unknown as SyncMapping);
     },
+    updateMapping: async (mappingId, patch) => {
+      // Update/delete mapping patches are rare (one per drifted/removed item), so
+      // they write straight through rather than buffering like creates.
+      await flush();
+      await api.updateMapping(mappingId, patch);
+    },
     updateRunStatus: async (runId, patch) => {
       // A terminal status marks the end of the run: flush buffered item writes
       // first so the finalized run reflects them, then update the run itself.

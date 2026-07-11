@@ -35,6 +35,12 @@ export type SyncFlowPlanConfig = {
   missingPayee: SyncMissingPayeePolicy;
   /** Append the visible `[Synced from …]` marker to target notes. */
   notesMarkerEnabled: boolean;
+  /**
+   * Custom text for the visible notes marker (RD-057 polish). Empty means use
+   * the default `[Synced from <budget> / <account>]`. Kept as literal text so a
+   * user can word it however they like.
+   */
+  notesMarker: string;
   /** Copy the source notes before appending the visible marker. */
   copySourceNotes: boolean;
   /**
@@ -58,6 +64,28 @@ export type SyncFlowPlanConfig = {
    * (RD-054). Fuzzy (strong/weak) duplicates are never auto-mapped.
    */
   exactDuplicateAutoMap: boolean;
+  /**
+   * When true, a mapped item whose source changed since the last sync becomes an
+   * opt-in `update` candidate that overwrites the target (RD-057 §4). Off by
+   * default: the safe behavior is to warn and leave the target unchanged. Apply
+   * never overwrites a target that was edited outside sync, regardless.
+   */
+  updateMappedTargets: boolean;
+  /**
+   * When true, a mapped item whose source transaction was deleted is surfaced as
+   * a review-first `source_missing` delete candidate (RD-057 §5). Off by default,
+   * and only acted on for whole-account flows (no date filter) so a transaction
+   * merely outside the synced window is never mistaken for a deletion. Deletes
+   * always require explicit selection - they are never applied in bulk.
+   */
+  detectDeletedSource: boolean;
+  /**
+   * When true, a source split transaction is synced as ONE grouped target split
+   * (parent + child lines) instead of exploding into separate transactions
+   * (RD-057 §6). Off by default (the explode behavior); requires a target that
+   * can create split transactions.
+   */
+  createTargetSplits: boolean;
 };
 
 /** Smallest allowed auto-sync interval - a budget sync per run is expensive. */
@@ -92,12 +120,16 @@ export const SYNC_PLAN_CONFIG_DEFAULTS = {
   amountDirection: "reverse" as SyncAmountDirection,
   missingPayee: "create" as SyncMissingPayeePolicy,
   notesMarkerEnabled: true,
+  notesMarker: "",
   copySourceNotes: true,
   // RD-053 behavior is unchanged unless the user opts a flow into automation.
   reviewPolicy: "manual_preview_required" as SyncReviewPolicy,
   intervalMinutes: DEFAULT_SYNC_INTERVAL_MINUTES,
   autoPausedAt: null as string | null,
   exactDuplicateAutoMap: false,
+  updateMappedTargets: false,
+  detectDeletedSource: false,
+  createTargetSplits: false,
 };
 
 type PartialRoute = Partial<
@@ -125,11 +157,15 @@ export function buildPlanConfig(
         | "amountDirection"
         | "missingPayee"
         | "notesMarkerEnabled"
+        | "notesMarker"
         | "copySourceNotes"
         | "reviewPolicy"
         | "intervalMinutes"
         | "autoPausedAt"
         | "exactDuplicateAutoMap"
+        | "updateMappedTargets"
+        | "detectDeletedSource"
+        | "createTargetSplits"
       >
     >
 ): SyncFlowPlanConfig {
@@ -149,6 +185,7 @@ export function buildPlanConfig(
     missingPayee: input.missingPayee ?? SYNC_PLAN_CONFIG_DEFAULTS.missingPayee,
     notesMarkerEnabled:
       input.notesMarkerEnabled ?? SYNC_PLAN_CONFIG_DEFAULTS.notesMarkerEnabled,
+    notesMarker: input.notesMarker ?? SYNC_PLAN_CONFIG_DEFAULTS.notesMarker,
     copySourceNotes: input.copySourceNotes ?? SYNC_PLAN_CONFIG_DEFAULTS.copySourceNotes,
     reviewPolicy: input.reviewPolicy ?? SYNC_PLAN_CONFIG_DEFAULTS.reviewPolicy,
     intervalMinutes:
@@ -158,6 +195,12 @@ export function buildPlanConfig(
     autoPausedAt: input.autoPausedAt ?? SYNC_PLAN_CONFIG_DEFAULTS.autoPausedAt,
     exactDuplicateAutoMap:
       input.exactDuplicateAutoMap ?? SYNC_PLAN_CONFIG_DEFAULTS.exactDuplicateAutoMap,
+    updateMappedTargets:
+      input.updateMappedTargets ?? SYNC_PLAN_CONFIG_DEFAULTS.updateMappedTargets,
+    detectDeletedSource:
+      input.detectDeletedSource ?? SYNC_PLAN_CONFIG_DEFAULTS.detectDeletedSource,
+    createTargetSplits:
+      input.createTargetSplits ?? SYNC_PLAN_CONFIG_DEFAULTS.createTargetSplits,
   };
 }
 
@@ -200,10 +243,14 @@ export function decodeFlowPlanConfig(flow: SyncFlow): SyncFlowPlanConfig {
     missingPayee:
       missingPayee === "create" || missingPayee === "leave_empty" ? missingPayee : undefined,
     notesMarkerEnabled: bool(transform.notesMarkerEnabled),
+    notesMarker: str(transform.notesMarker) ?? "",
     copySourceNotes: bool(transform.copySourceNotes),
     reviewPolicy: reviewPolicy(options.reviewPolicy),
     intervalMinutes: options.intervalMinutes != null ? clampSyncInterval(options.intervalMinutes) : undefined,
     autoPausedAt: str(options.autoPausedAt) ?? null,
     exactDuplicateAutoMap: bool(options.exactDuplicateAutoMap),
+    updateMappedTargets: bool(options.updateMappedTargets),
+    detectDeletedSource: bool(options.detectDeletedSource),
+    createTargetSplits: bool(options.createTargetSplits),
   });
 }

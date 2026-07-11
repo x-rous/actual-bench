@@ -20,10 +20,10 @@ export function RunHistory({ runs, onSelectRun }: RunHistoryProps) {
   }
 
   return (
-    <div className="overflow-hidden rounded-md border border-border">
-      <div className="overflow-x-auto">
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-md border border-border">
+      <div className="min-h-0 flex-1 overflow-auto">
         <table className="w-full text-xs">
-          <thead className="bg-muted/60 text-left text-[11px] uppercase text-muted-foreground">
+          <thead className="sticky top-0 z-10 bg-muted text-left text-[11px] uppercase text-muted-foreground">
             <tr>
               <th className="px-3 py-2">Status</th><th className="px-3 py-2">Trigger</th>
               <th className="px-3 py-2 text-right">Planned</th><th className="px-3 py-2 text-right">Created</th>

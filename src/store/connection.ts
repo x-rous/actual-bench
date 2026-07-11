@@ -92,10 +92,21 @@ export const useConnectionStore = create<ConnectionState & ConnectionActions>()(
       activeInstanceId: null,
 
       addInstance: (instance) =>
-        set((state) => ({
-          instances: [...state.instances, instance],
-          activeInstanceId: state.activeInstanceId ?? instance.id,
-        })),
+        set((state) => {
+          // One connection per budget: `budgetSyncId` is the budget's stable
+          // identity across transports, so reconnecting a budget in another mode
+          // (Direct ↔ HTTP) replaces its entry rather than adding a duplicate
+          // that would show twice in the switcher with the same name.
+          const withoutSameBudget = state.instances.filter(
+            (i) => i.budgetSyncId !== instance.budgetSyncId
+          );
+          const activeSurvived = withoutSameBudget.some((i) => i.id === state.activeInstanceId);
+          return {
+            instances: [...withoutSameBudget, instance],
+            // Keep the current active connection unless it was the one replaced.
+            activeInstanceId: activeSurvived ? state.activeInstanceId : instance.id,
+          };
+        }),
 
       removeInstance: (id) =>
         set((state) => {

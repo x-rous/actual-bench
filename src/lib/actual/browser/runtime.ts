@@ -53,6 +53,8 @@ export type ApiImportTransaction = {
   notes?: string | null;
   cleared?: boolean;
   imported_id?: string;
+  /** Split children created inline with the parent (RD-057 §6). */
+  subtransactions?: Array<{ amount: number; category?: string | null; payee?: string | null; notes?: string | null }>;
 };
 
 export type ActualQueryBuilder = {
@@ -139,6 +141,8 @@ export type ActualBrowserApi = {
     transactions: ApiImportTransaction[],
     opts?: { learnCategories?: boolean; runTransfers?: boolean }
   ): Promise<"ok">;
+  updateTransaction(id: string, fields: Partial<ApiImportTransaction>): Promise<unknown>;
+  deleteTransaction(id: string): Promise<unknown>;
   importTransactions(
     accountId: string,
     transactions: ApiImportTransaction[],

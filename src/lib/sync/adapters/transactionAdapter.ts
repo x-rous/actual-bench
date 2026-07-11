@@ -1,5 +1,5 @@
 import { getBudgetFileSyncCapabilities } from "../capabilities";
-import { connectionFingerprint } from "../connectionRef";
+import { connectionMatchesBudget } from "../connectionRef";
 import { decodeFlowPlanConfig, type SyncFlowPlanConfig } from "../flowConfig";
 import {
   DEFAULT_SOURCE_FILTER,
@@ -16,13 +16,18 @@ import {
   type AdapterApplyContext,
   type AdapterCreateInput,
   type AdapterCreateResult,
+  type AdapterMutateInput,
+  type AdapterMutateResult,
   type AdapterSourceResult,
   type AdapterSummary,
   type AdapterValidateInput,
   type SyncKindAdapter,
 } from "../syncKind";
+import { hashTargetFields } from "../targetFingerprint";
 import type {
   ActualBenchTransport,
+  SyncAppliedSnapshot,
+  SyncTargetSplitChild,
   SyncTargetTransactionInput,
 } from "@/lib/actual/transport";
 import type { JsonObject, SyncCapabilitySet, SyncFlow, SyncMapping } from "@/lib/app-db/types";
@@ -90,8 +95,8 @@ export const transactionAdapter: SyncKindAdapter = {
     if (!config.sourceAccountId || !config.targetAccountId) {
       throw new SyncKindError("missing_route", "Source and target accounts must both be selected before previewing.");
     }
-    assertConnectionMatches(config.sourceConnectionFingerprint, sourceConnection, "source");
-    assertConnectionMatches(config.targetConnectionFingerprint, targetConnection, "target");
+    assertConnectionMatches(config.sourceBudgetId, sourceConnection, "source");
+    assertConnectionMatches(config.targetBudgetId, targetConnection, "target");
 
     const sourceCaps = getBudgetFileSyncCapabilities({ mode: sourceConnection.mode });
     const targetCaps = getBudgetFileSyncCapabilities({ mode: targetConnection.mode });
@@ -121,7 +126,7 @@ export const transactionAdapter: SyncKindAdapter = {
     const scanned = rawSource.length;
     const nonGenerated = filterSourceTransactions(rawSource, filter);
     const generatedExcluded = scanned - nonGenerated.length;
-    const expanded = expandSourceTransactions(nonGenerated);
+    const expanded = expandSourceTransactions(nonGenerated, { groupSplits: config.createTargetSplits });
     const expandedCount = expanded.length;
     const kept = filterSourceItems(expanded, filter);
     const items = JSON.parse(JSON.stringify(kept)) as SyncSourceItem[];
@@ -142,12 +147,16 @@ export const transactionAdapter: SyncKindAdapter = {
   plan({ flow, materialized, target, mappings, targetCapabilities }): SyncPlanResult {
     const source = materialized as MaterializedSource;
     void flow;
+    // Deleted-source detection is only safe for a whole-account scan: with a date
+    // window, a source item outside the range would look "missing" (RD-057 §5).
+    const wholeAccount = !source.filter.startDate && !source.filter.endDate;
     return planExpandedItems({
       config: source.config,
       capabilities: { mode: "browser-api", supported: true, reason: null, capabilities: targetCapabilities },
       sourceItems: source.items,
       target: target as SyncPlannerTargetSnapshot,
       existingMappings: mappings as SyncMapping[],
+      detectDeletedSource: source.config.detectDeletedSource && wholeAccount,
     });
   },
 
@@ -209,6 +218,9 @@ export const transactionAdapter: SyncKindAdapter = {
       notes: (payload.notes as string | null) ?? null,
       cleared: payload.cleared === true,
       importedId: (payload.importedId as string | null) ?? null,
+      subtransactions: Array.isArray(payload.subtransactions)
+        ? (payload.subtransactions as SyncTargetSplitChild[])
+        : null,
     }));
     const { created } = await transport.createTransactionsForSync(createInputs);
     return inputs.map((input, i) => {
@@ -217,15 +229,114 @@ export const transactionAdapter: SyncKindAdapter = {
       const changedFields = actual
         ? diffPlannedVsActual(input.payload, res?.resolvedPayeeId ?? (input.payload.payeeId as string | null) ?? null, actual)
         : [];
-      return { itemId: input.itemId, targetId: res?.transactionId ?? null, changedFields };
+      return {
+        itemId: input.itemId,
+        targetId: res?.transactionId ?? null,
+        changedFields,
+        targetFingerprint: actual ? hashTargetFields(actual) : null,
+      };
     });
+  },
+
+  async updateBatch(
+    transport: ActualBenchTransport,
+    flow: SyncFlow,
+    inputs: AdapterMutateInput[]
+  ): Promise<AdapterMutateResult[]> {
+    const config = decodeFlowPlanConfig(flow);
+    const results: AdapterMutateResult[] = [];
+    for (const input of inputs) {
+      // Per-item try/catch: one failed target write must not discard the results
+      // of items already updated earlier in the batch.
+      try {
+        const payload = input.payload ?? {};
+        const live = await transport.readTargetTransactionForSync({
+          accountId: config.targetAccountId,
+          transactionId: input.targetId,
+          date: typeof payload.date === "string" ? payload.date : undefined,
+        });
+        if (!live) {
+          results.push({ itemId: input.itemId, outcome: "skipped", targetId: null, message: "Target no longer exists; not updated." });
+          continue;
+        }
+        // Without a recorded baseline we cannot prove the target is unmodified, so
+        // refuse to overwrite it (RD-057 §4). With one, only overwrite an exact match.
+        if (!input.expectedTargetFingerprint) {
+          results.push({ itemId: input.itemId, outcome: "skipped", targetId: input.targetId, message: "No sync baseline for this target; left unchanged." });
+          continue;
+        }
+        if (hashTargetFields(live) !== input.expectedTargetFingerprint) {
+          results.push({ itemId: input.itemId, outcome: "skipped", targetId: input.targetId, message: "Target was edited outside sync; left unchanged." });
+          continue;
+        }
+        const applied: SyncAppliedSnapshot | null = await transport.updateTransactionForSync({
+          transactionId: input.targetId,
+          accountId: config.targetAccountId,
+          date: String(payload.date ?? live.date),
+          amount: Number(payload.amount ?? live.amount),
+          payeeId: (payload.payeeId as string | null) ?? null,
+          payeeName: (payload.payeeName as string | null) ?? null,
+          categoryId: (payload.categoryId as string | null) ?? null,
+          notes: (payload.notes as string | null) ?? null,
+          cleared: payload.cleared === true,
+        });
+        results.push({
+          itemId: input.itemId,
+          outcome: "updated",
+          targetId: input.targetId,
+          targetFingerprint: applied ? hashTargetFields(applied) : null,
+        });
+      } catch (err) {
+        results.push({ itemId: input.itemId, outcome: "failed", targetId: input.targetId, message: err instanceof Error ? err.message : "Update failed." });
+      }
+    }
+    return results;
+  },
+
+  async deleteBatch(
+    transport: ActualBenchTransport,
+    flow: SyncFlow,
+    inputs: AdapterMutateInput[]
+  ): Promise<AdapterMutateResult[]> {
+    const config = decodeFlowPlanConfig(flow);
+    const results: AdapterMutateResult[] = [];
+    for (const input of inputs) {
+      // Per-item try/catch so one failed delete doesn't discard earlier successes.
+      try {
+        const live = await transport.readTargetTransactionForSync({
+          accountId: config.targetAccountId,
+          transactionId: input.targetId,
+        });
+        if (!live) {
+          results.push({ itemId: input.itemId, outcome: "skipped", targetId: null, message: "Target already gone." });
+          continue;
+        }
+        // Only delete a target we can prove is exactly what sync wrote: no baseline
+        // (or a mismatch) means it may have been re-used/edited - never delete it.
+        if (!input.expectedTargetFingerprint) {
+          results.push({ itemId: input.itemId, outcome: "skipped", targetId: input.targetId, message: "No sync baseline for this target; not deleted." });
+          continue;
+        }
+        if (hashTargetFields(live) !== input.expectedTargetFingerprint) {
+          results.push({ itemId: input.itemId, outcome: "skipped", targetId: input.targetId, message: "Target was edited outside sync; not deleted." });
+          continue;
+        }
+        await transport.deleteTransactionForSync({ transactionId: input.targetId });
+        results.push({ itemId: input.itemId, outcome: "deleted", targetId: input.targetId });
+      } catch (err) {
+        results.push({ itemId: input.itemId, outcome: "failed", targetId: input.targetId, message: err instanceof Error ? err.message : "Delete failed." });
+      }
+    }
+    return results;
   },
 };
 
-function assertConnectionMatches(savedFingerprint: string, connection: AdapterValidateInput["sourceConnection"], side: "source" | "target"): void {
-  if (!savedFingerprint) return;
-  if (connectionFingerprint(connection) !== savedFingerprint) {
-    throw new SyncKindError("connection_mismatch", `The ${side} connection does not match the one this flow was saved with.`);
+function assertConnectionMatches(savedBudgetId: string, connection: AdapterValidateInput["sourceConnection"], side: "source" | "target"): void {
+  if (!savedBudgetId) return;
+  // Match on the budget's stable id, not the mode/URL fingerprint, so a flow
+  // built in Direct mode also runs in HTTP mode against the same budget.
+  if (!connectionMatchesBudget(connection, savedBudgetId)) {
+    throw new SyncKindError("connection_mismatch", `The ${side} connection is not the budget this flow was saved for.`);
   }
 }
 

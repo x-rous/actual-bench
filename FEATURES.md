@@ -57,7 +57,7 @@ A compact diagnostics page for Actual Bench's own server-side metadata database.
 
 ## Budget File Sync
 
-A workspace for syncing data between budget files as saved one-way flows. One unified engine covers every data type — **transactions, payees, and categories** — so preview, apply, run history, the review queue, and the whole safe-only automation layer work identically for each. It is deliberately conservative: **cross-budget only, create-only, preview-first.** Every data type - transactions, payees, and categories - syncs in **both Direct and HTTP API Server mode**, in any combination (Direct-to-HTTP, HTTP-to-Direct, and same-mode).
+A workspace for syncing data between budget files as saved one-way flows. One unified engine covers every data type — **transactions, payees, and categories** — so preview, apply, run history, the review queue, and the whole safe-only automation layer work identically for each. It is **preview-first** and conservative by default (**create-only**), with opt-in advanced modes (update, delete, grouped splits, same-budget) that never write silently. Every data type - transactions, payees, and categories - syncs in **both Direct and HTTP API Server mode**, in any combination (Direct-to-HTTP, HTTP-to-Direct, and same-mode).
 
 ### Master data (payees & categories)
 
@@ -72,12 +72,16 @@ A workspace for syncing data between budget files as saved one-way flows. One un
 - Saved sync flows list with a compact editor: source/target Direct connection + account, filters, and transforms
 - Transforms: amount direction (reverse sign by default, same-sign optional), payee match-by-name (create missing by default, or leave empty), category match-by-name (missing categories are left empty — never auto-created), and a clean visible notes marker (`[Synced from <budget> / <account>]`, on by default)
 - Filters: date range, cleared/reconciled status, amount sign, payee/category include-exclude, and notes-contains; sync-generated transactions are always excluded to prevent loops
-- Eligible split lines are exploded into separate normal target transactions (no target split transaction is created)
+- Eligible split lines are exploded into separate normal target transactions by default, or **kept grouped as one target split** (parent + child lines, each resolved by name) when you enable *Keep splits grouped on the target*
+- **Same-budget flows**: a transaction flow may sync between two different accounts in the same budget (only a true self-sync — the same account on both sides — is blocked); entity flows still require two different budgets
 - Preview is required before any write: a dry-run produces a persisted run with classified rows — new, already synced, duplicate candidate, changed since sync, marker match, or blocked — showing source and transformed target amounts side by side, with no writes to Actual
 - Apply writes only the selected safe `new` create candidates, creates/resolves payees per policy, stamps a durable target-side marker (`imported_id`), and records a mapping immediately after each success; partial failures are reported and never lose earlier successes
 - Idempotent reruns: app-owned mappings are the source of truth (with the target marker as a secondary recovery aid), so re-previewing after apply shows already-synced items instead of creating duplicates
 - Marker-match repair: if a target already carries a flow's marker but the mapping was lost, the row can be selected to repair the mapping without creating a duplicate
+- **Update mapped targets** (opt-in): when a source transaction changes after it was synced, push the change to its mapped target — but never overwrite a target that was edited outside sync (a stored field fingerprint guards manual edits)
+- **Delete when the source is removed** (opt-in, review-first): when a synced source transaction is deleted, the mapped target surfaces under *Source deleted* for you to delete; never automatic, never in bulk, and only for whole-account flows
 - Reverse-flow helper: one click mirrors a flow (source/target swapped, created disabled for review) so two one-way flows form a two-way sync
+- **Export a run's audit** to CSV, and **export/import a flow definition** as JSON (no secrets or connections — re-select connections on import)
 - Run history per flow with counts and item-level detail, including how many items were auto-applied vs. left in the review queue vs. failed
 - Because Actual rules run on transaction create, the applied target transaction may differ from the preview (payee/category/notes/cleared); this is surfaced as a warning, not an error
 
@@ -94,7 +98,7 @@ The same engine can run without hand-picking every change — but only for prova
 - **Retry failed items**: re-attempt just the failed items of a run (marker-based idempotency prevents duplicates on retry)
 - **Flow health**: after repeated failed/partial automated runs a flow auto-pauses (and is badged) so it stops firing until you re-enable it; auto-run outcomes that fail or leave items to review raise an in-app notice
 
-- Not in scope: same-budget sync, automatic target updates/deletes, category auto-create, fuzzy duplicate auto-mapping, unattended server-side scheduled sync, and multi-currency conversion
+- Not in scope: true Actual transfer-linked sync (same-budget uses a plain copy), automatic (non-review) target deletes, category auto-create, fuzzy duplicate auto-mapping, unattended server-side scheduled sync, and multi-currency conversion
 
 ## Data Browser
 

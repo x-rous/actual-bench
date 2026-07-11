@@ -310,22 +310,29 @@ export function TopBar() {
                 </span>
                 <ChevronDown className="h-3 w-3 text-muted-foreground" />
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="start" className="w-64">
+              <DropdownMenuContent align="start" className="w-80">
+                <div className="max-h-64 overflow-y-auto">
                 {instances.map((instance) => {
                   const isActive = instance.id === activeInstance.id;
                   return (
                     <DropdownMenuItem
                       key={instance.id}
                       onClick={() => handleSwitchConnection(instance.id)}
-                      className="flex items-center justify-between"
+                      className="flex items-center justify-between gap-2"
                     >
-                      <span className="truncate">{instance.label}</span>
+                      <span className="flex min-w-0 items-center gap-2">
+                        <span className="truncate">{instance.label}</span>
+                        <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                          {instance.mode === "browser-api" ? "Direct" : "HTTP API"}
+                        </span>
+                      </span>
                       {isActive && (
-                        <Badge variant="secondary" className="ml-2 shrink-0 text-xs">active</Badge>
+                        <Badge variant="secondary" className="ml-1 shrink-0 text-xs">active</Badge>
                       )}
                     </DropdownMenuItem>
                   );
                 })}
+                </div>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={() => requestAction({ kind: "addConnection" })}>
                   Add connection…

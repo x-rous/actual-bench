@@ -9,6 +9,7 @@ import {
   emptyFlowForm,
   flowToFormState,
   isSameBudget,
+  isSelfSync,
   missingRouteFields,
   type SyncFlowFormState,
 } from "./flowForm";
@@ -34,9 +35,9 @@ function filledForm(): SyncFlowFormState {
 }
 
 describe("form defaults", () => {
-  it("defaults to reverse sign and create-missing-payee", () => {
+  it("defaults to same sign and create-missing-payee", () => {
     const form = emptyFlowForm();
-    expect(form.transform.amountDirection).toBe("reverse");
+    expect(form.transform.amountDirection).toBe("same");
     expect(form.transform.missingPayee).toBe("create");
     expect(form.transform.notesMarkerEnabled).toBe(true);
   });
@@ -91,18 +92,22 @@ describe("validation", () => {
     expect(missingRouteFields(filledForm())).toEqual([]);
   });
 
-  it("blocks any same-budget flow, including a different account in the same budget", () => {
+  it("allows same-budget different-account flows but blocks a self-sync (RD-057 §3)", () => {
+    // Same account → same account is a no-op: blocked.
     const sameAccount = filledForm();
     sameAccount.target = { ...sameAccount.source };
     expect(isSameBudget(sameAccount)).toBe(true);
+    expect(isSelfSync(sameAccount)).toBe(true);
 
-    // Same budget file, different account - still blocked (cross-budget only).
+    // Same budget file, different account - now allowed (not a self-sync).
     const sameBudget = filledForm();
     sameBudget.target = { ...sameBudget.source, accountId: "acct-other", accountName: "Savings" };
     expect(isSameBudget(sameBudget)).toBe(true);
+    expect(isSelfSync(sameBudget)).toBe(false);
 
     // Different budgets - allowed.
     expect(isSameBudget(filledForm())).toBe(false);
+    expect(isSelfSync(filledForm())).toBe(false);
   });
 });
 
@@ -116,7 +121,7 @@ describe("buildFlowPayload", () => {
     expect(leg.sourceRef.data).toMatchObject({ connectionFingerprint: connectionFingerprint(sourceConn), accountId: "acct-src", budgetId: "budget-src" });
     expect(leg.targetRef.data).toMatchObject({ connectionFingerprint: connectionFingerprint(targetConn), accountId: "acct-tgt" });
     expect(leg.filter.data).toMatchObject({ startDate: "2026-07-01", payeeInclude: ["Coffee Bar", "Market"], excludeGeneratedSyncTransactions: true });
-    expect(leg.transform.data).toMatchObject({ amountDirection: "reverse", missingPayee: "create", notesMarkerEnabled: true });
+    expect(leg.transform.data).toMatchObject({ amountDirection: "same", missingPayee: "create", notesMarkerEnabled: true });
     // no secret fields leak
     expect(JSON.stringify(payload)).not.toContain("serverPassword");
     expect(JSON.stringify(payload)).not.toContain("pw");
@@ -168,7 +173,7 @@ describe("flowToFormState", () => {
     // not the raw budget UUID).
     expect(form.target.budgetName).toBe("Family");
     expect(form.target.accountName).toBe("Joint");
-    expect(form.transform.amountDirection).toBe("reverse");
+    expect(form.transform.amountDirection).toBe("same");
     expect(form.filter.payeeInclude).toBe("coffee bar, market");
     // Automation policy survives the round-trip via the options envelope.
     expect(form.automation.reviewPolicy).toBe("manual_preview_required");

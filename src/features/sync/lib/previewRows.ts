@@ -10,6 +10,7 @@ export type PreviewGroup =
   | "already_synced"
   | "duplicate"
   | "source_changed"
+  | "source_deleted"
   | "marker_match"
   | "blocked"
   | "other";
@@ -26,6 +27,8 @@ export function syncKindOf(flowType: string): SyncKind {
 export type PreviewRow = {
   id: string;
   classification: SyncItemClassification | null;
+  /** What apply would do (create/update/delete/skip); drives selectability. */
+  plannedAction: string | null;
   /** Data type of the item, for kind-aware columns/labels. */
   entityType: "payee" | "category" | "transaction";
   group: PreviewGroup;
@@ -92,6 +95,8 @@ export function classificationGroup(classification: SyncItemClassification | nul
       return "duplicate";
     case "source_changed_since_sync":
       return "source_changed";
+    case "source_missing":
+      return "source_deleted";
     case "target_marker_match":
     case "target_name_match":
       return "marker_match";
@@ -115,17 +120,25 @@ export function toPreviewRow(item: SyncFlowRunItem): PreviewRow {
   const isExactDupAutoMap =
     item.classification === "exact_duplicate" && flags.includes("exact_duplicate_auto_map");
   const entityType = item.sourceEntityType === "payee" || item.sourceEntityType === "category" ? item.sourceEntityType : "transaction";
+  // Opt-in update (source changed) and review-first delete (source removed) are
+  // both explicitly selectable so the user drives them (RD-057 §4/§5).
+  const isUpdate = item.plannedAction === "update";
+  const isDelete = item.plannedAction === "delete";
   return {
     id: item.id,
     classification: item.classification,
+    plannedAction: item.plannedAction,
     entityType,
     group: classificationGroup(item.classification),
-    // Selectable: safe creates, marker/name-match repairs, or auto-mappable dups.
+    // Selectable: safe creates, marker/name-match repairs, auto-mappable dups,
+    // opt-in updates, or review-first deletes.
     selectable:
       isSafeNew ||
       item.classification === "target_marker_match" ||
       item.classification === "target_name_match" ||
-      isExactDupAutoMap,
+      isExactDupAutoMap ||
+      isUpdate ||
+      isDelete,
     isSafeNew,
     reviewRequired: isReviewRequired(item.classification) && !isExactDupAutoMap,
     applyState: item.applyState,
@@ -178,6 +191,7 @@ const GROUP_LABELS: Record<PreviewGroup, string> = {
   already_synced: "Already synced",
   duplicate: "Duplicate",
   source_changed: "Source changed",
+  source_deleted: "Source deleted",
   marker_match: "Marker match",
   blocked: "Blocked",
   other: "Other",
@@ -237,7 +251,7 @@ export function previewFilters(kind: SyncKind): { key: PreviewFilter; label: str
 export type PreviewFilter = "all" | "needs_review" | "review_queue" | PreviewGroup;
 
 /** The three groups the "Needs review" tile/filter covers. */
-const NEEDS_REVIEW_GROUPS: PreviewGroup[] = ["duplicate", "source_changed", "marker_match"];
+const NEEDS_REVIEW_GROUPS: PreviewGroup[] = ["duplicate", "source_changed", "source_deleted", "marker_match"];
 
 /** Chips shown above the table (detailed statuses; "needs_review" is tile-only). */
 export const PREVIEW_FILTERS: { key: PreviewFilter; label: string }[] = [
@@ -245,6 +259,7 @@ export const PREVIEW_FILTERS: { key: PreviewFilter; label: string }[] = [
   { key: "new", label: "New" },
   { key: "duplicate", label: "Duplicates" },
   { key: "source_changed", label: "Source changed" },
+  { key: "source_deleted", label: "Source deleted" },
   { key: "marker_match", label: "Marker match" },
   { key: "already_synced", label: "Already synced" },
   { key: "blocked", label: "Blocked" },
@@ -296,7 +311,12 @@ export function tileCounts(rows: PreviewRow[]): PreviewTileCounts {
     if (row.group === "new") counts.new += 1;
     else if (row.group === "already_synced") counts.alreadySynced += 1;
     else if (row.group === "blocked") counts.blocked += 1;
-    else if (row.group === "duplicate" || row.group === "source_changed" || row.group === "marker_match") {
+    else if (
+      row.group === "duplicate" ||
+      row.group === "source_changed" ||
+      row.group === "source_deleted" ||
+      row.group === "marker_match"
+    ) {
       counts.needsReview += 1;
     }
   }

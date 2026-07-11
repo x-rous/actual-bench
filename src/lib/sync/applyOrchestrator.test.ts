@@ -16,8 +16,10 @@ const MARKER_SPLIT = mk("split:t1:s1");
 const targetConn: BrowserApiConnection = {
   id: "tgt", label: "Family", mode: "browser-api", baseUrl: "https://tgt.example.com", serverPassword: "pw", budgetSyncId: "budget-tgt",
 };
+// An HTTP connection to the SAME target budget (budget-tgt) reached via a
+// different URL/mode - the cross-mode scenario budget-identity matching enables.
 const httpTarget: HttpApiConnection = {
-  id: "http", label: "Http", mode: "http-api", baseUrl: "https://api.example.com", apiKey: "k", budgetSyncId: "budget-http",
+  id: "http", label: "Http", mode: "http-api", baseUrl: "https://api.example.com", apiKey: "k", budgetSyncId: "budget-tgt",
 };
 
 // --- Fixtures ---------------------------------------------------------------
@@ -106,9 +108,28 @@ function makeTargetTransport(opts: TargetOptions = {}) {
     return { created };
   });
 
+  const snap = (r: SyncSourceTransaction) => ({ amount: r.amount, date: r.date, cleared: r.cleared, categoryId: r.categoryId, payeeId: r.payeeId, notes: r.notes });
+  const readTargetTransactionForSync = jest.fn(async ({ transactionId }: { transactionId: string }) => {
+    const row = rows.find((r) => r.id === transactionId);
+    return row ? snap(row) : null;
+  });
+  const updateTransactionForSync = jest.fn(async (input: { transactionId: string; amount: number; date: string; categoryId?: string | null; payeeId?: string | null; notes?: string | null; cleared?: boolean }) => {
+    const row = rows.find((r) => r.id === input.transactionId);
+    if (!row) return null;
+    Object.assign(row, { amount: input.amount, date: input.date, categoryId: input.categoryId ?? null, payeeId: input.payeeId ?? null, notes: input.notes ?? null, cleared: input.cleared ?? false });
+    return snap(row);
+  });
+  const deleteTransactionForSync = jest.fn(async ({ transactionId }: { transactionId: string }) => {
+    const i = rows.findIndex((r) => r.id === transactionId);
+    if (i >= 0) rows.splice(i, 1);
+  });
+
   const transport = {
     createOrResolvePayee: createPayee,
     createTransactionsForSync,
+    readTargetTransactionForSync,
+    updateTransactionForSync,
+    deleteTransactionForSync,
     getTargetLookupForSync: jest.fn(async () => ({
       payees: [],
       importedIdIndex: new Map(rows.filter((r) => r.importedId).map((r) => [r.importedId as string, r.id])),
@@ -118,7 +139,7 @@ function makeTargetTransport(opts: TargetOptions = {}) {
     ),
   } as unknown as ActualBenchTransport;
 
-  return { transport, rows, createPayee, createTransactionsForSync };
+  return { transport, rows, createPayee, createTransactionsForSync, updateTransactionForSync, deleteTransactionForSync };
 }
 
 // --- Fake store -------------------------------------------------------------
@@ -144,6 +165,11 @@ function makeStore(opts: { runStatus?: string; items?: SyncFlowRunItem[]; seedMa
     createMapping: jest.fn(async (input) => {
       createdMappings.push(input);
       mappings.set(input.flowId + "|" + input.sourceItemKey, { ...(input as unknown as SyncMapping) });
+    }),
+    updateMapping: jest.fn(async (mappingId, patch) => {
+      for (const [key, m] of mappings) {
+        if (m.id === mappingId) mappings.set(key, { ...m, ...patch } as SyncMapping);
+      }
     }),
     updateRunStatus: jest.fn(async (_runId, patch) => {
       run.status = patch.status;
@@ -180,24 +206,20 @@ describe("applySyncRun - validation", () => {
     expect(createTransactionsForSync).not.toHaveBeenCalled();
   });
 
-  it("applies transaction sync over an HTTP target (RD-060 Phase 2)", async () => {
-    const s = makeStore();
-    // Flow saved for the HTTP target so the route matches; HTTP now passes the
-    // capability gate (transaction sync is supported), so the apply proceeds.
-    s.store.loadFlow = jest.fn(async () => {
-      const flow = makeFlow();
-      (flow.legs[0].targetRef.data as Record<string, unknown>).connectionFingerprint = connectionFingerprint(httpTarget);
-      return flow;
-    });
+  it("applies a Direct-built flow over an HTTP connection to the same budget (RD-060 Phase 2)", async () => {
+    // The flow was saved in Direct mode (targetRef fingerprint = Direct), but the
+    // apply runs over an HTTP connection to the same budget-tgt. Budget-identity
+    // matching accepts it; HTTP passes the capability gate, so the apply proceeds.
+    const { store } = makeStore();
     const { transport } = makeTargetTransport();
-    const result = await applySyncRun({ runId: "run-1", targetConnection: httpTarget }, { transport: provider(transport), store: s.store });
+    const result = await applySyncRun({ runId: "run-1", targetConnection: httpTarget }, { transport: provider(transport), store });
     expect(result.status).toBe("applied");
   });
 
-  it("rejects a target that no longer matches the saved route", async () => {
+  it("rejects a target that points at a different budget", async () => {
     const { store } = makeStore();
     const { transport } = makeTargetTransport();
-    const other: BrowserApiConnection = { ...targetConn, baseUrl: "https://elsewhere.example.com" };
+    const other: BrowserApiConnection = { ...targetConn, budgetSyncId: "budget-other" };
     const result = await applySyncRun({ runId: "run-1", targetConnection: other }, { transport: provider(transport), store });
     expect(result).toMatchObject({ status: "failed", error: { code: "route_mismatch" } });
   });
@@ -299,6 +321,64 @@ describe("applySyncRun - create path", () => {
     expect(result.items[0].outcome).toBe("failed");
     expect(createdMappings).toHaveLength(0);
     expect(itemPatches.get("item-1")).toMatchObject({ applyState: "failed" });
+  });
+});
+
+describe("applySyncRun - update & delete (RD-057)", () => {
+  const updatePayload: JsonObject = {
+    accountId: "acct-tgt", date: "2026-07-10", amount: 9999,
+    payeeId: null, payeeName: null, categoryId: "tc1", notes: "changed", cleared: false, importedId: MARKER_T1,
+  };
+  // The live target row + a mapping whose fingerprint matches it (nothing edited
+  // outside sync), so the update guard permits the overwrite.
+  const liveRow = () => targetRow({ id: "tgt-1", importedId: MARKER_T1, amount: 1250, categoryId: "tc1", notes: "orig" });
+
+  function updateItem(): SyncFlowRunItem {
+    return runItem({
+      id: "item-1", classification: "source_changed_since_sync", plannedAction: "update",
+      plannedTargetPayload: { version: 1, data: updatePayload },
+      targetItemRef: { version: 1, data: { targetTransactionId: "tgt-1" } },
+    });
+  }
+
+  it("updates the mapped target when the flow opts in and the target is unedited", async () => {
+    const { hashTargetFields } = await import("./targetFingerprint");
+    const row = liveRow();
+    const seed = { id: "m1", flowId: "flow-1", sourceItemKey: "txn:t1", targetTransactionId: "tgt-1", targetFingerprint: hashTargetFields({ amount: row.amount, date: row.date, cleared: row.cleared, categoryId: row.categoryId, payeeId: row.payeeId, notes: row.notes }) } as unknown as SyncMapping;
+    const { store } = makeStore({ items: [updateItem()], seedMappings: [seed] });
+    const { transport, updateTransactionForSync } = makeTargetTransport({ preloaded: [row] });
+    const result = await applySyncRun({ runId: "run-1", targetConnection: targetConn }, { transport: provider(transport), store });
+    expect(result.items[0].outcome).toBe("updated");
+    expect(updateTransactionForSync).toHaveBeenCalledTimes(1);
+    expect(result.counts.updated).toBe(1);
+  });
+
+  it("never overwrites a target that was edited outside sync", async () => {
+    const seed = { id: "m1", flowId: "flow-1", sourceItemKey: "txn:t1", targetTransactionId: "tgt-1", targetFingerprint: "stale-does-not-match" } as unknown as SyncMapping;
+    const { store } = makeStore({ items: [updateItem()], seedMappings: [seed] });
+    const { transport, updateTransactionForSync } = makeTargetTransport({ preloaded: [liveRow()] });
+    const result = await applySyncRun({ runId: "run-1", targetConnection: targetConn }, { transport: provider(transport), store });
+    expect(result.items[0].outcome).toBe("skipped");
+    expect(updateTransactionForSync).not.toHaveBeenCalled();
+  });
+
+  it("deletes a source-missing target only when explicitly selected", async () => {
+    const { hashTargetFields } = await import("./targetFingerprint");
+    const row = liveRow();
+    const seed = { id: "m1", flowId: "flow-1", sourceItemKey: "txn:t1", targetTransactionId: "tgt-1", targetFingerprint: hashTargetFields({ amount: row.amount, date: row.date, cleared: row.cleared, categoryId: row.categoryId, payeeId: row.payeeId, notes: row.notes }) } as unknown as SyncMapping;
+    const delItem = runItem({
+      id: "item-1", classification: "source_missing", plannedAction: "delete",
+      plannedTargetPayload: null, targetItemRef: { version: 1, data: { targetTransactionId: "tgt-1" } },
+    });
+    const { store } = makeStore({ items: [delItem], seedMappings: [seed] });
+    const { transport, deleteTransactionForSync } = makeTargetTransport({ preloaded: [row] });
+    const result = await applySyncRun(
+      { runId: "run-1", targetConnection: targetConn, selection: { selectedItemIds: ["item-1"] } },
+      { transport: provider(transport), store }
+    );
+    expect(result.items[0].outcome).toBe("deleted");
+    expect(deleteTransactionForSync).toHaveBeenCalledWith({ transactionId: "tgt-1" });
+    expect(result.counts.deleted).toBe(1);
   });
 });
 

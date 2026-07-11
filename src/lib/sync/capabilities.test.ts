@@ -25,9 +25,10 @@ describe("budget file sync capabilities", () => {
     expect(report.capabilities.createSplitLinesAsSeparateTransactions).toBe(true);
     // Two budgets cannot be held open at once in one JS realm (single runtime).
     expect(report.capabilities.supportsMultiRuntimeBudgetAccess).toBe(false);
-    // MVP is create-only.
-    expect(report.capabilities.updateTransaction).toBe(false);
-    expect(report.capabilities.deleteTransaction).toBe(false);
+    // RD-057: Direct mode can update/delete an existing transaction.
+    expect(report.capabilities.updateTransaction).toBe(true);
+    expect(report.capabilities.deleteTransaction).toBe(true);
+    expect(report.capabilities.createTargetSplitTransaction).toBe(true);
     expect(
       missingSyncCapabilities(report, ["createTransaction", "supportsMultiRuntimeBudgetAccess"])
     ).toEqual(["supportsMultiRuntimeBudgetAccess"]);
@@ -41,9 +42,9 @@ describe("budget file sync capabilities", () => {
     expect(report.capabilities.createSplitLinesAsSeparateTransactions).toBe(true);
     // Independent servers can hold two budgets open at once (unlike Direct mode).
     expect(report.capabilities.supportsMultiRuntimeBudgetAccess).toBe(true);
-    // Still create-only.
-    expect(report.capabilities.updateTransaction).toBe(false);
-    expect(report.capabilities.deleteTransaction).toBe(false);
+    // RD-057: HTTP mode can update/delete via actual-http-api.
+    expect(report.capabilities.updateTransaction).toBe(true);
+    expect(report.capabilities.deleteTransaction).toBe(true);
     expect(hasSyncCapabilities(report, ["createPayee"])).toBe(true);
     expect(hasSyncCapabilities(report, ["listTransactions"])).toBe(true);
   });

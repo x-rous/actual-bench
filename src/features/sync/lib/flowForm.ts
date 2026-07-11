@@ -50,6 +50,8 @@ export type SyncTransformForm = {
   amountDirection: SyncAmountDirection;
   missingPayee: SyncMissingPayeePolicy;
   notesMarkerEnabled: boolean;
+  /** Custom marker text; empty = the default `[Synced from …]` (RD-057). */
+  notesMarker: string;
   copySourceNotes: boolean;
 };
 
@@ -62,6 +64,12 @@ export type SyncAutomationForm = {
   autoPausedAt: string | null;
   /** Auto-map exact duplicates to their existing target instead of queuing them. */
   exactDuplicateAutoMap: boolean;
+  /** Push a changed source transaction to its mapped target (RD-057 §4). */
+  updateMappedTargets: boolean;
+  /** Offer to delete a mapped target when its source was deleted (RD-057 §5). */
+  detectDeletedSource: boolean;
+  /** Sync split parents as one grouped target split (RD-057 §6). */
+  createTargetSplits: boolean;
 };
 
 /** Which data type the flow syncs (RD-055). Determines the engine adapter. */
@@ -122,9 +130,10 @@ export function emptyFlowForm(): SyncFlowFormState {
       notesContains: "",
     },
     transform: {
-      amountDirection: "reverse",
+      amountDirection: "same",
       missingPayee: "create",
       notesMarkerEnabled: true,
+      notesMarker: "",
       copySourceNotes: true,
     },
     automation: {
@@ -133,6 +142,9 @@ export function emptyFlowForm(): SyncFlowFormState {
       intervalMinutes: String(DEFAULT_SYNC_INTERVAL_MINUTES),
       autoPausedAt: null,
       exactDuplicateAutoMap: false,
+      updateMappedTargets: false,
+      detectDeletedSource: false,
+      createTargetSplits: false,
     },
     entity: { defaultGroupName: "", createMissingGroup: false },
   };
@@ -153,13 +165,22 @@ export function missingRouteFields(form: SyncFlowFormState): string[] {
   return missing;
 }
 
-/**
- * MVP is cross-budget only. Two accounts in the *same* budget file is not
- * supported, so any flow whose source and target resolve to the same budget is
- * blocked - regardless of account.
- */
+/** True when source and target resolve to the same budget file. */
 export function isSameBudget(form: SyncFlowFormState): boolean {
   return !!form.source.budgetSyncId && form.source.budgetSyncId === form.target.budgetSyncId;
+}
+
+/**
+ * A flow that syncs an account to itself is a no-op and is always blocked. Same
+ * budget but *different* accounts is allowed (RD-057 §3 same-budget sync);
+ * cross-budget remains the common case.
+ */
+export function isSelfSync(form: SyncFlowFormState): boolean {
+  return (
+    isSameBudget(form) &&
+    !!form.source.accountId &&
+    form.source.accountId === form.target.accountId
+  );
 }
 
 function splitNames(value: string): string[] {
@@ -223,6 +244,7 @@ export function buildFlowPayload(
     amountDirection: form.transform.amountDirection,
     missingPayee: form.transform.missingPayee,
     notesMarkerEnabled: form.transform.notesMarkerEnabled,
+    notesMarker: form.transform.notesMarker.trim() || null,
     copySourceNotes: form.transform.copySourceNotes,
   };
 
@@ -233,6 +255,9 @@ export function buildFlowPayload(
     intervalMinutes: clampSyncInterval(form.automation.intervalMinutes),
     autoPausedAt: form.automation.autoPausedAt,
     exactDuplicateAutoMap: form.automation.exactDuplicateAutoMap,
+    updateMappedTargets: form.automation.updateMappedTargets,
+    detectDeletedSource: form.automation.detectDeletedSource,
+    createTargetSplits: form.automation.createTargetSplits,
     // Master-data (entity) options - ignored by transaction flows.
     defaultGroupName: form.entity.defaultGroupName.trim() || null,
     createMissingGroup: form.entity.createMissingGroup,
@@ -301,6 +326,7 @@ export function flowToFormState(
     amountDirection: config.amountDirection,
     missingPayee: config.missingPayee,
     notesMarkerEnabled: config.notesMarkerEnabled,
+    notesMarker: config.notesMarker,
     copySourceNotes: config.copySourceNotes,
   };
   form.automation = {
@@ -308,6 +334,9 @@ export function flowToFormState(
     intervalMinutes: String(config.intervalMinutes),
     autoPausedAt: config.autoPausedAt,
     exactDuplicateAutoMap: config.exactDuplicateAutoMap,
+    updateMappedTargets: config.updateMappedTargets,
+    detectDeletedSource: config.detectDeletedSource,
+    createTargetSplits: config.createTargetSplits,
   };
   form.filter = {
     startDate: filter.startDate ?? "",

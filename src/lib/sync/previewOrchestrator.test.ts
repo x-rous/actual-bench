@@ -12,8 +12,10 @@ const sourceConn: BrowserApiConnection = {
 const targetConn: BrowserApiConnection = {
   id: "tgt", label: "Family", mode: "browser-api", baseUrl: "https://tgt.example.com", serverPassword: "pw", budgetSyncId: "budget-tgt",
 };
+// An HTTP connection to the SAME target budget (budget-tgt) via a different
+// URL/mode - the cross-mode scenario budget-identity matching enables.
 const httpTarget: HttpApiConnection = {
-  id: "http", label: "Http", mode: "http-api", baseUrl: "https://api.example.com", apiKey: "k", budgetSyncId: "budget-http",
+  id: "http", label: "Http", mode: "http-api", baseUrl: "https://api.example.com", apiKey: "k", budgetSyncId: "budget-tgt",
 };
 
 type FlowOverrides = { enabled?: boolean; filterData?: JsonObject; targetConnection?: ConnectionInstance };
@@ -230,8 +232,10 @@ describe("runLiveDryRunPreview - validation", () => {
     expect(provider.openTransport).not.toHaveBeenCalled();
   });
 
-  it("previews transaction sync through an HTTP target (RD-060 Phase 2)", async () => {
-    const { store } = makeStore(makeFlow({ targetConnection: httpTarget }));
+  it("previews a Direct-built flow through an HTTP connection to the same budget (RD-060 Phase 2)", async () => {
+    // Flow saved in Direct mode (targetRef fingerprint = Direct); the preview runs
+    // over an HTTP connection to the same budget-tgt. Budget-identity matching accepts it.
+    const { store } = makeStore(makeFlow());
     const result = await runLiveDryRunPreview(
       { flowId: "flow-1", context: { sourceConnection: sourceConn, targetConnection: httpTarget } },
       { transport: makeProvider(makeTransport("source", { sourceTransactions: [srcTxn()] }), makeTransport("target", {})), store }
@@ -239,9 +243,9 @@ describe("runLiveDryRunPreview - validation", () => {
     expect(result.status).toBe("draft_preview");
   });
 
-  it("rejects a connection that no longer matches the saved route", async () => {
+  it("rejects a connection that points at a different budget", async () => {
     const { store } = makeStore(makeFlow());
-    const otherSource: BrowserApiConnection = { ...sourceConn, baseUrl: "https://different.example.com" };
+    const otherSource: BrowserApiConnection = { ...sourceConn, budgetSyncId: "budget-other" };
     const result = await runLiveDryRunPreview(
       { flowId: "flow-1", context: { sourceConnection: otherSource, targetConnection: targetConn } },
       { transport: makeProvider(makeTransport("source", {}), makeTransport("target", {})), store }

@@ -5,6 +5,7 @@ import type {
   SyncFlowRunItem,
   SyncMapping,
   SyncMappingInput,
+  SyncMappingPatch,
   SyncRunTrigger,
 } from "@/lib/app-db/types";
 import type { SyncPlanResult } from "@/lib/sync/plannedChanges";
@@ -84,6 +85,17 @@ export function createMapping(input: SyncMappingInput): Promise<{ mapping: SyncM
 /** Bulk-create mappings in one request/transaction (apply-run flush). */
 export function createMappings(inputs: SyncMappingInput[]): Promise<{ mappings: SyncMapping[] }> {
   return jsonFetch("/api/sync-mappings", { method: "POST", body: JSON.stringify(inputs) });
+}
+
+/** Patch a single mapping (RD-057: refresh fingerprints / disable after delete). */
+export function updateMapping(
+  mappingId: string,
+  patch: SyncMappingPatch
+): Promise<{ mapping: SyncMapping }> {
+  return jsonFetch(`/api/sync-mappings?mappingId=${encodeURIComponent(mappingId)}`, {
+    method: "PATCH",
+    body: JSON.stringify(patch),
+  });
 }
 
 // --- Runs -------------------------------------------------------------------

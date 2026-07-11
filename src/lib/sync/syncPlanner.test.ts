@@ -188,6 +188,99 @@ describe("planSyncFlow - mappings and markers", () => {
     expect(item.plannedTargetPayload).toBeNull();
   });
 
+  it("plans an update candidate when the source changed and the flow opts in (RD-057 §4)", () => {
+    const updateConfig = buildPlanConfig({
+      flowId: FLOW_ID,
+      sourceBudgetId: "budget-src",
+      targetBudgetId: "budget-tgt",
+      targetAccountId: "acct-tgt",
+      sourceBudgetName: "Home",
+      sourceAccountName: "Checking",
+      updateMappedTargets: true,
+    });
+    const plan = planSyncFlow(
+      baseInput({
+        config: updateConfig,
+        existingMappings: [mapping({ sourceFingerprint: "stale-fingerprint", targetTransactionId: "tgt-txn-9" })],
+      })
+    );
+    const item = plan.items[0];
+    expect(item.classification).toBe("source_changed_since_sync");
+    expect(item.action).toBe("update");
+    expect(item.flags).toContain("source_changed_update");
+    expect(item.selectedForApply).toBe(true);
+    expect(item.targetTransactionId).toBe("tgt-txn-9");
+    expect(item.plannedTargetPayload).not.toBeNull();
+  });
+
+  it("warns (never updates) a changed grouped split parent, whose children can't be patched (RD-057 §4/§6)", () => {
+    const splitParent = txn({
+      id: "p", amount: -3000, isParent: true,
+      splitLines: [
+        { id: "s1", amount: -1000, payeeId: null, payeeName: null, categoryId: "sc-a", categoryName: "Groceries", notes: null },
+        { id: "s2", amount: -2000, payeeId: null, payeeName: null, categoryId: "sc-b", categoryName: "Household", notes: null },
+      ],
+    });
+    const config = buildPlanConfig({
+      flowId: FLOW_ID, sourceBudgetId: "budget-src", targetBudgetId: "budget-tgt",
+      targetAccountId: "acct-tgt", sourceBudgetName: "Home", sourceAccountName: "Checking",
+      updateMappedTargets: true, createTargetSplits: true,
+    });
+    const plan = planSyncFlow(
+      baseInput({
+        config,
+        sourceTransactions: [splitParent],
+        existingMappings: [mapping({ sourceItemKey: "txn:p", sourceFingerprint: "stale", targetTransactionId: "tgt-p", status: "active" })],
+      })
+    );
+    const item = plan.items[0];
+    expect(item.classification).toBe("source_changed_since_sync");
+    expect(item.action).toBe("skip"); // warn only - not "update"
+    expect(item.plannedTargetPayload).toBeNull();
+  });
+
+  it("still only warns when the source changed but the flow did not opt into updates", () => {
+    const plan = planSyncFlow(
+      baseInput({ existingMappings: [mapping({ sourceFingerprint: "stale-fingerprint", targetTransactionId: "tgt-txn-9" })] })
+    );
+    expect(plan.items[0].action).toBe("skip");
+    expect(plan.items[0].plannedTargetPayload).toBeNull();
+  });
+
+  it("emits a review-first delete candidate for a mapping whose source is gone (RD-057 §5)", () => {
+    const plan = planSyncFlow(
+      baseInput({
+        sourceTransactions: [], // source item t1 no longer exists
+        existingMappings: [mapping({ sourceItemKey: "txn:t1", targetTransactionId: "tgt-1", status: "active" })],
+        detectDeletedSource: true,
+      })
+    );
+    const gone = plan.items.find((i) => i.classification === "source_missing");
+    expect(gone).toBeDefined();
+    expect(gone!.action).toBe("delete");
+    expect(gone!.selectedForApply).toBe(false);
+    expect(gone!.flags).toContain("source_deleted_review");
+    expect(gone!.targetTransactionId).toBe("tgt-1");
+  });
+
+  it("skips an item whose mapping was disabled (RD-057 §7)", () => {
+    const plan = planSyncFlow(
+      baseInput({ existingMappings: [mapping({ sourceFingerprint: "anything", status: "disabled" })] })
+    );
+    expect(plan.items[0].action).toBe("skip");
+    expect(plan.items[0].message).toMatch(/disabled/i);
+  });
+
+  it("does not flag deletions when detection is off", () => {
+    const plan = planSyncFlow(
+      baseInput({
+        sourceTransactions: [],
+        existingMappings: [mapping({ sourceItemKey: "txn:t1", targetTransactionId: "tgt-1", status: "active" })],
+      })
+    );
+    expect(plan.items.some((i) => i.classification === "source_missing")).toBe(false);
+  });
+
   it("detects a target marker match when the DB mapping is missing (repairable)", () => {
     const expectedMarker = marker("txn:t1")!;
     const target = emptyTarget({ importedIdIndex: new Map([[expectedMarker, "tt-existing"]]) });
@@ -294,6 +387,40 @@ describe("planSyncFlow - splits", () => {
     // split children inherit the parent payee
     expect(plan.items[1].plannedTargetPayload?.payeeId).toBe("tp1");
     expect(plan.items[1].plannedTargetPayload?.importedId).toBe(marker("split:p:s2"));
+  });
+
+  it("syncs a split parent as ONE grouped target split when the flow opts in (RD-057 §6)", () => {
+    const parent = txn({
+      id: "p",
+      amount: -3000,
+      categoryId: null,
+      categoryName: null,
+      isParent: true,
+      splitLines: [
+        { id: "s1", amount: -1000, payeeId: null, payeeName: null, categoryId: "sc-a", categoryName: "Groceries", notes: null },
+        { id: "s2", amount: -2000, payeeId: null, payeeName: null, categoryId: "sc-b", categoryName: "Household", notes: "soap" },
+      ],
+    });
+    const target = emptyTarget({
+      categories: [
+        { id: "tc-a", name: "Groceries" },
+        { id: "tc-b", name: "Household" },
+      ],
+    });
+    const splitConfig = buildPlanConfig({ ...config, createTargetSplits: true });
+    const plan = planSyncFlow(baseInput({ config: splitConfig, sourceTransactions: [parent], target }));
+
+    // One parent item, not two exploded lines.
+    expect(plan.items).toHaveLength(1);
+    const item = plan.items[0];
+    expect(item.sourceItemKey).toBe("txn:p");
+    expect(item.plannedTargetPayload?.amount).toBe(3000); // reversed parent total
+    const subs = item.plannedTargetPayload?.subtransactions ?? [];
+    expect(subs).toHaveLength(2);
+    expect(subs[0]).toMatchObject({ amount: 1000, categoryId: "tc-a" });
+    expect(subs[1]).toMatchObject({ amount: 2000, categoryId: "tc-b" });
+    // Parent total equals the sum of children (amount consistency).
+    expect(subs[0].amount + subs[1].amount).toBe(item.plannedTargetPayload?.amount);
   });
 
   it("flags a split-line fallback key when the child has no id", () => {
