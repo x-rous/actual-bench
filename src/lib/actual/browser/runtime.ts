@@ -89,10 +89,8 @@ export type ActualBrowserApi = {
     password: string;
     verbose?: boolean;
   }): Promise<ActualBrowserApiInitResult>;
-  getBudgets(): Promise<Array<{ id: string; groupId?: string; cloudFileId?: string }>>;
+  getBudgets(): Promise<unknown[]>;
   downloadBudget(syncId: string, options?: { password?: string }): Promise<unknown>;
-  /** Load an already-downloaded budget by its LOCAL id (closes the current one). */
-  loadBudget(budgetId: string): Promise<unknown>;
   sync(): Promise<unknown>;
   batchBudgetUpdates(func: () => Promise<void>): Promise<void>;
   getBudgetMonths(): Promise<string[]>;
@@ -283,70 +281,27 @@ export async function getBrowserApiRuntime(
   const serverUrl = normalizeUrl(connection.baseUrl);
   const encryptionPassword = connection.encryptionPassword?.trim() || undefined;
 
-  // RD-059: is the previous runtime on the SAME server, with only the budget
-  // differing? Then we can keep the initialized API + server connection alive and
-  // just swap the open budget - skipping the teardown/re-init/reconnect entirely.
-  const sameServerAsPrevious =
-    !!previousRuntime && serverSignatureFromKey(previousRuntime.key) === serverSignature(connection);
-
   const promise = (async () => {
-    const timing = runtimeTiming();
+    if (previousRuntime) await shutdownRuntime(previousRuntime);
 
-    // ── Fast path (RD-059): same server + the target budget is ALREADY downloaded
-    // locally → switch in place with loadBudget(localId) (which closes the current
-    // budget and loads the target). No shutdown/re-init/reconnect and no
-    // re-download. `budgetSyncId` is the budget's groupId; getBudgets() lists the
-    // local budgets with their groupId + local id. Anything that doesn't line up
-    // (budget not local yet, or any error) falls through to a clean full init.
-    if (previousRuntime && sameServerAsPrevious && rd059FastSwitchEnabled()) {
-      try {
-        const runtime = await previousRuntime.promise;
-        const budgets = await runtime.getBudgets();
-        const localId = budgets.find((b) => b.groupId === connection.budgetSyncId)?.id ?? null;
-        if (localId) {
-          await timing.phase("download", () => withTimeout(runtime.loadBudget(localId), "Opening budget"));
-          await timing.phase("sync", () => withTimeout(runtime.sync(), "Syncing budget"));
-          timing.report({ budgetSyncId: connection.budgetSyncId, sameServerAsPrevious, switched: true });
-          return runtime;
-        }
-        // Target not downloaded locally yet → full init (which downloads it).
-      } catch {
-        await shutdownRuntime(previousRuntime).catch(() => {});
-        return fullInit(timing, /* alreadyShutDown */ true);
-      }
-    }
-
-    return fullInit(timing, /* alreadyShutDown */ false);
-  })();
-
-  // Full teardown + boot: different server, first open, target not yet local,
-  // or a fast-switch fallback.
-  async function fullInit(timing: ReturnType<typeof runtimeTiming>, alreadyShutDown: boolean): Promise<ActualBrowserApiRuntime> {
-    if (previousRuntime && !alreadyShutDown) {
-      await timing.phase("shutdown", () => shutdownRuntime(previousRuntime));
-    }
-    const actual = await timing.phase("load", () =>
-      withTimeout(loadActualApi<ActualBrowserApi>(), "Loading @actual-app/api")
+    const actual = await withTimeout(
+      loadActualApi<ActualBrowserApi>(),
+      "Loading @actual-app/api"
     );
-    const initResult = await timing.phase("init", () =>
-      initializeActualApi(actual, {
-        dataDir: "/documents",
-        serverURL: serverUrl,
-        password: connection.serverPassword,
-        verbose: false,
-      })
-    );
+    const initResult = await initializeActualApi(actual, {
+      dataDir: "/documents",
+      serverURL: serverUrl,
+      password: connection.serverPassword,
+      verbose: false,
+    });
     const runtime: ActualBrowserApiRuntime = { ...actual, send: initResult.send };
-    await timing.phase("download", () =>
-      withTimeout(
-        runtime.downloadBudget(connection.budgetSyncId, { password: encryptionPassword }),
-        "Opening budget"
-      )
+    await withTimeout(
+      runtime.downloadBudget(connection.budgetSyncId, { password: encryptionPassword }),
+      "Opening budget"
     );
-    await timing.phase("sync", () => withTimeout(runtime.sync(), "Syncing budget"));
-    timing.report({ budgetSyncId: connection.budgetSyncId, sameServerAsPrevious, switched: false });
+    await withTimeout(runtime.sync(), "Syncing budget");
     return runtime;
-  }
+  })();
 
   activeRuntime = { key, promise };
   promise.catch(() => {
@@ -354,88 +309,4 @@ export async function getBrowserApiRuntime(
   });
 
   return promise;
-}
-
-// ── SPIKE (RD-059): runtime-switch timing ──────────────────────────────────
-// Opt-in phase timing to decide whether the same-server budget-switch
-// optimization is worth building. Enable in the browser console with:
-//   localStorage.setItem("ab:runtime-timing", "1")
-// then run a cross-budget Direct preview and read "[RD-059 timing]" logs.
-// Off unless the flag is "1" (default) or NODE_ENV !== production; throwaway.
-
-// Kill switch for the RD-059 same-server fast path. On by default; disable
-// live (no rebuild) with: localStorage.setItem("ab:rd059", "0") then reload.
-function rd059FastSwitchEnabled(): boolean {
-  try {
-    if (typeof window !== "undefined" && window.localStorage.getItem("ab:rd059") === "0") return false;
-  } catch {
-    // ignore storage access errors
-  }
-  return true;
-}
-
-function runtimeTimingEnabled(): boolean {
-  try {
-    if (typeof window !== "undefined") {
-      const flag = window.localStorage.getItem("ab:runtime-timing");
-      if (flag === "1") return true;
-      if (flag === "0") return false;
-    }
-  } catch {
-    // ignore storage access errors
-  }
-  return process.env.NODE_ENV !== "production";
-}
-
-type PhaseName = "shutdown" | "load" | "init" | "download" | "sync";
-
-function runtimeTiming() {
-  const enabled = runtimeTimingEnabled();
-  const ms: Record<PhaseName, number> = { shutdown: 0, load: 0, init: 0, download: 0, sync: 0 };
-  return {
-    async phase<T>(name: PhaseName, run: () => Promise<T>): Promise<T> {
-      if (!enabled) return run();
-      const t = performance.now();
-      try {
-        return await run();
-      } finally {
-        ms[name] = Math.round(performance.now() - t);
-      }
-    },
-    report(meta: { budgetSyncId: string; sameServerAsPrevious: boolean; switched: boolean }) {
-      if (!enabled) return;
-      const total = ms.shutdown + ms.load + ms.init + ms.download + ms.sync;
-      // `switched: true` = RD-059 fast path taken, so shutdown/load/init are ~0
-      // and totalMs is the realized (post-optimization) cost. `sameServerSwitch`
-      // true with `switched: false` means the fast path fell back to a re-init.
-      console.info("[RD-059 timing]", {
-        budget: meta.budgetSyncId.slice(0, 8),
-        sameServerSwitch: meta.sameServerAsPrevious,
-        switched: meta.switched,
-        ms,
-        totalMs: total,
-      });
-    },
-  };
-}
-
-function serverSignature(connection: BrowserApiConnection): string {
-  return JSON.stringify({
-    baseUrl: normalizeUrl(connection.baseUrl),
-    serverPassword: connection.serverPassword,
-    encryptionPassword: connection.encryptionPassword ?? "",
-  });
-}
-
-function serverSignatureFromKey(key: string): string | null {
-  try {
-    const k = JSON.parse(key) as { baseUrl: string; serverPassword: string; encryptionPassword: string };
-    return JSON.stringify({
-      baseUrl: k.baseUrl,
-      serverPassword: k.serverPassword,
-      encryptionPassword: k.encryptionPassword,
-    });
-  } catch {
-    return null;
-  }
 }
