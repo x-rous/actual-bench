@@ -35,6 +35,12 @@ export type SyncFlowPlanConfig = {
   missingPayee: SyncMissingPayeePolicy;
   /** Append the visible `[Synced from …]` marker to target notes. */
   notesMarkerEnabled: boolean;
+  /**
+   * Custom text for the visible notes marker (RD-057 polish). Empty means use
+   * the default `[Synced from <budget> / <account>]`. Kept as literal text so a
+   * user can word it however they like.
+   */
+  notesMarker: string;
   /** Copy the source notes before appending the visible marker. */
   copySourceNotes: boolean;
   /**
@@ -114,6 +120,7 @@ export const SYNC_PLAN_CONFIG_DEFAULTS = {
   amountDirection: "reverse" as SyncAmountDirection,
   missingPayee: "create" as SyncMissingPayeePolicy,
   notesMarkerEnabled: true,
+  notesMarker: "",
   copySourceNotes: true,
   // RD-053 behavior is unchanged unless the user opts a flow into automation.
   reviewPolicy: "manual_preview_required" as SyncReviewPolicy,
@@ -150,6 +157,7 @@ export function buildPlanConfig(
         | "amountDirection"
         | "missingPayee"
         | "notesMarkerEnabled"
+        | "notesMarker"
         | "copySourceNotes"
         | "reviewPolicy"
         | "intervalMinutes"
@@ -177,6 +185,7 @@ export function buildPlanConfig(
     missingPayee: input.missingPayee ?? SYNC_PLAN_CONFIG_DEFAULTS.missingPayee,
     notesMarkerEnabled:
       input.notesMarkerEnabled ?? SYNC_PLAN_CONFIG_DEFAULTS.notesMarkerEnabled,
+    notesMarker: input.notesMarker ?? SYNC_PLAN_CONFIG_DEFAULTS.notesMarker,
     copySourceNotes: input.copySourceNotes ?? SYNC_PLAN_CONFIG_DEFAULTS.copySourceNotes,
     reviewPolicy: input.reviewPolicy ?? SYNC_PLAN_CONFIG_DEFAULTS.reviewPolicy,
     intervalMinutes:
@@ -234,6 +243,7 @@ export function decodeFlowPlanConfig(flow: SyncFlow): SyncFlowPlanConfig {
     missingPayee:
       missingPayee === "create" || missingPayee === "leave_empty" ? missingPayee : undefined,
     notesMarkerEnabled: bool(transform.notesMarkerEnabled),
+    notesMarker: str(transform.notesMarker) ?? "",
     copySourceNotes: bool(transform.copySourceNotes),
     reviewPolicy: reviewPolicy(options.reviewPolicy),
     intervalMinutes: options.intervalMinutes != null ? clampSyncInterval(options.intervalMinutes) : undefined,

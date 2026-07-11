@@ -1,4 +1,4 @@
-import { emptyFlowForm, type SyncFlowFormState } from "./flowForm";
+import { emptyFlowForm, type SyncEndpointForm, type SyncFlowFormState } from "./flowForm";
 
 /**
  * Portable flow definitions (RD-057 §7 / candidate list): export a flow's
@@ -13,25 +13,28 @@ import { emptyFlowForm, type SyncFlowFormState } from "./flowForm";
 const EXPORT_KIND = "actual-bench-sync-flow";
 const EXPORT_VERSION = 1;
 
+type ExportedEndpoint = Omit<SyncEndpointForm, "connectionId">;
+
 export type FlowExport = {
   kind: typeof EXPORT_KIND;
   version: number;
-  flow: SyncFlowFormState;
+  flow: Omit<SyncFlowFormState, "source" | "target"> & { source: ExportedEndpoint; target: ExportedEndpoint };
 };
 
-/** Strip the ephemeral connection id from an endpoint (names are kept as hints). */
-function scrubEndpoint(ep: SyncFlowFormState["source"]): SyncFlowFormState["source"] {
-  return { ...ep, connectionId: "" };
+/** Drop the ephemeral connection id from an endpoint (names are kept as hints). */
+function scrubEndpoint(ep: SyncEndpointForm): ExportedEndpoint {
+  const { connectionId: _drop, ...rest } = ep;
+  void _drop;
+  return rest;
 }
 
 /** Serialize a flow form to a portable JSON string (no secrets, no connection ids). */
 export function exportFlowDefinition(form: SyncFlowFormState): string {
-  const flow: SyncFlowFormState = {
-    ...form,
-    source: scrubEndpoint(form.source),
-    target: scrubEndpoint(form.target),
+  const payload: FlowExport = {
+    kind: EXPORT_KIND,
+    version: EXPORT_VERSION,
+    flow: { ...form, source: scrubEndpoint(form.source), target: scrubEndpoint(form.target) },
   };
-  const payload: FlowExport = { kind: EXPORT_KIND, version: EXPORT_VERSION, flow };
   return JSON.stringify(payload, null, 2);
 }
 
@@ -77,55 +80,3 @@ export function importFlowDefinition(json: string): SyncFlowFormState {
     entity: { ...base.entity, ...(flow.entity ?? {}) },
   };
 }
-
-// --- Starter templates ------------------------------------------------------
-
-export type FlowTemplate = {
-  key: string;
-  label: string;
-  description: string;
-  apply: (form: SyncFlowFormState) => SyncFlowFormState;
-};
-
-/**
- * Richer starter templates for the create dialog. Each returns a form pre-filled
- * with a common configuration; the user still picks the connections/accounts.
- */
-export const FLOW_TEMPLATES: FlowTemplate[] = [
-  {
-    key: "cross_budget_oneway",
-    label: "Cross-budget copy",
-    description: "One-way transaction sync into another budget, reversing amounts (the default).",
-    apply: (form) => ({
-      ...form,
-      flowType: "transaction_sync",
-      transform: { ...form.transform, amountDirection: "reverse" },
-    }),
-  },
-  {
-    key: "same_budget_mirror",
-    label: "Mirror account (same budget)",
-    description: "Copy one account's transactions into another account in the same budget, same sign.",
-    apply: (form) => ({
-      ...form,
-      flowType: "transaction_sync",
-      transform: { ...form.transform, amountDirection: "same" },
-    }),
-  },
-  {
-    key: "keep_current",
-    label: "Keep targets current",
-    description: "One-way sync that also updates targets when the source changes.",
-    apply: (form) => ({
-      ...form,
-      flowType: "transaction_sync",
-      automation: { ...form.automation, updateMappedTargets: true },
-    }),
-  },
-  {
-    key: "shared_payees",
-    label: "Shared payees",
-    description: "Keep payees in sync between two budgets (no transactions created).",
-    apply: (form) => ({ ...form, flowType: "payee_sync" }),
-  },
-];

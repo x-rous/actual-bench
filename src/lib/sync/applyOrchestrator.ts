@@ -1,6 +1,6 @@
 import { getBudgetFileSyncCapabilities } from "./capabilities";
 import "./adapters"; // register all data-type adapters (side-effect)
-import { connectionFingerprint } from "./connectionRef";
+import { connectionMatchesBudget } from "./connectionRef";
 import { decodeFlowPlanConfig, type SyncFlowPlanConfig } from "./flowConfig";
 import { generateSyncMarker } from "./marker";
 import { getSyncKindAdapter, SyncKindError, type AdapterCreateResult, type SyncKindAdapter } from "./syncKind";
@@ -394,11 +394,10 @@ async function validateAndPrepare(
     throw new ApplyPreflightError("unsupported_connection", caps.reason ?? "Target connection is unsupported.");
   }
 
-  if (
-    config.targetConnectionFingerprint &&
-    connectionFingerprint(input.targetConnection) !== config.targetConnectionFingerprint
-  ) {
-    throw new ApplyPreflightError("route_mismatch", "Target connection does not match the flow's saved route.");
+  // Match the target on its budget id (stable across mode/URL), not the full
+  // fingerprint, so a flow built in one mode also applies in the other.
+  if (config.targetBudgetId && !connectionMatchesBudget(input.targetConnection, config.targetBudgetId)) {
+    throw new ApplyPreflightError("route_mismatch", "Target connection is not the budget this flow was saved for.");
   }
 
   const allItems = await store.loadRunItems(input.runId);

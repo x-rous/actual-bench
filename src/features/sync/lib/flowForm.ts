@@ -50,6 +50,8 @@ export type SyncTransformForm = {
   amountDirection: SyncAmountDirection;
   missingPayee: SyncMissingPayeePolicy;
   notesMarkerEnabled: boolean;
+  /** Custom marker text; empty = the default `[Synced from …]` (RD-057). */
+  notesMarker: string;
   copySourceNotes: boolean;
 };
 
@@ -128,9 +130,10 @@ export function emptyFlowForm(): SyncFlowFormState {
       notesContains: "",
     },
     transform: {
-      amountDirection: "reverse",
+      amountDirection: "same",
       missingPayee: "create",
       notesMarkerEnabled: true,
+      notesMarker: "",
       copySourceNotes: true,
     },
     automation: {
@@ -241,6 +244,7 @@ export function buildFlowPayload(
     amountDirection: form.transform.amountDirection,
     missingPayee: form.transform.missingPayee,
     notesMarkerEnabled: form.transform.notesMarkerEnabled,
+    notesMarker: form.transform.notesMarker.trim() || null,
     copySourceNotes: form.transform.copySourceNotes,
   };
 
@@ -322,6 +326,7 @@ export function flowToFormState(
     amountDirection: config.amountDirection,
     missingPayee: config.missingPayee,
     notesMarkerEnabled: config.notesMarkerEnabled,
+    notesMarker: config.notesMarker,
     copySourceNotes: config.copySourceNotes,
   };
   form.automation = {

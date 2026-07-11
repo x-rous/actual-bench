@@ -117,8 +117,14 @@ export function SyncView() {
   }, [runId, runQuery.data, rows, isLivePreview, readOnly]);
 
   const dirty = JSON.stringify(form) !== savedSnapshot;
-  const sourceConn = connections.find((c) => c.id === form.source.connectionId);
-  const targetConn = connections.find((c) => c.id === form.target.connectionId);
+  // Prefer the exact connection the form is bound to, but fall back to any live
+  // connection reaching the same budget - so a flow keeps working after the mode
+  // or server URL changes (a budget's id is stable across both).
+  const resolveConn = (endpoint: SyncFlowFormState["source"]) =>
+    connections.find((c) => c.id === endpoint.connectionId) ??
+    (endpoint.budgetSyncId ? connections.find((c) => c.budgetSyncId === endpoint.budgetSyncId) : undefined);
+  const sourceConn = resolveConn(form.source);
+  const targetConn = resolveConn(form.target);
   const routeReady = missingRouteFields(form).length === 0 && !isSelfSync(form);
   const canPreview = !!selectedFlowId && !dirty && !!sourceConn && !!targetConn && routeReady;
 
@@ -374,32 +380,37 @@ export function SyncView() {
               onShowHistory={() => { setView("history"); setHistoryRunId(null); }}
             />
 
-            <div className="min-h-0 flex-1 overflow-y-auto p-5">
-              {actionError && (
-                <div className="mb-4 flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/10 px-3.5 py-2.5 text-sm">
-                  <XCircle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
-                  <span>{actionError}</span>
-                </div>
-              )}
-              {autoNotice && (
-                <div className="mb-4 flex items-start gap-2 rounded-md border border-amber-400/40 bg-amber-50/70 px-3.5 py-2.5 text-sm dark:bg-amber-950/20">
-                  <Bell className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
-                  <span className="flex-1">{autoNotice}</span>
-                  <button type="button" className="text-xs text-muted-foreground hover:text-foreground" onClick={() => setAutoNotice(null)}>
-                    Dismiss
-                  </button>
+            <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+              {(actionError || autoNotice) && (
+                <div className="flex shrink-0 flex-col gap-3 px-5 pt-5">
+                  {actionError && (
+                    <div className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/10 px-3.5 py-2.5 text-sm">
+                      <XCircle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
+                      <span>{actionError}</span>
+                    </div>
+                  )}
+                  {autoNotice && (
+                    <div className="flex items-start gap-2 rounded-md border border-amber-400/40 bg-amber-50/70 px-3.5 py-2.5 text-sm dark:bg-amber-950/20">
+                      <Bell className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
+                      <span className="flex-1">{autoNotice}</span>
+                      <button type="button" className="text-xs text-muted-foreground hover:text-foreground" onClick={() => setAutoNotice(null)}>
+                        Dismiss
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
               {view === "history" ? (
-                <div className="flex flex-col gap-3">
-                  <div className="flex items-center justify-between">
+                <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+                  <div className="flex shrink-0 items-center justify-between px-5 pb-3 pt-5">
                     <h3 className="text-[15px] font-semibold">Run history</h3>
                     <Button size="sm" variant="outline" onClick={() => { setView("flow"); setHistoryRunId(null); }}>
                       <ArrowLeft className="h-4 w-4" /> Back to flow
                     </Button>
                   </div>
                   {historyRunId && runQuery.data ? (
-                    <div className="flex flex-col gap-3">
+                    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+                      <div className="flex shrink-0 flex-col gap-3 px-5 pb-3">
                       <button
                         type="button"
                         className="flex items-center gap-1 self-start text-xs text-muted-foreground hover:text-foreground"
@@ -416,6 +427,7 @@ export function SyncView() {
                             {applyMutation.isPending ? "Retrying…" : "Retry failed"}
                           </Button>
                         )}
+                      </div>
                       </div>
                       <PreviewPanel
                         kind={kind}
@@ -435,11 +447,13 @@ export function SyncView() {
                       />
                     </div>
                   ) : (
-                    <RunHistory runs={runsQuery.data ?? []} onSelectRun={(id) => setHistoryRunId(id)} />
+                    <div className="flex min-h-0 flex-1 flex-col overflow-hidden px-5 pb-5">
+                      <RunHistory runs={runsQuery.data ?? []} onSelectRun={(id) => setHistoryRunId(id)} />
+                    </div>
                   )}
                 </div>
               ) : previewMutation.isPending ? (
-                <div className="flex flex-col items-center gap-3 rounded-md border border-border bg-background px-6 py-16 text-center shadow-sm">
+                <div className="m-5 flex flex-col items-center gap-3 rounded-md border border-border bg-background px-6 py-16 text-center shadow-sm">
                   <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
                   <h3 className="text-base font-semibold">Previewing…</h3>
                   <p className="max-w-md text-sm text-muted-foreground">
@@ -464,7 +478,7 @@ export function SyncView() {
                   runId={activeRunId}
                 />
               ) : (
-                <div className="flex flex-col items-center gap-3 rounded-md border border-dashed border-border bg-background px-6 py-16 text-center">
+                <div className="m-5 flex flex-col items-center gap-3 rounded-md border border-dashed border-border bg-background px-6 py-16 text-center">
                   <Play className="h-6 w-6 text-muted-foreground" />
                   <h3 className="text-base font-semibold">See what will change first</h3>
                   <p className="max-w-md text-sm text-muted-foreground">

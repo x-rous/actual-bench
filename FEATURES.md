@@ -81,7 +81,7 @@ A workspace for syncing data between budget files as saved one-way flows. One un
 - **Update mapped targets** (opt-in): when a source transaction changes after it was synced, push the change to its mapped target — but never overwrite a target that was edited outside sync (a stored field fingerprint guards manual edits)
 - **Delete when the source is removed** (opt-in, review-first): when a synced source transaction is deleted, the mapped target surfaces under *Source deleted* for you to delete; never automatic, never in bulk, and only for whole-account flows
 - Reverse-flow helper: one click mirrors a flow (source/target swapped, created disabled for review) so two one-way flows form a two-way sync
-- **Export a run's audit** to CSV, and **export/import a flow definition** as JSON (no secrets or connections — re-select connections on import); starter templates pre-fill common flows
+- **Export a run's audit** to CSV, and **export/import a flow definition** as JSON (no secrets or connections — re-select connections on import)
 - Run history per flow with counts and item-level detail, including how many items were auto-applied vs. left in the review queue vs. failed
 - Because Actual rules run on transaction create, the applied target transaction may differ from the preview (payee/category/notes/cleared); this is surfaced as a warning, not an error
 

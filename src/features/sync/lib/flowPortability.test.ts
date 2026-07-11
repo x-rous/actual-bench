@@ -2,7 +2,6 @@ import {
   exportFlowDefinition,
   importFlowDefinition,
   FlowImportError,
-  FLOW_TEMPLATES,
 } from "./flowPortability";
 import { emptyFlowForm } from "./flowForm";
 
@@ -43,18 +42,6 @@ describe("flow export / import (RD-057)", () => {
     const json = JSON.stringify({ kind: "actual-bench-sync-flow", version: 1, flow: { name: "Sparse" } });
     const form = importFlowDefinition(json);
     expect(form.name).toBe("Sparse");
-    expect(form.transform.amountDirection).toBe("reverse"); // default applied
-  });
-});
-
-describe("flow templates", () => {
-  it("each template yields a usable form with its intended options", () => {
-    const base = emptyFlowForm();
-    const mirror = FLOW_TEMPLATES.find((t) => t.key === "same_budget_mirror")!.apply(base);
-    expect(mirror.transform.amountDirection).toBe("same");
-    const current = FLOW_TEMPLATES.find((t) => t.key === "keep_current")!.apply(base);
-    expect(current.automation.updateMappedTargets).toBe(true);
-    const payees = FLOW_TEMPLATES.find((t) => t.key === "shared_payees")!.apply(base);
-    expect(payees.flowType).toBe("payee_sync");
+    expect(form.transform.amountDirection).toBe("same"); // default applied
   });
 });

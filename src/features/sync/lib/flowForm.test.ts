@@ -35,9 +35,9 @@ function filledForm(): SyncFlowFormState {
 }
 
 describe("form defaults", () => {
-  it("defaults to reverse sign and create-missing-payee", () => {
+  it("defaults to same sign and create-missing-payee", () => {
     const form = emptyFlowForm();
-    expect(form.transform.amountDirection).toBe("reverse");
+    expect(form.transform.amountDirection).toBe("same");
     expect(form.transform.missingPayee).toBe("create");
     expect(form.transform.notesMarkerEnabled).toBe(true);
   });
@@ -121,7 +121,7 @@ describe("buildFlowPayload", () => {
     expect(leg.sourceRef.data).toMatchObject({ connectionFingerprint: connectionFingerprint(sourceConn), accountId: "acct-src", budgetId: "budget-src" });
     expect(leg.targetRef.data).toMatchObject({ connectionFingerprint: connectionFingerprint(targetConn), accountId: "acct-tgt" });
     expect(leg.filter.data).toMatchObject({ startDate: "2026-07-01", payeeInclude: ["Coffee Bar", "Market"], excludeGeneratedSyncTransactions: true });
-    expect(leg.transform.data).toMatchObject({ amountDirection: "reverse", missingPayee: "create", notesMarkerEnabled: true });
+    expect(leg.transform.data).toMatchObject({ amountDirection: "same", missingPayee: "create", notesMarkerEnabled: true });
     // no secret fields leak
     expect(JSON.stringify(payload)).not.toContain("serverPassword");
     expect(JSON.stringify(payload)).not.toContain("pw");
@@ -173,7 +173,7 @@ describe("flowToFormState", () => {
     // not the raw budget UUID).
     expect(form.target.budgetName).toBe("Family");
     expect(form.target.accountName).toBe("Joint");
-    expect(form.transform.amountDirection).toBe("reverse");
+    expect(form.transform.amountDirection).toBe("same");
     expect(form.filter.payeeInclude).toBe("coffee bar, market");
     // Automation policy survives the round-trip via the options envelope.
     expect(form.automation.reviewPolicy).toBe("manual_preview_required");

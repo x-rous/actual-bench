@@ -16,8 +16,10 @@ const MARKER_SPLIT = mk("split:t1:s1");
 const targetConn: BrowserApiConnection = {
   id: "tgt", label: "Family", mode: "browser-api", baseUrl: "https://tgt.example.com", serverPassword: "pw", budgetSyncId: "budget-tgt",
 };
+// An HTTP connection to the SAME target budget (budget-tgt) reached via a
+// different URL/mode - the cross-mode scenario budget-identity matching enables.
 const httpTarget: HttpApiConnection = {
-  id: "http", label: "Http", mode: "http-api", baseUrl: "https://api.example.com", apiKey: "k", budgetSyncId: "budget-http",
+  id: "http", label: "Http", mode: "http-api", baseUrl: "https://api.example.com", apiKey: "k", budgetSyncId: "budget-tgt",
 };
 
 // --- Fixtures ---------------------------------------------------------------
@@ -204,24 +206,20 @@ describe("applySyncRun - validation", () => {
     expect(createTransactionsForSync).not.toHaveBeenCalled();
   });
 
-  it("applies transaction sync over an HTTP target (RD-060 Phase 2)", async () => {
-    const s = makeStore();
-    // Flow saved for the HTTP target so the route matches; HTTP now passes the
-    // capability gate (transaction sync is supported), so the apply proceeds.
-    s.store.loadFlow = jest.fn(async () => {
-      const flow = makeFlow();
-      (flow.legs[0].targetRef.data as Record<string, unknown>).connectionFingerprint = connectionFingerprint(httpTarget);
-      return flow;
-    });
+  it("applies a Direct-built flow over an HTTP connection to the same budget (RD-060 Phase 2)", async () => {
+    // The flow was saved in Direct mode (targetRef fingerprint = Direct), but the
+    // apply runs over an HTTP connection to the same budget-tgt. Budget-identity
+    // matching accepts it; HTTP passes the capability gate, so the apply proceeds.
+    const { store } = makeStore();
     const { transport } = makeTargetTransport();
-    const result = await applySyncRun({ runId: "run-1", targetConnection: httpTarget }, { transport: provider(transport), store: s.store });
+    const result = await applySyncRun({ runId: "run-1", targetConnection: httpTarget }, { transport: provider(transport), store });
     expect(result.status).toBe("applied");
   });
 
-  it("rejects a target that no longer matches the saved route", async () => {
+  it("rejects a target that points at a different budget", async () => {
     const { store } = makeStore();
     const { transport } = makeTargetTransport();
-    const other: BrowserApiConnection = { ...targetConn, baseUrl: "https://elsewhere.example.com" };
+    const other: BrowserApiConnection = { ...targetConn, budgetSyncId: "budget-other" };
     const result = await applySyncRun({ runId: "run-1", targetConnection: other }, { transport: provider(transport), store });
     expect(result).toMatchObject({ status: "failed", error: { code: "route_mismatch" } });
   });

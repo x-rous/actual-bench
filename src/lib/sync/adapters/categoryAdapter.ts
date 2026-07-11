@@ -1,5 +1,5 @@
 import { getBudgetFileSyncCapabilities } from "../capabilities";
-import { connectionFingerprint } from "../connectionRef";
+import { connectionMatchesBudget } from "../connectionRef";
 import {
   buildEntityPlannedItem,
   decodeEntityFlowConfig,
@@ -40,12 +40,14 @@ function assertEntityRoute({ flow, sourceConnection, targetConnection }: Adapter
   if (!config.sourceBudgetId || !config.targetBudgetId) {
     throw new SyncKindError("missing_route", "Source and target budgets must both be selected.");
   }
-  for (const [fp, conn, side] of [
-    [config.sourceConnectionFingerprint, sourceConnection, "source"],
-    [config.targetConnectionFingerprint, targetConnection, "target"],
+  for (const [budgetId, conn, side] of [
+    [config.sourceBudgetId, sourceConnection, "source"],
+    [config.targetBudgetId, targetConnection, "target"],
   ] as const) {
-    if (fp && connectionFingerprint(conn) !== fp) {
-      throw new SyncKindError("connection_mismatch", `The ${side} connection does not match the one this flow was saved with.`);
+    // Match on the budget's stable id, not the mode/URL fingerprint, so a flow
+    // built in one mode still runs in the other against the same budget.
+    if (budgetId && !connectionMatchesBudget(conn, budgetId)) {
+      throw new SyncKindError("connection_mismatch", `The ${side} connection is not the budget this flow was saved for.`);
     }
     if (!getBudgetFileSyncCapabilities({ mode: conn.mode }).supported) {
       throw new SyncKindError("unsupported_connection", `The ${side} connection does not support Budget File Sync.`);

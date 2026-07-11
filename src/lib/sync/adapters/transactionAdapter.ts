@@ -1,5 +1,5 @@
 import { getBudgetFileSyncCapabilities } from "../capabilities";
-import { connectionFingerprint } from "../connectionRef";
+import { connectionMatchesBudget } from "../connectionRef";
 import { decodeFlowPlanConfig, type SyncFlowPlanConfig } from "../flowConfig";
 import {
   DEFAULT_SOURCE_FILTER,
@@ -95,8 +95,8 @@ export const transactionAdapter: SyncKindAdapter = {
     if (!config.sourceAccountId || !config.targetAccountId) {
       throw new SyncKindError("missing_route", "Source and target accounts must both be selected before previewing.");
     }
-    assertConnectionMatches(config.sourceConnectionFingerprint, sourceConnection, "source");
-    assertConnectionMatches(config.targetConnectionFingerprint, targetConnection, "target");
+    assertConnectionMatches(config.sourceBudgetId, sourceConnection, "source");
+    assertConnectionMatches(config.targetBudgetId, targetConnection, "target");
 
     const sourceCaps = getBudgetFileSyncCapabilities({ mode: sourceConnection.mode });
     const targetCaps = getBudgetFileSyncCapabilities({ mode: targetConnection.mode });
@@ -312,10 +312,12 @@ export const transactionAdapter: SyncKindAdapter = {
   },
 };
 
-function assertConnectionMatches(savedFingerprint: string, connection: AdapterValidateInput["sourceConnection"], side: "source" | "target"): void {
-  if (!savedFingerprint) return;
-  if (connectionFingerprint(connection) !== savedFingerprint) {
-    throw new SyncKindError("connection_mismatch", `The ${side} connection does not match the one this flow was saved with.`);
+function assertConnectionMatches(savedBudgetId: string, connection: AdapterValidateInput["sourceConnection"], side: "source" | "target"): void {
+  if (!savedBudgetId) return;
+  // Match on the budget's stable id, not the mode/URL fingerprint, so a flow
+  // built in Direct mode also runs in HTTP mode against the same budget.
+  if (!connectionMatchesBudget(connection, savedBudgetId)) {
+    throw new SyncKindError("connection_mismatch", `The ${side} connection is not the budget this flow was saved for.`);
   }
 }
 

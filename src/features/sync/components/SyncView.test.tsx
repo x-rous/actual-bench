@@ -96,11 +96,11 @@ describe("SyncView", () => {
     expect(screen.queryByText(/needs at least two connections/i)).not.toBeInTheDocument();
   });
 
-  it("opens the editor dialog with default transform (reverse sign, create payee)", async () => {
+  it("opens the editor dialog with default transform (same sign, create payee)", async () => {
     setup([conn1, conn2]);
     render(<SyncView />);
     fireEvent.click(screen.getByRole("button", { name: /create sync flow/i }));
-    expect((await screen.findByLabelText("Amount direction") as HTMLSelectElement).value).toBe("reverse");
+    expect((await screen.findByLabelText("Amount direction") as HTMLSelectElement).value).toBe("same");
     expect((screen.getByLabelText("Missing payee policy") as HTMLSelectElement).value).toBe("create");
   });
 
@@ -114,7 +114,7 @@ describe("SyncView", () => {
     fireEvent.click(previewButtons[0]);
 
     expect(previewMutate).toHaveBeenCalledTimes(1);
-    expect(await screen.findByText("Change plan")).toBeInTheDocument();
+    expect(await screen.findByText("Planned changes")).toBeInTheDocument();
 
     const rows = screen.getAllByTestId("preview-row");
     expect(rows).toHaveLength(2);

@@ -25,7 +25,7 @@ export function transformNotes(
   sourceNotes: string | null,
   config: Pick<
     SyncFlowPlanConfig,
-    "notesMarkerEnabled" | "copySourceNotes" | "sourceBudgetName" | "sourceAccountName"
+    "notesMarkerEnabled" | "notesMarker" | "copySourceNotes" | "sourceBudgetName" | "sourceAccountName"
   >
 ): string | null {
   const carried = config.copySourceNotes ? sourceNotes ?? "" : "";
@@ -35,10 +35,14 @@ export function transformNotes(
     return trimmed ? trimmed : null;
   }
 
-  const marker = buildSyncNotesMarker({
-    sourceBudgetName: config.sourceBudgetName,
-    sourceAccountName: config.sourceAccountName,
-  });
+  // A custom marker (RD-057 polish) wins over the default `[Synced from …]`.
+  const custom = config.notesMarker.trim();
+  const marker = custom
+    ? custom
+    : buildSyncNotesMarker({
+        sourceBudgetName: config.sourceBudgetName,
+        sourceAccountName: config.sourceAccountName,
+      });
   return applySyncNotesMarker(carried, marker);
 }
 
