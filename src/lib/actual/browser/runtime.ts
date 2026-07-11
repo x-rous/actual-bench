@@ -287,46 +287,16 @@ export async function getBrowserApiRuntime(
   const sameServerAsPrevious =
     !!previousRuntime && serverSignatureFromKey(previousRuntime.key) === serverSignature(connection);
 
-  const openBudgetAndSync = async (
-    runtime: ActualBrowserApiRuntime,
-    timing: RuntimeTiming
-  ): Promise<void> => {
-    await timing.phase("download", () =>
-      withTimeout(
-        runtime.downloadBudget(connection.budgetSyncId, { password: encryptionPassword }),
-        "Opening budget"
-      )
-    );
-    await timing.phase("sync", () => withTimeout(runtime.sync(), "Syncing budget"));
-  };
-
+  // NOTE (RD-059): the live budget-swap fast path was reverted - `downloadBudget`
+  // on an already-initialized runtime throws (the exposed API has no clean
+  // close/reload primitive), so it fell back every time (`switched: false`) and
+  // made switching slower. Back to the plain full re-init; timing is kept so the
+  // baseline stays visible.
   const promise = (async () => {
     const timing = runtimeTiming();
 
-    // ── Fast path (RD-059): same server → swap the budget on the live runtime.
-    // Any failure falls through to a clean full re-init, so correctness is never
-    // at the mercy of the switch working.
-    if (previousRuntime && sameServerAsPrevious) {
-      try {
-        const runtime = await previousRuntime.promise;
-        await openBudgetAndSync(runtime, timing);
-        timing.report({ budgetSyncId: connection.budgetSyncId, sameServerAsPrevious, switched: true });
-        return runtime;
-      } catch {
-        // Live budget swap failed - tear the runtime down and re-init cleanly.
-        await shutdownRuntime(previousRuntime).catch(() => {});
-        return fullInit(timing, /* alreadyShutDown */ true);
-      }
-    }
+    if (previousRuntime) await timing.phase("shutdown", () => shutdownRuntime(previousRuntime));
 
-    return fullInit(timing, /* alreadyShutDown */ false);
-  })();
-
-  // Full teardown + boot: different server, first open, or a fast-switch fallback.
-  async function fullInit(timing: RuntimeTiming, alreadyShutDown: boolean): Promise<ActualBrowserApiRuntime> {
-    if (previousRuntime && !alreadyShutDown) {
-      await timing.phase("shutdown", () => shutdownRuntime(previousRuntime));
-    }
     const actual = await timing.phase("load", () =>
       withTimeout(loadActualApi<ActualBrowserApi>(), "Loading @actual-app/api")
     );
@@ -339,10 +309,17 @@ export async function getBrowserApiRuntime(
       })
     );
     const runtime: ActualBrowserApiRuntime = { ...actual, send: initResult.send };
-    await openBudgetAndSync(runtime, timing);
+    await timing.phase("download", () =>
+      withTimeout(
+        runtime.downloadBudget(connection.budgetSyncId, { password: encryptionPassword }),
+        "Opening budget"
+      )
+    );
+    await timing.phase("sync", () => withTimeout(runtime.sync(), "Syncing budget"));
+
     timing.report({ budgetSyncId: connection.budgetSyncId, sameServerAsPrevious, switched: false });
     return runtime;
-  }
+  })();
 
   activeRuntime = { key, promise };
   promise.catch(() => {
@@ -373,7 +350,6 @@ function runtimeTimingEnabled(): boolean {
 }
 
 type PhaseName = "shutdown" | "load" | "init" | "download" | "sync";
-type RuntimeTiming = ReturnType<typeof runtimeTiming>;
 
 function runtimeTiming() {
   const enabled = runtimeTimingEnabled();
