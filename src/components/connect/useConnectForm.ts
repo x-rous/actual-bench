@@ -1,5 +1,6 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
+import type { ConfirmState } from "@/components/ui/confirm-dialog";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -60,6 +61,12 @@ export function useConnectForm() {
   const addServer = useSavedServersStore((s) => s.addServer);
   const removeServer = useSavedServersStore((s) => s.removeServer);
   const savedServers = useSavedServersStore((s) => s.servers);
+
+  // Confirmation shown when reconnecting a budget that's already connected in a
+  // different mode/URL (the reconnect replaces that entry). The ref lets the
+  // confirm handler re-run connect() past the gate.
+  const [pendingBudgetSwitch, setPendingBudgetSwitch] = useState<ConfirmState | null>(null);
+  const confirmSwitchRef = useRef(false);
 
   // Server credentials
   const [connectionMode, setConnectionMode] = useState<ConnectionMode>("http-api");
@@ -379,6 +386,28 @@ export function useConnectForm() {
     const selected = budgets.find((b) => b.groupId === selectedGroupId);
     if (!selected) return;
 
+    // If this budget is already connected via a different transport/URL,
+    // reconnecting will replace that entry (one connection per budget). Confirm
+    // the switch first - unless the user already confirmed it.
+    const replacedExisting = instances.find(
+      (i) => i.budgetSyncId === selected.groupId && !(i.mode === validatedMode && i.baseUrl === validatedUrl)
+    );
+    if (replacedExisting && !confirmSwitchRef.current) {
+      const modeLabel = (m: ConnectionMode) => (m === "browser-api" ? "Direct" : "HTTP API");
+      setPendingBudgetSwitch({
+        title: "Switch this budget's connection?",
+        message: `"${replacedExisting.label}" is already connected in ${modeLabel(replacedExisting.mode)} mode. Continuing switches it to ${modeLabel(validatedMode)} mode and discards any unsaved changes.`,
+        destructiveLabel: "Switch mode",
+        onConfirm: () => {
+          confirmSwitchRef.current = true;
+          setPendingBudgetSwitch(null);
+          connect().catch(console.error);
+        },
+      });
+      return;
+    }
+    confirmSwitchRef.current = false;
+
     if (validatedMode === "browser-api") {
       const existing = instances
         .filter(isBrowserApiConnection)
@@ -562,5 +591,8 @@ export function useConnectForm() {
     handleValidate,
     handleKeyDown,
     handleConnect,
+    // Cross-mode reconnect confirmation
+    pendingBudgetSwitch,
+    dismissBudgetSwitch: () => setPendingBudgetSwitch(null),
   };
 }

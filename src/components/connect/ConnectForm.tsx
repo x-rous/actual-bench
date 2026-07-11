@@ -10,6 +10,7 @@ import { cn } from "@/lib/utils";
 import { useConnectionStore, selectActiveInstance } from "@/store/connection";
 import { useIsHydrated } from "@/hooks/useIsHydrated";
 import { useConnectForm } from "./useConnectForm";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { ConnectionCard } from "./ConnectionCard";
 import { deriveLabel, getConnectionModeBadge } from "./utils";
 
@@ -64,6 +65,8 @@ export function ConnectForm({ directBrowserApiEnabled }: ConnectFormProps) {
     handleValidate,
     handleKeyDown,
     handleConnect,
+    pendingBudgetSwitch,
+    dismissBudgetSwitch,
   } = useConnectForm();
 
   useEffect(() => {
@@ -148,15 +151,6 @@ export function ConnectForm({ directBrowserApiEnabled }: ConnectFormProps) {
         <div className="flex items-start gap-2.5 rounded-lg border border-muted bg-muted/40 px-3.5 py-3 text-xs leading-5 text-muted-foreground">
           <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
           <span>Direct Actual Server mode is disabled for this deployment. Remove <code>DIRECT_BROWSER_API=0</code> or <code>NEXT_PUBLIC_DIRECT_BROWSER_API=0</code> and restart the app to show both connection modes.</span>
-        </div>
-      )}
-
-      {connectionMode === "browser-api" && (
-        <div className="flex items-start gap-2.5 rounded-lg border border-emerald-200 bg-emerald-50/70 px-3.5 py-3 text-xs leading-5 text-emerald-950 dark:border-emerald-900/50 dark:bg-emerald-950/20 dark:text-emerald-100">
-          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
-          <span>
-            Direct mode connects this browser to your Actual Server. Credentials are kept in memory and cleared when you refresh or close this tab.
-          </span>
         </div>
       )}
 
@@ -463,6 +457,12 @@ export function ConnectForm({ directBrowserApiEnabled }: ConnectFormProps) {
           )}
         </section>
       )}
+
+      <ConfirmDialog
+        open={!!pendingBudgetSwitch}
+        onOpenChange={(open) => { if (!open) dismissBudgetSwitch(); }}
+        state={pendingBudgetSwitch}
+      />
     </div>
   );
 }
