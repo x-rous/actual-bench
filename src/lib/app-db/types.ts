@@ -275,3 +275,34 @@ export type SyncMappingPatch = Partial<
     | "lastAppliedAt"
   >
 >;
+
+// ─── Credential vault (RD-058 / PR-024a) ────────────────────────────────────
+
+/** The plaintext secret sealed in the vault for an unattended-sync connection. */
+export type SyncCredentialSecret = {
+  apiKey: string;
+  encryptionPassword?: string;
+};
+
+/** Non-secret credential metadata - safe to return to the client. */
+export type SyncCredentialMeta = {
+  connectionFingerprint: string;
+  mode: string;
+  baseUrl: string;
+  budgetSyncId: string;
+  label: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+/** Full credential (metadata + decrypted secret) - server-only, never sent to the client. */
+export type SyncCredential = SyncCredentialMeta & { secret: SyncCredentialSecret };
+
+export type SyncCredentialInput = {
+  connectionFingerprint: string;
+  mode: string;
+  baseUrl: string;
+  budgetSyncId: string;
+  label?: string;
+  secret: SyncCredentialSecret;
+};

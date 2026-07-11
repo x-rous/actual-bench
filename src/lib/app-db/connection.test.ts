@@ -46,7 +46,7 @@ describe("app DB connection", () => {
       const version = db
         .prepare("SELECT value FROM app_meta WHERE key = ?")
         .get<{ value: string }>("schema_version");
-      expect(version?.value).toBe("3");
+      expect(version?.value).toBe("4");
 
       const sameDb = getAppDb(dbPath);
       expect(sameDb).toBe(db);
@@ -54,7 +54,7 @@ describe("app DB connection", () => {
       const health = getAppDbHealth(dbPath);
       expect(health.ready).toBe(true);
       expect(health.writable).toBe(true);
-      expect(health.schemaVersion).toBe(3);
+      expect(health.schemaVersion).toBe(4);
       expect(health.configuredPath).toBe(dbPath);
     } finally {
       resetAppDbForTests();
@@ -86,7 +86,7 @@ describe("app DB connection", () => {
         .prepare("SELECT COUNT(*) AS count FROM sqlite_schema WHERE type = 'table' AND name = ?")
         .get<{ count: number }>("sync_mappings");
 
-      expect(version?.value).toBe("3");
+      expect(version?.value).toBe("4");
       expect(flowTypeColumn.some((column) => column.name === "flow_type")).toBe(true);
       expect(mappingTable?.count).toBe(1);
     } finally {
