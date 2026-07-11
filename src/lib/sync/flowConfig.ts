@@ -73,6 +73,13 @@ export type SyncFlowPlanConfig = {
    * always require explicit selection - they are never applied in bulk.
    */
   detectDeletedSource: boolean;
+  /**
+   * When true, a source split transaction is synced as ONE grouped target split
+   * (parent + child lines) instead of exploding into separate transactions
+   * (RD-057 §6). Off by default (the explode behavior); requires a target that
+   * can create split transactions.
+   */
+  createTargetSplits: boolean;
 };
 
 /** Smallest allowed auto-sync interval - a budget sync per run is expensive. */
@@ -115,6 +122,7 @@ export const SYNC_PLAN_CONFIG_DEFAULTS = {
   exactDuplicateAutoMap: false,
   updateMappedTargets: false,
   detectDeletedSource: false,
+  createTargetSplits: false,
 };
 
 type PartialRoute = Partial<
@@ -149,6 +157,7 @@ export function buildPlanConfig(
         | "exactDuplicateAutoMap"
         | "updateMappedTargets"
         | "detectDeletedSource"
+        | "createTargetSplits"
       >
     >
 ): SyncFlowPlanConfig {
@@ -181,6 +190,8 @@ export function buildPlanConfig(
       input.updateMappedTargets ?? SYNC_PLAN_CONFIG_DEFAULTS.updateMappedTargets,
     detectDeletedSource:
       input.detectDeletedSource ?? SYNC_PLAN_CONFIG_DEFAULTS.detectDeletedSource,
+    createTargetSplits:
+      input.createTargetSplits ?? SYNC_PLAN_CONFIG_DEFAULTS.createTargetSplits,
   };
 }
 
@@ -230,5 +241,6 @@ export function decodeFlowPlanConfig(flow: SyncFlow): SyncFlowPlanConfig {
     exactDuplicateAutoMap: bool(options.exactDuplicateAutoMap),
     updateMappedTargets: bool(options.updateMappedTargets),
     detectDeletedSource: bool(options.detectDeletedSource),
+    createTargetSplits: bool(options.createTargetSplits),
   });
 }

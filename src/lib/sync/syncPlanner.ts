@@ -40,7 +40,9 @@ import type {
 export function planSyncFlow(input: SyncPlannerInput): SyncPlanResult {
   return planExpandedItems({
     ...input,
-    sourceItems: expandSourceTransactions(input.sourceTransactions),
+    sourceItems: expandSourceTransactions(input.sourceTransactions, {
+      groupSplits: input.config.createTargetSplits,
+    }),
   });
 }
 
@@ -219,7 +221,20 @@ function planSourceItem(
     targetAccountId: config.targetAccountId,
     sourceItemKey: item.itemKey,
   });
-  const payload = buildPlannedTargetPayload({ item, config, payee, category, importedId });
+  // Grouped split (RD-057 §6): resolve each child's payee/category by name and
+  // apply the flow's amount direction, so the parent creates as one target split.
+  const subtransactions = item.splitLines?.map((line) => {
+    const childPayee = resolvePayee({ payeeName: line.payeeName ?? item.payeeName }, config, target.payees);
+    const childCategory = resolveCategory({ categoryName: line.categoryName }, target.categories);
+    return {
+      amount: config.amountDirection === "same" ? line.amount : -line.amount,
+      categoryId: childCategory.categoryId,
+      payeeId: childPayee.payeeId,
+      payeeName: childPayee.payeeName,
+      notes: line.notes,
+    };
+  }) ?? null;
+  const payload = buildPlannedTargetPayload({ item, config, payee, category, importedId, subtransactions });
   const effectivePayeeName = resolveEffectivePayeeName(item, payee, target);
 
   // 2. No mapping, but our marker already exists on the target → repairable.

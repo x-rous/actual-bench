@@ -50,6 +50,21 @@ export type PlannedTargetPayload = {
   cleared: boolean;
   /** Deterministic durable marker; required for every create candidate. */
   importedId: string | null;
+  /**
+   * Child lines for a grouped split target (RD-057 §6). Present only when the
+   * flow syncs splits as one parent; amounts already have the flow's sign
+   * direction applied and sum to `amount`.
+   */
+  subtransactions?: PlannedSplitChild[] | null;
+};
+
+/** A resolved split child line to create under a grouped target split. */
+export type PlannedSplitChild = {
+  amount: number;
+  categoryId: string | null;
+  payeeId: string | null;
+  payeeName: string | null;
+  notes: string | null;
 };
 
 /**

@@ -146,6 +146,20 @@ export type SyncTargetTransactionInput = {
    * mappings remain the source of truth; this is a recovery/dedupe safety net.
    */
   importedId?: string | null;
+  /**
+   * Split children to create inline under this transaction (RD-057 §6). When
+   * present, the transport creates a grouped split whose parent is this row.
+   */
+  subtransactions?: SyncTargetSplitChild[] | null;
+};
+
+/** A resolved split child line for a grouped target split (RD-057 §6). */
+export type SyncTargetSplitChild = {
+  amount: MinorUnitAmount;
+  categoryId?: string | null;
+  payeeId?: string | null;
+  payeeName?: string | null;
+  notes?: string | null;
 };
 
 /** Fields of an existing target transaction to overwrite (RD-057 §4). */

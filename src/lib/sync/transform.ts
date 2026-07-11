@@ -5,7 +5,7 @@ import type {
   CategoryResolution,
   PayeeResolution,
 } from "./entityResolution";
-import type { PlannedTargetPayload } from "./plannedChanges";
+import type { PlannedSplitChild, PlannedTargetPayload } from "./plannedChanges";
 
 /**
  * Pure transforms from a source item to a planned target payload
@@ -53,8 +53,10 @@ export function buildPlannedTargetPayload(input: {
   payee: PayeeResolution;
   category: CategoryResolution;
   importedId: string | null;
+  /** Resolved split children for a grouped target split (RD-057 §6). */
+  subtransactions?: PlannedSplitChild[] | null;
 }): PlannedTargetPayload {
-  const { item, config, payee, category, importedId } = input;
+  const { item, config, payee, category, importedId, subtransactions } = input;
   return {
     accountId: config.targetAccountId,
     date: item.date,
@@ -65,5 +67,6 @@ export function buildPlannedTargetPayload(input: {
     notes: transformNotes(item.notes, config),
     cleared: false,
     importedId,
+    subtransactions: subtransactions && subtransactions.length > 0 ? subtransactions : null,
   };
 }

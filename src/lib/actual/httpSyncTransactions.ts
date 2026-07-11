@@ -237,7 +237,8 @@ export async function createHttpTransactionsForSync(
     return created.id;
   }
 
-  type ApiInsert = { date: string; amount: number; payee: string | null; category: string | null; notes: string | null; cleared: boolean; imported_id: string | null };
+  type ApiSub = { amount: number; category: string | null; payee: string | null; notes: string | null };
+  type ApiInsert = { date: string; amount: number; payee: string | null; category: string | null; notes: string | null; cleared: boolean; imported_id: string | null; subtransactions?: ApiSub[] };
   type Entry = { index: number; input: SyncTargetTransactionInput; payload: ApiInsert; payeeId: string | null };
   const byAccount = new Map<string, { entries: Entry[]; minDate: string; maxDate: string }>();
   for (let index = 0; index < inputs.length; index++) {
@@ -253,6 +254,18 @@ export async function createHttpTransactionsForSync(
       cleared: input.cleared ?? false,
       imported_id: input.importedId ?? null,
     };
+    // Grouped split (RD-057 §6): actual-http-api accepts inline subtransactions.
+    if (input.subtransactions && input.subtransactions.length > 0) {
+      payload.subtransactions = [];
+      for (const child of input.subtransactions) {
+        payload.subtransactions.push({
+          amount: child.amount,
+          category: child.categoryId ?? null,
+          payee: await resolvePayeeId({ accountId: input.accountId, date: input.date, amount: child.amount, payeeId: child.payeeId, payeeName: child.payeeName }),
+          notes: child.notes ?? null,
+        });
+      }
+    }
     const group = byAccount.get(input.accountId);
     if (group) {
       group.entries.push({ index, input, payload, payeeId });

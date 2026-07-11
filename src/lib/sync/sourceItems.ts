@@ -38,6 +38,12 @@ export type SyncSourceItem = {
   cleared: boolean;
   reconciled: boolean;
   importedId: string | null;
+  /**
+   * Present only for a grouped split parent (RD-057 §6, `createTargetSplits`):
+   * the child lines to create as subtransactions under one target parent. Absent
+   * for exploded split lines and normal transactions.
+   */
+  splitLines?: SyncSourceSplitLine[];
 };
 
 const FINGERPRINT_VERSION = "v1";
@@ -121,20 +127,69 @@ export function splitLineFingerprint(
   return fnv1aHex(canonical);
 }
 
+/** Fingerprint of a whole split parent (all lines), for grouped-split sync. */
+export function splitParentFingerprint(txn: SyncSourceTransaction): string {
+  const canonical = [
+    FINGERPRINT_VERSION,
+    "split_parent",
+    part(txn.date),
+    part(txn.amount),
+    part(txn.payeeId),
+    part(txn.payeeName),
+    part(txn.cleared),
+    part(txn.reconciled),
+    part(txn.importedId),
+    ...txn.splitLines.flatMap((line, i) => [
+      part(i),
+      part(line.amount),
+      part(line.payeeName),
+      part(line.categoryName),
+      part(line.notes),
+    ]),
+  ].join(FIELD_SEP);
+  return fnv1aHex(canonical);
+}
+
 /**
  * Expand a source transaction into the sync source items it contributes.
  *
- * - A split parent contributes one `split_line` item per child (MVP explodes
- *   splits into separate normal target transactions; the parent itself is not
- *   synced as its own item).
+ * - A split parent contributes one `split_line` item per child (explode mode,
+ *   the default). When `groupSplits` is set (RD-057 §6), it instead contributes
+ *   ONE `transaction` item carrying its child lines, to be created as a single
+ *   grouped target split.
  * - Any other transaction contributes a single `transaction` item.
  *
  * Split children inherit the parent's date and - when the child has no payee of
  * its own - the parent's payee, since Actual split children commonly omit it.
  */
 export function expandSourceTransaction(
-  txn: SyncSourceTransaction
+  txn: SyncSourceTransaction,
+  opts: { groupSplits?: boolean } = {}
 ): SyncSourceItem[] {
+  // Grouped-split mode: the parent is one item carrying its lines (RD-057 §6).
+  if (opts.groupSplits && txn.isParent && txn.splitLines.length > 0) {
+    return [
+      {
+        kind: "transaction",
+        itemKey: sourceTransactionItemKey(txn.id),
+        sourceTransactionId: txn.id,
+        sourceSplitId: null,
+        usedFallbackKey: false,
+        fingerprint: splitParentFingerprint(txn),
+        date: txn.date,
+        amount: txn.amount,
+        payeeId: txn.payeeId,
+        payeeName: txn.payeeName,
+        categoryId: txn.categoryId,
+        categoryName: txn.categoryName,
+        notes: txn.notes,
+        cleared: txn.cleared,
+        reconciled: txn.reconciled,
+        importedId: txn.importedId,
+        splitLines: txn.splitLines,
+      } satisfies SyncSourceItem,
+    ];
+  }
   if (txn.isParent && txn.splitLines.length > 0) {
     return txn.splitLines.map((line, lineIndex) => {
       const fingerprint = splitLineFingerprint(txn, line, lineIndex);
@@ -190,7 +245,8 @@ export function expandSourceTransaction(
 
 /** Expand many source transactions, preserving order. */
 export function expandSourceTransactions(
-  txns: SyncSourceTransaction[]
+  txns: SyncSourceTransaction[],
+  opts: { groupSplits?: boolean } = {}
 ): SyncSourceItem[] {
-  return txns.flatMap(expandSourceTransaction);
+  return txns.flatMap((txn) => expandSourceTransaction(txn, opts));
 }

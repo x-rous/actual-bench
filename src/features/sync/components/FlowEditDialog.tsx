@@ -234,6 +234,17 @@ export function FlowEditDialog({
                 Offer to delete the target when the source is deleted
               </label>
             )}
+            {!entityMode && (
+              <label className="flex items-center gap-2 text-sm" title="Sync a split transaction as one grouped split on the target (parent + child lines) instead of separate transactions.">
+                <input
+                  type="checkbox"
+                  aria-label="Create grouped split transactions on the target"
+                  checked={form.automation.createTargetSplits}
+                  onChange={(e) => setAutomation({ createTargetSplits: e.target.checked })}
+                />
+                Keep splits grouped on the target
+              </label>
+            )}
           </section>
 
           {/* Master-data (entity) options */}

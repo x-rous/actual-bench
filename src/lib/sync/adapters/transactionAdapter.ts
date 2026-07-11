@@ -27,6 +27,7 @@ import { hashTargetFields } from "../targetFingerprint";
 import type {
   ActualBenchTransport,
   SyncAppliedSnapshot,
+  SyncTargetSplitChild,
   SyncTargetTransactionInput,
 } from "@/lib/actual/transport";
 import type { JsonObject, SyncCapabilitySet, SyncFlow, SyncMapping } from "@/lib/app-db/types";
@@ -125,7 +126,7 @@ export const transactionAdapter: SyncKindAdapter = {
     const scanned = rawSource.length;
     const nonGenerated = filterSourceTransactions(rawSource, filter);
     const generatedExcluded = scanned - nonGenerated.length;
-    const expanded = expandSourceTransactions(nonGenerated);
+    const expanded = expandSourceTransactions(nonGenerated, { groupSplits: config.createTargetSplits });
     const expandedCount = expanded.length;
     const kept = filterSourceItems(expanded, filter);
     const items = JSON.parse(JSON.stringify(kept)) as SyncSourceItem[];
@@ -217,6 +218,9 @@ export const transactionAdapter: SyncKindAdapter = {
       notes: (payload.notes as string | null) ?? null,
       cleared: payload.cleared === true,
       importedId: (payload.importedId as string | null) ?? null,
+      subtransactions: Array.isArray(payload.subtransactions)
+        ? (payload.subtransactions as SyncTargetSplitChild[])
+        : null,
     }));
     const { created } = await transport.createTransactionsForSync(createInputs);
     return inputs.map((input, i) => {

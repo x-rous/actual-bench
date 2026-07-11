@@ -745,6 +745,19 @@ async function createBrowserTransactionsForSync(
       cleared: input.cleared ?? false,
     };
     if (input.importedId) payload.imported_id = input.importedId;
+    // Grouped split (RD-057 §6): create children inline under this parent. Their
+    // payees are resolved to ids the same way as the parent's.
+    if (input.subtransactions && input.subtransactions.length > 0) {
+      payload.subtransactions = [];
+      for (const child of input.subtransactions) {
+        payload.subtransactions.push({
+          amount: child.amount,
+          category: child.categoryId ?? null,
+          payee: await resolvePayeeId({ accountId: input.accountId, date: input.date, amount: child.amount, payeeId: child.payeeId, payeeName: child.payeeName }),
+          notes: child.notes ?? null,
+        });
+      }
+    }
 
     const group = byAccount.get(input.accountId);
     if (group) {

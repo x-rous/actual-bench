@@ -355,6 +355,40 @@ describe("planSyncFlow - splits", () => {
     expect(plan.items[1].plannedTargetPayload?.importedId).toBe(marker("split:p:s2"));
   });
 
+  it("syncs a split parent as ONE grouped target split when the flow opts in (RD-057 §6)", () => {
+    const parent = txn({
+      id: "p",
+      amount: -3000,
+      categoryId: null,
+      categoryName: null,
+      isParent: true,
+      splitLines: [
+        { id: "s1", amount: -1000, payeeId: null, payeeName: null, categoryId: "sc-a", categoryName: "Groceries", notes: null },
+        { id: "s2", amount: -2000, payeeId: null, payeeName: null, categoryId: "sc-b", categoryName: "Household", notes: "soap" },
+      ],
+    });
+    const target = emptyTarget({
+      categories: [
+        { id: "tc-a", name: "Groceries" },
+        { id: "tc-b", name: "Household" },
+      ],
+    });
+    const splitConfig = buildPlanConfig({ ...config, createTargetSplits: true });
+    const plan = planSyncFlow(baseInput({ config: splitConfig, sourceTransactions: [parent], target }));
+
+    // One parent item, not two exploded lines.
+    expect(plan.items).toHaveLength(1);
+    const item = plan.items[0];
+    expect(item.sourceItemKey).toBe("txn:p");
+    expect(item.plannedTargetPayload?.amount).toBe(3000); // reversed parent total
+    const subs = item.plannedTargetPayload?.subtransactions ?? [];
+    expect(subs).toHaveLength(2);
+    expect(subs[0]).toMatchObject({ amount: 1000, categoryId: "tc-a" });
+    expect(subs[1]).toMatchObject({ amount: 2000, categoryId: "tc-b" });
+    // Parent total equals the sum of children (amount consistency).
+    expect(subs[0].amount + subs[1].amount).toBe(item.plannedTargetPayload?.amount);
+  });
+
   it("flags a split-line fallback key when the child has no id", () => {
     const parent = txn({
       id: "p",

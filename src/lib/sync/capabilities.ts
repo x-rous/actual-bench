@@ -11,6 +11,7 @@ const NO_SYNC_CAPABILITIES: SyncCapabilitySet = {
   createTransactionWithImportedId: false,
   createTransactionWithNotesMarker: false,
   createSplitLinesAsSeparateTransactions: false,
+  createTargetSplitTransaction: false,
   supportsMultiRuntimeBudgetAccess: false,
   updateTransaction: false,
   deleteTransaction: false,
@@ -35,6 +36,8 @@ const CURRENT_DIRECT_CAPABILITIES: SyncCapabilitySet = {
   createTransactionWithImportedId: true,
   createTransactionWithNotesMarker: true,
   createSplitLinesAsSeparateTransactions: true,
+  // RD-057: the browser API can create a split (parent + subtransactions).
+  createTargetSplitTransaction: true,
   // Actual's browser API keeps a single process-global budget open at a time,
   // so two budgets cannot be held open concurrently in one JS realm. Pattern B
   // (isolated worker per budget) is not proven, so cross-budget sync uses
@@ -66,6 +69,8 @@ const HTTP_SYNC_CAPABILITIES: SyncCapabilitySet = {
   createTransactionWithImportedId: true,
   createTransactionWithNotesMarker: true,
   createSplitLinesAsSeparateTransactions: true,
+  // RD-057: actual-http-api accepts inline subtransactions on create.
+  createTargetSplitTransaction: true,
   supportsMultiRuntimeBudgetAccess: true,
   // RD-057: actual-http-api exposes updateTransaction / deleteTransaction.
   updateTransaction: true,

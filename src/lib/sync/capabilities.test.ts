@@ -28,6 +28,7 @@ describe("budget file sync capabilities", () => {
     // RD-057: Direct mode can update/delete an existing transaction.
     expect(report.capabilities.updateTransaction).toBe(true);
     expect(report.capabilities.deleteTransaction).toBe(true);
+    expect(report.capabilities.createTargetSplitTransaction).toBe(true);
     expect(
       missingSyncCapabilities(report, ["createTransaction", "supportsMultiRuntimeBudgetAccess"])
     ).toEqual(["supportsMultiRuntimeBudgetAccess"]);

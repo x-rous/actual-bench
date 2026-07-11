@@ -66,6 +66,8 @@ export type SyncAutomationForm = {
   updateMappedTargets: boolean;
   /** Offer to delete a mapped target when its source was deleted (RD-057 §5). */
   detectDeletedSource: boolean;
+  /** Sync split parents as one grouped target split (RD-057 §6). */
+  createTargetSplits: boolean;
 };
 
 /** Which data type the flow syncs (RD-055). Determines the engine adapter. */
@@ -139,6 +141,7 @@ export function emptyFlowForm(): SyncFlowFormState {
       exactDuplicateAutoMap: false,
       updateMappedTargets: false,
       detectDeletedSource: false,
+      createTargetSplits: false,
     },
     entity: { defaultGroupName: "", createMissingGroup: false },
   };
@@ -241,6 +244,7 @@ export function buildFlowPayload(
     exactDuplicateAutoMap: form.automation.exactDuplicateAutoMap,
     updateMappedTargets: form.automation.updateMappedTargets,
     detectDeletedSource: form.automation.detectDeletedSource,
+    createTargetSplits: form.automation.createTargetSplits,
     // Master-data (entity) options - ignored by transaction flows.
     defaultGroupName: form.entity.defaultGroupName.trim() || null,
     createMissingGroup: form.entity.createMissingGroup,
@@ -318,6 +322,7 @@ export function flowToFormState(
     exactDuplicateAutoMap: config.exactDuplicateAutoMap,
     updateMappedTargets: config.updateMappedTargets,
     detectDeletedSource: config.detectDeletedSource,
+    createTargetSplits: config.createTargetSplits,
   };
   form.filter = {
     startDate: filter.startDate ?? "",
