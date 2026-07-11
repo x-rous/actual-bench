@@ -326,7 +326,9 @@ export function SyncView() {
   const previewedAt = runQuery.data?.run.startedAt ?? null;
   const blockReason = previewBlockReason();
 
-  if (connections.length < 2) {
+  // One connection is enough for a same-budget flow (account → account); a
+  // second budget is only needed for cross-budget sync.
+  if (connections.length < 1) {
     return (
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
         <div className="p-6"><NeedsConnectionsNotice /></div>

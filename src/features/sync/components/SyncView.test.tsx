@@ -83,17 +83,23 @@ function setup(connections: ConnectionInstance[]) {
 beforeEach(() => jest.clearAllMocks());
 
 describe("SyncView", () => {
-  it("shows the needs-connections notice when fewer than two connections exist", () => {
-    setup([conn1]);
+  it("shows the needs-connections notice only when there are no connections", () => {
+    setup([]);
     render(<SyncView />);
-    expect(screen.getByText(/needs at least two connections/i)).toBeInTheDocument();
+    expect(screen.getByText(/needs a connection/i)).toBeInTheDocument();
   });
 
-  it("counts HTTP API Server connections toward the two-connection minimum", () => {
+  it("opens the workspace with a single connection (same-budget sync needs only one)", () => {
+    setup([conn1]);
+    render(<SyncView />);
+    expect(screen.queryByText(/needs a connection/i)).not.toBeInTheDocument();
+  });
+
+  it("opens the workspace with an HTTP API Server connection", () => {
     const httpConn: ConnectionInstance = { id: "c3", label: "Cloud", mode: "http-api", baseUrl: "https://api.example.com", apiKey: "k", budgetSyncId: "b-http" };
     setup([conn1, httpConn]);
     render(<SyncView />);
-    expect(screen.queryByText(/needs at least two connections/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/needs a connection/i)).not.toBeInTheDocument();
   });
 
   it("opens the editor dialog with default transform (same sign, create payee)", async () => {
