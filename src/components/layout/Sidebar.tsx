@@ -282,12 +282,21 @@ export function Sidebar() {
       </nav>
 
       <div className="shrink-0 border-t border-border p-2 flex flex-col gap-0.5">
-        <SidebarNavLink
-          item={APP_HEALTH_ITEM}
-          collapsed={collapsed}
-          pathname={pathname}
-          allHrefs={[APP_HEALTH_ITEM.href]}
-        />
+        <Link
+          href={APP_HEALTH_ITEM.href}
+          title={collapsed ? APP_HEALTH_ITEM.label : undefined}
+          aria-current={pathname === APP_HEALTH_ITEM.href ? "page" : undefined}
+          className={cn(
+            "flex w-full items-center rounded-md px-2 py-1.5 text-xs transition-colors",
+            collapsed ? "justify-center" : "gap-2",
+            pathname === APP_HEALTH_ITEM.href
+              ? "bg-accent text-accent-foreground"
+              : "text-muted-foreground hover:bg-accent/50 hover:text-accent-foreground"
+          )}
+        >
+          <APP_HEALTH_ITEM.icon className="h-4 w-4 shrink-0" />
+          {!collapsed && <span>{APP_HEALTH_ITEM.label}</span>}
+        </Link>
         <DropdownMenu>
           <DropdownMenuTrigger
             title="Help & feedback"
