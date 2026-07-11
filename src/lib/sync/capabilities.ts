@@ -45,16 +45,50 @@ const CURRENT_DIRECT_CAPABILITIES: SyncCapabilitySet = {
   deleteTransaction: false,
 };
 
+/**
+ * HTTP-API Server mode capabilities (RD-060).
+ *
+ * Both master-data (payee/category) and transaction sync are enabled. The HTTP
+ * transport implements the transaction primitives against actual-http-api's
+ * `/transactions/batch` (plain insert preserving `imported_id`, ids recovered by
+ * marker read-back, split children inline as `subtransactions`) - verified
+ * against a live server in the Phase 2 spike. Two HTTP connections are
+ * independent servers, so budgets can be read concurrently without the
+ * single-runtime switching Direct mode needs.
+ */
+const HTTP_SYNC_CAPABILITIES: SyncCapabilitySet = {
+  listBudgets: false,
+  listAccounts: true,
+  listTransactions: true,
+  readSplitLines: true,
+  createPayee: true,
+  createTransaction: true,
+  createTransactionWithImportedId: true,
+  createTransactionWithNotesMarker: true,
+  createSplitLinesAsSeparateTransactions: true,
+  supportsMultiRuntimeBudgetAccess: true,
+  updateTransaction: false,
+  deleteTransaction: false,
+};
+
 export type SyncCapabilityKey = keyof SyncCapabilitySet;
 
 export function getBudgetFileSyncCapabilities(
   connection: Pick<ConnectionInstance, "mode"> | { mode: ConnectionMode }
 ): SyncCapabilityReport {
+  if (connection.mode === "http-api") {
+    return {
+      mode: "http-api",
+      supported: true,
+      reason: null,
+      capabilities: { ...HTTP_SYNC_CAPABILITIES },
+    };
+  }
   if (connection.mode !== "browser-api") {
     return {
       mode: connection.mode,
       supported: false,
-      reason: "Budget File Sync MVP supports Direct mode connections only.",
+      reason: "Budget File Sync supports Direct and HTTP API connections.",
       capabilities: { ...NO_SYNC_CAPABILITIES },
     };
   }

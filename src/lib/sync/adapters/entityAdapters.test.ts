@@ -1,6 +1,8 @@
 import { payeeAdapter } from "./payeeAdapter";
 import { categoryAdapter } from "./categoryAdapter";
+import { transactionAdapter } from "./transactionAdapter";
 import type { ActualBenchTransport } from "@/lib/actual/transport";
+import type { ConnectionInstance } from "@/store/connection";
 import type { JsonObject, SyncCapabilitySet, SyncFlow, SyncMapping } from "@/lib/app-db/types";
 
 const envelope = (data: JsonObject) => ({ version: 1, data });
@@ -21,6 +23,43 @@ function flow(flowType: SyncFlow["flowType"], options: JsonObject = {}): SyncFlo
 const caps = {} as SyncCapabilitySet;
 const mapping = (sourceItemKey: string, targetTransactionId: string): SyncMapping =>
   ({ sourceItemKey, targetTransactionId } as unknown as SyncMapping);
+
+const httpConn = (id: string): ConnectionInstance =>
+  ({ id, label: id, mode: "http-api", baseUrl: "https://api.example.com", apiKey: "k", budgetSyncId: `b-${id}` } as unknown as ConnectionInstance);
+
+/** A flow with no saved fingerprints (validation skips the strict fp check). */
+function routeFlow(flowType: SyncFlow["flowType"], withAccount = false): SyncFlow {
+  const ref = (budgetId: string, budgetName: string): JsonObject => ({
+    connectionFingerprint: "", budgetId, budgetName,
+    ...(withAccount ? { accountId: "acct", accountName: "Checking" } : {}),
+  });
+  const f = flow(flowType);
+  f.legs[0].sourceRef = envelope(ref("budget-src", "Personal"));
+  f.legs[0].targetRef = envelope(ref("budget-tgt", "Family"));
+  return f;
+}
+
+describe("entity sync over HTTP (RD-060)", () => {
+  it("validates payee and category flows on HTTP-API connections", () => {
+    expect(() => payeeAdapter.validate({ flow: routeFlow("payee_sync"), sourceConnection: httpConn("a"), targetConnection: httpConn("b") })).not.toThrow();
+    expect(() => categoryAdapter.validate({ flow: routeFlow("category_sync"), sourceConnection: httpConn("a"), targetConnection: httpConn("b") })).not.toThrow();
+  });
+
+  it("validates transaction flows on HTTP-API connections (RD-060 Phase 2)", () => {
+    expect(() => transactionAdapter.validate({ flow: routeFlow("transaction_sync", true), sourceConnection: httpConn("a"), targetConnection: httpConn("b") })).not.toThrow();
+  });
+
+  it("plans + creates payees through an HTTP-style transport", async () => {
+    const materialized = { payees: [{ id: "s1", name: "New Vendor" }] };
+    const target = { byName: new Map<string, string>() };
+    const plan = payeeAdapter.plan({ flow: routeFlow("payee_sync"), materialized, target, mappings: [], targetCapabilities: caps });
+    expect(plan.items[0].classification).toBe("new");
+    // Same createPayee primitive the HTTP transport already exposes for entity pages.
+    const createPayee = jest.fn(async ({ name }: { name: string }) => ({ id: "http-" + name, name, created: true }));
+    const results = await payeeAdapter.createBatch({ createPayee } as unknown as ActualBenchTransport, routeFlow("payee_sync"), [{ itemId: "i1", payload: { entity: "payee", name: "New Vendor" } as JsonObject }]);
+    expect(results[0]).toMatchObject({ itemId: "i1", targetId: "http-New Vendor" });
+  });
+});
 
 describe("payeeAdapter.plan", () => {
   const materialized = { payees: [{ id: "s1", name: "Coffee Bar" }, { id: "s2", name: "New Vendor" }, { id: "s3", name: "Mapped Co" }] };

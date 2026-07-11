@@ -282,13 +282,19 @@ describe("getSyncCapabilities", () => {
     expect(report.capabilities.createTransactionWithImportedId).toBe(true);
   });
 
-  it("reports unsupported for HTTP API and refuses sync primitives", async () => {
+  it("supports both entity and transaction sync over HTTP", () => {
     const transport = createHttpApiTransport(httpConnection);
-    expect(transport.getSyncCapabilities().supported).toBe(false);
-
-    expect(() => transport.listTransactionsForSync({ accountId: "a" })).toThrow(/Direct|not supported/i);
-    expect(() => transport.createOrResolvePayee({ name: "x" })).toThrow();
-    expect(() => transport.createTransactionsForSync([])).toThrow();
-    expect(() => transport.getTargetLookupForSync({ accountId: "a" })).toThrow();
+    const caps = transport.getSyncCapabilities();
+    expect(caps.supported).toBe(true);
+    expect(caps.capabilities.createPayee).toBe(true);
+    // Transaction sync is now implemented over HTTP (RD-060 Phase 2).
+    expect(caps.capabilities.listTransactions).toBe(true);
+    expect(caps.capabilities.createTransactionWithImportedId).toBe(true);
+    // The transaction primitives are wired (behaviour covered in
+    // httpSyncTransactions.test.ts).
+    expect(typeof transport.listTransactionsForSync).toBe("function");
+    expect(typeof transport.createOrResolvePayee).toBe("function");
+    expect(typeof transport.createTransactionsForSync).toBe("function");
+    expect(typeof transport.getTargetLookupForSync).toBe("function");
   });
 });

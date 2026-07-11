@@ -126,7 +126,7 @@ A read-only local diagnostics workspace for the exported budget snapshots.
 
 ### Budget File Sync
 
-Sync data between budget files as saved one-way flows. One unified engine covers **transactions, payees, and categories** — preview, apply, run history, the review queue, and the safe-only automation layer work identically for each. It is **Direct mode only, cross-budget, create-only, and preview-first**.
+Sync data between budget files as saved one-way flows. One unified engine covers **transactions, payees, and categories** — preview, apply, run history, the review queue, and the safe-only automation layer work identically for each. It is **cross-budget, create-only, and preview-first**. Every data type syncs in **both Direct and HTTP API Server mode**, in any combination.
 
 - **Master data:** pick a flow's data type (Transactions / Payees / Categories). Payee and category flows create missing entities on the target and match existing ones by name (no renames/deletes); categories place under the matching or a chosen default group, and block ambiguous placement for review.
 
@@ -135,7 +135,7 @@ Sync data between budget files as saved one-way flows. One unified engine covers
 - Apply creates only the selected safe new transactions with a durable `imported_id` marker and records app-owned mappings, so reruns skip already-synced items instead of creating duplicates
 - Eligible split lines are exploded into separate target transactions; a reverse-flow helper mirrors a flow for two-way sync
 - Opt-in automation per flow: auto-apply safe items, or auto-sync on a schedule **while the app is open and the connection is unlocked** (client-side, minimum 15 min — not an unattended daemon). Uncertain items collect in a review queue; exact duplicates can be auto-mapped (opt-in); failed items can be retried; and a flow auto-pauses after repeated failures
-- Target-budget rules may post-process created transactions; this is surfaced as a warning. Not in scope: HTTP mode, same-budget sync, updates/deletes, category auto-create, fuzzy duplicate auto-map, unattended server-side sync, and FX conversion
+- Target-budget rules may post-process created transactions; this is surfaced as a warning. Not in scope: same-budget sync, updates/deletes, category auto-create, fuzzy duplicate auto-map, unattended server-side sync, and FX conversion
 
 ### ActualQL Queries
 

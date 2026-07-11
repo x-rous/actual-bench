@@ -4,14 +4,14 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, ArrowLeftRight, Bell, Loader2, Play, Plus, XCircle } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { DirectOnlyNotice } from "./DirectOnlyNotice";
+import { NeedsConnectionsNotice } from "./NeedsConnectionsNotice";
 import { FlowEditDialog } from "./FlowEditDialog";
 import { FlowHeader } from "./FlowHeader";
 import { FlowList } from "./FlowList";
 import { PreviewPanel } from "./PreviewPanel";
 import { RunHistory } from "./RunHistory";
 import { useSyncFlows, useSyncFlowMutations } from "../hooks/useSyncFlows";
-import { useDirectConnections, useFlowRuns, useLatestRunByFlow, useSyncRun } from "../hooks/useSyncData";
+import { useSyncConnections, useFlowRuns, useLatestRunByFlow, useSyncRun } from "../hooks/useSyncData";
 import { useApplyMutation, usePreviewMutation, useSafeSyncMutation } from "../hooks/useSyncOrchestration";
 import { useSyncScheduler } from "../hooks/useSyncScheduler";
 import {
@@ -51,7 +51,7 @@ function deriveSummary(run: SyncFlowRun | undefined): DryRunSummary | null {
 }
 
 export function SyncView() {
-  const connections = useDirectConnections();
+  const connections = useSyncConnections();
   const flowsQuery = useSyncFlows();
   const flowIds = useMemo(() => (flowsQuery.data ?? []).map((f) => f.id), [flowsQuery.data]);
   const latestRunsQuery = useLatestRunByFlow(flowIds);
@@ -323,7 +323,7 @@ export function SyncView() {
   if (connections.length < 2) {
     return (
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-        <div className="p-6"><DirectOnlyNotice /></div>
+        <div className="p-6"><NeedsConnectionsNotice /></div>
       </div>
     );
   }

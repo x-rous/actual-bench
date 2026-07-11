@@ -15,13 +15,13 @@ import {
 import { clampSyncInterval } from "@/lib/sync/flowConfig";
 import { useFlowAccounts } from "../hooks/useSyncData";
 import { isEntityFlow, isSameBudget, missingRouteFields, type SyncEndpointForm, type SyncFlowFormState } from "../lib/flowForm";
-import type { BrowserApiConnection } from "@/store/connection";
+import type { ConnectionInstance } from "@/store/connection";
 
 type FlowEditDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   form: SyncFlowFormState;
-  connections: BrowserApiConnection[];
+  connections: ConnectionInstance[];
   onChange: (next: SyncFlowFormState) => void;
   onSave: () => void;
   onDelete: () => void;
@@ -40,7 +40,7 @@ function InlineEndpoint({
 }: {
   label: string;
   endpoint: SyncEndpointForm;
-  connections: BrowserApiConnection[];
+  connections: ConnectionInstance[];
   /** Entity (payee/category) flows pick a budget only - no account. */
   entityMode?: boolean;
   onChange: (next: SyncEndpointForm) => void;

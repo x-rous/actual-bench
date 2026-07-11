@@ -230,13 +230,13 @@ describe("runLiveDryRunPreview - validation", () => {
     expect(provider.openTransport).not.toHaveBeenCalled();
   });
 
-  it("rejects an unsupported (HTTP) target connection clearly", async () => {
+  it("previews transaction sync through an HTTP target (RD-060 Phase 2)", async () => {
     const { store } = makeStore(makeFlow({ targetConnection: httpTarget }));
     const result = await runLiveDryRunPreview(
       { flowId: "flow-1", context: { sourceConnection: sourceConn, targetConnection: httpTarget } },
-      { transport: makeProvider(makeTransport("source", {}), makeTransport("target", {})), store }
+      { transport: makeProvider(makeTransport("source", { sourceTransactions: [srcTxn()] }), makeTransport("target", {})), store }
     );
-    expect(result).toMatchObject({ status: "failed", error: { code: "unsupported_connection" } });
+    expect(result.status).toBe("draft_preview");
   });
 
   it("rejects a connection that no longer matches the saved route", async () => {
