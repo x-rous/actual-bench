@@ -89,8 +89,10 @@ export type ActualBrowserApi = {
     password: string;
     verbose?: boolean;
   }): Promise<ActualBrowserApiInitResult>;
-  getBudgets(): Promise<unknown[]>;
+  getBudgets(): Promise<Array<{ id: string; groupId?: string; cloudFileId?: string }>>;
   downloadBudget(syncId: string, options?: { password?: string }): Promise<unknown>;
+  /** Load an already-downloaded budget by its LOCAL id (closes the current one). */
+  loadBudget(budgetId: string): Promise<unknown>;
   sync(): Promise<unknown>;
   batchBudgetUpdates(func: () => Promise<void>): Promise<void>;
   getBudgetMonths(): Promise<string[]>;
@@ -287,16 +289,42 @@ export async function getBrowserApiRuntime(
   const sameServerAsPrevious =
     !!previousRuntime && serverSignatureFromKey(previousRuntime.key) === serverSignature(connection);
 
-  // NOTE (RD-059): the live budget-swap fast path was reverted - `downloadBudget`
-  // on an already-initialized runtime throws (the exposed API has no clean
-  // close/reload primitive), so it fell back every time (`switched: false`) and
-  // made switching slower. Back to the plain full re-init; timing is kept so the
-  // baseline stays visible.
   const promise = (async () => {
     const timing = runtimeTiming();
 
-    if (previousRuntime) await timing.phase("shutdown", () => shutdownRuntime(previousRuntime));
+    // ── Fast path (RD-059): same server + the target budget is ALREADY downloaded
+    // locally → switch in place with loadBudget(localId) (which closes the current
+    // budget and loads the target). No shutdown/re-init/reconnect and no
+    // re-download. `budgetSyncId` is the budget's groupId; getBudgets() lists the
+    // local budgets with their groupId + local id. Anything that doesn't line up
+    // (budget not local yet, or any error) falls through to a clean full init.
+    if (previousRuntime && sameServerAsPrevious && rd059FastSwitchEnabled()) {
+      try {
+        const runtime = await previousRuntime.promise;
+        const budgets = await runtime.getBudgets();
+        const localId = budgets.find((b) => b.groupId === connection.budgetSyncId)?.id ?? null;
+        if (localId) {
+          await timing.phase("download", () => withTimeout(runtime.loadBudget(localId), "Opening budget"));
+          await timing.phase("sync", () => withTimeout(runtime.sync(), "Syncing budget"));
+          timing.report({ budgetSyncId: connection.budgetSyncId, sameServerAsPrevious, switched: true });
+          return runtime;
+        }
+        // Target not downloaded locally yet → full init (which downloads it).
+      } catch {
+        await shutdownRuntime(previousRuntime).catch(() => {});
+        return fullInit(timing, /* alreadyShutDown */ true);
+      }
+    }
 
+    return fullInit(timing, /* alreadyShutDown */ false);
+  })();
+
+  // Full teardown + boot: different server, first open, target not yet local,
+  // or a fast-switch fallback.
+  async function fullInit(timing: ReturnType<typeof runtimeTiming>, alreadyShutDown: boolean): Promise<ActualBrowserApiRuntime> {
+    if (previousRuntime && !alreadyShutDown) {
+      await timing.phase("shutdown", () => shutdownRuntime(previousRuntime));
+    }
     const actual = await timing.phase("load", () =>
       withTimeout(loadActualApi<ActualBrowserApi>(), "Loading @actual-app/api")
     );
@@ -316,10 +344,9 @@ export async function getBrowserApiRuntime(
       )
     );
     await timing.phase("sync", () => withTimeout(runtime.sync(), "Syncing budget"));
-
     timing.report({ budgetSyncId: connection.budgetSyncId, sameServerAsPrevious, switched: false });
     return runtime;
-  })();
+  }
 
   activeRuntime = { key, promise };
   promise.catch(() => {
@@ -335,6 +362,17 @@ export async function getBrowserApiRuntime(
 //   localStorage.setItem("ab:runtime-timing", "1")
 // then run a cross-budget Direct preview and read "[RD-059 timing]" logs.
 // Off unless the flag is "1" (default) or NODE_ENV !== production; throwaway.
+
+// Kill switch for the RD-059 same-server fast path. On by default; disable
+// live (no rebuild) with: localStorage.setItem("ab:rd059", "0") then reload.
+function rd059FastSwitchEnabled(): boolean {
+  try {
+    if (typeof window !== "undefined" && window.localStorage.getItem("ab:rd059") === "0") return false;
+  } catch {
+    // ignore storage access errors
+  }
+  return true;
+}
 
 function runtimeTimingEnabled(): boolean {
   try {
