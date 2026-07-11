@@ -281,25 +281,37 @@ export async function getBrowserApiRuntime(
   const serverUrl = normalizeUrl(connection.baseUrl);
   const encryptionPassword = connection.encryptionPassword?.trim() || undefined;
 
-  const promise = (async () => {
-    if (previousRuntime) await shutdownRuntime(previousRuntime);
+  // SPIKE (RD-059): is the previous runtime on the SAME server (only the budget
+  // differs)? That's the exact case RD-059 would optimize, so we tag the timing.
+  const sameServerAsPrevious =
+    !!previousRuntime && serverSignatureFromKey(previousRuntime.key) === serverSignature(connection);
 
-    const actual = await withTimeout(
-      loadActualApi<ActualBrowserApi>(),
-      "Loading @actual-app/api"
+  const promise = (async () => {
+    const timing = runtimeTiming();
+
+    if (previousRuntime) await timing.phase("shutdown", () => shutdownRuntime(previousRuntime));
+
+    const actual = await timing.phase("load", () =>
+      withTimeout(loadActualApi<ActualBrowserApi>(), "Loading @actual-app/api")
     );
-    const initResult = await initializeActualApi(actual, {
-      dataDir: "/documents",
-      serverURL: serverUrl,
-      password: connection.serverPassword,
-      verbose: false,
-    });
+    const initResult = await timing.phase("init", () =>
+      initializeActualApi(actual, {
+        dataDir: "/documents",
+        serverURL: serverUrl,
+        password: connection.serverPassword,
+        verbose: false,
+      })
+    );
     const runtime: ActualBrowserApiRuntime = { ...actual, send: initResult.send };
-    await withTimeout(
-      runtime.downloadBudget(connection.budgetSyncId, { password: encryptionPassword }),
-      "Opening budget"
+    await timing.phase("download", () =>
+      withTimeout(
+        runtime.downloadBudget(connection.budgetSyncId, { password: encryptionPassword }),
+        "Opening budget"
+      )
     );
-    await withTimeout(runtime.sync(), "Syncing budget");
+    await timing.phase("sync", () => withTimeout(runtime.sync(), "Syncing budget"));
+
+    timing.report({ budgetSyncId: connection.budgetSyncId, sameServerAsPrevious });
     return runtime;
   })();
 
@@ -309,4 +321,77 @@ export async function getBrowserApiRuntime(
   });
 
   return promise;
+}
+
+// ── SPIKE (RD-059): runtime-switch timing ──────────────────────────────────
+// Opt-in phase timing to decide whether the same-server budget-switch
+// optimization is worth building. Enable in the browser console with:
+//   localStorage.setItem("ab:runtime-timing", "1")
+// then run a cross-budget Direct preview and read "[RD-059 timing]" logs.
+// Off unless the flag is "1" (default) or NODE_ENV !== production; throwaway.
+
+function runtimeTimingEnabled(): boolean {
+  try {
+    if (typeof window !== "undefined") {
+      const flag = window.localStorage.getItem("ab:runtime-timing");
+      if (flag === "1") return true;
+      if (flag === "0") return false;
+    }
+  } catch {
+    // ignore storage access errors
+  }
+  return process.env.NODE_ENV !== "production";
+}
+
+type PhaseName = "shutdown" | "load" | "init" | "download" | "sync";
+
+function runtimeTiming() {
+  const enabled = runtimeTimingEnabled();
+  const ms: Record<PhaseName, number> = { shutdown: 0, load: 0, init: 0, download: 0, sync: 0 };
+  return {
+    async phase<T>(name: PhaseName, run: () => Promise<T>): Promise<T> {
+      if (!enabled) return run();
+      const t = performance.now();
+      try {
+        return await run();
+      } finally {
+        ms[name] = Math.round(performance.now() - t);
+      }
+    },
+    report(meta: { budgetSyncId: string; sameServerAsPrevious: boolean }) {
+      if (!enabled) return;
+      const total = ms.shutdown + ms.load + ms.init + ms.download + ms.sync;
+      // What RD-059 would eliminate on a same-server switch: teardown + re-init.
+      const savableByRd059 = meta.sameServerAsPrevious ? ms.shutdown + ms.load + ms.init : 0;
+      console.info("[RD-059 timing]", {
+        budget: meta.budgetSyncId.slice(0, 8),
+        sameServerSwitch: meta.sameServerAsPrevious,
+        ms,
+        totalMs: total,
+        savableByRd059Ms: savableByRd059,
+        savablePct: total ? Math.round((savableByRd059 / total) * 100) : 0,
+      });
+    },
+  };
+}
+
+function serverSignature(connection: BrowserApiConnection): string {
+  return JSON.stringify({
+    baseUrl: normalizeUrl(connection.baseUrl),
+    serverPassword: connection.serverPassword,
+    encryptionPassword: connection.encryptionPassword ?? "",
+  });
+}
+
+function serverSignatureFromKey(key: string): string | null {
+  try {
+    const k = JSON.parse(key) as { baseUrl: string; serverPassword: string; encryptionPassword: string };
+    return JSON.stringify({
+      baseUrl: k.baseUrl,
+      serverPassword: k.serverPassword,
+      encryptionPassword: k.encryptionPassword,
+    });
+  } catch {
+    return null;
+  }
 }
