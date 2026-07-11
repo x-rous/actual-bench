@@ -6,6 +6,7 @@ import {
   sourceSplitItemKey,
   sourceTransactionItemKey,
   splitLineFingerprint,
+  splitParentFingerprint,
   transactionFingerprint,
 } from "./sourceItems";
 
@@ -30,6 +31,25 @@ function makeTxn(overrides: Partial<SyncSourceTransaction> = {}): SyncSourceTran
     ...overrides,
   };
 }
+
+describe("splitParentFingerprint", () => {
+  const parent = makeTxn({
+    id: "p", isParent: true, notes: "trip",
+    splitLines: [{ id: "s1", amount: -1000, payeeId: null, payeeName: null, categoryId: "c1", categoryName: "A", notes: null }],
+  });
+
+  it("changes when the parent's own notes change", () => {
+    const a = splitParentFingerprint(parent);
+    const b = splitParentFingerprint({ ...parent, notes: "trip (edited)" });
+    expect(a).not.toBe(b);
+  });
+
+  it("changes when a child line changes", () => {
+    const a = splitParentFingerprint(parent);
+    const b = splitParentFingerprint({ ...parent, splitLines: [{ ...parent.splitLines[0], amount: -1500 }] });
+    expect(a).not.toBe(b);
+  });
+});
 
 describe("source item keys", () => {
   it("builds stable keys for normal and split items", () => {

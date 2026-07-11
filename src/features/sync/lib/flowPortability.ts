@@ -68,9 +68,19 @@ export function importFlowDefinition(json: string): SyncFlowFormState {
 
   const base = emptyFlowForm();
   const flow = parsed.flow as Partial<SyncFlowFormState>;
+  const flowType =
+    flow.flowType === "transaction_sync" || flow.flowType === "payee_sync" || flow.flowType === "category_sync"
+      ? flow.flowType
+      : base.flowType;
   return {
     ...base,
     ...flow,
+    // Top-level scalars must be well-typed: a non-string `name` would crash the
+    // dialog on render (missingRouteFields calls name.trim()) outside the import
+    // try/catch, bypassing the friendly FlowImportError.
+    name: typeof flow.name === "string" ? flow.name : base.name,
+    enabled: typeof flow.enabled === "boolean" ? flow.enabled : base.enabled,
+    flowType,
     // Never trust an imported connection id; force re-selection.
     source: { ...base.source, ...(flow.source ?? {}), connectionId: "" },
     target: { ...base.target, ...(flow.target ?? {}), connectionId: "" },

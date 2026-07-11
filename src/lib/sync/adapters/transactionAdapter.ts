@@ -246,39 +246,49 @@ export const transactionAdapter: SyncKindAdapter = {
     const config = decodeFlowPlanConfig(flow);
     const results: AdapterMutateResult[] = [];
     for (const input of inputs) {
-      const payload = input.payload ?? {};
-      // Guard: if the live target no longer matches what sync last wrote, it was
-      // edited outside sync - never overwrite a manual edit (RD-057 §4).
-      const live = await transport.readTargetTransactionForSync({
-        accountId: config.targetAccountId,
-        transactionId: input.targetId,
-        date: typeof payload.date === "string" ? payload.date : undefined,
-      });
-      if (!live) {
-        results.push({ itemId: input.itemId, outcome: "skipped", targetId: null, message: "Target no longer exists; not updated." });
-        continue;
+      // Per-item try/catch: one failed target write must not discard the results
+      // of items already updated earlier in the batch.
+      try {
+        const payload = input.payload ?? {};
+        const live = await transport.readTargetTransactionForSync({
+          accountId: config.targetAccountId,
+          transactionId: input.targetId,
+          date: typeof payload.date === "string" ? payload.date : undefined,
+        });
+        if (!live) {
+          results.push({ itemId: input.itemId, outcome: "skipped", targetId: null, message: "Target no longer exists; not updated." });
+          continue;
+        }
+        // Without a recorded baseline we cannot prove the target is unmodified, so
+        // refuse to overwrite it (RD-057 §4). With one, only overwrite an exact match.
+        if (!input.expectedTargetFingerprint) {
+          results.push({ itemId: input.itemId, outcome: "skipped", targetId: input.targetId, message: "No sync baseline for this target; left unchanged." });
+          continue;
+        }
+        if (hashTargetFields(live) !== input.expectedTargetFingerprint) {
+          results.push({ itemId: input.itemId, outcome: "skipped", targetId: input.targetId, message: "Target was edited outside sync; left unchanged." });
+          continue;
+        }
+        const applied: SyncAppliedSnapshot | null = await transport.updateTransactionForSync({
+          transactionId: input.targetId,
+          accountId: config.targetAccountId,
+          date: String(payload.date ?? live.date),
+          amount: Number(payload.amount ?? live.amount),
+          payeeId: (payload.payeeId as string | null) ?? null,
+          payeeName: (payload.payeeName as string | null) ?? null,
+          categoryId: (payload.categoryId as string | null) ?? null,
+          notes: (payload.notes as string | null) ?? null,
+          cleared: payload.cleared === true,
+        });
+        results.push({
+          itemId: input.itemId,
+          outcome: "updated",
+          targetId: input.targetId,
+          targetFingerprint: applied ? hashTargetFields(applied) : null,
+        });
+      } catch (err) {
+        results.push({ itemId: input.itemId, outcome: "failed", targetId: input.targetId, message: err instanceof Error ? err.message : "Update failed." });
       }
-      if (input.expectedTargetFingerprint && hashTargetFields(live) !== input.expectedTargetFingerprint) {
-        results.push({ itemId: input.itemId, outcome: "skipped", targetId: input.targetId, message: "Target was edited outside sync; left unchanged." });
-        continue;
-      }
-      const applied: SyncAppliedSnapshot | null = await transport.updateTransactionForSync({
-        transactionId: input.targetId,
-        accountId: config.targetAccountId,
-        date: String(payload.date ?? live.date),
-        amount: Number(payload.amount ?? live.amount),
-        payeeId: (payload.payeeId as string | null) ?? null,
-        payeeName: (payload.payeeName as string | null) ?? null,
-        categoryId: (payload.categoryId as string | null) ?? null,
-        notes: (payload.notes as string | null) ?? null,
-        cleared: payload.cleared === true,
-      });
-      results.push({
-        itemId: input.itemId,
-        outcome: "updated",
-        targetId: input.targetId,
-        targetFingerprint: applied ? hashTargetFields(applied) : null,
-      });
     }
     return results;
   },
@@ -291,22 +301,31 @@ export const transactionAdapter: SyncKindAdapter = {
     const config = decodeFlowPlanConfig(flow);
     const results: AdapterMutateResult[] = [];
     for (const input of inputs) {
-      // Guard: only delete a target that still matches what sync last wrote, so a
-      // target re-used or edited outside sync is never removed (RD-057 §5).
-      const live = await transport.readTargetTransactionForSync({
-        accountId: config.targetAccountId,
-        transactionId: input.targetId,
-      });
-      if (!live) {
-        results.push({ itemId: input.itemId, outcome: "skipped", targetId: null, message: "Target already gone." });
-        continue;
+      // Per-item try/catch so one failed delete doesn't discard earlier successes.
+      try {
+        const live = await transport.readTargetTransactionForSync({
+          accountId: config.targetAccountId,
+          transactionId: input.targetId,
+        });
+        if (!live) {
+          results.push({ itemId: input.itemId, outcome: "skipped", targetId: null, message: "Target already gone." });
+          continue;
+        }
+        // Only delete a target we can prove is exactly what sync wrote: no baseline
+        // (or a mismatch) means it may have been re-used/edited - never delete it.
+        if (!input.expectedTargetFingerprint) {
+          results.push({ itemId: input.itemId, outcome: "skipped", targetId: input.targetId, message: "No sync baseline for this target; not deleted." });
+          continue;
+        }
+        if (hashTargetFields(live) !== input.expectedTargetFingerprint) {
+          results.push({ itemId: input.itemId, outcome: "skipped", targetId: input.targetId, message: "Target was edited outside sync; not deleted." });
+          continue;
+        }
+        await transport.deleteTransactionForSync({ transactionId: input.targetId });
+        results.push({ itemId: input.itemId, outcome: "deleted", targetId: input.targetId });
+      } catch (err) {
+        results.push({ itemId: input.itemId, outcome: "failed", targetId: input.targetId, message: err instanceof Error ? err.message : "Delete failed." });
       }
-      if (input.expectedTargetFingerprint && hashTargetFields(live) !== input.expectedTargetFingerprint) {
-        results.push({ itemId: input.itemId, outcome: "skipped", targetId: input.targetId, message: "Target was edited outside sync; not deleted." });
-        continue;
-      }
-      await transport.deleteTransactionForSync({ transactionId: input.targetId });
-      results.push({ itemId: input.itemId, outcome: "deleted", targetId: input.targetId });
     }
     return results;
   },

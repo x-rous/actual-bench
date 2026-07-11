@@ -213,6 +213,32 @@ describe("planSyncFlow - mappings and markers", () => {
     expect(item.plannedTargetPayload).not.toBeNull();
   });
 
+  it("warns (never updates) a changed grouped split parent, whose children can't be patched (RD-057 §4/§6)", () => {
+    const splitParent = txn({
+      id: "p", amount: -3000, isParent: true,
+      splitLines: [
+        { id: "s1", amount: -1000, payeeId: null, payeeName: null, categoryId: "sc-a", categoryName: "Groceries", notes: null },
+        { id: "s2", amount: -2000, payeeId: null, payeeName: null, categoryId: "sc-b", categoryName: "Household", notes: null },
+      ],
+    });
+    const config = buildPlanConfig({
+      flowId: FLOW_ID, sourceBudgetId: "budget-src", targetBudgetId: "budget-tgt",
+      targetAccountId: "acct-tgt", sourceBudgetName: "Home", sourceAccountName: "Checking",
+      updateMappedTargets: true, createTargetSplits: true,
+    });
+    const plan = planSyncFlow(
+      baseInput({
+        config,
+        sourceTransactions: [splitParent],
+        existingMappings: [mapping({ sourceItemKey: "txn:p", sourceFingerprint: "stale", targetTransactionId: "tgt-p", status: "active" })],
+      })
+    );
+    const item = plan.items[0];
+    expect(item.classification).toBe("source_changed_since_sync");
+    expect(item.action).toBe("skip"); // warn only - not "update"
+    expect(item.plannedTargetPayload).toBeNull();
+  });
+
   it("still only warns when the source changed but the flow did not opt into updates", () => {
     const plan = planSyncFlow(
       baseInput({ existingMappings: [mapping({ sourceFingerprint: "stale-fingerprint", targetTransactionId: "tgt-txn-9" })] })

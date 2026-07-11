@@ -44,4 +44,16 @@ describe("flow export / import (RD-057)", () => {
     expect(form.name).toBe("Sparse");
     expect(form.transform.amountDirection).toBe("same"); // default applied
   });
+
+  it("coerces malformed top-level scalars to safe defaults (never crashes the dialog)", () => {
+    const json = JSON.stringify({
+      kind: "actual-bench-sync-flow", version: 1,
+      flow: { name: 42, enabled: "yes", flowType: "bogus" },
+    });
+    const form = importFlowDefinition(json);
+    // A non-string name would crash missingRouteFields(form.name.trim()) on render.
+    expect(typeof form.name).toBe("string");
+    expect(form.enabled).toBe(true); // default
+    expect(form.flowType).toBe("transaction_sync"); // default
+  });
 });

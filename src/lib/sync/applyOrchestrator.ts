@@ -717,6 +717,16 @@ async function applyMutateBatch(
     const { item, mapping } = entry;
     const base = { itemId: item.id, sourceItemKey: item.sourceItemKey ?? "" };
     try {
+      if (res.outcome === "failed") {
+        await store.updateRunItemStatus(item.id, {
+          status: "failed",
+          applyState: "failed",
+          message: res.message ?? `${mode} failed for this item.`,
+          errors: envelope({ code: `${mode}_failed`, message: res.message ?? "unknown error" }),
+        });
+        results.push({ ...base, outcome: "failed", targetTransactionId: res.targetId, message: res.message });
+        continue;
+      }
       if (res.outcome === "skipped") {
         await store.updateRunItemStatus(item.id, {
           status: "skipped",

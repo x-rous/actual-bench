@@ -136,6 +136,7 @@ export function splitParentFingerprint(txn: SyncSourceTransaction): string {
     part(txn.amount),
     part(txn.payeeId),
     part(txn.payeeName),
+    part(txn.notes),
     part(txn.cleared),
     part(txn.reconciled),
     part(txn.importedId),

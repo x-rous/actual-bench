@@ -87,8 +87,12 @@ export type AdapterMutateInput = {
 
 export type AdapterMutateResult = {
   itemId: string;
-  /** "updated" / "deleted" on success; "skipped" when a guard blocked it. */
-  outcome: "updated" | "deleted" | "skipped";
+  /**
+   * "updated" / "deleted" on success; "skipped" when a guard blocked it (e.g. the
+   * target was edited outside sync); "failed" when the target write itself errored
+   * - reported per item so one failure doesn't discard the batch's other results.
+   */
+  outcome: "updated" | "deleted" | "skipped" | "failed";
   targetId: string | null;
   targetFingerprint?: string | null;
   message?: string;

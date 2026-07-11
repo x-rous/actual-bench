@@ -49,6 +49,23 @@ describe("entity sync over HTTP (RD-060)", () => {
     expect(() => transactionAdapter.validate({ flow: routeFlow("transaction_sync", true), sourceConnection: httpConn("a", "budget-src"), targetConnection: httpConn("b", "budget-tgt") })).not.toThrow();
   });
 
+  it("accepts any connection reaching the saved budget, regardless of mode/URL", () => {
+    // Direct-mode connections to the same budgets - a flow saved in either mode
+    // validates against either, because matching is by budget id.
+    const directSrc = { id: "d1", label: "d1", mode: "browser-api", baseUrl: "https://budget.example.com", serverPassword: "pw", budgetSyncId: "budget-src" } as unknown as ConnectionInstance;
+    const directTgt = { id: "d2", label: "d2", mode: "browser-api", baseUrl: "https://budget.example.com", serverPassword: "pw", budgetSyncId: "budget-tgt" } as unknown as ConnectionInstance;
+    expect(() => transactionAdapter.validate({ flow: routeFlow("transaction_sync", true), sourceConnection: directSrc, targetConnection: directTgt })).not.toThrow();
+  });
+
+  it("rejects a connection that reaches a different budget", () => {
+    expect(() =>
+      transactionAdapter.validate({ flow: routeFlow("transaction_sync", true), sourceConnection: httpConn("a", "budget-OTHER"), targetConnection: httpConn("b", "budget-tgt") })
+    ).toThrow(/is not the budget this flow was saved for/i);
+    expect(() =>
+      payeeAdapter.validate({ flow: routeFlow("payee_sync"), sourceConnection: httpConn("a", "budget-src"), targetConnection: httpConn("b", "budget-OTHER") })
+    ).toThrow(/is not the budget this flow was saved for/i);
+  });
+
   it("plans + creates payees through an HTTP-style transport", async () => {
     const materialized = { payees: [{ id: "s1", name: "New Vendor" }] };
     const target = { byName: new Map<string, string>() };

@@ -187,7 +187,12 @@ function planSourceItem(
     // targets (RD-057 §4), build an update candidate that overwrites the target;
     // otherwise warn only and leave the target unchanged. Apply re-checks that
     // the target was not edited outside sync before overwriting.
-    if (config.updateMappedTargets && mapping.targetTransactionId) {
+    //
+    // Grouped split parents are excluded: the update path patches only the parent
+    // fields and cannot rewrite child lines, so updating one would leave the split
+    // totals inconsistent. Warn instead until updates can carry subtransactions.
+    const isGroupedSplit = !!item.splitLines && item.splitLines.length > 0;
+    if (config.updateMappedTargets && mapping.targetTransactionId && !isGroupedSplit) {
       const upPayee = resolvePayee(item, config, input.target.payees);
       const upCategory = resolveCategory(item, input.target.categories);
       const upImportedId = generateSyncMarker({

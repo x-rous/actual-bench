@@ -71,6 +71,26 @@ describe("transactionAdapter.updateBatch (RD-057 §4)", () => {
     expect(res[0].outcome).toBe("skipped");
     expect(updateTransactionForSync).not.toHaveBeenCalled();
   });
+
+  it("refuses to overwrite when there is no recorded baseline fingerprint", async () => {
+    const { transport, updateTransactionForSync } = makeTransport();
+    const res = await transactionAdapter.updateBatch!(transport, flow(), [updateInput(null)]);
+    expect(res[0].outcome).toBe("skipped");
+    expect(updateTransactionForSync).not.toHaveBeenCalled();
+  });
+
+  it("reports a failed item without discarding the rest of the batch", async () => {
+    const updateTransactionForSync = jest
+      .fn()
+      .mockRejectedValueOnce(new Error("boom"))
+      .mockResolvedValueOnce({ ...liveTarget, amount: -2000 });
+    const { transport } = makeTransport({ updateTransactionForSync });
+    const res = await transactionAdapter.updateBatch!(transport, flow(), [
+      { ...updateInput(hashTargetFields(liveTarget)), itemId: "a" },
+      { ...updateInput(hashTargetFields(liveTarget)), itemId: "b" },
+    ]);
+    expect(res.map((r) => `${r.itemId}:${r.outcome}`)).toEqual(["a:failed", "b:updated"]);
+  });
 });
 
 describe("transactionAdapter.deleteBatch (RD-057 §5)", () => {
@@ -81,6 +101,15 @@ describe("transactionAdapter.deleteBatch (RD-057 §5)", () => {
     ]);
     expect(res[0].outcome).toBe("deleted");
     expect(deleteTransactionForSync).toHaveBeenCalledWith({ transactionId: "tgt-1" });
+  });
+
+  it("does not delete a target without a recorded baseline fingerprint", async () => {
+    const { transport, deleteTransactionForSync } = makeTransport();
+    const res = await transactionAdapter.deleteBatch!(transport, flow(), [
+      { itemId: "i1", targetId: "tgt-1", expectedTargetFingerprint: null },
+    ]);
+    expect(res[0].outcome).toBe("skipped");
+    expect(deleteTransactionForSync).not.toHaveBeenCalled();
   });
 
   it("does not delete a target edited outside sync", async () => {

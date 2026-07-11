@@ -18,6 +18,8 @@ import {
   buildFlowPayload,
   emptyFlowForm,
   flowToFormState,
+  isEntityFlow,
+  isSameBudget,
   isSelfSync,
   missingRouteFields,
   type SyncFlowFormState,
@@ -125,7 +127,11 @@ export function SyncView() {
     (endpoint.budgetSyncId ? connections.find((c) => c.budgetSyncId === endpoint.budgetSyncId) : undefined);
   const sourceConn = resolveConn(form.source);
   const targetConn = resolveConn(form.target);
-  const routeReady = missingRouteFields(form).length === 0 && !isSelfSync(form);
+  // Entity flows are budget-level and need two different budgets; transaction
+  // flows allow same budget with different accounts (only a self-sync is blocked).
+  // Mirror FlowEditDialog's blockedRoute so the preview gate matches Save.
+  const blockedRoute = isEntityFlow(form.flowType) ? isSameBudget(form) : isSelfSync(form);
+  const routeReady = missingRouteFields(form).length === 0 && !blockedRoute;
   const canPreview = !!selectedFlowId && !dirty && !!sourceConn && !!targetConn && routeReady;
 
   function previewBlockReason(): string | null {
