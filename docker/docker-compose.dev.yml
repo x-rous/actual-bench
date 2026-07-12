@@ -32,7 +32,9 @@ services:
       - NEXT_TELEMETRY_DISABLED=1
       - ACTUAL_BENCH_DB_PATH=/data/actual-bench.sqlite
       - NEXT_DEV_ALLOWED_ORIGINS=actual-bench-dev.nafverse.com,*.nafverse.com
-      - SYNC_VAULT_KEY="d4-KIJAZ4aRnh2yByM0_dpWJzehwMHHYu_lg1xJeiH8IA3kyTePdOjUIiApaKCvC"
+      # Never commit the real key. Provide it via a gitignored env file or the
+      # host environment; unattended sync stays disabled when it is unset.
+      - SYNC_VAULT_KEY=${SYNC_VAULT_KEY:-}
     ports:
       - "3001:3000"
     labels:
