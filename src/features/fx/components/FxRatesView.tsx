@@ -69,8 +69,9 @@ export function FxRatesView() {
     <PageLayout title="FX Rates">
       <div className="mx-auto flex w-full max-w-4xl flex-col gap-5 p-4 lg:p-5">
         <p className="text-sm text-muted-foreground">
-          The exchange rates applied when you consolidate local-currency budgets into your master budget. They fill
-          in automatically as you sync — review the trend, override any you want to control, or import your own.
+          Exchange rates used when a Budget File Sync flow converts amounts between budgets in different currencies
+          (the flow&apos;s <span className="font-medium">Convert currency</span> option). They fill in automatically as
+          you sync — review, override a date, or import your own.
         </p>
 
         <PairSelector pairs={pairs} selected={selected} onSelect={(p) => setSelectedKey(pairKey(p))} onAdd={(p) => { setExtraPairs((x) => [...x, p]); setSelectedKey(pairKey(p)); }} />
