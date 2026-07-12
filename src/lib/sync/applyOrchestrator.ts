@@ -53,7 +53,7 @@ export type ApplyStore = {
 };
 
 export type RunStatusPatch = {
-  status: "applying" | "applied" | "partial" | "failed";
+  status: "applying" | "applied" | "partial" | "failed" | "no_changes";
   finishedAt?: string | null;
   counts?: JsonEnvelope;
 };

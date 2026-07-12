@@ -75,6 +75,8 @@ function statusView(status: string): { label: string; tone: RunTone } {
       return { label: "Failed", tone: "bad" };
     case "cancelled":
       return { label: "Cancelled", tone: "neutral" };
+    case "no_changes":
+      return { label: "No changes", tone: "neutral" };
     default:
       return { label: status.replace(/_/g, " "), tone: "neutral" };
   }

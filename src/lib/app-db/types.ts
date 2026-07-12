@@ -55,7 +55,10 @@ export type SyncRunStatus =
   | "applied"
   | "partial"
   | "failed"
-  | "cancelled";
+  | "cancelled"
+  /** An automated safe-sync that completed with nothing safe to apply. Distinct
+   * from `draft_preview` so history doesn't mislabel a background run "Preview". */
+  | "no_changes";
 
 export type SyncRunTrigger =
   | "manual_preview"
