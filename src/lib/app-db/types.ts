@@ -87,7 +87,13 @@ export type SyncRunTrigger =
 export type SyncReviewPolicy =
   | "manual_preview_required"
   | "auto_apply_safe_only"
-  | "auto_sync_on_interval";
+  | "auto_sync_on_interval"
+  /**
+   * Safe-only sync on a server-side schedule with no browser open (RD-058 /
+   * PR-024). HTTP-API flows only; requires an enrolled vault credential. Same
+   * safe-only application as `auto_sync_on_interval`.
+   */
+  | "auto_sync_unattended";
 
 /**
  * Primary, mutually-exclusive lifecycle/dedupe state persisted for each run

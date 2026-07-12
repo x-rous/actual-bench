@@ -158,6 +158,7 @@ export function FlowEditDialog({
     manual_preview_required: "You review and apply every change.",
     auto_apply_safe_only: "Safe items apply on preview; uncertain ones wait in the review queue.",
     auto_sync_on_interval: "Runs on a schedule while the app is open. Safe items only; nothing runs in the background.",
+    auto_sync_unattended: "Runs on a server schedule with the app closed. Safe items only. HTTP API mode; requires storing the credential in the vault.",
   };
 
   // The default notes marker for this flow's route, shown as the editable
