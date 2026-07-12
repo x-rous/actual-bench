@@ -26,7 +26,7 @@ import {
 } from "../lib/flowForm";
 import { selectableRowIds, syncKindOf, toPreviewRow } from "../lib/previewRows";
 import { buildReverseFlowForm } from "../lib/reverseFlow";
-import { relativeTime, toRunRow } from "../lib/runsView";
+import { relativeTime, runErrorMessage, toRunRow } from "../lib/runsView";
 import type { SyncFlowRun } from "@/lib/app-db/types";
 import type { DryRunError, DryRunSummary } from "@/lib/sync/previewOrchestrator";
 import type { ApplyRunResult } from "@/lib/sync/applyOrchestrator";
@@ -436,6 +436,12 @@ export function SyncView() {
                           </Button>
                         )}
                       </div>
+                      {runErrorMessage(runQuery.data.run) && (
+                        <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+                          <span className="font-medium">Run failed: </span>
+                          {runErrorMessage(runQuery.data.run)}
+                        </div>
+                      )}
                       </div>
                       <PreviewPanel
                         kind={kind}

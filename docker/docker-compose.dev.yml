@@ -32,6 +32,7 @@ services:
       - NEXT_TELEMETRY_DISABLED=1
       - ACTUAL_BENCH_DB_PATH=/data/actual-bench.sqlite
       - NEXT_DEV_ALLOWED_ORIGINS=actual-bench-dev.nafverse.com,*.nafverse.com
+      - SYNC_VAULT_KEY="d4-KIJAZ4aRnh2yByM0_dpWJzehwMHHYu_lg1xJeiH8IA3kyTePdOjUIiApaKCvC"
     ports:
       - "3001:3000"
     labels:

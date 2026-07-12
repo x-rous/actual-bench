@@ -26,7 +26,7 @@ export function startUnattendedScheduler(): void {
     try {
       const summary = await runSchedulerTick(getAppDb());
       if (summary.ran.length > 0) {
-        logger.info(`[sync] scheduler tick ran ${summary.ran.length} flow(s): ${summary.ran.map((r) => `${r.flowId}=${r.status}`).join(", ")}`);
+        logger.info(`[sync] scheduler tick ran ${summary.ran.length} flow(s): ${summary.ran.map((r) => `${r.flowId}=${r.status}${r.message ? ` (${r.message})` : ""}`).join(", ")}`);
       }
     } catch (err) {
       logger.warn(`[sync] scheduler tick failed: ${err instanceof Error ? err.message : String(err)}`);

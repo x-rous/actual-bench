@@ -72,7 +72,7 @@ export function selectUnattendedFlowsToRun(input: UnattendedSelectionInput): str
 const inFlight = new Set<string>();
 const consecutiveFailures = new Map<string, number>();
 const pausedByHealth = new Set<string>();
-const lastResults = new Map<string, { status: string; at: string }>();
+const lastResults = new Map<string, { status: string; at: string; message?: string }>();
 let lastTickAt: string | null = null;
 
 export type SchedulerState = {
@@ -80,8 +80,17 @@ export type SchedulerState = {
   lastTickAt: string | null;
   inFlight: string[];
   pausedByHealth: string[];
-  lastResults: Record<string, { status: string; at: string }>;
+  lastResults: Record<string, { status: string; at: string; message?: string }>;
 };
+
+/** Human-readable reason for a non-success result, so the operator surfaces (log
+ * + App Health) explain a `failed`/blocked run instead of just its status. */
+export function serverResultMessage(result: ServerSafeSyncResult): string | undefined {
+  if (isServerSafeSyncBlocked(result)) return result.message;
+  if (result.status === "preview_failed") return result.error.message;
+  if (result.status === "failed" || result.status === "partial") return result.apply.error?.message;
+  return undefined;
+}
 
 /** Snapshot of the scheduler for the operator health view (024e). */
 export function getSchedulerState(): SchedulerState {
@@ -122,7 +131,7 @@ function outcomeOf(result: ServerSafeSyncResult): "success" | "failure" | "ignor
 export type TickSummary = {
   at: string;
   due: number;
-  ran: { flowId: string; status: string }[];
+  ran: { flowId: string; status: string; message?: string }[];
 };
 
 export type SchedulerRunDeps = {
@@ -141,7 +150,7 @@ export async function runSchedulerTick(db: SqliteDatabase, deps: SchedulerRunDep
 
   const flows = buildUnattendedFlows(db);
   const due = selectUnattendedFlowsToRun({ flows, inFlight, pausedByHealth, nowMs });
-  const ran: { flowId: string; status: string }[] = [];
+  const ran: { flowId: string; status: string; message?: string }[] = [];
 
   for (const flowId of due) {
     // A concurrent tick (interval + external POST) may have started this flow
@@ -157,8 +166,9 @@ export async function runSchedulerTick(db: SqliteDatabase, deps: SchedulerRunDep
       if (shouldPauseForHealth(failures, DEFAULT_HEALTH_PAUSE_THRESHOLD)) {
         pausedByHealth.add(flowId);
       }
-      lastResults.set(flowId, { status: result.status, at: lastTickAt });
-      ran.push({ flowId, status: result.status });
+      const message = serverResultMessage(result);
+      lastResults.set(flowId, { status: result.status, at: lastTickAt, message });
+      ran.push({ flowId, status: result.status, message });
     } catch (err) {
       const failures = nextConsecutiveFailures(consecutiveFailures.get(flowId) ?? 0, "failure");
       consecutiveFailures.set(flowId, failures);

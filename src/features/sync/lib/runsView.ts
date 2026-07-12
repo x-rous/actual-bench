@@ -112,6 +112,24 @@ export function latestRunLabel(run: SyncFlowRun | undefined): string {
   return `${label} · ${relativeTime(run.finishedAt ?? run.startedAt)}`;
 }
 
+/**
+ * Human-readable message for a run-level failure (RD-058 follow-up). The apply
+ * layer stores `{ code, message }` in the run's `error` envelope; a `failed`
+ * run with no per-item errors (e.g. the target budget couldn't be opened) has
+ * its only explanation here, so surface it in the run detail.
+ */
+export function runErrorMessage(run: SyncFlowRun): string | null {
+  const data = run.error?.data;
+  if (data && typeof data === "object" && !Array.isArray(data)) {
+    const record = data as Record<string, unknown>;
+    const message = typeof record.message === "string" ? record.message : null;
+    const code = typeof record.code === "string" ? record.code : null;
+    if (message) return code ? `${message} (${code})` : message;
+    if (code) return code;
+  }
+  return typeof data === "string" ? data : null;
+}
+
 export function relativeTime(iso: string): string {
   const then = new Date(iso).getTime();
   if (Number.isNaN(then)) return iso;

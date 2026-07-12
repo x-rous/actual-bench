@@ -21,7 +21,7 @@ type SchedulerState = {
   lastTickAt: string | null;
   inFlight: string[];
   pausedByHealth: string[];
-  lastResults: Record<string, { status: string; at: string }>;
+  lastResults: Record<string, { status: string; at: string; message?: string }>;
 };
 type VaultStatus = { enabled: boolean; credentials: { connectionFingerprint: string; label: string; budgetSyncId: string }[] };
 
@@ -144,9 +144,18 @@ function UnattendedSyncCard() {
         <DetailRow
           label="Recent runs"
           value={
-            results.length === 0
-              ? "No unattended runs yet"
-              : results.map(([flowId, r]) => `${flowId.slice(0, 8)}: ${r.status}`).join(" · ")
+            results.length === 0 ? (
+              "No unattended runs yet"
+            ) : (
+              <ul className="flex flex-col gap-1">
+                {results.map(([flowId, r]) => (
+                  <li key={flowId} className="break-words">
+                    <span className="font-mono text-xs">{flowId.slice(0, 8)}</span>: {r.status}
+                    {r.message && <span className="text-muted-foreground"> — {r.message}</span>}
+                  </li>
+                ))}
+              </ul>
+            )
           }
         />
       </dl>
