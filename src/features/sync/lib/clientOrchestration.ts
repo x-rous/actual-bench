@@ -131,7 +131,7 @@ export function runClientPreview(input: {
       context: { sourceConnection: input.sourceConnection, targetConnection: input.targetConnection },
       allowDisabled: input.allowDisabled,
     },
-    { transport: browserTransportProvider, store: previewStore() }
+    { transport: browserTransportProvider, store: previewStore(), resolveFx: (needs, allowProvider) => api.resolveFxRates(needs, allowProvider) }
   );
 }
 

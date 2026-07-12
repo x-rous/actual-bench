@@ -1,4 +1,5 @@
 import { buildSyncNotesMarker, applySyncNotesMarker } from "./notesMarker";
+import { convertMinorUnits } from "@/lib/fx/fxMath";
 import type { SyncFlowPlanConfig } from "./flowConfig";
 import type { SyncSourceItem } from "./sourceItems";
 import type {
@@ -59,12 +60,16 @@ export function buildPlannedTargetPayload(input: {
   importedId: string | null;
   /** Resolved split children for a grouped target split (RD-057 §6). */
   subtransactions?: PlannedSplitChild[] | null;
+  /** FX rate (decimal string) to convert the amount into the target currency
+   * (RD-056). Null/absent leaves the amount in the source currency. */
+  fxRate?: string | null;
 }): PlannedTargetPayload {
-  const { item, config, payee, category, importedId, subtransactions } = input;
+  const { item, config, payee, category, importedId, subtransactions, fxRate } = input;
+  const directed = transformAmount(item.amount, config.amountDirection);
   return {
     accountId: config.targetAccountId,
     date: item.date,
-    amount: transformAmount(item.amount, config.amountDirection),
+    amount: fxRate ? convertMinorUnits(directed, fxRate) : directed,
     payeeId: payee.payeeId,
     payeeName: payee.payeeName,
     categoryId: category.categoryId,

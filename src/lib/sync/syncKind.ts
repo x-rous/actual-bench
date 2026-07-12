@@ -121,6 +121,13 @@ export interface SyncKindAdapter {
   /** Read the target snapshot (runs on the target transport). */
   loadTarget(transport: ActualBenchTransport, flow: SyncFlow): Promise<unknown>;
 
+  /**
+   * The distinct FX conversions this materialized source needs (RD-056), so the
+   * orchestrator can resolve rates before planning. Only the transaction adapter
+   * implements it; others convert nothing.
+   */
+  collectFxNeeds?(materialized: unknown, flow: SyncFlow): { baseCurrency: string; quoteCurrency: string; date: string }[];
+
   /** Pure plan/classification from materialized source + target + mappings. */
   plan(input: {
     flow: SyncFlow;
@@ -128,6 +135,8 @@ export interface SyncKindAdapter {
     target: unknown;
     mappings: SyncMapping[];
     targetCapabilities: SyncCapabilitySet;
+    /** Resolved FX rate per transaction date (RD-056); omitted when FX is off. */
+    fxRateByDate?: Map<string, string>;
   }): SyncPlanResult;
 
   /** Non-secret source snapshot summary stored on the run. */

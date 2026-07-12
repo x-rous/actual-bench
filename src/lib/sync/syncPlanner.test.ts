@@ -447,3 +447,36 @@ describe("planSyncFlow - blocked", () => {
     expect(item.plannedTargetPayload).toBeNull();
   });
 });
+
+describe("planSyncFlow - FX conversion (RD-056)", () => {
+  const fxConfig = buildPlanConfig({
+    flowId: FLOW_ID, sourceBudgetId: "budget-src", targetBudgetId: "budget-tgt", targetAccountId: "acct-tgt",
+    sourceBudgetName: "Home", sourceAccountName: "Checking",
+    amountDirection: "same", fxEnabled: true, fxSourceCurrency: "AED", fxTargetCurrency: "AUD",
+  });
+
+  it("converts a cross-currency create amount using the date's rate", () => {
+    const plan = planSyncFlow(baseInput({ config: fxConfig, fxRateByDate: new Map([["2026-07-01", "0.4"]]) }));
+    expect(plan.items[0].classification).toBe("new");
+    // -1250 (same sign) × 0.4 = -500.
+    expect(plan.items[0].plannedTargetPayload?.amount).toBe(-500);
+  });
+
+  it("routes an item with no rate for its date to fx_rate_pending review", () => {
+    const plan = planSyncFlow(baseInput({ config: fxConfig })); // no rate map
+    expect(plan.items[0].classification).toBe("blocked");
+    expect(plan.items[0].flags).toContain("fx_rate_pending");
+    expect(plan.items[0].action).toBe("blocked");
+  });
+
+  it("does not convert when source and target currencies match", () => {
+    const sameCcy = buildPlanConfig({
+      flowId: FLOW_ID, sourceBudgetId: "budget-src", targetBudgetId: "budget-tgt", targetAccountId: "acct-tgt",
+      sourceBudgetName: "Home", sourceAccountName: "Checking",
+      amountDirection: "same", fxEnabled: true, fxSourceCurrency: "AED", fxTargetCurrency: "AED",
+    });
+    const plan = planSyncFlow(baseInput({ config: sameCcy }));
+    expect(plan.items[0].classification).toBe("new");
+    expect(plan.items[0].plannedTargetPayload?.amount).toBe(-1250);
+  });
+});

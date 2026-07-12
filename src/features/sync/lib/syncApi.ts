@@ -169,3 +169,11 @@ export function withdrawCredential(connectionFingerprint: string): Promise<{ ok:
 export function runFlowNow(flowId: string): Promise<{ result: { status: string; message: string | null } }> {
   return jsonFetch(`/api/sync-flows/${encodeURIComponent(flowId)}/run-now`, { method: "POST" });
 }
+
+/** Resolve FX rates for a preview's (base, quote, date) needs (RD-056 / PR-025b). */
+export function resolveFxRates(
+  needs: { baseCurrency: string; quoteCurrency: string; date: string }[],
+  allowProvider: boolean
+): Promise<{ resolved: Record<string, { requestedDate: string; rate: string }>; pending: Record<string, { code: string; message: string }> }> {
+  return jsonFetch("/api/fx/resolve", { method: "POST", body: JSON.stringify({ needs, allowProvider }) });
+}

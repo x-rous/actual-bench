@@ -1,4 +1,5 @@
 import { getBudgetFileSyncCapabilities } from "./capabilities";
+import { decodeFlowPlanConfig } from "./flowConfig";
 import "./adapters"; // register all data-type adapters (side-effect)
 import { getSyncKindAdapter, SyncKindError } from "./syncKind";
 import type { ActualBenchTransport } from "@/lib/actual/transport";
@@ -125,9 +126,16 @@ class DryRunPreviewError extends Error {
 
 // --- Orchestration ----------------------------------------------------------
 
+/** Resolves the FX rates a run needs (RD-056); the caller wires it to the app-DB
+ * registry (server) or the `/api/fx/resolve` route (client). */
+export type PreviewFxResolver = (
+  needs: { baseCurrency: string; quoteCurrency: string; date: string }[],
+  allowProvider: boolean
+) => Promise<{ resolved: Record<string, { requestedDate: string; rate: string }> }>;
+
 export async function runLiveDryRunPreview(
   input: LiveDryRunInput,
-  deps: { transport: PreviewTransportProvider; store: PreviewStore }
+  deps: { transport: PreviewTransportProvider; store: PreviewStore; resolveFx?: PreviewFxResolver }
 ): Promise<LiveDryRunResult> {
   const { flowId } = input;
   const warnings: string[] = [];
@@ -183,9 +191,19 @@ export async function runLiveDryRunPreview(
       throw new DryRunPreviewError("persistence_failed", describe(err, "Failed to load existing mappings."));
     }
 
+    // 4b. FX phase (RD-056): resolve the rates the run needs before planning, so
+    // the pure planner can convert amounts. Unresolved dates are simply absent →
+    // those items plan as `fx_rate_pending` review items.
+    let fxRateByDate: Map<string, string> | undefined;
+    const fxNeeds = adapter.collectFxNeeds?.(source.materialized, flow) ?? [];
+    if (fxNeeds.length > 0 && deps.resolveFx) {
+      const batch = await deps.resolveFx(fxNeeds, decodeFlowPlanConfig(flow).fxAllowProvider);
+      fxRateByDate = new Map(Object.values(batch.resolved).map((r) => [r.requestedDate, r.rate]));
+    }
+
     // 5. Plan (pure) + summary.
     const targetCapabilities = getBudgetFileSyncCapabilities({ mode: input.context.targetConnection.mode }).capabilities;
-    const plan = adapter.plan({ flow, materialized: source.materialized, target, mappings, targetCapabilities });
+    const plan = adapter.plan({ flow, materialized: source.materialized, target, mappings, targetCapabilities, fxRateByDate });
     const summary = adapter.buildSummary(plan, source.stats);
 
     // 6. Persist the draft preview run (one transaction).
