@@ -86,6 +86,17 @@ export type SyncFlowPlanConfig = {
    * can create split transactions.
    */
   createTargetSplits: boolean;
+  /**
+   * Multi-currency consolidation (RD-056 / PR-025). When true, target amounts are
+   * FX-converted from `fxSourceCurrency` to `fxTargetCurrency` using the rate for
+   * each transaction's date. Off by default (amounts copied as-is). Both are ISO
+   * 4217 codes; when they match, conversion is a rate-1 no-op.
+   */
+  fxEnabled: boolean;
+  fxSourceCurrency: string;
+  fxTargetCurrency: string;
+  /** Allow the FX provider (Frankfurter) to fetch missing rates; else registry-only. */
+  fxAllowProvider: boolean;
 };
 
 /** Smallest allowed auto-sync interval - a budget sync per run is expensive. */
@@ -131,6 +142,10 @@ export const SYNC_PLAN_CONFIG_DEFAULTS = {
   updateMappedTargets: false,
   detectDeletedSource: false,
   createTargetSplits: false,
+  fxEnabled: false,
+  fxSourceCurrency: "",
+  fxTargetCurrency: "",
+  fxAllowProvider: true,
 };
 
 type PartialRoute = Partial<
@@ -167,6 +182,10 @@ export function buildPlanConfig(
         | "updateMappedTargets"
         | "detectDeletedSource"
         | "createTargetSplits"
+        | "fxEnabled"
+        | "fxSourceCurrency"
+        | "fxTargetCurrency"
+        | "fxAllowProvider"
       >
     >
 ): SyncFlowPlanConfig {
@@ -202,6 +221,10 @@ export function buildPlanConfig(
       input.detectDeletedSource ?? SYNC_PLAN_CONFIG_DEFAULTS.detectDeletedSource,
     createTargetSplits:
       input.createTargetSplits ?? SYNC_PLAN_CONFIG_DEFAULTS.createTargetSplits,
+    fxEnabled: input.fxEnabled ?? SYNC_PLAN_CONFIG_DEFAULTS.fxEnabled,
+    fxSourceCurrency: input.fxSourceCurrency ?? SYNC_PLAN_CONFIG_DEFAULTS.fxSourceCurrency,
+    fxTargetCurrency: input.fxTargetCurrency ?? SYNC_PLAN_CONFIG_DEFAULTS.fxTargetCurrency,
+    fxAllowProvider: input.fxAllowProvider ?? SYNC_PLAN_CONFIG_DEFAULTS.fxAllowProvider,
   };
 }
 
@@ -253,5 +276,9 @@ export function decodeFlowPlanConfig(flow: SyncFlow): SyncFlowPlanConfig {
     updateMappedTargets: bool(options.updateMappedTargets),
     detectDeletedSource: bool(options.detectDeletedSource),
     createTargetSplits: bool(options.createTargetSplits),
+    fxEnabled: bool(transform.fxEnabled),
+    fxSourceCurrency: (str(transform.fxSourceCurrency) ?? "").toUpperCase() || undefined,
+    fxTargetCurrency: (str(transform.fxTargetCurrency) ?? "").toUpperCase() || undefined,
+    fxAllowProvider: transform.fxAllowProvider == null ? undefined : bool(transform.fxAllowProvider),
   });
 }
