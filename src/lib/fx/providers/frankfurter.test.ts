@@ -9,21 +9,21 @@ describe("FrankfurterFxRateProvider", () => {
   const provider = (fetchImpl: typeof fetch) => createFrankfurterProvider({ fetchImpl });
 
   it("returns the exact-date rate", async () => {
-    const fetchImpl = jest.fn(async () => jsonResponse({ base: "AED", rates: { "2026-07-10": { AUD: 0.4162 } } }));
+    const fetchImpl = jest.fn(async () => jsonResponse([{ date: "2026-07-10", base: "AED", quote: "AUD", rate: 0.4162 }]));
     const res = await provider(fetchImpl as unknown as typeof fetch).getRate({ baseCurrency: "aed", quoteCurrency: "aud", date: "2026-07-10" });
     expect(res).toMatchObject({ baseCurrency: "AED", quoteCurrency: "AUD", requestedDate: "2026-07-10", effectiveDate: "2026-07-10", rate: "0.4162", source: "frankfurter" });
   });
 
   it("falls back to the latest rate on or before the requested date (weekend)", async () => {
     // Sunday 2026-07-12 → use Friday 2026-07-10.
-    const fetchImpl = jest.fn(async () => jsonResponse({ base: "AED", rates: { "2026-07-09": { AUD: 0.41 }, "2026-07-10": { AUD: 0.4162 } } }));
+    const fetchImpl = jest.fn(async () => jsonResponse([{ date: "2026-07-09", base: "AED", quote: "AUD", rate: 0.41 }, { date: "2026-07-10", base: "AED", quote: "AUD", rate: 0.4162 }]));
     const res = await provider(fetchImpl as unknown as typeof fetch).getRate({ baseCurrency: "AED", quoteCurrency: "AUD", date: "2026-07-12" });
     expect(res.effectiveDate).toBe("2026-07-10");
     expect(res.requestedDate).toBe("2026-07-12");
   });
 
   it("errors when no rate exists in the fallback window", async () => {
-    const fetchImpl = jest.fn(async () => jsonResponse({ base: "AED", rates: {} }));
+    const fetchImpl = jest.fn(async () => jsonResponse([]));
     await expect(provider(fetchImpl as unknown as typeof fetch).getRate({ baseCurrency: "AED", quoteCurrency: "AUD", date: "2026-07-10" })).rejects.toMatchObject({ code: "RATE_NOT_FOUND" });
   });
 

@@ -16,11 +16,8 @@ import type { FxRateResult } from "../types";
 const DEFAULT_BASE_URL = "https://api.frankfurter.dev/v2";
 const TIMEOUT_MS = 10_000;
 
-/** Frankfurter range response shape (rates keyed by date, then quote). */
-type FrankfurterRangeResponse = {
-  base?: string;
-  rates?: Record<string, Record<string, number>>;
-};
+/** Frankfurter v2 range response: a flat array of daily rates. */
+type FrankfurterRangeRow = { date: string; base: string; quote: string; rate: number };
 
 export function createFrankfurterProvider(options?: {
   baseUrl?: string;
@@ -51,16 +48,19 @@ export function createFrankfurterProvider(options?: {
         throw new FxError("PROVIDER_UNAVAILABLE", `FX provider returned HTTP ${response.status}.`);
       }
 
-      let body: FrankfurterRangeResponse;
+      let body: FrankfurterRangeRow[];
       try {
-        body = (await response.json()) as FrankfurterRangeResponse;
+        body = (await response.json()) as FrankfurterRangeRow[];
       } catch {
         throw new FxError("INVALID_PROVIDER_RESPONSE", "The FX provider returned an unreadable response.");
       }
+      if (!Array.isArray(body)) {
+        throw new FxError("INVALID_PROVIDER_RESPONSE", "Unexpected FX provider response shape.");
+      }
 
-      const entries = Object.entries(body.rates ?? {})
-        .map(([d, quotes]) => ({ date: d, value: quotes?.[quote] }))
-        .filter((e): e is { date: string; value: number } => typeof e.value === "number" && e.value > 0);
+      const entries = body
+        .filter((row) => typeof row?.rate === "number" && row.rate > 0 && typeof row?.date === "string")
+        .map((row) => ({ date: row.date, value: row.rate }));
       const effective = pickEffectiveRate(entries, date);
       if (!effective) {
         throw new FxError("RATE_NOT_FOUND", `No ${base}/${quote} rate on or before ${date}.`);
