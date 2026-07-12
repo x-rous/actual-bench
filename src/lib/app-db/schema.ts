@@ -125,3 +125,71 @@ CREATE TABLE IF NOT EXISTS sync_credentials (
   updated_at text NOT NULL
 );
 `;
+
+// ── FX / multi-currency consolidation (RD-056 / PR-025a) ─────────────────────
+// The database is the authoritative FX registry; Frankfurter only populates it.
+export const FX_RATE_IMPORT_BATCH_TABLE_SQL = `
+CREATE TABLE IF NOT EXISTS fx_rate_import_batches (
+  id text PRIMARY KEY,
+  filename text NOT NULL,
+  imported_at text NOT NULL,
+  inserted_count integer NOT NULL DEFAULT 0,
+  replaced_count integer NOT NULL DEFAULT 0,
+  rejected_count integer NOT NULL DEFAULT 0,
+  status text NOT NULL,
+  created_by text,
+  notes text
+);
+`;
+
+// Rate stored as a decimal string (high precision); amounts never floated.
+export const FX_RATES_TABLE_SQL = `
+CREATE TABLE IF NOT EXISTS fx_rates (
+  id text PRIMARY KEY,
+  base_currency text NOT NULL,
+  quote_currency text NOT NULL,
+  requested_date text NOT NULL,
+  effective_date text NOT NULL,
+  rate text NOT NULL,
+  source text NOT NULL,
+  provider text,
+  status text NOT NULL DEFAULT 'active',
+  is_user_override integer NOT NULL DEFAULT 0,
+  import_batch_id text REFERENCES fx_rate_import_batches(id) ON DELETE SET NULL,
+  derived_from_fx_rate_id text,
+  created_at text NOT NULL,
+  updated_at text NOT NULL,
+  created_by text,
+  notes text
+);
+`;
+
+// Immutable per-transaction snapshot: the rate actually applied. source_amount /
+// converted_amount are integer minor units (Actual-compatible).
+export const TRANSACTION_FX_TABLE_SQL = `
+CREATE TABLE IF NOT EXISTS transaction_fx (
+  id text PRIMARY KEY,
+  transaction_id text NOT NULL,
+  fx_rate_id text REFERENCES fx_rates(id) ON DELETE SET NULL,
+  source_currency text NOT NULL,
+  target_currency text NOT NULL,
+  source_amount integer NOT NULL,
+  converted_amount integer NOT NULL,
+  applied_rate text NOT NULL,
+  requested_date text NOT NULL,
+  effective_date text NOT NULL,
+  source text NOT NULL,
+  provider text,
+  is_manual integer NOT NULL DEFAULT 0,
+  applied_at text NOT NULL,
+  updated_at text NOT NULL
+);
+`;
+
+export const FX_INDEX_SQL = [
+  "CREATE INDEX IF NOT EXISTS idx_fx_rates_pair_requested ON fx_rates(base_currency, quote_currency, requested_date)",
+  "CREATE INDEX IF NOT EXISTS idx_fx_rates_pair_effective ON fx_rates(base_currency, quote_currency, effective_date)",
+  // At most one active rate per pair + requested date (app also guards in a txn).
+  "CREATE UNIQUE INDEX IF NOT EXISTS idx_fx_rates_active_pair_date ON fx_rates(base_currency, quote_currency, requested_date) WHERE status = 'active'",
+  "CREATE UNIQUE INDEX IF NOT EXISTS idx_transaction_fx_transaction ON transaction_fx(transaction_id)",
+];
