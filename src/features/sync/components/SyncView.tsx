@@ -494,6 +494,11 @@ export function SyncView() {
                   previewedAt={previewedAt}
                   onToggle={(id) => setSelectedIds((prev) => { const next = new Set(prev); if (next.has(id)) next.delete(id); else next.add(id); return next; })}
                   onSelectAllSafeNew={() => setSelectedIds(new Set(selectableRowIds(rows)))}
+                  onSelectRows={(ids, selected) => setSelectedIds((prev) => {
+                    const next = new Set(prev);
+                    for (const id of ids) selected ? next.add(id) : next.delete(id);
+                    return next;
+                  })}
                   onClearSelection={() => setSelectedIds(new Set())}
                   onApply={handleApply}
                   applying={applyMutation.isPending}

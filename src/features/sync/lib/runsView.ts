@@ -113,7 +113,7 @@ export function runResultSummary(run: SyncFlowRun): string {
   // planned create candidates (0 for a "no changes" run).
   const created = run.status === "applied" || run.status === "partial" ? n0(c.applied) : n0(s.createCandidates);
   const already = n0(s.alreadySynced) + n0(s.targetMarkerMatches);
-  const parts = [`${scanned} scanned`, `${created} new`, `${already} synced`];
+  const parts = [`${scanned} scanned`, `${created} new`, `${already} already synced`];
 
   // dup + changed + blocked ARE the review queue (see runQueuedCount), so list
   // them individually rather than adding a redundant "to review" total.

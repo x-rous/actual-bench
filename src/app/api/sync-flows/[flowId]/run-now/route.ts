@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getAppDb } from "@/lib/app-db/connection";
 import { appDbErrorResponse } from "@/lib/app-db/routeResponses";
+import { getSyncFlow } from "@/lib/app-db/syncFlowRepository";
 import { runServerSafeSync } from "@/lib/sync/serverSafeSync";
 import { serverResultMessage } from "@/lib/sync/serverScheduler";
 import { vaultEnabled } from "@/lib/sync/vault";
@@ -25,6 +26,11 @@ export async function POST(_request: Request, context: RouteContext) {
       );
     }
     const { flowId } = await context.params;
+    // A disabled flow must not sync - mirror the scheduler, which skips it.
+    const flow = getSyncFlow(getAppDb(), flowId);
+    if (flow && !flow.enabled) {
+      return NextResponse.json({ error: "This flow is disabled. Enable it to run a sync." }, { status: 409 });
+    }
     const result = await runServerSafeSync(getAppDb(), flowId);
     return NextResponse.json({ result: { status: result.status, message: serverResultMessage(result) ?? null } });
   } catch (error) {

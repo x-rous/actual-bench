@@ -30,6 +30,8 @@ type PreviewPanelProps = {
   selectedIds: Set<string>;
   onToggle: (id: string) => void;
   onSelectAllSafeNew: () => void;
+  /** Add/remove a set of rows from the selection (header "select all shown"). */
+  onSelectRows?: (ids: string[], selected: boolean) => void;
   onClearSelection: () => void;
   onApply: () => void;
   applying: boolean;
@@ -109,6 +111,10 @@ export function PreviewPanel(props: PreviewPanelProps) {
   const filters = previewFilters(kind).filter((f) => f.key === "all" || filterCount(rows, f.key) > 0);
   const visible = rows.filter((r) => matchesPreviewFilter(r, filter));
   const selectedCount = rows.filter((r) => selectedIds.has(r.id)).length;
+  // "Select all shown": every selectable row under the active filter.
+  const visibleSelectableIds = props.readOnly ? [] : visible.filter((r) => r.selectable).map((r) => r.id);
+  const selectedVisible = visibleSelectableIds.filter((id) => selectedIds.has(id)).length;
+  const allVisibleSelected = visibleSelectableIds.length > 0 && selectedVisible === visibleSelectableIds.length;
   const splits = splitPositions(rows);
   const reviewCount = reviewQueueCount(rows);
   const columnCount = kind === "transaction" ? 10 : kind === "category" ? 5 : 4;
@@ -233,7 +239,21 @@ export function PreviewPanel(props: PreviewPanelProps) {
         <table className="w-full text-xs">
           <thead className="sticky top-0 z-10 bg-muted text-left text-[11px] uppercase tracking-wide text-muted-foreground">
               <tr className="[&>th]:whitespace-nowrap [&>th]:px-2 [&>th]:py-1.5 [&>th]:font-medium">
-                <th className="w-8" />
+                <th className="w-8">
+                  {visibleSelectableIds.length > 0 && (
+                    <input
+                      type="checkbox"
+                      aria-label="Select all shown"
+                      title="Select all shown items"
+                      disabled={props.applying}
+                      checked={allVisibleSelected}
+                      ref={(el) => {
+                        if (el) el.indeterminate = selectedVisible > 0 && !allVisibleSelected;
+                      }}
+                      onChange={() => props.onSelectRows?.(visibleSelectableIds, !allVisibleSelected)}
+                    />
+                  )}
+                </th>
                 <th>Status</th>
                 {kind === "transaction" ? (
                   <>

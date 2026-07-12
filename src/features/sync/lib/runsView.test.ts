@@ -28,7 +28,7 @@ describe("runResultSummary", () => {
       counts: { version: 1, data: { applied: 3, failed: 0 } },
       summary: summary({ sourceItemsScanned: 31, createCandidates: 3, alreadySynced: 24, targetMarkerMatches: 2, duplicatesSkipped: 2 }),
     });
-    expect(runResultSummary(r)).toBe("31 scanned · 3 new · 26 synced · 2 dup");
+    expect(runResultSummary(r)).toBe("31 scanned · 3 new · 26 already synced · 2 dup");
   });
 
   it("reads a no-changes automated run as all already-synced", () => {
@@ -36,7 +36,7 @@ describe("runResultSummary", () => {
       status: "no_changes",
       summary: summary({ sourceItemsScanned: 24, createCandidates: 0, alreadySynced: 24 }),
     });
-    expect(runResultSummary(r)).toBe("24 scanned · 0 new · 24 synced");
+    expect(runResultSummary(r)).toBe("24 scanned · 0 new · 24 already synced");
   });
 
   it("shows the failure reason instead of counts for a failed run", () => {
