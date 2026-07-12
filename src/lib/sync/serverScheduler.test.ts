@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { getAppDb, resetAppDbForTests } from "@/lib/app-db/connection";
 import { createSyncFlow, getSyncFlow } from "@/lib/app-db/syncFlowRepository";
+import { createSyncFlowRun } from "@/lib/app-db/syncRunRepository";
 import { upsertSyncCredential } from "@/lib/app-db/syncCredentialRepository";
 import { decodeFlowPlanConfig } from "./flowConfig";
 import {
@@ -34,26 +35,25 @@ describe("selectUnattendedFlowsToRun (RD-058 / PR-024c)", () => {
   const now = 10_000_000_000;
 
   it("runs an enrolled, enabled, due unattended flow", () => {
-    expect(isUnattendedFlowDue(flow(), NONE, NONE, now)).toBe(true);
+    expect(isUnattendedFlowDue(flow(), NONE, now)).toBe(true);
   });
 
-  it("skips non-unattended policy, disabled, not-enrolled, in-flight, or health-paused flows", () => {
-    expect(isUnattendedFlowDue(flow({ reviewPolicy: "auto_sync_on_interval" }), NONE, NONE, now)).toBe(false);
-    expect(isUnattendedFlowDue(flow({ enabled: false }), NONE, NONE, now)).toBe(false);
-    expect(isUnattendedFlowDue(flow({ enrolled: false }), NONE, NONE, now)).toBe(false);
-    expect(isUnattendedFlowDue(flow(), new Set(["f1"]), NONE, now)).toBe(false);
-    expect(isUnattendedFlowDue(flow(), NONE, new Set(["f1"]), now)).toBe(false);
+  it("skips non-unattended policy, disabled, not-enrolled, or in-flight flows", () => {
+    expect(isUnattendedFlowDue(flow({ reviewPolicy: "auto_sync_on_interval" }), NONE, now)).toBe(false);
+    expect(isUnattendedFlowDue(flow({ enabled: false }), NONE, now)).toBe(false);
+    expect(isUnattendedFlowDue(flow({ enrolled: false }), NONE, now)).toBe(false);
+    expect(isUnattendedFlowDue(flow(), new Set(["f1"]), now)).toBe(false);
   });
 
   it("honours the interval floor and elapsed time", () => {
     // Interval below the floor is clamped to 15 min.
-    expect(isUnattendedFlowDue(flow({ intervalMinutes: 1, lastRunAtMs: now - 5 * 60_000 }), NONE, NONE, now)).toBe(false);
-    expect(isUnattendedFlowDue(flow({ intervalMinutes: 1, lastRunAtMs: now - 16 * 60_000 }), NONE, NONE, now)).toBe(true);
+    expect(isUnattendedFlowDue(flow({ intervalMinutes: 1, lastRunAtMs: now - 5 * 60_000 }), NONE, now)).toBe(false);
+    expect(isUnattendedFlowDue(flow({ intervalMinutes: 1, lastRunAtMs: now - 16 * 60_000 }), NONE, now)).toBe(true);
   });
 
   it("selects only due flow ids", () => {
     const flows = [flow({ flowId: "a" }), flow({ flowId: "b", enrolled: false }), flow({ flowId: "c" })];
-    expect(selectUnattendedFlowsToRun({ flows, inFlight: NONE, pausedByHealth: NONE, nowMs: now })).toEqual(["a", "c"]);
+    expect(selectUnattendedFlowsToRun({ flows, inFlight: NONE, nowMs: now })).toEqual(["a", "c"]);
   });
 });
 
@@ -107,6 +107,18 @@ describe("runSchedulerTick (RD-058 / PR-024c)", () => {
     const run = jest.fn(async () => ({ status: "no_safe_items" as const, flowId, runId: "r", reviewPolicy: "auto_sync_unattended" as const, preview: {} as never }));
     const summary = await runSchedulerTick(db, { run });
     expect(summary.ran).toEqual([{ flowId, status: "no_safe_items" }]);
+    expect(run).toHaveBeenCalledTimes(1);
+  });
+
+  it("ignores a recent pending preview when timing the next run", async () => {
+    const flowId = unattendedFlow(db);
+    // Last real sync was 30 min ago (>15 min interval) → due...
+    createSyncFlowRun(db, { flowId, status: "no_changes", createdByTrigger: "scheduled_unattended", startedAt: new Date(Date.now() - 30 * 60_000).toISOString(), summary: env({}) });
+    // ...even though the user previewed it 1 min ago (a pending draft, not a sync).
+    createSyncFlowRun(db, { flowId, status: "draft_preview", createdByTrigger: "manual_preview", startedAt: new Date(Date.now() - 60_000).toISOString(), summary: env({}) });
+
+    const run = jest.fn(async () => ({ status: "no_safe_items" as const, flowId, runId: "r", reviewPolicy: "auto_sync_unattended" as const, preview: {} as never }));
+    await runSchedulerTick(db, { run });
     expect(run).toHaveBeenCalledTimes(1);
   });
 

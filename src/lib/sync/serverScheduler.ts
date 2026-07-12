@@ -39,23 +39,23 @@ export type UnattendedSelectionInput = {
   flows: UnattendedFlow[];
   /** Runs currently in progress this process - never started twice. */
   inFlight: ReadonlySet<string>;
-  /** Flows paused after repeated failures this process. */
-  pausedByHealth: ReadonlySet<string>;
   nowMs: number;
 };
 
-/** True when an unattended flow is due for a safe-only run right now. */
+/**
+ * True when an unattended flow is due for a safe-only run right now. Health
+ * pauses aren't checked here: a paused flow is persisted as disabled (see
+ * buildUnattendedFlows), so it already fails the `enabled` guard.
+ */
 export function isUnattendedFlowDue(
   flow: UnattendedFlow,
   inFlight: ReadonlySet<string>,
-  pausedByHealth: ReadonlySet<string>,
   nowMs: number
 ): boolean {
   if (flow.reviewPolicy !== "auto_sync_unattended") return false;
   if (!flow.enabled) return false;
   if (!flow.enrolled) return false;
   if (inFlight.has(flow.flowId)) return false;
-  if (pausedByHealth.has(flow.flowId)) return false;
   if (flow.lastRunAtMs == null) return true;
   const intervalMs = Math.max(MIN_UNATTENDED_INTERVAL_MINUTES, flow.intervalMinutes) * 60_000;
   return nowMs - flow.lastRunAtMs >= intervalMs;
@@ -64,7 +64,7 @@ export function isUnattendedFlowDue(
 /** Flow ids that should start an unattended safe-only run on this tick. */
 export function selectUnattendedFlowsToRun(input: UnattendedSelectionInput): string[] {
   return input.flows
-    .filter((flow) => isUnattendedFlowDue(flow, input.inFlight, input.pausedByHealth, input.nowMs))
+    .filter((flow) => isUnattendedFlowDue(flow, input.inFlight, input.nowMs))
     .map((flow) => flow.flowId);
 }
 
@@ -151,8 +151,13 @@ function buildUnattendedFlows(db: SqliteDatabase): UnattendedFlow[] {
     const enrolled =
       hasSyncCredential(db, config.sourceConnectionFingerprint) &&
       hasSyncCredential(db, config.targetConnectionFingerprint);
-    const latest = listSyncFlowRuns(db, { flowId: flow.id, limit: 1 })[0];
-    const lastRunAtMs = latest ? new Date(latest.finishedAt ?? latest.startedAt).getTime() : null;
+    // Measure the interval from the last run that actually *completed* a sync,
+    // not a pending manual preview (draft_preview) - otherwise repeatedly
+    // previewing a flow would keep resetting its clock and starve the schedule.
+    const lastCompleted = listSyncFlowRuns(db, { flowId: flow.id, limit: 20 }).find(
+      (r) => r.status !== "draft_preview"
+    );
+    const lastRunAtMs = lastCompleted ? new Date(lastCompleted.finishedAt ?? lastCompleted.startedAt).getTime() : null;
     return {
       flowId: flow.id,
       reviewPolicy: config.reviewPolicy,
@@ -196,7 +201,7 @@ export async function runSchedulerTick(db: SqliteDatabase, deps: SchedulerRunDep
   }
 
   const flows = buildUnattendedFlows(db);
-  const due = selectUnattendedFlowsToRun({ flows, inFlight, pausedByHealth: EMPTY, nowMs });
+  const due = selectUnattendedFlowsToRun({ flows, inFlight, nowMs });
   const ran: { flowId: string; status: string; message?: string }[] = [];
 
   for (const flowId of due) {
@@ -226,8 +231,6 @@ export async function runSchedulerTick(db: SqliteDatabase, deps: SchedulerRunDep
   persistSnapshot(db);
   return { at: lastTickAt, due: due.length, ran };
 }
-
-const EMPTY: ReadonlySet<string> = new Set();
 
 /**
  * Track consecutive failures per flow and, at the threshold, persist a health

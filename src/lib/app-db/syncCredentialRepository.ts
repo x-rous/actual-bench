@@ -43,37 +43,39 @@ function toMeta(row: CredentialRow): SyncCredentialMeta {
 export function upsertSyncCredential(db: SqliteDatabase, input: SyncCredentialInput): SyncCredentialMeta {
   const now = new Date().toISOString();
   const sealed = sealSecret(JSON.stringify(input.secret));
-  const existing = db
-    .prepare("SELECT created_at FROM sync_credentials WHERE connection_fingerprint = ?")
-    .get<{ created_at: string }>(input.connectionFingerprint);
-  const createdAt = existing?.created_at ?? now;
 
-  db.prepare(
-    `INSERT INTO sync_credentials (
-       connection_fingerprint, mode, base_url, budget_sync_id, label,
-       ciphertext, iv, auth_tag, created_at, updated_at
-     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-     ON CONFLICT(connection_fingerprint) DO UPDATE SET
-       mode = excluded.mode,
-       base_url = excluded.base_url,
-       budget_sync_id = excluded.budget_sync_id,
-       label = excluded.label,
-       ciphertext = excluded.ciphertext,
-       iv = excluded.iv,
-       auth_tag = excluded.auth_tag,
-       updated_at = excluded.updated_at`
-  ).run(
-    input.connectionFingerprint,
-    input.mode,
-    input.baseUrl,
-    input.budgetSyncId,
-    input.label ?? "",
-    sealed.ciphertext,
-    sealed.iv,
-    sealed.authTag,
-    createdAt,
-    now
-  );
+  // ON CONFLICT DO UPDATE never touches created_at, so an existing row keeps its
+  // original value; RETURNING gives us the effective created_at without a
+  // separate pre-SELECT.
+  const row = db
+    .prepare(
+      `INSERT INTO sync_credentials (
+         connection_fingerprint, mode, base_url, budget_sync_id, label,
+         ciphertext, iv, auth_tag, created_at, updated_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(connection_fingerprint) DO UPDATE SET
+         mode = excluded.mode,
+         base_url = excluded.base_url,
+         budget_sync_id = excluded.budget_sync_id,
+         label = excluded.label,
+         ciphertext = excluded.ciphertext,
+         iv = excluded.iv,
+         auth_tag = excluded.auth_tag,
+         updated_at = excluded.updated_at
+       RETURNING created_at`
+    )
+    .get<{ created_at: string }>(
+      input.connectionFingerprint,
+      input.mode,
+      input.baseUrl,
+      input.budgetSyncId,
+      input.label ?? "",
+      sealed.ciphertext,
+      sealed.iv,
+      sealed.authTag,
+      now,
+      now
+    );
 
   return {
     connectionFingerprint: input.connectionFingerprint,
@@ -81,7 +83,7 @@ export function upsertSyncCredential(db: SqliteDatabase, input: SyncCredentialIn
     baseUrl: input.baseUrl,
     budgetSyncId: input.budgetSyncId,
     label: input.label ?? "",
-    createdAt,
+    createdAt: row?.created_at ?? now,
     updatedAt: now,
   };
 }
