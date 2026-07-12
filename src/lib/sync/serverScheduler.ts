@@ -1,4 +1,4 @@
-import { listSyncFlows } from "@/lib/app-db/syncFlowRepository";
+import { listSyncFlows, pauseSyncFlowForHealth } from "@/lib/app-db/syncFlowRepository";
 import { listSyncFlowRuns } from "@/lib/app-db/syncRunRepository";
 import { hasSyncCredential } from "@/lib/app-db/syncCredentialRepository";
 import { getAppMeta, setAppMeta } from "@/lib/app-db/appMetaRepository";
@@ -33,9 +33,6 @@ export type UnattendedFlow = {
   enrolled: boolean;
   /** Start/finish time (ms) of the flow's most recent run, or null if never. */
   lastRunAtMs: number | null;
-  /** Flow's `updated_at` (ms). A health-paused flow resumes when edited after
-   * the pause, so a fixed misconfiguration recovers without a restart. */
-  updatedAtMs?: number | null;
 };
 
 export type UnattendedSelectionInput = {
@@ -75,8 +72,6 @@ export function selectUnattendedFlowsToRun(input: UnattendedSelectionInput): str
 
 const inFlight = new Set<string>();
 const consecutiveFailures = new Map<string, number>();
-const pausedByHealth = new Set<string>();
-const pausedAt = new Map<string, number>();
 const lastResults = new Map<string, { status: string; at: string; message?: string }>();
 let lastTickAt: string | null = null;
 
@@ -102,12 +97,20 @@ export function serverResultMessage(result: ServerSafeSyncResult): string | unde
   return undefined;
 }
 
-/** The in-memory snapshot written to the DB at the end of every tick. */
-function inMemorySnapshot(): PersistedSchedulerState {
+/** Flow ids that are health-paused (persisted `autoPausedAt`), for the card. */
+function pausedFlowIds(db: SqliteDatabase): string[] {
+  return listSyncFlows(db)
+    .filter((flow) => !flow.enabled && decodeFlowPlanConfig(flow).autoPausedAt)
+    .map((flow) => flow.id);
+}
+
+/** The snapshot written to the DB at the end of every tick. Health pauses are
+ * persisted on the flows themselves, so they are read back from the DB. */
+function buildSnapshot(db: SqliteDatabase): PersistedSchedulerState {
   return {
     lastTickAt,
     inFlight: [...inFlight],
-    pausedByHealth: [...pausedByHealth],
+    pausedByHealth: pausedFlowIds(db),
     lastResults: Object.fromEntries(lastResults),
   };
 }
@@ -132,7 +135,14 @@ export function getSchedulerState(db?: SqliteDatabase): SchedulerState {
       }
     }
   }
-  return { enabled, ...inMemorySnapshot() };
+  // No db / no snapshot yet: report this process's minimal in-memory view.
+  return {
+    enabled,
+    lastTickAt,
+    inFlight: [...inFlight],
+    pausedByHealth: [],
+    lastResults: Object.fromEntries(lastResults),
+  };
 }
 
 function buildUnattendedFlows(db: SqliteDatabase): UnattendedFlow[] {
@@ -143,15 +153,15 @@ function buildUnattendedFlows(db: SqliteDatabase): UnattendedFlow[] {
       hasSyncCredential(db, config.targetConnectionFingerprint);
     const latest = listSyncFlowRuns(db, { flowId: flow.id, limit: 1 })[0];
     const lastRunAtMs = latest ? new Date(latest.finishedAt ?? latest.startedAt).getTime() : null;
-    const updatedAtMs = flow.updatedAt ? new Date(flow.updatedAt).getTime() : null;
     return {
       flowId: flow.id,
       reviewPolicy: config.reviewPolicy,
+      // A health-paused flow is disabled + carries autoPausedAt, so it drops out
+      // here until the user re-enables it (which clears autoPausedAt).
       enabled: flow.enabled && !config.autoPausedAt,
       intervalMinutes: config.intervalMinutes,
       enrolled,
       lastRunAtMs: Number.isNaN(lastRunAtMs) ? null : lastRunAtMs,
-      updatedAtMs: updatedAtMs && !Number.isNaN(updatedAtMs) ? updatedAtMs : null,
     };
   });
 }
@@ -186,18 +196,7 @@ export async function runSchedulerTick(db: SqliteDatabase, deps: SchedulerRunDep
   }
 
   const flows = buildUnattendedFlows(db);
-  // Health-pause recovery: a paused flow that was edited after it paused is
-  // given another chance, so fixing a misconfiguration resumes it without a
-  // container restart. A later success (or a fresh failure) re-derives health.
-  for (const flow of flows) {
-    if (!pausedByHealth.has(flow.flowId)) continue;
-    if (flow.updatedAtMs != null && flow.updatedAtMs > (pausedAt.get(flow.flowId) ?? 0)) {
-      pausedByHealth.delete(flow.flowId);
-      pausedAt.delete(flow.flowId);
-      consecutiveFailures.delete(flow.flowId);
-    }
-  }
-  const due = selectUnattendedFlowsToRun({ flows, inFlight, pausedByHealth, nowMs });
+  const due = selectUnattendedFlowsToRun({ flows, inFlight, pausedByHealth: EMPTY, nowMs });
   const ran: { flowId: string; status: string; message?: string }[] = [];
 
   for (const flowId of due) {
@@ -209,22 +208,12 @@ export async function runSchedulerTick(db: SqliteDatabase, deps: SchedulerRunDep
     try {
       const result = await run(db, flowId);
       const outcome = outcomeOf(result);
-      const failures = nextConsecutiveFailures(consecutiveFailures.get(flowId) ?? 0, outcome);
-      consecutiveFailures.set(flowId, failures);
-      if (shouldPauseForHealth(failures, DEFAULT_HEALTH_PAUSE_THRESHOLD)) {
-        pausedByHealth.add(flowId);
-        pausedAt.set(flowId, nowMs);
-      }
+      registerOutcome(db, flowId, outcome);
       const message = serverResultMessage(result);
       lastResults.set(flowId, { status: result.status, at: lastTickAt, message });
       ran.push({ flowId, status: result.status, message });
     } catch (err) {
-      const failures = nextConsecutiveFailures(consecutiveFailures.get(flowId) ?? 0, "failure");
-      consecutiveFailures.set(flowId, failures);
-      if (shouldPauseForHealth(failures, DEFAULT_HEALTH_PAUSE_THRESHOLD)) {
-        pausedByHealth.add(flowId);
-        pausedAt.set(flowId, nowMs);
-      }
+      registerOutcome(db, flowId, "failure");
       lastResults.set(flowId, { status: err instanceof Error ? `error: ${err.message}` : "error", at: lastTickAt });
       ran.push({ flowId, status: "error" });
     } finally {
@@ -238,9 +227,27 @@ export async function runSchedulerTick(db: SqliteDatabase, deps: SchedulerRunDep
   return { at: lastTickAt, due: due.length, ran };
 }
 
+const EMPTY: ReadonlySet<string> = new Set();
+
+/**
+ * Track consecutive failures per flow and, at the threshold, persist a health
+ * pause on the flow itself (disabled + autoPausedAt). The pause then shows via
+ * the existing "Auto-paused" badge and is cleared when the user re-enables the
+ * flow - the counter is dropped so a resumed flow starts with a clean slate.
+ */
+function registerOutcome(db: SqliteDatabase, flowId: string, outcome: "success" | "failure" | "ignored"): void {
+  const failures = nextConsecutiveFailures(consecutiveFailures.get(flowId) ?? 0, outcome);
+  if (shouldPauseForHealth(failures, DEFAULT_HEALTH_PAUSE_THRESHOLD)) {
+    pauseSyncFlowForHealth(db, flowId, new Date().toISOString());
+    consecutiveFailures.delete(flowId);
+    return;
+  }
+  consecutiveFailures.set(flowId, failures);
+}
+
 function persistSnapshot(db: SqliteDatabase): void {
   try {
-    setAppMeta(db, SCHEDULER_STATE_KEY, JSON.stringify(inMemorySnapshot()));
+    setAppMeta(db, SCHEDULER_STATE_KEY, JSON.stringify(buildSnapshot(db)));
   } catch {
     // Snapshot persistence is best-effort telemetry; never fail a tick over it.
   }
@@ -250,8 +257,6 @@ function persistSnapshot(db: SqliteDatabase): void {
 export function __resetSchedulerStateForTests(): void {
   inFlight.clear();
   consecutiveFailures.clear();
-  pausedByHealth.clear();
-  pausedAt.clear();
   lastResults.clear();
   lastTickAt = null;
 }

@@ -216,6 +216,12 @@ export async function runLiveDryRunPreview(
 
 function describe(err: unknown, fallback: string): string {
   if (err instanceof Error && err.message) return err.message;
+  // Server-side HTTP calls throw a structured ApiError object (not an Error
+  // instance); surface its real message instead of the generic fallback.
+  if (err && typeof err === "object" && "message" in err) {
+    const message = (err as { message?: unknown }).message;
+    if (typeof message === "string" && message) return message;
+  }
   return fallback;
 }
 

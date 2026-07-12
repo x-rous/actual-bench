@@ -5,8 +5,9 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { getAppDb, resetAppDbForTests } from "@/lib/app-db/connection";
-import { createSyncFlow } from "@/lib/app-db/syncFlowRepository";
+import { createSyncFlow, getSyncFlow } from "@/lib/app-db/syncFlowRepository";
 import { upsertSyncCredential } from "@/lib/app-db/syncCredentialRepository";
+import { decodeFlowPlanConfig } from "./flowConfig";
 import {
   getSchedulerState,
   isUnattendedFlowDue,
@@ -121,22 +122,30 @@ describe("runSchedulerTick (RD-058 / PR-024c)", () => {
   it("pauses a flow after repeated failures (health), then stops running it", async () => {
     const flowId = unattendedFlow(db);
     const run = jest.fn(async () => ({ status: "not_enrolled" as const, flowId, message: "x" }));
-    // No run rows are created, so the flow stays due each tick until it pauses.
     for (let i = 0; i < 5; i++) await runSchedulerTick(db, { run });
     expect(run).toHaveBeenCalledTimes(3); // paused after the 3rd consecutive failure
   });
 
-  it("resumes a health-paused flow after it is edited (no restart needed)", async () => {
+  it("persists the health pause on the flow so it is visible and resumable", async () => {
     const flowId = unattendedFlow(db);
-    const failing = jest.fn(async () => ({ status: "not_enrolled" as const, flowId, message: "x" }));
-    for (let i = 0; i < 4; i++) await runSchedulerTick(db, { run: failing });
-    expect(failing).toHaveBeenCalledTimes(3); // paused
+    const run = jest.fn(async () => ({ status: "not_enrolled" as const, flowId, message: "x" }));
+    for (let i = 0; i < 3; i++) await runSchedulerTick(db, { run });
 
-    // Editing the flow bumps updated_at past the pause time → next tick retries.
-    db.prepare("UPDATE sync_flows SET updated_at = ? WHERE id = ?").run(
-      new Date(Date.now() + 3_600_000).toISOString(),
-      flowId
-    );
+    // The pause is persisted the same way the client auto-pause is: disabled +
+    // autoPausedAt, so the existing "Auto-paused" badge shows it.
+    const paused = getSyncFlow(db, flowId)!;
+    expect(paused.enabled).toBe(false);
+    expect(decodeFlowPlanConfig(paused).autoPausedAt).toBeTruthy();
+    expect(getSchedulerState(db).pausedByHealth).toContain(flowId);
+
+    // Re-enabling the flow (clearing autoPausedAt) lets it run again next tick.
+    db.prepare("UPDATE sync_flows SET enabled = 1 WHERE id = ?").run(flowId);
+    for (const leg of paused.legs) {
+      db.prepare("UPDATE sync_flow_legs SET options_json = ? WHERE id = ?").run(
+        JSON.stringify({ version: 1, data: { reviewPolicy: "auto_sync_unattended", intervalMinutes: 15 } }),
+        leg.id
+      );
+    }
     const ok = jest.fn(async () => ({ status: "no_safe_items" as const, flowId, runId: "r", reviewPolicy: "auto_sync_unattended" as const, preview: {} as never }));
     await runSchedulerTick(db, { run: ok });
     expect(ok).toHaveBeenCalledTimes(1);

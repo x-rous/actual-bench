@@ -356,6 +356,38 @@ export function updateSyncFlow(db: SqliteDatabase, flowId: string, input: unknow
   return getSyncFlow(db, flowId);
 }
 
+/**
+ * Persist a health pause on a flow the same way the client interval auto-pause
+ * does (RD-054): disable it and stamp `autoPausedAt` into each leg's options.
+ * This makes a server-scheduler pause visible via the existing "Auto-paused"
+ * badge and resumable via the existing re-enable toggle (which clears
+ * `autoPausedAt`). Used by the unattended scheduler after repeated failures.
+ */
+export function pauseSyncFlowForHealth(db: SqliteDatabase, flowId: string, pausedAtIso: string): SyncFlow | null {
+  const existing = getSyncFlow(db, flowId);
+  if (!existing) return null;
+  const now = new Date().toISOString();
+
+  const update = db.transaction(() => {
+    db.prepare("UPDATE sync_flows SET enabled = 0, updated_at = ? WHERE id = ?").run(now, flowId);
+    for (const leg of existing.legs) {
+      const current =
+        leg.options?.data && typeof leg.options.data === "object" && !Array.isArray(leg.options.data)
+          ? (leg.options.data as Record<string, unknown>)
+          : {};
+      const options = { version: leg.options?.version ?? 1, data: { ...current, autoPausedAt: pausedAtIso } };
+      db.prepare("UPDATE sync_flow_legs SET options_json = ?, updated_at = ? WHERE id = ?").run(
+        JSON.stringify(options),
+        now,
+        leg.id
+      );
+    }
+  });
+
+  update();
+  return getSyncFlow(db, flowId);
+}
+
 export function deleteSyncFlow(db: SqliteDatabase, flowId: string): boolean {
   const result = db.prepare("DELETE FROM sync_flows WHERE id = ?").run(flowId);
   return result.changes > 0;
