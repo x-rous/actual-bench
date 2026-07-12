@@ -8,4 +8,6 @@ import type { FxRateResult } from "../types";
 export interface FxRateProvider {
   readonly name: string;
   getRate(input: { baseCurrency: string; quoteCurrency: string; date: string }): Promise<FxRateResult>;
+  /** Every available daily rate in [from, to], for the "fill range" pre-fetch (RD-056 / PR-025e). */
+  getRateSeries?(input: { baseCurrency: string; quoteCurrency: string; from: string; to: string }): Promise<{ date: string; rate: string }[]>;
 }
