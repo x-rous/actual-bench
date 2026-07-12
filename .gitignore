@@ -19,6 +19,9 @@ coverage/
 .env.*
 !.env.example
 
+# Local dev compose — carries private infra (host paths, hostnames, proxy)
+docker/docker-compose.dev.yml
+
 # ── TypeScript ────────────────────────────────────────────────────────────────
 *.tsbuildinfo
 next-env.d.ts

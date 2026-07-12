@@ -126,6 +126,9 @@ export async function runSafeSync(
     preview.summary.targetMarkerMatches +
     preview.summary.exactDuplicatesAutoMapped;
   if (safeCount === 0) {
+    // Finalize the run so history shows a completed background run ("No changes")
+    // instead of leaving it as a pending draft preview.
+    await deps.applyStore.updateRunStatus(preview.runId, { status: "no_changes", finishedAt: new Date().toISOString() });
     return { status: "no_safe_items", flowId, runId: preview.runId, reviewPolicy, preview: preview.summary };
   }
 
@@ -144,6 +147,7 @@ export async function runSafeSync(
   // (e.g. the only safe rows resolved away between preview and apply), not a real
   // failure - report it as such rather than surfacing an error.
   if (apply.status === "failed" && apply.error?.code === "no_eligible_items") {
+    await deps.applyStore.updateRunStatus(preview.runId, { status: "no_changes", finishedAt: new Date().toISOString() });
     return { status: "no_safe_items", flowId, runId: preview.runId, reviewPolicy, preview: preview.summary };
   }
 

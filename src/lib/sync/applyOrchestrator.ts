@@ -53,7 +53,7 @@ export type ApplyStore = {
 };
 
 export type RunStatusPatch = {
-  status: "applying" | "applied" | "partial" | "failed";
+  status: "applying" | "applied" | "partial" | "failed" | "no_changes";
   finishedAt?: string | null;
   counts?: JsonEnvelope;
 };
@@ -976,6 +976,13 @@ function envelope(data: JsonObject): JsonEnvelope {
 
 function describe(err: unknown, fallback: string): string {
   if (err instanceof Error && err.message) return err.message;
+  // Server-side HTTP calls throw a structured ApiError object (not an Error
+  // instance); without this its real message was lost and callers saw only the
+  // generic fallback (e.g. "target_open_failed" with no HTTP reason).
+  if (err && typeof err === "object" && "message" in err) {
+    const message = (err as { message?: unknown }).message;
+    if (typeof message === "string" && message) return message;
+  }
   return fallback;
 }
 

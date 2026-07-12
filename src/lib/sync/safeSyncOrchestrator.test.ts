@@ -62,7 +62,7 @@ function makeDeps(
   return {
     transport: {} as SafeSyncDeps["transport"],
     previewStore: { loadFlow: jest.fn(async () => flow) } as unknown as PreviewStore,
-    applyStore: {} as unknown as ApplyStore,
+    applyStore: { updateRunStatus: jest.fn(async () => {}) } as unknown as ApplyStore,
     runPreview: runPreview as unknown as SafeSyncDeps["runPreview"],
     runApply: runApply as unknown as SafeSyncDeps["runApply"],
   };
@@ -135,6 +135,11 @@ describe("runSafeSync - composition", () => {
     const result = await runSafeSync({ flowId: "flow-1", context }, deps);
     expect(result.status).toBe("no_safe_items");
     expect(runApply).not.toHaveBeenCalled();
+    // The run is finalized so history shows "No changes", not a pending preview.
+    expect(deps.applyStore.updateRunStatus).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ status: "no_changes" })
+    );
   });
 
   it("applies when a marker match is the only safe item", async () => {

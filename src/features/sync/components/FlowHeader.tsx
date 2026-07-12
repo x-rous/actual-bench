@@ -106,6 +106,22 @@ export function FlowHeader({
         {/* Primary actions keep labels; secondary actions are icon-only so the
             row never wraps and overflows the header. */}
         <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
+          <button
+            type="button"
+            role="switch"
+            aria-checked={form.enabled}
+            aria-label="Enabled"
+            title={form.enabled ? "Enabled — click to disable" : "Disabled — click to enable"}
+            onClick={onToggleEnabled}
+            className={cn(
+              "relative h-[17px] w-[30px] shrink-0 rounded-full transition-colors",
+              form.enabled ? "bg-green-500" : "bg-muted-foreground/50"
+            )}
+          >
+            <span className={cn("absolute top-0.5 h-[13px] w-[13px] rounded-full bg-white transition-all", form.enabled ? "left-[15px]" : "left-0.5")} />
+          </button>
+          <span className="text-xs text-muted-foreground">{form.enabled ? "Enabled" : "Disabled"}</span>
+          <span className="mx-0.5 h-5 w-px bg-border" aria-hidden />
           <Button
             size="sm"
             className="text-xs"
@@ -113,7 +129,7 @@ export function FlowHeader({
             disabled={!canPreview || previewing}
             title={!canPreview && previewDisabledReason ? previewDisabledReason : undefined}
           >
-            <Play className="h-3.5 w-3.5" /> {previewing ? "Previewing…" : "Preview"}
+            <Play className="h-3.5 w-3.5" /> {previewing ? "Previewing…" : "Sync preview"}
           </Button>
           {showRunSafeSync && (
             <Button
@@ -142,20 +158,6 @@ export function FlowHeader({
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
-        <button
-          type="button"
-          role="switch"
-          aria-checked={form.enabled}
-          aria-label="Enabled"
-          onClick={onToggleEnabled}
-          className={cn(
-            "relative h-[17px] w-[30px] shrink-0 rounded-full transition-colors",
-            form.enabled ? "bg-green-500" : "bg-muted-foreground/50"
-          )}
-        >
-          <span className={cn("absolute top-0.5 h-[13px] w-[13px] rounded-full bg-white transition-all", form.enabled ? "left-[15px]" : "left-0.5")} />
-        </button>
-        <span className="mr-1 text-xs text-muted-foreground">{form.enabled ? "Enabled" : "Disabled"}</span>
         {!form.enabled && form.automation.autoPausedAt && (
           <Badge variant="status-warning" className="text-[11px] font-normal" title="Auto-sync paused after repeated failures. Re-enable to resume.">
             Auto-paused

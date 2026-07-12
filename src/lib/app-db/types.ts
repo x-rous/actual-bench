@@ -55,7 +55,10 @@ export type SyncRunStatus =
   | "applied"
   | "partial"
   | "failed"
-  | "cancelled";
+  | "cancelled"
+  /** An automated safe-sync that completed with nothing safe to apply. Distinct
+   * from `draft_preview` so history doesn't mislabel a background run "Preview". */
+  | "no_changes";
 
 export type SyncRunTrigger =
   | "manual_preview"
@@ -66,7 +69,13 @@ export type SyncRunTrigger =
    * distinguish automated from hand-applied runs. (Client-side only — there is
    * no unattended server daemon; that is RD-058.)
    */
-  | "interval_safe_only";
+  | "interval_safe_only"
+  /**
+   * A safe-only run driven by the server-side scheduler with no browser open
+   * (RD-058 / PR-024). Same executor as `interval_safe_only`; the distinct
+   * trigger lets history/health show it ran unattended.
+   */
+  | "scheduled_unattended";
 
 /**
  * Per-flow automation policy (RD-054 / PR-020). Gates how much of a run is
@@ -81,7 +90,13 @@ export type SyncRunTrigger =
 export type SyncReviewPolicy =
   | "manual_preview_required"
   | "auto_apply_safe_only"
-  | "auto_sync_on_interval";
+  | "auto_sync_on_interval"
+  /**
+   * Safe-only sync on a server-side schedule with no browser open (RD-058 /
+   * PR-024). HTTP-API flows only; requires an enrolled vault credential. Same
+   * safe-only application as `auto_sync_on_interval`.
+   */
+  | "auto_sync_unattended";
 
 /**
  * Primary, mutually-exclusive lifecycle/dedupe state persisted for each run
@@ -275,3 +290,34 @@ export type SyncMappingPatch = Partial<
     | "lastAppliedAt"
   >
 >;
+
+// ─── Credential vault (RD-058 / PR-024a) ────────────────────────────────────
+
+/** The plaintext secret sealed in the vault for an unattended-sync connection. */
+export type SyncCredentialSecret = {
+  apiKey: string;
+  encryptionPassword?: string;
+};
+
+/** Non-secret credential metadata - safe to return to the client. */
+export type SyncCredentialMeta = {
+  connectionFingerprint: string;
+  mode: string;
+  baseUrl: string;
+  budgetSyncId: string;
+  label: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+/** Full credential (metadata + decrypted secret) - server-only, never sent to the client. */
+export type SyncCredential = SyncCredentialMeta & { secret: SyncCredentialSecret };
+
+export type SyncCredentialInput = {
+  connectionFingerprint: string;
+  mode: string;
+  baseUrl: string;
+  budgetSyncId: string;
+  label?: string;
+  secret: SyncCredentialSecret;
+};

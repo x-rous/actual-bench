@@ -138,6 +138,15 @@ describe("getHttpTargetLookupForSync", () => {
     ]);
     expect(lookup.payees).toEqual([{ id: "p1", name: "Grocer" }]);
   });
+
+  it("always sends since_date even with no start date (actual-http-api 400s without it)", async () => {
+    mockApi({ payees: [], transactions: [] });
+    await getHttpTargetLookupForSync(connection, { accountId: "acct-tgt" });
+    const listCall = mockApiRequest.mock.calls.find(
+      ([, path]) => /^\/accounts\/acct-tgt\/transactions(\?|$)/.test(path)
+    );
+    expect(listCall?.[1]).toContain("since_date=");
+  });
 });
 
 describe("createOrResolveHttpPayee", () => {

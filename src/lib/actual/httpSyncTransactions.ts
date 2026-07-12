@@ -47,15 +47,21 @@ type RawHttpTransaction = {
 
 type NameMaps = { payee: Map<string, string>; category: Map<string, string> };
 
+// actual-http-api REQUIRES `since_date` on this endpoint (400s without it). When
+// no start date is supplied - e.g. the apply-time marker lookup, which must see
+// every synced row to dedup - default to an early floor so the whole account is
+// returned instead of omitting the parameter.
+const SINCE_DATE_FLOOR = "0001-01-01";
+
 async function fetchTransactions(
   connection: ConnectionInstance,
   accountId: string,
   startDate?: string
 ): Promise<RawHttpTransaction[]> {
-  const query = startDate ? `?since_date=${encodeURIComponent(startDate)}` : "";
+  const since = startDate || SINCE_DATE_FLOOR;
   const res = await apiRequest<{ data?: RawHttpTransaction[] } | RawHttpTransaction[]>(
     connection,
-    `/accounts/${accountId}/transactions${query}`
+    `/accounts/${accountId}/transactions?since_date=${encodeURIComponent(since)}`
   );
   return Array.isArray(res) ? res : res.data ?? [];
 }

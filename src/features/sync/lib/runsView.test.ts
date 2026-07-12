@@ -4,6 +4,7 @@ import {
   runAutoAppliedCount,
   runNeedsAttention,
   runQueuedCount,
+  runResultSummary,
   toRunRow,
 } from "./runsView";
 import type { SyncFlowRun } from "@/lib/app-db/types";
@@ -17,6 +18,32 @@ function run(overrides: Partial<SyncFlowRun> = {}): SyncFlowRun {
     ...overrides,
   };
 }
+
+describe("runResultSummary", () => {
+  const summary = (data: Record<string, number>) => ({ version: 1 as const, data });
+
+  it("always shows scanned/new/synced and appends non-zero classes", () => {
+    const r = run({
+      status: "applied",
+      counts: { version: 1, data: { applied: 3, failed: 0 } },
+      summary: summary({ sourceItemsScanned: 31, createCandidates: 3, alreadySynced: 24, targetMarkerMatches: 2, duplicatesSkipped: 2 }),
+    });
+    expect(runResultSummary(r)).toBe("31 scanned · 3 new · 26 already synced · 2 dup");
+  });
+
+  it("reads a no-changes automated run as all already-synced", () => {
+    const r = run({
+      status: "no_changes",
+      summary: summary({ sourceItemsScanned: 24, createCandidates: 0, alreadySynced: 24 }),
+    });
+    expect(runResultSummary(r)).toBe("24 scanned · 0 new · 24 already synced");
+  });
+
+  it("shows the failure reason instead of counts for a failed run", () => {
+    const r = run({ status: "failed", error: { version: 1, data: { code: "target_open_failed", message: "Failed to open the target budget" } } });
+    expect(runResultSummary(r)).toMatch(/target/i);
+  });
+});
 
 describe("toRunRow", () => {
   it("maps a draft preview run (no apply counts yet)", () => {

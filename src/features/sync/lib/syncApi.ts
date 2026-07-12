@@ -1,5 +1,7 @@
 import type {
   JsonObject,
+  SyncCredentialInput,
+  SyncCredentialMeta,
   SyncFlow,
   SyncFlowRun,
   SyncFlowRunItem,
@@ -144,4 +146,26 @@ export function updateRunItems(
   items: { itemId: string; patch: UpdateSyncFlowRunItemPatch }[]
 ): Promise<{ updated: number }> {
   return jsonFetch("/api/sync-flow-run-items", { method: "PATCH", body: JSON.stringify({ items }) });
+}
+
+// --- Credential vault (RD-058 / PR-024) -------------------------------------
+
+/** Vault status + enrolled connection metadata (never secrets). */
+export function getVaultStatus(): Promise<{ enabled: boolean; credentials: SyncCredentialMeta[] }> {
+  return jsonFetch("/api/sync-credentials");
+}
+
+/** Enroll (seal + store) a connection's secret for unattended sync. */
+export function enrollCredential(input: SyncCredentialInput): Promise<{ credential: SyncCredentialMeta }> {
+  return jsonFetch("/api/sync-credentials", { method: "POST", body: JSON.stringify(input) });
+}
+
+/** Withdraw an enrolled credential by connection fingerprint. */
+export function withdrawCredential(connectionFingerprint: string): Promise<{ ok: boolean }> {
+  return jsonFetch(`/api/sync-credentials?connectionFingerprint=${encodeURIComponent(connectionFingerprint)}`, { method: "DELETE" });
+}
+
+/** Trigger one unattended (server-side) safe-sync for a flow immediately. */
+export function runFlowNow(flowId: string): Promise<{ result: { status: string; message: string | null } }> {
+  return jsonFetch(`/api/sync-flows/${encodeURIComponent(flowId)}/run-now`, { method: "POST" });
 }

@@ -11,7 +11,7 @@ import { FlowList } from "./FlowList";
 import { PreviewPanel } from "./PreviewPanel";
 import { RunHistory } from "./RunHistory";
 import { useSyncFlows, useSyncFlowMutations } from "../hooks/useSyncFlows";
-import { useSyncConnections, useFlowRuns, useLatestRunByFlow, useSyncRun } from "../hooks/useSyncData";
+import { useSyncConnections, useFlowRuns, useLatestRunByFlow, useSyncRun, useVaultStatus } from "../hooks/useSyncData";
 import { useApplyMutation, usePreviewMutation, useSafeSyncMutation } from "../hooks/useSyncOrchestration";
 import { useSyncScheduler } from "../hooks/useSyncScheduler";
 import {
@@ -26,7 +26,7 @@ import {
 } from "../lib/flowForm";
 import { selectableRowIds, syncKindOf, toPreviewRow } from "../lib/previewRows";
 import { buildReverseFlowForm } from "../lib/reverseFlow";
-import { relativeTime, toRunRow } from "../lib/runsView";
+import { formatRunTimestamp, relativeTime, runErrorMessage, toRunRow } from "../lib/runsView";
 import type { SyncFlowRun } from "@/lib/app-db/types";
 import type { DryRunError, DryRunSummary } from "@/lib/sync/previewOrchestrator";
 import type { ApplyRunResult } from "@/lib/sync/applyOrchestrator";
@@ -57,6 +57,12 @@ export function SyncView() {
   const flowsQuery = useSyncFlows();
   const flowIds = useMemo(() => (flowsQuery.data ?? []).map((f) => f.id), [flowsQuery.data]);
   const latestRunsQuery = useLatestRunByFlow(flowIds);
+  const vaultQuery = useVaultStatus();
+  const vaultData = vaultQuery?.data;
+  const enrolledFingerprints = useMemo(
+    () => new Set((vaultData?.credentials ?? []).map((c) => c.connectionFingerprint)),
+    [vaultData]
+  );
   const flowMutations = useSyncFlowMutations();
   const previewMutation = usePreviewMutation();
   const applyMutation = useApplyMutation();
@@ -350,6 +356,8 @@ export function SyncView() {
           selectedFlowId={selectedFlowId}
           latestRuns={latestRunsQuery.data ?? new Map()}
           connections={connections}
+          vaultEnabled={vaultData?.enabled ?? false}
+          enrolledFingerprints={enrolledFingerprints}
           onSelect={handleSelect}
           onCreate={handleCreate}
         />
@@ -385,7 +393,7 @@ export function SyncView() {
               onRunSafeSyncNow={handleRunSafeSyncNow}
               onEdit={() => setEditorOpen(true)}
               onCreateReverse={handleCreateReverse}
-              onShowHistory={() => { setView("history"); setHistoryRunId(null); }}
+              onShowHistory={() => { setView("history"); setHistoryRunId(null); runsQuery.refetch(); }}
             />
 
             <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
@@ -428,7 +436,8 @@ export function SyncView() {
                       </button>
                       <div className="flex items-center gap-2">
                         <Badge variant="secondary" className="text-[10px]">{toRunRow(runQuery.data.run).statusLabel}</Badge>
-                        <span className="text-xs text-muted-foreground" title={new Date(toRunRow(runQuery.data.run).when).toLocaleString()}>{relativeTime(toRunRow(runQuery.data.run).when)}</span>
+                        <span className="text-xs text-muted-foreground">{formatRunTimestamp(toRunRow(runQuery.data.run).when)}</span>
+                        <span className="text-[10px] text-muted-foreground">{relativeTime(toRunRow(runQuery.data.run).when)}</span>
                         {(runQuery.data.run.status === "partial" || runQuery.data.run.status === "failed") && !!targetConn && (
                           <Button size="sm" variant="outline" className="ml-auto text-xs" onClick={handleRetryFailed} disabled={applyMutation.isPending}>
                             {applyMutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
@@ -436,6 +445,12 @@ export function SyncView() {
                           </Button>
                         )}
                       </div>
+                      {runErrorMessage(runQuery.data.run) && (
+                        <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+                          <span className="font-medium">Run failed: </span>
+                          {runErrorMessage(runQuery.data.run)}
+                        </div>
+                      )}
                       </div>
                       <PreviewPanel
                         kind={kind}
@@ -479,6 +494,11 @@ export function SyncView() {
                   previewedAt={previewedAt}
                   onToggle={(id) => setSelectedIds((prev) => { const next = new Set(prev); if (next.has(id)) next.delete(id); else next.add(id); return next; })}
                   onSelectAllSafeNew={() => setSelectedIds(new Set(selectableRowIds(rows)))}
+                  onSelectRows={(ids, selected) => setSelectedIds((prev) => {
+                    const next = new Set(prev);
+                    for (const id of ids) selected ? next.add(id) : next.delete(id);
+                    return next;
+                  })}
                   onClearSelection={() => setSelectedIds(new Set())}
                   onApply={handleApply}
                   applying={applyMutation.isPending}
@@ -512,6 +532,17 @@ export function SyncView() {
         onDelete={handleDelete}
         saving={flowMutations.create.isPending || flowMutations.update.isPending}
         isNew={!selectedFlowId}
+        flowId={selectedFlowId ?? undefined}
+        lastRunAtMs={(() => {
+          const r = selectedFlowId ? latestRunsQuery.data?.get(selectedFlowId) : undefined;
+          if (!r) return null;
+          const t = new Date(r.finishedAt ?? r.startedAt).getTime();
+          return Number.isNaN(t) ? null : t;
+        })()}
+        onRan={() => {
+          runsQuery.refetch();
+          latestRunsQuery.refetch();
+        }}
       />
     </div>
   );

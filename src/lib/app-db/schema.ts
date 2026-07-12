@@ -106,3 +106,22 @@ export const SYNC_PLATFORM_V2_INDEX_SQL = [
 export const SYNC_PLATFORM_V3_INDEX_SQL = [
   "CREATE INDEX IF NOT EXISTS idx_sync_flow_run_items_run_sequence ON sync_flow_run_items(run_id, sequence)",
 ] as const;
+
+// v4 (RD-058): encrypted credential vault for unattended server-side sync.
+// One row per enrolled connection→budget (keyed by connection fingerprint).
+// The secret blob (API key [+ encryption password]) is AES-256-GCM sealed; the
+// key comes from the SYNC_VAULT_KEY env var and is never stored here.
+export const SYNC_CREDENTIAL_TABLE_SQL = `
+CREATE TABLE IF NOT EXISTS sync_credentials (
+  connection_fingerprint text PRIMARY KEY,
+  mode text NOT NULL,
+  base_url text NOT NULL,
+  budget_sync_id text NOT NULL,
+  label text NOT NULL DEFAULT '',
+  ciphertext text NOT NULL,
+  iv text NOT NULL,
+  auth_tag text NOT NULL,
+  created_at text NOT NULL,
+  updated_at text NOT NULL
+);
+`;

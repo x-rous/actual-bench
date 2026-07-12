@@ -33,6 +33,58 @@ type RequestOptions = {
  * CORS is never an issue regardless of where actual-http-api is hosted.
  * Throws a structured ApiError on non-2xx responses.
  */
+/**
+ * Server-side direct forward to actual-http-api (RD-058). Mirrors the proxy's
+ * URL + auth-header construction, but runs in the Node server for unattended
+ * sync where there is no browser. Never used on the client.
+ */
+async function forwardDirectToActualHttpApi<T>(
+  connection: HttpApiConnection,
+  path: string,
+  method: string,
+  body: unknown
+): Promise<T> {
+  const base = connection.baseUrl.replace(/\/$/, "");
+  const url = connection.budgetSyncId
+    ? `${base}/v1/budgets/${connection.budgetSyncId}${path}`
+    : `${base}${path}`;
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    "x-api-key": connection.apiKey,
+    "budget-encryption-password": connection.encryptionPassword ?? "",
+  };
+
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      method,
+      headers,
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+      signal: AbortSignal.timeout(30_000),
+    });
+  } catch (err) {
+    const error: ApiError = {
+      kind: "api",
+      status: 0,
+      message: err instanceof Error ? err.message : "Network error reaching the API server",
+    };
+    throw error;
+  }
+
+  if (response.status === 204) return undefined as T;
+  if (!response.ok) {
+    let message = `HTTP ${response.status}`;
+    try {
+      const json = (await response.json()) as { error?: string; message?: string };
+      message = json.error ?? json.message ?? message;
+    } catch {
+      // ignore parse errors
+    }
+    throw { kind: "api", status: response.status, message } satisfies ApiError;
+  }
+  return response.json() as Promise<T>;
+}
+
 export async function apiRequest<T>(
   connection: ConnectionInstance,
   path: string,
@@ -40,6 +92,13 @@ export async function apiRequest<T>(
 ): Promise<T> {
   const { method = "GET", body } = options;
   const httpConnection = requireHttpApiConnection(connection);
+
+  // Server context (unattended sync, RD-058): there is no browser proxy to hit
+  // and the relative "/api/proxy" URL would not resolve, so forward straight to
+  // actual-http-api. The client path (below) still goes through the proxy.
+  if (typeof window === "undefined") {
+    return forwardDirectToActualHttpApi<T>(httpConnection, path, method, body);
+  }
 
   let response: Response;
 

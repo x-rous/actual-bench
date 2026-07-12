@@ -7,7 +7,8 @@ import { cn } from "@/lib/utils";
 import { connectionFingerprint } from "@/lib/sync/connectionRef";
 import { decodeFlowPlanConfig } from "@/lib/sync/flowConfig";
 import { latestRunLabel, runNeedsAttention, runQueuedCount } from "../lib/runsView";
-import type { ConnectionInstance } from "@/store/connection";
+import { computeUnattendedStatus, nextRunPhrase } from "../lib/unattendedStatus";
+import { isHttpApiConnection, type ConnectionInstance } from "@/store/connection";
 import type { SyncFlow, SyncFlowRun } from "@/lib/app-db/types";
 
 type FlowListProps = {
@@ -15,6 +16,8 @@ type FlowListProps = {
   selectedFlowId: string | null;
   latestRuns: Map<string, SyncFlowRun>;
   connections: ConnectionInstance[];
+  vaultEnabled?: boolean;
+  enrolledFingerprints?: Set<string>;
   onSelect: (flowId: string) => void;
   onCreate: () => void;
 };
@@ -24,7 +27,20 @@ function connectionAvailable(fingerprint: string, connections: ConnectionInstanc
   return connections.some((c) => connectionFingerprint(c) === fingerprint);
 }
 
-export function FlowList({ flows, selectedFlowId, latestRuns, connections, onSelect, onCreate }: FlowListProps) {
+function isHttpFingerprint(fingerprint: string, connections: ConnectionInstance[]): boolean {
+  return connections.some((c) => connectionFingerprint(c) === fingerprint && isHttpApiConnection(c));
+}
+
+export function FlowList({
+  flows,
+  selectedFlowId,
+  latestRuns,
+  connections,
+  vaultEnabled = false,
+  enrolledFingerprints = new Set<string>(),
+  onSelect,
+  onCreate,
+}: FlowListProps) {
   const [search, setSearch] = useState("");
 
   const filtered = useMemo(() => {
@@ -80,6 +96,23 @@ export function FlowList({ flows, selectedFlowId, latestRuns, connections, onSel
                 connectionAvailable(config.targetConnectionFingerprint, connections);
               const latestRun = latestRuns.get(flow.id);
               const autoPaused = !flow.enabled && !!config.autoPausedAt;
+              const lastRunMs = latestRun ? new Date(latestRun.finishedAt ?? latestRun.startedAt).getTime() : null;
+              const src = config.sourceConnectionFingerprint;
+              const tgt = config.targetConnectionFingerprint;
+              const bothEnrolled = enrolledFingerprints.has(src) && enrolledFingerprints.has(tgt);
+              const unattended = computeUnattendedStatus({
+                reviewPolicy: config.reviewPolicy,
+                flowEnabled: flow.enabled,
+                autoPaused: !!config.autoPausedAt,
+                vaultEnabled,
+                // Enrolled credentials are HTTP-API by construction, so treat an
+                // enrolled flow as HTTP even when its connection isn't loaded here.
+                bothHttp: bothEnrolled || (isHttpFingerprint(src, connections) && isHttpFingerprint(tgt, connections)),
+                bothEnrolled,
+                lastRunAtMs: lastRunMs && !Number.isNaN(lastRunMs) ? lastRunMs : null,
+                intervalMinutes: config.intervalMinutes,
+                nowMs: Date.now(),
+              });
               const attentionBadge = autoPaused
                 ? "Auto-paused"
                 : latestRun && runNeedsAttention(latestRun)
@@ -124,6 +157,17 @@ export function FlowList({ flows, selectedFlowId, latestRuns, connections, onSel
                       <span className="text-amber-600 dark:text-amber-400">Needs connection</span>
                     )}
                   </div>
+                  {unattended.isUnattended && !unattended.paused && (
+                    <div className="mt-0.5 flex items-center gap-1.5 text-[10.5px]">
+                      <span
+                        className={cn("h-1.5 w-1.5 shrink-0 rounded-full", unattended.armed ? "bg-green-500" : "bg-amber-500")}
+                        aria-hidden
+                      />
+                      <span className="truncate text-muted-foreground">
+                        {unattended.armed ? nextRunPhrase(unattended, Date.now()) : unattended.reason}
+                      </span>
+                    </div>
+                  )}
                 </button>
               );
             })}

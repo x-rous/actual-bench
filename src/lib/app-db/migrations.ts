@@ -1,6 +1,7 @@
 import type { SqliteDatabase } from "./types";
 import {
   APP_META_TABLE_SQL,
+  SYNC_CREDENTIAL_TABLE_SQL,
   SYNC_FLOW_INDEX_SQL,
   SYNC_FLOW_LEG_TABLE_SQL,
   SYNC_FLOW_RUN_ITEM_TABLE_SQL,
@@ -12,7 +13,7 @@ import {
 } from "./schema";
 import { AppDbUnavailableError } from "./errors";
 
-export const LATEST_SCHEMA_VERSION = 3;
+export const LATEST_SCHEMA_VERSION = 4;
 
 type Migration = {
   version: number;
@@ -97,6 +98,10 @@ const MIGRATIONS: readonly Migration[] = [
   {
     version: 3,
     apply: applySyncPlatformV3,
+  },
+  {
+    version: 4,
+    statements: [SYNC_CREDENTIAL_TABLE_SQL],
   },
 ];
 

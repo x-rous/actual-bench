@@ -107,6 +107,7 @@ const REVIEW_POLICIES: readonly SyncReviewPolicy[] = [
   "manual_preview_required",
   "auto_apply_safe_only",
   "auto_sync_on_interval",
+  "auto_sync_unattended",
 ];
 
 function reviewPolicy(value: unknown): SyncReviewPolicy | undefined {
