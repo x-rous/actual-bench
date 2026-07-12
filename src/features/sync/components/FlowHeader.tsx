@@ -129,7 +129,7 @@ export function FlowHeader({
             disabled={!canPreview || previewing}
             title={!canPreview && previewDisabledReason ? previewDisabledReason : undefined}
           >
-            <Play className="h-3.5 w-3.5" /> {previewing ? "Previewing…" : "Preview"}
+            <Play className="h-3.5 w-3.5" /> {previewing ? "Previewing…" : "Sync preview"}
           </Button>
           {showRunSafeSync && (
             <Button

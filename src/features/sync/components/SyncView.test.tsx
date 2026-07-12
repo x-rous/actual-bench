@@ -115,7 +115,7 @@ describe("SyncView", () => {
     render(<SyncView />);
     fireEvent.click(screen.getByText("Card sync"));
 
-    const previewButtons = await screen.findAllByRole("button", { name: /^preview$/i });
+    const previewButtons = await screen.findAllByRole("button", { name: /^sync preview$/i });
     await waitFor(() => expect(previewButtons[0]).toBeEnabled());
     fireEvent.click(previewButtons[0]);
 
@@ -133,7 +133,7 @@ describe("SyncView", () => {
     setup([conn1, conn2]);
     render(<SyncView />);
     fireEvent.click(screen.getByText("Card sync"));
-    const previewButtons = await screen.findAllByRole("button", { name: /^preview$/i });
+    const previewButtons = await screen.findAllByRole("button", { name: /^sync preview$/i });
     await waitFor(() => expect(previewButtons[0]).toBeEnabled());
     fireEvent.click(previewButtons[0]);
 
