@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { AlertTriangle, CheckCircle2, Database, HardDrive, RefreshCw } from "lucide-react";
+import { AlertTriangle, CalendarClock, CheckCircle2, Database, HardDrive, RefreshCw } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { PageLayout } from "@/components/layout/PageLayout";
@@ -14,6 +14,24 @@ async function fetchAppDbHealth(): Promise<AppDbHealth> {
     throw new Error(data.error ?? `App DB health request failed (${response.status})`);
   }
   return data;
+}
+
+type SchedulerState = {
+  enabled: boolean;
+  lastTickAt: string | null;
+  inFlight: string[];
+  pausedByHealth: string[];
+  lastResults: Record<string, { status: string; at: string }>;
+};
+type VaultStatus = { enabled: boolean; credentials: { connectionFingerprint: string; label: string; budgetSyncId: string }[] };
+
+async function fetchSchedulerState(): Promise<SchedulerState> {
+  const res = await fetch("/api/sync/scheduler/tick", { cache: "no-store" });
+  return (await res.json()) as SchedulerState;
+}
+async function fetchVaultStatus(): Promise<VaultStatus> {
+  const res = await fetch("/api/sync-credentials", { cache: "no-store" });
+  return (await res.json()) as VaultStatus;
 }
 
 function formatDate(value: string | null): string {
@@ -91,6 +109,49 @@ function AppDatabaseCard({ health }: { health: AppDbHealth }) {
   );
 }
 
+function UnattendedSyncCard() {
+  const scheduler = useQuery({ queryKey: ["sync-scheduler-state"], queryFn: fetchSchedulerState });
+  const vault = useQuery({ queryKey: ["sync-vault-status"], queryFn: fetchVaultStatus });
+  const state = scheduler.data;
+  const enabled = state?.enabled ?? vault.data?.enabled ?? false;
+  const paused = state?.pausedByHealth ?? [];
+  const results = Object.entries(state?.lastResults ?? {});
+
+  return (
+    <section className="rounded-md border border-border bg-background shadow-sm">
+      <div className="flex items-center justify-between gap-2 px-4 py-3">
+        <div className="flex items-center gap-2">
+          <CalendarClock className="h-4 w-4 text-muted-foreground" />
+          <h2 className="text-sm font-semibold">Unattended sync scheduler</h2>
+        </div>
+        <Badge variant={enabled ? "status-active" : "secondary"} className="text-[10px]">
+          {enabled ? "Enabled" : "Disabled"}
+        </Badge>
+      </div>
+      <dl>
+        <DetailRow
+          label="Vault"
+          value={enabled ? "Configured (SYNC_VAULT_KEY set)" : "Disabled - set SYNC_VAULT_KEY to enable unattended sync"}
+        />
+        <DetailRow label="Enrolled connections" value={vault.data ? String(vault.data.credentials.length) : "-"} />
+        <DetailRow label="Last scheduler tick" value={formatDate(state?.lastTickAt ?? null)} />
+        <DetailRow
+          label="Paused by health"
+          value={paused.length === 0 ? "None" : paused.join(", ")}
+        />
+        <DetailRow
+          label="Recent runs"
+          value={
+            results.length === 0
+              ? "No unattended runs yet"
+              : results.map(([flowId, r]) => `${flowId.slice(0, 8)}: ${r.status}`).join(" · ")
+          }
+        />
+      </dl>
+    </section>
+  );
+}
+
 export function AppHealthView() {
   const query = useQuery({
     queryKey: ["app-db-health"],
@@ -121,6 +182,7 @@ export function AppHealthView() {
     >
       <div className="mx-auto flex w-full max-w-4xl flex-col gap-4 p-4 lg:p-5">
         {query.data && <AppDatabaseCard health={query.data} />}
+        <UnattendedSyncCard />
       </div>
     </PageLayout>
   );

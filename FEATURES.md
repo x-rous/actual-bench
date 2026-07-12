@@ -91,14 +91,15 @@ The same engine can run without hand-picking every change — but only for prova
 
 - **Manual** (default): preview and apply yourself, exactly as above — no behavior change
 - **Auto-apply safe items on preview**: a run auto-applies only safe items (new creates and marker-match repairs); everything uncertain is left for you
-- **Auto-sync on a schedule**: a client-side timer re-runs a safe-only sync at a chosen interval (minimum 15 minutes) **while Actual Bench is open and the connection is unlocked** — this is not an unattended background daemon (that is a future item; nothing runs when the app is closed)
+- **Auto-sync on a schedule**: a client-side timer re-runs a safe-only sync at a chosen interval (minimum 15 minutes) **while Actual Bench is open and the connection is unlocked**
+- **Auto-sync on a server schedule (unattended)**: for **HTTP API mode** flows, a server-side scheduler runs the same safe-only sync **with the app closed** — opt-in and off by default. It requires an operator to set `SYNC_VAULT_KEY` and to enroll the connection's API key in an **encrypted, server-side vault** (AES-256-GCM; the key lives in the environment, never in the database, and is never returned to the browser). A missing/locked vault or an auth failure **pauses the flow and surfaces it on App Health** rather than guessing. Direct-mode flows can't run unattended (Actual runs in the browser) and keep the client-side interval. See `docs/UNATTENDED_SYNC.md`.
 - **Run safe sync now**: a one-click safe-only run for any automated flow
 - **Review queue**: duplicates, source-changed, source-missing, and blocked items are never auto-applied — they collect in a review queue for you to handle
 - **Exact-duplicate auto-map** (opt-in, off by default): a transaction that already exists on the target with the same date, amount, payee and category is linked to it (mapping only, no new transaction); fuzzy duplicates always stay in the review queue
 - **Retry failed items**: re-attempt just the failed items of a run (marker-based idempotency prevents duplicates on retry)
 - **Flow health**: after repeated failed/partial automated runs a flow auto-pauses (and is badged) so it stops firing until you re-enable it; auto-run outcomes that fail or leave items to review raise an in-app notice
 
-- Not in scope: true Actual transfer-linked sync (same-budget uses a plain copy), automatic (non-review) target deletes, category auto-create, fuzzy duplicate auto-mapping, unattended server-side scheduled sync, and multi-currency conversion
+- Not in scope: true Actual transfer-linked sync (same-budget uses a plain copy), automatic (non-review) target deletes, category auto-create, fuzzy duplicate auto-mapping, unattended sync for **Direct**-mode flows (HTTP API mode is supported), and multi-currency conversion
 
 ## Data Browser
 
