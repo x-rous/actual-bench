@@ -17,7 +17,7 @@ export const runtime = "nodejs";
 // GET → scheduler status snapshot (non-secret metadata) for the health view.
 export function GET() {
   try {
-    return NextResponse.json(getSchedulerState());
+    return NextResponse.json(getSchedulerState(getAppDb()));
   } catch (error) {
     return appDbErrorResponse(error);
   }

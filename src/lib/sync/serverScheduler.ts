@@ -1,6 +1,7 @@
 import { listSyncFlows } from "@/lib/app-db/syncFlowRepository";
 import { listSyncFlowRuns } from "@/lib/app-db/syncRunRepository";
 import { hasSyncCredential } from "@/lib/app-db/syncCredentialRepository";
+import { getAppMeta, setAppMeta } from "@/lib/app-db/appMetaRepository";
 import {
   DEFAULT_HEALTH_PAUSE_THRESHOLD,
   classifySafeSyncOutcome,
@@ -32,6 +33,9 @@ export type UnattendedFlow = {
   enrolled: boolean;
   /** Start/finish time (ms) of the flow's most recent run, or null if never. */
   lastRunAtMs: number | null;
+  /** Flow's `updated_at` (ms). A health-paused flow resumes when edited after
+   * the pause, so a fixed misconfiguration recovers without a restart. */
+  updatedAtMs?: number | null;
 };
 
 export type UnattendedSelectionInput = {
@@ -72,8 +76,12 @@ export function selectUnattendedFlowsToRun(input: UnattendedSelectionInput): str
 const inFlight = new Set<string>();
 const consecutiveFailures = new Map<string, number>();
 const pausedByHealth = new Set<string>();
+const pausedAt = new Map<string, number>();
 const lastResults = new Map<string, { status: string; at: string; message?: string }>();
 let lastTickAt: string | null = null;
+
+/** app_meta key holding the last scheduler snapshot (see appMetaRepository). */
+const SCHEDULER_STATE_KEY = "sync_scheduler_state";
 
 export type SchedulerState = {
   enabled: boolean;
@@ -82,6 +90,8 @@ export type SchedulerState = {
   pausedByHealth: string[];
   lastResults: Record<string, { status: string; at: string; message?: string }>;
 };
+
+type PersistedSchedulerState = Omit<SchedulerState, "enabled">;
 
 /** Human-readable reason for a non-success result, so the operator surfaces (log
  * + App Health) explain a `failed`/blocked run instead of just its status. */
@@ -92,15 +102,37 @@ export function serverResultMessage(result: ServerSafeSyncResult): string | unde
   return undefined;
 }
 
-/** Snapshot of the scheduler for the operator health view (024e). */
-export function getSchedulerState(): SchedulerState {
+/** The in-memory snapshot written to the DB at the end of every tick. */
+function inMemorySnapshot(): PersistedSchedulerState {
   return {
-    enabled: vaultEnabled(),
     lastTickAt,
     inFlight: [...inFlight],
     pausedByHealth: [...pausedByHealth],
     lastResults: Object.fromEntries(lastResults),
   };
+}
+
+/**
+ * Snapshot of the scheduler for the operator health view (024e). The scheduler
+ * runs in the server boot context; the App Health API route is a *different*
+ * module instance (Next re-evaluates route modules), so its in-memory state is
+ * blind. Read the last snapshot the scheduler persisted to the shared DB so the
+ * card reflects real activity. Falls back to this process's memory when no db is
+ * given or no snapshot exists yet.
+ */
+export function getSchedulerState(db?: SqliteDatabase): SchedulerState {
+  const enabled = vaultEnabled();
+  if (db) {
+    const raw = getAppMeta(db, SCHEDULER_STATE_KEY);
+    if (raw) {
+      try {
+        return { enabled, ...(JSON.parse(raw) as PersistedSchedulerState) };
+      } catch {
+        // Corrupt snapshot → fall through to in-memory.
+      }
+    }
+  }
+  return { enabled, ...inMemorySnapshot() };
 }
 
 function buildUnattendedFlows(db: SqliteDatabase): UnattendedFlow[] {
@@ -111,6 +143,7 @@ function buildUnattendedFlows(db: SqliteDatabase): UnattendedFlow[] {
       hasSyncCredential(db, config.targetConnectionFingerprint);
     const latest = listSyncFlowRuns(db, { flowId: flow.id, limit: 1 })[0];
     const lastRunAtMs = latest ? new Date(latest.finishedAt ?? latest.startedAt).getTime() : null;
+    const updatedAtMs = flow.updatedAt ? new Date(flow.updatedAt).getTime() : null;
     return {
       flowId: flow.id,
       reviewPolicy: config.reviewPolicy,
@@ -118,6 +151,7 @@ function buildUnattendedFlows(db: SqliteDatabase): UnattendedFlow[] {
       intervalMinutes: config.intervalMinutes,
       enrolled,
       lastRunAtMs: Number.isNaN(lastRunAtMs) ? null : lastRunAtMs,
+      updatedAtMs: updatedAtMs && !Number.isNaN(updatedAtMs) ? updatedAtMs : null,
     };
   });
 }
@@ -146,9 +180,23 @@ export async function runSchedulerTick(db: SqliteDatabase, deps: SchedulerRunDep
   const run = deps.run ?? runServerSafeSync;
   lastTickAt = new Date(nowMs).toISOString();
 
-  if (!vaultEnabled()) return { at: lastTickAt, due: 0, ran: [] };
+  if (!vaultEnabled()) {
+    persistSnapshot(db);
+    return { at: lastTickAt, due: 0, ran: [] };
+  }
 
   const flows = buildUnattendedFlows(db);
+  // Health-pause recovery: a paused flow that was edited after it paused is
+  // given another chance, so fixing a misconfiguration resumes it without a
+  // container restart. A later success (or a fresh failure) re-derives health.
+  for (const flow of flows) {
+    if (!pausedByHealth.has(flow.flowId)) continue;
+    if (flow.updatedAtMs != null && flow.updatedAtMs > (pausedAt.get(flow.flowId) ?? 0)) {
+      pausedByHealth.delete(flow.flowId);
+      pausedAt.delete(flow.flowId);
+      consecutiveFailures.delete(flow.flowId);
+    }
+  }
   const due = selectUnattendedFlowsToRun({ flows, inFlight, pausedByHealth, nowMs });
   const ran: { flowId: string; status: string; message?: string }[] = [];
 
@@ -165,6 +213,7 @@ export async function runSchedulerTick(db: SqliteDatabase, deps: SchedulerRunDep
       consecutiveFailures.set(flowId, failures);
       if (shouldPauseForHealth(failures, DEFAULT_HEALTH_PAUSE_THRESHOLD)) {
         pausedByHealth.add(flowId);
+        pausedAt.set(flowId, nowMs);
       }
       const message = serverResultMessage(result);
       lastResults.set(flowId, { status: result.status, at: lastTickAt, message });
@@ -172,7 +221,10 @@ export async function runSchedulerTick(db: SqliteDatabase, deps: SchedulerRunDep
     } catch (err) {
       const failures = nextConsecutiveFailures(consecutiveFailures.get(flowId) ?? 0, "failure");
       consecutiveFailures.set(flowId, failures);
-      if (shouldPauseForHealth(failures, DEFAULT_HEALTH_PAUSE_THRESHOLD)) pausedByHealth.add(flowId);
+      if (shouldPauseForHealth(failures, DEFAULT_HEALTH_PAUSE_THRESHOLD)) {
+        pausedByHealth.add(flowId);
+        pausedAt.set(flowId, nowMs);
+      }
       lastResults.set(flowId, { status: err instanceof Error ? `error: ${err.message}` : "error", at: lastTickAt });
       ran.push({ flowId, status: "error" });
     } finally {
@@ -180,7 +232,18 @@ export async function runSchedulerTick(db: SqliteDatabase, deps: SchedulerRunDep
     }
   }
 
+  // Publish the snapshot so the App Health route (a different module instance)
+  // reads real activity from the shared DB instead of its own blank memory.
+  persistSnapshot(db);
   return { at: lastTickAt, due: due.length, ran };
+}
+
+function persistSnapshot(db: SqliteDatabase): void {
+  try {
+    setAppMeta(db, SCHEDULER_STATE_KEY, JSON.stringify(inMemorySnapshot()));
+  } catch {
+    // Snapshot persistence is best-effort telemetry; never fail a tick over it.
+  }
 }
 
 /** Test-only: clear the process-local scheduler state between cases. */
@@ -188,6 +251,7 @@ export function __resetSchedulerStateForTests(): void {
   inFlight.clear();
   consecutiveFailures.clear();
   pausedByHealth.clear();
+  pausedAt.clear();
   lastResults.clear();
   lastTickAt = null;
 }

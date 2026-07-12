@@ -2,7 +2,7 @@
 
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
-import { relativeTime, toRunRow, type RunTone } from "../lib/runsView";
+import { formatRunTimestamp, relativeTime, toRunRow, type RunTone } from "../lib/runsView";
 import type { SyncFlowRun } from "@/lib/app-db/types";
 
 type RunHistoryProps = {
@@ -56,7 +56,10 @@ export function RunHistory({ runs, onSelectRun }: RunHistoryProps) {
                   <td className="px-3 py-2 text-right tabular-nums">{r.relinked ?? "-"}</td>
                   <td className={cn("px-3 py-2 text-right tabular-nums", r.queued && "font-medium text-amber-600 dark:text-amber-400")}>{r.queued ?? "-"}</td>
                   <td className={cn("px-3 py-2 text-right tabular-nums", r.failed ? "font-medium text-destructive" : "")}>{r.failed ?? "-"}</td>
-                  <td className="px-3 py-2 text-muted-foreground" title={new Date(r.when).toLocaleString()}>{relativeTime(r.when)}</td>
+                  <td className="whitespace-nowrap px-3 py-2 text-muted-foreground">
+                    <div className="text-foreground">{formatRunTimestamp(r.when)}</div>
+                    {r.when && <div className="text-[10px]">{relativeTime(r.when)}</div>}
+                  </td>
                 </tr>
               );
             })}

@@ -81,7 +81,16 @@ function statusView(status: string): { label: string; tone: RunTone } {
 }
 
 function triggerLabel(trigger: string): string {
-  return trigger === "interval_safe_only" ? "Auto-sync" : "Manual";
+  switch (trigger) {
+    case "interval_safe_only":
+      return "Auto-sync";
+    case "scheduled_unattended":
+      return "Scheduled";
+    case "manual_apply":
+    case "manual_preview":
+    default:
+      return "Manual";
+  }
 }
 
 export function toRunRow(run: SyncFlowRun): RunRowView {
@@ -128,6 +137,14 @@ export function runErrorMessage(run: SyncFlowRun): string | null {
     if (code) return code;
   }
   return typeof data === "string" ? data : null;
+}
+
+/** Absolute local date + time for a run, for the history table and run detail. */
+export function formatRunTimestamp(iso: string | null): string {
+  if (!iso) return "In progress";
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return iso;
+  return date.toLocaleString();
 }
 
 export function relativeTime(iso: string): string {

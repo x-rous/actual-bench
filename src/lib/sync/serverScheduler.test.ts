@@ -8,6 +8,7 @@ import { getAppDb, resetAppDbForTests } from "@/lib/app-db/connection";
 import { createSyncFlow } from "@/lib/app-db/syncFlowRepository";
 import { upsertSyncCredential } from "@/lib/app-db/syncCredentialRepository";
 import {
+  getSchedulerState,
   isUnattendedFlowDue,
   runSchedulerTick,
   selectUnattendedFlowsToRun,
@@ -123,5 +124,33 @@ describe("runSchedulerTick (RD-058 / PR-024c)", () => {
     // No run rows are created, so the flow stays due each tick until it pauses.
     for (let i = 0; i < 5; i++) await runSchedulerTick(db, { run });
     expect(run).toHaveBeenCalledTimes(3); // paused after the 3rd consecutive failure
+  });
+
+  it("resumes a health-paused flow after it is edited (no restart needed)", async () => {
+    const flowId = unattendedFlow(db);
+    const failing = jest.fn(async () => ({ status: "not_enrolled" as const, flowId, message: "x" }));
+    for (let i = 0; i < 4; i++) await runSchedulerTick(db, { run: failing });
+    expect(failing).toHaveBeenCalledTimes(3); // paused
+
+    // Editing the flow bumps updated_at past the pause time → next tick retries.
+    db.prepare("UPDATE sync_flows SET updated_at = ? WHERE id = ?").run(
+      new Date(Date.now() + 3_600_000).toISOString(),
+      flowId
+    );
+    const ok = jest.fn(async () => ({ status: "no_safe_items" as const, flowId, runId: "r", reviewPolicy: "auto_sync_unattended" as const, preview: {} as never }));
+    await runSchedulerTick(db, { run: ok });
+    expect(ok).toHaveBeenCalledTimes(1);
+  });
+
+  it("publishes its state to the DB so a fresh module instance reads it (dev split)", async () => {
+    const flowId = unattendedFlow(db);
+    const run = jest.fn(async () => ({ status: "no_safe_items" as const, flowId, runId: "r", reviewPolicy: "auto_sync_unattended" as const, preview: {} as never }));
+    await runSchedulerTick(db, { run });
+
+    // Simulate a different module instance (route handler): in-memory is blank,
+    // but the DB snapshot still reflects the tick.
+    __resetSchedulerStateForTests();
+    expect(getSchedulerState().lastTickAt).toBeNull(); // in-memory fallback: blank
+    expect(getSchedulerState(db).lastTickAt).not.toBeNull(); // DB-backed: real
   });
 });

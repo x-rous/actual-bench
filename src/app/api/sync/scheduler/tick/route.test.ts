@@ -7,6 +7,10 @@ jest.mock("next/server", () => ({
   },
 }));
 
+import { mkdtempSync, rmSync } from "node:fs";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
+import { getAppDb, resetAppDbForTests } from "@/lib/app-db/connection";
 import { POST, GET } from "./route";
 
 function req(headers: Record<string, string> = {}): { headers: { get(k: string): string | null } } {
@@ -16,7 +20,20 @@ function req(headers: Record<string, string> = {}): { headers: { get(k: string):
 describe("scheduler tick endpoint (RD-058 / PR-024c)", () => {
   const originalSecret = process.env.SYNC_SCHEDULER_SECRET;
   const originalKey = process.env.SYNC_VAULT_KEY;
+  const originalDbPath = process.env.ACTUAL_BENCH_DB_PATH;
+  let root: string;
+  beforeEach(() => {
+    // The GET snapshot reads scheduler state from the shared app DB, which the
+    // route resolves from ACTUAL_BENCH_DB_PATH.
+    root = mkdtempSync(join(tmpdir(), "actual-bench-tick-route-"));
+    process.env.ACTUAL_BENCH_DB_PATH = join(root, "metadata.sqlite");
+    getAppDb();
+  });
   afterEach(() => {
+    resetAppDbForTests();
+    rmSync(root, { recursive: true, force: true });
+    if (originalDbPath === undefined) delete process.env.ACTUAL_BENCH_DB_PATH;
+    else process.env.ACTUAL_BENCH_DB_PATH = originalDbPath;
     for (const [k, v] of [["SYNC_SCHEDULER_SECRET", originalSecret], ["SYNC_VAULT_KEY", originalKey]] as const) {
       if (v === undefined) delete process.env[k];
       else process.env[k] = v;

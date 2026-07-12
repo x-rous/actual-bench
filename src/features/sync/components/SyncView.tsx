@@ -26,7 +26,7 @@ import {
 } from "../lib/flowForm";
 import { selectableRowIds, syncKindOf, toPreviewRow } from "../lib/previewRows";
 import { buildReverseFlowForm } from "../lib/reverseFlow";
-import { relativeTime, runErrorMessage, toRunRow } from "../lib/runsView";
+import { formatRunTimestamp, relativeTime, runErrorMessage, toRunRow } from "../lib/runsView";
 import type { SyncFlowRun } from "@/lib/app-db/types";
 import type { DryRunError, DryRunSummary } from "@/lib/sync/previewOrchestrator";
 import type { ApplyRunResult } from "@/lib/sync/applyOrchestrator";
@@ -428,7 +428,8 @@ export function SyncView() {
                       </button>
                       <div className="flex items-center gap-2">
                         <Badge variant="secondary" className="text-[10px]">{toRunRow(runQuery.data.run).statusLabel}</Badge>
-                        <span className="text-xs text-muted-foreground" title={new Date(toRunRow(runQuery.data.run).when).toLocaleString()}>{relativeTime(toRunRow(runQuery.data.run).when)}</span>
+                        <span className="text-xs text-muted-foreground">{formatRunTimestamp(toRunRow(runQuery.data.run).when)}</span>
+                        <span className="text-[10px] text-muted-foreground">{relativeTime(toRunRow(runQuery.data.run).when)}</span>
                         {(runQuery.data.run.status === "partial" || runQuery.data.run.status === "failed") && !!targetConn && (
                           <Button size="sm" variant="outline" className="ml-auto text-xs" onClick={handleRetryFailed} disabled={applyMutation.isPending}>
                             {applyMutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
