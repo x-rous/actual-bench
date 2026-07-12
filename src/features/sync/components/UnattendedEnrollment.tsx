@@ -1,29 +1,46 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { CheckCircle2, ShieldCheck } from "lucide-react";
+import { CheckCircle2, Loader2, PlayCircle, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { connectionFingerprint } from "@/lib/sync/connectionRef";
 import { isHttpApiConnection, type ConnectionInstance } from "@/store/connection";
-import { enrollCredential, getVaultStatus, withdrawCredential } from "../lib/syncApi";
+import { enrollCredential, getVaultStatus, runFlowNow, withdrawCredential } from "../lib/syncApi";
+import { computeUnattendedStatus, nextRunPhrase } from "../lib/unattendedStatus";
 
 /**
  * Credential enrollment for unattended server sync (RD-058 / PR-024d). Shown when
  * a flow's policy is `auto_sync_unattended`. It stores the source + target HTTP
  * API keys in the server vault so the scheduler can run with the app closed, and
- * is explicit about exactly what gets persisted.
+ * is explicit about exactly what gets persisted. It also surfaces the armed
+ * state, the next run, and a "Run now" action so the flow is not a black box.
  */
 export function UnattendedEnrollment({
   sourceConnection,
   targetConnection,
+  flowId,
+  intervalMinutes,
+  flowEnabled,
+  autoPaused,
+  lastRunAtMs = null,
+  onRan,
 }: {
   sourceConnection?: ConnectionInstance;
   targetConnection?: ConnectionInstance;
+  /** Saved flow id; absent for an unsaved new flow (disables Run now). */
+  flowId?: string;
+  intervalMinutes: number;
+  flowEnabled: boolean;
+  autoPaused: boolean;
+  lastRunAtMs?: number | null;
+  onRan?: () => void;
 }) {
   const [enabled, setEnabled] = useState<boolean | null>(null);
   const [enrolled, setEnrolled] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [running, setRunning] = useState(false);
+  const [runResult, setRunResult] = useState<{ status: string; message: string | null } | null>(null);
 
   const refresh = useCallback(async () => {
     try {
@@ -87,6 +104,21 @@ export function UnattendedEnrollment({
     }
   };
 
+  const doRunNow = async () => {
+    if (!flowId) return;
+    setRunning(true);
+    setRunResult(null);
+    try {
+      const { result } = await runFlowNow(flowId);
+      setRunResult(result);
+      onRan?.();
+    } catch (e) {
+      setRunResult({ status: "error", message: e instanceof Error ? e.message : "Run failed" });
+    } finally {
+      setRunning(false);
+    }
+  };
+
   if (enabled === null) return null;
 
   const box = "flex flex-col gap-2 rounded-md border border-border bg-muted/30 p-3 text-xs";
@@ -140,6 +172,51 @@ export function UnattendedEnrollment({
         </span>
       </div>
       {error && <span className="text-destructive">{error}</span>}
+
+      {(() => {
+        const status = computeUnattendedStatus({
+          reviewPolicy: "auto_sync_unattended",
+          flowEnabled,
+          autoPaused,
+          vaultEnabled: enabled,
+          bothHttp,
+          bothEnrolled,
+          lastRunAtMs,
+          intervalMinutes,
+          nowMs: Date.now(),
+        });
+        return (
+          <div className="mt-1 flex flex-col gap-2 border-t border-border/60 pt-2">
+            <div className="flex items-center gap-1.5">
+              <span
+                className={`h-2 w-2 shrink-0 rounded-full ${status.armed ? "bg-green-500" : "bg-amber-500"}`}
+                aria-hidden
+              />
+              <span className="font-medium">{status.armed ? "Armed — runs unattended" : "Not armed"}</span>
+            </div>
+            <span className="text-muted-foreground">{nextRunPhrase(status, Date.now())}</span>
+            <div className="flex flex-wrap items-center gap-2 pt-0.5">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={doRunNow}
+                disabled={running || !status.armed || !flowId}
+                title={!flowId ? "Save the flow first" : !status.armed ? status.reason ?? "" : "Run this flow on the server now"}
+              >
+                {running ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <PlayCircle className="h-3.5 w-3.5" />}
+                {running ? "Running…" : "Run now"}
+              </Button>
+              {!flowId && <span className="text-[11px] text-muted-foreground">Save the flow to enable Run now.</span>}
+              {runResult && (
+                <span className="text-[11px] text-muted-foreground">
+                  Run finished: <strong>{runResult.status}</strong>
+                  {runResult.message ? ` — ${runResult.message}` : ""}
+                </span>
+              )}
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

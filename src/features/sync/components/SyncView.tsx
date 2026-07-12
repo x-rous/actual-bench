@@ -11,7 +11,7 @@ import { FlowList } from "./FlowList";
 import { PreviewPanel } from "./PreviewPanel";
 import { RunHistory } from "./RunHistory";
 import { useSyncFlows, useSyncFlowMutations } from "../hooks/useSyncFlows";
-import { useSyncConnections, useFlowRuns, useLatestRunByFlow, useSyncRun } from "../hooks/useSyncData";
+import { useSyncConnections, useFlowRuns, useLatestRunByFlow, useSyncRun, useVaultStatus } from "../hooks/useSyncData";
 import { useApplyMutation, usePreviewMutation, useSafeSyncMutation } from "../hooks/useSyncOrchestration";
 import { useSyncScheduler } from "../hooks/useSyncScheduler";
 import {
@@ -57,6 +57,12 @@ export function SyncView() {
   const flowsQuery = useSyncFlows();
   const flowIds = useMemo(() => (flowsQuery.data ?? []).map((f) => f.id), [flowsQuery.data]);
   const latestRunsQuery = useLatestRunByFlow(flowIds);
+  const vaultQuery = useVaultStatus();
+  const vaultData = vaultQuery?.data;
+  const enrolledFingerprints = useMemo(
+    () => new Set((vaultData?.credentials ?? []).map((c) => c.connectionFingerprint)),
+    [vaultData]
+  );
   const flowMutations = useSyncFlowMutations();
   const previewMutation = usePreviewMutation();
   const applyMutation = useApplyMutation();
@@ -350,6 +356,8 @@ export function SyncView() {
           selectedFlowId={selectedFlowId}
           latestRuns={latestRunsQuery.data ?? new Map()}
           connections={connections}
+          vaultEnabled={vaultData?.enabled ?? false}
+          enrolledFingerprints={enrolledFingerprints}
           onSelect={handleSelect}
           onCreate={handleCreate}
         />
@@ -519,6 +527,17 @@ export function SyncView() {
         onDelete={handleDelete}
         saving={flowMutations.create.isPending || flowMutations.update.isPending}
         isNew={!selectedFlowId}
+        flowId={selectedFlowId ?? undefined}
+        lastRunAtMs={(() => {
+          const r = selectedFlowId ? latestRunsQuery.data?.get(selectedFlowId) : undefined;
+          if (!r) return null;
+          const t = new Date(r.finishedAt ?? r.startedAt).getTime();
+          return Number.isNaN(t) ? null : t;
+        })()}
+        onRan={() => {
+          runsQuery.refetch();
+          latestRunsQuery.refetch();
+        }}
       />
     </div>
   );

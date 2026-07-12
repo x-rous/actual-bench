@@ -48,6 +48,11 @@ export function useSyncRun(runId: string | null) {
   });
 }
 
+/** Server vault status + enrolled credentials, for unattended arming/badges. */
+export function useVaultStatus() {
+  return useQuery({ queryKey: ["sync-vault-status"], queryFn: api.getVaultStatus, staleTime: 60_000 });
+}
+
 /** Run history for a flow. */
 export function useFlowRuns(flowId: string | null) {
   return useQuery({

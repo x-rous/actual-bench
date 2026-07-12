@@ -30,6 +30,10 @@ type FlowEditDialogProps = {
   onDelete: () => void;
   saving: boolean;
   isNew: boolean;
+  /** Saved flow id + its last run time, for the unattended status/Run now. */
+  flowId?: string;
+  lastRunAtMs?: number | null;
+  onRan?: () => void;
 };
 
 const selectClass = "rounded-md border border-border bg-background px-2 py-1.5 text-sm min-w-0";
@@ -105,6 +109,9 @@ export function FlowEditDialog({
   onDelete,
   saving,
   isNew,
+  flowId,
+  lastRunAtMs = null,
+  onRan,
 }: FlowEditDialogProps) {
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
@@ -295,7 +302,16 @@ export function FlowEditDialog({
                   </label>
                 )}
                 {form.automation.reviewPolicy === "auto_sync_unattended" && (
-                  <UnattendedEnrollment sourceConnection={sourceConn} targetConnection={targetConn} />
+                  <UnattendedEnrollment
+                    sourceConnection={sourceConn}
+                    targetConnection={targetConn}
+                    flowId={flowId}
+                    intervalMinutes={clampSyncInterval(form.automation.intervalMinutes)}
+                    flowEnabled={form.enabled}
+                    autoPaused={!!form.automation.autoPausedAt}
+                    lastRunAtMs={lastRunAtMs}
+                    onRan={onRan}
+                  />
                 )}
               </div>
 

@@ -164,3 +164,8 @@ export function enrollCredential(input: SyncCredentialInput): Promise<{ credenti
 export function withdrawCredential(connectionFingerprint: string): Promise<{ ok: boolean }> {
   return jsonFetch(`/api/sync-credentials?connectionFingerprint=${encodeURIComponent(connectionFingerprint)}`, { method: "DELETE" });
 }
+
+/** Trigger one unattended (server-side) safe-sync for a flow immediately. */
+export function runFlowNow(flowId: string): Promise<{ result: { status: string; message: string | null } }> {
+  return jsonFetch(`/api/sync-flows/${encodeURIComponent(flowId)}/run-now`, { method: "POST" });
+}
