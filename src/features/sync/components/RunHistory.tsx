@@ -25,10 +25,9 @@ export function RunHistory({ runs, onSelectRun }: RunHistoryProps) {
         <table className="w-full text-xs">
           <thead className="sticky top-0 z-10 bg-muted text-left text-[11px] uppercase text-muted-foreground">
             <tr>
-              <th className="px-3 py-2">Status</th><th className="px-3 py-2">Trigger</th>
-              <th className="px-3 py-2 text-right">Planned</th><th className="px-3 py-2 text-right">Created</th>
-              <th className="px-3 py-2 text-right">Re-linked</th><th className="px-3 py-2 text-right">Queued</th>
-              <th className="px-3 py-2 text-right">Failed</th>
+              <th className="px-3 py-2">Status</th>
+              <th className="px-3 py-2">Trigger</th>
+              <th className="px-3 py-2">Result</th>
               <th className="px-3 py-2">When</th>
             </tr>
           </thead>
@@ -49,14 +48,10 @@ export function RunHistory({ runs, onSelectRun }: RunHistoryProps) {
                     }
                   }}
                 >
-                  <td className="px-3 py-2"><Badge variant={TONE_VARIANT[r.tone]} className="text-[10px]">{r.statusLabel}</Badge></td>
-                  <td className="px-3 py-2">{r.trigger}</td>
-                  <td className="px-3 py-2 text-right tabular-nums">{r.planned ?? "-"}</td>
-                  <td className="px-3 py-2 text-right tabular-nums">{r.created ?? "-"}</td>
-                  <td className="px-3 py-2 text-right tabular-nums">{r.relinked ?? "-"}</td>
-                  <td className={cn("px-3 py-2 text-right tabular-nums", r.queued && "font-medium text-amber-600 dark:text-amber-400")}>{r.queued ?? "-"}</td>
-                  <td className={cn("px-3 py-2 text-right tabular-nums", r.failed ? "font-medium text-destructive" : "")}>{r.failed ?? "-"}</td>
-                  <td className="whitespace-nowrap px-3 py-2 text-muted-foreground">
+                  <td className="px-3 py-2 align-top"><Badge variant={TONE_VARIANT[r.tone]} className="text-[10px]">{r.statusLabel}</Badge></td>
+                  <td className="px-3 py-2 align-top text-muted-foreground">{r.trigger}</td>
+                  <td className={cn("px-3 py-2 align-top", r.tone === "bad" ? "text-destructive" : "text-foreground")}>{r.result}</td>
+                  <td className="whitespace-nowrap px-3 py-2 align-top text-muted-foreground">
                     <div className="text-foreground">{formatRunTimestamp(r.when)}</div>
                     {r.when && <div className="text-[10px]">{relativeTime(r.when)}</div>}
                   </td>

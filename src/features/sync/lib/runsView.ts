@@ -15,6 +15,8 @@ export type RunRowView = {
   trigger: string;
   /** True for an automated safe-only run (interval / "Run safe sync now"). */
   isAuto: boolean;
+  /** One-line preview-aligned breakdown, e.g. "31 scanned · 3 new · 26 synced". */
+  result: string;
   planned: number | null;
   created: number | null;
   relinked: number | null;
@@ -95,6 +97,37 @@ function triggerLabel(trigger: string): string {
   }
 }
 
+/**
+ * One-line, preview-aligned breakdown of what a run did, so history is readable
+ * without opening each run. A failed run shows its reason instead of counts.
+ * Always shows scanned/new/synced; only appends the rest when non-zero.
+ */
+export function runResultSummary(run: SyncFlowRun): string {
+  const s = (run.summary?.data ?? {}) as Record<string, unknown>;
+  const c = (run.counts?.data ?? {}) as Record<string, unknown>;
+
+  if (run.status === "failed") return runErrorMessage(run) ?? "Failed";
+
+  const scanned = n0(s.sourceItemsScanned) || n0(s.sourceTransactionsScanned) || n0(s.plannedItems);
+  // For an applied run "new" is what was actually created; before apply it's the
+  // planned create candidates (0 for a "no changes" run).
+  const created = run.status === "applied" || run.status === "partial" ? n0(c.applied) : n0(s.createCandidates);
+  const already = n0(s.alreadySynced) + n0(s.targetMarkerMatches);
+  const parts = [`${scanned} scanned`, `${created} new`, `${already} synced`];
+
+  // dup + changed + blocked ARE the review queue (see runQueuedCount), so list
+  // them individually rather than adding a redundant "to review" total.
+  const dup = n0(s.duplicatesSkipped);
+  const changed = n0(s.sourceChangedWarnings);
+  const blocked = n0(s.blocked);
+  const failed = n0(c.failed);
+  if (dup > 0) parts.push(`${dup} dup`);
+  if (changed > 0) parts.push(`${changed} changed`);
+  if (blocked > 0) parts.push(`${blocked} blocked`);
+  if (failed > 0) parts.push(`${failed} failed`);
+  return parts.join(" · ");
+}
+
 export function toRunRow(run: SyncFlowRun): RunRowView {
   const status = statusView(run.status);
   const counts = run.counts?.data ?? {};
@@ -107,6 +140,7 @@ export function toRunRow(run: SyncFlowRun): RunRowView {
     tone: status.tone,
     trigger: triggerLabel(run.createdByTrigger),
     isAuto: isAutoRun(run),
+    result: runResultSummary(run),
     planned: num(summary.totalItems) ?? num(counts.new),
     created: applied ? num(counts.applied) ?? 0 : null,
     relinked: applied ? num(counts.repaired) ?? 0 : null,

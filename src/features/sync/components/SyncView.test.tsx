@@ -151,9 +151,9 @@ describe("SyncView", () => {
     fireEvent.click(screen.getByText("Card sync"));
     fireEvent.click(await screen.findByRole("button", { name: /history/i }));
     expect(await screen.findByRole("button", { name: /back to flow/i })).toBeInTheDocument();
-    // "Trigger" and "Planned" column headers are unique to the history table.
+    // "Trigger" and "Result" column headers are unique to the history table.
     expect(screen.getByText("Trigger")).toBeInTheDocument();
-    expect(screen.getByText("Planned")).toBeInTheDocument();
+    expect(screen.getByText("Result")).toBeInTheDocument();
   });
 
   it("makes a run opened from history read-only (no apply)", async () => {
