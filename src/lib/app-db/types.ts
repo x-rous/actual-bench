@@ -66,7 +66,13 @@ export type SyncRunTrigger =
    * distinguish automated from hand-applied runs. (Client-side only — there is
    * no unattended server daemon; that is RD-058.)
    */
-  | "interval_safe_only";
+  | "interval_safe_only"
+  /**
+   * A safe-only run driven by the server-side scheduler with no browser open
+   * (RD-058 / PR-024). Same executor as `interval_safe_only`; the distinct
+   * trigger lets history/health show it ran unattended.
+   */
+  | "scheduled_unattended";
 
 /**
  * Per-flow automation policy (RD-054 / PR-020). Gates how much of a run is
