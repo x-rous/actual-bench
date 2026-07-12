@@ -43,6 +43,9 @@ export async function POST(request: Request) {
     if (!body?.connectionFingerprint || !body?.secret?.apiKey) {
       return NextResponse.json({ error: "connectionFingerprint and secret.apiKey are required." }, { status: 400 });
     }
+    if (!body?.baseUrl || !body?.budgetSyncId) {
+      return NextResponse.json({ error: "baseUrl and budgetSyncId are required." }, { status: 400 });
+    }
     if (body.mode !== "http-api") {
       // Hybrid (RD-058): only HTTP-API connections can run unattended server-side.
       return NextResponse.json({ error: "Only HTTP API Server connections can be enrolled for unattended sync." }, { status: 400 });

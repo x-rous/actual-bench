@@ -1,3 +1,4 @@
+import { timingSafeEqual } from "node:crypto";
 import { NextResponse, type NextRequest } from "next/server";
 import { getAppDb } from "@/lib/app-db/connection";
 import { appDbErrorResponse } from "@/lib/app-db/routeResponses";
@@ -32,7 +33,9 @@ export async function POST(request: NextRequest) {
         { status: 403 }
       );
     }
-    if (request.headers.get("x-scheduler-secret") !== secret) {
+    const provided = Buffer.from(request.headers.get("x-scheduler-secret") ?? "");
+    const expected = Buffer.from(secret);
+    if (provided.length !== expected.length || !timingSafeEqual(provided, expected)) {
       return NextResponse.json({ error: "Forbidden." }, { status: 403 });
     }
     if (!vaultEnabled()) {

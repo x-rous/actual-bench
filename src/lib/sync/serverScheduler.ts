@@ -144,6 +144,10 @@ export async function runSchedulerTick(db: SqliteDatabase, deps: SchedulerRunDep
   const ran: { flowId: string; status: string }[] = [];
 
   for (const flowId of due) {
+    // A concurrent tick (interval + external POST) may have started this flow
+    // between selection and now. `inFlight` is mutated synchronously before the
+    // first await, so this guard reliably prevents a double run.
+    if (inFlight.has(flowId)) continue;
     inFlight.add(flowId);
     try {
       const result = await run(db, flowId);

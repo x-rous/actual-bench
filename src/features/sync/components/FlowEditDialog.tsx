@@ -147,12 +147,16 @@ export function FlowEditDialog({
   // only a true self-sync (same account) is blocked.
   const sameBudget = isSameBudget(form);
   const blockedRoute = entityMode ? sameBudget : isSelfSync(form);
-  const canSave = routeMissing.length === 0 && !blockedRoute;
 
   // Unattended (server) sync needs both endpoints on HTTP API mode (Hybrid, RD-058).
   const sourceConn = connections.find((c) => c.id === form.source.connectionId);
   const targetConn = connections.find((c) => c.id === form.target.connectionId);
   const unattendedEligible = sourceConn?.mode === "http-api" && targetConn?.mode === "http-api";
+  // Block saving an unattended flow whose endpoints are no longer HTTP API - the
+  // option is disabled in that case but the stored policy can go stale.
+  const invalidUnattended = form.automation.reviewPolicy === "auto_sync_unattended" && !unattendedEligible;
+
+  const canSave = routeMissing.length === 0 && !blockedRoute && !invalidUnattended;
 
   const set = (patch: Partial<SyncFlowFormState>) => onChange({ ...form, ...patch });
   const setFilter = (patch: Partial<SyncFlowFormState["filter"]>) => onChange({ ...form, filter: { ...form.filter, ...patch } });

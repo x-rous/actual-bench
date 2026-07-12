@@ -27,10 +27,12 @@ type VaultStatus = { enabled: boolean; credentials: { connectionFingerprint: str
 
 async function fetchSchedulerState(): Promise<SchedulerState> {
   const res = await fetch("/api/sync/scheduler/tick", { cache: "no-store" });
+  if (!res.ok) throw new Error(`Scheduler status request failed (${res.status})`);
   return (await res.json()) as SchedulerState;
 }
 async function fetchVaultStatus(): Promise<VaultStatus> {
   const res = await fetch("/api/sync-credentials", { cache: "no-store" });
+  if (!res.ok) throw new Error(`Vault status request failed (${res.status})`);
   return (await res.json()) as VaultStatus;
 }
 

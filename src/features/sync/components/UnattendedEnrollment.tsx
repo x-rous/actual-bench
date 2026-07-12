@@ -62,10 +62,11 @@ export function UnattendedEnrollment({
           },
         });
       }
-      await refresh();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not store the credentials.");
     } finally {
+      // Always resync UI state - a partial enrollment still changed the vault.
+      await refresh();
       setBusy(false);
     }
   };
@@ -77,10 +78,11 @@ export function UnattendedEnrollment({
       for (const conn of httpEndpoints) {
         await withdrawCredential(connectionFingerprint(conn));
       }
-      await refresh();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not remove the credentials.");
     } finally {
+      // Always resync UI state - a partial withdrawal still changed the vault.
+      await refresh();
       setBusy(false);
     }
   };
