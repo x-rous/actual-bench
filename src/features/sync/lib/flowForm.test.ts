@@ -135,6 +135,16 @@ describe("buildFlowPayload", () => {
     expect(leg.options.data).toMatchObject({ reviewPolicy: "auto_sync_on_interval" });
   });
 
+  it("round-trips the unattended review policy (RD-058)", () => {
+    const form = filledForm();
+    form.automation.reviewPolicy = "auto_sync_unattended";
+    const payload = buildFlowPayload(form, instances) as JsonObject & { legs: JsonObject[] };
+    const leg = payload.legs[0] as Record<string, { version: number; data: JsonObject }>;
+    expect(leg.options.data).toMatchObject({ reviewPolicy: "auto_sync_unattended" });
+    const back = flowToFormState(payload as unknown as Parameters<typeof flowToFormState>[0], instances);
+    expect(back.automation.reviewPolicy).toBe("auto_sync_unattended");
+  });
+
   it("clamps the interval to its floor on save", () => {
     const form = filledForm();
     form.automation.intervalMinutes = "5"; // below the 15-minute floor

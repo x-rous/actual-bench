@@ -17,6 +17,7 @@ import { buildSyncNotesMarker } from "@/lib/sync/notesMarker";
 import { useFlowAccounts } from "../hooks/useSyncData";
 import { isEntityFlow, isSameBudget, isSelfSync, missingRouteFields, type SyncEndpointForm, type SyncFlowFormState } from "../lib/flowForm";
 import { exportFlowDefinition, importFlowDefinition, FlowImportError } from "../lib/flowPortability";
+import { UnattendedEnrollment } from "./UnattendedEnrollment";
 import type { ConnectionInstance } from "@/store/connection";
 
 type FlowEditDialogProps = {
@@ -148,6 +149,11 @@ export function FlowEditDialog({
   const blockedRoute = entityMode ? sameBudget : isSelfSync(form);
   const canSave = routeMissing.length === 0 && !blockedRoute;
 
+  // Unattended (server) sync needs both endpoints on HTTP API mode (Hybrid, RD-058).
+  const sourceConn = connections.find((c) => c.id === form.source.connectionId);
+  const targetConn = connections.find((c) => c.id === form.target.connectionId);
+  const unattendedEligible = sourceConn?.mode === "http-api" && targetConn?.mode === "http-api";
+
   const set = (patch: Partial<SyncFlowFormState>) => onChange({ ...form, ...patch });
   const setFilter = (patch: Partial<SyncFlowFormState["filter"]>) => onChange({ ...form, filter: { ...form.filter, ...patch } });
   const setTransform = (patch: Partial<SyncFlowFormState["transform"]>) => onChange({ ...form, transform: { ...form.transform, ...patch } });
@@ -263,10 +269,13 @@ export function FlowEditDialog({
                     <option value="manual_preview_required">Manual - preview &amp; apply yourself (default)</option>
                     <option value="auto_apply_safe_only">Auto-apply safe items on preview</option>
                     <option value="auto_sync_on_interval">Auto-sync on a schedule (while app is open)</option>
+                    <option value="auto_sync_unattended" disabled={!unattendedEligible}>
+                      Auto-sync on a server schedule (unattended){unattendedEligible ? "" : " - HTTP API only"}
+                    </option>
                   </select>
                 </label>
                 <p className="text-xs text-muted-foreground">{automationHelp[form.automation.reviewPolicy]}</p>
-                {form.automation.reviewPolicy === "auto_sync_on_interval" && (
+                {(form.automation.reviewPolicy === "auto_sync_on_interval" || form.automation.reviewPolicy === "auto_sync_unattended") && (
                   <label className="flex flex-col gap-1 text-xs text-muted-foreground">
                     Run every (minutes)
                     <Input
@@ -280,6 +289,9 @@ export function FlowEditDialog({
                     />
                     <span className="text-[11px]">Minimum 15 minutes. Each run re-opens and syncs the whole budget.</span>
                   </label>
+                )}
+                {form.automation.reviewPolicy === "auto_sync_unattended" && (
+                  <UnattendedEnrollment sourceConnection={sourceConn} targetConnection={targetConn} />
                 )}
               </div>
 
