@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PageLayout } from "@/components/layout/PageLayout";
 import { decodeFlowPlanConfig } from "@/lib/sync/flowConfig";
+import { invertRate } from "@/lib/fx/fxMath";
 import { listFlows } from "@/features/sync/lib/syncApi";
 import { addManualFxRate, fillFxRange, listFxRates } from "../lib/fxApi";
 import { FxImportPanel } from "./FxImportPanel";
@@ -34,6 +35,15 @@ function daysBetween(from: string, to: string, cap = 400): string[] {
 }
 
 const SOURCE_LABEL: Record<string, string> = { frankfurter: "Frankfurter", "user-upload": "Uploaded", manual: "Manual", derived: "Derived" };
+
+/** Inverse rate for display (1 quote = X base), rounded; "—" on bad input. */
+function inverse(rate: string): string {
+  try {
+    return invertRate(rate, 6);
+  } catch {
+    return "—";
+  }
+}
 
 export function FxRatesView() {
   // Pairs the user actually consolidates, derived from FX-enabled flows.
@@ -178,6 +188,11 @@ function PairPanel({ pair }: { pair: Pair }) {
             <div className="text-2xl font-semibold tabular-nums">
               1 {pair.base} = {latest ? latest.rate : "—"} {pair.quote}
             </div>
+            {latest && (
+              <div className="text-sm text-muted-foreground tabular-nums">
+                1 {pair.quote} = {inverse(latest.rate)} {pair.base}
+              </div>
+            )}
             <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
               {latest ? (
                 <>
@@ -219,11 +234,11 @@ function PairPanel({ pair }: { pair: Pair }) {
       <div className="min-h-0 overflow-auto rounded-md border border-border" style={{ maxHeight: "24rem" }}>
         <table className="w-full text-xs">
           <thead className="sticky top-0 z-10 bg-muted text-left text-[11px] uppercase text-muted-foreground">
-            <tr className="[&>th]:px-3 [&>th]:py-2"><th>Date</th><th className="text-right">Rate (1 {pair.base})</th><th>Source</th></tr>
+            <tr className="[&>th]:px-3 [&>th]:py-2"><th>Date</th><th className="text-right">1 {pair.base} = ? {pair.quote}</th><th className="text-right">1 {pair.quote} = ? {pair.base}</th><th>Source</th></tr>
           </thead>
           <tbody>
             {ratesQuery.isFetching && rates.length === 0 ? (
-              <tr><td colSpan={3} className="px-3 py-6 text-center text-muted-foreground">Loading…</td></tr>
+              <tr><td colSpan={4} className="px-3 py-6 text-center text-muted-foreground">Loading…</td></tr>
             ) : days.slice().reverse().map((day) => {
               const r = rateByDate.get(day);
               return (
@@ -235,6 +250,7 @@ function PairPanel({ pair }: { pair: Pair }) {
                 >
                   <td className="px-3 py-1.5 tabular-nums">{day}</td>
                   <td className="px-3 py-1.5 text-right tabular-nums font-medium">{r ? r.rate : "—"}</td>
+                  <td className="px-3 py-1.5 text-right tabular-nums text-muted-foreground">{r ? inverse(r.rate) : "—"}</td>
                   <td className="px-3 py-1.5">
                     {r ? (
                       <Badge variant={r.source === "manual" ? "status-warning" : r.source === "user-upload" ? "status-active" : "secondary"} className="text-[10px]">
