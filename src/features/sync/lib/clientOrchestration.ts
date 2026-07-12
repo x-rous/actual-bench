@@ -116,6 +116,9 @@ function applyStore(): ApplyStore {
         error: { version: 1, data: { code: error.code, message: error.message } },
       });
     },
+    persistFxSnapshot: async (input) => {
+      await api.persistFxSnapshot(input);
+    },
   };
 }
 

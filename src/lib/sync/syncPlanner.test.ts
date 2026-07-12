@@ -455,11 +455,16 @@ describe("planSyncFlow - FX conversion (RD-056)", () => {
     amountDirection: "same", fxEnabled: true, fxSourceCurrency: "AED", fxTargetCurrency: "AUD",
   });
 
-  it("converts a cross-currency create amount using the date's rate", () => {
-    const plan = planSyncFlow(baseInput({ config: fxConfig, fxRateByDate: new Map([["2026-07-01", "0.4"]]) }));
-    expect(plan.items[0].classification).toBe("new");
+  const rateInfo = (rate: string) => ({ rate, effectiveDate: "2026-07-01", source: "manual", provider: null, fxRateId: "fx-1" });
+
+  it("converts a cross-currency create amount and carries FX audit + note", () => {
+    const plan = planSyncFlow(baseInput({ config: fxConfig, fxRateByDate: new Map([["2026-07-01", rateInfo("0.4")]]) }));
+    const item = plan.items[0];
+    expect(item.classification).toBe("new");
     // -1250 (same sign) × 0.4 = -500.
-    expect(plan.items[0].plannedTargetPayload?.amount).toBe(-500);
+    expect(item.plannedTargetPayload?.amount).toBe(-500);
+    expect(item.plannedTargetPayload?.fx).toMatchObject({ sourceAmount: -1250, sourceCurrency: "AED", targetCurrency: "AUD", rate: "0.4", fxRateId: "fx-1" });
+    expect(item.plannedTargetPayload?.notes).toContain("AED -12.50 @ 0.4");
   });
 
   it("routes an item with no rate for its date to fx_rate_pending review", () => {

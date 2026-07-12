@@ -178,6 +178,7 @@ function makeStore(opts: { runStatus?: string; items?: SyncFlowRunItem[]; seedMa
       itemPatches.set(itemId, patch);
     }),
     persistApplyFailure: jest.fn(async () => {}),
+    persistFxSnapshot: jest.fn(async () => {}),
   };
   return { store, run, createdMappings, itemPatches };
 }
@@ -214,6 +215,22 @@ describe("applySyncRun - validation", () => {
     const { transport } = makeTargetTransport();
     const result = await applySyncRun({ runId: "run-1", targetConnection: httpTarget }, { transport: provider(transport), store });
     expect(result.status).toBe("applied");
+  });
+
+  it("writes an FX snapshot for a converted create (RD-056)", async () => {
+    const fxItem = runItem({
+      ...( { payloadData: {
+        amount: 500,
+        fx: { sourceAmount: -1250, sourceCurrency: "AED", targetCurrency: "AUD", rate: "0.4", requestedDate: "2026-07-10", effectiveDate: "2026-07-10", source: "frankfurter", provider: "frankfurter", fxRateId: "fx-1" },
+      } } as Partial<SyncFlowRunItem> ),
+    });
+    const { store } = makeStore({ items: [fxItem] });
+    const { transport } = makeTargetTransport();
+    const result = await applySyncRun({ runId: "run-1", targetConnection: targetConn }, { transport: provider(transport), store });
+    expect(result.status).toBe("applied");
+    expect(store.persistFxSnapshot).toHaveBeenCalledWith(
+      expect.objectContaining({ sourceCurrency: "AED", targetCurrency: "AUD", appliedRate: "0.4", convertedAmount: 500, sourceAmount: -1250, fxRateId: "fx-1" })
+    );
   });
 
   it("rejects a target that points at a different budget", async () => {

@@ -131,7 +131,9 @@ class DryRunPreviewError extends Error {
 export type PreviewFxResolver = (
   needs: { baseCurrency: string; quoteCurrency: string; date: string }[],
   allowProvider: boolean
-) => Promise<{ resolved: Record<string, { requestedDate: string; rate: string }> }>;
+) => Promise<{
+  resolved: Record<string, { requestedDate: string; rate: string; effectiveDate: string; source: string; provider: string | null; fxRateId: string | null }>;
+}>;
 
 export async function runLiveDryRunPreview(
   input: LiveDryRunInput,
@@ -194,11 +196,16 @@ export async function runLiveDryRunPreview(
     // 4b. FX phase (RD-056): resolve the rates the run needs before planning, so
     // the pure planner can convert amounts. Unresolved dates are simply absent →
     // those items plan as `fx_rate_pending` review items.
-    let fxRateByDate: Map<string, string> | undefined;
+    let fxRateByDate: Map<string, import("./plannedChanges").FxRateInfo> | undefined;
     const fxNeeds = adapter.collectFxNeeds?.(source.materialized, flow) ?? [];
     if (fxNeeds.length > 0 && deps.resolveFx) {
       const batch = await deps.resolveFx(fxNeeds, decodeFlowPlanConfig(flow).fxAllowProvider);
-      fxRateByDate = new Map(Object.values(batch.resolved).map((r) => [r.requestedDate, r.rate]));
+      fxRateByDate = new Map(
+        Object.values(batch.resolved).map((r) => [
+          r.requestedDate,
+          { rate: r.rate, effectiveDate: r.effectiveDate, source: r.source, provider: r.provider, fxRateId: r.fxRateId },
+        ])
+      );
     }
 
     // 5. Plan (pure) + summary.

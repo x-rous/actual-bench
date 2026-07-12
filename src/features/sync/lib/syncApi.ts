@@ -170,10 +170,27 @@ export function runFlowNow(flowId: string): Promise<{ result: { status: string; 
   return jsonFetch(`/api/sync-flows/${encodeURIComponent(flowId)}/run-now`, { method: "POST" });
 }
 
+/** Persist an immutable FX snapshot for a created transaction (RD-056 / PR-025c). */
+export function persistFxSnapshot(input: {
+  transactionId: string;
+  fxRateId: string | null;
+  sourceCurrency: string;
+  targetCurrency: string;
+  sourceAmount: number;
+  convertedAmount: number;
+  appliedRate: string;
+  requestedDate: string;
+  effectiveDate: string;
+  source: string;
+  provider: string | null;
+}): Promise<{ snapshot: unknown }> {
+  return jsonFetch("/api/fx/snapshot", { method: "POST", body: JSON.stringify(input) });
+}
+
 /** Resolve FX rates for a preview's (base, quote, date) needs (RD-056 / PR-025b). */
 export function resolveFxRates(
   needs: { baseCurrency: string; quoteCurrency: string; date: string }[],
   allowProvider: boolean
-): Promise<{ resolved: Record<string, { requestedDate: string; rate: string }>; pending: Record<string, { code: string; message: string }> }> {
+): Promise<{ resolved: Record<string, { requestedDate: string; rate: string; effectiveDate: string; source: string; provider: string | null; fxRateId: string | null }>; pending: Record<string, { code: string; message: string }> }> {
   return jsonFetch("/api/fx/resolve", { method: "POST", body: JSON.stringify({ needs, allowProvider }) });
 }

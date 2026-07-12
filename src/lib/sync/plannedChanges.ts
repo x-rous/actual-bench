@@ -58,6 +58,35 @@ export type PlannedTargetPayload = {
    * direction applied and sum to `amount`.
    */
   subtransactions?: PlannedSplitChild[] | null;
+  /**
+   * FX conversion applied to this payload (RD-056). Present only for a
+   * cross-currency create; used at apply to write the immutable transaction_fx
+   * snapshot keyed to the created target transaction. `amount` above is already
+   * the converted amount; `sourceAmount` here is the original.
+   */
+  fx?: PlannedFx | null;
+};
+
+/** FX provenance carried on a planned payload; the source layer stays decimal-string decoupled. */
+export type PlannedFx = {
+  sourceAmount: number;
+  sourceCurrency: string;
+  targetCurrency: string;
+  rate: string;
+  requestedDate: string;
+  effectiveDate: string;
+  source: string;
+  provider: string | null;
+  fxRateId: string | null;
+};
+
+/** Resolved rate info for a transaction date (RD-056), threaded into the planner. */
+export type FxRateInfo = {
+  rate: string;
+  effectiveDate: string;
+  source: string;
+  provider: string | null;
+  fxRateId: string | null;
 };
 
 /** A resolved split child line to create under a grouped target split. */
@@ -155,11 +184,11 @@ export type SyncPlannerInput = {
   target: SyncPlannerTargetSnapshot;
   existingMappings: SyncMapping[];
   /**
-   * FX rate (decimal string) per transaction date, when the flow converts
-   * currency (RD-056). A cross-currency item whose date is absent here is
-   * classified `blocked` with `fx_rate_pending`. Omitted when FX is off.
+   * Resolved FX rate info per transaction date, when the flow converts currency
+   * (RD-056). A cross-currency item whose date is absent here is classified
+   * `blocked` with `fx_rate_pending`. Omitted when FX is off.
    */
-  fxRateByDate?: Map<string, string>;
+  fxRateByDate?: Map<string, FxRateInfo>;
   /**
    * When true, active mappings with no matching source item are emitted as
    * review-first `source_missing` delete candidates (RD-057 §5). The adapter

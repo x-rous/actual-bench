@@ -94,6 +94,22 @@ describe("buildPlannedTargetPayload", () => {
       cleared: false,
       importedId: "absync:flow-1:txn:t1",
       subtransactions: null,
+      fx: null,
     });
+  });
+
+  it("converts the amount, stamps an FX note, and carries provenance when a rate is given", () => {
+    const payload = buildPlannedTargetPayload({
+      item: item({ amount: -1000 }),
+      config: { ...config, fxSourceCurrency: "AED", fxTargetCurrency: "AUD" },
+      payee: { payeeId: "tp1", payeeName: null, willCreateOnApply: false, leftEmpty: false },
+      category: { categoryId: "tc1", leftEmpty: false },
+      importedId: "m",
+      fx: { rate: "0.4", effectiveDate: "2026-07-01", source: "frankfurter", provider: "frankfurter", fxRateId: "fx-1" },
+    });
+    // reverse(-1000)=1000, ×0.4 = 400.
+    expect(payload.amount).toBe(400);
+    expect(payload.notes).toContain("AED -10.00 @ 0.4");
+    expect(payload.fx).toMatchObject({ sourceAmount: -1000, sourceCurrency: "AED", targetCurrency: "AUD", rate: "0.4", effectiveDate: "2026-07-01", fxRateId: "fx-1" });
   });
 });

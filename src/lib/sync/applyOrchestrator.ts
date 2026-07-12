@@ -17,7 +17,7 @@ import type {
   SyncMappingInput,
   SyncMappingPatch,
 } from "@/lib/app-db/types";
-import type { PlannedTargetPayload } from "./plannedChanges";
+import type { PlannedFx, PlannedTargetPayload } from "./plannedChanges";
 import type { AdapterMutateInput } from "./syncKind";
 
 /**
@@ -50,6 +50,23 @@ export type ApplyStore = {
   updateRunStatus(runId: string, patch: RunStatusPatch): Promise<void>;
   updateRunItemStatus(itemId: string, patch: RunItemStatusPatch): Promise<void>;
   persistApplyFailure(runId: string, error: ApplyError): Promise<void>;
+  /** Persist the immutable FX snapshot for a created transaction (RD-056). Best-
+   * effort audit; a failure here never fails the create. Absent when FX is off. */
+  persistFxSnapshot?(input: FxSnapshotInput): Promise<void>;
+};
+
+export type FxSnapshotInput = {
+  transactionId: string;
+  fxRateId: string | null;
+  sourceCurrency: string;
+  targetCurrency: string;
+  sourceAmount: number;
+  convertedAmount: number;
+  appliedRate: string;
+  requestedDate: string;
+  effectiveDate: string;
+  source: string;
+  provider: string | null;
 };
 
 export type RunStatusPatch = {
@@ -609,7 +626,7 @@ async function applyCreateBatch(
   const resultByItem = new Map(created.map((r) => [r.itemId, r]));
 
   // Phase C - per created item: verify id, record the mapping, set status.
-  for (const { item, marker } of toCreate) {
+  for (const { item, marker, payloadJson } of toCreate) {
     const base = { itemId: item.id, sourceItemKey: item.sourceItemKey ?? "" };
     const res = resultByItem.get(item.id);
     const targetId = res?.targetId ?? null;
@@ -631,6 +648,28 @@ async function applyCreateBatch(
       // Store the persisted target field hash so a later update can detect a
       // manual edit before overwriting (RD-057 §4).
       await recordMapping(store, ctx.config, item, targetId, marker, res?.targetFingerprint ?? null);
+      // RD-056: record the immutable FX snapshot for a converted create. Audit
+      // only — never fail the create over it.
+      const fx = (payloadJson as { fx?: PlannedFx | null; amount?: number }).fx;
+      if (fx && store.persistFxSnapshot) {
+        try {
+          await store.persistFxSnapshot({
+            transactionId: targetId,
+            fxRateId: fx.fxRateId,
+            sourceCurrency: fx.sourceCurrency,
+            targetCurrency: fx.targetCurrency,
+            sourceAmount: fx.sourceAmount,
+            convertedAmount: (payloadJson as { amount: number }).amount,
+            appliedRate: fx.rate,
+            requestedDate: fx.requestedDate,
+            effectiveDate: fx.effectiveDate,
+            source: fx.source,
+            provider: fx.provider,
+          });
+        } catch {
+          // best-effort audit
+        }
+      }
     } catch (err) {
       await store.updateRunItemStatus(item.id, {
         status: "failed",

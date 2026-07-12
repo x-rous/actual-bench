@@ -177,8 +177,9 @@ function planSourceItem(
   // no rate for its date is "pending" and routed to review before it could be
   // matched/created with an unconverted amount.
   const needsFx = config.fxEnabled && config.fxSourceCurrency !== config.fxTargetCurrency;
-  const fxRate = needsFx ? input.fxRateByDate?.get(item.date) ?? null : null;
-  const fxPending = needsFx && fxRate == null;
+  const fxInfo = needsFx ? input.fxRateByDate?.get(item.date) ?? null : null;
+  const fxRate = fxInfo?.rate ?? null;
+  const fxPending = needsFx && fxInfo == null;
 
   // 1. Existing mapping wins - this item was synced before.
   const mapping = mappingByKey.get(item.itemKey);
@@ -226,7 +227,7 @@ function planSourceItem(
         payee: upPayee,
         category: upCategory,
         importedId: upImportedId,
-        fxRate,
+        fx: fxInfo,
       });
       return baseItem(item, {
         classification: "source_changed_since_sync",
@@ -270,7 +271,7 @@ function planSourceItem(
       notes: line.notes,
     };
   }) ?? null;
-  const payload = buildPlannedTargetPayload({ item, config, payee, category, importedId, subtransactions, fxRate });
+  const payload = buildPlannedTargetPayload({ item, config, payee, category, importedId, subtransactions, fx: fxInfo });
   const effectivePayeeName = resolveEffectivePayeeName(item, payee, target);
 
   // 2. No mapping, but our marker already exists on the target → repairable.

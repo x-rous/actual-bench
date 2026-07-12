@@ -135,8 +135,8 @@ export interface SyncKindAdapter {
     target: unknown;
     mappings: SyncMapping[];
     targetCapabilities: SyncCapabilitySet;
-    /** Resolved FX rate per transaction date (RD-056); omitted when FX is off. */
-    fxRateByDate?: Map<string, string>;
+    /** Resolved FX rate info per transaction date (RD-056); omitted when FX is off. */
+    fxRateByDate?: Map<string, import("./plannedChanges").FxRateInfo>;
   }): SyncPlanResult;
 
   /** Non-secret source snapshot summary stored on the run. */
