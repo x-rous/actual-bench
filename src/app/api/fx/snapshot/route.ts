@@ -2,10 +2,12 @@ import { NextResponse } from "next/server";
 import { getAppDb } from "@/lib/app-db/connection";
 import { appDbErrorResponse, readJsonBody } from "@/lib/app-db/routeResponses";
 import { saveTransactionFx } from "@/lib/fx/repositories/transactionFxRepository";
-import type { TransactionFxInput } from "@/lib/fx/types";
+import type { FxRateSource, TransactionFxInput } from "@/lib/fx/types";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
+
+const FX_SOURCES: readonly FxRateSource[] = ["frankfurter", "user-upload", "manual", "derived"];
 
 /**
  * Persist an immutable per-transaction FX snapshot after a converted create
@@ -14,11 +16,24 @@ export const runtime = "nodejs";
  */
 export async function POST(request: Request) {
   try {
-    const body = (await readJsonBody(request)) as (TransactionFxInput & { isManual?: boolean }) | null;
-    if (!body?.transactionId || !body?.appliedRate) {
-      return NextResponse.json({ error: "transactionId and appliedRate are required." }, { status: 400 });
+    const body = (await readJsonBody(request)) as (Partial<TransactionFxInput> & { isManual?: boolean }) | null;
+    const missing = (["transactionId", "sourceCurrency", "targetCurrency", "appliedRate", "requestedDate", "effectiveDate"] as const).filter(
+      (k) => typeof body?.[k] !== "string" || (body[k] as string) === ""
+    );
+    if (missing.length > 0) {
+      return NextResponse.json({ error: `Missing or invalid: ${missing.join(", ")}.` }, { status: 400 });
     }
-    const snapshot = saveTransactionFx(getAppDb(), { ...body, source: body.source as import("@/lib/fx/types").FxRateSource, isManual: body.isManual ?? false });
+    if (typeof body?.sourceAmount !== "number" || typeof body?.convertedAmount !== "number") {
+      return NextResponse.json({ error: "sourceAmount and convertedAmount must be numbers." }, { status: 400 });
+    }
+    if (!FX_SOURCES.includes(body.source as FxRateSource)) {
+      return NextResponse.json({ error: `source must be one of ${FX_SOURCES.join(", ")}.` }, { status: 400 });
+    }
+    const snapshot = saveTransactionFx(getAppDb(), {
+      ...(body as TransactionFxInput),
+      provider: body.provider ?? null,
+      isManual: body.isManual ?? false,
+    });
     return NextResponse.json({ snapshot });
   } catch (error) {
     return appDbErrorResponse(error);

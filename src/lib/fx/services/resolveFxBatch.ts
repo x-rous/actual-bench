@@ -65,7 +65,12 @@ export async function resolveFxBatch(
   // N per-date calls into one), then retry those from the now-populated registry.
   if (deps.provider && needProvider.length > 0) {
     const byPair = new Map<string, FxNeed[]>();
-    for (const n of needProvider) byPair.set(`${n.baseCurrency}:${n.quoteCurrency}`, [...(byPair.get(`${n.baseCurrency}:${n.quoteCurrency}`) ?? []), n]);
+    for (const n of needProvider) {
+      // Group case-insensitively (matching fxNeedKey) so mixed-case inputs don't
+      // trigger duplicate range fetches for the same pair.
+      const gkey = `${n.baseCurrency.toUpperCase()}:${n.quoteCurrency.toUpperCase()}`;
+      byPair.set(gkey, [...(byPair.get(gkey) ?? []), n]);
+    }
     for (const pairNeeds of byPair.values()) {
       const dates = pairNeeds.map((n) => n.date).sort();
       try {

@@ -271,6 +271,16 @@ function planSourceItem(
       notes: line.notes,
     };
   }) ?? null;
+  // With FX, converting each child independently can round the children so they
+  // no longer sum to the parent total. Reconcile by pushing the rounding
+  // remainder onto the last child, keeping the grouped split balanced (RD-056).
+  if (fxRate && subtransactions && subtransactions.length > 0) {
+    const directedParent = config.amountDirection === "same" ? item.amount : -item.amount;
+    const parentConverted = convertMinorUnits(directedParent, fxRate);
+    const childSum = subtransactions.reduce((sum, child) => sum + child.amount, 0);
+    const remainder = parentConverted - childSum;
+    if (remainder !== 0) subtransactions[subtransactions.length - 1].amount += remainder;
+  }
   const payload = buildPlannedTargetPayload({ item, config, payee, category, importedId, subtransactions, fx: fxInfo });
   const effectivePayeeName = resolveEffectivePayeeName(item, payee, target);
 

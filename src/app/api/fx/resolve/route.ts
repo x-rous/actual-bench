@@ -16,11 +16,20 @@ export const runtime = "nodejs";
  */
 export async function POST(request: Request) {
   try {
-    const body = (await readJsonBody(request)) as { needs?: FxNeed[]; allowProvider?: boolean };
-    const needs = Array.isArray(body?.needs) ? body.needs : [];
-    if (needs.length === 0) {
+    const body = (await readJsonBody(request)) as { needs?: unknown; allowProvider?: boolean };
+    const raw = Array.isArray(body?.needs) ? body.needs : [];
+    if (raw.length === 0) {
       return NextResponse.json({ resolved: {}, pending: {} });
     }
+    const isNeed = (n: unknown): n is FxNeed =>
+      !!n && typeof n === "object" &&
+      typeof (n as FxNeed).baseCurrency === "string" &&
+      typeof (n as FxNeed).quoteCurrency === "string" &&
+      typeof (n as FxNeed).date === "string";
+    if (!raw.every(isNeed)) {
+      return NextResponse.json({ error: "each need must have string baseCurrency, quoteCurrency and date." }, { status: 400 });
+    }
+    const needs = raw as FxNeed[];
     const provider = body?.allowProvider === false ? undefined : createFrankfurterProvider();
     const result = await resolveFxBatch(getAppDb(), needs, { provider });
     return NextResponse.json(result);

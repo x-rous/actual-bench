@@ -474,6 +474,27 @@ describe("planSyncFlow - FX conversion (RD-056)", () => {
     expect(plan.items[0].action).toBe("blocked");
   });
 
+  it("keeps FX split children summing to the converted parent (remainder allocation)", () => {
+    const splitFxConfig = buildPlanConfig({
+      flowId: FLOW_ID, sourceBudgetId: "budget-src", targetBudgetId: "budget-tgt", targetAccountId: "acct-tgt",
+      sourceBudgetName: "Home", sourceAccountName: "Checking",
+      amountDirection: "same", fxEnabled: true, fxSourceCurrency: "AED", fxTargetCurrency: "AUD", createTargetSplits: true,
+    });
+    const parent = txn({
+      id: "sp", amount: -2, isParent: true,
+      splitLines: [
+        { id: "s1", amount: -1, payeeId: null, payeeName: null, categoryId: "sc-a", categoryName: "A", notes: null },
+        { id: "s2", amount: -1, payeeId: null, payeeName: null, categoryId: "sc-b", categoryName: "B", notes: null },
+      ],
+    });
+    const target = emptyTarget({ categories: [{ id: "tc-a", name: "A" }, { id: "tc-b", name: "B" }] });
+    const plan = planSyncFlow(baseInput({ config: splitFxConfig, sourceTransactions: [parent], target, fxRateByDate: new Map([["2026-07-01", rateInfo("0.4")]]) }));
+    const payload = plan.items[0].plannedTargetPayload!;
+    // parent 2 × 0.4 → 1; each child 1 × 0.4 rounds to 0, so the remainder is pushed to the last child.
+    expect(payload.amount).toBe(-1);
+    expect(payload.subtransactions!.reduce((s, c) => s + c.amount, 0)).toBe(payload.amount);
+  });
+
   it("does not convert when source and target currencies match", () => {
     const sameCcy = buildPlanConfig({
       flowId: FLOW_ID, sourceBudgetId: "budget-src", targetBudgetId: "budget-tgt", targetAccountId: "acct-tgt",

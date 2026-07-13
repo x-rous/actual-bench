@@ -20,8 +20,8 @@ export async function POST(request: Request) {
       overrideProvider?: boolean;
       overrideManual?: boolean;
     } | null;
-    if (!body?.csv) {
-      return NextResponse.json({ error: "csv content is required." }, { status: 400 });
+    if (typeof body?.csv !== "string" || body.csv.trim() === "") {
+      return NextResponse.json({ error: "csv content (a string) is required." }, { status: 400 });
     }
     const rows = parseFxCsv(body.csv);
     const options = { overrideProvider: body.overrideProvider, overrideManual: body.overrideManual };
