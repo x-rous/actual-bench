@@ -1,0 +1,131 @@
+---
+title: Upgrading and Backups
+description: Upgrade Actual Bench safely and protect its metadata — what to back up, upgrade procedures, database migrations, rollback, restore, and moving hosts.
+sidebar:
+  order: 3
+---
+
+This guide helps administrators upgrade Actual Bench safely and protect its data. The most important
+idea: **the only server-side state Actual Bench owns is its metadata database under `/data`** — your
+budget data lives in Actual Budget, not here.
+
+## What needs to be backed up
+
+| Data | Where | Back up? |
+|---|---|---|
+| Actual budget data | Your Actual Server | Yes — but backed up by **Actual Budget**, not Actual Bench |
+| Actual Bench metadata | `/data` volume (SQLite) | **Yes** |
+| Configuration | Your Compose file / environment | Yes |
+| `SYNC_VAULT_KEY` | Your secret manager | Yes — **store it separately and safely** |
+| Browser session state | The browser | No (transient; re-enter secrets on reconnect) |
+
+The metadata database holds sync flows, run history, and (if enabled) **encrypted** unattended-sync
+credentials. It does not contain your budget data or plaintext Actual credentials.
+
+## Before upgrading
+
+1. Read the [release notes](https://github.com/x-rous/actual-bench/releases) for the target version.
+2. Record your **current version** (shown in the sidebar footer).
+3. **Back up `/data`** (see [Backup](#back-up-the-metadata-database)).
+4. Back up your Compose file and environment configuration.
+5. Ensure `SYNC_VAULT_KEY` is safely retained (needed to keep unattended credentials usable).
+6. Prefer upgrading to a **pinned `:<version>`** rather than a moving tag, for a controlled change.
+
+## Upgrade procedures
+
+**Docker Compose:**
+
+```bash
+docker compose pull
+docker compose up -d
+```
+
+**Docker CLI:**
+
+```bash
+docker pull xrous/actual-bench:1.2.4
+docker stop actual-bench && docker rm actual-bench
+docker run -d \
+  --name actual-bench \
+  --restart unless-stopped \
+  -p 3000:3000 \
+  -v actual-bench-data:/data \
+  xrous/actual-bench:1.2.4
+```
+
+Pin the exact `:<version>` you intend to run so the upgrade is deterministic.
+
+### Moving from edge to stable
+
+If you were testing `edge`, switch the image tag to `latest` or a pinned `:<version>` and recreate the
+container. Keep the same `/data` volume so your metadata carries over.
+
+## Database migrations
+
+- Schema **migrations run automatically on boot** when a newer image starts against an existing
+  metadata database.
+- Check the result on **App Health**: the **Schema** row shows the current and latest version, and
+  **Writable** should be `Yes`.
+- If a migration fails, do **not** keep writing. Restore the `/data` backup you took before upgrading and
+  investigate before retrying.
+
+## Verify after upgrade
+
+1. The app loads and shows the new version in the sidebar footer.
+2. App Health: **Writable = Yes**, **Schema** current, **Persistence** as expected.
+3. Your sync flows and run history are present.
+4. If you use unattended sync, its scheduler section on App Health looks healthy.
+
+## Rollback
+
+- You can roll the **image** back to the previous `:<version>`.
+- Be aware that a newer version may have **migrated the schema**; an older image might not read a
+  newer database. If that happens, restore the pre-upgrade `/data` backup.
+- After a failed migration, prefer **restore from backup** over guessing.
+
+## Back up the metadata database
+
+Back up the `/data` volume (or at least the SQLite file at `ACTUAL_BENCH_DB_PATH`, default
+`/data/actual-bench.sqlite`).
+
+:::caution[Back up SQLite safely]
+For a consistent copy, stop the container first, or use a SQLite-safe backup method. Copying a live
+database file mid-write can produce a corrupt backup. Include any SQLite sidecar files (for example
+`-wal` / `-shm`) if present.
+:::
+
+Also back up your Compose/environment configuration, and store `SYNC_VAULT_KEY` **separately** in your
+secret manager.
+
+## Restore the metadata database
+
+1. Stop the container.
+2. Restore the metadata files to the `/data` volume with correct ownership/permissions.
+3. Restore your environment configuration.
+4. Provide the **same `SYNC_VAULT_KEY`** as before.
+5. Start the container and verify **App Health**.
+6. If the vault key was lost or changed, unattended credentials can't be decrypted — **re-enroll** them
+   per flow.
+
+## Move to another host
+
+1. Back up `/data` and your configuration on the old host.
+2. Restore `/data` on the new host with correct permissions.
+3. Recreate the container with the same image `:<version>` and environment.
+4. Provide the same `SYNC_VAULT_KEY`.
+5. Verify App Health and re-enroll any unattended credentials if the key changed.
+
+## Troubleshooting
+
+- **App started with empty metadata** — the `/data` volume isn't mounted (or points somewhere new);
+  check the mount and `ACTUAL_BENCH_DB_PATH`.
+- **Database not writable** — check volume permissions/ownership; App Health shows Writable = No.
+- **Migration failed** — restore the pre-upgrade backup and investigate.
+- **Old image can't read the new database** — roll forward again, or restore the matching backup.
+- **Unattended credentials fail after a move** — the `SYNC_VAULT_KEY` differs; re-enroll the flows.
+
+## Related pages
+
+- [Configuration](../configuration/)
+- [Deployment](../deployment/)
+- [Troubleshooting](../../help/troubleshooting/)

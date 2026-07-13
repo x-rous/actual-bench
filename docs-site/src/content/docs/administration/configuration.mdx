@@ -1,0 +1,136 @@
+---
+title: Configuration
+description: Environment variables and runtime settings for Actual Bench — metadata database, Direct mode, unattended sync vault, logging, and secret handling.
+sidebar:
+  order: 2
+---
+
+Actual Bench needs **no environment variables for a basic setup**. This page documents the settings you
+can provide for specific features and deployments.
+
+## How configuration is loaded
+
+Configuration is provided as environment variables to the container. Server-side variables are read by
+the Node server; variables prefixed with `NEXT_PUBLIC_` are build/public values exposed to the browser.
+The app **version** is injected automatically from the build — you do not set it.
+
+:::caution[Restart to apply changes]
+Environment variables are read at server start. Change them and **restart** the container for the new
+values to take effect.
+:::
+
+## Environment variables
+
+Only variables verified in the current codebase are listed.
+
+| Variable | Default | Purpose | Secret | Restart |
+|---|---|---|:---:|:---:|
+| `ACTUAL_BENCH_DB_PATH` | `/data/actual-bench.sqlite` | Path to the metadata SQLite database. | No | Yes |
+| `DIRECT_BROWSER_API` | enabled | Set to `0` to disable Direct Actual Server mode (server-side). | No | Yes |
+| `NEXT_PUBLIC_DIRECT_BROWSER_API` | enabled | Set to `0` to disable Direct mode (build/public equivalent). | No | Yes |
+| `SYNC_VAULT_KEY` | *(unset)* | Enables unattended server-side sync; derives the encryption key for stored credentials. | **Yes** | Yes |
+| `SYNC_SCHEDULER_SECRET` | *(unset)* | Enables the external scheduler trigger endpoint; required in its request header. | **Yes** | Yes |
+| `LOG_LEVEL` | `info` | Server log verbosity. | No | Yes |
+| `NEXT_DEV_ALLOWED_ORIGINS` | *(unset)* | Dev-only: allow the HMR WebSocket through a reverse proxy (comma-separated hostnames). | No | Yes |
+
+Demo/analytics variables (such as `NEXT_PUBLIC_ANALYTICS`) exist for the public demo build and are inert
+in self-hosted deployments — you do not need them.
+
+## Minimum configuration
+
+A basic production deployment needs only a persistent `/data` volume; no variables are strictly
+required. Set `ACTUAL_BENCH_DB_PATH` only if you want the metadata database somewhere other than the
+default.
+
+## Direct-mode settings
+
+Direct Actual Server mode is enabled by default. To hide it (offer only HTTP API Server mode), set
+`DIRECT_BROWSER_API=0` **or** `NEXT_PUBLIC_DIRECT_BROWSER_API=0` and restart. See
+[Deployment](../deployment/#direct-mode-network-requirements) for the browser reachability and
+cross-origin requirements Direct mode needs.
+
+## Metadata database
+
+- Default path: `/data/actual-bench.sqlite` (override with `ACTUAL_BENCH_DB_PATH`).
+- Requires a **writable** persistent volume.
+- Schema **migrations run on boot**; App Health shows the current and latest schema version.
+- Stores Actual Bench workflow metadata only — **not** Actual credentials or budget data (with the
+  exception of explicitly enrolled, encrypted unattended-sync credentials, below).
+
+## Unattended sync settings
+
+For server-side scheduled sync (HTTP API Server mode flows only):
+
+- **`SYNC_VAULT_KEY`** — a strong operator secret. When set, the in-process scheduler runs and enrolled
+  credentials can be stored/decrypted. When unset, the feature is fully disabled: nothing is persisted
+  and the scheduler never runs. Enrolled credentials are stored **AES-256-GCM encrypted** in the
+  metadata database; the key is derived from this variable and never stored in the database.
+- **`SYNC_SCHEDULER_SECRET`** *(optional)* — enables an external trigger endpoint at
+  `POST /api/sync/scheduler/tick`, which requires the header `x-scheduler-secret`. Without it, that
+  endpoint returns `403`. Use this only if you want to drive the scheduler from an external cron instead
+  of (or in addition to) the built-in one.
+
+Generate strong values with, for example:
+
+```bash
+openssl rand -base64 48
+```
+
+:::danger[Rotating `SYNC_VAULT_KEY` invalidates stored credentials]
+Changing `SYNC_VAULT_KEY` makes all previously stored ciphertext undecryptable **by design**. After
+rotating, **re-enroll** each unattended flow's credentials. Flows whose credentials can't be decrypted
+are paused and shown on App Health until re-enrolled.
+:::
+
+See [Budget Sync → Automation](../../user-guide/budget-sync/#automation-opt-in) for how flows opt in, and
+the repository's `docs/UNATTENDED_SYNC.md` for the operator walkthrough.
+
+## Logging
+
+Set `LOG_LEVEL` to control server log verbosity (default `info`). Lower it to `warn` or `error` in
+production if you want quieter logs, or raise it for debugging.
+
+## Secret handling
+
+- Never commit a `.env` file with real secrets to version control.
+- Use your container platform's secret management for `SYNC_VAULT_KEY` and `SYNC_SCHEDULER_SECRET`.
+- Do not expose server secrets as `NEXT_PUBLIC_*` variables — those are shipped to the browser.
+- Redact secrets before sharing logs, and rotate any value you suspect is compromised.
+
+## Configuration examples
+
+**Minimal (Direct or HTTP mode, no unattended sync):**
+
+```yaml
+environment:
+  ACTUAL_BENCH_DB_PATH: /data/actual-bench.sqlite
+```
+
+**With unattended server-side sync:**
+
+```yaml
+environment:
+  ACTUAL_BENCH_DB_PATH: /data/actual-bench.sqlite
+  SYNC_VAULT_KEY: ${SYNC_VAULT_KEY}   # provided via your secret manager
+```
+
+**HTTP API Server mode only (Direct disabled):**
+
+```yaml
+environment:
+  DIRECT_BROWSER_API: "0"
+```
+
+Use placeholders and inject real secrets from your platform — never hard-code them.
+
+## Validation
+
+After changing configuration and restarting, open **App Health** to confirm the metadata database is
+writable, the schema is current, and (if configured) the unattended scheduler reports the expected
+vault state.
+
+## Related pages
+
+- [Deployment](../deployment/)
+- [Upgrading and Backups](../upgrading-and-backups/)
+- [Budget Sync](../../user-guide/budget-sync/)
