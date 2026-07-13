@@ -1,0 +1,160 @@
+---
+title: Rules
+description: Build, edit, merge, and diagnose Actual Budget rules in Actual Bench — conditions and actions, stages, templates and formulas, merging duplicates, and the Rule Diagnostics linter.
+sidebar:
+  order: 4
+---
+
+Rules automate changes to transactions in Actual Budget. Actual Bench gives you a full condition/action
+builder with resolved entity names, plus a read-only **Rule Diagnostics** workspace to find problems.
+
+Open **Rules** from the **Data Management** sidebar section; open **Rule Diagnostics** from the
+**Tools** section or the **Diagnostics** button on the Rules toolbar.
+
+## What rules do
+
+A rule has **conditions** (when it applies) and **actions** (what it changes), and runs at a **stage**.
+Actual Budget applies rules when a transaction is created or imported.
+
+## Understand rule stages
+
+Rules run in three stages, in order: **`pre`**, **`default`**, then **`post`**. Use stages to control
+which rules run before others (for example, normalize an imported payee in `pre`, then categorize in
+`default`).
+
+## Create a basic rule
+
+1. On the **Rules** page, create a rule to open the editor.
+2. A new rule starts with a guided default condition (`Payee is`) and a default action row.
+3. Set the condition field, operator, and value.
+4. Add an action.
+5. Save to stage the rule.
+
+Validation stays neutral until you edit rows or attempt to save, then required fields are flagged, with
+inline warnings for risky catch-all or destructive combinations. Closing the drawer with unsaved edits
+prompts for confirmation.
+
+## Add conditions
+
+- Conditions support fields such as **payee**, **imported payee**, **category**, **account**,
+  **amount**, and **notes**.
+- Combine them with **AND** / **OR** logic (`conditions_op`).
+- Operators include `is`, `is not`, `contains`, `matches`, `lt`, `lte`, `gt`, `gte`, and `oneOf`, among
+  others. The `matches` operator shows a regex syntax hint.
+- **Entity-reference values** (payee, category, account) show as blue chips; plain string values show as
+  green chips — so you can tell an ID reference from literal text at a glance.
+
+## Add actions
+
+Common actions include **set payee**, **set category**, **set account**, **set amount**, **set notes**,
+and **link schedule**.
+
+### Templates
+
+Toggle the `{}` button on an action to enter **template mode** (Handlebars), for example
+`{{regex imported_payee 'foo' 'bar'}}`. Templates render as an amber monospace chip in the rules table.
+
+### Formulas
+
+Toggle the `ƒ` button on a **notes** or **payee_name** action to enter an **Excel-style formula**
+evaluated by HyperFormula, for example `=IF(ISBLANK(notes), imported_payee, notes)`. Formulas must
+start with `=`. Template and formula modes are mutually exclusive per action row.
+
+## Edit, duplicate, filter, and search
+
+- Duplicate a rule with one click.
+- Filter the list by stage, payee, or category.
+- **Search resolves entity names** — searching "Groceries" finds rules whose `oneOf` condition
+  references that payee or category by ID. Resolved names are shown throughout (no raw IDs).
+- Links from the Payees and Categories pages filter the rules list to that entity automatically.
+
+## Merge rules
+
+1. Select the rules to combine.
+2. Choose **Merge** to open the merge dialog (it shares the main editor's sections and validation).
+3. Review the merged result; the **Delete originals** checkbox is pre-ticked for full duplicates and
+   unticked for near-duplicates.
+4. Confirm to stage the merge.
+
+Merging from a diagnostics finding returns you to the diagnostics report afterward so cleanup flows
+naturally.
+
+## Schedule-generated rules
+
+Rules created by schedules (those with a `link-schedule` action) are shown **read-only** on the Rules
+page and are excluded from bulk selection and merge. Manage them from the
+[Schedules](../schedules-and-tags/) page.
+
+## Import and export
+
+Rules import/export uses a long CSV format — one condition or action per row, grouped by a `rule_id`.
+Key columns: `rule_id`, `stage`, `conditions_op`, `row_type` (`condition`/`action`), `field`, `op`, and
+`value` (use `|` to separate multi-value `oneOf` values). Formula values are exported with a leading
+`'` so spreadsheets don't evaluate them; the prefix is stripped on re-import.
+
+## Rule Diagnostics
+
+Rule Diagnostics is a **read-only, advisory** linter. It never modifies, creates, or deletes anything as
+a side effect, and it runs entirely in the browser against your current working set — including unsaved
+staged edits.
+
+### Run diagnostics and read findings
+
+1. Open **Rule Diagnostics** (Tools sidebar, or the **Diagnostics** button on the Rules toolbar). The
+   URL `/rules/diagnostics` is bookmarkable.
+2. Findings are grouped by severity with summary cards for **error**, **warning**, and **info**, plus
+   severity- and code-based filters.
+3. Each finding has a plain-language explanation, the affected rule's summary, and a copy-UUID button.
+
+### What it checks
+
+- Missing payee / category / account / category-group references.
+- Empty or no-op actions.
+- Impossibly contradictory conditions on `and`-rules.
+- Strictly shadowed rules within a stage.
+- Broad match criteria (very short `contains` / `matches` values).
+- Duplicate rule groups and near-duplicate pairs.
+- Unsupported field/operator combinations.
+
+Schedule-generated rules are excluded from editor-relevant checks but still surface missing-entity
+findings.
+
+### Act on findings
+
+- Click a finding's rule summary to **jump to the rule** (`/rules?highlight=<id>`) and open it.
+- Duplicate and near-duplicate findings have a one-click **Merge** button that opens the merge dialog
+  pre-filled.
+- A **stale-results** banner appears if the working set changes while the view is open; results stay
+  until you **Refresh**.
+
+## Examples
+
+A few practical patterns (use your own payees and categories):
+
+- **Categorize by payee** — condition `Payee is "Fresh Market"`, action `set category "Groceries"`.
+- **Normalize imported text** — a `pre`-stage template action on `payee_name`:
+  `{{regex imported_payee 'SQ \*' ''}}`.
+- **Fall back to imported payee** — a formula on `notes`: `=IF(ISBLANK(notes), imported_payee, notes)`.
+- **Route by amount** — condition `amount gt 100000`, action `set category "Large Purchases"`.
+
+## Safety and limitations
+
+- Because Actual Budget runs rules on transaction create, a saved rule can change a transaction
+  differently than you expect if other rules also apply. Use stages to order them.
+- Diagnostics is advisory — it never changes your rules.
+
+## Troubleshooting
+
+- **A rule doesn't run** — check its stage and whether an earlier-stage rule already changed the field.
+- **AND/OR confusion** — verify `conditions_op`; AND requires all conditions, OR any.
+- **A missing-entity finding** — the referenced payee/category/account was deleted or renamed.
+- **A regex isn't matching** — check the `matches` syntax hint.
+- **A template/formula won't save** — formulas must start with `=`; template and formula modes are
+  mutually exclusive per row.
+- **A schedule-linked rule can't be edited** — manage it from the Schedules page.
+
+## Related pages
+
+- [Schedules and Tags](../schedules-and-tags/)
+- [Accounts, Payees and Categories](../accounts-payees-categories/)
+- [ActualQL](../actualql/)

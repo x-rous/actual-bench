@@ -1,0 +1,176 @@
+---
+title: Budget Management
+description: Edit a full-year budget in Actual Bench's spreadsheet-grade workspace — cells, multi-cell selection, fill actions, envelope and tracking modes, notes, and CSV import/export.
+sidebar:
+  order: 1
+---
+
+Budget Management is a full-width, 12-month budget editor for both envelope and tracking budgets. It
+behaves like a spreadsheet: select ranges, paste from Excel or Google Sheets, fill values, and review
+everything in a draft panel before you **Save**.
+
+Open it from the **Budget** item in the sidebar (under **Data Management**), or go to
+`/budget-management`.
+
+:::note[Staged like the rest of the app]
+Budget cell edits are staged locally and only written to your Actual Server when you **Save**. See
+[Core Concepts](../../getting-started/core-concepts/) for the staging model.
+:::
+
+## Understand the workspace
+
+The workspace shows a grid with one row per category (grouped under category groups) and one column per
+month in a 12-month window:
+
+- A **budget mode badge** (`Envelope`, `Tracking`, or `Unknown`) sits at the top-left.
+- The **category name column** and the **month header row** stay pinned while you scroll.
+- **Group rows** show per-month aggregate totals; collapsing a group hides its categories but keeps the
+  group total.
+- A **Budget Details** panel on the right shows details for the current selection and your staged
+  changes.
+
+## Choose Budget, Actuals, or Balance
+
+Use the cell-view toggle in the toolbar (also the `V` key) to switch what every month cell displays:
+
+- **Budget** — the budgeted amount.
+- **Actuals** — actual activity.
+- **Balance** — the running balance.
+
+## Navigate months and years
+
+- Move the 12-month window back/forward by one month with `‹` / `›`, or by a year with `«` / `»`.
+- Use the calendar button to jump to the current year.
+- The `[` and `]` keys pan the window backward/forward by one month.
+
+## Expand, collapse, and hide
+
+- Expand or collapse all groups with the toolbar buttons, or `E` / `Shift+E`.
+- Toggle a single group with `Space` on its label.
+- Show or hide hidden categories with the toolbar toggle, or the `H` key.
+
+## Edit one budget cell
+
+1. Select a cell and press `Enter`, `F2`, or start typing (a digit, `+`, `-`, `.`, or `(`).
+2. Type an amount **or an arithmetic expression** — `+`, `-`, `*`, `/`, and parentheses are supported
+   (for example `1200/12`).
+3. Press `Enter` to commit (and move down), `Tab` to commit sideways, or `Escape` to cancel.
+
+Staged edits show in amber. Reverting a cell to its original value removes the staged edit
+automatically. `Delete` or `Backspace` sets a focused cell to zero.
+
+:::note[Income in envelope mode]
+In envelope mode, income categories are not editable in the grid.
+:::
+
+## Select multiple cells
+
+- Click a cell to select it; `Shift+click` or drag to extend a rectangular selection.
+- Extend with `Shift+Arrow`, `Shift+PageUp/Down`, and `Shift+Home/End`.
+- The first column (category/group label) is selectable for row-aggregate views in the details panel.
+
+## Copy and paste
+
+- `Ctrl/Cmd+C` copies the selection as tab-delimited text that round-trips through Excel / Google
+  Sheets.
+- `Ctrl/Cmd+V` fills the selection from a single value, or expands a multi-cell paste from the top-left
+  cell.
+
+## Fill values
+
+With a range selected:
+
+- `Ctrl/Cmd+Enter` — fill the whole selection with the anchor cell's value.
+- `Ctrl/Cmd+D` — fill down.
+- `Ctrl/Cmd+R` — fill right.
+- `Alt+L` — fill each row with its previous-month value.
+- `Alt+A` — fill each row with its 3-month average.
+
+## Right-click bulk actions
+
+Right-click a category budget cell for a context menu:
+
+- **Cell actions** (mode-aware): in tracking mode, enable/disable rollover from that month forward; in
+  envelope mode, **Cover Overspending** or **Transfer to Another Category**.
+- **Set Budget**: Copy previous month, Copy specific month…, Set to zero, Set to fixed amount…, Apply
+  % change…, and 3-, 6-, or 12-month averages (averages use each prior month's **budgeted** amount).
+
+No-input actions run immediately as one undo step; actions that need input open a two-step
+(parameters → preview) dialog.
+
+## Review staged changes and Save
+
+- The Budget Details panel shows a **"N changes"** badge; open it for a list of staged changes grouped
+  by month (transfer pairs appear as a single linked row).
+- **Save** opens a review summary (change count, affected months, net delta), then a progress dialog
+  that sends changes sequentially. Transfer pairs post atomically; standalone edits and holds are sent
+  individually.
+- Partial failures are reported with a **Retry Failed** option; only changes the server accepted are
+  cleared.
+- Undo/redo works across staged edits (`Ctrl/Cmd+Z`, `Ctrl/Cmd+Shift+Z` / `Ctrl+Y`), up to 50 steps.
+
+## Use notes
+
+The details panel has an editable **Note** section for the current selection — a category, group,
+category × month cell, or a whole budget month (selected from its column header).
+
+:::caution[Notes save immediately]
+Note edits save to the server right away, independently of your staged budget edits and the **Save**
+button. See [Core Concepts](../../getting-started/core-concepts/#immediate-save-exceptions).
+:::
+
+## Envelope budget actions
+
+- **Hold for next month** — each *To Budget* cell shows the held amount; the toggle opens a dialog to
+  stage a hold (or clears an existing one). Holds are staged and saved with your other changes.
+- **Cover Overspending / Transfer to Another Category** — stage a category-to-category transfer; both
+  legs stage together as one undo step and post atomically on save.
+
+Holds and transfers are envelope-mode only.
+
+## Tracking budget behavior
+
+In tracking mode the workspace uses planning language rather than envelope balances. Past months show
+actual performance, the current month is marked partial, and future months show budgeted context
+instead of a zero-actual result. Rollover (carryover) is toggled per category from the right-click menu.
+
+## Import and export
+
+- **Export** opens a dialog with month-selection modes (Quick Range, Date Range, or Select), options to
+  include hidden categories / income groups / staged values, and a blank-template download. Files are
+  UTF-8 CSV with a BOM.
+- **Import** parses a CSV, lets you review exact / suggested / unmatched rows, previews before/after
+  values, and stages all changes as one undo step. Near-miss category names get fuzzy-match
+  suggestions; out-of-range months can extend the visible window.
+
+:::tip[Back up before large imports]
+A budget CSV import can stage many changes at once. Consider exporting your current budget first so you
+have a known-good snapshot to re-import if needed.
+:::
+
+## Keyboard shortcuts
+
+Press `?` (or `F1`, `Ctrl/Cmd+/`, or the toolbar **Shortcuts** button) to open the full cheatsheet,
+generated from the app's keymap. Bare-letter shortcuts (`V`, `F`, `H`, `E`, `[`, `]`) don't fire while
+you're typing in a cell.
+
+## Safety and limitations
+
+- Carryover is toggled via the right-click menu (tracking mode); it is shown but not directly editable
+  as a grid cell.
+- Category-to-pool transfers (omitting a source or destination category) are not supported.
+- The grid is not virtualized, so very large category lists may scroll more slowly.
+
+## Troubleshooting
+
+- **Paste didn't apply** — make sure a cell is selected first; paste fills from the top-left cell.
+- **A value isn't visible** — check the cell-view toggle (Budget / Actuals / Balance) and whether the
+  month is inside the current 12-month window.
+- **A category is missing** — it may be hidden; toggle hidden categories with `H`.
+- **Changes didn't save** — failed cells stay staged with a red indicator; use **Retry Failed**.
+- **A note "won't discard"** — notes save immediately and are not part of the staged Save.
+
+## Related pages
+
+- [Core Concepts](../../getting-started/core-concepts/)
+- [Accounts, Payees and Categories](../accounts-payees-categories/)
