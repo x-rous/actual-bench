@@ -12,6 +12,7 @@ import {
   splitPositions,
   statusLabel,
   syncKindOf,
+  targetEntityDisplay,
   toPreviewRow,
 } from "./previewRows";
 import type { SyncFlowRunItem } from "@/lib/app-db/types";
@@ -175,6 +176,47 @@ describe("kind-aware rendering (RD-055 UI)", () => {
     // Entity filters drop transaction-only groups.
     expect(previewFilters("payee").map((f) => f.key)).not.toContain("duplicate");
     expect(previewFilters("transaction").map((f) => f.key)).toContain("duplicate");
+  });
+});
+
+describe("transaction preview clarity (PR-025g)", () => {
+  function withFlags(flags: string[], overrides: Partial<SyncFlowRunItem> = {}) {
+    return toPreviewRow(item({ warnings: { version: 1, data: { flags } }, ...overrides }));
+  }
+
+  it("carries structured FX info from the planned payload", () => {
+    const row = toPreviewRow(item({
+      plannedTargetPayload: {
+        version: 1,
+        data: { date: "2026-07-01", amount: -520, payeeName: "Coffee Bar", categoryId: "tc1", notes: "n",
+          fx: { sourceCurrency: "AED", targetCurrency: "AUD", rate: "0.4162", effectiveDate: "2026-06-30" } },
+      },
+    }));
+    expect(row.fx).toEqual({ sourceCurrency: "AED", targetCurrency: "AUD", rate: "0.4162", effectiveDate: "2026-06-30" });
+  });
+
+  it("drops FX info when the payload lacks a complete rate", () => {
+    expect(toPreviewRow(item()).fx).toBeNull();
+  });
+
+  it("labels FX-pending and rate-changed rows distinctly", () => {
+    expect(statusLabel(withFlags(["fx_rate_pending"]))).toBe("FX pending");
+    expect(statusLabel(withFlags(["fx_rate_changed"]))).toBe("Rate changed");
+  });
+
+  it("resolves payee/category display from match-by-name and missing flags", () => {
+    expect(targetEntityDisplay("Coffee Bar", [], "payee")).toEqual({ name: "Coffee Bar", state: "matched" });
+    expect(targetEntityDisplay("Coffee Bar", ["missing_payee_created_on_apply"], "payee")).toEqual({ name: "Coffee Bar", state: "new" });
+    // Source has a payee but it won't map (auto-create off): keep the name, mark unmatched.
+    expect(targetEntityDisplay("Coffee Bar", ["missing_payee_left_empty"], "payee")).toEqual({ name: "Coffee Bar", state: "unmatched" });
+    // Source has a category with no target match: keep the name, mark unmatched.
+    expect(targetEntityDisplay("Dining", ["missing_category_left_empty"], "category")).toEqual({ name: "Dining", state: "unmatched" });
+    // Genuinely empty source field.
+    expect(targetEntityDisplay(null, [], "category")).toEqual({ name: "", state: "none" });
+  });
+
+  it("no longer maps a raw category id as the target category name", () => {
+    expect(toPreviewRow(item()).target.categoryName).toBeNull();
   });
 });
 
