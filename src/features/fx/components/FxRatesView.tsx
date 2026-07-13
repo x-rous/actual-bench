@@ -217,6 +217,8 @@ function PairPanel({ pair }: { pair: Pair }) {
           {fillM.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />} Fill range from Frankfurter
         </Button>
       </div>
+      {from > to && <p className="text-xs text-destructive">From is after To — pick a valid range.</p>}
+      {days.length >= 400 && <p className="text-xs text-amber-600 dark:text-amber-400">Showing the first 400 days — narrow the range to see the rest.</p>}
       {notice && <p className="text-xs text-green-600 dark:text-green-400">{notice}</p>}
       {error && <p className="text-xs text-destructive">{error}</p>}
 

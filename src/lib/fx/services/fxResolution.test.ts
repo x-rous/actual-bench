@@ -5,14 +5,14 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { getAppDb, resetAppDbForTests } from "@/lib/app-db/connection";
-import { convertCurrency } from "./convertCurrency";
 import { resolveFxRate } from "./resolveFxRate";
+import { convertMinorUnits } from "../fxMath";
 import {
   findActiveFxRate,
   insertFxRate,
   replaceActiveFxRate,
 } from "../repositories/fxRateRepository";
-import { findTransactionFx } from "../repositories/transactionFxRepository";
+import { saveTransactionFx } from "../repositories/transactionFxRepository";
 import { FxError } from "../errors";
 import type { FxRateProvider } from "../providers/fxRateProvider";
 import type { SqliteDatabase } from "@/lib/app-db/types";
@@ -46,10 +46,11 @@ describe("FX resolution + conversion", () => {
     rmSync(root, { recursive: true, force: true });
   });
 
-  it("same-currency converts at rate 1 without a provider call", async () => {
+  it("same-currency resolves at rate 1 without a provider call", async () => {
     const provider = stubProvider();
-    const res = await convertCurrency(db, { amount: 100000, sourceCurrency: "AED", targetCurrency: "AED", date: "2026-07-10" }, { provider, nowMs: NOW });
-    expect(res).toMatchObject({ convertedAmount: 100000, rate: "1", rateSource: "derived" });
+    const res = await resolveFxRate(db, { baseCurrency: "AED", quoteCurrency: "AED", date: "2026-07-10" }, { provider, nowMs: NOW });
+    expect(res).toMatchObject({ rate: "1", source: "derived" });
+    expect(convertMinorUnits(100000, res.rate)).toBe(100000);
     expect(provider.calls).toBe(0);
   });
 
@@ -59,32 +60,29 @@ describe("FX resolution + conversion", () => {
 
   it("fetches from the provider once, then reuses the stored registry rate", async () => {
     const provider = stubProvider("0.4162");
-    const a = await convertCurrency(db, { amount: 100000, sourceCurrency: "AED", targetCurrency: "AUD", date: "2026-07-10" }, { provider, nowMs: NOW });
-    expect(a.convertedAmount).toBe(41620);
+    const a = await resolveFxRate(db, { baseCurrency: "AED", quoteCurrency: "AUD", date: "2026-07-10" }, { provider, nowMs: NOW });
+    expect(convertMinorUnits(100000, a.rate)).toBe(41620);
     expect(provider.calls).toBe(1);
-    // Second, different transaction, same pair+date → no new provider call.
-    const b = await convertCurrency(db, { amount: 50000, sourceCurrency: "AED", targetCurrency: "AUD", date: "2026-07-10" }, { provider, nowMs: NOW });
-    expect(b.convertedAmount).toBe(20810);
+    // Second resolve, same pair+date → registry hit, no new provider call.
+    const b = await resolveFxRate(db, { baseCurrency: "AED", quoteCurrency: "AUD", date: "2026-07-10" }, { provider, nowMs: NOW });
+    expect(convertMinorUnits(50000, b.rate)).toBe(20810);
     expect(provider.calls).toBe(1);
   });
 
   it("a transaction-specific manual rate wins and does not touch the registry", async () => {
     const provider = stubProvider("0.4162");
-    const res = await convertCurrency(db, { amount: 100000, sourceCurrency: "AED", targetCurrency: "AUD", date: "2026-07-10", transactionId: "txn-1", manualRate: "0.5" }, { provider, nowMs: NOW });
-    expect(res).toMatchObject({ convertedAmount: 50000, rate: "0.5", rateSource: "manual", isManual: true });
+    const res = await resolveFxRate(db, { baseCurrency: "AED", quoteCurrency: "AUD", date: "2026-07-10", manualRate: "0.5" }, { provider, nowMs: NOW });
+    expect(res).toMatchObject({ rate: "0.5", source: "manual", isManual: true });
     expect(provider.calls).toBe(0);
     expect(findActiveFxRate(db, { baseCurrency: "AED", quoteCurrency: "AUD", requestedDate: "2026-07-10" })).toBeNull();
   });
 
   it("reuses an existing transaction snapshot on rerun (lock at first sync)", async () => {
-    const provider = stubProvider("0.4162");
-    await convertCurrency(db, { amount: 100000, sourceCurrency: "AED", targetCurrency: "AUD", date: "2026-07-10", transactionId: "txn-9" }, { provider, nowMs: NOW });
-    expect(findTransactionFx(db, "txn-9")?.appliedRate).toBe("0.4162");
-    // Even after the registry rate changes, the rerun keeps the snapshot's rate.
+    saveTransactionFx(db, { transactionId: "txn-9", fxRateId: null, sourceCurrency: "AED", targetCurrency: "AUD", sourceAmount: 100000, convertedAmount: 41620, appliedRate: "0.4162", requestedDate: "2026-07-10", effectiveDate: "2026-07-10", source: "frankfurter", provider: "frankfurter", isManual: false });
+    // Even after the registry rate changes, resolving by transaction keeps the snapshot's rate.
     replaceActiveFxRate(db, { baseCurrency: "AED", quoteCurrency: "AUD", requestedDate: "2026-07-10", effectiveDate: "2026-07-10", rate: "0.99", source: "manual", isUserOverride: true });
-    const rerun = await convertCurrency(db, { amount: 100000, sourceCurrency: "AED", targetCurrency: "AUD", date: "2026-07-10", transactionId: "txn-9" }, { provider, nowMs: NOW });
+    const rerun = await resolveFxRate(db, { baseCurrency: "AED", quoteCurrency: "AUD", date: "2026-07-10", transactionId: "txn-9" }, { nowMs: NOW });
     expect(rerun.rate).toBe("0.4162");
-    expect(provider.calls).toBe(1);
   });
 
   it("derives a direct rate from a stored inverse", async () => {

@@ -118,9 +118,12 @@ export function commitFxImport(
   options: FxImportOptions = {}
 ): FxRateImportBatch {
   const preview = previewFxImport(db, rows, options);
-  const batch = createFxImportBatch(db, { filename });
+  const rejected = preview.counts.invalid;
 
+  // Everything in one transaction: on failure the batch row rolls back too,
+  // rather than being left orphaned as `pending`.
   const apply = db.transaction(() => {
+    const batch = createFxImportBatch(db, { filename });
     let inserted = 0;
     let replaced = 0;
     for (const { row, category } of preview.rows) {
@@ -133,17 +136,13 @@ export function commitFxImport(
         replaced++;
       }
     }
-    return { inserted, replaced };
-  });
-
-  const { inserted, replaced } = apply();
-  const rejected = preview.counts.invalid;
-  return (
-    updateFxImportBatch(db, batch.id, {
+    return updateFxImportBatch(db, batch.id, {
       insertedCount: inserted,
       replacedCount: replaced,
       rejectedCount: rejected,
       status: rejected > 0 ? "completed-with-errors" : "completed",
-    }) ?? batch
-  );
+    }) ?? batch;
+  });
+
+  return apply();
 }

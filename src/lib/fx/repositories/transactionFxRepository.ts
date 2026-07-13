@@ -53,35 +53,23 @@ export function findTransactionFx(db: SqliteDatabase, transactionId: string): Tr
   return row ? rowToSnapshot(row) : null;
 }
 
-/** Insert or replace the snapshot for a transaction (one FX target per txn). */
+/**
+ * Store the immutable snapshot for a transaction (one FX target per txn). The
+ * snapshot is lock-at-first-sync: an existing snapshot is kept as-is and
+ * returned unchanged. Explicit revaluation (025f) will use a dedicated update.
+ */
 export function saveTransactionFx(db: SqliteDatabase, input: TransactionFxInput): TransactionFxRecord {
   const now = new Date().toISOString();
-  const existing = db
-    .prepare("SELECT id, applied_at FROM transaction_fx WHERE transaction_id = ?")
-    .get<{ id: string; applied_at: string }>(input.transactionId);
-  const id = input.id ?? existing?.id ?? generateId();
-  const appliedAt = existing?.applied_at ?? now;
+  const id = input.id ?? generateId();
 
-  const row = db
+  const inserted = db
     .prepare(
       `INSERT INTO transaction_fx (
          id, transaction_id, fx_rate_id, source_currency, target_currency,
          source_amount, converted_amount, applied_rate, requested_date, effective_date,
          source, provider, is_manual, applied_at, updated_at
        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-       ON CONFLICT(transaction_id) DO UPDATE SET
-         fx_rate_id = excluded.fx_rate_id,
-         source_currency = excluded.source_currency,
-         target_currency = excluded.target_currency,
-         source_amount = excluded.source_amount,
-         converted_amount = excluded.converted_amount,
-         applied_rate = excluded.applied_rate,
-         requested_date = excluded.requested_date,
-         effective_date = excluded.effective_date,
-         source = excluded.source,
-         provider = excluded.provider,
-         is_manual = excluded.is_manual,
-         updated_at = excluded.updated_at
+       ON CONFLICT(transaction_id) DO NOTHING
        RETURNING *`
     )
     .get<TransactionFxRow>(
@@ -98,10 +86,11 @@ export function saveTransactionFx(db: SqliteDatabase, input: TransactionFxInput)
       input.source,
       input.provider,
       input.isManual ? 1 : 0,
-      appliedAt,
+      now,
       now
     );
-  return rowToSnapshot(row as TransactionFxRow);
+  // On conflict the insert wrote nothing; return the existing (kept) snapshot.
+  return inserted ? rowToSnapshot(inserted) : findTransactionFx(db, input.transactionId)!;
 }
 
 /** Snapshots that used a given registry rate (for explicit recalculation, 025e). */

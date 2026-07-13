@@ -17,12 +17,26 @@ function tempDb(): { root: string; db: SqliteDatabase } {
 
 const NOW = Date.parse("2026-07-20T00:00:00Z");
 
-const provider: FxRateProvider = {
-  name: "stub",
-  async getRate({ baseCurrency, quoteCurrency, date }) {
-    return { provider: "stub", baseCurrency, quoteCurrency, requestedDate: date, effectiveDate: date, rate: "0.4", source: "frankfurter", isManual: false, fxRateId: null };
-  },
-};
+function makeProvider(): FxRateProvider & { seriesCalls: number } {
+  const p = {
+    name: "stub",
+    seriesCalls: 0,
+    async getRate({ baseCurrency, quoteCurrency, date }: { baseCurrency: string; quoteCurrency: string; date: string }) {
+      return { provider: "stub", baseCurrency, quoteCurrency, requestedDate: date, effectiveDate: date, rate: "0.4", source: "frankfurter" as const, isManual: false, fxRateId: null };
+    },
+    async getRateSeries({ from, to }: { baseCurrency: string; quoteCurrency: string; from: string; to: string }) {
+      p.seriesCalls++;
+      // Return a rate for every trading day requested (the batch fill covers the range).
+      const out: { date: string; rate: string }[] = [];
+      for (let d = new Date(`${from}T00:00:00Z`); d <= new Date(`${to}T00:00:00Z`); d.setUTCDate(d.getUTCDate() + 1)) {
+        out.push({ date: d.toISOString().slice(0, 10), rate: "0.4" });
+      }
+      return out;
+    },
+  };
+  return p;
+}
+const provider = makeProvider();
 
 describe("resolveFxBatch", () => {
   let root: string;
@@ -66,5 +80,13 @@ describe("resolveFxBatch", () => {
   it("uses the provider when allowed and persists the fetch", async () => {
     const res = await resolveFxBatch(db, [{ baseCurrency: "AED", quoteCurrency: "AUD", date: "2026-07-10" }], { provider, nowMs: NOW });
     expect(res.resolved[fxNeedKey({ baseCurrency: "AED", quoteCurrency: "AUD", date: "2026-07-10" })].rate).toBe("0.4");
+  });
+
+  it("fetches the provider once for many dates of the same pair (batched range)", async () => {
+    const p = makeProvider();
+    const needs = ["2026-07-08", "2026-07-09", "2026-07-10"].map((date) => ({ baseCurrency: "AED", quoteCurrency: "AUD", date }));
+    const res = await resolveFxBatch(db, needs, { provider: p, nowMs: NOW });
+    expect(Object.keys(res.resolved)).toHaveLength(3);
+    expect(p.seriesCalls).toBe(1); // one range fetch, not one per date
   });
 });

@@ -1,6 +1,8 @@
 import type { SqliteDatabase } from "@/lib/app-db/types";
-import { FxError, isFxPending, type FxRateErrorCode } from "../errors";
+import { FxError, type FxRateErrorCode } from "../errors";
+import { fallbackFromDate } from "../dateFallback";
 import { resolveFxRate, type ResolveFxRateDeps } from "./resolveFxRate";
+import { fillFxRateRange } from "./fillFxRateRange";
 import type { FxRateResult } from "../types";
 
 /**
@@ -36,17 +38,51 @@ export async function resolveFxBatch(
   deps: ResolveFxRateDeps = {}
 ): Promise<FxBatchResult> {
   const out: FxBatchResult = { resolved: {}, pending: {} };
-  for (const need of distinct(needs)) {
+  const distinctNeeds = distinct(needs);
+
+  // Phase 1: resolve from the registry only (no provider). Records rate hits and
+  // collects the dates that would otherwise need a per-date provider fetch.
+  const registryOnly: ResolveFxRateDeps = { ...deps, provider: undefined };
+  const needProvider: FxNeed[] = [];
+  const resolveOne = async (need: FxNeed) => {
     const key = fxNeedKey(need);
     try {
-      out.resolved[key] = await resolveFxRate(db, need, deps);
+      out.resolved[key] = await resolveFxRate(db, need, registryOnly);
+      return true;
     } catch (err) {
-      if (isFxPending(err) || err instanceof FxError) {
-        out.pending[key] = { code: (err as FxError).code, message: (err as FxError).message };
-      } else {
-        out.pending[key] = { code: "DATABASE_ERROR", message: err instanceof Error ? err.message : "FX resolution failed." };
+      if (err instanceof FxError && err.code === "RATE_NOT_FOUND" && deps.provider) return false;
+      out.pending[key] = err instanceof FxError
+        ? { code: err.code, message: err.message }
+        : { code: "DATABASE_ERROR", message: err instanceof Error ? err.message : "FX resolution failed." };
+      return true;
+    }
+  };
+  for (const need of distinctNeeds) {
+    if (!(await resolveOne(need))) needProvider.push(need);
+  }
+
+  // Phase 2: one provider range fetch per pair covering all missing dates (turns
+  // N per-date calls into one), then retry those from the now-populated registry.
+  if (deps.provider && needProvider.length > 0) {
+    const byPair = new Map<string, FxNeed[]>();
+    for (const n of needProvider) byPair.set(`${n.baseCurrency}:${n.quoteCurrency}`, [...(byPair.get(`${n.baseCurrency}:${n.quoteCurrency}`) ?? []), n]);
+    for (const pairNeeds of byPair.values()) {
+      const dates = pairNeeds.map((n) => n.date).sort();
+      try {
+        await fillFxRateRange(db, { baseCurrency: pairNeeds[0].baseCurrency, quoteCurrency: pairNeeds[0].quoteCurrency, from: fallbackFromDate(dates[0]), to: dates[dates.length - 1] }, deps.provider);
+      } catch {
+        // Provider unavailable → the retry below leaves these as pending.
+      }
+    }
+    for (const need of needProvider) {
+      const key = fxNeedKey(need);
+      try {
+        out.resolved[key] = await resolveFxRate(db, need, registryOnly);
+      } catch (err) {
+        out.pending[key] = err instanceof FxError ? { code: err.code, message: err.message } : { code: "DATABASE_ERROR", message: "FX resolution failed." };
       }
     }
   }
+
   return out;
 }

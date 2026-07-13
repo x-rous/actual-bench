@@ -95,6 +95,26 @@ export function findActiveFxRate(
   return row ? rowToRate(row) : null;
 }
 
+/**
+ * Latest active rate for the pair with `requested_date <= date` and `>= notBefore`
+ * (weekend/holiday fallback from the registry, RD-056). Lets a filled range serve
+ * non-trading dates without re-hitting the provider.
+ */
+export function findLatestActiveFxRateOnOrBefore(
+  db: SqliteDatabase,
+  input: { baseCurrency: string; quoteCurrency: string; date: string; notBefore: string }
+): FxRateRecord | null {
+  const row = db
+    .prepare(
+      `SELECT * FROM fx_rates
+       WHERE base_currency = ? AND quote_currency = ? AND status = 'active'
+         AND requested_date <= ? AND requested_date >= ?
+       ORDER BY requested_date DESC LIMIT 1`
+    )
+    .get<FxRateRow>(input.baseCurrency, input.quoteCurrency, input.date, input.notBefore);
+  return row ? rowToRate(row) : null;
+}
+
 /** Active rates for the pair+date restricted to the given sources, in the caller's priority order. */
 export function findActiveFxRatesBySource(
   db: SqliteDatabase,

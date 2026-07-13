@@ -1,8 +1,9 @@
 import type { SqliteDatabase } from "@/lib/app-db/types";
 import { FxError } from "../errors";
 import { normalizeCurrency, assertValidDate, isFutureDate, todayIso } from "../validation";
+import { fallbackFromDate } from "../dateFallback";
 import { invertRate, isValidRate } from "../fxMath";
-import { findActiveFxRate, insertFxRate } from "../repositories/fxRateRepository";
+import { findActiveFxRate, findLatestActiveFxRateOnOrBefore, insertFxRate } from "../repositories/fxRateRepository";
 import { findTransactionFx } from "../repositories/transactionFxRepository";
 import type { FxRateProvider } from "../providers/fxRateProvider";
 import type { FxRateResult, TransactionFxRecord } from "../types";
@@ -56,8 +57,10 @@ export async function resolveFxRate(
     return { provider: null, baseCurrency: base, quoteCurrency: quote, requestedDate: input.date, effectiveDate: input.date, rate: "1", source: "derived", isManual: false, fxRateId: null };
   }
 
-  // Never use today's rate for a future transaction (FX doc §19).
-  if (isFutureDate(input.date, todayIso(deps.nowMs))) {
+  // Never use today's rate for a future transaction (FX doc §19). A one-day grace
+  // avoids misflagging a same-day transaction across timezones (a genuinely future
+  // date has no rate and pends as RATE_NOT_FOUND anyway).
+  if (isFutureDate(input.date, todayIso(deps.nowMs, 1))) {
     throw new FxError("FUTURE_DATE", `Transaction date ${input.date} is in the future; FX rate is pending.`);
   }
 
@@ -78,6 +81,13 @@ export async function resolveFxRate(
   const active = findActiveFxRate(db, { baseCurrency: base, quoteCurrency: quote, requestedDate: input.date });
   if (active) {
     return { provider: active.provider, baseCurrency: base, quoteCurrency: quote, requestedDate: active.requestedDate, effectiveDate: active.effectiveDate, rate: active.rate, source: active.source, isManual: active.source === "manual", fxRateId: active.id };
+  }
+
+  // 6a. Registry fallback: the latest stored rate on or before the date, within
+  // the fallback window (a weekend/holiday date served from a filled range).
+  const prior = findLatestActiveFxRateOnOrBefore(db, { baseCurrency: base, quoteCurrency: quote, date: input.date, notBefore: fallbackFromDate(input.date) });
+  if (prior) {
+    return { provider: prior.provider, baseCurrency: base, quoteCurrency: quote, requestedDate: input.date, effectiveDate: prior.requestedDate, rate: prior.rate, source: prior.source, isManual: prior.source === "manual", fxRateId: prior.id };
   }
 
   // 6b. Derive from a stored inverse rate (quote→base) if one is active (§13).

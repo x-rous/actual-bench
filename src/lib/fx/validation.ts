@@ -44,7 +44,9 @@ export function isFutureDate(date: string, today: string): boolean {
   return date > today;
 }
 
-/** Today's date (UTC) as YYYY-MM-DD. */
-export function todayIso(nowMs = Date.now()): string {
-  return new Date(nowMs).toISOString().slice(0, 10);
+/** Today's date (UTC) as YYYY-MM-DD, optionally shifted forward by `graceDays`. */
+export function todayIso(nowMs = Date.now(), graceDays = 0): string {
+  const d = new Date(nowMs);
+  if (graceDays) d.setUTCDate(d.getUTCDate() + graceDays);
+  return d.toISOString().slice(0, 10);
 }
