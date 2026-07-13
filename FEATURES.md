@@ -74,7 +74,7 @@ A workspace for syncing data between budget files as saved one-way flows. One un
 - Filters: date range, cleared/reconciled status, amount sign, payee/category include-exclude, and notes-contains; sync-generated transactions are always excluded to prevent loops
 - Eligible split lines are exploded into separate normal target transactions by default, or **kept grouped as one target split** (parent + child lines, each resolved by name) when you enable *Keep splits grouped on the target*
 - **Same-budget flows**: a transaction flow may sync between two different accounts in the same budget (only a true self-sync — the same account on both sides — is blocked); entity flows still require two different budgets
-- Preview is required before any write: a dry-run produces a persisted run with classified rows — new, already synced, duplicate candidate, changed since sync, marker match, or blocked — showing source and transformed target amounts side by side, with no writes to Actual
+- Preview is required before any write: a dry-run produces a persisted run with classified rows — new, already synced, duplicate candidate, changed since sync, marker match, blocked, or FX pending — showing source and transformed target amounts side by side, with no writes to Actual. For currency-converting flows the preview labels each amount with its currency and shows the applied rate; payee and category cells show whether the value matches, will be created, or won't map on the target
 - Apply writes only the selected safe `new` create candidates, creates/resolves payees per policy, stamps a durable target-side marker (`imported_id`), and records a mapping immediately after each success; partial failures are reported and never lose earlier successes
 - Idempotent reruns: app-owned mappings are the source of truth (with the target marker as a secondary recovery aid), so re-previewing after apply shows already-synced items instead of creating duplicates
 - Marker-match repair: if a target already carries a flow's marker but the mapping was lost, the row can be selected to repair the mapping without creating a duplicate
@@ -93,12 +93,30 @@ The same engine can run without hand-picking every change — but only for prova
 - **Auto-apply safe items on preview**: a run auto-applies only safe items (new creates and marker-match repairs); everything uncertain is left for you
 - **Auto-sync on a schedule**: a client-side timer re-runs a safe-only sync at a chosen interval (minimum 15 minutes) **while Actual Bench is open and the connection is unlocked**
 - **Auto-sync on a server schedule (unattended)**: for **HTTP API mode** flows, a server-side scheduler runs the same safe-only sync **with the app closed** — opt-in and off by default. It requires an operator to set `SYNC_VAULT_KEY` and to enroll the connection's API key in an **encrypted, server-side vault** (AES-256-GCM; the key lives in the environment, never in the database, and is never returned to the browser). A missing/locked vault or an auth failure **pauses the flow and surfaces it on App Health** rather than guessing. Direct-mode flows can't run unattended (Actual runs in the browser) and keep the client-side interval. See `docs/UNATTENDED_SYNC.md`.
-- **Multi-currency consolidation**: a transaction flow can **convert amounts** between budgets in different currencies (its *Convert currency* option). Rates come from a database-backed registry, filled automatically from the free Frankfurter provider (no API key; weekend/holiday fallback to the latest prior rate); you can override any date or import a CSV. The preview shows original → rate → converted, and a missing/future rate goes to the review queue (a provider hiccup never fails the run). Each converted transaction stores an **immutable rate snapshot** and an audit note; rates **lock at first sync** so past conversions never silently change. A dedicated **FX Rates** page (sidebar → Tools) shows the trend and coverage and lets you fill/override/import rates
 - **Run safe sync now**: a one-click safe-only run for any automated flow
 - **Review queue**: duplicates, source-changed, source-missing, and blocked items are never auto-applied — they collect in a review queue for you to handle
 - **Exact-duplicate auto-map** (opt-in, off by default): a transaction that already exists on the target with the same date, amount, payee and category is linked to it (mapping only, no new transaction); fuzzy duplicates always stay in the review queue
 - **Retry failed items**: re-attempt just the failed items of a run (marker-based idempotency prevents duplicates on retry)
 - **Flow health**: after repeated failed/partial automated runs a flow auto-pauses (and is badged) so it stops firing until you re-enable it; auto-run outcomes that fail or leave items to review raise an in-app notice
+
+### Multi-currency consolidation (FX)
+
+Consolidate budgets kept in **different currencies**: a transaction flow can convert amounts as it syncs, so a source budget in one currency lands correctly in a target budget's currency.
+
+- **Enable per flow**: turn on *Convert currency* in a transaction flow's transforms and set the source and target currencies. Only transaction flows convert — entity (payee/category) flows never do.
+- **Rates**: come from a database-backed registry, filled automatically from the free [Frankfurter](https://frankfurter.dev) provider (no API key; weekend/holiday dates fall back to the latest prior rate). You can override any single date or import a CSV.
+- **Preview**: each converted row shows the original amount, the applied rate, and the converted amount, each labelled with its currency. A missing or future-dated rate goes to the review queue as **FX pending** rather than failing the run — a provider hiccup never breaks a sync.
+- **Immutable snapshots**: every converted transaction stores the exact rate, source/target amounts, provider, and dates as an immutable per-transaction snapshot, plus a compact audit note on the target transaction. Rates **lock at first sync**, so a later rate change never silently rewrites past conversions.
+- **Update on rate change** (opt-in, off by default): if you later correct a rate, enable *Update synced transactions when the rate changes* on the flow to push the new conversion to already-synced targets through the normal previewed, safety-checked update path — never silently.
+
+**FX Rates page** — a dedicated per-currency-pair workspace at **sidebar → Tools → FX Rates** (`/fx-rates`):
+
+- Hero card with the latest rate, a trend sparkline, and coverage for the selected date range
+- **Fill range from Frankfurter** backfills every missing day in the range in one click (reports how many were inserted vs. already set)
+- A coverage ledger lists every day in the range with gaps called out, and labels each rate's source (Frankfurter, Uploaded, Manual, Derived)
+- **Set your rate** overrides any date manually; when the override affects already-synced transactions, an **impact preview** lists them with their old → new converted amounts before you decide to update
+- **Import a CSV** of rates for a pair
+- Currency pairs are seeded from your FX-enabled flows, and you can add your own
 
 - Not in scope: true Actual transfer-linked sync (same-budget uses a plain copy), automatic (non-review) target deletes, category auto-create, fuzzy duplicate auto-mapping, unattended sync for **Direct**-mode flows (HTTP API mode is supported), FX gain/loss accounting, multi-currency within a single budget file, and silent recalculation of past conversions
 
