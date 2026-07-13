@@ -144,7 +144,16 @@ export const transactionAdapter: SyncKindAdapter = {
     }
   },
 
-  plan({ flow, materialized, target, mappings, targetCapabilities }): SyncPlanResult {
+  /** Distinct (sourceCurrency → targetCurrency, date) rates this run needs (RD-056). */
+  collectFxNeeds(materialized: unknown): { baseCurrency: string; quoteCurrency: string; date: string }[] {
+    const source = materialized as MaterializedSource;
+    const { config } = source;
+    if (!config.fxEnabled || config.fxSourceCurrency === config.fxTargetCurrency) return [];
+    const dates = new Set(source.items.map((item) => item.date));
+    return [...dates].map((date) => ({ baseCurrency: config.fxSourceCurrency, quoteCurrency: config.fxTargetCurrency, date }));
+  },
+
+  plan({ flow, materialized, target, mappings, targetCapabilities, fxRateByDate }): SyncPlanResult {
     const source = materialized as MaterializedSource;
     void flow;
     // Deleted-source detection is only safe for a whole-account scan: with a date
@@ -157,6 +166,7 @@ export const transactionAdapter: SyncKindAdapter = {
       target: target as SyncPlannerTargetSnapshot,
       existingMappings: mappings as SyncMapping[],
       detectDeletedSource: source.config.detectDeletedSource && wholeAccount,
+      fxRateByDate,
     });
   },
 

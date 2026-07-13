@@ -35,7 +35,9 @@ export type SyncPlanFlag =
   /** Source changed and the flow opted into updating the mapped target (RD-057 §4). */
   | "source_changed_update"
   /** Mapped source item was deleted; target still exists, awaiting review (RD-057 §5). */
-  | "source_deleted_review";
+  | "source_deleted_review"
+  /** FX conversion is enabled but no rate is available for this item's date (RD-056). */
+  | "fx_rate_pending";
 
 /** The transaction the engine would create on the target (create-only, no splits). */
 export type PlannedTargetPayload = {
@@ -56,6 +58,35 @@ export type PlannedTargetPayload = {
    * direction applied and sum to `amount`.
    */
   subtransactions?: PlannedSplitChild[] | null;
+  /**
+   * FX conversion applied to this payload (RD-056). Present only for a
+   * cross-currency create; used at apply to write the immutable transaction_fx
+   * snapshot keyed to the created target transaction. `amount` above is already
+   * the converted amount; `sourceAmount` here is the original.
+   */
+  fx?: PlannedFx | null;
+};
+
+/** FX provenance carried on a planned payload; the source layer stays decimal-string decoupled. */
+export type PlannedFx = {
+  sourceAmount: number;
+  sourceCurrency: string;
+  targetCurrency: string;
+  rate: string;
+  requestedDate: string;
+  effectiveDate: string;
+  source: string;
+  provider: string | null;
+  fxRateId: string | null;
+};
+
+/** Resolved rate info for a transaction date (RD-056), threaded into the planner. */
+export type FxRateInfo = {
+  rate: string;
+  effectiveDate: string;
+  source: string;
+  provider: string | null;
+  fxRateId: string | null;
 };
 
 /** A resolved split child line to create under a grouped target split. */
@@ -152,6 +183,12 @@ export type SyncPlannerInput = {
   sourceTransactions: SyncSourceTransaction[];
   target: SyncPlannerTargetSnapshot;
   existingMappings: SyncMapping[];
+  /**
+   * Resolved FX rate info per transaction date, when the flow converts currency
+   * (RD-056). A cross-currency item whose date is absent here is classified
+   * `blocked` with `fx_rate_pending`. Omitted when FX is off.
+   */
+  fxRateByDate?: Map<string, FxRateInfo>;
   /**
    * When true, active mappings with no matching source item are emitted as
    * review-first `source_missing` delete candidates (RD-057 §5). The adapter

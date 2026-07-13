@@ -163,7 +163,12 @@ export function FlowEditDialog({
   // option is disabled in that case but the stored policy can go stale.
   const invalidUnattended = form.automation.reviewPolicy === "auto_sync_unattended" && !unattendedEligible;
 
-  const canSave = routeMissing.length === 0 && !blockedRoute && !invalidUnattended;
+  // FX (RD-056): a converting transaction flow needs both currency codes.
+  const invalidFx =
+    form.transform.fxEnabled && !entityMode &&
+    (!form.transform.fxSourceCurrency.trim() || !form.transform.fxTargetCurrency.trim());
+
+  const canSave = routeMissing.length === 0 && !blockedRoute && !invalidUnattended && !invalidFx;
 
   const set = (patch: Partial<SyncFlowFormState>) => onChange({ ...form, ...patch });
   const setFilter = (patch: Partial<SyncFlowFormState["filter"]>) => onChange({ ...form, filter: { ...form.filter, ...patch } });
@@ -411,6 +416,30 @@ export function FlowEditDialog({
                 Also copy the source transaction&apos;s notes
               </label>
               <p className="text-xs text-muted-foreground">Payees and categories are matched by name on the target.</p>
+
+              {!entityMode && (
+                <div className="flex flex-col gap-2 border-t border-border/60 pt-3">
+                  <label className="flex items-center gap-2 text-sm" title="Convert amounts into a master currency using the FX rate for each transaction's date (RD-056). Missing rates go to review.">
+                    <input type="checkbox" aria-label="Convert currency" checked={form.transform.fxEnabled} onChange={(e) => setTransform({ fxEnabled: e.target.checked })} />
+                    Convert currency (multi-currency consolidation)
+                  </label>
+                  {form.transform.fxEnabled && (
+                    <div className="flex flex-col gap-2 pl-6">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Input aria-label="Source currency" className="w-16 uppercase" maxLength={3} placeholder="AED" value={form.transform.fxSourceCurrency} onChange={(e) => setTransform({ fxSourceCurrency: e.target.value.toUpperCase() })} />
+                        <span className="text-muted-foreground">→</span>
+                        <Input aria-label="Target currency" className="w-16 uppercase" maxLength={3} placeholder="AUD" value={form.transform.fxTargetCurrency} onChange={(e) => setTransform({ fxTargetCurrency: e.target.value.toUpperCase() })} />
+                        <span className="text-[11px] text-muted-foreground">ISO 4217 codes — target is your master currency</span>
+                      </div>
+                      <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                        <input type="checkbox" aria-label="Fetch missing rates" checked={form.transform.fxAllowProvider} onChange={(e) => setTransform({ fxAllowProvider: e.target.checked })} />
+                        Fetch missing rates automatically (Frankfurter)
+                      </label>
+                      {invalidFx && <span className="text-xs text-destructive">Enter both a source and a target currency code.</span>}
+                    </div>
+                  )}
+                </div>
+              )}
             </section>
 
             <section className="flex flex-col gap-3">

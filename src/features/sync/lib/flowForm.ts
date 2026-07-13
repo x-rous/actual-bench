@@ -53,6 +53,11 @@ export type SyncTransformForm = {
   /** Custom marker text; empty = the default `[Synced from …]` (RD-057). */
   notesMarker: string;
   copySourceNotes: boolean;
+  /** Multi-currency consolidation (RD-056). Off by default. */
+  fxEnabled: boolean;
+  fxSourceCurrency: string;
+  fxTargetCurrency: string;
+  fxAllowProvider: boolean;
 };
 
 /** Automation policy for the flow (RD-054 / PR-020). */
@@ -135,6 +140,10 @@ export function emptyFlowForm(): SyncFlowFormState {
       notesMarkerEnabled: true,
       notesMarker: "",
       copySourceNotes: true,
+      fxEnabled: false,
+      fxSourceCurrency: "",
+      fxTargetCurrency: "",
+      fxAllowProvider: true,
     },
     automation: {
       // Existing/new flows stay manual - RD-053 behavior - until opted in.
@@ -246,6 +255,10 @@ export function buildFlowPayload(
     notesMarkerEnabled: form.transform.notesMarkerEnabled,
     notesMarker: form.transform.notesMarker.trim() || null,
     copySourceNotes: form.transform.copySourceNotes,
+    fxEnabled: form.transform.fxEnabled,
+    fxSourceCurrency: form.transform.fxSourceCurrency.trim().toUpperCase() || null,
+    fxTargetCurrency: form.transform.fxTargetCurrency.trim().toUpperCase() || null,
+    fxAllowProvider: form.transform.fxAllowProvider,
   };
 
   // Automation/policy metadata lives in the leg `options` envelope (non-secret).
@@ -328,6 +341,10 @@ export function flowToFormState(
     notesMarkerEnabled: config.notesMarkerEnabled,
     notesMarker: config.notesMarker,
     copySourceNotes: config.copySourceNotes,
+    fxEnabled: config.fxEnabled,
+    fxSourceCurrency: config.fxSourceCurrency,
+    fxTargetCurrency: config.fxTargetCurrency,
+    fxAllowProvider: config.fxAllowProvider,
   };
   form.automation = {
     reviewPolicy: config.reviewPolicy,

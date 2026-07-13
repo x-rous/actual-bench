@@ -447,3 +447,62 @@ describe("planSyncFlow - blocked", () => {
     expect(item.plannedTargetPayload).toBeNull();
   });
 });
+
+describe("planSyncFlow - FX conversion (RD-056)", () => {
+  const fxConfig = buildPlanConfig({
+    flowId: FLOW_ID, sourceBudgetId: "budget-src", targetBudgetId: "budget-tgt", targetAccountId: "acct-tgt",
+    sourceBudgetName: "Home", sourceAccountName: "Checking",
+    amountDirection: "same", fxEnabled: true, fxSourceCurrency: "AED", fxTargetCurrency: "AUD",
+  });
+
+  const rateInfo = (rate: string) => ({ rate, effectiveDate: "2026-07-01", source: "manual", provider: null, fxRateId: "fx-1" });
+
+  it("converts a cross-currency create amount and carries FX audit + note", () => {
+    const plan = planSyncFlow(baseInput({ config: fxConfig, fxRateByDate: new Map([["2026-07-01", rateInfo("0.4")]]) }));
+    const item = plan.items[0];
+    expect(item.classification).toBe("new");
+    // -1250 (same sign) × 0.4 = -500.
+    expect(item.plannedTargetPayload?.amount).toBe(-500);
+    expect(item.plannedTargetPayload?.fx).toMatchObject({ sourceAmount: -1250, sourceCurrency: "AED", targetCurrency: "AUD", rate: "0.4", fxRateId: "fx-1" });
+    expect(item.plannedTargetPayload?.notes).toContain("AED -12.50 @ 0.4");
+  });
+
+  it("routes an item with no rate for its date to fx_rate_pending review", () => {
+    const plan = planSyncFlow(baseInput({ config: fxConfig })); // no rate map
+    expect(plan.items[0].classification).toBe("blocked");
+    expect(plan.items[0].flags).toContain("fx_rate_pending");
+    expect(plan.items[0].action).toBe("blocked");
+  });
+
+  it("keeps FX split children summing to the converted parent (remainder allocation)", () => {
+    const splitFxConfig = buildPlanConfig({
+      flowId: FLOW_ID, sourceBudgetId: "budget-src", targetBudgetId: "budget-tgt", targetAccountId: "acct-tgt",
+      sourceBudgetName: "Home", sourceAccountName: "Checking",
+      amountDirection: "same", fxEnabled: true, fxSourceCurrency: "AED", fxTargetCurrency: "AUD", createTargetSplits: true,
+    });
+    const parent = txn({
+      id: "sp", amount: -2, isParent: true,
+      splitLines: [
+        { id: "s1", amount: -1, payeeId: null, payeeName: null, categoryId: "sc-a", categoryName: "A", notes: null },
+        { id: "s2", amount: -1, payeeId: null, payeeName: null, categoryId: "sc-b", categoryName: "B", notes: null },
+      ],
+    });
+    const target = emptyTarget({ categories: [{ id: "tc-a", name: "A" }, { id: "tc-b", name: "B" }] });
+    const plan = planSyncFlow(baseInput({ config: splitFxConfig, sourceTransactions: [parent], target, fxRateByDate: new Map([["2026-07-01", rateInfo("0.4")]]) }));
+    const payload = plan.items[0].plannedTargetPayload!;
+    // parent 2 × 0.4 → 1; each child 1 × 0.4 rounds to 0, so the remainder is pushed to the last child.
+    expect(payload.amount).toBe(-1);
+    expect(payload.subtransactions!.reduce((s, c) => s + c.amount, 0)).toBe(payload.amount);
+  });
+
+  it("does not convert when source and target currencies match", () => {
+    const sameCcy = buildPlanConfig({
+      flowId: FLOW_ID, sourceBudgetId: "budget-src", targetBudgetId: "budget-tgt", targetAccountId: "acct-tgt",
+      sourceBudgetName: "Home", sourceAccountName: "Checking",
+      amountDirection: "same", fxEnabled: true, fxSourceCurrency: "AED", fxTargetCurrency: "AED",
+    });
+    const plan = planSyncFlow(baseInput({ config: sameCcy }));
+    expect(plan.items[0].classification).toBe("new");
+    expect(plan.items[0].plannedTargetPayload?.amount).toBe(-1250);
+  });
+});

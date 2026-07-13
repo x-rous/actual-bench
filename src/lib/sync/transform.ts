@@ -1,11 +1,12 @@
 import { buildSyncNotesMarker, applySyncNotesMarker } from "./notesMarker";
+import { convertMinorUnits } from "@/lib/fx/fxMath";
 import type { SyncFlowPlanConfig } from "./flowConfig";
 import type { SyncSourceItem } from "./sourceItems";
 import type {
   CategoryResolution,
   PayeeResolution,
 } from "./entityResolution";
-import type { PlannedSplitChild, PlannedTargetPayload } from "./plannedChanges";
+import type { FxRateInfo, PlannedSplitChild, PlannedTargetPayload } from "./plannedChanges";
 
 /**
  * Pure transforms from a source item to a planned target payload
@@ -59,18 +60,45 @@ export function buildPlannedTargetPayload(input: {
   importedId: string | null;
   /** Resolved split children for a grouped target split (RD-057 §6). */
   subtransactions?: PlannedSplitChild[] | null;
+  /** Resolved FX rate info for this item's date (RD-056). Null/absent leaves the
+   * amount in the source currency. */
+  fx?: FxRateInfo | null;
 }): PlannedTargetPayload {
-  const { item, config, payee, category, importedId, subtransactions } = input;
+  const { item, config, payee, category, importedId, subtransactions, fx } = input;
+  const directed = transformAmount(item.amount, config.amountDirection);
+  const amount = fx ? convertMinorUnits(directed, fx.rate) : directed;
+  const baseNotes = transformNotes(item.notes, config);
   return {
     accountId: config.targetAccountId,
     date: item.date,
-    amount: transformAmount(item.amount, config.amountDirection),
+    amount,
     payeeId: payee.payeeId,
     payeeName: payee.payeeName,
     categoryId: category.categoryId,
-    notes: transformNotes(item.notes, config),
+    notes: fx ? appendFxNote(baseNotes, item.amount, config.fxSourceCurrency, fx.rate) : baseNotes,
     cleared: false,
     importedId,
     subtransactions: subtransactions && subtransactions.length > 0 ? subtransactions : null,
+    fx: fx
+      ? {
+          sourceAmount: item.amount,
+          sourceCurrency: config.fxSourceCurrency,
+          targetCurrency: config.fxTargetCurrency,
+          rate: fx.rate,
+          requestedDate: item.date,
+          effectiveDate: fx.effectiveDate,
+          source: fx.source,
+          provider: fx.provider,
+          fxRateId: fx.fxRateId,
+        }
+      : null,
   };
+}
+
+/** Append a compact FX audit line to the target notes, e.g. `[AED -10.00 @ 0.4162]`. */
+function appendFxNote(notes: string | null, sourceMinor: number, sourceCurrency: string, rate: string): string {
+  const original = `${sourceCurrency} ${(sourceMinor / 100).toFixed(2)} @ ${rate}`;
+  const marker = `[${original}]`;
+  const trimmed = (notes ?? "").trim();
+  return trimmed ? `${trimmed} ${marker}` : marker;
 }

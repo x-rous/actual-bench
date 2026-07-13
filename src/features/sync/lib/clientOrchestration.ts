@@ -116,6 +116,9 @@ function applyStore(): ApplyStore {
         error: { version: 1, data: { code: error.code, message: error.message } },
       });
     },
+    persistFxSnapshot: async (input) => {
+      await api.persistFxSnapshot(input);
+    },
   };
 }
 
@@ -131,7 +134,7 @@ export function runClientPreview(input: {
       context: { sourceConnection: input.sourceConnection, targetConnection: input.targetConnection },
       allowDisabled: input.allowDisabled,
     },
-    { transport: browserTransportProvider, store: previewStore() }
+    { transport: browserTransportProvider, store: previewStore(), resolveFx: (needs, allowProvider) => api.resolveFxRates(needs, allowProvider) }
   );
 }
 

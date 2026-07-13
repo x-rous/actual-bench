@@ -3,6 +3,7 @@ import { resolveCategory, resolvePayee } from "./entityResolution";
 import { generateSyncMarker } from "./marker";
 import { expandSourceTransactions, type SyncSourceItem } from "./sourceItems";
 import { buildPlannedTargetPayload } from "./transform";
+import { convertMinorUnits } from "@/lib/fx/fxMath";
 import type {
   SyncDuplicateConfidence,
   SyncEntityType,
@@ -154,13 +155,31 @@ function baseItem(
   };
 }
 
+/** A blocked item awaiting an FX rate (RD-056), routed to review. */
+function fxPendingItem(item: SyncSourceItem): SyncPlannedItem {
+  return baseItem(item, {
+    classification: "blocked",
+    action: "blocked",
+    flags: ["fx_rate_pending"],
+    message: `No FX rate available for ${item.date}; item is awaiting a rate.`,
+  });
+}
+
 function planSourceItem(
   item: SyncSourceItem,
-  input: Pick<SyncPlannerInput, "config" | "target">,
+  input: Pick<SyncPlannerInput, "config" | "target" | "fxRateByDate">,
   mappingByKey: Map<string, SyncMapping>,
   canWriteMarker: boolean
 ): SyncPlannedItem {
   const { config, target } = input;
+
+  // FX conversion (RD-056): resolve this item's rate. A cross-currency item with
+  // no rate for its date is "pending" and routed to review before it could be
+  // matched/created with an unconverted amount.
+  const needsFx = config.fxEnabled && config.fxSourceCurrency !== config.fxTargetCurrency;
+  const fxInfo = needsFx ? input.fxRateByDate?.get(item.date) ?? null : null;
+  const fxRate = fxInfo?.rate ?? null;
+  const fxPending = needsFx && fxInfo == null;
 
   // 1. Existing mapping wins - this item was synced before.
   const mapping = mappingByKey.get(item.itemKey);
@@ -193,6 +212,7 @@ function planSourceItem(
     // totals inconsistent. Warn instead until updates can carry subtransactions.
     const isGroupedSplit = !!item.splitLines && item.splitLines.length > 0;
     if (config.updateMappedTargets && mapping.targetTransactionId && !isGroupedSplit) {
+      if (fxPending) return fxPendingItem(item);
       const upPayee = resolvePayee(item, config, input.target.payees);
       const upCategory = resolveCategory(item, input.target.categories);
       const upImportedId = generateSyncMarker({
@@ -207,6 +227,7 @@ function planSourceItem(
         payee: upPayee,
         category: upCategory,
         importedId: upImportedId,
+        fx: fxInfo,
       });
       return baseItem(item, {
         classification: "source_changed_since_sync",
@@ -241,15 +262,26 @@ function planSourceItem(
   const subtransactions = item.splitLines?.map((line) => {
     const childPayee = resolvePayee({ payeeName: line.payeeName ?? item.payeeName }, config, target.payees);
     const childCategory = resolveCategory({ categoryName: line.categoryName }, target.categories);
+    const directedChild = config.amountDirection === "same" ? line.amount : -line.amount;
     return {
-      amount: config.amountDirection === "same" ? line.amount : -line.amount,
+      amount: fxRate ? convertMinorUnits(directedChild, fxRate) : directedChild,
       categoryId: childCategory.categoryId,
       payeeId: childPayee.payeeId,
       payeeName: childPayee.payeeName,
       notes: line.notes,
     };
   }) ?? null;
-  const payload = buildPlannedTargetPayload({ item, config, payee, category, importedId, subtransactions });
+  // With FX, converting each child independently can round the children so they
+  // no longer sum to the parent total. Reconcile by pushing the rounding
+  // remainder onto the last child, keeping the grouped split balanced (RD-056).
+  if (fxRate && subtransactions && subtransactions.length > 0) {
+    const directedParent = config.amountDirection === "same" ? item.amount : -item.amount;
+    const parentConverted = convertMinorUnits(directedParent, fxRate);
+    const childSum = subtransactions.reduce((sum, child) => sum + child.amount, 0);
+    const remainder = parentConverted - childSum;
+    if (remainder !== 0) subtransactions[subtransactions.length - 1].amount += remainder;
+  }
+  const payload = buildPlannedTargetPayload({ item, config, payee, category, importedId, subtransactions, fx: fxInfo });
   const effectivePayeeName = resolveEffectivePayeeName(item, payee, target);
 
   // 2. No mapping, but our marker already exists on the target → repairable.
@@ -262,6 +294,10 @@ function planSourceItem(
       message: "Target already has a matching sync marker; mapping can be repaired.",
     });
   }
+
+  // An FX-pending item must not be matched or created with an unconverted
+  // amount — route it to review now (after the cheap marker-repair check above).
+  if (fxPending) return fxPendingItem(item);
 
   // 3. Duplicate heuristic (skipped by default when uncertain).
   const { confidence, targetTransactionId: dupTargetId } = classifyDuplicate(
@@ -325,7 +361,9 @@ function planSourceItem(
     flags,
     selectedForApply: true,
     plannedTargetPayload: payload,
-    message: null,
+    // Surface the applied FX rate in the preview's Details (RD-056); the source
+    // and target amount columns already show original vs converted.
+    message: fxRate ? `FX ${config.fxSourceCurrency}→${config.fxTargetCurrency} @ ${fxRate}` : null,
   });
 }
 

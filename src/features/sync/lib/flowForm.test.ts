@@ -111,6 +111,26 @@ describe("validation", () => {
   });
 });
 
+describe("FX config (RD-056)", () => {
+  it("round-trips FX transform fields through the payload and back", () => {
+    const form = filledForm();
+    form.transform.fxEnabled = true;
+    form.transform.fxSourceCurrency = "aed";
+    form.transform.fxTargetCurrency = "aud";
+    form.transform.fxAllowProvider = false;
+    const payload = buildFlowPayload(form, instances) as JsonObject & { legs: JsonObject[] };
+    const leg = payload.legs[0] as Record<string, { version: number; data: JsonObject }>;
+    expect(leg.transform.data).toMatchObject({ fxEnabled: true, fxSourceCurrency: "AED", fxTargetCurrency: "AUD", fxAllowProvider: false });
+
+    const flow: SyncFlow = {
+      id: "flow-1", name: "Card sync", enabled: true, flowType: "transaction_sync", description: null, createdAt: "", updatedAt: "",
+      legs: [{ id: "leg-1", flowId: "flow-1", position: 0, sourceRef: leg.sourceRef, targetRef: leg.targetRef, filter: leg.filter, transform: leg.transform, options: leg.options, createdAt: "", updatedAt: "" }],
+    };
+    const back = flowToFormState(flow, instances);
+    expect(back.transform).toMatchObject({ fxEnabled: true, fxSourceCurrency: "AED", fxTargetCurrency: "AUD", fxAllowProvider: false });
+  });
+});
+
 describe("buildFlowPayload", () => {
   it("encodes non-secret refs, filter, and transform into leg envelopes", () => {
     const payload = buildFlowPayload(filledForm(), instances) as JsonObject & { legs: JsonObject[] };
