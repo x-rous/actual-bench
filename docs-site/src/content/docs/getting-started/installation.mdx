@@ -1,0 +1,140 @@
+---
+title: Installation
+description: Run Actual Bench with Docker or Docker Compose, open the app, and verify the installation.
+sidebar:
+  order: 2
+---
+
+This page helps you get Actual Bench running with the simplest supported installation. Actual Bench is
+distributed as a Docker image, so Docker (with or without Compose) is the recommended way to run it.
+
+:::note[You still need Actual Budget]
+Actual Bench connects to an existing [Actual Budget](https://github.com/actualbudget/actual) server —
+it does not include one. Have your Actual Server (and, for HTTP API Server mode,
+[actual-http-api](https://github.com/jhonderson/actual-http-api)) running first.
+:::
+
+## Before you start
+
+- **Docker** (and optionally Docker Compose) installed on the host.
+- A free host **port** to publish the app on. The container listens on port **3000**.
+- A location for a **persistent volume** so Actual Bench keeps its metadata across restarts.
+- **Browser access** to wherever you publish Actual Bench.
+- For **Direct Actual Server mode**: your browser must be able to reach your Actual Server, which has
+  CORS and cross-origin isolation requirements. See [Connect to Actual Budget](../connecting/).
+- For **HTTP API Server mode**: the Actual Bench container must be able to reach your `actual-http-api`
+  server.
+
+## Choose a release channel
+
+Actual Bench publishes multi-architecture images (`linux/amd64` and `linux/arm64`):
+
+| Tag | Stability | Use it when |
+|---|---|---|
+| `latest` | Stable | Normal production / self-hosting (default) |
+| `:<version>` (e.g. `:1.2.4`) | Stable, pinned | You want a specific, unchanging version |
+| `edge` | Unstable — rebuilt on every merge | Testing the newest changes before a release |
+
+:::caution
+`edge` tracks the `main` branch and can change at any time. Do not use it as your normal production
+image — prefer `latest` or a pinned `:<version>`.
+:::
+
+## Install with Docker Compose
+
+Create a `docker-compose.yml`:
+
+```yaml
+services:
+  actual-bench:
+    image: xrous/actual-bench:latest
+    container_name: actual-bench
+    ports:
+      - "3000:3000"
+    environment:
+      ACTUAL_BENCH_DB_PATH: /data/actual-bench.sqlite
+    volumes:
+      - actual-bench-data:/data
+    restart: unless-stopped
+
+volumes:
+  actual-bench-data:
+```
+
+Start it:
+
+```bash
+docker compose up -d
+```
+
+No environment variables are required for a basic setup — `ACTUAL_BENCH_DB_PATH` is shown here only to
+make the metadata location explicit; it already defaults to `/data/actual-bench.sqlite`.
+
+## Install with the Docker CLI
+
+The equivalent without Compose:
+
+```bash
+docker run -d \
+  --name actual-bench \
+  --restart unless-stopped \
+  -p 3000:3000 \
+  -v actual-bench-data:/data \
+  xrous/actual-bench:latest
+```
+
+## Open Actual Bench
+
+Open the app in your browser:
+
+- Local host: `http://localhost:3000`
+- Remote host: `http://<your-server>:3000`, or your reverse-proxy URL
+
+You should land on the connection screen. Setting up the connection is covered in
+[Connect to Actual Budget](../connecting/).
+
+:::tip[Use HTTPS when it isn't just localhost]
+As soon as Actual Bench is reachable beyond your own machine, put it behind HTTPS (for example via a
+reverse proxy). Direct Actual Server mode in particular depends on secure, cross-origin-isolated
+context. See the **Administration → Deployment** guide.
+:::
+
+## Verify the installation
+
+1. The app loads and shows the connection screen.
+2. The version appears in the sidebar footer (for example `v1.2.4`).
+3. Open **App Health** (under **Tools**) and confirm:
+   - **Writable** is `Yes`.
+   - **Schema** shows a version number (not `Not initialized`).
+   - **Persistence** reads *Persistent when /data is mounted*.
+
+If **Writable** is `No` or persistence looks wrong, re-check the `/data` volume mount and its
+permissions before connecting.
+
+## Persistent metadata storage
+
+Actual Bench stores its own workflow metadata in a SQLite database at `/data/actual-bench.sqlite` (set
+`ACTUAL_BENCH_DB_PATH` to change the path). Persist and back up the `/data` volume to keep this data
+across container recreation.
+
+:::note[What `/data` is — and isn't]
+The metadata database holds Actual Bench workflow data only (such as sync flows and run history). It is
+**not** a copy of your Actual Budget data and does **not** store Actual credentials, API keys, Actual
+Server passwords, or budget encryption passwords.
+:::
+
+## Update the container
+
+To move to a newer image:
+
+```bash
+docker compose pull
+docker compose up -d
+```
+
+For a safe upgrade — including backups, version pinning, and database migration notes — follow the
+**Administration → Upgrading and Backups** guide.
+
+## Next step
+
+Continue to [Connect to Actual Budget](../connecting/).

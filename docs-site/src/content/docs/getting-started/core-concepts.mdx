@@ -1,0 +1,110 @@
+---
+title: Core Concepts
+description: Staged edits and the Save model, immediate-save exceptions, connection scoping, safety patterns, and where Actual Bench keeps data.
+sidebar:
+  order: 4
+---
+
+Actual Bench is built around reviewing changes before they reach your budget. Understanding a few core
+behaviors — especially the difference between *staged* and *saved* data — will help you work confidently
+before you make larger changes.
+
+## Saved data versus staged data
+
+Most edits you make in Actual Bench are **staged** locally first. Nothing is written to your Actual
+Budget server until you explicitly **Save**.
+
+- **Saved state** is what currently exists on the server.
+- **Staged state** is your local working set of pending creates, edits, and deletes.
+- Staged rows are visually marked — for example new, updated, or deleted — so you can see exactly what
+  will change.
+- The **Draft Changes** panel and the top bar summarize what is pending across the current workspace.
+- **Save** writes staged changes to the server; **Discard** reverts to the last saved state.
+- Refreshing, navigating away, or closing the tab with unsaved changes prompts for confirmation so you
+  don't lose work by accident.
+
+## Undo and redo
+
+Undo and redo apply to staged edits within your session:
+
+- Use the top bar undo/redo controls, or `Ctrl/Cmd+Z` and `Ctrl/Cmd+Shift+Z` (or `Ctrl+Y`).
+- The Budget Management workspace keeps its own edit history for cell edits, holds, and transfers.
+
+Undo affects staged changes; it is not a way to reverse changes that have already been saved to the
+server.
+
+## Immediate-save exceptions
+
+A few actions do **not** wait for the main **Save** button — they save immediately:
+
+- **Notes** — editing a note on an account, category, category group, budget month, or budget cell
+  saves right away, independently of your other staged edits.
+
+:::caution
+Because notes save immediately, editing a note is not undone by **Discard** and is not part of the
+staged **Save**. Treat note edits as taking effect at once.
+:::
+
+## Connection scoping
+
+Each connected budget has its own local state:
+
+- Staged edits and the query cache are **scoped per connection**.
+- Switching connections from the top bar never mixes staged data or cached query results between
+  budgets.
+- Always confirm the **active connection** before you Save, so changes land in the budget you intend.
+
+## Safety patterns
+
+You will encounter a few distinct interaction patterns across Actual Bench. Recognizing which one
+applies helps you know when a change becomes permanent:
+
+1. **Staged edit → review → Save** — the default for most entity and budget edits.
+   *Example:* renaming a payee, or editing a budget cell.
+2. **Preview → select → Apply** — used by Budget File Sync. A dry-run preview classifies items, and
+   only the items you select are written.
+3. **Impact-aware confirmation** — destructive actions confirm first, showing impact such as
+   transaction counts, rule references, or a balance.
+   *Example:* deleting a category group shows how many child categories and transactions are affected.
+4. **Read-only inspection** — tools that never write back to your budget.
+   *Example:* Budget File Health and the Data Browser.
+5. **Immediate save** — specific fields that save at once, such as notes.
+
+## Credential handling
+
+Actual Bench is deliberately conservative with secrets:
+
+- Server passwords, API keys, and budget encryption passwords are held **in memory only**; refreshing
+  or reopening the tab requires reconnecting.
+- Saved connection presets in session storage contain **non-secret** details only.
+- Credentials for unattended server-side sync are stored only after you explicitly enroll them, and are
+  kept **encrypted** in the metadata database (the encryption key comes from the server environment,
+  never the database).
+- The metadata database does not store Actual credentials.
+
+## Where data lives
+
+| Data | Where it lives | Persistence | Contains secrets? |
+|---|---|---|---|
+| Actual budget data | Your Actual Server | Managed by Actual | Your budget content |
+| Staged edits & query cache | Browser (in memory) | Until refresh / tab close | No server credentials |
+| Saved connection preset | Browser session storage | Cleared when the tab closes | Non-secret details only |
+| Actual Bench metadata | `/data` SQLite on the server | Persistent (with `/data` mounted) | Workflow metadata only |
+| Unattended sync credentials | Metadata database, encrypted | Persistent | Encrypted credentials |
+| Exported budget snapshot | Processed locally in your browser | Cached during the session | May contain budget data |
+
+For where the metadata database lives and how to back it up, see the **Administration** guides.
+
+## Working with multiple budgets
+
+You can keep several connections open and switch between them:
+
+- Each budget keeps its own staged edits and query cache.
+- Nothing is shared between connections, so you can safely work across budgets in one session.
+- Verify the active connection before saving or applying changes.
+
+## Next steps
+
+- If you haven't yet, [install Actual Bench](../installation/) and
+  [connect to a budget](../connecting/).
+- Then explore the feature guides in the **User Guide** section.
