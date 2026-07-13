@@ -178,14 +178,22 @@ function PairPanel({ pair }: { pair: Pair }) {
     mutationFn: async () => {
       const date = overrideDate;
       await addManualFxRate({ baseCurrency: pair.base, quoteCurrency: pair.quote, date, rate: overrideRate });
-      return { date, impact: await fxRecalcImpact(pair.base, pair.quote, date) };
+      // The impact preview is best-effort; the rate is already saved, so a
+      // failure here must not surface as "could not save the rate".
+      let impact: Awaited<ReturnType<typeof fxRecalcImpact>> | null = null;
+      try {
+        impact = await fxRecalcImpact(pair.base, pair.quote, date);
+      } catch {
+        // ignore — show the saved rate without an impact preview
+      }
+      return { date, impact };
     },
     onSuccess: ({ date, impact: imp }) => {
       setNotice(`Set your rate for ${date}.`);
       setError(null);
       setOverrideRate("");
       setOverrideDate("");
-      setImpact(imp.rows.length > 0 ? imp : null);
+      setImpact(imp && imp.rows.length > 0 ? imp : null);
       ratesQuery.refetch();
     },
     onError: (e) => setError(e instanceof Error ? e.message : "Could not save the rate."),

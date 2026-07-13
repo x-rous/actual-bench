@@ -44,18 +44,21 @@ export async function POST(request: Request) {
 export async function PATCH(request: Request) {
   try {
     const body = (await readJsonBody(request)) as (Partial<TransactionFxInput> & { appliedRate?: string }) | null;
-    if (typeof body?.transactionId !== "string" || typeof body?.appliedRate !== "string") {
+    if (typeof body?.transactionId !== "string" || body.transactionId === "" || typeof body?.appliedRate !== "string" || body.appliedRate === "") {
       return NextResponse.json({ error: "transactionId and appliedRate are required." }, { status: 400 });
     }
     if (typeof body.convertedAmount !== "number" || !FX_SOURCES.includes(body.source as FxRateSource)) {
       return NextResponse.json({ error: "convertedAmount (number) and a valid source are required." }, { status: 400 });
     }
+    if (typeof body.requestedDate !== "string" || body.requestedDate === "" || typeof body.effectiveDate !== "string" || body.effectiveDate === "") {
+      return NextResponse.json({ error: "requestedDate and effectiveDate are required." }, { status: 400 });
+    }
     const updated = updateTransactionFxSnapshot(getAppDb(), body.transactionId, {
       fxRateId: body.fxRateId ?? null,
       appliedRate: body.appliedRate,
       convertedAmount: body.convertedAmount,
-      requestedDate: body.requestedDate ?? "",
-      effectiveDate: body.effectiveDate ?? body.requestedDate ?? "",
+      requestedDate: body.requestedDate,
+      effectiveDate: body.effectiveDate,
       source: body.source as FxRateSource,
       provider: body.provider ?? null,
     });
