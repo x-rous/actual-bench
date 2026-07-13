@@ -1,6 +1,7 @@
 import Database from "better-sqlite3";
 import { accessSync, constants, existsSync, statSync } from "node:fs";
 import { dirname, resolve } from "node:path";
+import { tmpdir } from "node:os";
 import { AppDbUnavailableError, errorMessage } from "./errors";
 import { LATEST_SCHEMA_VERSION, readMigrationMeta, runMigrations } from "./migrations";
 import type { AppDbHealth, SqliteDatabase } from "./types";
@@ -25,7 +26,14 @@ function runtime(): "node" | "vercel" {
 
 export function resolveAppDbPath(env: NodeJS.ProcessEnv = process.env): string {
   const configured = env.ACTUAL_BENCH_DB_PATH?.trim();
-  return configured ? resolve(configured) : DEFAULT_APP_DB_PATH;
+  if (configured) return resolve(configured);
+  // Vercel's serverless filesystem is read-only except for the OS temp dir, and
+  // `/data` does not exist there. With no explicit override, fall back to a
+  // writable (but non-durable) temp path so the metadata database can still
+  // initialize instead of failing with `ENOENT ... stat '/data'`. App Health
+  // already reports the Vercel runtime as non-durable.
+  if (env.VERCEL) return resolve(tmpdir(), "actual-bench.sqlite");
+  return DEFAULT_APP_DB_PATH;
 }
 
 export function hasAppDbPathOverride(env: NodeJS.ProcessEnv = process.env): boolean {
