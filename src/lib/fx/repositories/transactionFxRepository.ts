@@ -100,3 +100,14 @@ export function findAffectedTransactionFx(db: SqliteDatabase, fxRateId: string):
     .all<TransactionFxRow>(fxRateId)
     .map(rowToSnapshot);
 }
+
+/** Snapshots for a currency pair on a requested date (for a rate-change impact view, 025f). */
+export function findTransactionFxForPairDate(
+  db: SqliteDatabase,
+  input: { sourceCurrency: string; targetCurrency: string; requestedDate: string }
+): TransactionFxRecord[] {
+  return db
+    .prepare("SELECT * FROM transaction_fx WHERE source_currency = ? AND target_currency = ? AND requested_date = ?")
+    .all<TransactionFxRow>(input.sourceCurrency, input.targetCurrency, input.requestedDate)
+    .map(rowToSnapshot);
+}

@@ -10,7 +10,7 @@ import { PageLayout } from "@/components/layout/PageLayout";
 import { decodeFlowPlanConfig } from "@/lib/sync/flowConfig";
 import { invertRate } from "@/lib/fx/fxMath";
 import { listFlows } from "@/features/sync/lib/syncApi";
-import { addManualFxRate, fillFxRange, listFxRates } from "../lib/fxApi";
+import { addManualFxRate, fillFxRange, fxRecalcImpact, listFxRates } from "../lib/fxApi";
 import { FxImportPanel } from "./FxImportPanel";
 import type { FxRateRecord } from "@/lib/fx/types";
 
@@ -173,9 +173,21 @@ function PairPanel({ pair }: { pair: Pair }) {
     onSuccess: ({ result }) => { setNotice(`Filled ${result.inserted} day(s) from Frankfurter (${result.skipped} already set).`); setError(null); ratesQuery.refetch(); },
     onError: (e) => setError(e instanceof Error ? e.message : "Could not fetch rates."),
   });
+  const [impact, setImpact] = useState<Awaited<ReturnType<typeof fxRecalcImpact>> | null>(null);
   const overrideM = useMutation({
-    mutationFn: () => addManualFxRate({ baseCurrency: pair.base, quoteCurrency: pair.quote, date: overrideDate, rate: overrideRate }),
-    onSuccess: () => { setNotice(`Set your rate for ${overrideDate}.`); setError(null); setOverrideRate(""); setOverrideDate(""); ratesQuery.refetch(); },
+    mutationFn: async () => {
+      const date = overrideDate;
+      await addManualFxRate({ baseCurrency: pair.base, quoteCurrency: pair.quote, date, rate: overrideRate });
+      return { date, impact: await fxRecalcImpact(pair.base, pair.quote, date) };
+    },
+    onSuccess: ({ date, impact: imp }) => {
+      setNotice(`Set your rate for ${date}.`);
+      setError(null);
+      setOverrideRate("");
+      setOverrideDate("");
+      setImpact(imp.rows.length > 0 ? imp : null);
+      ratesQuery.refetch();
+    },
     onError: (e) => setError(e instanceof Error ? e.message : "Could not save the rate."),
   });
 
@@ -232,6 +244,8 @@ function PairPanel({ pair }: { pair: Pair }) {
         </div>
       </section>
 
+      {impact && <ImpactPanel pair={pair} impact={impact} onDismiss={() => setImpact(null)} />}
+
       {/* Coverage ledger: every day in range, gaps shown */}
       <div className="min-h-0 overflow-auto rounded-md border border-border" style={{ maxHeight: "24rem" }}>
         <table className="w-full text-xs">
@@ -271,6 +285,49 @@ function PairPanel({ pair }: { pair: Pair }) {
 
       <FxImportPanel onCommitted={() => ratesQuery.refetch()} />
     </div>
+  );
+}
+
+function money(minor: number): string {
+  return (minor / 100).toFixed(2);
+}
+
+/**
+ * Read-only impact of a rate change (RD-056 / PR-025f): which already-synced
+ * transactions used a different rate. It does not change anything — rewriting
+ * the amounts in the budget is a separate, deliberate step.
+ */
+function ImpactPanel({ pair, impact, onDismiss }: { pair: Pair; impact: { activeRate: string | null; rows: { transactionId: string; sourceAmount: number; appliedRate: string; oldConvertedAmount: number; newConvertedAmount: number }[] }; onDismiss: () => void }) {
+  return (
+    <section className="rounded-md border border-amber-400/50 bg-amber-50 p-3 text-sm dark:bg-amber-950/20">
+      <div className="flex items-start justify-between gap-2">
+        <p className="font-medium text-amber-800 dark:text-amber-300">
+          {impact.rows.length} already-synced transaction{impact.rows.length === 1 ? "" : "s"} used a different rate
+        </p>
+        <button type="button" className="text-xs text-muted-foreground hover:text-foreground" onClick={onDismiss}>Dismiss</button>
+      </div>
+      <p className="mt-1 text-xs text-muted-foreground">
+        Their amounts in your budget are unchanged (rates lock at first sync). This shows what they would become at the
+        new rate — actually rewriting the transactions is a separate step.
+      </p>
+      <div className="mt-2 overflow-x-auto rounded border border-amber-400/30">
+        <table className="w-full text-xs">
+          <thead className="text-left text-[11px] uppercase text-muted-foreground">
+            <tr className="[&>th]:px-2 [&>th]:py-1"><th>Source</th><th className="text-right">Now ({pair.quote})</th><th className="text-right">At new rate</th></tr>
+          </thead>
+          <tbody>
+            {impact.rows.slice(0, 12).map((r) => (
+              <tr key={r.transactionId} className="border-t border-amber-400/20 [&>td]:px-2 [&>td]:py-1">
+                <td className="tabular-nums">{pair.base} {money(r.sourceAmount)}</td>
+                <td className="text-right tabular-nums text-muted-foreground">{money(r.oldConvertedAmount)}</td>
+                <td className="text-right tabular-nums font-medium">{money(r.newConvertedAmount)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {impact.rows.length > 12 && <p className="mt-1 text-[11px] text-muted-foreground">…and {impact.rows.length - 12} more.</p>}
+    </section>
   );
 }
 

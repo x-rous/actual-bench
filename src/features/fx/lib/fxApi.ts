@@ -33,3 +33,9 @@ export function commitFxImport(csv: string, filename: string, options?: { overri
 export function fillFxRange(baseCurrency: string, quoteCurrency: string, from: string, to: string): Promise<{ result: { fetched: number; inserted: number; skipped: number } }> {
   return jsonFetch("/api/fx/rates/fill", { method: "POST", body: JSON.stringify({ baseCurrency, quoteCurrency, from, to }) });
 }
+
+/** Read-only: synced transactions on a date whose converted amount would change under the current rate. */
+export function fxRecalcImpact(base: string, quote: string, date: string): Promise<{ activeRate: string | null; rows: { transactionId: string; sourceAmount: number; appliedRate: string; oldConvertedAmount: number; newConvertedAmount: number }[] }> {
+  const q = new URLSearchParams({ base, quote, date }).toString();
+  return jsonFetch(`/api/fx/recalc-impact?${q}`);
+}
