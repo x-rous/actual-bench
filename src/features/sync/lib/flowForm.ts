@@ -58,6 +58,7 @@ export type SyncTransformForm = {
   fxSourceCurrency: string;
   fxTargetCurrency: string;
   fxAllowProvider: boolean;
+  fxUpdateOnRateChange: boolean;
 };
 
 /** Automation policy for the flow (RD-054 / PR-020). */
@@ -144,6 +145,7 @@ export function emptyFlowForm(): SyncFlowFormState {
       fxSourceCurrency: "",
       fxTargetCurrency: "",
       fxAllowProvider: true,
+      fxUpdateOnRateChange: false,
     },
     automation: {
       // Existing/new flows stay manual - RD-053 behavior - until opted in.
@@ -259,6 +261,7 @@ export function buildFlowPayload(
     fxSourceCurrency: form.transform.fxSourceCurrency.trim().toUpperCase() || null,
     fxTargetCurrency: form.transform.fxTargetCurrency.trim().toUpperCase() || null,
     fxAllowProvider: form.transform.fxAllowProvider,
+    fxUpdateOnRateChange: form.transform.fxUpdateOnRateChange,
   };
 
   // Automation/policy metadata lives in the leg `options` envelope (non-secret).
@@ -345,6 +348,7 @@ export function flowToFormState(
     fxSourceCurrency: config.fxSourceCurrency,
     fxTargetCurrency: config.fxTargetCurrency,
     fxAllowProvider: config.fxAllowProvider,
+    fxUpdateOnRateChange: config.fxUpdateOnRateChange,
   };
   form.automation = {
     reviewPolicy: config.reviewPolicy,

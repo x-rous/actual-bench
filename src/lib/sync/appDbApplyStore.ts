@@ -6,7 +6,7 @@ import {
   updateSyncFlowRun,
   updateSyncFlowRunItem,
 } from "@/lib/app-db/syncRunRepository";
-import { saveTransactionFx } from "@/lib/fx/repositories/transactionFxRepository";
+import { saveTransactionFx, updateTransactionFxSnapshot } from "@/lib/fx/repositories/transactionFxRepository";
 import type { SqliteDatabase } from "@/lib/app-db/types";
 import type { ApplyStore } from "./applyOrchestrator";
 
@@ -47,6 +47,9 @@ export function createAppDbApplyStore(db: SqliteDatabase): ApplyStore {
     },
     persistFxSnapshot: async (input) => {
       saveTransactionFx(db, { ...input, source: input.source as import("@/lib/fx/types").FxRateSource, isManual: false });
+    },
+    updateFxSnapshot: async (input) => {
+      updateTransactionFxSnapshot(db, input.transactionId, { ...input, source: input.source as import("@/lib/fx/types").FxRateSource });
     },
   };
 }

@@ -435,6 +435,10 @@ export function FlowEditDialog({
                         <input type="checkbox" aria-label="Fetch missing rates" checked={form.transform.fxAllowProvider} onChange={(e) => setTransform({ fxAllowProvider: e.target.checked })} />
                         Fetch missing rates automatically (Frankfurter)
                       </label>
+                      <label className="flex items-center gap-2 text-xs text-muted-foreground" title="If you correct a rate after syncing, the preview offers to update the already-synced transactions' amounts. A transaction you edited by hand in Actual is never overwritten.">
+                        <input type="checkbox" aria-label="Update on rate change" checked={form.transform.fxUpdateOnRateChange} onChange={(e) => setTransform({ fxUpdateOnRateChange: e.target.checked })} />
+                        Update synced transactions when the rate changes
+                      </label>
                       {invalidFx && <span className="text-xs text-destructive">Enter both a source and a target currency code.</span>}
                     </div>
                   )}

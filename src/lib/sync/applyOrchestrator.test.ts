@@ -179,6 +179,7 @@ function makeStore(opts: { runStatus?: string; items?: SyncFlowRunItem[]; seedMa
     }),
     persistApplyFailure: jest.fn(async () => {}),
     persistFxSnapshot: jest.fn(async () => {}),
+    updateFxSnapshot: jest.fn(async () => {}),
   };
   return { store, run, createdMappings, itemPatches };
 }

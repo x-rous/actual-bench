@@ -18,6 +18,7 @@ function row(overrides: Partial<PreviewRow> = {}): PreviewRow {
     message: null,
     source: { date: "2026-07-01", amount: -1250, payeeName: "Coffee, Bar", categoryName: "Dining", notes: null },
     target: { date: "2026-07-01", amount: 1250, payeeName: "Coffee, Bar", categoryName: "tc1", notes: null },
+    fx: null,
     ...overrides,
   };
 }

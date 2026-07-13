@@ -11,6 +11,7 @@ import type {
   SyncMapping,
 } from "@/lib/app-db/types";
 import type {
+  FxRateInfo,
   PlannedTargetPayload,
   SyncPlanFlag,
   SyncPlannedAction,
@@ -155,6 +156,49 @@ function baseItem(
   };
 }
 
+/**
+ * An already-synced item whose FX rate changed since sync → an opt-in `update`
+ * candidate that rewrites the target amount (RD-056). Returns null when FX
+ * updates are off, no rate is available, the item is a grouped split, or the
+ * target already holds the current converted amount. Apply re-checks the target
+ * wasn't hand-edited before overwriting.
+ */
+function fxRateChangeUpdate(
+  item: SyncSourceItem,
+  input: Pick<SyncPlannerInput, "config" | "target">,
+  mapping: SyncMapping,
+  fxInfo: FxRateInfo | null,
+  fxRate: string | null
+): SyncPlannedItem | null {
+  const { config, target } = input;
+  if (!config.fxUpdateOnRateChange || !fxRate || !fxInfo || !mapping.targetTransactionId) return null;
+  if (item.splitLines && item.splitLines.length > 0) return null;
+
+  const directedParent = config.amountDirection === "same" ? item.amount : -item.amount;
+  const currentConverted = convertMinorUnits(directedParent, fxRate);
+  const targetTxn = target.transactions.find((t) => t.id === mapping.targetTransactionId);
+  if (!targetTxn || targetTxn.amount === currentConverted) return null;
+
+  const payee = resolvePayee(item, config, target.payees);
+  const category = resolveCategory(item, target.categories);
+  const importedId = generateSyncMarker({
+    sourceBudgetId: config.sourceBudgetId,
+    targetBudgetId: config.targetBudgetId,
+    targetAccountId: config.targetAccountId,
+    sourceItemKey: item.itemKey,
+  });
+  const payload = buildPlannedTargetPayload({ item, config, payee, category, importedId, fx: fxInfo });
+  return baseItem(item, {
+    classification: "source_changed_since_sync",
+    action: "update",
+    flags: ["source_changed_update", "fx_rate_changed"],
+    selectedForApply: true,
+    plannedTargetPayload: payload,
+    targetTransactionId: mapping.targetTransactionId,
+    message: `Exchange rate changed for ${item.date} (now ${fxRate}); the target amount will be updated.`,
+  });
+}
+
 /** A blocked item awaiting an FX rate (RD-056), routed to review. */
 function fxPendingItem(item: SyncSourceItem): SyncPlannedItem {
   return baseItem(item, {
@@ -195,6 +239,10 @@ function planSourceItem(
       });
     }
     if (mapping.sourceFingerprint === item.fingerprint) {
+      // The source is unchanged, but the FX rate may have been corrected since
+      // sync. When the flow opts in, offer to update the target amount (RD-056).
+      const fxUpdate = fxRateChangeUpdate(item, input, mapping, fxInfo, fxRate);
+      if (fxUpdate) return fxUpdate;
       return baseItem(item, {
         classification: "already_synced",
         action: "skip",

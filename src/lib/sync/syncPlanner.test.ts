@@ -495,6 +495,35 @@ describe("planSyncFlow - FX conversion (RD-056)", () => {
     expect(payload.subtransactions!.reduce((s, c) => s + c.amount, 0)).toBe(payload.amount);
   });
 
+  describe("rate-change update (opt-in)", () => {
+    const cfg = (fxUpdateOnRateChange: boolean) => buildPlanConfig({
+      flowId: FLOW_ID, sourceBudgetId: "budget-src", targetBudgetId: "budget-tgt", targetAccountId: "acct-tgt",
+      sourceBudgetName: "Home", sourceAccountName: "Checking",
+      amountDirection: "same", fxEnabled: true, fxSourceCurrency: "AED", fxTargetCurrency: "AUD", fxUpdateOnRateChange,
+    });
+    // Already-synced item; target holds the old converted amount (-1250 × 0.4 = -500).
+    const syncedMapping = () => mapping({ sourceFingerprint: transactionFingerprint(txn()), targetTransactionId: "tt1" });
+    const targetWithOld = () => emptyTarget({ transactions: [{ id: "tt1", date: "2026-07-01", amount: -500, payeeName: null, categoryId: null }] });
+
+    it("offers an update when the rate changed and the flow opted in", () => {
+      const plan = planSyncFlow(baseInput({ config: cfg(true), existingMappings: [syncedMapping()], target: targetWithOld(), fxRateByDate: new Map([["2026-07-01", rateInfo("0.5")]]) }));
+      const item = plan.items[0];
+      expect(item.action).toBe("update");
+      expect(item.flags).toContain("fx_rate_changed");
+      expect(item.plannedTargetPayload?.amount).toBe(-625); // -1250 × 0.5
+    });
+
+    it("stays already-synced when the flow did not opt in", () => {
+      const plan = planSyncFlow(baseInput({ config: cfg(false), existingMappings: [syncedMapping()], target: targetWithOld(), fxRateByDate: new Map([["2026-07-01", rateInfo("0.5")]]) }));
+      expect(plan.items[0].classification).toBe("already_synced");
+    });
+
+    it("stays already-synced when the target already holds the current rate's amount", () => {
+      const plan = planSyncFlow(baseInput({ config: cfg(true), existingMappings: [syncedMapping()], target: targetWithOld(), fxRateByDate: new Map([["2026-07-01", rateInfo("0.4")]]) }));
+      expect(plan.items[0].classification).toBe("already_synced");
+    });
+  });
+
   it("does not convert when source and target currencies match", () => {
     const sameCcy = buildPlanConfig({
       flowId: FLOW_ID, sourceBudgetId: "budget-src", targetBudgetId: "budget-tgt", targetAccountId: "acct-tgt",

@@ -187,6 +187,20 @@ export function persistFxSnapshot(input: {
   return jsonFetch("/api/fx/snapshot", { method: "POST", body: JSON.stringify(input) });
 }
 
+/** Update an FX snapshot after a confirmed rate-change re-sync (RD-056 / PR-025 rate-change update). */
+export function updateFxSnapshot(input: {
+  transactionId: string;
+  fxRateId: string | null;
+  appliedRate: string;
+  convertedAmount: number;
+  requestedDate: string;
+  effectiveDate: string;
+  source: string;
+  provider: string | null;
+}): Promise<{ ok: boolean }> {
+  return jsonFetch("/api/fx/snapshot", { method: "PATCH", body: JSON.stringify(input) });
+}
+
 /** Resolve FX rates for a preview's (base, quote, date) needs (RD-056 / PR-025b). */
 export function resolveFxRates(
   needs: { baseCurrency: string; quoteCurrency: string; date: string }[],

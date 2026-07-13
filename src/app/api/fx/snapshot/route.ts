@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getAppDb } from "@/lib/app-db/connection";
 import { appDbErrorResponse, readJsonBody } from "@/lib/app-db/routeResponses";
-import { saveTransactionFx } from "@/lib/fx/repositories/transactionFxRepository";
+import { saveTransactionFx, updateTransactionFxSnapshot } from "@/lib/fx/repositories/transactionFxRepository";
 import type { FxRateSource, TransactionFxInput } from "@/lib/fx/types";
 
 export const dynamic = "force-dynamic";
@@ -35,6 +35,34 @@ export async function POST(request: Request) {
       isManual: body.isManual ?? false,
     });
     return NextResponse.json({ snapshot });
+  } catch (error) {
+    return appDbErrorResponse(error);
+  }
+}
+
+/** Revalue an existing snapshot after a confirmed rate-change re-sync (RD-056). */
+export async function PATCH(request: Request) {
+  try {
+    const body = (await readJsonBody(request)) as (Partial<TransactionFxInput> & { appliedRate?: string }) | null;
+    if (typeof body?.transactionId !== "string" || body.transactionId === "" || typeof body?.appliedRate !== "string" || body.appliedRate === "") {
+      return NextResponse.json({ error: "transactionId and appliedRate are required." }, { status: 400 });
+    }
+    if (typeof body.convertedAmount !== "number" || !FX_SOURCES.includes(body.source as FxRateSource)) {
+      return NextResponse.json({ error: "convertedAmount (number) and a valid source are required." }, { status: 400 });
+    }
+    if (typeof body.requestedDate !== "string" || body.requestedDate === "" || typeof body.effectiveDate !== "string" || body.effectiveDate === "") {
+      return NextResponse.json({ error: "requestedDate and effectiveDate are required." }, { status: 400 });
+    }
+    const updated = updateTransactionFxSnapshot(getAppDb(), body.transactionId, {
+      fxRateId: body.fxRateId ?? null,
+      appliedRate: body.appliedRate,
+      convertedAmount: body.convertedAmount,
+      requestedDate: body.requestedDate,
+      effectiveDate: body.effectiveDate,
+      source: body.source as FxRateSource,
+      provider: body.provider ?? null,
+    });
+    return NextResponse.json({ ok: updated != null });
   } catch (error) {
     return appDbErrorResponse(error);
   }

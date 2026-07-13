@@ -37,7 +37,9 @@ export type SyncPlanFlag =
   /** Mapped source item was deleted; target still exists, awaiting review (RD-057 §5). */
   | "source_deleted_review"
   /** FX conversion is enabled but no rate is available for this item's date (RD-056). */
-  | "fx_rate_pending";
+  | "fx_rate_pending"
+  /** An already-synced item whose FX rate changed; target amount will be updated (RD-056). */
+  | "fx_rate_changed";
 
 /** The transaction the engine would create on the target (create-only, no splits). */
 export type PlannedTargetPayload = {

@@ -14,6 +14,7 @@ import {
   reviewQueueCount,
   splitPositions,
   statusLabel,
+  targetEntityDisplay,
   type PreviewFilter,
   type PreviewRow,
   type SyncKind,
@@ -117,7 +118,7 @@ export function PreviewPanel(props: PreviewPanelProps) {
   const allVisibleSelected = visibleSelectableIds.length > 0 && selectedVisible === visibleSelectableIds.length;
   const splits = splitPositions(rows);
   const reviewCount = reviewQueueCount(rows);
-  const columnCount = kind === "transaction" ? 10 : kind === "category" ? 5 : 4;
+  const columnCount = kind === "transaction" ? 9 : kind === "category" ? 5 : 4;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
@@ -261,9 +262,8 @@ export function PreviewPanel(props: PreviewPanelProps) {
                     <th>Payee</th>
                     <th>Category</th>
                     <th>Notes</th>
-                    <th className="text-right">Source</th>
-                    <th className="text-right">Target</th>
-                    <th>Target payee</th>
+                    <th className="text-right">Source amount</th>
+                    <th className="text-right">Target amount</th>
                   </>
                 ) : kind === "category" ? (
                   <>
@@ -301,12 +301,11 @@ export function PreviewPanel(props: PreviewPanelProps) {
                     {kind === "transaction" ? (
                       <>
                         <td className="tabular-nums">{row.source.date}</td>
-                        <td><Truncate text={row.source.payeeName} width="10rem" /></td>
-                        <td><Truncate text={row.source.categoryName} width="9rem" /></td>
-                        <td><Truncate text={row.source.notes} width="12rem" /></td>
-                        <td className="text-right tabular-nums">{formatAmount(row.source.amount)}</td>
-                        <td className="text-right tabular-nums">{formatAmount(row.target.amount)}</td>
-                        <td><Truncate text={row.target.payeeName} width="10rem" /></td>
+                        <td><EntityCell display={targetEntityDisplay(row.source.payeeName, row.flags, "payee")} kind="payee" /></td>
+                        <td><EntityCell display={targetEntityDisplay(row.source.categoryName, row.flags, "category")} kind="category" /></td>
+                        <td><Truncate text={row.source.notes} width="11rem" /></td>
+                        <td className="text-right"><Amount minor={row.source.amount} currency={row.fx?.sourceCurrency} /></td>
+                        <td className="text-right"><Amount minor={row.target.amount} currency={row.fx?.targetCurrency} fx={row.fx} /></td>
                       </>
                     ) : kind === "category" ? (
                       <>
@@ -336,6 +335,48 @@ export function PreviewPanel(props: PreviewPanelProps) {
 
 function Truncate({ text, width }: { text: string | null | undefined; width: string }) {
   return <span className="block truncate" style={{ maxWidth: width }} title={text ?? undefined}>{text ?? "-"}</span>;
+}
+
+/** A signed amount, colour-coded, with an optional currency code and FX rate cue. */
+function Amount({ minor, currency, fx }: { minor: number | null; currency?: string; fx?: PreviewRow["fx"] }) {
+  if (minor == null) return <span className="text-muted-foreground">-</span>;
+  const tone = minor < 0 ? "text-red-600 dark:text-red-400" : minor > 0 ? "text-green-700 dark:text-green-400" : "text-muted-foreground";
+  return (
+    <span className="tabular-nums">
+      <span className="whitespace-nowrap">
+        {currency && <span className="text-[10px] text-muted-foreground">{currency} </span>}
+        <span className={tone}>{formatAmount(minor)}</span>
+      </span>
+      {fx && (
+        <span className="block text-[10px] text-muted-foreground" title={fx.effectiveDate ? `rate from ${fx.effectiveDate}` : undefined}>
+          @ {fx.rate}
+        </span>
+      )}
+    </span>
+  );
+}
+
+/** A payee/category cell that always shows the source name and annotates its target fate. */
+function EntityCell({ display, kind }: { display: ReturnType<typeof targetEntityDisplay>; kind: "payee" | "category" }) {
+  if (display.state === "none") return <span className="text-muted-foreground">—</span>;
+  return (
+    <span className="flex items-center gap-1">
+      <Truncate text={display.name} width="8.5rem" />
+      {display.state === "new" && (
+        <span className="shrink-0 rounded bg-green-500/15 px-1 py-px text-[9px] font-medium text-green-700 dark:text-green-400">new</span>
+      )}
+      {display.state === "unmatched" && (
+        <span
+          className="shrink-0 rounded bg-amber-500/15 px-1 py-px text-[9px] font-medium text-amber-700 dark:text-amber-400"
+          title={kind === "payee"
+            ? "Not on target. Turn on Auto-create payees to add it."
+            : "No matching category on the target; left uncategorized."}
+        >
+          {kind === "payee" ? "unmatched" : "no match"}
+        </span>
+      )}
+    </span>
+  );
 }
 
 function PreviewFreshness({ previewedAt, readOnly }: { previewedAt: string | null; readOnly: boolean }) {

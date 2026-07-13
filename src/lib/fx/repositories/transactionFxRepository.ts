@@ -100,3 +100,46 @@ export function findAffectedTransactionFx(db: SqliteDatabase, fxRateId: string):
     .all<TransactionFxRow>(fxRateId)
     .map(rowToSnapshot);
 }
+
+/**
+ * Update a snapshot's applied rate + converted amount after an explicit,
+ * user-confirmed rate-change re-sync (RD-056). This is the sanctioned override
+ * of the otherwise-immutable snapshot; it runs only alongside rewriting the
+ * target transaction in the same apply. No-op when the snapshot is absent.
+ */
+export function updateTransactionFxSnapshot(
+  db: SqliteDatabase,
+  transactionId: string,
+  patch: { fxRateId: string | null; appliedRate: string; convertedAmount: number; requestedDate: string; effectiveDate: string; source: FxRateSource; provider: string | null }
+): TransactionFxRecord | null {
+  const row = db
+    .prepare(
+      `UPDATE transaction_fx
+       SET fx_rate_id = ?, applied_rate = ?, converted_amount = ?, requested_date = ?, effective_date = ?,
+           source = ?, provider = ?, updated_at = ?
+       WHERE transaction_id = ? RETURNING *`
+    )
+    .get<TransactionFxRow>(
+      patch.fxRateId,
+      patch.appliedRate,
+      patch.convertedAmount,
+      patch.requestedDate,
+      patch.effectiveDate,
+      patch.source,
+      patch.provider,
+      new Date().toISOString(),
+      transactionId
+    );
+  return row ? rowToSnapshot(row) : null;
+}
+
+/** Snapshots for a currency pair on a requested date (for a rate-change impact view, 025f). */
+export function findTransactionFxForPairDate(
+  db: SqliteDatabase,
+  input: { sourceCurrency: string; targetCurrency: string; requestedDate: string }
+): TransactionFxRecord[] {
+  return db
+    .prepare("SELECT * FROM transaction_fx WHERE source_currency = ? AND target_currency = ? AND requested_date = ?")
+    .all<TransactionFxRow>(input.sourceCurrency, input.targetCurrency, input.requestedDate)
+    .map(rowToSnapshot);
+}
