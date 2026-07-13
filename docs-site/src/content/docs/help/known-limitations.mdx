@@ -1,0 +1,109 @@
+---
+title: Known Limitations
+description: Current boundaries of Actual Bench that affect what you can expect — by area, with alternatives where they exist.
+sidebar:
+  order: 2
+---
+
+This page lists current, confirmed limitations so you know what to expect. Each entry describes the
+impact and, where one exists, an alternative. Limitations are removed as they are resolved — this is not
+a roadmap and includes no delivery promises.
+
+## Product scope
+
+- **Actual Bench does not replace everyday budgeting.** It supplements Actual Budget for administration,
+  cleanup, diagnostics, queries, and cross-budget sync — not day-to-day transaction entry or
+  reconciliation.
+
+## Connection modes
+
+### Direct-mode unattended sync is not supported
+
+**Applies to:** Budget Sync using Direct Actual Server mode.
+
+Direct mode runs the Actual engine in the browser, so scheduled sync can't continue after the browser
+is closed.
+
+**Alternative:** Use the client-side schedule while Actual Bench is open, or configure both sides through
+HTTP API Server mode for unattended server-side sync.
+
+### ActualQL cURL is HTTP API Server-only
+
+**Applies to:** the ActualQL workspace.
+
+cURL generation targets `actual-http-api`'s `/run-query` endpoint, so it is available only for HTTP API
+Server executions, not Direct mode.
+
+## Browser and deployment
+
+- **Large budget snapshots depend on browser memory.** Budget File Tools process the exported snapshot
+  locally in the browser; very large files may be constrained by available memory.
+- **The unattended scheduler is single-instance.** It runs in-process and is designed for one instance;
+  it does not coordinate across multiple replicas.
+
+## Staged editing
+
+- **Notes save immediately.** Note edits are not part of the staged **Save** and are not reverted by
+  **Discard**. See [Core Concepts](../../getting-started/core-concepts/#immediate-save-exceptions).
+- **Query results reflect saved state.** ActualQL results do not include unsaved staged edits.
+
+## Master data
+
+- **Account budget type is fixed after creation.** On-budget / off-budget can't be changed later
+  (an Actual Budget constraint).
+- **Transfer payees are restricted.** They are system-managed and can't be edited or bulk-deleted like
+  regular payees.
+- **Income categories can't move groups.** They stay locked to the single income parent group.
+
+## Schedules and rules
+
+- **Schedule-generated rules are read-only** on the Rules page and can't be merged; manage them from the
+  Schedules page.
+- **The schedule `completed` flag is not a status.** It's retained for round-tripping but isn't shown as a
+  reliable paid/completed state.
+
+## Budget Management
+
+- **Carryover is toggled via the right-click menu**, not edited directly as a grid cell.
+- **Category-to-pool transfers are not supported** (transfers require both a source and destination
+  category).
+- **The grid is not virtualized**, so very large category lists may scroll slowly.
+
+## Budget File tools
+
+- **Read-only.** Budget File Health and the Data Browser never write back to your budget; they inspect an
+  exported snapshot.
+
+## Budget Sync
+
+Not currently in scope:
+
+- True Actual **transfer-linked** sync (same-budget flows use a plain copy).
+- **Automatic (non-review) target deletes** — deletion is always review-first.
+- **Category auto-create** during sync.
+- **Fuzzy duplicate auto-mapping** — only exact duplicates can be auto-mapped (opt-in); fuzzy duplicates
+  always go to the review queue.
+
+## FX / multi-currency
+
+- **No FX gain/loss accounting.**
+- **No silent recalculation** of past conversions — rates lock at first sync.
+- **No multi-currency within a single budget file** — conversion applies to cross-currency sync between
+  budgets.
+- **Rate availability** depends on the provider and the coverage you've filled or imported.
+
+## Version compatibility
+
+- Some features depend on your **Actual Budget server version** (for example, tags require Actual Budget
+  v26.3.0 or later).
+
+## Requesting an enhancement
+
+If a limitation is blocking you, open a feature request on
+[GitHub Issues](https://github.com/x-rous/actual-bench/issues) describing your use case.
+
+## Related pages
+
+- [Troubleshooting](../troubleshooting/)
+- [Budget Sync](../../user-guide/budget-sync/)
+- [FX Rates](../../user-guide/fx-rates/)

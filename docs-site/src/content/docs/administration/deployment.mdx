@@ -1,0 +1,143 @@
+---
+title: Deployment
+description: Production self-hosting guidance for Actual Bench — architecture, image tags, Compose, networking for both connection modes, reverse proxy, HTTPS, and hardening.
+sidebar:
+  order: 1
+---
+
+This guide covers running Actual Bench in production. For a first install, start with
+[Installation](../../getting-started/installation/); this page adds architecture, networking, reverse
+proxy, and hardening detail.
+
+## Deployment architecture
+
+Actual Bench is a Next.js application. How requests flow depends on the connection mode:
+
+- **Direct Actual Server mode** — the browser talks to your Actual Server directly and runs Actual's
+  engine in a browser worker. Actual Bench serves the app; it does not proxy budget traffic.
+- **HTTP API Server mode** — the browser talks only to Actual Bench, which forwards requests
+  server-side to `actual-http-api` through its internal proxy. The browser never calls `actual-http-api`
+  directly.
+
+Actual Bench also keeps a server-side **metadata database** (SQLite under `/data`) for its own workflow
+data.
+
+## Choose an image tag
+
+Multi-architecture images are published for `linux/amd64` and `linux/arm64`:
+
+- `xrous/actual-bench:latest` — stable, for normal production.
+- `xrous/actual-bench:<version>` (e.g. `:1.2.4`) — a pinned, unchanging version.
+- `xrous/actual-bench:edge` — unstable, rebuilt on every merge; for testing only.
+
+Pin a specific `:<version>` in production if you want fully controlled upgrades.
+
+## Docker Compose deployment
+
+```yaml
+services:
+  actual-bench:
+    image: xrous/actual-bench:1.2.4   # pin a version in production
+    container_name: actual-bench
+    ports:
+      - "3000:3000"
+    environment:
+      ACTUAL_BENCH_DB_PATH: /data/actual-bench.sqlite
+      # SYNC_VAULT_KEY: "..."   # only if you use unattended server-side sync
+    volumes:
+      - actual-bench-data:/data
+    restart: unless-stopped
+
+volumes:
+  actual-bench-data:
+```
+
+See [Configuration](../configuration/) for the full environment-variable reference.
+
+## Network design
+
+Two different reachability requirements exist, and confusing them is the most common deployment issue:
+
+- **Browser → service** (Direct mode): the user's browser must reach the Actual Server URL.
+- **Container → container** (HTTP API mode): the Actual Bench container must reach `actual-http-api`.
+
+:::caution[`localhost` inside a container is the container itself]
+In HTTP API mode, if `actual-http-api` runs in another container, do not point Actual Bench at
+`localhost` — that resolves to the Actual Bench container. Use the API's Docker service name (on a
+shared network) or a reachable host/URL.
+:::
+
+### Direct-mode network requirements
+
+Direct mode runs the Actual engine in the browser, so:
+
+- The **browser** must be able to reach your Actual Server URL.
+- The response must satisfy **CORS** (or be served same-origin via a reverse proxy).
+- Actual Bench sets the cross-origin isolation headers it needs on its own assets
+  (`Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy: require-corp`).
+- Serve Actual Bench (and ideally Actual Server) over **HTTPS**.
+
+If Direct mode can't be supported in your environment, disable it with `DIRECT_BROWSER_API=0` (or
+`NEXT_PUBLIC_DIRECT_BROWSER_API=0`) so only HTTP API Server mode is offered.
+
+### HTTP API network requirements
+
+- The Actual Bench **container** must reach the `actual-http-api` base URL.
+- Requests are proxied server-side through Actual Bench, so only Actual Bench needs that path — the
+  browser does not.
+- If both run in Docker, attach them to a shared network and use the API's service name.
+
+If the UI shows `fetch failed` or `502 Bad Gateway` in HTTP mode, check container-to-container
+networking first.
+
+## Reverse proxy and HTTPS
+
+Run Actual Bench behind a reverse proxy that terminates HTTPS:
+
+- Forward the correct **host** and **protocol** headers.
+- Use HTTPS end-to-end where possible — Direct mode in particular depends on a secure, isolated origin.
+- Serving Actual Server same-origin through the proxy is one way to satisfy Direct-mode CORS/isolation
+  without wide CORS rules.
+
+## App Health after deployment
+
+Open **App Health** (Tools sidebar) and confirm:
+
+- **Writable** is `Yes`.
+- **Schema** shows a version (migrations run on boot).
+- **Persistence** reads *Persistent when /data is mounted*.
+- If you use unattended sync, the **Unattended sync scheduler** section shows the vault state, enrolled
+  count, and last tick.
+
+## Production hardening
+
+- Terminate **HTTPS** at the proxy; don't expose the app over plain HTTP beyond localhost.
+- Keep server secrets (like `SYNC_VAULT_KEY`) out of the image and out of version control; use your
+  platform's secret management.
+- Persist and back up the `/data` volume; restrict its file permissions.
+- Pin a specific `:<version>` and upgrade deliberately (see [Upgrading and Backups](../upgrading-and-backups/)).
+- Don't publicly expose backend APIs (`actual-http-api`, Actual Server) more than necessary.
+- Redact secrets before sharing logs.
+
+## Scaling and the unattended scheduler
+
+The unattended sync scheduler runs **in-process** and ticks about once a minute; a **single instance is
+sufficient** and is the intended model. Do not assume distributed-lock behavior across multiple
+replicas. If you need external control, drive the trigger endpoint with `SYNC_SCHEDULER_SECRET` instead
+(see [Configuration](../configuration/#unattended-sync-settings)).
+
+## Deployment checklist
+
+- [ ] Pinned image `:<version>` chosen.
+- [ ] `/data` volume mounted, writable, and backed up.
+- [ ] HTTPS terminated at the proxy; host/protocol headers forwarded.
+- [ ] Direct mode: browser can reach Actual Server; CORS / cross-origin isolation satisfied.
+- [ ] HTTP mode: Actual Bench container can reach `actual-http-api`.
+- [ ] `SYNC_VAULT_KEY` set (only if using unattended sync) and stored securely.
+- [ ] App Health shows Writable = Yes and a valid schema version.
+
+## Related pages
+
+- [Configuration](../configuration/)
+- [Upgrading and Backups](../upgrading-and-backups/)
+- [Installation](../../getting-started/installation/)

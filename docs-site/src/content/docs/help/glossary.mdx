@@ -1,0 +1,82 @@
+---
+title: Glossary
+description: Definitions of Actual Bench and Actual Budget terms used throughout this documentation.
+sidebar:
+  order: 3
+---
+
+Short definitions of the terms used across this documentation. Where a term has its own guide, a link is
+included.
+
+## Products and connections
+
+- **Actual Bench** — the independent companion app this documentation describes.
+- **Actual Budget** — the budgeting application Actual Bench works with.
+- **Actual Server** — the server that hosts your Actual Budget data.
+- **actual-http-api** — a separate API server that Actual Bench can connect through in HTTP API Server
+  mode.
+- **Direct Actual Server mode** — connecting to your Actual Server and running Actual's engine in the
+  browser. See [Connecting](../../getting-started/connecting/).
+- **HTTP API Server mode** — connecting through `actual-http-api`. See
+  [Connecting](../../getting-started/connecting/).
+- **Browser worker** — the in-browser process that runs the Actual engine in Direct mode.
+- **CORS** — the browser rule set governing cross-origin requests; relevant to Direct mode.
+- **Cross-origin isolation** — the secure browsing context (COOP/COEP headers) Direct mode requires.
+
+## Budget concepts
+
+- **Account** — a place transactions live (for example a checking account).
+- **On-budget account** — an account included in budgeting.
+- **Off-budget account** — an account tracked but excluded from budgeting.
+- **Payee** — who a transaction is with.
+- **Transfer payee** — a system-managed payee representing an inter-account transfer.
+- **Category** — a budgeting bucket for transactions.
+- **Category group** — a group of categories (income or expense).
+- **Schedule** — a planned one-time or recurring transaction.
+- **Tag** — a label attached to transactions.
+- **Rule** — automation that changes transactions based on conditions.
+- **Rule stage** — when a rule runs: `pre`, `default`, or `post`.
+- **Condition / Action** — the "when" and the "what changes" parts of a rule.
+- **Template / Formula** — advanced action modes (Handlebars templates; Excel-style formulas).
+- **Budget mode** — **Envelope** or **Tracking**, the two Actual Budget budgeting styles.
+- **Budget cell** — a single category × month value in the budget grid.
+
+## Working in Actual Bench
+
+- **Staged change** — a local edit not yet written to the server.
+- **Draft Changes** — the panel/summary of pending staged changes.
+- **Save** — write staged changes to the server.
+- **Discard** — revert staged changes to the last saved state.
+- **Preview** — a dry-run that classifies items without writing (Budget Sync).
+- **Apply** — write the selected safe items from a sync preview.
+- **App Health** — the diagnostics page for Actual Bench's metadata database and scheduler.
+- **Metadata database** — the server-side SQLite store (under `/data`) for Actual Bench workflow data.
+- **ActualQL** — Actual Budget's JSON query language, used in the query workspace.
+- **Budget snapshot** — an exported copy of a budget, inspected read-only by Budget File Tools.
+- **SQLite** — the database format budgets and metadata use.
+- **Integrity check** — a deep SQLite validation in Budget File Health.
+
+## Budget Sync and FX
+
+- **Flow** — a saved one-way sync definition between a source and target.
+- **Source / Target** — the origin and destination of a flow.
+- **Mapping** — the app-owned link between a source item and its synced target item.
+- **Marker** — a durable target-side stamp (`imported_id`) recording that an item was synced.
+- **Duplicate candidate** — a possible duplicate on the target, held for review.
+- **Review queue** — where uncertain items collect for manual handling.
+- **Run history** — the record of a flow's past runs.
+- **Safe item** — an item safe to apply automatically (a new create or marker-match repair).
+- **FX rate** — an exchange rate used to convert amounts during cross-currency sync.
+- **Currency pair** — a source/target currency combination on the FX Rates page.
+- **Rate override** — a manually entered rate for a specific date.
+- **Locked rate** — a rate captured at first sync that won't silently change.
+- **Immutable rate snapshot** — the stored rate and amounts kept with a converted transaction.
+- **Vault** — the encrypted store for unattended-sync credentials.
+- **`SYNC_VAULT_KEY`** — the environment secret that enables and encrypts that vault.
+- **Unattended sync** — safe-only server-side sync that runs with the app closed (HTTP API mode).
+- **Auto-pause** — a flow automatically pausing after repeated failed automated runs.
+
+## Related pages
+
+- [Introduction](../../getting-started/introduction/)
+- [Core Concepts](../../getting-started/core-concepts/)

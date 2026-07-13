@@ -1,0 +1,116 @@
+---
+title: Troubleshooting
+description: First-line troubleshooting for Actual Bench — connections, the metadata database, staged changes, feature areas, performance, and how to report a bug.
+sidebar:
+  order: 1
+---
+
+This page collects practical first-line fixes across Actual Bench. For area-specific issues, each
+feature guide also has its own troubleshooting section.
+
+:::caution[Don't start with destructive steps]
+Deleting the metadata database or clearing browser storage is a **last resort**, not a first step —
+both can lose data. Understand what a step removes before you take it.
+:::
+
+## Troubleshoot safely: collect basic information
+
+Before changing anything, note:
+
+1. The Actual Bench **version** (sidebar footer).
+2. The **connection mode** (Direct Actual Server or HTTP API Server).
+3. The **active budget/connection** (top bar).
+4. What **App Health** reports.
+5. The browser console — only if it helps.
+6. Container logs.
+7. The smallest safe action that reproduces the issue.
+
+Redact secrets before sharing any logs.
+
+## Installation and container
+
+- **Container exits on start** — check logs; verify the image tag and that the `/data` volume is
+  mountable.
+- **Port conflict** — another process holds the published port; change the host port mapping.
+- **Wrong architecture** — the images are multi-arch (`amd64`/`arm64`); ensure your host pulls a matching
+  variant.
+- **Reverse proxy returns 502/504** — check that the proxy can reach the container and forwards
+  host/protocol headers. See [Deployment](../../administration/deployment/).
+
+## Metadata database
+
+- **Database not writable** — App Health shows **Writable = No**; check `/data` volume permissions and
+  ownership.
+- **Unexpectedly empty history** — the `/data` volume isn't mounted or points to a new location; verify
+  `ACTUAL_BENCH_DB_PATH`.
+- **Migration issue after upgrade** — see [Upgrading and Backups](../../administration/upgrading-and-backups/#database-migrations).
+
+## Direct connection
+
+- **Browser can't reach Actual Server** — confirm the URL is reachable from the browser over HTTPS.
+- **CORS or cross-origin isolation errors** — allow CORS or serve Actual Server same-origin via a
+  reverse proxy; Actual Bench sets its own isolation headers.
+- **Only HTTP API Server mode is offered** — Direct mode is disabled via `DIRECT_BROWSER_API=0` /
+  `NEXT_PUBLIC_DIRECT_BROWSER_API=0`.
+- **Encrypted budget won't open** — confirm the **Encryption password**.
+
+## HTTP API connection
+
+- **`fetch failed` / `502 Bad Gateway`** — the Actual Bench container can't reach `actual-http-api`;
+  check container-to-container networking. Remember `localhost` is the Actual Bench container itself.
+- **Wrong URL or API key** — verify the **HTTP API Server URL** and that the **API Key** matches
+  `ACTUAL_API_KEY`.
+
+## Browser state
+
+- **Saved preset but must re-enter secrets** — expected: secrets are held in memory only and are never
+  saved.
+- **Refresh requires reconnecting** — expected, for the same reason.
+- **Stale worker/cache in Direct mode** — as a last resort, clear this site's browser data. This removes
+  saved presets and cached worker state and requires reconnecting.
+
+## Staged changes and Save
+
+- **Changes didn't persist** — you may not have clicked **Save**; failed items stay marked with an
+  error, with a retry option.
+- **A note "won't discard"** — notes save immediately and are not part of the staged Save. See
+  [Core Concepts](../../getting-started/core-concepts/#immediate-save-exceptions).
+- **Wrong budget affected** — confirm the active connection before saving; staged data is scoped per
+  connection.
+
+## Feature areas
+
+Each guide has a focused troubleshooting section:
+
+- [Budget Management](../../user-guide/budget-management/#troubleshooting)
+- [Accounts, Payees and Categories](../../user-guide/accounts-payees-categories/#common-problems)
+- [Rules](../../user-guide/rules/#troubleshooting)
+- [ActualQL](../../user-guide/actualql/#troubleshooting)
+- [Budget File Tools](../../user-guide/budget-file-tools/#troubleshooting)
+- [Budget Sync](../../user-guide/budget-sync/#troubleshooting)
+- [FX Rates](../../user-guide/fx-rates/#troubleshooting)
+
+## Performance
+
+Large budgets and large snapshots are the usual causes of slowness:
+
+- Entity pages load the full set; very large budgets feel slower on Accounts/Payees/Categories/Rules.
+- The full SQLite integrity check and large table exports take time.
+- Big sync previews and rule diagnostics over large rule sets are heavier.
+- Very large budget snapshots depend on available browser memory.
+
+## Reporting a bug
+
+Open an issue on [GitHub Issues](https://github.com/x-rous/actual-bench/issues) with:
+
+- Actual Bench **version**, **browser**, and **OS**.
+- **Connection mode** and deployment type.
+- Exact **steps to reproduce**, plus expected vs. actual behavior.
+- Screenshots and **sanitized** console/container logs.
+- Whether it reproduces in the [demo](https://actual-bench-demo.vercel.app) or another browser.
+
+## Related pages
+
+- [Known Limitations](../known-limitations/)
+- [Connect to Actual Budget](../../getting-started/connecting/)
+- [Deployment](../../administration/deployment/)
