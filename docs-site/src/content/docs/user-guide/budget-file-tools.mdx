@@ -1,0 +1,97 @@
+---
+title: Budget File Tools
+description: Inspect exported Actual Budget snapshots locally in the browser with Budget File Health and the Data Browser — read-only health checks, SQLite browsing, and CSV export.
+sidebar:
+  order: 6
+---
+
+Budget File Tools are **read-only** diagnostics for the exported budget snapshot: **Budget File Health**
+(metadata and health checks) and the **Data Browser** (raw SQLite tables and rows). Both process the
+snapshot **locally in your browser** and never write anything back to your budget.
+
+Open **Budget File Health** and **Data Browser** from the **Tools** sidebar section.
+
+:::caution[Snapshots contain your financial data]
+An exported snapshot can include personal financial information. Processing happens locally in your
+browser, but any ZIP or CSV you download becomes your responsibility — avoid sharing raw snapshots when
+reporting issues.
+:::
+
+## Load a budget snapshot
+
+The first time you open either tool, Actual Bench downloads and opens the active budget's exported
+snapshot. It is then **cached** across navigation (with a "loaded X ago" label and a **Reload** button)
+and **shared** between Budget File Health and the Data Browser — so once loaded, the other tool opens
+instantly.
+
+Snapshot opening shows a staged progress rail with retry on failure, plus a reminder that the contents
+stay local but may include personal budget data.
+
+## Budget File Health
+
+A workspace with top-level **Overview** and **Diagnostics** tabs.
+
+### Review snapshot metadata
+
+The **Overview** tab summarizes export metadata, snapshot object counts, ZIP and SQLite sizes, and
+source details, with a button to download the exported ZIP.
+
+### Run diagnostics
+
+The **Diagnostics** tab runs deterministic checks over the snapshot — schema, relationships, metadata,
+and SQLite health — and summarizes findings by severity. You can:
+
+- Run a full **SQLite integrity check** (a longer-running operation).
+- **Export findings to CSV**.
+
+No diagnostics action writes anything back to your budget.
+
+## Data Browser
+
+The Data Browser (`/data-browser`) opens the snapshot's raw SQLite objects. It reuses the cached
+snapshot, so it opens instantly once the budget has been loaded anywhere.
+
+### Browse tables, views, and schema
+
+- Lists **tables, views, indexes, and triggers** grouped by Actual Budget domain; `v_transactions` is
+  selected by default when present.
+- The row browser paginates through table/view rows with sticky headers, horizontal scrolling,
+  worker-side sorting, and URL state for the object, page, page size, and sort.
+- The **Schema** tab shows object type, parent table, row count, inferred row key, columns, indexes, and
+  the raw `CREATE …` SQL.
+- Indexes and triggers are listed but marked as not row-browsable.
+
+### Inspect rows and follow relationships
+
+- **Row actions** copy a row's JSON to the clipboard (BLOBs serialized as base64) and open a stackable
+  row-details panel.
+- **Relationship-aware drill-in** turns known linked cells into navigable references, using the same
+  relationship map as diagnostics.
+- Cell rendering keeps raw money-like integers, formats dates and obvious budget months, marks BLOBs as
+  binary with a hex-preview tooltip, and preserves raw values in tooltips.
+
+### Export tables and views
+
+Full table/view **CSV export** streams rows through worker-owned cursors, preserves UTF-8 for Excel,
+neutralizes formula-like text values, keeps numeric negatives raw, and caps BLOB cells as base64
+previews.
+
+## Safety and limitations
+
+- These tools are strictly read-only; they never modify your budget.
+- Very large snapshots depend on available browser memory.
+- The full SQLite integrity check can take a while on large files.
+
+## Troubleshooting
+
+- **Export or snapshot won't open** — retry from the progress rail; check browser memory for large
+  files.
+- **An object shows no rows** — indexes and triggers are not row-browsable.
+- **The snapshot looks stale** — use **Reload** to fetch a fresh export.
+- **A CSV opens oddly in a spreadsheet** — exports are UTF-8 with formula-injection protection; open
+  them as UTF-8.
+
+## Related pages
+
+- [ActualQL](../actualql/) — query live saved data instead of a snapshot
+- [Core Concepts](../../getting-started/core-concepts/)

@@ -1,0 +1,114 @@
+---
+title: ActualQL
+description: Run, explain, save, and export ActualQL queries against your budget in Actual Bench — editor, result views, saved queries, and mode differences.
+sidebar:
+  order: 5
+---
+
+The ActualQL workspace lets you run arbitrary ActualQL queries against the open budget for advanced
+analysis. Open it from **ActualQL Queries** under the **Tools** sidebar section (`/query`). It works in
+both Direct Actual Server mode and HTTP API Server mode.
+
+## What ActualQL is
+
+ActualQL is Actual Budget's query language, expressed as **JSON** (not SQL). In Actual Bench this
+workspace is used for reading and analyzing data.
+
+:::note[Read-only from Actual Bench's side]
+Running a query does not stage or write anything. Results reflect **saved server state**, not your
+unsaved staged edits.
+:::
+
+## Open the workspace and understand the editor
+
+- A syntax-highlighted JSON editor with line numbers and a JetBrains Mono font; you edit raw JSON with
+  no auto-correction.
+- The editor accepts bare ActualQL query objects and the wrapped `{ "ActualQLquery": ... }` shape used
+  by `actual-http-api`.
+- The editor/results split is resizable, and the divider position persists across reloads.
+
+## Run and format a query
+
+1. Type or paste a query.
+2. Select **Run** (or press `Ctrl/Cmd+Enter`).
+3. Use **Format JSON** to tidy the query.
+
+Parse errors are shown inline before any request is made. **Lint warnings** flag risky shapes — for
+example a broad `transactions` query with no `limit`, `groupBy`, or `calculate`; an empty `$oneof`; or a
+`groupBy` with no aggregate.
+
+## Use built-in examples and reference
+
+- **ActualQL Reference** — a six-section quick reference (basics, filter operators, joined fields,
+  aggregates, transactions options, and copyable snippets).
+- **Example packs** — one-click inserts grouped into Data inspection, Cleanup & validation, Aggregation,
+  and Targeted subset.
+
+## Understand result views
+
+Select a result view via tabs:
+
+- **Table** — columns from the union of keys across rows; nested values are JSON-stringified; capped at
+  500 rows with a warning banner. Dates render human-readably; `amount`/`balance` integers show as
+  decimals (cents ÷ 100), with the raw value on hover.
+- **Raw JSON** — the full syntax-highlighted payload.
+- **Scalar** — a large value card for `calculate` aggregate results.
+- **Tree** — a collapsible JSON tree, auto-selected for plain-object results.
+
+An execution metadata bar shows an OK / Error chip, elapsed time, row count, and payload size.
+
+## Explain a query
+
+Select **Explain** for a one-click plain-English summary of what the current query does — its target
+table, filters, grouping, aggregation, ordering, and whether the result is tabular or scalar. Explaining
+does not run the query.
+
+## Save, pin, and reuse queries
+
+- **Save** a query with a name (stored locally per budget). Load, rerun, duplicate, rename, delete, and
+  **pin as favorite**.
+- **Query history** keeps the last 10 executed queries per budget for one-click reload; re-running a
+  query bumps it to the top rather than duplicating it.
+
+## Export and copy results
+
+- **Copy result JSON** and **Copy query JSON** are available in all modes.
+- For **HTTP API Server** executions only, you can also copy **sanitized cURL** (secrets replaced with
+  placeholders) or **full cURL** (opt-in, clearly marked as containing real credentials). cURL is
+  generated from the last HTTP API Server request, not the current editor state.
+
+:::caution[Full cURL contains real credentials]
+The full-cURL option embeds your API key. Only copy it when you need it, and never paste it where others
+can see it.
+:::
+
+## Staged changes and query results
+
+If you have unsaved staged changes, a banner reminds you that query results reflect **saved** server
+state, not your pending local edits. Results bypass the staged store entirely.
+
+## Practical examples
+
+Start from the built-in example packs, which cover transactions, accounts, payees, categories, monthly
+spending, budget status, and rules. They are the most reliable, current examples to build on.
+
+## Mode differences
+
+- ActualQL runs in both Direct and HTTP API Server mode.
+- **cURL generation is HTTP API Server-only**, because it targets `actual-http-api`'s `/run-query`
+  endpoint.
+
+## Troubleshooting
+
+- **Invalid JSON** — the inline parse error points at the problem; fix it before running.
+- **Unsupported query** — check the lint warnings and the ActualQL Reference.
+- **Empty result** — verify filters and date ranges.
+- **Result isn't table-friendly** — use the Tree or Raw JSON view.
+- **Results look stale** — they reflect saved state; save your staged edits first.
+- **cURL option missing** — you're in Direct mode; cURL is HTTP API Server-only.
+
+## Related pages
+
+- [Rules](../rules/)
+- [Budget File Tools](../budget-file-tools/)
+- [Connect to Actual Budget](../../getting-started/connecting/)
