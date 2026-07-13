@@ -119,6 +119,9 @@ function applyStore(): ApplyStore {
     persistFxSnapshot: async (input) => {
       await api.persistFxSnapshot(input);
     },
+    updateFxSnapshot: async (input) => {
+      await api.updateFxSnapshot(input);
+    },
   };
 }
 

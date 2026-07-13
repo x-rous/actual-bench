@@ -97,6 +97,13 @@ export type SyncFlowPlanConfig = {
   fxTargetCurrency: string;
   /** Allow the FX provider (Frankfurter) to fetch missing rates; else registry-only. */
   fxAllowProvider: boolean;
+  /**
+   * When true, an already-synced transaction whose FX rate has since changed
+   * becomes an opt-in `update` candidate that rewrites the target amount + note
+   * (RD-056 rate-change update). Off by default; reuses the update path's
+   * "not edited outside sync" guard.
+   */
+  fxUpdateOnRateChange: boolean;
 };
 
 /** Smallest allowed auto-sync interval - a budget sync per run is expensive. */
@@ -146,6 +153,7 @@ export const SYNC_PLAN_CONFIG_DEFAULTS = {
   fxSourceCurrency: "",
   fxTargetCurrency: "",
   fxAllowProvider: true,
+  fxUpdateOnRateChange: false,
 };
 
 type PartialRoute = Partial<
@@ -186,6 +194,7 @@ export function buildPlanConfig(
         | "fxSourceCurrency"
         | "fxTargetCurrency"
         | "fxAllowProvider"
+        | "fxUpdateOnRateChange"
       >
     >
 ): SyncFlowPlanConfig {
@@ -225,6 +234,7 @@ export function buildPlanConfig(
     fxSourceCurrency: input.fxSourceCurrency ?? SYNC_PLAN_CONFIG_DEFAULTS.fxSourceCurrency,
     fxTargetCurrency: input.fxTargetCurrency ?? SYNC_PLAN_CONFIG_DEFAULTS.fxTargetCurrency,
     fxAllowProvider: input.fxAllowProvider ?? SYNC_PLAN_CONFIG_DEFAULTS.fxAllowProvider,
+    fxUpdateOnRateChange: input.fxUpdateOnRateChange ?? SYNC_PLAN_CONFIG_DEFAULTS.fxUpdateOnRateChange,
   };
 }
 
@@ -280,5 +290,6 @@ export function decodeFlowPlanConfig(flow: SyncFlow): SyncFlowPlanConfig {
     fxSourceCurrency: (str(transform.fxSourceCurrency) ?? "").toUpperCase() || undefined,
     fxTargetCurrency: (str(transform.fxTargetCurrency) ?? "").toUpperCase() || undefined,
     fxAllowProvider: transform.fxAllowProvider == null ? undefined : bool(transform.fxAllowProvider),
+    fxUpdateOnRateChange: bool(transform.fxUpdateOnRateChange),
   });
 }

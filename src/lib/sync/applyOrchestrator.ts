@@ -53,6 +53,19 @@ export type ApplyStore = {
   /** Persist the immutable FX snapshot for a created transaction (RD-056). Best-
    * effort audit; a failure here never fails the create. Absent when FX is off. */
   persistFxSnapshot?(input: FxSnapshotInput): Promise<void>;
+  /** Update an FX snapshot's rate/amount after a confirmed rate-change re-sync (RD-056). */
+  updateFxSnapshot?(input: FxSnapshotUpdate): Promise<void>;
+};
+
+export type FxSnapshotUpdate = {
+  transactionId: string;
+  fxRateId: string | null;
+  appliedRate: string;
+  convertedAmount: number;
+  requestedDate: string;
+  effectiveDate: string;
+  source: string;
+  provider: string | null;
 };
 
 export type FxSnapshotInput = {
@@ -784,10 +797,29 @@ async function applyMutateBatch(
             lastAppliedAt: nowIso(),
           });
         }
+        // RD-056: an FX rate-change update also revalues the immutable snapshot,
+        // so the audit stays consistent with the rewritten target amount.
+        const fx = (item.plannedTargetPayload?.data as { fx?: PlannedFx | null; amount?: number } | undefined)?.fx;
+        if (fx && res.targetId && store.updateFxSnapshot) {
+          try {
+            await store.updateFxSnapshot({
+              transactionId: res.targetId,
+              fxRateId: fx.fxRateId,
+              appliedRate: fx.rate,
+              convertedAmount: (item.plannedTargetPayload?.data as { amount?: number }).amount ?? 0,
+              requestedDate: fx.requestedDate,
+              effectiveDate: fx.effectiveDate,
+              source: fx.source,
+              provider: fx.provider,
+            });
+          } catch {
+            // best-effort audit
+          }
+        }
         await store.updateRunItemStatus(item.id, {
           status: "updated",
           applyState: "applied",
-          message: "Target updated to match the changed source.",
+          message: fx ? "Target amount updated for the corrected FX rate." : "Target updated to match the changed source.",
           createdTargetTransactionId: res.targetId,
           targetItemRef: { version: 1, data: { targetTransactionId: res.targetId } },
         });
