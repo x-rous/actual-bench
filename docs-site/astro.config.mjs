@@ -32,6 +32,7 @@ export default defineConfig({
 				{ label: 'User Guide', items: [{ autogenerate: { directory: 'user-guide' } }] },
 				{ label: 'Administration', items: [{ autogenerate: { directory: 'administration' } }] },
 				{ label: 'Help', items: [{ autogenerate: { directory: 'help' } }] },
+				{ label: 'Contributing', link: '/contributing/' },
 			],
 		}),
 	],

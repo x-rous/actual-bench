@@ -1,0 +1,96 @@
+---
+title: Contributing
+description: How to contribute to Actual Bench — reporting bugs, suggesting features, improving docs, the branch and PR model, and validation.
+---
+
+Contributions are welcome — bug reports, feature requests, documentation improvements, and code alike.
+This is a concise entry point; the repository's [CONTRIBUTING.md](https://github.com/x-rous/actual-bench/blob/main/CONTRIBUTING.md)
+is the full reference.
+
+## Ways to contribute
+
+- Report a **bug**.
+- Suggest a **feature**.
+- Fix or improve **documentation**.
+- Contribute **screenshots** that match the current UI.
+- Contribute **code**.
+- Help by **testing** changes.
+
+## Report a bug or suggest a feature
+
+Open an issue on [GitHub Issues](https://github.com/x-rous/actual-bench/issues) using the appropriate
+template. For bugs, include your version, browser/OS, connection mode, exact steps, and expected vs.
+actual behavior. Check existing issues first to avoid duplicates. See
+[Troubleshooting](../help/troubleshooting/#reporting-a-bug) for what to include.
+
+## Set up the project
+
+```bash
+git clone https://github.com/x-rous/actual-bench.git
+cd actual-bench
+npm install
+npm run dev
+```
+
+Node.js `22.23.1` is recommended. HTTP API Server mode integration testing needs a running
+`actual-http-api` instance (or use a test budget).
+
+## Branch and PR model
+
+Work on short-lived branches that target `main`:
+
+| Type | Branch prefix |
+|---|---|
+| Feature | `feat/*` |
+| Bug fix | `fix/*` |
+| Refactor | `refactor/*` |
+| Docs | `docs/*` |
+
+All pull requests target `main`. Keep them focused, give them a clear user-facing title, and include
+screenshots for UI changes. Update `FEATURES.md` when a feature ships, and update this documentation
+when user-facing behavior changes.
+
+## Documentation contributions
+
+The documentation site is a standalone Astro Starlight project under `docs-site/`:
+
+```bash
+cd docs-site
+npm install
+npm run dev      # http://localhost:4321/actual-bench
+npm run build
+```
+
+When writing docs:
+
+- Treat the **current implementation and UI** as the source of truth; use exact in-app labels.
+- Keep each page substantial and task-oriented — smaller workflows are sections, not new pages.
+- Put images under `docs-site/src/assets/screenshots/` and reference them relatively.
+- Never include real secrets, credentials, private hostnames, or personal budget data.
+- Use base-safe links (relative, or prefixed with `/actual-bench/`).
+
+Every page has an **Edit** link that takes you straight to its source file on GitHub.
+
+## Validate before submitting
+
+From the repository root:
+
+```bash
+npm run lint      # 0 errors
+npx tsc --noEmit  # 0 errors
+npm test          # passes
+npm run build     # succeeds
+```
+
+For documentation-only changes, also run the docs build (`npm --prefix docs-site run build`). The
+documentation site has its own CI check on pull requests.
+
+## Security issues
+
+For a suspected security vulnerability, avoid posting exploit details in a public issue. Check the
+repository's security policy for the preferred private reporting channel before disclosing.
+
+## Related pages
+
+- [Introduction](../getting-started/introduction/)
+- [Troubleshooting](../help/troubleshooting/)
