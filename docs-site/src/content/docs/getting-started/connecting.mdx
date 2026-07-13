@@ -1,0 +1,128 @@
+---
+title: Connect to Actual Budget
+description: Choose Direct Actual Server mode or HTTP API Server mode, enter your server details, and open a budget in Actual Bench.
+sidebar:
+  order: 3
+---
+
+Actual Bench uses a two-step connection flow: first **Choose a server**, then **Choose a budget**. This
+page explains the two connection modes and how to complete each step.
+
+## Choose a connection mode
+
+At the top of the connection screen you pick one of two modes:
+
+- **Direct Actual Server** — Actual Bench connects to your Actual Server and runs Actual's engine
+  directly in your browser. This is the target architecture for new browser-based workflows.
+- **HTTP API Server** — Actual Bench connects through a separate
+  [actual-http-api](https://github.com/jhonderson/actual-http-api) server. This path remains fully
+  supported for deployments and integrations that prefer or require it.
+
+:::note
+If only **HTTP API Server** is shown, Direct mode has been disabled for this deployment with
+`DIRECT_BROWSER_API=0` or `NEXT_PUBLIC_DIRECT_BROWSER_API=0`. Remove that setting and restart to show
+both modes.
+:::
+
+### Mode comparison
+
+| Topic | Direct Actual Server mode | HTTP API Server mode |
+|---|---|---|
+| Connects to | Your Actual Server | An `actual-http-api` server |
+| Where Actual runs | In your browser (a worker) | On the API server |
+| Credential entered | **Server password** | **API Key** (`ACTUAL_API_KEY`) |
+| Reachability required | Browser → Actual Server | Actual Bench container → `actual-http-api` |
+| Special requirements | CORS and cross-origin isolation | API key and network path to the API |
+| Unattended server-side sync | Not supported | Supported when configured |
+
+Both modes support opening multiple budgets, encrypted budgets, and the core workspaces. Some
+capabilities differ by mode — those differences are called out in the relevant feature guides.
+
+## Connect using Direct Actual Server mode
+
+1. On the connection screen, under **Choose a server**, select **Direct Actual Server**.
+2. In **Actual Server URL**, enter your Actual Server base URL (for example
+   `https://actual.example.com`).
+3. In **Server password**, enter the password your Actual Server browser clients use.
+4. Select **Load Budgets**. Actual Bench opens the Actual engine in your browser and lists the
+   available budgets.
+5. Continue to [Select a budget](#select-a-budget).
+
+:::caution[Direct mode needs a reachable, isolated origin]
+Your browser must be able to reach the Actual Server URL, and the response must satisfy CORS and
+cross-origin isolation requirements. In practice this usually means serving both Actual Bench and
+Actual Server over HTTPS, with CORS allowed or a same-origin reverse proxy. If budgets fail to load in
+Direct mode, this is the first thing to check — see [Troubleshooting](#troubleshooting).
+:::
+
+## Connect using HTTP API Server mode
+
+1. Under **Choose a server**, select **HTTP API Server**.
+2. In **HTTP API Server URL**, enter your `actual-http-api` base URL (for example
+   `https://budgetapi.example.com`).
+3. In **API Key**, enter the `ACTUAL_API_KEY` configured on that server. It is kept in memory only.
+4. Select **Load Budgets** to validate the server and list budgets.
+5. Continue to [Select a budget](#select-a-budget).
+
+## Select a budget
+
+After **Load Budgets** succeeds, the **Choose a budget** step appears:
+
+1. Pick a budget from the list.
+2. If the budget is end-to-end encrypted, enter its **Encryption password**. Leave it blank if the
+   budget is not encrypted.
+3. Select **Connect**.
+
+Actual Bench opens the budget and takes you to the Budget Overview.
+
+## Encrypted budgets
+
+For end-to-end encrypted budgets, the **Encryption password** is required to open the budget and is
+kept in memory only. It is separate from your Actual Server password or API key.
+
+## Saved presets and reconnecting
+
+Previously used connections appear on the connection screen so you can reconnect in a single step
+during the current browser session.
+
+- Only **non-secret** connection details (such as the server URL and label) are saved, in the browser's
+  session storage.
+- Secrets — the Server password, API Key, and Encryption password — are **not** saved. You re-enter
+  them when reconnecting.
+- Because presets live in session storage, they are cleared when the browser tab is closed.
+
+## Switch between connections
+
+You can add several connections and switch between them from the top bar. Each connection has its own
+staged edits and query cache, so switching budgets never mixes local state between them.
+
+:::tip[Check the active connection before you Save]
+Staged changes belong to the connection they were made in. Confirm the active connection in the top bar
+before saving, so changes land in the intended budget.
+:::
+
+## Credential handling
+
+- Server passwords, API keys, and encryption passwords are held **in memory only**. Refreshing or
+  reopening the tab requires reconnecting.
+- Saved presets contain non-secret details only.
+- Actual Bench's server-side metadata database does not store Actual credentials.
+
+See [Core Concepts](../core-concepts/) for the full picture of where data lives.
+
+## Troubleshooting
+
+- **Budgets won't load in Direct mode** — verify the browser can reach the Actual Server URL over HTTPS
+  and that CORS / cross-origin isolation are satisfied (or use a same-origin reverse proxy).
+- **Budgets won't load in HTTP API mode** — verify the **HTTP API Server URL** is correct, the **API
+  Key** matches `ACTUAL_API_KEY`, and the Actual Bench container can reach the API server. If the API
+  runs in another container, remember that `localhost` refers to the Actual Bench container itself.
+- **Only HTTP API Server mode is shown** — Direct mode is disabled via `DIRECT_BROWSER_API=0` /
+  `NEXT_PUBLIC_DIRECT_BROWSER_API=0`.
+- **Budget won't open** — for encrypted budgets, confirm the **Encryption password**.
+
+The **Help → Troubleshooting** guide covers connection problems in more depth.
+
+## Next step
+
+Read [Core Concepts](../core-concepts/) before making larger changes.
