@@ -38,6 +38,56 @@ describe("app DB connection", () => {
     );
   });
 
+  it("falls back to a writable temp path on Vercel when no override is set", () => {
+    // On Vercel `/data` does not exist and the filesystem is read-only except
+    // the temp dir, so the default must not be the (unwritable) `/data` path.
+    expect(resolveAppDbPath({ VERCEL: "1" } as unknown as NodeJS.ProcessEnv)).toBe(
+      resolve(tmpdir(), "actual-bench.sqlite")
+    );
+    // An explicit override still wins on Vercel.
+    expect(
+      resolveAppDbPath({ VERCEL: "1", ACTUAL_BENCH_DB_PATH: "/mnt/app.sqlite" } as unknown as NodeJS.ProcessEnv)
+    ).toBe(resolve("/mnt/app.sqlite"));
+  });
+
+  it("reports a ready but non-durable metadata DB on the Vercel runtime", () => {
+    process.env.VERCEL = "1";
+    const { root, dbPath } = tempDbPath();
+
+    try {
+      const health = getAppDbHealth(dbPath);
+      expect(health.ready).toBe(true);
+      expect(health.writable).toBe(true);
+      expect(health.schemaVersion).toBe(5);
+      expect(health.runtime).toBe("vercel");
+      expect(health.durable).toBe(false);
+    } finally {
+      resetAppDbForTests();
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("initializes the default metadata DB on Vercel without an override (the demo condition)", () => {
+    // Reproduces the exact demo setup: VERCEL set, no ACTUAL_BENCH_DB_PATH.
+    // Previously this defaulted to `/data` and failed with ENOENT.
+    process.env.VERCEL = "1";
+    delete process.env.ACTUAL_BENCH_DB_PATH;
+    const defaultPath = resolveAppDbPath();
+
+    try {
+      expect(defaultPath).toBe(resolve(tmpdir(), "actual-bench.sqlite"));
+      const health = getAppDbHealth(); // no arg → uses the resolved default
+      expect(health.ready).toBe(true);
+      expect(health.writable).toBe(true);
+      expect(health.error).toBeUndefined();
+    } finally {
+      resetAppDbForTests();
+      for (const suffix of ["", "-wal", "-shm"]) {
+        rmSync(`${defaultPath}${suffix}`, { force: true });
+      }
+    }
+  });
+
   it("initializes migrations idempotently and reports health", () => {
     const { root, dbPath } = tempDbPath();
 
