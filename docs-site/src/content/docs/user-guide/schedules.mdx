@@ -1,20 +1,26 @@
 ---
-title: Schedules and Tags
-description: Create and manage recurring schedules and transaction tags in Actual Bench — recurrence, amount modes, weekend adjustment, linked rules, colors, and CSV import/export.
+title: Schedules
+description: Create and manage recurring and one-time schedules in Actual Bench — recurrence patterns, amount modes, weekend adjustment, end conditions, linked rules, CSV import/export, and impact-aware deletion.
 sidebar:
-  order: 3
+  order: 6
 ---
 
-This guide covers two lightweight but related areas: **Schedules** (recurring and one-time planned
-transactions) and **Tags** (metadata you attach to transactions). Open each from the **Data
-Management** section of the sidebar.
-
-## Schedules
-
 A schedule describes a planned transaction — one-time or recurring — with an amount, timing, and
-optional payee and account.
+optional payee and account. Schedules are staged and written on **Save**, like the rest of Actual
+Bench (see [Core Concepts](../../getting-started/core-concepts/)).
 
-### Create a schedule
+Open **Schedules** from the **Data Management** section of the sidebar.
+
+## What you get beyond Actual Budget
+
+- **CSV import and export** of schedules for bulk setup and backup.
+- **Impact-aware deletion** — every delete shows the schedule's linked-rule status, auto-post flag, and
+  transaction count first.
+- **A richer recurrence summary** that infers weekday/day anchors from the start date.
+- **An "Edit as Rule" bridge** to open a schedule's server-managed rule directly in the Rules editor.
+- **Staged review** — set up or adjust several schedules and review them before they touch your budget.
+
+## Create a schedule
 
 1. On the **Schedules** page, open the schedule drawer to add a schedule.
 2. Set the **name** (optional), **date** (or recurrence), and amount.
@@ -24,7 +30,7 @@ optional payee and account.
 Saving an unchanged schedule closes the drawer without staging a draft. Closing the drawer with unsaved
 edits prompts for confirmation.
 
-### Choose an amount mode
+## Choose an amount mode
 
 Schedule amounts always use one of three modes:
 
@@ -34,7 +40,7 @@ Schedule amounts always use one of three modes:
 
 Missing or null server amounts are treated as an approximate zero.
 
-### Configure recurrence
+## Configure recurrence
 
 - Frequencies: **daily**, **weekly**, **monthly**, **yearly**, each with a configurable interval.
 - Monthly schedules support a **specific day of the month** (including "last day") or a
@@ -42,13 +48,13 @@ Missing or null server amounts are treated as an approximate zero.
 - The table's **Repeats** summary infers weekday/day anchors from the start date (for example
   `Every 2 weeks on Wednesday`), and a **Recurring** column marks repeating schedules.
 
-### Weekend adjustment and end conditions
+## Weekend adjustment and end conditions
 
 - **Weekend adjustment** — when a scheduled date lands on a weekend, move it to the nearest **Friday
   before** or **Monday after**.
 - **End conditions** — run forever, end after **N occurrences**, or end **on a date**.
 
-### Auto-add and linked rules
+## Auto-add and linked rules
 
 - **Auto-add** — when enabled, Actual Budget automatically posts a transaction when the schedule is due.
 - Every schedule has an underlying **linked rule** managed by the server. Open it in the Rules editor
@@ -60,61 +66,32 @@ shows the resolved schedule name and cannot be created or edited manually. Manag
 the Schedules page instead.
 :::
 
-### Edit, delete, filter, and import/export
+## Edit, delete, and filter
 
 - Edit schedules in the drawer; successfully saved edits stay visible while the background refresh
   reconciles server data.
 - Deleting a schedule (single or bulk) confirms with an impact dialog showing its linked-rule status,
   auto-post flag, and transaction count.
 - Filter by name, payee, account, frequency, and auto-add state.
-- Import and export schedules as CSV.
+
+## Import and export
+
+Import and export schedules as CSV (staged before saving).
 
 :::note[No "completed" status column]
 The schedule `completed` flag is kept for round-tripping server data but is not shown as a status in the
 UI, because it does not represent a reliable paid/completed state. Imported schedules start active.
 :::
 
-## Tags
+## Common problems
 
-Tags are simple labels (with an optional color and description) available in Actual Budget v26.3.0 and
-later.
-
-### Create and edit a tag
-
-1. On the **Tags** page, create a tag and give it a **name**.
-2. Optionally assign a **color** — click the swatch to open a native color picker; hover the row for a
-   clear button.
-3. Optionally add a **description**.
-4. Edit any name or description inline (`Enter` confirms, `Escape` cancels).
-
-### Filter, delete, and import/export
-
-- Filter by name or description, and by color presence (All / Has Color / No Color).
-- Bulk-select and delete; duplicate names show a warning.
-- Import and export tags as CSV — columns: `name` (required), `color` (optional hex, e.g. `#FF5733`),
-  `description` (optional).
-
-:::note[Tag usage data]
-The Usage Inspector shows a tag's rule references, but transaction data is not available for tags, so
-the drawer notes that explicitly.
-:::
-
-## Review and Save
-
-Schedule and tag edits are staged and written on **Save**; **Discard** reverts them. (Notes on other
-entity types save immediately, but that does not apply to schedules or tags themselves.)
-
-## Troubleshooting
-
-- **A schedule's rule looks read-only** — schedule-linked rules are managed from the Schedules page; use
-  **Edit as Rule** to open the editable parts.
-- **Can't merge a schedule-generated rule** — those rules are excluded from bulk selection and merge.
+- **A schedule's rule looks read-only** — schedule-linked rules are managed here; use **Edit as Rule**
+  to open the editable parts.
 - **The recurrence summary looks wrong** — it is inferred from the start date; check the day/weekday
   anchor and interval.
-- **Tags are unavailable** — tags require Actual Budget v26.3.0 or later on the server.
-- **A tag color or description didn't stick** — confirm you saved; inline edits commit on `Enter`.
 
 ## Related pages
 
-- [Rules](../rules/)
-- [Accounts, Payees and Categories](../accounts-payees-categories/)
+- [Rules](../rules/) — schedule-linked rules
+- [Tags](../tags/)
+- [Core Concepts](../../getting-started/core-concepts/)

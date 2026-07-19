@@ -1,0 +1,105 @@
+---
+title: Managing your data
+description: The shared editing model behind Actual Bench's master-data pages — staged inline editing, bulk actions, filters, CSV import/export, Quick Create, Global Search, and the Usage Inspector.
+sidebar:
+  order: 2
+---
+
+Accounts, Payees, Categories, and Tags are Actual Bench's **master-data** pages, opened from the
+**Data Management** section of the sidebar. They share one editing model, so this page explains it
+once — each entity's own guide then focuses on what it adds over Actual Budget.
+
+## Why manage this data in Actual Bench?
+
+In Actual Budget you generally create and edit these records **one at a time**, from inside the
+budgeting UI, with each change taking effect immediately. Actual Bench is built for the opposite job —
+**setting up, cleaning up, and auditing this data in bulk** — and adds capabilities the native app
+doesn't offer:
+
+- **Bulk everything** — select many rows and act on them at once (delete, close/reopen, merge,
+  visibility), or paste rows straight from Excel / Google Sheets to create many records in one go.
+- **CSV import and export** — seed a fresh budget from a spreadsheet, or export for backup and
+  offline editing.
+- **Usage & impact visibility** — see how many rules and transactions reference a record, and jump
+  straight to them, *before* you change or delete anything.
+- **Staged review** — creates, edits, and deletes are collected as drafts and only written when you
+  **Save**, so you can review a whole cleanup pass before it touches your budget.
+- **Duplicate detection** — name clashes are flagged as you work.
+
+## The shared editing model
+
+All master-data pages behave the same way:
+
+- **Inline editing** — double-click, `Enter`, or `F2` to edit a cell; `Escape` cancels.
+- **Staged rows** — new, edited, and deleted rows are visually marked and only written on **Save**.
+  See [Core Concepts](../../getting-started/core-concepts/) for the full staging model.
+- **Bulk selection** — select rows with checkboxes and apply bulk actions. System-managed rows show a
+  disabled checkbox with a tooltip explaining why.
+- **Filters and search** — filter and search each page; your filters persist per page and reset when
+  you switch connections.
+- **Duplicate warnings** — a visual warning appears when a name already exists.
+- **Impact-aware deletion** — destructive actions confirm first, showing transaction counts, rule
+  references, balances, or child counts where available.
+
+## Quick Create
+
+Stage a new entity from anywhere without leaving the current page:
+
+- Press `N` (when no input or dialog is focused) or `Ctrl/Cmd+Shift+N` (from anywhere) to open the
+  Quick Create dialog.
+- Choose **Payee**, **Category**, **Account**, or **Tag**.
+- Category requires a group; Account has an on-budget / off-budget toggle; Tag has an optional color.
+- On submit, the entity is staged (one undo step) and you stay on the current page.
+
+## Global Search
+
+Press `Ctrl/Cmd+K` (or the top-bar **Search** button) to search across accounts, payees, categories,
+rules, schedules, and tags. Results are grouped by type; selecting one navigates to that entity with
+the row highlighted. Search runs against loaded in-memory data and never writes anything.
+
+## CSV import and export
+
+Every master-data page supports CSV export and import:
+
+- **Exports** are UTF-8 with a BOM, so they open cleanly in Excel / Google Sheets.
+- **Imports** are staged with per-row validation (and a 5 MB limit), so you review everything before
+  **Save**.
+
+The exact columns for each entity are documented on its own page. Sample files ship in the
+repository's `public/samples csv/` for testing against a fresh budget.
+
+To move **all** master-data types at once (a whole-budget snapshot or seed), use
+[Bundle Export / Import](../bundle-export-import/) instead of the per-page CSVs.
+
+## The Usage Inspector
+
+The **Info** button on any row opens a drawer with a complete usage profile — *without* starting a
+delete:
+
+- A stats row: **Rules** (always), **Transactions** (except tags), **Balance** (accounts, amber when
+  non-zero), and **Categories** (groups only).
+- An **impact** section describing what a deletion would affect.
+- Quick links (for example **View rules →**) for entities with rule references.
+- An empty state ("No known references found.") when nothing references the entity.
+
+:::note[Rule counts are clickable]
+Accounts, payees, categories, and tags show how many rules reference them. Click the count to jump to
+the [Rules](../rules/) page filtered to that entity.
+:::
+
+## Review and Save
+
+Staged creates, edits, deletes, and merges appear in the **Draft Changes** panel and the top bar.
+Nothing is written to your Actual Server until you **Save**; **Discard** reverts to the last saved
+state.
+
+:::caution[Notes are the exception]
+Note edits on accounts, categories, and category groups **save immediately** — they are not part of
+the staged **Save** and are not reverted by **Discard**. See
+[Core Concepts](../../getting-started/core-concepts/#immediate-save-exceptions).
+:::
+
+## Related pages
+
+- [Accounts](../accounts/) · [Payees](../payees/) · [Categories](../categories/) · [Tags](../tags/)
+- [Core Concepts](../../getting-started/core-concepts/)

@@ -7,7 +7,14 @@ import starlight from '@astrojs/starlight';
 // https://astro.build/config
 export default defineConfig({
 	site: 'https://x-rous.github.io',
-	base: '/actual-bench',
+	base: process.env.DOCS_BASE ?? '/actual-bench',
+	vite: {
+		server: {
+			// Dev-only: allow a reverse-proxy host (e.g. code-server) when set.
+			// Unset in normal builds, so default behavior is unchanged.
+			allowedHosts: process.env.DOCS_ALLOWED_HOST ? [process.env.DOCS_ALLOWED_HOST] : [],
+		},
+	},
 	integrations: [
 		starlight({
 			title: 'Actual Bench',

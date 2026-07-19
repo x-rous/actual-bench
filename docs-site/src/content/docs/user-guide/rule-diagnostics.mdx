@@ -1,0 +1,66 @@
+---
+title: Rule Diagnostics
+description: Lint your Actual Budget rule set in Actual Bench — a read-only, advisory workspace that flags missing references, shadowed rules, contradictions, broad matches, duplicates, and near-duplicates, with one-click jump-to-rule and merge.
+sidebar:
+  order: 9
+---
+
+Rule Diagnostics is a **read-only, advisory linter** for your rules — a capability Actual Budget has no
+equivalent for. It never modifies, creates, or deletes anything as a side effect, and it runs entirely
+in the browser against your current working set, **including unsaved staged edits**.
+
+Open **Rule Diagnostics** from the **Tools** sidebar section, or the **Diagnostics** button on the
+Rules toolbar. The URL `/rules/diagnostics` is bookmarkable.
+
+## Why this doesn't exist in Actual Budget
+
+Actual Budget runs rules but gives you no way to audit them in aggregate. As a rule set grows, problems
+accumulate silently — a rule pointing at a deleted category, two rules that quietly shadow each other,
+near-duplicate rules that should be one. Rule Diagnostics surfaces all of these in one place, explains
+each in plain language, and links you straight to the fix.
+
+## Run diagnostics and read findings
+
+1. Open **Rule Diagnostics** (Tools sidebar, or the **Diagnostics** button on the Rules toolbar).
+2. Findings are grouped by severity with summary cards for **error**, **warning**, and **info**, plus
+   severity- and code-based filters.
+3. Each finding has a plain-language explanation, the affected rule's summary, and a copy-UUID button.
+
+## What it checks
+
+- Missing payee / category / account / category-group references.
+- Empty or no-op actions.
+- Impossibly contradictory conditions on `and`-rules.
+- Strictly shadowed rules within a stage.
+- Broad match criteria (very short `contains` / `matches` values).
+- Duplicate rule groups and near-duplicate pairs.
+- Unsupported field/operator combinations.
+
+Schedule-generated rules are excluded from editor-relevant checks but still surface missing-entity
+findings.
+
+## Act on findings
+
+- Click a finding's rule summary to **jump to the rule** (`/rules?highlight=<id>`) and open it.
+- Duplicate and near-duplicate findings have a one-click **Merge** button that opens the
+  [merge dialog](../rules/#merge-rules) pre-filled; you're returned to the diagnostics report afterward.
+- A **stale-results** banner appears if the working set changes while the view is open; results stay
+  until you **Refresh**.
+
+## Safety
+
+Diagnostics is advisory — it only reads. It never changes your rules; every fix is an explicit action
+you take (jump to a rule, or confirm a merge) that then follows the normal staged **Save** flow.
+
+## Troubleshooting
+
+- **A missing-entity finding** — the referenced payee/category/account was deleted or renamed; open the
+  rule and repoint it.
+- **Results look stale** — the working set changed; click **Refresh**.
+- **A large stage isn't fully analyzed** — very large rule partitions are analyzed up to a safety cap;
+  a notice explains when a partition is skipped.
+
+## Related pages
+
+- [Rules](../rules/) — build, edit, and merge rules
+- [Managing your data](../managing-your-data/)
