@@ -3,16 +3,50 @@ import { registerCheck } from "../runDiagnostics";
 import { buildFinding } from "../findingMessages";
 import { findingRuleSummary } from "../../utils/findingRuleSummary";
 
-/** Skip near-duplicate evaluation when a partition has more than this many rules. */
-export const NEAR_DUPLICATE_PARTITION_CAP = 300;
+/**
+ * Skip near-duplicate evaluation when a partition has more than this many
+ * eligible rules. Detection is O(n²) in the partition size, but each pairwise
+ * comparison is a cheap early-exiting merge (see `symmetricDiffCountCapped`),
+ * so this only guards against pathological rule sets. At the cap that is
+ * ~2M comparisons, comfortably under a frame's worth of work for realistic
+ * data where most pairs bail out after the first few differing parts.
+ */
+export const NEAR_DUPLICATE_PARTITION_CAP = 2000;
 
-function symmetricDiffCount(a: string[], b: string[]): number {
-  const setA = new Set(a);
-  const setB = new Set(b);
+/**
+ * Count of part-signatures present in exactly one of the two arrays, given both
+ * are sorted ascending and free of internal duplicates. Short-circuits as soon
+ * as the count passes 2 — callers only care about the 1-or-2 "near-duplicate"
+ * band, so once we know it's ≥ 3 the exact value is irrelevant. Returns a value
+ * > 2 (not necessarily the true count) in that case.
+ */
+function symmetricDiffCountCapped(a: string[], b: string[]): number {
+  let i = 0;
+  let j = 0;
   let count = 0;
-  for (const v of setA) if (!setB.has(v)) count++;
-  for (const v of setB) if (!setA.has(v)) count++;
-  return count;
+  while (i < a.length && j < b.length) {
+    if (a[i] === b[j]) {
+      i++;
+      j++;
+    } else if (a[i] < b[j]) {
+      count++;
+      i++;
+    } else {
+      count++;
+      j++;
+    }
+    if (count > 2) return count;
+  }
+  return count + (a.length - i) + (b.length - j);
+}
+
+/** Collapse adjacent duplicates in an already-sorted array. */
+function dedupeSorted(sorted: readonly string[]): string[] {
+  const out: string[] = [];
+  for (const v of sorted) {
+    if (out.length === 0 || out[out.length - 1] !== v) out.push(v);
+  }
+  return out;
 }
 
 export const nearDuplicateRules: CheckFn = (ws, ctx) => {
@@ -41,13 +75,21 @@ export const nearDuplicateRules: CheckFn = (ws, ctx) => {
       continue;
     }
 
+    // Precompute each rule's sorted, de-duplicated part signatures once so the
+    // O(n²) pair scan below only does an early-exiting merge per pair rather
+    // than rebuilding sets for every comparison.
+    const sigs = new Map<string, string[]>();
+    for (const r of eligible) {
+      sigs.set(r.id, dedupeSorted(ctx.partSignatures.get(r.id) ?? []));
+    }
+
     for (let i = 0; i < eligible.length; i++) {
       for (let j = i + 1; j < eligible.length; j++) {
         const a = eligible[i];
         const b = eligible[j];
-        const sigA = ctx.partSignatures.get(a.id) ?? [];
-        const sigB = ctx.partSignatures.get(b.id) ?? [];
-        const diff = symmetricDiffCount(sigA, sigB);
+        const sigA = sigs.get(a.id) ?? [];
+        const sigB = sigs.get(b.id) ?? [];
+        const diff = symmetricDiffCountCapped(sigA, sigB);
         if (diff !== 1 && diff !== 2) continue;
 
         const lowerId = a.id < b.id ? a : b;

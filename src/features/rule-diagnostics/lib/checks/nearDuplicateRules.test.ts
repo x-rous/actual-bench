@@ -143,6 +143,38 @@ describe("nearDuplicateRules", () => {
     expect(skipped?.severity).toBe("info");
   });
 
+  it("still analyzes partitions larger than the old 300-rule cap (issue #165)", () => {
+    // 400 distinct rules (above the previous cap of 300, below the new cap)
+    // plus one planted near-duplicate of the first — detection must run and
+    // flag the planted pair rather than skipping the whole partition.
+    const rules: Rule[] = [];
+    for (let i = 0; i < 400; i++) {
+      rules.push(
+        rule({
+          id: `r${i}`,
+          conditions: [{ field: "imported_payee", op: "contains", value: `value-${i}` }],
+          actions: [{ field: "payee", op: "set", value: `p-${i}` }],
+        })
+      );
+    }
+    // Near-duplicate of r0: same condition, one extra action (diff = 1).
+    rules.push(
+      rule({
+        id: "r-dup",
+        conditions: [{ field: "imported_payee", op: "contains", value: "value-0" }],
+        actions: [
+          { field: "payee", op: "set", value: "p-0" },
+          { field: "category", op: "set", value: "c-extra" },
+        ],
+      })
+    );
+
+    const findings = nearDuplicateRules(ws(rules), makeCtx(rules));
+    expect(findings.some((f) => f.code === "RULE_ANALYZER_SKIPPED")).toBe(false);
+    const pair = findings.find((f) => f.code === "RULE_NEAR_DUPLICATE_PAIR");
+    expect(pair?.affected.map((r) => r.id).sort()).toEqual(["r-dup", "r0"]);
+  });
+
   it("does not flag schedule-linked rules", () => {
     const a = rule({
       id: "r1",
