@@ -1,0 +1,48 @@
+---
+title: Budget Overview
+description: The Budget Overview is Actual Bench's landing page after you connect — a live snapshot of your budget, the navigation hub to every workspace, and the entry point for whole-budget export/import.
+sidebar:
+  order: 5
+---
+
+After you connect to a budget, Actual Bench takes you to the **Budget Overview** (`/overview`) — your
+home base for that budget. It's a lightweight snapshot and navigation hub, not an editing surface, so
+it loads fast and always reflects current **saved** server state.
+
+## What the Overview shows
+
+- **A live snapshot row** with saved-state counts for **transactions, accounts, payees, categories,
+  schedules, and rules**.
+- **Derived context** — the **Budget Mode** (`Envelope`, `Tracking`, or `Unidentified`) and
+  **Budgeting since**, inferred from your oldest transaction date.
+- **A manual Refresh** with a loading state and a last-refreshed indicator. Snapshot values switch to
+  loading placeholders immediately when you switch budgets or refresh.
+
+:::note[Overview reflects saved data]
+The snapshot reads current server state. Unsaved staged edits elsewhere in Actual Bench are not
+counted here until you Save.
+:::
+
+## The navigation hub
+
+The Overview links out to the core workspaces so it can serve as your starting point each session:
+
+- Direct links to the entity pages ([Accounts](../../user-guide/accounts/),
+  [Payees](../../user-guide/payees/), [Categories](../../user-guide/categories/), and the rest) and to
+  [ActualQL](../../user-guide/actualql/).
+- Entry points for [Budget File Health](../../user-guide/budget-file-tools/) and the **Data Browser**,
+  which open the exported snapshot for read-only inspection.
+
+## Whole-budget export and import
+
+The Overview page header hosts the **Export** and **Import** buttons for
+[Bundle Export / Import](../../user-guide/bundle-export-import/) — a one-step way to move *all* of a
+budget's master data (accounts, payees, categories, tags, schedules, and rules) in or out as a single
+ZIP. Because the Overview intentionally skips preloading, the export dialog loads entity data on demand,
+so it always reflects current server state.
+
+## Related pages
+
+- [Connect to Actual Budget](../connecting/) — how you get here
+- [Bundle Export / Import](../../user-guide/bundle-export-import/)
+- [Budget File Tools](../../user-guide/budget-file-tools/)

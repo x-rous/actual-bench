@@ -1,0 +1,63 @@
+---
+title: Payees
+description: Manage and clean up Actual Budget payees in Actual Bench — bulk-merge duplicates, CSV import/export, rule linkage, transfer-payee handling, and impact-aware deletion.
+sidebar:
+  order: 4
+---
+
+The Payees page manages regular payees and makes transfer payees explicit. It shares the
+[master-data editing model](../managing-your-data/) — this page covers what's specific to payees.
+
+Open **Payees** from the **Data Management** section of the sidebar.
+
+## What you get beyond Actual Budget
+
+- **Bulk-merge duplicate payees** — collapse several payees into one, staged and undoable, before it
+  touches your budget.
+- **Create and import in bulk** — inline creation plus CSV import/export.
+- **See which rules reference a payee** and jump straight to them.
+- **Impact-aware deletion** — every delete shows the payee's transaction and rule-reference counts.
+- **Clear transfer-payee handling** — system-managed transfer payees are shown as a distinct type and
+  protected from accidental edits.
+
+## Regular and transfer payees
+
+Transfer payees are auto-generated for inter-account transfers. They appear as a separate, filterable
+type and cannot be edited or bulk-deleted like regular payees — their selection checkbox is disabled to
+make that explicit.
+
+## Create, rename, and delete
+
+- Create and rename payees inline.
+- Every delete (single or bulk) confirms, showing the payee's transaction count and rule reference
+  count. Transfer payees are excluded from bulk delete and counted separately in the dialog.
+
+## Merge duplicate payees
+
+1. Select **two or more regular payees**.
+2. Choose **Merge**.
+3. The **first payee you check** becomes the surviving target (regardless of table sort); the rest are
+   absorbed.
+4. The merge is staged and shown in the Draft Changes panel as "Merge Deleted" before you **Save**.
+   `Ctrl+Z` undoes it.
+
+## Filter
+
+Filter by name, type (regular / transfer / all), and whether a payee has associated rules.
+
+## Import and export
+
+Export payees to CSV or import them (staged before saving). CSV columns:
+
+- `name` (required).
+
+## Common problems
+
+- **"Can't select a transfer payee"** — transfer payees are system-managed and not bulk-editable.
+- **A merge picked the wrong survivor** — the target is the *first* payee you checked, not the
+  top-sorted row; re-select in the intended order.
+
+## Related pages
+
+- [Managing your data](../managing-your-data/) — the shared editing model
+- [Rules](../rules/) — how rules reference payees

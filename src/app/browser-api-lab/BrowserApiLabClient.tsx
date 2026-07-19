@@ -171,7 +171,7 @@ export function BrowserApiLabClient({ enabled }: BrowserApiLabClientProps) {
             <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
             <div>
               <p className="font-medium">Browser API lab is disabled for this deployment.</p>
-              <p className="mt-1">Remove DIRECT_BROWSER_API=0 or NEXT_PUBLIC_DIRECT_BROWSER_API=0 and restart the app to enable this route.</p>
+              <p className="mt-1">Remove DIRECT_BROWSER_API=0 and restart the app to enable this route.</p>
             </div>
           </section>
         )}

@@ -1,15 +1,26 @@
 ---
 title: Rules
-description: Build, edit, merge, and diagnose Actual Budget rules in Actual Bench — conditions and actions, stages, templates and formulas, merging duplicates, and the Rule Diagnostics linter.
+description: Build, edit, merge, and import Actual Budget rules in Actual Bench — a full condition/action builder with resolved entity names, Handlebars templates, Excel-style formulas, duplicate merging, and CSV round-trip.
 sidebar:
-  order: 4
+  order: 8
 ---
 
 Rules automate changes to transactions in Actual Budget. Actual Bench gives you a full condition/action
-builder with resolved entity names, plus a read-only **Rule Diagnostics** workspace to find problems.
+builder that shows resolved entity names instead of raw IDs, plus power tools — templates, formulas,
+duplicate merging, and CSV round-trip — that the native rule editor doesn't offer. To *find* problems
+across your rule set, use the separate [Rule Diagnostics](../rule-diagnostics/) linter.
 
-Open **Rules** from the **Data Management** sidebar section; open **Rule Diagnostics** from the
-**Tools** section or the **Diagnostics** button on the Rules toolbar.
+Open **Rules** from the **Data Management** sidebar section.
+
+## What you get beyond Actual Budget
+
+- **Resolved entity names everywhere** — payees, categories, and accounts show as readable chips, and
+  search matches them by name, so you never hunt through raw IDs.
+- **Handlebars templates and Excel-style formulas** with dedicated editor affordances.
+- **Bulk-merge duplicate and near-duplicate rules** into one.
+- **CSV import and export** of your entire rule set for bulk edits and backup.
+- **A read-only linter** — [Rule Diagnostics](../rule-diagnostics/) — that flags missing references,
+  shadowed rules, duplicates, and more.
 
 ## What rules do
 
@@ -76,14 +87,14 @@ start with `=`. Template and formula modes are mutually exclusive per action row
    unticked for near-duplicates.
 4. Confirm to stage the merge.
 
-Merging from a diagnostics finding returns you to the diagnostics report afterward so cleanup flows
-naturally.
+Merging from a [Rule Diagnostics](../rule-diagnostics/) finding returns you to the diagnostics report
+afterward so cleanup flows naturally.
 
 ## Schedule-generated rules
 
 Rules created by schedules (those with a `link-schedule` action) are shown **read-only** on the Rules
-page and are excluded from bulk selection and merge. Manage them from the
-[Schedules](../schedules-and-tags/) page.
+page and are excluded from bulk selection and merge. Manage them from the [Schedules](../schedules/)
+page.
 
 ## Import and export
 
@@ -91,41 +102,6 @@ Rules import/export uses a long CSV format — one condition or action per row, 
 Key columns: `rule_id`, `stage`, `conditions_op`, `row_type` (`condition`/`action`), `field`, `op`, and
 `value` (use `|` to separate multi-value `oneOf` values). Formula values are exported with a leading
 `'` so spreadsheets don't evaluate them; the prefix is stripped on re-import.
-
-## Rule Diagnostics
-
-Rule Diagnostics is a **read-only, advisory** linter. It never modifies, creates, or deletes anything as
-a side effect, and it runs entirely in the browser against your current working set — including unsaved
-staged edits.
-
-### Run diagnostics and read findings
-
-1. Open **Rule Diagnostics** (Tools sidebar, or the **Diagnostics** button on the Rules toolbar). The
-   URL `/rules/diagnostics` is bookmarkable.
-2. Findings are grouped by severity with summary cards for **error**, **warning**, and **info**, plus
-   severity- and code-based filters.
-3. Each finding has a plain-language explanation, the affected rule's summary, and a copy-UUID button.
-
-### What it checks
-
-- Missing payee / category / account / category-group references.
-- Empty or no-op actions.
-- Impossibly contradictory conditions on `and`-rules.
-- Strictly shadowed rules within a stage.
-- Broad match criteria (very short `contains` / `matches` values).
-- Duplicate rule groups and near-duplicate pairs.
-- Unsupported field/operator combinations.
-
-Schedule-generated rules are excluded from editor-relevant checks but still surface missing-entity
-findings.
-
-### Act on findings
-
-- Click a finding's rule summary to **jump to the rule** (`/rules?highlight=<id>`) and open it.
-- Duplicate and near-duplicate findings have a one-click **Merge** button that opens the merge dialog
-  pre-filled.
-- A **stale-results** banner appears if the working set changes while the view is open; results stay
-  until you **Refresh**.
 
 ## Examples
 
@@ -141,13 +117,11 @@ A few practical patterns (use your own payees and categories):
 
 - Because Actual Budget runs rules on transaction create, a saved rule can change a transaction
   differently than you expect if other rules also apply. Use stages to order them.
-- Diagnostics is advisory — it never changes your rules.
 
 ## Troubleshooting
 
 - **A rule doesn't run** — check its stage and whether an earlier-stage rule already changed the field.
 - **AND/OR confusion** — verify `conditions_op`; AND requires all conditions, OR any.
-- **A missing-entity finding** — the referenced payee/category/account was deleted or renamed.
 - **A regex isn't matching** — check the `matches` syntax hint.
 - **A template/formula won't save** — formulas must start with `=`; template and formula modes are
   mutually exclusive per row.
@@ -155,6 +129,6 @@ A few practical patterns (use your own payees and categories):
 
 ## Related pages
 
-- [Schedules and Tags](../schedules-and-tags/)
-- [Accounts, Payees and Categories](../accounts-payees-categories/)
+- [Rule Diagnostics](../rule-diagnostics/) — lint your rule set for problems
+- [Schedules](../schedules/)
 - [ActualQL](../actualql/)

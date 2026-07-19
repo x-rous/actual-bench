@@ -198,7 +198,7 @@ Direct mode is the target architecture for browser-based Actual Bench workflows:
 
 ### Direct mode
 
-Direct mode is shown by default alongside HTTP API Server mode and is the preferred target for new browser workflows. It uses worker/static asset headers required for cross-origin isolation (`Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy: require-corp`), and the Actual Server must be reachable from the browser through CORS or a same-origin reverse proxy. Set `DIRECT_BROWSER_API=0` or `NEXT_PUBLIC_DIRECT_BROWSER_API=0` only if your deployment cannot support Direct mode.
+Direct mode is shown by default alongside HTTP API Server mode and is the preferred target for new browser workflows. It uses worker/static asset headers required for cross-origin isolation (`Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy: require-corp`), and the Actual Server must be reachable from the browser through CORS or a same-origin reverse proxy. Set `DIRECT_BROWSER_API=0` only if your deployment cannot support Direct mode.
 
 Direct mode currently supports core entity pages, Budget Management reads/staged saves, Budget File Health, Data Browser, and the ActualQL Query workspace. HTTP API Server mode remains first-class and maintained for deployments that prefer or require `actual-http-api`; query cURL generation remains HTTP API Server-only because it targets actual-http-api's `/run-query` endpoint.
 
@@ -216,7 +216,7 @@ Direct mode currently supports core entity pages, Budget Management reads/staged
 ## Requirements
 
 - A running [Actual Budget](https://github.com/actualbudget/actual) server
-- For Direct mode: browser access from Actual Bench to Actual Server, plus cross-origin isolation/CORS support. Direct mode is enabled by default; set `DIRECT_BROWSER_API=0` or `NEXT_PUBLIC_DIRECT_BROWSER_API=0` to hide it when a deployment cannot support it
+- For Direct mode: browser access from Actual Bench to Actual Server, plus cross-origin isolation/CORS support. Direct mode is enabled by default; set `DIRECT_BROWSER_API=0` to hide it when a deployment cannot support it
 - For HTTP API Server mode: a running [actual-http-api](https://github.com/jhonderson/actual-http-api) instance and an `ACTUAL_API_KEY`
 - Docker, Docker Compose, or Node.js 22.23.1 recommended for local development
 
@@ -243,6 +243,24 @@ docker run -d \
   xrous/actual-bench:edge
 ```
 
+All environment variables are optional. To set any, add `-e VAR=value` flags to the `docker run`
+command, for example:
+
+```bash
+docker run -d \
+  --name actual-bench \
+  --restart unless-stopped \
+  -p 3000:3000 \
+  -v actual-bench-data:/data \
+  -e DIRECT_BROWSER_API=0 \
+  -e LOG_LEVEL=info \
+  -e SYNC_VAULT_KEY=<strong-secret> \
+  xrous/actual-bench:latest
+```
+
+See the [Configuration guide](https://x-rous.github.io/actual-bench/administration/configuration/) for
+what each variable does and which are secrets.
+
 Open `http://localhost:3000` and connect with Direct Actual Server mode, or use HTTP API Server mode if you run `actual-http-api`.
 
 ### Docker Compose
@@ -256,6 +274,11 @@ services:
       - "3000:3000"
     environment:
       ACTUAL_BENCH_DB_PATH: /data/actual-bench.sqlite
+      # --- Optional settings (uncomment to use) ---
+      # DIRECT_BROWSER_API: "0"                    # offer only HTTP API Server mode
+      # LOG_LEVEL: info                            # debug | info | warn | error
+      # SYNC_VAULT_KEY: "<strong-secret>"          # enable unattended server-side sync
+      # SYNC_SCHEDULER_SECRET: "<strong-secret>"   # enable the external scheduler trigger
     volumes:
       - actual-bench-data:/data
     restart: unless-stopped
@@ -269,6 +292,10 @@ Start it with:
 ```bash
 docker compose up -d
 ```
+
+No environment variables are required for a basic setup. All variables are optional — see the
+[Configuration guide](https://x-rous.github.io/actual-bench/administration/configuration/) for what
+each one does and which are secrets.
 
 ### App metadata database
 

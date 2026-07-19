@@ -1,0 +1,76 @@
+---
+title: Accounts
+description: Bulk-manage Actual Budget accounts in Actual Bench — paste-to-create, CSV import/export, initial-balance seeding, bulk close/reopen/delete, rule linkage, and impact-aware deletion.
+sidebar:
+  order: 3
+---
+
+The Accounts page manages your accounts, their balances, and their budget type. It shares the
+[master-data editing model](../managing-your-data/) (inline edit, staged rows, bulk actions, CSV,
+Usage Inspector) — this page covers what's specific to accounts.
+
+Open **Accounts** from the **Data Management** section of the sidebar.
+
+## What you get beyond Actual Budget
+
+- **Create accounts in bulk** — paste tab-separated rows from Excel / Google Sheets, or import a CSV,
+  instead of adding one account at a time.
+- **Seed an initial balance at creation** — set a starting balance when the account is created (also
+  editable in the Balance column for staged rows).
+- **Bulk close, reopen, and delete** with a single action across selected accounts.
+- **See which rules reference an account** and jump straight to them.
+- **Impact-aware deletion** — every close/delete shows the outstanding balance, transaction count, and
+  rule references first, with an explicit warning for non-zero balances.
+
+## Create an account
+
+1. Select **Add Account** to open the form drawer.
+2. Enter a **Name**.
+3. Optionally set an **Initial Balance** (seeds the account's starting balance on creation).
+4. Choose **on-budget** or **off-budget** with the toggle.
+5. Save to stage the new account.
+
+To create several at once, use the bottom **Add Rows** / paste flow — the **Balance** column is
+editable there so you can set each new account's initial balance inline.
+
+:::caution[Budget type is fixed after creation]
+Actual Budget does not allow an account's on-budget / off-budget type to change after creation, so
+Actual Bench shows it as a read-only badge afterward. Choose carefully at creation time.
+:::
+
+## Balances, closing, and deleting
+
+- The **Current balance** column shows the live balance (fetched via ActualQL aggregation, refreshed
+  about every 60 seconds or via **Refresh**); negative balances are highlighted in red.
+- Open and close accounts individually or in bulk (close, reopen).
+- Every delete and close confirms first, showing the account's outstanding balance, transaction count,
+  and rule reference count. Non-zero balances get an explicit budget-consistency warning.
+
+## Filter and sort
+
+Filter by name, status (open / closed / all), budget type (on / off / all), and whether an account
+has associated rules. Sort by name, status, or budget type; staged (unsaved) rows stay at the top of
+the list regardless of sort until you Save.
+
+## Notes
+
+Each account row has a note button beside the name. Read (Markdown-rendered), add, edit, or clear the
+note inline — note changes **save immediately**, independent of staged account edits.
+
+## Import and export
+
+Export accounts to CSV or import them (staged before saving). CSV columns:
+
+- `name` (required), `offBudget`, `closed`.
+
+## Common problems
+
+- **"Can't change the account type"** — this is by design; type is fixed after creation.
+- **A delete is blocked or warns** — read the impact dialog; non-zero balances warn about budget
+  consistency.
+- **A new row stays highlighted** — it is staged; click **Save** to persist it.
+
+## Related pages
+
+- [Managing your data](../managing-your-data/) — the shared editing model
+- [Rules](../rules/) — how rules reference accounts

@@ -1,0 +1,51 @@
+---
+title: App Health
+description: Check Actual Bench's own metadata database in the App Health page — SQLite path, writable state, schema version, migration status, and the persistence reminder for the /data volume.
+sidebar:
+  order: 4
+---
+
+App Health is a compact diagnostics page for **Actual Bench's own server-side metadata database** —
+not your budget. Use it to confirm the app can persist its workflow data (sync flows, run history, FX
+registry) across restarts. Open it from **App Health** under the **Tools** sidebar section.
+
+:::note[This is about Actual Bench, not your budget]
+The metadata database holds Actual Bench workflow data only. It is **not** a copy of your Actual Budget
+data and does **not** store Actual credentials, API keys, server passwords, or budget encryption
+passwords. See [Core Concepts](../../getting-started/core-concepts/#where-data-lives).
+:::
+
+## What it reports
+
+- **Database path** — the configured SQLite location (`ACTUAL_BENCH_DB_PATH`, default
+  `/data/actual-bench.sqlite`).
+- **Writable** — whether Actual Bench can write to the database. Should be **Yes**.
+- **Schema** — the current schema version, or `Not initialized` if the database hasn't been set up.
+- **Migration status** — whether migrations are up to date.
+- **Persistence** — a reminder that data is *Persistent when `/data` is mounted*.
+
+## Verify a healthy install
+
+After installing or upgrading, open App Health and confirm:
+
+- **Writable** is `Yes`.
+- **Schema** shows a version number (not `Not initialized`).
+- **Persistence** reads *Persistent when /data is mounted*.
+
+If **Writable** is `No` or persistence looks wrong, re-check the `/data` volume mount and its
+permissions — see [Installation](../../getting-started/installation/#verify-the-installation) and
+[Upgrading and Backups](../upgrading-and-backups/).
+
+## Common problems
+
+- **Writable: No** — the `/data` volume isn't writable by the container user; fix the mount permissions.
+- **Schema: Not initialized** — the database couldn't be created at the configured path; verify
+  `ACTUAL_BENCH_DB_PATH` points at the mounted, writable volume.
+- **Data disappears after recreating the container** — the `/data` volume isn't persisted; mount a
+  named volume or host path.
+
+## Related pages
+
+- [Installation](../../getting-started/installation/)
+- [Upgrading and Backups](../upgrading-and-backups/)
+- [Configuration](../configuration/)
