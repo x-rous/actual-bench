@@ -40,8 +40,14 @@ function symmetricDiffCountCapped(a: string[], b: string[]): number {
   return count + (a.length - i) + (b.length - j);
 }
 
-/** Collapse adjacent duplicates in an already-sorted array. */
-function dedupeSorted(sorted: readonly string[]): string[] {
+/**
+ * Return a sorted, duplicate-free copy of a rule's part signatures.
+ * `rulePartSignatures` sorts conditions and actions separately and concatenates
+ * them, so the combined array is not globally ordered — sort here to satisfy the
+ * merge assumptions of `symmetricDiffCountCapped`.
+ */
+function sortedUniqueSignatures(sigs: readonly string[]): string[] {
+  const sorted = [...sigs].sort();
   const out: string[] = [];
   for (const v of sorted) {
     if (out.length === 0 || out[out.length - 1] !== v) out.push(v);
@@ -80,7 +86,7 @@ export const nearDuplicateRules: CheckFn = (ws, ctx) => {
     // than rebuilding sets for every comparison.
     const sigs = new Map<string, string[]>();
     for (const r of eligible) {
-      sigs.set(r.id, dedupeSorted(ctx.partSignatures.get(r.id) ?? []));
+      sigs.set(r.id, sortedUniqueSignatures(ctx.partSignatures.get(r.id) ?? []));
     }
 
     for (let i = 0; i < eligible.length; i++) {
