@@ -26,8 +26,8 @@ Only variables verified in the current codebase are listed.
 | Variable | Default | Purpose | Secret | Restart |
 |---|---|---|:---:|:---:|
 | `ACTUAL_BENCH_DB_PATH` | `/data/actual-bench.sqlite` | Path to the metadata SQLite database. | No | Yes |
-| `DIRECT_BROWSER_API` | enabled | Set to `0` to disable Direct Actual Server mode (server-side). | No | Yes |
-| `NEXT_PUBLIC_DIRECT_BROWSER_API` | enabled | Set to `0` to disable Direct mode (build/public equivalent). | No | Yes |
+| `DIRECT_BROWSER_API` | enabled | Set to `0` / `false` / `off` to disable Direct Actual Server mode. The single, canonical switch — takes effect at runtime on the prebuilt image. | No | Yes |
+| `NEXT_PUBLIC_DIRECT_BROWSER_API` | *(deprecated)* | Deprecated alias for `DIRECT_BROWSER_API`, still honored (with a warning) for one release. Use `DIRECT_BROWSER_API` instead. | No | Yes |
 | `SYNC_VAULT_KEY` | *(unset)* | Enables unattended server-side sync; derives the encryption key for stored credentials. | **Yes** | Yes |
 | `SYNC_SCHEDULER_SECRET` | *(unset)* | Enables the external scheduler trigger endpoint; required in its request header. | **Yes** | Yes |
 | `LOG_LEVEL` | `info` | Server log verbosity. | No | Yes |
@@ -45,9 +45,17 @@ default.
 ## Direct-mode settings
 
 Direct Actual Server mode is enabled by default. To hide it (offer only HTTP API Server mode), set
-`DIRECT_BROWSER_API=0` **or** `NEXT_PUBLIC_DIRECT_BROWSER_API=0` and restart. See
+`DIRECT_BROWSER_API=0` and restart. This one server-side runtime variable is read consistently across
+the app — the middleware that emits the cross-origin-isolation headers, the connect screen, and the
+Actual-engine asset route — so it takes effect on the prebuilt image with no rebuild. See
 [Deployment](../deployment/#direct-mode-network-requirements) for the browser reachability and
 cross-origin requirements Direct mode needs.
+
+:::note[`NEXT_PUBLIC_DIRECT_BROWSER_API` is deprecated]
+Earlier versions required a second, build-time `NEXT_PUBLIC_DIRECT_BROWSER_API` variable. It is now a
+deprecated alias — still honored (with a startup warning) for one release, but you should set only
+`DIRECT_BROWSER_API`.
+:::
 
 ## Metadata database
 

@@ -20,3 +20,7 @@ export function proxy() {
 export const config = {
   matcher: ["/((?!api/).*)"],
 };
+
+// Note: in Next.js 16 the Proxy (middleware) always runs on the Node.js
+// runtime, so it reads the same server-side runtime env (`DIRECT_BROWSER_API`)
+// as the rest of the app — which is why a single variable is sufficient.

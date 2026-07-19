@@ -53,6 +53,11 @@ services:
       - "3000:3000"
     environment:
       ACTUAL_BENCH_DB_PATH: /data/actual-bench.sqlite
+      # --- Optional settings (uncomment to use; see the Configuration guide) ---
+      # DIRECT_BROWSER_API: "0"                    # offer only HTTP API Server mode
+      # LOG_LEVEL: info                            # debug | info | warn | error
+      # SYNC_VAULT_KEY: "<strong-secret>"          # enable unattended server-side sync
+      # SYNC_SCHEDULER_SECRET: "<strong-secret>"   # enable the external scheduler trigger
     volumes:
       - actual-bench-data:/data
     restart: unless-stopped
@@ -68,7 +73,9 @@ docker compose up -d
 ```
 
 No environment variables are required for a basic setup — `ACTUAL_BENCH_DB_PATH` is shown here only to
-make the metadata location explicit; it already defaults to `/data/actual-bench.sqlite`.
+make the metadata location explicit; it already defaults to `/data/actual-bench.sqlite`. The commented
+lines are optional settings you *can* provide; see [Configuration](../../administration/configuration/)
+for what each one does.
 
 ## Install with the Docker CLI
 

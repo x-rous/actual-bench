@@ -150,7 +150,7 @@ export function ConnectForm({ directBrowserApiEnabled }: ConnectFormProps) {
       {!directBrowserApiEnabled && (
         <div className="flex items-start gap-2.5 rounded-lg border border-muted bg-muted/40 px-3.5 py-3 text-xs leading-5 text-muted-foreground">
           <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
-          <span>Direct Actual Server mode is disabled for this deployment. Remove <code>DIRECT_BROWSER_API=0</code> or <code>NEXT_PUBLIC_DIRECT_BROWSER_API=0</code> and restart the app to show both connection modes.</span>
+          <span>Direct Actual Server mode is disabled for this deployment. Remove <code>DIRECT_BROWSER_API=0</code> and restart the app to show both connection modes.</span>
         </div>
       )}
 

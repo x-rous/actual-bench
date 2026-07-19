@@ -7,6 +7,15 @@ services:
       NODE_ENV: production
       NEXT_TELEMETRY_DISABLED: "1"
       ACTUAL_BENCH_DB_PATH: /data/actual-bench.sqlite
+      # --- Optional settings (uncomment to use) ---
+      # Disable Direct Actual Server mode (offer only HTTP API Server mode):
+      # DIRECT_BROWSER_API: "0"
+      # Server log verbosity: debug | info (default) | warn | error
+      # LOG_LEVEL: info
+      # Unattended server-side sync (HTTP API Server flows only) — see docs.
+      # Provide these via your secret manager, never hard-coded:
+      # SYNC_VAULT_KEY: "<strong-secret>"        # enables + encrypts the credential vault
+      # SYNC_SCHEDULER_SECRET: "<strong-secret>" # enables the external scheduler trigger endpoint
     volumes:
       - actual-bench-data:/data
     restart: unless-stopped
