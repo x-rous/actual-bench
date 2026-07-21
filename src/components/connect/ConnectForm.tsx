@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 import { useConnectionStore, selectActiveInstance } from "@/store/connection";
+import { connectionFingerprint } from "@/lib/sync/connectionRef";
 import { useIsHydrated } from "@/hooks/useIsHydrated";
 import { useConnectForm } from "./useConnectForm";
 import { useConnectionVault } from "@/features/connect/useConnectionVault";
@@ -92,6 +93,10 @@ export function ConnectForm({ directBrowserApiEnabled }: ConnectFormProps) {
   // Show the two-column layout when there's anything on the side: in-memory
   // connections this session, or remembered (vault) connections.
   const hasSideContent = instances.length > 0 || vault.connections.length > 0;
+
+  // Fingerprints already open this session — hidden from the remembered list so
+  // a connection isn't shown under both "Your connections" and "Remembered".
+  const activeFingerprints = new Set(instances.map((i) => connectionFingerprint(i)));
 
   // ── Panels ──────────────────────────────────────────────────────────────────
 
@@ -422,14 +427,14 @@ export function ConnectForm({ directBrowserApiEnabled }: ConnectFormProps) {
   // ── Layout ──────────────────────────────────────────────────────────────────
 
   return (
-    <div className={cn("w-full flex flex-col gap-8", hasSideContent ? "max-w-5xl" : "max-w-xl")}>
+    <div className={cn("w-full flex flex-col gap-8", hasSideContent ? "max-w-[68rem]" : "max-w-xl")}>
       <div className="flex justify-center">
         <Image src="/logo.png" alt="Actual Bench" width={160} height={40} priority />
       </div>
 
       {hasSideContent ? (
         /* ── Two-column layout ── */
-        <div className="grid grid-cols-1 lg:grid-cols-[2fr_3fr] gap-6 items-start">
+        <div className="grid grid-cols-1 lg:grid-cols-[9fr_11fr] gap-6 items-start">
           {/* Left: this-session + remembered connections */}
           <div className="flex flex-col gap-6">
             {instances.length > 0 && (
@@ -451,7 +456,12 @@ export function ConnectForm({ directBrowserApiEnabled }: ConnectFormProps) {
                 </div>
               </section>
             )}
-            <RememberedConnections vault={vault} onReconnect={reconnectRemembered} busy={anyBusy} />
+            <RememberedConnections
+              vault={vault}
+              onReconnect={reconnectRemembered}
+              busy={anyBusy}
+              activeFingerprints={activeFingerprints}
+            />
           </div>
 
           {/* Right: add a connection */}

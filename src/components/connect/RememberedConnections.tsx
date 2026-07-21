@@ -36,17 +36,26 @@ export function RememberedConnections({
   vault,
   onReconnect,
   busy,
+  activeFingerprints,
 }: {
   vault: Vault;
   onReconnect: (instance: ConnectionInstance) => void;
   busy: boolean;
+  /** Fingerprints already open in "Your connections" — hidden here to avoid duplicates. */
+  activeFingerprints: Set<string>;
 }) {
   const [passphrase, setPassphrase] = useState("");
   const [unlocking, setUnlocking] = useState(false);
   const [revealingId, setRevealingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  if (!vault.status.supported || vault.connections.length === 0) return null;
+  // A remembered connection that's already active this session lives under
+  // "Your connections"; don't list it twice.
+  const connections = vault.connections.filter(
+    (meta) => !activeFingerprints.has(meta.connectionFingerprint)
+  );
+
+  if (!vault.status.supported || connections.length === 0) return null;
 
   const locked = !vault.status.unlocked;
 
@@ -124,7 +133,7 @@ export function RememberedConnections({
       {error && <p className="text-xs text-destructive">{error}</p>}
 
       <div className="flex max-h-96 flex-col gap-2 overflow-y-auto">
-        {vault.connections.map((meta) => {
+        {connections.map((meta) => {
           const isDirect = meta.mode === "browser-api";
           const revealing = revealingId === meta.connectionFingerprint;
           return (
@@ -143,11 +152,6 @@ export function RememberedConnections({
                   </span>
                 </div>
                 <div className="truncate text-xs text-muted-foreground">{meta.baseUrl}</div>
-                {isDirect && (
-                  <div className="text-[10px] text-amber-600 dark:text-amber-500">
-                    Password is released to this browser on reconnect.
-                  </div>
-                )}
               </div>
               <button
                 type="button"
