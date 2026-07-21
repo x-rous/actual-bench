@@ -10,6 +10,9 @@ import {
 import type { ConnectionCredentialInput, SqliteDatabase } from "@/lib/app-db/types";
 import { changePassphrase, isPassphraseSet, setPassphrase, verifyPassphrase } from "./passphrase";
 
+// scrypt at the OWASP floor is intentionally slow; give derive-heavy tests room.
+jest.setTimeout(30000);
+
 function tempDb(): { root: string; db: SqliteDatabase } {
   const root = mkdtempSync(join(tmpdir(), "actual-bench-passphrase-"));
   return { root, db: getAppDb(join(root, "metadata.sqlite")) };

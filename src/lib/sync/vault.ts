@@ -66,13 +66,37 @@ export function openWithKey(sealed: SealedSecret, key: Buffer): string {
   return dec.toString("utf8");
 }
 
+/** scrypt cost parameters for a passphrase KDF version. */
+export type ScryptParams = { N: number; r: number; p: number; maxmem: number };
+
+/**
+ * KDF parameter sets by version, so remembered-connection data stays decryptable
+ * if the cost is raised later: bump `CURRENT_KDF_VERSION`, add a new entry, and
+ * migrate on the next re-seal (existing salts keep deriving with their version).
+ * v1 meets the OWASP scrypt floor (N=2^17, r=8, p=1); `maxmem` must cover
+ * 128 * N * r (≈134 MiB) since Node's default cap is 32 MiB.
+ */
+export const CONNECTION_KDF_PARAMS: Record<number, ScryptParams> = {
+  1: { N: 131072, r: 8, p: 1, maxmem: 192 * 1024 * 1024 },
+};
+export const CURRENT_KDF_VERSION = 1;
+
 /**
  * Derive a 32-byte key from a user passphrase and a per-install salt (scrypt).
  * The passphrase and derived key must never be persisted. Used by the
  * remembered-connection vault (RD-061); unrelated to `SYNC_VAULT_KEY`.
  */
-export function deriveKeyFromPassphrase(passphrase: string, salt: Buffer): Buffer {
-  return scryptSync(passphrase, salt, DERIVED_KEY_BYTES);
+export function deriveKeyFromPassphrase(
+  passphrase: string,
+  salt: Buffer,
+  params: ScryptParams = CONNECTION_KDF_PARAMS[CURRENT_KDF_VERSION]
+): Buffer {
+  return scryptSync(passphrase, salt, DERIVED_KEY_BYTES, {
+    N: params.N,
+    r: params.r,
+    p: params.p,
+    maxmem: params.maxmem,
+  });
 }
 
 /** Seal plaintext with the env (`SYNC_VAULT_KEY`) key. Throws VaultDisabledError if unset. */

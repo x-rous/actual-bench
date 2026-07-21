@@ -23,8 +23,12 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { getAppDb, resetAppDbForTests } from "@/lib/app-db/connection";
 import { clearAllSessions } from "@/lib/connectionVault/session";
+import { resetUnlockThrottle } from "@/lib/connectionVault/throttle";
 import { VAULT_COOKIE } from "@/lib/connectionVault/cookies";
 import { GET } from "./route";
+
+// scrypt at the OWASP floor is intentionally slow; give derive-heavy tests room.
+jest.setTimeout(30000);
 import { POST as setPassphrase } from "./passphrase/route";
 import { POST as changePassphrase } from "./passphrase/change/route";
 import { POST as unlock } from "./unlock/route";
@@ -55,12 +59,14 @@ describe("connection-vault routes (RD-061 / PR-026b)", () => {
     getAppDb();
     cookieJar.clear();
     clearAllSessions();
+    resetUnlockThrottle();
   });
   afterEach(() => {
     resetAppDbForTests();
     rmSync(root, { recursive: true, force: true });
     cookieJar.clear();
     clearAllSessions();
+    resetUnlockThrottle();
     if (originalDbPath === undefined) delete process.env.ACTUAL_BENCH_DB_PATH;
     else process.env.ACTUAL_BENCH_DB_PATH = originalDbPath;
   });
@@ -92,6 +98,19 @@ describe("connection-vault routes (RD-061 / PR-026b)", () => {
 
     expect((await unlock(req({ passphrase: "unlock-me-please" }))).status).toBe(200);
     expect((await status()).unlocked).toBe(true);
+  });
+
+  it("throttles repeated failed unlock attempts", async () => {
+    await setPassphrase(req({ passphrase: "unlock-me-please" }));
+    await lock(req());
+
+    // Five wrong guesses are 401; the throttle then locks further attempts (429).
+    for (let i = 0; i < 5; i++) {
+      expect((await unlock(req({ passphrase: "wrong" }))).status).toBe(401);
+    }
+    expect((await unlock(req({ passphrase: "wrong" }))).status).toBe(429);
+    // Even the correct passphrase is refused while locked out.
+    expect((await unlock(req({ passphrase: "unlock-me-please" }))).status).toBe(429);
   });
 
   it("changes the passphrase and rejects a wrong current one", async () => {

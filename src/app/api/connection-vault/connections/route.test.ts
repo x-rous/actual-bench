@@ -28,6 +28,9 @@ import { POST as setPassphrase } from "../passphrase/route";
 import { GET as listConnections, POST as remember, DELETE as forget } from "./route";
 import { POST as reveal } from "./reveal/route";
 
+// scrypt at the OWASP floor is intentionally slow; give derive-heavy tests room.
+jest.setTimeout(30000);
+
 function req(opts: { body?: unknown; query?: Record<string, string> } = {}): never {
   return {
     headers: { get: () => null },
@@ -127,6 +130,10 @@ describe("remembered connections routes (RD-061 / PR-026d)", () => {
     await remember(req({ body: directInput }));
     const directFp = connectionFingerprint(directInput);
 
+    // Unlocked but the connection doesn't exist → 404.
+    expect((await reveal(req({ body: { connectionFingerprint: "does-not-exist" } }))).status).toBe(404);
+
+    // Locked session (no cookie) → 401, even for a known connection.
     cookieJar.clear();
     expect((await reveal(req({ body: { connectionFingerprint: directFp } }))).status).toBe(401);
   });

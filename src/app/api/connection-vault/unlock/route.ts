@@ -5,6 +5,7 @@ import { rememberedCredentialsSupported } from "@/lib/app-db/connectionCredentia
 import { isPassphraseSet, verifyPassphrase } from "@/lib/connectionVault/passphrase";
 import { createSession } from "@/lib/connectionVault/session";
 import { setSessionCookie } from "@/lib/connectionVault/cookies";
+import { recordUnlockFailure, recordUnlockSuccess, unlockRetryAfterMs } from "@/lib/connectionVault/throttle";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -30,10 +31,20 @@ export async function POST(request: NextRequest) {
     if (!isPassphraseSet(db)) {
       return NextResponse.json({ error: "No passphrase is set." }, { status: 400 });
     }
+    // Brute-force backoff: reject while locked out after repeated failures.
+    const retryMs = unlockRetryAfterMs();
+    if (retryMs > 0) {
+      return NextResponse.json(
+        { error: "Too many attempts. Try again later." },
+        { status: 429, headers: { "Retry-After": String(Math.ceil(retryMs / 1000)) } }
+      );
+    }
     const key = verifyPassphrase(db, body.passphrase);
     if (!key) {
+      recordUnlockFailure();
       return NextResponse.json({ error: "Incorrect passphrase." }, { status: 401 });
     }
+    recordUnlockSuccess();
     const response = NextResponse.json({ ok: true, unlocked: true });
     setSessionCookie(request, response, createSession(key));
     return response;

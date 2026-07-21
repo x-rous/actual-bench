@@ -1,5 +1,11 @@
 import { randomBytes } from "node:crypto";
-import { deriveKeyFromPassphrase, openWithKey, sealWithKey } from "@/lib/sync/vault";
+import {
+  CONNECTION_KDF_PARAMS,
+  CURRENT_KDF_VERSION,
+  deriveKeyFromPassphrase,
+  openWithKey,
+  sealWithKey,
+} from "@/lib/sync/vault";
 import { getAppMeta, setAppMeta } from "./appMetaRepository";
 import { getAppDbHealth } from "./connection";
 import type {
@@ -22,6 +28,7 @@ import type {
  */
 
 const SALT_META_KEY = "connection_vault_salt";
+const KDF_VERSION_META_KEY = "connection_vault_kdf_version";
 const SALT_BYTES = 16;
 
 /**
@@ -39,13 +46,20 @@ export function getConnectionVaultSalt(db: SqliteDatabase): Buffer | null {
   return raw ? Buffer.from(raw, "base64") : null;
 }
 
-/** Read the per-install salt, creating it on first use. */
+/** Read the per-install salt, creating it (and stamping the KDF version) on first use. */
 export function getOrCreateConnectionVaultSalt(db: SqliteDatabase): Buffer {
   const existing = getConnectionVaultSalt(db);
   if (existing) return existing;
   const salt = randomBytes(SALT_BYTES);
   setAppMeta(db, SALT_META_KEY, salt.toString("base64"));
+  setAppMeta(db, KDF_VERSION_META_KEY, String(CURRENT_KDF_VERSION));
   return salt;
+}
+
+/** KDF params for this install's stored version (defaults to current if unset). */
+function connectionKdfParams(db: SqliteDatabase) {
+  const version = Number(getAppMeta(db, KDF_VERSION_META_KEY) ?? CURRENT_KDF_VERSION);
+  return CONNECTION_KDF_PARAMS[version] ?? CONNECTION_KDF_PARAMS[CURRENT_KDF_VERSION];
 }
 
 /** True once a passphrase (and therefore a salt) has been established. */
@@ -53,9 +67,9 @@ export function hasConnectionPassphrase(db: SqliteDatabase): boolean {
   return getConnectionVaultSalt(db) !== null;
 }
 
-/** Derive the vault key from a passphrase using the stored per-install salt. */
+/** Derive the vault key from a passphrase using the stored per-install salt + KDF version. */
 export function deriveConnectionVaultKey(db: SqliteDatabase, passphrase: string): Buffer {
-  return deriveKeyFromPassphrase(passphrase, getOrCreateConnectionVaultSalt(db));
+  return deriveKeyFromPassphrase(passphrase, getOrCreateConnectionVaultSalt(db), connectionKdfParams(db));
 }
 
 type CredentialRow = {

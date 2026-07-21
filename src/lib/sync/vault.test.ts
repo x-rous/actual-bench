@@ -9,6 +9,9 @@ import {
 } from "./vault";
 import { randomBytes } from "node:crypto";
 
+// scrypt at the OWASP floor is intentionally slow; give derive-heavy tests room.
+jest.setTimeout(30000);
+
 describe("credential vault (RD-058 / PR-024a)", () => {
   const original = process.env.SYNC_VAULT_KEY;
   afterEach(() => {

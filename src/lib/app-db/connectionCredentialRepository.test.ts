@@ -18,6 +18,9 @@ import {
 } from "./connectionCredentialRepository";
 import type { ConnectionCredentialInput, SqliteDatabase } from "./types";
 
+// scrypt at the OWASP floor is intentionally slow; give derive-heavy tests room.
+jest.setTimeout(30000);
+
 function tempDb(): { root: string; dbPath: string; db: SqliteDatabase } {
   const root = mkdtempSync(join(tmpdir(), "actual-bench-conncred-"));
   const dbPath = join(root, "metadata.sqlite");
