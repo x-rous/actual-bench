@@ -126,6 +126,26 @@ CREATE TABLE IF NOT EXISTS sync_credentials (
 );
 `;
 
+// ── Remembered connection credentials (RD-061 / PR-026a) ─────────────────────
+// Opt-in, passphrase-sealed reconnect credentials. Kept separate from
+// `sync_credentials` (unattended vault) so the two concerns never share
+// ciphertext or a key. The secret blob is sealed with a key derived from the
+// user's unlock passphrase; only the salt + AES-256-GCM blob are stored.
+export const CONNECTION_CREDENTIAL_TABLE_SQL = `
+CREATE TABLE IF NOT EXISTS connection_credentials (
+  connection_fingerprint text PRIMARY KEY,
+  mode text NOT NULL,
+  base_url text NOT NULL,
+  budget_sync_id text NOT NULL,
+  label text NOT NULL DEFAULT '',
+  ciphertext text NOT NULL,
+  iv text NOT NULL,
+  auth_tag text NOT NULL,
+  created_at text NOT NULL,
+  updated_at text NOT NULL
+);
+`;
+
 // ── FX / multi-currency consolidation (RD-056 / PR-025a) ─────────────────────
 // The database is the authoritative FX registry; Frankfurter only populates it.
 export const FX_RATE_IMPORT_BATCH_TABLE_SQL = `

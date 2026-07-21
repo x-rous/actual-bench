@@ -1,6 +1,7 @@
 import type { SqliteDatabase } from "./types";
 import {
   APP_META_TABLE_SQL,
+  CONNECTION_CREDENTIAL_TABLE_SQL,
   FX_INDEX_SQL,
   FX_RATES_TABLE_SQL,
   FX_RATE_IMPORT_BATCH_TABLE_SQL,
@@ -17,7 +18,7 @@ import {
 } from "./schema";
 import { AppDbUnavailableError } from "./errors";
 
-export const LATEST_SCHEMA_VERSION = 5;
+export const LATEST_SCHEMA_VERSION = 6;
 
 type Migration = {
   version: number;
@@ -111,6 +112,11 @@ const MIGRATIONS: readonly Migration[] = [
     version: 5,
     // FX registry (RD-056 / PR-025a). Batches first: fx_rates references it.
     statements: [FX_RATE_IMPORT_BATCH_TABLE_SQL, FX_RATES_TABLE_SQL, TRANSACTION_FX_TABLE_SQL, ...FX_INDEX_SQL],
+  },
+  {
+    version: 6,
+    // Remembered connection credentials (RD-061 / PR-026a).
+    statements: [CONNECTION_CREDENTIAL_TABLE_SQL],
   },
 ];
 
