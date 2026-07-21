@@ -103,19 +103,24 @@ describe("remembered connections routes (RD-061 / PR-026d)", () => {
     expect((await remember(req({ body: { ...httpInput, secret: {} } }))).status).toBe(400);
   });
 
-  it("releases a Direct-mode secret only via reveal, and never an HTTP-API key", async () => {
+  it("reveals a remembered secret for reconnect — both Direct and HTTP (Option B)", async () => {
     await remember(req({ body: directInput }));
     await remember(req({ body: httpInput }));
 
     const directFp = connectionFingerprint(directInput);
-    const revealed = (await reveal(req({ body: { connectionFingerprint: directFp } })));
-    expect(revealed.status).toBe(200);
-    const payload = (await revealed.json()) as { secret: { serverPassword: string; encryptionPassword: string | null } };
-    expect(payload.secret).toEqual({ serverPassword: "pw", encryptionPassword: "enc" });
+    const directRes = await reveal(req({ body: { connectionFingerprint: directFp } }));
+    expect(directRes.status).toBe(200);
+    const direct = (await directRes.json()) as { mode: string; secret: { serverPassword: string | null; encryptionPassword: string | null } };
+    expect(direct.mode).toBe("browser-api");
+    expect(direct.secret.serverPassword).toBe("pw");
+    expect(direct.secret.encryptionPassword).toBe("enc");
 
-    // HTTP-API keys are never released to the browser.
     const httpFp = connectionFingerprint(httpInput);
-    expect((await reveal(req({ body: { connectionFingerprint: httpFp } }))).status).toBe(400);
+    const httpRes = await reveal(req({ body: { connectionFingerprint: httpFp } }));
+    expect(httpRes.status).toBe(200);
+    const http = (await httpRes.json()) as { mode: string; secret: { apiKey: string | null } };
+    expect(http.mode).toBe("http-api");
+    expect(http.secret.apiKey).toBe("sealed-key");
   });
 
   it("reveal requires an unlocked session and a known connection", async () => {

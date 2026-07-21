@@ -14,13 +14,9 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { logger } from "@/lib/logger";
 import { queueServerRequest, type HttpProxyConnection } from "../serverQueue";
-import { resolveProxyConnection } from "../resolveConnection";
 
 type DownloadRequestBody = {
-  /** Inline credentials for an ephemeral connection. */
-  connection?: HttpProxyConnection;
-  /** Reference to a remembered connection (fingerprint); key injected server-side. */
-  connectionRef?: string;
+  connection: HttpProxyConnection;
   path: string;
   method?: string;
 };
@@ -108,13 +104,11 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
   }
 
-  const { path, method = "GET" } = payload;
+  const { connection, path, method = "GET" } = payload;
 
-  const resolved = resolveProxyConnection(request, payload);
-  if (!resolved.ok) {
-    return NextResponse.json({ error: resolved.error }, { status: resolved.status });
+  if (!connection?.baseUrl || !connection?.apiKey) {
+    return NextResponse.json({ error: "Missing connection details" }, { status: 400 });
   }
-  const connection = resolved.connection;
 
   const reqId = Math.random().toString(36).slice(2, 9);
   const start = Date.now();

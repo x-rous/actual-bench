@@ -12,12 +12,15 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 /**
- * Direct-mode secret release (RD-061 / PR-026d). Because Direct mode runs the
- * Actual engine in the browser, reconnecting a remembered Direct connection
- * requires releasing its `serverPassword` to the browser — the deliberate,
- * clearly-labelled weaker path. This is the ONLY endpoint that returns a stored
- * plaintext secret, and only via an explicit unlock action for a browser-api
- * record. HTTP-API keys are never released here (they inject server-side).
+ * Reveal a remembered connection's secret to reconnect (RD-061 / PR-026d, Option
+ * B). The vault unseals the stored secret with the unlocked session key and
+ * returns it so the browser can rebuild a normal connection — HTTP `apiKey` or
+ * Direct `serverPassword`, plus any budget `encryptionPassword`. This is the
+ * single, explicit "release for reconnect" action; it requires an unlocked
+ * session and never returns anything from list/metadata endpoints.
+ *
+ * Browser exposure is identical to a freshly-typed connection; the vault only
+ * adds encryption-at-rest + passphrase-gating on top.
  */
 export async function POST(request: NextRequest) {
   try {
@@ -44,16 +47,14 @@ export async function POST(request: NextRequest) {
     if (!cred) {
       return NextResponse.json({ error: "Remembered connection not found." }, { status: 404 });
     }
-    if (cred.mode !== "browser-api" || !cred.secret.serverPassword) {
-      // HTTP-API keys stay server-side; never released to the browser.
-      return NextResponse.json({ error: "This connection's secret is not released to the browser." }, { status: 400 });
-    }
     return NextResponse.json({
+      mode: cred.mode,
       baseUrl: cred.baseUrl,
       budgetSyncId: cred.budgetSyncId,
       label: cred.label,
       secret: {
-        serverPassword: cred.secret.serverPassword,
+        apiKey: cred.secret.apiKey ?? null,
+        serverPassword: cred.secret.serverPassword ?? null,
         encryptionPassword: cred.secret.encryptionPassword ?? null,
       },
     });

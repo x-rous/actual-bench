@@ -1,6 +1,9 @@
 import type { ConnectionCredentialMeta, ConnectionCredentialSecret } from "@/lib/app-db/types";
 import type { ConnectionMode } from "@/store/connection";
 
+// Re-export for consumers building UI over remembered connections.
+export type { ConnectionCredentialMeta } from "@/lib/app-db/types";
+
 /**
  * Client for the remembered-connection vault routes (RD-061 / PR-026d).
  *
@@ -104,15 +107,20 @@ export function forgetRememberedConnection(connectionFingerprint: string): Promi
   );
 }
 
-export type RevealedDirectSecret = {
+export type RevealedConnectionSecret = {
+  mode: ConnectionMode;
   baseUrl: string;
   budgetSyncId: string;
   label: string;
-  secret: { serverPassword: string; encryptionPassword: string | null };
+  secret: {
+    apiKey: string | null;
+    serverPassword: string | null;
+    encryptionPassword: string | null;
+  };
 };
 
-/** Release a remembered Direct connection's server password to reconnect (weaker path). */
-export function revealDirectSecret(connectionFingerprint: string): Promise<RevealedDirectSecret> {
+/** Reveal a remembered connection's secret to reconnect (HTTP apiKey or Direct serverPassword). */
+export function revealRememberedSecret(connectionFingerprint: string): Promise<RevealedConnectionSecret> {
   return jsonFetch("/api/connection-vault/connections/reveal", {
     method: "POST",
     body: JSON.stringify({ connectionFingerprint }),
