@@ -87,9 +87,53 @@ during the current browser session.
 
 - Only **non-secret** connection details (such as the server URL and label) are saved, in the browser's
   session storage.
-- Secrets — the Server password, API Key, and Encryption password — are **not** saved. You re-enter
-  them when reconnecting.
+- Secrets — the Server password, API Key, and Encryption password — are **not** saved by default. You
+  re-enter them when reconnecting, unless you opt in to remembering the connection (below).
 - Because presets live in session storage, they are cleared when the browser tab is closed.
+
+## Remember a connection (optional)
+
+To avoid re-typing credentials every session, you can **remember** a connection. Its secret is then
+stored **encrypted on the server**, protected by a passphrase you choose, and you reconnect with one
+click after unlocking.
+
+:::note[Off by default]
+Remembering is opt-in. If you do nothing, secrets stay in memory only and you re-enter them each
+session. The option is hidden where storage isn't durable (for example the public demo).
+:::
+
+### Remember it while connecting
+
+1. On the **Choose a budget** step, tick **Remember this connection on the server**.
+2. The first time, you're asked to **create a passphrase** (at least 8 characters). This passphrase
+   protects all remembered connections; if a passphrase already exists, unlock it instead.
+3. Select **Connect**. The connection opens and its secret is sealed in the metadata database.
+
+### Reconnect a remembered connection
+
+On the connect screen, remembered connections appear under **Remembered connections**:
+
+1. If the vault is locked, enter your **passphrase** once to unlock it.
+2. Select **Reconnect** on any remembered connection — no need to re-enter its API key or password.
+3. Use **Forget** to remove a remembered connection.
+
+:::caution[Direct mode is the weaker path]
+For **Direct Actual Server** connections, the Actual engine runs in your browser, so on reconnect the
+stored **Server password is released to the browser** — the same exposure as typing it in. Remembered
+**HTTP API** connections are handled exactly as any HTTP connection is today. Either way, remembering
+adds encryption **at rest** and passphrase-gating on top of today's behaviour.
+:::
+
+### About the passphrase
+
+- It protects the stored secrets and is entered **once per session** to unlock them. It is **not** a
+  login for Actual Bench — the app still has no built-in authentication (see the security note above).
+- The passphrase and its derived key are **never stored** on the server — only the encrypted secrets
+  and a salt. If you **forget the passphrase, remembered secrets can't be recovered** — you re-enter
+  and re-remember the connection. Changing the passphrase re-encrypts everything.
+
+See [Core Concepts](../core-concepts/#where-data-lives) for where remembered secrets live, and the
+**Administration** guides for backup implications.
 
 ## Switch between connections
 

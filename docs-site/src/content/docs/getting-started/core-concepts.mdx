@@ -74,13 +74,18 @@ applies helps you know when a change becomes permanent:
 
 Actual Bench is deliberately conservative with secrets:
 
-- Server passwords, API keys, and budget encryption passwords are held **in memory only**; refreshing
-  or reopening the tab requires reconnecting.
+- Server passwords, API keys, and budget encryption passwords are held **in memory only** by default;
+  refreshing or reopening the tab requires reconnecting.
 - Saved connection presets in session storage contain **non-secret** details only.
+- **Remembered connections (opt-in):** if you choose to remember a connection, its secret is sealed
+  **AES-256-GCM in the metadata database**, encrypted with a key derived from a **passphrase you set**.
+  The passphrase and key are never stored, so the server cannot decrypt on its own — you unlock once
+  per session. The passphrase is **not** an app login. See
+  [Remember a connection](../connecting/#remember-a-connection-optional).
 - Credentials for unattended server-side sync are stored only after you explicitly enroll them, and are
-  kept **encrypted** in the metadata database (the encryption key comes from the server environment,
-  never the database).
-- The metadata database does not store Actual credentials.
+  kept **encrypted** in the metadata database (that key comes from the server environment,
+  `SYNC_VAULT_KEY`, never the database). This vault is separate from remembered-connection storage.
+- Beyond those explicit, encrypted opt-ins, the metadata database does not store Actual credentials.
 
 ## Where data lives
 
@@ -90,6 +95,7 @@ Actual Bench is deliberately conservative with secrets:
 | Staged edits & query cache | Browser (in memory) | Until refresh / tab close | No server credentials |
 | Saved connection preset | Browser session storage | Cleared when the tab closes | Non-secret details only |
 | Actual Bench metadata | `/data` SQLite on the server | Persistent (with `/data` mounted) | Workflow metadata only |
+| Remembered connection secret (opt-in) | Metadata database, encrypted | Persistent | Encrypted; needs your passphrase |
 | Unattended sync credentials | Metadata database, encrypted | Persistent | Encrypted credentials |
 | Exported budget snapshot | Processed locally in your browser | Cached during the session | May contain budget data |
 
