@@ -22,9 +22,11 @@ import {
   isBrowserApiConnection,
   type ConnectionInstance,
   type ConnectionMode,
+  type HttpApiConnection,
 } from "@/store/connection";
 import { useSavedServersStore, type SavedServer } from "@/store/savedServers";
 import { useStagedStore } from "@/store/staged";
+import { rememberConnection } from "@/features/connect/vaultApi";
 import { removeSavedServerIfUnused } from "@/lib/savedServerCleanup";
 import { generateId } from "@/lib/uuid";
 import {
@@ -92,6 +94,10 @@ export function useConnectForm() {
 
   // Reconnect busy tracking for connection cards
   const [reconnectBusyId, setReconnectBusyId] = useState<string | null>(null);
+
+  // "Remember this connection on the server" (RD-061). Only enrolls when the
+  // vault is unlocked — the UI gates the checkbox on that.
+  const [rememberOnServer, setRememberOnServer] = useState(false);
 
   const validateBusy = validateStatus.kind === "busy";
   const connectBusy = connectStatus.kind === "busy";
@@ -277,6 +283,34 @@ export function useConnectForm() {
     });
   }
 
+  // Reconnect a remembered (vault) connection: add it to the in-memory store,
+  // then run the normal reconnect flow. The instance is rebuilt from the
+  // revealed secret by the caller.
+  function reconnectRemembered(instance: ConnectionInstance) {
+    addInstance(instance);
+    handleReconnect(instance);
+  }
+
+  // Best-effort enroll into the vault after a successful connect, when the user
+  // ticked "Remember". Never blocks the connection — a failure just warns.
+  async function maybeRemember(instance: ConnectionInstance) {
+    if (!rememberOnServer) return;
+    const secret = isBrowserApiConnection(instance)
+      ? { serverPassword: instance.serverPassword, encryptionPassword: instance.encryptionPassword }
+      : { apiKey: (instance as HttpApiConnection).apiKey, encryptionPassword: instance.encryptionPassword };
+    try {
+      await rememberConnection({
+        mode: instance.mode,
+        baseUrl: instance.baseUrl,
+        budgetSyncId: instance.budgetSyncId,
+        label: instance.label,
+        secret,
+      });
+    } catch (err) {
+      toast.error(`Connected, but couldn't remember this connection: ${parseApiError(err)}`);
+    }
+  }
+
   // ── Validate: fetch budget list ─────────────────────────────────────────────
 
   async function validate(overrides: {
@@ -437,6 +471,7 @@ export function useConnectForm() {
         discardAll();
         queryClient.clear();
         setActiveInstance(directConnection.id);
+        await maybeRemember(directConnection);
         setConnectStatus({ kind: "success" });
         toast.success("Direct connection opened. Redirecting…");
         await new Promise((r) => setTimeout(r, 800));
@@ -466,6 +501,7 @@ export function useConnectForm() {
       };
       setConnectStatus({ kind: "busy" });
       try {
+        await maybeRemember(freshInstance);
         await reconnect(freshInstance);
         setConnectStatus({ kind: "idle" });
       } catch (err) {
@@ -517,6 +553,7 @@ export function useConnectForm() {
       queryClient.clear();
       addInstance(finalInstance);
       setActiveInstance(finalInstance.id);
+      await maybeRemember(finalInstance);
       setConnectStatus({ kind: "success" });
       toast.success("Connected! Redirecting…");
       await new Promise((r) => setTimeout(r, 800));
@@ -591,6 +628,10 @@ export function useConnectForm() {
     handleValidate,
     handleKeyDown,
     handleConnect,
+    // Remembered connections (RD-061)
+    rememberOnServer,
+    setRememberOnServer,
+    reconnectRemembered,
     // Cross-mode reconnect confirmation
     pendingBudgetSwitch,
     dismissBudgetSwitch: () => setPendingBudgetSwitch(null),

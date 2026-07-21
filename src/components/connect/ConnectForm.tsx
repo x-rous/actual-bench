@@ -10,8 +10,11 @@ import { cn } from "@/lib/utils";
 import { useConnectionStore, selectActiveInstance } from "@/store/connection";
 import { useIsHydrated } from "@/hooks/useIsHydrated";
 import { useConnectForm } from "./useConnectForm";
+import { useConnectionVault } from "@/features/connect/useConnectionVault";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { ConnectionCard } from "./ConnectionCard";
+import { RememberedConnections } from "./RememberedConnections";
+import { RememberToggle } from "./RememberToggle";
 import { deriveLabel, getConnectionModeBadge } from "./utils";
 
 type ConnectFormProps = {
@@ -65,9 +68,14 @@ export function ConnectForm({ directBrowserApiEnabled }: ConnectFormProps) {
     handleValidate,
     handleKeyDown,
     handleConnect,
+    rememberOnServer,
+    setRememberOnServer,
+    reconnectRemembered,
     pendingBudgetSwitch,
     dismissBudgetSwitch,
   } = useConnectForm();
+
+  const vault = useConnectionVault();
 
   useEffect(() => {
     if (hydrated && connectedInstance) {
@@ -80,6 +88,10 @@ export function ConnectForm({ directBrowserApiEnabled }: ConnectFormProps) {
   }
 
   const activeValidatedMode = validatedMode ?? connectionMode;
+
+  // Show the two-column layout when there's anything on the side: in-memory
+  // connections this session, or remembered (vault) connections.
+  const hasSideContent = instances.length > 0 || vault.connections.length > 0;
 
   // ── Panels ──────────────────────────────────────────────────────────────────
 
@@ -382,6 +394,13 @@ export function ConnectForm({ directBrowserApiEnabled }: ConnectFormProps) {
         </div>
       )}
 
+      <RememberToggle
+        vault={vault}
+        checked={rememberOnServer}
+        onCheckedChange={setRememberOnServer}
+        disabled={connectBusy || !!reconnectBusyId}
+      />
+
       <button
         type="button"
         disabled={connectBusy || !!reconnectBusyId || !selectedGroupId}
@@ -403,32 +422,37 @@ export function ConnectForm({ directBrowserApiEnabled }: ConnectFormProps) {
   // ── Layout ──────────────────────────────────────────────────────────────────
 
   return (
-    <div className={cn("w-full flex flex-col gap-8", instances.length > 0 ? "max-w-5xl" : "max-w-xl")}>
+    <div className={cn("w-full flex flex-col gap-8", hasSideContent ? "max-w-5xl" : "max-w-xl")}>
       <div className="flex justify-center">
         <Image src="/logo.png" alt="Actual Bench" width={160} height={40} priority />
       </div>
 
-      {instances.length > 0 ? (
+      {hasSideContent ? (
         /* ── Two-column layout ── */
         <div className="grid grid-cols-1 lg:grid-cols-[2fr_3fr] gap-6 items-start">
-          {/* Left: saved connections */}
-          <section className="flex flex-col gap-3">
-            <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">
-              Your connections
-            </h2>
-            <div className="flex flex-col gap-2 overflow-y-auto max-h-96">
-              {instances.map((instance) => (
-                <ConnectionCard
-                  key={instance.id}
-                  instance={instance}
-                  isActive={activeInstance?.id === instance.id}
-                  onConnect={handleReconnect}
-                  onRemove={removeInstance}
-                  connectBusyId={reconnectBusyId}
-                />
-              ))}
-            </div>
-          </section>
+          {/* Left: this-session + remembered connections */}
+          <div className="flex flex-col gap-6">
+            {instances.length > 0 && (
+              <section className="flex flex-col gap-3">
+                <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">
+                  Your connections
+                </h2>
+                <div className="flex flex-col gap-2 overflow-y-auto max-h-96">
+                  {instances.map((instance) => (
+                    <ConnectionCard
+                      key={instance.id}
+                      instance={instance}
+                      isActive={activeInstance?.id === instance.id}
+                      onConnect={handleReconnect}
+                      onRemove={removeInstance}
+                      connectBusyId={reconnectBusyId}
+                    />
+                  ))}
+                </div>
+              </section>
+            )}
+            <RememberedConnections vault={vault} onReconnect={reconnectRemembered} busy={anyBusy} />
+          </div>
 
           {/* Right: add a connection */}
           <section className="flex flex-col gap-4">
