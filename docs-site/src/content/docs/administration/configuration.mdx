@@ -62,8 +62,20 @@ deprecated alias — still honored (with a startup warning) for one release, but
 - Default path: `/data/actual-bench.sqlite` (override with `ACTUAL_BENCH_DB_PATH`).
 - Requires a **writable** persistent volume.
 - Schema **migrations run on boot**; App Health shows the current and latest schema version.
-- Stores Actual Bench workflow metadata only — **not** Actual credentials or budget data (with the
-  exception of explicitly enrolled, encrypted unattended-sync credentials, below).
+- Stores Actual Bench workflow metadata only — **not** Actual credentials or budget data, except two
+  explicit, encrypted opt-ins: **remembered-connection** secrets and **unattended-sync** credentials
+  (below).
+
+### Remembered-connection secrets (user passphrase)
+
+When a user opts in to [remembering a connection](../../getting-started/connecting/#remember-a-connection-optional),
+its secret is sealed **AES-256-GCM** in this database, encrypted with a key derived from a **passphrase
+the user sets** — no environment variable is involved. The passphrase and derived key are never stored
+(only the ciphertext and a salt), so the server cannot decrypt on its own; the user unlocks once per
+session. This is **separate** from the `SYNC_VAULT_KEY` unattended-sync vault below — the two never
+share ciphertext or a key. The feature is only offered when this database is durable, so it is inert on
+non-durable runtimes. Back up `/data` to preserve remembered connections; a lost passphrase means the
+user re-enters and re-remembers.
 
 ## Unattended sync settings
 

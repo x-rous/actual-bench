@@ -10,7 +10,8 @@
 - HTTP API Server mode remains fully maintained as the `actual-http-api` compatibility path; HTTP-specific actions stay mode-aware, and ActualQL cURL generation is shown only for HTTP API Server query executions
 - Remove saved connections individually
 - Per-connection query cache and staged data scoping — switching connections never leaks data between sessions
-- API keys, Actual Server passwords, and budget encryption passwords are kept in memory only; saved server presets in session storage contain non-secret connection details only
+- API keys, Actual Server passwords, and budget encryption passwords are kept in memory only by default; saved server presets in session storage contain non-secret connection details only
+- **Remember connections (opt-in):** optionally persist a connection's secret so you can reconnect next session without re-typing. Secrets are sealed **AES-256-GCM in the server-side metadata database**, encrypted with a key derived from a **passphrase you set** — the server cannot decrypt without it (there is no app login; the passphrase is not one). You unlock once per session, then reconnect any remembered connection in one click, or forget it. Off by default; only offered when the metadata database is durable (not on the ephemeral demo). Direct connections release their server password to the browser on reconnect (labelled as the weaker path); HTTP API keys are handled the same way they already are for any connection
 - App Health shows the server-side metadata database path, writable state, schema version, and migration status for self-hosted deployments
 
 ## Quick Create
