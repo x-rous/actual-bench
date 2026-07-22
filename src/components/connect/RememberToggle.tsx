@@ -100,9 +100,9 @@ export function RememberToggle({
           className="mt-0.5 h-4 w-4"
         />
         <span className="flex flex-col">
-          <span className="text-sm font-medium">Remember this connection on the server</span>
+          <span className="text-sm font-medium">Remember this server</span>
           <span className="text-xs text-muted-foreground">
-            Encrypted with your passphrase so you can reconnect next time without re-typing.
+            Encrypted with your passphrase so you can open any of its budgets next time without re-typing.
             {checked && !vault.status.unlocked && (
               <>
                 {" "}

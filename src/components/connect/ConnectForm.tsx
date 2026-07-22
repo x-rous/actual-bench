@@ -8,13 +8,12 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 import { useConnectionStore, selectActiveInstance } from "@/store/connection";
-import { connectionFingerprint } from "@/lib/sync/connectionRef";
 import { useIsHydrated } from "@/hooks/useIsHydrated";
 import { useConnectForm } from "./useConnectForm";
 import { useConnectionVault } from "@/features/connect/useConnectionVault";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { ConnectionCard } from "./ConnectionCard";
-import { RememberedConnections } from "./RememberedConnections";
+import { RememberedServers } from "./RememberedServers";
 import { RememberToggle } from "./RememberToggle";
 import { deriveLabel, getConnectionModeBadge } from "./utils";
 
@@ -71,7 +70,7 @@ export function ConnectForm({ directBrowserApiEnabled }: ConnectFormProps) {
     handleConnect,
     rememberOnServer,
     setRememberOnServer,
-    reconnectRemembered,
+    startFromRememberedServer,
     pendingBudgetSwitch,
     dismissBudgetSwitch,
   } = useConnectForm();
@@ -91,12 +90,8 @@ export function ConnectForm({ directBrowserApiEnabled }: ConnectFormProps) {
   const activeValidatedMode = validatedMode ?? connectionMode;
 
   // Show the two-column layout when there's anything on the side: in-memory
-  // connections this session, or remembered (vault) connections.
-  const hasSideContent = instances.length > 0 || vault.connections.length > 0;
-
-  // Fingerprints already open this session — hidden from the remembered list so
-  // a connection isn't shown under both "Your connections" and "Remembered".
-  const activeFingerprints = new Set(instances.map((i) => connectionFingerprint(i)));
+  // connections this session, or remembered (vault) servers.
+  const hasSideContent = instances.length > 0 || vault.servers.length > 0;
 
   // ── Panels ──────────────────────────────────────────────────────────────────
 
@@ -456,11 +451,10 @@ export function ConnectForm({ directBrowserApiEnabled }: ConnectFormProps) {
                 </div>
               </section>
             )}
-            <RememberedConnections
+            <RememberedServers
               vault={vault}
-              onReconnect={reconnectRemembered}
+              onStart={startFromRememberedServer}
               busy={anyBusy}
-              activeFingerprints={activeFingerprints}
             />
           </div>
 
