@@ -349,6 +349,41 @@ export function useConnectForm() {
     });
   }
 
+  // The last encryption password we auto-filled from the vault. Lets us tell a
+  // remembered password apart from one the user typed, so budget switches
+  // refresh the former but never clobber the latter.
+  const autoFilledEncRef = useRef("");
+
+  // Reveal a budget's remembered encryption password for a server (mode + URL),
+  // or "" when the vault is locked, the server isn't remembered, or the budget
+  // has no stored password. Never throws.
+  async function revealBudgetEncryption(mode: ConnectionMode, url: string, budgetSyncId: string): Promise<string> {
+    try {
+      const fp = serverFingerprint({ mode, baseUrl: url });
+      const revealed = await revealServerSecret(fp, budgetSyncId);
+      return revealed.secret.encryptionPassword ?? "";
+    } catch {
+      return "";
+    }
+  }
+
+  // When a budget is picked, pre-fill its remembered encryption password so an
+  // encrypted budget opens without a second prompt — but never clobber a
+  // password the user typed themselves.
+  async function prefillEncryptionPassword(budgetSyncId: string) {
+    if (!validatedMode || !validatedUrl) return;
+    if (encryptionPassword && encryptionPassword !== autoFilledEncRef.current) return;
+    const pw = await revealBudgetEncryption(validatedMode, validatedUrl, budgetSyncId);
+    autoFilledEncRef.current = pw;
+    setEncryptionPassword(pw);
+  }
+
+  function handleSelectBudget(budgetSyncId: string) {
+    setSelectedGroupId(budgetSyncId);
+    if (connectStatus.kind === "error") setConnectStatus({ kind: "idle" });
+    void prefillEncryptionPassword(budgetSyncId);
+  }
+
   // ── Validate: fetch budget list ─────────────────────────────────────────────
 
   async function validate(overrides: {
@@ -430,6 +465,13 @@ export function useConnectForm() {
       setBudgets(fetched);
       setSelectedGroupId(fetched[0].groupId!);
       setValidateStatus({ kind: "idle" });
+
+      // Pre-fill the initially-selected budget's remembered encryption password
+      // (if any) so opening it needs no second prompt. Uses local mode/url since
+      // the validated* state was just set this tick.
+      const firstPw = await revealBudgetEncryption(mode, url, fetched[0].groupId!);
+      autoFilledEncRef.current = firstPw;
+      setEncryptionPassword(firstPw);
 
       // Persist the server, then select its chip so the manual form collapses.
       const persisted = useSavedServersStore
@@ -672,6 +714,7 @@ export function useConnectForm() {
     reconnectRemembered,
     // Remembered servers (RD-063)
     startFromRememberedServer,
+    handleSelectBudget,
     // Cross-mode reconnect confirmation
     pendingBudgetSwitch,
     dismissBudgetSwitch: () => setPendingBudgetSwitch(null),

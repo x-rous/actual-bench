@@ -71,6 +71,7 @@ export function ConnectForm({ directBrowserApiEnabled }: ConnectFormProps) {
     rememberOnServer,
     setRememberOnServer,
     startFromRememberedServer,
+    handleSelectBudget,
     pendingBudgetSwitch,
     dismissBudgetSwitch,
   } = useConnectForm();
@@ -320,8 +321,8 @@ export function ConnectForm({ directBrowserApiEnabled }: ConnectFormProps) {
               type="button"
               disabled={connectBusy || !!reconnectBusyId}
               onClick={() => {
-                setSelectedGroupId(budget.groupId ?? null);
-                if (connectStatus.kind === "error") setConnectStatus({ kind: "idle" });
+                if (budget.groupId) handleSelectBudget(budget.groupId);
+                else setSelectedGroupId(null);
               }}
               className={cn(
                 "flex items-start gap-3 rounded-lg border px-4 py-3 text-left transition-colors disabled:opacity-50",

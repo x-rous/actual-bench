@@ -15,9 +15,18 @@ const mockTestConnection = jest.fn();
 const mockGetApiVersion = jest.fn();
 const mockGetServerVersion = jest.fn();
 const mockLoadBrowserApiBudgetList = jest.fn();
+const mockRevealServerSecret = jest.fn();
+const mockRememberServer = jest.fn();
+const mockRememberBudgetEncryption = jest.fn();
 
 jest.mock("next/navigation", () => ({
   useRouter: () => ({ push: mockPush, replace: mockReplace }),
+}));
+
+jest.mock("../../features/connect/vaultApi", () => ({
+  revealServerSecret: (fp: string, budgetSyncId?: string) => mockRevealServerSecret(fp, budgetSyncId),
+  rememberServer: (input: unknown) => mockRememberServer(input),
+  rememberBudgetEncryption: (input: unknown) => mockRememberBudgetEncryption(input),
 }));
 
 jest.mock("sonner", () => ({
@@ -70,6 +79,15 @@ describe("useConnectForm Direct redirects", () => {
       getServerVersion: jest.fn().mockResolvedValue(null),
     });
     mockLoadBrowserApiBudgetList.mockReset();
+    // Default: nothing remembered for this budget (vault "locked"/empty).
+    mockRevealServerSecret.mockReset().mockResolvedValue({
+      mode: "http-api",
+      baseUrl: "https://api.example.com",
+      label: "",
+      secret: { apiKey: null, serverPassword: null, encryptionPassword: null },
+    });
+    mockRememberServer.mockReset().mockResolvedValue({ server: {} });
+    mockRememberBudgetEncryption.mockReset().mockResolvedValue({ ok: true });
 
     resetStores();
     sessionStorage.clear();
@@ -240,6 +258,33 @@ describe("useConnectForm Direct redirects", () => {
     expect(mockEnsureTransportReady).toHaveBeenCalledWith(
       expect.objectContaining({ budgetSyncId: "local-budget-1" })
     );
+  });
+
+  it("pre-fills a budget's remembered encryption password when budgets load", async () => {
+    mockListBudgets.mockResolvedValue([
+      { groupId: "budget-1", cloudFileId: "budget-1", name: "Budget One" },
+    ]);
+    mockRevealServerSecret.mockResolvedValue({
+      mode: "http-api",
+      baseUrl: "https://api.example.com",
+      label: "",
+      secret: { apiKey: null, serverPassword: null, encryptionPassword: "enc-secret" },
+    });
+
+    const client = new QueryClient();
+    const { result } = renderHook(() => useConnectForm(), { wrapper: makeWrapper(client) });
+
+    act(() => {
+      result.current.setBaseUrl("https://api.example.com");
+      result.current.setApiKey("api-key");
+    });
+    act(() => {
+      result.current.handleValidate();
+    });
+
+    await waitFor(() => expect(result.current.budgets).toHaveLength(1));
+    await waitFor(() => expect(result.current.encryptionPassword).toBe("enc-secret"));
+    expect(mockRevealServerSecret).toHaveBeenCalledWith(expect.any(String), "budget-1");
   });
 
   it("redirects a successful Direct reconnect to overview", async () => {
