@@ -322,42 +322,6 @@ export type SyncCredentialInput = {
   secret: SyncCredentialSecret;
 };
 
-// ── Remembered connection credentials (RD-061 / PR-026a) ─────────────────────
-
-/**
- * The plaintext secret sealed for a remembered connection. Fields are
- * mode-appropriate: HTTP API uses `apiKey`; Direct uses `serverPassword`; either
- * may carry a budget `encryptionPassword`.
- */
-export type ConnectionCredentialSecret = {
-  apiKey?: string;
-  serverPassword?: string;
-  encryptionPassword?: string;
-};
-
-/** Non-secret remembered-credential metadata - safe to return to the client. */
-export type ConnectionCredentialMeta = {
-  connectionFingerprint: string;
-  mode: string;
-  baseUrl: string;
-  budgetSyncId: string;
-  label: string;
-  createdAt: string;
-  updatedAt: string;
-};
-
-/** Full remembered credential (metadata + decrypted secret) - server-only. */
-export type ConnectionCredential = ConnectionCredentialMeta & { secret: ConnectionCredentialSecret };
-
-export type ConnectionCredentialInput = {
-  connectionFingerprint: string;
-  mode: string;
-  baseUrl: string;
-  budgetSyncId: string;
-  label?: string;
-  secret: ConnectionCredentialSecret;
-};
-
 // ── Server-scoped remembered credentials (RD-063 / PR-028a) ──────────────────
 
 /** The sealed secret for a server: an API key (HTTP) or server password (Direct). */

@@ -1,20 +1,15 @@
-import type {
-  ConnectionCredentialMeta,
-  ConnectionCredentialSecret,
-  ServerCredentialMeta,
-  ServerCredentialSecret,
-} from "@/lib/app-db/types";
+import type { ServerCredentialMeta, ServerCredentialSecret } from "@/lib/app-db/types";
 import type { ConnectionMode } from "@/store/connection";
 
-// Re-export for consumers building UI over remembered connections.
-export type { ConnectionCredentialMeta, ServerCredentialMeta } from "@/lib/app-db/types";
+// Re-export for consumers building UI over remembered servers.
+export type { ServerCredentialMeta } from "@/lib/app-db/types";
 
 /**
- * Client for the remembered-connection vault routes (RD-061 / PR-026d).
+ * Client for the remembered-server vault routes (RD-061 / RD-063).
  *
  * All requests are same-origin, so the httpOnly unlock-session cookie rides
  * along automatically. Secrets only ever travel *to* the server on enroll, and
- * *from* it only via `revealDirectSecret` (Direct mode, explicit unlock).
+ * *from* it only via `revealServerSecret` (explicit unlock).
  */
 
 async function jsonFetch<T>(input: string, init?: RequestInit): Promise<T> {
@@ -67,6 +62,14 @@ export function lockVault(): Promise<{ ok: true; unlocked: false }> {
   return jsonFetch("/api/connection-vault/lock", { method: "POST" });
 }
 
+/**
+ * Reset the vault when the passphrase is forgotten: drop all saved servers +
+ * budget passwords and clear the passphrase so a new one can be set.
+ */
+export function resetVault(): Promise<{ ok: true }> {
+  return jsonFetch("/api/connection-vault/reset", { method: "POST" });
+}
+
 /** Change the passphrase, re-sealing all remembered credentials. */
 export function changeVaultPassphrase(
   currentPassphrase: string,
@@ -78,61 +81,7 @@ export function changeVaultPassphrase(
   });
 }
 
-/** List remembered connection metadata (no secrets). Available before unlock. */
-export function listRememberedConnections(): Promise<{
-  supported: boolean;
-  connections: ConnectionCredentialMeta[];
-}> {
-  return jsonFetch("/api/connection-vault/connections");
-}
-
-export type RememberConnectionInput = {
-  mode: ConnectionMode;
-  baseUrl: string;
-  budgetSyncId: string;
-  label?: string;
-  secret: ConnectionCredentialSecret;
-};
-
-/** Remember (seal + store) a connection. Requires an unlocked session. */
-export function rememberConnection(
-  input: RememberConnectionInput
-): Promise<{ connection: ConnectionCredentialMeta }> {
-  return jsonFetch("/api/connection-vault/connections", {
-    method: "POST",
-    body: JSON.stringify(input),
-  });
-}
-
-/** Forget a remembered connection by fingerprint. */
-export function forgetRememberedConnection(connectionFingerprint: string): Promise<{ ok: true }> {
-  return jsonFetch(
-    `/api/connection-vault/connections?connectionFingerprint=${encodeURIComponent(connectionFingerprint)}`,
-    { method: "DELETE" }
-  );
-}
-
-export type RevealedConnectionSecret = {
-  mode: ConnectionMode;
-  baseUrl: string;
-  budgetSyncId: string;
-  label: string;
-  secret: {
-    apiKey: string | null;
-    serverPassword: string | null;
-    encryptionPassword: string | null;
-  };
-};
-
-/** Reveal a remembered connection's secret to reconnect (HTTP apiKey or Direct serverPassword). */
-export function revealRememberedSecret(connectionFingerprint: string): Promise<RevealedConnectionSecret> {
-  return jsonFetch("/api/connection-vault/connections/reveal", {
-    method: "POST",
-    body: JSON.stringify({ connectionFingerprint }),
-  });
-}
-
-// ── Server-scoped vault (RD-063 / PR-028b) ───────────────────────────────────
+// ── Server-scoped vault (RD-063) ─────────────────────────────────────────────
 // A saved server opens any of its budgets; budget encryption passwords are
 // remembered per-budget under their server.
 

@@ -1,26 +1,21 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import type { ConnectionCredentialMeta, ServerCredentialMeta } from "@/lib/app-db/types";
+import type { ServerCredentialMeta } from "@/lib/app-db/types";
 import {
   forgetBudgetEncryption,
-  forgetRememberedConnection,
   forgetRememberedServer,
   getVaultStatus,
-  listRememberedConnections,
   listRememberedServers,
   lockVault,
   rememberBudgetEncryption,
-  rememberConnection,
   rememberServer,
-  revealRememberedSecret,
+  resetVault,
   revealServerSecret,
   setVaultPassphrase,
   unlockVault,
   type RememberBudgetEncryptionInput,
-  type RememberConnectionInput,
   type RememberServerInput,
-  type RevealedConnectionSecret,
   type RevealedServerSecret,
   type VaultStatus,
 } from "./vaultApi";
@@ -28,13 +23,13 @@ import {
 const CLOSED: VaultStatus = { supported: false, passphraseSet: false, unlocked: false };
 
 /**
- * Client state + actions for the remembered-connection vault (RD-061 / PR-026d).
- * Encapsulates status, the remembered list, and the passphrase/enroll operations
- * so the connect UI stays thin. All actions refresh status on completion.
+ * Client state + actions for the remembered-server vault (RD-061 / RD-063).
+ * Encapsulates status, the saved-server list, and the passphrase/enroll
+ * operations so the connect UI stays thin. All actions refresh status on
+ * completion.
  */
 export function useConnectionVault() {
   const [status, setStatus] = useState<VaultStatus>(CLOSED);
-  const [connections, setConnections] = useState<ConnectionCredentialMeta[]>([]);
   const [servers, setServers] = useState<ServerCredentialMeta[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -43,20 +38,14 @@ export function useConnectionVault() {
       const s = await getVaultStatus();
       setStatus(s);
       if (s.supported) {
-        const [{ connections: connList }, { servers: serverList }] = await Promise.all([
-          listRememberedConnections(),
-          listRememberedServers(),
-        ]);
-        setConnections(connList);
+        const { servers: serverList } = await listRememberedServers();
         setServers(serverList);
       } else {
-        setConnections([]);
         setServers([]);
       }
     } catch {
       // Vault route unavailable → treat as unsupported rather than surface an error.
       setStatus(CLOSED);
-      setConnections([]);
       setServers([]);
     } finally {
       setLoading(false);
@@ -88,29 +77,12 @@ export function useConnectionVault() {
     await refresh();
   }, [refresh]);
 
-  const remember = useCallback(
-    async (input: RememberConnectionInput) => {
-      await rememberConnection(input);
-      await refresh();
-    },
-    [refresh]
-  );
+  const reset = useCallback(async () => {
+    await resetVault();
+    await refresh();
+  }, [refresh]);
 
-  const forget = useCallback(
-    async (connectionFingerprint: string) => {
-      await forgetRememberedConnection(connectionFingerprint);
-      await refresh();
-    },
-    [refresh]
-  );
-
-  const reveal = useCallback(
-    (connectionFingerprint: string): Promise<RevealedConnectionSecret> =>
-      revealRememberedSecret(connectionFingerprint),
-    []
-  );
-
-  // ── Server-scoped actions (RD-063 / PR-028) ────────────────────────────────
+  // ── Server-scoped actions (RD-063) ─────────────────────────────────────────
 
   const rememberSrv = useCallback(
     async (input: RememberServerInput) => {
@@ -152,16 +124,13 @@ export function useConnectionVault() {
 
   return {
     status,
-    connections,
     servers,
     loading,
     refresh,
     setPassphrase,
     unlock,
     lock,
-    remember,
-    forget,
-    reveal,
+    reset,
     rememberServer: rememberSrv,
     forgetServer: forgetSrv,
     revealServer: revealSrv,
