@@ -111,16 +111,23 @@ session. The option is hidden where storage isn't durable (for example the publi
 3. Select **Connect**. The server's secret is sealed in the metadata database. If the budget is
    encrypted, its **encryption password** is remembered separately, tied to that budget.
 
-### Reconnect from a saved server
+### Reconnect from the Connections list
 
-On the connect screen, your saved servers and the budgets you've opened on them appear under
-**Continue**:
+On the connect screen, the **Connections** list shows everything you can open, grouped by server. Each
+budget appears once with small state chips:
 
-1. If the vault is locked, enter your **passphrase** once to unlock it.
-2. Select a **budget** to reconnect in one click — no need to re-enter the URL or password, and if that
-   budget's encryption password was remembered it is used automatically.
-3. To open a budget you haven't opened here yet, use **Open another budget** under its server: the full
-   budget list loads (still without re-entering credentials) so you can pick one.
+- **open** — loaded in this browser session. Click to switch to it **instantly** — no passphrase needed,
+  since its credentials are still in memory.
+- **saved** — kept in the vault. Click to reconnect after unlocking once; the server credential and the
+  budget's encryption password (if any) are used automatically, with no re-typing.
+
+A budget that is both shows both chips and opens instantly.
+
+1. If the vault is locked, enter your **passphrase** once to unlock the **saved** budgets. (Budgets that
+   are already **open** this session stay clickable without unlocking.)
+2. Select a **budget** to open it.
+3. To open a budget you haven't opened here yet, use **Open another budget** under a saved server: the
+   full budget list loads (still without re-entering credentials) so you can pick one.
 4. Use the **✕** next to a budget to forget just that budget, or the **trash** icon on a server to
    forget the whole server (and its remembered budget passwords).
 

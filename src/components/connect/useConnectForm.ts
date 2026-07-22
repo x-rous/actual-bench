@@ -283,7 +283,7 @@ export function useConnectForm() {
     // Errors propagate to the caller — no catch here.
   }
 
-  // Called from ConnectionCard — shows a toast on failure.
+  // Called from the Connections list — shows a toast on failure.
   function handleReconnect(instance: ConnectionInstance) {
     reconnect(instance).catch((err) => {
       toast.error(parseApiError(err));
@@ -355,7 +355,7 @@ export function useConnectForm() {
 
   // Start a connection from a remembered server (RD-063): reveal its secret,
   // prime the form, and load its budget list so the user can pick any budget.
-  // Errors propagate to the caller (RememberedServers shows them inline).
+  // Errors propagate to the caller (the Connections list shows them inline).
   async function startFromRememberedServer(server: ServerCredentialMeta) {
     const revealed = await revealServerSecret(server.serverFingerprint);
     setConnectionMode(revealed.mode);

@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2, AlertCircle, CheckCircle2, Server, Plus, Check, KeyRound, BookOpen, ExternalLink } from "lucide-react";
 import { Input } from "@/components/ui/input";
@@ -12,8 +12,8 @@ import { useIsHydrated } from "@/hooks/useIsHydrated";
 import { useConnectForm } from "./useConnectForm";
 import { useConnectionVault } from "@/features/connect/useConnectionVault";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
-import { ConnectionCard } from "./ConnectionCard";
-import { RememberedServers } from "./RememberedServers";
+import { ConnectionsList } from "./ConnectionsList";
+import { mergeConnections } from "./mergeConnections";
 import { RememberToggle } from "./RememberToggle";
 import { deriveLabel, getConnectionModeBadge } from "./utils";
 
@@ -31,7 +31,6 @@ export function ConnectForm({ directBrowserApiEnabled }: ConnectFormProps) {
 
   const {
     instances,
-    activeInstance,
     savedServersForMode,
     removeInstance,
     connectionMode,
@@ -82,6 +81,13 @@ export function ConnectForm({ directBrowserApiEnabled }: ConnectFormProps) {
 
   const vault = useConnectionVault();
 
+  // One server-grouped view of everything openable: this-session connections +
+  // the saved vault. Each budget appears once, deduped by server + sync id.
+  const mergedServers = useMemo(
+    () => mergeConnections(instances, vault.servers, vault.budgets),
+    [instances, vault.servers, vault.budgets]
+  );
+
   useEffect(() => {
     if (hydrated && connectedInstance) {
       router.replace("/overview");
@@ -94,9 +100,8 @@ export function ConnectForm({ directBrowserApiEnabled }: ConnectFormProps) {
 
   const activeValidatedMode = validatedMode ?? connectionMode;
 
-  // Show the two-column layout when there's anything on the side: in-memory
-  // connections this session, or remembered (vault) servers.
-  const hasSideContent = instances.length > 0 || vault.servers.length > 0;
+  // Show the two-column layout when there's anything to continue from.
+  const hasSideContent = mergedServers.length > 0;
 
   // ── Panels ──────────────────────────────────────────────────────────────────
 
@@ -435,31 +440,16 @@ export function ConnectForm({ directBrowserApiEnabled }: ConnectFormProps) {
       {hasSideContent ? (
         /* ── Two-column layout ── */
         <div className="grid grid-cols-1 lg:grid-cols-[9fr_11fr] gap-6 items-start">
-          {/* Left: this-session + remembered connections */}
+          {/* Left: everything you can open — this session + the saved vault */}
           <div className="flex flex-col gap-6">
-            {instances.length > 0 && (
-              <section className="flex flex-col gap-3">
-                <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">
-                  Your connections
-                </h2>
-                <div className="flex flex-col gap-2 overflow-y-auto max-h-96">
-                  {instances.map((instance) => (
-                    <ConnectionCard
-                      key={instance.id}
-                      instance={instance}
-                      isActive={activeInstance?.id === instance.id}
-                      onConnect={handleReconnect}
-                      onRemove={removeInstance}
-                      connectBusyId={reconnectBusyId}
-                    />
-                  ))}
-                </div>
-              </section>
-            )}
-            <RememberedServers
+            <ConnectionsList
               vault={vault}
+              servers={mergedServers}
+              onReconnectInstance={handleReconnect}
+              reconnectBusyId={reconnectBusyId}
               onOpenBudget={openRememberedBudget}
               onOpenServer={startFromRememberedServer}
+              onForgetInstance={removeInstance}
               busy={anyBusy}
             />
           </div>
