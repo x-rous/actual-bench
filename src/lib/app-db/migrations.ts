@@ -1,7 +1,9 @@
 import type { SqliteDatabase } from "./types";
 import {
   APP_META_TABLE_SQL,
+  BUDGET_ENCRYPTION_CREDENTIAL_TABLE_SQL,
   CONNECTION_CREDENTIAL_TABLE_SQL,
+  SERVER_CREDENTIAL_TABLE_SQL,
   FX_INDEX_SQL,
   FX_RATES_TABLE_SQL,
   FX_RATE_IMPORT_BATCH_TABLE_SQL,
@@ -18,7 +20,7 @@ import {
 } from "./schema";
 import { AppDbUnavailableError } from "./errors";
 
-export const LATEST_SCHEMA_VERSION = 6;
+export const LATEST_SCHEMA_VERSION = 7;
 
 type Migration = {
   version: number;
@@ -117,6 +119,13 @@ const MIGRATIONS: readonly Migration[] = [
     version: 6,
     // Remembered connection credentials (RD-061 / PR-026a).
     statements: [CONNECTION_CREDENTIAL_TABLE_SQL],
+  },
+  {
+    version: 7,
+    // Server-scoped remembered credentials (RD-063 / PR-028a). Additive: the
+    // per-budget `connection_credentials` table + vault meta are cleared when
+    // the switch-over lands (a later migration).
+    statements: [SERVER_CREDENTIAL_TABLE_SQL, BUDGET_ENCRYPTION_CREDENTIAL_TABLE_SQL],
   },
 ];
 

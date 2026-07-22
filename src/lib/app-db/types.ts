@@ -357,3 +357,39 @@ export type ConnectionCredentialInput = {
   label?: string;
   secret: ConnectionCredentialSecret;
 };
+
+// ── Server-scoped remembered credentials (RD-063 / PR-028a) ──────────────────
+
+/** The sealed secret for a server: an API key (HTTP) or server password (Direct). */
+export type ServerCredentialSecret = {
+  apiKey?: string;
+  serverPassword?: string;
+};
+
+/** Non-secret server-credential metadata - safe to return to the client. */
+export type ServerCredentialMeta = {
+  serverFingerprint: string;
+  mode: string;
+  baseUrl: string;
+  label: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+/** Full server credential (metadata + decrypted secret) - server-only. */
+export type ServerCredential = ServerCredentialMeta & { secret: ServerCredentialSecret };
+
+export type ServerCredentialInput = {
+  mode: string;
+  baseUrl: string;
+  label?: string;
+  secret: ServerCredentialSecret;
+};
+
+/** A remembered per-budget encryption password (opt-in), keyed under its server. */
+export type BudgetEncryptionCredentialInput = {
+  serverFingerprint: string;
+  budgetSyncId: string;
+  label?: string;
+  encryptionPassword: string;
+};

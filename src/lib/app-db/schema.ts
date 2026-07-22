@@ -146,6 +146,38 @@ CREATE TABLE IF NOT EXISTS connection_credentials (
 );
 `;
 
+// ── Server-scoped remembered credentials (RD-063 / PR-028a) ──────────────────
+// Credentials are server-scoped (mode + URL), so one saved server opens any of
+// its budgets. Budget encryption passwords stay per-budget. Both are sealed with
+// the same passphrase-derived vault key as the (per-budget) table above.
+export const SERVER_CREDENTIAL_TABLE_SQL = `
+CREATE TABLE IF NOT EXISTS server_credentials (
+  server_fingerprint text PRIMARY KEY,
+  mode text NOT NULL,
+  base_url text NOT NULL,
+  label text NOT NULL DEFAULT '',
+  ciphertext text NOT NULL,
+  iv text NOT NULL,
+  auth_tag text NOT NULL,
+  created_at text NOT NULL,
+  updated_at text NOT NULL
+);
+`;
+
+export const BUDGET_ENCRYPTION_CREDENTIAL_TABLE_SQL = `
+CREATE TABLE IF NOT EXISTS budget_encryption_credentials (
+  server_fingerprint text NOT NULL,
+  budget_sync_id text NOT NULL,
+  label text NOT NULL DEFAULT '',
+  ciphertext text NOT NULL,
+  iv text NOT NULL,
+  auth_tag text NOT NULL,
+  created_at text NOT NULL,
+  updated_at text NOT NULL,
+  PRIMARY KEY (server_fingerprint, budget_sync_id)
+);
+`;
+
 // ── FX / multi-currency consolidation (RD-056 / PR-025a) ─────────────────────
 // The database is the authoritative FX registry; Frankfurter only populates it.
 export const FX_RATE_IMPORT_BATCH_TABLE_SQL = `
