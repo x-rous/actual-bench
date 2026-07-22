@@ -28,10 +28,11 @@ import { useSavedServersStore, type SavedServer } from "@/store/savedServers";
 import { useStagedStore } from "@/store/staged";
 import {
   rememberServer,
+  rememberBudget,
   rememberBudgetEncryption,
   revealServerSecret,
 } from "@/features/connect/vaultApi";
-import type { ServerCredentialMeta } from "@/lib/app-db/types";
+import type { RememberedBudget, ServerCredentialMeta } from "@/lib/app-db/types";
 import { serverFingerprint } from "@/lib/sync/connectionRef";
 import { removeSavedServerIfUnused } from "@/lib/savedServerCleanup";
 import { generateId } from "@/lib/uuid";
@@ -306,6 +307,7 @@ export function useConnectForm() {
     const secret = isBrowserApiConnection(instance)
       ? { serverPassword: instance.serverPassword }
       : { apiKey: (instance as HttpApiConnection).apiKey };
+    const fingerprint = serverFingerprint(instance);
     try {
       await rememberServer({
         mode: instance.mode,
@@ -313,9 +315,15 @@ export function useConnectForm() {
         label: deriveLabel(instance.baseUrl),
         secret,
       });
+      // Record the budget so it offers one-click reconnect next time.
+      await rememberBudget({
+        serverFingerprint: fingerprint,
+        budgetSyncId: instance.budgetSyncId,
+        name: instance.label,
+      });
       if (instance.encryptionPassword) {
         await rememberBudgetEncryption({
-          serverFingerprint: serverFingerprint(instance),
+          serverFingerprint: fingerprint,
           budgetSyncId: instance.budgetSyncId,
           label: instance.label,
           encryptionPassword: instance.encryptionPassword,
@@ -324,6 +332,25 @@ export function useConnectForm() {
     } catch (err) {
       toast.error(`Connected, but couldn't remember this server: ${parseApiError(err)}`);
     }
+  }
+
+  // One-click reconnect into a remembered budget (RD-063): reveal the server
+  // secret + that budget's encryption password, rebuild the connection, and go
+  // straight to the budget — no budget picker. Errors propagate to the caller.
+  async function openRememberedBudget(server: ServerCredentialMeta, budget: RememberedBudget) {
+    const revealed = await revealServerSecret(server.serverFingerprint, budget.budgetSyncId);
+    const base = {
+      id: generateId(),
+      label: budget.name || deriveLabel(server.baseUrl),
+      baseUrl: server.baseUrl,
+      budgetSyncId: budget.budgetSyncId,
+      ...(revealed.secret.encryptionPassword ? { encryptionPassword: revealed.secret.encryptionPassword } : {}),
+    };
+    const instance: ConnectionInstance =
+      revealed.mode === "browser-api"
+        ? { ...base, mode: "browser-api", serverPassword: revealed.secret.serverPassword ?? "" }
+        : { ...base, mode: "http-api", apiKey: revealed.secret.apiKey ?? "" };
+    reconnectRemembered(instance);
   }
 
   // Start a connection from a remembered server (RD-063): reveal its secret,
@@ -714,6 +741,7 @@ export function useConnectForm() {
     reconnectRemembered,
     // Remembered servers (RD-063)
     startFromRememberedServer,
+    openRememberedBudget,
     handleSelectBudget,
     // Cross-mode reconnect confirmation
     pendingBudgetSwitch,

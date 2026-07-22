@@ -1,13 +1,15 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import type { ServerCredentialMeta } from "@/lib/app-db/types";
+import type { RememberedBudget, ServerCredentialMeta } from "@/lib/app-db/types";
 import {
+  forgetBudget,
   forgetBudgetEncryption,
   forgetRememberedServer,
   getVaultStatus,
   listRememberedServers,
   lockVault,
+  rememberBudget,
   rememberBudgetEncryption,
   rememberServer,
   resetVault,
@@ -15,6 +17,7 @@ import {
   setVaultPassphrase,
   unlockVault,
   type RememberBudgetEncryptionInput,
+  type RememberBudgetInput,
   type RememberServerInput,
   type RevealedServerSecret,
   type VaultStatus,
@@ -31,6 +34,7 @@ const CLOSED: VaultStatus = { supported: false, passphraseSet: false, unlocked: 
 export function useConnectionVault() {
   const [status, setStatus] = useState<VaultStatus>(CLOSED);
   const [servers, setServers] = useState<ServerCredentialMeta[]>([]);
+  const [budgets, setBudgets] = useState<RememberedBudget[]>([]);
   const [loading, setLoading] = useState(true);
 
   const refresh = useCallback(async () => {
@@ -38,15 +42,18 @@ export function useConnectionVault() {
       const s = await getVaultStatus();
       setStatus(s);
       if (s.supported) {
-        const { servers: serverList } = await listRememberedServers();
+        const { servers: serverList, budgets: budgetList } = await listRememberedServers();
         setServers(serverList);
+        setBudgets(budgetList);
       } else {
         setServers([]);
+        setBudgets([]);
       }
     } catch {
       // Vault route unavailable → treat as unsupported rather than surface an error.
       setStatus(CLOSED);
       setServers([]);
+      setBudgets([]);
     } finally {
       setLoading(false);
     }
@@ -122,9 +129,26 @@ export function useConnectionVault() {
     [refresh]
   );
 
+  const rememberBudgetMeta = useCallback(
+    async (input: RememberBudgetInput) => {
+      await rememberBudget(input);
+      await refresh();
+    },
+    [refresh]
+  );
+
+  const forgetBudgetMeta = useCallback(
+    async (serverFingerprint: string, budgetSyncId: string) => {
+      await forgetBudget(serverFingerprint, budgetSyncId);
+      await refresh();
+    },
+    [refresh]
+  );
+
   return {
     status,
     servers,
+    budgets,
     loading,
     refresh,
     setPassphrase,
@@ -136,5 +160,7 @@ export function useConnectionVault() {
     revealServer: revealSrv,
     rememberBudgetEncryption: rememberBudgetEnc,
     forgetBudgetEncryption: forgetBudgetEnc,
+    rememberBudget: rememberBudgetMeta,
+    forgetBudget: forgetBudgetMeta,
   };
 }

@@ -9,13 +9,16 @@ import { getOrCreateConnectionVaultSalt } from "./connectionCredentialRepository
 import {
   deleteAllServerVaultCredentials,
   deleteBudgetEncryptionCredential,
+  deleteRememberedBudget,
   deleteServerCredential,
   getBudgetEncryptionPassword,
   getServerCredential,
   hasServerCredential,
+  listRememberedBudgets,
   listServerCredentialMeta,
   resealServerVault,
   upsertBudgetEncryptionCredential,
+  upsertRememberedBudget,
   upsertServerCredential,
 } from "./serverCredentialRepository";
 import type { ServerCredentialInput, SqliteDatabase } from "./types";
@@ -127,8 +130,36 @@ describe("serverCredentialRepository (RD-063 / PR-028a)", () => {
     const k = key(db);
     const s = upsertServerCredential(db, httpServer, k);
     upsertBudgetEncryptionCredential(db, { serverFingerprint: s.serverFingerprint, budgetSyncId: "b1", encryptionPassword: "enc1" }, k);
+    upsertRememberedBudget(db, { serverFingerprint: s.serverFingerprint, budgetSyncId: "b1", name: "Main" });
     deleteAllServerVaultCredentials(db);
     expect(listServerCredentialMeta(db)).toHaveLength(0);
+    expect(listRememberedBudgets(db)).toHaveLength(0);
     expect(getBudgetEncryptionPassword(db, s.serverFingerprint, "b1", k)).toBeNull();
+  });
+
+  it("records remembered budgets (non-secret) for one-click reconnect", () => {
+    const k = key(db);
+    const s = upsertServerCredential(db, httpServer, k);
+    upsertRememberedBudget(db, { serverFingerprint: s.serverFingerprint, budgetSyncId: "b1", name: "Main" });
+    upsertRememberedBudget(db, { serverFingerprint: s.serverFingerprint, budgetSyncId: "b2", name: "Travel" });
+
+    const budgets = listRememberedBudgets(db);
+    expect(budgets).toHaveLength(2);
+    expect(budgets.map((b) => b.budgetSyncId).sort()).toEqual(["b1", "b2"]);
+    expect(budgets.find((b) => b.budgetSyncId === "b1")?.name).toBe("Main");
+
+    // Forgetting a budget also drops its remembered encryption password.
+    upsertBudgetEncryptionCredential(db, { serverFingerprint: s.serverFingerprint, budgetSyncId: "b1", encryptionPassword: "enc1" }, k);
+    deleteRememberedBudget(db, s.serverFingerprint, "b1");
+    expect(listRememberedBudgets(db).map((b) => b.budgetSyncId)).toEqual(["b2"]);
+    expect(getBudgetEncryptionPassword(db, s.serverFingerprint, "b1", k)).toBeNull();
+  });
+
+  it("forgetting a server cascades its remembered budgets", () => {
+    const k = key(db);
+    const s = upsertServerCredential(db, directServer, k);
+    upsertRememberedBudget(db, { serverFingerprint: s.serverFingerprint, budgetSyncId: "b1", name: "Main" });
+    deleteServerCredential(db, s.serverFingerprint);
+    expect(listRememberedBudgets(db)).toHaveLength(0);
   });
 });

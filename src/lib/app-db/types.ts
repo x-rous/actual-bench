@@ -357,3 +357,18 @@ export type BudgetEncryptionCredentialInput = {
   label?: string;
   encryptionPassword: string;
 };
+
+/** Non-secret record of a budget opened on a remembered server (one-click reconnect). */
+export type RememberedBudget = {
+  serverFingerprint: string;
+  budgetSyncId: string;
+  name: string;
+  createdAt: string;
+  lastOpenedAt: string;
+};
+
+export type RememberedBudgetInput = {
+  serverFingerprint: string;
+  budgetSyncId: string;
+  name?: string;
+};

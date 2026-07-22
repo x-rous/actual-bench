@@ -1,8 +1,8 @@
-import type { ServerCredentialMeta, ServerCredentialSecret } from "@/lib/app-db/types";
+import type { RememberedBudget, ServerCredentialMeta, ServerCredentialSecret } from "@/lib/app-db/types";
 import type { ConnectionMode } from "@/store/connection";
 
 // Re-export for consumers building UI over remembered servers.
-export type { ServerCredentialMeta } from "@/lib/app-db/types";
+export type { RememberedBudget, ServerCredentialMeta } from "@/lib/app-db/types";
 
 /**
  * Client for the remembered-server vault routes (RD-061 / RD-063).
@@ -85,10 +85,11 @@ export function changeVaultPassphrase(
 // A saved server opens any of its budgets; budget encryption passwords are
 // remembered per-budget under their server.
 
-/** List remembered server metadata (no secrets). Available before unlock. */
+/** List remembered servers + budgets (no secrets). Available before unlock. */
 export function listRememberedServers(): Promise<{
   supported: boolean;
   servers: ServerCredentialMeta[];
+  budgets: RememberedBudget[];
 }> {
   return jsonFetch("/api/connection-vault/servers");
 }
@@ -160,6 +161,30 @@ export function rememberBudgetEncryption(input: RememberBudgetEncryptionInput): 
 export function forgetBudgetEncryption(serverFingerprint: string, budgetSyncId: string): Promise<{ ok: true }> {
   return jsonFetch(
     `/api/connection-vault/servers/budget-encryption?serverFingerprint=${encodeURIComponent(
+      serverFingerprint
+    )}&budgetSyncId=${encodeURIComponent(budgetSyncId)}`,
+    { method: "DELETE" }
+  );
+}
+
+export type RememberBudgetInput = {
+  serverFingerprint: string;
+  budgetSyncId: string;
+  name?: string;
+};
+
+/** Record a budget opened on a remembered server (non-secret; one-click reconnect). */
+export function rememberBudget(input: RememberBudgetInput): Promise<{ ok: true }> {
+  return jsonFetch("/api/connection-vault/servers/budgets", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+/** Forget a remembered budget (and its encryption password). */
+export function forgetBudget(serverFingerprint: string, budgetSyncId: string): Promise<{ ok: true }> {
+  return jsonFetch(
+    `/api/connection-vault/servers/budgets?serverFingerprint=${encodeURIComponent(
       serverFingerprint
     )}&budgetSyncId=${encodeURIComponent(budgetSyncId)}`,
     { method: "DELETE" }

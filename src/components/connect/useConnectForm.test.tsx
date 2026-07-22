@@ -17,6 +17,7 @@ const mockGetServerVersion = jest.fn();
 const mockLoadBrowserApiBudgetList = jest.fn();
 const mockRevealServerSecret = jest.fn();
 const mockRememberServer = jest.fn();
+const mockRememberBudget = jest.fn();
 const mockRememberBudgetEncryption = jest.fn();
 
 jest.mock("next/navigation", () => ({
@@ -26,6 +27,7 @@ jest.mock("next/navigation", () => ({
 jest.mock("../../features/connect/vaultApi", () => ({
   revealServerSecret: (fp: string, budgetSyncId?: string) => mockRevealServerSecret(fp, budgetSyncId),
   rememberServer: (input: unknown) => mockRememberServer(input),
+  rememberBudget: (input: unknown) => mockRememberBudget(input),
   rememberBudgetEncryption: (input: unknown) => mockRememberBudgetEncryption(input),
 }));
 
@@ -87,6 +89,7 @@ describe("useConnectForm Direct redirects", () => {
       secret: { apiKey: null, serverPassword: null, encryptionPassword: null },
     });
     mockRememberServer.mockReset().mockResolvedValue({ server: {} });
+    mockRememberBudget.mockReset().mockResolvedValue({ ok: true });
     mockRememberBudgetEncryption.mockReset().mockResolvedValue({ ok: true });
 
     resetStores();
@@ -285,6 +288,37 @@ describe("useConnectForm Direct redirects", () => {
     await waitFor(() => expect(result.current.budgets).toHaveLength(1));
     await waitFor(() => expect(result.current.encryptionPassword).toBe("enc-secret"));
     expect(mockRevealServerSecret).toHaveBeenCalledWith(expect.any(String), "budget-1");
+  });
+
+  it("opens a remembered budget in one click, straight to overview", async () => {
+    mockRevealServerSecret.mockResolvedValue({
+      mode: "http-api",
+      baseUrl: "https://api.example.com",
+      label: "",
+      secret: { apiKey: "the-key", serverPassword: null, encryptionPassword: "enc-x" },
+    });
+
+    const client = new QueryClient();
+    const { result } = renderHook(() => useConnectForm(), { wrapper: makeWrapper(client) });
+
+    act(() => {
+      void result.current.openRememberedBudget(
+        { serverFingerprint: "fp", mode: "http-api", baseUrl: "https://api.example.com", label: "Home", createdAt: "", updatedAt: "" },
+        { serverFingerprint: "fp", budgetSyncId: "b1", name: "Main", createdAt: "", lastOpenedAt: "" }
+      );
+    });
+
+    await waitFor(() => expect(mockPush).toHaveBeenCalledWith("/overview"), { timeout: 2_000 });
+    // Revealed with the budget id so an encrypted budget's password comes along.
+    expect(mockRevealServerSecret).toHaveBeenCalledWith("fp", "b1");
+    // No budget picker was involved — the instance went straight in.
+    expect(useConnectionStore.getState().instances).toHaveLength(1);
+    expect(useConnectionStore.getState().instances[0]).toMatchObject({
+      mode: "http-api",
+      budgetSyncId: "b1",
+      apiKey: "the-key",
+      encryptionPassword: "enc-x",
+    });
   });
 
   it("redirects a successful Direct reconnect to overview", async () => {

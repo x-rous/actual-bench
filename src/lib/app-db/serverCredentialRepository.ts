@@ -1,6 +1,8 @@
 import { openWithKey, sealWithKey } from "@/lib/sync/vault";
 import type {
   BudgetEncryptionCredentialInput,
+  RememberedBudget,
+  RememberedBudgetInput,
   ServerCredential,
   ServerCredentialInput,
   ServerCredentialMeta,
@@ -117,11 +119,12 @@ export function listServerCredentialMeta(db: SqliteDatabase): ServerCredentialMe
   return db.prepare("SELECT * FROM server_credentials ORDER BY updated_at DESC").all<ServerRow>().map(toServerMeta);
 }
 
-/** Forget a server + all its remembered budget encryption passwords. */
+/** Forget a server + all its remembered budgets and budget encryption passwords. */
 export function deleteServerCredential(db: SqliteDatabase, serverFp: string): void {
   const remove = db.transaction(() => {
     db.prepare("DELETE FROM server_credentials WHERE server_fingerprint = ?").run(serverFp);
     db.prepare("DELETE FROM budget_encryption_credentials WHERE server_fingerprint = ?").run(serverFp);
+    db.prepare("DELETE FROM remembered_budgets WHERE server_fingerprint = ?").run(serverFp);
   });
   remove();
 }
@@ -179,6 +182,55 @@ export function deleteBudgetEncryptionCredential(db: SqliteDatabase, serverFp: s
   db.prepare("DELETE FROM budget_encryption_credentials WHERE server_fingerprint = ? AND budget_sync_id = ?").run(serverFp, budgetSyncId);
 }
 
+// ── Remembered budgets (non-secret; one-click reconnect) ─────────────────────
+
+type RememberedBudgetRow = {
+  server_fingerprint: string;
+  budget_sync_id: string;
+  name: string;
+  created_at: string;
+  last_opened_at: string;
+};
+
+function toRememberedBudget(row: RememberedBudgetRow): RememberedBudget {
+  return {
+    serverFingerprint: row.server_fingerprint,
+    budgetSyncId: row.budget_sync_id,
+    name: row.name,
+    createdAt: row.created_at,
+    lastOpenedAt: row.last_opened_at,
+  };
+}
+
+/** Record (or refresh) a budget opened on a remembered server. Holds no secret. */
+export function upsertRememberedBudget(db: SqliteDatabase, input: RememberedBudgetInput): void {
+  const now = new Date().toISOString();
+  db.prepare(
+    `INSERT INTO remembered_budgets (server_fingerprint, budget_sync_id, name, created_at, last_opened_at)
+     VALUES (?, ?, ?, ?, ?)
+     ON CONFLICT(server_fingerprint, budget_sync_id) DO UPDATE SET
+       name = excluded.name,
+       last_opened_at = excluded.last_opened_at`
+  ).run(input.serverFingerprint, input.budgetSyncId, input.name ?? "", now, now);
+}
+
+/** All remembered budgets (metadata only), most-recently-opened first. */
+export function listRememberedBudgets(db: SqliteDatabase): RememberedBudget[] {
+  return db
+    .prepare("SELECT * FROM remembered_budgets ORDER BY last_opened_at DESC")
+    .all<RememberedBudgetRow>()
+    .map(toRememberedBudget);
+}
+
+/** Forget a remembered budget and any encryption password stored for it. */
+export function deleteRememberedBudget(db: SqliteDatabase, serverFp: string, budgetSyncId: string): void {
+  const remove = db.transaction(() => {
+    db.prepare("DELETE FROM remembered_budgets WHERE server_fingerprint = ? AND budget_sync_id = ?").run(serverFp, budgetSyncId);
+    db.prepare("DELETE FROM budget_encryption_credentials WHERE server_fingerprint = ? AND budget_sync_id = ?").run(serverFp, budgetSyncId);
+  });
+  remove();
+}
+
 // ── Vault-wide re-key + reset ────────────────────────────────────────────────
 
 /**
@@ -208,11 +260,12 @@ export function resealServerVault(db: SqliteDatabase, oldKey: Buffer, newKey: Bu
   return reseal();
 }
 
-/** Remove all server + budget-encryption credentials (part of a full vault reset). */
+/** Remove all server credentials, budget encryption passwords, and remembered budgets (full vault reset). */
 export function deleteAllServerVaultCredentials(db: SqliteDatabase): void {
   const clear = db.transaction(() => {
     db.prepare("DELETE FROM server_credentials").run();
     db.prepare("DELETE FROM budget_encryption_credentials").run();
+    db.prepare("DELETE FROM remembered_budgets").run();
   });
   clear();
 }

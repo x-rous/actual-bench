@@ -178,6 +178,22 @@ CREATE TABLE IF NOT EXISTS budget_encryption_credentials (
 );
 `;
 
+// ── Remembered budgets (RD-063 / PR-028f) ────────────────────────────────────
+// Non-secret record of which budgets you've opened on a remembered server, so
+// the connect page can offer one-click reconnect straight into a budget (the
+// server credential + any per-budget encryption password are revealed behind the
+// scenes). Holds no secret material — only the budget's sync id and display name.
+export const REMEMBERED_BUDGET_TABLE_SQL = `
+CREATE TABLE IF NOT EXISTS remembered_budgets (
+  server_fingerprint text NOT NULL,
+  budget_sync_id text NOT NULL,
+  name text NOT NULL DEFAULT '',
+  created_at text NOT NULL,
+  last_opened_at text NOT NULL,
+  PRIMARY KEY (server_fingerprint, budget_sync_id)
+);
+`;
+
 // ── FX / multi-currency consolidation (RD-056 / PR-025a) ─────────────────────
 // The database is the authoritative FX registry; Frankfurter only populates it.
 export const FX_RATE_IMPORT_BATCH_TABLE_SQL = `

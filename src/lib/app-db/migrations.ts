@@ -3,6 +3,7 @@ import {
   APP_META_TABLE_SQL,
   BUDGET_ENCRYPTION_CREDENTIAL_TABLE_SQL,
   CONNECTION_CREDENTIAL_TABLE_SQL,
+  REMEMBERED_BUDGET_TABLE_SQL,
   SERVER_CREDENTIAL_TABLE_SQL,
   FX_INDEX_SQL,
   FX_RATES_TABLE_SQL,
@@ -20,7 +21,7 @@ import {
 } from "./schema";
 import { AppDbUnavailableError } from "./errors";
 
-export const LATEST_SCHEMA_VERSION = 8;
+export const LATEST_SCHEMA_VERSION = 9;
 
 type Migration = {
   version: number;
@@ -145,6 +146,11 @@ const MIGRATIONS: readonly Migration[] = [
   {
     version: 8,
     apply: applyServerVaultCutover,
+  },
+  {
+    version: 9,
+    // Remembered budgets (RD-063 / PR-028f): one-click reconnect into a budget.
+    statements: [REMEMBERED_BUDGET_TABLE_SQL],
   },
 ];
 

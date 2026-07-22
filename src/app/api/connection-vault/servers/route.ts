@@ -4,6 +4,7 @@ import { appDbErrorResponse, readJsonBody } from "@/lib/app-db/routeResponses";
 import { rememberedCredentialsSupported } from "@/lib/app-db/connectionCredentialRepository";
 import {
   deleteServerCredential,
+  listRememberedBudgets,
   listServerCredentialMeta,
   upsertServerCredential,
 } from "@/lib/app-db/serverCredentialRepository";
@@ -30,13 +31,18 @@ function unsupported(): NextResponse {
   );
 }
 
-// GET → remembered server metadata (never secrets).
+// GET → remembered server + budget metadata (never secrets).
 export function GET() {
   try {
     if (!rememberedCredentialsSupported()) {
-      return NextResponse.json({ supported: false, servers: [] });
+      return NextResponse.json({ supported: false, servers: [], budgets: [] });
     }
-    return NextResponse.json({ supported: true, servers: listServerCredentialMeta(getAppDb()) });
+    const db = getAppDb();
+    return NextResponse.json({
+      supported: true,
+      servers: listServerCredentialMeta(db),
+      budgets: listRememberedBudgets(db),
+    });
   } catch (error) {
     return appDbErrorResponse(error);
   }

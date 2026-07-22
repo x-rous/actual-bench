@@ -29,6 +29,7 @@ import { POST as unlock } from "../unlock/route";
 import { GET as listServers, POST as remember, DELETE as forget } from "./route";
 import { POST as reveal } from "./reveal/route";
 import { POST as rememberBudgetEnc, DELETE as forgetBudgetEnc } from "./budget-encryption/route";
+import { POST as rememberBudget, DELETE as forgetBudget } from "./budgets/route";
 
 // scrypt at the OWASP floor is intentionally slow; give derive-heavy tests room.
 jest.setTimeout(30000);
@@ -140,6 +141,27 @@ describe("server-scoped vault routes (RD-063 / PR-028b)", () => {
       secret: { encryptionPassword: string | null };
     };
     expect(gone.secret.encryptionPassword).toBeNull();
+  });
+
+  it("records remembered budgets and returns them in the servers list", async () => {
+    await remember(req({ body: httpServer }));
+    const fp = serverFingerprint(httpServer);
+
+    // A budget requires a remembered server first.
+    expect((await rememberBudget(req({ body: { serverFingerprint: "nope", budgetSyncId: "b1", name: "X" } }))).status).toBe(404);
+
+    expect((await rememberBudget(req({ body: { serverFingerprint: fp, budgetSyncId: "b1", name: "Main" } }))).status).toBe(201);
+    expect((await rememberBudget(req({ body: { serverFingerprint: fp, budgetSyncId: "b2", name: "Travel" } }))).status).toBe(201);
+
+    const list = (await (await listServers()).json()) as {
+      budgets: Array<{ serverFingerprint: string; budgetSyncId: string; name: string }>;
+    };
+    expect(list.budgets).toHaveLength(2);
+    expect(list.budgets.map((b) => b.budgetSyncId).sort()).toEqual(["b1", "b2"]);
+
+    await forgetBudget(req({ query: { serverFingerprint: fp, budgetSyncId: "b1" } }));
+    const after = (await (await listServers()).json()) as { budgets: unknown[] };
+    expect(after.budgets).toHaveLength(1);
   });
 
   it("reveal requires an unlocked session and a known server", async () => {

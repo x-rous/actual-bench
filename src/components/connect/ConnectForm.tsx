@@ -74,6 +74,7 @@ export function ConnectForm({ directBrowserApiEnabled }: ConnectFormProps) {
     rememberOnServer,
     setRememberOnServer,
     startFromRememberedServer,
+    openRememberedBudget,
     handleSelectBudget,
     pendingBudgetSwitch,
     dismissBudgetSwitch,
@@ -457,7 +458,8 @@ export function ConnectForm({ directBrowserApiEnabled }: ConnectFormProps) {
             )}
             <RememberedServers
               vault={vault}
-              onStart={startFromRememberedServer}
+              onOpenBudget={openRememberedBudget}
+              onOpenServer={startFromRememberedServer}
               busy={anyBusy}
             />
           </div>
