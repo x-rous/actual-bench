@@ -66,16 +66,17 @@ deprecated alias — still honored (with a startup warning) for one release, but
   explicit, encrypted opt-ins: **remembered-connection** secrets and **unattended-sync** credentials
   (below).
 
-### Remembered-connection secrets (user passphrase)
+### Remembered-server secrets (user passphrase)
 
-When a user opts in to [remembering a connection](../../getting-started/connecting/#remember-a-connection-optional),
+When a user opts in to [remembering a server](../../getting-started/connecting/#remember-a-server-optional),
 its secret is sealed **AES-256-GCM** in this database, encrypted with a key derived from a **passphrase
-the user sets** — no environment variable is involved. The passphrase and derived key are never stored
-(only the ciphertext and a salt), so the server cannot decrypt on its own; the user unlocks once per
-session. This is **separate** from the `SYNC_VAULT_KEY` unattended-sync vault below — the two never
-share ciphertext or a key. The feature is only offered when this database is durable, so it is inert on
-non-durable runtimes. Back up `/data` to preserve remembered connections; a lost passphrase means the
-user re-enters and re-remembers.
+the user sets** — no environment variable is involved. Credentials are server-scoped (one saved server
+opens any of its budgets); budget encryption passwords are sealed separately, per budget. The passphrase
+and derived key are never stored (only the ciphertext and a salt), so the server cannot decrypt on its
+own; the user unlocks once per session. This is **separate** from the `SYNC_VAULT_KEY` unattended-sync
+vault below — the two never share ciphertext or a key. The feature is only offered when this database is
+durable, so it is inert on non-durable runtimes. Back up `/data` to preserve remembered servers; a lost
+passphrase means the user resets the vault and re-saves.
 
 ## Unattended sync settings
 
