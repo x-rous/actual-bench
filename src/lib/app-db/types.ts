@@ -1,3 +1,5 @@
+import type { ConnectionMode } from "@/store/connection";
+
 export type JsonPrimitive = string | number | boolean | null;
 export type JsonObject = { [key: string]: JsonValue };
 export type JsonValue = JsonPrimitive | JsonObject | JsonValue[];
@@ -322,38 +324,53 @@ export type SyncCredentialInput = {
   secret: SyncCredentialSecret;
 };
 
-// ── Remembered connection credentials (RD-061 / PR-026a) ─────────────────────
+// ── Server-scoped remembered credentials (RD-063 / PR-028a) ──────────────────
 
-/**
- * The plaintext secret sealed for a remembered connection. Fields are
- * mode-appropriate: HTTP API uses `apiKey`; Direct uses `serverPassword`; either
- * may carry a budget `encryptionPassword`.
- */
-export type ConnectionCredentialSecret = {
+/** The sealed secret for a server: an API key (HTTP) or server password (Direct). */
+export type ServerCredentialSecret = {
   apiKey?: string;
   serverPassword?: string;
-  encryptionPassword?: string;
 };
 
-/** Non-secret remembered-credential metadata - safe to return to the client. */
-export type ConnectionCredentialMeta = {
-  connectionFingerprint: string;
-  mode: string;
+/** Non-secret server-credential metadata - safe to return to the client. */
+export type ServerCredentialMeta = {
+  serverFingerprint: string;
+  mode: ConnectionMode;
   baseUrl: string;
-  budgetSyncId: string;
   label: string;
   createdAt: string;
   updatedAt: string;
 };
 
-/** Full remembered credential (metadata + decrypted secret) - server-only. */
-export type ConnectionCredential = ConnectionCredentialMeta & { secret: ConnectionCredentialSecret };
+/** Full server credential (metadata + decrypted secret) - server-only. */
+export type ServerCredential = ServerCredentialMeta & { secret: ServerCredentialSecret };
 
-export type ConnectionCredentialInput = {
-  connectionFingerprint: string;
-  mode: string;
+export type ServerCredentialInput = {
+  mode: ConnectionMode;
   baseUrl: string;
+  label?: string;
+  secret: ServerCredentialSecret;
+};
+
+/** A remembered per-budget encryption password (opt-in), keyed under its server. */
+export type BudgetEncryptionCredentialInput = {
+  serverFingerprint: string;
   budgetSyncId: string;
   label?: string;
-  secret: ConnectionCredentialSecret;
+  encryptionPassword: string;
+};
+
+/** Non-secret record of a budget opened on a remembered server (one-click reconnect). */
+export type RememberedBudget = {
+  serverFingerprint: string;
+  budgetSyncId: string;
+  name: string;
+  createdAt: string;
+  lastOpenedAt: string;
+};
+
+export type RememberedBudgetInput = {
+  serverFingerprint: string;
+  budgetSyncId: string;
+  name?: string;
 };

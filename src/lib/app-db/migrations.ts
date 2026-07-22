@@ -1,7 +1,10 @@
 import type { SqliteDatabase } from "./types";
 import {
   APP_META_TABLE_SQL,
+  BUDGET_ENCRYPTION_CREDENTIAL_TABLE_SQL,
   CONNECTION_CREDENTIAL_TABLE_SQL,
+  REMEMBERED_BUDGET_TABLE_SQL,
+  SERVER_CREDENTIAL_TABLE_SQL,
   FX_INDEX_SQL,
   FX_RATES_TABLE_SQL,
   FX_RATE_IMPORT_BATCH_TABLE_SQL,
@@ -16,9 +19,10 @@ import {
   SYNC_PLATFORM_V3_INDEX_SQL,
   TRANSACTION_FX_TABLE_SQL,
 } from "./schema";
+import { KDF_VERSION_META_KEY, SALT_META_KEY, VERIFIER_META_KEY } from "./vaultMetaKeys";
 import { AppDbUnavailableError } from "./errors";
 
-export const LATEST_SCHEMA_VERSION = 6;
+export const LATEST_SCHEMA_VERSION = 9;
 
 type Migration = {
   version: number;
@@ -84,6 +88,21 @@ function applySyncPlatformV3(db: SqliteDatabase): void {
   for (const statement of SYNC_PLATFORM_V3_INDEX_SQL) db.exec(statement);
 }
 
+// v8 (RD-063 / PR-028e): switch remembered credentials from per-budget to
+// per-server. Drop the superseded `connection_credentials` table, and wipe the
+// vault (salt, KDF version, verifier, and any sealed server blobs). The
+// passphrase-derived key can't be re-derived at boot to migrate old blobs, and a
+// v1.2.5 KDF-versioning bug can leave the stored verifier unverifiable — so the
+// user re-sets a passphrase cleanly on the server-scoped model.
+function applyServerVaultCutover(db: SqliteDatabase): void {
+  db.exec("DROP TABLE IF EXISTS connection_credentials");
+  db.exec("DELETE FROM server_credentials");
+  db.exec("DELETE FROM budget_encryption_credentials");
+  for (const key of [VERIFIER_META_KEY, SALT_META_KEY, KDF_VERSION_META_KEY]) {
+    db.prepare("DELETE FROM app_meta WHERE key = ?").run(key);
+  }
+}
+
 const MIGRATIONS: readonly Migration[] = [
   {
     version: 1,
@@ -117,6 +136,22 @@ const MIGRATIONS: readonly Migration[] = [
     version: 6,
     // Remembered connection credentials (RD-061 / PR-026a).
     statements: [CONNECTION_CREDENTIAL_TABLE_SQL],
+  },
+  {
+    version: 7,
+    // Server-scoped remembered credentials (RD-063 / PR-028a). Additive: the
+    // per-budget `connection_credentials` table + vault meta are cleared by the
+    // v8 switch-over below.
+    statements: [SERVER_CREDENTIAL_TABLE_SQL, BUDGET_ENCRYPTION_CREDENTIAL_TABLE_SQL],
+  },
+  {
+    version: 8,
+    apply: applyServerVaultCutover,
+  },
+  {
+    version: 9,
+    // Remembered budgets (RD-063 / PR-028f): one-click reconnect into a budget.
+    statements: [REMEMBERED_BUDGET_TABLE_SQL],
   },
 ];
 

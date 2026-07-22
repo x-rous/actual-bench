@@ -1,22 +1,24 @@
 "use client";
 
 import Image from "next/image";
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, AlertCircle, CheckCircle2, Server, Plus, Check, KeyRound } from "lucide-react";
+import { Loader2, AlertCircle, CheckCircle2, Server, Plus, Check, KeyRound, BookOpen, ExternalLink } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 import { useConnectionStore, selectActiveInstance } from "@/store/connection";
-import { connectionFingerprint } from "@/lib/sync/connectionRef";
 import { useIsHydrated } from "@/hooks/useIsHydrated";
 import { useConnectForm } from "./useConnectForm";
 import { useConnectionVault } from "@/features/connect/useConnectionVault";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
-import { ConnectionCard } from "./ConnectionCard";
-import { RememberedConnections } from "./RememberedConnections";
+import { ConnectionsList } from "./ConnectionsList";
+import { mergeConnections } from "./mergeConnections";
 import { RememberToggle } from "./RememberToggle";
 import { deriveLabel, getConnectionModeBadge } from "./utils";
+
+const DOCS_URL = "https://x-rous.github.io/actual-bench";
+const GITHUB_URL = "https://github.com/x-rous/actual-bench";
 
 type ConnectFormProps = {
   directBrowserApiEnabled: boolean;
@@ -29,7 +31,6 @@ export function ConnectForm({ directBrowserApiEnabled }: ConnectFormProps) {
 
   const {
     instances,
-    activeInstance,
     savedServersForMode,
     removeInstance,
     connectionMode,
@@ -71,12 +72,21 @@ export function ConnectForm({ directBrowserApiEnabled }: ConnectFormProps) {
     handleConnect,
     rememberOnServer,
     setRememberOnServer,
-    reconnectRemembered,
+    startFromRememberedServer,
+    openRememberedBudget,
+    handleSelectBudget,
     pendingBudgetSwitch,
     dismissBudgetSwitch,
   } = useConnectForm();
 
   const vault = useConnectionVault();
+
+  // One server-grouped view of everything openable: this-session connections +
+  // the saved vault. Each budget appears once, deduped by server + sync id.
+  const mergedServers = useMemo(
+    () => mergeConnections(instances, vault.servers, vault.budgets),
+    [instances, vault.servers, vault.budgets]
+  );
 
   useEffect(() => {
     if (hydrated && connectedInstance) {
@@ -90,13 +100,8 @@ export function ConnectForm({ directBrowserApiEnabled }: ConnectFormProps) {
 
   const activeValidatedMode = validatedMode ?? connectionMode;
 
-  // Show the two-column layout when there's anything on the side: in-memory
-  // connections this session, or remembered (vault) connections.
-  const hasSideContent = instances.length > 0 || vault.connections.length > 0;
-
-  // Fingerprints already open this session — hidden from the remembered list so
-  // a connection isn't shown under both "Your connections" and "Remembered".
-  const activeFingerprints = new Set(instances.map((i) => connectionFingerprint(i)));
+  // Show the two-column layout when there's anything to continue from.
+  const hasSideContent = mergedServers.length > 0;
 
   // ── Panels ──────────────────────────────────────────────────────────────────
 
@@ -325,8 +330,8 @@ export function ConnectForm({ directBrowserApiEnabled }: ConnectFormProps) {
               type="button"
               disabled={connectBusy || !!reconnectBusyId}
               onClick={() => {
-                setSelectedGroupId(budget.groupId ?? null);
-                if (connectStatus.kind === "error") setConnectStatus({ kind: "idle" });
+                if (budget.groupId) handleSelectBudget(budget.groupId);
+                else setSelectedGroupId(null);
               }}
               className={cn(
                 "flex items-start gap-3 rounded-lg border px-4 py-3 text-left transition-colors disabled:opacity-50",
@@ -435,32 +440,17 @@ export function ConnectForm({ directBrowserApiEnabled }: ConnectFormProps) {
       {hasSideContent ? (
         /* ── Two-column layout ── */
         <div className="grid grid-cols-1 lg:grid-cols-[9fr_11fr] gap-6 items-start">
-          {/* Left: this-session + remembered connections */}
+          {/* Left: everything you can open — this session + the saved vault */}
           <div className="flex flex-col gap-6">
-            {instances.length > 0 && (
-              <section className="flex flex-col gap-3">
-                <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">
-                  Your connections
-                </h2>
-                <div className="flex flex-col gap-2 overflow-y-auto max-h-96">
-                  {instances.map((instance) => (
-                    <ConnectionCard
-                      key={instance.id}
-                      instance={instance}
-                      isActive={activeInstance?.id === instance.id}
-                      onConnect={handleReconnect}
-                      onRemove={removeInstance}
-                      connectBusyId={reconnectBusyId}
-                    />
-                  ))}
-                </div>
-              </section>
-            )}
-            <RememberedConnections
+            <ConnectionsList
               vault={vault}
-              onReconnect={reconnectRemembered}
+              servers={mergedServers}
+              onReconnectInstance={handleReconnect}
+              reconnectBusyId={reconnectBusyId}
+              onOpenBudget={openRememberedBudget}
+              onOpenServer={startFromRememberedServer}
+              onForgetInstance={removeInstance}
               busy={anyBusy}
-              activeFingerprints={activeFingerprints}
             />
           </div>
 
@@ -475,18 +465,41 @@ export function ConnectForm({ directBrowserApiEnabled }: ConnectFormProps) {
         </div>
       ) : (
         /* ── Single-column layout (first-time user) ── */
-        <section className="flex flex-col gap-4">
+        <section className="flex flex-col gap-5">
+          <div className="flex flex-col items-center gap-2 text-center">
+            <h1 className="text-lg font-semibold">Connect your Actual server</h1>
+            <p className="max-w-md text-sm text-muted-foreground">
+              Point Actual Bench at your budget server to review, sync, and manage it. Choose{" "}
+              <span className="font-medium text-foreground">HTTP API</span> for a hosted API server, or{" "}
+              <span className="font-medium text-foreground">Direct</span> to talk to Actual itself. Your
+              credentials stay in this browser unless you choose to save them.
+            </p>
+          </div>
+
           {step1Panel}
           {step2Panel}
+
           {budgets === null && !validateBusy && (
-            <div className="flex flex-col items-center gap-3 py-6 text-center">
-              <div className="flex h-11 w-11 items-center justify-center rounded-full bg-muted">
-                <Server className="h-5 w-5 text-muted-foreground" />
-              </div>
-              <p className="text-sm text-muted-foreground">
-                Enter your server details above and click{" "}
-                <span className="font-medium text-foreground">Load Budgets</span> to get started.
-              </p>
+            <div className="flex flex-wrap items-center justify-center gap-x-5 gap-y-2 border-t border-border pt-4 text-xs text-muted-foreground">
+              <span>New here?</span>
+              <a
+                href={DOCS_URL}
+                target="_blank"
+                rel="noreferrer"
+                className="flex items-center gap-1.5 hover:text-foreground"
+              >
+                <BookOpen className="h-3.5 w-3.5" />
+                Documentation
+              </a>
+              <a
+                href={GITHUB_URL}
+                target="_blank"
+                rel="noreferrer"
+                className="flex items-center gap-1.5 hover:text-foreground"
+              >
+                <ExternalLink className="h-3.5 w-3.5" />
+                GitHub
+              </a>
             </div>
           )}
         </section>

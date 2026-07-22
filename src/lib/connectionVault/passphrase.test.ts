@@ -2,13 +2,10 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { getAppDb, resetAppDbForTests } from "@/lib/app-db/connection";
-import {
-  deriveConnectionVaultKey,
-  getConnectionCredential,
-  upsertConnectionCredential,
-} from "@/lib/app-db/connectionCredentialRepository";
-import type { ConnectionCredentialInput, SqliteDatabase } from "@/lib/app-db/types";
-import { changePassphrase, isPassphraseSet, setPassphrase, verifyPassphrase } from "./passphrase";
+import { deriveConnectionVaultKey } from "@/lib/app-db/connectionCredentialRepository";
+import { getServerCredential, upsertServerCredential } from "@/lib/app-db/serverCredentialRepository";
+import type { ServerCredentialInput, SqliteDatabase } from "@/lib/app-db/types";
+import { changePassphrase, isPassphraseSet, resetVault, setPassphrase, verifyPassphrase } from "./passphrase";
 
 // scrypt at the OWASP floor is intentionally slow; give derive-heavy tests room.
 jest.setTimeout(30000);
@@ -18,15 +15,14 @@ function tempDb(): { root: string; db: SqliteDatabase } {
   return { root, db: getAppDb(join(root, "metadata.sqlite")) };
 }
 
-const cred = (fp: string): ConnectionCredentialInput => ({
-  connectionFingerprint: fp,
+const server: ServerCredentialInput = {
   mode: "http-api",
   baseUrl: "https://api.example.com",
-  budgetSyncId: "budget-1",
-  secret: { apiKey: "key-" + fp },
-});
+  label: "Family",
+  secret: { apiKey: "key-fp1" },
+};
 
-describe("connection vault passphrase lifecycle (RD-061 / PR-026b)", () => {
+describe("connection vault passphrase lifecycle (RD-061 / RD-063)", () => {
   let root: string;
   let db: SqliteDatabase;
 
@@ -68,7 +64,7 @@ describe("connection vault passphrase lifecycle (RD-061 / PR-026b)", () => {
   it("changes the passphrase, re-sealing credentials and the verifier", () => {
     setPassphrase(db, "old-passphrase");
     const oldKey = deriveConnectionVaultKey(db, "old-passphrase");
-    upsertConnectionCredential(db, cred("fp1"), oldKey);
+    const meta = upsertServerCredential(db, server, oldKey);
 
     // Wrong current passphrase is rejected.
     expect(changePassphrase(db, "not-it", "new-passphrase")).toBe(false);
@@ -78,7 +74,23 @@ describe("connection vault passphrase lifecycle (RD-061 / PR-026b)", () => {
     expect(verifyPassphrase(db, "old-passphrase")).toBeNull();
     const newKey = verifyPassphrase(db, "new-passphrase");
     expect(newKey).not.toBeNull();
-    // The remembered credential decrypts under the new key.
-    expect(getConnectionCredential(db, "fp1", newKey!)?.secret).toEqual({ apiKey: "key-fp1" });
+    // The remembered server decrypts under the new key.
+    expect(getServerCredential(db, meta.serverFingerprint, newKey!)?.secret).toEqual({ apiKey: "key-fp1" });
+  });
+
+  it("resets the vault — clears the passphrase and saved servers", () => {
+    setPassphrase(db, "old-passphrase");
+    const key = deriveConnectionVaultKey(db, "old-passphrase");
+    const meta = upsertServerCredential(db, server, key);
+
+    resetVault(db);
+
+    expect(isPassphraseSet(db)).toBe(false);
+    expect(verifyPassphrase(db, "old-passphrase")).toBeNull();
+    // A fresh passphrase can be set, and the old server is gone.
+    setPassphrase(db, "brand-new-pass");
+    const freshKey = verifyPassphrase(db, "brand-new-pass");
+    expect(freshKey).not.toBeNull();
+    expect(getServerCredential(db, meta.serverFingerprint, freshKey!)).toBeNull();
   });
 });

@@ -206,8 +206,8 @@ Direct mode currently supports core entity pages, Budget Management reads/staged
 
 - Saved server presets store only non-secret details in **session storage** and are cleared when the browser tab is closed.
 - API keys, Actual Server passwords, and budget encryption passwords are kept in memory only by default. Refreshing or reopening the tab requires reconnecting. Actual's browser worker cache may require clearing this site's browser data if it becomes stale or corrupt.
-- Optionally, you can **remember a connection**: its secret is then sealed (AES-256-GCM) in the server-side metadata database, encrypted with a key derived from a passphrase you set — the server can't decrypt without it, and you unlock once per session. Off by default; only offered when `/data` is durable.
-- App workflow metadata is stored server-side in SQLite at `/data/actual-bench.sqlite` by default. It stores Actual Bench metadata only and does not store Actual credentials or copied budget data, except the explicit, encrypted opt-ins above (remembered connections) and unattended-sync credentials.
+- Optionally, you can **remember a server**: its secret is then sealed (AES-256-GCM) in the server-side metadata database, encrypted with a key derived from a passphrase you set — the server can't decrypt without it, and you unlock once per session. Credentials are server-scoped, so one saved server opens any of its budgets. Off by default; only offered when `/data` is durable.
+- App workflow metadata is stored server-side in SQLite at `/data/actual-bench.sqlite` by default. It stores Actual Bench metadata only and does not store Actual credentials or copied budget data, except the explicit, encrypted opt-ins above (remembered servers) and unattended-sync credentials.
 - Staged data and query cache are scoped per connection so switching budgets does not leak local state between sessions.
 - Budget File Health and the Data Browser process exported snapshots locally in the browser and do not write changes back to the budget.
 - Exported budget ZIP files and diagnostic data may still contain personal financial information, so handle downloaded files carefully.

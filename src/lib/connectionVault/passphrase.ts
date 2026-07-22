@@ -1,9 +1,7 @@
-import { getAppMeta, setAppMeta } from "@/lib/app-db/appMetaRepository";
-import {
-  deriveConnectionVaultKey,
-  getConnectionVaultSalt,
-  resealConnectionCredentials,
-} from "@/lib/app-db/connectionCredentialRepository";
+import { deleteAppMeta, getAppMeta, setAppMeta } from "@/lib/app-db/appMetaRepository";
+import { deriveConnectionVaultKey, getConnectionVaultSalt } from "@/lib/app-db/connectionCredentialRepository";
+import { deleteAllServerVaultCredentials, resealServerVault } from "@/lib/app-db/serverCredentialRepository";
+import { KDF_VERSION_META_KEY, SALT_META_KEY, VERIFIER_META_KEY } from "@/lib/app-db/vaultMetaKeys";
 import { openWithKey, sealWithKey, type SealedSecret } from "@/lib/sync/vault";
 import type { SqliteDatabase } from "@/lib/app-db/types";
 
@@ -19,7 +17,6 @@ import type { SqliteDatabase } from "@/lib/app-db/types";
  * Node-only; must never be imported into client code.
  */
 
-const VERIFIER_META_KEY = "connection_vault_verifier";
 const VERIFIER_PLAINTEXT = "actual-bench:connection-vault:v1";
 
 /** True once a passphrase has been set (a verifier exists). */
@@ -77,9 +74,25 @@ export function changePassphrase(db: SqliteDatabase, currentPassphrase: string, 
   if (!oldKey) return false;
   const newKey = deriveConnectionVaultKey(db, newPassphrase);
   const apply = db.transaction(() => {
-    resealConnectionCredentials(db, oldKey, newKey);
+    resealServerVault(db, oldKey, newKey);
     writeVerifier(db, newKey);
   });
   apply();
   return true;
+}
+
+/**
+ * Reset the vault when the passphrase is forgotten (RD-063). Since the key is
+ * never stored, sealed secrets can't be recovered — so we drop them along with
+ * the salt, KDF version, and verifier. Afterwards `isPassphraseSet` is false and
+ * the user starts fresh with a new passphrase. Runs in one transaction.
+ */
+export function resetVault(db: SqliteDatabase): void {
+  const apply = db.transaction(() => {
+    deleteAllServerVaultCredentials(db);
+    deleteAppMeta(db, VERIFIER_META_KEY);
+    deleteAppMeta(db, SALT_META_KEY);
+    deleteAppMeta(db, KDF_VERSION_META_KEY);
+  });
+  apply();
 }

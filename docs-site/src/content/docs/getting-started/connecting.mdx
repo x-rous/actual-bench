@@ -91,11 +91,12 @@ during the current browser session.
   re-enter them when reconnecting, unless you opt in to remembering the connection (below).
 - Because presets live in session storage, they are cleared when the browser tab is closed.
 
-## Remember a connection (optional)
+## Remember a server (optional)
 
-To avoid re-typing credentials every session, you can **remember** a connection. Its secret is then
-stored **encrypted on the server**, protected by a passphrase you choose, and you reconnect with one
-click after unlocking.
+To avoid re-typing credentials every session, you can **remember a server**. Credentials are
+**server-scoped**: one saved server (its mode + URL, with its API key or password) opens **any** of its
+budgets. The secret is stored **encrypted on the server**, protected by a passphrase you choose, and
+after unlocking once you open any budget on that server without re-entering anything.
 
 :::note[Off by default]
 Remembering is opt-in. If you do nothing, secrets stay in memory only and you re-enter them each
@@ -104,24 +105,37 @@ session. The option is hidden where storage isn't durable (for example the publi
 
 ### Remember it while connecting
 
-1. On the **Choose a budget** step, tick **Remember this connection on the server**.
+1. On the **Choose a budget** step, tick **Remember this server**.
 2. The first time, you're asked to **create a passphrase** (at least 8 characters). This passphrase
-   protects all remembered connections; if a passphrase already exists, unlock it instead.
-3. Select **Connect**. The connection opens and its secret is sealed in the metadata database.
+   protects every saved server; if a passphrase already exists, unlock it instead.
+3. Select **Connect**. The server's secret is sealed in the metadata database. If the budget is
+   encrypted, its **encryption password** is remembered separately, tied to that budget.
 
-### Reconnect a remembered connection
+### Reconnect from the Connections list
 
-On the connect screen, remembered connections appear under **Remembered connections**:
+On the connect screen, the **Connections** list shows everything you can open, grouped by server. Each
+budget appears once with small state chips:
 
-1. If the vault is locked, enter your **passphrase** once to unlock it.
-2. Select **Reconnect** on any remembered connection — no need to re-enter its API key or password.
-3. Use **Forget** to remove a remembered connection.
+- **open** — loaded in this browser session. Click to switch to it **instantly** — no passphrase needed,
+  since its credentials are still in memory.
+- **saved** — kept in the vault. Click to reconnect after unlocking once; the server credential and the
+  budget's encryption password (if any) are used automatically, with no re-typing.
+
+A budget that is both shows both chips and opens instantly.
+
+1. If the vault is locked, enter your **passphrase** once to unlock the **saved** budgets. (Budgets that
+   are already **open** this session stay clickable without unlocking.)
+2. Select a **budget** to open it.
+3. To open a budget you haven't opened here yet, use **Open another budget** under a saved server: the
+   full budget list loads (still without re-entering credentials) so you can pick one.
+4. Use the **✕** next to a budget to forget just that budget, or the **trash** icon on a server to
+   forget the whole server (and its remembered budget passwords).
 
 :::caution[Direct mode is the weaker path]
 For **Direct Actual Server** connections, the Actual engine runs in your browser, so on reconnect the
 stored **Server password is released to the browser** — the same exposure as typing it in. Remembered
-**HTTP API** connections are handled exactly as any HTTP connection is today. Either way, remembering
-adds encryption **at rest** and passphrase-gating on top of today's behaviour.
+**HTTP API** servers are handled exactly as any HTTP connection is today. Either way, remembering adds
+encryption **at rest** and passphrase-gating on top of today's behaviour.
 :::
 
 ### About the passphrase
@@ -129,8 +143,10 @@ adds encryption **at rest** and passphrase-gating on top of today's behaviour.
 - It protects the stored secrets and is entered **once per session** to unlock them. It is **not** a
   login for Actual Bench — the app still has no built-in authentication (see the security note above).
 - The passphrase and its derived key are **never stored** on the server — only the encrypted secrets
-  and a salt. If you **forget the passphrase, remembered secrets can't be recovered** — you re-enter
-  and re-remember the connection. Changing the passphrase re-encrypts everything.
+  and a salt. Changing the passphrase re-encrypts everything.
+- If you **forget the passphrase**, saved secrets can't be recovered. Use **Forgot passphrase?** on the
+  unlock panel to **reset the vault** — this removes all saved servers and clears the passphrase so you
+  can set a new one. Your budgets and their data are untouched.
 
 See [Core Concepts](../core-concepts/#where-data-lives) for where remembered secrets live, and the
 **Administration** guides for backup implications.

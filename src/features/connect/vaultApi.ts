@@ -1,15 +1,15 @@
-import type { ConnectionCredentialMeta, ConnectionCredentialSecret } from "@/lib/app-db/types";
+import type { RememberedBudget, ServerCredentialMeta, ServerCredentialSecret } from "@/lib/app-db/types";
 import type { ConnectionMode } from "@/store/connection";
 
-// Re-export for consumers building UI over remembered connections.
-export type { ConnectionCredentialMeta } from "@/lib/app-db/types";
+// Re-export for consumers building UI over remembered servers.
+export type { RememberedBudget, ServerCredentialMeta } from "@/lib/app-db/types";
 
 /**
- * Client for the remembered-connection vault routes (RD-061 / PR-026d).
+ * Client for the remembered-server vault routes (RD-061 / RD-063).
  *
  * All requests are same-origin, so the httpOnly unlock-session cookie rides
  * along automatically. Secrets only ever travel *to* the server on enroll, and
- * *from* it only via `revealDirectSecret` (Direct mode, explicit unlock).
+ * *from* it only via `revealServerSecret` (explicit unlock).
  */
 
 async function jsonFetch<T>(input: string, init?: RequestInit): Promise<T> {
@@ -62,6 +62,14 @@ export function lockVault(): Promise<{ ok: true; unlocked: false }> {
   return jsonFetch("/api/connection-vault/lock", { method: "POST" });
 }
 
+/**
+ * Reset the vault when the passphrase is forgotten: drop all saved servers +
+ * budget passwords and clear the passphrase so a new one can be set.
+ */
+export function resetVault(): Promise<{ ok: true }> {
+  return jsonFetch("/api/connection-vault/reset", { method: "POST" });
+}
+
 /** Change the passphrase, re-sealing all remembered credentials. */
 export function changeVaultPassphrase(
   currentPassphrase: string,
@@ -73,44 +81,45 @@ export function changeVaultPassphrase(
   });
 }
 
-/** List remembered connection metadata (no secrets). Available before unlock. */
-export function listRememberedConnections(): Promise<{
+// ── Server-scoped vault (RD-063) ─────────────────────────────────────────────
+// A saved server opens any of its budgets; budget encryption passwords are
+// remembered per-budget under their server.
+
+/** List remembered servers + budgets (no secrets). Available before unlock. */
+export function listRememberedServers(): Promise<{
   supported: boolean;
-  connections: ConnectionCredentialMeta[];
+  servers: ServerCredentialMeta[];
+  budgets: RememberedBudget[];
 }> {
-  return jsonFetch("/api/connection-vault/connections");
+  return jsonFetch("/api/connection-vault/servers");
 }
 
-export type RememberConnectionInput = {
+export type RememberServerInput = {
   mode: ConnectionMode;
   baseUrl: string;
-  budgetSyncId: string;
   label?: string;
-  secret: ConnectionCredentialSecret;
+  secret: ServerCredentialSecret;
 };
 
-/** Remember (seal + store) a connection. Requires an unlocked session. */
-export function rememberConnection(
-  input: RememberConnectionInput
-): Promise<{ connection: ConnectionCredentialMeta }> {
-  return jsonFetch("/api/connection-vault/connections", {
+/** Remember (seal + store) a server. Requires an unlocked session. */
+export function rememberServer(input: RememberServerInput): Promise<{ server: ServerCredentialMeta }> {
+  return jsonFetch("/api/connection-vault/servers", {
     method: "POST",
     body: JSON.stringify(input),
   });
 }
 
-/** Forget a remembered connection by fingerprint. */
-export function forgetRememberedConnection(connectionFingerprint: string): Promise<{ ok: true }> {
+/** Forget a remembered server (and its budget encryption passwords) by fingerprint. */
+export function forgetRememberedServer(serverFingerprint: string): Promise<{ ok: true }> {
   return jsonFetch(
-    `/api/connection-vault/connections?connectionFingerprint=${encodeURIComponent(connectionFingerprint)}`,
+    `/api/connection-vault/servers?serverFingerprint=${encodeURIComponent(serverFingerprint)}`,
     { method: "DELETE" }
   );
 }
 
-export type RevealedConnectionSecret = {
+export type RevealedServerSecret = {
   mode: ConnectionMode;
   baseUrl: string;
-  budgetSyncId: string;
   label: string;
   secret: {
     apiKey: string | null;
@@ -119,10 +128,65 @@ export type RevealedConnectionSecret = {
   };
 };
 
-/** Reveal a remembered connection's secret to reconnect (HTTP apiKey or Direct serverPassword). */
-export function revealRememberedSecret(connectionFingerprint: string): Promise<RevealedConnectionSecret> {
-  return jsonFetch("/api/connection-vault/connections/reveal", {
+/**
+ * Reveal a remembered server's secret to reconnect. Pass `budgetSyncId` to also
+ * release that budget's remembered encryption password, when one is stored.
+ */
+export function revealServerSecret(
+  serverFingerprint: string,
+  budgetSyncId?: string
+): Promise<RevealedServerSecret> {
+  return jsonFetch("/api/connection-vault/servers/reveal", {
     method: "POST",
-    body: JSON.stringify({ connectionFingerprint }),
+    body: JSON.stringify({ serverFingerprint, budgetSyncId }),
   });
+}
+
+export type RememberBudgetEncryptionInput = {
+  serverFingerprint: string;
+  budgetSyncId: string;
+  label?: string;
+  encryptionPassword: string;
+};
+
+/** Remember a budget's encryption password under its server. Requires an unlocked session. */
+export function rememberBudgetEncryption(input: RememberBudgetEncryptionInput): Promise<{ ok: true }> {
+  return jsonFetch("/api/connection-vault/servers/budget-encryption", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+/** Forget a budget's remembered encryption password. */
+export function forgetBudgetEncryption(serverFingerprint: string, budgetSyncId: string): Promise<{ ok: true }> {
+  return jsonFetch(
+    `/api/connection-vault/servers/budget-encryption?serverFingerprint=${encodeURIComponent(
+      serverFingerprint
+    )}&budgetSyncId=${encodeURIComponent(budgetSyncId)}`,
+    { method: "DELETE" }
+  );
+}
+
+export type RememberBudgetInput = {
+  serverFingerprint: string;
+  budgetSyncId: string;
+  name?: string;
+};
+
+/** Record a budget opened on a remembered server (non-secret; one-click reconnect). */
+export function rememberBudget(input: RememberBudgetInput): Promise<{ ok: true }> {
+  return jsonFetch("/api/connection-vault/servers/budgets", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+/** Forget a remembered budget (and its encryption password). */
+export function forgetBudget(serverFingerprint: string, budgetSyncId: string): Promise<{ ok: true }> {
+  return jsonFetch(
+    `/api/connection-vault/servers/budgets?serverFingerprint=${encodeURIComponent(
+      serverFingerprint
+    )}&budgetSyncId=${encodeURIComponent(budgetSyncId)}`,
+    { method: "DELETE" }
+  );
 }

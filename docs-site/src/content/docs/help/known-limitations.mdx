@@ -34,11 +34,11 @@ HTTP API Server mode for unattended server-side sync.
 cURL generation targets `actual-http-api`'s `/run-query` endpoint, so it is available only for HTTP API
 Server executions, not Direct mode.
 
-## Remembered connections
+## Remembered servers
 
 ### Remembering requires durable storage
 
-**Applies to:** the "Remember this connection" option.
+**Applies to:** the "Remember this server" option.
 
 Remembered secrets are stored in the server's metadata database, so the option is **only offered when
 that database is durable** (a mounted `/data` volume). On an ephemeral runtime such as the public demo,
@@ -46,17 +46,18 @@ it is hidden.
 
 ### A forgotten passphrase can't be recovered
 
-**Applies to:** remembered connections.
+**Applies to:** remembered servers.
 
 The passphrase and its derived key are never stored, so a lost passphrase means the encrypted secrets
 **cannot be decrypted** — by design.
 
-**Alternative:** re-enter the credentials and remember the connection again. Changing the passphrase
-re-encrypts all remembered connections.
+**Alternative:** use **Forgot passphrase?** on the unlock panel to reset the vault, then set a new
+passphrase and re-save your servers. Changing the passphrase (when you still know it) re-encrypts all
+saved servers instead.
 
-### Remembered connections are per-server, not synced across devices
+### Remembered servers are per-instance, not synced across devices
 
-**Applies to:** remembered connections.
+**Applies to:** remembered servers.
 
 They live in one Actual Bench instance's database; there is no cross-device sync of remembered
 credentials.

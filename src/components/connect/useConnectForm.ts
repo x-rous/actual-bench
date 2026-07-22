@@ -26,7 +26,14 @@ import {
 } from "@/store/connection";
 import { useSavedServersStore, type SavedServer } from "@/store/savedServers";
 import { useStagedStore } from "@/store/staged";
-import { rememberConnection } from "@/features/connect/vaultApi";
+import {
+  rememberServer,
+  rememberBudget,
+  rememberBudgetEncryption,
+  revealServerSecret,
+} from "@/features/connect/vaultApi";
+import type { RememberedBudget, ServerCredentialMeta } from "@/lib/app-db/types";
+import { serverFingerprint } from "@/lib/sync/connectionRef";
 import { removeSavedServerIfUnused } from "@/lib/savedServerCleanup";
 import { generateId } from "@/lib/uuid";
 import {
@@ -276,7 +283,7 @@ export function useConnectForm() {
     // Errors propagate to the caller — no catch here.
   }
 
-  // Called from ConnectionCard — shows a toast on failure.
+  // Called from the Connections list — shows a toast on failure.
   function handleReconnect(instance: ConnectionInstance) {
     reconnect(instance).catch((err) => {
       toast.error(parseApiError(err));
@@ -292,23 +299,116 @@ export function useConnectForm() {
   }
 
   // Best-effort enroll into the vault after a successful connect, when the user
-  // ticked "Remember". Never blocks the connection — a failure just warns.
+  // ticked "Remember". Server-scoped (RD-063): the server credential opens any of
+  // its budgets, and an encryption password (if any) is remembered per-budget.
+  // Never blocks the connection — a failure just warns.
   async function maybeRemember(instance: ConnectionInstance) {
     if (!rememberOnServer) return;
     const secret = isBrowserApiConnection(instance)
-      ? { serverPassword: instance.serverPassword, encryptionPassword: instance.encryptionPassword }
-      : { apiKey: (instance as HttpApiConnection).apiKey, encryptionPassword: instance.encryptionPassword };
+      ? { serverPassword: instance.serverPassword }
+      : { apiKey: (instance as HttpApiConnection).apiKey };
+    const fingerprint = serverFingerprint(instance);
     try {
-      await rememberConnection({
+      await rememberServer({
         mode: instance.mode,
         baseUrl: instance.baseUrl,
-        budgetSyncId: instance.budgetSyncId,
-        label: instance.label,
+        label: deriveLabel(instance.baseUrl),
         secret,
       });
+      // Record the budget so it offers one-click reconnect next time.
+      await rememberBudget({
+        serverFingerprint: fingerprint,
+        budgetSyncId: instance.budgetSyncId,
+        name: instance.label,
+      });
+      if (instance.encryptionPassword) {
+        await rememberBudgetEncryption({
+          serverFingerprint: fingerprint,
+          budgetSyncId: instance.budgetSyncId,
+          label: instance.label,
+          encryptionPassword: instance.encryptionPassword,
+        });
+      }
     } catch (err) {
-      toast.error(`Connected, but couldn't remember this connection: ${parseApiError(err)}`);
+      toast.error(`Connected, but couldn't remember this server: ${parseApiError(err)}`);
     }
+  }
+
+  // One-click reconnect into a remembered budget (RD-063): reveal the server
+  // secret + that budget's encryption password, rebuild the connection, and go
+  // straight to the budget — no budget picker. Errors propagate to the caller.
+  async function openRememberedBudget(server: ServerCredentialMeta, budget: RememberedBudget) {
+    const revealed = await revealServerSecret(server.serverFingerprint, budget.budgetSyncId);
+    const base = {
+      id: generateId(),
+      label: budget.name || deriveLabel(server.baseUrl),
+      baseUrl: server.baseUrl,
+      budgetSyncId: budget.budgetSyncId,
+      ...(revealed.secret.encryptionPassword ? { encryptionPassword: revealed.secret.encryptionPassword } : {}),
+    };
+    const instance: ConnectionInstance =
+      revealed.mode === "browser-api"
+        ? { ...base, mode: "browser-api", serverPassword: revealed.secret.serverPassword ?? "" }
+        : { ...base, mode: "http-api", apiKey: revealed.secret.apiKey ?? "" };
+    reconnectRemembered(instance);
+  }
+
+  // Start a connection from a remembered server (RD-063): reveal its secret,
+  // prime the form, and load its budget list so the user can pick any budget.
+  // Errors propagate to the caller (the Connections list shows them inline).
+  async function startFromRememberedServer(server: ServerCredentialMeta) {
+    const revealed = await revealServerSecret(server.serverFingerprint);
+    setConnectionMode(revealed.mode);
+    setSelectedServerId(null);
+    setBaseUrl(revealed.baseUrl);
+    if (revealed.mode === "http-api") {
+      setApiKey(revealed.secret.apiKey ?? "");
+      setServerPassword("");
+    } else {
+      setServerPassword(revealed.secret.serverPassword ?? "");
+      setApiKey("");
+    }
+    await validate({
+      mode: revealed.mode,
+      baseUrl: revealed.baseUrl,
+      apiKey: revealed.secret.apiKey ?? undefined,
+      serverPassword: revealed.secret.serverPassword ?? undefined,
+    });
+  }
+
+  // The last encryption password we auto-filled from the vault. Lets us tell a
+  // remembered password apart from one the user typed, so budget switches
+  // refresh the former but never clobber the latter.
+  const autoFilledEncRef = useRef("");
+
+  // Reveal a budget's remembered encryption password for a server (mode + URL),
+  // or "" when the vault is locked, the server isn't remembered, or the budget
+  // has no stored password. Never throws.
+  async function revealBudgetEncryption(mode: ConnectionMode, url: string, budgetSyncId: string): Promise<string> {
+    try {
+      const fp = serverFingerprint({ mode, baseUrl: url });
+      const revealed = await revealServerSecret(fp, budgetSyncId);
+      return revealed.secret.encryptionPassword ?? "";
+    } catch {
+      return "";
+    }
+  }
+
+  // When a budget is picked, pre-fill its remembered encryption password so an
+  // encrypted budget opens without a second prompt — but never clobber a
+  // password the user typed themselves.
+  async function prefillEncryptionPassword(budgetSyncId: string) {
+    if (!validatedMode || !validatedUrl) return;
+    if (encryptionPassword && encryptionPassword !== autoFilledEncRef.current) return;
+    const pw = await revealBudgetEncryption(validatedMode, validatedUrl, budgetSyncId);
+    autoFilledEncRef.current = pw;
+    setEncryptionPassword(pw);
+  }
+
+  function handleSelectBudget(budgetSyncId: string) {
+    setSelectedGroupId(budgetSyncId);
+    if (connectStatus.kind === "error") setConnectStatus({ kind: "idle" });
+    void prefillEncryptionPassword(budgetSyncId);
   }
 
   // ── Validate: fetch budget list ─────────────────────────────────────────────
@@ -392,6 +492,13 @@ export function useConnectForm() {
       setBudgets(fetched);
       setSelectedGroupId(fetched[0].groupId!);
       setValidateStatus({ kind: "idle" });
+
+      // Pre-fill the initially-selected budget's remembered encryption password
+      // (if any) so opening it needs no second prompt. Uses local mode/url since
+      // the validated* state was just set this tick.
+      const firstPw = await revealBudgetEncryption(mode, url, fetched[0].groupId!);
+      autoFilledEncRef.current = firstPw;
+      setEncryptionPassword(firstPw);
 
       // Persist the server, then select its chip so the manual form collapses.
       const persisted = useSavedServersStore
@@ -632,6 +739,10 @@ export function useConnectForm() {
     rememberOnServer,
     setRememberOnServer,
     reconnectRemembered,
+    // Remembered servers (RD-063)
+    startFromRememberedServer,
+    openRememberedBudget,
+    handleSelectBudget,
     // Cross-mode reconnect confirmation
     pendingBudgetSwitch,
     dismissBudgetSwitch: () => setPendingBudgetSwitch(null),
