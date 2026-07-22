@@ -1,8 +1,13 @@
-import type { ConnectionCredentialMeta, ConnectionCredentialSecret } from "@/lib/app-db/types";
+import type {
+  ConnectionCredentialMeta,
+  ConnectionCredentialSecret,
+  ServerCredentialMeta,
+  ServerCredentialSecret,
+} from "@/lib/app-db/types";
 import type { ConnectionMode } from "@/store/connection";
 
 // Re-export for consumers building UI over remembered connections.
-export type { ConnectionCredentialMeta } from "@/lib/app-db/types";
+export type { ConnectionCredentialMeta, ServerCredentialMeta } from "@/lib/app-db/types";
 
 /**
  * Client for the remembered-connection vault routes (RD-061 / PR-026d).
@@ -125,4 +130,89 @@ export function revealRememberedSecret(connectionFingerprint: string): Promise<R
     method: "POST",
     body: JSON.stringify({ connectionFingerprint }),
   });
+}
+
+// ── Server-scoped vault (RD-063 / PR-028b) ───────────────────────────────────
+// A saved server opens any of its budgets; budget encryption passwords are
+// remembered per-budget under their server.
+
+/** List remembered server metadata (no secrets). Available before unlock. */
+export function listRememberedServers(): Promise<{
+  supported: boolean;
+  servers: ServerCredentialMeta[];
+}> {
+  return jsonFetch("/api/connection-vault/servers");
+}
+
+export type RememberServerInput = {
+  mode: ConnectionMode;
+  baseUrl: string;
+  label?: string;
+  secret: ServerCredentialSecret;
+};
+
+/** Remember (seal + store) a server. Requires an unlocked session. */
+export function rememberServer(input: RememberServerInput): Promise<{ server: ServerCredentialMeta }> {
+  return jsonFetch("/api/connection-vault/servers", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+/** Forget a remembered server (and its budget encryption passwords) by fingerprint. */
+export function forgetRememberedServer(serverFingerprint: string): Promise<{ ok: true }> {
+  return jsonFetch(
+    `/api/connection-vault/servers?serverFingerprint=${encodeURIComponent(serverFingerprint)}`,
+    { method: "DELETE" }
+  );
+}
+
+export type RevealedServerSecret = {
+  mode: ConnectionMode;
+  baseUrl: string;
+  label: string;
+  secret: {
+    apiKey: string | null;
+    serverPassword: string | null;
+    encryptionPassword: string | null;
+  };
+};
+
+/**
+ * Reveal a remembered server's secret to reconnect. Pass `budgetSyncId` to also
+ * release that budget's remembered encryption password, when one is stored.
+ */
+export function revealServerSecret(
+  serverFingerprint: string,
+  budgetSyncId?: string
+): Promise<RevealedServerSecret> {
+  return jsonFetch("/api/connection-vault/servers/reveal", {
+    method: "POST",
+    body: JSON.stringify({ serverFingerprint, budgetSyncId }),
+  });
+}
+
+export type RememberBudgetEncryptionInput = {
+  serverFingerprint: string;
+  budgetSyncId: string;
+  label?: string;
+  encryptionPassword: string;
+};
+
+/** Remember a budget's encryption password under its server. Requires an unlocked session. */
+export function rememberBudgetEncryption(input: RememberBudgetEncryptionInput): Promise<{ ok: true }> {
+  return jsonFetch("/api/connection-vault/servers/budget-encryption", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+/** Forget a budget's remembered encryption password. */
+export function forgetBudgetEncryption(serverFingerprint: string, budgetSyncId: string): Promise<{ ok: true }> {
+  return jsonFetch(
+    `/api/connection-vault/servers/budget-encryption?serverFingerprint=${encodeURIComponent(
+      serverFingerprint
+    )}&budgetSyncId=${encodeURIComponent(budgetSyncId)}`,
+    { method: "DELETE" }
+  );
 }

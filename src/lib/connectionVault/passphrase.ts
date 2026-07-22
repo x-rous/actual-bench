@@ -4,6 +4,7 @@ import {
   getConnectionVaultSalt,
   resealConnectionCredentials,
 } from "@/lib/app-db/connectionCredentialRepository";
+import { resealServerVault } from "@/lib/app-db/serverCredentialRepository";
 import { openWithKey, sealWithKey, type SealedSecret } from "@/lib/sync/vault";
 import type { SqliteDatabase } from "@/lib/app-db/types";
 
@@ -78,6 +79,7 @@ export function changePassphrase(db: SqliteDatabase, currentPassphrase: string, 
   const newKey = deriveConnectionVaultKey(db, newPassphrase);
   const apply = db.transaction(() => {
     resealConnectionCredentials(db, oldKey, newKey);
+    resealServerVault(db, oldKey, newKey);
     writeVerifier(db, newKey);
   });
   apply();
