@@ -1,5 +1,7 @@
-import { getAppMeta, setAppMeta } from "@/lib/app-db/appMetaRepository";
+import { deleteAppMeta, getAppMeta, setAppMeta } from "@/lib/app-db/appMetaRepository";
 import {
+  clearConnectionVaultSalt,
+  deleteAllConnectionCredentials,
   deriveConnectionVaultKey,
   getConnectionVaultSalt,
   resealConnectionCredentials,
@@ -82,4 +84,20 @@ export function changePassphrase(db: SqliteDatabase, currentPassphrase: string, 
   });
   apply();
   return true;
+}
+
+/**
+ * Reset the vault: remove **all** remembered connections and clear the
+ * passphrase (salt + verifier + KDF version). For recovery when the passphrase
+ * is forgotten — the sealed secrets are unrecoverable anyway, so this only
+ * discards them. Deliberately requires no passphrase (you've lost it); the app
+ * is single-tenant and network-isolated, and no plaintext is exposed.
+ */
+export function resetVault(db: SqliteDatabase): void {
+  const apply = db.transaction(() => {
+    deleteAllConnectionCredentials(db);
+    clearConnectionVaultSalt(db);
+    deleteAppMeta(db, VERIFIER_META_KEY);
+  });
+  apply();
 }

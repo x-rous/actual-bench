@@ -2,11 +2,12 @@ import { randomBytes } from "node:crypto";
 import {
   CONNECTION_KDF_PARAMS,
   CURRENT_KDF_VERSION,
+  LEGACY_KDF_VERSION,
   deriveKeyFromPassphrase,
   openWithKey,
   sealWithKey,
 } from "@/lib/sync/vault";
-import { getAppMeta, setAppMeta } from "./appMetaRepository";
+import { deleteAppMeta, getAppMeta, setAppMeta } from "./appMetaRepository";
 import { getAppDbHealth } from "./connection";
 import type {
   ConnectionCredential,
@@ -56,9 +57,14 @@ export function getOrCreateConnectionVaultSalt(db: SqliteDatabase): Buffer {
   return salt;
 }
 
-/** KDF params for this install's stored version (defaults to current if unset). */
+/**
+ * KDF params for this install's stored version. A **missing** version means the
+ * salt predates versioning and was sealed with the legacy (v0) defaults, so it
+ * must map to v0 — not the current version — or the vault can't be unlocked.
+ */
 function connectionKdfParams(db: SqliteDatabase) {
-  const version = Number(getAppMeta(db, KDF_VERSION_META_KEY) ?? CURRENT_KDF_VERSION);
+  const raw = getAppMeta(db, KDF_VERSION_META_KEY);
+  const version = raw === null ? LEGACY_KDF_VERSION : Number(raw);
   return CONNECTION_KDF_PARAMS[version] ?? CONNECTION_KDF_PARAMS[CURRENT_KDF_VERSION];
 }
 
@@ -183,6 +189,17 @@ export function listConnectionCredentialMeta(db: SqliteDatabase): ConnectionCred
 /** Remove a remembered credential. */
 export function deleteConnectionCredential(db: SqliteDatabase, connectionFingerprint: string): void {
   db.prepare("DELETE FROM connection_credentials WHERE connection_fingerprint = ?").run(connectionFingerprint);
+}
+
+/** Remove every remembered credential. */
+export function deleteAllConnectionCredentials(db: SqliteDatabase): void {
+  db.prepare("DELETE FROM connection_credentials").run();
+}
+
+/** Clear the per-install salt + stored KDF version (part of a full vault reset). */
+export function clearConnectionVaultSalt(db: SqliteDatabase): void {
+  deleteAppMeta(db, SALT_META_KEY);
+  deleteAppMeta(db, KDF_VERSION_META_KEY);
 }
 
 /**

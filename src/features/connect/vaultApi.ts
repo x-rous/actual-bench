@@ -62,6 +62,11 @@ export function lockVault(): Promise<{ ok: true; unlocked: false }> {
   return jsonFetch("/api/connection-vault/lock", { method: "POST" });
 }
 
+/** Reset the vault — remove all remembered connections + clear the passphrase (forgotten-passphrase recovery). */
+export function resetVault(): Promise<{ ok: true; reset: true }> {
+  return jsonFetch("/api/connection-vault/reset", { method: "POST" });
+}
+
 /** Change the passphrase, re-sealing all remembered credentials. */
 export function changeVaultPassphrase(
   currentPassphrase: string,

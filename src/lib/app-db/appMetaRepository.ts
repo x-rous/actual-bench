@@ -20,3 +20,7 @@ export function setAppMeta(db: SqliteDatabase, key: string, value: string): void
      ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`
   ).run(key, value, new Date().toISOString());
 }
+
+export function deleteAppMeta(db: SqliteDatabase, key: string): void {
+  db.prepare("DELETE FROM app_meta WHERE key = ?").run(key);
+}

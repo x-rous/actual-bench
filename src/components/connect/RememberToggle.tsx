@@ -13,7 +13,11 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { useConnectionVault } from "@/features/connect/useConnectionVault";
-import { parseApiError } from "./utils";
+
+/** Vault operations throw a plain Error carrying the server's message; surface it directly. */
+function vaultErrorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : "Something went wrong.";
+}
 
 type Vault = ReturnType<typeof useConnectionVault>;
 
@@ -84,7 +88,7 @@ export function RememberToggle({
       setDialogOpen(false);
       resetDialog();
     } catch (err) {
-      setError(parseApiError(err));
+      setError(vaultErrorMessage(err));
       setBusy(false);
     }
   }

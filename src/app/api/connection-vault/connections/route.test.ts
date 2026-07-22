@@ -25,6 +25,7 @@ import { getAppDb, resetAppDbForTests } from "@/lib/app-db/connection";
 import { clearAllSessions } from "@/lib/connectionVault/session";
 import { connectionFingerprint } from "@/lib/sync/connectionRef";
 import { POST as setPassphrase } from "../passphrase/route";
+import { POST as resetVault } from "../reset/route";
 import { GET as listConnections, POST as remember, DELETE as forget } from "./route";
 import { POST as reveal } from "./reveal/route";
 
@@ -136,5 +137,20 @@ describe("remembered connections routes (RD-061 / PR-026d)", () => {
     // Locked session (no cookie) → 401, even for a known connection.
     cookieJar.clear();
     expect((await reveal(req({ body: { connectionFingerprint: directFp } }))).status).toBe(401);
+  });
+
+  it("resets the vault — removes all connections and clears the passphrase (forgotten-passphrase recovery)", async () => {
+    await remember(req({ body: httpInput }));
+    await remember(req({ body: directInput }));
+    expect(((await (await listConnections()).json()) as { connections: unknown[] }).connections).toHaveLength(2);
+
+    // Reset needs no passphrase (it's forgotten).
+    cookieJar.clear();
+    expect((await resetVault(req())).status).toBe(200);
+
+    const after = (await (await listConnections()).json()) as { connections: unknown[] };
+    expect(after.connections).toHaveLength(0);
+    // Passphrase was cleared, so a brand-new one can be set again.
+    expect((await setPassphrase(req({ body: { passphrase: "brand-new-passphrase" } }))).status).toBe(200);
   });
 });

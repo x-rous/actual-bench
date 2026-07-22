@@ -8,6 +8,7 @@ import {
   listRememberedConnections,
   lockVault,
   rememberConnection,
+  resetVault,
   revealRememberedSecret,
   setVaultPassphrase,
   unlockVault,
@@ -72,6 +73,11 @@ export function useConnectionVault() {
     await refresh();
   }, [refresh]);
 
+  const reset = useCallback(async () => {
+    await resetVault();
+    await refresh();
+  }, [refresh]);
+
   const remember = useCallback(
     async (input: RememberConnectionInput) => {
       await rememberConnection(input);
@@ -94,5 +100,5 @@ export function useConnectionVault() {
     []
   );
 
-  return { status, connections, loading, refresh, setPassphrase, unlock, lock, remember, forget, reveal };
+  return { status, connections, loading, refresh, setPassphrase, unlock, lock, reset, remember, forget, reveal };
 }

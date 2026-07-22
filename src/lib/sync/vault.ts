@@ -73,13 +73,20 @@ export type ScryptParams = { N: number; r: number; p: number; maxmem: number };
  * KDF parameter sets by version, so remembered-connection data stays decryptable
  * if the cost is raised later: bump `CURRENT_KDF_VERSION`, add a new entry, and
  * migrate on the next re-seal (existing salts keep deriving with their version).
- * v1 meets the OWASP scrypt floor (N=2^17, r=8, p=1); `maxmem` must cover
- * 128 * N * r (≈134 MiB) since Node's default cap is 32 MiB.
+ *
+ * - v0 = the legacy Node scrypt defaults (N=2^14, r=8, p=1). A salt with **no**
+ *   stored version predates versioning and was sealed with these, so a missing
+ *   version MUST map to v0 or that vault can never be unlocked again.
+ * - v1 = the OWASP scrypt floor (N=2^17, r=8, p=1); `maxmem` must cover
+ *   128 * N * r (≈134 MiB) since Node's default cap is 32 MiB.
  */
 export const CONNECTION_KDF_PARAMS: Record<number, ScryptParams> = {
+  0: { N: 16384, r: 8, p: 1, maxmem: 32 * 1024 * 1024 },
   1: { N: 131072, r: 8, p: 1, maxmem: 192 * 1024 * 1024 },
 };
 export const CURRENT_KDF_VERSION = 1;
+/** Version to assume when a salt has no stored KDF version (pre-versioning data). */
+export const LEGACY_KDF_VERSION = 0;
 
 /**
  * Derive a 32-byte key from a user passphrase and a per-install salt (scrypt).

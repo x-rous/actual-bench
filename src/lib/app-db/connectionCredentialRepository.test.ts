@@ -2,7 +2,8 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { randomBytes } from "node:crypto";
-import { deriveKeyFromPassphrase } from "@/lib/sync/vault";
+import { CONNECTION_KDF_PARAMS, deriveKeyFromPassphrase } from "@/lib/sync/vault";
+import { setAppMeta } from "./appMetaRepository";
 import { getAppDb, resetAppDbForTests } from "./connection";
 import {
   deleteConnectionCredential,
@@ -136,5 +137,21 @@ describe("connectionCredentialRepository (RD-061 / PR-026a)", () => {
     deleteConnectionCredential(db, "fp1");
     expect(hasConnectionCredential(db, "fp1")).toBe(false);
     expect(listConnectionCredentialMeta(db)).toHaveLength(0);
+  });
+
+  it("still unlocks a pre-versioning vault (salt with no stored KDF version → legacy params)", () => {
+    // Simulate an older build: a salt exists but no KDF version was stamped, and
+    // the data was sealed with the legacy (v0) scrypt defaults.
+    const salt = randomBytes(16);
+    setAppMeta(db, "connection_vault_salt", salt.toString("base64"));
+    const legacyKey = deriveKeyFromPassphrase("correct-pass", salt, CONNECTION_KDF_PARAMS[0]);
+    upsertConnectionCredential(db, input("legacy"), legacyKey);
+
+    // deriveConnectionVaultKey must reproduce the legacy key, not the current one.
+    const derived = deriveConnectionVaultKey(db, "correct-pass");
+    expect(derived.equals(legacyKey)).toBe(true);
+    expect(derived.equals(deriveKeyFromPassphrase("correct-pass", salt, CONNECTION_KDF_PARAMS[1]))).toBe(false);
+    // The pre-versioning credential opens again.
+    expect(getConnectionCredential(db, "legacy", derived)?.secret).toEqual({ apiKey: "key-legacy", encryptionPassword: "enc" });
   });
 });

@@ -9,9 +9,14 @@ import type { ConnectionInstance } from "@/store/connection";
 import type { useConnectionVault } from "@/features/connect/useConnectionVault";
 import type { RevealedConnectionSecret } from "@/features/connect/vaultApi";
 import type { ConnectionCredentialMeta } from "@/lib/app-db/types";
-import { deriveLabel, parseApiError } from "./utils";
+import { deriveLabel } from "./utils";
 
 type Vault = ReturnType<typeof useConnectionVault>;
+
+/** Vault operations throw a plain Error carrying the server's message; surface it directly. */
+function vaultErrorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : "Something went wrong.";
+}
 
 function buildInstance(meta: ConnectionCredentialMeta, revealed: RevealedConnectionSecret): ConnectionInstance {
   const base = {
@@ -48,6 +53,8 @@ export function RememberedConnections({
   const [unlocking, setUnlocking] = useState(false);
   const [revealingId, setRevealingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [confirmingReset, setConfirmingReset] = useState(false);
+  const [resetting, setResetting] = useState(false);
 
   // A remembered connection that's already active this session lives under
   // "Your connections"; don't list it twice.
@@ -67,7 +74,7 @@ export function RememberedConnections({
       await vault.unlock(passphrase);
       setPassphrase("");
     } catch (err) {
-      setError(parseApiError(err));
+      setError(vaultErrorMessage(err));
     } finally {
       setUnlocking(false);
     }
@@ -80,7 +87,7 @@ export function RememberedConnections({
       const revealed = await vault.reveal(meta.connectionFingerprint);
       onReconnect(buildInstance(meta, revealed));
     } catch (err) {
-      setError(parseApiError(err));
+      setError(vaultErrorMessage(err));
     } finally {
       setRevealingId(null);
     }
@@ -91,7 +98,21 @@ export function RememberedConnections({
       await vault.forget(meta.connectionFingerprint);
       toast.success(`Forgot "${meta.label || deriveLabel(meta.baseUrl)}".`);
     } catch (err) {
-      toast.error(parseApiError(err));
+      toast.error(vaultErrorMessage(err));
+    }
+  }
+
+  async function handleReset() {
+    setResetting(true);
+    setError(null);
+    try {
+      await vault.reset();
+      toast.success("Vault reset. Set a new passphrase to remember connections again.");
+      setConfirmingReset(false);
+    } catch (err) {
+      setError(vaultErrorMessage(err));
+    } finally {
+      setResetting(false);
     }
   }
 
@@ -127,6 +148,42 @@ export function RememberedConnections({
               {unlocking ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Unlock"}
             </button>
           </div>
+
+          {!confirmingReset ? (
+            <button
+              type="button"
+              onClick={() => setConfirmingReset(true)}
+              className="self-start text-[11px] text-muted-foreground underline underline-offset-2 hover:text-foreground"
+            >
+              Forgot your passphrase?
+            </button>
+          ) : (
+            <div className="flex flex-col gap-2 rounded-md border border-destructive/30 bg-destructive/5 p-2.5">
+              <p className="text-[11px] text-muted-foreground">
+                A forgotten passphrase can&apos;t be recovered. Resetting removes all{" "}
+                {vault.connections.length} remembered connection{vault.connections.length === 1 ? "" : "s"} and clears
+                the passphrase so you can set a new one. This can&apos;t be undone.
+              </p>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => void handleReset()}
+                  disabled={resetting}
+                  className="flex h-8 items-center gap-1.5 rounded-md bg-destructive px-3 text-xs font-medium text-white disabled:opacity-50"
+                >
+                  {resetting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Reset & remove all"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setConfirmingReset(false)}
+                  disabled={resetting}
+                  className="h-8 rounded-md border border-border px-3 text-xs hover:bg-muted disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
