@@ -30,6 +30,8 @@ export function RememberedServers({
   const [unlocking, setUnlocking] = useState(false);
   const [startingFp, setStartingFp] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [confirmReset, setConfirmReset] = useState(false);
+  const [resetting, setResetting] = useState(false);
 
   if (!vault.status.supported || vault.servers.length === 0) return null;
 
@@ -58,6 +60,21 @@ export function RememberedServers({
       setError(parseApiError(err));
     } finally {
       setStartingFp(null);
+    }
+  }
+
+  async function handleReset() {
+    setResetting(true);
+    setError(null);
+    try {
+      await vault.reset();
+      setConfirmReset(false);
+      setPassphrase("");
+      toast.success("Vault reset. Set a passphrase to start saving servers again.");
+    } catch (err) {
+      setError(parseApiError(err));
+    } finally {
+      setResetting(false);
     }
   }
 
@@ -102,6 +119,41 @@ export function RememberedServers({
               {unlocking ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Unlock"}
             </button>
           </div>
+
+          {confirmReset ? (
+            <div className="flex flex-col gap-2 rounded-md border border-destructive/30 bg-destructive/5 p-2.5">
+              <p className="text-xs text-muted-foreground">
+                Forgot it? Resetting removes all saved servers and clears the passphrase so you can set a
+                new one. Your budgets and their data are untouched.
+              </p>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => void handleReset()}
+                  disabled={resetting}
+                  className="flex h-8 items-center gap-1.5 rounded-md bg-destructive px-3 text-xs font-medium text-white disabled:opacity-50"
+                >
+                  {resetting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Reset vault"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setConfirmReset(false)}
+                  disabled={resetting}
+                  className="flex h-8 items-center rounded-md border border-border px-3 text-xs font-medium hover:bg-muted disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setConfirmReset(true)}
+              className="self-start text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
+            >
+              Forgot passphrase?
+            </button>
+          )}
         </div>
       )}
 
