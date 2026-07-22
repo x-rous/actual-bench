@@ -111,15 +111,18 @@ session. The option is hidden where storage isn't durable (for example the publi
 3. Select **Connect**. The server's secret is sealed in the metadata database. If the budget is
    encrypted, its **encryption password** is remembered separately, tied to that budget.
 
-### Open a budget from a saved server
+### Reconnect from a saved server
 
-On the connect screen, saved servers appear under **Continue**:
+On the connect screen, your saved servers and the budgets you've opened on them appear under
+**Continue**:
 
 1. If the vault is locked, enter your **passphrase** once to unlock it.
-2. Select **Open** on a saved server — its budget list loads without re-entering the URL or password.
-3. Pick any budget and select **Connect**. If that budget's encryption password was remembered, it is
-   filled in for you.
-4. Use the **trash** icon to **forget** a server (which also forgets its remembered budget passwords).
+2. Select a **budget** to reconnect in one click — no need to re-enter the URL or password, and if that
+   budget's encryption password was remembered it is used automatically.
+3. To open a budget you haven't opened here yet, use **Open another budget** under its server: the full
+   budget list loads (still without re-entering credentials) so you can pick one.
+4. Use the **✕** next to a budget to forget just that budget, or the **trash** icon on a server to
+   forget the whole server (and its remembered budget passwords).
 
 :::caution[Direct mode is the weaker path]
 For **Direct Actual Server** connections, the Actual engine runs in your browser, so on reconnect the
