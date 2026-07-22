@@ -2,6 +2,7 @@ import { randomBytes } from "node:crypto";
 import { CONNECTION_KDF_PARAMS, CURRENT_KDF_VERSION, deriveKeyFromPassphrase } from "@/lib/sync/vault";
 import { getAppMeta, setAppMeta } from "./appMetaRepository";
 import { getAppDbHealth } from "./connection";
+import { KDF_VERSION_META_KEY, SALT_META_KEY } from "./vaultMetaKeys";
 import type { SqliteDatabase } from "./types";
 
 /**
@@ -16,8 +17,6 @@ import type { SqliteDatabase } from "./types";
  * Node-only; must never be imported into client code.
  */
 
-export const SALT_META_KEY = "connection_vault_salt";
-export const KDF_VERSION_META_KEY = "connection_vault_kdf_version";
 const SALT_BYTES = 16;
 
 /**

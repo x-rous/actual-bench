@@ -1,3 +1,5 @@
+import type { ConnectionMode } from "@/store/connection";
+
 export type JsonPrimitive = string | number | boolean | null;
 export type JsonObject = { [key: string]: JsonValue };
 export type JsonValue = JsonPrimitive | JsonObject | JsonValue[];
@@ -333,7 +335,7 @@ export type ServerCredentialSecret = {
 /** Non-secret server-credential metadata - safe to return to the client. */
 export type ServerCredentialMeta = {
   serverFingerprint: string;
-  mode: string;
+  mode: ConnectionMode;
   baseUrl: string;
   label: string;
   createdAt: string;
@@ -344,7 +346,7 @@ export type ServerCredentialMeta = {
 export type ServerCredential = ServerCredentialMeta & { secret: ServerCredentialSecret };
 
 export type ServerCredentialInput = {
-  mode: string;
+  mode: ConnectionMode;
   baseUrl: string;
   label?: string;
   secret: ServerCredentialSecret;

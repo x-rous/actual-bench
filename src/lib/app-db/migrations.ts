@@ -19,6 +19,7 @@ import {
   SYNC_PLATFORM_V3_INDEX_SQL,
   TRANSACTION_FX_TABLE_SQL,
 } from "./schema";
+import { KDF_VERSION_META_KEY, SALT_META_KEY, VERIFIER_META_KEY } from "./vaultMetaKeys";
 import { AppDbUnavailableError } from "./errors";
 
 export const LATEST_SCHEMA_VERSION = 9;
@@ -97,7 +98,7 @@ function applyServerVaultCutover(db: SqliteDatabase): void {
   db.exec("DROP TABLE IF EXISTS connection_credentials");
   db.exec("DELETE FROM server_credentials");
   db.exec("DELETE FROM budget_encryption_credentials");
-  for (const key of ["connection_vault_verifier", "connection_vault_salt", "connection_vault_kdf_version"]) {
+  for (const key of [VERIFIER_META_KEY, SALT_META_KEY, KDF_VERSION_META_KEY]) {
     db.prepare("DELETE FROM app_meta WHERE key = ?").run(key);
   }
 }

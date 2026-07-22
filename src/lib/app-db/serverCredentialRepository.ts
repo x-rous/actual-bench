@@ -9,6 +9,7 @@ import type {
   SqliteDatabase,
 } from "./types";
 import { serverFingerprint } from "@/lib/sync/connectionRef";
+import type { ConnectionMode } from "@/store/connection";
 
 /**
  * App-DB repository for **server-scoped** remembered credentials (RD-063 / PR-028a).
@@ -39,7 +40,8 @@ type ServerRow = {
 function toServerMeta(row: ServerRow): ServerCredentialMeta {
   return {
     serverFingerprint: row.server_fingerprint,
-    mode: row.mode,
+    // DB column is untyped text; rows only ever hold a valid mode.
+    mode: row.mode as ConnectionMode,
     baseUrl: row.base_url,
     label: row.label,
     createdAt: row.created_at,
@@ -54,7 +56,7 @@ export function upsertServerCredential(
   key: Buffer
 ): ServerCredentialMeta {
   const now = new Date().toISOString();
-  const fingerprint = serverFingerprint({ mode: input.mode as never, baseUrl: input.baseUrl });
+  const fingerprint = serverFingerprint({ mode: input.mode, baseUrl: input.baseUrl });
   const sealed = sealWithKey(JSON.stringify(input.secret), key);
 
   const row = db

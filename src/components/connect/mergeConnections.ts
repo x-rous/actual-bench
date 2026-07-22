@@ -61,7 +61,7 @@ export function mergeConnections(
   for (const server of servers) {
     ensureServer(server.serverFingerprint, () => ({
       serverFingerprint: server.serverFingerprint,
-      mode: server.mode as ConnectionMode,
+      mode: server.mode,
       baseUrl: server.baseUrl,
       label: server.label || deriveLabel(server.baseUrl),
       savedServer: server,

@@ -1,11 +1,7 @@
 import { deleteAppMeta, getAppMeta, setAppMeta } from "@/lib/app-db/appMetaRepository";
-import {
-  deriveConnectionVaultKey,
-  getConnectionVaultSalt,
-  KDF_VERSION_META_KEY,
-  SALT_META_KEY,
-} from "@/lib/app-db/connectionCredentialRepository";
+import { deriveConnectionVaultKey, getConnectionVaultSalt } from "@/lib/app-db/connectionCredentialRepository";
 import { deleteAllServerVaultCredentials, resealServerVault } from "@/lib/app-db/serverCredentialRepository";
+import { KDF_VERSION_META_KEY, SALT_META_KEY, VERIFIER_META_KEY } from "@/lib/app-db/vaultMetaKeys";
 import { openWithKey, sealWithKey, type SealedSecret } from "@/lib/sync/vault";
 import type { SqliteDatabase } from "@/lib/app-db/types";
 
@@ -21,7 +17,6 @@ import type { SqliteDatabase } from "@/lib/app-db/types";
  * Node-only; must never be imported into client code.
  */
 
-const VERIFIER_META_KEY = "connection_vault_verifier";
 const VERIFIER_PLAINTEXT = "actual-bench:connection-vault:v1";
 
 /** True once a passphrase has been set (a verifier exists). */
