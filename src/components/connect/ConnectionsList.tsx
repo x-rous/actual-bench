@@ -2,13 +2,25 @@
 
 import { useState } from "react";
 import { toast } from "sonner";
-import { KeyRound, Loader2, Lock, Plus, Server, Trash2, X } from "lucide-react";
+import { KeyRound, Loader2, Lock, Plus, Server, Trash2, Unlock, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import type { ConnectionInstance } from "@/store/connection";
 import type { RememberedBudget, ServerCredentialMeta } from "@/lib/app-db/types";
 import type { useConnectionVault } from "@/features/connect/useConnectionVault";
 import type { MergedBudget, MergedServer } from "./mergeConnections";
 import { deriveLabel, parseApiError } from "./utils";
+
+const MIN_PASSPHRASE_LENGTH = 8;
 
 type Vault = ReturnType<typeof useConnectionVault>;
 
@@ -49,11 +61,64 @@ export function ConnectionsList({
   const [error, setError] = useState<string | null>(null);
   const [confirmReset, setConfirmReset] = useState(false);
   const [resetting, setResetting] = useState(false);
+  const [locking, setLocking] = useState(false);
+  const [changeOpen, setChangeOpen] = useState(false);
+  const [currentPass, setCurrentPass] = useState("");
+  const [nextPass, setNextPass] = useState("");
+  const [confirmPass, setConfirmPass] = useState("");
+  const [changing, setChanging] = useState(false);
+  const [changeError, setChangeError] = useState<string | null>(null);
 
   if (servers.length === 0) return null;
 
   const locked = !vault.status.unlocked;
   const hasSaved = servers.some((s) => s.savedServer);
+
+  async function handleLock() {
+    setLocking(true);
+    try {
+      await vault.lock();
+      toast.success("Vault locked.");
+    } catch (err) {
+      toast.error(parseApiError(err));
+    } finally {
+      setLocking(false);
+    }
+  }
+
+  function openChangePassphrase() {
+    setCurrentPass("");
+    setNextPass("");
+    setConfirmPass("");
+    setChangeError(null);
+    setChangeOpen(true);
+  }
+
+  async function handleChangePassphrase() {
+    setChangeError(null);
+    if (!currentPass) {
+      setChangeError("Current passphrase is required.");
+      return;
+    }
+    if (nextPass.length < MIN_PASSPHRASE_LENGTH) {
+      setChangeError(`New passphrase must be at least ${MIN_PASSPHRASE_LENGTH} characters.`);
+      return;
+    }
+    if (nextPass !== confirmPass) {
+      setChangeError("New passphrases do not match.");
+      return;
+    }
+    setChanging(true);
+    try {
+      await vault.changePassphrase(currentPass, nextPass);
+      setChangeOpen(false);
+      toast.success("Passphrase changed. Your saved servers were re-encrypted.");
+    } catch (err) {
+      setChangeError(parseApiError(err));
+    } finally {
+      setChanging(false);
+    }
+  }
 
   async function handleUnlock() {
     if (!passphrase) return;
@@ -145,9 +210,37 @@ export function ConnectionsList({
 
   return (
     <section className="flex flex-col gap-3">
-      <h2 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-        Connections
-      </h2>
+      <div className="flex min-h-6 items-center justify-between gap-2">
+        <h2 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+          Connections
+        </h2>
+        {!locked && hasSaved && (
+          <div className="flex items-center gap-1 text-xs">
+            <span className="flex items-center gap-1 text-muted-foreground">
+              <Unlock className="h-3 w-3" />
+              Unlocked
+            </span>
+            <span className="text-border">·</span>
+            <button
+              type="button"
+              onClick={openChangePassphrase}
+              className="rounded px-1 py-0.5 text-muted-foreground hover:text-foreground"
+            >
+              Change passphrase
+            </button>
+            <span className="text-border">·</span>
+            <button
+              type="button"
+              onClick={() => void handleLock()}
+              disabled={locking}
+              className="flex items-center gap-1 rounded px-1 py-0.5 text-muted-foreground hover:text-foreground disabled:opacity-50"
+            >
+              {locking ? <Loader2 className="h-3 w-3 animate-spin" /> : <Lock className="h-3 w-3" />}
+              Lock
+            </button>
+          </div>
+        )}
+      </div>
 
       {locked && hasSaved && (
         <div className="flex flex-col gap-2 rounded-lg border border-border bg-muted/30 p-3">
@@ -228,11 +321,12 @@ export function ConnectionsList({
                 ) : (
                   <Server className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                 )}
-                <span className="truncate text-xs font-medium">{server.label || deriveLabel(server.baseUrl)}</span>
+                <span className="min-w-0 flex-1 truncate text-xs font-medium">
+                  {server.label || deriveLabel(server.baseUrl)}
+                </span>
                 <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-[10px] text-muted-foreground">
                   {isDirect ? "Direct" : "HTTP API"}
                 </span>
-                <span className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground">{server.baseUrl}</span>
                 <button
                   type="button"
                   onClick={() => void forgetServer(server)}
@@ -318,6 +412,63 @@ export function ConnectionsList({
           );
         })}
       </div>
+
+      <Dialog open={changeOpen} onOpenChange={(open) => { if (!open && !changing) setChangeOpen(false); }}>
+        <DialogContent showCloseButton={false}>
+          <DialogHeader>
+            <DialogTitle>Change passphrase</DialogTitle>
+            <DialogDescription>
+              Enter your current passphrase and a new one. Your saved servers are re-encrypted with the
+              new passphrase, and other tabs are signed out of the vault.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="flex flex-col gap-2">
+            <Input
+              type="password"
+              value={currentPass}
+              onChange={(e) => setCurrentPass(e.target.value)}
+              placeholder="Current passphrase"
+              aria-label="Current passphrase"
+              autoComplete="current-password"
+              autoFocus
+              disabled={changing}
+            />
+            <Input
+              type="password"
+              value={nextPass}
+              onChange={(e) => setNextPass(e.target.value)}
+              placeholder="New passphrase"
+              aria-label="New passphrase"
+              autoComplete="new-password"
+              disabled={changing}
+            />
+            <Input
+              type="password"
+              value={confirmPass}
+              onChange={(e) => setConfirmPass(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") void handleChangePassphrase(); }}
+              placeholder="Confirm new passphrase"
+              aria-label="Confirm new passphrase"
+              autoComplete="new-password"
+              disabled={changing}
+            />
+            {changeError && <p className="text-xs text-destructive">{changeError}</p>}
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setChangeOpen(false)} disabled={changing}>
+              Cancel
+            </Button>
+            <Button
+              onClick={() => void handleChangePassphrase()}
+              disabled={changing || !currentPass || !nextPass || !confirmPass}
+            >
+              {changing ? <Loader2 className="h-4 w-4 animate-spin" /> : "Change passphrase"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </section>
   );
 }
