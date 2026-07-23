@@ -321,6 +321,45 @@ describe("useConnectForm Direct redirects", () => {
     });
   });
 
+  it("prompts to switch when connecting a budget already saved via a different mode", async () => {
+    mockListBudgets.mockResolvedValue([{ groupId: "budget-1", cloudFileId: "budget-1", name: "Budget One" }]);
+    mockGetApiVersion.mockResolvedValue("1.2.3");
+
+    const client = new QueryClient();
+    const { result } = renderHook(
+      () =>
+        useConnectForm({
+          savedBudgets: [
+            {
+              budgetSyncId: "budget-1",
+              mode: "browser-api",
+              baseUrl: "https://actual.example.com",
+              label: "Budget One (Direct)",
+            },
+          ],
+        }),
+      { wrapper: makeWrapper(client) }
+    );
+
+    act(() => {
+      result.current.setBaseUrl("https://api.example.com");
+      result.current.setApiKey("api-key");
+    });
+    act(() => {
+      result.current.handleValidate();
+    });
+    await waitFor(() => expect(result.current.budgets).toHaveLength(1));
+
+    act(() => {
+      result.current.handleConnect();
+    });
+
+    // Same budget id, different mode → switch dialog instead of an immediate connect.
+    await waitFor(() => expect(result.current.pendingBudgetSwitch).not.toBeNull());
+    expect(result.current.pendingBudgetSwitch?.title).toMatch(/switch/i);
+    expect(mockPush).not.toHaveBeenCalledWith("/overview");
+  });
+
   it("redirects a successful Direct reconnect to overview", async () => {
     const instance: ConnectionInstance = {
       id: "direct-1",
