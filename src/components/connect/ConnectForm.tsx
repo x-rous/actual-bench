@@ -254,7 +254,7 @@ export function ConnectForm({ directBrowserApiEnabled }: ConnectFormProps) {
                 disabled={anyBusy}
               />
               <p className="text-xs text-muted-foreground">
-                The <code>ACTUAL_API_KEY</code> on your API server. Kept in memory only.
+                The <code>ACTUAL_API_KEY</code> configured on your API server.
               </p>
             </div>
           ) : (
@@ -274,9 +274,6 @@ export function ConnectForm({ directBrowserApiEnabled }: ConnectFormProps) {
                 onKeyDown={handleKeyDown}
                 disabled={anyBusy}
               />
-              <p className="text-xs text-muted-foreground">
-                Kept in memory only for this browser tab.
-              </p>
             </div>
           )}
         </div>
@@ -385,9 +382,6 @@ export function ConnectForm({ directBrowserApiEnabled }: ConnectFormProps) {
           }}
           disabled={connectBusy || !!reconnectBusyId}
         />
-        <p className="text-xs text-muted-foreground">
-          Kept in memory only for this browser tab.
-        </p>
       </div>
 
       {connectStatus.kind === "error" && (
@@ -471,8 +465,7 @@ export function ConnectForm({ directBrowserApiEnabled }: ConnectFormProps) {
             <p className="max-w-md text-sm text-muted-foreground">
               Point Actual Bench at your budget server to review, sync, and manage it. Choose{" "}
               <span className="font-medium text-foreground">HTTP API</span> for a hosted API server, or{" "}
-              <span className="font-medium text-foreground">Direct</span> to talk to Actual itself. Your
-              credentials stay in this browser unless you choose to save them.
+              <span className="font-medium text-foreground">Direct</span> to talk to Actual itself.
             </p>
           </div>
 
