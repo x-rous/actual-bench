@@ -96,6 +96,10 @@ export function ConnectionsList({
 
   async function handleChangePassphrase() {
     setChangeError(null);
+    if (!currentPass) {
+      setChangeError("Current passphrase is required.");
+      return;
+    }
     if (nextPass.length < MIN_PASSPHRASE_LENGTH) {
       setChangeError(`New passphrase must be at least ${MIN_PASSPHRASE_LENGTH} characters.`);
       return;
@@ -425,6 +429,7 @@ export function ConnectionsList({
               value={currentPass}
               onChange={(e) => setCurrentPass(e.target.value)}
               placeholder="Current passphrase"
+              aria-label="Current passphrase"
               autoComplete="current-password"
               autoFocus
               disabled={changing}
@@ -434,6 +439,7 @@ export function ConnectionsList({
               value={nextPass}
               onChange={(e) => setNextPass(e.target.value)}
               placeholder="New passphrase"
+              aria-label="New passphrase"
               autoComplete="new-password"
               disabled={changing}
             />
@@ -443,6 +449,7 @@ export function ConnectionsList({
               onChange={(e) => setConfirmPass(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter") void handleChangePassphrase(); }}
               placeholder="Confirm new passphrase"
+              aria-label="Confirm new passphrase"
               autoComplete="new-password"
               disabled={changing}
             />
