@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import type { RememberedBudget, ServerCredentialMeta } from "@/lib/app-db/types";
 import {
+  changeVaultPassphrase,
   forgetBudget,
   forgetBudgetEncryption,
   forgetRememberedServer,
@@ -89,6 +90,14 @@ export function useConnectionVault() {
     await refresh();
   }, [refresh]);
 
+  const changePassphrase = useCallback(
+    async (currentPassphrase: string, newPassphrase: string) => {
+      await changeVaultPassphrase(currentPassphrase, newPassphrase);
+      await refresh();
+    },
+    [refresh]
+  );
+
   // ── Server-scoped actions (RD-063) ─────────────────────────────────────────
 
   const rememberSrv = useCallback(
@@ -155,6 +164,7 @@ export function useConnectionVault() {
     unlock,
     lock,
     reset,
+    changePassphrase,
     rememberServer: rememberSrv,
     forgetServer: forgetSrv,
     revealServer: revealSrv,

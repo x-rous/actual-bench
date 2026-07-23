@@ -126,8 +126,8 @@ export function RememberToggle({
             <DialogTitle>{setting ? "Protect saved credentials" : "Unlock the vault"}</DialogTitle>
             <DialogDescription>
               {setting
-                ? "Create a passphrase to encrypt remembered connections. You'll enter it once per session to reconnect. It is not stored — if you forget it, you'll re-enter and re-remember."
-                : "Enter your passphrase to unlock remembered connections for this session."}
+                ? "Create a passphrase to encrypt your saved servers. You'll enter it once per session to reconnect. It is not stored — if you forget it, you can reset the vault and start over."
+                : "Enter your passphrase to unlock your saved servers for this session."}
             </DialogDescription>
           </DialogHeader>
 
