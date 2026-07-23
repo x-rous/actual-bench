@@ -131,11 +131,11 @@ A budget that is both shows both chips and opens instantly.
 4. Use the **✕** next to a budget to forget just that budget, or the **trash** icon on a server to
    forget the whole server (and its remembered budget passwords).
 
-:::caution[Direct mode is the weaker path]
-For **Direct Actual Server** connections, the Actual engine runs in your browser, so on reconnect the
-stored **Server password is released to the browser** — the same exposure as typing it in. Remembered
-**HTTP API** servers are handled exactly as any HTTP connection is today. Either way, remembering adds
-encryption **at rest** and passphrase-gating on top of today's behaviour.
+:::note[Your saved credentials stay protected]
+Saved credentials are encrypted at rest and unlocked only with your passphrase. Reconnecting simply
+signs you in with them, just as if you'd typed them yourself — nothing is shared anywhere new. In Direct
+mode that happens in your browser (where Actual runs); in HTTP API mode they're used like any other API
+connection.
 :::
 
 ### About the passphrase
