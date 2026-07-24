@@ -549,7 +549,7 @@ export function useConnectForm({ savedBudgets = [] }: { savedBudgets?: SavedBudg
       const modeLabel = (m: ConnectionMode) => (m === "browser-api" ? "Direct" : "HTTP API");
       setPendingBudgetSwitch({
         title: "Switch this budget's connection?",
-        message: `"${replacedExisting.label}" is already connected in ${modeLabel(replacedExisting.mode)} mode. Continuing switches it to ${modeLabel(validatedMode)} mode and discards any unsaved changes.`,
+        message: `"${replacedExisting.label}" is already set up in ${modeLabel(replacedExisting.mode)} mode. Continuing switches it to ${modeLabel(validatedMode)} mode and discards any unsaved changes.`,
         destructiveLabel: "Switch mode",
         onConfirm: () => {
           confirmSwitchRef.current = true;

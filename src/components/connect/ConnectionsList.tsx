@@ -251,7 +251,13 @@ export function ConnectionsList({
             </div>
             {!locked && (
               <div className="flex shrink-0 gap-2">
-                <Button variant="outline" size="sm" className="h-8 gap-1.5" onClick={openChangePassphrase}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8 gap-1.5"
+                  onClick={openChangePassphrase}
+                  aria-label="Change passphrase"
+                >
                   <Settings2 className="size-3.5" />
                   <span className="hidden sm:inline">Change passphrase</span>
                 </Button>
