@@ -14,10 +14,11 @@ import { useEffect } from "react";
  */
 export default function GlobalError({
   error,
-  reset,
+  unstable_retry,
 }: {
   error: Error & { digest?: string };
   reset: () => void;
+  unstable_retry: () => void;
 }) {
   useEffect(() => {
     console.error("Fatal application error:", error);
@@ -101,7 +102,7 @@ export default function GlobalError({
 
           <button
             type="button"
-            onClick={reset}
+            onClick={unstable_retry}
             style={{
               display: "inline-flex",
               alignItems: "center",

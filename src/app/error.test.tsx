@@ -15,6 +15,7 @@ describe("App error boundary", () => {
       <AppError
         error={new Error("secret-server-password-leak")}
         reset={() => {}}
+        unstable_retry={() => {}}
       />,
     );
 
@@ -25,17 +26,25 @@ describe("App error boundary", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("calls reset() when 'Try again' is clicked", () => {
-    const reset = jest.fn();
-    render(<AppError error={new Error("boom")} reset={reset} />);
+  it("calls unstable_retry() when 'Try again' is clicked", () => {
+    const unstableRetry = jest.fn();
+    render(
+      <AppError
+        error={new Error("boom")}
+        reset={() => {}}
+        unstable_retry={unstableRetry}
+      />,
+    );
 
     fireEvent.click(screen.getByRole("button", { name: /try again/i }));
-    expect(reset).toHaveBeenCalledTimes(1);
+    expect(unstableRetry).toHaveBeenCalledTimes(1);
   });
 
   it("renders the digest reference when present", () => {
     const error = Object.assign(new Error("boom"), { digest: "abc123" });
-    render(<AppError error={error} reset={() => {}} />);
+    render(
+      <AppError error={error} reset={() => {}} unstable_retry={() => {}} />,
+    );
 
     expect(screen.getByText(/Reference: abc123/)).toBeInTheDocument();
   });
