@@ -57,7 +57,15 @@ function toBudgetFile(budget: Awaited<ReturnType<typeof listBrowserApiBudgets>>[
   };
 }
 
-export function useConnectForm() {
+/** A budget already reachable via a saved (vault) connection, for switch detection. */
+export type SavedBudgetRef = {
+  budgetSyncId: string;
+  mode: ConnectionMode;
+  baseUrl: string;
+  label: string;
+};
+
+export function useConnectForm({ savedBudgets = [] }: { savedBudgets?: SavedBudgetRef[] } = {}) {
   const router = useRouter();
   const queryClient = useQueryClient();
   const addInstance = useConnectionStore((s) => s.addInstance);
@@ -527,17 +535,21 @@ export function useConnectForm() {
     const selected = budgets.find((b) => b.groupId === selectedGroupId);
     if (!selected) return;
 
-    // If this budget is already connected via a different transport/URL,
-    // reconnecting will replace that entry (one connection per budget). Confirm
-    // the switch first - unless the user already confirmed it.
-    const replacedExisting = instances.find(
-      (i) => i.budgetSyncId === selected.groupId && !(i.mode === validatedMode && i.baseUrl === validatedUrl)
-    );
+    // If this budget is already reachable via a different transport/URL —
+    // either open this session or saved in the vault — reconnecting switches it
+    // (one connection per budget). Confirm first, unless already confirmed.
+    const replacedExisting =
+      instances.find(
+        (i) => i.budgetSyncId === selected.groupId && !(i.mode === validatedMode && i.baseUrl === validatedUrl)
+      ) ??
+      savedBudgets.find(
+        (s) => s.budgetSyncId === selected.groupId && !(s.mode === validatedMode && s.baseUrl === validatedUrl)
+      );
     if (replacedExisting && !confirmSwitchRef.current) {
       const modeLabel = (m: ConnectionMode) => (m === "browser-api" ? "Direct" : "HTTP API");
       setPendingBudgetSwitch({
         title: "Switch this budget's connection?",
-        message: `"${replacedExisting.label}" is already connected in ${modeLabel(replacedExisting.mode)} mode. Continuing switches it to ${modeLabel(validatedMode)} mode and discards any unsaved changes.`,
+        message: `"${replacedExisting.label}" is already set up in ${modeLabel(replacedExisting.mode)} mode. Continuing switches it to ${modeLabel(validatedMode)} mode and discards any unsaved changes.`,
         destructiveLabel: "Switch mode",
         onConfirm: () => {
           confirmSwitchRef.current = true;

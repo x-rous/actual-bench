@@ -100,9 +100,9 @@ export function RememberToggle({
           className="mt-0.5 h-4 w-4"
         />
         <span className="flex flex-col">
-          <span className="text-sm font-medium">Remember this server</span>
+          <span className="text-sm font-medium">Remember this budget</span>
           <span className="text-xs text-muted-foreground">
-            Encrypted with your passphrase so you can open any of its budgets next time without re-typing.
+            Adds this budget to your saved connections for one-click reopen. Stored encrypted with your passphrase.
             {checked && !vault.status.unlocked && (
               <>
                 {" "}
@@ -126,7 +126,7 @@ export function RememberToggle({
             <DialogTitle>{setting ? "Protect saved credentials" : "Unlock the vault"}</DialogTitle>
             <DialogDescription>
               {setting
-                ? "Create a passphrase to encrypt your saved servers. You'll enter it once per session to reconnect. It is not stored — if you forget it, you can reset the vault and start over."
+                ? "Create a passphrase to encrypt your saved servers. You'll enter it once per session to reconnect. It is not stored; if you forget it, you can reset the vault and start over."
                 : "Enter your passphrase to unlock your saved servers for this session."}
             </DialogDescription>
           </DialogHeader>
