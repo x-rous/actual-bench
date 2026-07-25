@@ -37,9 +37,14 @@ export function useSavedQueries() {
   useEffect(() => {
     if (migrationRan.current) return;
     migrationRan.current = true;
-    void migrateLegacySavedQueriesOnce(api.importSavedQueries).then((imported) => {
-      if (imported > 0) void invalidate();
-    });
+    migrateLegacySavedQueriesOnce(api.importSavedQueries)
+      .then((imported) => {
+        if (imported > 0) void invalidate();
+      })
+      .catch((error) => {
+        // Non-fatal: the flag is only set on success, so this retries next mount.
+        console.error("Legacy saved-query migration failed:", error);
+      });
   }, [invalidate]);
 
   const create = useMutation({

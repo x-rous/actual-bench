@@ -56,7 +56,9 @@ export function collectLegacySavedQueries(): SavedQueryCreateInput[] {
         if (!entry || typeof entry.name !== "string" || typeof entry.query !== "string") continue;
         const name = entry.name.trim();
         if (!name || !entry.query.trim()) continue;
-        const dedupeKey = `${name} ${entry.query}`;
+        // NUL separator (matches the server-side importSavedQueries dedupe) so
+        // "A"+"B C" and "A B"+"C" never collide and silently drop a query.
+        const dedupeKey = `${name}\u0000${entry.query}`;
         if (seen.has(dedupeKey)) continue;
         seen.add(dedupeKey);
         collected.push({ name, query: entry.query, isFavorite: entry.isFavorite === true });
