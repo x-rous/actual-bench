@@ -1,108 +1,22 @@
 /**
- * Persistence layer for the ActualQL query workspace.
+ * Session-history persistence for the ActualQL query workspace.
  *
- * Saved queries:  localStorage  — `actualql-saved-queries:${budgetSyncId}`
- * History:        sessionStorage — `actualql-history:${budgetSyncId}`
+ * History: sessionStorage — `actualql-history:${budgetSyncId}`, keyed per budget
+ * and cleared when the browser tab closes, matching the lifetime of the
+ * connection credentials.
  *
- * Both are keyed by `budgetSyncId` so each budget has its own independent
- * set of saved queries and history. History is session-scoped (cleared when
- * the browser tab closes), matching the lifetime of the connection credentials.
+ * Saved/favorite queries are NOT here — as of RD-064 they live in the app DB
+ * (global, cross-budget) and are accessed through `useSavedQueries` /
+ * `savedQueriesApi`, not localStorage.
  */
 
 import { generateId } from "@/lib/uuid";
-import type { SavedQuery, QueryHistoryEntry } from "../types";
+import type { QueryHistoryEntry } from "../types";
 
-// ─── Key helpers ──────────────────────────────────────────────────────────────
-
-function savedKey(budgetSyncId: string): string {
-  return `actualql-saved-queries:${budgetSyncId}`;
-}
+// ─── Key helper ───────────────────────────────────────────────────────────────
 
 function historyKey(budgetSyncId: string): string {
   return `actualql-history:${budgetSyncId}`;
-}
-
-// ─── Saved queries (localStorage) ────────────────────────────────────────────
-
-function readSaved(budgetSyncId: string): SavedQuery[] {
-  if (typeof window === "undefined") return [];
-  try {
-    const raw = localStorage.getItem(savedKey(budgetSyncId));
-    return raw ? (JSON.parse(raw) as SavedQuery[]) : [];
-  } catch {
-    return [];
-  }
-}
-
-function writeSaved(budgetSyncId: string, queries: SavedQuery[]): void {
-  if (typeof window === "undefined") return;
-  try {
-    localStorage.setItem(savedKey(budgetSyncId), JSON.stringify(queries));
-  } catch {
-    // Storage quota exceeded or access denied — degrade gracefully.
-  }
-}
-
-export function getSavedQueries(budgetSyncId: string): SavedQuery[] {
-  return readSaved(budgetSyncId);
-}
-
-export function saveQuery(
-  budgetSyncId: string,
-  name: string,
-  query: string
-): SavedQuery {
-  const existing = readSaved(budgetSyncId);
-  const now = new Date().toISOString();
-  const entry: SavedQuery = {
-    id: generateId(),
-    name,
-    query,
-    createdAt: now,
-    updatedAt: now,
-  };
-  writeSaved(budgetSyncId, [...existing, entry]);
-  return entry;
-}
-
-export function updateSavedQuery(
-  budgetSyncId: string,
-  id: string,
-  patch: Partial<Pick<SavedQuery, "name" | "query" | "isFavorite">>
-): void {
-  const queries = readSaved(budgetSyncId);
-  writeSaved(
-    budgetSyncId,
-    queries.map((q) =>
-      q.id === id ? { ...q, ...patch, updatedAt: new Date().toISOString() } : q
-    )
-  );
-}
-
-export function deleteSavedQuery(budgetSyncId: string, id: string): void {
-  writeSaved(
-    budgetSyncId,
-    readSaved(budgetSyncId).filter((q) => q.id !== id)
-  );
-}
-
-export function duplicateSavedQuery(
-  budgetSyncId: string,
-  id: string
-): SavedQuery | null {
-  const source = readSaved(budgetSyncId).find((q) => q.id === id);
-  if (!source) return null;
-  const now = new Date().toISOString();
-  const copy: SavedQuery = {
-    ...source,
-    id: generateId(),
-    name: `${source.name} (copy)`,
-    createdAt: now,
-    updatedAt: now,
-    isFavorite: false,
-  };
-  writeSaved(budgetSyncId, [...readSaved(budgetSyncId), copy]);
-  return copy;
 }
 
 // ─── History (sessionStorage) ─────────────────────────────────────────────────

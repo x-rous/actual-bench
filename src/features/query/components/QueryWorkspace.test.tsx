@@ -1,6 +1,18 @@
 import { cleanup, render, screen } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { QueryWorkspace } from "./QueryWorkspace";
 import { useConnectionStore, type BrowserApiConnection } from "@/store/connection";
+
+function renderWorkspace() {
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  return render(
+    <QueryClientProvider client={client}>
+      <QueryWorkspace />
+    </QueryClientProvider>,
+  );
+}
 
 jest.mock("sonner", () => ({
   toast: Object.assign(jest.fn(), {
@@ -29,6 +41,13 @@ describe("QueryWorkspace", () => {
   beforeEach(() => {
     localStorage.clear();
     sessionStorage.clear();
+    // Saved queries are now fetched from the app-DB route; stub it so the
+    // workspace's TanStack query resolves to an empty list in the test env.
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      text: () => Promise.resolve(JSON.stringify({ savedQueries: [] })),
+    }) as unknown as typeof fetch;
     useConnectionStore.setState({
       instances: [directConnection],
       activeInstanceId: directConnection.id,
@@ -42,7 +61,7 @@ describe("QueryWorkspace", () => {
   });
 
   it("opens the ActualQL workspace for Direct connections", () => {
-    render(<QueryWorkspace />);
+    renderWorkspace();
 
     expect(screen.getByRole("heading", { name: "ActualQL Queries" })).toBeInTheDocument();
     expect(

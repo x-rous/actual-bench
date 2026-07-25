@@ -374,3 +374,17 @@ export type RememberedBudgetInput = {
   budgetSyncId: string;
   name?: string;
 };
+
+// ── Saved ActualQL queries (RD-064 / PR-029) ─────────────────────────────────
+// Global (not budget-scoped). `isFavorite` is stored as an integer column and
+// normalized to boolean by the repository. Shape is structurally compatible
+// with the query feature's client-side `SavedQuery` type.
+export type SavedQueryRecord = {
+  id: string;
+  name: string;
+  /** Raw ActualQL JSON string as the user wrote it. */
+  query: string;
+  isFavorite: boolean;
+  createdAt: string;
+  updatedAt: string;
+};

@@ -4,6 +4,7 @@ import {
   BUDGET_ENCRYPTION_CREDENTIAL_TABLE_SQL,
   CONNECTION_CREDENTIAL_TABLE_SQL,
   REMEMBERED_BUDGET_TABLE_SQL,
+  SAVED_QUERY_TABLE_SQL,
   SERVER_CREDENTIAL_TABLE_SQL,
   FX_INDEX_SQL,
   FX_RATES_TABLE_SQL,
@@ -22,7 +23,7 @@ import {
 import { KDF_VERSION_META_KEY, SALT_META_KEY, VERIFIER_META_KEY } from "./vaultMetaKeys";
 import { AppDbUnavailableError } from "./errors";
 
-export const LATEST_SCHEMA_VERSION = 9;
+export const LATEST_SCHEMA_VERSION = 10;
 
 type Migration = {
   version: number;
@@ -152,6 +153,11 @@ const MIGRATIONS: readonly Migration[] = [
     version: 9,
     // Remembered budgets (RD-063 / PR-028f): one-click reconnect into a budget.
     statements: [REMEMBERED_BUDGET_TABLE_SQL],
+  },
+  {
+    version: 10,
+    // Persistent, cross-budget saved ActualQL queries (RD-064 / PR-029).
+    statements: [SAVED_QUERY_TABLE_SQL],
   },
 ];
 
