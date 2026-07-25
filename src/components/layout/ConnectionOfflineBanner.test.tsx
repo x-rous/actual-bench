@@ -31,6 +31,9 @@ describe("ConnectionOfflineBanner", () => {
     renderBanner();
     const alert = screen.getByRole("alert");
     expect(alert).toHaveTextContent(/lost connection to server/i);
+    expect(alert).toHaveTextContent(
+      /changes may not save until the connection is restored/i,
+    );
     expect(alert).not.toHaveTextContent(/save disabled/i);
   });
 
