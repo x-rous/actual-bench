@@ -194,6 +194,21 @@ CREATE TABLE IF NOT EXISTS remembered_budgets (
 );
 `;
 
+// ── Saved ActualQL queries (RD-064 / PR-029) ─────────────────────────────────
+// Global to the Actual Bench instance — intentionally NOT budget-scoped, so a
+// saved query written against one budget is available from every budget. Holds
+// only user-authored ActualQL text (no secrets, no copied budget data).
+export const SAVED_QUERY_TABLE_SQL = `
+CREATE TABLE IF NOT EXISTS saved_queries (
+  id text PRIMARY KEY,
+  name text NOT NULL,
+  query text NOT NULL,
+  is_favorite integer NOT NULL DEFAULT 0,
+  created_at text NOT NULL,
+  updated_at text NOT NULL
+);
+`;
+
 // ── FX / multi-currency consolidation (RD-056 / PR-025a) ─────────────────────
 // The database is the authoritative FX registry; Frankfurter only populates it.
 export const FX_RATE_IMPORT_BATCH_TABLE_SQL = `

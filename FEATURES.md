@@ -442,7 +442,7 @@ Bare-letter shortcuts (`V`, `F`, `H`, `E`, `[`, `]`) are scoped so they never fi
 - **Explain this query** — one-click plain-English summary of what the current query does: target table, filters, grouping, aggregation, ordering, and whether the result is tabular or scalar
 - **ActualQL Reference** dialog — six-section quick reference covering basics, filter operators, joined fields, aggregates, transactions-specific options, and copyable snippets
 - Built-in example packs in four groups (Data inspection, Cleanup & validation, Aggregation, Targeted subset) — one-click insert into the editor
-- Saved queries — name and save any query locally per budget; load, rerun, duplicate, rename, delete, and pin as favorite
+- Saved queries — name and save any query; persisted in the Actual Bench database and shared across every budget in the instance (not per-browser or per-budget), so they are always available wherever you connect; load, rerun, duplicate, rename, delete, and pin as favorite. Queries saved in earlier versions (previously stored per-budget in the browser) are imported into the database automatically the first time you open the workspace
 - Query history — last 10 executed queries stored per budget in session storage; one-click reload into the editor; deduplicated (re-running the same query bumps it to the top rather than adding a duplicate)
 - Favorites — pin saved queries for fast access; shown at the top of the saved queries panel
 - Banner warns when unsaved staged changes exist — query results reflect saved server state, not pending local edits

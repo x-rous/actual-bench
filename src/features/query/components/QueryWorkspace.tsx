@@ -22,16 +22,8 @@ import dynamic from "next/dynamic";
 import { parseQuery, lintQuery } from "../lib/queryValidation";
 import { formatJson } from "../lib/queryFormatting";
 import { explainQuery } from "../lib/queryExplain";
-import {
-  getHistory,
-  addToHistory,
-  clearHistory,
-  getSavedQueries,
-  saveQuery,
-  updateSavedQuery,
-  deleteSavedQuery,
-  duplicateSavedQuery,
-} from "../lib/queryStorage";
+import { getHistory, addToHistory, clearHistory } from "../lib/queryStorage";
+import { useSavedQueries } from "../hooks/useSavedQueries";
 import type { SavedQuery, QueryHistoryEntry, LintWarning, LastExecutedRequest } from "../types";
 
 const DEFAULT_QUERY = JSON.stringify(
@@ -141,7 +133,7 @@ function LeftPanel({
       {activeTab === "saved" && savedQueries.length > 0 && (
         <div className="flex shrink-0 items-center border-b border-border/60 px-3 py-1.5">
           <span className="text-[11px] text-muted-foreground/60">
-            {savedQueries.length} saved · local to this browser
+            {savedQueries.length} saved · available in every budget
           </span>
         </div>
       )}
@@ -202,7 +194,15 @@ export function QueryWorkspace() {
   const [saveDialogOpen, setSaveDialogOpen] = useState(false);
   const [saveDefaultName, setSaveDefaultName] = useState("");
   const [history, setHistory] = useState<QueryHistoryEntry[]>([]);
-  const [savedQueries, setSavedQueries] = useState<SavedQuery[]>([]);
+  // Saved/favorite queries are global and DB-backed (RD-064), owned by the hook.
+  const {
+    savedQueries,
+    saveQuery: persistSavedQuery,
+    renameQuery,
+    toggleFavorite,
+    deleteQuery,
+    duplicateQuery,
+  } = useSavedQueries();
 
   // ─── Phase 2 state ────────────────────────────────────────────────────────────
   const [lastExecutedRequest, setLastExecutedRequest] =
@@ -282,7 +282,6 @@ export function QueryWorkspace() {
     setPayloadBytes(null);
     if (!connection) return;
     setHistory(getHistory(connection.budgetSyncId));
-    setSavedQueries(getSavedQueries(connection.budgetSyncId));
   }, [connection]);
 
   // Lint as the user types; also keeps the inline parse-error banner in sync.
@@ -435,10 +434,9 @@ export function QueryWorkspace() {
   }, []);
 
   function handleSaveConfirm(name: string) {
-    if (!connection) return;
-    saveQuery(connection.budgetSyncId, name, editorValue);
-    setSavedQueries(getSavedQueries(connection.budgetSyncId));
-    toast.success(`Saved "${name}"`);
+    persistSavedQuery(name, editorValue)
+      .then(() => toast.success(`Saved "${name}"`))
+      .catch(() => toast.error("Failed to save query"));
   }
 
   // ─── Sidebar actions ─────────────────────────────────────────────────────────
@@ -467,29 +465,23 @@ export function QueryWorkspace() {
   }
 
   function handleDeleteSaved(id: string) {
-    if (!connection) return;
-    deleteSavedQuery(connection.budgetSyncId, id);
-    setSavedQueries(getSavedQueries(connection.budgetSyncId));
+    deleteQuery(id).catch(() => toast.error("Failed to delete query"));
   }
 
   function handleToggleFavorite(id: string) {
-    if (!connection) return;
     const q = savedQueries.find((s) => s.id === id);
     if (!q) return;
-    updateSavedQuery(connection.budgetSyncId, id, { isFavorite: !q.isFavorite });
-    setSavedQueries(getSavedQueries(connection.budgetSyncId));
+    toggleFavorite(id, !q.isFavorite).catch(() => toast.error("Failed to update query"));
   }
 
   function handleRenameSaved(id: string, name: string) {
-    if (!connection) return;
-    updateSavedQuery(connection.budgetSyncId, id, { name });
-    setSavedQueries(getSavedQueries(connection.budgetSyncId));
+    renameQuery(id, name).catch(() => toast.error("Failed to rename query"));
   }
 
   function handleDuplicateSaved(id: string) {
-    if (!connection) return;
-    duplicateSavedQuery(connection.budgetSyncId, id);
-    setSavedQueries(getSavedQueries(connection.budgetSyncId));
+    const q = savedQueries.find((s) => s.id === id);
+    if (!q) return;
+    duplicateQuery(q).catch(() => toast.error("Failed to duplicate query"));
   }
 
   function handleClearHistory() {
