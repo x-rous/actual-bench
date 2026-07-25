@@ -21,6 +21,12 @@ export type ConnectionHealthState = {
   latencyMs: number | null;
   /** True only after 2+ consecutive offline checks — triggers the banner. */
   showBanner: boolean;
+  /**
+   * Run a health check immediately instead of waiting for the next poll.
+   * No-op while a check is already in flight, or when the active connection is
+   * not HTTP-API mode. Backs the banner's "Retry now" action.
+   */
+  recheck: () => void;
 };
 
 const POLL_INTERVAL_MS = 30_000;
@@ -31,6 +37,7 @@ export const ConnectionHealthContext = createContext<ConnectionHealthState>({
   status: "unknown",
   latencyMs: null,
   showBanner: false,
+  recheck: () => {},
 });
 
 export function useConnectionHealthContext(): ConnectionHealthState {
@@ -90,6 +97,12 @@ export function useConnectionHealth(): ConnectionHealthState {
     isChecking.current = false;
   }, []);
 
+  const recheck = useCallback(() => {
+    if (activeInstance && isHttpApiConnection(activeInstance)) {
+      void runCheck(activeInstance.baseUrl, activeInstance.apiKey);
+    }
+  }, [activeInstance, runCheck]);
+
   useEffect(() => {
     // Reset guards on connection change so a stale check doesn't block the new one.
     consecutiveFailures.current = 0;
@@ -134,12 +147,12 @@ export function useConnectionHealth(): ConnectionHealthState {
 
   // When no connection is active derive the reset values during render rather
   // than calling setState in the effect body (which triggers cascading renders).
-  if (!activeInstance) return { status: "unknown", latencyMs: null, showBanner: false };
+  if (!activeInstance) return { status: "unknown", latencyMs: null, showBanner: false, recheck };
   if (isBrowserApiConnection(activeInstance)) {
-    return { status: "direct", latencyMs: null, showBanner: false };
+    return { status: "direct", latencyMs: null, showBanner: false, recheck };
   }
   if (!isHttpApiConnection(activeInstance)) {
-    return { status: "unknown", latencyMs: null, showBanner: false };
+    return { status: "unknown", latencyMs: null, showBanner: false, recheck };
   }
-  return { status, latencyMs, showBanner };
+  return { status, latencyMs, showBanner, recheck };
 }
