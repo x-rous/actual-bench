@@ -25,16 +25,21 @@ template: |
 
   **Full Changelog**: https://github.com/x-rous/actual-bench/compare/$PREVIOUS_TAG...v$RESOLVED_VERSION
 
+# Default every release to a patch bump. A minor/major bump is opt-in via an
+# explicit 'minor'/'major' label on a PR — feature PRs still appear under the
+# "🚀 Features" section above, but no longer force a minor version bump on their
+# own (which previously auto-proposed e.g. v1.3.0 instead of a patch v1.2.6).
 version-resolver:
   major:
     labels:
       - 'major'
   minor:
     labels:
-      - 'feature'
+      - 'minor'
   patch:
     labels:
       - 'fix'
       - 'maintenance'
       - 'docs'
+      - 'feature'
   default: patch
