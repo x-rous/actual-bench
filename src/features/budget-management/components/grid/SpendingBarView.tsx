@@ -1,13 +1,15 @@
 import type { SpendingBar, SpendingTier } from "../../lib/spendingBar";
 
-/** Tailwind classes for the green/amber base fill by tier (RD-065). */
+// Tailwind classes for the green/amber base fill by tier (RD-065). Kept
+// deliberately low-opacity so a full column of bars reads as a soft glance
+// rather than a wall of saturated colour.
 const BAR_FILL_CLASS: Record<Exclude<SpendingTier, "none">, string> = {
-  under: "bg-emerald-500/70 dark:bg-emerald-400/60",
-  near: "bg-amber-500/80",
-  over: "bg-amber-500/80",
-  // Distinct from `over` (amber + red overflow): a solid muted red means money
-  // left an envelope/group that was never funded.
-  unbudgeted: "bg-red-500/45",
+  under: "bg-emerald-500/40 dark:bg-emerald-400/35",
+  near: "bg-amber-500/50 dark:bg-amber-500/45",
+  over: "bg-amber-500/50 dark:bg-amber-500/45",
+  // Distinct from `over` (amber + red overflow): a muted red means money left an
+  // envelope/group that was never funded.
+  unbudgeted: "bg-red-500/30 dark:bg-red-500/35",
 };
 
 /**
@@ -29,7 +31,7 @@ export function SpendingBarView({ bar }: { bar: SpendingBar }) {
       />
       {bar.overflow > 0 && (
         <span
-          className="absolute bottom-0 right-0 h-full bg-red-500"
+          className="absolute bottom-0 right-0 h-full bg-red-500/55 dark:bg-red-500/50"
           style={{ width: `${bar.overflow * 100}%` }}
         />
       )}
