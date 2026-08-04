@@ -3,7 +3,8 @@
 import { useBudgetEditsStore } from "@/store/budgetEdits";
 import type { BudgetCellKey, BudgetCellSelection, LoadedCategory } from "../types";
 import { resolveSelectionCells } from "../lib/budgetSelectionUtils";
-import { formatDelta } from "../lib/format";
+import { useMonthsData } from "../context/MonthsDataContext";
+import { formatDelta, formatMinor } from "../lib/format";
 
 type Props = {
   selection: BudgetCellSelection | null;
@@ -24,6 +25,8 @@ export function BudgetSelectionSummary({
   categories,
 }: Props) {
   const edits = useBudgetEditsStore((s) => s.edits);
+  // Effective (staged-or-server) per-month budgeted values, for the sum/average.
+  const { effective } = useMonthsData();
 
   // ── Global stats (no category lookup needed) ──────────────────────────────
   const editValues = Object.values(edits);
@@ -37,6 +40,7 @@ export function BudgetSelectionSummary({
   let selectionCells: { month: string; categoryId: string }[] = [];
   let selectionStagedCount = 0;
   let selectionDelta = 0;
+  let selectionSum = 0;
 
   if (selection && categories.length > 0) {
     selectionCells = resolveSelectionCells(selection, activeMonths, categories);
@@ -47,8 +51,13 @@ export function BudgetSelectionSummary({
         selectionStagedCount++;
         selectionDelta += edit.nextBudgeted - edit.previousBudgeted;
       }
+      selectionSum +=
+        effective.get(cell.month)?.categoriesById[cell.categoryId]?.budgeted ?? 0;
     }
   }
+
+  const selectionAvg =
+    selectionCells.length > 0 ? selectionSum / selectionCells.length : 0;
 
   const selectedMonthSet = new Set(selectionCells.map((c) => c.month));
   const selectedCatSet = new Set(selectionCells.map((c) => c.categoryId));
@@ -97,6 +106,18 @@ export function BudgetSelectionSummary({
           </span>
           <span aria-label={`${selectedMonthSet.size} months, ${selectedCatSet.size} categories`}>
             ({selectedMonthSet.size} mo × {selectedCatSet.size} cat)
+          </span>
+          <span
+            className="text-foreground font-medium tabular-nums"
+            aria-label={`Sum of selected: ${formatMinor(selectionSum)}`}
+          >
+            Σ {formatMinor(selectionSum)}
+          </span>
+          <span
+            className="tabular-nums"
+            aria-label={`Average of selected: ${formatMinor(selectionAvg)}`}
+          >
+            avg {formatMinor(selectionAvg)}
           </span>
           {selectionStagedCount > 0 && (
             <span

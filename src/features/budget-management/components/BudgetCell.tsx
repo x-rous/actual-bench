@@ -125,7 +125,12 @@ export function BudgetCell({
   /** Returns true if commit succeeded (valid parse), false on error. */
   const commitEdit = (): boolean => {
     if (!editing) return true;
-    const result = parseBudgetExpression(inputValue);
+    // Clearing the cell and pressing Enter sets it to 0 rather than erroring —
+    // an empty field is a deliberate "no budget", not an invalid expression.
+    const result =
+      inputValue.trim() === ""
+        ? ({ ok: true, value: 0 } as const)
+        : parseBudgetExpression(inputValue);
     if (!result.ok) {
       setInputError(result.error);
       return false;
