@@ -284,7 +284,7 @@ export function BudgetToolbar({
               }`}
             >
               <BarChart2 className="h-3.5 w-3.5" aria-hidden="true" />
-              Bars
+              Spending Bars
             </button>
           )}
         </div>

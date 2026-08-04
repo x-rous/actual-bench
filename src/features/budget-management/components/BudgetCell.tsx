@@ -5,7 +5,8 @@ import { useBudgetEditsStore } from "@/store/budgetEdits";
 import { useEffectiveMonthFromContext } from "../context/MonthsDataContext";
 import { parseBudgetExpression } from "../lib/budgetMath";
 import { formatMinor } from "../lib/format";
-import { computeSpendingBar, type SpendingTier } from "../lib/spendingBar";
+import { computeSpendingBar } from "../lib/spendingBar";
+import { SpendingBarView } from "./grid/SpendingBarView";
 import { isIncomeBlocked, isLargeChange } from "../lib/budgetValidation";
 import { useCellKeymap, useCellEditKeymap } from "../keyboard/useBudgetKeymap";
 import type { BudgetCellKey, BudgetMode, CellView, LoadedCategory, NavDirection } from "../types";
@@ -38,16 +39,6 @@ type Props = {
   isReadOnlyMonth?: boolean;
   /** RD-065: draw the spent-vs-budget bar under editable expense cells. */
   showSpendingBars?: boolean;
-};
-
-/** Tailwind classes for the green/amber base fill by tier (RD-065). */
-const BAR_FILL_CLASS: Record<Exclude<SpendingTier, "none">, string> = {
-  under: "bg-emerald-500/70 dark:bg-emerald-400/60",
-  near: "bg-amber-500/80",
-  over: "bg-amber-500/80",
-  // Distinct from `over` (amber + red overflow): a solid muted red means money
-  // left an envelope that was never funded.
-  unbudgeted: "bg-red-500/45",
 };
 
 /** BM-16: minimum pointer travel (CSS px) before treating a drag as range-select. */
@@ -500,23 +491,7 @@ export function BudgetCell({
         />
       )}
 
-      {spendingBar && spendingBar.tier !== "none" && (
-        <span
-          className="pointer-events-none absolute inset-x-0 bottom-0 h-[3px] bg-foreground/5"
-          aria-hidden="true"
-        >
-          <span
-            className={`absolute bottom-0 left-0 h-full ${BAR_FILL_CLASS[spendingBar.tier]}`}
-            style={{ width: `${spendingBar.fill * 100}%` }}
-          />
-          {spendingBar.overflow > 0 && (
-            <span
-              className="absolute bottom-0 right-0 h-full bg-red-500"
-              style={{ width: `${spendingBar.overflow * 100}%` }}
-            />
-          )}
-        </span>
-      )}
+      {spendingBar && <SpendingBarView bar={spendingBar} />}
     </div>
   );
 }

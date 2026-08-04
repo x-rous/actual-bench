@@ -5,6 +5,8 @@ import { useEffectiveMonthFromContext } from "../../context/MonthsDataContext";
 import { useBudgetEditsStore } from "@/store/budgetEdits";
 import { useAllNotes } from "@/hooks/useAllNotes";
 import { formatMinor } from "../../lib/format";
+import { computeSpendingBar } from "../../lib/spendingBar";
+import { SpendingBarView } from "./SpendingBarView";
 import { dispatchRowLabel, useGroupCellKeymap } from "../../keyboard/useBudgetKeymap";
 import { BudgetCell, type BudgetCellDragState } from "../BudgetCell";
 import { isCellSelected, type SelectionBounds } from "./types";
@@ -31,6 +33,7 @@ function GroupMonthAggregate({
   onNavigate,
   onToggleCollapse,
   isReadOnlyMonth,
+  showSpendingBars,
 }: {
   month: string;
   groupId: string;
@@ -42,6 +45,7 @@ function GroupMonthAggregate({
   onNavigate?: (dir: NavDirection) => void;
   onToggleCollapse?: () => void;
   isReadOnlyMonth?: boolean;
+  showSpendingBars?: boolean;
 }) {
   const data = useEffectiveMonthFromContext(month);
   const group = data?.groupsById[groupId];
@@ -91,27 +95,44 @@ function GroupMonthAggregate({
   const effectiveView =
     budgetMode === "envelope" && group.isIncome ? "spent" : cellView;
 
-  let displayValue: number;
+  let groupBudgetedMinor: number;
+  let groupActualsMinor: number;
+  let groupBalanceMinor: number;
   if (budgetMode === "tracking") {
     // Tracking: sum non-hidden categories only.
     const cats = group.categoryIds
       .map((id) => data?.categoriesById[id])
       .filter((c): c is NonNullable<typeof c> => !!c && !c.hidden);
-    displayValue =
-      effectiveView === "spent"
-        ? cats.reduce((sum, c) => sum + c.actuals, 0)
-        : effectiveView === "balance"
-        ? cats.reduce((sum, c) => sum + c.balance, 0)
-        : cats.reduce((sum, c) => sum + c.budgeted, 0);
+    groupBudgetedMinor = cats.reduce((sum, c) => sum + c.budgeted, 0);
+    groupActualsMinor = cats.reduce((sum, c) => sum + c.actuals, 0);
+    groupBalanceMinor = cats.reduce((sum, c) => sum + c.balance, 0);
   } else {
     // Envelope: group-level aggregates include all hidden rows.
-    displayValue =
-      effectiveView === "spent"
-        ? group.actuals
-        : effectiveView === "balance"
-        ? group.balance
-        : group.budgeted;
+    groupBudgetedMinor = group.budgeted;
+    groupActualsMinor = group.actuals;
+    groupBalanceMinor = group.balance;
   }
+  const displayValue =
+    effectiveView === "spent"
+      ? groupActualsMinor
+      : effectiveView === "balance"
+      ? groupBalanceMinor
+      : groupBudgetedMinor;
+
+  // RD-065 group-level spending bar — same rules as category cells: Budgeted
+  // view only, non-income groups, not a read-only month, toggle on.
+  const groupSpentMinor = Math.max(0, -groupActualsMinor);
+  const groupOverByMinor = groupSpentMinor - groupBudgetedMinor;
+  const spendingBar =
+    showSpendingBars && cellView === "budgeted" && !group.isIncome && !isReadOnlyMonth
+      ? computeSpendingBar(groupBudgetedMinor, groupSpentMinor)
+      : null;
+  const overNote =
+    spendingBar?.tier === "over"
+      ? ` (over by ${formatMinor(groupOverByMinor)})`
+      : spendingBar?.tier === "unbudgeted"
+      ? " (unbudgeted)"
+      : "";
 
   return (
     <div
@@ -119,8 +140,8 @@ function GroupMonthAggregate({
       role="gridcell"
       tabIndex={0}
       aria-selected={isSelected}
-      aria-label={`${group.name} total for ${month}: ${formatMinor(displayValue)}`}
-      title={`Budgeted: ${formatMinor(group.budgeted)} | Actuals: ${formatMinor(Math.abs(group.actuals))} | Balance: ${formatMinor(group.balance)}${stagedChildCount > 0 ? ` | ${stagedChildCount} staged change${stagedChildCount !== 1 ? "s" : ""} in this group` : ""}`}
+      aria-label={`${group.name} total for ${month}: ${formatMinor(displayValue)}${overNote}`}
+      title={`Budgeted: ${formatMinor(group.budgeted)} | Actuals: ${formatMinor(Math.abs(group.actuals))} | Balance: ${formatMinor(group.balance)}${overNote}${stagedChildCount > 0 ? ` | ${stagedChildCount} staged change${stagedChildCount !== 1 ? "s" : ""} in this group` : ""}`}
       data-group-id={groupId}
       data-group-month={month}
       onClick={onFocus}
@@ -135,6 +156,7 @@ function GroupMonthAggregate({
         />
       )}
       {formatMinor(displayValue)}
+      {spendingBar && <SpendingBarView bar={spendingBar} />}
     </div>
   );
 }
@@ -280,6 +302,7 @@ export function BudgetGridGroupRows({
           onNavigate={(dir) => onGroupNavigate?.(group.id, month, dir)}
           onToggleCollapse={onToggleCollapse}
           isReadOnlyMonth={readOnlyMonths.has(month)}
+          showSpendingBars={showSpendingBars}
         />
       ))}
 
