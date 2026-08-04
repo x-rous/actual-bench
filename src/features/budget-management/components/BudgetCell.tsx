@@ -449,7 +449,7 @@ export function BudgetCell({
       className={`${cellClass}${dimClass}`}
       role="gridcell"
       tabIndex={0}
-      aria-label={`${category.name} budget for ${month}${stagedEdit ? " (unsaved)" : ""}${hasSaveError ? " - save error" : ""}${spendingBar && spendingBar.tier !== "none" ? ` - spent ${formatMinor(spentMinor)}${overNote}` : ""}`}
+      aria-label={`${category.name} budget for ${month}${stagedEdit ? " (unsaved)" : ""}${hasSaveError ? " - save error" : ""}${spendingBar && spentMinor > 0 ? ` - spent ${formatMinor(spentMinor)}${overNote}` : ""}`}
       aria-selected={isSelected}
       onPointerDown={handlePointerDown}
       onPointerEnter={handlePointerEnter}

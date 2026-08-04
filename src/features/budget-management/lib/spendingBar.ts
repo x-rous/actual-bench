@@ -14,7 +14,7 @@
  */
 
 export type SpendingTier =
-  | "none" // nothing budgeted and nothing spent — no bar
+  | "empty" // nothing budgeted and nothing spent — a neutral gray track
   | "under" // spent < ~90% of budget
   | "near" // spent within ~90–100% of budget
   | "over" // spent > budget
@@ -31,7 +31,7 @@ export type SpendingBar = {
 /** Ratio at/after which the fill turns amber (approaching the limit). */
 export const NEAR_THRESHOLD = 0.9;
 
-const NONE: SpendingBar = { tier: "none", fill: 0, overflow: 0 };
+const EMPTY: SpendingBar = { tier: "empty", fill: 0, overflow: 0 };
 
 function clamp01(n: number): number {
   if (n <= 0) return 0;
@@ -52,8 +52,9 @@ export function computeSpendingBar(budgetedMinor: number, spentMinor: number): S
   const spent = Number.isFinite(spentMinor) && spentMinor > 0 ? spentMinor : 0;
 
   if (budgeted <= 0) {
-    // No funded envelope. Spending against it is the notable case.
-    return spent > 0 ? { tier: "unbudgeted", fill: 1, overflow: 0 } : NONE;
+    // No funded envelope. Spending against it is the notable case; an untouched
+    // 0/0 cell still shows a neutral gray track for a consistent grid.
+    return spent > 0 ? { tier: "unbudgeted", fill: 1, overflow: 0 } : EMPTY;
   }
 
   if (spent <= 0) {

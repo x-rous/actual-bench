@@ -2,11 +2,15 @@ import { render } from "@testing-library/react";
 import { SpendingBarView } from "./SpendingBarView";
 
 describe("SpendingBarView", () => {
-  it("renders nothing when there is no bar", () => {
+  it("renders a neutral track (no coloured fill) for an empty cell", () => {
     const { container } = render(
-      <SpendingBarView bar={{ tier: "none", fill: 0, overflow: 0 }} />,
+      <SpendingBarView bar={{ tier: "empty", fill: 0, overflow: 0 }} />,
     );
-    expect(container.firstChild).toBeNull();
+    const track = container.firstChild as HTMLElement;
+    expect(track).not.toBeNull();
+    // The track paints, but the fill is zero-width so no colour shows.
+    const fill = track.firstChild as HTMLElement;
+    expect(fill.style.width).toBe("0%");
   });
 
   it("renders a decorative track with the fill width", () => {

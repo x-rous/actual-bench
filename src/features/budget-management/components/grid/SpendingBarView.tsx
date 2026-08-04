@@ -3,7 +3,10 @@ import type { SpendingBar, SpendingTier } from "../../lib/spendingBar";
 // Tailwind classes for the green/amber base fill by tier (RD-065). Kept
 // deliberately low-opacity so a full column of bars reads as a soft glance
 // rather than a wall of saturated colour.
-const BAR_FILL_CLASS: Record<Exclude<SpendingTier, "none">, string> = {
+const BAR_FILL_CLASS: Record<SpendingTier, string> = {
+  // `empty` has zero fill width, so its colour never actually paints — it just
+  // shows the neutral gray track (below) for a consistent, calm grid.
+  empty: "bg-transparent",
   under: "bg-emerald-500/40 dark:bg-emerald-400/35",
   near: "bg-amber-500/50 dark:bg-amber-500/45",
   over: "bg-amber-500/50 dark:bg-amber-500/45",
@@ -19,7 +22,6 @@ const BAR_FILL_CLASS: Record<Exclude<SpendingTier, "none">, string> = {
  * aria-label / tooltip, so nothing is conveyed by colour alone.
  */
 export function SpendingBarView({ bar }: { bar: SpendingBar }) {
-  if (bar.tier === "none") return null;
   return (
     <span
       className="pointer-events-none absolute inset-x-0 bottom-0 h-[3px] bg-foreground/5"

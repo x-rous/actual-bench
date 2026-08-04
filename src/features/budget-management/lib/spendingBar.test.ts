@@ -1,8 +1,8 @@
 import { computeSpendingBar, NEAR_THRESHOLD } from "./spendingBar";
 
 describe("computeSpendingBar", () => {
-  it("returns no bar when nothing is budgeted or spent", () => {
-    expect(computeSpendingBar(0, 0)).toEqual({ tier: "none", fill: 0, overflow: 0 });
+  it("shows a neutral empty track when nothing is budgeted or spent", () => {
+    expect(computeSpendingBar(0, 0)).toEqual({ tier: "empty", fill: 0, overflow: 0 });
   });
 
   it("treats spending against a zero budget as unbudgeted", () => {
@@ -49,6 +49,6 @@ describe("computeSpendingBar", () => {
   });
 
   it("is robust to non-finite input", () => {
-    expect(computeSpendingBar(NaN, NaN)).toEqual({ tier: "none", fill: 0, overflow: 0 });
+    expect(computeSpendingBar(NaN, NaN)).toEqual({ tier: "empty", fill: 0, overflow: 0 });
   });
 });
