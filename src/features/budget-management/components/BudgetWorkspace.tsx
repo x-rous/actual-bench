@@ -88,6 +88,8 @@ type Props = {
   onToggleCollapse: (groupId: string) => void;
   /** When true, hidden groups/categories are rendered (dimmed); when false they are hidden. */
   showHidden?: boolean;
+  /** RD-065: draw the spent-vs-budget bar under editable expense cells. */
+  showSpendingBars?: boolean;
   onOpenTransfer?: (categoryId: string, month: string, mode: "cover" | "transfer") => void;
   // ── Tier 3 view-state setters (keyboard shortcuts) ─────────────────────
   onCycleCellView: () => void;
@@ -130,6 +132,7 @@ function BudgetWorkspaceInner({
   collapsedGroups,
   onToggleCollapse,
   showHidden = false,
+  showSpendingBars = false,
   onOpenTransfer,
   onCycleCellView,
   onToggleShowHidden,
@@ -946,6 +949,7 @@ function BudgetWorkspaceInner({
           collapsedGroups={collapsedGroups}
           onToggleCollapse={onToggleCollapse}
           showHidden={showHidden}
+          showSpendingBars={showSpendingBars}
           onCellFocus={handleCellFocus}
           onCellRangeSelect={handleCellRangeSelect}
           onCellNavigate={handleCellNavigate}

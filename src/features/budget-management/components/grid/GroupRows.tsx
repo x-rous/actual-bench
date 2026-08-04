@@ -156,6 +156,7 @@ export type GroupRowsProps = {
   dragStateRef: { current: BudgetCellDragState };
   suppressNextClickRef: { current: boolean };
   showHidden: boolean;
+  showSpendingBars?: boolean;
   groupSelection?: { groupId: string; month: string } | null;
   rowSelection?: RowSelection | null;
   readOnlyMonths: Set<string>;
@@ -193,6 +194,7 @@ export function BudgetGridGroupRows({
   dragStateRef,
   suppressNextClickRef,
   showHidden,
+  showSpendingBars,
   groupSelection,
   rowSelection,
   readOnlyMonths,
@@ -348,6 +350,7 @@ export function BudgetGridGroupRows({
                     suppressNextClickRef={suppressNextClickRef}
                     isDimmed={catDimmed}
                     isReadOnlyMonth={readOnlyMonths.has(month)}
+                    showSpendingBars={showSpendingBars}
                     onFocus={onCellFocus}
                     onRangeSelect={onCellRangeSelect}
                     onNavigate={(dir) => onCellNavigate?.(cat.id, month, dir)}

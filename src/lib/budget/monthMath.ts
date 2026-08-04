@@ -35,6 +35,11 @@ function fromDate(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 
+/** The current calendar month as `YYYY-MM`, in the viewer's local time. */
+export function currentMonth(): string {
+  return fromDate(new Date());
+}
+
 /** Add `delta` months (may be negative) to `month`. */
 export function addMonths(month: string, delta: number): string {
   const [year, mo] = parseMonth(month);

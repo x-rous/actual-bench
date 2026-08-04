@@ -5,6 +5,7 @@ import { useBudgetEditsStore } from "@/store/budgetEdits";
 import { useEffectiveMonthFromContext } from "../context/MonthsDataContext";
 import { parseBudgetExpression } from "../lib/budgetMath";
 import { formatMinor } from "../lib/format";
+import { computeSpendingBar, type SpendingTier } from "../lib/spendingBar";
 import { isIncomeBlocked, isLargeChange } from "../lib/budgetValidation";
 import { useCellKeymap, useCellEditKeymap } from "../keyboard/useBudgetKeymap";
 import type { BudgetCellKey, BudgetMode, CellView, LoadedCategory, NavDirection } from "../types";
@@ -35,6 +36,18 @@ type Props = {
   isDimmed?: boolean;
   /** Historical month missing from the API; visible for context but not editable. */
   isReadOnlyMonth?: boolean;
+  /** RD-065: draw the spent-vs-budget bar under editable expense cells. */
+  showSpendingBars?: boolean;
+};
+
+/** Tailwind classes for the green/amber base fill by tier (RD-065). */
+const BAR_FILL_CLASS: Record<Exclude<SpendingTier, "none">, string> = {
+  under: "bg-emerald-500/70 dark:bg-emerald-400/60",
+  near: "bg-amber-500/80",
+  over: "bg-amber-500/80",
+  // Distinct from `over` (amber + red overflow): a solid muted red means money
+  // left an envelope that was never funded.
+  unbudgeted: "bg-red-500/45",
 };
 
 /** BM-16: minimum pointer travel (CSS px) before treating a drag as range-select. */
@@ -63,6 +76,7 @@ export function BudgetCell({
   onContextMenuRequest,
   isDimmed,
   isReadOnlyMonth = false,
+  showSpendingBars = false,
 }: Props) {
   const dimClass = isDimmed ? " opacity-50" : "";
   const key: BudgetCellKey = `${month}:${category.id}`;
@@ -290,12 +304,31 @@ export function BudgetCell({
     />
   ) : null;
 
+  // RD-065 spending bar: spent as a positive magnitude (actuals are negative for
+  // expenses; a net inflow reads as zero spent). Only for editable expense cells
+  // that have month data, and only when the toggle is on.
+  const spentMinor = Math.max(0, -effectiveCategory.actuals);
+  const overByMinor = spentMinor - currentBudgeted;
+  const spendingBar =
+    showSpendingBars && !category.isIncome && hasMonthData
+      ? computeSpendingBar(currentBudgeted, spentMinor)
+      : null;
+
+  // A text signal for the bar so nothing is conveyed by colour alone (used in
+  // the aria-label and appended to the tooltip).
+  const overNote =
+    spendingBar?.tier === "over"
+      ? ` (over by ${formatMinor(overByMinor)})`
+      : spendingBar?.tier === "unbudgeted"
+      ? " (unbudgeted)"
+      : "";
+
   // Hover tooltip: show spent/balance when in budgeted view (they aren't directly visible).
   const hoverTitle =
     isReadOnlyMonth && !hasMonthData
       ? "No budget exists for this past month; budget cells are read-only."
       : cellView === "budgeted"
-      ? `Spent: ${formatMinor(effectiveCategory.actuals)} | Balance: ${formatMinor(effectiveCategory.balance)}`
+      ? `Spent: ${formatMinor(effectiveCategory.actuals)} | Balance: ${formatMinor(effectiveCategory.balance)}${overNote}`
       : undefined;
 
   // ─── Non-editable cell ───────────────────────────────────────────────────────
@@ -425,7 +458,7 @@ export function BudgetCell({
       className={`${cellClass}${dimClass}`}
       role="gridcell"
       tabIndex={0}
-      aria-label={`${category.name} budget for ${month}${stagedEdit ? " (unsaved)" : ""}${hasSaveError ? " - save error" : ""}`}
+      aria-label={`${category.name} budget for ${month}${stagedEdit ? " (unsaved)" : ""}${hasSaveError ? " - save error" : ""}${spendingBar && spendingBar.tier !== "none" ? ` - spent ${formatMinor(spentMinor)}${overNote}` : ""}`}
       aria-selected={isSelected}
       onPointerDown={handlePointerDown}
       onPointerEnter={handlePointerEnter}
@@ -465,6 +498,24 @@ export function BudgetCell({
           aria-hidden="true"
           title={stagedEdit?.saveError}
         />
+      )}
+
+      {spendingBar && spendingBar.tier !== "none" && (
+        <span
+          className="pointer-events-none absolute inset-x-0 bottom-0 h-[3px] bg-foreground/5"
+          aria-hidden="true"
+        >
+          <span
+            className={`absolute bottom-0 left-0 h-full ${BAR_FILL_CLASS[spendingBar.tier]}`}
+            style={{ width: `${spendingBar.fill * 100}%` }}
+          />
+          {spendingBar.overflow > 0 && (
+            <span
+              className="absolute bottom-0 right-0 h-full bg-red-500"
+              style={{ width: `${spendingBar.overflow * 100}%` }}
+            />
+          )}
+        </span>
       )}
     </div>
   );

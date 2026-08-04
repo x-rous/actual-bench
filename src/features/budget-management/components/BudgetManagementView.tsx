@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { addMonths } from "@/lib/budget/monthMath";
+import { addMonths, currentMonth } from "@/lib/budget/monthMath";
 import type { CellView } from "../types";
 import { useBudgetMode } from "../hooks/useBudgetMode";
 import { useAvailableMonths } from "../hooks/useAvailableMonths";
@@ -78,6 +78,9 @@ export function BudgetManagementView() {
     () => new Set()
   );
   const [showHidden, setShowHidden] = useState(true);
+  // RD-065: spent-vs-budget bars under editable cells. On by default.
+  const [showSpendingBars, setShowSpendingBars] = useState(true);
+  const handleToggleSpendingBars = useCallback(() => setShowSpendingBars((v) => !v), []);
 
   const handleToggleGroupCollapse = useCallback((groupId: string) => {
     setCollapsedGroups((prev) => {
@@ -202,8 +205,33 @@ export function BudgetManagementView() {
     setWindowStart((s) => addMonths(s, 1));
   }, []);
 
+  // F-079 orient-to-now: bring the current-month column into view (centered).
+  const scrollCurrentMonthIntoView = useCallback(() => {
+    requestAnimationFrame(() => {
+      document
+        .querySelector(`[data-month-header="${currentMonth()}"]`)
+        ?.scrollIntoView({ inline: "center", block: "nearest" });
+    });
+  }, []);
+
+  // Calendar toolbar button: jump to the window containing the current month and
+  // scroll it into view (previously only reset to January of the current year).
+  const handleGoToCurrentMonth = useCallback(() => {
+    setWindowStart(defaultWindowStart());
+    scrollCurrentMonthIntoView();
+  }, [scrollCurrentMonthIntoView]);
+
+  // On first load, land oriented on "now" rather than on January.
+  const didInitialScroll = useRef(false);
+
   const isLoading = modeLoading || monthsLoading;
   const hasError = !!modeError || !!monthsError;
+
+  useEffect(() => {
+    if (didInitialScroll.current || isLoading || hasError || hasEntityChanges) return;
+    didInitialScroll.current = true;
+    scrollCurrentMonthIntoView();
+  }, [isLoading, hasError, hasEntityChanges, scrollCurrentMonthIntoView]);
 
   if (isLoading) {
     return (
@@ -250,12 +278,15 @@ export function BudgetManagementView() {
         budgetMode={budgetMode ?? "unidentified"}
         windowStart={windowStart}
         onWindowChange={setWindowStart}
+        onGoToCurrentMonth={handleGoToCurrentMonth}
         cellView={cellView}
         onCellViewChange={setCellView}
         onExpandAll={handleExpandAll}
         onCollapseAll={handleCollapseAll}
         showHidden={showHidden}
         onToggleShowHidden={handleToggleShowHidden}
+        showSpendingBars={showSpendingBars}
+        onToggleSpendingBars={handleToggleSpendingBars}
         onExport={handleOpenExport}
         onImport={handleOpenImport}
         onShowShortcuts={() => setShortcutsHelpOpen(true)}
@@ -276,6 +307,7 @@ export function BudgetManagementView() {
         collapsedGroups={collapsedGroups}
         onToggleCollapse={handleToggleGroupCollapse}
         showHidden={showHidden}
+        showSpendingBars={showSpendingBars}
         onOpenTransfer={budgetMode === "envelope" ? handleOpenTransfer : undefined}
       />
 
