@@ -82,14 +82,10 @@ export function TrackingDetailsPanel({
         coverageLabel={metrics.coverageLabel}
       />
 
-      {/* Period summary leads with "Actual Result" (income − spend), which the
-          budget meter does NOT mirror — so the meter gets its own "Under/Over
-          budget by" status box above it. Selections lead with the variance the
-          meter mirrors, so there it embeds. */}
-      {isFullPeriod && metrics.meter && (
-        <MeterSection model={metrics.meter} helper="Spending to date against budgeted expenses to date." />
-      )}
-
+      {/* Selections lead with the variance the meter mirrors, so there it embeds.
+          The period summary leads with "Actual Result So Far" (income − spend),
+          which the budget meter does NOT mirror — so the meter gets its own
+          "Under/Over budget by" status box just below it. */}
       <PrimaryMetric
         label={metrics.primary.label}
         value={metrics.primary.value}
@@ -99,6 +95,10 @@ export function TrackingDetailsPanel({
       >
         {!isFullPeriod && metrics.meter && <BudgetMeter model={metrics.meter} embedded />}
       </PrimaryMetric>
+
+      {isFullPeriod && metrics.meter && (
+        <MeterSection model={metrics.meter} helper="Spending to date against budgeted expenses to date." />
+      )}
 
       {isMonth && metrics.monthValues && (
         <DetailsSection title="Values">
