@@ -1,4 +1,14 @@
-import { computeSpendingBar, NEAR_THRESHOLD } from "./spendingBar";
+import { computeSpendingBar, spendingTierLabel, NEAR_THRESHOLD } from "./spendingBar";
+
+describe("spendingTierLabel", () => {
+  it("gives a spoken status for every non-empty tier (never colour-only)", () => {
+    expect(spendingTierLabel("under")).toBe("under budget");
+    expect(spendingTierLabel("near")).toBe("near budget limit");
+    expect(spendingTierLabel("over")).toBe("over budget");
+    expect(spendingTierLabel("unbudgeted")).toBe("unbudgeted spending");
+    expect(spendingTierLabel("empty")).toBe("");
+  });
+});
 
 describe("computeSpendingBar", () => {
   it("shows a neutral empty track when nothing is budgeted or spent", () => {

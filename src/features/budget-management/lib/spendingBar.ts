@@ -33,6 +33,25 @@ export const NEAR_THRESHOLD = 0.9;
 
 const EMPTY: SpendingBar = { tier: "empty", fill: 0, overflow: 0 };
 
+/**
+ * Human-readable status for each tier, for accessible names / tooltips so the
+ * bar's meaning is never conveyed by colour alone.
+ */
+export function spendingTierLabel(tier: SpendingTier): string {
+  switch (tier) {
+    case "under":
+      return "under budget";
+    case "near":
+      return "near budget limit";
+    case "over":
+      return "over budget";
+    case "unbudgeted":
+      return "unbudgeted spending";
+    case "empty":
+      return "";
+  }
+}
+
 function clamp01(n: number): number {
   if (n <= 0) return 0;
   if (n >= 1) return 1;

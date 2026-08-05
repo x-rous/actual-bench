@@ -33,6 +33,6 @@ describe("SpendingBarView", () => {
     expect(track.childElementCount).toBe(2);
     const overflow = track.children[1] as HTMLElement;
     expect(overflow.style.width).toBe("25%");
-    expect(overflow.className).toMatch(/bg-red-500/);
+    expect(overflow.className).toMatch(/bg-destructive/);
   });
 });

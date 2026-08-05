@@ -5,7 +5,7 @@ import { useBudgetEditsStore } from "@/store/budgetEdits";
 import { useEffectiveMonthFromContext } from "../context/MonthsDataContext";
 import { parseBudgetExpression } from "../lib/budgetMath";
 import { formatMinor } from "../lib/format";
-import { computeSpendingBar } from "../lib/spendingBar";
+import { computeSpendingBar, spendingTierLabel } from "../lib/spendingBar";
 import { SpendingBarView } from "./grid/SpendingBarView";
 import { isIncomeBlocked, isLargeChange } from "../lib/budgetValidation";
 import { useCellKeymap, useCellEditKeymap } from "../keyboard/useBudgetKeymap";
@@ -319,6 +319,18 @@ export function BudgetCell({
       ? " (unbudgeted)"
       : "";
 
+  // Full spoken status for the cell: every tier (not just over/unbudgeted) plus
+  // budgeted / spent / balance, so the bar's colour is never the only signal and
+  // the balance promised in cell labels is present.
+  const barStatusNote =
+    spendingBar && spendingBar.tier !== "empty"
+      ? ` - budgeted ${formatMinor(currentBudgeted)}, spent ${formatMinor(
+          spentMinor
+        )}, balance ${formatMinor(effectiveCategory.balance)} (${spendingTierLabel(
+          spendingBar.tier
+        )})`
+      : "";
+
   // Hover tooltip: show spent/balance when in budgeted view (they aren't directly visible).
   const hoverTitle =
     isReadOnlyMonth && !hasMonthData
@@ -454,7 +466,7 @@ export function BudgetCell({
       className={`${cellClass}${dimClass}`}
       role="gridcell"
       tabIndex={0}
-      aria-label={`${category.name} budget for ${month}${stagedEdit ? " (unsaved)" : ""}${hasSaveError ? " - save error" : ""}${spendingBar && spentMinor > 0 ? ` - spent ${formatMinor(spentMinor)}${overNote}` : ""}`}
+      aria-label={`${category.name} budget for ${month}${stagedEdit ? " (unsaved)" : ""}${hasSaveError ? " - save error" : ""}${barStatusNote}`}
       aria-selected={isSelected}
       onPointerDown={handlePointerDown}
       onPointerEnter={handlePointerEnter}

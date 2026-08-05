@@ -1,8 +1,12 @@
 import type { SpendingBar, SpendingTier } from "../../lib/spendingBar";
 
-// Tailwind classes for the green/amber base fill by tier (RD-065). Kept
-// deliberately low-opacity so a full column of bars reads as a soft glance
-// rather than a wall of saturated colour.
+// Fill classes by tier (RD-065). Kept deliberately low-opacity so a full column
+// of bars reads as a soft glance rather than a wall of saturated colour.
+//
+// The red tiers use the semantic `destructive` token. There is no semantic
+// success/warning token in the theme (only `destructive`), and raw emerald/amber
+// is the established convention across the budget grid (staged/carryover
+// indicators), so under/near stay on the raw palette here.
 const BAR_FILL_CLASS: Record<SpendingTier, string> = {
   // `empty` has zero fill width, so its colour never actually paints — it just
   // shows the neutral gray track (below) for a consistent, calm grid.
@@ -12,7 +16,7 @@ const BAR_FILL_CLASS: Record<SpendingTier, string> = {
   over: "bg-amber-500/50 dark:bg-amber-500/45",
   // Distinct from `over` (amber + red overflow): a muted red means money left an
   // envelope/group that was never funded.
-  unbudgeted: "bg-red-500/30 dark:bg-red-500/35",
+  unbudgeted: "bg-destructive/25",
 };
 
 /**
@@ -33,7 +37,7 @@ export function SpendingBarView({ bar }: { bar: SpendingBar }) {
       />
       {bar.overflow > 0 && (
         <span
-          className="absolute bottom-0 right-0 h-full bg-red-500/55 dark:bg-red-500/50"
+          className="absolute bottom-0 right-0 h-full bg-destructive/55"
           style={{ width: `${bar.overflow * 100}%` }}
         />
       )}

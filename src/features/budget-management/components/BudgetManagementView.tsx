@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { addMonths, currentMonth } from "@/lib/budget/monthMath";
+import { addMonths } from "@/lib/budget/monthMath";
 import type { CellView } from "../types";
 import { useBudgetMode } from "../hooks/useBudgetMode";
 import { useAvailableMonths } from "../hooks/useAvailableMonths";
@@ -206,12 +206,21 @@ export function BudgetManagementView() {
   }, []);
 
   // F-079 orient-to-now: bring the current-month column into view (centered).
+  // The grid loads its month data independently (its own useMonthsData), so on a
+  // cold load the header may not exist for several frames — retry until the
+  // marker mounts, capped at ~3s so we never spin. The marker is always present
+  // on the current-month header, even when that month isn't yet available.
   const scrollCurrentMonthIntoView = useCallback(() => {
-    requestAnimationFrame(() => {
-      document
-        .querySelector(`[data-month-header="${currentMonth()}"]`)
-        ?.scrollIntoView({ inline: "center", block: "nearest" });
-    });
+    const deadline = performance.now() + 3000;
+    const tick = () => {
+      const el = document.querySelector("[data-current-month-header]");
+      if (el) {
+        el.scrollIntoView({ inline: "center", block: "nearest" });
+        return;
+      }
+      if (performance.now() < deadline) requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
   }, []);
 
   // Calendar toolbar button: jump to the window containing the current month and

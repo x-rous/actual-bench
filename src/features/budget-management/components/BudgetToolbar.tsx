@@ -2,6 +2,7 @@
 
 import { ChevronsLeft, ChevronsRight, ChevronLeft, ChevronRight, CalendarDays, Upload, Download, ChevronsDownUp, ChevronsUpDown, Eye, EyeOff, Keyboard, BarChart2 } from "lucide-react";
 import { addMonths, formatMonthLabel } from "@/lib/budget/monthMath";
+import { cn } from "@/lib/utils";
 import type { BudgetMode, CellView } from "../types";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -277,11 +278,12 @@ export function BudgetToolbar({
               aria-label={showSpendingBars ? "Hide spending bars" : "Show spending bars"}
               title={showSpendingBars ? "Hide spending bars" : "Show spending bars"}
               aria-pressed={showSpendingBars ?? false}
-              className={`inline-flex items-center gap-1 h-6 px-2 rounded text-[11px] font-medium transition-colors ${
+              className={cn(
+                "inline-flex items-center gap-1 h-6 px-2 rounded text-[11px] font-medium transition-colors",
                 showSpendingBars
                   ? "text-foreground bg-muted"
                   : "text-muted-foreground hover:bg-muted hover:text-foreground"
-              }`}
+              )}
             >
               <BarChart2 className="h-3.5 w-3.5" aria-hidden="true" />
               Spending Bars
