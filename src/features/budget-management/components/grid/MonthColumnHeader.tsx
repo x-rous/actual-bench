@@ -25,12 +25,15 @@ export function MonthColumnHeader({
   /** Current date, passed daily-refreshed from the grid so the marker doesn't
    *  go stale on a long-lived page. Defaults to now for standalone/test use. */
   today,
+  inCrosshair,
 }: {
   month: string;
   availableMonths: string[];
   isSelected?: boolean;
   onSelect?: (month: string) => void;
   today?: Date;
+  /** F-083: this is the focused cell's column (crosshair axis tint). */
+  inCrosshair?: boolean;
 }) {
   const hasStagedEdits = useBudgetEditsStore((s) =>
     Object.keys(s.edits).some((k) => k.startsWith(`${month}:`))
@@ -108,6 +111,9 @@ export function MonthColumnHeader({
           }
         : {})}
     >
+      {inCrosshair && !isSelected && (
+        <span className="pointer-events-none absolute inset-0 bg-primary/[0.08]" aria-hidden="true" />
+      )}
       <span
         className={`h-1.5 w-1.5 rounded-full shrink-0 ${dotColor}`}
         title={dotTitle}

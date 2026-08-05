@@ -39,12 +39,7 @@ type Props = {
   isReadOnlyMonth?: boolean;
   /** RD-065: draw the spent-vs-budget bar under editable expense cells. */
   showSpendingBars?: boolean;
-  /** F-083: this cell is in the focused cell's row or column (crosshair tint). */
-  inCrosshair?: boolean;
 };
-
-/** Faint crosshair tint for cells in the focused row/column (F-083). */
-const CROSSHAIR_CLASS = "bg-primary/[0.06]";
 
 /** BM-16: minimum pointer travel (CSS px) before treating a drag as range-select. */
 const DRAG_THRESHOLD_PX = 3;
@@ -73,7 +68,6 @@ export function BudgetCell({
   isDimmed,
   isReadOnlyMonth = false,
   showSpendingBars = false,
-  inCrosshair = false,
 }: Props) {
   const dimClass = isDimmed ? " opacity-50" : "";
   const key: BudgetCellKey = `${month}:${category.id}`;
@@ -364,8 +358,6 @@ export function BudgetCell({
       blockedCellClass += " bg-muted/30 ring-2 ring-inset ring-foreground/80";
     } else if (isSelected) {
       blockedCellClass += " bg-primary/10";
-    } else if (inCrosshair) {
-      blockedCellClass += ` ${CROSSHAIR_CLASS} hover:bg-muted/40 focus:bg-muted/40`;
     } else {
       blockedCellClass += " bg-muted/30 hover:bg-muted/40 focus:bg-muted/40";
     }
@@ -457,8 +449,6 @@ export function BudgetCell({
     cellClass += " ring-2 ring-inset ring-foreground/80";
   } else if (isSelected) {
     cellClass += " bg-primary/10";
-  } else if (inCrosshair) {
-    cellClass += ` ${CROSSHAIR_CLASS} hover:bg-muted/40 focus:bg-muted/40`;
   } else {
     cellClass += " hover:bg-muted/40 focus:bg-muted/40";
   }

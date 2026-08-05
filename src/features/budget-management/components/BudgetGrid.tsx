@@ -249,9 +249,9 @@ export function BudgetGrid({
   const selectedMonth =
     selection?.focusMonth ?? groupSelection?.month ?? monthSelection ?? null;
 
-  // F-083 crosshair: the focused cell's row (category) and column (month) get a
-  // faint highlight to their edges, so tracing "which category × which month" in
-  // a 12-wide grid is effortless. Driven by the existing focus, not per-hover.
+  // F-083 crosshair (axes-only): the focused cell's column (month header) and row
+  // (category label) get a faint highlight, so tracing "which category × which
+  // month" is easy without tinting the grid body. Driven by focus, not per-hover.
   const crosshairMonth = selection?.focusMonth ?? null;
   const crosshairCategoryId = selection?.focusCategoryId ?? null;
 
@@ -275,7 +275,6 @@ export function BudgetGrid({
     suppressNextClickRef: suppressNextClickClearRef,
     showHidden,
     showSpendingBars,
-    crosshairMonth,
     crosshairCategoryId,
     onCellFocus,
     onCellRangeSelect,
@@ -347,6 +346,7 @@ export function BudgetGrid({
           isSelected={month === selectedMonth}
           onSelect={onMonthSelect}
           today={today}
+          inCrosshair={crosshairMonth != null && month === crosshairMonth}
         />
       ))}
 

@@ -34,7 +34,6 @@ function GroupMonthAggregate({
   onToggleCollapse,
   isReadOnlyMonth,
   showSpendingBars,
-  inCrosshair,
 }: {
   month: string;
   groupId: string;
@@ -47,7 +46,6 @@ function GroupMonthAggregate({
   onToggleCollapse?: () => void;
   isReadOnlyMonth?: boolean;
   showSpendingBars?: boolean;
-  inCrosshair?: boolean;
 }) {
   const data = useEffectiveMonthFromContext(month);
   const group = data?.groupsById[groupId];
@@ -86,9 +84,6 @@ function GroupMonthAggregate({
         onFocus={onFocus}
         onKeyDown={handleKeyDown}
       >
-        {inCrosshair && !isSelected && (
-          <span className="pointer-events-none absolute inset-0 bg-primary/[0.06]" aria-hidden="true" />
-        )}
         --
       </div>
     );
@@ -164,9 +159,6 @@ function GroupMonthAggregate({
       onFocus={onFocus}
       onKeyDown={handleKeyDown}
     >
-      {inCrosshair && !isSelected && (
-        <span className="pointer-events-none absolute inset-0 bg-primary/[0.06]" aria-hidden="true" />
-      )}
       {stagedChildCount > 0 && (
         <span
           className="absolute top-1 left-1 h-1.5 w-1.5 rounded-full bg-amber-400 dark:bg-amber-500"
@@ -198,8 +190,7 @@ export type GroupRowsProps = {
   suppressNextClickRef: { current: boolean };
   showHidden: boolean;
   showSpendingBars?: boolean;
-  /** F-083: focused cell's month/category, for the crosshair row+column tint. */
-  crosshairMonth?: string | null;
+  /** F-083: focused cell's category, for the crosshair row-label (axis) tint. */
   crosshairCategoryId?: string | null;
   groupSelection?: { groupId: string; month: string } | null;
   rowSelection?: RowSelection | null;
@@ -239,7 +230,6 @@ export function BudgetGridGroupRows({
   suppressNextClickRef,
   showHidden,
   showSpendingBars,
-  crosshairMonth,
   crosshairCategoryId,
   groupSelection,
   rowSelection,
@@ -327,7 +317,6 @@ export function BudgetGridGroupRows({
           onToggleCollapse={onToggleCollapse}
           isReadOnlyMonth={readOnlyMonths.has(month)}
           showSpendingBars={showSpendingBars}
-          inCrosshair={crosshairMonth != null && month === crosshairMonth}
         />
       ))}
 
@@ -374,7 +363,7 @@ export function BudgetGridGroupRows({
                 }
               >
                 {isCrosshairRow && !isCatRowSelected && (
-                  <span className="pointer-events-none absolute inset-0 bg-primary/[0.06]" aria-hidden="true" />
+                  <span className="pointer-events-none absolute inset-0 bg-primary/[0.08]" aria-hidden="true" />
                 )}
                 <span className="flex-1 min-w-0 truncate">{cat.name}</span>
                 {allNotes?.has(cat.id) && (
@@ -404,9 +393,6 @@ export function BudgetGridGroupRows({
                     isDimmed={catDimmed}
                     isReadOnlyMonth={readOnlyMonths.has(month)}
                     showSpendingBars={showSpendingBars}
-                    inCrosshair={
-                      (crosshairMonth != null && month === crosshairMonth) || isCrosshairRow
-                    }
                     onFocus={onCellFocus}
                     onRangeSelect={onCellRangeSelect}
                     onNavigate={(dir) => onCellNavigate?.(cat.id, month, dir)}
