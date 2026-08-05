@@ -108,7 +108,7 @@ export function BudgetSelectionSummary({
             ({selectedMonthSet.size} mo × {selectedCatSet.size} cat)
           </span>
           <span
-            className="text-foreground font-medium tabular-nums"
+            className="tabular-nums"
             aria-label={`Sum of selected: ${formatMinor(selectionSum)}`}
           >
             Σ {formatMinor(selectionSum)}
