@@ -22,22 +22,30 @@ export function MonthColumnHeader({
   availableMonths,
   isSelected,
   onSelect,
+  /** Current date, passed daily-refreshed from the grid so the marker doesn't
+   *  go stale on a long-lived page. Defaults to now for standalone/test use. */
+  today,
 }: {
   month: string;
   availableMonths: string[];
   isSelected?: boolean;
   onSelect?: (month: string) => void;
+  today?: Date;
 }) {
   const hasStagedEdits = useBudgetEditsStore((s) =>
     Object.keys(s.edits).some((k) => k.startsWith(`${month}:`))
   );
   const isAvailable = availableMonths.includes(month);
-  const isCurrentMonth = month === currentMonth();
 
   // RD-067: how far through the current month "today" is, for a subtle marker on
   // the current-month column (so a spending bar reads as fair — 80% spent on the
-  // 5th ≠ on the 25th). Only meaningful for the current month.
-  const now = new Date();
+  // 5th ≠ on the 25th). Derived from the same `today` used for the current-month
+  // check so both stay in sync across a midnight/month boundary.
+  const now = today ?? new Date();
+  const nowMonth = Number.isFinite(now.getTime())
+    ? `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`
+    : currentMonth();
+  const isCurrentMonth = month === nowMonth;
   const elapsedFraction = isCurrentMonth ? monthElapsedFraction(month, now) : null;
   const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
   const elapsedText = isCurrentMonth ? `, day ${now.getDate()} of ${daysInMonth}` : "";
@@ -58,6 +66,15 @@ export function MonthColumnHeader({
 
   const selectable = isAvailable && onSelect != null;
 
+  // Hit-testable tooltip on the whole header (the 1px marker itself can't reliably
+  // receive hover): surfaces "today, day X of Y" for the current month, plus the
+  // select hint when selectable.
+  const headerTitle = isCurrentMonth
+    ? `Today${elapsedText}${selectable ? ` — select ${label}` : ""}`
+    : selectable
+    ? `Select ${label}`
+    : undefined;
+
   return (
     <div
       className={cn(
@@ -71,6 +88,7 @@ export function MonthColumnHeader({
         selectable && "cursor-pointer hover:bg-muted/70"
       )}
       aria-label={`Month: ${label}${isCurrentMonth ? ` (current month${elapsedText})` : ""}`}
+      {...(headerTitle ? { title: headerTitle } : {})}
       // Always present on the current-month header (even when the month is not
       // yet available/selectable) so orientation can reliably scroll to it.
       {...(isCurrentMonth ? { "aria-current": "date" as const, "data-current-month-header": "" } : {})}
@@ -80,7 +98,6 @@ export function MonthColumnHeader({
             tabIndex: 0,
             "data-month-header": month,
             "aria-pressed": isSelected ?? false,
-            title: `Select ${label}`,
             onClick: () => onSelect(month),
             onKeyDown: (e: React.KeyboardEvent) => {
               if (e.key === "Enter" || e.key === " ") {
@@ -102,7 +119,6 @@ export function MonthColumnHeader({
         <span
           className="pointer-events-none absolute bottom-0 w-px h-2 bg-primary/70 rounded-t"
           style={{ left: `${elapsedFraction * 100}%` }}
-          title={`Today${elapsedText}`}
           aria-hidden="true"
         />
       )}

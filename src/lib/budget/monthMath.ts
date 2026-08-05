@@ -47,13 +47,14 @@ export function currentMonth(): string {
  * fully passed, otherwise the elapsed time within the month divided by the
  * month's length. Timestamp-based, so leap years and month lengths are handled
  * by `Date`. Used to show "where are we in the month?" on the current-month
- * column (RD-067).
+ * column (RD-067). An invalid `now` (e.g. `new Date("")`) falls back to `0`.
  */
 export function monthElapsedFraction(month: string, now: Date): number {
+  const t = now.getTime();
+  if (!Number.isFinite(t)) return 0; // invalid Date → treat as "not started"
   const [year, mo] = parseMonth(month);
   const start = new Date(year, mo - 1, 1).getTime();
   const end = new Date(year, mo, 1).getTime(); // first instant of the next month
-  const t = now.getTime();
   if (t <= start) return 0;
   if (t >= end) return 1;
   return (t - start) / (end - start);

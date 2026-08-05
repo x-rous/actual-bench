@@ -72,7 +72,7 @@ function GroupMonthAggregate({
   if (!group && isReadOnlyMonth) {
     return (
       <div
-        className={`${baseClass}${dimClass} px-2 flex items-center justify-end text-xs font-sans tabular-nums text-muted-foreground cursor-not-allowed outline-none${isSelected ? " ring-2 ring-inset ring-foreground/80" : ""}`}
+        className={`relative ${baseClass}${dimClass} px-2 flex items-center justify-end text-xs font-sans tabular-nums text-muted-foreground cursor-not-allowed outline-none${isSelected ? " ring-2 ring-inset ring-foreground/80" : ""}`}
         role="gridcell"
         tabIndex={0}
         aria-selected={isSelected}
@@ -86,6 +86,9 @@ function GroupMonthAggregate({
         onFocus={onFocus}
         onKeyDown={handleKeyDown}
       >
+        {inCrosshair && !isSelected && (
+          <span className="pointer-events-none absolute inset-0 bg-primary/[0.06]" aria-hidden="true" />
+        )}
         --
       </div>
     );

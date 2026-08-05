@@ -17,7 +17,10 @@ describe("MonthColumnHeader current-month highlight (F-079)", () => {
   it("includes the elapsed day-of-month in the current-month accessible name (RD-067)", () => {
     render(<MonthColumnHeader month={now} availableMonths={[now]} />);
     // e.g. "... (current month, day 12 of 31)"
-    expect(screen.getByLabelText(/current month, day \d+ of \d+/i)).toBeInTheDocument();
+    const header = screen.getByLabelText(/current month, day \d+ of \d+/i);
+    expect(header).toBeInTheDocument();
+    // The day text is also on a hit-testable header title (not just the 1px marker).
+    expect(header.getAttribute("title")).toMatch(/today, day \d+ of \d+/i);
   });
 
   it("does not add an elapsed marker on a non-current month", () => {

@@ -26,6 +26,10 @@ describe("monthElapsedFraction", () => {
     expect(f).toBeLessThan(0.52);
   });
 
+  it("falls back to 0 for an invalid Date", () => {
+    expect(monthElapsedFraction("2026-06", new Date(""))).toBe(0);
+  });
+
   it("handles a leap-year February (29 days)", () => {
     // 2028 is a leap year; end-of-day Feb 15 ≈ just over half of 29 days.
     const f = monthElapsedFraction("2028-02", new Date(2028, 1, 15, 12, 0, 0));
