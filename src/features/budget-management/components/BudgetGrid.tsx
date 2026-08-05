@@ -40,6 +40,8 @@ type Props = {
   onToggleCollapse: (groupId: string) => void;
   /** When true, hidden groups/categories are rendered dimmed; when false they are omitted. */
   showHidden: boolean;
+  /** RD-065: draw the spent-vs-budget bar under editable expense cells. */
+  showSpendingBars?: boolean;
   onCellFocus: (categoryId: string, month: string) => void;
   onCellRangeSelect: (categoryId: string, month: string) => void;
   onCellNavigate?: (categoryId: string, month: string, dir: NavDirection) => void;
@@ -93,6 +95,7 @@ export function BudgetGrid({
   collapsedGroups,
   onToggleCollapse,
   showHidden,
+  showSpendingBars,
   onCellFocus,
   onCellRangeSelect,
   onCellNavigate,
@@ -261,6 +264,7 @@ export function BudgetGrid({
     dragStateRef,
     suppressNextClickRef: suppressNextClickClearRef,
     showHidden,
+    showSpendingBars,
     onCellFocus,
     onCellRangeSelect,
     onCellNavigate,

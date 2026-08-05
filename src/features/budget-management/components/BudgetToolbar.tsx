@@ -1,7 +1,8 @@
 "use client";
 
-import { ChevronsLeft, ChevronsRight, ChevronLeft, ChevronRight, CalendarDays, Upload, Download, ChevronsDownUp, ChevronsUpDown, Eye, EyeOff, Keyboard } from "lucide-react";
+import { ChevronsLeft, ChevronsRight, ChevronLeft, ChevronRight, CalendarDays, Upload, Download, ChevronsDownUp, ChevronsUpDown, Eye, EyeOff, Keyboard, BarChart2 } from "lucide-react";
 import { addMonths, formatMonthLabel } from "@/lib/budget/monthMath";
+import { cn } from "@/lib/utils";
 import type { BudgetMode, CellView } from "../types";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -39,12 +40,17 @@ type Props = {
   /** First month of the 12-month display window (YYYY-MM). */
   windowStart: string;
   onWindowChange: (start: string) => void;
+  /** Jump the window to include the current month and scroll it into view (F-079). */
+  onGoToCurrentMonth?: () => void;
   cellView: CellView;
   onCellViewChange: (view: CellView) => void;
   onExpandAll?: () => void;
   onCollapseAll?: () => void;
   showHidden?: boolean;
   onToggleShowHidden?: () => void;
+  /** RD-065: spent-vs-budget bars under editable cells. */
+  showSpendingBars?: boolean;
+  onToggleSpendingBars?: () => void;
   onExport?: () => void;
   onImport?: () => void;
   /** Open the keyboard-shortcuts cheatsheet modal. */
@@ -69,12 +75,15 @@ export function BudgetToolbar({
   budgetMode,
   windowStart,
   onWindowChange,
+  onGoToCurrentMonth,
   cellView,
   onCellViewChange,
   onExpandAll,
   onCollapseAll,
   showHidden,
   onToggleShowHidden,
+  showSpendingBars,
+  onToggleSpendingBars,
   onExport,
   onImport,
   onShowShortcuts,
@@ -156,15 +165,18 @@ export function BudgetToolbar({
           <ChevronsRight className="h-3.5 w-3.5" />
         </button>
 
-        {/* Jump to current year */}
+        {/* Jump to the current month */}
         <button
           type="button"
           onClick={() => {
-            const currentYear = new Date().getFullYear();
-            onWindowChange(`${currentYear}-01`);
+            if (onGoToCurrentMonth) {
+              onGoToCurrentMonth();
+            } else {
+              onWindowChange(`${new Date().getFullYear()}-01`);
+            }
           }}
-          aria-label="Go to current year"
-          title="Go to current year"
+          aria-label="Go to current month"
+          title="Go to current month"
           className="flex items-center justify-center w-6 h-6 rounded text-muted-foreground hover:bg-muted transition-colors ml-0.5"
         >
           <CalendarDays className="h-3.5 w-3.5" />
@@ -198,10 +210,10 @@ export function BudgetToolbar({
         ))}
       </div>
 
-      {(onExpandAll || onCollapseAll || onToggleShowHidden) && <Divider />}
+      {(onExpandAll || onCollapseAll || onToggleShowHidden || onToggleSpendingBars) && <Divider />}
 
-      {/* Expand / Collapse All + Show/Hide hidden */}
-      {(onExpandAll || onCollapseAll || onToggleShowHidden) && (
+      {/* Expand / Collapse All + Show/Hide hidden + Spending bars */}
+      {(onExpandAll || onCollapseAll || onToggleShowHidden || onToggleSpendingBars) && (
         <div
           className="flex items-center gap-0.5 shrink-0"
           role="group"
@@ -257,6 +269,24 @@ export function BudgetToolbar({
                   Show hidden
                 </>
               )}
+            </button>
+          )}
+          {onToggleSpendingBars && (
+            <button
+              type="button"
+              onClick={onToggleSpendingBars}
+              aria-label={showSpendingBars ? "Hide spending bars" : "Show spending bars"}
+              title={showSpendingBars ? "Hide spending bars" : "Show spending bars"}
+              aria-pressed={showSpendingBars ?? false}
+              className={cn(
+                "inline-flex items-center gap-1 h-6 px-2 rounded text-[11px] font-medium transition-colors",
+                showSpendingBars
+                  ? "text-foreground bg-muted"
+                  : "text-muted-foreground hover:bg-muted hover:text-foreground"
+              )}
+            >
+              <BarChart2 className="h-3.5 w-3.5" aria-hidden="true" />
+              Spending Bars
             </button>
           )}
         </div>

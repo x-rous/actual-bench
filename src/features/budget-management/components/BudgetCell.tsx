@@ -5,6 +5,8 @@ import { useBudgetEditsStore } from "@/store/budgetEdits";
 import { useEffectiveMonthFromContext } from "../context/MonthsDataContext";
 import { parseBudgetExpression } from "../lib/budgetMath";
 import { formatMinor } from "../lib/format";
+import { computeSpendingBar, spendingTierLabel } from "../lib/spendingBar";
+import { SpendingBarView } from "./grid/SpendingBarView";
 import { isIncomeBlocked, isLargeChange } from "../lib/budgetValidation";
 import { useCellKeymap, useCellEditKeymap } from "../keyboard/useBudgetKeymap";
 import type { BudgetCellKey, BudgetMode, CellView, LoadedCategory, NavDirection } from "../types";
@@ -35,6 +37,8 @@ type Props = {
   isDimmed?: boolean;
   /** Historical month missing from the API; visible for context but not editable. */
   isReadOnlyMonth?: boolean;
+  /** RD-065: draw the spent-vs-budget bar under editable expense cells. */
+  showSpendingBars?: boolean;
 };
 
 /** BM-16: minimum pointer travel (CSS px) before treating a drag as range-select. */
@@ -63,6 +67,7 @@ export function BudgetCell({
   onContextMenuRequest,
   isDimmed,
   isReadOnlyMonth = false,
+  showSpendingBars = false,
 }: Props) {
   const dimClass = isDimmed ? " opacity-50" : "";
   const key: BudgetCellKey = `${month}:${category.id}`;
@@ -120,7 +125,12 @@ export function BudgetCell({
   /** Returns true if commit succeeded (valid parse), false on error. */
   const commitEdit = (): boolean => {
     if (!editing) return true;
-    const result = parseBudgetExpression(inputValue);
+    // Clearing the cell and pressing Enter sets it to 0 rather than erroring —
+    // an empty field is a deliberate "no budget", not an invalid expression.
+    const result =
+      inputValue.trim() === ""
+        ? ({ ok: true, value: 0 } as const)
+        : parseBudgetExpression(inputValue);
     if (!result.ok) {
       setInputError(result.error);
       return false;
@@ -290,12 +300,43 @@ export function BudgetCell({
     />
   ) : null;
 
+  // RD-065 spending bar: spent as a positive magnitude (actuals are negative for
+  // expenses; a net inflow reads as zero spent). Only for editable expense cells
+  // that have month data, and only when the toggle is on.
+  const spentMinor = Math.max(0, -effectiveCategory.actuals);
+  const overByMinor = spentMinor - currentBudgeted;
+  const spendingBar =
+    showSpendingBars && !category.isIncome && hasMonthData
+      ? computeSpendingBar(currentBudgeted, spentMinor)
+      : null;
+
+  // A text signal for the bar so nothing is conveyed by colour alone (used in
+  // the aria-label and appended to the tooltip).
+  const overNote =
+    spendingBar?.tier === "over"
+      ? ` (over by ${formatMinor(overByMinor)})`
+      : spendingBar?.tier === "unbudgeted"
+      ? " (unbudgeted)"
+      : "";
+
+  // Full spoken status for the cell: every tier (not just over/unbudgeted) plus
+  // budgeted / spent / balance, so the bar's colour is never the only signal and
+  // the balance promised in cell labels is present.
+  const barStatusNote =
+    spendingBar && spendingBar.tier !== "empty"
+      ? ` - budgeted ${formatMinor(currentBudgeted)}, spent ${formatMinor(
+          spentMinor
+        )}, balance ${formatMinor(effectiveCategory.balance)} (${spendingTierLabel(
+          spendingBar.tier
+        )})`
+      : "";
+
   // Hover tooltip: show spent/balance when in budgeted view (they aren't directly visible).
   const hoverTitle =
     isReadOnlyMonth && !hasMonthData
       ? "No budget exists for this past month; budget cells are read-only."
       : cellView === "budgeted"
-      ? `Spent: ${formatMinor(effectiveCategory.actuals)} | Balance: ${formatMinor(effectiveCategory.balance)}`
+      ? `Spent: ${formatMinor(effectiveCategory.actuals)} | Balance: ${formatMinor(effectiveCategory.balance)}${overNote}`
       : undefined;
 
   // ─── Non-editable cell ───────────────────────────────────────────────────────
@@ -425,7 +466,7 @@ export function BudgetCell({
       className={`${cellClass}${dimClass}`}
       role="gridcell"
       tabIndex={0}
-      aria-label={`${category.name} budget for ${month}${stagedEdit ? " (unsaved)" : ""}${hasSaveError ? " - save error" : ""}`}
+      aria-label={`${category.name} budget for ${month}${stagedEdit ? " (unsaved)" : ""}${hasSaveError ? " - save error" : ""}${barStatusNote}`}
       aria-selected={isSelected}
       onPointerDown={handlePointerDown}
       onPointerEnter={handlePointerEnter}
@@ -466,6 +507,8 @@ export function BudgetCell({
           title={stagedEdit?.saveError}
         />
       )}
+
+      {spendingBar && <SpendingBarView bar={spendingBar} />}
     </div>
   );
 }

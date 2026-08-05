@@ -268,8 +268,10 @@ A multi-month budget editing workspace with staged cell editing, a draft review 
 
 ### Toolbar
 - Budget mode badge (`Envelope`, `Tracking`, or `Unknown`) always visible at the left
-- 12-month window navigator: back/forward by 1 month (`‹ ›`) or 1 year (`«»`), plus a "go to current year" calendar button; range label displays as "Jan '26 – Dec '26"
+- 12-month window navigator: back/forward by 1 month (`‹ ›`) or 1 year (`«»`), plus a "go to current month" calendar button; range label displays as "Jan '26 – Dec '26"
+- Opens oriented on the current month, and the current-month column is highlighted (bold + accent border, `aria-current`) so "now" is obvious at a glance
 - Cell-view toggle: **Budget** / **Actuals** / **Balance** — switches what value each month cell displays
+- **Spending Bars** (toolbar toggle, on by default): a thin bar under each editable expense cell — and under each group-total cell — shows spent ÷ budgeted for that month — green under budget, amber approaching the limit, and a red overflow segment when over; a distinct red bar flags spending from an unfunded envelope/group. The bar keeps the 12-month width and row height; exact spent/balance stay in the cell tooltip and details panel. Income rows show no bar.
 - Expand all / Collapse all group buttons
 - Show / Hide hidden categories toggle
 - Import and Export buttons (UTF-8 CSV with BOM)
@@ -282,7 +284,7 @@ A multi-month budget editing workspace with staged cell editing, a draft review 
 - Mode-specific summary section above the category groups:
   - **Envelope mode**: Available Funds (+), Overspent Last Month (−), Budgeted (−), Hold for next month (−), and a **To Budget / Overbudget** (=) total row
   - **Tracking mode**: compact status rows for Result, Spending vs Budgeted, and Income. Past months show actual performance, the current month is marked partial, and future months show budgeted context instead of zero-actual performance.
-- The 12-month window defaults to January of the current year; the user can navigate freely to any period
+- The 12-month window defaults to the current calendar year and opens scrolled to the current month; the user can navigate freely to any period, and the calendar button returns to the current month
 
 ### Staged Cell Editing
 - Click, double-click, Enter, or F2 to enter edit mode; blur or Enter to commit; Escape to cancel

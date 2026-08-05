@@ -1,7 +1,8 @@
 "use client";
 
+import { cn } from "@/lib/utils";
 import { useBudgetEditsStore } from "@/store/budgetEdits";
-import { formatMonthLabel } from "@/lib/budget/monthMath";
+import { currentMonth, formatMonthLabel } from "@/lib/budget/monthMath";
 
 /**
  * Sticky column header for a single month: full-name label plus a status dot.
@@ -31,6 +32,7 @@ export function MonthColumnHeader({
     Object.keys(s.edits).some((k) => k.startsWith(`${month}:`))
   );
   const isAvailable = availableMonths.includes(month);
+  const isCurrentMonth = month === currentMonth();
 
   const label = formatMonthLabel(month, "long");
 
@@ -50,12 +52,20 @@ export function MonthColumnHeader({
 
   return (
     <div
-      className={`h-8 px-2 flex items-center justify-end gap-1.5 border-b-2 text-xs font-semibold sticky top-0 z-20 ${
+      className={cn(
+        "h-8 px-2 flex items-center justify-end gap-1.5 border-b-2 text-xs sticky top-0 z-20",
+        isCurrentMonth ? "font-bold" : "font-semibold",
         isSelected
           ? "border-primary/70 bg-muted text-foreground"
-          : "border-border bg-muted text-foreground"
-      } ${selectable ? "cursor-pointer hover:bg-muted/70" : ""}`}
-      aria-label={`Month: ${label}`}
+          : isCurrentMonth
+          ? "border-primary bg-primary/5 text-foreground"
+          : "border-border bg-muted text-foreground",
+        selectable && "cursor-pointer hover:bg-muted/70"
+      )}
+      aria-label={`Month: ${label}${isCurrentMonth ? " (current month)" : ""}`}
+      // Always present on the current-month header (even when the month is not
+      // yet available/selectable) so orientation can reliably scroll to it.
+      {...(isCurrentMonth ? { "aria-current": "date" as const, "data-current-month-header": "" } : {})}
       {...(selectable
         ? {
             role: "button",
