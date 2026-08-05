@@ -17,6 +17,7 @@ import {
   StagedImpactBlock,
 } from "./DetailsPrimitives";
 import dynamic from "next/dynamic";
+import { BudgetMeter } from "./BudgetMeter";
 import { BudgetNoteSection, type BudgetNoteTarget } from "./BudgetNoteSection";
 import { useSpendingDetailsShortcut } from "./useSpendingDetailsShortcut";
 
@@ -88,6 +89,8 @@ export function TrackingDetailsPanel({
         tone={metrics.primary.tone}
         showPlus={isFullPeriod}
       />
+
+      {metrics.meter && <BudgetMeter model={metrics.meter} />}
 
       {isMonth && metrics.monthValues && (
         <DetailsSection title="Values">

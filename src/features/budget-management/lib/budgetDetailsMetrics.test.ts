@@ -1,4 +1,8 @@
-import { buildTrackingDetailsMetrics } from "./budgetDetailsMetrics";
+import {
+  buildTrackingDetailsMetrics,
+  buildEnvelopeDetailsMetrics,
+  buildMonthSummaryMeter,
+} from "./budgetDetailsMetrics";
 import type {
   BudgetDetailsModel,
   BudgetDetailsSelection,
@@ -414,5 +418,140 @@ describe("buildTrackingDetailsMetrics", () => {
       value: null,
       tone: "neutral",
     });
+  });
+});
+
+describe("details meter (F-086)", () => {
+  it("attaches a plan-progress meter to a tracking expense selection", () => {
+    const metrics = buildTrackingDetailsMetrics(
+      modelForSelection({
+        selection: { scope: "month", entity: "category", month: "2026-04", categoryId: "expense-cat" },
+        state: monthState("2026-04", {
+          incomeBudgeted: 0,
+          incomeActuals: 0,
+          expenseBudgeted: -300_000,
+          expenseActuals: -280_000,
+          categoryExpenseBudgeted: -300_000,
+          categoryExpenseActuals: -280_000,
+        }),
+      })
+    );
+    // Budgeted 3000, spent 2800 → under by 200.
+    expect(metrics.meter).toMatchObject({
+      total: 300_000,
+      filled: 280_000,
+      remaining: 20_000,
+      remainingLabel: "under",
+      variant: "expense",
+    });
+  });
+
+  it("omits the meter on a future (plan-only) month", () => {
+    const metrics = buildTrackingDetailsMetrics(
+      modelForSelection({
+        selection: { scope: "month", entity: "category", month: "2026-04", categoryId: "expense-cat" },
+        status: "future",
+      })
+    );
+    expect(metrics.meter).toBeUndefined();
+  });
+
+  it("omits the envelope meter for an income target", () => {
+    const metrics = buildEnvelopeDetailsMetrics(
+      modelForSelection({
+        selection: { scope: "month", entity: "category", month: "2026-04", categoryId: "income-cat" },
+        state: monthState("2026-04", {
+          incomeBudgeted: 500_000,
+          incomeActuals: 480_000,
+          expenseBudgeted: -300_000,
+          expenseActuals: -280_000,
+        }),
+      })
+    );
+    expect(metrics.meter).toBeUndefined();
+  });
+});
+
+describe("buildMonthSummaryMeter", () => {
+  it("builds an envelope-fill meter (available = spent + balance)", () => {
+    const meter = buildMonthSummaryMeter({
+      isTracking: false,
+      budgeted: 60_000,
+      spent: 45_000,
+      balance: 15_000,
+    });
+    expect(meter).toMatchObject({
+      total: 60_000, // 45k spent + 15k balance
+      filled: 45_000,
+      remaining: 15_000,
+      remainingLabel: "left",
+      variant: "expense",
+    });
+  });
+
+  it("flags an overspent envelope (negative balance) as over", () => {
+    const meter = buildMonthSummaryMeter({
+      isTracking: false,
+      budgeted: 60_000,
+      spent: 70_000,
+      balance: -10_000,
+    });
+    expect(meter?.remaining).toBe(-10_000);
+    expect(meter?.remainingLabel).toBe("over");
+  });
+
+  it("builds a plan-progress meter in tracking mode", () => {
+    const meter = buildMonthSummaryMeter({
+      isTracking: true,
+      budgeted: 60_000,
+      spent: 45_000,
+      balance: 15_000,
+    });
+    expect(meter).toMatchObject({
+      total: 60_000, // budgeted is the track in tracking mode
+      filled: 45_000,
+      remainingLabel: "under",
+    });
+  });
+
+  it("returns no meter when nothing is budgeted and nothing spent", () => {
+    expect(
+      buildMonthSummaryMeter({ isTracking: false, budgeted: 0, spent: 0, balance: 0 })
+    ).toBeUndefined();
+    expect(
+      buildMonthSummaryMeter({ isTracking: true, budgeted: 0, spent: 0, balance: 0 })
+    ).toBeUndefined();
+  });
+
+  it("uses a neutral 'on budget' label when tracking expense is exactly on plan", () => {
+    const meter = buildTrackingDetailsMetrics(
+      modelForSelection({
+        selection: { scope: "month", entity: "category", month: "2026-04", categoryId: "expense-cat" },
+        state: monthState("2026-04", {
+          incomeBudgeted: 0,
+          incomeActuals: 0,
+          expenseBudgeted: -300_000,
+          expenseActuals: -300_000,
+          categoryExpenseBudgeted: -300_000,
+          categoryExpenseActuals: -300_000,
+        }),
+      })
+    ).meter;
+    expect(meter).toMatchObject({ remaining: 0, remainingLabel: "on budget" });
+  });
+
+  it("uses a neutral 'on plan' label when tracking income exactly hits plan", () => {
+    const meter = buildTrackingDetailsMetrics(
+      modelForSelection({
+        selection: { scope: "month", entity: "category", month: "2026-04", categoryId: "income-cat" },
+        state: monthState("2026-04", {
+          incomeBudgeted: 500_000,
+          incomeActuals: 500_000,
+          expenseBudgeted: -300_000,
+          expenseActuals: -280_000,
+        }),
+      })
+    ).meter;
+    expect(meter).toMatchObject({ remaining: 0, remainingLabel: "on plan", variant: "income" });
   });
 });

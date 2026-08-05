@@ -18,6 +18,7 @@ import {
   toneClass,
 } from "./DetailsPrimitives";
 import { BudgetTransactionsDialog } from "./BudgetTransactionsDialog";
+import { BudgetMeter } from "./BudgetMeter";
 import { BudgetNoteSection, type BudgetNoteTarget } from "./BudgetNoteSection";
 import { useSpendingDetailsShortcut } from "./useSpendingDetailsShortcut";
 
@@ -79,6 +80,8 @@ export function EnvelopeDetailsPanel({
         showPlus={isFullPeriod && isToBudgetLabel(metrics.primary.label)}
         valuePrefix={isFullyBudgeted(metrics.primary.label) ? "✓ " : undefined}
       />
+
+      {metrics.meter && <BudgetMeter model={metrics.meter} />}
 
       {!isMonth && metrics.endPlan && (
         <DetailsSection title="End of visible plan">
