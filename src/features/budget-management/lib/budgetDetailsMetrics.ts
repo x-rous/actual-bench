@@ -43,7 +43,8 @@ export type BudgetMeterModel = {
   totalLabel: string;
   /** Word after the remaining amount: "left" / "over" / "under" / "to go" / "ahead". */
   remainingLabel: string;
-  variant: "expense" | "income";
+  /** Which mental model this meter follows — drives the standalone status headline. */
+  variant: "envelope" | "expense" | "income";
 };
 
 /** Envelope-fill meter: track = available (spent + balance), carryover-aware. */
@@ -61,7 +62,7 @@ function envelopeAvailableMeter(
     filledLabel: "Spent",
     totalLabel,
     remainingLabel: balance < 0 ? "over" : "left",
-    variant: "expense",
+    variant: "envelope",
   };
 }
 
@@ -80,7 +81,7 @@ function envelopeAssignedMeter(
     filledLabel: "Spent",
     totalLabel,
     remainingLabel: remaining < 0 ? "over" : "left",
-    variant: "expense",
+    variant: "envelope",
   };
 }
 

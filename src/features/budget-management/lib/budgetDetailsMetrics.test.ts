@@ -485,7 +485,7 @@ describe("buildMonthSummaryMeter", () => {
       filled: 45_000,
       remaining: 15_000,
       remainingLabel: "left",
-      variant: "expense",
+      variant: "envelope",
     });
   });
 

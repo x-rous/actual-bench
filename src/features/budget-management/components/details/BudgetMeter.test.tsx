@@ -1,5 +1,5 @@
 import { render, screen } from "@testing-library/react";
-import { BudgetMeter } from "./BudgetMeter";
+import { BudgetMeter, meterStatus } from "./BudgetMeter";
 import type { BudgetMeterModel } from "../../lib/budgetDetailsMetrics";
 
 function model(overrides: Partial<BudgetMeterModel> = {}): BudgetMeterModel {
@@ -44,5 +44,50 @@ describe("BudgetMeter", () => {
     expect(screen.getByRole("progressbar").getAttribute("aria-label")).toMatch(/100\.00 over/);
     // The "spent of total" caption still renders.
     expect(screen.getByText(/Spent 700\.00 of 600\.00/)).toBeInTheDocument();
+  });
+});
+
+describe("meterStatus (summary-box headline)", () => {
+  it("phrases tracking-expense variance as under/over budget", () => {
+    expect(meterStatus(model({ variant: "expense", remaining: 8_000 }))).toEqual({
+      label: "Under budget by",
+      value: 8_000,
+      tone: "positive",
+    });
+    expect(meterStatus(model({ variant: "expense", remaining: -8_000 }))).toEqual({
+      label: "Over budget by",
+      value: 8_000,
+      tone: "negative",
+    });
+    expect(meterStatus(model({ variant: "expense", remaining: 0 }))).toEqual({
+      label: "On budget",
+      value: null,
+      tone: "neutral",
+    });
+  });
+
+  it("phrases the envelope meter as left-to-spend / overspent", () => {
+    expect(meterStatus(model({ variant: "envelope", remaining: 15_000 }))).toMatchObject({
+      label: "Left to spend",
+      tone: "positive",
+    });
+    expect(meterStatus(model({ variant: "envelope", remaining: -5_000 }))).toMatchObject({
+      label: "Overspent",
+      tone: "negative",
+    });
+  });
+
+  it("phrases income as ahead / left to receive / on plan", () => {
+    expect(meterStatus(model({ variant: "income", remaining: -3_000 }))).toMatchObject({
+      label: "Ahead by",
+      tone: "positive",
+    });
+    expect(meterStatus(model({ variant: "income", remaining: 3_000 }))).toMatchObject({
+      label: "Left to receive",
+    });
+    expect(meterStatus(model({ variant: "income", remaining: 0 }))).toMatchObject({
+      label: "On plan",
+      value: null,
+    });
   });
 });

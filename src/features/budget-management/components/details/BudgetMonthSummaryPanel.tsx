@@ -11,7 +11,7 @@ import {
   MetricLine,
   PrimaryMetric,
 } from "./DetailsPrimitives";
-import { BudgetMeter } from "./BudgetMeter";
+import { MeterSection } from "./BudgetMeter";
 import { BudgetNoteSection } from "./BudgetNoteSection";
 
 function toneFromValue(value: number): DetailsTone {
@@ -106,9 +106,10 @@ function EnvelopeMonthBody({
         tone={toBudget >= 0 ? "positive" : "negative"}
         showPlus={!fullyBudgeted}
         valuePrefix={fullyBudgeted ? "✓ " : undefined}
-      >
-        {meter && <BudgetMeter model={meter} embedded />}
-      </PrimaryMetric>
+      />
+      {meter && (
+        <MeterSection model={meter} helper="Spending against this month's assigned budget." />
+      )}
       <DetailsSection title="Values">
         <MetricLine
           label="Assigned / Budgeted"
@@ -149,15 +150,16 @@ function TrackingMonthBody({
 
   return (
     <>
+      {meter && (
+        <MeterSection model={meter} helper="Spending against budgeted expenses this month." />
+      )}
       <PrimaryMetric
         label="Actual Result"
         value={result}
         helper={result >= 0 ? "saved" : "overspent"}
         tone={toneFromValue(result)}
         showPlus
-      >
-        {meter && <BudgetMeter model={meter} embedded />}
-      </PrimaryMetric>
+      />
       <DetailsSection title="Actuals">
         <MetricLine label="Income received" value={formatSigned(income)} />
         <MetricLine label="Expenses spent" value={formatSigned(spent)} />

@@ -18,7 +18,7 @@ import {
   toneClass,
 } from "./DetailsPrimitives";
 import { BudgetTransactionsDialog } from "./BudgetTransactionsDialog";
-import { BudgetMeter } from "./BudgetMeter";
+import { BudgetMeter, MeterSection } from "./BudgetMeter";
 import { BudgetNoteSection, type BudgetNoteTarget } from "./BudgetNoteSection";
 import { useSpendingDetailsShortcut } from "./useSpendingDetailsShortcut";
 
@@ -80,8 +80,15 @@ export function EnvelopeDetailsPanel({
         showPlus={isFullPeriod && isToBudgetLabel(metrics.primary.label)}
         valuePrefix={isFullyBudgeted(metrics.primary.label) ? "✓ " : undefined}
       >
-        {metrics.meter && <BudgetMeter model={metrics.meter} embedded />}
+        {/* Selections mirror the primary (Balance) → embed. The period summary
+            leads with "To Budget" (a different number), so its spending meter
+            gets its own status box below instead. */}
+        {!isFullPeriod && metrics.meter && <BudgetMeter model={metrics.meter} embedded />}
       </PrimaryMetric>
+
+      {isFullPeriod && metrics.meter && (
+        <MeterSection model={metrics.meter} helper="Spending against the assigned budget this period." />
+      )}
 
       {!isMonth && metrics.endPlan && (
         <DetailsSection title="End of visible plan">

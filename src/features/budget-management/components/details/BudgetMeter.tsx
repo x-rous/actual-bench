@@ -2,7 +2,8 @@
 
 import { computeSpendingBar, type SpendingTier } from "../../lib/spendingBar";
 import { formatMinor } from "../../lib/format";
-import type { BudgetMeterModel } from "../../lib/budgetDetailsMetrics";
+import type { BudgetMeterModel, DetailsTone } from "../../lib/budgetDetailsMetrics";
+import { PrimaryMetric } from "./DetailsPrimitives";
 
 /**
  * Horizontal budget-vs-spent meter for the details panel (F-086).
@@ -98,5 +99,47 @@ export function BudgetMeter({
         )}
       </div>
     </div>
+  );
+}
+
+/**
+ * The status headline for a standalone meter box (used in summary contexts where
+ * the meter does NOT mirror the panel's primary number). Phrased per mental model:
+ * envelope → "Left to spend / Overspent"; tracking expense → "Under/Over budget by";
+ * tracking income → "Ahead by / Left to receive". `value` is null on an exact match.
+ */
+export function meterStatus(model: BudgetMeterModel): {
+  label: string;
+  value: number | null;
+  tone: DetailsTone;
+} {
+  const { remaining, variant } = model;
+  const amount = Math.abs(remaining);
+  if (variant === "income") {
+    if (remaining < 0) return { label: "Ahead by", value: amount, tone: "positive" };
+    if (remaining > 0) return { label: "Left to receive", value: amount, tone: "neutral" };
+    return { label: "On plan", value: null, tone: "neutral" };
+  }
+  if (variant === "envelope") {
+    if (remaining < 0) return { label: "Overspent", value: amount, tone: "negative" };
+    return { label: "Left to spend", value: amount, tone: remaining > 0 ? "positive" : "neutral" };
+  }
+  // tracking expense (plan vs actual)
+  if (remaining < 0) return { label: "Over budget by", value: amount, tone: "negative" };
+  if (remaining > 0) return { label: "Under budget by", value: amount, tone: "positive" };
+  return { label: "On budget", value: null, tone: "neutral" };
+}
+
+/**
+ * Standalone "budget status" box: a bold status headline (mirroring the meter)
+ * plus the bar. Used in the period/month summaries, whose primary box already
+ * leads with a different number (Actual Result / To Budget).
+ */
+export function MeterSection({ model, helper }: { model: BudgetMeterModel; helper: string }) {
+  const status = meterStatus(model);
+  return (
+    <PrimaryMetric label={status.label} value={status.value} helper={helper} tone={status.tone}>
+      <BudgetMeter model={model} embedded />
+    </PrimaryMetric>
   );
 }
