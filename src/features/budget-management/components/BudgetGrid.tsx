@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef } from "react";
 import { Loader2 } from "lucide-react";
 import { useMonthsData } from "../context/MonthsDataContext";
+import { useDailyDate } from "../hooks/useDailyDate";
 import { MonthColumnHeader } from "./grid/MonthColumnHeader";
 import {
   SummaryHeaderRow,
@@ -108,6 +109,9 @@ export function BudgetGrid({
   onMonthSelect,
 }: Props) {
   const firstMonth = activeMonths[0] ?? null;
+  // Daily-refreshed date so the current-month highlight + time-of-month marker
+  // (RD-067) don't go stale on a page left open across midnight.
+  const today = useDailyDate();
   const { merged, isLoading, errors } = useMonthsData();
   const hasAnyData = merged !== null;
   const firstMonthError = firstMonth ? errors.get(firstMonth) : undefined;
@@ -245,6 +249,12 @@ export function BudgetGrid({
   const selectedMonth =
     selection?.focusMonth ?? groupSelection?.month ?? monthSelection ?? null;
 
+  // F-083 crosshair (axes-only): the focused cell's column (month header) and row
+  // (category label) get a faint highlight, so tracing "which category × which
+  // month" is easy without tinting the grid body. Driven by focus, not per-hover.
+  const crosshairMonth = selection?.focusMonth ?? null;
+  const crosshairCategoryId = selection?.focusCategoryId ?? null;
+
   const gridStyle: React.CSSProperties = {
     display: "grid",
     gridTemplateColumns: `minmax(180px, 1fr) repeat(${activeMonths.length}, minmax(69px, 94px))`,
@@ -265,6 +275,7 @@ export function BudgetGrid({
     suppressNextClickRef: suppressNextClickClearRef,
     showHidden,
     showSpendingBars,
+    crosshairCategoryId,
     onCellFocus,
     onCellRangeSelect,
     onCellNavigate,
@@ -334,6 +345,8 @@ export function BudgetGrid({
           availableMonths={availableMonths}
           isSelected={month === selectedMonth}
           onSelect={onMonthSelect}
+          today={today}
+          inCrosshair={crosshairMonth != null && month === crosshairMonth}
         />
       ))}
 

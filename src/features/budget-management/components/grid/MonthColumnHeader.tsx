@@ -2,7 +2,7 @@
 
 import { cn } from "@/lib/utils";
 import { useBudgetEditsStore } from "@/store/budgetEdits";
-import { currentMonth, formatMonthLabel } from "@/lib/budget/monthMath";
+import { currentMonth, formatMonthLabel, monthElapsedFraction } from "@/lib/budget/monthMath";
 
 /**
  * Sticky column header for a single month: full-name label plus a status dot.
@@ -22,17 +22,36 @@ export function MonthColumnHeader({
   availableMonths,
   isSelected,
   onSelect,
+  /** Current date, passed daily-refreshed from the grid so the marker doesn't
+   *  go stale on a long-lived page. Defaults to now for standalone/test use. */
+  today,
+  inCrosshair,
 }: {
   month: string;
   availableMonths: string[];
   isSelected?: boolean;
   onSelect?: (month: string) => void;
+  today?: Date;
+  /** F-083: this is the focused cell's column (crosshair axis tint). */
+  inCrosshair?: boolean;
 }) {
   const hasStagedEdits = useBudgetEditsStore((s) =>
     Object.keys(s.edits).some((k) => k.startsWith(`${month}:`))
   );
   const isAvailable = availableMonths.includes(month);
-  const isCurrentMonth = month === currentMonth();
+
+  // RD-067: how far through the current month "today" is, for a subtle marker on
+  // the current-month column (so a spending bar reads as fair — 80% spent on the
+  // 5th ≠ on the 25th). Derived from the same `today` used for the current-month
+  // check so both stay in sync across a midnight/month boundary.
+  const now = today ?? new Date();
+  const nowMonth = Number.isFinite(now.getTime())
+    ? `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`
+    : currentMonth();
+  const isCurrentMonth = month === nowMonth;
+  const elapsedFraction = isCurrentMonth ? monthElapsedFraction(month, now) : null;
+  const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+  const elapsedText = isCurrentMonth ? `, day ${now.getDate()} of ${daysInMonth}` : "";
 
   const label = formatMonthLabel(month, "long");
 
@@ -50,10 +69,19 @@ export function MonthColumnHeader({
 
   const selectable = isAvailable && onSelect != null;
 
+  // Hit-testable tooltip on the whole header (the 1px marker itself can't reliably
+  // receive hover): surfaces "today, day X of Y" for the current month, plus the
+  // select hint when selectable.
+  const headerTitle = isCurrentMonth
+    ? `Today${elapsedText}${selectable ? ` — select ${label}` : ""}`
+    : selectable
+    ? `Select ${label}`
+    : undefined;
+
   return (
     <div
       className={cn(
-        "h-8 px-2 flex items-center justify-end gap-1.5 border-b-2 text-xs sticky top-0 z-20",
+        "relative h-8 px-2 flex items-center justify-end gap-1.5 border-b-2 text-xs sticky top-0 z-20",
         isCurrentMonth ? "font-bold" : "font-semibold",
         isSelected
           ? "border-primary/70 bg-muted text-foreground"
@@ -62,7 +90,8 @@ export function MonthColumnHeader({
           : "border-border bg-muted text-foreground",
         selectable && "cursor-pointer hover:bg-muted/70"
       )}
-      aria-label={`Month: ${label}${isCurrentMonth ? " (current month)" : ""}`}
+      aria-label={`Month: ${label}${isCurrentMonth ? ` (current month${elapsedText})` : ""}`}
+      {...(headerTitle ? { title: headerTitle } : {})}
       // Always present on the current-month header (even when the month is not
       // yet available/selectable) so orientation can reliably scroll to it.
       {...(isCurrentMonth ? { "aria-current": "date" as const, "data-current-month-header": "" } : {})}
@@ -72,7 +101,6 @@ export function MonthColumnHeader({
             tabIndex: 0,
             "data-month-header": month,
             "aria-pressed": isSelected ?? false,
-            title: `Select ${label}`,
             onClick: () => onSelect(month),
             onKeyDown: (e: React.KeyboardEvent) => {
               if (e.key === "Enter" || e.key === " ") {
@@ -83,12 +111,23 @@ export function MonthColumnHeader({
           }
         : {})}
     >
+      {inCrosshair && !isSelected && (
+        <span className="pointer-events-none absolute inset-0 bg-primary/[0.08]" aria-hidden="true" />
+      )}
       <span
         className={`h-1.5 w-1.5 rounded-full shrink-0 ${dotColor}`}
         title={dotTitle}
         aria-hidden="true"
       />
       <span className="truncate">{label}</span>
+
+      {elapsedFraction !== null && (
+        <span
+          className="pointer-events-none absolute bottom-0 w-px h-2 bg-primary/70 rounded-t"
+          style={{ left: `${elapsedFraction * 100}%` }}
+          aria-hidden="true"
+        />
+      )}
     </div>
   );
 }

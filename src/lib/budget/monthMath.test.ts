@@ -6,7 +6,39 @@ import {
   compareMonths,
   formatMonthLabel,
   isValidMonth,
+  monthElapsedFraction,
 } from "./monthMath";
+
+describe("monthElapsedFraction", () => {
+  it("is 0 before the month and 1 after it", () => {
+    expect(monthElapsedFraction("2026-06", new Date(2026, 4, 20))).toBe(0); // May, before June
+    expect(monthElapsedFraction("2026-06", new Date(2026, 6, 3))).toBe(1); // July, after June
+  });
+
+  it("is 0 at the first instant of the month", () => {
+    expect(monthElapsedFraction("2026-06", new Date(2026, 5, 1, 0, 0, 0))).toBe(0);
+  });
+
+  it("is ~0.5 at mid-month", () => {
+    // June has 30 days; midday of the 16th is ~half elapsed.
+    const f = monthElapsedFraction("2026-06", new Date(2026, 5, 16, 0, 0, 0));
+    expect(f).toBeGreaterThan(0.48);
+    expect(f).toBeLessThan(0.52);
+  });
+
+  it("falls back to 0 for an invalid Date", () => {
+    expect(monthElapsedFraction("2026-06", new Date(""))).toBe(0);
+  });
+
+  it("handles a leap-year February (29 days)", () => {
+    // 2028 is a leap year; end-of-day Feb 15 ≈ just over half of 29 days.
+    const f = monthElapsedFraction("2028-02", new Date(2028, 1, 15, 12, 0, 0));
+    expect(f).toBeGreaterThan(0.48);
+    expect(f).toBeLessThan(0.55);
+    // The 29th exists and is within the month (fraction < 1).
+    expect(monthElapsedFraction("2028-02", new Date(2028, 1, 29, 0, 0, 0))).toBeLessThan(1);
+  });
+});
 
 describe("isValidMonth", () => {
   it.each([

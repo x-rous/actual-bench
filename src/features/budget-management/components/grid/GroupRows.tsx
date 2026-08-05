@@ -70,7 +70,7 @@ function GroupMonthAggregate({
   if (!group && isReadOnlyMonth) {
     return (
       <div
-        className={`${baseClass}${dimClass} px-2 flex items-center justify-end text-xs font-sans tabular-nums text-muted-foreground cursor-not-allowed outline-none${isSelected ? " ring-2 ring-inset ring-foreground/80" : ""}`}
+        className={`relative ${baseClass}${dimClass} px-2 flex items-center justify-end text-xs font-sans tabular-nums text-muted-foreground cursor-not-allowed outline-none${isSelected ? " ring-2 ring-inset ring-foreground/80" : ""}`}
         role="gridcell"
         tabIndex={0}
         aria-selected={isSelected}
@@ -190,6 +190,8 @@ export type GroupRowsProps = {
   suppressNextClickRef: { current: boolean };
   showHidden: boolean;
   showSpendingBars?: boolean;
+  /** F-083: focused cell's category, for the crosshair row-label (axis) tint. */
+  crosshairCategoryId?: string | null;
   groupSelection?: { groupId: string; month: string } | null;
   rowSelection?: RowSelection | null;
   readOnlyMonths: Set<string>;
@@ -228,6 +230,7 @@ export function BudgetGridGroupRows({
   suppressNextClickRef,
   showHidden,
   showSpendingBars,
+  crosshairCategoryId,
   groupSelection,
   rowSelection,
   readOnlyMonths,
@@ -332,6 +335,8 @@ export function BudgetGridGroupRows({
           const catRowSelectedClass = isCatRowSelected
             ? " ring-2 ring-inset ring-foreground/80"
             : "";
+          const isCrosshairRow =
+            crosshairCategoryId != null && crosshairCategoryId === cat.id;
 
           return (
             <div
@@ -342,7 +347,7 @@ export function BudgetGridGroupRows({
             >
               {/* Category label - clickable / focusable to select the row */}
               <div
-                className={`h-7 pl-4 pr-2 flex items-center border-r border-b border-border/50 text-xs sticky left-0 bg-background cursor-default outline-none${catDimClass}${catRowSelectedClass}`}
+                className={`relative h-7 pl-4 pr-2 flex items-center border-r border-b border-border/50 text-xs sticky left-0 bg-background cursor-default outline-none${catDimClass}${catRowSelectedClass}`}
                 role="gridcell"
                 tabIndex={0}
                 aria-selected={isCatRowSelected}
@@ -357,6 +362,9 @@ export function BudgetGridGroupRows({
                   })
                 }
               >
+                {isCrosshairRow && !isCatRowSelected && (
+                  <span className="pointer-events-none absolute inset-0 bg-primary/[0.08]" aria-hidden="true" />
+                )}
                 <span className="flex-1 min-w-0 truncate">{cat.name}</span>
                 {allNotes?.has(cat.id) && (
                   <StickyNote className="ml-1.5 h-3 w-3 shrink-0 text-muted-foreground/50" aria-hidden="true" />
