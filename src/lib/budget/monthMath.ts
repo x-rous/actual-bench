@@ -40,6 +40,25 @@ export function currentMonth(): string {
   return fromDate(new Date());
 }
 
+/**
+ * Fraction of `month` that has elapsed as of `now`, in [0, 1].
+ *
+ * `0` if `now` is at/before the month's first instant, `1` if the month has
+ * fully passed, otherwise the elapsed time within the month divided by the
+ * month's length. Timestamp-based, so leap years and month lengths are handled
+ * by `Date`. Used to show "where are we in the month?" on the current-month
+ * column (RD-067).
+ */
+export function monthElapsedFraction(month: string, now: Date): number {
+  const [year, mo] = parseMonth(month);
+  const start = new Date(year, mo - 1, 1).getTime();
+  const end = new Date(year, mo, 1).getTime(); // first instant of the next month
+  const t = now.getTime();
+  if (t <= start) return 0;
+  if (t >= end) return 1;
+  return (t - start) / (end - start);
+}
+
 /** Add `delta` months (may be negative) to `month`. */
 export function addMonths(month: string, delta: number): string {
   const [year, mo] = parseMonth(month);

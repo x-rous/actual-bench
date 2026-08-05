@@ -269,7 +269,8 @@ A multi-month budget editing workspace with staged cell editing, a draft review 
 ### Toolbar
 - Budget mode badge (`Envelope`, `Tracking`, or `Unknown`) always visible at the left
 - 12-month window navigator: back/forward by 1 month (`‹ ›`) or 1 year (`«»`), plus a "go to current month" calendar button; range label displays as "Jan '26 – Dec '26"
-- Opens oriented on the current month, and the current-month column is highlighted (bold + accent border, `aria-current`) so "now" is obvious at a glance
+- Opens oriented on the current month, and the current-month column is highlighted (bold + accent border, `aria-current`) so "now" is obvious at a glance; a subtle marker on that column shows how far through the month today is (e.g. day 12 of 31), so a spending bar reads fairly
+- Crosshair highlight: the focused cell's row and column are softly tinted to the grid edges, making it effortless to trace which category and month a cell belongs to across the 12-month grid
 - Cell-view toggle: **Budget** / **Actuals** / **Balance** — switches what value each month cell displays
 - **Spending Bars** (toolbar toggle, on by default): a thin bar under each editable expense cell — and under each group-total cell — shows spent ÷ budgeted for that month — green under budget, amber approaching the limit, and a red overflow segment when over; a distinct red bar flags spending from an unfunded envelope/group. The bar keeps the 12-month width and row height; exact spent/balance stay in the cell tooltip and details panel. Income rows show no bar.
 - Expand all / Collapse all group buttons

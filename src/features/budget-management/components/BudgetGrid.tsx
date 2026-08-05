@@ -245,6 +245,12 @@ export function BudgetGrid({
   const selectedMonth =
     selection?.focusMonth ?? groupSelection?.month ?? monthSelection ?? null;
 
+  // F-083 crosshair: the focused cell's row (category) and column (month) get a
+  // faint highlight to their edges, so tracing "which category × which month" in
+  // a 12-wide grid is effortless. Driven by the existing focus, not per-hover.
+  const crosshairMonth = selection?.focusMonth ?? null;
+  const crosshairCategoryId = selection?.focusCategoryId ?? null;
+
   const gridStyle: React.CSSProperties = {
     display: "grid",
     gridTemplateColumns: `minmax(180px, 1fr) repeat(${activeMonths.length}, minmax(69px, 94px))`,
@@ -265,6 +271,8 @@ export function BudgetGrid({
     suppressNextClickRef: suppressNextClickClearRef,
     showHidden,
     showSpendingBars,
+    crosshairMonth,
+    crosshairCategoryId,
     onCellFocus,
     onCellRangeSelect,
     onCellNavigate,

@@ -14,6 +14,17 @@ describe("MonthColumnHeader current-month highlight (F-079)", () => {
     expect(header.className).toMatch(/font-bold/);
   });
 
+  it("includes the elapsed day-of-month in the current-month accessible name (RD-067)", () => {
+    render(<MonthColumnHeader month={now} availableMonths={[now]} />);
+    // e.g. "... (current month, day 12 of 31)"
+    expect(screen.getByLabelText(/current month, day \d+ of \d+/i)).toBeInTheDocument();
+  });
+
+  it("does not add an elapsed marker on a non-current month", () => {
+    render(<MonthColumnHeader month={other} availableMonths={[other]} />);
+    expect(screen.getByLabelText(/^Month:/).getAttribute("aria-label")).not.toMatch(/day \d+ of/i);
+  });
+
   it("does not mark a non-current month", () => {
     render(<MonthColumnHeader month={other} availableMonths={[other]} />);
     const header = screen.getByLabelText(/^Month:/);

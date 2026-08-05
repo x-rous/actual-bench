@@ -2,7 +2,7 @@
 
 import { cn } from "@/lib/utils";
 import { useBudgetEditsStore } from "@/store/budgetEdits";
-import { currentMonth, formatMonthLabel } from "@/lib/budget/monthMath";
+import { currentMonth, formatMonthLabel, monthElapsedFraction } from "@/lib/budget/monthMath";
 
 /**
  * Sticky column header for a single month: full-name label plus a status dot.
@@ -34,6 +34,14 @@ export function MonthColumnHeader({
   const isAvailable = availableMonths.includes(month);
   const isCurrentMonth = month === currentMonth();
 
+  // RD-067: how far through the current month "today" is, for a subtle marker on
+  // the current-month column (so a spending bar reads as fair — 80% spent on the
+  // 5th ≠ on the 25th). Only meaningful for the current month.
+  const now = new Date();
+  const elapsedFraction = isCurrentMonth ? monthElapsedFraction(month, now) : null;
+  const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+  const elapsedText = isCurrentMonth ? `, day ${now.getDate()} of ${daysInMonth}` : "";
+
   const label = formatMonthLabel(month, "long");
 
   const dotColor = !isAvailable
@@ -53,7 +61,7 @@ export function MonthColumnHeader({
   return (
     <div
       className={cn(
-        "h-8 px-2 flex items-center justify-end gap-1.5 border-b-2 text-xs sticky top-0 z-20",
+        "relative h-8 px-2 flex items-center justify-end gap-1.5 border-b-2 text-xs sticky top-0 z-20",
         isCurrentMonth ? "font-bold" : "font-semibold",
         isSelected
           ? "border-primary/70 bg-muted text-foreground"
@@ -62,7 +70,7 @@ export function MonthColumnHeader({
           : "border-border bg-muted text-foreground",
         selectable && "cursor-pointer hover:bg-muted/70"
       )}
-      aria-label={`Month: ${label}${isCurrentMonth ? " (current month)" : ""}`}
+      aria-label={`Month: ${label}${isCurrentMonth ? ` (current month${elapsedText})` : ""}`}
       // Always present on the current-month header (even when the month is not
       // yet available/selectable) so orientation can reliably scroll to it.
       {...(isCurrentMonth ? { "aria-current": "date" as const, "data-current-month-header": "" } : {})}
@@ -89,6 +97,15 @@ export function MonthColumnHeader({
         aria-hidden="true"
       />
       <span className="truncate">{label}</span>
+
+      {elapsedFraction !== null && (
+        <span
+          className="pointer-events-none absolute bottom-0 w-px h-2 bg-primary/70 rounded-t"
+          style={{ left: `${elapsedFraction * 100}%` }}
+          title={`Today${elapsedText}`}
+          aria-hidden="true"
+        />
+      )}
     </div>
   );
 }
