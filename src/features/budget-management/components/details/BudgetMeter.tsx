@@ -25,18 +25,27 @@ export function BudgetMeter({ model }: { model: BudgetMeterModel }) {
   const { total, filled, remaining, filledLabel, totalLabel, remainingLabel } = model;
   const bar = computeSpendingBar(total, filled);
 
-  const remainingText = `${formatMinor(Math.abs(remaining))} ${remainingLabel}`;
+  // "0.00 under" is false — when there's no leftover, show just the status word.
+  const remainingText =
+    remaining === 0 ? remainingLabel : `${formatMinor(Math.abs(remaining))} ${remainingLabel}`;
   const captionLeft = `${filledLabel} ${formatMinor(filled)} of ${formatMinor(total)} ${totalLabel.toLowerCase()}`;
   const isOver = bar.tier === "over" || bar.tier === "unbudgeted";
-  const pct = total > 0 ? Math.round((filled / total) * 100) : 0;
+  // % is only meaningful with a positive track (unfunded spending has total = 0).
+  const pct = total > 0 ? Math.round((filled / total) * 100) : null;
+
+  // ARIA determinate range must stay valid: clamp `now` into [0, max]; carry the
+  // real amounts (which can exceed the track when over budget) in aria-valuetext.
+  const valueMax = Math.max(0, Math.round(total));
+  const valueNow = Math.min(Math.max(0, Math.round(filled)), valueMax);
 
   return (
     <div
       className="rounded border border-border/60 px-2.5 py-2 space-y-1.5"
       role="progressbar"
       aria-valuemin={0}
-      aria-valuemax={Math.round(total)}
-      aria-valuenow={Math.round(filled)}
+      aria-valuemax={valueMax}
+      aria-valuenow={valueNow}
+      aria-valuetext={`${captionLeft} — ${remainingText}`}
       aria-label={`${captionLeft} — ${remainingText}`}
     >
       <div
@@ -62,7 +71,7 @@ export function BudgetMeter({ model }: { model: BudgetMeterModel }) {
       <div className="flex items-baseline justify-between gap-2 text-[10px]">
         <span className="text-muted-foreground/80 tabular-nums truncate">
           {captionLeft}
-          <span className="ml-1 text-muted-foreground/60">· {pct}%</span>
+          {pct !== null && <span className="ml-1 text-muted-foreground/60">· {pct}%</span>}
         </span>
         <span
           className={`shrink-0 font-medium tabular-nums ${

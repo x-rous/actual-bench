@@ -522,4 +522,36 @@ describe("buildMonthSummaryMeter", () => {
       buildMonthSummaryMeter({ isTracking: true, budgeted: 0, spent: 0, balance: 0 })
     ).toBeUndefined();
   });
+
+  it("uses a neutral 'on budget' label when tracking expense is exactly on plan", () => {
+    const meter = buildTrackingDetailsMetrics(
+      modelForSelection({
+        selection: { scope: "month", entity: "category", month: "2026-04", categoryId: "expense-cat" },
+        state: monthState("2026-04", {
+          incomeBudgeted: 0,
+          incomeActuals: 0,
+          expenseBudgeted: -300_000,
+          expenseActuals: -300_000,
+          categoryExpenseBudgeted: -300_000,
+          categoryExpenseActuals: -300_000,
+        }),
+      })
+    ).meter;
+    expect(meter).toMatchObject({ remaining: 0, remainingLabel: "on budget" });
+  });
+
+  it("uses a neutral 'on plan' label when tracking income exactly hits plan", () => {
+    const meter = buildTrackingDetailsMetrics(
+      modelForSelection({
+        selection: { scope: "month", entity: "category", month: "2026-04", categoryId: "income-cat" },
+        state: monthState("2026-04", {
+          incomeBudgeted: 500_000,
+          incomeActuals: 500_000,
+          expenseBudgeted: -300_000,
+          expenseActuals: -280_000,
+        }),
+      })
+    ).meter;
+    expect(meter).toMatchObject({ remaining: 0, remainingLabel: "on plan", variant: "income" });
+  });
 });

@@ -31,11 +31,11 @@ export type DetailsTone = "positive" | "negative" | "neutral";
  * - Tracking income: `total` = planned, `filled` = received, `remaining` = to-go.
  */
 export type BudgetMeterModel = {
-  /** Track denominator (>= 0). Zero means "nothing to fill" — no meter. */
+  /** Track denominator, **integer minor units** (>= 0). Zero → nothing to fill. */
   total: number;
-  /** Filled amount: spent / actual / received (>= 0). */
+  /** Filled amount: spent / actual / received, **integer minor units** (>= 0). */
   filled: number;
-  /** Signed leftover: balance / variance / to-go. Negative reads as over/ahead. */
+  /** Signed leftover: balance / variance / to-go, **integer minor units**. Negative reads as over/ahead. */
   remaining: number;
   /** e.g. "Spent" / "Received". */
   filledLabel: string;
@@ -98,7 +98,7 @@ function trackingExpenseMeter(
     remaining,
     filledLabel: "Spent",
     totalLabel,
-    remainingLabel: remaining < 0 ? "over" : "under",
+    remainingLabel: remaining < 0 ? "over" : remaining > 0 ? "under" : "on budget",
     variant: "expense",
   };
 }
@@ -132,7 +132,7 @@ function trackingIncomeMeter(
     remaining,
     filledLabel: "Received",
     totalLabel,
-    remainingLabel: remaining <= 0 ? "ahead" : "to go",
+    remainingLabel: remaining < 0 ? "ahead" : remaining > 0 ? "to go" : "on plan",
     variant: "income",
   };
 }
