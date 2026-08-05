@@ -152,7 +152,7 @@ function GroupMonthAggregate({
       tabIndex={0}
       aria-selected={isSelected}
       aria-label={`${group.name} total for ${month}: ${formatMinor(displayValue)}${barStatusNote}`}
-      title={`Budgeted: ${formatMinor(group.budgeted)} | Actuals: ${formatMinor(Math.abs(group.actuals))} | Balance: ${formatMinor(group.balance)}${overNote}${stagedChildCount > 0 ? ` | ${stagedChildCount} staged change${stagedChildCount !== 1 ? "s" : ""} in this group` : ""}`}
+      title={`Budgeted: ${formatMinor(groupBudgetedMinor)} | Actuals: ${formatMinor(Math.abs(groupActualsMinor))} | Balance: ${formatMinor(groupBalanceMinor)}${overNote}${stagedChildCount > 0 ? ` | ${stagedChildCount} staged change${stagedChildCount !== 1 ? "s" : ""} in this group` : ""}`}
       data-group-id={groupId}
       data-group-month={month}
       onClick={onFocus}
