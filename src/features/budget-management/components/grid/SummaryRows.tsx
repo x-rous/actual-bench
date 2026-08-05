@@ -72,6 +72,8 @@ export type SummaryRowConfig = {
   emphasizeValue?: boolean;
   /** Optional value class override for rows that need a stronger emphasis. */
   valueClassName?: string;
+  /** Optional class override for the row-header label text (weight/size). */
+  labelClassName?: string;
   /** Tiny top margin before the row. */
   marginTop?: boolean;
 };
@@ -99,19 +101,22 @@ export const TRACKING_SUMMARY_ROWS: SummaryRowConfig[] = [
     getCell: (_s, state, month) => getTrackingSpendingCell(state, month),
     noBorder: true,
     marginTop: true,
+    rowHeight: "h-7",
+    labelClassName: "font-bold text-[12px]",
   },
   {
     label: "Income",
     rowTooltip: "Received income compared with budgeted income.",
     getCell: (_s, state, month) => getTrackingIncomeCell(state, month),
     noBorder: true,
+    rowHeight: "h-7",
   },
   {
     label: "Result",
     rowTooltip:
       "Actual saved/overspent for past months; projected result for current/future months.",
     getCell: (_s, state, month) => getTrackingResultCell(state, month),
-    rowHeight: "h-10",
+    rowHeight: "h-9",
     noBorder: true,
     emphasizeValue: true,
     valueClassName: "text-[13px] font-bold",
@@ -199,7 +204,11 @@ export function SummaryHeaderRow({
             {config.operator}
           </span>
         )}
-        <span className={config.operator === "=" ? "font-semibold" : ""}>{rowLabel}</span>
+        <span
+          className={`${config.operator === "=" ? "font-semibold" : ""} ${config.labelClassName ?? ""}`}
+        >
+          {rowLabel}
+        </span>
       </div>
       {activeMonths.map((month) => (
         <SummaryHeaderCell key={month} month={month} config={config} />
