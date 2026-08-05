@@ -5,7 +5,7 @@ import { useEffectiveMonthFromContext } from "../../context/MonthsDataContext";
 import { useBudgetEditsStore } from "@/store/budgetEdits";
 import { useAllNotes } from "@/hooks/useAllNotes";
 import { formatMinor } from "../../lib/format";
-import { computeSpendingBar } from "../../lib/spendingBar";
+import { computeSpendingBar, spendingTierLabel } from "../../lib/spendingBar";
 import { SpendingBarView } from "./SpendingBarView";
 import { dispatchRowLabel, useGroupCellKeymap } from "../../keyboard/useBudgetKeymap";
 import { BudgetCell, type BudgetCellDragState } from "../BudgetCell";
@@ -134,13 +134,24 @@ function GroupMonthAggregate({
       ? " (unbudgeted)"
       : "";
 
+  // Full spoken status for the group bar so its tier is never colour-only
+  // (mirrors the category cell): budgeted / spent / balance + tier label.
+  const barStatusNote =
+    spendingBar && spendingBar.tier !== "empty"
+      ? ` - budgeted ${formatMinor(groupBudgetedMinor)}, spent ${formatMinor(
+          groupSpentMinor
+        )}, balance ${formatMinor(groupBalanceMinor)} (${spendingTierLabel(
+          spendingBar.tier
+        )})`
+      : "";
+
   return (
     <div
       className={`${baseClass}${dimClass} relative px-2 flex items-center justify-end text-xs font-sans tabular-nums text-black dark:text-zinc-200 cursor-default outline-none${isSelected ? " ring-2 ring-inset ring-foreground/80" : ""}`}
       role="gridcell"
       tabIndex={0}
       aria-selected={isSelected}
-      aria-label={`${group.name} total for ${month}: ${formatMinor(displayValue)}${overNote}`}
+      aria-label={`${group.name} total for ${month}: ${formatMinor(displayValue)}${barStatusNote}`}
       title={`Budgeted: ${formatMinor(group.budgeted)} | Actuals: ${formatMinor(Math.abs(group.actuals))} | Balance: ${formatMinor(group.balance)}${overNote}${stagedChildCount > 0 ? ` | ${stagedChildCount} staged change${stagedChildCount !== 1 ? "s" : ""} in this group` : ""}`}
       data-group-id={groupId}
       data-group-month={month}
