@@ -19,6 +19,124 @@ import type { BudgetTransactionsDrilldown } from "./budgetTransactionBrowser";
 
 export type DetailsTone = "positive" | "negative" | "neutral";
 
+/**
+ * Progress-meter model for the details panel (F-086). The meter visualises the
+ * panel's existing hero number, so `filled`/`total`/`remaining` are already
+ * computed here alongside every other metric; the panel just renders it.
+ *
+ * - Envelope expense: `total` = money available (spent + balance, carryover-aware),
+ *   `filled` = spent, `remaining` = balance.
+ * - Tracking expense: `total` = budgeted (to-date), `filled` = actual (to-date),
+ *   `remaining` = variance.
+ * - Tracking income: `total` = planned, `filled` = received, `remaining` = to-go.
+ */
+export type BudgetMeterModel = {
+  /** Track denominator (>= 0). Zero means "nothing to fill" — no meter. */
+  total: number;
+  /** Filled amount: spent / actual / received (>= 0). */
+  filled: number;
+  /** Signed leftover: balance / variance / to-go. Negative reads as over/ahead. */
+  remaining: number;
+  /** e.g. "Spent" / "Received". */
+  filledLabel: string;
+  /** e.g. "Available" / "Budgeted to date" / "Planned". */
+  totalLabel: string;
+  /** Word after the remaining amount: "left" / "over" / "under" / "to go" / "ahead". */
+  remainingLabel: string;
+  variant: "expense" | "income";
+};
+
+/** Envelope-fill meter: track = available (spent + balance), carryover-aware. */
+function envelopeAvailableMeter(
+  spent: number,
+  balance: number,
+  totalLabel = "Available"
+): BudgetMeterModel | undefined {
+  const available = spent + balance;
+  if (available <= 0 && spent <= 0) return undefined;
+  return {
+    total: Math.max(available, 0),
+    filled: Math.max(spent, 0),
+    remaining: balance,
+    filledLabel: "Spent",
+    totalLabel,
+    remainingLabel: balance < 0 ? "over" : "left",
+    variant: "expense",
+  };
+}
+
+/** Whole-budget envelope meter: assigned-vs-spent (no single balance at that level). */
+function envelopeAssignedMeter(
+  assigned: number,
+  spent: number,
+  totalLabel = "Assigned"
+): BudgetMeterModel | undefined {
+  if (assigned <= 0) return undefined;
+  const remaining = assigned - spent;
+  return {
+    total: assigned,
+    filled: Math.max(spent, 0),
+    remaining,
+    filledLabel: "Spent",
+    totalLabel,
+    remainingLabel: remaining < 0 ? "over" : "left",
+    variant: "expense",
+  };
+}
+
+/** Tracking plan-progress meter: budgeted-vs-actual (pass to-date values only). */
+function trackingExpenseMeter(
+  budgeted: number,
+  actuals: number,
+  totalLabel = "Budgeted"
+): BudgetMeterModel | undefined {
+  if (budgeted <= 0) return undefined;
+  const remaining = budgeted - actuals; // variance
+  return {
+    total: budgeted,
+    filled: Math.max(actuals, 0),
+    remaining,
+    filledLabel: "Spent",
+    totalLabel,
+    remainingLabel: remaining < 0 ? "over" : "under",
+    variant: "expense",
+  };
+}
+
+/**
+ * Meter for the whole-month summary panel (which bypasses the metric builders).
+ * Envelope: envelope-fill from the month's totals; Tracking: plan-progress.
+ */
+export function buildMonthSummaryMeter(input: {
+  isTracking: boolean;
+  budgeted: number;
+  spent: number;
+  balance: number;
+}): BudgetMeterModel | undefined {
+  return input.isTracking
+    ? trackingExpenseMeter(input.budgeted, input.spent, "Budgeted")
+    : envelopeAvailableMeter(input.spent, input.balance, "Available");
+}
+
+/** Tracking income meter: received-vs-planned. */
+function trackingIncomeMeter(
+  budgeted: number,
+  actuals: number,
+  totalLabel = "Planned"
+): BudgetMeterModel | undefined {
+  if (budgeted <= 0) return undefined;
+  const remaining = budgeted - actuals; // to go (negative = ahead)
+  return {
+    total: budgeted,
+    filled: Math.max(actuals, 0),
+    remaining,
+    filledLabel: "Received",
+    totalLabel,
+    remainingLabel: remaining <= 0 ? "ahead" : "to go",
+    variant: "income",
+  };
+}
+
 export type BudgetTrendPoint = {
   month: string;
   label: string;
@@ -144,6 +262,7 @@ export type TrackingDetailsMetrics = {
   selectionAverages?: TrackingSelectionAverages;
   rollover?: TrackingRolloverMetrics | null;
   monthValues?: TrackingSelectedMonthValues;
+  meter?: BudgetMeterModel;
   trendLabel: string;
   trend: BudgetTrendPoint[];
   spendingVsBudgetedTrend?: BudgetTrendPoint[];
@@ -186,6 +305,7 @@ export type EnvelopeDetailsMetrics = {
     spentLabel: string;
   };
   monthValues?: EnvelopeSelectedMonthValues;
+  meter?: BudgetMeterModel;
   trendLabel: string;
   trend: BudgetTrendPoint[];
   stagedImpact: RelevantStagedImpact | null;
@@ -775,6 +895,11 @@ function buildTrackingMonthMetrics(
       previousBudgeted: previousValues?.budgeted ?? null,
       stagedEdit: exactEdit,
     },
+    meter: futureOnly
+      ? undefined
+      : target.isIncome
+      ? trackingIncomeMeter(values.budgeted, values.actuals)
+      : trackingExpenseMeter(values.budgeted, values.actuals),
     trendLabel: "Monthly Spending vs. Budgeted",
     trend: [],
     stagedImpact: relevantStagedImpact(model, target),
@@ -917,6 +1042,11 @@ export function buildTrackingDetailsMetrics(
             }
           : undefined,
       rollover: buildTrackingRolloverMetrics(model, target),
+      meter: futureOnly
+        ? undefined
+        : target.isIncome
+        ? trackingIncomeMeter(budgetToDate, actualToDate, "Planned to date")
+        : trackingExpenseMeter(budgetToDate, actualToDate, "Budgeted to date"),
       trendLabel: "Monthly Spending vs. Budgeted",
       trend,
       stagedImpact: relevantStagedImpact(model, target),
@@ -1013,6 +1143,9 @@ export function buildTrackingDetailsMetrics(
       expensesBudgeted: fullExpenseBudget,
       plannedResult,
     },
+    meter: model.coverage.isFutureOnly
+      ? undefined
+      : trackingExpenseMeter(expenseBudgetToDate, expenseActuals, "Budgeted to date"),
     trendLabel: "Monthly Result",
     trend,
     spendingVsBudgetedTrend: model.coverage.isFutureOnly ? undefined : spendingVsBudgetedTrend,
@@ -1092,6 +1225,10 @@ function buildEnvelopeMonthMetrics(
       carryover: selection.entity === "category" ? values.carryover : null,
       stagedEdit: exactEdit,
     },
+    meter:
+      entry.status === "future" || target.isIncome
+        ? undefined
+        : envelopeAvailableMeter(values.actuals, values.balance, "Available"),
     trendLabel: "Balance Trend",
     trend: [],
     stagedImpact: relevantStagedImpact(model, target),
@@ -1212,6 +1349,10 @@ export function buildEnvelopeDetailsMetrics(
         carryover: target.categoryIds.length === 1 ? latest?.carryover ?? null : null,
         spentLabel: target.isIncome ? "Income received to date" : "Spent to date",
       },
+      meter:
+        futureOnly || target.isIncome || !latest
+          ? undefined
+          : envelopeAvailableMeter(spentToDate, latest.balance, "Available"),
       trendLabel: "Balance Trend",
       trend,
       stagedImpact: relevantStagedImpact(model, target),
@@ -1297,6 +1438,9 @@ export function buildEnvelopeDetailsMetrics(
       incomeReceivedToDate,
       forNextMonth: latestActual?.state?.summary.forNextMonth ?? null,
     },
+    meter: model.coverage.isFutureOnly
+      ? undefined
+      : envelopeAssignedMeter(assignedBudgeted, spentToDate, "Assigned"),
     trendLabel: "To Budget Trend",
     trend,
     stagedImpact: relevantStagedImpact(model, null),

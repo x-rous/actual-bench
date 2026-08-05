@@ -2,7 +2,8 @@
 
 import { formatMonthLabel } from "@/lib/budget/monthMath";
 import { formatDelta, formatSigned } from "../../lib/format";
-import type { DetailsTone } from "../../lib/budgetDetailsMetrics";
+import { buildMonthSummaryMeter, type DetailsTone } from "../../lib/budgetDetailsMetrics";
+import { classifyMonthActualStatus } from "../../lib/budgetDetailsModel";
 import type { BudgetMonthSummary, LoadedMonthState } from "../../types";
 import {
   DetailsHeader,
@@ -10,6 +11,7 @@ import {
   MetricLine,
   PrimaryMetric,
 } from "./DetailsPrimitives";
+import { BudgetMeter } from "./BudgetMeter";
 import { BudgetNoteSection } from "./BudgetNoteSection";
 
 function toneFromValue(value: number): DetailsTone {
@@ -35,6 +37,18 @@ export function BudgetMonthSummaryPanel({
   state: LoadedMonthState | undefined;
   isTracking: boolean;
 }) {
+  // Skip the meter on plan-only (future) months — nothing spent to fill it.
+  const isFuture = classifyMonthActualStatus(month) === "future";
+  const meter =
+    state && !isFuture
+      ? buildMonthSummaryMeter({
+          isTracking,
+          budgeted: Math.abs(state.summary.totalBudgeted),
+          spent: Math.abs(state.summary.totalSpent),
+          balance: state.summary.totalBalance,
+        })
+      : undefined;
+
   return (
     <div className="px-3 py-2 space-y-3">
       <DetailsHeader
@@ -46,9 +60,9 @@ export function BudgetMonthSummaryPanel({
 
       {state ? (
         isTracking ? (
-          <TrackingMonthBody summary={state.summary} />
+          <TrackingMonthBody summary={state.summary} meter={meter} />
         ) : (
-          <EnvelopeMonthBody summary={state.summary} />
+          <EnvelopeMonthBody summary={state.summary} meter={meter} />
         )
       ) : (
         <DetailsSection>
@@ -63,7 +77,13 @@ export function BudgetMonthSummaryPanel({
   );
 }
 
-function EnvelopeMonthBody({ summary }: { summary: BudgetMonthSummary }) {
+function EnvelopeMonthBody({
+  summary,
+  meter,
+}: {
+  summary: BudgetMonthSummary;
+  meter?: ReturnType<typeof buildMonthSummaryMeter>;
+}) {
   const toBudget = summary.toBudget;
   const fullyBudgeted = toBudget === 0;
   const primaryLabel = fullyBudgeted
@@ -87,6 +107,7 @@ function EnvelopeMonthBody({ summary }: { summary: BudgetMonthSummary }) {
         showPlus={!fullyBudgeted}
         valuePrefix={fullyBudgeted ? "✓ " : undefined}
       />
+      {meter && <BudgetMeter model={meter} />}
       <DetailsSection title="Values">
         <MetricLine
           label="Assigned / Budgeted"
@@ -111,7 +132,13 @@ function EnvelopeMonthBody({ summary }: { summary: BudgetMonthSummary }) {
   );
 }
 
-function TrackingMonthBody({ summary }: { summary: BudgetMonthSummary }) {
+function TrackingMonthBody({
+  summary,
+  meter,
+}: {
+  summary: BudgetMonthSummary;
+  meter?: ReturnType<typeof buildMonthSummaryMeter>;
+}) {
   const income = summary.totalIncome;
   const spent = Math.abs(summary.totalSpent);
   const budgeted = Math.abs(summary.totalBudgeted);
@@ -128,6 +155,7 @@ function TrackingMonthBody({ summary }: { summary: BudgetMonthSummary }) {
         tone={toneFromValue(result)}
         showPlus
       />
+      {meter && <BudgetMeter model={meter} />}
       <DetailsSection title="Actuals">
         <MetricLine label="Income received" value={formatSigned(income)} />
         <MetricLine label="Expenses spent" value={formatSigned(spent)} />
