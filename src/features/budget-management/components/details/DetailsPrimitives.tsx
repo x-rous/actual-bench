@@ -112,6 +112,7 @@ export function PrimaryMetric({
   tone,
   showPlus = false,
   valuePrefix,
+  children,
 }: {
   label: string;
   value: number | null;
@@ -119,6 +120,8 @@ export function PrimaryMetric({
   tone: DetailsTone;
   showPlus?: boolean;
   valuePrefix?: string;
+  /** Optional extra content inside the box (e.g. the embedded progress meter). */
+  children?: ReactNode;
 }) {
   return (
     <DetailsSection>
@@ -136,6 +139,7 @@ export function PrimaryMetric({
           </>
         )}
       </div>
+      {children && <div className="mt-2">{children}</div>}
     </DetailsSection>
   );
 }

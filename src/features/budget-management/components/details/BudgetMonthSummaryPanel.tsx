@@ -106,8 +106,9 @@ function EnvelopeMonthBody({
         tone={toBudget >= 0 ? "positive" : "negative"}
         showPlus={!fullyBudgeted}
         valuePrefix={fullyBudgeted ? "✓ " : undefined}
-      />
-      {meter && <BudgetMeter model={meter} />}
+      >
+        {meter && <BudgetMeter model={meter} embedded />}
+      </PrimaryMetric>
       <DetailsSection title="Values">
         <MetricLine
           label="Assigned / Budgeted"
@@ -154,8 +155,9 @@ function TrackingMonthBody({
         helper={result >= 0 ? "saved" : "overspent"}
         tone={toneFromValue(result)}
         showPlus
-      />
-      {meter && <BudgetMeter model={meter} />}
+      >
+        {meter && <BudgetMeter model={meter} embedded />}
+      </PrimaryMetric>
       <DetailsSection title="Actuals">
         <MetricLine label="Income received" value={formatSigned(income)} />
         <MetricLine label="Expenses spent" value={formatSigned(spent)} />

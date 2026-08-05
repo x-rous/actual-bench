@@ -88,9 +88,9 @@ export function TrackingDetailsPanel({
         helper={metrics.primary.helper}
         tone={metrics.primary.tone}
         showPlus={isFullPeriod}
-      />
-
-      {metrics.meter && <BudgetMeter model={metrics.meter} />}
+      >
+        {metrics.meter && <BudgetMeter model={metrics.meter} embedded />}
+      </PrimaryMetric>
 
       {isMonth && metrics.monthValues && (
         <DetailsSection title="Values">

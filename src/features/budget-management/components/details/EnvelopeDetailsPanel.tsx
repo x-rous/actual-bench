@@ -79,9 +79,9 @@ export function EnvelopeDetailsPanel({
         tone={metrics.primary.tone}
         showPlus={isFullPeriod && isToBudgetLabel(metrics.primary.label)}
         valuePrefix={isFullyBudgeted(metrics.primary.label) ? "✓ " : undefined}
-      />
-
-      {metrics.meter && <BudgetMeter model={metrics.meter} />}
+      >
+        {metrics.meter && <BudgetMeter model={metrics.meter} embedded />}
+      </PrimaryMetric>
 
       {!isMonth && metrics.endPlan && (
         <DetailsSection title="End of visible plan">

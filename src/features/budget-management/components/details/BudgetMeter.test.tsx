@@ -30,4 +30,19 @@ describe("BudgetMeter", () => {
     render(<BudgetMeter model={model({ filled: 70_000, remaining: -10_000, remainingLabel: "over" })} />);
     expect(screen.getByText(/100\.00 over/)).toBeInTheDocument();
   });
+
+  it("embedded: hides the visible remaining text but keeps it in the accessible name", () => {
+    render(
+      <BudgetMeter
+        model={model({ filled: 70_000, remaining: -10_000, remainingLabel: "over" })}
+        embedded
+      />,
+    );
+    // The redundant remaining text is not shown (the box's headline states it)…
+    expect(screen.queryByText(/100\.00 over/)).not.toBeInTheDocument();
+    // …but it stays in the progressbar's accessible name for screen readers.
+    expect(screen.getByRole("progressbar").getAttribute("aria-label")).toMatch(/100\.00 over/);
+    // The "spent of total" caption still renders.
+    expect(screen.getByText(/Spent 700\.00 of 600\.00/)).toBeInTheDocument();
+  });
 });

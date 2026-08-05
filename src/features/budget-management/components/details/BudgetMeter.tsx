@@ -21,7 +21,19 @@ const FILL_CLASS: Record<Exclude<SpendingTier, "none" | "empty">, string> = {
   unbudgeted: "bg-destructive/30",
 };
 
-export function BudgetMeter({ model }: { model: BudgetMeterModel }) {
+export function BudgetMeter({
+  model,
+  embedded = false,
+}: {
+  model: BudgetMeterModel;
+  /**
+   * When true, the meter renders without its own border/padding and drops the
+   * visible remaining-text — used inside the primary-metric box, whose headline
+   * (e.g. "Under budget by $80") already states the leftover. The full text is
+   * still in the accessible name.
+   */
+  embedded?: boolean;
+}) {
   const { total, filled, remaining, filledLabel, totalLabel, remainingLabel } = model;
   const bar = computeSpendingBar(total, filled);
 
@@ -40,7 +52,9 @@ export function BudgetMeter({ model }: { model: BudgetMeterModel }) {
 
   return (
     <div
-      className="rounded border border-border/60 px-2.5 py-2 space-y-1.5"
+      className={
+        embedded ? "space-y-1.5" : "rounded border border-border/60 px-2.5 py-2 space-y-1.5"
+      }
       role="progressbar"
       aria-valuemin={0}
       aria-valuemax={valueMax}
@@ -73,13 +87,15 @@ export function BudgetMeter({ model }: { model: BudgetMeterModel }) {
           {captionLeft}
           {pct !== null && <span className="ml-1 text-muted-foreground/60">· {pct}%</span>}
         </span>
-        <span
-          className={`shrink-0 font-medium tabular-nums ${
-            isOver ? "text-destructive" : "text-emerald-700 dark:text-emerald-400"
-          }`}
-        >
-          {remainingText}
-        </span>
+        {!embedded && (
+          <span
+            className={`shrink-0 font-medium tabular-nums ${
+              isOver ? "text-destructive" : "text-emerald-700 dark:text-emerald-400"
+            }`}
+          >
+            {remainingText}
+          </span>
+        )}
       </div>
     </div>
   );
