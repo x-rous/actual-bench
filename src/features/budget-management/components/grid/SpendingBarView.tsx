@@ -11,12 +11,12 @@ const BAR_FILL_CLASS: Record<SpendingTier, string> = {
   // `empty` has zero fill width, so its colour never actually paints — it just
   // shows the neutral gray track (below) for a consistent, calm grid.
   empty: "bg-transparent",
-  under: "bg-emerald-500/40 dark:bg-emerald-400/35",
-  near: "bg-amber-500/50 dark:bg-amber-500/45",
-  over: "bg-amber-500/50 dark:bg-amber-500/45",
+  under: "bg-emerald-500/25 dark:bg-emerald-400/25",
+  near: "bg-amber-500/30 dark:bg-amber-500/30",
+  over: "bg-amber-500/30 dark:bg-amber-500/30",
   // Distinct from `over` (amber + red overflow): a muted red means money left an
   // envelope/group that was never funded.
-  unbudgeted: "bg-destructive/25",
+  unbudgeted: "bg-destructive/15",
 };
 
 /**
@@ -37,7 +37,7 @@ export function SpendingBarView({ bar }: { bar: SpendingBar }) {
       />
       {bar.overflow > 0 && (
         <span
-          className="absolute bottom-0 right-0 h-full bg-destructive/55"
+          className="absolute bottom-0 right-0 h-full bg-destructive/35"
           style={{ width: `${bar.overflow * 100}%` }}
         />
       )}
