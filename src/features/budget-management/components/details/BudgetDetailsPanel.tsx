@@ -249,6 +249,8 @@ export function BudgetDetailsPanel() {
         month={selectedMonth}
         state={statesByMonth.get(selectedMonth)}
         isTracking={isTracking}
+        transactionBrowserOptions={transactionBrowserOptions}
+        statesByMonth={statesByMonth}
       />
     );
   }

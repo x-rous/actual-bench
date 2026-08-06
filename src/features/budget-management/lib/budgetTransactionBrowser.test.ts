@@ -1,5 +1,6 @@
 import {
   buildBudgetTransactionBrowserOptions,
+  buildMonthCategoriesDrilldown,
   type BudgetTransactionBrowserOptions,
 } from "./budgetTransactionBrowser";
 import type { BudgetDetailsModel } from "./budgetDetailsModel";
@@ -137,5 +138,34 @@ describe("budget transaction browser options", () => {
         categoryIds: ["food"],
       },
     ]);
+  });
+});
+
+describe("buildMonthCategoriesDrilldown", () => {
+  it("collects visible expense categories for the month (excludes hidden)", () => {
+    const drill = buildMonthCategoriesDrilldown(monthState(), "2026-04", "expense");
+    expect(drill).toEqual({
+      id: "__month_expenses__",
+      month: "2026-04",
+      title: "All expenses",
+      entity: "group",
+      categoryIds: ["food"],
+    });
+  });
+
+  it("collects visible income categories for the month", () => {
+    const drill = buildMonthCategoriesDrilldown(monthState(), "2026-04", "income");
+    expect(drill).toMatchObject({
+      id: "__month_income__",
+      title: "All income",
+      categoryIds: ["paycheck"],
+    });
+  });
+
+  it("returns null when the month has no matching categories", () => {
+    const state = monthState();
+    // Hide the only income category → no income to drill into.
+    state.categoriesById.paycheck.hidden = true;
+    expect(buildMonthCategoriesDrilldown(state, "2026-04", "income")).toBeNull();
   });
 });

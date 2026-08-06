@@ -15,18 +15,14 @@ import {
   MiniTrend,
   PrimaryMetric,
   StagedImpactBlock,
+  monthPaceProps,
   toneClass,
+  toneFromValue,
 } from "./DetailsPrimitives";
 import { BudgetTransactionsDialog } from "./BudgetTransactionsDialog";
 import { BudgetMeter, MeterSection } from "./BudgetMeter";
 import { BudgetNoteSection, type BudgetNoteTarget } from "./BudgetNoteSection";
 import { useSpendingDetailsShortcut } from "./useSpendingDetailsShortcut";
-
-function toneFromValue(value: number) {
-  if (value > 0) return "positive" as const;
-  if (value < 0) return "negative" as const;
-  return "neutral" as const;
-}
 
 function isToBudgetLabel(label: string): boolean {
   return label.includes("To Budget") || label.includes("Overbudget");
@@ -56,6 +52,10 @@ export function EnvelopeDetailsPanel({
 }) {
   const isFullPeriod = metrics.entity === "none";
   const isMonth = metrics.scope === "month";
+  const { chip: monthChip, elapsedFraction: monthElapsed } = monthPaceProps(
+    metrics.thisMonth,
+    isMonth
+  );
   const [transactionTarget, setTransactionTarget] =
     useState<BudgetTransactionsDrilldown | null>(null);
   useSpendingDetailsShortcut({
@@ -70,6 +70,8 @@ export function EnvelopeDetailsPanel({
         subtitle={metrics.subtitle}
         rangeLabel={metrics.rangeLabel}
         coverageLabel={metrics.coverageLabel}
+        coverage={metrics.coverage}
+        dayProgress={metrics.dayProgress}
       />
 
       <PrimaryMetric
@@ -79,11 +81,15 @@ export function EnvelopeDetailsPanel({
         tone={metrics.primary.tone}
         showPlus={isFullPeriod && isToBudgetLabel(metrics.primary.label)}
         valuePrefix={isFullyBudgeted(metrics.primary.label) ? "✓ " : undefined}
+        chip={monthChip}
+        hero
       >
         {/* Selections mirror the primary (Balance) → embed. The period summary
             leads with "To Budget" (a different number), so its spending meter
             gets its own status box below instead. */}
-        {!isFullPeriod && metrics.meter && <BudgetMeter model={metrics.meter} embedded />}
+        {!isFullPeriod && metrics.meter && (
+          <BudgetMeter model={metrics.meter} embedded elapsedFraction={monthElapsed} />
+        )}
       </PrimaryMetric>
 
       {isFullPeriod && metrics.meter && (
@@ -102,7 +108,7 @@ export function EnvelopeDetailsPanel({
               {formatEnvelopeStatusValue(metrics.endPlan.label, metrics.endPlan.value)}
             </span>
           </div>
-          <p className="text-[10px] text-muted-foreground/70 text-right">
+          <p className="text-[10.5px] text-muted-foreground text-right">
             {metrics.endPlan.helper}
           </p>
         </DetailsSection>

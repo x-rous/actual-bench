@@ -1,7 +1,7 @@
 "use client";
 
 import { computeSpendingBar, type SpendingTier } from "../../lib/spendingBar";
-import { formatMinor } from "../../lib/format";
+import { formatMinor, formatSummary } from "../../lib/format";
 import type { BudgetMeterModel, DetailsTone } from "../../lib/budgetDetailsMetrics";
 import { PrimaryMetric } from "./DetailsPrimitives";
 
@@ -25,6 +25,7 @@ const FILL_CLASS: Record<Exclude<SpendingTier, "none" | "empty">, string> = {
 export function BudgetMeter({
   model,
   embedded = false,
+  elapsedFraction,
 }: {
   model: BudgetMeterModel;
   /**
@@ -34,6 +35,12 @@ export function BudgetMeter({
    * still in the accessible name.
    */
   embedded?: boolean;
+  /**
+   * For an in-progress month: draws a marker on the bar at the fraction of the
+   * month elapsed, so "spent faster than time" reads at a glance (matches the
+   * period view's "This month so far" meter).
+   */
+  elapsedFraction?: number;
 }) {
   const { total, filled, remaining, filledLabel, totalLabel, remainingLabel } = model;
   const bar = computeSpendingBar(total, filled);
@@ -41,7 +48,9 @@ export function BudgetMeter({
   // "0.00 under" is false — when there's no leftover, show just the status word.
   const remainingText =
     remaining === 0 ? remainingLabel : `${formatMinor(Math.abs(remaining))} ${remainingLabel}`;
-  const captionLeft = `${filledLabel} ${formatMinor(filled)} of ${formatMinor(total)} ${totalLabel.toLowerCase()}`;
+  // Whole-dollar figures on the bar itself — cents are noise here; the exact
+  // remaining amount still carries its precision in the status text/aria.
+  const captionLeft = `${filledLabel} ${formatSummary(filled)} of ${formatSummary(total)} ${totalLabel.toLowerCase()}`;
   const isOver = bar.tier === "over" || bar.tier === "unbudgeted";
   // % is only meaningful with a positive track (unfunded spending has total = 0).
   const pct = total > 0 ? Math.round((filled / total) * 100) : null;
@@ -81,12 +90,18 @@ export function BudgetMeter({
             style={{ width: `${bar.overflow * 100}%` }}
           />
         )}
+        {elapsedFraction != null && (
+          <span
+            className="absolute inset-y-0 z-10 w-px bg-foreground/55"
+            style={{ left: `${Math.min(100, Math.max(0, elapsedFraction * 100))}%` }}
+          />
+        )}
       </div>
 
-      <div className="flex items-baseline justify-between gap-2 text-[10px]">
-        <span className="text-muted-foreground/80 tabular-nums truncate">
+      <div className="flex items-baseline justify-between gap-2 text-[10.5px]">
+        <span className="text-muted-foreground tabular-nums truncate">
           {captionLeft}
-          {pct !== null && <span className="ml-1 text-muted-foreground/60">· {pct}%</span>}
+          {pct !== null && <span className="ml-1 text-muted-foreground">· {pct}%</span>}
         </span>
         {!embedded && (
           <span
@@ -135,11 +150,30 @@ export function meterStatus(model: BudgetMeterModel): {
  * plus the bar. Used in the period/month summaries, whose primary box already
  * leads with a different number (Actual Result / To Budget).
  */
-export function MeterSection({ model, helper }: { model: BudgetMeterModel; helper: string }) {
+export function MeterSection({
+  model,
+  helper,
+  elapsedFraction,
+  chip,
+  hero = false,
+}: {
+  model: BudgetMeterModel;
+  helper: string;
+  elapsedFraction?: number;
+  chip?: { label: string; tone: DetailsTone };
+  hero?: boolean;
+}) {
   const status = meterStatus(model);
   return (
-    <PrimaryMetric label={status.label} value={status.value} helper={helper} tone={status.tone}>
-      <BudgetMeter model={model} embedded />
+    <PrimaryMetric
+      label={status.label}
+      value={status.value}
+      helper={helper}
+      tone={status.tone}
+      chip={chip}
+      hero={hero}
+    >
+      <BudgetMeter model={model} embedded elapsedFraction={elapsedFraction} />
     </PrimaryMetric>
   );
 }

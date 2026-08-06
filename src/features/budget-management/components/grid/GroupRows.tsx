@@ -119,12 +119,13 @@ function GroupMonthAggregate({
       ? groupBalanceMinor
       : groupBudgetedMinor;
 
-  // RD-065 group-level spending bar — same rules as category cells: Budgeted
-  // view only, non-income groups, not a read-only month, toggle on.
+  // Group-level spending bar — a spent-vs-budget visual shown in every view
+  // (Budget / Actual / Balance) and closed months, for non-income groups when
+  // the toggle is on. No-data past months return earlier, so nothing to guard.
   const groupSpentMinor = Math.max(0, -groupActualsMinor);
   const groupOverByMinor = groupSpentMinor - groupBudgetedMinor;
   const spendingBar =
-    showSpendingBars && cellView === "budgeted" && !group.isIncome && !isReadOnlyMonth
+    showSpendingBars && !group.isIncome
       ? computeSpendingBar(groupBudgetedMinor, groupSpentMinor)
       : null;
   const overNote =

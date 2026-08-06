@@ -366,7 +366,7 @@ export function BudgetCell({
       <div
         className={`${blockedCellClass}${dimClass}`}
         role="gridcell"
-        aria-label={blockedLabel}
+        aria-label={`${blockedLabel}${barStatusNote}`}
         aria-selected={isSelected}
         aria-readonly="true"
         aria-disabled={blocked || isReadOnlyMonth ? "true" : undefined}
@@ -396,6 +396,7 @@ export function BudgetCell({
         >
           {displayText}
         </span>
+        {spendingBar && <SpendingBarView bar={spendingBar} />}
       </div>
     );
   }

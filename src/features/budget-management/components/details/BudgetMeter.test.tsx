@@ -42,8 +42,8 @@ describe("BudgetMeter", () => {
     expect(screen.queryByText(/100\.00 over/)).not.toBeInTheDocument();
     // …but it stays in the progressbar's accessible name for screen readers.
     expect(screen.getByRole("progressbar").getAttribute("aria-label")).toMatch(/100\.00 over/);
-    // The "spent of total" caption still renders.
-    expect(screen.getByText(/Spent 700\.00 of 600\.00/)).toBeInTheDocument();
+    // The "spent of total" caption still renders (whole dollars on the bar).
+    expect(screen.getByText(/Spent 700 of 600/)).toBeInTheDocument();
   });
 });
 

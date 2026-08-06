@@ -235,12 +235,415 @@ describe("buildTrackingDetailsMetrics", () => {
       value: 20_000,
     });
     expect(metrics.selectionToDate).toMatchObject({
-      budgetLabel: "Budgeted to date",
-      actualLabel: "Spent to date",
+      budgetLabel: "Budgeted",
+      actualLabel: "Spent",
     });
     expect(metrics.selectionAverages).toMatchObject({
       budgetLabel: "Budgeted / month",
       actualLabel: "Spent / month",
+    });
+  });
+
+  // ── closed-vs-current separation (no blending of the in-progress month) ──
+  // "now" sits on Aug 14 2026 (noon), so 2026-08 is the current partial month
+  // (~43.5% elapsed) and 2026-07 is closed.
+  const NOW = new Date(2026, 7, 14, 12, 0, 0);
+
+  function periodModel(
+    months: { month: string; status: MonthActualStatus; state: LoadedMonthState }[]
+  ): BudgetDetailsModel {
+    let pastCount = 0;
+    let currentCount = 0;
+    let futureCount = 0;
+    for (const m of months) {
+      if (m.status === "past") pastCount++;
+      else if (m.status === "current-partial") currentCount++;
+      else futureCount++;
+    }
+    return {
+      budgetMode: "tracking",
+      displayMonths: months.map((m) => m.month),
+      rangeLabel: "range",
+      selection: { scope: "period", entity: "none" },
+      months,
+      coverage: {
+        totalMonths: months.length,
+        pastCount,
+        currentCount,
+        futureCount,
+        actualLikeCount: pastCount + currentCount,
+        hasFuture: futureCount > 0,
+        isFutureOnly: pastCount + currentCount === 0 && futureCount > 0,
+        label: "range",
+      },
+      edits: {},
+    };
+  }
+
+  it("excludes the current partial month from closed-month cumulative figures", () => {
+    const model = periodModel([
+      {
+        month: "2026-07",
+        status: "past",
+        state: monthState("2026-07", {
+          incomeBudgeted: 500_000,
+          incomeActuals: 520_000,
+          expenseBudgeted: -300_000,
+          expenseActuals: -280_000,
+        }),
+      },
+      {
+        month: "2026-08",
+        status: "current-partial",
+        state: monthState("2026-08", {
+          incomeBudgeted: 130_000,
+          incomeActuals: 71_000,
+          expenseBudgeted: -60_000,
+          expenseActuals: -48_000,
+        }),
+      },
+    ]);
+
+    const metrics = buildTrackingDetailsMetrics(model, NOW);
+
+    // Cumulative figures see the closed month only — the partial month is out.
+    expect(metrics.closedMonthCount).toBe(1);
+    expect(metrics.periodActuals).toEqual({
+      incomeReceived: 520_000,
+      expensesSpent: 280_000,
+      result: 240_000,
+    });
+    expect(metrics.periodBudgetToDate).toMatchObject({
+      incomeBudgeted: 500_000,
+      expensesBudgeted: 300_000,
+    });
+    expect(metrics.primary).toMatchObject({ label: "Result", value: 240_000 });
+
+    // The in-progress month is reported on its own, with income progress.
+    expect(metrics.thisMonth).toMatchObject({
+      month: "2026-08",
+      budgeted: 60_000,
+      actuals: 48_000,
+      // 80% used at ~43% elapsed → ~1.8× the linear rate.
+      paceStatus: "well-over-pace",
+      income: { budgeted: 130_000, actuals: 71_000 },
+    });
+    expect(metrics.thisMonth?.usedFraction).toBeCloseTo(0.8, 5);
+  });
+
+  it.each([
+    [26_100, "on-pace"], // ~43.5% used vs ~43.5% elapsed
+    [33_000, "slightly-over-pace"], // ~55% used vs ~43.5% elapsed, ratio < 1.6
+    [48_000, "well-over-pace"], // 80% used, ~1.8× the linear rate
+    [60_000, "over-budget"], // 100% of the month's budget already spent
+  ] as const)(
+    "classifies this-month spend of %d as %s",
+    (expenseActuals, expected) => {
+      const model = periodModel([
+        {
+          month: "2026-08",
+          status: "current-partial",
+          state: monthState("2026-08", {
+            incomeBudgeted: 130_000,
+            incomeActuals: 71_000,
+            expenseBudgeted: -60_000,
+            expenseActuals: -expenseActuals,
+          }),
+        },
+      ]);
+
+      const metrics = buildTrackingDetailsMetrics(model, NOW);
+
+      // No closed months → cumulative figures are withheld, pacing still shown.
+      expect(metrics.closedMonthCount).toBe(0);
+      expect(metrics.periodActuals).toBeUndefined();
+      expect(metrics.primary).toMatchObject({ label: "No closed months yet" });
+      expect(metrics.thisMonth?.paceStatus).toBe(expected);
+    }
+  );
+
+  it("summarises per-month coverage for the header strip", () => {
+    const state = monthState("2026-07", {
+      incomeBudgeted: 1,
+      incomeActuals: 1,
+      expenseBudgeted: -1,
+      expenseActuals: -1,
+    });
+    const model = periodModel([
+      { month: "2026-06", status: "past", state },
+      { month: "2026-08", status: "current-partial", state },
+      { month: "2026-09", status: "future", state },
+    ]);
+
+    const metrics = buildTrackingDetailsMetrics(model, NOW);
+
+    expect(metrics.coverage).toEqual({
+      segments: ["past", "current-partial", "future"],
+      closedCount: 1,
+      currentCount: 1,
+      futureCount: 1,
+      totalMonths: 3,
+    });
+  });
+
+  it("projects the period result as closed actuals plus the plan for every open month", () => {
+    const model = periodModel([
+      {
+        month: "2026-07",
+        status: "past",
+        state: monthState("2026-07", {
+          incomeBudgeted: 500_000, // planned +200k
+          incomeActuals: 520_000, // actual +240k
+          expenseBudgeted: -300_000,
+          expenseActuals: -280_000,
+        }),
+      },
+      {
+        month: "2026-08",
+        status: "current-partial",
+        state: monthState("2026-08", {
+          incomeBudgeted: 130_000, // planned +70k
+          incomeActuals: 71_000, // actual +23k
+          expenseBudgeted: -60_000,
+          expenseActuals: -48_000,
+        }),
+      },
+      {
+        month: "2026-09",
+        status: "future",
+        state: monthState("2026-09", {
+          incomeBudgeted: 500_000, // planned +200k
+          incomeActuals: 0,
+          expenseBudgeted: -300_000,
+          expenseActuals: 0,
+        }),
+      },
+    ]);
+
+    const metrics = buildTrackingDetailsMetrics(model, NOW);
+    const traj = metrics.trajectory;
+
+    // Closed actuals = 240k (Jul). Aug (current) + Sep (future) contribute plan
+    // (70k + 200k), not Aug's income-starved partial actuals → 240k + 270k.
+    expect(traj).toMatchObject({
+      isSpend: false,
+      todayIndex: 0, // actual line ends at the last closed month (Jul)
+      projectedValue: 510_000,
+      planValue: 470_000, // 200k + 70k + 200k
+      variance: 40_000,
+      varianceLabel: "above",
+      chipLabel: "ahead of plan", // +8.5% vs plan, beyond the 2% tolerance
+      lineTone: "positive",
+      // 270k plan for the 2 open months (Aug 70k + Sep 200k).
+      breakdown: { openPlan: 270_000, openMonthCount: 2 },
+    });
+    expect(traj?.points).toHaveLength(3);
+    expect(traj?.points[1].actual).toBeNull(); // Aug is not banked
+    expect(traj?.points[2].actual).toBeNull();
+  });
+
+  it("marks the projection below plan when it misses by more than the tolerance", () => {
+    const model = periodModel([
+      {
+        month: "2026-07",
+        status: "past",
+        state: monthState("2026-07", {
+          incomeBudgeted: 500_000, // plan +200k
+          incomeActuals: 450_000, // actual +150k (closed month underperforms)
+          expenseBudgeted: -300_000,
+          expenseActuals: -300_000,
+        }),
+      },
+      {
+        month: "2026-08",
+        status: "current-partial",
+        state: monthState("2026-08", {
+          incomeBudgeted: 130_000, // plan +70k
+          incomeActuals: 0,
+          expenseBudgeted: -60_000,
+          expenseActuals: 0,
+        }),
+      },
+      {
+        month: "2026-09",
+        status: "future",
+        state: monthState("2026-09", {
+          incomeBudgeted: 500_000, // plan +200k
+          incomeActuals: 0,
+          expenseBudgeted: -300_000,
+          expenseActuals: 0,
+        }),
+      },
+    ]);
+
+    const traj = buildTrackingDetailsMetrics(model, NOW).trajectory;
+
+    // Projected 150k (closed) + 270k (open plan) = 420k vs 470k plan → ~11% below.
+    expect(traj).toMatchObject({
+      projectedValue: 420_000,
+      planValue: 470_000,
+      chipLabel: "below plan",
+      chipTone: "neutral",
+      lineTone: "positive", // still a positive result, just under plan
+    });
+  });
+
+  it("projects expense spend by run-rate (can exceed the plan)", () => {
+    const model: BudgetDetailsModel = {
+      ...periodModel([
+        {
+          month: "2026-07",
+          status: "past",
+          state: monthState("2026-07", {
+            incomeBudgeted: 0,
+            incomeActuals: 0,
+            expenseBudgeted: -50_000,
+            expenseActuals: -60_000,
+          }),
+        },
+        {
+          month: "2026-08",
+          status: "current-partial",
+          state: monthState("2026-08", {
+            incomeBudgeted: 0,
+            incomeActuals: 0,
+            expenseBudgeted: -50_000,
+            expenseActuals: -30_000,
+          }),
+        },
+        {
+          month: "2026-09",
+          status: "future",
+          state: monthState("2026-09", {
+            incomeBudgeted: 0,
+            incomeActuals: 0,
+            expenseBudgeted: -50_000,
+            expenseActuals: 0,
+          }),
+        },
+      ]),
+      selection: { scope: "period", entity: "category", categoryId: "expense-cat" },
+    };
+
+    const metrics = buildTrackingDetailsMetrics(model, NOW);
+    const traj = metrics.trajectory;
+
+    expect(traj?.isSpend).toBe(true);
+    expect(traj?.planValue).toBe(150_000);
+    // banked 90k over ~47.8% of the period → run-rate well above the 150k plan.
+    expect(traj?.projectedValue).toBeGreaterThan(150_000);
+    expect(traj).toMatchObject({
+      variance: expect.any(Number),
+      varianceLabel: "over",
+      chipLabel: "at risk",
+      planLabel: "Full-period budget",
+    });
+  });
+
+  it("reports day-of-month progress for a single-month selection", () => {
+    const model: BudgetDetailsModel = {
+      budgetMode: "tracking",
+      displayMonths: ["2026-08"],
+      rangeLabel: "August 2026",
+      selection: {
+        scope: "month",
+        entity: "category",
+        month: "2026-08",
+        categoryId: "expense-cat",
+      },
+      months: [
+        {
+          month: "2026-08",
+          status: "current-partial",
+          state: monthState("2026-08", {
+            incomeBudgeted: 0,
+            incomeActuals: 0,
+            expenseBudgeted: -60_000,
+            expenseActuals: -48_000,
+          }),
+        },
+      ],
+      coverage: {
+        totalMonths: 1,
+        pastCount: 0,
+        currentCount: 1,
+        futureCount: 0,
+        actualLikeCount: 1,
+        hasFuture: false,
+        isFutureOnly: false,
+        label: "1 current partial",
+      },
+      edits: {},
+    };
+
+    const metrics = buildTrackingDetailsMetrics(model, NOW);
+
+    expect(metrics.dayProgress).toMatchObject({
+      closed: false,
+      dayLabel: "day 14 of 31",
+    });
+    expect(metrics.dayProgress?.elapsedFraction).toBeGreaterThan(0.4);
+    expect(metrics.dayProgress?.elapsedFraction).toBeLessThan(0.5);
+  });
+
+  it("computes this-month pace for a current single-month tracking selection", () => {
+    const model = modelForSelection({
+      selection: {
+        scope: "month",
+        entity: "category",
+        month: "2026-08",
+        categoryId: "expense-cat",
+      },
+      month: "2026-08",
+      status: "current-partial",
+      state: monthState("2026-08", {
+        incomeBudgeted: 0,
+        incomeActuals: 0,
+        expenseBudgeted: -580_000,
+        expenseActuals: -77_196, // ~13% used at ~43% elapsed → under pace
+      }),
+    });
+
+    const metrics = buildTrackingDetailsMetrics(model, NOW);
+
+    expect(metrics.thisMonth).toMatchObject({
+      month: "2026-08",
+      budgeted: 580_000,
+      actuals: 77_196,
+      paceStatus: "under-pace",
+    });
+  });
+
+  it("gives the envelope period summary the coverage strip (parity)", () => {
+    const model = periodModel([
+      {
+        month: "2026-06",
+        status: "past",
+        state: monthState("2026-06", {
+          incomeBudgeted: 1,
+          incomeActuals: 1,
+          expenseBudgeted: -1,
+          expenseActuals: -1,
+        }),
+      },
+      {
+        month: "2026-08",
+        status: "current-partial",
+        state: monthState("2026-08", {
+          incomeBudgeted: 1,
+          incomeActuals: 1,
+          expenseBudgeted: -1,
+          expenseActuals: -1,
+        }),
+      },
+    ]);
+
+    const metrics = buildEnvelopeDetailsMetrics({ ...model, budgetMode: "envelope" });
+
+    expect(metrics.coverage).toMatchObject({
+      totalMonths: 2,
+      closedCount: 1,
+      currentCount: 1,
     });
   });
 
