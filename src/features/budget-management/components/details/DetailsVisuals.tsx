@@ -152,13 +152,26 @@ function TrajectorySparkline({
     trajectory.projectedValue
   )}`;
 
+  // Self-describing chart: the accessible name states the actual figures (not
+  // just the shape), and the sr-only list below gives the per-month values that
+  // are otherwise only reachable by mouse hover.
+  const planWord = trajectory.isSpend ? "budget" : "plan";
+  const bankedThrough = pts[todayIdx]?.month;
+  const chartLabel =
+    `Projected ${trajectory.isSpend ? "spend" : "result"} ${formatSummary(
+      trajectory.projectedValue
+    )}, full-period ${planWord} ${formatSummary(trajectory.planValue)}, ` +
+    `${formatSummary(Math.abs(trajectory.variance))} ${trajectory.varianceLabel} ${planWord}` +
+    (bankedThrough ? `; actual banked through ${formatMonthLabel(bankedThrough)}.` : ".");
+
   return (
+    <>
     <svg
       viewBox={`0 0 ${width} ${height}`}
       preserveAspectRatio="none"
       className="block w-full h-14 text-muted-foreground"
       role="img"
-      aria-label="Cumulative actual to date, with a projection (actuals plus remaining plan) shown against the plan line."
+      aria-label={chartLabel}
     >
       {/* "Now" divider between banked actuals and the projection. */}
       <line
@@ -197,7 +210,8 @@ function TrajectorySparkline({
         strokeWidth={2}
         vectorEffect="non-scaling-stroke"
       />
-      {/* Invisible hit targets: exact monthly values on hover / tap. */}
+      {/* Invisible hit targets: exact monthly values on mouse hover. Screen
+          readers use the sr-only list below instead (the svg is role=img). */}
       {pts.map((p, i) => (
         <circle key={p.month} cx={xAt(i)} cy={yAt(p.actual ?? p.plan)} r={7} fill="transparent">
           <title>
@@ -208,6 +222,16 @@ function TrajectorySparkline({
         </circle>
       ))}
     </svg>
+      <ul className="sr-only">
+        {pts.map((p) => (
+          <li key={p.month}>
+            {`${formatMonthLabel(p.month)}: plan ${formatSummary(p.plan)}${
+              p.actual != null ? `, actual ${formatSummary(p.actual)}` : ""
+            }`}
+          </li>
+        ))}
+      </ul>
+    </>
   );
 }
 
