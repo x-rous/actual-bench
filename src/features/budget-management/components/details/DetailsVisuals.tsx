@@ -144,7 +144,7 @@ function TrajectorySparkline({
     .map((s, i) => `${i === 0 ? "M" : "L"}${s}`)
     .join(" ");
 
-  const todayIdx = trajectory.todayIndex;
+  const todayIdx = Math.min(n - 1, Math.max(0, trajectory.todayIndex));
   const todayX = xAt(todayIdx);
   const todayVal = pts[todayIdx]?.actual ?? pts[todayIdx]?.plan ?? 0;
   // Projection = actuals so far, carried to the projected end-of-period value.
@@ -249,6 +249,7 @@ export function TrajectorySection({
         {headline}
       </p>
 
+      {trajectory.points.length >= 2 && (
       <div>
         <div className="relative h-3">
           <span
@@ -289,6 +290,7 @@ export function TrajectorySection({
           </span>
         </div>
       </div>
+      )}
 
       {trajectory.breakdown && (
         <div className="flex justify-between items-baseline gap-2 pt-0.5 text-[11px] text-muted-foreground tabular-nums">

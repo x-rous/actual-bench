@@ -220,7 +220,10 @@ function paceFillClass(status: ThisMonthPaceStatus): string {
 export function ThisMonthSection({ metrics }: { metrics: ThisMonthMetrics }) {
   const usedPct =
     metrics.usedFraction == null ? null : Math.round(metrics.usedFraction * 100);
-  const elapsedPct = Math.round(metrics.elapsedFraction * 100);
+  const elapsedPct = Math.min(
+    100,
+    Math.max(0, Math.round(metrics.elapsedFraction * 100))
+  );
   const fillPct =
     metrics.usedFraction == null
       ? 0

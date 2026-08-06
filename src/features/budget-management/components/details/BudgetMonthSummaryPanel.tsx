@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { formatMonthLabel } from "@/lib/budget/monthMath";
 import { formatDelta, formatSigned } from "../../lib/format";
 import {
@@ -58,18 +58,24 @@ export function BudgetMonthSummaryPanel({
   // income transactions. Only single-month figures are drillable.
   const [transactionTarget, setTransactionTarget] =
     useState<BudgetTransactionsDrilldown | null>(null);
-  const expenseDrill =
-    state && !isFuture ? buildMonthCategoriesDrilldown(state, month, "expense") : null;
-  const incomeDrill =
-    state && !isFuture ? buildMonthCategoriesDrilldown(state, month, "income") : null;
+  const expenseDrill = useMemo(
+    () =>
+      state && !isFuture ? buildMonthCategoriesDrilldown(state, month, "expense") : null,
+    [state, month, isFuture]
+  );
+  const incomeDrill = useMemo(
+    () =>
+      state && !isFuture ? buildMonthCategoriesDrilldown(state, month, "income") : null,
+    [state, month, isFuture]
+  );
   const openExpense = expenseDrill ? () => setTransactionTarget(expenseDrill) : undefined;
   const openIncome = incomeDrill ? () => setTransactionTarget(incomeDrill) : undefined;
   useSpendingDetailsShortcut({ target: expenseDrill, onOpen: setTransactionTarget });
   const monthLabel = formatMonthLabel(month, "long");
   // For the in-progress month, add the pace verdict + elapsed marker (parity
-  // with the tracking category/period views).
+  // across tracking and envelope, category/period views).
   const pace =
-    isTracking && status === "current-partial" && state
+    status === "current-partial" && state
       ? computeThisMonthMetrics({
           month,
           budgeted: Math.abs(state.summary.totalBudgeted),
@@ -111,6 +117,7 @@ export function BudgetMonthSummaryPanel({
           <EnvelopeMonthBody
             summary={state.summary}
             meter={meter}
+            pace={pace}
             monthLabel={monthLabel}
             onExpenseClick={openExpense}
             onIncomeClick={openIncome}
@@ -142,12 +149,14 @@ export function BudgetMonthSummaryPanel({
 function EnvelopeMonthBody({
   summary,
   meter,
+  pace,
   monthLabel,
   onExpenseClick,
   onIncomeClick,
 }: {
   summary: BudgetMonthSummary;
   meter?: ReturnType<typeof buildMonthSummaryMeter>;
+  pace?: ThisMonthMetrics | null;
   monthLabel: string;
   onExpenseClick?: () => void;
   onIncomeClick?: () => void;
@@ -177,7 +186,12 @@ function EnvelopeMonthBody({
         hero
       />
       {meter && (
-        <MeterSection model={meter} helper="Spending against this month's assigned budget." />
+        <MeterSection
+          model={meter}
+          helper="Spending against this month's assigned budget."
+          elapsedFraction={pace?.elapsedFraction}
+          chip={pace ? { label: pace.statusLabel, tone: pace.tone } : undefined}
+        />
       )}
       <DetailsSection title="Values">
         <MetricLine

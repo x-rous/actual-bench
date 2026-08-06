@@ -1150,10 +1150,6 @@ export function buildDayProgress(
   };
 }
 
-function isActualLikeEntry(status: MonthActualStatus): boolean {
-  return status === "past" || status === "current-partial";
-}
-
 /**
  * Net-result trajectory for the period summary: actuals are banked up to today,
  * and every month after today contributes its planned result. So the projection
@@ -1263,7 +1259,7 @@ function buildSelectionTrajectory(
     const plan = values ? Math.abs(values.budgeted) : 0;
     const actual = values ? Math.abs(values.actuals) : 0;
     cumPlan += plan;
-    if (isActualLikeEntry(entry.status)) {
+    if (isActualLikeStatus(entry.status)) {
       cumActual += actual;
       todayIndex = i;
       banked = cumActual;
@@ -1277,7 +1273,7 @@ function buildSelectionTrajectory(
     points.push({
       month: entry.month,
       plan: cumPlan,
-      actual: isActualLikeEntry(entry.status) ? cumActual : null,
+      actual: isActualLikeStatus(entry.status) ? cumActual : null,
     });
   });
 
@@ -1641,7 +1637,8 @@ function envelopeBalanceHelper(value: number, month: string): string {
 }
 
 function buildEnvelopeMonthMetrics(
-  model: BudgetDetailsModel
+  model: BudgetDetailsModel,
+  now: Date = new Date()
 ): EnvelopeDetailsMetrics {
   const target = findTarget(model);
   const selection = model.selection;
@@ -1672,7 +1669,7 @@ function buildEnvelopeMonthMetrics(
     subtitle: `${target.subtitle} - Envelope`,
     rangeLabel: formatMonthLabel(selectedMonth, "long"),
     coverageLabel: monthStatusLabel(entry.status),
-    dayProgress: buildDayProgress(selectedMonth, entry.status),
+    dayProgress: buildDayProgress(selectedMonth, entry.status, now),
     thisMonth:
       entry.status === "current-partial" && !target.isIncome
         ? computeThisMonthMetrics({
@@ -1680,6 +1677,7 @@ function buildEnvelopeMonthMetrics(
             budgeted: values.budgeted,
             actuals: values.actuals,
             isIncome: false,
+            now,
           })
         : null,
     futureOnly: entry.status === "future",
@@ -1738,10 +1736,11 @@ function missingEnvelopeMetrics(
 }
 
 export function buildEnvelopeDetailsMetrics(
-  model: BudgetDetailsModel
+  model: BudgetDetailsModel,
+  now: Date = new Date()
 ): EnvelopeDetailsMetrics {
   if (model.selection.scope === "month") {
-    return buildEnvelopeMonthMetrics(model);
+    return buildEnvelopeMonthMetrics(model, now);
   }
 
   const coverage = buildDetailsCoverage(model);
