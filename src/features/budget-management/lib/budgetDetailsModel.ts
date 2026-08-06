@@ -57,6 +57,17 @@ export function isActualLikeStatus(status: MonthActualStatus): boolean {
   return status === "past" || status === "current-partial";
 }
 
+/**
+ * A "closed" month is one whose figures are final: only fully-elapsed past
+ * months qualify. The current partial month is deliberately excluded so that
+ * cumulative and averaged figures never blend a full month's budget against
+ * a fraction of a month's actuals. The current month is reported on its own
+ * (see the "This month so far" metrics), and future months are plan-only.
+ */
+export function isClosedMonthStatus(status: MonthActualStatus): boolean {
+  return status === "past";
+}
+
 export function formatBudgetDetailsRange(displayMonths: string[]): string {
   const first = displayMonths[0];
   const last = displayMonths[displayMonths.length - 1];

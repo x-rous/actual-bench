@@ -568,8 +568,22 @@ export function BudgetTransactionsDialog({ target, browserOptions, statesByMonth
         if (subCategory) return { budgeted: Math.abs(subCategory.budgeted) };
       }
       const group = state.groupsById[effectiveTarget.id];
-      if (!group || group.isIncome) return null;
-      return { budgeted: Math.abs(group.budgeted) };
+      if (group) {
+        if (group.isIncome) return null;
+        return { budgeted: Math.abs(group.budgeted) };
+      }
+      // Synthetic whole-month group (e.g. "All expenses"): there is no real
+      // group entry, so sum the target's own expense categories. Income-only
+      // targets have no meaningful budget KPI.
+      let sum = 0;
+      let hasExpense = false;
+      for (const id of effectiveTarget.categoryIds) {
+        const cat = state.categoriesById[id];
+        if (!cat || cat.isIncome) continue;
+        hasExpense = true;
+        sum += cat.budgeted;
+      }
+      return hasExpense ? { budgeted: Math.abs(sum) } : null;
     }
     const category = state.categoriesById[effectiveTarget.id];
     if (!category || category.isIncome) return null;

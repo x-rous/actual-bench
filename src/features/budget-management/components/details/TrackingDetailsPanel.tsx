@@ -15,32 +15,73 @@ import {
   MiniTrend,
   PrimaryMetric,
   StagedImpactBlock,
+  ThisMonthSection,
+  monthPaceProps,
+  toneFromValue,
 } from "./DetailsPrimitives";
+import { TrajectorySection } from "./DetailsVisuals";
 import dynamic from "next/dynamic";
-import { BudgetMeter } from "./BudgetMeter";
+import { BudgetMeter, MeterSection } from "./BudgetMeter";
 import { BudgetNoteSection, type BudgetNoteTarget } from "./BudgetNoteSection";
 import { useSpendingDetailsShortcut } from "./useSpendingDetailsShortcut";
 
-function toneFromValue(value: number) {
-  if (value > 0) return "positive" as const;
-  if (value < 0) return "negative" as const;
-  return "neutral" as const;
+/**
+ * Renders a variance as plain language — "1,200.00 under budget" — instead of a
+ * bare signed number, so direction reads without decoding the sign. `positive`
+ * is the good direction (under budget / above plan).
+ */
+function describeVariance(
+  value: number,
+  kind: "budget" | "plan",
+  short = false
+): { text: string; tone: "positive" | "negative" | "neutral" } {
+  if (value === 0) {
+    return { text: kind === "budget" ? "on budget" : "on plan", tone: "neutral" };
+  }
+  // Positive is the good direction (under budget / above plan). Short form drops
+  // the trailing noun when the row label already carries it ("Budget variance"
+  // → "… over"), so the line doesn't overflow the panel.
+  const up =
+    kind === "budget" ? (short ? "under" : "under budget") : short ? "above" : "above plan";
+  const down =
+    kind === "budget" ? (short ? "over" : "over budget") : short ? "below" : "below plan";
+  return {
+    text: `${formatSigned(Math.abs(value))} ${value > 0 ? up : down}`,
+    tone: value > 0 ? "positive" : "negative",
+  };
+}
+
+function VarianceLine({
+  label,
+  value,
+  kind,
+  short,
+  tooltip,
+}: {
+  label: string;
+  value: number;
+  kind: "budget" | "plan";
+  short?: boolean;
+  tooltip?: string;
+}) {
+  const v = describeVariance(value, kind, short);
+  return <MetricLine label={label} value={v.text} tone={v.tone} tooltip={tooltip} />;
 }
 
 const PERIOD_TOOLTIP = {
   incomeReceived:
-    "Sum of income received in actualized months and the current partial month.",
+    "Sum of income received across closed (fully-elapsed) months. The current month is shown separately.",
   expensesSpent:
-    "Sum of expenses spent in actualized months and the current partial month.",
-  actualResult: "Income received minus expenses spent.",
+    "Sum of expenses spent across closed (fully-elapsed) months. The current month is shown separately.",
+  actualResult: "Income received minus expenses spent, over closed months.",
   incomeBudgetedToDate:
-    "Sum of income budgeted in actualized months and the current partial month.",
+    "Sum of income budgeted across closed (fully-elapsed) months.",
   expensesBudgetedToDate:
-    "Sum of expenses budgeted in actualized months and the current partial month.",
+    "Sum of expenses budgeted across closed (fully-elapsed) months.",
   expenseVariance:
-    "Expenses budgeted to date minus expenses spent to date. Positive means under budget.",
+    "Budget variance — expenses only: budgeted expenses minus expenses spent, over closed months. Positive means spending came in under budget.",
   netPlanVariance:
-    "Actual result so far compared with budgeted result to date: (income received - expenses spent) - (income budgeted - expenses budgeted).",
+    "Result vs plan — the whole picture: actual net result (income − expenses) minus the planned net result, over closed months. Positive means ahead of plan.",
   fullIncomeBudget: "Sum of income budgeted across the visible 12 months.",
   fullExpenseBudget: "Sum of expenses budgeted across the visible 12 months.",
   plannedResult: "Full-period income budgeted minus expenses budgeted.",
@@ -66,6 +107,16 @@ export function TrackingDetailsPanel({
 }) {
   const isFullPeriod = metrics.entity === "none";
   const isMonth = metrics.scope === "month";
+  const closedMonthsTitle =
+    metrics.closedMonthCount != null && metrics.coverage
+      ? `Closed months · ${metrics.closedMonthCount} of ${metrics.coverage.totalMonths}`
+      : "Closed months";
+  // Single in-progress month: surface the pace verdict as a chip and mark how
+  // much of the month has elapsed on the meter (parity with the period view).
+  const { chip: monthChip, elapsedFraction: monthElapsed } = monthPaceProps(
+    metrics.thisMonth,
+    isMonth
+  );
   const [transactionTarget, setTransactionTarget] =
     useState<BudgetTransactionsDrilldown | null>(null);
   useSpendingDetailsShortcut({
@@ -80,17 +131,45 @@ export function TrackingDetailsPanel({
         subtitle={metrics.subtitle}
         rangeLabel={metrics.rangeLabel}
         coverageLabel={metrics.coverageLabel}
+        coverage={metrics.coverage}
+        dayProgress={metrics.dayProgress}
       />
 
-      <PrimaryMetric
-        label={metrics.primary.label}
-        value={metrics.primary.value}
-        helper={metrics.primary.helper}
-        tone={metrics.primary.tone}
-        showPlus={isFullPeriod}
-      />
+      {/* Period views lead with where the selection is heading (trajectory).
+          Single months and the no-closed-months fallback lead with the primary
+          metric; the closed-months breakdown and this month follow below. */}
+      {!isMonth && metrics.trajectory ? (
+        <TrajectorySection trajectory={metrics.trajectory} />
+      ) : (
+        <PrimaryMetric
+          label={metrics.primary.label}
+          value={metrics.primary.value}
+          helper={metrics.primary.helper}
+          tone={metrics.primary.tone}
+          showPlus={isFullPeriod}
+          chip={monthChip}
+          hero
+        >
+          {!isFullPeriod && metrics.meter && (
+            <BudgetMeter
+              model={metrics.meter}
+              embedded
+              elapsedFraction={monthElapsed}
+            />
+          )}
+        </PrimaryMetric>
+      )}
 
-      {metrics.meter && <BudgetMeter model={metrics.meter} />}
+      {isFullPeriod && metrics.meter && !metrics.trajectory && (
+        <MeterSection
+          model={metrics.meter}
+          helper="Closed-month spending against budgeted expenses."
+        />
+      )}
+
+      {!isMonth && metrics.thisMonth && (
+        <ThisMonthSection metrics={metrics.thisMonth} />
+      )}
 
       {isMonth && metrics.monthValues && (
         <DetailsSection title="Values">
@@ -108,13 +187,6 @@ export function TrackingDetailsPanel({
                   : undefined
               }
               valueAriaLabel={`View transactions for ${metrics.title}`}
-            />
-          )}
-          {metrics.monthValues.variance != null && (
-            <MetricLine
-              label="Variance"
-              value={formatDelta(metrics.monthValues.variance)}
-              tone={toneFromValue(metrics.monthValues.variance)}
             />
           )}
           {metrics.monthValues.rolloverBalance && (
@@ -146,53 +218,67 @@ export function TrackingDetailsPanel({
         </DetailsSection>
       )}
 
-      {isFullPeriod && !metrics.futureOnly && metrics.periodActuals && (
-        <DetailsSection title="Actuals to date">
-          <MetricLine
-            label="Income received"
-            value={formatSigned(metrics.periodActuals.incomeReceived)}
-            tooltip={PERIOD_TOOLTIP.incomeReceived}
-          />
-          <MetricLine
-            label="Expenses spent"
-            value={formatSigned(metrics.periodActuals.expensesSpent)}
-            tooltip={PERIOD_TOOLTIP.expensesSpent}
-          />
-          <MetricLine
-            label="Result"
-            value={formatDelta(metrics.periodActuals.result)}
-            tone={toneFromValue(metrics.periodActuals.result)}
-            tooltip={PERIOD_TOOLTIP.actualResult}
-          />
-        </DetailsSection>
-      )}
+      {isFullPeriod &&
+        !metrics.futureOnly &&
+        metrics.periodActuals &&
+        metrics.periodBudgetToDate && (
+          <DetailsSection title={closedMonthsTitle}>
+            {/* Actuals build to the Result, then compare it to plan… */}
+            <MetricLine
+              label="Income received"
+              value={formatSigned(metrics.periodActuals.incomeReceived)}
+              tooltip={PERIOD_TOOLTIP.incomeReceived}
+            />
+            <MetricLine
+              label="Expenses spent"
+              value={formatSigned(metrics.periodActuals.expensesSpent)}
+              tooltip={PERIOD_TOOLTIP.expensesSpent}
+            />
+            <div className="border-t border-border/50 pt-1.5">
+              <MetricLine
+                label="Result"
+                value={`${formatDelta(metrics.periodActuals.result)}${
+                  metrics.periodActuals.result > 0
+                    ? " saved"
+                    : metrics.periodActuals.result < 0
+                    ? " overspent"
+                    : ""
+                }`}
+                tone={toneFromValue(metrics.periodActuals.result)}
+                tooltip={PERIOD_TOOLTIP.actualResult}
+              />
+            </div>
+            <VarianceLine
+              label="Result vs plan"
+              value={metrics.periodBudgetToDate.netPlanVariance}
+              kind="plan"
+              short
+              tooltip={PERIOD_TOOLTIP.netPlanVariance}
+            />
 
-      {isFullPeriod && !metrics.futureOnly && metrics.periodBudgetToDate && (
-        <DetailsSection title="Budget to date">
-          <MetricLine
-            label="Income budgeted"
-            value={formatSigned(metrics.periodBudgetToDate.incomeBudgeted)}
-            tooltip={PERIOD_TOOLTIP.incomeBudgetedToDate}
-          />
-          <MetricLine
-            label="Expenses budgeted"
-            value={formatSigned(metrics.periodBudgetToDate.expensesBudgeted)}
-            tooltip={PERIOD_TOOLTIP.expensesBudgetedToDate}
-          />
-          <MetricLine
-            label="Spending vs budgeted"
-            value={formatDelta(metrics.periodBudgetToDate.expenseVariance)}
-            tone={toneFromValue(metrics.periodBudgetToDate.expenseVariance)}
-            tooltip={PERIOD_TOOLTIP.expenseVariance}
-          />
-          <MetricLine
-            label="Result vs budgeted"
-            value={formatDelta(metrics.periodBudgetToDate.netPlanVariance)}
-            tone={toneFromValue(metrics.periodBudgetToDate.netPlanVariance)}
-            tooltip={PERIOD_TOOLTIP.netPlanVariance}
-          />
-        </DetailsSection>
-      )}
+            {/* …then the budget side, ending in the spending variance. */}
+            <p className="pt-1 text-[10.5px] font-medium uppercase tracking-wide text-muted-foreground">
+              Budget
+            </p>
+            <MetricLine
+              label="Income budgeted"
+              value={formatSigned(metrics.periodBudgetToDate.incomeBudgeted)}
+              tooltip={PERIOD_TOOLTIP.incomeBudgetedToDate}
+            />
+            <MetricLine
+              label="Expenses budgeted"
+              value={formatSigned(metrics.periodBudgetToDate.expensesBudgeted)}
+              tooltip={PERIOD_TOOLTIP.expensesBudgetedToDate}
+            />
+            <VarianceLine
+              label="Budget variance"
+              value={metrics.periodBudgetToDate.expenseVariance}
+              kind="budget"
+              short
+              tooltip={PERIOD_TOOLTIP.expenseVariance}
+            />
+          </DetailsSection>
+        )}
 
       {isFullPeriod && metrics.periodFullPlan && (
         <DetailsSection title="Full 12-month plan">
@@ -216,7 +302,7 @@ export function TrackingDetailsPanel({
       )}
 
       {!isFullPeriod && !isMonth && !metrics.futureOnly && metrics.selectionToDate && (
-        <DetailsSection title="Actual vs budget to date">
+        <DetailsSection title={closedMonthsTitle}>
           <MetricLine
             label={metrics.selectionToDate.budgetLabel}
             value={formatSigned(metrics.selectionToDate.budgeted)}
@@ -225,32 +311,50 @@ export function TrackingDetailsPanel({
             label={metrics.selectionToDate.actualLabel}
             value={formatSigned(metrics.selectionToDate.actuals)}
           />
-          <MetricLine
-            label="Variance"
-            value={formatDelta(metrics.selectionToDate.variance)}
-            tone={toneFromValue(metrics.selectionToDate.variance)}
-          />
-        </DetailsSection>
-      )}
-
-      {!isFullPeriod && !isMonth && metrics.selectionAverages && (
-        <DetailsSection title="Averages to date">
-          <MetricLine
-            label={metrics.selectionAverages.budgetLabel}
-            value={formatSigned(metrics.selectionAverages.budgetPerMonth)}
-          />
-          {metrics.selectionAverages.actualPerMonth != null && (
+          {metrics.isIncome ? (
             <MetricLine
-              label={metrics.selectionAverages.actualLabel}
-              value={formatSigned(metrics.selectionAverages.actualPerMonth)}
+              label="Variance"
+              value={formatDelta(metrics.selectionToDate.variance)}
+              tone={toneFromValue(metrics.selectionToDate.variance)}
+            />
+          ) : (
+            <VarianceLine
+              label="Variance"
+              value={metrics.selectionToDate.variance}
+              kind="budget"
             />
           )}
-          {metrics.selectionAverages.variancePerMonth != null && (
-            <MetricLine
-              label="Variance / month"
-              value={formatDelta(metrics.selectionAverages.variancePerMonth)}
-              tone={toneFromValue(metrics.selectionAverages.variancePerMonth)}
-            />
+
+          {metrics.selectionAverages && (
+            <>
+              <p className="pt-1 text-[10.5px] font-medium uppercase tracking-wide text-muted-foreground">
+                Averages · per month
+              </p>
+              <MetricLine
+                label={metrics.selectionToDate.budgetLabel}
+                value={formatSigned(metrics.selectionAverages.budgetPerMonth)}
+              />
+              {metrics.selectionAverages.actualPerMonth != null && (
+                <MetricLine
+                  label={metrics.selectionToDate.actualLabel}
+                  value={formatSigned(metrics.selectionAverages.actualPerMonth)}
+                />
+              )}
+              {metrics.selectionAverages.variancePerMonth != null &&
+                (metrics.isIncome ? (
+                  <MetricLine
+                    label="Variance"
+                    value={formatDelta(metrics.selectionAverages.variancePerMonth)}
+                    tone={toneFromValue(metrics.selectionAverages.variancePerMonth)}
+                  />
+                ) : (
+                  <VarianceLine
+                    label="Variance"
+                    value={metrics.selectionAverages.variancePerMonth}
+                    kind="budget"
+                  />
+                ))}
+            </>
           )}
         </DetailsSection>
       )}
@@ -275,7 +379,7 @@ export function TrackingDetailsPanel({
             value={formatDelta(metrics.rollover.current.value)}
             tone={metrics.rollover.current.tone}
           />
-          <p className="text-[10px] text-muted-foreground/70 text-right">
+          <p className="text-[10.5px] text-muted-foreground text-right">
             {metrics.rollover.current.helper}
           </p>
         </DetailsSection>
@@ -288,7 +392,7 @@ export function TrackingDetailsPanel({
             value={formatDelta(metrics.rollover.endPlan.value)}
             tone={metrics.rollover.endPlan.tone}
           />
-          <p className="text-[10px] text-muted-foreground/70 text-right">
+          <p className="text-[10.5px] text-muted-foreground text-right">
             {metrics.rollover.endPlan.helper}
           </p>
         </DetailsSection>
@@ -298,9 +402,10 @@ export function TrackingDetailsPanel({
         <BudgetNoteSection key={noteTarget.id} target={noteTarget} />
       )}
 
-      {!isMonth && <MiniTrend label={metrics.trendLabel} points={metrics.trend} />}
-      {isFullPeriod && metrics.spendingVsBudgetedTrend && (
-        <MiniTrend label="Monthly Spending vs. Budgeted" points={metrics.spendingVsBudgetedTrend} />
+      {/* Period summary's cumulative story is the trajectory chart; the per-month
+          trend stays for category/group selections. */}
+      {!isFullPeriod && !isMonth && (
+        <MiniTrend label={metrics.trendLabel} points={metrics.trend} />
       )}
 
       <StagedImpactBlock mode="tracking" impact={metrics.stagedImpact} />

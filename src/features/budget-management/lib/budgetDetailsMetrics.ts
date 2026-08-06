@@ -1,4 +1,8 @@
-import { formatMonthLabel, prevMonth } from "@/lib/budget/monthMath";
+import {
+  formatMonthLabel,
+  monthElapsedFraction,
+  prevMonth,
+} from "@/lib/budget/monthMath";
 import type {
   BudgetCellKey,
   LoadedCategory,
@@ -6,6 +10,7 @@ import type {
 } from "../types";
 import {
   isActualLikeStatus,
+  isClosedMonthStatus,
   type BudgetDetailsModel,
   type BudgetDetailsMonth,
   type BudgetDetailsSelection,
@@ -43,7 +48,8 @@ export type BudgetMeterModel = {
   totalLabel: string;
   /** Word after the remaining amount: "left" / "over" / "under" / "to go" / "ahead". */
   remainingLabel: string;
-  variant: "expense" | "income";
+  /** Which mental model this meter follows — drives the standalone status headline. */
+  variant: "envelope" | "expense" | "income";
 };
 
 /** Envelope-fill meter: track = available (spent + balance), carryover-aware. */
@@ -61,7 +67,7 @@ function envelopeAvailableMeter(
     filledLabel: "Spent",
     totalLabel,
     remainingLabel: balance < 0 ? "over" : "left",
-    variant: "expense",
+    variant: "envelope",
   };
 }
 
@@ -80,7 +86,7 @@ function envelopeAssignedMeter(
     filledLabel: "Spent",
     totalLabel,
     remainingLabel: remaining < 0 ? "over" : "left",
-    variant: "expense",
+    variant: "envelope",
   };
 }
 
@@ -189,6 +195,88 @@ type TrackingSelectionAverages = {
   variancePerMonth: number | null;
 };
 
+/**
+ * The in-progress month, reported on its own so it never contaminates the
+ * closed-months cumulative/averaged figures. "Pace" compares the fraction of
+ * the budget used against the fraction of the month elapsed.
+ */
+export type ThisMonthPaceStatus =
+  | "on-pace"
+  | "slightly-over-pace"
+  | "well-over-pace"
+  | "over-budget"
+  | "under-pace"
+  | "no-budget";
+
+export type ThisMonthMetrics = {
+  month: string;
+  monthLabel: string;
+  dayLabel: string;
+  actualLabel: string;
+  budgeted: number;
+  actuals: number;
+  elapsedFraction: number;
+  usedFraction: number | null;
+  paceStatus: ThisMonthPaceStatus;
+  statusLabel: string;
+  tone: DetailsTone;
+  /** Period-summary "this month" also carries income progress alongside the
+   *  expense-spending pace, so the panel can show a secondary income line. */
+  income: { budgeted: number; actuals: number } | null;
+};
+
+/** One segment per displayed month for the header coverage strip. */
+export type DetailsCoverage = {
+  segments: MonthActualStatus[];
+  closedCount: number;
+  currentCount: number;
+  futureCount: number;
+  totalMonths: number;
+};
+
+/** Single-month header progress: a day-of-month bar instead of the strip. */
+export type DayProgress = {
+  elapsedFraction: number;
+  dayLabel: string;
+  closed: boolean;
+};
+
+export type TrajectoryPoint = {
+  month: string;
+  /** Cumulative plan up to and including this month. */
+  plan: number;
+  /** Cumulative actual up to and including this month; null once past today. */
+  actual: number | null;
+};
+
+/**
+ * Where the selection is heading by the end of the visible period. Actuals are
+ * banked up to today; the remainder is projected (net result: banked +
+ * remaining plan; spend: run-rate from the elapsed fraction of the period).
+ */
+export type TrajectoryMetrics = {
+  label: string;
+  projectedValue: number;
+  planLabel: string;
+  planValue: number;
+  variance: number;
+  varianceLabel: string;
+  /** Tone of the projected headline number. */
+  tone: DetailsTone;
+  /** Tone that colours the Actual + Projection chart lines. Kept separate from
+   *  the verdict chip so the lines never collapse into the muted plan line. */
+  lineTone: DetailsTone;
+  /** Short verdict chip beside the headline (e.g. "on track" / "below plan"). */
+  chipLabel: string;
+  chipTone: DetailsTone;
+  isSpend: boolean;
+  todayIndex: number;
+  points: TrajectoryPoint[];
+  /** The projected contribution of every not-yet-closed month (this month +
+   *  upcoming) at plan. Only set for the result trajectory. */
+  breakdown: { openPlan: number; openMonthCount: number } | null;
+};
+
 type RolloverBalanceLine = {
   label: string;
   value: number;
@@ -260,6 +348,16 @@ export type TrackingDetailsMetrics = {
   };
   selectionFullBudget?: number;
   selectionAverages?: TrackingSelectionAverages;
+  /** The current in-progress month, kept separate from closed-months figures. */
+  thisMonth?: ThisMonthMetrics | null;
+  /** Count of fully-closed months backing the cumulative/averaged figures. */
+  closedMonthCount?: number;
+  /** Per-month coverage for the header strip (period views). */
+  coverage?: DetailsCoverage;
+  /** Day-of-month progress for single-month views. */
+  dayProgress?: DayProgress | null;
+  /** End-of-period projection for period views. */
+  trajectory?: TrajectoryMetrics | null;
   rollover?: TrackingRolloverMetrics | null;
   monthValues?: TrackingSelectedMonthValues;
   meter?: BudgetMeterModel;
@@ -277,6 +375,12 @@ export type EnvelopeDetailsMetrics = {
   subtitle: string;
   rangeLabel: string;
   coverageLabel: string;
+  /** Per-month coverage strip (period views) — parity with tracking. */
+  coverage?: DetailsCoverage;
+  /** Day-of-month progress (single-month views). */
+  dayProgress?: DayProgress | null;
+  /** In-progress month pace verdict, for the current-month meter chip. */
+  thisMonth?: ThisMonthMetrics | null;
   futureOnly: boolean;
   isIncome: boolean;
   primary: {
@@ -831,7 +935,8 @@ function trackingMonthRolloverLine(
 }
 
 function buildTrackingMonthMetrics(
-  model: BudgetDetailsModel
+  model: BudgetDetailsModel,
+  now: Date = new Date()
 ): TrackingDetailsMetrics {
   const target = findTarget(model);
   const selection = model.selection;
@@ -853,6 +958,16 @@ function buildTrackingMonthMetrics(
   const variance = target.isIncome
     ? values.actuals - values.budgeted
     : values.budgeted - values.actuals;
+  const thisMonth =
+    entry.status === "current-partial"
+      ? computeThisMonthMetrics({
+          month: selectedMonth,
+          budgeted: values.budgeted,
+          actuals: values.actuals,
+          isIncome: target.isIncome,
+          now,
+        })
+      : null;
   const exactEdit =
     selection.entity === "category"
       ? exactCategoryMonthEdit(model, selectedMonth, selection.categoryId)
@@ -866,6 +981,8 @@ function buildTrackingMonthMetrics(
     subtitle: `${target.subtitle} - Tracking`,
     rangeLabel: formatMonthLabel(selectedMonth, "long"),
     coverageLabel: monthStatusLabel(entry.status),
+    dayProgress: buildDayProgress(selectedMonth, entry.status, now),
+    thisMonth,
     futureOnly,
     isIncome: target.isIncome,
     primary: futureOnly
@@ -906,6 +1023,292 @@ function buildTrackingMonthMetrics(
   };
 }
 
+/** Spending/receipts may run this far from the elapsed fraction and still
+ *  count as "on pace" — avoids flapping around the exact linear line. */
+const PACE_TOLERANCE = 0.1;
+
+/** A projection within this fraction of the plan reads as "on track"; beyond
+ *  it, "below plan" / "ahead of plan". A sensible default until/unless a
+ *  per-budget tolerance is configured. */
+const TRAJECTORY_PLAN_TOLERANCE = 0.02;
+
+function dayOfMonthLabel(month: string, now: Date): string {
+  const [year, mo] = month.split("-").map((n) => Number.parseInt(n, 10));
+  const daysInMonth = new Date(year, mo, 0).getDate();
+  const isCurrent = now.getFullYear() === year && now.getMonth() + 1 === mo;
+  const day = isCurrent ? Math.min(now.getDate(), daysInMonth) : daysInMonth;
+  return `day ${day} of ${daysInMonth}`;
+}
+
+export function computeThisMonthMetrics(input: {
+  month: string;
+  budgeted: number;
+  actuals: number;
+  isIncome: boolean;
+  now?: Date;
+  income?: { budgeted: number; actuals: number } | null;
+}): ThisMonthMetrics {
+  const { month, budgeted, actuals, isIncome } = input;
+  const now = input.now ?? new Date();
+  const elapsedFraction = monthElapsedFraction(month, now);
+  const usedFraction = budgeted > 0 ? actuals / budgeted : null;
+
+  let paceStatus: ThisMonthPaceStatus;
+  let statusLabel: string;
+  let tone: DetailsTone;
+
+  if (usedFraction == null) {
+    paceStatus = "no-budget";
+    statusLabel = "no budget set";
+    tone = "neutral";
+  } else if (isIncome) {
+    // Income arrives lumpily (often end of month), so we report progress
+    // without penalising a slow start.
+    if (usedFraction >= 1) {
+      paceStatus = "on-pace";
+      statusLabel = "fully received";
+      tone = "positive";
+    } else if (usedFraction - elapsedFraction >= PACE_TOLERANCE) {
+      paceStatus = "under-pace";
+      statusLabel = "ahead of pace";
+      tone = "positive";
+    } else {
+      paceStatus = "on-pace";
+      statusLabel = "arriving";
+      tone = "neutral";
+    }
+  } else if (usedFraction >= 1) {
+    paceStatus = "over-budget";
+    statusLabel = "over budget";
+    tone = "negative";
+  } else {
+    const delta = usedFraction - elapsedFraction;
+    // Ratio distinguishes "a bit ahead" from "burning far too fast"; the 5%
+    // floor stops early-month noise (tiny elapsed) from exploding the ratio.
+    const ratio = elapsedFraction > 0.05 ? usedFraction / elapsedFraction : 1;
+    if (delta > PACE_TOLERANCE && ratio >= 1.6) {
+      paceStatus = "well-over-pace";
+      statusLabel = "well over pace";
+      tone = "negative";
+    } else if (delta > PACE_TOLERANCE) {
+      paceStatus = "slightly-over-pace";
+      statusLabel = "slightly over pace";
+      tone = "negative";
+    } else if (delta < -PACE_TOLERANCE) {
+      paceStatus = "under-pace";
+      statusLabel = "under pace";
+      tone = "positive";
+    } else {
+      paceStatus = "on-pace";
+      statusLabel = "on pace";
+      tone = "positive";
+    }
+  }
+
+  return {
+    month,
+    monthLabel: formatMonthLabel(month, "long"),
+    dayLabel: dayOfMonthLabel(month, now),
+    actualLabel: isIncome ? "Received income" : "Spent",
+    budgeted,
+    actuals,
+    elapsedFraction,
+    usedFraction,
+    paceStatus,
+    statusLabel,
+    tone,
+    income: input.income ?? null,
+  };
+}
+
+function buildDetailsCoverage(model: BudgetDetailsModel): DetailsCoverage {
+  const segments = model.months.map((entry) => entry.status);
+  return {
+    segments,
+    closedCount: segments.filter((s) => s === "past").length,
+    currentCount: segments.filter((s) => s === "current-partial").length,
+    futureCount: segments.filter((s) => s === "future").length,
+    totalMonths: segments.length,
+  };
+}
+
+export function buildDayProgress(
+  month: string,
+  status: MonthActualStatus,
+  now: Date = new Date()
+): DayProgress {
+  return {
+    elapsedFraction:
+      status === "future" ? 0 : status === "past" ? 1 : monthElapsedFraction(month, now),
+    dayLabel:
+      status === "past"
+        ? "closed"
+        : status === "future"
+        ? "planned"
+        : dayOfMonthLabel(month, now),
+    closed: status === "past",
+  };
+}
+
+/**
+ * Net-result trajectory for the period summary: actuals are banked up to today,
+ * and every month after today contributes its planned result. So the projection
+ * answers "if the rest of the year goes to plan, where do we land?".
+ */
+function buildResultTrajectory(
+  model: BudgetDetailsModel
+): TrajectoryMetrics | null {
+  if (model.months.length === 0 || model.coverage.isFutureOnly) return null;
+
+  const points: TrajectoryPoint[] = [];
+  let cumPlan = 0;
+  let cumClosedActual = 0;
+  let closedPlan = 0;
+  let closedCount = 0;
+  let lastClosedIndex = -1;
+
+  model.months.forEach((entry, i) => {
+    const values = entry.state ? getTrackingPeriodValues(entry.state) : null;
+    const planned = values ? values.incomeBudgeted - values.expenseBudgeted : 0;
+    const actual = values ? values.incomeActuals - values.expenseActuals : 0;
+    cumPlan += planned;
+    // Only closed months are banked. The current partial month is projected at
+    // plan (not its income-starved partial actuals), so a late paycheck can't
+    // drag the year-end projection down.
+    if (entry.status === "past") {
+      cumClosedActual += actual;
+      closedPlan += planned;
+      closedCount++;
+      lastClosedIndex = i;
+    }
+    points.push({
+      month: entry.month,
+      plan: cumPlan,
+      actual: entry.status === "past" ? cumClosedActual : null,
+    });
+  });
+
+  if (lastClosedIndex === -1) return null;
+
+  const openPlan = cumPlan - closedPlan;
+  const projectedValue = cumClosedActual + openPlan;
+  const planValue = cumPlan;
+  const variance = projectedValue - planValue;
+  const rel = planValue !== 0 ? variance / Math.abs(planValue) : 0;
+
+  let chipLabel: string;
+  let chipTone: DetailsTone;
+  if (projectedValue < 0) {
+    chipLabel = "shortfall";
+    chipTone = "negative";
+  } else if (rel < -TRAJECTORY_PLAN_TOLERANCE) {
+    chipLabel = "below plan";
+    chipTone = "neutral";
+  } else if (rel > TRAJECTORY_PLAN_TOLERANCE) {
+    chipLabel = "ahead of plan";
+    chipTone = "positive";
+  } else {
+    chipLabel = "on track";
+    chipTone = "positive";
+  }
+
+  return {
+    label: "Projected result",
+    projectedValue,
+    planLabel: "Full-period plan",
+    planValue,
+    variance,
+    varianceLabel: variance >= 0 ? "above" : "below",
+    tone: toneForSigned(projectedValue),
+    lineTone: toneForSigned(projectedValue),
+    chipLabel,
+    chipTone,
+    isSpend: false,
+    todayIndex: lastClosedIndex,
+    points,
+    breakdown: {
+      openPlan,
+      openMonthCount: model.months.length - closedCount,
+    },
+  };
+}
+
+/**
+ * Spend trajectory for an expense selection: project the run-rate from the
+ * fraction of the whole period that has elapsed, so spending faster than the
+ * calendar projects over budget. Income targets have no meaningful run-rate
+ * projection (receipts are lumpy), so this returns null for them.
+ */
+function buildSelectionTrajectory(
+  model: BudgetDetailsModel,
+  target: TargetInfo,
+  now: Date
+): TrajectoryMetrics | null {
+  if (target.isIncome || model.coverage.isFutureOnly) return null;
+
+  const points: TrajectoryPoint[] = [];
+  let cumPlan = 0;
+  let cumActual = 0;
+  let todayIndex = -1;
+  let banked = 0;
+  let elapsedMonths = 0;
+  let closedCount = 0;
+
+  model.months.forEach((entry, i) => {
+    const values = entry.state ? getTrackingTargetValues(entry.state, target) : null;
+    const plan = values ? Math.abs(values.budgeted) : 0;
+    const actual = values ? Math.abs(values.actuals) : 0;
+    cumPlan += plan;
+    if (isActualLikeStatus(entry.status)) {
+      cumActual += actual;
+      todayIndex = i;
+      banked = cumActual;
+      if (entry.status === "past") {
+        elapsedMonths += 1;
+        closedCount++;
+      } else {
+        elapsedMonths += monthElapsedFraction(entry.month, now);
+      }
+    }
+    points.push({
+      month: entry.month,
+      plan: cumPlan,
+      actual: isActualLikeStatus(entry.status) ? cumActual : null,
+    });
+  });
+
+  // Run-rate needs a closed month to be stable — projecting from a sliver of
+  // the current month alone produces wild numbers.
+  if (todayIndex === -1 || closedCount === 0) return null;
+
+  const periodElapsed =
+    model.months.length > 0 ? elapsedMonths / model.months.length : 0;
+  const projectedValue =
+    periodElapsed > 0 ? Math.round(banked / periodElapsed) : banked;
+  const planValue = cumPlan;
+  const variance = projectedValue - planValue;
+  const rel = planValue !== 0 ? variance / Math.abs(planValue) : 0;
+  const atRisk = rel > TRAJECTORY_PLAN_TOLERANCE;
+  const chipTone: DetailsTone = atRisk ? "negative" : "positive";
+
+  return {
+    label: "Projected spend",
+    projectedValue,
+    planLabel: "Full-period budget",
+    planValue,
+    variance,
+    varianceLabel: variance > 0 ? "over" : "under",
+    tone: "neutral",
+    lineTone: chipTone,
+    chipLabel: atRisk ? "at risk" : "on track",
+    chipTone,
+    isSpend: true,
+    todayIndex,
+    points,
+    breakdown: null,
+  };
+}
+
 function missingSelectionMetrics(
   model: BudgetDetailsModel
 ): TrackingDetailsMetrics {
@@ -932,11 +1335,14 @@ function missingSelectionMetrics(
 }
 
 export function buildTrackingDetailsMetrics(
-  model: BudgetDetailsModel
+  model: BudgetDetailsModel,
+  now: Date = new Date()
 ): TrackingDetailsMetrics {
   if (model.selection.scope === "month") {
-    return buildTrackingMonthMetrics(model);
+    return buildTrackingMonthMetrics(model, now);
   }
+
+  const coverage = buildDetailsCoverage(model);
 
   if (model.selection.entity !== "none") {
     const target = findTarget(model);
@@ -945,8 +1351,9 @@ export function buildTrackingDetailsMetrics(
     let budgetToDate = 0;
     let actualToDate = 0;
     let fullBudget = 0;
-    let actualLikeMonthCount = 0;
-    let fullBudgetMonthCount = 0;
+    let closedMonthCount = 0;
+    let currentValues: SelectedMonthValues | null = null;
+    let currentMonth: string | null = null;
     const trend: BudgetTrendPoint[] = [];
 
     for (const entry of model.months) {
@@ -954,11 +1361,13 @@ export function buildTrackingDetailsMetrics(
       const values = state ? getTrackingTargetValues(state, target) : null;
       if (values) {
         fullBudget += values.budgeted;
-        fullBudgetMonthCount++;
-        if (isActualLikeStatus(entry.status)) {
+        if (isClosedMonthStatus(entry.status)) {
           budgetToDate += values.budgeted;
           actualToDate += values.actuals;
-          actualLikeMonthCount++;
+          closedMonthCount++;
+        } else if (entry.status === "current-partial") {
+          currentValues = values;
+          currentMonth = entry.month;
         }
       }
 
@@ -980,11 +1389,18 @@ export function buildTrackingDetailsMetrics(
     const variance = target.isIncome
       ? actualToDate - budgetToDate
       : budgetToDate - actualToDate;
-    const hasActualLikeMonths = actualLikeMonthCount > 0;
-    const budgetAverageDivisor = hasActualLikeMonths
-      ? actualLikeMonthCount
-      : fullBudgetMonthCount;
+    const hasClosedMonths = closedMonthCount > 0;
     const futureOnly = model.coverage.isFutureOnly;
+    const thisMonth =
+      currentValues && currentMonth
+        ? computeThisMonthMetrics({
+            month: currentMonth,
+            budgeted: currentValues.budgeted,
+            actuals: currentValues.actuals,
+            isIncome: target.isIncome,
+            now,
+          })
+        : null;
     return {
       scope: model.selection.scope,
       entity: model.selection.entity,
@@ -1002,6 +1418,13 @@ export function buildTrackingDetailsMetrics(
             helper: "Future months are shown as plan-only.",
             tone: "neutral",
           }
+        : !hasClosedMonths
+        ? {
+            label: "No closed months yet",
+            value: null,
+            helper: "This month is still in progress — see below.",
+            tone: "neutral",
+          }
         : {
             ...(target.isIncome
               ? trackingIncomePrimaryMetric({
@@ -1012,41 +1435,42 @@ export function buildTrackingDetailsMetrics(
                 })
               : trackingExpensePrimaryMetric({ variance, status: null })),
           },
-      selectionToDate: {
-        budgetLabel: target.isIncome ? "Budgeted income to date" : "Budgeted to date",
-        actualLabel: target.isIncome ? "Received income to date" : "Spent to date",
-        budgeted: budgetToDate,
-        actuals: actualToDate,
-        variance,
-      },
+      selectionToDate: hasClosedMonths
+        ? {
+            budgetLabel: target.isIncome
+              ? "Budgeted income"
+              : "Budgeted",
+            actualLabel: target.isIncome ? "Received income" : "Spent",
+            budgeted: budgetToDate,
+            actuals: actualToDate,
+            variance,
+          }
+        : undefined,
       selectionFullBudget: fullBudget,
-      selectionAverages:
-        budgetAverageDivisor > 0
-          ? {
-              budgetLabel: target.isIncome
-                ? "Budgeted income / month"
-                : "Budgeted / month",
-              actualLabel: target.isIncome
-                ? "Received income / month"
-                : "Spent / month",
-              budgetPerMonth: Math.round(
-                (hasActualLikeMonths ? budgetToDate : fullBudget) /
-                  budgetAverageDivisor
-              ),
-              actualPerMonth: hasActualLikeMonths
-                ? Math.round(actualToDate / actualLikeMonthCount)
-                : null,
-              variancePerMonth: hasActualLikeMonths
-                ? Math.round(variance / actualLikeMonthCount)
-                : null,
-            }
-          : undefined,
+      selectionAverages: hasClosedMonths
+        ? {
+            budgetLabel: target.isIncome
+              ? "Budgeted income / month"
+              : "Budgeted / month",
+            actualLabel: target.isIncome
+              ? "Received income / month"
+              : "Spent / month",
+            budgetPerMonth: Math.round(budgetToDate / closedMonthCount),
+            actualPerMonth: Math.round(actualToDate / closedMonthCount),
+            variancePerMonth: Math.round(variance / closedMonthCount),
+          }
+        : undefined,
+      thisMonth,
+      closedMonthCount,
+      coverage,
+      trajectory: buildSelectionTrajectory(model, target, now),
       rollover: buildTrackingRolloverMetrics(model, target),
-      meter: futureOnly
-        ? undefined
-        : target.isIncome
-        ? trackingIncomeMeter(budgetToDate, actualToDate, "Planned to date")
-        : trackingExpenseMeter(budgetToDate, actualToDate, "Budgeted to date"),
+      meter:
+        futureOnly || !hasClosedMonths
+          ? undefined
+          : target.isIncome
+          ? trackingIncomeMeter(budgetToDate, actualToDate, "Planned")
+          : trackingExpenseMeter(budgetToDate, actualToDate, "Budgeted"),
       trendLabel: "Monthly Spending vs. Budgeted",
       trend,
       stagedImpact: relevantStagedImpact(model, target),
@@ -1060,6 +1484,9 @@ export function buildTrackingDetailsMetrics(
   let expenseVarianceToDate = 0;
   let fullIncomeBudget = 0;
   let fullExpenseBudget = 0;
+  let closedMonthCount = 0;
+  let currentPeriodValues: TrackingMonthValues | null = null;
+  let currentPeriodMonth: string | null = null;
   const trend: BudgetTrendPoint[] = [];
   const spendingVsBudgetedTrend: BudgetTrendPoint[] = [];
 
@@ -1069,12 +1496,16 @@ export function buildTrackingDetailsMetrics(
     if (values) {
       fullIncomeBudget += values.incomeBudgeted;
       fullExpenseBudget += values.expenseBudgeted;
-      if (isActualLikeStatus(entry.status)) {
+      if (isClosedMonthStatus(entry.status)) {
         incomeActuals += values.incomeActuals;
         expenseActuals += values.expenseActuals;
         incomeBudgetToDate += values.incomeBudgeted;
         expenseBudgetToDate += values.expenseBudgeted;
         expenseVarianceToDate += values.expenseVariance;
+        closedMonthCount++;
+      } else if (entry.status === "current-partial") {
+        currentPeriodValues = values;
+        currentPeriodMonth = entry.month;
       }
     }
 
@@ -1103,13 +1534,28 @@ export function buildTrackingDetailsMetrics(
   const expenseVariance = expenseVarianceToDate;
   const netPlanVariance = actualResult - plannedToDate;
   const plannedResult = fullIncomeBudget - fullExpenseBudget;
+  const hasClosedMonths = closedMonthCount > 0;
+  const periodThisMonth =
+    currentPeriodValues && currentPeriodMonth
+      ? computeThisMonthMetrics({
+          month: currentPeriodMonth,
+          budgeted: currentPeriodValues.expenseBudgeted,
+          actuals: currentPeriodValues.expenseActuals,
+          isIncome: false,
+          now,
+          income: {
+            budgeted: currentPeriodValues.incomeBudgeted,
+            actuals: currentPeriodValues.incomeActuals,
+          },
+        })
+      : null;
 
   return {
     scope: "period",
     entity: "none",
     kind: "period",
     title: "PERIOD SUMMARY",
-    subtitle: `Tracking - ${model.displayMonths.length} months`,
+    subtitle: "Tracking",
     rangeLabel: model.rangeLabel,
     coverageLabel: model.coverage.label,
     futureOnly: model.coverage.isFutureOnly,
@@ -1121,31 +1567,47 @@ export function buildTrackingDetailsMetrics(
           helper: "Future months are shown as plan-only.",
           tone: "neutral",
         }
+      : !hasClosedMonths
+      ? {
+          label: "No closed months yet",
+          value: null,
+          helper: "This month is still in progress — see below.",
+          tone: "neutral",
+        }
       : {
-          label: "Actual Result So Far",
+          label: "Result",
           value: actualResult,
           helper: actualResult >= 0 ? "saved" : "overspent",
           tone: toneForSigned(actualResult),
         },
-    periodActuals: {
-      incomeReceived: incomeActuals,
-      expensesSpent: expenseActuals,
-      result: actualResult,
-    },
-    periodBudgetToDate: {
-      incomeBudgeted: incomeBudgetToDate,
-      expensesBudgeted: expenseBudgetToDate,
-      expenseVariance,
-      netPlanVariance,
-    },
+    periodActuals: hasClosedMonths
+      ? {
+          incomeReceived: incomeActuals,
+          expensesSpent: expenseActuals,
+          result: actualResult,
+        }
+      : undefined,
+    periodBudgetToDate: hasClosedMonths
+      ? {
+          incomeBudgeted: incomeBudgetToDate,
+          expensesBudgeted: expenseBudgetToDate,
+          expenseVariance,
+          netPlanVariance,
+        }
+      : undefined,
     periodFullPlan: {
       incomeBudgeted: fullIncomeBudget,
       expensesBudgeted: fullExpenseBudget,
       plannedResult,
     },
-    meter: model.coverage.isFutureOnly
-      ? undefined
-      : trackingExpenseMeter(expenseBudgetToDate, expenseActuals, "Budgeted to date"),
+    thisMonth: periodThisMonth,
+    closedMonthCount,
+    coverage,
+    trajectory: buildResultTrajectory(model),
+    meter:
+      model.coverage.isFutureOnly || !hasClosedMonths
+        ? undefined
+        : trackingExpenseMeter(expenseBudgetToDate, expenseActuals, "Budgeted"),
     trendLabel: "Monthly Result",
     trend,
     spendingVsBudgetedTrend: model.coverage.isFutureOnly ? undefined : spendingVsBudgetedTrend,
@@ -1175,7 +1637,8 @@ function envelopeBalanceHelper(value: number, month: string): string {
 }
 
 function buildEnvelopeMonthMetrics(
-  model: BudgetDetailsModel
+  model: BudgetDetailsModel,
+  now: Date = new Date()
 ): EnvelopeDetailsMetrics {
   const target = findTarget(model);
   const selection = model.selection;
@@ -1206,6 +1669,17 @@ function buildEnvelopeMonthMetrics(
     subtitle: `${target.subtitle} - Envelope`,
     rangeLabel: formatMonthLabel(selectedMonth, "long"),
     coverageLabel: monthStatusLabel(entry.status),
+    dayProgress: buildDayProgress(selectedMonth, entry.status, now),
+    thisMonth:
+      entry.status === "current-partial" && !target.isIncome
+        ? computeThisMonthMetrics({
+            month: selectedMonth,
+            budgeted: values.budgeted,
+            actuals: values.actuals,
+            isIncome: false,
+            now,
+          })
+        : null,
     futureOnly: entry.status === "future",
     isIncome: target.isIncome,
     primary: {
@@ -1262,11 +1736,14 @@ function missingEnvelopeMetrics(
 }
 
 export function buildEnvelopeDetailsMetrics(
-  model: BudgetDetailsModel
+  model: BudgetDetailsModel,
+  now: Date = new Date()
 ): EnvelopeDetailsMetrics {
   if (model.selection.scope === "month") {
-    return buildEnvelopeMonthMetrics(model);
+    return buildEnvelopeMonthMetrics(model, now);
   }
+
+  const coverage = buildDetailsCoverage(model);
 
   if (model.selection.entity !== "none") {
     const target = findTarget(model);
@@ -1317,6 +1794,7 @@ export function buildEnvelopeDetailsMetrics(
       subtitle: `${target.subtitle} - Envelope`,
       rangeLabel: model.rangeLabel,
       coverageLabel: model.coverage.label,
+      coverage,
       futureOnly,
       isIncome: target.isIncome,
       primary:
@@ -1398,9 +1876,10 @@ export function buildEnvelopeDetailsMetrics(
     entity: "none",
     kind: "period",
     title: "PERIOD SUMMARY",
-    subtitle: `Envelope - ${model.displayMonths.length} months`,
+    subtitle: "Envelope",
     rangeLabel: model.rangeLabel,
     coverageLabel: model.coverage.label,
+    coverage,
     futureOnly: model.coverage.isFutureOnly,
     isIncome: false,
     primary:

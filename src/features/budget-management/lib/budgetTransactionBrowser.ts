@@ -1,5 +1,6 @@
 import { formatMonthLabel } from "@/lib/budget/monthMath";
 import type { BudgetDetailsModel } from "./budgetDetailsModel";
+import type { LoadedMonthState } from "../types";
 
 export type BudgetTransactionEntity = "category" | "group";
 
@@ -55,6 +56,41 @@ function collectVisibleExpenseCategoryIds(
   }
 
   return [...ids];
+}
+
+/**
+ * Drill target for every visible expense (or income) category in a single
+ * month — powers the whole-month summary's "Expenses spent" / "Income received"
+ * figures. Single-month only; period aggregates are deliberately not drillable.
+ */
+export function buildMonthCategoriesDrilldown(
+  state: LoadedMonthState,
+  month: string,
+  kind: "expense" | "income"
+): BudgetTransactionsDrilldown | null {
+  const wantIncome = kind === "income";
+  const categoryIds: string[] = [];
+
+  for (const groupId of state.groupOrder) {
+    const group = state.groupsById[groupId];
+    if (!group || group.hidden || group.isIncome !== wantIncome) continue;
+    for (const categoryId of group.categoryIds) {
+      const category = state.categoriesById[categoryId];
+      if (!category || category.hidden || category.isIncome !== wantIncome) {
+        continue;
+      }
+      categoryIds.push(categoryId);
+    }
+  }
+
+  if (categoryIds.length === 0) return null;
+  return {
+    id: wantIncome ? "__month_income__" : "__month_expenses__",
+    month,
+    title: wantIncome ? "All income" : "All expenses",
+    entity: "group",
+    categoryIds,
+  };
 }
 
 export function buildBudgetTransactionBrowserOptions(

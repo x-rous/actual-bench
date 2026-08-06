@@ -1,8 +1,19 @@
 "use client";
 
+import { useMemo, useState } from "react";
 import { formatMonthLabel } from "@/lib/budget/monthMath";
 import { formatDelta, formatSigned } from "../../lib/format";
-import { buildMonthSummaryMeter, type DetailsTone } from "../../lib/budgetDetailsMetrics";
+import {
+  buildDayProgress,
+  buildMonthSummaryMeter,
+  computeThisMonthMetrics,
+  type ThisMonthMetrics,
+} from "../../lib/budgetDetailsMetrics";
+import {
+  buildMonthCategoriesDrilldown,
+  type BudgetTransactionBrowserOptions,
+  type BudgetTransactionsDrilldown,
+} from "../../lib/budgetTransactionBrowser";
 import { classifyMonthActualStatus } from "../../lib/budgetDetailsModel";
 import type { BudgetMonthSummary, LoadedMonthState } from "../../types";
 import {
@@ -10,15 +21,12 @@ import {
   DetailsSection,
   MetricLine,
   PrimaryMetric,
+  toneFromValue,
 } from "./DetailsPrimitives";
-import { BudgetMeter } from "./BudgetMeter";
+import { MeterSection } from "./BudgetMeter";
 import { BudgetNoteSection } from "./BudgetNoteSection";
-
-function toneFromValue(value: number): DetailsTone {
-  if (value > 0) return "positive";
-  if (value < 0) return "negative";
-  return "neutral";
-}
+import { BudgetTransactionsDialog } from "./BudgetTransactionsDialog";
+import { useSpendingDetailsShortcut } from "./useSpendingDetailsShortcut";
 
 /**
  * Whole-month overview shown when a month column header is selected (no cell or
@@ -32,13 +40,49 @@ export function BudgetMonthSummaryPanel({
   month,
   state,
   isTracking,
+  transactionBrowserOptions,
+  statesByMonth,
 }: {
   month: string;
   state: LoadedMonthState | undefined;
   isTracking: boolean;
+  transactionBrowserOptions: BudgetTransactionBrowserOptions;
+  statesByMonth: Map<string, LoadedMonthState>;
 }) {
   // Skip the meter on plan-only (future) months — nothing spent to fill it.
-  const isFuture = classifyMonthActualStatus(month) === "future";
+  const status = classifyMonthActualStatus(month);
+  const isFuture = status === "future";
+  const dayProgress = buildDayProgress(month, status);
+
+  // Whole-month drill-through: the actual figures open that month's expense /
+  // income transactions. Only single-month figures are drillable.
+  const [transactionTarget, setTransactionTarget] =
+    useState<BudgetTransactionsDrilldown | null>(null);
+  const expenseDrill = useMemo(
+    () =>
+      state && !isFuture ? buildMonthCategoriesDrilldown(state, month, "expense") : null,
+    [state, month, isFuture]
+  );
+  const incomeDrill = useMemo(
+    () =>
+      state && !isFuture ? buildMonthCategoriesDrilldown(state, month, "income") : null,
+    [state, month, isFuture]
+  );
+  const openExpense = expenseDrill ? () => setTransactionTarget(expenseDrill) : undefined;
+  const openIncome = incomeDrill ? () => setTransactionTarget(incomeDrill) : undefined;
+  useSpendingDetailsShortcut({ target: expenseDrill, onOpen: setTransactionTarget });
+  const monthLabel = formatMonthLabel(month, "long");
+  // For the in-progress month, add the pace verdict + elapsed marker (parity
+  // across tracking and envelope, category/period views).
+  const pace =
+    status === "current-partial" && state
+      ? computeThisMonthMetrics({
+          month,
+          budgeted: Math.abs(state.summary.totalBudgeted),
+          actuals: Math.abs(state.summary.totalSpent),
+          isIncome: false,
+        })
+      : null;
   const meter =
     state && !isFuture
       ? buildMonthSummaryMeter({
@@ -56,13 +100,28 @@ export function BudgetMonthSummaryPanel({
         subtitle={`${isTracking ? "Tracking" : "Envelope"} - month overview`}
         rangeLabel={formatMonthLabel(month, "long")}
         coverageLabel="Whole-month totals across all categories"
+        dayProgress={dayProgress}
       />
 
       {state ? (
         isTracking ? (
-          <TrackingMonthBody summary={state.summary} meter={meter} />
+          <TrackingMonthBody
+            summary={state.summary}
+            meter={meter}
+            pace={pace}
+            monthLabel={monthLabel}
+            onExpenseClick={openExpense}
+            onIncomeClick={openIncome}
+          />
         ) : (
-          <EnvelopeMonthBody summary={state.summary} meter={meter} />
+          <EnvelopeMonthBody
+            summary={state.summary}
+            meter={meter}
+            pace={pace}
+            monthLabel={monthLabel}
+            onExpenseClick={openExpense}
+            onIncomeClick={openIncome}
+          />
         )
       ) : (
         <DetailsSection>
@@ -73,6 +132,16 @@ export function BudgetMonthSummaryPanel({
       )}
 
       <BudgetNoteSection target={{ kind: "budgetMonth", id: month }} />
+
+      {transactionTarget && (
+        <BudgetTransactionsDialog
+          key={`${transactionTarget.entity}:${transactionTarget.id}:${transactionTarget.month}`}
+          target={transactionTarget}
+          browserOptions={transactionBrowserOptions}
+          statesByMonth={statesByMonth}
+          onClose={() => setTransactionTarget(null)}
+        />
+      )}
     </div>
   );
 }
@@ -80,9 +149,17 @@ export function BudgetMonthSummaryPanel({
 function EnvelopeMonthBody({
   summary,
   meter,
+  pace,
+  monthLabel,
+  onExpenseClick,
+  onIncomeClick,
 }: {
   summary: BudgetMonthSummary;
   meter?: ReturnType<typeof buildMonthSummaryMeter>;
+  pace?: ThisMonthMetrics | null;
+  monthLabel: string;
+  onExpenseClick?: () => void;
+  onIncomeClick?: () => void;
 }) {
   const toBudget = summary.toBudget;
   const fullyBudgeted = toBudget === 0;
@@ -106,8 +183,16 @@ function EnvelopeMonthBody({
         tone={toBudget >= 0 ? "positive" : "negative"}
         showPlus={!fullyBudgeted}
         valuePrefix={fullyBudgeted ? "✓ " : undefined}
+        hero
       />
-      {meter && <BudgetMeter model={meter} />}
+      {meter && (
+        <MeterSection
+          model={meter}
+          helper="Spending against this month's assigned budget."
+          elapsedFraction={pace?.elapsedFraction}
+          chip={pace ? { label: pace.statusLabel, tone: pace.tone } : undefined}
+        />
+      )}
       <DetailsSection title="Values">
         <MetricLine
           label="Assigned / Budgeted"
@@ -116,10 +201,14 @@ function EnvelopeMonthBody({
         <MetricLine
           label="Spent"
           value={formatSigned(Math.abs(summary.totalSpent))}
+          onValueClick={onExpenseClick}
+          valueAriaLabel={`View expense transactions for ${monthLabel}`}
         />
         <MetricLine
           label="Income received"
           value={formatSigned(summary.totalIncome)}
+          onValueClick={onIncomeClick}
+          valueAriaLabel={`View income transactions for ${monthLabel}`}
         />
         {summary.forNextMonth > 0 && (
           <MetricLine
@@ -135,42 +224,54 @@ function EnvelopeMonthBody({
 function TrackingMonthBody({
   summary,
   meter,
+  pace,
+  monthLabel,
+  onExpenseClick,
+  onIncomeClick,
 }: {
   summary: BudgetMonthSummary;
   meter?: ReturnType<typeof buildMonthSummaryMeter>;
+  pace?: ThisMonthMetrics | null;
+  monthLabel: string;
+  onExpenseClick?: () => void;
+  onIncomeClick?: () => void;
 }) {
   const income = summary.totalIncome;
   const spent = Math.abs(summary.totalSpent);
-  const budgeted = Math.abs(summary.totalBudgeted);
   const result = income - spent;
-  // Matches the period panel: budgeted - spent, positive means under budget.
-  const variance = summary.totalBalance;
 
   return (
     <>
-      <PrimaryMetric
-        label="Actual Result"
-        value={result}
-        helper={result >= 0 ? "saved" : "overspent"}
-        tone={toneFromValue(result)}
-        showPlus
-      />
-      {meter && <BudgetMeter model={meter} />}
+      {/* Lead with spending-vs-budget (the meter states over/under budget); the
+          net result lives once, below, so nothing is shown twice. */}
+      {meter && (
+        <MeterSection
+          model={meter}
+          helper="Spending against budgeted expenses this month."
+          elapsedFraction={pace?.elapsedFraction}
+          chip={pace ? { label: pace.statusLabel, tone: pace.tone } : undefined}
+          hero
+        />
+      )}
       <DetailsSection title="Actuals">
-        <MetricLine label="Income received" value={formatSigned(income)} />
-        <MetricLine label="Expenses spent" value={formatSigned(spent)} />
+        <MetricLine
+          label="Income received"
+          value={formatSigned(income)}
+          onValueClick={onIncomeClick}
+          valueAriaLabel={`View income transactions for ${monthLabel}`}
+        />
+        <MetricLine
+          label="Expenses spent"
+          value={formatSigned(spent)}
+          onValueClick={onExpenseClick}
+          valueAriaLabel={`View expense transactions for ${monthLabel}`}
+        />
         <MetricLine
           label="Result"
-          value={formatDelta(result)}
+          value={`${formatDelta(result)}${
+            result > 0 ? " saved" : result < 0 ? " overspent" : ""
+          }`}
           tone={toneFromValue(result)}
-        />
-      </DetailsSection>
-      <DetailsSection title="Budget">
-        <MetricLine label="Expenses budgeted" value={formatSigned(budgeted)} />
-        <MetricLine
-          label="Spending vs budgeted"
-          value={formatDelta(variance)}
-          tone={toneFromValue(variance)}
         />
       </DetailsSection>
     </>

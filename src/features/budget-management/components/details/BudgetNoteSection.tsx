@@ -79,7 +79,7 @@ export function BudgetNoteSection({ target }: { target: BudgetNoteTarget }) {
   return (
     <section className="rounded border border-border/60 px-2.5 py-2">
       <div className="mb-1.5 flex items-center justify-between gap-2">
-        <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+        <p className="text-[10.5px] font-semibold uppercase tracking-wide text-muted-foreground">
           Note
         </p>
         {!editing && note && (
@@ -96,7 +96,7 @@ export function BudgetNoteSection({ target }: { target: BudgetNoteTarget }) {
       </div>
 
       {allNotes === undefined ? (
-        <p className="text-[11px] text-muted-foreground/60">Loading…</p>
+        <p className="text-[11px] text-muted-foreground">Loading…</p>
       ) : editing ? (
         <>
           <textarea
@@ -108,7 +108,7 @@ export function BudgetNoteSection({ target }: { target: BudgetNoteTarget }) {
             className="w-full resize-y rounded border border-input bg-transparent px-2 py-1.5 text-[11px] outline-none transition-colors placeholder:text-muted-foreground focus-visible:border-ring"
           />
           {(save.isError || remove.isError) && (
-            <p aria-live="polite" className="mt-1 text-[10px] text-destructive">
+            <p aria-live="polite" className="mt-1 text-[10.5px] text-destructive">
               {save.isError ? "Could not save the note. Try again." : "Could not clear the note. Try again."}
             </p>
           )}
@@ -150,7 +150,7 @@ export function BudgetNoteSection({ target }: { target: BudgetNoteTarget }) {
           </div>
         </>
       ) : note ? (
-        <p className="whitespace-pre-wrap text-[11px] text-foreground/80">{note}</p>
+        <p className="whitespace-pre-wrap text-[11px] text-foreground">{note}</p>
       ) : (
         <Button
           variant="ghost"
