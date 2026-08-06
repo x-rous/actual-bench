@@ -72,8 +72,6 @@ export type SummaryRowConfig = {
   emphasizeValue?: boolean;
   /** Optional value class override for rows that need a stronger emphasis. */
   valueClassName?: string;
-  /** Optional class override for the row-header label text (weight/size). */
-  labelClassName?: string;
   /** Tiny top margin before the row. */
   marginTop?: boolean;
 };
@@ -102,7 +100,7 @@ export const TRACKING_SUMMARY_ROWS: SummaryRowConfig[] = [
     noBorder: true,
     marginTop: true,
     rowHeight: "h-7",
-    labelClassName: "font-bold text-[12px]",
+    valueClassName: "text-[13px] font-bold",
   },
   {
     label: "Income",
@@ -110,6 +108,7 @@ export const TRACKING_SUMMARY_ROWS: SummaryRowConfig[] = [
     getCell: (_s, state, month) => getTrackingIncomeCell(state, month),
     noBorder: true,
     rowHeight: "h-7",
+    marginTop: true,
   },
   {
     label: "Result",
@@ -204,11 +203,7 @@ export function SummaryHeaderRow({
             {config.operator}
           </span>
         )}
-        <span
-          className={`${config.operator === "=" ? "font-semibold" : ""} ${config.labelClassName ?? ""}`}
-        >
-          {rowLabel}
-        </span>
+        <span className={config.operator === "=" ? "font-semibold" : ""}>{rowLabel}</span>
       </div>
       {activeMonths.map((month) => (
         <SummaryHeaderCell key={month} month={month} config={config} />
