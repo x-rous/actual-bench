@@ -20,6 +20,47 @@ export function toneClass(tone: DetailsTone): string {
   return "text-foreground";
 }
 
+/**
+ * Shimmer placeholder shown while the panel's month data loads, instead of a
+ * bare "Loading…" line. Announces itself once to assistive tech; the visual
+ * blocks are decorative.
+ */
+export function DetailsSkeleton({
+  header = true,
+  boxes = 3,
+}: {
+  header?: boolean;
+  boxes?: number;
+}) {
+  return (
+    <div
+      className={header ? "px-3 py-2 space-y-3" : "space-y-3"}
+      role="status"
+      aria-live="polite"
+    >
+      <span className="sr-only">Loading budget details…</span>
+      {header && (
+        <div className="space-y-1.5 pb-2 border-b border-border/40" aria-hidden="true">
+          <div className="h-2.5 w-24 rounded bg-muted animate-pulse" />
+          <div className="h-2 w-40 rounded bg-muted animate-pulse" />
+          <div className="h-1 w-full rounded bg-muted animate-pulse" />
+        </div>
+      )}
+      {Array.from({ length: boxes }).map((_, i) => (
+        <div
+          key={i}
+          className="rounded border border-border/60 px-2.5 py-2 space-y-2"
+          aria-hidden="true"
+        >
+          <div className="h-2 w-20 rounded bg-muted animate-pulse" />
+          <div className="h-2 w-full rounded bg-muted animate-pulse" />
+          <div className="h-2 w-3/4 rounded bg-muted animate-pulse" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
 /** Positive value → good, negative → bad, zero → neutral. */
 export function toneFromValue(value: number): DetailsTone {
   if (value > 0) return "positive";

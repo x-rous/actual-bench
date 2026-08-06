@@ -19,6 +19,7 @@ import type { BudgetMonthSummary, LoadedMonthState } from "../../types";
 import {
   DetailsHeader,
   DetailsSection,
+  DetailsSkeleton,
   MetricLine,
   PrimaryMetric,
   toneFromValue,
@@ -124,11 +125,7 @@ export function BudgetMonthSummaryPanel({
           />
         )
       ) : (
-        <DetailsSection>
-          <p className="text-[11px] text-muted-foreground">
-            Month data is still loading.
-          </p>
-        </DetailsSection>
+        <DetailsSkeleton header={false} boxes={2} />
       )}
 
       <BudgetNoteSection target={{ kind: "budgetMonth", id: month }} />

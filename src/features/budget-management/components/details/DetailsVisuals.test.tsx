@@ -78,10 +78,12 @@ describe("TrajectorySection", () => {
     // Upcoming-plan line shows only the open-months contribution (no "Closed so far").
     expect(screen.getByText("Upcoming plan · 2 mo")).toBeInTheDocument();
     expect(screen.queryByText("Closed so far")).not.toBeInTheDocument();
-    // The sparkline is present and labelled, with the renamed legend + Now marker.
+    // The sparkline carries a data-rich accessible name (not just "a chart"),
+    // and a screen-reader list of the per-month values.
     expect(
-      screen.getByLabelText(/Cumulative actual to date/),
+      screen.getByLabelText(/Projected result 4,630, full-period plan 4,700/),
     ).toBeInTheDocument();
+    expect(screen.getByText(/plan 2,000, actual 2,400/)).toBeInTheDocument();
     expect(screen.getByText("Projection")).toBeInTheDocument();
     expect(screen.queryByText("Forecast")).not.toBeInTheDocument();
     expect(screen.getByText("Now")).toBeInTheDocument();

@@ -1150,49 +1150,103 @@ export function buildDayProgress(
   };
 }
 
+type TrajectoryAccumulation = {
+  points: TrajectoryPoint[];
+  /** Cumulative plan across every displayed month. */
+  cumPlan: number;
+  /** Cumulative banked actual (closed, plus the current month when banked). */
+  bankedActual: number;
+  /** Cumulative plan for the banked months. */
+  bankedPlan: number;
+  /** Index of the last banked month (where the actual line ends), or -1. */
+  lastBankedIndex: number;
+  /** Count of fully-closed (past) months. */
+  closedCount: number;
+  /** Elapsed-month total for run-rate: 1 per closed month + the current fraction. */
+  elapsedMonths: number;
+};
+
 /**
- * Net-result trajectory for the period summary: actuals are banked up to today,
- * and every month after today contributes its planned result. So the projection
- * answers "if the rest of the year goes to plan, where do we land?".
+ * Walks the visible months once, accumulating the cumulative plan and actual
+ * lines for a trajectory chart. `bankCurrentPartial` decides whether the
+ * in-progress month counts as banked (spend run-rate) or is left to be
+ * projected at plan (net result).
+ */
+function accumulateTrajectory(
+  model: BudgetDetailsModel,
+  monthValues: (state: LoadedMonthState) => { plan: number; actual: number } | null,
+  bankCurrentPartial: boolean,
+  now: Date = new Date()
+): TrajectoryAccumulation {
+  const points: TrajectoryPoint[] = [];
+  let cumPlan = 0;
+  let bankedActual = 0;
+  let bankedPlan = 0;
+  let lastBankedIndex = -1;
+  let closedCount = 0;
+  let elapsedMonths = 0;
+
+  model.months.forEach((entry, i) => {
+    const v = entry.state ? monthValues(entry.state) : null;
+    cumPlan += v?.plan ?? 0;
+    const isPast = entry.status === "past";
+    const banked = isPast || (bankCurrentPartial && entry.status === "current-partial");
+    if (banked) {
+      bankedActual += v?.actual ?? 0;
+      bankedPlan += v?.plan ?? 0;
+      lastBankedIndex = i;
+      if (isPast) {
+        closedCount++;
+        elapsedMonths += 1;
+      } else {
+        elapsedMonths += monthElapsedFraction(entry.month, now);
+      }
+    }
+    points.push({
+      month: entry.month,
+      plan: cumPlan,
+      actual: banked ? bankedActual : null,
+    });
+  });
+
+  return {
+    points,
+    cumPlan,
+    bankedActual,
+    bankedPlan,
+    lastBankedIndex,
+    closedCount,
+    elapsedMonths,
+  };
+}
+
+/**
+ * Net-result trajectory for the period summary: actuals are banked for closed
+ * months only, and every not-yet-closed month contributes its planned result —
+ * so a late paycheck can't drag the projection down. Answers "if the rest of
+ * the period goes to plan, where do we land?".
  */
 function buildResultTrajectory(
   model: BudgetDetailsModel
 ): TrajectoryMetrics | null {
   if (model.months.length === 0 || model.coverage.isFutureOnly) return null;
 
-  const points: TrajectoryPoint[] = [];
-  let cumPlan = 0;
-  let cumClosedActual = 0;
-  let closedPlan = 0;
-  let closedCount = 0;
-  let lastClosedIndex = -1;
+  const accum = accumulateTrajectory(
+    model,
+    (state) => {
+      const v = getTrackingPeriodValues(state);
+      return {
+        plan: v.incomeBudgeted - v.expenseBudgeted,
+        actual: v.incomeActuals - v.expenseActuals,
+      };
+    },
+    false
+  );
+  if (accum.lastBankedIndex === -1) return null;
 
-  model.months.forEach((entry, i) => {
-    const values = entry.state ? getTrackingPeriodValues(entry.state) : null;
-    const planned = values ? values.incomeBudgeted - values.expenseBudgeted : 0;
-    const actual = values ? values.incomeActuals - values.expenseActuals : 0;
-    cumPlan += planned;
-    // Only closed months are banked. The current partial month is projected at
-    // plan (not its income-starved partial actuals), so a late paycheck can't
-    // drag the year-end projection down.
-    if (entry.status === "past") {
-      cumClosedActual += actual;
-      closedPlan += planned;
-      closedCount++;
-      lastClosedIndex = i;
-    }
-    points.push({
-      month: entry.month,
-      plan: cumPlan,
-      actual: entry.status === "past" ? cumClosedActual : null,
-    });
-  });
-
-  if (lastClosedIndex === -1) return null;
-
-  const openPlan = cumPlan - closedPlan;
-  const projectedValue = cumClosedActual + openPlan;
-  const planValue = cumPlan;
+  const openPlan = accum.cumPlan - accum.bankedPlan;
+  const projectedValue = accum.bankedActual + openPlan;
+  const planValue = accum.cumPlan;
   const variance = projectedValue - planValue;
   const rel = planValue !== 0 ? variance / Math.abs(planValue) : 0;
 
@@ -1224,11 +1278,11 @@ function buildResultTrajectory(
     chipLabel,
     chipTone,
     isSpend: false,
-    todayIndex: lastClosedIndex,
-    points,
+    todayIndex: accum.lastBankedIndex,
+    points: accum.points,
     breakdown: {
       openPlan,
-      openMonthCount: model.months.length - closedCount,
+      openMonthCount: model.months.length - accum.closedCount,
     },
   };
 }
@@ -1246,46 +1300,25 @@ function buildSelectionTrajectory(
 ): TrajectoryMetrics | null {
   if (target.isIncome || model.coverage.isFutureOnly) return null;
 
-  const points: TrajectoryPoint[] = [];
-  let cumPlan = 0;
-  let cumActual = 0;
-  let todayIndex = -1;
-  let banked = 0;
-  let elapsedMonths = 0;
-  let closedCount = 0;
-
-  model.months.forEach((entry, i) => {
-    const values = entry.state ? getTrackingTargetValues(entry.state, target) : null;
-    const plan = values ? Math.abs(values.budgeted) : 0;
-    const actual = values ? Math.abs(values.actuals) : 0;
-    cumPlan += plan;
-    if (isActualLikeStatus(entry.status)) {
-      cumActual += actual;
-      todayIndex = i;
-      banked = cumActual;
-      if (entry.status === "past") {
-        elapsedMonths += 1;
-        closedCount++;
-      } else {
-        elapsedMonths += monthElapsedFraction(entry.month, now);
-      }
-    }
-    points.push({
-      month: entry.month,
-      plan: cumPlan,
-      actual: isActualLikeStatus(entry.status) ? cumActual : null,
-    });
-  });
+  const accum = accumulateTrajectory(
+    model,
+    (state) => {
+      const v = getTrackingTargetValues(state, target);
+      return v ? { plan: Math.abs(v.budgeted), actual: Math.abs(v.actuals) } : null;
+    },
+    true,
+    now
+  );
 
   // Run-rate needs a closed month to be stable — projecting from a sliver of
   // the current month alone produces wild numbers.
-  if (todayIndex === -1 || closedCount === 0) return null;
+  if (accum.lastBankedIndex === -1 || accum.closedCount === 0) return null;
 
   const periodElapsed =
-    model.months.length > 0 ? elapsedMonths / model.months.length : 0;
+    model.months.length > 0 ? accum.elapsedMonths / model.months.length : 0;
   const projectedValue =
-    periodElapsed > 0 ? Math.round(banked / periodElapsed) : banked;
-  const planValue = cumPlan;
+    periodElapsed > 0 ? Math.round(accum.bankedActual / periodElapsed) : accum.bankedActual;
+  const planValue = accum.cumPlan;
   const variance = projectedValue - planValue;
   const rel = planValue !== 0 ? variance / Math.abs(planValue) : 0;
   const atRisk = rel > TRAJECTORY_PLAN_TOLERANCE;
@@ -1303,8 +1336,8 @@ function buildSelectionTrajectory(
     chipLabel: atRisk ? "at risk" : "on track",
     chipTone,
     isSpend: true,
-    todayIndex,
-    points,
+    todayIndex: accum.lastBankedIndex,
+    points: accum.points,
     breakdown: null,
   };
 }
