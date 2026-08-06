@@ -21,6 +21,7 @@ import {
 import { buildBudgetTransactionBrowserOptions } from "../../lib/budgetTransactionBrowser";
 import { toCategoryMonthNoteId } from "@/lib/api/notes";
 import type { BudgetNoteTarget } from "./BudgetNoteSection";
+import { DetailsSkeleton } from "./DetailsPrimitives";
 import { BudgetMonthSummaryPanel } from "./BudgetMonthSummaryPanel";
 import { EnvelopeDetailsPanel } from "./EnvelopeDetailsPanel";
 import { TrackingDetailsPanel } from "./TrackingDetailsPanel";
@@ -198,7 +199,7 @@ export function BudgetDetailsPanel() {
   })();
 
   if (displayMonths.length === 0) {
-    return <EmptyDetailsState message="Loading..." />;
+    return <DetailsSkeleton />;
   }
 
   if (availableMonthsError) {
@@ -231,7 +232,7 @@ export function BudgetDetailsPanel() {
     isMonthLoading ||
     (isTracking && incomeBudgetsLoading);
   if (isLoading && statesByMonth.size === 0) {
-    return <EmptyDetailsState message="Loading..." />;
+    return <DetailsSkeleton />;
   }
 
   if (budgetMode === "unidentified") {
