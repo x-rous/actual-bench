@@ -53,13 +53,26 @@ export function initializeActualApi<TActual extends ActualInitCapable>(
   actual: TActual,
   config: ActualInitConfig
 ): Promise<Awaited<ReturnType<TActual["init"]>>> {
-  const run = () =>
-    withTimeout(
-      actual.init(config),
+  // The caller-facing promise races a timeout, but the queue must stay gated on
+  // the *real* init settling. If we advanced the queue on the timeout, a later
+  // connect could start a second init while the first is still running inside
+  // the worker — the exact interleave this serialization prevents.
+  let initSettled: Promise<unknown> = Promise.resolve();
+  const run = () => {
+    const initPromise = actual.init(config);
+    initSettled = initPromise.then(
+      () => undefined,
+      () => undefined
+    );
+    return withTimeout(
+      initPromise,
       "Initializing browser API worker"
     ) as Promise<Awaited<ReturnType<TActual["init"]>>>;
+  };
   const result = initializeActualApiTail.then(run, run);
-  initializeActualApiTail = result.catch(() => undefined);
+  initializeActualApiTail = result
+    .catch(() => undefined)
+    .then(() => initSettled);
   return result;
 }
 
