@@ -6,6 +6,16 @@ const pkg = JSON.parse(
   readFileSync(join(process.cwd(), "package.json"), "utf8")
 ) as { version?: string };
 
+// The resolved version of the bundled Actual API package. Read from the
+// installed package so it reflects what actually ships, not the dependency
+// range declared in package.json.
+const actualApiPkg = JSON.parse(
+  readFileSync(
+    join(process.cwd(), "node_modules", "@actual-app", "api", "package.json"),
+    "utf8"
+  )
+) as { version?: string };
+
 const nextConfig: NextConfig = {
   // Emit a self-contained standalone server (server.js + only the traced
   // runtime node_modules) so the Docker runtime image doesn't carry the full
@@ -36,6 +46,7 @@ const nextConfig: NextConfig = {
   // current release without needing it set in .env files.
   env: {
     NEXT_PUBLIC_APP_VERSION: pkg.version ?? "0.0.0",
+    NEXT_PUBLIC_ACTUAL_API_VERSION: actualApiPkg.version ?? "0.0.0",
   },
 };
 

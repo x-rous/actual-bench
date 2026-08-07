@@ -560,6 +560,13 @@ export function ConnectForm({ directBrowserApiEnabled }: ConnectFormProps) {
         </a>
       </div>
 
+      {/* Build versions — Actual Bench app + bundled Actual API */}
+      <p className="mt-2 text-center text-xs text-muted-foreground">
+        Actual Bench v{process.env.NEXT_PUBLIC_APP_VERSION ?? "0.0.0"}
+        <span className="mx-1.5 opacity-50">·</span>
+        Actual API v{process.env.NEXT_PUBLIC_ACTUAL_API_VERSION ?? "0.0.0"}
+      </p>
+
       <ConfirmDialog
         open={!!pendingBudgetSwitch}
         onOpenChange={(open) => {

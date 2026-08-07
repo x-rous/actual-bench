@@ -1,102 +1,25 @@
-import { initializeActualApi } from "./setup";
-
-type WorkerRecord = {
-  scriptURL: string | URL;
-  options?: WorkerOptions;
-  messages: unknown[];
-};
-
-const originalWorker = window.Worker;
-
-class MockNativeWorker {
-  static instances: WorkerRecord[] = [];
-
-  private record: WorkerRecord;
-
-  constructor(scriptURL: string | URL, options?: WorkerOptions) {
-    this.record = { scriptURL, options, messages: [] };
-    MockNativeWorker.instances.push(this.record);
-  }
-
-  postMessage(message: unknown): void {
-    this.record.messages.push(message);
-  }
-}
-
-function installMockWorker() {
-  MockNativeWorker.instances = [];
-  Object.defineProperty(window, "Worker", {
-    configurable: true,
-    writable: true,
-    value: MockNativeWorker,
-  });
-}
-
-function restoreWorker() {
-  Object.defineProperty(window, "Worker", {
-    configurable: true,
-    writable: true,
-    value: originalWorker,
-  });
-}
+import { DEFAULT_STEP_TIMEOUT_MS, initializeActualApi } from "./setup";
 
 describe("initializeActualApi", () => {
-  beforeEach(() => {
-    installMockWorker();
-  });
-
-  afterEach(() => {
-    restoreWorker();
-  });
-
-  it("redirects only Actual backend worker URLs through the asset route", async () => {
-    const unrelatedWorkerUrl = new URL("https://cdn.example.com/other-worker.js");
+  it("passes the config straight through to the API's init", async () => {
     const actual = {
-      init: jest.fn(async () => {
-        const ActualWorker = window.Worker;
-        const backend = new ActualWorker(
-          new URL("https://cdn.example.com/@actual-app/api/dist/worker.js"),
-          { type: "module" }
-        );
-        const unrelated = new ActualWorker(unrelatedWorkerUrl);
-        const plainWorker = new ActualWorker(new URL("https://cdn.example.com/worker.js"));
-
-        backend.postMessage({ name: "api-browser/init", args: { config: true } });
-        unrelated.postMessage({ name: "other/init" });
-        plainWorker.postMessage({ name: "plain/init" });
-        return "ready";
-      }),
+      init: jest.fn(async () => "ready"),
     };
 
-    await expect(
-      initializeActualApi(actual, {
-        serverURL: "https://actual.example.com",
-        password: "password",
-      })
-    ).resolves.toBe("ready");
+    const config = {
+      serverURL: "https://actual.example.com",
+      password: "password",
+      dataDir: "/documents",
+      verbose: true,
+    };
 
-    expect(MockNativeWorker.instances).toHaveLength(3);
-    expect(String(MockNativeWorker.instances[0].scriptURL)).toBe(
-      "http://localhost/actual-api-assets/worker.js"
-    );
-    expect(MockNativeWorker.instances[0].options).toEqual({ type: "module" });
-    expect(MockNativeWorker.instances[0].messages[0]).toEqual({
-      name: "api-browser/init",
-      args: {
-        config: true,
-        assetsBaseUrl: "http://localhost/actual-api-assets/",
-      },
-    });
-    expect(MockNativeWorker.instances[1].scriptURL).toBe(unrelatedWorkerUrl);
-    expect(MockNativeWorker.instances[1].messages[0]).toEqual({ name: "other/init" });
-    expect(String(MockNativeWorker.instances[2].scriptURL)).toBe(
-      "https://cdn.example.com/worker.js"
-    );
-    expect(MockNativeWorker.instances[2].messages[0]).toEqual({ name: "plain/init" });
-    expect(window.Worker).toBe(MockNativeWorker);
+    await expect(initializeActualApi(actual, config)).resolves.toBe("ready");
+
+    // Optional fields (dataDir, verbose) must reach init unchanged.
+    expect(actual.init).toHaveBeenCalledWith(config);
   });
 
-  it("serializes overlapping init calls so Worker restore order stays stable", async () => {
+  it("serializes overlapping init calls so they never interleave", async () => {
     const events: string[] = [];
     let finishFirst!: () => void;
 
@@ -134,6 +57,44 @@ describe("initializeActualApi", () => {
     await expect(firstResult).resolves.toBe("first-ready");
     await expect(secondResult).resolves.toBe("second-ready");
     expect(events).toEqual(["first-start", "second-start"]);
-    expect(window.Worker).toBe(MockNativeWorker);
+  });
+
+  it("keeps the queue gated after a timeout until the real init settles", async () => {
+    jest.useFakeTimers();
+    try {
+      let resolveFirst!: (value: string) => void;
+      const first = {
+        init: jest.fn(
+          () => new Promise<string>((resolve) => (resolveFirst = resolve))
+        ),
+      };
+      const second = { init: jest.fn(async () => "second-ready") };
+
+      const config = {
+        serverURL: "https://actual.example.com",
+        password: "password",
+      };
+
+      const firstResult = initializeActualApi(first, config);
+      firstResult.catch(() => undefined);
+
+      // The first init never resolves; fire the init timeout.
+      await jest.advanceTimersByTimeAsync(DEFAULT_STEP_TIMEOUT_MS);
+      await expect(firstResult).rejects.toThrow(/did not finish/);
+
+      // A retry must NOT start a concurrent init while the first is still
+      // running inside the worker — the queue stays gated on the real promise.
+      const secondResult = initializeActualApi(second, config);
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(second.init).not.toHaveBeenCalled();
+
+      // Once the first init actually settles, the queue releases the retry.
+      resolveFirst("first-ready");
+      await expect(secondResult).resolves.toBe("second-ready");
+      expect(second.init).toHaveBeenCalledTimes(1);
+    } finally {
+      jest.useRealTimers();
+    }
   });
 });
