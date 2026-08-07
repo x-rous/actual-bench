@@ -77,6 +77,7 @@ export function BudgetManagementView() {
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(
     () => new Set()
   );
+  const [defaultCollapseApplied, setDefaultCollapseApplied] = useState(false);
   const [showHidden, setShowHidden] = useState(true);
   // RD-065: spent-vs-budget bars under editable cells. On by default.
   const [showSpendingBars, setShowSpendingBars] = useState(true);
@@ -187,6 +188,15 @@ export function BudgetManagementView() {
   const handleCollapseAll = useCallback(() => {
     setCollapsedGroups(new Set(firstMonthData?.groupOrder ?? []));
   }, [firstMonthData]);
+
+  // Category groups start collapsed when the page first opens. Seed the state
+  // during render (React's derived-state pattern) as soon as the group list is
+  // known — applied once, so later expand/collapse choices and month navigation
+  // are never overridden.
+  if (!defaultCollapseApplied && (firstMonthData?.groupOrder.length ?? 0) > 0) {
+    setDefaultCollapseApplied(true);
+    setCollapsedGroups(new Set(firstMonthData!.groupOrder));
+  }
 
   // ── Tier 3 keyboard shortcut handlers ────────────────────────────────────
   const handleCycleCellView = useCallback(() => {
