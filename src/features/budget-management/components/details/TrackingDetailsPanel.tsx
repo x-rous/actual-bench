@@ -1,12 +1,19 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { formatDelta, formatSigned } from "../../lib/format";
 import type { TrackingDetailsMetrics } from "../../lib/budgetDetailsMetrics";
 import type {
   BudgetTransactionBrowserOptions,
   BudgetTransactionsDrilldown,
 } from "../../lib/budgetTransactionBrowser";
+import {
+  classifyMonthActualStatus,
+  formatBudgetDetailsRange,
+  isClosedMonthStatus,
+} from "../../lib/budgetDetailsModel";
+import type { VarianceSide } from "../../lib/varianceDrivers";
+import { TopVarianceDriversDialog } from "./TopVarianceDriversDialog";
 import type { LoadedMonthState } from "../../types";
 import {
   DetailsHeader,
@@ -32,19 +39,39 @@ import { useSpendingDetailsShortcut } from "./useSpendingDetailsShortcut";
  */
 function describeVariance(
   value: number,
-  kind: "budget" | "plan",
+  kind: "budget" | "plan" | "income",
   short = false
 ): { text: string; tone: "positive" | "negative" | "neutral" } {
   if (value === 0) {
-    return { text: kind === "budget" ? "on budget" : "on plan", tone: "neutral" };
+    return { text: kind === "plan" ? "on plan" : "on budget", tone: "neutral" };
   }
-  // Positive is the good direction (under budget / above plan). Short form drops
-  // the trailing noun when the row label already carries it ("Budget variance"
-  // → "… over"), so the line doesn't overflow the panel.
+  // Positive is the good direction (under budget / above plan / above budgeted
+  // income). Short form drops the trailing noun when the row label already
+  // carries it ("Budget variance" → "… over"), so the line doesn't overflow.
   const up =
-    kind === "budget" ? (short ? "under" : "under budget") : short ? "above" : "above plan";
+    kind === "plan"
+      ? short
+        ? "above"
+        : "above plan"
+      : kind === "income"
+        ? short
+          ? "above"
+          : "above budget"
+        : short
+          ? "under"
+          : "under budget";
   const down =
-    kind === "budget" ? (short ? "over" : "over budget") : short ? "below" : "below plan";
+    kind === "plan"
+      ? short
+        ? "below"
+        : "below plan"
+      : kind === "income"
+        ? short
+          ? "below"
+          : "below budget"
+        : short
+          ? "over"
+          : "over budget";
   return {
     text: `${formatSigned(Math.abs(value))} ${value > 0 ? up : down}`,
     tone: value > 0 ? "positive" : "negative",
@@ -57,15 +84,28 @@ function VarianceLine({
   kind,
   short,
   tooltip,
+  onValueClick,
+  valueAriaLabel,
 }: {
   label: string;
   value: number;
-  kind: "budget" | "plan";
+  kind: "budget" | "plan" | "income";
   short?: boolean;
   tooltip?: string;
+  onValueClick?: () => void;
+  valueAriaLabel?: string;
 }) {
   const v = describeVariance(value, kind, short);
-  return <MetricLine label={label} value={v.text} tone={v.tone} tooltip={tooltip} />;
+  return (
+    <MetricLine
+      label={label}
+      value={v.text}
+      tone={v.tone}
+      tooltip={tooltip}
+      onValueClick={onValueClick}
+      valueAriaLabel={valueAriaLabel}
+    />
+  );
 }
 
 const PERIOD_TOOLTIP = {
@@ -80,6 +120,8 @@ const PERIOD_TOOLTIP = {
     "Sum of expenses budgeted across closed (fully-elapsed) months.",
   expenseVariance:
     "Budget variance — expenses only: budgeted expenses minus expenses spent, over closed months. Positive means spending came in under budget.",
+  incomeVariance:
+    "Income variance — income received minus income budgeted, over closed months. Positive means income came in above budget.",
   netPlanVariance:
     "Result vs plan — the whole picture: actual net result (income − expenses) minus the planned net result, over closed months. Positive means ahead of plan.",
   fullIncomeBudget: "Sum of income budgeted across the visible 12 months.",
@@ -123,6 +165,24 @@ export function TrackingDetailsPanel({
     target: metrics.monthValues?.transactionDrilldown,
     onOpen: setTransactionTarget,
   });
+
+  // RD-070 Top Variance Drivers (full-period / View 1). The clicked variance
+  // number sets which tab opens first; null means the dialog is closed.
+  const [driversSide, setDriversSide] = useState<VarianceSide | null>(null);
+  const drivers = useMemo(() => {
+    const closedMonths = [...statesByMonth.keys()]
+      .filter((month) => isClosedMonthStatus(classifyMonthActualStatus(month)))
+      .sort();
+    const closedStates = closedMonths
+      .map((month) => statesByMonth.get(month))
+      .filter((state): state is LoadedMonthState => state != null);
+    return {
+      scopeLabel: closedMonths.length
+        ? `${formatBudgetDetailsRange(closedMonths)} · Closed months`
+        : "Closed months",
+      closedStates,
+    };
+  }, [statesByMonth]);
 
   return (
     <div className="px-3 py-2 space-y-3">
@@ -276,6 +336,20 @@ export function TrackingDetailsPanel({
               kind="budget"
               short
               tooltip={PERIOD_TOOLTIP.expenseVariance}
+              onValueClick={() => setDriversSide("expense")}
+              valueAriaLabel="View variance drivers"
+            />
+            <VarianceLine
+              label="Income variance"
+              value={
+                metrics.periodActuals.incomeReceived -
+                metrics.periodBudgetToDate.incomeBudgeted
+              }
+              kind="income"
+              short
+              tooltip={PERIOD_TOOLTIP.incomeVariance}
+              onValueClick={() => setDriversSide("income")}
+              valueAriaLabel="View variance drivers"
             />
           </DetailsSection>
         )}
@@ -421,6 +495,16 @@ export function TrackingDetailsPanel({
           browserOptions={transactionBrowserOptions}
           statesByMonth={statesByMonth}
           onClose={() => setTransactionTarget(null)}
+        />
+      )}
+
+      {driversSide && (
+        <TopVarianceDriversDialog
+          open
+          onClose={() => setDriversSide(null)}
+          scopeLabel={drivers.scopeLabel}
+          initialSide={driversSide}
+          monthStates={drivers.closedStates}
         />
       )}
     </div>

@@ -15,6 +15,8 @@ import {
   type BudgetTransactionsDrilldown,
 } from "../../lib/budgetTransactionBrowser";
 import { classifyMonthActualStatus } from "../../lib/budgetDetailsModel";
+import { buildVarianceTree, type VarianceSide } from "../../lib/varianceDrivers";
+import { TopVarianceDriversDialog } from "./TopVarianceDriversDialog";
 import type { BudgetMonthSummary, LoadedMonthState } from "../../types";
 import {
   DetailsHeader,
@@ -107,7 +109,8 @@ export function BudgetMonthSummaryPanel({
       {state ? (
         isTracking ? (
           <TrackingMonthBody
-            summary={state.summary}
+            state={state}
+            month={month}
             meter={meter}
             pace={pace}
             monthLabel={monthLabel}
@@ -218,24 +221,65 @@ function EnvelopeMonthBody({
   );
 }
 
+/** Plain-language variance text, e.g. "1,200.00 over budget" (RD-070). */
+function monthVarianceText(
+  minor: number,
+  side: VarianceSide,
+  provisional: boolean
+): string {
+  const soFar = provisional ? " so far" : "";
+  const favourable = minor >= 0;
+  const word =
+    side === "expense"
+      ? favourable
+        ? "under budget"
+        : "over budget"
+      : favourable
+        ? "above budget"
+        : "below budget";
+  return `${formatSigned(Math.abs(minor))} ${word}${soFar}`;
+}
+
+function varianceTone(minor: number): "positive" | "negative" | "neutral" {
+  return minor > 0 ? "positive" : minor < 0 ? "negative" : "neutral";
+}
+
 function TrackingMonthBody({
-  summary,
+  state,
+  month,
   meter,
   pace,
   monthLabel,
   onExpenseClick,
   onIncomeClick,
 }: {
-  summary: BudgetMonthSummary;
+  state: LoadedMonthState;
+  month: string;
   meter?: ReturnType<typeof buildMonthSummaryMeter>;
   pace?: ThisMonthMetrics | null;
   monthLabel: string;
   onExpenseClick?: () => void;
   onIncomeClick?: () => void;
 }) {
+  const summary = state.summary;
   const income = summary.totalIncome;
   const spent = Math.abs(summary.totalSpent);
   const result = income - spent;
+
+  // RD-070: single-month variance drivers. Provisional for the open month.
+  const provisional = classifyMonthActualStatus(month) === "current-partial";
+  // Take the entry-line totals from the same tree the dialog uses, so the
+  // clickable number always equals the dialog's total.
+  const expenseVariance = useMemo(
+    () => buildVarianceTree([state], "expense").totals.varianceMinor,
+    [state]
+  );
+  const incomeVariance = useMemo(
+    () => buildVarianceTree([state], "income").totals.varianceMinor,
+    [state]
+  );
+  const [driversSide, setDriversSide] = useState<VarianceSide | null>(null);
+  const scopeLabel = provisional ? `${monthLabel} · Current month` : monthLabel;
 
   return (
     <>
@@ -270,7 +314,34 @@ function TrackingMonthBody({
           }`}
           tone={toneFromValue(result)}
         />
+        <div className="border-t border-border/50 pt-1.5">
+          <MetricLine
+            label="Budget variance"
+            value={monthVarianceText(expenseVariance, "expense", provisional)}
+            tone={varianceTone(expenseVariance)}
+            onValueClick={() => setDriversSide("expense")}
+            valueAriaLabel="View variance drivers"
+          />
+          <MetricLine
+            label="Income variance"
+            value={monthVarianceText(incomeVariance, "income", provisional)}
+            tone={varianceTone(incomeVariance)}
+            onValueClick={() => setDriversSide("income")}
+            valueAriaLabel="View variance drivers"
+          />
+        </div>
       </DetailsSection>
+
+      {driversSide && (
+        <TopVarianceDriversDialog
+          open
+          onClose={() => setDriversSide(null)}
+          scopeLabel={scopeLabel}
+          provisional={provisional}
+          initialSide={driversSide}
+          monthStates={[state]}
+        />
+      )}
     </>
   );
 }
