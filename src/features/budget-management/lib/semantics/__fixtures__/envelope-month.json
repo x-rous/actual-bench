@@ -1,0 +1,48 @@
+{
+  "month": "2026-06",
+  "incomeAvailable": 7000,
+  "lastMonthOverspent": -50,
+  "forNextMonth": 0,
+  "totalBudgeted": -3200,
+  "toBudget": 3750,
+  "fromLastMonth": 1000,
+  "totalIncome": 6000,
+  "totalSpent": -3130,
+  "totalBalance": 3870,
+  "categoryGroups": [
+    {
+      "id": "g-income",
+      "name": "Income",
+      "is_income": true,
+      "hidden": false,
+      "received": 6000,
+      "categories": [
+        { "id": "c-salary", "name": "Salary", "is_income": true, "hidden": false, "received": 6000 }
+      ]
+    },
+    {
+      "id": "g-housing",
+      "name": "Housing",
+      "is_income": false,
+      "hidden": false,
+      "budgeted": 3000,
+      "spent": -2800,
+      "balance": 4000,
+      "categories": [
+        { "id": "c-rent", "name": "Rent", "is_income": false, "hidden": false, "budgeted": 3000, "spent": -2800, "balance": 4000, "carryover": false }
+      ]
+    },
+    {
+      "id": "g-old",
+      "name": "Old",
+      "is_income": false,
+      "hidden": true,
+      "budgeted": 200,
+      "spent": -330,
+      "balance": -130,
+      "categories": [
+        { "id": "c-oldthing", "name": "Old Thing", "is_income": false, "hidden": true, "budgeted": 200, "spent": -330, "balance": -130, "carryover": false }
+      ]
+    }
+  ]
+}
