@@ -10,6 +10,14 @@ import type {
 } from "./budgetDetailsModel";
 import type { LoadedMonthState } from "../types";
 
+function signedExpenseBudget(value: number): number {
+  return value === 0 ? 0 : -Math.abs(value);
+}
+
+function signedExpenseVariance(budgeted: number, actuals: number): number {
+  return actuals - signedExpenseBudget(budgeted);
+}
+
 function monthState(month: string, values: {
   incomeBudgeted: number;
   incomeActuals: number;
@@ -33,14 +41,14 @@ function monthState(month: string, values: {
     values.summaryExpenseBudgeted ?? values.expenseBudgeted;
   const summaryExpenseVariance =
     values.summaryExpenseVariance ??
-    Math.abs(summaryExpenseBudgeted) - Math.abs(summaryExpenseActuals);
+    signedExpenseVariance(summaryExpenseBudgeted, summaryExpenseActuals);
   const groupExpenseBudgeted =
     values.groupExpenseBudgeted ?? values.expenseBudgeted;
   const groupExpenseActuals =
     values.groupExpenseActuals ?? values.expenseActuals;
   const groupExpenseBalance =
     values.groupExpenseBalance ??
-    Math.abs(groupExpenseBudgeted) - Math.abs(groupExpenseActuals);
+    signedExpenseVariance(groupExpenseBudgeted, groupExpenseActuals);
   const categoryExpenseBudgeted =
     values.categoryExpenseBudgeted ?? values.expenseBudgeted;
   const categoryExpenseActuals =
@@ -104,7 +112,10 @@ function monthState(month: string, values: {
         hidden: false,
         budgeted: categoryExpenseBudgeted,
         actuals: categoryExpenseActuals,
-        balance: Math.abs(categoryExpenseBudgeted) - Math.abs(categoryExpenseActuals),
+        balance: signedExpenseVariance(
+          categoryExpenseBudgeted,
+          categoryExpenseActuals
+        ),
         carryover: false,
       },
     },
@@ -203,19 +214,135 @@ describe("buildTrackingDetailsMetrics", () => {
 
     expect(metrics.periodBudgetToDate).toEqual({
       incomeBudgeted: 500_000,
-      expensesBudgeted: 305_000,
-      expenseVariance: 22_000,
-      netPlanVariance: 49_000,
+      incomeActuals: 520_000,
+      expensesBudgeted: -300_000,
+      expenseVariance: 20_000,
+      incomeVariance: 20_000,
+      netPlanVariance: 44_000,
     });
     expect(metrics.periodFullPlan).toEqual({
       incomeBudgeted: 1_000_000,
-      expensesBudgeted: 615_000,
-      plannedResult: 385_000,
+      expensesBudgeted: -600_000,
+      plannedResult: 400_000,
     });
     expect(metrics.periodActuals).toEqual({
       incomeReceived: 525_000,
-      expensesSpent: 281_000,
+      expensesSpent: -281_000,
       result: 244_000,
+    });
+  });
+
+  it("keeps refund-positive expenses signed and keeps hidden rows out of budget variance", () => {
+    const state = monthState("2026-03", {
+      incomeBudgeted: 500_000,
+      incomeActuals: 520_000,
+      expenseBudgeted: -100_000,
+      expenseActuals: 20_000,
+      summaryIncomeActuals: 530_000,
+      summaryExpenseActuals: -30_000,
+    });
+    state.groupOrder.push("hidden-income", "hidden-expenses");
+    state.groupsById["hidden-income"] = {
+      id: "hidden-income",
+      name: "Hidden Income",
+      isIncome: true,
+      hidden: true,
+      categoryIds: ["hidden-income-cat"],
+      budgeted: 0,
+      actuals: 10_000,
+      balance: 0,
+    };
+    state.groupsById["hidden-expenses"] = {
+      id: "hidden-expenses",
+      name: "Hidden Expenses",
+      isIncome: false,
+      hidden: true,
+      categoryIds: ["hidden-expense-cat"],
+      budgeted: -50_000,
+      actuals: -50_000,
+      balance: 0,
+    };
+    state.categoriesById["hidden-income-cat"] = {
+      id: "hidden-income-cat",
+      name: "Hidden Income",
+      groupId: "hidden-income",
+      groupName: "Hidden Income",
+      isIncome: true,
+      hidden: false,
+      budgeted: 0,
+      actuals: 10_000,
+      balance: 0,
+      carryover: false,
+    };
+    state.categoriesById["hidden-expense-cat"] = {
+      id: "hidden-expense-cat",
+      name: "Hidden Expense",
+      groupId: "hidden-expenses",
+      groupName: "Hidden Expenses",
+      isIncome: false,
+      hidden: false,
+      budgeted: -50_000,
+      actuals: -50_000,
+      balance: 0,
+      carryover: false,
+    };
+
+    const metrics = buildTrackingDetailsMetrics(
+      modelForSelection({ selection: { scope: "period", entity: "none" }, state })
+    );
+
+    expect(metrics.periodActuals).toEqual({
+      incomeReceived: 530_000,
+      expensesSpent: -30_000,
+      result: 500_000,
+    });
+    expect(metrics.periodBudgetToDate).toEqual({
+      incomeBudgeted: 500_000,
+      incomeActuals: 520_000,
+      expensesBudgeted: -100_000,
+      expenseVariance: 120_000,
+      incomeVariance: 20_000,
+      netPlanVariance: 100_000,
+    });
+    expect(metrics.meter).toMatchObject({
+      total: 100_000,
+      filled: 0,
+      remaining: 120_000,
+      remainingLabel: "under",
+    });
+  });
+
+  it("treats a selected expense category refund as favourable signed actuals", () => {
+    const metrics = buildTrackingDetailsMetrics(
+      modelForSelection({
+        selection: {
+          scope: "period",
+          entity: "category",
+          categoryId: "expense-cat",
+        },
+        state: monthState("2026-04", {
+          incomeBudgeted: 0,
+          incomeActuals: 0,
+          expenseBudgeted: -100_000,
+          expenseActuals: 20_000,
+        }),
+      })
+    );
+
+    expect(metrics.primary).toMatchObject({
+      label: "Under budget to date by",
+      value: 120_000,
+    });
+    expect(metrics.selectionToDate).toMatchObject({
+      budgeted: -100_000,
+      actuals: 20_000,
+      variance: 120_000,
+    });
+    expect(metrics.meter).toMatchObject({
+      total: 100_000,
+      filled: 0,
+      remaining: 120_000,
+      remainingLabel: "under",
     });
   });
 
@@ -310,12 +437,15 @@ describe("buildTrackingDetailsMetrics", () => {
     expect(metrics.closedMonthCount).toBe(1);
     expect(metrics.periodActuals).toEqual({
       incomeReceived: 520_000,
-      expensesSpent: 280_000,
+      expensesSpent: -280_000,
       result: 240_000,
     });
     expect(metrics.periodBudgetToDate).toMatchObject({
       incomeBudgeted: 500_000,
-      expensesBudgeted: 300_000,
+      incomeActuals: 520_000,
+      expensesBudgeted: -300_000,
+      expenseVariance: 20_000,
+      incomeVariance: 20_000,
     });
     expect(metrics.primary).toMatchObject({ label: "Result", value: 240_000 });
 
@@ -647,7 +777,7 @@ describe("buildTrackingDetailsMetrics", () => {
     });
   });
 
-  it("uses group aggregate values for selected Tracking groups", () => {
+  it("uses visible child values for selected Tracking groups", () => {
     const state = monthState("2026-04", {
       incomeBudgeted: 500_000,
       incomeActuals: 520_000,
@@ -686,12 +816,12 @@ describe("buildTrackingDetailsMetrics", () => {
 
     expect(metrics.primary).toMatchObject({
       label: "Under budget to date by",
-      value: 30_000,
+      value: 40_000,
     });
     expect(metrics.selectionToDate).toMatchObject({
-      budgeted: 450_000,
-      actuals: 420_000,
-      variance: 30_000,
+      budgeted: -300_000,
+      actuals: -260_000,
+      variance: 40_000,
     });
   });
 
@@ -791,7 +921,7 @@ describe("buildTrackingDetailsMetrics", () => {
 
     expect(metrics.primary).toMatchObject({
       label: "Budgeted",
-      value: 300_000,
+      value: -300_000,
     });
     expect(metrics.monthValues).toMatchObject({
       actuals: null,
@@ -906,8 +1036,8 @@ describe("buildMonthSummaryMeter", () => {
   it("builds a plan-progress meter in tracking mode", () => {
     const meter = buildMonthSummaryMeter({
       isTracking: true,
-      budgeted: 60_000,
-      spent: 45_000,
+      budgeted: -60_000,
+      spent: -45_000,
       balance: 15_000,
     });
     expect(meter).toMatchObject({

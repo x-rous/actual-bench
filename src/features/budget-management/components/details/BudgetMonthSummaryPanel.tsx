@@ -75,14 +75,24 @@ export function BudgetMonthSummaryPanel({
   const openIncome = incomeDrill ? () => setTransactionTarget(incomeDrill) : undefined;
   useSpendingDetailsShortcut({ target: expenseDrill, onOpen: setTransactionTarget });
   const monthLabel = formatMonthLabel(month, "long");
+  const trackingExpenseTotals = useMemo(
+    () => (state && isTracking ? buildVarianceTree([state], "expense").totals : null),
+    [state, isTracking]
+  );
   // For the in-progress month, add the pace verdict + elapsed marker (parity
   // across tracking and envelope, category/period views).
   const pace =
     status === "current-partial" && state
       ? computeThisMonthMetrics({
           month,
-          budgeted: Math.abs(state.summary.totalBudgeted),
-          actuals: Math.abs(state.summary.totalSpent),
+          budgeted:
+            isTracking && trackingExpenseTotals
+              ? Math.abs(trackingExpenseTotals.budgetedMinor)
+              : Math.abs(state.summary.totalBudgeted),
+          actuals:
+            isTracking && trackingExpenseTotals
+              ? Math.max(0, -trackingExpenseTotals.actualMinor)
+              : Math.abs(state.summary.totalSpent),
           isIncome: false,
         })
       : null;
@@ -90,9 +100,18 @@ export function BudgetMonthSummaryPanel({
     state && !isFuture
       ? buildMonthSummaryMeter({
           isTracking,
-          budgeted: Math.abs(state.summary.totalBudgeted),
-          spent: Math.abs(state.summary.totalSpent),
-          balance: state.summary.totalBalance,
+          budgeted:
+            isTracking && trackingExpenseTotals
+              ? trackingExpenseTotals.budgetedMinor
+              : Math.abs(state.summary.totalBudgeted),
+          spent:
+            isTracking && trackingExpenseTotals
+              ? trackingExpenseTotals.actualMinor
+              : Math.abs(state.summary.totalSpent),
+          balance:
+            isTracking && trackingExpenseTotals
+              ? trackingExpenseTotals.varianceMinor
+              : state.summary.totalBalance,
         })
       : undefined;
 
@@ -263,11 +282,13 @@ function TrackingMonthBody({
 }) {
   const summary = state.summary;
   const income = summary.totalIncome;
-  const spent = Math.abs(summary.totalSpent);
-  const result = income - spent;
+  const spent = summary.totalSpent;
+  const result = income + spent;
 
   // RD-070: single-month variance drivers. Provisional for the open month.
-  const provisional = classifyMonthActualStatus(month) === "current-partial";
+  const status = classifyMonthActualStatus(month);
+  const isFuture = status === "future";
+  const provisional = status === "current-partial";
   // Take the entry-line totals from the same tree the dialog uses, so the
   // clickable number always equals the dialog's total.
   const expenseVariance = useMemo(
@@ -314,25 +335,27 @@ function TrackingMonthBody({
           }`}
           tone={toneFromValue(result)}
         />
-        <div className="border-t border-border/50 pt-1.5">
-          <MetricLine
-            label="Budget variance"
-            value={monthVarianceText(expenseVariance, "expense", provisional)}
-            tone={varianceTone(expenseVariance)}
-            onValueClick={() => setDriversSide("expense")}
-            valueAriaLabel="View variance drivers"
-          />
-          <MetricLine
-            label="Income variance"
-            value={monthVarianceText(incomeVariance, "income", provisional)}
-            tone={varianceTone(incomeVariance)}
-            onValueClick={() => setDriversSide("income")}
-            valueAriaLabel="View variance drivers"
-          />
-        </div>
+        {!isFuture && (
+          <div className="border-t border-border/50 pt-1.5">
+            <MetricLine
+              label="Budget variance"
+              value={monthVarianceText(expenseVariance, "expense", provisional)}
+              tone={varianceTone(expenseVariance)}
+              onValueClick={() => setDriversSide("expense")}
+              valueAriaLabel="View variance drivers"
+            />
+            <MetricLine
+              label="Income variance"
+              value={monthVarianceText(incomeVariance, "income", provisional)}
+              tone={varianceTone(incomeVariance)}
+              onValueClick={() => setDriversSide("income")}
+              valueAriaLabel="View variance drivers"
+            />
+          </div>
+        )}
       </DetailsSection>
 
-      {driversSide && (
+      {driversSide && !isFuture && (
         <TopVarianceDriversDialog
           open
           onClose={() => setDriversSide(null)}

@@ -3,7 +3,6 @@ import {
   buildVarianceTree,
   computeVarianceDrivers,
   treeHasData,
-  type VarianceCategoryInput,
 } from "./varianceDrivers";
 import type {
   BudgetMonthSummary,
@@ -63,11 +62,11 @@ function toInputs(categories: LoadedCategory[], side: "expense" | "income") {
 // ── Worked reconciliation examples (§13) ─────────────────────────────────────
 
 describe("computeVarianceDrivers — reconciliation", () => {
-  it("expense: 435,150.45 budgeted − 460,855.91 actual = −25,705.46, exact", () => {
+  it("expense: signed actual − signed budget = −25,705.46, exact", () => {
     const result = computeVarianceDrivers(toInputs(EXPENSE_CATEGORIES, "expense"), "expense");
 
-    expect(result.totalBudgetedMinor).toBe(43515045);
-    expect(result.totalActualMinor).toBe(46085591);
+    expect(result.totalBudgetedMinor).toBe(-43515045);
+    expect(result.totalActualMinor).toBe(-46085591);
     expect(result.totalVarianceMinor).toBe(-2570546); // 25,705.46 over budget
     expect(result.favourable).toBe(false);
 
@@ -125,8 +124,8 @@ describe("computeVarianceDrivers — ranking", () => {
     const result = computeVarianceDrivers(toInputs(EXPENSE_CATEGORIES, "expense"), "expense");
     expect(result.other).toEqual({
       count: 1,
-      budgetedMinor: 800000,
-      actualMinor: 900000,
+      budgetedMinor: -800000,
+      actualMinor: -900000,
       varianceMinor: -100000, // Insurance, over budget
     });
   });
@@ -137,12 +136,25 @@ describe("computeVarianceDrivers — ranking", () => {
     expect(result.drivers).toHaveLength(3);
   });
 
-  it("normalizes negative-stored expense amounts to positive magnitudes", () => {
+  it("keeps expense budgets and actuals signed", () => {
     const result = computeVarianceDrivers(toInputs(EXPENSE_CATEGORIES, "expense"), "expense");
     const food = result.drivers.find((d) => d.id === "Food & Groceries")!;
-    expect(food.budgetedMinor).toBe(3550000);
-    expect(food.actualMinor).toBe(4593000);
+    expect(food.budgetedMinor).toBe(-3550000);
+    expect(food.actualMinor).toBe(-4593000);
     expect(food.varianceMinor).toBe(-1043000); // 10,430 over
+  });
+
+  it("treats a refund-positive expense actual as favourable", () => {
+    const result = computeVarianceDrivers(
+      toInputs([
+        makeCategory({ id: "Refunded", budgeted: -1000, actuals: 200 }),
+      ], "expense"),
+      "expense"
+    );
+    expect(result.totalBudgetedMinor).toBe(-1000);
+    expect(result.totalActualMinor).toBe(200);
+    expect(result.totalVarianceMinor).toBe(1200);
+    expect(result.favourable).toBe(true);
   });
 });
 
@@ -169,7 +181,7 @@ describe("computeVarianceDrivers — contribution %", () => {
 
   it("returns null contribution when a side has no drivers", () => {
     const allOver = computeVarianceDrivers(
-      [{ id: "a", name: "a", groupId: "g", groupName: "G", budgetedMinor: 100, actualMinor: 300 }],
+      [{ id: "a", name: "a", groupId: "g", groupName: "G", budgetedMinor: -100, actualMinor: -300 }],
       "expense"
     );
     expect(allOver.drivers[0].contribution).toBeCloseTo(1, 10);
@@ -186,7 +198,7 @@ describe("aggregateCategoryVariances", () => {
     const feb = makeState([makeCategory({ id: "Food", budgeted: -1500, actuals: -1100 })]);
     const inputs = aggregateCategoryVariances([jan, feb], "expense");
     expect(inputs).toHaveLength(1);
-    expect(inputs[0]).toMatchObject({ id: "Food", budgetedMinor: 2500, actualMinor: 2300 });
+    expect(inputs[0]).toMatchObject({ id: "Food", budgetedMinor: -2500, actualMinor: -2300 });
   });
 
   it("filters to the requested side (income vs expense)", () => {
@@ -213,7 +225,7 @@ describe("aggregateCategoryVariances", () => {
     };
     const inputs = aggregateCategoryVariances([state], "expense");
     expect(inputs).toHaveLength(1);
-    expect(inputs[0].budgetedMinor).toBe(1000);
+    expect(inputs[0].budgetedMinor).toBe(-1000);
   });
 
   it("single income category is shown as-is, not padded (§5)", () => {
@@ -237,14 +249,14 @@ function housingFoodStates(): LoadedMonthState[] {
   const g = (id: string, groupId: string, groupName: string, budgeted: number, actuals: number) =>
     makeCategory({ id, groupId, groupName, budgeted, actuals });
   const jan = makeState([
-    g("Mortgage", "housing", "Housing", 1000, -1200),
-    g("Property tax", "housing", "Housing", 400, -450),
-    g("Groceries", "food", "Food", 300, -280),
+    g("Mortgage", "housing", "Housing", -1000, -1200),
+    g("Property tax", "housing", "Housing", -400, -450),
+    g("Groceries", "food", "Food", -300, -280),
   ]);
   const feb = makeState([
-    g("Mortgage", "housing", "Housing", 1000, -1100),
-    g("Property tax", "housing", "Housing", 400, -420),
-    g("Groceries", "food", "Food", 300, -350),
+    g("Mortgage", "housing", "Housing", -1000, -1100),
+    g("Property tax", "housing", "Housing", -400, -420),
+    g("Groceries", "food", "Food", -300, -350),
   ]);
   return [jan, feb];
 }
@@ -258,7 +270,7 @@ describe("buildVarianceTree", () => {
     expect(tree.groups.map((g) => g.id)).toEqual(["housing", "food"]);
 
     const housing = tree.groups[0];
-    expect(housing).toMatchObject({ budgetedMinor: 2800, actualMinor: 3170, varianceMinor: -370 });
+    expect(housing).toMatchObject({ budgetedMinor: -2800, actualMinor: -3170, varianceMinor: -370 });
 
     // Σ children variance === group variance.
     expect(housing.children.reduce((a, c) => a + c.varianceMinor, 0)).toBe(-370);
@@ -270,8 +282,8 @@ describe("buildVarianceTree", () => {
 
     // Σ groups === totals, exactly.
     expect(tree.totals).toMatchObject({
-      budgetedMinor: 3400,
-      actualMinor: 3800,
+      budgetedMinor: -3400,
+      actualMinor: -3800,
       varianceMinor: -400,
       overspendMinor: 400,
       savedMinor: 0,
@@ -299,19 +311,19 @@ describe("buildVarianceTree", () => {
 
   it("excludes hidden categories (Tracking convention)", () => {
     const state = makeState([
-      makeCategory({ id: "Rent", groupId: "housing", groupName: "Housing", budgeted: 1000, actuals: -1100 }),
-      makeCategory({ id: "Secret", groupId: "housing", groupName: "Housing", hidden: true, budgeted: 200, actuals: -260 }),
+      makeCategory({ id: "Rent", groupId: "housing", groupName: "Housing", budgeted: -1000, actuals: -1100 }),
+      makeCategory({ id: "Secret", groupId: "housing", groupName: "Housing", hidden: true, budgeted: -200, actuals: -260 }),
     ]);
     const tree = buildVarianceTree([state], "expense");
-    expect(tree.groups[0].budgetedMinor).toBe(1000); // hidden "Secret" not counted
+    expect(tree.groups[0].budgetedMinor).toBe(-1000); // hidden "Secret" not counted
     expect(tree.groups[0].varianceMinor).toBe(-100);
     expect(tree.groups[0].children.map((c) => c.id)).toEqual(["Rent"]);
   });
 
   it("excludes an entire hidden group and its children", () => {
     const state = makeState([
-      makeCategory({ id: "Rent", groupId: "housing", groupName: "Housing", budgeted: 1000, actuals: -1100 }),
-      makeCategory({ id: "Fun", groupId: "hiddenGroup", groupName: "Hidden", budgeted: 500, actuals: -800 }),
+      makeCategory({ id: "Rent", groupId: "housing", groupName: "Housing", budgeted: -1000, actuals: -1100 }),
+      makeCategory({ id: "Fun", groupId: "hiddenGroup", groupName: "Hidden", budgeted: -500, actuals: -800 }),
     ]);
     (state.groupsById as Record<string, unknown>)["hiddenGroup"] = {
       id: "hiddenGroup",
@@ -319,7 +331,7 @@ describe("buildVarianceTree", () => {
       isIncome: false,
       hidden: true,
       categoryIds: ["Fun"],
-      budgeted: 500,
+      budgeted: -500,
       actuals: -800,
       balance: -300,
     };
@@ -330,7 +342,7 @@ describe("buildVarianceTree", () => {
 
   it("filters to the requested side and reports data presence", () => {
     const state = makeState([
-      makeCategory({ id: "Rent", groupId: "housing", groupName: "Housing", budgeted: 1000, actuals: -1100 }),
+      makeCategory({ id: "Rent", groupId: "housing", groupName: "Housing", budgeted: -1000, actuals: -1100 }),
       makeCategory({ id: "Salary", groupId: "inc", groupName: "Income", isIncome: true, budgeted: 5000, actuals: 5200 }),
     ]);
     const expense = buildVarianceTree([state], "expense");

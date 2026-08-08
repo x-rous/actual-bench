@@ -9,18 +9,17 @@ import type { LoadedMonthState } from "../types";
  * tolerance) — the sum of driver variances (+ Other) equals the scope total.
  *
  * Sign conventions (mirrors `budgetDetailsMetrics` / `getTrackingTargetValues`):
- * - Expense category `budgeted`/`actuals` are stored signed (≤ 0); we normalize
- *   with `Math.abs` so budgeted/actual are positive magnitudes.
- * - Income category `budgeted`/`actuals` are already positive; kept as-is.
+ * - Expense category budgets are returned as signed negative amounts; if an API
+ *   surface provides a positive budget, we normalize it back to negative.
+ * - Expense actuals preserve the API sign, so refunds can make actuals positive.
+ * - Income budgeted/actual amounts are positive.
  *
- * Variance (favourable = positive):
- * - Expense: `budgeted − actual` — positive = under budget (good).
- * - Income:  `actual − budgeted` — positive = above budget (good).
+ * Variance (favourable = positive) is `actual − budgeted` for both sides.
  */
 
 export type VarianceSide = "expense" | "income";
 
-/** A category already normalized to positive-magnitude minor units for its side. */
+/** A category normalized to the signed display contract for its side. */
 export type VarianceCategoryInput = {
   id: string;
   name: string;
@@ -71,21 +70,15 @@ function sum<T>(items: readonly T[], pick: (item: T) => number): number {
   return total;
 }
 
-function signedVariance(
-  side: VarianceSide,
-  budgetedMinor: number,
-  actualMinor: number
-): number {
-  return side === "expense"
-    ? budgetedMinor - actualMinor
-    : actualMinor - budgetedMinor;
+function signedVariance(budgetedMinor: number, actualMinor: number): number {
+  return actualMinor - budgetedMinor;
 }
 
 /**
  * Sum each category's budgeted/actual across the given month states (already
  * filtered to the in-scope closed months by the caller), for one side. Excludes
- * hidden categories (Tracking-budget variance analysis convention), like the
- * Budget page and details panel display.
+ * hidden categories and hidden groups (Tracking-budget variance analysis
+ * convention), like the Budget page and details panel display.
  */
 export function aggregateCategoryVariances(
   states: readonly LoadedMonthState[],
@@ -98,13 +91,12 @@ export function aggregateCategoryVariances(
     for (const category of Object.values(state.categoriesById)) {
       if (category.isIncome !== wantIncome || category.hidden) continue;
       if (state.groupsById[category.groupId]?.hidden) continue;
-      // Expenses are stored negative; income positive. Normalize to magnitudes.
       const budgetedMinor = wantIncome
         ? category.budgeted
-        : Math.abs(category.budgeted);
-      const actualMinor = wantIncome
-        ? category.actuals
-        : Math.abs(category.actuals);
+        : category.budgeted === 0
+          ? 0
+          : -Math.abs(category.budgeted);
+      const actualMinor = category.actuals;
 
       const existing = byId.get(category.id);
       if (existing) {
@@ -140,7 +132,6 @@ export function computeVarianceDrivers(
 
   const scored = categories.map((category) => {
     const varianceMinor = signedVariance(
-      side,
       category.budgetedMinor,
       category.actualMinor
     );
@@ -255,15 +246,18 @@ function normalizeAmount(
   budgeted: number,
   actuals: number
 ): { budgetedMinor: number; actualMinor: number } {
-  // Expenses are stored negative; income positive. Normalize to magnitudes.
   return {
-    budgetedMinor: wantIncome ? budgeted : Math.abs(budgeted),
-    actualMinor: wantIncome ? actuals : Math.abs(actuals),
+    budgetedMinor: wantIncome
+      ? budgeted
+      : budgeted === 0
+        ? 0
+        : -Math.abs(budgeted),
+    actualMinor: actuals,
   };
 }
 
 function pctOfBudget(varianceMinor: number, budgetedMinor: number): number | null {
-  return budgetedMinor !== 0 ? varianceMinor / budgetedMinor : null;
+  return budgetedMinor !== 0 ? varianceMinor / Math.abs(budgetedMinor) : null;
 }
 
 /**
@@ -309,11 +303,7 @@ export function buildVarianceTree(
         category.budgeted,
         category.actuals
       );
-      // Take variance from the grid's authoritative figures rather than
-      // recomputing budgeted − actual, which double-counts refunds through the
-      // abs() normalization: expense uses the stored `balance` (signed, positive
-      // = under budget); income has no stored balance, so received − budgeted.
-      const variance = wantIncome ? actualMinor - budgetedMinor : category.balance;
+      const variance = signedVariance(budgetedMinor, actualMinor);
 
       let group = groupsById.get(category.groupId);
       if (!group) {

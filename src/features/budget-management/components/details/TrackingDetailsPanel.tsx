@@ -110,23 +110,23 @@ function VarianceLine({
 
 const PERIOD_TOOLTIP = {
   incomeReceived:
-    "Sum of income received across closed (fully-elapsed) months. The current month is shown separately.",
+    "API summary income actuals across closed months, including hidden categories. The current month is shown separately.",
   expensesSpent:
-    "Sum of expenses spent across closed (fully-elapsed) months. The current month is shown separately.",
-  actualResult: "Income received minus expenses spent, over closed months.",
+    "API summary signed expense actuals across closed months, including hidden categories. Refunds can make this positive.",
+  actualResult: "Income received plus signed expense actuals, over closed months.",
   incomeBudgetedToDate:
-    "Sum of income budgeted across closed (fully-elapsed) months.",
+    "Visible income budgeted across closed months; hidden categories and groups are excluded.",
   expensesBudgetedToDate:
-    "Sum of expenses budgeted across closed (fully-elapsed) months.",
+    "Visible signed expense budgets across closed months; hidden categories and groups are excluded.",
   expenseVariance:
-    "Budget variance — expenses only: budgeted expenses minus expenses spent, over closed months. Positive means spending came in under budget.",
+    "Budget variance — visible expenses only: signed expense actuals minus signed expense budgets, over closed months. Positive means spending came in under budget.",
   incomeVariance:
-    "Income variance — income received minus income budgeted, over closed months. Positive means income came in above budget.",
+    "Income variance — visible income received minus visible income budgeted, over closed months. Positive means income came in above budget.",
   netPlanVariance:
-    "Result vs plan — the whole picture: actual net result (income − expenses) minus the planned net result, over closed months. Positive means ahead of plan.",
-  fullIncomeBudget: "Sum of income budgeted across the visible 12 months.",
-  fullExpenseBudget: "Sum of expenses budgeted across the visible 12 months.",
-  plannedResult: "Full-period income budgeted minus expenses budgeted.",
+    "Result vs plan: inclusive actual result minus the visible planned result, over closed months. Positive means ahead of plan.",
+  fullIncomeBudget: "Visible income budgeted across the visible 12 months.",
+  fullExpenseBudget: "Visible signed expense budgets across the visible 12 months.",
+  plannedResult: "Full-period visible income budgeted plus signed expenses budgeted.",
 } as const;
 
 // Lazy-loaded: the transactions dialog (large) is only shown when a user drills
@@ -341,10 +341,7 @@ export function TrackingDetailsPanel({
             />
             <VarianceLine
               label="Income variance"
-              value={
-                metrics.periodActuals.incomeReceived -
-                metrics.periodBudgetToDate.incomeBudgeted
-              }
+              value={metrics.periodBudgetToDate.incomeVariance}
               kind="income"
               short
               tooltip={PERIOD_TOOLTIP.incomeVariance}
