@@ -17,13 +17,18 @@ import {
 import { classifyMonthActualStatus } from "../../lib/budgetDetailsModel";
 import { buildVarianceTree, type VarianceSide } from "../../lib/varianceDrivers";
 import { computeTrackingMonth } from "../../lib/semantics/trackingBudgetSemantics";
-import { trackingInputsFromState } from "../../lib/semantics/fromLoadedState";
+import { computeEnvelopeFunding } from "../../lib/semantics/envelopeBudgetSemantics";
+import {
+  trackingInputsFromState,
+  envelopeInputsFromState,
+} from "../../lib/semantics/fromLoadedState";
 import {
   buildTrackingMonthView,
   type MonthTimePhase,
 } from "../../lib/semantics/trackingMonthView";
+import { buildEnvelopeMonthView } from "../../lib/semantics/envelopeMonthView";
 import { TopVarianceDriversDialog } from "./TopVarianceDriversDialog";
-import type { BudgetMonthSummary, LoadedMonthState } from "../../types";
+import type { LoadedMonthState } from "../../types";
 import {
   DetailsHeader,
   DetailsSection,
@@ -144,7 +149,8 @@ export function BudgetMonthSummaryPanel({
           />
         ) : (
           <EnvelopeMonthBody
-            summary={state.summary}
+            state={state}
+            month={month}
             meter={meter}
             pace={pace}
             monthLabel={monthLabel}
@@ -172,76 +178,100 @@ export function BudgetMonthSummaryPanel({
 }
 
 function EnvelopeMonthBody({
-  summary,
+  state,
+  month,
   meter,
   pace,
   monthLabel,
   onExpenseClick,
   onIncomeClick,
 }: {
-  summary: BudgetMonthSummary;
+  state: LoadedMonthState;
+  month: string;
   meter?: ReturnType<typeof buildMonthSummaryMeter>;
   pace?: ThisMonthMetrics | null;
   monthLabel: string;
   onExpenseClick?: () => void;
   onIncomeClick?: () => void;
 }) {
-  const toBudget = summary.toBudget;
-  const fullyBudgeted = toBudget === 0;
-  const primaryLabel = fullyBudgeted
-    ? "Fully budgeted"
-    : toBudget < 0
-    ? "Overbudget"
-    : "To Budget";
-  const helper = fullyBudgeted
-    ? "Every dollar assigned"
-    : toBudget < 0
-    ? "Over-assigned this month"
-    : "Left to assign this month";
+  const status = classifyMonthActualStatus(month);
+  const phase: MonthTimePhase =
+    status === "past" ? "past" : status === "future" ? "future" : "current";
+
+  // Funding-first Envelope view: To Budget / Overbudgeted headline + the funding
+  // bridge, reconciled from raw signs (PR-033 / F-088, BM-19/BM-24).
+  const view = useMemo(
+    () => buildEnvelopeMonthView(computeEnvelopeFunding(envelopeInputsFromState(state)), phase),
+    [state, phase]
+  );
 
   return (
     <>
       <PrimaryMetric
-        label={primaryLabel}
-        value={toBudget}
-        helper={helper}
-        tone={toBudget >= 0 ? "positive" : "negative"}
-        showPlus={!fullyBudgeted}
-        valuePrefix={fullyBudgeted ? "✓ " : undefined}
+        label={view.headline.label}
+        value={view.headline.value}
+        tone={view.headline.tone}
+        helper={
+          view.headline.label === "Overbudgeted"
+            ? "Assigned more than available"
+            : view.headline.label === "Fully budgeted"
+              ? "Every dollar assigned"
+              : "Left to assign this month"
+        }
         hero
       />
-      {meter && (
-        <MeterSection
-          model={meter}
-          helper="Spending against this month's assigned budget."
-          elapsedFraction={pace?.elapsedFraction}
-          chip={pace ? { label: pace.statusLabel, tone: pace.tone } : undefined}
-        />
-      )}
-      <DetailsSection title="Values">
-        <MetricLine
-          label="Assigned / Budgeted"
-          value={formatSigned(Math.abs(summary.totalBudgeted))}
-        />
-        <MetricLine
-          label="Spent"
-          value={formatSigned(Math.abs(summary.totalSpent))}
-          onValueClick={onExpenseClick}
-          valueAriaLabel={`View expense transactions for ${monthLabel}`}
-        />
-        <MetricLine
-          label="Income received"
-          value={formatSigned(summary.totalIncome)}
-          onValueClick={onIncomeClick}
-          valueAriaLabel={`View income transactions for ${monthLabel}`}
-        />
-        {summary.forNextMonth > 0 && (
+
+      {/* Funding bridge — operator rows carry direction; magnitudes are positive. */}
+      <DetailsSection title="Funding">
+        {view.bridge.map((row) => (
           <MetricLine
-            label="Hold for next month"
-            value={formatSigned(summary.forNextMonth)}
+            key={row.label}
+            label={`${row.operator} ${row.label}`}
+            value={formatSigned(row.display)}
           />
-        )}
+        ))}
+        <div className="border-t border-border/50 pt-1.5">
+          <MetricLine
+            label={`= ${view.headline.label}`}
+            value={formatSigned(view.toBudget)}
+            tone={view.headline.tone}
+          />
+        </div>
       </DetailsSection>
+
+      {/* Actual activity — never fabricated on a future month. */}
+      {view.showActivity && (
+        <>
+          {meter && (
+            <MeterSection
+              model={meter}
+              helper="Spending against this month's assigned budget."
+              elapsedFraction={pace?.elapsedFraction}
+              chip={pace ? { label: pace.statusLabel, tone: pace.tone } : undefined}
+            />
+          )}
+          <DetailsSection title="Activity">
+            <MetricLine
+              label="Spent"
+              value={formatSigned(view.signedSpent)}
+              onValueClick={onExpenseClick}
+              valueAriaLabel={`View expense transactions for ${monthLabel}`}
+            />
+            <MetricLine
+              label="Income received"
+              value={formatSigned(view.incomeReceived)}
+              onValueClick={onIncomeClick}
+              valueAriaLabel={`View income transactions for ${monthLabel}`}
+            />
+            <MetricLine
+              label="Balance"
+              value={formatSigned(view.balance)}
+              tone={toneFromValue(view.balance)}
+              tooltip="Money still assigned to envelopes (carryover-inclusive) — not a plan variance."
+            />
+          </DetailsSection>
+        </>
+      )}
     </>
   );
 }

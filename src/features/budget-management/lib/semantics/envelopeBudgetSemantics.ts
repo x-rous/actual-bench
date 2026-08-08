@@ -29,29 +29,55 @@ export type EnvelopeFundingSemantics = {
   toBudgetComputed: number;
   /** Envelope leftover (`totalBalance`) — money still assigned, not variance. */
   balance: number;
+  /** Signed expense activity (`totalSpent`; refunds positive). */
+  signedSpent: number;
 };
 
-export function deriveEnvelopeFunding(month: ParsedBudgetMonth): EnvelopeFundingSemantics {
-  const incomeReceived = required(month.totalIncome);
-  const fromLastMonth = required(month.fromLastMonth);
-  const availableFunds = required(month.incomeAvailable);
-  const lastMonthOverspent = required(month.lastMonthOverspent);
-  const budgetedAllocation = required(month.totalBudgeted);
-  const forNextMonthHold = required(month.forNextMonth);
-  const toBudget = required(month.toBudget);
+/**
+ * Mode-neutral inputs for the Envelope funding math. Both the parser path and the
+ * live `LoadedMonthState` path build these (all raw-signed; Envelope needs no sign
+ * recovery since `totalBudgeted` is already negative).
+ */
+export type EnvelopeFundingInputs = {
+  incomeReceived: number;
+  fromLastMonth: number;
+  availableFunds: number;
+  lastMonthOverspent: number;
+  budgetedAllocation: number;
+  forNextMonthHold: number;
+  toBudget: number;
+  balance: number;
+  signedSpent: number;
+};
 
+export function computeEnvelopeFunding(i: EnvelopeFundingInputs): EnvelopeFundingSemantics {
   return {
-    incomeReceived,
-    fromLastMonth,
-    availableFunds,
-    lastMonthOverspent,
-    budgetedAllocation,
-    forNextMonthHold,
-    toBudget,
+    incomeReceived: i.incomeReceived,
+    fromLastMonth: i.fromLastMonth,
+    availableFunds: i.availableFunds,
+    lastMonthOverspent: i.lastMonthOverspent,
+    budgetedAllocation: i.budgetedAllocation,
+    forNextMonthHold: i.forNextMonthHold,
+    toBudget: i.toBudget,
     toBudgetComputed:
-      availableFunds + lastMonthOverspent + budgetedAllocation - forNextMonthHold,
-    balance: required(month.totalBalance),
+      i.availableFunds + i.lastMonthOverspent + i.budgetedAllocation - i.forNextMonthHold,
+    balance: i.balance,
+    signedSpent: i.signedSpent,
   };
+}
+
+export function deriveEnvelopeFunding(month: ParsedBudgetMonth): EnvelopeFundingSemantics {
+  return computeEnvelopeFunding({
+    incomeReceived: required(month.totalIncome),
+    fromLastMonth: required(month.fromLastMonth),
+    availableFunds: required(month.incomeAvailable),
+    lastMonthOverspent: required(month.lastMonthOverspent),
+    budgetedAllocation: required(month.totalBudgeted),
+    forNextMonthHold: required(month.forNextMonth),
+    toBudget: required(month.toBudget),
+    balance: required(month.totalBalance),
+    signedSpent: required(month.totalSpent),
+  });
 }
 
 export type EnvelopeBridgeRow = {
