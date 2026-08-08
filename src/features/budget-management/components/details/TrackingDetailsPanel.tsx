@@ -13,6 +13,12 @@ import {
   isClosedMonthStatus,
 } from "../../lib/budgetDetailsModel";
 import type { VarianceSide } from "../../lib/varianceDrivers";
+import { trackingInputsFromState } from "../../lib/semantics/fromLoadedState";
+import {
+  buildTrackingPeriodView,
+  type TrackingPeriodMonth,
+} from "../../lib/semantics/trackingPeriodView";
+import type { MonthTimePhase } from "../../lib/semantics/trackingMonthView";
 import { TopVarianceDriversDialog } from "./TopVarianceDriversDialog";
 import type { LoadedMonthState } from "../../types";
 import {
@@ -184,6 +190,22 @@ export function TrackingDetailsPanel({
     };
   }, [statesByMonth]);
 
+  // Period view on the parity semantics — refund-safe closed-month savings and
+  // true income/expense variance, with Balance as a snapshot (PR-033 / F-088).
+  const periodView = useMemo(() => {
+    const months: TrackingPeriodMonth[] = [...statesByMonth.keys()]
+      .sort()
+      .map((m) => {
+        const state = statesByMonth.get(m)!;
+        const status = classifyMonthActualStatus(m);
+        const phase: MonthTimePhase =
+          status === "past" ? "past" : status === "future" ? "future" : "current";
+        return { month: m, phase, inputs: trackingInputsFromState(state) };
+      });
+    return buildTrackingPeriodView(months);
+  }, [statesByMonth]);
+  const closed = periodView?.closed ?? null;
+
   return (
     <div className="px-3 py-2 space-y-3">
       <DetailsHeader
@@ -278,78 +300,83 @@ export function TrackingDetailsPanel({
         </DetailsSection>
       )}
 
-      {isFullPeriod &&
-        !metrics.futureOnly &&
-        metrics.periodActuals &&
-        metrics.periodBudgetToDate && (
-          <DetailsSection title={closedMonthsTitle}>
-            {/* Actuals build to the Result, then compare it to plan… */}
+      {isFullPeriod && !metrics.futureOnly && closed && metrics.periodBudgetToDate && (
+        <DetailsSection title={closedMonthsTitle}>
+          {/* Actuals build to the Result, then compare it to plan… */}
+          <MetricLine
+            label="Income received"
+            value={formatSigned(closed.actualIncome)}
+            tooltip={PERIOD_TOOLTIP.incomeReceived}
+          />
+          <MetricLine
+            label="Expenses spent"
+            value={formatSigned(closed.signedExpenseActivity)}
+            tooltip={PERIOD_TOOLTIP.expensesSpent}
+          />
+          <div className="border-t border-border/50 pt-1.5">
             <MetricLine
-              label="Income received"
-              value={formatSigned(metrics.periodActuals.incomeReceived)}
-              tooltip={PERIOD_TOOLTIP.incomeReceived}
-            />
-            <MetricLine
-              label="Expenses spent"
-              value={formatSigned(metrics.periodActuals.expensesSpent)}
-              tooltip={PERIOD_TOOLTIP.expensesSpent}
-            />
-            <div className="border-t border-border/50 pt-1.5">
-              <MetricLine
-                label="Result"
-                value={`${formatDelta(metrics.periodActuals.result)}${
-                  metrics.periodActuals.result > 0
-                    ? " saved"
-                    : metrics.periodActuals.result < 0
+              label="Result"
+              value={`${formatDelta(closed.actualSavings)}${
+                closed.actualSavings > 0
+                  ? " saved"
+                  : closed.actualSavings < 0
                     ? " overspent"
                     : ""
-                }`}
-                tone={toneFromValue(metrics.periodActuals.result)}
-                tooltip={PERIOD_TOOLTIP.actualResult}
-              />
-            </div>
-            <VarianceLine
-              label="Result vs plan"
-              value={metrics.periodBudgetToDate.netPlanVariance}
-              kind="plan"
-              short
-              tooltip={PERIOD_TOOLTIP.netPlanVariance}
+              }`}
+              tone={toneFromValue(closed.actualSavings)}
+              tooltip={PERIOD_TOOLTIP.actualResult}
             />
+          </div>
+          <VarianceLine
+            label="Result vs plan"
+            value={metrics.periodBudgetToDate.netPlanVariance}
+            kind="plan"
+            short
+            tooltip={PERIOD_TOOLTIP.netPlanVariance}
+          />
 
-            {/* …then the budget side, ending in the spending variance. */}
-            <p className="pt-1 text-[10.5px] font-medium uppercase tracking-wide text-muted-foreground">
-              Budget
-            </p>
+          {/* …then the budget side, ending in the spending variance. */}
+          <p className="pt-1 text-[10.5px] font-medium uppercase tracking-wide text-muted-foreground">
+            Budget
+          </p>
+          <MetricLine
+            label="Income budgeted"
+            value={formatSigned(closed.budgetedIncome)}
+            tooltip={PERIOD_TOOLTIP.incomeBudgetedToDate}
+          />
+          <MetricLine
+            label="Expenses budgeted"
+            value={formatSigned(closed.budgetedExpenseAllocation)}
+            tooltip={PERIOD_TOOLTIP.expensesBudgetedToDate}
+          />
+          <VarianceLine
+            label="Budget variance"
+            value={closed.expenseVariance}
+            kind="budget"
+            short
+            tooltip={PERIOD_TOOLTIP.expenseVariance}
+            onValueClick={() => setDriversSide("expense")}
+            valueAriaLabel="View variance drivers"
+          />
+          <VarianceLine
+            label="Income variance"
+            value={closed.incomeVariance}
+            kind="income"
+            short
+            tooltip={PERIOD_TOOLTIP.incomeVariance}
+            onValueClick={() => setDriversSide("income")}
+            valueAriaLabel="View variance drivers"
+          />
+          <div className="border-t border-border/50 pt-1.5">
             <MetricLine
-              label="Income budgeted"
-              value={formatSigned(metrics.periodBudgetToDate.incomeBudgeted)}
-              tooltip={PERIOD_TOOLTIP.incomeBudgetedToDate}
+              label="Ending balance"
+              value={formatSigned(closed.endingBalance)}
+              tone={toneFromValue(closed.endingBalance)}
+              tooltip="Spreadsheet leftover at the last closed month — a snapshot, not a sum of monthly balances."
             />
-            <MetricLine
-              label="Expenses budgeted"
-              value={formatSigned(metrics.periodBudgetToDate.expensesBudgeted)}
-              tooltip={PERIOD_TOOLTIP.expensesBudgetedToDate}
-            />
-            <VarianceLine
-              label="Budget variance"
-              value={metrics.periodBudgetToDate.expenseVariance}
-              kind="budget"
-              short
-              tooltip={PERIOD_TOOLTIP.expenseVariance}
-              onValueClick={() => setDriversSide("expense")}
-              valueAriaLabel="View variance drivers"
-            />
-            <VarianceLine
-              label="Income variance"
-              value={metrics.periodBudgetToDate.incomeVariance}
-              kind="income"
-              short
-              tooltip={PERIOD_TOOLTIP.incomeVariance}
-              onValueClick={() => setDriversSide("income")}
-              valueAriaLabel="View variance drivers"
-            />
-          </DetailsSection>
-        )}
+          </div>
+        </DetailsSection>
+      )}
 
       {isFullPeriod && metrics.periodFullPlan && (
         <DetailsSection title="Full 12-month plan">
