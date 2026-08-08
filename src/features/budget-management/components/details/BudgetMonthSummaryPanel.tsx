@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { formatMonthLabel } from "@/lib/budget/monthMath";
+import { formatMonthLabel, nextMonth } from "@/lib/budget/monthMath";
 import { formatSigned } from "../../lib/format";
 import {
   buildDayProgress,
@@ -154,6 +154,9 @@ export function BudgetMonthSummaryPanel({
             meter={meter}
             pace={pace}
             monthLabel={monthLabel}
+            nextMonthLastOverspent={
+              statesByMonth.get(nextMonth(month))?.summary.lastMonthOverspent ?? null
+            }
             onExpenseClick={openExpense}
             onIncomeClick={openIncome}
           />
@@ -183,6 +186,7 @@ function EnvelopeMonthBody({
   meter,
   pace,
   monthLabel,
+  nextMonthLastOverspent,
   onExpenseClick,
   onIncomeClick,
 }: {
@@ -191,6 +195,7 @@ function EnvelopeMonthBody({
   meter?: ReturnType<typeof buildMonthSummaryMeter>;
   pace?: ThisMonthMetrics | null;
   monthLabel: string;
+  nextMonthLastOverspent: number | null;
   onExpenseClick?: () => void;
   onIncomeClick?: () => void;
 }) {
@@ -201,8 +206,13 @@ function EnvelopeMonthBody({
   // Funding-first Envelope view: To Budget / Overbudgeted headline + the funding
   // bridge, reconciled from raw signs (PR-033 / F-088, BM-19/BM-24).
   const view = useMemo(
-    () => buildEnvelopeMonthView(computeEnvelopeFunding(envelopeInputsFromState(state)), phase),
-    [state, phase]
+    () =>
+      buildEnvelopeMonthView(
+        computeEnvelopeFunding(envelopeInputsFromState(state)),
+        phase,
+        nextMonthLastOverspent
+      ),
+    [state, phase, nextMonthLastOverspent]
   );
 
   return (
@@ -251,6 +261,7 @@ function EnvelopeMonthBody({
             />
           )}
           <DetailsSection title="Activity">
+            <MetricLine label="Assigned / Budgeted" value={formatSigned(view.budgeted)} />
             <MetricLine
               label="Spent"
               value={formatSigned(view.signedSpent)}
@@ -269,6 +280,14 @@ function EnvelopeMonthBody({
               tone={toneFromValue(view.balance)}
               tooltip="Money still assigned to envelopes (carryover-inclusive) — not a plan variance."
             />
+            {view.thisMonthOverspent != null && (
+              <MetricLine
+                label={phase === "current" ? "Overspent this month so far" : "Overspent this month"}
+                value={formatSigned(view.thisMonthOverspent)}
+                tone="negative"
+                tooltip="Overspending not carried over — it reduces next month's available funds as “Overspent last month”."
+              />
+            )}
           </DetailsSection>
         </>
       )}

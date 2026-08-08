@@ -1,8 +1,16 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { formatDelta, formatSigned } from "../../lib/format";
 import type { EnvelopeDetailsMetrics } from "../../lib/budgetDetailsMetrics";
+import { classifyMonthActualStatus } from "../../lib/budgetDetailsModel";
+import { computeEnvelopeFunding } from "../../lib/semantics/envelopeBudgetSemantics";
+import { envelopeInputsFromState } from "../../lib/semantics/fromLoadedState";
+import {
+  buildEnvelopePeriodView,
+  type EnvelopePeriodMonth,
+} from "../../lib/semantics/envelopePeriodView";
+import type { MonthTimePhase } from "../../lib/semantics/trackingMonthView";
 import type {
   BudgetTransactionBrowserOptions,
   BudgetTransactionsDrilldown,
@@ -63,6 +71,23 @@ export function EnvelopeDetailsPanel({
     onOpen: setTransactionTarget,
   });
 
+  // Full-period funding view (PR-033 / F-088): the focus month's bridge and a
+  // Balance snapshot, computed from the authoritative summary values. To Budget
+  // and Balance are never summed across months.
+  const periodView = useMemo(() => {
+    if (!isFullPeriod) return null;
+    const months: EnvelopePeriodMonth[] = [...statesByMonth.keys()]
+      .sort()
+      .map((m) => {
+        const state = statesByMonth.get(m)!;
+        const status = classifyMonthActualStatus(m);
+        const phase: MonthTimePhase =
+          status === "past" ? "past" : status === "future" ? "future" : "current";
+        return { month: m, phase, funding: computeEnvelopeFunding(envelopeInputsFromState(state)) };
+      });
+    return buildEnvelopePeriodView(months);
+  }, [isFullPeriod, statesByMonth]);
+
   return (
     <div className="px-3 py-2 space-y-3">
       <DetailsHeader
@@ -96,6 +121,21 @@ export function EnvelopeDetailsPanel({
         <MeterSection model={metrics.meter} helper="Spending against the assigned budget this period." />
       )}
 
+      {isFullPeriod && periodView && (
+        <DetailsSection title="How To Budget is derived">
+          {periodView.bridge.map((row) => (
+            <MetricLine
+              key={row.label}
+              label={`${row.operator} ${row.label}`}
+              value={formatSigned(row.display)}
+            />
+          ))}
+          <p className="text-[10.5px] text-muted-foreground text-right">
+            Focus month {periodView.focusMonth} · To Budget is not summed across months
+          </p>
+        </DetailsSection>
+      )}
+
       {!isMonth && metrics.endPlan && (
         <DetailsSection title="End of visible plan">
           <div className="flex justify-between items-baseline gap-2">
@@ -124,6 +164,14 @@ export function EnvelopeDetailsPanel({
             label="Spent to date"
             value={formatSigned(metrics.periodValues.spentToDate)}
           />
+          {periodView && (
+            <MetricLine
+              label="Balance"
+              value={formatSigned(periodView.focusBalance)}
+              tone={toneFromValue(periodView.focusBalance)}
+              tooltip="Money still assigned to envelopes as of the focus month — a snapshot, not a sum of monthly balances."
+            />
+          )}
           <MetricLine
             label="Income received to date"
             value={formatSigned(metrics.periodValues.incomeReceivedToDate)}

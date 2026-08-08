@@ -1,3 +1,4 @@
+import { displayMagnitude } from "./amountRoles";
 import {
   envelopeBridgeRows,
   type EnvelopeBridgeRow,
@@ -21,18 +22,29 @@ export type EnvelopeMonthView = {
   reconciles: boolean;
   /** Optional Available Funds explanation. */
   availableFundsBreakdown: { incomeReceived: number; fromLastMonth: number };
+  /** Assigned/budgeted this month, positive display magnitude (the envelope triad's first term). */
+  budgeted: number;
   /** Money still assigned (`totalBalance`) — not a variance. */
   balance: number;
   /** Signed expense activity (refund-safe). */
   signedSpent: number;
   incomeReceived: number;
+  /**
+   * This month's own overspending (positive magnitude), i.e. the amount that
+   * rolls into next month as "Overspent last month". Sourced authoritatively from
+   * the next month's `lastMonthOverspent` (carryover/hidden-correct). `null` when
+   * not applicable (future month, no overspend, or the next month isn't loaded).
+   */
+  thisMonthOverspent: number | null;
   /** Future months omit fabricated actual spending/balance rows. */
   showActivity: boolean;
 };
 
 export function buildEnvelopeMonthView(
   s: EnvelopeFundingSemantics,
-  phase: MonthTimePhase
+  phase: MonthTimePhase,
+  /** Next month's `lastMonthOverspent` (negative), or null when it isn't loaded. */
+  nextMonthLastOverspent: number | null = null
 ): EnvelopeMonthView {
   const toBudget = s.toBudget;
   const headline =
@@ -51,9 +63,14 @@ export function buildEnvelopeMonthView(
       incomeReceived: s.incomeReceived,
       fromLastMonth: s.fromLastMonth,
     },
+    budgeted: displayMagnitude(s.budgetedAllocation),
     balance: s.balance,
     signedSpent: s.signedSpent,
     incomeReceived: s.incomeReceived,
+    thisMonthOverspent:
+      phase !== "future" && nextMonthLastOverspent != null && nextMonthLastOverspent < 0
+        ? Math.abs(nextMonthLastOverspent)
+        : null,
     showActivity: phase !== "future",
   };
 }

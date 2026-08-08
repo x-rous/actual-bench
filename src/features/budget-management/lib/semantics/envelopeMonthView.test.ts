@@ -57,6 +57,7 @@ describe("buildEnvelopeMonthView", () => {
     expect(v.availableFundsBreakdown).toEqual({ incomeReceived: 6000, fromLastMonth: 1000 });
     expect(v.incomeReceived).toBe(6000);
     expect(v.signedSpent).toBe(-3130);
+    expect(v.budgeted).toBe(3200); // assigned magnitude (envelope triad first term)
     expect(v.balance).toBe(3870); // money still assigned, includes hidden
   });
 
@@ -64,5 +65,14 @@ describe("buildEnvelopeMonthView", () => {
     expect(buildEnvelopeMonthView(funding, "future").showActivity).toBe(false);
     expect(buildEnvelopeMonthView(funding, "past").showActivity).toBe(true);
     expect(buildEnvelopeMonthView(funding, "current").showActivity).toBe(true);
+  });
+
+  it("surfaces this-month overspending from the next month's lastMonthOverspent", () => {
+    // Next month reports −467,889 of prior overspending → this month overspent that.
+    expect(buildEnvelopeMonthView(funding, "past", -467889).thisMonthOverspent).toBe(467889);
+    // No next month loaded, or no overspend, or a future month → null.
+    expect(buildEnvelopeMonthView(funding, "past", null).thisMonthOverspent).toBeNull();
+    expect(buildEnvelopeMonthView(funding, "past", 0).thisMonthOverspent).toBeNull();
+    expect(buildEnvelopeMonthView(funding, "future", -467889).thisMonthOverspent).toBeNull();
   });
 });
