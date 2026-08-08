@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { formatMonthLabel } from "@/lib/budget/monthMath";
-import { formatDelta, formatSigned } from "../../lib/format";
+import { formatSigned } from "../../lib/format";
 import {
   buildDayProgress,
   buildMonthSummaryMeter,
@@ -16,6 +16,12 @@ import {
 } from "../../lib/budgetTransactionBrowser";
 import { classifyMonthActualStatus } from "../../lib/budgetDetailsModel";
 import { buildVarianceTree, type VarianceSide } from "../../lib/varianceDrivers";
+import { computeTrackingMonth } from "../../lib/semantics/trackingBudgetSemantics";
+import { trackingInputsFromState } from "../../lib/semantics/fromLoadedState";
+import {
+  buildTrackingMonthView,
+  type MonthTimePhase,
+} from "../../lib/semantics/trackingMonthView";
 import { TopVarianceDriversDialog } from "./TopVarianceDriversDialog";
 import type { BudgetMonthSummary, LoadedMonthState } from "../../types";
 import {
@@ -280,76 +286,110 @@ function TrackingMonthBody({
   onExpenseClick?: () => void;
   onIncomeClick?: () => void;
 }) {
-  const summary = state.summary;
-  const income = summary.totalIncome;
-  const spent = summary.totalSpent;
-  const result = income + spent;
-
-  // RD-070: single-month variance drivers. Provisional for the open month.
   const status = classifyMonthActualStatus(month);
-  const isFuture = status === "future";
-  const provisional = status === "current-partial";
-  // Take the entry-line totals from the same tree the dialog uses, so the
-  // clickable number always equals the dialog's total.
-  const expenseVariance = useMemo(
-    () => buildVarianceTree([state], "expense").totals.varianceMinor,
-    [state]
+  const phase: MonthTimePhase =
+    status === "past" ? "past" : status === "future" ? "future" : "current";
+  const isFuture = phase === "future";
+  const provisional = phase === "current";
+  const toDate = provisional ? " to date" : "";
+
+  // Savings-first Tracking view derived from authoritative summary values, with
+  // Variance and Balance kept independent (PR-033 / F-088).
+  const view = useMemo(
+    () => buildTrackingMonthView(computeTrackingMonth(trackingInputsFromState(state)), phase),
+    [state, phase]
   );
-  const incomeVariance = useMemo(
-    () => buildVarianceTree([state], "income").totals.varianceMinor,
-    [state]
-  );
+
   const [driversSide, setDriversSide] = useState<VarianceSide | null>(null);
   const scopeLabel = provisional ? `${monthLabel} · Current month` : monthLabel;
 
   return (
     <>
-      {/* Lead with spending-vs-budget (the meter states over/under budget); the
-          net result lives once, below, so nothing is shown twice. */}
-      {meter && (
+      {/* Primary KPI: Projected savings (current/future) or Saved/Overspent (past). */}
+      <PrimaryMetric
+        label={view.headline.label}
+        value={view.headline.value}
+        tone={view.headline.tone}
+        helper={
+          provisional
+            ? "Projected for the full month"
+            : isFuture
+              ? "Planned"
+              : "Income received minus expenses this month"
+        }
+        hero
+      />
+      {view.supporting && (
+        <MetricLine
+          label={view.supporting.label}
+          value={formatSigned(view.supporting.value)}
+          tone={view.supporting.tone}
+        />
+      )}
+
+      {/* Expense spending progress — actuals only (never on a future month). */}
+      {meter && !isFuture && (
         <MeterSection
           model={meter}
           helper="Spending against budgeted expenses this month."
           elapsedFraction={pace?.elapsedFraction}
           chip={pace ? { label: pace.statusLabel, tone: pace.tone } : undefined}
-          hero
         />
       )}
-      <DetailsSection title="Actuals">
+
+      <DetailsSection title="Income">
         <MetricLine
-          label="Income received"
-          value={formatSigned(income)}
-          onValueClick={onIncomeClick}
-          valueAriaLabel={`View income transactions for ${monthLabel}`}
+          label={isFuture ? "Planned income" : "Budgeted income"}
+          value={formatSigned(view.income.budgeted)}
         />
+        {view.income.actual != null && (
+          <MetricLine
+            label={`Received${toDate}`}
+            value={formatSigned(view.income.actual)}
+            onValueClick={onIncomeClick}
+            valueAriaLabel={`View income transactions for ${monthLabel}`}
+          />
+        )}
+        {view.income.variance != null && (
+          <MetricLine
+            label={`Income variance${toDate}`}
+            value={monthVarianceText(view.income.variance, "income", provisional)}
+            tone={varianceTone(view.income.variance)}
+            onValueClick={() => setDriversSide("income")}
+            valueAriaLabel="View variance drivers"
+          />
+        )}
+      </DetailsSection>
+
+      <DetailsSection title="Expenses">
         <MetricLine
-          label="Expenses spent"
-          value={formatSigned(spent)}
-          onValueClick={onExpenseClick}
-          valueAriaLabel={`View expense transactions for ${monthLabel}`}
+          label={isFuture ? "Planned expenses" : "Budgeted expenses"}
+          value={formatSigned(view.expenses.budgeted)}
         />
-        <MetricLine
-          label="Result"
-          value={`${formatDelta(result)}${
-            result > 0 ? " saved" : result < 0 ? " overspent" : ""
-          }`}
-          tone={toneFromValue(result)}
-        />
-        {!isFuture && (
+        {view.expenses.actual != null && (
+          <MetricLine
+            label={`Spent${toDate}`}
+            value={formatSigned(view.expenses.actual)}
+            onValueClick={onExpenseClick}
+            valueAriaLabel={`View expense transactions for ${monthLabel}`}
+          />
+        )}
+        {view.expenses.variance != null && (
+          <MetricLine
+            label={`Budget variance${toDate}`}
+            value={monthVarianceText(view.expenses.variance, "expense", provisional)}
+            tone={varianceTone(view.expenses.variance)}
+            onValueClick={() => setDriversSide("expense")}
+            valueAriaLabel="View variance drivers"
+          />
+        )}
+        {!isFuture && view.balance.distinctFromVariance && (
           <div className="border-t border-border/50 pt-1.5">
             <MetricLine
-              label="Budget variance"
-              value={monthVarianceText(expenseVariance, "expense", provisional)}
-              tone={varianceTone(expenseVariance)}
-              onValueClick={() => setDriversSide("expense")}
-              valueAriaLabel="View variance drivers"
-            />
-            <MetricLine
-              label="Income variance"
-              value={monthVarianceText(incomeVariance, "income", provisional)}
-              tone={varianceTone(incomeVariance)}
-              onValueClick={() => setDriversSide("income")}
-              valueAriaLabel="View variance drivers"
+              label="Balance"
+              value={formatSigned(view.balance.value)}
+              tone={toneFromValue(view.balance.value)}
+              tooltip="Spreadsheet leftover — includes prior carryover, so it can differ from this month's budget variance."
             />
           </div>
         )}
