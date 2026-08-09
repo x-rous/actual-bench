@@ -20,11 +20,18 @@ import type {
  * `budgeted`, propagating the delta to its parent group and to the relevant
  * summary fields. Pure — produces a shallow-cloned state without mutating
  * the input. Used for optimistic cache updates after a successful PATCH.
+ *
+ * BM-12: this must project the same way the staged reducer
+ * (`computeEffectiveMonthState` Layer 2) does, or the grid would jump when a
+ * save clears the staged overlay. In Tracking mode an effectively-hidden
+ * category is excluded from the summary aggregates, and a hidden category
+ * inside a *visible* group must not pollute that group's totals either.
  */
-function applyBudgetedToMonthState(
+export function applyBudgetedToMonthState(
   state: LoadedMonthState,
   categoryId: string,
-  budgeted: number
+  budgeted: number,
+  isTracking: boolean
 ): LoadedMonthState {
   const cat = state.categoriesById[categoryId];
   if (!cat) return state;
@@ -33,20 +40,33 @@ function applyBudgetedToMonthState(
 
   const nextCat = { ...cat, budgeted, balance: cat.balance + delta };
   const group = state.groupsById[cat.groupId];
-  const nextGroup = group
+
+  // A category is effectively hidden if its own flag is set OR its parent is.
+  const effectivelyHidden = cat.hidden || (group?.hidden ?? false);
+  // Tracking: a hidden category inside a visible group must not touch the
+  // visible group's aggregate (mirrors effectiveMonth Layer 2's skip rule).
+  const skipGroupUpdate =
+    isTracking && effectivelyHidden && !(group?.hidden ?? false);
+  const skipSummaryUpdate = isTracking && effectivelyHidden;
+
+  const groupChanged = !!group && !skipGroupUpdate;
+  const nextGroup = groupChanged
     ? { ...group, budgeted: group.budgeted + delta, balance: group.balance + delta }
     : group;
-  const nextSummary = {
-    ...state.summary,
-    totalBudgeted: state.summary.totalBudgeted - delta,
-    totalBalance: state.summary.totalBalance + delta,
-    toBudget: state.summary.toBudget - delta,
-  };
+
+  const nextSummary = skipSummaryUpdate
+    ? state.summary
+    : {
+        ...state.summary,
+        totalBudgeted: state.summary.totalBudgeted - delta,
+        totalBalance: state.summary.totalBalance + delta,
+        toBudget: state.summary.toBudget - delta,
+      };
 
   return {
     summary: nextSummary,
-    groupsById: nextGroup
-      ? { ...state.groupsById, [cat.groupId]: nextGroup }
+    groupsById: groupChanged
+      ? { ...state.groupsById, [cat.groupId]: nextGroup! }
       : state.groupsById,
     categoriesById: { ...state.categoriesById, [categoryId]: nextCat },
     groupOrder: state.groupOrder,
@@ -102,6 +122,10 @@ export function useBudgetSave(): UseBudgetSaveReturn {
     ): Promise<BudgetSaveResult[]> => {
       if (!connection) throw new Error("No active connection");
       const transport = getTransport(connection);
+      // BM-12: project optimistic cache updates the same way the grid stages
+      // them. Mode is synced into the store by BudgetManagementView.
+      const isTracking =
+        useBudgetEditsStore.getState().budgetMode === "tracking";
 
       const entries = Object.entries(edits) as [BudgetCellKey, StagedBudgetEdit][];
       const holdEntries = Object.entries(holds) as [string, StagedHold][];
@@ -294,8 +318,8 @@ export function useBudgetSave(): UseBudgetSaveReturn {
               ["budget-month-data", connection.id, month],
               (prev: LoadedMonthState | undefined) => {
                 if (!prev) return prev;
-                let next = applyBudgetedToMonthState(prev, srcEdit.categoryId, srcEdit.nextBudgeted);
-                next = applyBudgetedToMonthState(next, dstEdit.categoryId, dstEdit.nextBudgeted);
+                let next = applyBudgetedToMonthState(prev, srcEdit.categoryId, srcEdit.nextBudgeted, isTracking);
+                next = applyBudgetedToMonthState(next, dstEdit.categoryId, dstEdit.nextBudgeted, isTracking);
                 return next;
               }
             );
@@ -336,7 +360,7 @@ export function useBudgetSave(): UseBudgetSaveReturn {
             queryClient.setQueryData(
               ["budget-month-data", connection.id, edit.month],
               (prev: LoadedMonthState | undefined) =>
-                prev ? applyBudgetedToMonthState(prev, edit.categoryId, edit.nextBudgeted) : prev
+                prev ? applyBudgetedToMonthState(prev, edit.categoryId, edit.nextBudgeted, isTracking) : prev
             );
 
             succeededKeys.push(key);
@@ -395,34 +419,41 @@ export function useBudgetSave(): UseBudgetSaveReturn {
         clearHistory();
       }
 
-      // BM-11: Invalidate in parallel — invalidations are read-side and
-      // independent. The optimistic updates above already cleared the UI;
-      // these refetches reconcile against the server.
+      // Invalidate in parallel — invalidations are read-side and independent.
+      // The optimistic updates above already cleared the UI; these refetches
+      // reconcile against the server.
       if (successMonths.size > 0) {
+        // BM-10: a saved edit cascades forward only (carryover, envelope
+        // balances, incomeAvailable/toBudget of later months). So invalidate
+        // the exact loaded/prefetched window at or after the earliest changed
+        // month, and leave earlier months — which cannot be affected — cached.
+        const earliestSuccess = Array.from(successMonths).sort()[0]!;
+        const loaded = new Set<string>(successMonths);
+        const displayMonths = useBudgetEditsStore.getState().displayMonths;
+        if (displayMonths.length > 0) {
+          // Visible 12 months (0..11) plus the prefetched adjacent windows
+          // (-12..-1 and 12..23) that usePrefetchAdjacentMonths warms.
+          const firstVisible = displayMonths[0]!;
+          for (let i = -12; i <= 23; i++) loaded.add(addMonths(firstVisible, i));
+        }
+        const toInvalidate = Array.from(loaded).filter((m) => m >= earliestSuccess);
         await Promise.all(
-          Array.from(successMonths).map((month) =>
+          toInvalidate.map((month) =>
             queryClient.invalidateQueries({
               queryKey: ["budget-month-data", connection.id, month],
             })
           )
         );
 
-        // RD-038: Invalidate the two adjacent 12-month windows so any prefetched
-        // months get fresh server cascade values (incomeAvailable / toBudget)
-        // after saves propagate through the server.
-        const displayMonths = useBudgetEditsStore.getState().displayMonths;
-        if (displayMonths.length > 0) {
-          const firstVisible = displayMonths[0]!;
-          const adjacentMonths: string[] = [];
-          for (let i = -12; i <= -1; i++) adjacentMonths.push(addMonths(firstVisible, i));
-          for (let i = 12; i <= 23; i++) adjacentMonths.push(addMonths(firstVisible, i));
-          await Promise.all(
-            adjacentMonths.map((month) =>
-              queryClient.invalidateQueries({
-                queryKey: ["budget-month-data", connection.id, month],
-              })
-            )
-          );
+        // BM-11: Tracking income budgeted values come from a separate
+        // reflect_budgets query (useIncomeBudgets). Its cache is not touched by
+        // the month-data invalidation above, so a just-saved income edit could
+        // be overwritten by its stale fallback on the next effective-state pass.
+        // Refresh that key too. (Envelope never runs this query, so gate on it.)
+        if (isTracking) {
+          await queryClient.invalidateQueries({
+            queryKey: ["income-budgets", connection.id],
+          });
         }
       }
 

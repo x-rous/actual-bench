@@ -44,6 +44,7 @@ export function BudgetManagementView() {
   const hasPendingEdits = useBudgetEditsStore((s) => s.hasPendingEdits);
   const edits = useBudgetEditsStore((s) => s.edits);
   const setDisplayMonths = useBudgetEditsStore((s) => s.setDisplayMonths);
+  const setBudgetMode = useBudgetEditsStore((s) => s.setBudgetMode);
   const hasEntityChanges = useStagedStore(selectHasChanges);
   const discardEntityChanges = useStagedStore((s) => s.discardAll);
 
@@ -58,6 +59,12 @@ export function BudgetManagementView() {
   useEffect(() => {
     setDisplayMonths(activeMonths);
   }, [activeMonths, setDisplayMonths]);
+
+  // Keep the active mode in the store so the save pipeline can project
+  // optimistic updates mode-aware (BM-12) without prop-drilling.
+  useEffect(() => {
+    setBudgetMode(budgetMode ?? "unidentified");
+  }, [budgetMode, setBudgetMode]);
 
   // Warm the adjacent ±12 months in the TanStack Query cache so «/» navigation
   // renders from cache without a loading state.

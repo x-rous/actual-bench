@@ -228,6 +228,9 @@ export type BudgetEditsState = {
   rowSelection: RowSelection | null;
   /** The 12 months currently visible in the grid window — synced by BudgetManagementView. */
   displayMonths: string[];
+  /** Active budget mode — synced by BudgetManagementView so the save pipeline
+   *  can apply mode-aware optimistic projections without prop-drilling (BM-12). */
+  budgetMode: BudgetMode;
 };
 
 export type BudgetEditsActions = {
@@ -255,4 +258,5 @@ export type BudgetEditsActions = {
   /** Set the row-label selection; clears any cell/group-cell selection in uiSelection. */
   setRowSelection: (selection: RowSelection | null) => void;
   setDisplayMonths: (months: string[]) => void;
+  setBudgetMode: (mode: BudgetMode) => void;
 };
