@@ -312,11 +312,16 @@ export function BudgetCell({
 
   // A text signal for the bar so nothing is conveyed by colour alone (used in
   // the aria-label and appended to the tooltip).
+  // A net inflow (refund exceeding spend) reads as an empty bar; flag it
+  // explicitly so the refund is never silently hidden by the geometry (BM-34).
+  const isNetRefund = !category.isIncome && effectiveCategory.actuals > 0;
   const overNote =
     spendingBar?.tier === "over"
       ? ` (over by ${formatMinor(overByMinor)})`
       : spendingBar?.tier === "unbudgeted"
       ? " (unbudgeted)"
+      : isNetRefund
+      ? ` (net refund ${formatMinor(effectiveCategory.actuals)})`
       : "";
 
   // Full spoken status for the cell: every tier (not just over/unbudgeted) plus
