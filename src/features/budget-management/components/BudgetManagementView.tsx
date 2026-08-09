@@ -78,7 +78,11 @@ export function BudgetManagementView() {
     () => new Set()
   );
   const [defaultCollapseApplied, setDefaultCollapseApplied] = useState(false);
-  const [showHidden, setShowHidden] = useState(true);
+  // BM-21: hidden categories are off by default so the grid mirrors Actual's
+  // active plan. The toggle only affects what is rendered — it never changes
+  // any total (Tracking still excludes hidden from its aggregates; Envelope
+  // still counts hidden as financially active regardless of visibility).
+  const [showHidden, setShowHidden] = useState(false);
   // RD-065: spent-vs-budget bars under editable cells. On by default.
   const [showSpendingBars, setShowSpendingBars] = useState(true);
   const handleToggleSpendingBars = useCallback(() => setShowSpendingBars((v) => !v), []);
