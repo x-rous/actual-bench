@@ -14,10 +14,17 @@ import type { EnvelopeFundingInputs } from "./envelopeBudgetSemantics";
  * income GROUP budgets (authoritative aggregate; hidden excluded per Tracking).
  */
 export function trackingInputsFromState(state: LoadedMonthState): TrackingMonthInputs {
+  // Sum visible income category budgets (excluding hidden categories and hidden
+  // groups) — matches getTrackingSummaryTotals and equals the group aggregate for
+  // real data, while staying robust to states that only populate category values.
   let budgetedIncome = 0;
   for (const id of state.groupOrder) {
     const group = state.groupsById[id];
-    if (group && group.isIncome && !group.hidden) budgetedIncome += group.budgeted;
+    if (!group || !group.isIncome || group.hidden) continue;
+    for (const catId of group.categoryIds) {
+      const category = state.categoriesById[catId];
+      if (category && !category.hidden) budgetedIncome += category.budgeted;
+    }
   }
 
   return {

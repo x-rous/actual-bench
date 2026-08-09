@@ -77,10 +77,13 @@ describe("trackingInputsFromState — recovers positive allocation from coerced 
       },
       groupOrder: ["g-income", "g-hidden-income"],
       groupsById: {
-        "g-income": { id: "g-income", isIncome: true, hidden: false, budgeted: 5000 },
-        "g-hidden-income": { id: "g-hidden-income", isIncome: true, hidden: true, budgeted: 9999 },
+        "g-income": { id: "g-income", isIncome: true, hidden: false, budgeted: 5000, categoryIds: ["c-salary"] },
+        "g-hidden-income": { id: "g-hidden-income", isIncome: true, hidden: true, budgeted: 9999, categoryIds: ["c-secret"] },
       },
-      categoriesById: {},
+      categoriesById: {
+        "c-salary": { id: "c-salary", isIncome: true, hidden: false, budgeted: 5000 },
+        "c-secret": { id: "c-secret", isIncome: true, hidden: false, budgeted: 9999 },
+      },
     } as unknown as LoadedMonthState;
 
     const inputs = trackingInputsFromState(state);

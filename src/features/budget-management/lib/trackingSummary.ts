@@ -3,6 +3,8 @@ import {
   type MonthActualStatus,
 } from "./budgetDetailsModel";
 import { formatSummary } from "./format";
+import { computeTrackingMonth } from "./semantics/trackingBudgetSemantics";
+import { trackingInputsFromState } from "./semantics/fromLoadedState";
 import type { LoadedCategory, LoadedMonthState } from "../types";
 
 export type TrackingSummaryTotals = {
@@ -84,10 +86,10 @@ export function getTrackingResultCell(
 ): TrackingSummaryCell {
   const status = classifyMonthActualStatus(month, now);
   const totals = getTrackingSummaryTotals(state);
-  const value =
-    status === "past"
-      ? totals.incomeActuals - totals.expenseActuals
-      : totals.incomeBudgeted - totals.expenseBudgeted;
+  // Refund-safe: Actual Savings = income + signed expense activity (BM-02);
+  // projections use budgeted income − budgeted expenses.
+  const sem = computeTrackingMonth(trackingInputsFromState(state));
+  const value = status === "past" ? sem.actualSavings : sem.projectedSavings;
 
   if (status === "past") {
     return {
@@ -96,7 +98,7 @@ export function getTrackingResultCell(
       valueKind: "amount",
       signed: true,
       tone: toneFromSignedValue(value, status),
-      tooltip: `Actual income ${formatSummary(totals.incomeActuals)} - actual expenses ${formatSummary(totals.expenseActuals)}.`,
+      tooltip: `Actual income ${formatSummary(sem.actualIncome)} plus signed expense activity ${formatSummary(sem.signedExpenseActivity)}.`,
     };
   }
 
@@ -149,7 +151,9 @@ export function getTrackingSpendingCell(
     };
   }
 
-  const variance = state.summary.totalBalance;
+  // True current-period expense variance (budgeted allocation + signed activity),
+  // NOT the spreadsheet balance — Balance can include prior carryover (BM-06).
+  const variance = computeTrackingMonth(trackingInputsFromState(state)).expenseVariance;
   const statusLabel =
     variance > 0
       ? status === "current-partial"
@@ -174,7 +178,7 @@ export function getTrackingSpendingCell(
           ? "warning"
           : "muted"
         : toneFromSignedValue(variance, status),
-    tooltip: `${status === "current-partial" ? "Current partial month. " : ""}Budgeted expenses ${formatSummary(totals.expenseBudgeted)} - actual expenses ${formatSummary(totals.expenseActuals)}.`,
+    tooltip: `${status === "current-partial" ? "Current partial month. " : ""}Budgeted expenses minus expenses spent this month — current-period, independent of any prior carryover.`,
   };
 }
 
