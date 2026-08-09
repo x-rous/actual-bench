@@ -39,6 +39,37 @@ export function isMissingBudgetMonthError(
   );
 }
 
+// BM-07: the summary's `totalBudgeted` is the signed expense allocation. Actual
+// delivers it positive in Tracking payloads and negative in Envelope payloads.
+// The whole feature stores it in one canonical form — non-positive — so Envelope
+// keeps its native sign and Tracking recovers its magnitude via `Math.abs`
+// downstream (see fromLoadedState / trackingSummary). This is a documented,
+// mode-neutral normalization, NOT an arbitrary flip.
+//
+// The correction here is to stop doing it *silently*: surface (dev-only, once)
+// when a value is actually re-signed so a genuine transport/version contract
+// change is observable in logs instead of being masked. The stored contract is
+// intentionally left unchanged — every consumer depends on it.
+let hasReportedBudgetSignNormalization = false;
+
+function toSignedExpenseAllocation(totalBudgeted: number): number {
+  if (totalBudgeted > 0) {
+    if (
+      !hasReportedBudgetSignNormalization &&
+      process.env.NODE_ENV !== "production"
+    ) {
+      hasReportedBudgetSignNormalization = true;
+      console.warn(
+        "[budget] Normalized a positive summary.totalBudgeted to non-positive. " +
+          "This is expected for Tracking payloads; if the active budget is Envelope, " +
+          "the transport contract may have drifted."
+      );
+    }
+    return -totalBudgeted;
+  }
+  return totalBudgeted;
+}
+
 export function normalizeBudgetMonthData(
   d: TransportBudgetMonth
 ): LoadedMonthState {
@@ -47,8 +78,7 @@ export function normalizeBudgetMonthData(
     incomeAvailable: d.incomeAvailable,
     lastMonthOverspent: d.lastMonthOverspent,
     forNextMonth: d.forNextMonth,
-    // Always store as non-positive: API may return positive or negative depending on version.
-    totalBudgeted: d.totalBudgeted > 0 ? -d.totalBudgeted : d.totalBudgeted,
+    totalBudgeted: toSignedExpenseAllocation(d.totalBudgeted),
     toBudget: d.toBudget,
     fromLastMonth: d.fromLastMonth,
     totalIncome: d.totalIncome,
