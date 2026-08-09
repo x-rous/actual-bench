@@ -33,13 +33,37 @@ month in a 12-month window:
   against planned income-to-date. It appears for expense (and tracking-income) selections in every scope
   and is omitted where it wouldn't be meaningful (envelope income, plan-only future months).
 
+## Two budgeting models
+
+Actual supports two budgeting models, and Budget Management adapts its labels, totals, and the details
+panel to whichever your budget uses (shown in the mode badge).
+
+- **Envelope** budgeting allocates the real money you have into category "envelopes". Money you haven't
+  assigned yet is **To Budget**; over-assigning shows as **Overbudget**. Each category keeps a running
+  **Balance** that rolls forward month to month, so unspent budget carries over and overspending is
+  carried against the next month. Income is counted as **received** — it is never budgeted, so income
+  rows are Received-only and can't be edited in the grid.
+- **Tracking** budgeting compares a plan against what actually happened. Its headline is **Savings**
+  (income minus expenses): a live **Projected Savings** for the current and future months, and **Saved**
+  or **Overspent** for closed months. Tracking keeps two numbers that envelope budgeting blends — the
+  spreadsheet **Balance** (which can include prior carryover) and an independently calculated
+  **Variance** (this period's budget minus its actual activity). Hidden categories are excluded from
+  Tracking's plan totals; in envelope mode they stay financially active.
+
+The details panel leads with each model's own KPI — To Budget / Overbudget for envelope, Savings for
+tracking — and never mixes the two. Totals come from the budget's authoritative summary, so they don't
+change when you hide categories or collapse groups.
+
 ## Choose Budget, Actuals, or Balance
 
 Use the cell-view toggle in the toolbar (also the `V` key) to switch what every month cell displays:
 
-- **Budget** — the budgeted amount.
-- **Actuals** — actual activity.
+- **Budget** — the budgeted amount (expenses are shown signed-negative; envelope income has no budget).
+- **Actuals** — actual activity: **spent** for expenses, **received** for income.
 - **Balance** — the running balance.
+
+Labels follow the row's side and mode: an income row's activity reads *Received*, and an envelope income
+row is always Received-only regardless of the toggle.
 
 ### See spending at a glance
 
@@ -175,8 +199,8 @@ you're typing in a cell.
 
 ## Safety and limitations
 
-- Carryover is toggled via the right-click menu (tracking mode); it is shown but not directly editable
-  as a grid cell.
+- Rollover (carryover) is toggled via the right-click menu (tracking mode); it is shown but not directly
+  editable as a grid cell.
 - Category-to-pool transfers (omitting a source or destination category) are not supported.
 - The grid is not virtualized, so very large category lists may scroll more slowly.
 
