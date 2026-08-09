@@ -233,10 +233,13 @@ export function buildBudgetTransactionAnalytics(
     }
   }
 
-  // netSpent matches the budget panel: -(sum of all signed amounts).
-  // totalSpent only counts spending rows (ignoring refunds) and is used for
-  // bar-chart percentages. netSpent is what the dialog shows as "Spent".
-  const netSpent = Math.max(0, rows.reduce((sum, row) => sum - row.amount, 0));
+  // netSpent matches the budget panel: -(sum of all signed amounts). It is the
+  // signed net outflow and must stay signed — a net refund (inflow > outflow)
+  // is legitimately negative and must not be clamped to zero (refunds would
+  // otherwise vanish from the "Spent" figure and the variance). totalSpent below
+  // counts only spending rows (ignoring refunds) and is used for bar-chart
+  // percentage geometry.
+  const netSpent = rows.reduce((sum, row) => sum - row.amount, 0);
 
   const averageTransaction =
     rows.length > 0 ? Math.round(totalSpent / rows.length) : 0;
