@@ -5,7 +5,8 @@ import {
 import { formatSummary } from "./format";
 import { computeTrackingMonth } from "./semantics/trackingBudgetSemantics";
 import { trackingInputsFromState } from "./semantics/fromLoadedState";
-import type { LoadedCategory, LoadedMonthState } from "../types";
+import { trackingIncomeBudgeted } from "./monthAuthority";
+import type { LoadedMonthState } from "../types";
 
 export type TrackingSummaryTotals = {
   incomeBudgeted: number;
@@ -36,37 +37,16 @@ export type TrackingSummaryCell = {
 export const TRACKING_INCOME_ON_TARGET_RATIO = 0.995;
 export const TRACKING_INCOME_AHEAD_RATIO = 1.005;
 
-function visibleTrackingCategories(state: LoadedMonthState): LoadedCategory[] {
-  const result: LoadedCategory[] = [];
-  for (const groupId of state.groupOrder) {
-    const group = state.groupsById[groupId];
-    if (!group || group.hidden) continue;
-    for (const categoryId of group.categoryIds) {
-      const category = state.categoriesById[categoryId];
-      if (!category || category.hidden) continue;
-      result.push(category);
-    }
-  }
-  return result;
-}
-
 export function getTrackingSummaryTotals(
   state: LoadedMonthState
 ): TrackingSummaryTotals {
-  const totals: TrackingSummaryTotals = {
-    incomeBudgeted: 0,
+  return {
+    // BM-14: budgeted income comes from the single canonical selector.
+    incomeBudgeted: trackingIncomeBudgeted(state),
     incomeActuals: state.summary.totalIncome,
     expenseBudgeted: Math.abs(state.summary.totalBudgeted),
     expenseActuals: Math.abs(state.summary.totalSpent),
   };
-
-  for (const category of visibleTrackingCategories(state)) {
-    if (category.isIncome) {
-      totals.incomeBudgeted += category.budgeted;
-    }
-  }
-
-  return totals;
 }
 
 function toneFromSignedValue(
