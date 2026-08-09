@@ -222,12 +222,16 @@ export function EnvelopeDetailsPanel({
 
       {isMonth && metrics.monthValues && (
         <DetailsSection title="Values">
+          {/* BM-16: Envelope income is Received-only — omit the invented
+              Assigned/Budgeted, Balance, and Rollover rows it has no concept of. */}
+          {!metrics.isIncome && (
+            <MetricLine
+              label="Assigned / Budgeted"
+              value={formatSigned(metrics.monthValues.assignedBudgeted)}
+            />
+          )}
           <MetricLine
-            label="Assigned / Budgeted"
-            value={formatSigned(metrics.monthValues.assignedBudgeted)}
-          />
-          <MetricLine
-            label="Spent"
+            label={metrics.isIncome ? "Received" : "Spent"}
             value={formatSigned(metrics.monthValues.spent)}
             onValueClick={
               metrics.monthValues.transactionDrilldown
@@ -236,19 +240,22 @@ export function EnvelopeDetailsPanel({
             }
             valueAriaLabel={`View transactions for ${metrics.title}`}
           />
-          <MetricLine
-            label="Balance"
-            value={formatSigned(metrics.monthValues.balance)}
-            tone={toneFromValue(metrics.monthValues.balance)}
-          />
-          {metrics.monthValues.previousLabel &&
+          {!metrics.isIncome && (
+            <MetricLine
+              label="Balance"
+              value={formatSigned(metrics.monthValues.balance)}
+              tone={toneFromValue(metrics.monthValues.balance)}
+            />
+          )}
+          {!metrics.isIncome &&
+            metrics.monthValues.previousLabel &&
             metrics.monthValues.previousBalance != null && (
               <MetricLine
                 label={metrics.monthValues.previousLabel}
                 value={formatSigned(metrics.monthValues.previousBalance)}
               />
             )}
-          {metrics.monthValues.carryover != null && (
+          {!metrics.isIncome && metrics.monthValues.carryover != null && (
             <MetricLine
               label="Rollover"
               value={metrics.monthValues.carryover ? "On" : "Off"}

@@ -860,6 +860,36 @@ describe("buildTrackingDetailsMetrics", () => {
     });
   });
 
+  it("leads an Envelope income month with Received, not an invented Balance (BM-16)", () => {
+    const model = modelForSelection({
+      month: "2026-06",
+      status: "past",
+      selection: {
+        scope: "month",
+        entity: "category",
+        month: "2026-06",
+        categoryId: "income-cat",
+      },
+      state: monthState("2026-06", {
+        incomeBudgeted: 0,
+        incomeActuals: 480_000,
+        expenseBudgeted: -300_000,
+        expenseActuals: -280_000,
+      }),
+    });
+
+    const metrics = buildEnvelopeDetailsMetrics({ ...model, budgetMode: "envelope" });
+
+    expect(metrics.isIncome).toBe(true);
+    expect(metrics.primary).toMatchObject({
+      label: "Received income",
+      value: 480_000,
+    });
+    // The panel omits Assigned/Balance for income; the received figure is still
+    // exposed via monthValues.spent for the "Received" line.
+    expect(metrics.monthValues?.spent).toBe(480_000);
+  });
+
   it("uses visible child values for selected Tracking groups", () => {
     const state = monthState("2026-04", {
       incomeBudgeted: 500_000,

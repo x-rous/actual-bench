@@ -1828,12 +1828,22 @@ function buildEnvelopeMonthMetrics(
         : null,
     futureOnly: entry.status === "future",
     isIncome: target.isIncome,
-    primary: {
-      label: entry.status === "future" ? "Planned Balance" : "Current Balance",
-      value: values.balance,
-      helper: envelopeBalanceHelper(values.balance, selectedMonth),
-      tone: toneForSigned(values.balance),
-    },
+    // BM-16: Envelope income is Received-only — it has no budget or balance to
+    // assign, so lead with Received rather than an invented Balance.
+    primary: target.isIncome
+      ? {
+          label: entry.status === "future" ? "Expected income" : "Received income",
+          value: values.actuals,
+          helper:
+            "Envelope budgeting tracks income as received — no budget or balance is assigned to it.",
+          tone: "neutral",
+        }
+      : {
+          label: entry.status === "future" ? "Planned Balance" : "Current Balance",
+          value: values.balance,
+          helper: envelopeBalanceHelper(values.balance, selectedMonth),
+          tone: toneForSigned(values.balance),
+        },
     endPlan: null,
     monthValues: {
       assignedBudgeted: values.budgeted,

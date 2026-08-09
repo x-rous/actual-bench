@@ -336,10 +336,27 @@ export function BudgetCell({
         )})`
       : "";
 
-  // Hover tooltip: show spent/balance when in budgeted view (they aren't directly visible).
+  // BM-15/BM-16: name what THIS cell actually shows, per side + mode. Expense
+  // follows the selected view (Budgeted / Spent / Balance); income's spend is
+  // "received"; and Envelope income is Received-only — it has no budget or
+  // balance concept, so its labels must never imply one.
+  const viewTerm =
+    envelopeIncome || (category.isIncome && cellView === "spent")
+      ? "received"
+      : cellView === "spent"
+      ? "spent"
+      : cellView === "balance"
+      ? "balance"
+      : "budget";
+
+  // Hover tooltip: reveal the figures that aren't directly visible in the
+  // budgeted view. Envelope income has no budget/balance, so clarify rather than
+  // inventing "Spent | Balance" numbers for it.
   const hoverTitle =
     isReadOnlyMonth && !hasMonthData
       ? "No budget exists for this past month; budget cells are read-only."
+      : envelopeIncome
+      ? "Received income — envelope budgeting assigns no budget or balance to income."
       : cellView === "budgeted"
       ? `Spent: ${formatMinor(effectiveCategory.actuals)} | Balance: ${formatMinor(effectiveCategory.balance)}${overNote}`
       : undefined;
@@ -349,8 +366,8 @@ export function BudgetCell({
     const blockedLabel = isReadOnlyMonth
       ? `${category.name} budget for ${month} - no budget exists for this past month`
       : blocked
-      ? `${category.name} budget for ${month} - income editing blocked in envelope mode`
-      : `${category.name} ${cellView} for ${month}`;
+      ? `${category.name} received for ${month} - envelope income is tracked as received, not budgeted`
+      : `${category.name} ${viewTerm} for ${month}`;
     const displayText =
       isReadOnlyMonth && !hasMonthData ? "--" : formatMinor(displayMinor);
 
