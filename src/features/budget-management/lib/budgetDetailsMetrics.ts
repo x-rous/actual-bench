@@ -2025,14 +2025,16 @@ export function buildEnvelopeDetailsMetrics(
     });
   }
 
+  // BM-18: keep the single combined "To Budget / Overbudget" bridge label with
+  // sign-dependent tone (the approved BENCH presentation, matching the grid
+  // summary row). Do not invent historical time variants like "Ending To
+  // Budget" — To Budget does not carry a historical label (see also BM-27).
   const latestToBudget = latestActual?.state?.summary.toBudget;
   const primaryLabel = latestToBudget === 0
     ? "Fully budgeted"
     : model.coverage.isFutureOnly
     ? "No actualized months in this view"
-    : model.coverage.hasFuture || model.coverage.currentCount > 0
-    ? "Current To Budget / Overbudget"
-    : "Ending To Budget / Overbudget";
+    : "To Budget / Overbudget";
 
   return {
     scope: "period",
