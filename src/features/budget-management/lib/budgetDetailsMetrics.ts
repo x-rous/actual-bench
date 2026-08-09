@@ -300,7 +300,8 @@ type TrackingPrimaryMetric = {
 
 type EnvelopeSelectedMonthValues = {
   assignedBudgeted: number;
-  spent: number;
+  /** Null for future months — nothing has been spent/received yet (BM-26). */
+  spent: number | null;
   balance: number;
   transactionDrilldown: BudgetTransactionsDrilldown | null;
   previousBalance: number | null;
@@ -1849,9 +1850,12 @@ function buildEnvelopeMonthMetrics(
     endPlan: null,
     monthValues: {
       assignedBudgeted: values.budgeted,
-      spent: values.actuals,
+      // BM-26: a future month has no observed spending/receipts and no
+      // transactions to drill into — don't render zeros/links as if real.
+      spent: entry.status === "future" ? null : values.actuals,
       balance: values.balance,
-      transactionDrilldown: budgetTransactionsDrilldown(entry, target),
+      transactionDrilldown:
+        entry.status === "future" ? null : budgetTransactionsDrilldown(entry, target),
       previousBalance: previousValues?.balance ?? null,
       previousLabel: previousValues ? "Previous month balance" : null,
       carryover: selection.entity === "category" ? values.carryover : null,

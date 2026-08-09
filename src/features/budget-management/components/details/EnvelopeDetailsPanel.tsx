@@ -230,16 +230,19 @@ export function EnvelopeDetailsPanel({
               value={formatSigned(metrics.monthValues.assignedBudgeted)}
             />
           )}
-          <MetricLine
-            label={metrics.isIncome ? "Received" : "Spent"}
-            value={formatSigned(metrics.monthValues.spent)}
-            onValueClick={
-              metrics.monthValues.transactionDrilldown
-                ? () => setTransactionTarget(metrics.monthValues!.transactionDrilldown)
-                : undefined
-            }
-            valueAriaLabel={`View transactions for ${metrics.title}`}
-          />
+          {/* BM-26: no observed spend/receipts for a future month. */}
+          {metrics.monthValues.spent != null && (
+            <MetricLine
+              label={metrics.isIncome ? "Received" : "Spent"}
+              value={formatSigned(metrics.monthValues.spent)}
+              onValueClick={
+                metrics.monthValues.transactionDrilldown
+                  ? () => setTransactionTarget(metrics.monthValues!.transactionDrilldown)
+                  : undefined
+              }
+              valueAriaLabel={`View transactions for ${metrics.title}`}
+            />
+          )}
           {!metrics.isIncome && (
             <MetricLine
               label="Balance"

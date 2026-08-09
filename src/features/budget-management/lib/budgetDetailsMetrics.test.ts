@@ -890,6 +890,32 @@ describe("buildTrackingDetailsMetrics", () => {
     expect(metrics.monthValues?.spent).toBe(480_000);
   });
 
+  it("suppresses spent and transaction links for a future Envelope month (BM-26)", () => {
+    const model = modelForSelection({
+      month: "2026-12",
+      status: "future",
+      selection: {
+        scope: "month",
+        entity: "category",
+        month: "2026-12",
+        categoryId: "expense-cat",
+      },
+      state: monthState("2026-12", {
+        incomeBudgeted: 0,
+        incomeActuals: 0,
+        expenseBudgeted: -100_000,
+        expenseActuals: 0,
+      }),
+    });
+
+    const metrics = buildEnvelopeDetailsMetrics({ ...model, budgetMode: "envelope" });
+
+    // Assigned/planned is real; spend and the drill link are not shown as data.
+    expect(metrics.monthValues?.assignedBudgeted).toBe(100_000);
+    expect(metrics.monthValues?.spent).toBeNull();
+    expect(metrics.monthValues?.transactionDrilldown).toBeNull();
+  });
+
   it("uses visible child values for selected Tracking groups", () => {
     const state = monthState("2026-04", {
       incomeBudgeted: 500_000,
