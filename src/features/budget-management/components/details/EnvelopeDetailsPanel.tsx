@@ -202,7 +202,7 @@ export function EnvelopeDetailsPanel({
           />
           {metrics.selectionActivity.carryover != null && (
             <MetricLine
-              label="Carryover"
+              label="Rollover"
               value={metrics.selectionActivity.carryover ? "On" : "Off"}
             />
           )}
@@ -239,7 +239,7 @@ export function EnvelopeDetailsPanel({
             )}
           {metrics.monthValues.carryover != null && (
             <MetricLine
-              label="Carryover"
+              label="Rollover"
               value={metrics.monthValues.carryover ? "On" : "Off"}
             />
           )}
