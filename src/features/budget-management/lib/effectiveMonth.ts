@@ -254,6 +254,9 @@ export function computeEffectiveMonthState(
     groupsById,
     categoriesById,
     groupOrder: serverState.groupOrder,
+    // Carry the income-budget provenance forward so the effective state stays a
+    // faithful superset of the server state (BM-09).
+    incomeBudgetFallbackIds: serverState.incomeBudgetFallbackIds,
   };
 }
 
