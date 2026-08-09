@@ -1,4 +1,5 @@
 import {
+  ArrowLeftRight,
   Calendar,
   Database,
   FileSearch,
@@ -105,6 +106,15 @@ export const TOOL_CARDS: OverviewActionCard[] = [
     icon: FileSearch,
     tone: "tool",
     href: "/budget-diagnostics",
+  },
+  {
+    id: "sync",
+    label: "Budget File Sync",
+    description:
+      "Copy transactions, payees, and categories between budget files as preview-first, one-way flows with run history and safe automation.",
+    icon: ArrowLeftRight,
+    tone: "tool",
+    href: "/sync",
   },
   {
     id: "data-browser",
