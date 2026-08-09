@@ -447,7 +447,7 @@ describe("buildTrackingDetailsMetrics", () => {
       expenseVariance: 20_000,
       incomeVariance: 20_000,
     });
-    expect(metrics.primary).toMatchObject({ label: "Result", value: 240_000 });
+    expect(metrics.primary).toMatchObject({ label: "Saved", value: 240_000 });
 
     // The in-progress month is reported on its own, with income progress.
     expect(metrics.thisMonth).toMatchObject({

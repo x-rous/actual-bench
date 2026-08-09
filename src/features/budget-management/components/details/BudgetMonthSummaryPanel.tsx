@@ -261,7 +261,7 @@ function EnvelopeMonthBody({
             />
           )}
           <DetailsSection title="Activity">
-            <MetricLine label="Assigned / Budgeted" value={formatSigned(view.budgeted)} />
+            <MetricLine label="Assigned" value={formatSigned(view.budgeted)} />
             <MetricLine
               label="Spent"
               value={formatSigned(view.signedSpent)}

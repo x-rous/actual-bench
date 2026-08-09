@@ -491,10 +491,11 @@ function selectedEntityId(selection: BudgetDetailsSelection): string | null {
   return null;
 }
 
+// BM-28: user-facing time language, not implementation terms.
 function monthStatusLabel(status: MonthActualStatus): string {
-  if (status === "past") return "Actualized month";
-  if (status === "current-partial") return "Current partial month";
-  return "Plan-only month";
+  if (status === "past") return "Closed month";
+  if (status === "current-partial") return "This month, in progress";
+  return "Upcoming month";
 }
 
 function findMonthEntry(
@@ -1087,7 +1088,7 @@ function buildTrackingMonthMetrics(
       ? {
           label: "Budgeted",
           value: values.budgeted,
-          helper: "Plan-only month.",
+          helper: "Upcoming month — planned, not yet spent.",
           tone: "neutral",
         }
       : target.isIncome
@@ -1547,7 +1548,7 @@ export function buildTrackingDetailsMetrics(
         ? {
             label: "No actualized months in this view",
             value: null,
-            helper: "Future months are shown as plan-only.",
+            helper: "Future months are planned, not yet actual.",
             tone: "neutral",
           }
         : !hasClosedMonths
@@ -1704,7 +1705,7 @@ export function buildTrackingDetailsMetrics(
       ? {
           label: "No actualized months in this view",
           value: null,
-          helper: "Future months are shown as plan-only.",
+          helper: "Future months are planned, not yet actual.",
           tone: "neutral",
         }
       : !hasClosedMonths
@@ -1715,9 +1716,10 @@ export function buildTrackingDetailsMetrics(
           tone: "neutral",
         }
       : {
-          label: "Result",
+          // BM-29: name the exact Tracking outcome by sign, not a generic "Result".
+          label: actualResult >= 0 ? "Saved" : "Overspent",
           value: actualResult,
-          helper: actualResult >= 0 ? "saved" : "overspent",
+          helper: "Income received minus expenses across closed months.",
           tone: toneForSigned(actualResult),
         },
     periodActuals: hasClosedMonths
@@ -1964,7 +1966,7 @@ export function buildEnvelopeDetailsMetrics(
           : {
               label: "No actualized months in this view",
               value: null,
-              helper: "Future months are shown as plan-only.",
+              helper: "Future months are planned, not yet actual.",
               tone: "neutral",
             },
       endPlan:
@@ -2061,7 +2063,7 @@ export function buildEnvelopeDetailsMetrics(
         : {
             label: primaryLabel,
             value: null,
-            helper: "Future months are shown as plan-only.",
+            helper: "Future months are planned, not yet actual.",
             tone: "neutral",
           },
     endPlan:

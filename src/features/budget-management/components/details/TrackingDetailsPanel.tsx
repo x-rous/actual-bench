@@ -116,9 +116,9 @@ function VarianceLine({
 
 const PERIOD_TOOLTIP = {
   incomeReceived:
-    "API summary income actuals across closed months, including hidden categories. The current month is shown separately.",
+    "Income received across closed months, including hidden categories. The current month is shown separately.",
   expensesSpent:
-    "API summary signed expense actuals across closed months, including hidden categories. Refunds can make this positive.",
+    "Signed expenses across closed months, including hidden categories. Refunds can make this positive.",
   actualResult: "Income received plus signed expense actuals, over closed months.",
   incomeBudgetedToDate:
     "Visible income budgeted across closed months; hidden categories and groups are excluded.",
@@ -299,11 +299,11 @@ export function TrackingDetailsPanel({
           {metrics.monthValues.stagedEdit && (
             <>
               <MetricLine
-                label="Was"
+                label="Previous budget"
                 value={formatSigned(metrics.monthValues.stagedEdit.was)}
               />
               <MetricLine
-                label="Diff"
+                label="Change"
                 value={formatDelta(metrics.monthValues.stagedEdit.diff)}
                 tone={toneFromValue(metrics.monthValues.stagedEdit.diff)}
               />
@@ -327,14 +327,8 @@ export function TrackingDetailsPanel({
           />
           <div className="border-t border-border/50 pt-1.5">
             <MetricLine
-              label="Result"
-              value={`${formatDelta(closed.actualSavings)}${
-                closed.actualSavings > 0
-                  ? " saved"
-                  : closed.actualSavings < 0
-                    ? " overspent"
-                    : ""
-              }`}
+              label={closed.actualSavings >= 0 ? "Saved" : "Overspent"}
+              value={formatDelta(closed.actualSavings)}
               tone={toneFromValue(closed.actualSavings)}
               tooltip={PERIOD_TOOLTIP.actualResult}
             />

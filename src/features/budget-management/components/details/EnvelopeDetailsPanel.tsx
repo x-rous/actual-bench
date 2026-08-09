@@ -199,7 +199,7 @@ export function EnvelopeDetailsPanel({
       {!isFullPeriod && !isMonth && metrics.selectionActivity && (
         <DetailsSection title="Period activity">
           <MetricLine
-            label="Assigned / Budgeted"
+            label="Assigned"
             value={formatSigned(metrics.selectionActivity.assignedBudgeted)}
           />
           <MetricLine
@@ -226,7 +226,7 @@ export function EnvelopeDetailsPanel({
               Assigned/Budgeted, Balance, and Rollover rows it has no concept of. */}
           {!metrics.isIncome && (
             <MetricLine
-              label="Assigned / Budgeted"
+              label="Assigned"
               value={formatSigned(metrics.monthValues.assignedBudgeted)}
             />
           )}
@@ -264,11 +264,11 @@ export function EnvelopeDetailsPanel({
           {metrics.monthValues.stagedEdit && (
             <>
               <MetricLine
-                label="Was"
+                label="Previous budget"
                 value={formatSigned(metrics.monthValues.stagedEdit.was)}
               />
               <MetricLine
-                label="Diff"
+                label="Change"
                 value={formatDelta(metrics.monthValues.stagedEdit.diff)}
                 tone={toneFromValue(metrics.monthValues.stagedEdit.diff)}
               />
