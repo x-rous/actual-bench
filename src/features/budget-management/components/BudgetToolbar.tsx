@@ -28,7 +28,7 @@ const MODE_COLORS: Record<BudgetMode, string> = {
 };
 
 const CELL_VIEW_LABELS: Record<CellView, string> = {
-  budgeted: "Budget",
+  budgeted: "Budgeted",
   spent: "Actuals",
   balance: "Balance",
 };
@@ -89,6 +89,18 @@ export function BudgetToolbar({
   onShowShortcuts,
 }: Props) {
   const rangeLabel = formatWindowRange(windowStart);
+
+  // BM-21: the visibility toggle is display-only. Spell out that totals never
+  // move, and remind which mode-specific rule already governs hidden rows.
+  const hiddenCalcNote =
+    budgetMode === "tracking"
+      ? "Hidden categories stay out of the plan totals whether shown or not."
+      : budgetMode === "envelope"
+        ? "Hidden categories still hold their assigned money whether shown or not."
+        : "Totals are unaffected — this only changes what's shown.";
+  const hiddenToggleTitle = showHidden
+    ? `Hide hidden categories. ${hiddenCalcNote}`
+    : `Show hidden categories. ${hiddenCalcNote}`;
 
   return (
     <div
@@ -248,7 +260,7 @@ export function BudgetToolbar({
               type="button"
               onClick={onToggleShowHidden}
               aria-label={showHidden ? "Hide hidden categories" : "Show hidden categories"}
-              title={showHidden ? "Hide hidden categories" : "Show hidden categories"}
+              title={hiddenToggleTitle}
               // Inverted: pressed state means "currently hiding hidden categories"
               // (showHidden=false). Default — hidden visible — is unpressed.
               aria-pressed={!showHidden}

@@ -1,8 +1,16 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { formatDelta, formatSigned } from "../../lib/format";
 import type { EnvelopeDetailsMetrics } from "../../lib/budgetDetailsMetrics";
+import { classifyMonthActualStatus } from "../../lib/budgetDetailsModel";
+import { computeEnvelopeFunding } from "../../lib/semantics/envelopeBudgetSemantics";
+import { envelopeInputsFromState } from "../../lib/semantics/fromLoadedState";
+import {
+  buildEnvelopePeriodView,
+  type EnvelopePeriodMonth,
+} from "../../lib/semantics/envelopePeriodView";
+import type { MonthTimePhase } from "../../lib/semantics/trackingMonthView";
 import type {
   BudgetTransactionBrowserOptions,
   BudgetTransactionsDrilldown,
@@ -63,6 +71,23 @@ export function EnvelopeDetailsPanel({
     onOpen: setTransactionTarget,
   });
 
+  // Full-period funding view (PR-033 / F-088): the focus month's bridge and a
+  // Balance snapshot, computed from the authoritative summary values. To Budget
+  // and Balance are never summed across months.
+  const periodView = useMemo(() => {
+    if (!isFullPeriod) return null;
+    const months: EnvelopePeriodMonth[] = [...statesByMonth.keys()]
+      .sort()
+      .map((m) => {
+        const state = statesByMonth.get(m)!;
+        const status = classifyMonthActualStatus(m);
+        const phase: MonthTimePhase =
+          status === "past" ? "past" : status === "future" ? "future" : "current";
+        return { month: m, phase, funding: computeEnvelopeFunding(envelopeInputsFromState(state)) };
+      });
+    return buildEnvelopePeriodView(months);
+  }, [isFullPeriod, statesByMonth]);
+
   return (
     <div className="px-3 py-2 space-y-3">
       <DetailsHeader
@@ -93,7 +118,25 @@ export function EnvelopeDetailsPanel({
       </PrimaryMetric>
 
       {isFullPeriod && metrics.meter && (
-        <MeterSection model={metrics.meter} helper="Spending against the assigned budget this period." />
+        <MeterSection
+          model={metrics.meter}
+          helper="Spent so far against the budget assigned for the months elapsed to date."
+        />
+      )}
+
+      {isFullPeriod && periodView && (
+        <DetailsSection title="How To Budget is derived">
+          {periodView.bridge.map((row) => (
+            <MetricLine
+              key={row.label}
+              label={`${row.operator} ${row.label}`}
+              value={formatSigned(row.display)}
+            />
+          ))}
+          <p className="text-[10.5px] text-muted-foreground text-right">
+            Focus month {periodView.focusMonth} · To Budget is not summed across months
+          </p>
+        </DetailsSection>
       )}
 
       {!isMonth && metrics.endPlan && (
@@ -117,13 +160,29 @@ export function EnvelopeDetailsPanel({
       {isFullPeriod && metrics.periodValues && (
         <DetailsSection title="Period values">
           <MetricLine
-            label="Assigned / Budgeted"
-            value={formatSigned(metrics.periodValues.assignedBudgeted)}
+            label="Assigned to date"
+            value={formatSigned(metrics.periodValues.assignedToDate)}
+            tooltip="Budget assigned across the months that have started (past + current). Paired with Spent to date."
           />
+          {metrics.periodValues.assignedFullPeriod != null && (
+            <MetricLine
+              label="Planned across window"
+              value={formatSigned(metrics.periodValues.assignedFullPeriod)}
+              tooltip="Total assigned across every visible month, including future months budgeted ahead — a plan total, not yet spendable."
+            />
+          )}
           <MetricLine
             label="Spent to date"
             value={formatSigned(metrics.periodValues.spentToDate)}
           />
+          {periodView && (
+            <MetricLine
+              label="Balance"
+              value={formatSigned(periodView.focusBalance)}
+              tone={toneFromValue(periodView.focusBalance)}
+              tooltip="Money still assigned to envelopes as of the focus month — a snapshot, not a sum of monthly balances."
+            />
+          )}
           <MetricLine
             label="Income received to date"
             value={formatSigned(metrics.periodValues.incomeReceivedToDate)}
@@ -140,7 +199,7 @@ export function EnvelopeDetailsPanel({
       {!isFullPeriod && !isMonth && metrics.selectionActivity && (
         <DetailsSection title="Period activity">
           <MetricLine
-            label="Assigned / Budgeted"
+            label="Assigned"
             value={formatSigned(metrics.selectionActivity.assignedBudgeted)}
           />
           <MetricLine
@@ -154,7 +213,7 @@ export function EnvelopeDetailsPanel({
           />
           {metrics.selectionActivity.carryover != null && (
             <MetricLine
-              label="Carryover"
+              label="Rollover"
               value={metrics.selectionActivity.carryover ? "On" : "Off"}
             />
           )}
@@ -163,46 +222,56 @@ export function EnvelopeDetailsPanel({
 
       {isMonth && metrics.monthValues && (
         <DetailsSection title="Values">
-          <MetricLine
-            label="Assigned / Budgeted"
-            value={formatSigned(metrics.monthValues.assignedBudgeted)}
-          />
-          <MetricLine
-            label="Spent"
-            value={formatSigned(metrics.monthValues.spent)}
-            onValueClick={
-              metrics.monthValues.transactionDrilldown
-                ? () => setTransactionTarget(metrics.monthValues!.transactionDrilldown)
-                : undefined
-            }
-            valueAriaLabel={`View transactions for ${metrics.title}`}
-          />
-          <MetricLine
-            label="Balance"
-            value={formatSigned(metrics.monthValues.balance)}
-            tone={toneFromValue(metrics.monthValues.balance)}
-          />
-          {metrics.monthValues.previousLabel &&
+          {/* BM-16: Envelope income is Received-only — omit the invented
+              Assigned/Budgeted, Balance, and Rollover rows it has no concept of. */}
+          {!metrics.isIncome && (
+            <MetricLine
+              label="Assigned"
+              value={formatSigned(metrics.monthValues.assignedBudgeted)}
+            />
+          )}
+          {/* BM-26: no observed spend/receipts for a future month. */}
+          {metrics.monthValues.spent != null && (
+            <MetricLine
+              label={metrics.isIncome ? "Received" : "Spent"}
+              value={formatSigned(metrics.monthValues.spent)}
+              onValueClick={
+                metrics.monthValues.transactionDrilldown
+                  ? () => setTransactionTarget(metrics.monthValues!.transactionDrilldown)
+                  : undefined
+              }
+              valueAriaLabel={`View transactions for ${metrics.title}`}
+            />
+          )}
+          {!metrics.isIncome && (
+            <MetricLine
+              label="Balance"
+              value={formatSigned(metrics.monthValues.balance)}
+              tone={toneFromValue(metrics.monthValues.balance)}
+            />
+          )}
+          {!metrics.isIncome &&
+            metrics.monthValues.previousLabel &&
             metrics.monthValues.previousBalance != null && (
               <MetricLine
                 label={metrics.monthValues.previousLabel}
                 value={formatSigned(metrics.monthValues.previousBalance)}
               />
             )}
-          {metrics.monthValues.carryover != null && (
+          {!metrics.isIncome && metrics.monthValues.carryover != null && (
             <MetricLine
-              label="Carryover"
+              label="Rollover"
               value={metrics.monthValues.carryover ? "On" : "Off"}
             />
           )}
           {metrics.monthValues.stagedEdit && (
             <>
               <MetricLine
-                label="Was"
+                label="Previous budget"
                 value={formatSigned(metrics.monthValues.stagedEdit.was)}
               />
               <MetricLine
-                label="Diff"
+                label="Change"
                 value={formatDelta(metrics.monthValues.stagedEdit.diff)}
                 tone={toneFromValue(metrics.monthValues.stagedEdit.diff)}
               />

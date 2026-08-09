@@ -6,6 +6,7 @@ import { useBudgetEditsStore } from "@/store/budgetEdits";
 import { useAllNotes } from "@/hooks/useAllNotes";
 import { formatMinor } from "../../lib/format";
 import { computeSpendingBar, spendingTierLabel } from "../../lib/spendingBar";
+import { classifyMonthActualStatus } from "../../lib/budgetDetailsModel";
 import { SpendingBarView } from "./SpendingBarView";
 import { dispatchRowLabel, useGroupCellKeymap } from "../../keyboard/useBudgetKeymap";
 import { BudgetCell, type BudgetCellDragState } from "../BudgetCell";
@@ -119,6 +120,19 @@ function GroupMonthAggregate({
       ? groupBalanceMinor
       : groupBudgetedMinor;
 
+  // Balance view carries the same polarity coloring as the category cells
+  // (green left / red overspent / neutral zero); other views — and future
+  // months, whose balance is a projection — stay neutral.
+  const isFutureMonth = classifyMonthActualStatus(month) === "future";
+  const valueColorClass =
+    effectiveView === "balance" && !isFutureMonth
+      ? groupBalanceMinor < 0
+        ? "text-destructive"
+        : groupBalanceMinor > 0
+        ? "text-emerald-600 dark:text-emerald-400"
+        : "text-muted-foreground"
+      : "text-black dark:text-zinc-200";
+
   // Group-level spending bar — a spent-vs-budget visual shown in every view
   // (Budget / Actual / Balance) and closed months, for non-income groups when
   // the toggle is on. No-data past months return earlier, so nothing to guard.
@@ -148,7 +162,7 @@ function GroupMonthAggregate({
 
   return (
     <div
-      className={`${baseClass}${dimClass} relative px-2 flex items-center justify-end text-xs font-sans tabular-nums text-black dark:text-zinc-200 cursor-default outline-none${isSelected ? " ring-2 ring-inset ring-foreground/80" : ""}`}
+      className={`${baseClass}${dimClass} relative px-2 flex items-center justify-end text-xs font-sans tabular-nums ${valueColorClass} cursor-default outline-none${isSelected ? " ring-2 ring-inset ring-foreground/80" : ""}`}
       role="gridcell"
       tabIndex={0}
       aria-selected={isSelected}

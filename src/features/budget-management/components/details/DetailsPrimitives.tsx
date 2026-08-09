@@ -362,7 +362,7 @@ export function MiniTrend({
               key={point.month}
               className="flex-1 flex flex-col justify-end h-7"
               title={`${point.label}: ${formatSigned(point.value)}${
-                point.planOnly ? " plan-only" : ""
+                point.planOnly ? " (planned)" : ""
               }`}
             >
               <div
@@ -375,7 +375,7 @@ export function MiniTrend({
       </div>
       {points.some((point) => point.planOnly) && (
         <p className="text-[10.5px] text-muted-foreground">
-          Future months are muted as plan-only.
+          Future months are muted — planned, not yet actual.
         </p>
       )}
     </DetailsSection>

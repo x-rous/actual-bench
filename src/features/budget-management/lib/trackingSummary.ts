@@ -3,7 +3,10 @@ import {
   type MonthActualStatus,
 } from "./budgetDetailsModel";
 import { formatSummary } from "./format";
-import type { LoadedCategory, LoadedMonthState } from "../types";
+import { computeTrackingMonth } from "./semantics/trackingBudgetSemantics";
+import { trackingInputsFromState } from "./semantics/fromLoadedState";
+import { trackingIncomeBudgeted } from "./monthAuthority";
+import type { LoadedMonthState } from "../types";
 
 export type TrackingSummaryTotals = {
   incomeBudgeted: number;
@@ -34,37 +37,16 @@ export type TrackingSummaryCell = {
 export const TRACKING_INCOME_ON_TARGET_RATIO = 0.995;
 export const TRACKING_INCOME_AHEAD_RATIO = 1.005;
 
-function visibleTrackingCategories(state: LoadedMonthState): LoadedCategory[] {
-  const result: LoadedCategory[] = [];
-  for (const groupId of state.groupOrder) {
-    const group = state.groupsById[groupId];
-    if (!group || group.hidden) continue;
-    for (const categoryId of group.categoryIds) {
-      const category = state.categoriesById[categoryId];
-      if (!category || category.hidden) continue;
-      result.push(category);
-    }
-  }
-  return result;
-}
-
 export function getTrackingSummaryTotals(
   state: LoadedMonthState
 ): TrackingSummaryTotals {
-  const totals: TrackingSummaryTotals = {
-    incomeBudgeted: 0,
+  return {
+    // BM-14: budgeted income comes from the single canonical selector.
+    incomeBudgeted: trackingIncomeBudgeted(state),
     incomeActuals: state.summary.totalIncome,
     expenseBudgeted: Math.abs(state.summary.totalBudgeted),
     expenseActuals: Math.abs(state.summary.totalSpent),
   };
-
-  for (const category of visibleTrackingCategories(state)) {
-    if (category.isIncome) {
-      totals.incomeBudgeted += category.budgeted;
-    }
-  }
-
-  return totals;
 }
 
 function toneFromSignedValue(
@@ -84,10 +66,10 @@ export function getTrackingResultCell(
 ): TrackingSummaryCell {
   const status = classifyMonthActualStatus(month, now);
   const totals = getTrackingSummaryTotals(state);
-  const value =
-    status === "past"
-      ? totals.incomeActuals - totals.expenseActuals
-      : totals.incomeBudgeted - totals.expenseBudgeted;
+  // Refund-safe: Actual Savings = income + signed expense activity (BM-02);
+  // projections use budgeted income − budgeted expenses.
+  const sem = computeTrackingMonth(trackingInputsFromState(state));
+  const value = status === "past" ? sem.actualSavings : sem.projectedSavings;
 
   if (status === "past") {
     return {
@@ -96,7 +78,7 @@ export function getTrackingResultCell(
       valueKind: "amount",
       signed: true,
       tone: toneFromSignedValue(value, status),
-      tooltip: `Actual income ${formatSummary(totals.incomeActuals)} - actual expenses ${formatSummary(totals.expenseActuals)}.`,
+      tooltip: `Actual income ${formatSummary(sem.actualIncome)} plus signed expense activity ${formatSummary(sem.signedExpenseActivity)}.`,
     };
   }
 
@@ -149,7 +131,9 @@ export function getTrackingSpendingCell(
     };
   }
 
-  const variance = state.summary.totalBalance;
+  // True current-period expense variance (budgeted allocation + signed activity),
+  // NOT the spreadsheet balance — Balance can include prior carryover (BM-06).
+  const variance = computeTrackingMonth(trackingInputsFromState(state)).expenseVariance;
   const statusLabel =
     variance > 0
       ? status === "current-partial"
@@ -174,7 +158,7 @@ export function getTrackingSpendingCell(
           ? "warning"
           : "muted"
         : toneFromSignedValue(variance, status),
-    tooltip: `${status === "current-partial" ? "Current partial month. " : ""}Budgeted expenses ${formatSummary(totals.expenseBudgeted)} - actual expenses ${formatSummary(totals.expenseActuals)}.`,
+    tooltip: `${status === "current-partial" ? "Current partial month. " : ""}Budgeted expenses minus expenses spent this month — current-period, independent of any prior carryover.`,
   };
 }
 

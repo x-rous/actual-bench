@@ -40,13 +40,24 @@ describe("buildBudgetTransactionAnalytics", () => {
   it("computes spending KPIs from fetched transaction rows", () => {
     const analytics = buildBudgetTransactionAnalytics(rows);
 
-    expect(analytics.totalSpent).toBe(9200);
+    expect(analytics.totalSpent).toBe(9200); // gross outflow, ignores the refund
+    expect(analytics.netSpent).toBe(8200); // net = gross − 1,000 refund (signed)
     expect(analytics.transactionCount).toBe(4);
     expect(analytics.spendingTransactionCount).toBe(3);
     expect(analytics.averageTransaction).toBe(2300);
     expect(analytics.largestTransaction?.id).toBe("tx-2");
     expect(analytics.distinctPayeeCount).toBe(2);
     expect(analytics.noPayeeCount).toBe(1);
+  });
+
+  it("keeps net spent signed when refunds exceed spending (not clamped to 0)", () => {
+    const refundHeavy: BudgetTransactionRow[] = [
+      { id: "s", date: "2026-04-02", amount: -2000, payeeName: "Store", categoryName: "Gear", notes: null },
+      { id: "r", date: "2026-04-20", amount: 5000, payeeName: "Store", categoryName: "Gear", notes: "big refund" },
+    ];
+    const analytics = buildBudgetTransactionAnalytics(refundHeavy);
+    expect(analytics.netSpent).toBe(-3000); // net inflow of 3,000 — refund not lost
+    expect(analytics.totalSpent).toBe(2000); // gross outflow unchanged
   });
 
   it("builds ranked payee and category breakdowns", () => {

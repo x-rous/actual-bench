@@ -124,10 +124,18 @@ export function computeEffectiveMonthState(
   // ── Apply Layer 1 ──────────────────────────────────────────────────────────
   if (incomeBudgetForMonth) {
     const incomeGroupBudgetDelta = new Map<string, number>();
+    // BM-09: the reflect_budgets fallback may only fill income categories whose
+    // monthly `budgeted` was absent — it must never overwrite a canonical value
+    // the month payload already carried (Actual 26.8+). `undefined` = unknown,
+    // which preserves the legacy overlay-all behaviour for older payloads.
+    const fallbackIds = serverState.incomeBudgetFallbackIds;
+    const needsFallback = (catId: string) =>
+      fallbackIds == null || fallbackIds.includes(catId);
 
     for (const [catId, budgeted] of incomeBudgetForMonth) {
       const serverCat = serverState.categoriesById[catId];
       if (!serverCat?.isIncome) continue;
+      if (!needsFallback(catId)) continue;
       if (serverCat.budgeted === budgeted) continue;
       const delta = budgeted - serverCat.budgeted;
 
@@ -246,6 +254,9 @@ export function computeEffectiveMonthState(
     groupsById,
     categoriesById,
     groupOrder: serverState.groupOrder,
+    // Carry the income-budget provenance forward so the effective state stays a
+    // faithful superset of the server state (BM-09).
+    incomeBudgetFallbackIds: serverState.incomeBudgetFallbackIds,
   };
 }
 

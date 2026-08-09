@@ -78,6 +78,16 @@ export type LoadedMonthState = {
   groupsById: Record<string, LoadedGroup>;
   categoriesById: Record<string, LoadedCategory>;
   groupOrder: string[];
+  /**
+   * Income category ids whose monthly `budgeted` was absent in the transport
+   * payload and therefore need the `reflect_budgets` compatibility fallback
+   * (BM-08/BM-09). Empty on servers that carry income budgets in the month
+   * payload (Actual 26.8+), so the fallback query is skipped and never
+   * overwrites the canonical monthly value. `undefined` means "unknown" — the
+   * effective-state overlay then falls back to all income categories (legacy
+   * behaviour), so states built without this field keep working.
+   */
+  incomeBudgetFallbackIds?: string[];
 };
 
 // ─── Staged edits ─────────────────────────────────────────────────────────────
@@ -228,6 +238,9 @@ export type BudgetEditsState = {
   rowSelection: RowSelection | null;
   /** The 12 months currently visible in the grid window — synced by BudgetManagementView. */
   displayMonths: string[];
+  /** Active budget mode — synced by BudgetManagementView so the save pipeline
+   *  can apply mode-aware optimistic projections without prop-drilling (BM-12). */
+  budgetMode: BudgetMode;
 };
 
 export type BudgetEditsActions = {
@@ -255,4 +268,5 @@ export type BudgetEditsActions = {
   /** Set the row-label selection; clears any cell/group-cell selection in uiSelection. */
   setRowSelection: (selection: RowSelection | null) => void;
   setDisplayMonths: (months: string[]) => void;
+  setBudgetMode: (mode: BudgetMode) => void;
 };

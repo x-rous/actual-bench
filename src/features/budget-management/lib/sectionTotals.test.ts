@@ -221,9 +221,10 @@ describe("section total helpers", () => {
     ).toBe(100_000);
   });
 
-  it("keeps envelope totals based on group aggregates, including hidden groups", () => {
+  it("uses authoritative API summary totals for envelope sections (BM-14)", () => {
     const testState = state();
 
+    // Expense budgeted → summary.totalBudgeted (includes hidden entities).
     expect(
       calculateSectionTotal({
         state: testState,
@@ -232,6 +233,9 @@ describe("section total helpers", () => {
         budgetMode: "envelope",
       })
     ).toBe(-700_000);
+    // Income is Received-only from summary.totalIncome — NOT a sum of group
+    // actuals (which would over-count to 1,300,000 in this fixture). This is
+    // the authority the details panel already uses, so grid and details agree.
     expect(
       calculateSectionTotal({
         state: testState,
@@ -239,6 +243,6 @@ describe("section total helpers", () => {
         cellView: "budgeted",
         budgetMode: "envelope",
       })
-    ).toBe(1_300_000);
+    ).toBe(1_100_000);
   });
 });

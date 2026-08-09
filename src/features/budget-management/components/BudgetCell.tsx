@@ -8,6 +8,7 @@ import { formatMinor } from "../lib/format";
 import { computeSpendingBar, spendingTierLabel } from "../lib/spendingBar";
 import { SpendingBarView } from "./grid/SpendingBarView";
 import { isIncomeBlocked, isLargeChange } from "../lib/budgetValidation";
+import { classifyMonthActualStatus } from "../lib/budgetDetailsModel";
 import { useCellKeymap, useCellEditKeymap } from "../keyboard/useBudgetKeymap";
 import type { BudgetCellKey, BudgetMode, CellView, LoadedCategory, NavDirection } from "../types";
 
@@ -92,6 +93,9 @@ export function BudgetCell({
   // In Envelope mode, income cells always show actuals (received) — there is
   // no budget or variance concept for income in envelope budgeting.
   const envelopeIncome = budgetMode === "envelope" && category.isIncome;
+  // A future month's balance is a projection, not an outcome — keep it neutral
+  // rather than green/red (matches how future months are treated elsewhere).
+  const isFutureMonth = classifyMonthActualStatus(month) === "future";
   const displayMinor = envelopeIncome
     ? effectiveCategory.actuals
     : cellView === "spent"
@@ -312,11 +316,16 @@ export function BudgetCell({
 
   // A text signal for the bar so nothing is conveyed by colour alone (used in
   // the aria-label and appended to the tooltip).
+  // A net inflow (refund exceeding spend) reads as an empty bar; flag it
+  // explicitly so the refund is never silently hidden by the geometry (BM-34).
+  const isNetRefund = !category.isIncome && effectiveCategory.actuals > 0;
   const overNote =
     spendingBar?.tier === "over"
       ? ` (over by ${formatMinor(overByMinor)})`
       : spendingBar?.tier === "unbudgeted"
       ? " (unbudgeted)"
+      : isNetRefund
+      ? ` (net refund ${formatMinor(effectiveCategory.actuals)})`
       : "";
 
   // Full spoken status for the cell: every tier (not just over/unbudgeted) plus
@@ -331,10 +340,27 @@ export function BudgetCell({
         )})`
       : "";
 
-  // Hover tooltip: show spent/balance when in budgeted view (they aren't directly visible).
+  // BM-15/BM-16: name what THIS cell actually shows, per side + mode. Expense
+  // follows the selected view (Budgeted / Spent / Balance); income's spend is
+  // "received"; and Envelope income is Received-only — it has no budget or
+  // balance concept, so its labels must never imply one.
+  const viewTerm =
+    envelopeIncome || (category.isIncome && cellView === "spent")
+      ? "received"
+      : cellView === "spent"
+      ? "spent"
+      : cellView === "balance"
+      ? "balance"
+      : "budget";
+
+  // Hover tooltip: reveal the figures that aren't directly visible in the
+  // budgeted view. Envelope income has no budget/balance, so clarify rather than
+  // inventing "Spent | Balance" numbers for it.
   const hoverTitle =
     isReadOnlyMonth && !hasMonthData
       ? "No budget exists for this past month; budget cells are read-only."
+      : envelopeIncome
+      ? "Received income — envelope budgeting assigns no budget or balance to income."
       : cellView === "budgeted"
       ? `Spent: ${formatMinor(effectiveCategory.actuals)} | Balance: ${formatMinor(effectiveCategory.balance)}${overNote}`
       : undefined;
@@ -344,8 +370,8 @@ export function BudgetCell({
     const blockedLabel = isReadOnlyMonth
       ? `${category.name} budget for ${month} - no budget exists for this past month`
       : blocked
-      ? `${category.name} budget for ${month} - income editing blocked in envelope mode`
-      : `${category.name} ${cellView} for ${month}`;
+      ? `${category.name} received for ${month} - envelope income is tracked as received, not budgeted`
+      : `${category.name} ${viewTerm} for ${month}`;
     const displayText =
       isReadOnlyMonth && !hasMonthData ? "--" : formatMinor(displayMinor);
 
@@ -387,11 +413,20 @@ export function BudgetCell({
           className={
             isReadOnlyMonth && !hasMonthData
               ? "text-muted-foreground"
-              : cellView === "balance" && displayMinor < 0
-              ? "text-destructive"
-              : cellView === "spent"
-              ? "text-foreground"
-              : "text-muted-foreground"
+              : // Balance polarity: money left is green, overspent is red, zero
+                // neutral. envelopeIncome shows received (not a balance), so it
+                // is excluded. The minus sign still carries the sign for a11y.
+                cellView === "balance" && !envelopeIncome
+                ? isFutureMonth
+                  ? "text-foreground"
+                  : displayMinor < 0
+                  ? "text-destructive"
+                  : displayMinor > 0
+                  ? "text-emerald-600 dark:text-emerald-400"
+                  : "text-muted-foreground"
+                : cellView === "spent"
+                ? "text-foreground"
+                : "text-muted-foreground"
           }
         >
           {displayText}

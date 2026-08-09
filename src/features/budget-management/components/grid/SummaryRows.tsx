@@ -92,28 +92,29 @@ const TO_BUDGET_OVERBUDGET_LABEL: ReactNode = (
 
 // ─── Per-mode configs ─────────────────────────────────────────────────────────
 
+// Tracking hierarchy (reference §42): supporting Income and Expenses lines, with
+// Savings as the emphasized bottom-line KPI — Projected Savings for current/future
+// months, Saved/Overspent for past months.
 export const TRACKING_SUMMARY_ROWS: SummaryRowConfig[] = [
-  {
-    label: "Spending vs Budgeted",
-    rowTooltip: "Expenses compared with budgeted expenses.",
-    getCell: (_s, state, month) => getTrackingSpendingCell(state, month),
-    noBorder: true,
-    marginTop: true,
-    rowHeight: "h-7",
-    valueClassName: "text-[13px] font-bold",
-  },
   {
     label: "Income",
     rowTooltip: "Received income compared with budgeted income.",
     getCell: (_s, state, month) => getTrackingIncomeCell(state, month),
     noBorder: true,
-    rowHeight: "h-7",
     marginTop: true,
+    rowHeight: "h-7",
   },
   {
-    label: "Result",
+    label: "Expenses",
+    rowTooltip: "Expenses spent compared with budgeted expenses.",
+    getCell: (_s, state, month) => getTrackingSpendingCell(state, month),
+    noBorder: true,
+    rowHeight: "h-7",
+  },
+  {
+    label: "Savings",
     rowTooltip:
-      "Actual saved/overspent for past months; projected result for current/future months.",
+      "Projected savings for current/future months; saved or overspent for past months.",
     getCell: (_s, state, month) => getTrackingResultCell(state, month),
     rowHeight: "h-9",
     noBorder: true,
@@ -122,6 +123,14 @@ export const TRACKING_SUMMARY_ROWS: SummaryRowConfig[] = [
   },
 ];
 
+// BM-19: this is a funding *bridge*. The row operators (+ / −) already convey
+// the arithmetic, so each row shows the positive magnitude of its term — never
+// the raw signed value. `lastMonthOverspent` and `totalBudgeted` arrive
+// negative and `forNextMonth` is a positive hold; feeding those signed values
+// straight into a "−" row would read as a double subtraction. The authoritative
+// reconciliation lives in the "=" To Budget row, which reads `s.toBudget`
+// directly (toBudget = incomeAvailable + lastMonthOverspent + totalBudgeted −
+// forNextMonth), so these display-only magnitudes never drive a calculation.
 export const ENVELOPE_SUMMARY_ROWS: SummaryRowConfig[] = [
   {
     label: "Available Funds",
@@ -132,21 +141,21 @@ export const ENVELOPE_SUMMARY_ROWS: SummaryRowConfig[] = [
   },
   {
     label: "Overspent Last Month",
-    getValue: (s) => s.lastMonthOverspent,
+    getValue: (s) => Math.abs(s.lastMonthOverspent),
     colorClass: () => "text-foreground/75",
     isSubRow: true,
     operator: "−",
   },
   {
     label: "Budgeted",
-    getValue: (s) => s.totalBudgeted,
+    getValue: (s) => Math.abs(s.totalBudgeted),
     colorClass: () => "text-foreground/75",
     isSubRow: true,
     operator: "−",
   },
   {
     label: "Hold for next month",
-    getValue: (s) => (s.forNextMonth > 0 ? -s.forNextMonth : 0),
+    getValue: (s) => (s.forNextMonth > 0 ? s.forNextMonth : 0),
     colorClass: () => "text-foreground/75",
     isSubRow: true,
     operator: "−",

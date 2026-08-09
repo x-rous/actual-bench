@@ -115,6 +115,7 @@ export const useBudgetEditsStore = create<BudgetEditsStore>()((set, get) => ({
   uiSelection: { month: null, categoryId: null, groupId: null },
   rowSelection: null,
   displayMonths: [],
+  budgetMode: "unidentified",
 
   pushUndo() {
     // Compatibility no-op: the store now records patches automatically on
@@ -365,6 +366,10 @@ export const useBudgetEditsStore = create<BudgetEditsStore>()((set, get) => ({
       // Clear cell/group-cell selection so the draft panel routes correctly.
       uiSelection: { month: null, categoryId: null, groupId: null },
     });
+  },
+
+  setBudgetMode(mode) {
+    set({ budgetMode: mode });
   },
 
   setDisplayMonths(months) {

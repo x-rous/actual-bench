@@ -38,8 +38,12 @@ import type {
   BudgetTransactionBrowserOptions,
   BudgetTransactionCategoryOption,
   BudgetTransactionsDrilldown,
+  BudgetTransactionSide,
 } from "../../lib/budgetTransactionBrowser";
-import type { BudgetTransactionRow } from "../../lib/budgetTransactionsQuery";
+import {
+  BUDGET_TRANSACTIONS_ROW_LIMIT,
+  type BudgetTransactionRow,
+} from "../../lib/budgetTransactionsQuery";
 import type { LoadedMonthState } from "../../types";
 
 type Props = {
@@ -72,7 +76,9 @@ const columns = [
     ),
     sortingFn: "alphanumeric",
   }),
-  columnHelper.accessor((row) => (row.amount < 0 ? Math.abs(row.amount) : 0), {
+  // Sort by magnitude so the biggest movements lead regardless of side — the
+  // largest outflow for expenses, the largest inflow for income.
+  columnHelper.accessor((row) => Math.abs(row.amount), {
     id: "amount",
     header: "Amount",
     cell: ({ row }) => (
@@ -433,8 +439,16 @@ export function BudgetTransactionsDialog({ target, browserOptions, statesByMonth
     enabled: open && effectiveTarget != null,
   });
 
-  const rows = data ?? EMPTY_TRANSACTION_ROWS;
+  const rows = data?.rows ?? EMPTY_TRANSACTION_ROWS;
+  const summary = data?.summary ?? null;
   const isGroup = effectiveTarget?.entity === "group";
+  // BM-04: income drill-throughs read as inflow, expense as outflow. The copy
+  // and the KPI direction below follow the target's side so income never gets
+  // presented through the expense/"spent" lens.
+  const side: BudgetTransactionSide = effectiveTarget?.side ?? "expense";
+  const isIncome = side === "income";
+  const flowNoun = isIncome ? "Income" : "Spending";
+  const flowVerb = isIncome ? "Received" : "Spent";
 
   // Clear visual + search filters when target or month changes
   useEffect(() => {
@@ -467,14 +481,14 @@ export function BudgetTransactionsDialog({ target, browserOptions, statesByMonth
 
   // Analytics for SpendBreakdown — responds to week filter
   const spendBreakdownAnalytics = useMemo(
-    () => buildBudgetTransactionAnalytics(weekFilteredRows),
-    [weekFilteredRows]
+    () => buildBudgetTransactionAnalytics(weekFilteredRows, side),
+    [weekFilteredRows, side]
   );
 
   // Analytics for WeeklySpending — responds to spend/category filter
   const weeklyAnalytics = useMemo(
-    () => buildBudgetTransactionAnalytics(spendFilteredRows),
-    [spendFilteredRows]
+    () => buildBudgetTransactionAnalytics(spendFilteredRows, side),
+    [spendFilteredRows, side]
   );
 
   // Rows for KPIs: only update for category selection (budgets exist at category level),
@@ -488,14 +502,21 @@ export function BudgetTransactionsDialog({ target, browserOptions, statesByMonth
 
   // Analytics for KPIs
   const analytics = useMemo(
-    () => buildBudgetTransactionAnalytics(kpiRows),
-    [kpiRows]
+    () => buildBudgetTransactionAnalytics(kpiRows, side),
+    [kpiRows, side]
   );
 
   const primaryBreakdown = isGroup ? spendBreakdownAnalytics.spendByCategory : spendBreakdownAnalytics.spendByPayee;
 
+  // The category/group picker only offers options on the same side as the
+  // current target, so an income drill can't switch to an expense category.
+  const categoryOptions = useMemo(
+    () => browserOptions.categories.filter((option) => option.side === side),
+    [browserOptions.categories, side]
+  );
+
   const selectedCategoryKey = effectiveTarget ? targetKey(effectiveTarget) : "";
-  const hasSelectedCategoryOption = browserOptions.categories.some(
+  const hasSelectedCategoryOption = categoryOptions.some(
     (option) => optionKey(option) === selectedCategoryKey
   );
   const monthLabel = effectiveTarget ? formatMonthLabel(effectiveTarget.month, "long") : "";
@@ -533,12 +554,19 @@ export function BudgetTransactionsDialog({ target, browserOptions, statesByMonth
   }
 
   function handleCategoryChange(key: string) {
-    const option = browserOptions.categories.find((candidate) => optionKey(candidate) === key);
+    const option = categoryOptions.find((candidate) => optionKey(candidate) === key);
     if (!option) return;
     setActiveTarget((current) => {
       const base = current ?? target;
       if (!base) return base;
-      return { ...base, id: option.id, title: option.title, entity: option.entity, categoryIds: option.categoryIds };
+      return {
+        ...base,
+        id: option.id,
+        title: option.title,
+        entity: option.entity,
+        side: option.side,
+        categoryIds: option.categoryIds,
+      };
     });
     setSpendFilter(null);
     setWeekFilter(null);
@@ -559,38 +587,67 @@ export function BudgetTransactionsDialog({ target, browserOptions, statesByMonth
     if (!effectiveTarget) return null;
     const state = statesByMonth.get(effectiveTarget.month);
     if (!state) return null;
+    // A category's budgeted figure only shares the target's side (expense
+    // categories carry the expense plan, income categories the income plan).
+    const wantIncome = side === "income";
     if (effectiveTarget.entity === "group") {
       // When a sub-category is selected in the breakdown, drill into its budget
       if (spendFilter) {
         const subCategory = Object.values(state.categoriesById).find(
-          (cat) => !cat.isIncome && cat.groupId === effectiveTarget.id && cat.name === spendFilter
+          (cat) => cat.isIncome === wantIncome && cat.groupId === effectiveTarget.id && cat.name === spendFilter
         );
         if (subCategory) return { budgeted: Math.abs(subCategory.budgeted) };
       }
       const group = state.groupsById[effectiveTarget.id];
-      if (group) {
-        if (group.isIncome) return null;
+      if (group && group.isIncome === wantIncome) {
         return { budgeted: Math.abs(group.budgeted) };
       }
-      // Synthetic whole-month group (e.g. "All expenses"): there is no real
-      // group entry, so sum the target's own expense categories. Income-only
-      // targets have no meaningful budget KPI.
+      if (group) return null;
+      // Synthetic whole-month group (e.g. "All expenses" / "All income"): there
+      // is no real group entry, so sum the target's own same-side categories.
       let sum = 0;
-      let hasExpense = false;
+      let hasMatch = false;
       for (const id of effectiveTarget.categoryIds) {
         const cat = state.categoriesById[id];
-        if (!cat || cat.isIncome) continue;
-        hasExpense = true;
+        if (!cat || cat.isIncome !== wantIncome) continue;
+        hasMatch = true;
         sum += cat.budgeted;
       }
-      return hasExpense ? { budgeted: Math.abs(sum) } : null;
+      return hasMatch ? { budgeted: Math.abs(sum) } : null;
     }
     const category = state.categoriesById[effectiveTarget.id];
-    if (!category || category.isIncome) return null;
+    if (!category || category.isIncome !== wantIncome) return null;
     return { budgeted: Math.abs(category.budgeted) };
-  }, [effectiveTarget, statesByMonth, spendFilter]);
+  }, [effectiveTarget, statesByMonth, spendFilter, side]);
 
-  const variance = budgetValues !== null ? budgetValues.budgeted - analytics.netSpent : null;
+  // BM-05: the row list is capped at BUDGET_TRANSACTIONS_ROW_LIMIT. The
+  // aggregate summary covers the whole set, so drive the headline KPIs from it
+  // (they reconcile to the budget panel even past the cap). Visual filters
+  // intentionally scope to the loaded page, so they fall back to row analytics.
+  const totalCount = summary?.count ?? null;
+  const isTruncated =
+    totalCount != null
+      ? totalCount > rows.length
+      : rows.length >= BUDGET_TRANSACTIONS_ROW_LIMIT;
+  const useAggregateHeadline = !hasVisualFilters && summary != null;
+  const headlineNet =
+    useAggregateHeadline && summary
+      ? isIncome
+        ? summary.total
+        : -summary.total
+      : analytics.netSpent;
+  const headlineCount =
+    useAggregateHeadline && summary ? summary.count : analytics.transactionCount;
+
+  // Variance is favorable (positive/green) when spending stays under budget or
+  // income comes in at or above plan — so the two sides subtract in opposite
+  // directions. `headlineNet` is directional (net outflow vs net inflow).
+  const variance =
+    budgetValues !== null
+      ? isIncome
+        ? headlineNet - budgetValues.budgeted
+        : budgetValues.budgeted - headlineNet
+      : null;
 
   const hasData = !isLoading && !error && rows.length > 0;
 
@@ -602,7 +659,7 @@ export function BudgetTransactionsDialog({ target, browserOptions, statesByMonth
           <div className="flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
-                <DialogTitle className="text-base">Spending details</DialogTitle>
+                <DialogTitle className="text-base">{flowNoun} details</DialogTitle>
                 <Badge variant={isGroup ? "secondary" : "outline"}>
                   {isGroup ? "Category group" : "Single category"}
                 </Badge>
@@ -624,7 +681,7 @@ export function BudgetTransactionsDialog({ target, browserOptions, statesByMonth
                 onChange={(event) => handleMonthChange(event.target.value)}
                 className={cn(SELECT_CLASS, "w-32")}
                 disabled={!effectiveTarget || browserOptions.months.length === 0}
-                aria-label="Select spending month"
+                aria-label="Select month"
               >
                 {browserOptions.months.map((option) => (
                   <option key={option.month} value={option.month}>
@@ -637,13 +694,13 @@ export function BudgetTransactionsDialog({ target, browserOptions, statesByMonth
                 value={selectedCategoryKey}
                 onChange={(event) => handleCategoryChange(event.target.value)}
                 className={cn(SELECT_CLASS, "w-96 max-w-full")}
-                disabled={!effectiveTarget || browserOptions.categories.length === 0}
-                aria-label="Select spending category or group"
+                disabled={!effectiveTarget || categoryOptions.length === 0}
+                aria-label="Select category or group"
               >
                 {effectiveTarget && !hasSelectedCategoryOption && (
                   <option value={selectedCategoryKey}>{effectiveTarget.title}</option>
                 )}
-                {browserOptions.categories.map((option) => (
+                {categoryOptions.map((option) => (
                   <option key={optionKey(option)} value={optionKey(option)}>
                     {optionLabel(option)}
                   </option>
@@ -657,7 +714,7 @@ export function BudgetTransactionsDialog({ target, browserOptions, statesByMonth
         {hasData && (
           <div className="shrink-0 border-b border-border/70 bg-muted/5 px-4 py-2">
             <div className="flex items-stretch divide-x divide-border/50">
-              <StripItem label="Spent" value={formatSigned(analytics.netSpent)} />
+              <StripItem label={flowVerb} value={formatSigned(headlineNet)} />
               {budgetValues !== null && (
                 <>
                   <StripItem label="Budgeted" value={formatSigned(budgetValues.budgeted)} />
@@ -678,13 +735,24 @@ export function BudgetTransactionsDialog({ target, browserOptions, statesByMonth
               )}
               <StripItem
                 label="Transactions"
-                value={analytics.transactionCount.toLocaleString()}
+                value={headlineCount.toLocaleString()}
               />
               <StripItem
                 label="Average"
                 value={analytics.averageTransaction > 0 ? formatSigned(analytics.averageTransaction) : "-"}
               />
             </div>
+          </div>
+        )}
+
+        {/* Truncation notice: the row list is capped, so disclose that the
+            charts/table below are a partial page. The headline KPIs stay
+            reconciled via the aggregate when it is available (BM-05). */}
+        {hasData && isTruncated && (
+          <div className="shrink-0 border-b border-amber-500/30 bg-amber-500/10 px-4 py-1.5 text-[11px] text-amber-700 dark:text-amber-300">
+            {summary != null
+              ? `Showing the first ${rows.length.toLocaleString()} of ${summary.count.toLocaleString()} transactions. ${flowVerb}, Variance, and the count above cover all ${summary.count.toLocaleString()}; the breakdowns and table below reflect only the first ${rows.length.toLocaleString()}.`
+              : `Showing the first ${rows.length.toLocaleString()} transactions — there may be more, so the figures below can be incomplete.`}
           </div>
         )}
 
@@ -702,16 +770,30 @@ export function BudgetTransactionsDialog({ target, browserOptions, statesByMonth
             <div className="flex min-h-0 flex-1 flex-col gap-2.5 overflow-hidden p-3">
               {/* Visual panels */}
               <div className="grid h-[256px] shrink-0 grid-cols-2 gap-2.5">
-                <Panel title={isGroup ? "Where the group spend went" : "Where the spend went (by payee)"}>
+                <Panel
+                  title={
+                    isIncome
+                      ? isGroup
+                        ? "Where the income came from"
+                        : "Where the income came from (by payee)"
+                      : isGroup
+                        ? "Where the group spend went"
+                        : "Where the spend went (by payee)"
+                  }
+                >
                   <SpendBreakdown
                     buckets={primaryBreakdown}
-                    emptyLabel="No spending breakdown available."
+                    emptyLabel={
+                      isIncome
+                        ? "No income breakdown available."
+                        : "No spending breakdown available."
+                    }
                     selectedId={spendFilter}
                     onSelect={toggleSpendFilter}
                   />
                 </Panel>
 
-                <Panel title="When spending happened">
+                <Panel title={isIncome ? "When income arrived" : "When spending happened"}>
                   <WeeklySpending
                     buckets={weeklyAnalytics.spendByWeek}
                     month={effectiveTarget?.month ?? ""}

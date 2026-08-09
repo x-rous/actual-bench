@@ -37,12 +37,20 @@ export function BudgetSelectionSummary({
   );
 
   // ── Per-selection stats (requires categories to be loaded) ────────────────
+  // BM-35: income budgets are positive and expense budgets negative, so a single
+  // Σ over a mixed selection nets to a meaningless number. Track the two sides
+  // separately and only present one combined total when the selection is
+  // single-sided.
   let selectionCells: { month: string; categoryId: string }[] = [];
   let selectionStagedCount = 0;
   let selectionDelta = 0;
-  let selectionSum = 0;
+  let incomeSum = 0;
+  let expenseSum = 0;
+  let incomeCount = 0;
+  let expenseCount = 0;
 
   if (selection && categories.length > 0) {
+    const isIncomeById = new Map(categories.map((c) => [c.id, c.isIncome]));
     selectionCells = resolveSelectionCells(selection, activeMonths, categories);
     for (const cell of selectionCells) {
       const key: BudgetCellKey = `${cell.month}:${cell.categoryId}`;
@@ -51,11 +59,22 @@ export function BudgetSelectionSummary({
         selectionStagedCount++;
         selectionDelta += edit.nextBudgeted - edit.previousBudgeted;
       }
-      selectionSum +=
+      const budgeted =
         effective.get(cell.month)?.categoriesById[cell.categoryId]?.budgeted ?? 0;
+      if (isIncomeById.get(cell.categoryId)) {
+        incomeSum += budgeted;
+        incomeCount++;
+      } else {
+        expenseSum += budgeted;
+        expenseCount++;
+      }
     }
   }
 
+  const isMixedSelection = incomeCount > 0 && expenseCount > 0;
+  // Single-sided total/average are meaningful; a mixed net is not, so it is
+  // never rendered as one number.
+  const selectionSum = incomeSum + expenseSum;
   const selectionAvg =
     selectionCells.length > 0 ? selectionSum / selectionCells.length : 0;
 
@@ -107,18 +126,30 @@ export function BudgetSelectionSummary({
           <span aria-label={`${selectedMonthSet.size} months, ${selectedCatSet.size} categories`}>
             ({selectedMonthSet.size} mo × {selectedCatSet.size} cat)
           </span>
-          <span
-            className="tabular-nums"
-            aria-label={`Sum of selected: ${formatMinor(selectionSum)}`}
-          >
-            Σ {formatMinor(selectionSum)}
-          </span>
-          <span
-            className="tabular-nums"
-            aria-label={`Average of selected: ${formatMinor(selectionAvg)}`}
-          >
-            avg {formatMinor(selectionAvg)}
-          </span>
+          {isMixedSelection ? (
+            // Mixed income + expense: show each side's subtotal, never a net.
+            <span
+              className="tabular-nums"
+              aria-label={`Sum of selected income budgets: ${formatMinor(incomeSum)}; sum of selected expense budgets: ${formatMinor(expenseSum)}`}
+            >
+              Σ inc {formatMinor(incomeSum)} · exp {formatMinor(expenseSum)}
+            </span>
+          ) : (
+            <>
+              <span
+                className="tabular-nums"
+                aria-label={`Sum of selected: ${formatMinor(selectionSum)}`}
+              >
+                Σ {formatMinor(selectionSum)}
+              </span>
+              <span
+                className="tabular-nums"
+                aria-label={`Average of selected: ${formatMinor(selectionAvg)}`}
+              >
+                avg {formatMinor(selectionAvg)}
+              </span>
+            </>
+          )}
           {selectionStagedCount > 0 && (
             <span
               className={

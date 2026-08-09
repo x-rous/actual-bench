@@ -1,9 +1,5 @@
-import type {
-  BudgetMode,
-  CellView,
-  LoadedCategory,
-  LoadedMonthState,
-} from "../types";
+import type { BudgetMode, CellView, LoadedMonthState } from "../types";
+import { trackingIncomeBalance, trackingIncomeBudgeted } from "./monthAuthority";
 
 export type SectionFilter = "expense" | "income";
 
@@ -19,27 +15,15 @@ export function getSectionEffectiveView({
   return budgetMode === "envelope" && filter === "income" ? "spent" : cellView;
 }
 
-function visibleIncomeCategories(state: LoadedMonthState): LoadedCategory[] {
-  return state.groupOrder
-    .map((id) => state.groupsById[id])
-    .filter((group) => !!group && group.isIncome && !group.hidden)
-    .flatMap((group) =>
-      group.categoryIds
-        .map((categoryId) => state.categoriesById[categoryId])
-        .filter((category): category is LoadedCategory => !!category && !category.hidden)
-    );
-}
-
 function trackingIncomeTotal(
   state: LoadedMonthState,
   effectiveView: CellView
 ): number {
+  // Received is the API summary; budgeted/balance come from the shared
+  // canonical selectors (BM-14) so grid and details can never disagree.
   if (effectiveView === "spent") return state.summary.totalIncome;
-
-  const categories = visibleIncomeCategories(state);
-  return effectiveView === "balance"
-    ? categories.reduce((sum, category) => sum + category.balance, 0)
-    : categories.reduce((sum, category) => sum + category.budgeted, 0);
+  if (effectiveView === "balance") return trackingIncomeBalance(state);
+  return trackingIncomeBudgeted(state);
 }
 
 function trackingExpenseTotal(
@@ -56,17 +40,14 @@ function envelopeTotal(
   filter: SectionFilter,
   effectiveView: CellView
 ): number {
-  const groups = state.groupOrder
-    .map((id) => state.groupsById[id])
-    .filter((group) => !!group && (filter === "expense" ? !group.isIncome : group.isIncome));
-
-  if (effectiveView === "spent") {
-    return groups.reduce((sum, group) => sum + group.actuals, 0);
-  }
-  if (effectiveView === "balance") {
-    return groups.reduce((sum, group) => sum + group.balance, 0);
-  }
-  return groups.reduce((sum, group) => sum + group.budgeted, 0);
+  // BM-14: Envelope section totals are authoritative API summary values — never
+  // a sum of rendered/group rows. Income is Received-only (summary.totalIncome);
+  // expenses read the summary by view. The summary already includes hidden
+  // entities, so financial inclusion never shifts with visibility.
+  if (filter === "income") return state.summary.totalIncome;
+  if (effectiveView === "spent") return state.summary.totalSpent;
+  if (effectiveView === "balance") return state.summary.totalBalance;
+  return state.summary.totalBudgeted;
 }
 
 export function calculateSectionTotal({

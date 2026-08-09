@@ -113,7 +113,9 @@ describe("tracking summary helpers", () => {
   });
 
   it("calculates expense variance only for past/current months", () => {
-    expect(getTrackingExpenseVariance(state(), "2026-04", now)).toBe(140_000);
+    // True current-period variance = budgeted 400,000 − spent 380,000 = 20,000,
+    // independent of totalBalance (140,000) which can carry prior leftover (BM-06).
+    expect(getTrackingExpenseVariance(state(), "2026-04", now)).toBe(20_000);
     expect(getTrackingExpenseVarianceLabel(state(), "2026-04", now)).toBe(
       "Under budget"
     );
@@ -127,7 +129,7 @@ describe("tracking summary helpers", () => {
   it("builds spending cells without treating future months as actual performance", () => {
     expect(getTrackingSpendingCell(state(), "2026-04", now)).toMatchObject({
       label: "Under budget",
-      value: 140_000,
+      value: 20_000,
       signed: true,
       tone: "positive",
     });
@@ -142,7 +144,7 @@ describe("tracking summary helpers", () => {
   it("uses shorter current-month labels", () => {
     expect(getTrackingSpendingCell(state(), "2026-05", now)).toMatchObject({
       label: "Under so far",
-      value: 140_000,
+      value: 20_000,
     });
 
     expect(getTrackingIncomeCell(state(), "2026-05", now)).toMatchObject({

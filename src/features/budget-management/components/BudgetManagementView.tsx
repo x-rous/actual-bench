@@ -44,6 +44,7 @@ export function BudgetManagementView() {
   const hasPendingEdits = useBudgetEditsStore((s) => s.hasPendingEdits);
   const edits = useBudgetEditsStore((s) => s.edits);
   const setDisplayMonths = useBudgetEditsStore((s) => s.setDisplayMonths);
+  const setBudgetMode = useBudgetEditsStore((s) => s.setBudgetMode);
   const hasEntityChanges = useStagedStore(selectHasChanges);
   const discardEntityChanges = useStagedStore((s) => s.discardAll);
 
@@ -58,6 +59,12 @@ export function BudgetManagementView() {
   useEffect(() => {
     setDisplayMonths(activeMonths);
   }, [activeMonths, setDisplayMonths]);
+
+  // Keep the active mode in the store so the save pipeline can project
+  // optimistic updates mode-aware (BM-12) without prop-drilling.
+  useEffect(() => {
+    setBudgetMode(budgetMode ?? "unidentified");
+  }, [budgetMode, setBudgetMode]);
 
   // Warm the adjacent ±12 months in the TanStack Query cache so «/» navigation
   // renders from cache without a loading state.
@@ -77,7 +84,12 @@ export function BudgetManagementView() {
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(
     () => new Set()
   );
-  const [showHidden, setShowHidden] = useState(true);
+  const [defaultCollapseApplied, setDefaultCollapseApplied] = useState(false);
+  // BM-21: hidden categories are off by default so the grid mirrors Actual's
+  // active plan. The toggle only affects what is rendered — it never changes
+  // any total (Tracking still excludes hidden from its aggregates; Envelope
+  // still counts hidden as financially active regardless of visibility).
+  const [showHidden, setShowHidden] = useState(false);
   // RD-065: spent-vs-budget bars under editable cells. On by default.
   const [showSpendingBars, setShowSpendingBars] = useState(true);
   const handleToggleSpendingBars = useCallback(() => setShowSpendingBars((v) => !v), []);
@@ -187,6 +199,15 @@ export function BudgetManagementView() {
   const handleCollapseAll = useCallback(() => {
     setCollapsedGroups(new Set(firstMonthData?.groupOrder ?? []));
   }, [firstMonthData]);
+
+  // Category groups start collapsed when the page first opens. Seed the state
+  // during render (React's derived-state pattern) as soon as the group list is
+  // known — applied once, so later expand/collapse choices and month navigation
+  // are never overridden.
+  if (!defaultCollapseApplied && (firstMonthData?.groupOrder.length ?? 0) > 0) {
+    setDefaultCollapseApplied(true);
+    setCollapsedGroups(new Set(firstMonthData!.groupOrder));
+  }
 
   // ── Tier 3 keyboard shortcut handlers ────────────────────────────────────
   const handleCycleCellView = useCallback(() => {

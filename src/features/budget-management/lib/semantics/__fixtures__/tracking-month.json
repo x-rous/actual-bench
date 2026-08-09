@@ -1,0 +1,74 @@
+{
+  "month": "2026-06",
+  "incomeAvailable": null,
+  "lastMonthOverspent": null,
+  "forNextMonth": null,
+  "totalBudgeted": 4500,
+  "toBudget": null,
+  "fromLastMonth": null,
+  "totalIncome": 5200,
+  "totalSpent": -3700,
+  "totalBalance": 1300,
+  "categoryGroups": [
+    {
+      "id": "g-income",
+      "name": "Income",
+      "is_income": true,
+      "hidden": false,
+      "budgeted": 5000,
+      "received": 5200,
+      "balance": -200,
+      "categories": [
+        { "id": "c-salary", "name": "Salary", "is_income": true, "hidden": false, "budgeted": 5000, "received": 5200, "balance": -200, "carryover": false }
+      ]
+    },
+    {
+      "id": "g-housing",
+      "name": "Housing",
+      "is_income": false,
+      "hidden": false,
+      "budgeted": 3000,
+      "spent": -2800,
+      "balance": 200,
+      "categories": [
+        { "id": "c-rent", "name": "Rent", "is_income": false, "hidden": false, "budgeted": 3000, "spent": -2800, "balance": 200, "carryover": false }
+      ]
+    },
+    {
+      "id": "g-sinking",
+      "name": "Sinking Funds",
+      "is_income": false,
+      "hidden": false,
+      "budgeted": 1000,
+      "spent": -1000,
+      "balance": 500,
+      "categories": [
+        { "id": "c-car", "name": "Car Fund", "is_income": false, "hidden": false, "budgeted": 1000, "spent": -1000, "balance": 500, "carryover": true }
+      ]
+    },
+    {
+      "id": "g-misc",
+      "name": "Misc",
+      "is_income": false,
+      "hidden": false,
+      "budgeted": 500,
+      "spent": 100,
+      "balance": 600,
+      "categories": [
+        { "id": "c-reimb", "name": "Reimbursed", "is_income": false, "hidden": false, "budgeted": 500, "spent": 100, "balance": 600, "carryover": false }
+      ]
+    },
+    {
+      "id": "g-old",
+      "name": "Old",
+      "is_income": false,
+      "hidden": true,
+      "budgeted": 400,
+      "spent": -350,
+      "balance": 50,
+      "categories": [
+        { "id": "c-oldthing", "name": "Old Thing", "is_income": false, "hidden": true, "budgeted": 400, "spent": -350, "balance": 50, "carryover": false }
+      ]
+    }
+  ]
+}

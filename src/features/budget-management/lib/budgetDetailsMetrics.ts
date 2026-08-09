@@ -96,11 +96,13 @@ function trackingExpenseMeter(
   actuals: number,
   totalLabel = "Budgeted"
 ): BudgetMeterModel | undefined {
-  if (budgeted <= 0) return undefined;
-  const remaining = budgeted - actuals; // variance
+  const signedBudgeted = signedExpenseBudget(budgeted);
+  const total = Math.abs(signedBudgeted);
+  if (total <= 0) return undefined;
+  const remaining = expenseVarianceFromSigned(signedBudgeted, actuals);
   return {
-    total: budgeted,
-    filled: Math.max(actuals, 0),
+    total,
+    filled: expenseOutflowMagnitude(actuals),
     remaining,
     filledLabel: "Spent",
     totalLabel,
@@ -298,7 +300,8 @@ type TrackingPrimaryMetric = {
 
 type EnvelopeSelectedMonthValues = {
   assignedBudgeted: number;
-  spent: number;
+  /** Null for future months — nothing has been spent/received yet (BM-26). */
+  spent: number | null;
   balance: number;
   transactionDrilldown: BudgetTransactionsDrilldown | null;
   previousBalance: number | null;
@@ -330,8 +333,10 @@ export type TrackingDetailsMetrics = {
   };
   periodBudgetToDate?: {
     incomeBudgeted: number;
+    incomeActuals: number;
     expensesBudgeted: number;
     expenseVariance: number;
+    incomeVariance: number;
     netPlanVariance: number;
   };
   periodFullPlan?: {
@@ -345,6 +350,8 @@ export type TrackingDetailsMetrics = {
     budgeted: number;
     actuals: number;
     variance: number;
+    /** Last closed month's Balance for this entity — a snapshot, never a sum. */
+    endingBalance: number | null;
   };
   selectionFullBudget?: number;
   selectionAverages?: TrackingSelectionAverages;
@@ -396,7 +403,12 @@ export type EnvelopeDetailsMetrics = {
     tone: DetailsTone;
   } | null;
   periodValues?: {
-    assignedBudgeted: number;
+    /** Assigned across elapsed (past + current-partial) months — matches the
+     *  meter and reconciles with spentToDate over the same window. */
+    assignedToDate: number;
+    /** Assigned across the whole visible window, including future months
+     *  budgeted ahead. Null when it equals assignedToDate (no future plan). */
+    assignedFullPeriod: number | null;
     spentToDate: number;
     incomeReceivedToDate: number;
     forNextMonth: number | null;
@@ -416,11 +428,20 @@ export type EnvelopeDetailsMetrics = {
 };
 
 type TrackingMonthValues = {
+  /** Visible income budgeted amount, excluding hidden categories/groups. */
   incomeBudgeted: number;
+  /** Visible income received, excluding hidden categories/groups. */
   incomeActuals: number;
+  /** Visible expense budgeted amount, signed negative. */
   expenseBudgeted: number;
+  /** Visible expense actuals, signed as returned by the API. */
   expenseActuals: number;
+  /** Visible expense variance: signed actuals minus signed budgeted. */
   expenseVariance: number;
+  /** Result-inclusive income actuals from the API summary, including hidden rows. */
+  resultIncomeActuals: number;
+  /** Result-inclusive expense actuals from the API summary, including hidden rows. */
+  resultExpenseActuals: number;
 };
 
 type SelectedMonthValues = {
@@ -432,6 +453,21 @@ type SelectedMonthValues = {
 
 function absAmount(value: number): number {
   return Math.abs(value);
+}
+
+function signedExpenseBudget(value: number): number {
+  return value === 0 ? 0 : -Math.abs(value);
+}
+
+function expenseOutflowMagnitude(actuals: number): number {
+  return Math.max(0, -actuals);
+}
+
+function expenseVarianceFromSigned(
+  signedBudgeted: number,
+  signedActuals: number
+): number {
+  return signedActuals - signedBudgeted;
 }
 
 function toneForSigned(value: number): DetailsTone {
@@ -456,10 +492,11 @@ function selectedEntityId(selection: BudgetDetailsSelection): string | null {
   return null;
 }
 
+// BM-28: user-facing time language, not implementation terms.
 function monthStatusLabel(status: MonthActualStatus): string {
-  if (status === "past") return "Actualized month";
-  if (status === "current-partial") return "Current partial month";
-  return "Plan-only month";
+  if (status === "past") return "Closed month";
+  if (status === "current-partial") return "This month, in progress";
+  return "Upcoming month";
 }
 
 function findMonthEntry(
@@ -560,13 +597,54 @@ function getVisibleTrackingIncomeBudgeted(state: LoadedMonthState): number {
   return total;
 }
 
+function getVisibleTrackingIncomeActuals(state: LoadedMonthState): number {
+  let total = 0;
+  for (const groupId of state.groupOrder) {
+    const group = state.groupsById[groupId];
+    if (!group || group.hidden || !group.isIncome) continue;
+    for (const categoryId of group.categoryIds) {
+      const category = state.categoriesById[categoryId];
+      if (!category || category.hidden || !category.isIncome) continue;
+      total += category.actuals;
+    }
+  }
+  return total;
+}
+
+function getVisibleTrackingExpenseValues(state: LoadedMonthState): {
+  budgeted: number;
+  actuals: number;
+} {
+  let budgeted = 0;
+  let actuals = 0;
+
+  for (const groupId of state.groupOrder) {
+    const group = state.groupsById[groupId];
+    if (!group || group.hidden || group.isIncome) continue;
+    for (const categoryId of group.categoryIds) {
+      const category = state.categoriesById[categoryId];
+      if (!category || category.hidden || category.isIncome) continue;
+      budgeted += signedExpenseBudget(category.budgeted);
+      actuals += category.actuals;
+    }
+  }
+
+  return { budgeted, actuals };
+}
+
 function getTrackingPeriodValues(state: LoadedMonthState): TrackingMonthValues {
+  const visibleExpense = getVisibleTrackingExpenseValues(state);
   return {
     incomeBudgeted: getVisibleTrackingIncomeBudgeted(state),
-    incomeActuals: state.summary.totalIncome,
-    expenseBudgeted: absAmount(state.summary.totalBudgeted),
-    expenseActuals: absAmount(state.summary.totalSpent),
-    expenseVariance: state.summary.totalBalance,
+    incomeActuals: getVisibleTrackingIncomeActuals(state),
+    expenseBudgeted: visibleExpense.budgeted,
+    expenseActuals: visibleExpense.actuals,
+    expenseVariance: expenseVarianceFromSigned(
+      visibleExpense.budgeted,
+      visibleExpense.actuals
+    ),
+    resultIncomeActuals: state.summary.totalIncome,
+    resultExpenseActuals: state.summary.totalSpent,
   };
 }
 
@@ -583,20 +661,39 @@ function getTrackingTargetValues(
   if (!target.groupId) {
     const group = state.groupsById[target.id];
     if (!group) return null;
-    return {
-      budgeted: target.isIncome ? group.budgeted : absAmount(group.budgeted),
-      actuals: target.isIncome ? group.actuals : absAmount(group.actuals),
-      balance: group.balance,
-      carryover: null,
-    };
+
+    for (const catId of target.categoryIds) {
+      const category = state.categoriesById[catId];
+      if (!category || category.hidden) continue;
+      found = true;
+      budgeted += target.isIncome
+        ? category.budgeted
+        : signedExpenseBudget(category.budgeted);
+      actuals += category.actuals;
+      balance += category.balance;
+      hasCarryover ||= category.carryover;
+    }
+
+    return found
+      ? { budgeted, actuals, balance, carryover: hasCarryover ? true : null }
+      : {
+          budgeted: target.isIncome
+            ? group.budgeted
+            : signedExpenseBudget(group.budgeted),
+          actuals: group.actuals,
+          balance: group.balance,
+          carryover: null,
+        };
   }
 
   if (target.categoryIds.length === 1 && target.groupId) {
     const category = state.categoriesById[target.id];
     if (!category) return null;
     return {
-      budgeted: target.isIncome ? category.budgeted : absAmount(category.budgeted),
-      actuals: target.isIncome ? category.actuals : absAmount(category.actuals),
+      budgeted: target.isIncome
+        ? category.budgeted
+        : signedExpenseBudget(category.budgeted),
+      actuals: category.actuals,
       balance: category.balance,
       carryover: category.carryover,
     };
@@ -606,8 +703,10 @@ function getTrackingTargetValues(
     const category = state.categoriesById[catId];
     if (!category || category.hidden) continue;
     found = true;
-    budgeted += target.isIncome ? category.budgeted : absAmount(category.budgeted);
-    actuals += target.isIncome ? category.actuals : absAmount(category.actuals);
+    budgeted += target.isIncome
+      ? category.budgeted
+      : signedExpenseBudget(category.budgeted);
+    actuals += category.actuals;
     balance += category.balance;
     hasCarryover ||= category.carryover;
   }
@@ -658,7 +757,7 @@ function budgetTransactionsDrilldown(
   entry: BudgetDetailsMonth,
   target: TargetInfo,
 ): BudgetTransactionsDrilldown | null {
-  if (target.isIncome || !entry.state) return null;
+  if (!entry.state) return null;
 
   const categoryIds = target.groupId
     ? [target.id]
@@ -670,6 +769,7 @@ function budgetTransactionsDrilldown(
     month: entry.month,
     title: target.title,
     entity: target.groupId ? "category" : "group",
+    side: target.isIncome ? "income" : "expense",
     categoryIds,
   };
 }
@@ -955,15 +1055,15 @@ function buildTrackingMonthMetrics(
     ? getTrackingTargetValues(previousEntry.state, target)
     : null;
   const futureOnly = entry.status === "future";
-  const variance = target.isIncome
-    ? values.actuals - values.budgeted
-    : values.budgeted - values.actuals;
+  const variance = values.actuals - values.budgeted;
   const thisMonth =
     entry.status === "current-partial"
       ? computeThisMonthMetrics({
           month: selectedMonth,
-          budgeted: values.budgeted,
-          actuals: values.actuals,
+          budgeted: target.isIncome ? values.budgeted : Math.abs(values.budgeted),
+          actuals: target.isIncome
+            ? values.actuals
+            : expenseOutflowMagnitude(values.actuals),
           isIncome: target.isIncome,
           now,
         })
@@ -989,7 +1089,7 @@ function buildTrackingMonthMetrics(
       ? {
           label: "Budgeted",
           value: values.budgeted,
-          helper: "Plan-only month.",
+          helper: "Upcoming month — planned, not yet spent.",
           tone: "neutral",
         }
       : target.isIncome
@@ -1236,8 +1336,8 @@ function buildResultTrajectory(
     (state) => {
       const v = getTrackingPeriodValues(state);
       return {
-        plan: v.incomeBudgeted - v.expenseBudgeted,
-        actual: v.incomeActuals - v.expenseActuals,
+        plan: v.incomeBudgeted + v.expenseBudgeted,
+        actual: v.resultIncomeActuals + v.resultExpenseActuals,
       };
     },
     false
@@ -1304,7 +1404,9 @@ function buildSelectionTrajectory(
     model,
     (state) => {
       const v = getTrackingTargetValues(state, target);
-      return v ? { plan: Math.abs(v.budgeted), actual: Math.abs(v.actuals) } : null;
+      return v
+        ? { plan: Math.abs(v.budgeted), actual: expenseOutflowMagnitude(v.actuals) }
+        : null;
     },
     true,
     now
@@ -1385,6 +1487,7 @@ export function buildTrackingDetailsMetrics(
     let actualToDate = 0;
     let fullBudget = 0;
     let closedMonthCount = 0;
+    let closedEndingBalance: number | null = null;
     let currentValues: SelectedMonthValues | null = null;
     let currentMonth: string | null = null;
     const trend: BudgetTrendPoint[] = [];
@@ -1397,6 +1500,7 @@ export function buildTrackingDetailsMetrics(
         if (isClosedMonthStatus(entry.status)) {
           budgetToDate += values.budgeted;
           actualToDate += values.actuals;
+          closedEndingBalance = values.balance; // last closed month wins (snapshot)
           closedMonthCount++;
         } else if (entry.status === "current-partial") {
           currentValues = values;
@@ -1404,12 +1508,7 @@ export function buildTrackingDetailsMetrics(
         }
       }
 
-      const variance =
-        values == null
-          ? null
-          : target.isIncome
-          ? values.actuals - values.budgeted
-          : values.budgeted - values.actuals;
+      const variance = values == null ? null : values.actuals - values.budgeted;
       trend.push({
         month: entry.month,
         label: formatMonthLabel(entry.month),
@@ -1419,17 +1518,19 @@ export function buildTrackingDetailsMetrics(
       });
     }
 
-    const variance = target.isIncome
-      ? actualToDate - budgetToDate
-      : budgetToDate - actualToDate;
+    const variance = actualToDate - budgetToDate;
     const hasClosedMonths = closedMonthCount > 0;
     const futureOnly = model.coverage.isFutureOnly;
     const thisMonth =
       currentValues && currentMonth
         ? computeThisMonthMetrics({
             month: currentMonth,
-            budgeted: currentValues.budgeted,
-            actuals: currentValues.actuals,
+            budgeted: target.isIncome
+              ? currentValues.budgeted
+              : Math.abs(currentValues.budgeted),
+            actuals: target.isIncome
+              ? currentValues.actuals
+              : expenseOutflowMagnitude(currentValues.actuals),
             isIncome: target.isIncome,
             now,
           })
@@ -1448,7 +1549,7 @@ export function buildTrackingDetailsMetrics(
         ? {
             label: "No actualized months in this view",
             value: null,
-            helper: "Future months are shown as plan-only.",
+            helper: "Future months are planned, not yet actual.",
             tone: "neutral",
           }
         : !hasClosedMonths
@@ -1477,6 +1578,7 @@ export function buildTrackingDetailsMetrics(
             budgeted: budgetToDate,
             actuals: actualToDate,
             variance,
+            endingBalance: closedEndingBalance,
           }
         : undefined,
       selectionFullBudget: fullBudget,
@@ -1510,8 +1612,10 @@ export function buildTrackingDetailsMetrics(
     };
   }
 
-  let incomeActuals = 0;
-  let expenseActuals = 0;
+  let resultIncomeActuals = 0;
+  let resultExpenseActuals = 0;
+  let visibleIncomeActualsToDate = 0;
+  let visibleExpenseActualsToDate = 0;
   let incomeBudgetToDate = 0;
   let expenseBudgetToDate = 0;
   let expenseVarianceToDate = 0;
@@ -1530,8 +1634,10 @@ export function buildTrackingDetailsMetrics(
       fullIncomeBudget += values.incomeBudgeted;
       fullExpenseBudget += values.expenseBudgeted;
       if (isClosedMonthStatus(entry.status)) {
-        incomeActuals += values.incomeActuals;
-        expenseActuals += values.expenseActuals;
+        resultIncomeActuals += values.resultIncomeActuals;
+        resultExpenseActuals += values.resultExpenseActuals;
+        visibleIncomeActualsToDate += values.incomeActuals;
+        visibleExpenseActualsToDate += values.expenseActuals;
         incomeBudgetToDate += values.incomeBudgeted;
         expenseBudgetToDate += values.expenseBudgeted;
         expenseVarianceToDate += values.expenseVariance;
@@ -1543,9 +1649,11 @@ export function buildTrackingDetailsMetrics(
     }
 
     const actualResult =
-      values == null ? null : values.incomeActuals - values.expenseActuals;
+      values == null
+        ? null
+        : values.resultIncomeActuals + values.resultExpenseActuals;
     const plannedResult =
-      values == null ? null : values.incomeBudgeted - values.expenseBudgeted;
+      values == null ? null : values.incomeBudgeted + values.expenseBudgeted;
     trend.push({
       month: entry.month,
       label: formatMonthLabel(entry.month),
@@ -1562,18 +1670,19 @@ export function buildTrackingDetailsMetrics(
     });
   }
 
-  const actualResult = incomeActuals - expenseActuals;
-  const plannedToDate = incomeBudgetToDate - expenseBudgetToDate;
+  const actualResult = resultIncomeActuals + resultExpenseActuals;
+  const plannedToDate = incomeBudgetToDate + expenseBudgetToDate;
   const expenseVariance = expenseVarianceToDate;
+  const incomeVariance = visibleIncomeActualsToDate - incomeBudgetToDate;
   const netPlanVariance = actualResult - plannedToDate;
-  const plannedResult = fullIncomeBudget - fullExpenseBudget;
+  const plannedResult = fullIncomeBudget + fullExpenseBudget;
   const hasClosedMonths = closedMonthCount > 0;
   const periodThisMonth =
     currentPeriodValues && currentPeriodMonth
       ? computeThisMonthMetrics({
           month: currentPeriodMonth,
-          budgeted: currentPeriodValues.expenseBudgeted,
-          actuals: currentPeriodValues.expenseActuals,
+          budgeted: Math.abs(currentPeriodValues.expenseBudgeted),
+          actuals: expenseOutflowMagnitude(currentPeriodValues.expenseActuals),
           isIncome: false,
           now,
           income: {
@@ -1597,7 +1706,7 @@ export function buildTrackingDetailsMetrics(
       ? {
           label: "No actualized months in this view",
           value: null,
-          helper: "Future months are shown as plan-only.",
+          helper: "Future months are planned, not yet actual.",
           tone: "neutral",
         }
       : !hasClosedMonths
@@ -1608,23 +1717,26 @@ export function buildTrackingDetailsMetrics(
           tone: "neutral",
         }
       : {
-          label: "Result",
+          // BM-29: name the exact Tracking outcome by sign, not a generic "Result".
+          label: actualResult >= 0 ? "Saved" : "Overspent",
           value: actualResult,
-          helper: actualResult >= 0 ? "saved" : "overspent",
+          helper: "Income received minus expenses across closed months.",
           tone: toneForSigned(actualResult),
         },
     periodActuals: hasClosedMonths
       ? {
-          incomeReceived: incomeActuals,
-          expensesSpent: expenseActuals,
+          incomeReceived: resultIncomeActuals,
+          expensesSpent: resultExpenseActuals,
           result: actualResult,
         }
       : undefined,
     periodBudgetToDate: hasClosedMonths
       ? {
           incomeBudgeted: incomeBudgetToDate,
+          incomeActuals: visibleIncomeActualsToDate,
           expensesBudgeted: expenseBudgetToDate,
           expenseVariance,
+          incomeVariance,
           netPlanVariance,
         }
       : undefined,
@@ -1640,7 +1752,11 @@ export function buildTrackingDetailsMetrics(
     meter:
       model.coverage.isFutureOnly || !hasClosedMonths
         ? undefined
-        : trackingExpenseMeter(expenseBudgetToDate, expenseActuals, "Budgeted"),
+        : trackingExpenseMeter(
+            expenseBudgetToDate,
+            visibleExpenseActualsToDate,
+            "Budgeted"
+          ),
     trendLabel: "Monthly Result",
     trend,
     spendingVsBudgetedTrend: model.coverage.isFutureOnly ? undefined : spendingVsBudgetedTrend,
@@ -1715,18 +1831,38 @@ function buildEnvelopeMonthMetrics(
         : null,
     futureOnly: entry.status === "future",
     isIncome: target.isIncome,
-    primary: {
-      label: entry.status === "future" ? "Planned Balance" : "Current Balance",
-      value: values.balance,
-      helper: envelopeBalanceHelper(values.balance, selectedMonth),
-      tone: toneForSigned(values.balance),
-    },
+    // BM-16: Envelope income is Received-only — it has no budget or balance to
+    // assign, so lead with Received rather than an invented Balance.
+    primary: target.isIncome
+      ? {
+          label: entry.status === "future" ? "Expected income" : "Received income",
+          value: values.actuals,
+          helper:
+            "Envelope budgeting tracks income as received — no budget or balance is assigned to it.",
+          tone: "neutral",
+        }
+      : {
+          // BM-27: Envelope balance carries a time meaning — Ending (closed),
+          // Current (in progress), or Planned (future).
+          label:
+            entry.status === "future"
+              ? "Planned Balance"
+              : entry.status === "past"
+              ? "Ending Balance"
+              : "Current Balance",
+          value: values.balance,
+          helper: envelopeBalanceHelper(values.balance, selectedMonth),
+          tone: toneForSigned(values.balance),
+        },
     endPlan: null,
     monthValues: {
       assignedBudgeted: values.budgeted,
-      spent: values.actuals,
+      // BM-26: a future month has no observed spending/receipts and no
+      // transactions to drill into — don't render zeros/links as if real.
+      spent: entry.status === "future" ? null : values.actuals,
       balance: values.balance,
-      transactionDrilldown: budgetTransactionsDrilldown(entry, target),
+      transactionDrilldown:
+        entry.status === "future" ? null : budgetTransactionsDrilldown(entry, target),
       previousBalance: previousValues?.balance ?? null,
       previousLabel: previousValues ? "Previous month balance" : null,
       carryover: selection.entity === "category" ? values.carryover : null,
@@ -1841,7 +1977,7 @@ export function buildEnvelopeDetailsMetrics(
           : {
               label: "No actualized months in this view",
               value: null,
-              helper: "Future months are shown as plan-only.",
+              helper: "Future months are planned, not yet actual.",
               tone: "neutral",
             },
       endPlan:
@@ -1872,7 +2008,13 @@ export function buildEnvelopeDetailsMetrics(
 
   const latestActual = latestActualEntry(model);
   const lastVisible = lastVisibleEntry(model);
-  let assignedBudgeted = 0;
+  // Assigned is tracked over two windows: elapsed-only (to pair like-for-like
+  // with spent-to-date in the progress meter) and the full visible window
+  // (which includes money budgeted ahead into future months). Mixing the two —
+  // to-date spend against a denominator that counts unstarted months — makes
+  // the meter's % drop just because more future months are in view.
+  let assignedToDate = 0;
+  let assignedFullPeriod = 0;
   let spentToDate = 0;
   let incomeReceivedToDate = 0;
   const trend: BudgetTrendPoint[] = [];
@@ -1880,8 +2022,9 @@ export function buildEnvelopeDetailsMetrics(
   for (const entry of model.months) {
     const state = entry.state;
     if (state) {
-      assignedBudgeted += absAmount(state.summary.totalBudgeted);
+      assignedFullPeriod += absAmount(state.summary.totalBudgeted);
       if (isActualLikeStatus(entry.status)) {
+        assignedToDate += absAmount(state.summary.totalBudgeted);
         spentToDate += absAmount(state.summary.totalSpent);
         incomeReceivedToDate += state.summary.totalIncome;
       }
@@ -1895,14 +2038,16 @@ export function buildEnvelopeDetailsMetrics(
     });
   }
 
+  // BM-18: keep the single combined "To Budget / Overbudget" bridge label with
+  // sign-dependent tone (the approved BENCH presentation, matching the grid
+  // summary row). Do not invent historical time variants like "Ending To
+  // Budget" — To Budget does not carry a historical label (see also BM-27).
   const latestToBudget = latestActual?.state?.summary.toBudget;
   const primaryLabel = latestToBudget === 0
     ? "Fully budgeted"
     : model.coverage.isFutureOnly
     ? "No actualized months in this view"
-    : model.coverage.hasFuture || model.coverage.currentCount > 0
-    ? "Current To Budget / Overbudget"
-    : "Ending To Budget / Overbudget";
+    : "To Budget / Overbudget";
 
   return {
     scope: "period",
@@ -1929,7 +2074,7 @@ export function buildEnvelopeDetailsMetrics(
         : {
             label: primaryLabel,
             value: null,
-            helper: "Future months are shown as plan-only.",
+            helper: "Future months are planned, not yet actual.",
             tone: "neutral",
           },
     endPlan:
@@ -1945,14 +2090,16 @@ export function buildEnvelopeDetailsMetrics(
           }
         : null,
     periodValues: {
-      assignedBudgeted,
+      assignedToDate,
+      assignedFullPeriod:
+        assignedFullPeriod !== assignedToDate ? assignedFullPeriod : null,
       spentToDate,
       incomeReceivedToDate,
       forNextMonth: latestActual?.state?.summary.forNextMonth ?? null,
     },
     meter: model.coverage.isFutureOnly
       ? undefined
-      : envelopeAssignedMeter(assignedBudgeted, spentToDate, "Assigned"),
+      : envelopeAssignedMeter(assignedToDate, spentToDate, "Assigned so far"),
     trendLabel: "To Budget Trend",
     trend,
     stagedImpact: relevantStagedImpact(model, null),

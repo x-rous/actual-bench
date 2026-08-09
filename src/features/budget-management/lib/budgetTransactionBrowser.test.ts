@@ -114,7 +114,7 @@ function model(): BudgetDetailsModel {
 }
 
 describe("budget transaction browser options", () => {
-  it("builds visible month and expense category jump options", () => {
+  it("builds visible month and side-tagged category jump options", () => {
     const options: BudgetTransactionBrowserOptions =
       buildBudgetTransactionBrowserOptions(model());
 
@@ -126,6 +126,7 @@ describe("budget transaction browser options", () => {
       {
         id: "expenses",
         entity: "group",
+        side: "expense",
         title: "Expenses",
         subtitle: "Expense group",
         categoryIds: ["food"],
@@ -133,9 +134,26 @@ describe("budget transaction browser options", () => {
       {
         id: "food",
         entity: "category",
+        side: "expense",
         title: "Food",
         subtitle: "Expenses",
         categoryIds: ["food"],
+      },
+      {
+        id: "income",
+        entity: "group",
+        side: "income",
+        title: "Income",
+        subtitle: "Income group",
+        categoryIds: ["paycheck"],
+      },
+      {
+        id: "paycheck",
+        entity: "category",
+        side: "income",
+        title: "Paycheck",
+        subtitle: "Income",
+        categoryIds: ["paycheck"],
       },
     ]);
   });
@@ -149,6 +167,7 @@ describe("buildMonthCategoriesDrilldown", () => {
       month: "2026-04",
       title: "All expenses",
       entity: "group",
+      side: "expense",
       categoryIds: ["food"],
     });
   });
