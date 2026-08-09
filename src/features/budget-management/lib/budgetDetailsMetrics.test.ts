@@ -866,6 +866,7 @@ describe("buildTrackingDetailsMetrics", () => {
       month: "2026-04",
       title: "Expenses",
       entity: "group",
+      side: "expense",
       categoryIds: ["expense-cat"],
     });
   });

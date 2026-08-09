@@ -750,7 +750,7 @@ function budgetTransactionsDrilldown(
   entry: BudgetDetailsMonth,
   target: TargetInfo,
 ): BudgetTransactionsDrilldown | null {
-  if (target.isIncome || !entry.state) return null;
+  if (!entry.state) return null;
 
   const categoryIds = target.groupId
     ? [target.id]
@@ -762,6 +762,7 @@ function budgetTransactionsDrilldown(
     month: entry.month,
     title: target.title,
     entity: target.groupId ? "category" : "group",
+    side: target.isIncome ? "income" : "expense",
     categoryIds,
   };
 }

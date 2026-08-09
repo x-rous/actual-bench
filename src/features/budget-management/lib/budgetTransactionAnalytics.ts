@@ -1,3 +1,4 @@
+import type { BudgetTransactionSide } from "./budgetTransactionBrowser";
 import type { BudgetTransactionRow } from "./budgetTransactionsQuery";
 
 export type TransactionSpendBucket = {
@@ -46,6 +47,21 @@ function parseTransactionDate(date: string): Date | null {
 }
 
 export function transactionSpendAmount(row: BudgetTransactionRow): number {
+  return row.amount < 0 ? Math.abs(row.amount) : 0;
+}
+
+/**
+ * The magnitude of a transaction in the natural direction of `side`: an
+ * expense outflow counts its negative amount, an income inflow counts its
+ * positive amount, and anything moving the other way (a refund on the expense
+ * side, a chargeback on the income side) contributes zero to the gross figure.
+ * The signed net is tracked separately so those reversals still net out.
+ */
+function transactionFlowAmount(
+  row: BudgetTransactionRow,
+  side: BudgetTransactionSide
+): number {
+  if (side === "income") return row.amount > 0 ? row.amount : 0;
   return row.amount < 0 ? Math.abs(row.amount) : 0;
 }
 
@@ -155,7 +171,8 @@ function buildWeekBuckets(
 }
 
 export function buildBudgetTransactionAnalytics(
-  rows: BudgetTransactionRow[]
+  rows: BudgetTransactionRow[],
+  side: BudgetTransactionSide = "expense"
 ): BudgetTransactionAnalytics {
   const byPayee = new Map<string, { label: string; amount: number; count: number }>();
   const byCategory = new Map<string, { label: string; amount: number; count: number }>();
@@ -177,7 +194,7 @@ export function buildBudgetTransactionAnalytics(
   let largestTransaction: BudgetTransactionRow | null = null;
 
   for (const row of rows) {
-    const amount = transactionSpendAmount(row);
+    const amount = transactionFlowAmount(row, side);
     const payeeName = row.payeeName?.trim() || "";
     const payeeLabel = payeeName || "No payee";
     const categoryLabel = row.categoryName?.trim() || "Uncategorized";
@@ -233,13 +250,16 @@ export function buildBudgetTransactionAnalytics(
     }
   }
 
-  // netSpent matches the budget panel: -(sum of all signed amounts). It is the
-  // signed net outflow and must stay signed — a net refund (inflow > outflow)
-  // is legitimately negative and must not be clamped to zero (refunds would
-  // otherwise vanish from the "Spent" figure and the variance). totalSpent below
-  // counts only spending rows (ignoring refunds) and is used for bar-chart
-  // percentage geometry.
-  const netSpent = rows.reduce((sum, row) => sum - row.amount, 0);
+  // netSpent is the signed net in the side's natural direction: -(sum of signed
+  // amounts) for expenses (a net outflow is positive), +(sum) for income (a net
+  // inflow is positive). It must stay signed — a net refund on the expense side
+  // (inflow > outflow) is legitimately negative and must not be clamped to zero,
+  // or refunds would vanish from the "Spent" figure and the variance. totalSpent
+  // above counts only rows moving the natural way and drives bar-chart geometry.
+  const netSpent = rows.reduce(
+    (sum, row) => (side === "income" ? sum + row.amount : sum - row.amount),
+    0
+  );
 
   const averageTransaction =
     rows.length > 0 ? Math.round(totalSpent / rows.length) : 0;
@@ -256,7 +276,7 @@ export function buildBudgetTransactionAnalytics(
       : 0;
   const outlierTransactions =
     outlierThreshold > 0
-      ? rows.filter((row) => transactionSpendAmount(row) >= outlierThreshold)
+      ? rows.filter((row) => transactionFlowAmount(row, side) >= outlierThreshold)
       : [];
   const repeatedPayees = [...repeatedPayeeMap.entries()]
     .filter(([, value]) => value.count > 1)
