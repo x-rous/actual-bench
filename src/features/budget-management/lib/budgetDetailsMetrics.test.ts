@@ -777,6 +777,89 @@ describe("buildTrackingDetailsMetrics", () => {
     });
   });
 
+  it("meters spent-to-date against assigned-to-date, keeping future plan separate", () => {
+    const model = periodModel([
+      {
+        month: "2026-06",
+        status: "past",
+        state: monthState("2026-06", {
+          incomeBudgeted: 0,
+          incomeActuals: 0,
+          expenseBudgeted: -40_000,
+          expenseActuals: -12_000,
+        }),
+      },
+      {
+        month: "2026-08",
+        status: "current-partial",
+        state: monthState("2026-08", {
+          incomeBudgeted: 0,
+          incomeActuals: 0,
+          expenseBudgeted: -30_000,
+          expenseActuals: -18_000,
+        }),
+      },
+      {
+        // Budgeted ahead into a future month — must NOT inflate the meter.
+        month: "2026-10",
+        status: "future",
+        state: monthState("2026-10", {
+          incomeBudgeted: 0,
+          incomeActuals: 0,
+          expenseBudgeted: -25_000,
+          expenseActuals: 0,
+        }),
+      },
+    ]);
+
+    const metrics = buildEnvelopeDetailsMetrics({ ...model, budgetMode: "envelope" });
+
+    // Meter pairs like-for-like: spent 30,000 of assigned-to-date 70,000.
+    expect(metrics.meter).toMatchObject({
+      total: 70_000,
+      filled: 30_000,
+      remaining: 40_000,
+      totalLabel: "Assigned so far",
+    });
+    expect(metrics.periodValues).toMatchObject({
+      assignedToDate: 70_000,
+      assignedFullPeriod: 95_000, // includes the 25,000 future plan
+      spentToDate: 30_000,
+    });
+  });
+
+  it("omits the full-period plan line when nothing is budgeted ahead", () => {
+    const model = periodModel([
+      {
+        month: "2026-06",
+        status: "past",
+        state: monthState("2026-06", {
+          incomeBudgeted: 0,
+          incomeActuals: 0,
+          expenseBudgeted: -40_000,
+          expenseActuals: -12_000,
+        }),
+      },
+      {
+        month: "2026-08",
+        status: "current-partial",
+        state: monthState("2026-08", {
+          incomeBudgeted: 0,
+          incomeActuals: 0,
+          expenseBudgeted: -30_000,
+          expenseActuals: -18_000,
+        }),
+      },
+    ]);
+
+    const metrics = buildEnvelopeDetailsMetrics({ ...model, budgetMode: "envelope" });
+
+    expect(metrics.periodValues).toMatchObject({
+      assignedToDate: 70_000,
+      assignedFullPeriod: null, // equals assigned-to-date → suppressed
+    });
+  });
+
   it("uses visible child values for selected Tracking groups", () => {
     const state = monthState("2026-04", {
       incomeBudgeted: 500_000,

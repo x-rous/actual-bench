@@ -118,7 +118,10 @@ export function EnvelopeDetailsPanel({
       </PrimaryMetric>
 
       {isFullPeriod && metrics.meter && (
-        <MeterSection model={metrics.meter} helper="Spending against the assigned budget this period." />
+        <MeterSection
+          model={metrics.meter}
+          helper="Spent so far against the budget assigned for the months elapsed to date."
+        />
       )}
 
       {isFullPeriod && periodView && (
@@ -157,9 +160,17 @@ export function EnvelopeDetailsPanel({
       {isFullPeriod && metrics.periodValues && (
         <DetailsSection title="Period values">
           <MetricLine
-            label="Assigned / Budgeted"
-            value={formatSigned(metrics.periodValues.assignedBudgeted)}
+            label="Assigned to date"
+            value={formatSigned(metrics.periodValues.assignedToDate)}
+            tooltip="Budget assigned across the months that have started (past + current). Paired with Spent to date."
           />
+          {metrics.periodValues.assignedFullPeriod != null && (
+            <MetricLine
+              label="Planned across window"
+              value={formatSigned(metrics.periodValues.assignedFullPeriod)}
+              tooltip="Total assigned across every visible month, including future months budgeted ahead — a plan total, not yet spendable."
+            />
+          )}
           <MetricLine
             label="Spent to date"
             value={formatSigned(metrics.periodValues.spentToDate)}

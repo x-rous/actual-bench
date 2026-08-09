@@ -402,7 +402,12 @@ export type EnvelopeDetailsMetrics = {
     tone: DetailsTone;
   } | null;
   periodValues?: {
-    assignedBudgeted: number;
+    /** Assigned across elapsed (past + current-partial) months — matches the
+     *  meter and reconciles with spentToDate over the same window. */
+    assignedToDate: number;
+    /** Assigned across the whole visible window, including future months
+     *  budgeted ahead. Null when it equals assignedToDate (no future plan). */
+    assignedFullPeriod: number | null;
     spentToDate: number;
     incomeReceivedToDate: number;
     forNextMonth: number | null;
@@ -1980,7 +1985,13 @@ export function buildEnvelopeDetailsMetrics(
 
   const latestActual = latestActualEntry(model);
   const lastVisible = lastVisibleEntry(model);
-  let assignedBudgeted = 0;
+  // Assigned is tracked over two windows: elapsed-only (to pair like-for-like
+  // with spent-to-date in the progress meter) and the full visible window
+  // (which includes money budgeted ahead into future months). Mixing the two —
+  // to-date spend against a denominator that counts unstarted months — makes
+  // the meter's % drop just because more future months are in view.
+  let assignedToDate = 0;
+  let assignedFullPeriod = 0;
   let spentToDate = 0;
   let incomeReceivedToDate = 0;
   const trend: BudgetTrendPoint[] = [];
@@ -1988,8 +1999,9 @@ export function buildEnvelopeDetailsMetrics(
   for (const entry of model.months) {
     const state = entry.state;
     if (state) {
-      assignedBudgeted += absAmount(state.summary.totalBudgeted);
+      assignedFullPeriod += absAmount(state.summary.totalBudgeted);
       if (isActualLikeStatus(entry.status)) {
+        assignedToDate += absAmount(state.summary.totalBudgeted);
         spentToDate += absAmount(state.summary.totalSpent);
         incomeReceivedToDate += state.summary.totalIncome;
       }
@@ -2053,14 +2065,16 @@ export function buildEnvelopeDetailsMetrics(
           }
         : null,
     periodValues: {
-      assignedBudgeted,
+      assignedToDate,
+      assignedFullPeriod:
+        assignedFullPeriod !== assignedToDate ? assignedFullPeriod : null,
       spentToDate,
       incomeReceivedToDate,
       forNextMonth: latestActual?.state?.summary.forNextMonth ?? null,
     },
     meter: model.coverage.isFutureOnly
       ? undefined
-      : envelopeAssignedMeter(assignedBudgeted, spentToDate, "Assigned"),
+      : envelopeAssignedMeter(assignedToDate, spentToDate, "Assigned so far"),
     trendLabel: "To Budget Trend",
     trend,
     stagedImpact: relevantStagedImpact(model, null),
