@@ -434,6 +434,16 @@ export function TrackingDetailsPanel({
               kind="budget"
             />
           )}
+          {metrics.selectionToDate.endingBalance != null && (
+            <div className="border-t border-border/50 pt-1.5">
+              <MetricLine
+                label="Ending balance"
+                value={formatSigned(metrics.selectionToDate.endingBalance)}
+                tone={toneFromValue(metrics.selectionToDate.endingBalance)}
+                tooltip="This entity's balance at the last closed month — a snapshot, not a sum of monthly balances."
+              />
+            </div>
+          )}
 
           {metrics.selectionAverages && (
             <>

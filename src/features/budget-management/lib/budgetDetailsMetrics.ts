@@ -349,6 +349,8 @@ export type TrackingDetailsMetrics = {
     budgeted: number;
     actuals: number;
     variance: number;
+    /** Last closed month's Balance for this entity — a snapshot, never a sum. */
+    endingBalance: number | null;
   };
   selectionFullBudget?: number;
   selectionAverages?: TrackingSelectionAverages;
@@ -1477,6 +1479,7 @@ export function buildTrackingDetailsMetrics(
     let actualToDate = 0;
     let fullBudget = 0;
     let closedMonthCount = 0;
+    let closedEndingBalance: number | null = null;
     let currentValues: SelectedMonthValues | null = null;
     let currentMonth: string | null = null;
     const trend: BudgetTrendPoint[] = [];
@@ -1489,6 +1492,7 @@ export function buildTrackingDetailsMetrics(
         if (isClosedMonthStatus(entry.status)) {
           budgetToDate += values.budgeted;
           actualToDate += values.actuals;
+          closedEndingBalance = values.balance; // last closed month wins (snapshot)
           closedMonthCount++;
         } else if (entry.status === "current-partial") {
           currentValues = values;
@@ -1566,6 +1570,7 @@ export function buildTrackingDetailsMetrics(
             budgeted: budgetToDate,
             actuals: actualToDate,
             variance,
+            endingBalance: closedEndingBalance,
           }
         : undefined,
       selectionFullBudget: fullBudget,
