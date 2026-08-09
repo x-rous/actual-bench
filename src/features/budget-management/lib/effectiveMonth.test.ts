@@ -500,6 +500,135 @@ describe("computeEffectiveMonthState", () => {
   });
 });
 
+// ─── BM-13: Envelope cross-month staged projection golden scenarios ─────────────
+//
+// These lock the *current* delta-cascade behavior end-to-end (not per-layer) so
+// any future change to the projection formulas is a deliberate, reviewed diff
+// against a documented baseline. Each scenario projects a single future month
+// from an unedited server snapshot plus prior-month staged edits, following:
+//
+//   balance(M, C) = server balance(M, C) + Σ prior-month staged deltas for C
+//   incomeAvailable(M), toBudget(M) −= Σ prior-month staged deltas (all cats)
+//   hold: forNextMonth ← nextAmount; toBudget −= (nextAmount − server forNextMonth)
+//
+// Envelope mode chains every spending category forward regardless of carryover.
+
+describe("BM-13: Envelope cross-month staged projection golden scenarios", () => {
+  // A February snapshot for one spending category, parameterised by its
+  // starting (server) balance so scenarios can start over- or under-funded.
+  function februaryFor(balance: number, extra?: Partial<LoadedMonthState["summary"]>) {
+    return state({
+      month: "2026-02",
+      groups: [group({ id: "g1", categoryIds: ["c1"], budgeted: 300, balance })],
+      cats: [cat({ id: "c1", budgeted: 300, balance })],
+      summary: { totalBudgeted: -300, totalBalance: balance, incomeAvailable: 500, toBudget: 500, ...extra },
+    });
+  }
+
+  it("prior overspending deepens when an earlier month's budget is cut", () => {
+    const r = computeEffectiveMonthState({
+      serverState: februaryFor(-50), // already overspent by 50
+      allEdits: editsMap([edit("2026-01", "c1", 200, 300)]), // Jan cut −100
+      isTracking: false,
+      incomeBudgets: undefined,
+      month: "2026-02",
+    });
+    // Balance cascade: −50 + (−100) = −150 (overspend grows)
+    expect(r?.categoriesById.c1!.balance).toBe(-150);
+    expect(r?.groupsById.g1!.balance).toBe(-150);
+    expect(r?.summary.totalBalance).toBe(-150);
+    // Scalar cascade: a −100 prior delta lifts incomeAvailable/toBudget by 100
+    expect(r?.summary.incomeAvailable).toBe(600);
+    expect(r?.summary.toBudget).toBe(600);
+  });
+
+  it("positive leftover rolls forward when an earlier month is topped up", () => {
+    const r = computeEffectiveMonthState({
+      serverState: februaryFor(40),
+      allEdits: editsMap([edit("2026-01", "c1", 350, 200)]), // Jan +150
+      isTracking: false,
+      incomeBudgets: undefined,
+      month: "2026-02",
+    });
+    expect(r?.categoriesById.c1!.balance).toBe(190); // 40 + 150
+    expect(r?.summary.totalBalance).toBe(190);
+    expect(r?.summary.toBudget).toBe(350); // 500 − 150
+  });
+
+  it("balance crosses zero upward without any sign special-casing", () => {
+    const r = computeEffectiveMonthState({
+      serverState: februaryFor(-30),
+      allEdits: editsMap([edit("2026-01", "c1", 400, 300)]), // +100
+      isTracking: false,
+      incomeBudgets: undefined,
+      month: "2026-02",
+    });
+    expect(r?.categoriesById.c1!.balance).toBe(70); // −30 + 100 crosses 0
+  });
+
+  it("balance crosses zero downward without any sign special-casing", () => {
+    const r = computeEffectiveMonthState({
+      serverState: februaryFor(30),
+      allEdits: editsMap([edit("2026-01", "c1", 200, 300)]), // −100
+      isTracking: false,
+      incomeBudgets: undefined,
+      month: "2026-02",
+    });
+    expect(r?.categoriesById.c1!.balance).toBe(-70); // 30 − 100 crosses 0
+  });
+
+  it("a fresh staged hold moves forNextMonth and reduces toBudget by the hold", () => {
+    const r = computeEffectiveMonthState({
+      serverState: februaryFor(40, { forNextMonth: 0, toBudget: 500 }),
+      allEdits: {},
+      isTracking: false,
+      incomeBudgets: undefined,
+      month: "2026-02",
+      stagedHolds: { "2026-02": { month: "2026-02", previousAmount: 0, nextAmount: 120 } },
+    });
+    expect(r?.summary.forNextMonth).toBe(120);
+    expect(r?.summary.toBudget).toBe(380); // 500 − 120
+  });
+
+  it("re-holding on top of an existing server hold only applies the delta", () => {
+    const r = computeEffectiveMonthState({
+      serverState: februaryFor(40, { forNextMonth: 100, toBudget: 500 }),
+      allEdits: {},
+      isTracking: false,
+      incomeBudgets: undefined,
+      month: "2026-02",
+      stagedHolds: { "2026-02": { month: "2026-02", previousAmount: 100, nextAmount: 120 } },
+    });
+    expect(r?.summary.forNextMonth).toBe(120);
+    expect(r?.summary.toBudget).toBe(480); // 500 − (120 − 100)
+  });
+
+  it("cumulative cascade: a March projection sums every prior month's delta", () => {
+    const march = state({
+      month: "2026-03",
+      groups: [group({ id: "g1", categoryIds: ["c1"], budgeted: 300, balance: 20 })],
+      cats: [cat({ id: "c1", budgeted: 300, balance: 20 })],
+      summary: { totalBudgeted: -300, totalBalance: 20, incomeAvailable: 500, toBudget: 500 },
+    });
+    const r = computeEffectiveMonthState({
+      serverState: march,
+      allEdits: editsMap([
+        edit("2026-01", "c1", 400, 300), // +100
+        edit("2026-02", "c1", 350, 300), // +50
+      ]),
+      isTracking: false,
+      incomeBudgets: undefined,
+      month: "2026-03",
+    });
+    // Both prior months chain forward: 20 + 100 + 50 = 170
+    expect(r?.categoriesById.c1!.balance).toBe(170);
+    expect(r?.summary.totalBalance).toBe(170);
+    // Scalar cascade subtracts the combined +150 prior delta
+    expect(r?.summary.toBudget).toBe(350);
+    expect(r?.summary.incomeAvailable).toBe(350);
+  });
+});
+
 // ─── mergeMonthStates ──────────────────────────────────────────────────────────
 
 describe("mergeMonthStates", () => {
