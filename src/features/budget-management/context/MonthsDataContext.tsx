@@ -10,6 +10,7 @@ import {
 } from "../lib/monthDataQuery";
 import { useBudgetMode } from "../hooks/useBudgetMode";
 import { useIncomeBudgets } from "../hooks/useIncomeBudgets";
+import { incomeCategoryIdsNeedingBudgetFallback } from "../lib/monthAuthority";
 import {
   computeEffectiveMonthState,
   mergeMonthStates,
@@ -93,16 +94,11 @@ export function MonthsDataProvider({
     (q, i) => loadableMonthSet.has(months[i]!) && q.isLoading
   );
 
-  // Income category IDs — read from any loaded month (consistent across months).
+  // BM-09: only income categories whose monthly `budgeted` was absent need the
+  // reflect_budgets fallback. On 26.8+ this is empty, so useIncomeBudgets stays
+  // disabled and the canonical monthly value is used without a second fetch.
   const incomeCategoryIds = useMemo(() => {
-    for (const d of dataArr) {
-      if (d) {
-        return Object.values(d.categoriesById)
-          .filter((c) => c.isIncome)
-          .map((c) => c.id);
-      }
-    }
-    return [];
+    return incomeCategoryIdsNeedingBudgetFallback(dataArr);
     // dataArr is a fresh array each render but its element identities are stable
     // when underlying TanStack Query data is unchanged. Spread is intentional.
     // eslint-disable-next-line react-hooks/exhaustive-deps

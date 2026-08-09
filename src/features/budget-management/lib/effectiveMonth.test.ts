@@ -310,6 +310,44 @@ describe("computeEffectiveMonthState", () => {
       });
       expect(r?.categoriesById.i1!.budgeted).toBe(0);
     });
+
+    it("BM-09: does not overwrite a present canonical income budget (empty fallback set)", () => {
+      const s = state({
+        month: "2026-01",
+        groups: [group({ id: "gi", isIncome: true, categoryIds: ["i1"], budgeted: 700 })],
+        cats: [cat({ id: "i1", isIncome: true, groupId: "gi", budgeted: 700 })],
+      });
+      // Payload carried the income budget → nothing needs the fallback overlay.
+      s.incomeBudgetFallbackIds = [];
+      const incomeBudgets = new Map([["2026-01", new Map([["i1", 999]])]]);
+      const r = computeEffectiveMonthState({
+        serverState: s,
+        allEdits: {},
+        isTracking: true,
+        incomeBudgets,
+        month: "2026-01",
+      });
+      // The stale reflect_budgets value (999) must NOT overwrite the canonical 700.
+      expect(r?.categoriesById.i1!.budgeted).toBe(700);
+    });
+
+    it("BM-09: still overlays income categories flagged as needing the fallback", () => {
+      const s = state({
+        month: "2026-01",
+        groups: [group({ id: "gi", isIncome: true, categoryIds: ["i1"], budgeted: 0 })],
+        cats: [cat({ id: "i1", isIncome: true, groupId: "gi", budgeted: 0 })],
+      });
+      s.incomeBudgetFallbackIds = ["i1"];
+      const incomeBudgets = new Map([["2026-01", new Map([["i1", 50000]])]]);
+      const r = computeEffectiveMonthState({
+        serverState: s,
+        allEdits: {},
+        isTracking: true,
+        incomeBudgets,
+        month: "2026-01",
+      });
+      expect(r?.categoriesById.i1!.budgeted).toBe(50000);
+    });
   });
 
   describe("Layer 3 — per-category balance cascade", () => {

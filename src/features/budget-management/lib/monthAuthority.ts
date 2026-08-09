@@ -59,3 +59,28 @@ export function trackingIncomeBalance(state: LoadedMonthState): number {
   }
   return total;
 }
+
+/**
+ * Income categories that still need the `reflect_budgets` compatibility fallback
+ * across the loaded months (BM-09). When the month payload carries income budgets
+ * (`incomeBudgetFallbackIds` present and empty, Actual 26.8+) this is empty, so
+ * the fallback query is never issued and the canonical monthly value stands. A
+ * state with `undefined` fallback ids is of unknown provenance (legacy/tests),
+ * so every income category is included to preserve the old overlay-all behaviour.
+ */
+export function incomeCategoryIdsNeedingBudgetFallback(
+  states: (LoadedMonthState | undefined)[]
+): string[] {
+  const ids = new Set<string>();
+  for (const state of states) {
+    if (!state) continue;
+    if (state.incomeBudgetFallbackIds == null) {
+      for (const category of Object.values(state.categoriesById)) {
+        if (category.isIncome) ids.add(category.id);
+      }
+    } else {
+      for (const id of state.incomeBudgetFallbackIds) ids.add(id);
+    }
+  }
+  return [...ids];
+}

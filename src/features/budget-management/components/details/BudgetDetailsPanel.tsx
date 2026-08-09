@@ -13,6 +13,7 @@ import {
   isMissingBudgetMonthError,
 } from "../../lib/monthDataQuery";
 import { computeEffectiveMonthState } from "../../lib/effectiveMonth";
+import { incomeCategoryIdsNeedingBudgetFallback } from "../../lib/monthAuthority";
 import { buildBudgetDetailsModel } from "../../lib/budgetDetailsModel";
 import {
   buildEnvelopeDetailsMetrics,
@@ -36,18 +37,6 @@ function EmptyDetailsState({ message }: { message: string }) {
 }
 
 const EMPTY_INCOME_CATEGORY_IDS: string[] = [];
-
-function firstLoadedIncomeCategoryIds(
-  states: Array<LoadedMonthState | undefined>
-): string[] {
-  for (const state of states) {
-    if (!state) continue;
-    return Object.values(state.categoriesById)
-      .filter((category) => category.isIncome)
-      .map((category) => category.id);
-  }
-  return EMPTY_INCOME_CATEGORY_IDS;
-}
 
 /**
  * Mode-aware Budget Management side-panel content.
@@ -113,8 +102,10 @@ export function BudgetDetailsPanel() {
     [displayMonths, queries]
   );
 
+  // BM-09: only fetch reflect_budgets for income categories the month payload
+  // didn't already carry (empty on 26.8+ → no fallback fetch).
   const incomeCategoryIds = isTracking
-    ? firstLoadedIncomeCategoryIds(dataArr)
+    ? incomeCategoryIdsNeedingBudgetFallback(dataArr)
     : EMPTY_INCOME_CATEGORY_IDS;
 
   const {

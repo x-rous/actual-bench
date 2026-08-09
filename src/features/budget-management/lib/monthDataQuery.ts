@@ -70,30 +70,77 @@ function toSignedExpenseAllocation(totalBudgeted: number): number {
   return totalBudgeted;
 }
 
+// BM-08: both transports cast the month payload to a broad type without runtime
+// validation, so a missing or malformed numeric summary field silently becomes
+// NaN/undefined deep in the UI. Validate the boundary: coerce non-finite summary
+// numbers to 0 (so nothing downstream produces NaN) AND surface the drift
+// (dev-only, once) instead of masking it.
+let hasReportedInvalidMonthField = false;
+
+const SUMMARY_NUMERIC_FIELDS = [
+  "incomeAvailable",
+  "lastMonthOverspent",
+  "forNextMonth",
+  "totalBudgeted",
+  "toBudget",
+  "fromLastMonth",
+  "totalIncome",
+  "totalSpent",
+  "totalBalance",
+] as const;
+
+function finiteOr0(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+function reportInvalidMonthFields(d: TransportBudgetMonth): void {
+  if (process.env.NODE_ENV === "production" || hasReportedInvalidMonthField) {
+    return;
+  }
+  const bad = SUMMARY_NUMERIC_FIELDS.filter(
+    (field) => !Number.isFinite(d[field] as number)
+  );
+  if (bad.length > 0) {
+    hasReportedInvalidMonthField = true;
+    console.warn(
+      `[budget] Month ${d.month ?? "?"} payload has non-numeric summary fields: ` +
+        `${bad.join(", ")}. Treating them as 0 — the transport contract may have drifted.`
+    );
+  }
+}
+
 export function normalizeBudgetMonthData(
   d: TransportBudgetMonth
 ): LoadedMonthState {
+  reportInvalidMonthFields(d);
+
   const summary: BudgetMonthSummary = {
     month: d.month,
-    incomeAvailable: d.incomeAvailable,
-    lastMonthOverspent: d.lastMonthOverspent,
-    forNextMonth: d.forNextMonth,
-    totalBudgeted: toSignedExpenseAllocation(d.totalBudgeted),
-    toBudget: d.toBudget,
-    fromLastMonth: d.fromLastMonth,
-    totalIncome: d.totalIncome,
-    totalSpent: d.totalSpent,
-    totalBalance: d.totalBalance,
+    incomeAvailable: finiteOr0(d.incomeAvailable),
+    lastMonthOverspent: finiteOr0(d.lastMonthOverspent),
+    forNextMonth: finiteOr0(d.forNextMonth),
+    totalBudgeted: toSignedExpenseAllocation(finiteOr0(d.totalBudgeted)),
+    toBudget: finiteOr0(d.toBudget),
+    fromLastMonth: finiteOr0(d.fromLastMonth),
+    totalIncome: finiteOr0(d.totalIncome),
+    totalSpent: finiteOr0(d.totalSpent),
+    totalBalance: finiteOr0(d.totalBalance),
   };
 
   const groupsById: Record<string, LoadedGroup> = {};
   const categoriesById: Record<string, LoadedCategory> = {};
   const groupOrder: string[] = [];
+  // BM-09: income categories whose monthly `budgeted` is absent — these (and
+  // only these) need the reflect_budgets compatibility overlay. On 26.8+ the
+  // month payload carries income budgets, so this stays empty and the canonical
+  // monthly value is never overwritten by the fallback query.
+  const incomeBudgetFallbackIds: string[] = [];
 
   for (const g of d.categoryGroups) {
     const categoryIds: string[] = [];
 
     for (const c of g.categories) {
+      if (g.is_income && c.budgeted == null) incomeBudgetFallbackIds.push(c.id);
       const cat: LoadedCategory = g.is_income
         ? {
             id: c.id,
@@ -148,7 +195,13 @@ export function normalizeBudgetMonthData(
     groupOrder.push(g.id);
   }
 
-  return { summary, groupsById, categoriesById, groupOrder } satisfies LoadedMonthState;
+  return {
+    summary,
+    groupsById,
+    categoriesById,
+    groupOrder,
+    incomeBudgetFallbackIds,
+  } satisfies LoadedMonthState;
 }
 
 export function budgetMonthDataQueryOptions(

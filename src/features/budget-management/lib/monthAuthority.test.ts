@@ -1,4 +1,5 @@
 import {
+  incomeCategoryIdsNeedingBudgetFallback,
   trackingIncomeBalance,
   trackingIncomeBudgeted,
   trackingVisibleIncomeCategories,
@@ -98,5 +99,35 @@ describe("monthAuthority canonical selectors (BM-14)", () => {
     s.categoriesById["bonus-hidden"]!.hidden = false;
     // Now bonus counts too: 500,000 + 300,000.
     expect(trackingIncomeBudgeted(s)).toBe(800_000);
+  });
+});
+
+describe("incomeCategoryIdsNeedingBudgetFallback (BM-09)", () => {
+  it("returns nothing when the payload carries income budgets (fallback ids empty)", () => {
+    const s = state();
+    s.incomeBudgetFallbackIds = [];
+    expect(incomeCategoryIdsNeedingBudgetFallback([s])).toEqual([]);
+  });
+
+  it("returns only the flagged categories across months, de-duplicated", () => {
+    const a = state();
+    a.incomeBudgetFallbackIds = ["salary"];
+    const b = state();
+    b.incomeBudgetFallbackIds = ["salary", "side"];
+    expect(incomeCategoryIdsNeedingBudgetFallback([a, b]).sort()).toEqual([
+      "salary",
+      "side",
+    ]);
+  });
+
+  it("falls back to all income categories when provenance is unknown (undefined)", () => {
+    const s = state();
+    delete s.incomeBudgetFallbackIds;
+    // salary + bonus-hidden + side are all income; rent is expense.
+    expect(incomeCategoryIdsNeedingBudgetFallback([s]).sort()).toEqual([
+      "bonus-hidden",
+      "salary",
+      "side",
+    ]);
   });
 });

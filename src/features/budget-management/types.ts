@@ -78,6 +78,16 @@ export type LoadedMonthState = {
   groupsById: Record<string, LoadedGroup>;
   categoriesById: Record<string, LoadedCategory>;
   groupOrder: string[];
+  /**
+   * Income category ids whose monthly `budgeted` was absent in the transport
+   * payload and therefore need the `reflect_budgets` compatibility fallback
+   * (BM-08/BM-09). Empty on servers that carry income budgets in the month
+   * payload (Actual 26.8+), so the fallback query is skipped and never
+   * overwrites the canonical monthly value. `undefined` means "unknown" — the
+   * effective-state overlay then falls back to all income categories (legacy
+   * behaviour), so states built without this field keep working.
+   */
+  incomeBudgetFallbackIds?: string[];
 };
 
 // ─── Staged edits ─────────────────────────────────────────────────────────────
