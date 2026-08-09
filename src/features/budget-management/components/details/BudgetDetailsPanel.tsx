@@ -68,6 +68,7 @@ export function BudgetDetailsPanel() {
   const isTracking = budgetMode === "tracking";
 
   const edits = useBudgetEditsStore((s) => s.edits);
+  const holds = useBudgetEditsStore((s) => s.holds);
   const {
     categoryId: selectedCategoryId,
     groupId: selectedGroupId,
@@ -139,6 +140,9 @@ export function BudgetDetailsPanel() {
         isTracking,
         incomeBudgets,
         month,
+        // Match the grid (MonthsDataProvider): the Details panel must reflect
+        // the same staged holds so its effective state never diverges.
+        stagedHolds: holds,
       });
       if (effective) result.set(month, effective);
     }
@@ -147,6 +151,7 @@ export function BudgetDetailsPanel() {
     dataArr,
     displayMonths,
     edits,
+    holds,
     hasIncomeBudgetsError,
     hasMonthQueryError,
     incomeBudgets,
