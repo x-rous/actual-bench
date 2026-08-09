@@ -1842,7 +1842,14 @@ function buildEnvelopeMonthMetrics(
           tone: "neutral",
         }
       : {
-          label: entry.status === "future" ? "Planned Balance" : "Current Balance",
+          // BM-27: Envelope balance carries a time meaning — Ending (closed),
+          // Current (in progress), or Planned (future).
+          label:
+            entry.status === "future"
+              ? "Planned Balance"
+              : entry.status === "past"
+              ? "Ending Balance"
+              : "Current Balance",
           value: values.balance,
           helper: envelopeBalanceHelper(values.balance, selectedMonth),
           tone: toneForSigned(values.balance),
