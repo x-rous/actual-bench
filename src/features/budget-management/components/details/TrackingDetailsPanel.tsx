@@ -53,7 +53,7 @@ function describeVariance(
   }
   // Positive is the good direction (under budget / above plan / above budgeted
   // income). Short form drops the trailing noun when the row label already
-  // carries it ("Budget variance" → "… over"), so the line doesn't overflow.
+  // carries it ("Expense variance" → "… over"), so the line doesn't overflow.
   const up =
     kind === "plan"
       ? short
@@ -125,7 +125,7 @@ const PERIOD_TOOLTIP = {
   expensesBudgetedToDate:
     "Visible signed expense budgets across closed months; hidden categories and groups are excluded.",
   expenseVariance:
-    "Budget variance — visible expenses only: signed expense actuals minus signed expense budgets, over closed months. Positive means spending came in under budget.",
+    "Expense variance — visible expenses only: signed expense actuals minus signed expense budgets, over closed months. Positive means spending came in under budget.",
   incomeVariance:
     "Income variance — visible income received minus visible income budgeted, over closed months. Positive means income came in above budget.",
   netPlanVariance:
@@ -352,11 +352,14 @@ export function TrackingDetailsPanel({
           />
           <MetricLine
             label="Expenses budgeted"
-            value={formatSigned(closed.budgetedExpenseAllocation)}
+            // Signed to match "Expenses spent" above, the Full-plan section, and
+            // the grid — expense figures are negative throughout (the semantic
+            // allocation is a positive magnitude, so negate it for display only).
+            value={formatSigned(-closed.budgetedExpenseAllocation)}
             tooltip={PERIOD_TOOLTIP.expensesBudgetedToDate}
           />
           <VarianceLine
-            label="Budget variance"
+            label="Expense variance"
             value={closed.expenseVariance}
             kind="budget"
             short

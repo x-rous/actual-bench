@@ -413,7 +413,10 @@ function TrackingMonthBody({
       <DetailsSection title="Expenses">
         <MetricLine
           label={isFuture ? "Planned expenses" : "Budgeted expenses"}
-          value={formatSigned(view.expenses.budgeted)}
+          // Signed negative to match Spent below and every other view — expenses
+          // read negative across the panel (the allocation is a positive
+          // magnitude, negated for display only).
+          value={formatSigned(-view.expenses.budgeted)}
         />
         {view.expenses.actual != null && (
           <MetricLine
@@ -425,7 +428,7 @@ function TrackingMonthBody({
         )}
         {view.expenses.variance != null && (
           <MetricLine
-            label={`Budget variance${toDate}`}
+            label={`Expense variance${toDate}`}
             value={monthVarianceText(view.expenses.variance, "expense", provisional)}
             tone={varianceTone(view.expenses.variance)}
             onValueClick={() => setDriversSide("expense")}
