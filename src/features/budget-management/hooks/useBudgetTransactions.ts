@@ -5,7 +5,9 @@ import { useQuery } from "@tanstack/react-query";
 import { selectActiveInstance, useConnectionStore } from "@/store/connection";
 import {
   fetchBudgetTransactions,
+  fetchBudgetTransactionsSummary,
   type BudgetTransactionRow,
+  type BudgetTransactionsSummary,
 } from "../lib/budgetTransactionsQuery";
 
 type UseBudgetTransactionsInput = {
@@ -14,12 +16,19 @@ type UseBudgetTransactionsInput = {
   enabled: boolean;
 };
 
+export type BudgetTransactionsResult = {
+  /** The fetched page of rows (capped at the row limit). */
+  rows: BudgetTransactionRow[];
+  /** True aggregate over the whole matching set, or null if unavailable. */
+  summary: BudgetTransactionsSummary | null;
+};
+
 export function useBudgetTransactions({
   month,
   categoryIds,
   enabled,
 }: UseBudgetTransactionsInput): {
-  data: BudgetTransactionRow[] | undefined;
+  data: BudgetTransactionsResult | undefined;
   isLoading: boolean;
   isFetching: boolean;
   error: unknown;
@@ -37,12 +46,17 @@ export function useBudgetTransactions({
       month,
       sortedCategoryIds.join(","),
     ],
-    queryFn: async () => {
+    queryFn: async (): Promise<BudgetTransactionsResult> => {
       if (!connection) throw new Error("No active connection");
-      return fetchBudgetTransactions(connection, {
-        month,
-        categoryIds: sortedCategoryIds,
-      });
+      const params = { month, categoryIds: sortedCategoryIds };
+      // The row page must succeed; the aggregate is best-effort so a transport
+      // that can't run aggregate selects degrades to a truncation notice rather
+      // than failing the whole drill-down (BM-05).
+      const [rows, summary] = await Promise.all([
+        fetchBudgetTransactions(connection, params),
+        fetchBudgetTransactionsSummary(connection, params).catch(() => null),
+      ]);
+      return { rows, summary };
     },
     enabled:
       enabled &&

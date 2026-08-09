@@ -40,7 +40,10 @@ import type {
   BudgetTransactionsDrilldown,
   BudgetTransactionSide,
 } from "../../lib/budgetTransactionBrowser";
-import type { BudgetTransactionRow } from "../../lib/budgetTransactionsQuery";
+import {
+  BUDGET_TRANSACTIONS_ROW_LIMIT,
+  type BudgetTransactionRow,
+} from "../../lib/budgetTransactionsQuery";
 import type { LoadedMonthState } from "../../types";
 
 type Props = {
@@ -436,7 +439,8 @@ export function BudgetTransactionsDialog({ target, browserOptions, statesByMonth
     enabled: open && effectiveTarget != null,
   });
 
-  const rows = data ?? EMPTY_TRANSACTION_ROWS;
+  const rows = data?.rows ?? EMPTY_TRANSACTION_ROWS;
+  const summary = data?.summary ?? null;
   const isGroup = effectiveTarget?.entity === "group";
   // BM-04: income drill-throughs read as inflow, expense as outflow. The copy
   // and the KPI direction below follow the target's side so income never gets
@@ -616,14 +620,33 @@ export function BudgetTransactionsDialog({ target, browserOptions, statesByMonth
     return { budgeted: Math.abs(category.budgeted) };
   }, [effectiveTarget, statesByMonth, spendFilter, side]);
 
+  // BM-05: the row list is capped at BUDGET_TRANSACTIONS_ROW_LIMIT. The
+  // aggregate summary covers the whole set, so drive the headline KPIs from it
+  // (they reconcile to the budget panel even past the cap). Visual filters
+  // intentionally scope to the loaded page, so they fall back to row analytics.
+  const totalCount = summary?.count ?? null;
+  const isTruncated =
+    totalCount != null
+      ? totalCount > rows.length
+      : rows.length >= BUDGET_TRANSACTIONS_ROW_LIMIT;
+  const useAggregateHeadline = !hasVisualFilters && summary != null;
+  const headlineNet =
+    useAggregateHeadline && summary
+      ? isIncome
+        ? summary.total
+        : -summary.total
+      : analytics.netSpent;
+  const headlineCount =
+    useAggregateHeadline && summary ? summary.count : analytics.transactionCount;
+
   // Variance is favorable (positive/green) when spending stays under budget or
   // income comes in at or above plan — so the two sides subtract in opposite
-  // directions. `netSpent` is already directional (net outflow vs net inflow).
+  // directions. `headlineNet` is directional (net outflow vs net inflow).
   const variance =
     budgetValues !== null
       ? isIncome
-        ? analytics.netSpent - budgetValues.budgeted
-        : budgetValues.budgeted - analytics.netSpent
+        ? headlineNet - budgetValues.budgeted
+        : budgetValues.budgeted - headlineNet
       : null;
 
   const hasData = !isLoading && !error && rows.length > 0;
@@ -691,7 +714,7 @@ export function BudgetTransactionsDialog({ target, browserOptions, statesByMonth
         {hasData && (
           <div className="shrink-0 border-b border-border/70 bg-muted/5 px-4 py-2">
             <div className="flex items-stretch divide-x divide-border/50">
-              <StripItem label={flowVerb} value={formatSigned(analytics.netSpent)} />
+              <StripItem label={flowVerb} value={formatSigned(headlineNet)} />
               {budgetValues !== null && (
                 <>
                   <StripItem label="Budgeted" value={formatSigned(budgetValues.budgeted)} />
@@ -712,13 +735,24 @@ export function BudgetTransactionsDialog({ target, browserOptions, statesByMonth
               )}
               <StripItem
                 label="Transactions"
-                value={analytics.transactionCount.toLocaleString()}
+                value={headlineCount.toLocaleString()}
               />
               <StripItem
                 label="Average"
                 value={analytics.averageTransaction > 0 ? formatSigned(analytics.averageTransaction) : "-"}
               />
             </div>
+          </div>
+        )}
+
+        {/* Truncation notice: the row list is capped, so disclose that the
+            charts/table below are a partial page. The headline KPIs stay
+            reconciled via the aggregate when it is available (BM-05). */}
+        {hasData && isTruncated && (
+          <div className="shrink-0 border-b border-amber-500/30 bg-amber-500/10 px-4 py-1.5 text-[11px] text-amber-700 dark:text-amber-300">
+            {summary != null
+              ? `Showing the first ${rows.length.toLocaleString()} of ${summary.count.toLocaleString()} transactions. ${flowVerb}, Variance, and the count above cover all ${summary.count.toLocaleString()}; the breakdowns and table below reflect only the first ${rows.length.toLocaleString()}.`
+              : `Showing the first ${rows.length.toLocaleString()} transactions — there may be more, so the figures below can be incomplete.`}
           </div>
         )}
 

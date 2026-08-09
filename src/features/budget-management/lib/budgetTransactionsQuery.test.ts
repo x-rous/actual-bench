@@ -1,128 +1,44 @@
 import {
+  BUDGET_TRANSACTIONS_ROW_LIMIT,
   buildBudgetTransactionsQuery,
-  fetchBudgetTransactions,
+  buildBudgetTransactionsSummaryQuery,
 } from "./budgetTransactionsQuery";
-import type { ConnectionInstance } from "@/store/connection";
 
-jest.mock("../../../lib/api/client", () => ({
-  apiRequest: jest.fn(),
-}));
+const params = { month: "2026-04", categoryIds: ["food", "rent"] };
 
-import { apiRequest } from "../../../lib/api/client";
-
-const mockApiRequest = apiRequest as jest.MockedFunction<typeof apiRequest>;
-
-const connection: ConnectionInstance = {
-  id: "conn-1",
-  label: "Test",
-  mode: "http-api",
-  baseUrl: "http://localhost:5006",
-  apiKey: "test-key",
-  budgetSyncId: "budget-1",
+// The filter is shared between the row and aggregate queries so both cover the
+// exact same set — that identity is what lets the aggregate reconcile the rows.
+const sharedFilter = {
+  $and: [
+    { date: { $transform: "$month", $eq: "2026-04" } },
+    { category: { $oneof: ["food", "rent"] } },
+    { "account.offbudget": false },
+  ],
 };
 
-describe("budget transaction queries", () => {
-  beforeEach(() => {
-    mockApiRequest.mockReset();
+describe("buildBudgetTransactionsQuery", () => {
+  it("caps rows at the shared row limit by default and orders newest first", () => {
+    const query = buildBudgetTransactionsQuery(params).ActualQLquery;
+    expect(query.limit).toBe(BUDGET_TRANSACTIONS_ROW_LIMIT);
+    expect(query.orderBy).toEqual([{ date: "desc" }]);
+    expect(query.filter).toEqual(sharedFilter);
   });
 
-  it("builds a month/category ActualQL query for inline transaction rows", () => {
-    expect(
-      buildBudgetTransactionsQuery({
-        month: "2026-04",
-        categoryIds: ["cat-1", "cat-2"],
-      })
-    ).toEqual({
-      ActualQLquery: {
-        table: "transactions",
-        options: { splits: "inline" },
-        filter: {
-          $and: [
-            { date: { $transform: "$month", $eq: "2026-04" } },
-            { category: { $oneof: ["cat-1", "cat-2"] } },
-            { "account.offbudget": false },
-          ],
-        },
-        select: [
-          "id",
-          "date",
-          "amount",
-          "payee.name",
-          "category.name",
-          "notes",
-        ],
-        orderBy: [{ date: "desc" }],
-        limit: 500,
-      },
-    });
+  it("honours an explicit limit override", () => {
+    const query = buildBudgetTransactionsQuery({ ...params, limit: 10 }).ActualQLquery;
+    expect(query.limit).toBe(10);
   });
+});
 
-  it("returns no rows without calling the API when no categories are provided", async () => {
-    await expect(
-      fetchBudgetTransactions(connection, {
-        month: "2026-04",
-        categoryIds: [],
-      })
-    ).resolves.toEqual([]);
-
-    expect(mockApiRequest).not.toHaveBeenCalled();
-  });
-
-  it("normalizes transaction rows returned by ActualQL", async () => {
-    mockApiRequest.mockResolvedValueOnce({
-      data: [
-        {
-          id: "tx-1",
-          date: "2026-04-15",
-          amount: -1234,
-          "payee.name": "Grocery",
-          "category.name": "Food",
-          notes: "weekly shop",
-        },
-        {
-          id: null,
-          date: "2026-04-16",
-          amount: -500,
-          "payee.name": "Skipped",
-        },
-        null,
-      ],
-    });
-
-    await expect(
-      fetchBudgetTransactions(connection, {
-        month: "2026-04",
-        categoryIds: ["cat-1"],
-      })
-    ).resolves.toEqual([
-      {
-        id: "tx-1",
-        date: "2026-04-15",
-        amount: -1234,
-        payeeName: "Grocery",
-        categoryName: "Food",
-        notes: "weekly shop",
-      },
+describe("buildBudgetTransactionsSummaryQuery", () => {
+  it("aggregates the signed total and count over the same filter, without a limit", () => {
+    const query = buildBudgetTransactionsSummaryQuery(params).ActualQLquery;
+    expect(query.filter).toEqual(sharedFilter);
+    expect(query.select).toEqual([
+      { total: { $sum: "$amount" } },
+      { count: { $count: "$id" } },
     ]);
-    expect(mockApiRequest).toHaveBeenCalledWith(
-      connection,
-      "/run-query",
-      expect.objectContaining({
-        method: "POST",
-      })
-    );
-  });
-
-  it("throws a clear error when the ActualQL response is missing a data array", async () => {
-    mockApiRequest.mockResolvedValueOnce({});
-
-    await expect(
-      fetchBudgetTransactions(connection, {
-        month: "2026-04",
-        categoryIds: ["cat-1"],
-      })
-    ).rejects.toThrow(
-      "Budget transactions query returned an invalid response: missing data array"
-    );
+    expect(query).not.toHaveProperty("limit");
+    expect(query).not.toHaveProperty("orderBy");
   });
 });
