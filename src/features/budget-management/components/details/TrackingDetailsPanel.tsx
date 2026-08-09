@@ -271,6 +271,18 @@ export function TrackingDetailsPanel({
               valueAriaLabel={`View transactions for ${metrics.title}`}
             />
           )}
+          {metrics.monthValues.variance != null && (
+            <VarianceLine
+              label="Variance"
+              value={metrics.monthValues.variance}
+              kind={metrics.isIncome ? "income" : "budget"}
+              tooltip={
+                metrics.isIncome
+                  ? "Received income minus budgeted income this month."
+                  : "Budgeted minus spent this month — current-period, independent of any prior carryover."
+              }
+            />
+          )}
           {metrics.monthValues.rolloverBalance && (
             <MetricLine
               label={metrics.monthValues.rolloverBalance.label}
