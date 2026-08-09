@@ -45,4 +45,35 @@ describe("BudgetSelectionSummary sum/average", () => {
     );
     expect(screen.queryByLabelText(/Sum of selected/)).not.toBeInTheDocument();
   });
+
+  it("splits into income/expense subtotals for a mixed selection (BM-35)", () => {
+    // `a` is income (+10,000), `b` is expense (30,000 magnitude) — a single net
+    // would be meaningless, so both sides are shown separately and there is no
+    // combined Σ or average.
+    const mixedCategories = [
+      { id: "a", name: "Salary", isIncome: true },
+      { id: "b", name: "Rent", isIncome: false },
+    ] as unknown as LoadedCategory[];
+    const selection: BudgetCellSelection = {
+      anchorCategoryId: "a",
+      anchorMonth: "2026-08",
+      focusCategoryId: "b",
+      focusMonth: "2026-08",
+    };
+
+    render(
+      <BudgetSelectionSummary
+        selection={selection}
+        activeMonths={["2026-08"]}
+        categories={mixedCategories}
+      />,
+    );
+
+    expect(
+      screen.getByLabelText(/income budgets: 100\.00; sum of selected expense budgets: 300\.00/)
+    ).toHaveTextContent("Σ inc 100.00 · exp 300.00");
+    // No single combined total or average for a mixed selection.
+    expect(screen.queryByLabelText(/^Sum of selected: /)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/Average of selected/)).not.toBeInTheDocument();
+  });
 });
