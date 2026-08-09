@@ -28,7 +28,7 @@ const MODE_COLORS: Record<BudgetMode, string> = {
 };
 
 const CELL_VIEW_LABELS: Record<CellView, string> = {
-  budgeted: "Budget",
+  budgeted: "Budgeted",
   spent: "Actuals",
   balance: "Balance",
 };

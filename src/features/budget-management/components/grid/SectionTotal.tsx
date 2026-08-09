@@ -9,16 +9,20 @@ import {
 } from "../../lib/sectionTotals";
 import type { BudgetMode, CellView } from "../../types";
 
+// The `balance` view sums the spreadsheet balance (leftover in Tracking, money
+// still assigned in Envelope) — it is NOT the budget variance, so it must not be
+// labelled "Variance" (PR-033 / F-088, BM-06). Analytical Variance lives in the
+// details panel and drivers dialog, where it is calculated independently.
 const SECTION_LABELS: Record<SectionFilter, Record<CellView, string>> = {
   expense: {
     budgeted: "Total Budgeted Expenses",
     spent: "Total Spent Expenses",
-    balance: "Total Expense Variance",
+    balance: "Total Expense Balance",
   },
   income: {
     budgeted: "Total Budgeted Income",
     spent: "Total Received Income",
-    balance: "Total Income Variance",
+    balance: "Total Income Balance",
   },
 };
 
