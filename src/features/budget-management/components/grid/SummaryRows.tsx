@@ -92,28 +92,29 @@ const TO_BUDGET_OVERBUDGET_LABEL: ReactNode = (
 
 // ─── Per-mode configs ─────────────────────────────────────────────────────────
 
+// Tracking hierarchy (reference §42): supporting Income and Expenses lines, with
+// Savings as the emphasized bottom-line KPI — Projected Savings for current/future
+// months, Saved/Overspent for past months.
 export const TRACKING_SUMMARY_ROWS: SummaryRowConfig[] = [
-  {
-    label: "Spending vs Budgeted",
-    rowTooltip: "Expenses compared with budgeted expenses.",
-    getCell: (_s, state, month) => getTrackingSpendingCell(state, month),
-    noBorder: true,
-    marginTop: true,
-    rowHeight: "h-7",
-    valueClassName: "text-[13px] font-bold",
-  },
   {
     label: "Income",
     rowTooltip: "Received income compared with budgeted income.",
     getCell: (_s, state, month) => getTrackingIncomeCell(state, month),
     noBorder: true,
-    rowHeight: "h-7",
     marginTop: true,
+    rowHeight: "h-7",
   },
   {
-    label: "Result",
+    label: "Expenses",
+    rowTooltip: "Expenses spent compared with budgeted expenses.",
+    getCell: (_s, state, month) => getTrackingSpendingCell(state, month),
+    noBorder: true,
+    rowHeight: "h-7",
+  },
+  {
+    label: "Savings",
     rowTooltip:
-      "Actual saved/overspent for past months; projected result for current/future months.",
+      "Projected savings for current/future months; saved or overspent for past months.",
     getCell: (_s, state, month) => getTrackingResultCell(state, month),
     rowHeight: "h-9",
     noBorder: true,
