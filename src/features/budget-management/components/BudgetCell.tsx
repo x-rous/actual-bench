@@ -8,6 +8,7 @@ import { formatMinor } from "../lib/format";
 import { computeSpendingBar, spendingTierLabel } from "../lib/spendingBar";
 import { SpendingBarView } from "./grid/SpendingBarView";
 import { isIncomeBlocked, isLargeChange } from "../lib/budgetValidation";
+import { classifyMonthActualStatus } from "../lib/budgetDetailsModel";
 import { useCellKeymap, useCellEditKeymap } from "../keyboard/useBudgetKeymap";
 import type { BudgetCellKey, BudgetMode, CellView, LoadedCategory, NavDirection } from "../types";
 
@@ -92,6 +93,9 @@ export function BudgetCell({
   // In Envelope mode, income cells always show actuals (received) — there is
   // no budget or variance concept for income in envelope budgeting.
   const envelopeIncome = budgetMode === "envelope" && category.isIncome;
+  // A future month's balance is a projection, not an outcome — keep it neutral
+  // rather than green/red (matches how future months are treated elsewhere).
+  const isFutureMonth = classifyMonthActualStatus(month) === "future";
   const displayMinor = envelopeIncome
     ? effectiveCategory.actuals
     : cellView === "spent"
@@ -409,11 +413,20 @@ export function BudgetCell({
           className={
             isReadOnlyMonth && !hasMonthData
               ? "text-muted-foreground"
-              : cellView === "balance" && displayMinor < 0
-              ? "text-destructive"
-              : cellView === "spent"
-              ? "text-foreground"
-              : "text-muted-foreground"
+              : // Balance polarity: money left is green, overspent is red, zero
+                // neutral. envelopeIncome shows received (not a balance), so it
+                // is excluded. The minus sign still carries the sign for a11y.
+                cellView === "balance" && !envelopeIncome
+                ? isFutureMonth
+                  ? "text-foreground"
+                  : displayMinor < 0
+                  ? "text-destructive"
+                  : displayMinor > 0
+                  ? "text-emerald-600 dark:text-emerald-400"
+                  : "text-muted-foreground"
+                : cellView === "spent"
+                ? "text-foreground"
+                : "text-muted-foreground"
           }
         >
           {displayText}
