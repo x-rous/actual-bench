@@ -132,7 +132,7 @@ export function TopVarianceDriversDialog({
             <DialogDescription className="text-xs">{scopeLabel}</DialogDescription>
           </DialogHeader>
 
-          <div className="flex gap-0.5 self-start rounded-lg bg-muted p-0.5" role="tablist">
+          <div className="flex gap-0.5 self-start rounded-lg bg-muted p-0.5" role="group" aria-label="Variance side">
             <Tab active={side === "expense"} disabled={!expenseHasData} onClick={() => switchSide("expense")}>
               Expenses
             </Tab>
@@ -149,6 +149,7 @@ export function TopVarianceDriversDialog({
                 <button
                   key={f}
                   type="button"
+                  aria-pressed={filter === f}
                   onClick={() => setFilter(f)}
                   className={cn(
                     "rounded-md px-2.5 py-1 text-[11px] font-semibold transition-colors",
@@ -235,7 +236,9 @@ export function TopVarianceDriversDialog({
               "text-right text-[11px] font-bold tabular-nums",
               tree.totals.varianceMinor >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-destructive"
             )}
+            aria-label={`${tree.totals.varianceMinor >= 0 ? "favourable" : "unfavourable"} total variance ${formatMinor(Math.abs(tree.totals.varianceMinor))}`}
           >
+            {tree.totals.varianceMinor > 0 ? "+" : tree.totals.varianceMinor < 0 ? "−" : ""}
             {formatMinor(Math.abs(tree.totals.varianceMinor))}
           </span>
           <span />
@@ -367,13 +370,18 @@ function DivergingBar({
 
 function VarianceCell({ variance }: { variance: number }) {
   const favourable = variance >= 0;
+  // Direction is also carried by a +/− glyph (and the diverging bar) so it isn't
+  // colour-only.
+  const sign = variance > 0 ? "+" : variance < 0 ? "−" : "";
   return (
     <span
       className={cn(
         "text-right text-[11.5px] font-medium tabular-nums",
         favourable ? "text-emerald-600 dark:text-emerald-400" : "text-destructive"
       )}
+      aria-label={`${favourable ? "favourable" : "unfavourable"} variance ${formatMinor(Math.abs(variance))}`}
     >
+      {sign}
       {formatMinor(Math.abs(variance))}
     </span>
   );
@@ -485,8 +493,7 @@ function Tab({
   return (
     <button
       type="button"
-      role="tab"
-      aria-selected={active}
+      aria-pressed={active}
       disabled={disabled}
       onClick={onClick}
       className={cn(
@@ -595,4 +602,12 @@ function exportCsv(tree: VarianceTree, side: VarianceSide) {
 
 const minor = (v: number) => (v / 100).toFixed(2);
 const pct = (v: number | null) => (v == null ? "" : (v * 100).toFixed(1));
-const csvCell = (s: string) => (/[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s);
+const csvCell = (s: string) => {
+  // Neutralize spreadsheet formula injection — category/group names are user
+  // data, and a leading =, +, -, @, tab, or CR can execute as a formula in
+  // Excel/Sheets. Prefix such a cell with an apostrophe, but leave genuine
+  // numbers (e.g. "-300.00") untouched so the numeric columns still parse.
+  const isNumber = /^-?\d+(\.\d+)?$/.test(s);
+  const guarded = !isNumber && /^[=+\-@\t\r]/.test(s) ? `'${s}` : s;
+  return /[",\r\n]/.test(guarded) ? `"${guarded.replace(/"/g, '""')}"` : guarded;
+};

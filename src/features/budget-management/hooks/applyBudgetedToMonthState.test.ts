@@ -174,4 +174,13 @@ describe("applyBudgetedToMonthState (BM-12 convergence)", () => {
     expect(result.summary.totalBudgeted).toBe(-270_000);
     expect(result.groupsById["visible-group"]!.budgeted).toBe(-230_000);
   });
+
+  it("preserves income-budget provenance so the fallback can't overwrite it (BM-09)", () => {
+    const base: LoadedMonthState = { ...state(), incomeBudgetFallbackIds: [] };
+    const result = applyBudgetedToMonthState(base, "visible-cat", -150_000, false);
+
+    // Empty (present) fallback list must survive the optimistic update — a
+    // dropped/undefined list would re-enable the overlay-all fallback.
+    expect(result.incomeBudgetFallbackIds).toEqual([]);
+  });
 });

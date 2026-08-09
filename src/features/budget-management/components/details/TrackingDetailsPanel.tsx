@@ -543,6 +543,9 @@ export function TrackingDetailsPanel({
 
       {driversSide && (
         <TopVarianceDriversDialog
+          // Remount on side change so the dialog's internal tab/filter/expand
+          // state always starts fresh for the requested side (CodeRabbit).
+          key={driversSide}
           open
           onClose={() => setDriversSide(null)}
           scopeLabel={drivers.scopeLabel}

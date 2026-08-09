@@ -6,7 +6,6 @@ import { useConnectionStore, selectActiveInstance } from "@/store/connection";
 import { getTransport } from "@/lib/actual";
 import { useBudgetEditsStore } from "@/store/budgetEdits";
 import { budgetMonthDataQueryOptions } from "./useMonthData";
-import { addMonths } from "@/lib/budget/monthMath";
 import type {
   BudgetCellKey,
   BudgetSaveResult,
@@ -70,6 +69,11 @@ export function applyBudgetedToMonthState(
       : state.groupsById,
     categoriesById: { ...state.categoriesById, [categoryId]: nextCat },
     groupOrder: state.groupOrder,
+    // Preserve income-budget provenance (BM-09): without it the optimistically
+    // cached state would look like "unknown", and the effective-state overlay
+    // would re-apply the reflect_budgets fallback to every income category,
+    // letting a stale fallback overwrite the canonical monthly value.
+    incomeBudgetFallbackIds: state.incomeBudgetFallbackIds,
   };
 }
 
@@ -424,26 +428,24 @@ export function useBudgetSave(): UseBudgetSaveReturn {
       // reconcile against the server.
       if (successMonths.size > 0) {
         // BM-10: a saved edit cascades forward only (carryover, envelope
-        // balances, incomeAvailable/toBudget of later months). So invalidate
-        // the exact loaded/prefetched window at or after the earliest changed
-        // month, and leave earlier months — which cannot be affected — cached.
+        // balances, incomeAvailable/toBudget of later months). Invalidate EVERY
+        // cached budget-month-data query for this connection at or after the
+        // earliest changed month — not just the current window — so a
+        // previously-visited later month that is still cached can't stay stale.
+        // Earlier months cannot be affected, so they are left cached.
         const earliestSuccess = Array.from(successMonths).sort()[0]!;
-        const loaded = new Set<string>(successMonths);
-        const displayMonths = useBudgetEditsStore.getState().displayMonths;
-        if (displayMonths.length > 0) {
-          // Visible 12 months (0..11) plus the prefetched adjacent windows
-          // (-12..-1 and 12..23) that usePrefetchAdjacentMonths warms.
-          const firstVisible = displayMonths[0]!;
-          for (let i = -12; i <= 23; i++) loaded.add(addMonths(firstVisible, i));
-        }
-        const toInvalidate = Array.from(loaded).filter((m) => m >= earliestSuccess);
-        await Promise.all(
-          toInvalidate.map((month) =>
-            queryClient.invalidateQueries({
-              queryKey: ["budget-month-data", connection.id, month],
-            })
-          )
-        );
+        await queryClient.invalidateQueries({
+          predicate: (query) => {
+            const key = query.queryKey;
+            return (
+              Array.isArray(key) &&
+              key[0] === "budget-month-data" &&
+              key[1] === connection.id &&
+              typeof key[2] === "string" &&
+              key[2] >= earliestSuccess
+            );
+          },
+        });
 
         // BM-11: Tracking income budgeted values come from a separate
         // reflect_budgets query (useIncomeBudgets). Its cache is not touched by
