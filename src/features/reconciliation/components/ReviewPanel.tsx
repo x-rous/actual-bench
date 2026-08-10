@@ -6,8 +6,13 @@ import { cn } from "@/lib/utils";
 import { planCounts, totalChanges, type ApplyPlan } from "@/lib/reconciliation/apply/operations";
 import { stagedFields } from "@/lib/reconciliation/session/staging";
 import type { ApplyConfig } from "@/lib/reconciliation/session/plan";
-import type { ActualTransactionSnapshot, StatementRow } from "@/lib/reconciliation/types";
-import { formatMinorUnits } from "../lib/format";
+import type {
+  ActualTransactionSnapshot,
+  ReconciliationItem,
+  StatementRow,
+} from "@/lib/reconciliation/types";
+import { ReviewComparison } from "./ReviewComparison";
+import type { Option } from "./StagedFields";
 
 /**
  * The last screen before anything is written (feature spec §38).
@@ -31,8 +36,11 @@ const FIELD_LABELS: Record<string, string> = {
 
 export type ReviewPanelProps = {
   plan: ApplyPlan;
+  items: ReconciliationItem[];
   statementRows: Map<string, StatementRow>;
   transactions: Map<string, ActualTransactionSnapshot>;
+  payees: Option[];
+  categories: Option[];
   isApplying: boolean;
   /** How far a run in flight has got, so a long apply is legible. */
   progress: { done: number; total: number } | null;
@@ -44,8 +52,11 @@ export type ReviewPanelProps = {
 
 export function ReviewPanel({
   plan,
+  items,
   statementRows,
   transactions,
+  payees,
+  categories,
   isApplying,
   progress,
   applyConfig,
@@ -192,75 +203,15 @@ export function ReviewPanel({
         </section>
       )}
 
-      {plan.operations.length > 0 && (
-        <section className="rounded-md border border-border/60">
-          <h3 className="border-b border-border/60 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            Every change, in the order it will run
-          </h3>
-          <ul className="divide-y divide-border/30 text-xs">
-            {plan.operations.map((operation) => {
-              const row =
-                operation.kind === "create"
-                  ? statementRows.get(operation.statementRowId)
-                  : undefined;
-              const transaction =
-                operation.kind === "create"
-                  ? undefined
-                  : transactions.get(operation.transactionId);
-
-              return (
-                <li key={operation.id} className="flex items-start gap-3 px-3 py-2">
-                  <span
-                    className={cn(
-                      "w-14 shrink-0 font-medium",
-                      operation.kind === "delete"
-                        ? "text-destructive"
-                        : operation.kind === "create"
-                          ? "text-sky-600 dark:text-sky-400"
-                          : "text-amber-600 dark:text-amber-400"
-                    )}
-                  >
-                    {operation.kind === "create"
-                      ? "Create"
-                      : operation.kind === "delete"
-                        ? "Delete"
-                        : "Update"}
-                  </span>
-
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate">
-                      {row?.description ?? transaction?.payeeName ?? transaction?.notes ?? "—"}
-                    </span>
-                    {operation.kind === "update" && (
-                      <span className="block text-muted-foreground">
-                        {stagedFields(operation.patch)
-                          .map((field) => {
-                            const entry = operation.patch[field];
-                            if (!entry) return null;
-                            if (field === "amount") {
-                              return `Amount ${formatMinorUnits(
-                                entry.original as number
-                              )} → ${formatMinorUnits(entry.staged as number)}`;
-                            }
-                            return FIELD_LABELS[field] ?? field;
-                          })
-                          .filter(Boolean)
-                          .join(" · ")}
-                      </span>
-                    )}
-                  </span>
-
-                  <span className="shrink-0 tabular-nums text-muted-foreground">
-                    {operation.kind === "create"
-                      ? formatMinorUnits(operation.amount)
-                      : formatMinorUnits(transaction?.amount ?? operation.amount)}
-                  </span>
-                </li>
-              );
-            })}
-          </ul>
-        </section>
-      )}
+      <ReviewComparison
+        plan={plan}
+        items={items}
+        statementRows={statementRows}
+        transactions={transactions}
+        payees={payees}
+        categories={categories}
+        applyConfig={applyConfig}
+      />
 
       {plan.blocked.length > 0 && (
         <section className="rounded-md border border-amber-500/40 p-3 text-xs">

@@ -766,8 +766,11 @@ export function ReconciliationView() {
         {screen.name === "review" ? (
           <ReviewPanel
             plan={applyPlan}
+            items={items}
             statementRows={statementRowsById}
             transactions={transactionsById}
+            payees={payeeOptions}
+            categories={categoryOptions}
             isApplying={isApplying}
             progress={applyProgress}
             applyConfig={applyConfig}
