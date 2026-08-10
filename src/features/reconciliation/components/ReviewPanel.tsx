@@ -34,6 +34,8 @@ export type ReviewPanelProps = {
   statementRows: Map<string, StatementRow>;
   transactions: Map<string, ActualTransactionSnapshot>;
   isApplying: boolean;
+  /** How far a run in flight has got, so a long apply is legible. */
+  progress: { done: number; total: number } | null;
   applyConfig: ApplyConfig;
   onApplyConfigChange: (config: ApplyConfig) => void;
   onBack: () => void;
@@ -45,6 +47,7 @@ export function ReviewPanel({
   statementRows,
   transactions,
   isApplying,
+  progress,
   applyConfig,
   onApplyConfigChange,
   onBack,
@@ -293,6 +296,12 @@ export function ReviewPanel({
       )}
 
       <div className="flex items-center justify-end gap-2 border-t border-border/50 pt-3">
+        {/* A spinner alone cannot distinguish slow from stuck. */}
+        {isApplying && progress && (
+          <span className="mr-auto text-xs tabular-nums text-muted-foreground">
+            Writing {progress.done} of {progress.total}…
+          </span>
+        )}
         <Button variant="ghost" onClick={onBack} disabled={isApplying}>
           Cancel
         </Button>

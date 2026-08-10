@@ -44,6 +44,7 @@ import {
   type ApplyConfig,
 } from "@/lib/reconciliation/session/plan";
 import { prospectiveTransaction } from "@/lib/reconciliation/session/prospective";
+import { updateSession as updateSessionQuietly } from "../lib/reconciliationApi";
 import { executeApplyPlan, type ApplyRunResult } from "@/lib/reconciliation/apply/executor";
 import type { OperationResult } from "@/lib/reconciliation/apply/operations";
 import { createReconciliationTransport } from "@/lib/reconciliation/transportAdapter";
@@ -70,6 +71,13 @@ import { Workbench } from "./Workbench";
  * matching, staging and review are all local until an explicit Apply, which
  * arrives with the next milestone.
  */
+
+/**
+ * How often apply progress is written while a run is in flight. Frequent enough
+ * that an interruption loses little, rare enough that persistence does not
+ * dominate the run.
+ */
+const PROGRESS_FLUSH_MS = 1000;
 
 type Screen =
   | { name: "home" }
@@ -113,6 +121,7 @@ export function ReconciliationView() {
   const [loadedSessionId, setLoadedSessionId] = useState<string | null>(null);
   const [isApplying, setIsApplying] = useState(false);
   const [applyResult, setApplyResult] = useState<ApplyRunResult | null>(null);
+  const [applyProgress, setApplyProgress] = useState<{ done: number; total: number } | null>(null);
   const [applyConfig, setApplyConfig] = useState<ApplyConfig>(DEFAULT_APPLY_CONFIG);
 
   // Matching options live with the session (and, once saved, the import
@@ -605,6 +614,7 @@ export function ReconciliationView() {
 
     setIsApplying(true);
     setMatchError(null);
+    setApplyProgress({ done: 0, total: applyPlan.operations.length });
     const transport = createReconciliationTransport(getTransport(connection));
 
     try {
@@ -619,6 +629,32 @@ export function ReconciliationView() {
         ? (session.applyResults as OperationResult[])
         : [];
 
+      /*
+       * Progress is written straight through the API rather than through a
+       * mutation, and in batches.
+       *
+       * A mutation per operation invalidated the session query, so every write
+       * dragged a refetch of the whole session and a re-render of the workbench
+       * along behind it — between writes. On a real statement that turns a
+       * few seconds of work into minutes of thrashing.
+       *
+       * Batching costs nothing in safety: the record is the fast path for a
+       * retry, and the durable marker in the account is what actually prevents
+       * a duplicate create. Losing the last few results means a retry re-checks
+       * them, not that it repeats them.
+       */
+      let lastFlush = 0;
+      let pending = false;
+
+      const flush = async (force: boolean) => {
+        if (!pending && !force) return;
+        const now = Date.now();
+        if (!force && now - lastFlush < PROGRESS_FLUSH_MS) return;
+        lastFlush = now;
+        pending = false;
+        await updateSessionQuietly(session.id, { applyResults: [...collected] });
+      };
+
       const result = await executeApplyPlan({
         plan: applyPlan,
         transport,
@@ -626,14 +662,18 @@ export function ReconciliationView() {
         previousResults,
         onResult: async (entry) => {
           collected.push(entry);
-          await mutations.updateSession.mutateAsync({
-            id: session.id,
-            payload: { applyResults: collected },
-          });
+          pending = true;
+          await flush(false);
         },
+        onProgress: (progress) =>
+          setApplyProgress({ done: progress.completed, total: progress.total }),
       });
 
+      await flush(true);
       setApplyResult(result);
+
+      // One invalidating write at the end, so the session list and the
+      // workbench refresh once rather than once per operation.
       await mutations.updateSession.mutateAsync({
         id: session.id,
         payload: {
@@ -650,6 +690,7 @@ export function ReconciliationView() {
       setMatchError(error instanceof Error ? error.message : "Could not apply the changes");
     } finally {
       setIsApplying(false);
+      setApplyProgress(null);
     }
   }
 
@@ -728,6 +769,7 @@ export function ReconciliationView() {
             statementRows={statementRowsById}
             transactions={transactionsById}
             isApplying={isApplying}
+            progress={applyProgress}
             applyConfig={applyConfig}
             onApplyConfigChange={(config) => {
               setApplyConfig(config);
