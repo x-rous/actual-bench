@@ -105,6 +105,11 @@ export function ReconciliationView() {
         amount: row.amount,
         description: row.description,
         reference: row.reference ?? undefined,
+        transactionDate: row.transactionDate ?? undefined,
+        // Without these a resumed session silently stops matching foreign
+        // purchases on their original amount.
+        originalAmount: row.originalAmount ?? undefined,
+        originalCurrency: row.originalCurrency ?? undefined,
         raw: row.raw,
         fingerprint: row.fingerprint,
       }))

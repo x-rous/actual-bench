@@ -334,6 +334,14 @@ CREATE TABLE IF NOT EXISTS reconciliation_statement_rows (
   amount integer NOT NULL,
   description text NOT NULL,
   reference text,
+  -- Some statements distinguish the transaction date from the posting date.
+  transaction_date text,
+  -- Foreign-currency transactions: the amount the bank printed in the original
+  -- currency, in integer minor units. Persisted because matching uses it as a
+  -- second exact key, so a resumed session that lost it would silently stop
+  -- matching every foreign purchase.
+  original_amount integer,
+  original_currency text,
   -- Stable hash of the raw cells; backs the deterministic create marker.
   fingerprint text NOT NULL,
   -- The untouched source row, never overwritten.

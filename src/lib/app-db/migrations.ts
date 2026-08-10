@@ -28,7 +28,7 @@ import {
 import { KDF_VERSION_META_KEY, SALT_META_KEY, VERIFIER_META_KEY } from "./vaultMetaKeys";
 import { AppDbUnavailableError } from "./errors";
 
-export const LATEST_SCHEMA_VERSION = 11;
+export const LATEST_SCHEMA_VERSION = 12;
 
 type Migration = {
   version: number;
@@ -175,7 +175,20 @@ const MIGRATIONS: readonly Migration[] = [
       ...RECONCILIATION_INDEX_SQL,
     ],
   },
+  {
+    version: 12,
+    // Statement rows keep their original-currency amount (RD-071). Without it a
+    // resumed session stops matching foreign purchases, because the converted
+    // amount the statement posts never equals the amount recorded in Actual.
+    apply: applyReconciliationOriginalAmounts,
+  },
 ];
+
+function applyReconciliationOriginalAmounts(db: SqliteDatabase): void {
+  addColumnIfMissing(db, "reconciliation_statement_rows", "transaction_date", "text");
+  addColumnIfMissing(db, "reconciliation_statement_rows", "original_amount", "integer");
+  addColumnIfMissing(db, "reconciliation_statement_rows", "original_currency", "text");
+}
 
 function nowIso(): string {
   return new Date().toISOString();

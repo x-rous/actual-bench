@@ -30,22 +30,48 @@ import { WorkbenchRow } from "./WorkbenchRow";
 type FilterId =
   | "all"
   | "needs-review"
-  | "create"
-  | "actual-only"
-  | "outside-period"
+  | "ambiguous"
   | "amount-mismatch"
   | "duplicates"
-  | "matched";
+  | "create"
+  | "matched"
+  | "actual-only"
+  | "outside-period";
 
-const FILTERS: { id: FilterId; label: string }[] = [
-  { id: "all", label: "All" },
-  { id: "needs-review", label: "Needs review" },
-  { id: "create", label: "Not in Actual" },
-  { id: "actual-only", label: "Actual only" },
-  { id: "outside-period", label: "Outside period" },
-  { id: "amount-mismatch", label: "Amount differs" },
-  { id: "duplicates", label: "Duplicates" },
-  { id: "matched", label: "Matched" },
+type FilterDef = {
+  id: FilterId;
+  label: string;
+  /** Dot colour, always paired with the label — never colour alone. */
+  dot: string;
+  /** Indented under the filter it refines. */
+  child?: boolean;
+};
+
+/**
+ * Filters for the statement's own rows, in the order a user works through them.
+ *
+ * "Needs review" is the parent of the three reasons a row lands there, so the
+ * counts nest rather than double-count: a row whose amount differs is already
+ * one of the rows needing review.
+ */
+const STATEMENT_FILTERS: FilterDef[] = [
+  { id: "all", label: "All", dot: "bg-muted-foreground/40" },
+  { id: "needs-review", label: "Needs review", dot: "bg-amber-500/70" },
+  { id: "ambiguous", label: "Several candidates", dot: "bg-amber-500/40", child: true },
+  { id: "amount-mismatch", label: "Amount differs", dot: "bg-amber-500/40", child: true },
+  { id: "duplicates", label: "Duplicates", dot: "bg-amber-500/40", child: true },
+  { id: "create", label: "Not in Actual", dot: "bg-sky-500/60" },
+  { id: "matched", label: "Matched", dot: "bg-emerald-500/70" },
+];
+
+/**
+ * Rows that exist only in Actual. Kept visually apart because they are not part
+ * of the statement's total: nothing here counts towards how much of the
+ * statement is covered.
+ */
+const ACTUAL_ONLY_FILTERS: FilterDef[] = [
+  { id: "actual-only", label: "Actual only", dot: "bg-violet-500/60" },
+  { id: "outside-period", label: "Outside period", dot: "bg-muted-foreground/40" },
 ];
 
 function matchesFilter(item: ReconciliationItem, filter: FilterId): boolean {
@@ -57,18 +83,26 @@ function matchesFilter(item: ReconciliationItem, filter: FilterId): boolean {
         item.disposition === "unresolved" &&
         (item.reasonCode === REASON.ambiguousMatch ||
           item.reasonCode === REASON.belowConfidenceFloor ||
-          item.reasonCode === REASON.amountMismatch)
+          item.reasonCode === REASON.amountMismatch ||
+          item.reasonCode === REASON.likelyDuplicate)
       );
+    case "ambiguous":
+      return (
+        item.reasonCode === REASON.ambiguousMatch ||
+        item.reasonCode === REASON.belowConfidenceFloor
+      );
+    case "amount-mismatch":
+      return item.reasonCode === REASON.amountMismatch;
+    case "duplicates":
+      // A matched row can carry the duplicate flag; it belongs under Matched,
+      // not under the work still to do.
+      return item.disposition !== "matched" && item.reasonCode === REASON.likelyDuplicate;
     case "create":
       return item.reasonCode === REASON.noActualCandidate;
     case "actual-only":
       return item.reasonCode === REASON.notOnStatement;
     case "outside-period":
       return item.reasonCode === REASON.outsideStatementPeriod;
-    case "amount-mismatch":
-      return item.reasonCode === REASON.amountMismatch;
-    case "duplicates":
-      return item.reasonCode === REASON.likelyDuplicate;
     default:
       return true;
   }
@@ -89,6 +123,38 @@ export type WorkbenchProps = {
   onMatchConfigChange: (preset: TextTargetPreset, config: MatchConfig) => void;
   onRematch: () => void;
 };
+
+function FilterButton({
+  entry,
+  active,
+  count,
+  onSelect,
+}: {
+  entry: FilterDef;
+  active: boolean;
+  count: number;
+  onSelect: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      aria-pressed={active}
+      onClick={onSelect}
+      className={cn(
+        "flex items-center gap-1.5 rounded-md px-2 py-1 text-xs transition-colors",
+        entry.child && "ml-1 text-[11px]",
+        active
+          ? "bg-accent text-accent-foreground"
+          : "text-muted-foreground hover:bg-accent/50",
+        count === 0 && !active && "opacity-50"
+      )}
+    >
+      <span className={cn("h-2 w-2 shrink-0 rounded-full", entry.dot)} aria-hidden="true" />
+      {entry.label}
+      <span className="tabular-nums opacity-70">{count}</span>
+    </button>
+  );
+}
 
 export function Workbench({
   accountName,
@@ -112,7 +178,7 @@ export function Workbench({
 
   const counts = useMemo(() => {
     const result = {} as Record<FilterId, number>;
-    for (const { id } of FILTERS) {
+    for (const { id } of [...STATEMENT_FILTERS, ...ACTUAL_ONLY_FILTERS]) {
       result[id] = items.filter((item) => matchesFilter(item, id)).length;
     }
     return result;
@@ -207,23 +273,32 @@ export function Workbench({
       </header>
 
       <div className="flex flex-wrap items-center gap-2 border-b border-border/50 px-4 py-2">
-        <div role="group" aria-label="Filter reconciliation rows" className="flex flex-wrap gap-1">
-          {FILTERS.map((entry) => (
-            <button
+        <div role="group" aria-label="Filter statement rows" className="flex flex-wrap items-center gap-1">
+          {STATEMENT_FILTERS.map((entry) => (
+            <FilterButton
               key={entry.id}
-              type="button"
-              aria-pressed={filter === entry.id}
-              onClick={() => setFilter(entry.id)}
-              className={cn(
-                "rounded-md px-2 py-1 text-xs transition-colors",
-                filter === entry.id
-                  ? "bg-accent text-accent-foreground"
-                  : "text-muted-foreground hover:bg-accent/50"
-              )}
-            >
-              {entry.label}
-              <span className="ml-1 tabular-nums opacity-70">{counts[entry.id]}</span>
-            </button>
+              entry={entry}
+              active={filter === entry.id}
+              count={counts[entry.id]}
+              onSelect={() => setFilter(entry.id)}
+            />
+          ))}
+        </div>
+
+        {/* Kept apart: nothing here counts towards the statement's coverage. */}
+        <div
+          role="group"
+          aria-label="Filter transactions that are not on the statement"
+          className="flex flex-wrap items-center gap-1 border-l border-border/60 pl-2"
+        >
+          {ACTUAL_ONLY_FILTERS.map((entry) => (
+            <FilterButton
+              key={entry.id}
+              entry={entry}
+              active={filter === entry.id}
+              count={counts[entry.id]}
+              onSelect={() => setFilter(entry.id)}
+            />
           ))}
         </div>
 

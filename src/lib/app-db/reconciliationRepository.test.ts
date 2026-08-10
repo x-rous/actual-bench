@@ -141,6 +141,46 @@ describe("statement rows", () => {
     expect(stored.reference).toBeNull();
   });
 
+  it("round-trips every field the matcher reads", () => {
+    // A field the matcher uses but persistence drops does not fail loudly: the
+    // session simply matches worse after being resumed. The original-currency
+    // amount was lost exactly this way, and foreign purchases silently stopped
+    // matching on re-run.
+    const db = tempDb();
+    const session = newSession(db);
+
+    const full = {
+      ...ROW,
+      reference: "88721",
+      transactionDate: "2026-06-30",
+      originalAmount: -22570,
+      originalCurrency: "SAR",
+    };
+    replaceStatementRows(db, session.id, [full]);
+
+    const [stored] = listStatementRows(db, session.id);
+    expect(stored).toMatchObject({
+      sourceRowNumber: full.sourceRowNumber,
+      postedDate: full.postedDate,
+      amount: full.amount,
+      description: full.description,
+      reference: "88721",
+      transactionDate: "2026-06-30",
+      originalAmount: -22570,
+      originalCurrency: "SAR",
+      fingerprint: full.fingerprint,
+    });
+    expect(stored.raw).toEqual(full.raw);
+  });
+
+  it("rejects a non-integer original amount", () => {
+    const db = tempDb();
+    const session = newSession(db);
+    expect(() =>
+      replaceStatementRows(db, session.id, [{ ...ROW, originalAmount: -225.7 }])
+    ).toThrow(AppDbValidationError);
+  });
+
   it("replaces rather than appends, so a re-import leaves nothing behind", () => {
     const db = tempDb();
     const session = newSession(db);

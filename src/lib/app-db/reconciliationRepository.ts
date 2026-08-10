@@ -93,6 +93,10 @@ export type ReconciliationStatementRowRecord = {
   amount: number;
   description: string;
   reference: string | null;
+  transactionDate: string | null;
+  /** Integer minor units, in the transaction's original currency. */
+  originalAmount: number | null;
+  originalCurrency: string | null;
   fingerprint: string;
   raw: unknown;
 };
@@ -155,6 +159,9 @@ type StatementRowRow = {
   amount: number;
   description: string;
   reference: string | null;
+  transaction_date: string | null;
+  original_amount: number | null;
+  original_currency: string | null;
   fingerprint: string;
   raw_json: string;
 };
@@ -264,6 +271,9 @@ function statementRowToRecord(row: StatementRowRow): ReconciliationStatementRowR
     amount: row.amount,
     description: row.description,
     reference: row.reference,
+    transactionDate: row.transaction_date,
+    originalAmount: row.original_amount,
+    originalCurrency: row.original_currency,
     fingerprint: row.fingerprint,
     raw: parseJson(row.raw_json),
   };
@@ -522,6 +532,9 @@ export type StatementRowInput = {
   amount: number;
   description: string;
   reference?: string | null;
+  transactionDate?: string | null;
+  originalAmount?: number | null;
+  originalCurrency?: string | null;
   fingerprint: string;
   raw: unknown;
 };
@@ -540,13 +553,19 @@ export function replaceStatementRows(
 ): number {
   const insert = db.prepare(
     `INSERT INTO reconciliation_statement_rows
-       (id, session_id, source_row_number, posted_date, amount, description, reference, fingerprint, raw_json)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+       (id, session_id, source_row_number, posted_date, amount, description, reference,
+        transaction_date, original_amount, original_currency, fingerprint, raw_json)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   );
 
   const run = db.transaction(() => {
     db.prepare("DELETE FROM reconciliation_statement_rows WHERE session_id = ?").run(sessionId);
     for (const row of rows) {
+      if (row.originalAmount != null && !Number.isInteger(row.originalAmount)) {
+        throw new AppDbValidationError(
+          `Statement row ${row.sourceRowNumber} original amount must be an integer in minor units`
+        );
+      }
       if (!Number.isInteger(row.amount)) {
         // Minor units are integers by definition; a float here means a parsing
         // bug upstream and must not be silently persisted.
@@ -562,6 +581,9 @@ export function replaceStatementRows(
         row.amount,
         row.description,
         row.reference ?? null,
+        row.transactionDate ?? null,
+        row.originalAmount ?? null,
+        row.originalCurrency ?? null,
         row.fingerprint,
         JSON.stringify(row.raw ?? null)
       );
