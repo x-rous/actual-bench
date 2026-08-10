@@ -108,8 +108,9 @@ function Side({
 }
 
 export function CoverageSummary({ coverage }: { coverage: ReconciliationCoverage }) {
-  const { statement, actual } = coverage;
+  const { statement, actual, decisions } = coverage;
   const statementOpen = statement.needsReview + statement.unaccounted;
+  const needingDecision = decisions.decided + decisions.pending;
 
   const actualNote = [
     coverage.outsideStatementPeriod > 0
@@ -144,6 +145,33 @@ export function CoverageSummary({ coverage }: { coverage: ReconciliationCoverage
           note={actualNote || undefined}
         />
       </div>
+
+      {/*
+        Coverage answers "how much of the statement is accounted for". This
+        answers "how much is left for me to do", which is the question someone
+        working through a reconciliation is actually asking. An automatic match
+        is counted apart from both: it never needed deciding, and folding it in
+        would flatter the number.
+      */}
+      {needingDecision > 0 && (
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-md bg-muted/40 px-3 py-2 text-xs">
+          <span className="font-medium">
+            {decisions.decided} of {needingDecision} decided
+          </span>
+          {decisions.pending > 0 ? (
+            <span className="text-amber-600 dark:text-amber-400">
+              {decisions.pending} still to decide
+            </span>
+          ) : (
+            <span className="text-emerald-600 dark:text-emerald-400">
+              Everything has been decided
+            </span>
+          )}
+          <span className="text-muted-foreground">
+            {decisions.automatic} matched without needing you
+          </span>
+        </div>
+      )}
     </section>
   );
 }

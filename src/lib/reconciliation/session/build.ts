@@ -227,9 +227,26 @@ export type SideCoverage = {
   unaccounted: number;
 };
 
+/**
+ * Progress through the work, as distinct from coverage of the statement.
+ *
+ * Coverage answers "how much of the statement is accounted for". This answers
+ * "how much is left for me to do", which is the question someone actually
+ * working through a reconciliation is asking.
+ */
+export type DecisionProgress = {
+  /** Rows that needed a person and have had one. */
+  decided: number;
+  /** Rows still waiting on a decision. */
+  pending: number;
+  /** Rows that never needed a decision, because the matcher settled them. */
+  automatic: number;
+};
+
 export type ReconciliationCoverage = {
   statement: SideCoverage;
   actual: SideCoverage;
+  decisions: DecisionProgress;
   /** Actual rows dated outside the statement's own period. */
   outsideStatementPeriod: number;
   likelyDuplicates: number;
@@ -254,6 +271,7 @@ export function summarizeCoverage(
 ): ReconciliationCoverage {
   const statement: SideCoverage = { total: 0, matched: 0, needsReview: 0, unaccounted: 0 };
   const actual: SideCoverage = { total: 0, matched: 0, needsReview: 0, unaccounted: 0 };
+  const decisions: DecisionProgress = { decided: 0, pending: 0, automatic: 0 };
   let outsideStatementPeriod = 0;
   let likelyDuplicates = 0;
 
@@ -284,11 +302,23 @@ export function summarizeCoverage(
       outsideStatementPeriod += transactionIds.length;
     }
     if (item.reasonCode === REASON.likelyDuplicate) likelyDuplicates += 1;
+
+    // An automatic match nobody has touched is not "decided" — it never needed
+    // deciding. Counting it as done would flatter the progress number and hide
+    // how much work is actually left.
+    if (item.disposition === "matched" && item.match?.evidenceSource !== "manual") {
+      decisions.automatic += 1;
+    } else if (item.disposition === "unresolved") {
+      decisions.pending += 1;
+    } else {
+      decisions.decided += 1;
+    }
   }
 
   return {
     statement: { ...statement, total: totals.statementRows || statement.total },
     actual,
+    decisions,
     outsideStatementPeriod,
     likelyDuplicates,
     loadedAsHeadroom: Math.max(0, totals.loadedTransactions - actual.total),

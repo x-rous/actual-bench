@@ -49,6 +49,13 @@ const DUPLICATE_EVIDENCE_DELTA = 3;
 /** Weak candidates worth offering when nothing cleared the floor. */
 const MAX_WEAK_CANDIDATES = 5;
 
+/**
+ * A candidate below this carries nothing but a coincidence of amount and a date
+ * inside the window. Offering it as a possible match wastes the user's
+ * attention on a pair no evidence supports.
+ */
+const MIN_CANDIDATE_TO_OFFER = 60;
+
 export function assignMatches(input: AssignmentInput): AssignmentResult {
   const { candidates, config } = input;
   const consumedStatementRows = new Set<string>();
@@ -87,9 +94,19 @@ export function assignMatches(input: AssignmentInput): AssignmentResult {
       // Nothing here is confident enough to match. Offer the plausible few so
       // the user can pick, rather than silently dropping the row or listing
       // every transaction that happens to share the amount.
+      const worthOffering = availableFor(candidate.statementRowId)
+        .filter((entry) => entry.score >= MIN_CANDIDATE_TO_OFFER)
+        .slice(0, MAX_WEAK_CANDIDATES);
+
+      if (worthOffering.length === 0) {
+        // Nothing here is worth the user's attention; leave the row unmatched
+        // so it is offered as a create rather than as a bad guess.
+        continue;
+      }
+
       ambiguousByRow.set(candidate.statementRowId, {
         statementRowId: candidate.statementRowId,
-        candidates: availableFor(candidate.statementRowId).slice(0, MAX_WEAK_CANDIDATES),
+        candidates: worthOffering,
         why: "below-floor",
       });
       continue;

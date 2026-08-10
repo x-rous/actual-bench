@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowRight, Lock, Plus, Split, TriangleAlert } from "lucide-react";
+import { ArrowRight, Ban, Check, Lock, Pencil, Plus, Split, Trash2, TriangleAlert } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type {
   ActualTransactionSnapshot,
@@ -30,7 +30,49 @@ type MiddleState = {
   icon: typeof ArrowRight | null;
 };
 
+/**
+ * A decision the user has taken outranks the reason the row was flagged.
+ *
+ * Once someone has said "create this", the row's job is to say what will
+ * happen, not to keep restating the problem that prompted it. Leaving the
+ * original reason on screen makes decided work look outstanding.
+ */
+function decidedState(item: ReconciliationItem): MiddleState | null {
+  switch (item.disposition) {
+    case "create":
+      return {
+        label: "Will create",
+        detail: null,
+        tone: "text-sky-600 dark:text-sky-400",
+        icon: Plus,
+      };
+    case "delete":
+      return {
+        label: "Will delete",
+        detail: null,
+        tone: "text-destructive",
+        icon: Trash2,
+      };
+    case "keep":
+      return { label: "Keep", detail: null, tone: "text-muted-foreground", icon: Check };
+    case "correct-amount":
+      return {
+        label: "Will fix amount",
+        detail: null,
+        tone: "text-sky-600 dark:text-sky-400",
+        icon: Pencil,
+      };
+    case "ignored":
+      return { label: "Ignored", detail: null, tone: "text-muted-foreground", icon: Ban };
+    default:
+      return null;
+  }
+}
+
 function middleState(item: ReconciliationItem): MiddleState {
+  const decided = decidedState(item);
+  if (decided) return decided;
+
   if (item.disposition === "matched") {
     const confidence = item.match?.confidence;
     const label = item.match ? confidenceLabelText(item.match.label) : "Matched";
@@ -122,6 +164,8 @@ export type WorkbenchRowProps = {
   statementRow: StatementRow | undefined;
   transactions: ActualTransactionSnapshot[];
   selected: boolean;
+  checked: boolean;
+  onToggleChecked: (checked: boolean) => void;
   onSelect: () => void;
 };
 
@@ -130,6 +174,8 @@ export function WorkbenchRow({
   statementRow,
   transactions,
   selected,
+  checked,
+  onToggleChecked,
   onSelect,
 }: WorkbenchRowProps) {
   const state = middleState(item);
@@ -158,6 +204,19 @@ export function WorkbenchRow({
         selected ? "bg-accent" : "hover:bg-accent/40"
       )}
     >
+      <td className="px-2 py-1.5" onClick={(event) => event.stopPropagation()}>
+        <input
+          type="checkbox"
+          checked={checked}
+          onChange={(event) => onToggleChecked(event.target.checked)}
+          aria-label={
+            statementRow
+              ? `Select ${statementRow.description}`
+              : `Select ${primary?.payeeName ?? "transaction"}`
+          }
+        />
+      </td>
+
       {/* Bank statement */}
       <td className="whitespace-nowrap px-2 py-1.5 tabular-nums text-muted-foreground">
         {statementRow ? formatShortDate(statementRow.postedDate) : EMPTY}
@@ -209,6 +268,11 @@ export function WorkbenchRow({
             {transactions.length > 1 && (
               <span className="shrink-0 text-[11px] text-muted-foreground">
                 +{transactions.length - 1}
+              </span>
+            )}
+            {item.stagedChanges && Object.keys(item.stagedChanges).length > 0 && (
+              <span className="shrink-0 text-[11px] text-amber-600 dark:text-amber-400">
+                edited
               </span>
             )}
           </div>

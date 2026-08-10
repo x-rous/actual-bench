@@ -393,6 +393,36 @@ describe("duplicate transactions and their competing candidates", () => {
   });
 });
 
+describe("a fee row must not borrow another purchase's original amount", () => {
+  it("does not offer an unrelated merchant as a candidate", () => {
+    // Real case: a VAT fee row prints the *purchase's* original amount in its
+    // own description, so SAR41.00 collides with an unrelated SAR41.00 purchase
+    // three days earlier. The amounts agree by arithmetic and nothing else.
+    const graph = match({
+      statementRows: parse(
+        [
+          "Date\tDescription\tDebit\tCredit",
+          "15/07/2026\tVAT ON SERVICE CHARGES SAR41.00\t0.08\t0",
+        ].join("\n")
+      ),
+      actualTransactions: [
+        txn({
+          id: "t1",
+          date: "2026-07-12",
+          amount: -4100,
+          payeeName: "Babies & More",
+          notes: "#API Babies More",
+        }),
+      ],
+      config: DEFAULT_MATCH_CONFIG,
+    });
+
+    expect(graph.matched).toHaveLength(0);
+    expect(graph.ambiguous).toHaveLength(0);
+    expect(graph.unmatchedStatementRowIds).toHaveLength(1);
+  });
+});
+
 describe("amounts mangled upstream (same merchant, same date)", () => {
   // Transactions here are created by an automation that extracts fields from an
   // SMS and converts currency, so the amount can be wrong by an arbitrary

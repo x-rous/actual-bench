@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { RefreshCw, Search, SlidersHorizontal } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -17,6 +17,8 @@ import type { TextTargetPreset } from "@/lib/reconciliation/match/config";
 import type { StageableField } from "@/lib/reconciliation/session/staging";
 import type { ReconciliationDisposition } from "@/lib/reconciliation/types";
 import type { Option } from "./StagedFields";
+import { useTableSelection } from "@/hooks/useTableSelection";
+import { BulkDecisionBar } from "./BulkDecisionBar";
 import { CoverageSummary } from "./CoverageSummary";
 import { Inspector } from "./Inspector";
 import { MatchOptions } from "./MatchOptions";
@@ -78,6 +80,71 @@ const ACTUAL_ONLY_FILTERS: FilterDef[] = [
   { id: "actual-only", label: "Actual only", dot: "bg-violet-500/60" },
   { id: "outside-period", label: "Outside period", dot: "bg-muted-foreground/40" },
 ];
+
+/**
+ * A second axis: where the row stands in the user's own workflow, rather than
+ * what the matcher concluded about it. "What is left for me to do" is a
+ * different question from "what kind of problem is this".
+ */
+type DecisionFilter = "any" | "undecided" | "decided" | "edited";
+
+const DECISION_FILTERS: { id: DecisionFilter; label: string }[] = [
+  { id: "any", label: "Any" },
+  { id: "undecided", label: "Undecided" },
+  { id: "decided", label: "Decided" },
+  { id: "edited", label: "Edited" },
+];
+
+function matchesDecisionFilter(item: ReconciliationItem, filter: DecisionFilter): boolean {
+  const edited = Boolean(item.stagedChanges && Object.keys(item.stagedChanges).length > 0);
+  switch (filter) {
+    case "undecided":
+      return item.disposition === "unresolved";
+    case "decided":
+      // An automatic match is not a decision anyone took.
+      return item.disposition !== "unresolved" && !(
+        item.disposition === "matched" && item.match?.evidenceSource !== "manual"
+      );
+    case "edited":
+      return edited;
+    default:
+      return true;
+  }
+}
+
+/**
+ * Attributes worth filtering on mid-reconciliation. Deliberately few: these are
+ * the ones that identify work — rows needing cleanup, and rows that are
+ * protected and therefore cannot be actioned here.
+ */
+type AttributeFilter = "no-payee" | "no-category" | "protected";
+
+const ATTRIBUTE_FILTERS: { id: AttributeFilter; label: string }[] = [
+  { id: "no-payee", label: "No payee" },
+  { id: "no-category", label: "No category" },
+  { id: "protected", label: "Protected" },
+];
+
+function matchesAttributes(
+  item: ReconciliationItem,
+  active: Set<AttributeFilter>,
+  transactions: Map<string, ActualTransactionSnapshot>
+): boolean {
+  if (active.size === 0) return true;
+  const transaction = transactions.get(item.actualTransactionIds[0] ?? "");
+
+  if (active.has("no-payee") && transaction?.payeeName) return false;
+  if (active.has("no-category") && transaction?.categoryId) return false;
+  if (
+    active.has("protected") &&
+    !item.guards.protectedReconciled &&
+    !item.guards.splitParent &&
+    item.guards.transfer === "no"
+  ) {
+    return false;
+  }
+  return true;
+}
 
 function matchesFilter(item: ReconciliationItem, filter: FilterId): boolean {
   switch (filter) {
@@ -141,6 +208,10 @@ export type WorkbenchProps = {
   onCorrectAmount: (itemId: string, transactionId: string, amount: number) => void;
   onStage: (itemId: string, field: StageableField, value: string | null) => void;
   onUnstage: (itemId: string, field: StageableField) => void;
+  onBulkDisposition: (itemIds: string[], disposition: ReconciliationDisposition) => void;
+  onBulkCorrectAmount: (
+    entries: { itemId: string; transactionId: string; amount: number }[]
+  ) => void;
 };
 
 function FilterButton({
@@ -196,9 +267,14 @@ export function Workbench({
   onCorrectAmount,
   onStage,
   onUnstage,
+  onBulkDisposition,
+  onBulkCorrectAmount,
 }: WorkbenchProps) {
   const [filter, setFilter] = useState<FilterId>("all");
+  const [decisionFilter, setDecisionFilter] = useState<DecisionFilter>("any");
+  const [attributeFilters, setAttributeFilters] = useState<Set<AttributeFilter>>(new Set());
   const [search, setSearch] = useState("");
+  const { selectedIds, toggleSelect, toggleSelectAll, clearSelection } = useTableSelection();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [optionsOpen, setOptionsOpen] = useState(false);
 
@@ -249,6 +325,8 @@ export function Workbench({
     const needle = search.trim().toLowerCase();
     return sorted.filter((item) => {
       if (!matchesFilter(item, filter)) return false;
+      if (!matchesDecisionFilter(item, decisionFilter)) return false;
+      if (!matchesAttributes(item, attributeFilters, transactions)) return false;
       if (!needle) return true;
 
       // Search spans both sides plus the amount, since a user looking for a
@@ -271,12 +349,77 @@ export function Workbench({
       }
       return haystacks.join(" ").toLowerCase().includes(needle);
     });
-  }, [sorted, filter, search, statementRows, transactions]);
+  }, [sorted, filter, decisionFilter, attributeFilters, search, statementRows, transactions]);
+
+  const visibleIds = useMemo(() => visible.map((item) => item.id), [visible]);
+  const allVisibleSelected =
+    visibleIds.length > 0 && visibleIds.every((id) => selectedIds.has(id));
+  const selectedItems = useMemo(
+    () => items.filter((item) => selectedIds.has(item.id)),
+    [items, selectedIds]
+  );
 
   const selected = useMemo(
     () => items.find((item) => item.id === selectedId) ?? null,
     [items, selectedId]
   );
+
+  /**
+   * Move the selection by keyboard.
+   *
+   * A few hundred rows is a lot of mousing, and the work is inherently
+   * sequential: look at a row, decide, move on. j/k and the arrow keys follow
+   * the visible order, so the filter in force defines what "next" means.
+   */
+  const step = useCallback(
+    (delta: number) => {
+      if (visible.length === 0) return;
+      const index = visible.findIndex((item) => item.id === selectedId);
+      const next = index === -1 ? 0 : Math.min(visible.length - 1, Math.max(0, index + delta));
+      setSelectedId(visible[next].id);
+    },
+    [visible, selectedId]
+  );
+
+  /** Jump to the next row still waiting on a decision. */
+  const goToNextUndecided = useCallback(() => {
+    const index = visible.findIndex((item) => item.id === selectedId);
+    const after = visible.slice(index + 1).find((item) => item.disposition === "unresolved");
+    const wrapped = after ?? visible.find((item) => item.disposition === "unresolved");
+    if (wrapped) setSelectedId(wrapped.id);
+  }, [visible, selectedId]);
+
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      // Never steal a key from someone typing in the search box or a note.
+      const target = event.target as HTMLElement | null;
+      if (
+        target &&
+        (target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.tagName === "SELECT" ||
+          target.isContentEditable)
+      ) {
+        return;
+      }
+
+      if (event.key === "j" || event.key === "ArrowDown") {
+        event.preventDefault();
+        step(1);
+      } else if (event.key === "k" || event.key === "ArrowUp") {
+        event.preventDefault();
+        step(-1);
+      } else if (event.key === "n") {
+        event.preventDefault();
+        goToNextUndecided();
+      } else if (event.key === "Escape") {
+        setSelectedId(null);
+      }
+    }
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [step, goToNextUndecided]);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -359,6 +502,65 @@ export function Workbench({
         </div>
       </div>
 
+      <div className="flex flex-wrap items-center gap-2 border-b border-border/50 px-4 py-1.5 text-xs">
+        <span className="text-muted-foreground">Progress</span>
+        <div role="group" aria-label="Filter by decision state" className="flex gap-1">
+          {DECISION_FILTERS.map((entry) => (
+            <button
+              key={entry.id}
+              type="button"
+              aria-pressed={decisionFilter === entry.id}
+              onClick={() => setDecisionFilter(entry.id)}
+              className={cn(
+                "rounded-md px-2 py-0.5 transition-colors",
+                decisionFilter === entry.id
+                  ? "bg-accent text-accent-foreground"
+                  : "text-muted-foreground hover:bg-accent/50"
+              )}
+            >
+              {entry.label}
+            </button>
+          ))}
+        </div>
+
+        <span className="ml-2 text-muted-foreground">Show only</span>
+        <div role="group" aria-label="Filter by attribute" className="flex gap-1">
+          {ATTRIBUTE_FILTERS.map((entry) => (
+            <button
+              key={entry.id}
+              type="button"
+              aria-pressed={attributeFilters.has(entry.id)}
+              onClick={() =>
+                setAttributeFilters((previous) => {
+                  const next = new Set(previous);
+                  if (next.has(entry.id)) next.delete(entry.id);
+                  else next.add(entry.id);
+                  return next;
+                })
+              }
+              className={cn(
+                "rounded-md px-2 py-0.5 transition-colors",
+                attributeFilters.has(entry.id)
+                  ? "bg-accent text-accent-foreground"
+                  : "text-muted-foreground hover:bg-accent/50"
+              )}
+            >
+              {entry.label}
+            </button>
+          ))}
+        </div>
+
+        <div className="ml-auto flex items-center gap-2">
+          <Button size="sm" variant="ghost" className="h-6 text-xs" onClick={goToNextUndecided}>
+            Next undecided
+            <kbd className="ml-1.5 rounded border border-border px-1 text-[10px]">n</kbd>
+          </Button>
+          <span className="tabular-nums text-muted-foreground">
+            {visible.length} of {items.length} rows
+          </span>
+        </div>
+      </div>
+
       {optionsOpen && (
         <div className="border-b border-border/50 px-4 py-3">
           <MatchOptions config={matchConfig} preset={matchPreset} onChange={onMatchConfigChange} />
@@ -376,6 +578,7 @@ export function Workbench({
             </caption>
             <thead className="sticky top-0 z-10 bg-background text-[11px] uppercase tracking-wide text-muted-foreground">
               <tr className="border-b border-border/30">
+                <th scope="col" className="w-8 px-2 pt-2" />
                 <th scope="colgroup" colSpan={3} className="px-2 pt-2 text-left font-semibold">
                   Bank statement
                 </th>
@@ -387,6 +590,16 @@ export function Workbench({
                 </th>
               </tr>
               <tr className="border-b border-border/50">
+                <th scope="col" className="w-8 px-2 pb-2">
+                  <input
+                    type="checkbox"
+                    aria-label={
+                      allVisibleSelected ? "Deselect all visible rows" : "Select all visible rows"
+                    }
+                    checked={allVisibleSelected}
+                    onChange={() => toggleSelectAll(visibleIds, allVisibleSelected)}
+                  />
+                </th>
                 <th scope="col" className="w-14 px-2 pb-2 text-left font-medium">Date</th>
                 <th scope="col" className="px-2 pb-2 text-left font-medium">Description</th>
                 <th scope="col" className="w-24 px-2 pb-2 text-right font-medium">Amount</th>
@@ -411,6 +624,8 @@ export function Workbench({
                     .map((id) => transactions.get(id))
                     .filter((t): t is ActualTransactionSnapshot => Boolean(t))}
                   selected={item.id === selectedId}
+                  checked={selectedIds.has(item.id)}
+                  onToggleChecked={(checked) => toggleSelect(item.id, checked)}
                   onSelect={() => setSelectedId(item.id)}
                 />
               ))}
@@ -452,6 +667,21 @@ export function Workbench({
           />
         )}
       </div>
+
+      <BulkDecisionBar
+        selected={selectedItems}
+        statementRows={statementRows}
+        transactions={transactions}
+        onClear={clearSelection}
+        onBulkDisposition={(itemIds, disposition) => {
+          onBulkDisposition(itemIds, disposition);
+          clearSelection();
+        }}
+        onBulkCorrectAmount={(entries) => {
+          onBulkCorrectAmount(entries);
+          clearSelection();
+        }}
+      />
     </div>
   );
 }

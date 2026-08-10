@@ -86,13 +86,27 @@ export function ItemActions({
               key={transaction.id}
               variant="outline"
               size="sm"
-              className="h-auto justify-start py-1.5 text-left"
+              className="h-auto w-full items-start justify-start whitespace-normal py-2 text-left"
               onClick={() => onUseCandidate(transaction.id)}
             >
-              <Check className="mr-1.5 h-3.5 w-3.5 shrink-0" />
-              <span className="min-w-0 flex-1 truncate text-xs">
-                {transaction.date} · {transaction.payeeName ?? transaction.notes ?? "No payee"} ·{" "}
-                {formatMinorUnits(transaction.amount)}
+              <Check className="mr-1.5 mt-0.5 h-3.5 w-3.5 shrink-0" />
+              {/* Shown in full rather than truncated: this is the moment the
+                  user is choosing between transactions, so the text they are
+                  choosing on must be readable. */}
+              <span className="flex min-w-0 flex-1 flex-col gap-0.5 text-xs">
+                <span className="flex justify-between gap-2">
+                  <span className="tabular-nums text-muted-foreground">{transaction.date}</span>
+                  <span className="tabular-nums">{formatMinorUnits(transaction.amount)}</span>
+                </span>
+                <span className="break-words font-medium">
+                  {transaction.payeeName ?? "No payee"}
+                </span>
+                {transaction.notes && (
+                  <span className="break-words text-muted-foreground">{transaction.notes}</span>
+                )}
+                {transaction.categoryName && (
+                  <span className="text-muted-foreground">{transaction.categoryName}</span>
+                )}
               </span>
             </Button>
           ))}
@@ -166,6 +180,19 @@ export function ItemActions({
           </Button>
         )}
       </div>
+
+      {/*
+        Rules run when a transaction is created, so a payee or category chosen
+        here can be changed by the budget's own rules on the way in. Said where
+        the choice is made rather than only at the end, when it is too late to
+        matter.
+      */}
+      {item.disposition === "create" && (
+        <p className="text-[11px] text-muted-foreground">
+          Actual&apos;s rules run on transactions as they are created, so the payee or category may
+          end up different from what you set here.
+        </p>
+      )}
 
       {item.reasonCode === REASON.merchantCluster && (
         <p className="text-[11px] text-muted-foreground">

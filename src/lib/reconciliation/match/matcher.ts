@@ -45,7 +45,8 @@ export function match(input: MatchInput): MatchGraph {
     if (pinnedRows.has(row.id)) continue;
     for (const transaction of candidatesFor(row, index, config)) {
       if (pinnedTransactions.has(transaction.id)) continue;
-      candidates.push(scoreCandidate(row, transaction, config, index));
+      const candidate = scoreCandidate(row, transaction, config, index);
+      if (candidate) candidates.push(candidate);
     }
   }
 

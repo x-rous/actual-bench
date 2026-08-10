@@ -404,6 +404,18 @@ export function ReconciliationView() {
     }));
   }
 
+  function handleBulkDisposition(itemIds: string[], disposition: ReconciliationDisposition) {
+    for (const itemId of itemIds) handleDisposition(itemId, disposition);
+  }
+
+  function handleBulkCorrectAmount(
+    entries: { itemId: string; transactionId: string; amount: number }[]
+  ) {
+    for (const entry of entries) {
+      handleCorrectAmount(entry.itemId, entry.transactionId, entry.amount);
+    }
+  }
+
   function handleCorrectAmount(itemId: string, transactionId: string, amount: number) {
     updateItem(itemId, (item) => {
       const snapshot = transactionsById.get(transactionId);
@@ -560,6 +572,8 @@ export function ReconciliationView() {
           onCorrectAmount={handleCorrectAmount}
           onStage={handleStage}
           onUnstage={handleUnstage}
+          onBulkDisposition={handleBulkDisposition}
+          onBulkCorrectAmount={handleBulkCorrectAmount}
           onMatchConfigChange={(preset, config) => {
             setMatchPreset(preset);
             setMatchConfig(config);

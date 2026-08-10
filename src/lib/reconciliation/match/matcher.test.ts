@@ -331,7 +331,23 @@ describe("ambiguity guard", () => {
     expect(graph.matched[0].actualTransactionId).toBe("t1");
   });
 
-  it("leaves a below-floor pair for the user instead of matching it", () => {
+  it("offers a below-floor pair the user could plausibly want", () => {
+    // Same amount, three days apart, and the text agrees: not confident enough
+    // to match automatically, but plainly worth showing.
+    const graph = run(
+      [row({ id: "s1", postedDate: "2026-07-01", amount: -1000, description: "CARREFOUR MARKET" })],
+      [txn({ id: "t1", date: "2026-07-04", amount: -1000, payeeName: "Carrefour" })],
+      { autoMatchFloor: 95 }
+    );
+
+    expect(graph.matched).toHaveLength(0);
+    expect(graph.ambiguous[0]?.why).toBe("below-floor");
+  });
+
+  it("offers nothing when a pair shares only an amount and a distant date", () => {
+    // No text agreement and a week apart is a coincidence of arithmetic, not a
+    // candidate. Offering it spends the user's attention on a pair that no
+    // evidence supports; the row is better presented as missing from Actual.
     const graph = run(
       [row({ id: "s1", postedDate: "2026-07-01", amount: -1000, description: "XYZ" })],
       [txn({ id: "t1", date: "2026-07-08", amount: -1000, payeeName: "Totally Unrelated" })],
@@ -339,7 +355,8 @@ describe("ambiguity guard", () => {
     );
 
     expect(graph.matched).toHaveLength(0);
-    expect(graph.ambiguous[0]?.why).toBe("below-floor");
+    expect(graph.ambiguous).toHaveLength(0);
+    expect(graph.unmatchedStatementRowIds).toEqual(["s1"]);
   });
 });
 
