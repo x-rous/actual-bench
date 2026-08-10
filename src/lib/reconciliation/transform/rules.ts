@@ -18,10 +18,11 @@ import {
   addNoteTag,
   appendNoteText,
   hasNoteTag,
+  prependNoteText,
   removeNoteTag,
   replaceNoteTag,
 } from "../noteTags";
-import { effectiveValue } from "../session/staging";
+import type { ProspectiveTransaction } from "../session/prospective";
 import type {
   ActualTransactionSnapshot,
   ReconciliationItem,
@@ -69,10 +70,16 @@ export type Condition = {
 export type TransformAction =
   | { kind: "setCategory"; categoryId: string | null }
   | { kind: "setPayee"; payeeId: string | null }
-  | { kind: "addTag"; tag: string }
+  /**
+   * `position` matters more than it looks: users who tag by workflow write the
+   * tag first (`#API ADNOC …`), and a tag appended to the end of a bank
+   * description reads as part of the merchant name.
+   */
+  | { kind: "addTag"; tag: string; position?: "start" | "end" }
   | { kind: "removeTag"; tag: string }
   | { kind: "replaceTag"; from: string; to: string }
-  | { kind: "appendNote"; text: string };
+  | { kind: "appendNote"; text: string }
+  | { kind: "prependNote"; text: string };
 
 /**
  * A saved transformation.
@@ -96,43 +103,42 @@ export type TransformRule = {
 export type TransformContext = {
   item: ReconciliationItem;
   statementRow: StatementRow | undefined;
+  /** What Actual holds today; absent for a row about to be created. */
   transaction: ActualTransactionSnapshot | undefined;
+  /**
+   * What the row will be once applied — staged values over existing ones, and
+   * for a new transaction, whatever the statement supplies.
+   *
+   * Rules read this rather than the stored transaction so a single instruction
+   * covers rows that exist and rows about to be created. "Tag everything this
+   * statement touches" should not need saying twice.
+   */
+  pending: ProspectiveTransaction;
   /** Resolves ids to names, so a condition can be written against what is shown. */
   categoryName: (id: string | null) => string | null;
   payeeName: (id: string | null) => string | null;
 };
 
 /**
- * The value a condition sees.
- *
- * Read through the staged patch, so a rule tests what the transaction *will*
- * be, not what it was before an earlier rule ran (§32).
+ * The value a condition sees: what the row *will* be, not what it was before an
+ * earlier rule ran (§32) and not what Actual currently holds.
  */
 function fieldValue(field: ConditionField, context: TransformContext): string | number | null {
-  const { item, statementRow, transaction } = context;
-  const patch = item.stagedChanges;
+  const { item, statementRow, pending } = context;
 
   switch (field) {
     case "statementDescription":
       return statementRow?.description ?? null;
     case "payee":
-      return context.payeeName(
-        effectiveValue(patch, "payeeId", transaction?.payeeId ?? null)
-      );
+      return context.payeeName(pending.payeeId);
     case "category":
-      return context.categoryName(
-        effectiveValue(patch, "categoryId", transaction?.categoryId ?? null)
-      );
+      return context.categoryName(pending.categoryId);
     case "notes":
-      return effectiveValue(patch, "notes", transaction?.notes ?? null);
+      return pending.notes;
     case "amount":
-      return effectiveValue(
-        patch,
-        "amount",
-        transaction?.amount ?? statementRow?.amount ?? null
-      );
+      return pending.amount;
     case "date":
-      return effectiveValue(patch, "date", transaction?.date ?? statementRow?.postedDate ?? null);
+      return pending.date;
     case "matchStatus":
       return item.disposition;
   }
@@ -228,8 +234,10 @@ export type FieldChange = {
  * text yields both, because each reads what the previous one produced.
  */
 export function changesFor(rule: TransformRule, context: TransformContext): FieldChange[] {
-  const patch = context.item.stagedChanges;
-  const startingNotes = effectiveValue(patch, "notes", context.transaction?.notes ?? null);
+  // The note a new transaction is going to carry, not the empty one it does not
+  // have yet — otherwise adding a tag to a row being created would discard the
+  // description that was about to become its note.
+  const startingNotes = context.pending.notes;
 
   let notes = startingNotes;
   let notesTouched = false;
@@ -244,7 +252,7 @@ export function changesFor(rule: TransformRule, context: TransformContext): Fiel
         changes.push({ field: "payeeId", value: action.payeeId });
         break;
       case "addTag":
-        notes = addNoteTag(notes, action.tag);
+        notes = addNoteTag(notes, action.tag, action.position ?? "end");
         notesTouched = true;
         break;
       case "removeTag":
@@ -257,6 +265,10 @@ export function changesFor(rule: TransformRule, context: TransformContext): Fiel
         break;
       case "appendNote":
         notes = appendNoteText(notes, action.text);
+        notesTouched = true;
+        break;
+      case "prependNote":
+        notes = prependNoteText(notes, action.text);
         notesTouched = true;
         break;
     }

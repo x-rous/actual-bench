@@ -43,6 +43,7 @@ import {
   buildApplyPlan,
   type ApplyConfig,
 } from "@/lib/reconciliation/session/plan";
+import { prospectiveTransaction } from "@/lib/reconciliation/session/prospective";
 import { executeApplyPlan, type ApplyRunResult } from "@/lib/reconciliation/apply/executor";
 import type { OperationResult } from "@/lib/reconciliation/apply/operations";
 import { createReconciliationTransport } from "@/lib/reconciliation/transportAdapter";
@@ -499,10 +500,13 @@ export function ReconciliationView() {
    * names the user sees rather than the ids the model holds.
    */
   function transformContextFor(entry: ReconciliationItem) {
+    const statementRow = statementRowsById.get(entry.statementRowIds[0] ?? "");
+    const transaction = transactionsById.get(entry.actualTransactionIds[0] ?? "");
     return {
       item: entry,
-      statementRow: statementRowsById.get(entry.statementRowIds[0] ?? ""),
-      transaction: transactionsById.get(entry.actualTransactionIds[0] ?? ""),
+      statementRow,
+      transaction,
+      pending: prospectiveTransaction({ item: entry, statementRow, transaction, applyConfig }),
       categoryName: (id: string | null) =>
         categoryOptions.find((option) => option.id === id)?.name ?? null,
       payeeName: (id: string | null) =>

@@ -19,6 +19,7 @@ import type {
   ReconciliationItem,
   StatementRow,
 } from "../types";
+import { prospectiveTransaction } from "./prospective";
 import { canStageDelete, canStageField, hasStagedChanges, stagedFields } from "./staging";
 
 /**
@@ -214,9 +215,14 @@ function createOperationFor(
         ? null
         : row.description || null,
     categoryId: patch?.categoryId?.staged ?? null,
-    notes:
-      patch?.notes?.staged ??
-      (descriptionTarget === "notes" ? row.description || null : null),
+    // Shared with the transformation engine, so a rule that adds a tag to a new
+    // transaction and the write that creates it agree on what its note is.
+    notes: prospectiveTransaction({
+      item,
+      statementRow: row,
+      transaction: undefined,
+      applyConfig: config,
+    }).notes,
     cleared: config.clearedTarget !== "none",
     marker: createMarker({
       budgetSyncId: input.budgetSyncId,

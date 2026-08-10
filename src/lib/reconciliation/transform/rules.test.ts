@@ -4,6 +4,8 @@ import type {
   StagedPatch,
   StatementRow,
 } from "../types";
+import { prospectiveTransaction } from "../session/prospective";
+import { DEFAULT_APPLY_CONFIG } from "../session/plan";
 import { previewTransform } from "./preview";
 import {
   changesFor,
@@ -66,10 +68,22 @@ function item(overrides: Partial<ReconciliationItem> = {}): ReconciliationItem {
 }
 
 function context(overrides: Partial<TransformContext> = {}): TransformContext {
-  return {
+  const base = {
     item: item(),
     statementRow: statementRow(),
-    transaction: txn(),
+    transaction: txn() as ActualTransactionSnapshot | undefined,
+    ...overrides,
+  };
+  return {
+    ...base,
+    pending:
+      overrides.pending ??
+      prospectiveTransaction({
+        item: base.item,
+        statementRow: base.statementRow,
+        transaction: base.transaction,
+        applyConfig: DEFAULT_APPLY_CONFIG,
+      }),
     categoryName: (id) => (id === "c1" ? "Transport" : id === "c2" ? "Taxi" : null),
     payeeName: (id) => (id === "p1" ? "Dubai Taxi" : null),
     ...overrides,
@@ -282,6 +296,69 @@ describe("preview (feature spec §31)", () => {
         }),
     });
   }
+
+  it("tags a transaction that does not exist yet", () => {
+    // A row about to be created has no transaction, but it does have a note it
+    // is going to carry. Adding a tag must build on that rather than replace it.
+    const createItem = item({
+      id: "new",
+      disposition: "create",
+      actualTransactionIds: [],
+    });
+
+    const result = previewTransform({
+      rule: {
+        id: "tag",
+        conditions: [condition({ field: "matchStatus", operator: "equals", value: "create" })],
+        actions: [{ kind: "addTag", tag: "#2026-07", position: "start" }],
+      },
+      items: [createItem],
+      contextFor: () =>
+        context({
+          item: createItem,
+          transaction: undefined,
+          pending: prospectiveTransaction({
+            item: createItem,
+            statementRow: statementRow(),
+            transaction: undefined,
+            applyConfig: { descriptionTarget: "notes", clearedTarget: "none" },
+          }),
+        }),
+    });
+
+    expect(result.changed).toHaveLength(1);
+    expect(result.changed[0].changes[0]).toEqual({
+      field: "notes",
+      before: "DUBAI TAXI CORPORATION",
+      after: "#2026-07 DUBAI TAXI CORPORATION",
+    });
+  });
+
+  it("tags a new transaction whose description went to the payee", () => {
+    const createItem = item({ id: "new", disposition: "create", actualTransactionIds: [] });
+
+    const result = previewTransform({
+      rule: {
+        id: "tag",
+        conditions: [],
+        actions: [{ kind: "addTag", tag: "#2026-07" }],
+      },
+      items: [createItem],
+      contextFor: () =>
+        context({
+          item: createItem,
+          transaction: undefined,
+          pending: prospectiveTransaction({
+            item: createItem,
+            statementRow: statementRow(),
+            transaction: undefined,
+            applyConfig: { descriptionTarget: "payee", clearedTarget: "none" },
+          }),
+        }),
+    });
+
+    expect(result.changed[0].changes[0].after).toBe("#2026-07");
+  });
 
   it("shows the exact before and after", () => {
     const result = preview([item()], { t1: txn({ notes: "#API Dinner" }) });

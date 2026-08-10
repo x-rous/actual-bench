@@ -2,6 +2,7 @@ import {
   addNoteTag,
   appendNoteText,
   findNoteTags,
+  prependNoteText,
   removeNoteTag,
   replaceNoteTag,
   hasNoteTag,
@@ -236,5 +237,30 @@ describe("user text always survives (feature spec §49)", () => {
   it("keeps a multi-line note's shape when a tag is removed", () => {
     const original = "Line one #One\nLine two";
     expect(removeNoteTag(original, "#One")).toBe("Line one\nLine two");
+  });
+});
+
+describe("tag position and prepending", () => {
+  it("puts a tag at the front when asked", () => {
+    // The convention among users who tag by workflow: the tag leads.
+    expect(addNoteTag("ADNOC AL CORNICHE 933", "#2026-07", "start")).toBe(
+      "#2026-07 ADNOC AL CORNICHE 933"
+    );
+  });
+
+  it("still appends by default", () => {
+    expect(addNoteTag("Dinner", "#2026-07")).toBe("Dinner #2026-07");
+  });
+
+  it("does not duplicate whichever end it is asked for", () => {
+    expect(addNoteTag("#2026-07 Dinner", "#2026-07", "start")).toBe("#2026-07 Dinner");
+  });
+
+  it("prepends text before what is already there", () => {
+    expect(prependNoteText("Dinner", "Checked")).toBe("Checked | Dinner");
+  });
+
+  it("writes prepended text alone into an empty note", () => {
+    expect(prependNoteText(null, "Checked")).toBe("Checked");
   });
 });

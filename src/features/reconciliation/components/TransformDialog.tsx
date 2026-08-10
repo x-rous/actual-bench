@@ -60,6 +60,7 @@ const ACTIONS: { id: ActionKind; label: string }[] = [
   { id: "addTag", label: "Add tag" },
   { id: "removeTag", label: "Remove tag" },
   { id: "appendNote", label: "Append to notes" },
+  { id: "prependNote", label: "Put at the start of notes" },
   { id: "setCategory", label: "Set category" },
   { id: "setPayee", label: "Set payee" },
 ];
@@ -78,6 +79,10 @@ function emptyAction(kind: ActionKind): TransformAction {
       return { kind, categoryId: null };
     case "setPayee":
       return { kind, payeeId: null };
+    case "prependNote":
+      return { kind, text: "" };
+    default:
+      return { kind: "addTag", tag: "" };
   }
 }
 
@@ -134,7 +139,9 @@ export function TransformDialog({
     actions.every((action) => {
       if (action.kind === "replaceTag") return action.from.trim() && action.to.trim();
       if (action.kind === "addTag" || action.kind === "removeTag") return action.tag.trim();
-      if (action.kind === "appendNote") return action.text.trim();
+      if (action.kind === "appendNote" || action.kind === "prependNote") {
+        return action.text.trim();
+      }
       return true;
     });
 
@@ -329,6 +336,26 @@ export function TransformDialog({
               </>
             )}
 
+            {action.kind === "addTag" && (
+              <select
+                className="h-8 rounded-md border border-input bg-background px-2 text-xs"
+                aria-label="Where the tag goes"
+                value={action.position ?? "end"}
+                onChange={(event) =>
+                  setActions((previous) =>
+                    previous.map((entry, i) =>
+                      i === index && entry.kind === "addTag"
+                        ? { ...entry, position: event.target.value as "start" | "end" }
+                        : entry
+                    )
+                  )
+                }
+              >
+                <option value="end">at the end</option>
+                <option value="start">at the start</option>
+              </select>
+            )}
+
             {(action.kind === "addTag" || action.kind === "removeTag") && (
               <input
                 className="h-8 w-32 rounded-md border border-input bg-background px-2 text-xs"
@@ -347,7 +374,7 @@ export function TransformDialog({
               />
             )}
 
-            {action.kind === "appendNote" && (
+            {(action.kind === "appendNote" || action.kind === "prependNote") && (
               <input
                 className="h-8 w-64 rounded-md border border-input bg-background px-2 text-xs"
                 value={action.text}
@@ -356,7 +383,7 @@ export function TransformDialog({
                 onChange={(event) =>
                   setActions((previous) =>
                     previous.map((entry, i) =>
-                      i === index && entry.kind === "appendNote"
+                      i === index && (entry.kind === "appendNote" || entry.kind === "prependNote")
                         ? { ...entry, text: event.target.value }
                         : entry
                     )

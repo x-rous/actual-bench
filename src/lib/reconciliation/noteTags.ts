@@ -131,14 +131,19 @@ export function normalizeTagName(tag: string | null | undefined): string {
  * Appended at the end, because that is where a reader expects a label, and
  * inserting one mid-sentence would change how the note reads.
  */
-export function addNoteTag(notes: string | null | undefined, tag: string): string {
+export function addNoteTag(
+  notes: string | null | undefined,
+  tag: string,
+  position: "start" | "end" = "end"
+): string {
   const name = normalizeTagName(tag);
   if (!name) return notes ?? "";
   if (hasNoteTag(notes, name)) return notes ?? "";
 
   const base = (notes ?? "").trim();
   const written = `#${tag.trim().replace(/^#/, "")}`;
-  return base ? `${base} ${written}` : written;
+  if (!base) return written;
+  return position === "start" ? `${written} ${base}` : `${base} ${written}`;
 }
 
 /**
@@ -216,6 +221,25 @@ export function replaceNoteTag(
   out += notes.slice(cursor);
 
   return out.replace(/[ \t]{2,}/g, " ").trim();
+}
+
+/**
+ * Put text at the front of a note, keeping what is already there.
+ *
+ * The mirror of appending, for notes whose convention puts the label first.
+ */
+export function prependNoteText(
+  notes: string | null | undefined,
+  text: string,
+  separator = " | "
+): string {
+  const addition = text.trim();
+  if (!addition) return notes ?? "";
+
+  const base = (notes ?? "").trim();
+  if (!base) return addition;
+  if (base.includes(addition)) return base;
+  return `${addition}${separator}${base}`;
 }
 
 /**

@@ -133,7 +133,11 @@ export function previewTransform(input: PreviewInput): TransformPreview {
   return { matched, changed, skipped };
 }
 
-/** What the field holds right now, staged changes included. */
+/**
+ * What the field will hold before this rule runs — staged changes included, and
+ * for a row about to be created, whatever the statement supplies. That is what
+ * the user needs to see as the "before".
+ */
 function currentValue(
   item: ReconciliationItem,
   context: TransformContext,
@@ -141,7 +145,16 @@ function currentValue(
 ): string | null {
   const staged = item.stagedChanges?.[field];
   if (staged) return staged.staged as string | null;
-  return originalValue(context, field);
+  switch (field) {
+    case "notes":
+      return context.pending.notes;
+    case "payeeId":
+      return context.pending.payeeId;
+    case "categoryId":
+      return context.pending.categoryId;
+    default:
+      return originalValue(context, field);
+  }
 }
 
 /** What Actual holds today — the baseline every staged change is measured from. */
