@@ -17,6 +17,7 @@ import {
 } from "@/lib/reconciliation/statement/normalize";
 import type { MatchConfig } from "@/lib/reconciliation/types";
 import type { TextTargetPreset } from "@/lib/reconciliation/match/config";
+import type { ReconciliationProfileRecord } from "../lib/reconciliationApi";
 import { MatchOptions } from "./MatchOptions";
 import { formatMinorUnits } from "../lib/format";
 
@@ -82,7 +83,12 @@ export type ImportPanelProps = {
   accountName: string;
   matchConfig: MatchConfig;
   matchPreset: TextTargetPreset;
+  /** Saved profiles for this account, most recently used first. */
+  profiles: ReconciliationProfileRecord[];
   onMatchConfigChange: (preset: TextTargetPreset, config: MatchConfig) => void;
+  onApplyProfile: (profile: ReconciliationProfileRecord) => void;
+  onSaveProfile: (name: string, mapping: ColumnMapping) => void;
+  isSavingProfile?: boolean;
   onCancel: () => void;
   onParsed: (result: NormalizedStatement, statementName: string | null) => void;
   isSaving?: boolean;
@@ -92,7 +98,11 @@ export function ImportPanel({
   accountName,
   matchConfig,
   matchPreset,
+  profiles,
   onMatchConfigChange,
+  onApplyProfile,
+  onSaveProfile,
+  isSavingProfile,
   onCancel,
   onParsed,
   isSaving,
@@ -101,6 +111,8 @@ export function ImportPanel({
   const [fileName, setFileName] = useState<string | null>(null);
   const [fileError, setFileError] = useState<string | null>(null);
   const [mapping, setMapping] = useState<ColumnMapping | null>(null);
+  const [appliedProfileId, setAppliedProfileId] = useState<string | null>(null);
+  const [profileName, setProfileName] = useState("");
 
   const table = useMemo(() => (text.trim() ? parseStatementText(text) : null), [text]);
 
@@ -126,7 +138,21 @@ export function ImportPanel({
   function update(patch: Partial<ColumnMapping>) {
     if (!effectiveMapping) return;
     setMapping({ ...effectiveMapping, ...patch });
+    // Once the user edits the mapping it is no longer the saved profile, and
+    // saying otherwise would be a lie about what is about to run.
+    setAppliedProfileId(null);
   }
+
+  function applyProfile(profile: ReconciliationProfileRecord) {
+    const saved = profile.mapping as ColumnMapping | null;
+    if (saved) setMapping(saved);
+    setAppliedProfileId(profile.id);
+    setProfileName(profile.name);
+    onApplyProfile(profile);
+  }
+
+  const appliedProfile = profiles.find((profile) => profile.id === appliedProfileId) ?? null;
+  const suggestedProfile = profiles[0] ?? null;
 
   async function handleFile(file: File | undefined) {
     if (!file) return;
@@ -151,6 +177,42 @@ export function ImportPanel({
           budget at this stage.
         </p>
       </div>
+
+      {suggestedProfile && !appliedProfile && (
+        <div className="flex flex-wrap items-center gap-2 rounded-md border border-border/60 bg-muted/40 px-3 py-2 text-xs">
+          <span>
+            Saved profile for this account:{" "}
+            <span className="font-medium">{suggestedProfile.name}</span>
+          </span>
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-7"
+            onClick={() => applyProfile(suggestedProfile)}
+          >
+            Use it
+          </Button>
+        </div>
+      )}
+
+      {appliedProfile && (
+        <div className="flex flex-wrap items-center gap-2 rounded-md border border-border/60 bg-muted/40 px-3 py-2 text-xs">
+          <span>
+            Using <span className="font-medium">{appliedProfile.name}</span>
+          </span>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7"
+            onClick={() => {
+              setMapping(null);
+              setAppliedProfileId(null);
+            }}
+          >
+            Detect from the file instead
+          </Button>
+        </div>
+      )}
 
       <div className="flex flex-wrap items-center gap-2">
         <label className="inline-flex h-8 cursor-pointer items-center rounded-md border border-input px-3 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground focus-within:ring-2 focus-within:ring-ring">
@@ -387,6 +449,37 @@ export function ImportPanel({
             </details>
           )}
         </>
+      )}
+
+      {table && effectiveMapping && (
+        <div className="flex flex-wrap items-end gap-2 rounded-md border border-border/60 p-3">
+          <div className="flex flex-col gap-1">
+            <Label htmlFor="profile-name" className="text-xs">
+              Save these settings for {accountName}
+            </Label>
+            <input
+              id="profile-name"
+              value={profileName}
+              onChange={(event) => setProfileName(event.target.value)}
+              placeholder={`${accountName} statement`}
+              className="h-8 w-72 rounded-md border border-input bg-background px-2 text-sm"
+            />
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={isSavingProfile}
+            onClick={() =>
+              onSaveProfile(profileName.trim() || `${accountName} statement`, effectiveMapping)
+            }
+          >
+            {isSavingProfile ? "Saving…" : "Save profile"}
+          </Button>
+          <p className="w-full text-[11px] text-muted-foreground">
+            Stores the column mapping and the matching options, so next month&apos;s statement needs
+            no setting up. Saving again under the same name replaces it.
+          </p>
+        </div>
       )}
 
       <div className="flex items-center justify-end gap-2">

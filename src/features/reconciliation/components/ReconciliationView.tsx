@@ -30,9 +30,12 @@ import { useAccounts } from "@/features/accounts/hooks/useAccounts";
 import { loadCandidateWindow } from "../lib/loadCandidates";
 import {
   useReconciliationMutations,
+  useReconciliationProfiles,
   useReconciliationSession,
   useReconciliationSessions,
 } from "../hooks/useReconciliation";
+import type { ReconciliationProfileRecord } from "../lib/reconciliationApi";
+import type { ColumnMapping } from "@/lib/reconciliation/statement/normalize";
 import { ImportPanel } from "./ImportPanel";
 import { SessionList } from "./SessionList";
 import { Workbench } from "./Workbench";
@@ -76,6 +79,12 @@ export function ReconciliationView() {
   // profile) because they describe how this account's transactions are created.
   const [matchConfig, setMatchConfig] = useState<MatchConfig>(DEFAULT_MATCH_CONFIG);
   const [matchPreset, setMatchPreset] = useState<TextTargetPreset>(DEFAULT_TEXT_PRESET);
+
+  // Profiles are per account, so the panel can propose the one this account
+  // used last rather than making the user configure the same statement layout
+  // every month.
+  const profileAccountId = screen.name === "import" ? screen.accountId : accountId || undefined;
+  const profilesQuery = useReconciliationProfiles(profileAccountId);
 
   const sessionId = screen.name === "home" ? null : screen.sessionId;
   const sessionQuery = useReconciliationSession(sessionId);
@@ -332,6 +341,20 @@ export function ReconciliationView() {
           accountName={screen.accountName}
           matchConfig={matchConfig}
           matchPreset={matchPreset}
+          profiles={profilesQuery.data ?? []}
+          isSavingProfile={mutations.saveProfile.isPending}
+          onApplyProfile={(profile: ReconciliationProfileRecord) => {
+            const saved = profile.matchConfig as MatchConfig | null;
+            if (saved) setMatchConfig({ ...DEFAULT_MATCH_CONFIG, ...saved });
+          }}
+          onSaveProfile={(name: string, mapping: ColumnMapping) => {
+            void mutations.saveProfile.mutateAsync({
+              accountId: screen.accountId,
+              name,
+              mapping,
+              matchConfig,
+            });
+          }}
           onMatchConfigChange={(preset, config) => {
             setMatchPreset(preset);
             setMatchConfig(config);
