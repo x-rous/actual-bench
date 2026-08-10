@@ -3,7 +3,12 @@
 import { AlertTriangle, ArrowLeft, Loader2, Plus, Trash2, Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { planCounts, totalChanges, type ApplyPlan } from "@/lib/reconciliation/apply/operations";
+import {
+  balanceImpact,
+  planCounts,
+  totalChanges,
+  type ApplyPlan,
+} from "@/lib/reconciliation/apply/operations";
 import { stagedFields } from "@/lib/reconciliation/session/staging";
 import type { ApplyConfig } from "@/lib/reconciliation/session/plan";
 import type {
@@ -12,6 +17,7 @@ import type {
   StatementRow,
 } from "@/lib/reconciliation/types";
 import { ReviewComparison } from "./ReviewComparison";
+import { formatMinorUnits } from "../lib/format";
 import type { Option } from "./StagedFields";
 
 /**
@@ -66,6 +72,7 @@ export function ReviewPanel({
 }: ReviewPanelProps) {
   const counts = planCounts(plan);
   const total = totalChanges(plan);
+  const balance = balanceImpact(plan);
 
   // Counted per field rather than per operation: one update that changes a
   // category and a note is two metadata changes, and that is what the user is
@@ -100,6 +107,32 @@ export function ReviewPanel({
         <Stat label="Delete" value={counts.delete} icon={Trash2} destructive />
         <Stat label="No change needed" value={plan.noWriteMatches} muted />
       </div>
+
+      {/*
+        A reconciliation that moves money is doing something the user should
+        agree to knowingly, so the figure is stated before the fact rather than
+        discovered afterwards in the account.
+      */}
+      <section className="flex flex-wrap items-baseline gap-x-3 gap-y-1 rounded-md border border-border/60 px-3 py-2">
+        <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          Effect on the account balance
+        </h3>
+        <p
+          className={cn(
+            "text-sm font-semibold tabular-nums",
+            balance > 0 && "text-emerald-600 dark:text-emerald-400",
+            balance < 0 && "text-destructive"
+          )}
+        >
+          {balance > 0 ? "+" : balance < 0 ? "−" : ""}
+          {formatMinorUnits(Math.abs(balance))}
+        </p>
+        <p className="text-[11px] text-muted-foreground">
+          {balance === 0
+            ? "These changes leave the balance where it is."
+            : "Transactions created, less those deleted, plus the difference on any corrected amount."}
+        </p>
+      </section>
 
       {/*
         Asked here rather than in the matching options: these shape the write,

@@ -34,6 +34,8 @@ type ReviewRow = {
   action: "create" | "update" | "delete" | "unchanged" | "later";
   pending: ReturnType<typeof prospectiveTransaction>;
   changedFields: Set<string>;
+  /** `yes` = this run clears it, `already` = it is cleared and stays so. */
+  willBeCleared: "yes" | "already" | "no";
 };
 
 const ACTION_LABELS: Record<ReviewRow["action"], string> = {
@@ -112,9 +114,19 @@ export function ReviewComparison({
           : "unchanged";
 
       const changedFields = new Set<string>(stagedFields(item.stagedChanges));
-      if (operation?.kind === "update" && operation.cleared) changedFields.add("cleared");
+      const clearedByThisRun =
+        (operation?.kind === "update" && operation.cleared === true) ||
+        (operation?.kind === "create" && operation.cleared === true);
+      if (clearedByThisRun) changedFields.add("cleared");
+
+      const willBeCleared: ReviewRow["willBeCleared"] = clearedByThisRun
+        ? "yes"
+        : transaction?.cleared
+          ? "already"
+          : "no";
 
       return {
+        willBeCleared,
         item,
         statementRow,
         transaction,
@@ -169,22 +181,25 @@ export function ReviewComparison({
               <th scope="col" className="border-x border-border/40 px-2 pt-1.5 text-left font-semibold">
                 Will
               </th>
-              <th scope="colgroup" colSpan={5} className="px-2 pt-1.5 text-left font-semibold">
+              <th scope="colgroup" colSpan={6} className="px-2 pt-1.5 text-left font-semibold">
                 Resulting transaction in Actual
               </th>
             </tr>
             <tr className="border-b border-border/50">
               <th scope="col" className="w-14 px-2 pb-1.5 text-left font-medium">Date</th>
-              <th scope="col" className="px-2 pb-1.5 text-left font-medium">Description</th>
-              <th scope="col" className="w-24 px-2 pb-1.5 text-right font-medium">Amount</th>
+              {/* Capped: the statement side is context, the resulting side is
+                  what the user is agreeing to and needs the room. */}
+              <th scope="col" className="w-[20%] px-2 pb-1.5 text-left font-medium">Description</th>
+              <th scope="col" className="w-20 px-2 pb-1.5 text-right font-medium">Amount</th>
               <th scope="col" className="w-20 border-x border-border/40 px-2 pb-1.5 text-left font-medium">
                 Action
               </th>
               <th scope="col" className="w-14 px-2 pb-1.5 text-left font-medium">Date</th>
-              <th scope="col" className="w-40 px-2 pb-1.5 text-left font-medium">Payee</th>
-              <th scope="col" className="px-2 pb-1.5 text-left font-medium">Notes</th>
-              <th scope="col" className="w-36 px-2 pb-1.5 text-left font-medium">Category</th>
-              <th scope="col" className="w-24 px-2 pb-1.5 text-right font-medium">Amount</th>
+              <th scope="col" className="w-[16%] px-2 pb-1.5 text-left font-medium">Payee</th>
+              <th scope="col" className="w-[26%] px-2 pb-1.5 text-left font-medium">Notes</th>
+              <th scope="col" className="w-[14%] px-2 pb-1.5 text-left font-medium">Category</th>
+              <th scope="col" className="w-20 px-2 pb-1.5 text-right font-medium">Amount</th>
+              <th scope="col" className="w-16 px-2 pb-1.5 text-left font-medium">Cleared</th>
             </tr>
           </thead>
           <tbody>
@@ -218,7 +233,7 @@ export function ReviewComparison({
                   </td>
 
                   {deleted ? (
-                    <td colSpan={5} className="px-2 py-1 text-muted-foreground line-through">
+                    <td colSpan={6} className="px-2 py-1 text-muted-foreground line-through">
                       {row.transaction?.payeeName ?? row.transaction?.notes ?? "This transaction"}{" "}
                       · {formatMinorUnits(row.transaction?.amount ?? 0)}
                     </td>
@@ -265,6 +280,18 @@ export function ReviewComparison({
                         >
                           {row.pending.amount !== null ? formatMinorUnits(row.pending.amount) : "—"}
                         </Changed>
+                      </td>
+                      {/* Whether this row ends up cleared, since that is a
+                          choice made on this screen and its effect is otherwise
+                          invisible until afterwards. */}
+                      <td className="whitespace-nowrap px-2 py-1">
+                        {row.willBeCleared === "yes" ? (
+                          <span className="text-emerald-600 dark:text-emerald-400">Yes</span>
+                        ) : row.willBeCleared === "already" ? (
+                          <span className="text-muted-foreground">Already</span>
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
                       </td>
                     </>
                   )}

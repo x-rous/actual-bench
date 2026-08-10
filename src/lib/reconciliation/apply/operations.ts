@@ -109,6 +109,38 @@ export function planCounts(plan: ApplyPlan): Record<OperationKind, number> {
   return counts;
 }
 
+/**
+ * What applying will do to the account's balance, in integer minor units.
+ *
+ * Derived from the plan alone, since every operation carries the amounts it
+ * moves: a created transaction adds its own amount, a deleted one removes the
+ * amount it was contributing, and a corrected one contributes only the
+ * difference between what it said and what it will say.
+ *
+ * Worth stating before the fact: a reconciliation that changes the balance is
+ * doing something the user should have agreed to knowingly.
+ */
+export function balanceImpact(plan: ApplyPlan): MinorUnitAmount {
+  let delta = 0;
+  for (const operation of plan.operations) {
+    switch (operation.kind) {
+      case "create":
+        delta += operation.amount;
+        break;
+      case "delete":
+        // Removing a transaction reverses whatever it was contributing.
+        delta -= operation.amount;
+        break;
+      case "update": {
+        const amount = operation.patch.amount;
+        if (amount) delta += amount.staged - amount.original;
+        break;
+      }
+    }
+  }
+  return delta;
+}
+
 /** Total writes, i.e. what the Apply button should name (feature spec §38). */
 export function totalChanges(plan: ApplyPlan): number {
   return plan.operations.length;
