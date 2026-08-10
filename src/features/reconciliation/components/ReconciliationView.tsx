@@ -166,7 +166,7 @@ export function ReconciliationView() {
     () =>
       summarizeCoverage(items, {
         statementRows: parsedRows.length,
-        actualTransactions: snapshot.length,
+        loadedTransactions: snapshot.length,
       }),
     [items, parsedRows.length, snapshot.length]
   );

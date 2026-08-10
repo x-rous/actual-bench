@@ -196,92 +196,86 @@ export function buildReconciliationItems(input: BuildItemsInput): Reconciliation
 // ---------------------------------------------------------------------------
 
 /**
- * Two independent completeness questions (UX §30, V2 §4):
+ * What became of each side.
  *
- * - does every statement row have a resolution?
- * - is every in-window Actual row explained?
- *
- * A single "96.8% matched" figure hides an unexplained Actual side, so both are
- * reported.
+ * The question a reconciliation has to answer is not "what is the status of
+ * each row" but "how much of my statement is accounted for, and what is in
+ * Actual on top of it". So each side is reported as a total that its parts sum
+ * to exactly — a number that does not add up is worse than no number.
  */
-export type ReconciliationCoverage = {
-  statementRows: number;
-  statementRowsResolved: number;
-  actualTransactions: number;
-  actualTransactionsExplained: number;
+export type SideCoverage = {
+  /** Rows on this side that have a row in the workbench. */
+  total: number;
+  /** Paired with the other side. */
   matched: number;
-  create: number;
-  keep: number;
-  delete: number;
-  unresolved: number;
-  ignored: number;
-  likelyDuplicates: number;
-  /**
-   * Loaded only because of the candidate padding, and outside the statement's
-   * own dates. Reported separately so they do not read as unexplained.
-   */
-  outsideStatementPeriod: number;
+  /** Has a candidate, but needs a person to decide. */
+  needsReview: number;
+  /** Statement: nothing in Actual. Actual: nothing on the statement. */
+  unaccounted: number;
 };
 
-const RESOLVED_DISPOSITIONS = new Set(["matched", "create", "keep", "delete", "ignored"]);
+export type ReconciliationCoverage = {
+  statement: SideCoverage;
+  actual: SideCoverage;
+  /** Actual rows dated outside the statement's own period. */
+  outsideStatementPeriod: number;
+  likelyDuplicates: number;
+  /**
+   * Loaded only as matching headroom and never shown. Reported so the Actual
+   * total is explainable rather than mysteriously smaller than the account.
+   */
+  loadedAsHeadroom: number;
+};
+
+const REVIEW_REASONS = new Set<string>([
+  REASON.ambiguousMatch,
+  REASON.belowConfidenceFloor,
+  REASON.amountMismatch,
+]);
 
 export function summarizeCoverage(
   items: ReconciliationItem[],
-  totals: { statementRows: number; actualTransactions: number }
+  totals: { statementRows: number; loadedTransactions: number }
 ): ReconciliationCoverage {
-  const coverage: ReconciliationCoverage = {
-    statementRows: totals.statementRows,
-    statementRowsResolved: 0,
-    actualTransactions: totals.actualTransactions,
-    actualTransactionsExplained: 0,
-    matched: 0,
-    create: 0,
-    keep: 0,
-    delete: 0,
-    unresolved: 0,
-    ignored: 0,
-    likelyDuplicates: 0,
-    outsideStatementPeriod: 0,
-  };
+  const statement: SideCoverage = { total: 0, matched: 0, needsReview: 0, unaccounted: 0 };
+  const actual: SideCoverage = { total: 0, matched: 0, needsReview: 0, unaccounted: 0 };
+  let outsideStatementPeriod = 0;
+  let likelyDuplicates = 0;
+
+  // Counted per transaction, not per item: one review item can offer several
+  // candidates, and each of those is a transaction the user still has to place.
+  const seenTransactions = new Set<string>();
 
   for (const item of items) {
+    const statementCount = item.statementRowIds.length;
+    const transactionIds = item.actualTransactionIds.filter((id) => !seenTransactions.has(id));
+    for (const id of transactionIds) seenTransactions.add(id);
+
+    statement.total += statementCount;
+    actual.total += transactionIds.length;
+
+    if (item.disposition === "matched") {
+      statement.matched += statementCount;
+      actual.matched += transactionIds.length;
+    } else if (REVIEW_REASONS.has(item.reasonCode ?? "")) {
+      statement.needsReview += statementCount;
+      actual.needsReview += transactionIds.length;
+    } else {
+      statement.unaccounted += statementCount;
+      actual.unaccounted += transactionIds.length;
+    }
+
     if (item.reasonCode === REASON.outsideStatementPeriod) {
-      // The statement says nothing about these dates, so they are neither
-      // resolved nor a gap — they are excluded from both sides of the ratio.
-      coverage.outsideStatementPeriod += 1;
-      coverage.actualTransactions = Math.max(0, coverage.actualTransactions - 1);
-      continue;
+      outsideStatementPeriod += transactionIds.length;
     }
-    const resolved = RESOLVED_DISPOSITIONS.has(item.disposition);
-    if (resolved) {
-      coverage.statementRowsResolved += item.statementRowIds.length;
-      // An ambiguous item references several candidate transactions but
-      // explains at most the one it settles on, so count the resolved side only.
-      coverage.actualTransactionsExplained += Math.min(item.actualTransactionIds.length, 1);
-    }
-
-    switch (item.disposition) {
-      case "matched":
-        coverage.matched += 1;
-        break;
-      case "create":
-        coverage.create += 1;
-        break;
-      case "keep":
-        coverage.keep += 1;
-        break;
-      case "delete":
-        coverage.delete += 1;
-        break;
-      case "ignored":
-        coverage.ignored += 1;
-        break;
-      default:
-        coverage.unresolved += 1;
-    }
-
-    if (item.reasonCode === REASON.likelyDuplicate) coverage.likelyDuplicates += 1;
+    if (item.reasonCode === REASON.likelyDuplicate) likelyDuplicates += 1;
   }
 
-  return coverage;
+  return {
+    statement: { ...statement, total: totals.statementRows || statement.total },
+    actual,
+    outsideStatementPeriod,
+    likelyDuplicates,
+    loadedAsHeadroom: Math.max(0, totals.loadedTransactions - actual.total),
+  };
 }

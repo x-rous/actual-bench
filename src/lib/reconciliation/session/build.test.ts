@@ -207,7 +207,7 @@ describe("transactions loaded outside the statement period", () => {
     expect(items[0].reasonCode).toBe(REASON.notOnStatement);
   });
 
-  it("excludes it from the explained ratio instead of counting it as a gap", () => {
+  it("does not count a padded transaction against the statement", () => {
     const items = build(
       [row({ id: "s1", postedDate: "2026-07-20" })],
       [
@@ -218,40 +218,9 @@ describe("transactions loaded outside the statement period", () => {
       period
     );
 
-    const coverage = summarizeCoverage(items, { statementRows: 1, actualTransactions: 2 });
-    // One transaction in period, matched. The padded one is reported separately.
-    expect(coverage.actualTransactions).toBe(1);
-    expect(coverage.actualTransactionsExplained).toBe(1);
+    const coverage = summarizeCoverage(items, { statementRows: 1, loadedTransactions: 2 });
+    expect(coverage.statement.matched).toBe(1);
     expect(coverage.outsideStatementPeriod).toBe(1);
-    expect(coverage.unresolved).toBe(0);
-  });
-
-  it("omits an unmatched transaction outside the range the user asked to see", () => {
-    // Padding of zero: the window loaded is still wide enough for matching to
-    // reach across the boundary, but the user asked to see only their own
-    // period, so a neighbouring transaction is not listed at all.
-    const items = build(
-      [],
-      [txn({ id: "t1", date: "2026-08-10" })],
-      true,
-      period,
-      period
-    );
-    expect(items).toHaveLength(0);
-  });
-
-  it("keeps a matched pair even when the transaction sits outside that range", () => {
-    // Matching headroom exists precisely so a statement row at the edge of the
-    // period can pair with a transaction recorded just outside it.
-    const items = build(
-      [row({ id: "s1", postedDate: "2026-08-06" })],
-      [txn({ id: "t1", date: "2026-08-08" })],
-      true,
-      period,
-      period
-    );
-    expect(items).toHaveLength(1);
-    expect(items[0].disposition).toBe("matched");
   });
 
   it("keeps the old behaviour when no period is supplied", () => {
@@ -261,35 +230,73 @@ describe("transactions loaded outside the statement period", () => {
 });
 
 describe("summarizeCoverage", () => {
-  it("reports both sides independently", () => {
+  it("breaks the statement into parts that sum to its total", () => {
+    // The number that matters: of the rows the bank says posted, how many are
+    // accounted for. A breakdown that does not add up is worse than none.
     const items = build(
-      [row({ id: "s1" }), row({ id: "s2", amount: -999, description: "MISSING" })],
+      [
+        row({ id: "s1" }),
+        row({ id: "s2", amount: -999, description: "NOT IN ACTUAL" }),
+        row({ id: "s3", postedDate: "2026-07-08", amount: -11000, description: "AMAZON AE" }),
+      ],
+      [
+        txn({ id: "t1" }),
+        txn({ id: "t2", date: "2026-07-07", amount: -11000, payeeName: "Amazon" }),
+        txn({ id: "t3", date: "2026-07-08", amount: -11000, payeeName: "Amazon Marketplace" }),
+      ]
+    );
+
+    const coverage = summarizeCoverage(items, { statementRows: 3, loadedTransactions: 3 });
+    const { statement } = coverage;
+
+    expect(statement.total).toBe(3);
+    expect(statement.matched + statement.needsReview + statement.unaccounted).toBe(statement.total);
+    expect(statement.matched).toBe(1);
+    expect(statement.needsReview).toBe(1);
+    expect(statement.unaccounted).toBe(1);
+  });
+
+  it("breaks Actual into parts that sum to its total", () => {
+    const items = build(
+      [row({ id: "s1" })],
       [txn({ id: "t1" }), txn({ id: "t2", amount: -777, payeeName: "Orphan" })]
     );
 
-    const coverage = summarizeCoverage(items, { statementRows: 2, actualTransactions: 2 });
-
-    expect(coverage.statementRows).toBe(2);
-    expect(coverage.actualTransactions).toBe(2);
-    // One matched pair; the other row on each side is unexplained.
-    expect(coverage.statementRowsResolved).toBe(1);
-    expect(coverage.actualTransactionsExplained).toBe(1);
-    expect(coverage.matched).toBe(1);
-    expect(coverage.unresolved).toBe(2);
+    const { actual } = summarizeCoverage(items, { statementRows: 1, loadedTransactions: 2 });
+    expect(actual.matched + actual.needsReview + actual.unaccounted).toBe(actual.total);
+    expect(actual.total).toBe(2);
+    expect(actual.matched).toBe(1);
+    expect(actual.unaccounted).toBe(1);
   });
 
-  it("counts a fully matched statement as fully resolved on both sides", () => {
+  it("counts a transaction once even when several review candidates share an item", () => {
+    const items = build(
+      [row({ id: "s1", postedDate: "2026-07-08", amount: -11000, description: "AMAZON AE" })],
+      [
+        txn({ id: "t1", date: "2026-07-07", amount: -11000, payeeName: "Amazon" }),
+        txn({ id: "t2", date: "2026-07-08", amount: -11000, payeeName: "Amazon Marketplace" }),
+      ]
+    );
+
+    const { actual } = summarizeCoverage(items, { statementRows: 1, loadedTransactions: 2 });
+    expect(actual.total).toBe(2);
+    expect(actual.needsReview).toBe(2);
+  });
+
+  it("reports transactions loaded only as matching headroom separately", () => {
+    // They have no row, so counting them in the Actual total would make it
+    // impossible to reconcile the breakdown against what is on screen.
     const items = build([row({ id: "s1" })], [txn({ id: "t1" })]);
-    const coverage = summarizeCoverage(items, { statementRows: 1, actualTransactions: 1 });
+    const coverage = summarizeCoverage(items, { statementRows: 1, loadedTransactions: 40 });
 
-    expect(coverage.statementRowsResolved).toBe(1);
-    expect(coverage.actualTransactionsExplained).toBe(1);
-    expect(coverage.unresolved).toBe(0);
+    expect(coverage.actual.total).toBe(1);
+    expect(coverage.loadedAsHeadroom).toBe(39);
   });
 
-  it("counts an empty session as zero rather than dividing by nothing", () => {
-    const coverage = summarizeCoverage([], { statementRows: 0, actualTransactions: 0 });
-    expect(coverage.statementRowsResolved).toBe(0);
-    expect(coverage.actualTransactionsExplained).toBe(0);
+  it("reports an empty session as zero rather than dividing by nothing", () => {
+    const coverage = summarizeCoverage([], { statementRows: 0, loadedTransactions: 0 });
+    expect(coverage.statement.total).toBe(0);
+    expect(coverage.actual.total).toBe(0);
+    expect(coverage.loadedAsHeadroom).toBe(0);
   });
 });

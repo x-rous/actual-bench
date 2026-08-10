@@ -14,6 +14,7 @@ import type {
   StatementRow,
 } from "@/lib/reconciliation/types";
 import type { TextTargetPreset } from "@/lib/reconciliation/match/config";
+import { CoverageSummary } from "./CoverageSummary";
 import { Inspector } from "./Inspector";
 import { MatchOptions } from "./MatchOptions";
 import { WorkbenchRow } from "./WorkbenchRow";
@@ -71,11 +72,6 @@ function matchesFilter(item: ReconciliationItem, filter: FilterId): boolean {
     default:
       return true;
   }
-}
-
-function percent(part: number, whole: number): string {
-  if (whole === 0) return "100%";
-  return `${Math.round((part / whole) * 1000) / 10}%`;
 }
 
 export type WorkbenchProps = {
@@ -205,32 +201,9 @@ export function Workbench({
           )}
         </div>
 
-        {/*
-          Two independent completeness numbers. A single "96.8% matched" figure
-          hides an unexplained Actual side, so both are always visible.
-        */}
-        <dl className="mt-2 flex flex-wrap gap-x-6 gap-y-1 text-xs">
-          <div className="flex gap-1.5">
-            <dt className="text-muted-foreground">Statement rows resolved</dt>
-            <dd className="font-medium tabular-nums">
-              {coverage.statementRowsResolved} / {coverage.statementRows} (
-              {percent(coverage.statementRowsResolved, coverage.statementRows)})
-            </dd>
-          </div>
-          <div className="flex gap-1.5">
-            <dt className="text-muted-foreground">Actual transactions explained</dt>
-            <dd className="font-medium tabular-nums">
-              {coverage.actualTransactionsExplained} / {coverage.actualTransactions} (
-              {percent(coverage.actualTransactionsExplained, coverage.actualTransactions)})
-            </dd>
-          </div>
-          {coverage.outsideStatementPeriod > 0 && (
-            <div className="flex gap-1.5">
-              <dt className="text-muted-foreground">Outside the statement period</dt>
-              <dd className="tabular-nums">{coverage.outsideStatementPeriod}</dd>
-            </div>
-          )}
-        </dl>
+        <div className="mt-2">
+          <CoverageSummary coverage={coverage} />
+        </div>
       </header>
 
       <div className="flex flex-wrap items-center gap-2 border-b border-border/50 px-4 py-2">
