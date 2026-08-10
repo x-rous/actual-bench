@@ -147,6 +147,15 @@ export function createReconciliationTransport(
       };
     },
 
+    async readExistingMarkers(input) {
+      const lookup = await transport.getTargetLookupForSync({
+        accountId: input.accountId,
+        startDate: input.startDate,
+        endDate: input.endDate,
+      });
+      return new Set(lookup.importedIdIndex.keys());
+    },
+
     async createTransactions(inputs: TransactionCreateDraft[]): Promise<CreatedTransaction[]> {
       const result = await transport.createTransactionsForSync(
         inputs.map((input) => ({

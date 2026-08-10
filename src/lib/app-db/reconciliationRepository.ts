@@ -79,6 +79,8 @@ export type ReconciliationSessionRecord = {
   /** Session-level override of the profile's match config, when set. */
   matchConfig: unknown | null;
   totals: unknown | null;
+  /** Outcome of each apply operation from the most recent attempt. */
+  applyResults: unknown | null;
   createdAt: string;
   updatedAt: string;
   appliedAt: string | null;
@@ -146,6 +148,7 @@ type SessionRow = {
   statement_fingerprint: string | null;
   match_config_json: string | null;
   totals_json: string | null;
+  apply_results_json: string | null;
   created_at: string;
   updated_at: string;
   applied_at: string | null;
@@ -256,6 +259,7 @@ function sessionToRecord(row: SessionRow): ReconciliationSessionRecord {
     statementFingerprint: row.statement_fingerprint,
     matchConfig: parseJson(row.match_config_json),
     totals: parseJson(row.totals_json),
+    applyResults: parseJson(row.apply_results_json),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     appliedAt: row.applied_at,
@@ -470,6 +474,7 @@ export type UpdateSessionInput = {
   statementFingerprint?: string | null;
   matchConfig?: unknown;
   totals?: unknown;
+  applyResults?: unknown;
   appliedAt?: string | null;
 };
 
@@ -502,6 +507,9 @@ export function updateReconciliationSession(
   if (input.statementFingerprint !== undefined) set("statement_fingerprint", input.statementFingerprint);
   if (input.matchConfig !== undefined) set("match_config_json", JSON.stringify(input.matchConfig ?? null));
   if (input.totals !== undefined) set("totals_json", JSON.stringify(input.totals ?? null));
+  if (input.applyResults !== undefined) {
+    set("apply_results_json", JSON.stringify(input.applyResults ?? null));
+  }
   if (input.appliedAt !== undefined) set("applied_at", input.appliedAt);
 
   if (assignments.length === 0) return sessionToRecord(existing);

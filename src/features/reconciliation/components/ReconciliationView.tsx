@@ -37,6 +37,13 @@ import type { ReconciliationDisposition } from "@/lib/reconciliation/types";
 import { useConnectionStore, selectActiveInstance } from "@/store/connection";
 import { useAccounts } from "@/features/accounts/hooks/useAccounts";
 import { loadCandidateWindow } from "../lib/loadCandidates";
+import { buildApplyPlan } from "@/lib/reconciliation/session/plan";
+import { executeApplyPlan, type ApplyRunResult } from "@/lib/reconciliation/apply/executor";
+import type { OperationResult } from "@/lib/reconciliation/apply/operations";
+import { createReconciliationTransport } from "@/lib/reconciliation/transportAdapter";
+import { getTransport } from "@/lib/actual";
+import { ApplyResultPanel } from "./ApplyResultPanel";
+import { ReviewPanel } from "./ReviewPanel";
 import {
   useReconciliationMutations,
   useReconciliationProfiles,
@@ -61,7 +68,9 @@ import { Workbench } from "./Workbench";
 type Screen =
   | { name: "home" }
   | { name: "import"; sessionId: string; accountId: string; accountName: string }
-  | { name: "workbench"; sessionId: string };
+  | { name: "workbench"; sessionId: string }
+  | { name: "review"; sessionId: string }
+  | { name: "result"; sessionId: string };
 
 export function ReconciliationView() {
   const connection = useConnectionStore(selectActiveInstance);
@@ -88,6 +97,8 @@ export function ReconciliationView() {
   const [statementName, setStatementName] = useState<string | null>(null);
   const [matchError, setMatchError] = useState<string | null>(null);
   const [isMatching, setIsMatching] = useState(false);
+  const [isApplying, setIsApplying] = useState(false);
+  const [applyResult, setApplyResult] = useState<ApplyRunResult | null>(null);
 
   // Matching options live with the session (and, once saved, the import
   // profile) because they describe how this account's transactions are created.
@@ -206,6 +217,25 @@ export function ReconciliationView() {
         .map((staged) => ({ id: staged.entity.id, name: staged.entity.name }))
         .sort((a, b) => a.name.localeCompare(b.name)),
     [stagedCategories]
+  );
+
+  /**
+   * What Apply would do, derived rather than tracked.
+   *
+   * The review screen and the executor read the same plan, so what is shown and
+   * what runs cannot drift apart.
+   */
+  const applyPlan = useMemo(
+    () =>
+      buildApplyPlan({
+        sessionId: sessionId ?? "",
+        budgetSyncId: connection?.budgetSyncId ?? "",
+        accountId: sessionQuery.data?.session.accountId ?? "",
+        items,
+        statementRows: statementRowsById,
+        transactions: transactionsById,
+      }),
+    [sessionId, connection, sessionQuery.data, items, statementRowsById, transactionsById]
   );
 
   const coverage = useMemo(
@@ -504,6 +534,68 @@ export function ReconciliationView() {
     });
   }
 
+  /**
+   * Write the plan.
+   *
+   * Markers already in the account are read first, so a create that succeeded in
+   * an earlier attempt is recognised and skipped even if this session's own
+   * record of it was lost. Each outcome is persisted as it happens rather than
+   * in one write at the end, so an interruption leaves a truthful record.
+   */
+  async function handleApply() {
+    const session = sessionQuery.data?.session;
+    if (!connection || !session || applyPlan.operations.length === 0) return;
+
+    setIsApplying(true);
+    setMatchError(null);
+    const transport = createReconciliationTransport(getTransport(connection));
+
+    try {
+      const existingMarkers = await transport.readExistingMarkers({
+        accountId: session.accountId,
+        startDate: session.statementStart ?? undefined,
+        endDate: session.statementEnd ?? undefined,
+      });
+
+      const collected: OperationResult[] = [];
+      const previousResults = Array.isArray(session.applyResults)
+        ? (session.applyResults as OperationResult[])
+        : [];
+
+      const result = await executeApplyPlan({
+        plan: applyPlan,
+        transport,
+        existingMarkers,
+        previousResults,
+        onResult: async (entry) => {
+          collected.push(entry);
+          await mutations.updateSession.mutateAsync({
+            id: session.id,
+            payload: { applyResults: collected },
+          });
+        },
+      });
+
+      setApplyResult(result);
+      await mutations.updateSession.mutateAsync({
+        id: session.id,
+        payload: {
+          applyResults: result.results,
+          status: result.complete ? "completed" : "partial",
+          appliedAt: new Date().toISOString(),
+        },
+      });
+
+      // Direct-mode writes need the browser runtime told about them.
+      await getTransport(connection).sync();
+      setScreen({ name: "result", sessionId: session.id });
+    } catch (error) {
+      setMatchError(error instanceof Error ? error.message : "Could not apply the changes");
+    } finally {
+      setIsApplying(false);
+    }
+  }
+
   async function handleParsed(result: NormalizedStatement, fileName: string | null) {
     if (screen.name !== "import" || !result.period) return;
     await runMatch({
@@ -564,6 +656,46 @@ export function ReconciliationView() {
     );
   }
 
+  if (screen.name === "review" || screen.name === "result") {
+    const session = sessionQuery.data?.session;
+    return (
+      <PageLayout title="Bank Reconciliation" scrollManaged>
+        {matchError && (
+          <p role="alert" className="px-4 pt-3 text-xs text-destructive">
+            {matchError}
+          </p>
+        )}
+        {screen.name === "review" ? (
+          <ReviewPanel
+            plan={applyPlan}
+            statementRows={statementRowsById}
+            transactions={transactionsById}
+            isApplying={isApplying}
+            onBack={() => setScreen({ name: "workbench", sessionId: screen.sessionId })}
+            onApply={() => void handleApply()}
+          />
+        ) : (
+          applyResult && (
+            <ApplyResultPanel
+              plan={applyPlan}
+              result={applyResult}
+              isApplying={isApplying}
+              onRetry={() => void handleApply()}
+              onBack={() => setScreen({ name: "workbench", sessionId: screen.sessionId })}
+            />
+          )
+        )}
+        {screen.name === "result" && !applyResult && (
+          <p className="px-4 py-6 text-sm text-muted-foreground">
+            {session?.appliedAt
+              ? "This reconciliation has already been applied."
+              : "Nothing has been applied yet."}
+          </p>
+        )}
+      </PageLayout>
+    );
+  }
+
   if (screen.name === "workbench") {
     const session = sessionQuery.data?.session;
     const canRematch = Boolean(session && period && parsedRows.length > 0);
@@ -604,6 +736,8 @@ export function ReconciliationView() {
           onUnstage={handleUnstage}
           onBulkDisposition={handleBulkDisposition}
           onBulkCorrectAmount={handleBulkCorrectAmount}
+          changeCount={applyPlan.operations.length}
+          onReview={() => setScreen({ name: "review", sessionId: screen.sessionId })}
           onMatchConfigChange={(preset, config) => {
             setMatchPreset(preset);
             setMatchConfig(config);

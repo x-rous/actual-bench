@@ -28,7 +28,7 @@ import {
 import { KDF_VERSION_META_KEY, SALT_META_KEY, VERIFIER_META_KEY } from "./vaultMetaKeys";
 import { AppDbUnavailableError } from "./errors";
 
-export const LATEST_SCHEMA_VERSION = 12;
+export const LATEST_SCHEMA_VERSION = 13;
 
 type Migration = {
   version: number;
@@ -182,7 +182,17 @@ const MIGRATIONS: readonly Migration[] = [
     // amount the statement posts never equals the amount recorded in Actual.
     apply: applyReconciliationOriginalAmounts,
   },
+  {
+    version: 13,
+    // Per-operation apply outcomes (RD-071 / PR-034b), so a partial apply is
+    // resumable without repeating writes that already succeeded.
+    apply: applyReconciliationApplyResults,
+  },
 ];
+
+function applyReconciliationApplyResults(db: SqliteDatabase): void {
+  addColumnIfMissing(db, "reconciliation_sessions", "apply_results_json", "text");
+}
 
 function applyReconciliationOriginalAmounts(db: SqliteDatabase): void {
   addColumnIfMissing(db, "reconciliation_statement_rows", "transaction_date", "text");

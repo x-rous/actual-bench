@@ -96,6 +96,19 @@ export type ReconciliationTransport = {
     transactionId: string;
     date?: string;
   }): Promise<ActualTransactionSnapshot | null>;
+  /**
+   * Markers already present in the account.
+   *
+   * Read immediately before Apply so a create that succeeded in an earlier
+   * attempt is recognised and skipped. The session's own record of results is
+   * the first line of defence; this is the one that still works after the
+   * record is lost — a crashed tab, a cleared database, a different machine.
+   */
+  readExistingMarkers(input: {
+    accountId: string;
+    startDate?: string;
+    endDate?: string;
+  }): Promise<Set<string>>;
   createTransactions(inputs: TransactionCreateDraft[]): Promise<CreatedTransaction[]>;
   updateTransaction(input: TransactionUpdateInput): Promise<AppliedSnapshot | null>;
   deleteTransaction(input: { transactionId: string }): Promise<void>;

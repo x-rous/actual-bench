@@ -100,6 +100,27 @@ describe("reconciliation sessions", () => {
     });
   });
 
+  it("round-trips apply results, so a partial apply can be resumed", () => {
+    // Persisted as each write happens. Losing them would mean a retry could not
+    // tell what already ran, and would write it again.
+    const db = tempDb();
+    const session = newSession(db);
+
+    const results = [
+      { operationId: "create:i1", status: "applied", transactionId: "new-1" },
+      { operationId: "update:i2", status: "failed", error: "server said no" },
+    ];
+    const updated = updateReconciliationSession(db, session.id, {
+      applyResults: results,
+      status: "partial",
+      appliedAt: "2026-08-10T10:00:00.000Z",
+    });
+
+    expect(updated?.applyResults).toEqual(results);
+    expect(updated?.status).toBe("partial");
+    expect(getReconciliationSession(db, session.id)?.applyResults).toEqual(results);
+  });
+
   it("rejects an unknown status rather than persisting it", () => {
     const db = tempDb();
     const session = newSession(db);

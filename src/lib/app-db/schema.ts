@@ -318,6 +318,10 @@ CREATE TABLE IF NOT EXISTS reconciliation_sessions (
   -- Session-level overrides of the profile's match config, when set.
   match_config_json text,
   totals_json text,
+  -- Outcome of each apply operation, keyed by operation id. Persisted as each
+  -- write happens so an interrupted apply leaves a truthful record of what
+  -- already ran, and a retry can skip it rather than repeat it.
+  apply_results_json text,
   created_at text NOT NULL,
   updated_at text NOT NULL,
   applied_at text

@@ -212,6 +212,9 @@ export type WorkbenchProps = {
   onBulkCorrectAmount: (
     entries: { itemId: string; transactionId: string; amount: number }[]
   ) => void;
+  /** Writes the plan would make, named on the button rather than a row count. */
+  changeCount: number;
+  onReview: () => void;
 };
 
 function FilterButton({
@@ -269,6 +272,8 @@ export function Workbench({
   onUnstage,
   onBulkDisposition,
   onBulkCorrectAmount,
+  changeCount,
+  onReview,
 }: WorkbenchProps) {
   const [filter, setFilter] = useState<FilterId>("all");
   const [decisionFilter, setDecisionFilter] = useState<DecisionFilter>("any");
@@ -481,9 +486,15 @@ export function Workbench({
             <SlidersHorizontal className="mr-1 h-3.5 w-3.5" />
             Matching
           </Button>
-          <Button size="sm" disabled={!canRematch || isMatching} onClick={onRematch}>
+          <Button size="sm" variant="outline" disabled={!canRematch || isMatching} onClick={onRematch}>
             <RefreshCw className={cn("mr-1 h-3.5 w-3.5", isMatching && "animate-spin")} />
             {isMatching ? "Matching…" : "Re-run"}
+          </Button>
+          {/* Named in changes, not rows: most of a reconciliation needs no
+              write, and offering to "apply 248" when 12 will change is how a
+              user stops trusting the numbers. */}
+          <Button size="sm" disabled={changeCount === 0} onClick={onReview}>
+            Review {changeCount} change{changeCount === 1 ? "" : "s"}
           </Button>
         </div>
 

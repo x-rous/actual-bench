@@ -71,6 +71,7 @@ export async function PATCH(request: Request, context: RouteContext) {
     }
     if ("matchConfig" in body) patch.matchConfig = body.matchConfig;
     if ("totals" in body) patch.totals = body.totals;
+    if ("applyResults" in body) patch.applyResults = body.applyResults;
     if ("appliedAt" in body) patch.appliedAt = body.appliedAt as string | null;
 
     const session = updateReconciliationSession(getAppDb(), id, patch);

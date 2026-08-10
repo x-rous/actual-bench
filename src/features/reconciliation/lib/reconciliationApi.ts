@@ -69,6 +69,8 @@ export function updateSession(
     profileId: string | null;
     matchConfig: unknown;
     totals: unknown;
+    applyResults: unknown;
+    appliedAt: string | null;
   }>
 ) {
   return request<{ session: ReconciliationSessionRecord }>(
