@@ -30,17 +30,45 @@ export type MergeOutcome =
 const MIN_SHARED_CHARS = 4;
 
 /**
- * A single shared word is not evidence of a captured merchant name.
+ * How many consecutive shared words make an overlap trustworthy on its own.
  *
- * "ROYAL something SERVICE" shares `SERVICE` with a catering merchant and means
- * nothing by it; swapping that one word in would produce a sentence the user
- * never wrote. Two consecutive words is the point at which the overlap is
- * plausibly the name itself.
+ * A single word usually is not: "ROYAL something SERVICE" shares `SERVICE` with
+ * a catering merchant and means nothing by it, and swapping that one word in
+ * produces a sentence the user never wrote.
+ *
+ * But a one-word note often *is* the merchant — `#2026-08 MOHESR` against
+ * `MOHESR ABU DHABI AB` — so length alone is the wrong test. What separates the
+ * two is whether the note's matching words are **scattered**: an overlap is
+ * coincidental when some other word in the note also appears in the
+ * description but did not join the run. See `runIsTrustworthy`.
  */
 const MIN_SHARED_WORDS = 2;
 
 function tokensOf(value: string): string[] {
   return value.split(/\s+/).filter(Boolean);
+}
+
+/**
+ * Whether a run can be trusted as the note's captured merchant text.
+ *
+ * Several consecutive shared words speak for themselves. A single shared word
+ * only does when it is the note's *whole* overlap — if another word outside the
+ * run also appears in the description, the words match in scattered places and
+ * the note was never a merchant name to begin with.
+ */
+function runIsTrustworthy(
+  normalizedNote: string[],
+  start: number,
+  end: number,
+  paddedDescription: string
+): boolean {
+  if (end - start + 1 >= MIN_SHARED_WORDS) return true;
+
+  return !normalizedNote.some((token, index) => {
+    if (index >= start && index <= end) return false;
+    if (!token) return false;
+    return paddedDescription.includes(` ${token} `);
+  });
 }
 
 /**
@@ -85,7 +113,7 @@ export function mergeDescriptionIntoNotes(
       if (!normalizedDescription.includes(` ${run.join(" ")} `)) break;
 
       const length = run.join("").length;
-      if (run.length >= MIN_SHARED_WORDS && length > bestLength) {
+      if (length > bestLength) {
         bestLength = length;
         bestStart = start;
         bestEnd = end;
@@ -93,7 +121,11 @@ export function mergeDescriptionIntoNotes(
     }
   }
 
-  if (bestStart === -1 || bestLength < MIN_SHARED_CHARS) {
+  if (
+    bestStart === -1 ||
+    bestLength < MIN_SHARED_CHARS ||
+    !runIsTrustworthy(normalizedNote, bestStart, bestEnd, normalizedDescription)
+  ) {
     return { changed: false, reason: "no-shared-text" };
   }
 

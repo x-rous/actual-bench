@@ -110,3 +110,49 @@ describe("bringing a note's merchant text up to the statement's", () => {
     expect(result).toEqual({ changed: true, notes: "S103 TAMIMI MARKETS KHOBAR SAU" });
   });
 });
+
+describe("notes whose merchant text is a single word", () => {
+  it("extends a one-word note carrying a workflow tag", () => {
+    // Real case: the automation captured only the merchant's short name.
+    expect(
+      mergeDescriptionIntoNotes("#2026-08 MOHESR", "MOHESR ABU DHABI AB")
+    ).toEqual({ changed: true, notes: "#2026-08 MOHESR ABU DHABI AB" });
+  });
+
+  it("extends a bare one-word note", () => {
+    expect(mergeDescriptionIntoNotes("STARBUCKS", "STARBUCKS MALL OF EMIRATES")).toEqual({
+      changed: true,
+      notes: "STARBUCKS MALL OF EMIRATES",
+    });
+  });
+
+  it("keeps the user's own words after a one-word merchant", () => {
+    expect(
+      mergeDescriptionIntoNotes("STARBUCKS | paid by me", "STARBUCKS MALL OF EMIRATES")
+    ).toEqual({ changed: true, notes: "STARBUCKS MALL OF EMIRATES | paid by me" });
+  });
+
+  it("still refuses when the note's matching words are scattered", () => {
+    // The guard that made one-word runs suspect in the first place: another word
+    // in the note also appears in the description, so the overlap is chance.
+    expect(
+      mergeDescriptionIntoNotes("ROYAL something SERVICE", "ROYAL CATERING SERVICE ABU DHABI")
+    ).toEqual({ changed: false, reason: "no-shared-text" });
+  });
+
+  it("still refuses a word too short to identify anything", () => {
+    expect(mergeDescriptionIntoNotes("AE", "TALABAT AE 88721")).toEqual({
+      changed: false,
+      reason: "no-shared-text",
+    });
+  });
+
+  it("is still safe to run twice on a one-word note", () => {
+    const once = mergeDescriptionIntoNotes("#2026-08 MOHESR", "MOHESR ABU DHABI AB");
+    if (!once.changed) throw new Error("expected a change");
+    expect(mergeDescriptionIntoNotes(once.notes, "MOHESR ABU DHABI AB")).toEqual({
+      changed: false,
+      reason: "already-matches",
+    });
+  });
+});
