@@ -11,6 +11,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { resetAppDbForTests } from "@/lib/app-db/connection";
+import { LATEST_SCHEMA_VERSION } from "@/lib/app-db/migrations";
 import { GET } from "./route";
 
 describe("GET /api/app-db/health", () => {
@@ -33,6 +34,6 @@ describe("GET /api/app-db/health", () => {
 
     expect(response.status).toBe(200);
     expect(body.ready).toBe(true);
-    expect(body.schemaVersion).toBe(10);
+    expect(body.schemaVersion).toBe(LATEST_SCHEMA_VERSION);
   });
 });

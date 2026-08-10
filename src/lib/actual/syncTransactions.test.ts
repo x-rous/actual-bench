@@ -120,6 +120,50 @@ describe("listTransactionsForSync (Direct)", () => {
     });
   });
 
+  it("passes through imported payee, transfer and schedule links when present", async () => {
+    // Reconciliation guardrails depend on these: a transfer leg has a
+    // counterpart in another account, so it must never be silently deleted.
+    buildFakeRuntime({
+      transactions: [
+        {
+          id: "t1",
+          account: "acct-src",
+          date: "2026-07-01",
+          amount: -1250,
+          imported_payee: "AMZN Mktp AE*2J8G4",
+          transfer_id: "xfer-9",
+          schedule: "sched-3",
+        },
+      ],
+    });
+
+    const transport = createBrowserApiTransport(browserConnection);
+    const [row] = await transport.listTransactionsForSync({ accountId: "acct-src" });
+
+    expect(row).toMatchObject({
+      importedPayee: "AMZN Mktp AE*2J8G4",
+      transferId: "xfer-9",
+      scheduleId: "sched-3",
+    });
+  });
+
+  it("reports the optional fields as null when the runtime omits them", async () => {
+    // An older server may not expose them at all. Null must be distinguishable
+    // downstream so a guardrail can take its conservative branch.
+    buildFakeRuntime({
+      transactions: [
+        { id: "t1", account: "acct-src", date: "2026-07-01", amount: -1250 },
+      ],
+    });
+
+    const transport = createBrowserApiTransport(browserConnection);
+    const [row] = await transport.listTransactionsForSync({ accountId: "acct-src" });
+
+    expect(row.importedPayee).toBeNull();
+    expect(row.transferId).toBeNull();
+    expect(row.scheduleId).toBeNull();
+  });
+
   it("returns split parents with inline children and skips top-level children", async () => {
     buildFakeRuntime({
       payees: [{ id: "p1", name: "Market" }],

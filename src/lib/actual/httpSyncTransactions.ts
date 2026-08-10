@@ -39,6 +39,12 @@ type RawHttpTransaction = {
   cleared: boolean;
   reconciled: boolean;
   imported_id: string | null;
+  // Optional: older actual-http-api builds may omit these. Absent -> null, and
+  // reconciliation's guardrails take their conservative branch rather than
+  // assuming "not a transfer".
+  imported_payee?: string | null;
+  transfer_id?: string | null;
+  schedule?: string | null;
   is_parent: boolean;
   is_child: boolean;
   parent_id: string | null;
@@ -104,6 +110,9 @@ function toSourceTransaction(raw: RawHttpTransaction, names: NameMaps): SyncSour
     cleared: raw.cleared === true,
     reconciled: raw.reconciled === true,
     importedId: raw.imported_id ?? null,
+    importedPayee: raw.imported_payee ?? null,
+    transferId: raw.transfer_id ?? null,
+    scheduleId: raw.schedule ?? null,
     isParent,
     isChild: raw.is_child === true,
     parentId: raw.parent_id ?? null,

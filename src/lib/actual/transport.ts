@@ -113,6 +113,25 @@ export type SyncSourceTransaction = {
   reconciled: boolean;
   /** Actual `imported_id` if the source transaction carries one. */
   importedId: string | null;
+  /**
+   * The raw merchant text Actual stored at import (`imported_payee`), which is
+   * distinct from the user's curated payee. Null when the row was not imported
+   * or the transport does not expose it.
+   *
+   * Optional so the existing sync engine and its fixtures are unaffected;
+   * consumers normalise a missing value to null at their own boundary.
+   */
+  importedPayee?: string | null;
+  /**
+   * Non-null when this row is one leg of a transfer. Reconciliation uses it as
+   * a guardrail: deleting or re-payeeing a transfer leg silently mutates the
+   * counterpart in another account. Null also means "not a transfer" only if
+   * the transport exposes the field at all — callers that need certainty must
+   * treat an absent field conservatively.
+   */
+  transferId?: string | null;
+  /** Non-null when the row is linked to a schedule. */
+  scheduleId?: string | null;
   /** True when this transaction is a split parent that owns `splitLines`. */
   isParent: boolean;
   /** True when this transaction is itself a split child of another parent. */

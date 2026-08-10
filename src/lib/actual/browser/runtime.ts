@@ -36,6 +36,12 @@ export type ApiTransaction = {
   cleared?: boolean;
   reconciled?: boolean;
   imported_id?: string | null;
+  /** Raw merchant text captured at import, distinct from the curated payee. */
+  imported_payee?: string | null;
+  /** Set on both legs of a transfer; mutating one leg affects the other. */
+  transfer_id?: string | null;
+  /** Set when the row is linked to a schedule. */
+  schedule?: string | null;
   is_parent?: boolean;
   is_child?: boolean;
   parent_id?: string | null;
