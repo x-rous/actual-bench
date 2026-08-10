@@ -52,7 +52,8 @@ function build(
   statementRows: StatementRow[],
   actualTransactions: ActualTransactionSnapshot[],
   transfersReported = true,
-  statementPeriod?: { start: string; end: string } | null
+  statementPeriod?: { start: string; end: string } | null,
+  visibleWindow?: { start: string; end: string } | null
 ) {
   const graph = match({ statementRows, actualTransactions, config: DEFAULT_MATCH_CONFIG });
   return buildReconciliationItems({
@@ -61,6 +62,7 @@ function build(
     graph,
     transfersReported,
     statementPeriod,
+    visibleWindow,
     makeId,
   });
 }
@@ -222,6 +224,34 @@ describe("transactions loaded outside the statement period", () => {
     expect(coverage.actualTransactionsExplained).toBe(1);
     expect(coverage.outsideStatementPeriod).toBe(1);
     expect(coverage.unresolved).toBe(0);
+  });
+
+  it("omits an unmatched transaction outside the range the user asked to see", () => {
+    // Padding of zero: the window loaded is still wide enough for matching to
+    // reach across the boundary, but the user asked to see only their own
+    // period, so a neighbouring transaction is not listed at all.
+    const items = build(
+      [],
+      [txn({ id: "t1", date: "2026-08-10" })],
+      true,
+      period,
+      period
+    );
+    expect(items).toHaveLength(0);
+  });
+
+  it("keeps a matched pair even when the transaction sits outside that range", () => {
+    // Matching headroom exists precisely so a statement row at the edge of the
+    // period can pair with a transaction recorded just outside it.
+    const items = build(
+      [row({ id: "s1", postedDate: "2026-08-06" })],
+      [txn({ id: "t1", date: "2026-08-08" })],
+      true,
+      period,
+      period
+    );
+    expect(items).toHaveLength(1);
+    expect(items[0].disposition).toBe("matched");
   });
 
   it("keeps the old behaviour when no period is supplied", () => {

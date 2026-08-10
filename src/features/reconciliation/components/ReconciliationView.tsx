@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ArrowLeft, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -27,7 +27,7 @@ import type {
 import { useStagedStore } from "@/store/staged";
 import { useConnectionStore, selectActiveInstance } from "@/store/connection";
 import { useAccounts } from "@/features/accounts/hooks/useAccounts";
-import { useCandidateWindow } from "../hooks/useCandidateWindow";
+import { loadCandidateWindow } from "../lib/loadCandidates";
 import {
   useReconciliationMutations,
   useReconciliationSession,
@@ -70,6 +70,7 @@ export function ReconciliationView() {
   const [period, setPeriod] = useState<{ start: string; end: string } | null>(null);
   const [statementName, setStatementName] = useState<string | null>(null);
   const [matchError, setMatchError] = useState<string | null>(null);
+  const [isMatching, setIsMatching] = useState(false);
 
   // Matching options live with the session (and, once saved, the import
   // profile) because they describe how this account's transactions are created.
@@ -79,13 +80,62 @@ export function ReconciliationView() {
   const sessionId = screen.name === "home" ? null : screen.sessionId;
   const sessionQuery = useReconciliationSession(sessionId);
 
-  const candidates = useCandidateWindow({
-    accountId: screen.name === "import" ? screen.accountId : null,
-    statementStart: period?.start ?? null,
-    statementEnd: period?.end ?? null,
-    matchToleranceDays: matchConfig.dateToleranceDays,
-    paddingDays: matchConfig.candidatePaddingDays,
-  });
+  /**
+   * Rehydrate a resumed session from the app database.
+   *
+   * A session outlives the component, so returning to one must rebuild the
+   * workbench from what was persisted rather than showing an empty grid. The
+   * Actual side is rebuilt from the snapshot stored on each item — that is
+   * deliberately the snapshot the session matched against, not a fresh read,
+   * because it is also what drift is measured from before Apply.
+   */
+  const hydratedSessionId = sessionQuery.data?.session.id;
+  useEffect(() => {
+    const data = sessionQuery.data;
+    if (!data || screen.name !== "workbench" || data.session.id !== screen.sessionId) return;
+    // Only hydrate when this component has nothing for the session, so a fresh
+    // match result is never overwritten by the persisted copy behind it.
+    if (parsedRows.length > 0 || items.length > 0) return;
+
+    setParsedRows(
+      data.statementRows.map((row) => ({
+        id: row.id,
+        sourceRowNumber: row.sourceRowNumber,
+        postedDate: row.postedDate,
+        amount: row.amount,
+        description: row.description,
+        reference: row.reference ?? undefined,
+        raw: row.raw,
+        fingerprint: row.fingerprint,
+      }))
+    );
+    setItems(
+      data.items.map((item) => ({
+        id: item.id,
+        statementRowIds: item.statementRowIds,
+        actualTransactionIds: item.actualTransactionIds,
+        disposition: item.disposition as ReconciliationItem["disposition"],
+        reasonCode: item.reasonCode ?? undefined,
+        match: (item.match ?? undefined) as ReconciliationItem["match"],
+        guards: (item.guards ?? {
+          protectedReconciled: false,
+          splitParent: false,
+          transfer: "unknown",
+        }) as ReconciliationItem["guards"],
+        stagedChanges: (item.stagedChanges ?? undefined) as ReconciliationItem["stagedChanges"],
+      }))
+    );
+    setSnapshot(
+      data.items
+        .map((item) => item.actualSnapshot as ActualTransactionSnapshot | null)
+        .filter((snapshot): snapshot is ActualTransactionSnapshot => snapshot != null)
+    );
+    if (data.session.statementStart && data.session.statementEnd) {
+      setPeriod({ start: data.session.statementStart, end: data.session.statementEnd });
+    }
+    setStatementName(data.session.statementName);
+    if (data.session.matchConfig) setMatchConfig(data.session.matchConfig as MatchConfig);
+  }, [sessionQuery.data, hydratedSessionId, screen, parsedRows.length, items.length]);
 
   const capabilities = useMemo(
     () => (connection ? getBudgetFileSyncCapabilities(connection) : null),
@@ -163,42 +213,58 @@ export function ReconciliationView() {
   }
 
   /**
-   * Parse → load the candidate window → match → persist.
+   * Load the candidate window, match, and persist.
    *
-   * The candidate window can only be loaded once the statement period is known,
-   * so this runs after parsing rather than alongside it.
+   * Shared by the first run and by re-running from the workbench, so changing a
+   * matching option never means re-importing the statement.
    */
-  async function handleParsed(result: NormalizedStatement, fileName: string | null) {
-    if (screen.name !== "import" || !result.period) return;
+  async function runMatch(input: {
+    sessionId: string;
+    accountId: string;
+    statementRows: StatementRow[];
+    statementPeriod: { start: string; end: string };
+    totals?: unknown;
+    statementName?: string | null;
+    config: MatchConfig;
+  }) {
+    if (!connection) return;
+    setIsMatching(true);
     setMatchError(null);
-    setParsedRows(result.rows);
-    setPeriod(result.period);
-    setStatementName(fileName);
 
     try {
-      const loaded = await candidates.refetch();
-      const transactions = loaded.data?.transactions ?? [];
-      setSnapshot(transactions);
+      const window = await loadCandidateWindow(connection, {
+        accountId: input.accountId,
+        statementStart: input.statementPeriod.start,
+        statementEnd: input.statementPeriod.end,
+        matchToleranceDays: input.config.dateToleranceDays,
+        paddingDays: input.config.candidatePaddingDays,
+      });
 
       const graph = match({
-        statementRows: result.rows,
-        actualTransactions: transactions,
-        config: matchConfig,
+        statementRows: input.statementRows,
+        actualTransactions: window.transactions,
+        config: input.config,
       });
 
       const built = buildReconciliationItems({
-        statementRows: result.rows,
-        actualTransactions: transactions,
+        statementRows: input.statementRows,
+        actualTransactions: window.transactions,
         graph,
-        transfersReported: loaded.data?.transfersReported ?? false,
-        statementPeriod: result.period,
+        transfersReported: window.transfersReported,
+        statementPeriod: input.statementPeriod,
+        visibleWindow: window.visible,
         makeId: () => generateId(),
       });
+
+      setSnapshot(window.transactions);
+      setParsedRows(input.statementRows);
+      setPeriod(input.statementPeriod);
       setItems(built);
+      if (input.statementName !== undefined) setStatementName(input.statementName);
 
       await mutations.saveParsedStatement.mutateAsync({
-        sessionId: screen.sessionId,
-        statementRows: result.rows,
+        sessionId: input.sessionId,
+        statementRows: input.statementRows,
         items: built.map((item) => ({
           id: item.id,
           statementRowIds: item.statementRowIds,
@@ -207,23 +273,37 @@ export function ReconciliationView() {
           reasonCode: item.reasonCode ?? null,
           match: item.match,
           guards: item.guards,
-          actualSnapshot:
-            transactionsSnapshotFor(item, transactions) ?? null,
+          actualSnapshot: transactionsSnapshotFor(item, window.transactions) ?? null,
         })),
         patch: {
           status: "needs_review",
-          statementName: fileName,
-          statementStart: result.period.start,
-          statementEnd: result.period.end,
-          totals: result.totals,
-          matchConfig,
+          statementStart: input.statementPeriod.start,
+          statementEnd: input.statementPeriod.end,
+          matchConfig: input.config,
+          ...(input.statementName !== undefined ? { statementName: input.statementName } : {}),
+          ...(input.totals !== undefined ? { totals: input.totals } : {}),
         },
       });
 
-      setScreen({ name: "workbench", sessionId: screen.sessionId });
+      setScreen({ name: "workbench", sessionId: input.sessionId });
     } catch (error) {
       setMatchError(error instanceof Error ? error.message : "Could not match the statement");
+    } finally {
+      setIsMatching(false);
     }
+  }
+
+  async function handleParsed(result: NormalizedStatement, fileName: string | null) {
+    if (screen.name !== "import" || !result.period) return;
+    await runMatch({
+      sessionId: screen.sessionId,
+      accountId: screen.accountId,
+      statementRows: result.rows,
+      statementPeriod: result.period,
+      totals: result.totals,
+      statementName: fileName,
+      config: matchConfig,
+    });
   }
 
   if (screen.name === "import") {
@@ -253,7 +333,7 @@ export function ReconciliationView() {
           }}
           onCancel={() => setScreen({ name: "home" })}
           onParsed={(result, fileName) => void handleParsed(result, fileName)}
-          isSaving={mutations.saveParsedStatement.isPending || candidates.isFetching}
+          isSaving={isMatching}
         />
       </PageLayout>
     );
@@ -261,6 +341,7 @@ export function ReconciliationView() {
 
   if (screen.name === "workbench") {
     const session = sessionQuery.data?.session;
+    const canRematch = Boolean(session && period && parsedRows.length > 0);
     return (
       <PageLayout
         title="Bank Reconciliation"
@@ -272,6 +353,11 @@ export function ReconciliationView() {
         }
         scrollManaged
       >
+        {matchError && (
+          <p role="alert" className="px-4 pt-3 text-xs text-destructive">
+            {matchError}
+          </p>
+        )}
         <Workbench
           accountName={session?.accountName ?? "Account"}
           statementName={statementName ?? session?.statementName ?? null}
@@ -280,6 +366,24 @@ export function ReconciliationView() {
           statementRows={statementRowsById}
           transactions={transactionsById}
           coverage={coverage}
+          matchConfig={matchConfig}
+          matchPreset={matchPreset}
+          isMatching={isMatching}
+          canRematch={canRematch}
+          onMatchConfigChange={(preset, config) => {
+            setMatchPreset(preset);
+            setMatchConfig(config);
+          }}
+          onRematch={() => {
+            if (!session || !period) return;
+            void runMatch({
+              sessionId: session.id,
+              accountId: session.accountId,
+              statementRows: parsedRows,
+              statementPeriod: period,
+              config: matchConfig,
+            });
+          }}
         />
       </PageLayout>
     );

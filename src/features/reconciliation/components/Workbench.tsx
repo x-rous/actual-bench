@@ -1,17 +1,21 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Search } from "lucide-react";
+import { RefreshCw, Search, SlidersHorizontal } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { REASON } from "@/lib/reconciliation/session/build";
 import type { ReconciliationCoverage } from "@/lib/reconciliation/session/build";
 import type {
   ActualTransactionSnapshot,
+  MatchConfig,
   ReconciliationItem,
   StatementRow,
 } from "@/lib/reconciliation/types";
+import type { TextTargetPreset } from "@/lib/reconciliation/match/config";
 import { Inspector } from "./Inspector";
+import { MatchOptions } from "./MatchOptions";
 import { WorkbenchRow } from "./WorkbenchRow";
 
 /**
@@ -77,6 +81,12 @@ export type WorkbenchProps = {
   statementRows: Map<string, StatementRow>;
   transactions: Map<string, ActualTransactionSnapshot>;
   coverage: ReconciliationCoverage;
+  matchConfig: MatchConfig;
+  matchPreset: TextTargetPreset;
+  isMatching: boolean;
+  canRematch: boolean;
+  onMatchConfigChange: (preset: TextTargetPreset, config: MatchConfig) => void;
+  onRematch: () => void;
 };
 
 export function Workbench({
@@ -87,10 +97,17 @@ export function Workbench({
   statementRows,
   transactions,
   coverage,
+  matchConfig,
+  matchPreset,
+  isMatching,
+  canRematch,
+  onMatchConfigChange,
+  onRematch,
 }: WorkbenchProps) {
   const [filter, setFilter] = useState<FilterId>("all");
   const [search, setSearch] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [optionsOpen, setOptionsOpen] = useState(false);
 
   const counts = useMemo(() => {
     const result = {} as Record<FilterId, number>;
@@ -100,9 +117,44 @@ export function Workbench({
     return result;
   }, [items]);
 
+  /**
+   * Sorted by transaction date, not by match status.
+   *
+   * The user reads this table to see what happened on a given day across both
+   * sides, so grouping by outcome would scatter a single day's transactions.
+   * The statement date leads where there is one; otherwise the Actual date
+   * stands in, which keeps an Actual-only row next to the day it belongs to.
+   */
+  const sorted = useMemo(() => {
+    const dateOf = (item: ReconciliationItem): string => {
+      for (const id of item.statementRowIds) {
+        const row = statementRows.get(id);
+        if (row) return row.postedDate;
+      }
+      for (const id of item.actualTransactionIds) {
+        const transaction = transactions.get(id);
+        if (transaction) return transaction.date;
+      }
+      return "";
+    };
+
+    return [...items].sort((a, b) => {
+      const left = dateOf(a);
+      const right = dateOf(b);
+      if (left !== right) return left < right ? -1 : 1;
+      // Stable within a day: source order, then id.
+      const leftRow = statementRows.get(a.statementRowIds[0] ?? "");
+      const rightRow = statementRows.get(b.statementRowIds[0] ?? "");
+      const leftSeq = leftRow?.sourceRowNumber ?? Number.MAX_SAFE_INTEGER;
+      const rightSeq = rightRow?.sourceRowNumber ?? Number.MAX_SAFE_INTEGER;
+      if (leftSeq !== rightSeq) return leftSeq - rightSeq;
+      return a.id < b.id ? -1 : 1;
+    });
+  }, [items, statementRows, transactions]);
+
   const visible = useMemo(() => {
     const needle = search.trim().toLowerCase();
-    return items.filter((item) => {
+    return sorted.filter((item) => {
       if (!matchesFilter(item, filter)) return false;
       if (!needle) return true;
 
@@ -126,7 +178,7 @@ export function Workbench({
       }
       return haystacks.join(" ").toLowerCase().includes(needle);
     });
-  }, [items, filter, search, statementRows, transactions]);
+  }, [sorted, filter, search, statementRows, transactions]);
 
   const selected = useMemo(
     () => items.find((item) => item.id === selectedId) ?? null,
@@ -197,7 +249,23 @@ export function Workbench({
           ))}
         </div>
 
-        <div className="relative ml-auto">
+        <div className="ml-auto flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            aria-expanded={optionsOpen}
+            onClick={() => setOptionsOpen((open) => !open)}
+          >
+            <SlidersHorizontal className="mr-1 h-3.5 w-3.5" />
+            Matching
+          </Button>
+          <Button size="sm" disabled={!canRematch || isMatching} onClick={onRematch}>
+            <RefreshCw className={cn("mr-1 h-3.5 w-3.5", isMatching && "animate-spin")} />
+            {isMatching ? "Matching…" : "Re-run"}
+          </Button>
+        </div>
+
+        <div className="relative w-full">
           <Search
             className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground"
             aria-hidden="true"
@@ -207,10 +275,19 @@ export function Workbench({
             onChange={(event) => setSearch(event.target.value)}
             placeholder="Search description, payee, amount…"
             aria-label="Search reconciliation rows"
-            className="h-8 w-64 pl-7 text-xs"
+            className="h-8 w-full pl-7 text-xs"
           />
         </div>
       </div>
+
+      {optionsOpen && (
+        <div className="border-b border-border/50 px-4 py-3">
+          <MatchOptions config={matchConfig} preset={matchPreset} onChange={onMatchConfigChange} />
+          <p className="mt-2 text-[11px] text-muted-foreground">
+            Changing these does not re-match on its own — choose Re-run when you are ready.
+          </p>
+        </div>
+      )}
 
       <div className="flex min-h-0 flex-1">
         <div className="min-h-0 flex-1 overflow-auto">
@@ -219,16 +296,27 @@ export function Workbench({
               Bank statement rows matched against Actual transactions
             </caption>
             <thead className="sticky top-0 z-10 bg-background text-[11px] uppercase tracking-wide text-muted-foreground">
-              <tr className="border-b border-border/50">
-                <th scope="col" className="w-[38%] px-3 py-2 text-left font-medium">
+              <tr className="border-b border-border/30">
+                <th scope="colgroup" colSpan={3} className="px-3 pt-2 text-left font-semibold">
                   Bank statement
                 </th>
-                <th scope="col" className="w-[24%] px-3 py-2 text-left font-medium">
+                <th scope="col" className="border-x border-border/40 px-3 pt-2 text-left font-semibold">
                   Match
                 </th>
-                <th scope="col" className="w-[38%] px-3 py-2 text-left font-medium">
+                <th scope="colgroup" colSpan={3} className="px-3 pt-2 text-left font-semibold">
                   Actual
                 </th>
+              </tr>
+              <tr className="border-b border-border/50">
+                <th scope="col" className="w-[8%] px-3 pb-2 text-left font-medium">Date</th>
+                <th scope="col" className="w-[24%] px-3 pb-2 text-left font-medium">Description</th>
+                <th scope="col" className="w-[9%] px-3 pb-2 text-right font-medium">Amount</th>
+                <th scope="col" className="w-[18%] border-x border-border/40 px-3 pb-2 text-left font-medium">
+                  Result
+                </th>
+                <th scope="col" className="w-[8%] px-3 pb-2 text-left font-medium">Date</th>
+                <th scope="col" className="w-[24%] px-3 pb-2 text-left font-medium">Payee / notes</th>
+                <th scope="col" className="w-[9%] px-3 pb-2 text-right font-medium">Amount</th>
               </tr>
             </thead>
             <tbody>
@@ -251,7 +339,9 @@ export function Workbench({
 
           {visible.length === 0 && (
             <p className="px-4 py-8 text-center text-xs text-muted-foreground">
-              No rows match this filter.
+              {items.length === 0
+                ? "No matching has run for this session yet. Choose Re-run to match it against Actual."
+                : "No rows match this filter."}
             </p>
           )}
         </div>

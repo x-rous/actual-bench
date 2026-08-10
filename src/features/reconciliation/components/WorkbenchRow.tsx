@@ -11,13 +11,16 @@ import { REASON } from "@/lib/reconciliation/session/build";
 import { confidenceLabelText, describeReason, formatMinorUnits, formatShortDate } from "../lib/format";
 
 /**
- * One reconciliation relationship, rendered as a single row across three
- * columns (UX §7).
+ * One reconciliation relationship as a single table row.
  *
- * This is deliberately one synchronized table rather than two independently
- * scrolling lists: the moment one side is missing a transaction, independent
- * scrolling breaks the visual correspondence and the user can no longer tell
- * what lines up with what (UX §8).
+ * Laid out horizontally — date, description and amount are their own columns on
+ * each side — so a row occupies one line and a day's transactions can be
+ * scanned down the page. Stacking the three facts vertically tripled the row
+ * height and made it hard to compare the two sides at a glance.
+ *
+ * It remains one synchronized table rather than two independently scrolling
+ * lists: the moment one side is missing a transaction, independent scrolling
+ * breaks the visual correspondence (UX §8).
  */
 
 type MiddleState = {
@@ -57,21 +60,21 @@ function middleState(item: ReconciliationItem): MiddleState {
     case REASON.noActualCandidate:
       return {
         label: "Not in Actual",
-        detail: "No matching transaction found",
+        detail: null,
         tone: "text-sky-600 dark:text-sky-400",
         icon: Plus,
       };
     case REASON.outsideStatementPeriod:
       return {
         label: "Outside period",
-        detail: "Dated outside this statement",
+        detail: null,
         tone: "text-muted-foreground",
         icon: null,
       };
     case REASON.notOnStatement:
       return {
         label: "Actual only",
-        detail: "Not on this statement",
+        detail: null,
         tone: "text-muted-foreground",
         icon: null,
       };
@@ -86,6 +89,12 @@ function middleState(item: ReconciliationItem): MiddleState {
       return { label: "Unresolved", detail: null, tone: "text-muted-foreground", icon: null };
   }
 }
+
+const EMPTY = (
+  <span className="text-muted-foreground/60" aria-hidden="true">
+    —
+  </span>
+);
 
 export type WorkbenchRowProps = {
   item: ReconciliationItem;
@@ -106,86 +115,80 @@ export function WorkbenchRow({
   const Icon = state.icon;
   const primary = transactions[0];
 
-  // Match reasons carry the "why", including which field the text matched.
-  const reasonText = (item.match?.reasons ?? [])
+  // The single strongest reason keeps the row to one line; the inspector shows
+  // the full evidence list.
+  const topReason = (item.match?.reasons ?? [])
+    .filter((reason) => reason.kind === "text" || reason.kind === "reference" || reason.kind === "original-amount")
     .map(describeReason)
-    .filter(Boolean)
-    .slice(0, 3);
+    .filter(Boolean)[0];
 
   return (
     <tr
       aria-selected={selected}
       onClick={onSelect}
       className={cn(
-        "cursor-pointer border-b border-border/30 align-top text-xs transition-colors",
+        "cursor-pointer border-b border-border/30 text-xs transition-colors",
         selected ? "bg-accent" : "hover:bg-accent/40"
       )}
     >
       {/* Bank statement */}
-      <td className="px-3 py-2">
-        {statementRow ? (
-          <div className="flex flex-col gap-0.5">
-            <span className="tabular-nums text-muted-foreground">
-              {formatShortDate(statementRow.postedDate)}
-            </span>
-            <span className="truncate font-medium">{statementRow.description}</span>
-            <span className="tabular-nums">{formatMinorUnits(statementRow.amount)}</span>
-          </div>
-        ) : (
-          <span className="text-muted-foreground" aria-label="No statement row">
-            —
-          </span>
-        )}
+      <td className="whitespace-nowrap px-3 py-1.5 tabular-nums text-muted-foreground">
+        {statementRow ? formatShortDate(statementRow.postedDate) : EMPTY}
+      </td>
+      <td className="max-w-0 truncate px-3 py-1.5" title={statementRow?.description}>
+        {statementRow ? statementRow.description : EMPTY}
+      </td>
+      <td className="whitespace-nowrap px-3 py-1.5 text-right tabular-nums">
+        {statementRow ? formatMinorUnits(statementRow.amount) : EMPTY}
       </td>
 
       {/* Match */}
-      <td className="px-3 py-2">
+      <td className="border-x border-border/40 px-3 py-1.5">
         <div className={cn("flex items-center gap-1 font-medium", state.tone)}>
           {Icon && <Icon className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />}
-          <span>{state.label}</span>
+          <span className="truncate">{state.label}</span>
         </div>
-        {state.detail && <p className="mt-0.5 text-muted-foreground">{state.detail}</p>}
-        {reasonText.length > 0 && (
-          <ul className="mt-0.5 space-y-0.5 text-muted-foreground">
-            {reasonText.map((reason) => (
-              <li key={reason}>{reason}</li>
-            ))}
-          </ul>
+        {(state.detail || topReason) && (
+          <p className="truncate text-[11px] text-muted-foreground" title={topReason ?? undefined}>
+            {state.detail ?? topReason}
+          </p>
         )}
       </td>
 
       {/* Actual */}
-      <td className="px-3 py-2">
+      <td className="whitespace-nowrap px-3 py-1.5 tabular-nums text-muted-foreground">
+        {primary ? formatShortDate(primary.date) : EMPTY}
+      </td>
+      <td className="max-w-0 px-3 py-1.5">
         {primary ? (
-          <div className="flex flex-col gap-0.5">
-            <span className="tabular-nums text-muted-foreground">
-              {formatShortDate(primary.date)}
+          <div className="flex items-center gap-1.5">
+            <span className="truncate" title={primary.notes ?? primary.payeeName ?? undefined}>
+              {primary.payeeName ?? primary.notes ?? "No payee"}
             </span>
-            <span className="truncate font-medium">{primary.payeeName ?? "No payee"}</span>
-            <span className="tabular-nums">{formatMinorUnits(primary.amount)}</span>
-
-            <div className="mt-0.5 flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
-              {item.guards.protectedReconciled && (
-                <span className="flex items-center gap-0.5">
-                  <Lock className="h-3 w-3" aria-hidden="true" />
-                  Reconciled
-                </span>
-              )}
-              {item.guards.splitParent && (
-                <span className="flex items-center gap-0.5">
-                  <Split className="h-3 w-3" aria-hidden="true" />
-                  {primary.splitLines.length} splits
-                </span>
-              )}
-              {item.guards.transfer === "yes" && <span>Transfer</span>}
-              {transactions.length > 1 && <span>{transactions.length} candidates</span>}
-            </div>
+            {item.guards.protectedReconciled && (
+              <Lock className="h-3 w-3 shrink-0 text-muted-foreground" aria-label="Reconciled" />
+            )}
+            {item.guards.splitParent && (
+              <Split
+                className="h-3 w-3 shrink-0 text-muted-foreground"
+                aria-label={`${primary.splitLines.length} splits`}
+              />
+            )}
+            {item.guards.transfer === "yes" && (
+              <span className="shrink-0 text-[11px] text-muted-foreground">Transfer</span>
+            )}
+            {transactions.length > 1 && (
+              <span className="shrink-0 text-[11px] text-muted-foreground">
+                +{transactions.length - 1}
+              </span>
+            )}
           </div>
         ) : (
-          <span className="text-muted-foreground" aria-label="No Actual transaction">
-            —
-          </span>
+          EMPTY
         )}
+      </td>
+      <td className="whitespace-nowrap px-3 py-1.5 text-right tabular-nums">
+        {primary ? formatMinorUnits(primary.amount) : EMPTY}
       </td>
     </tr>
   );

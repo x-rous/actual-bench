@@ -40,6 +40,16 @@ export type BuildItemsInput = {
    * are flagged rather than counted as unexplained.
    */
   statementPeriod?: { start: string; end: string } | null;
+  /**
+   * The range the user asked to see, which may be narrower than the range
+   * loaded — matching needs headroom that the user did not ask to look at.
+   *
+   * An unmatched transaction outside this range gets **no item at all**: with
+   * zero padding the user is saying "show me my statement's dates and nothing
+   * else", and listing neighbouring transactions anyway would be ignoring them.
+   * Matched pairs are always kept, whatever their date.
+   */
+  visibleWindow?: { start: string; end: string } | null;
   makeId: () => string;
 };
 
@@ -131,8 +141,20 @@ export function buildReconciliationItems(input: BuildItemsInput): Reconciliation
   }
 
   const period = input.statementPeriod ?? null;
+  const visible = input.visibleWindow ?? null;
   for (const transactionId of graph.unmatchedActualTransactionIds) {
     const snapshot = snapshots.get(transactionId);
+
+    // Loaded purely as matching headroom and not matched: the user never asked
+    // to see it, so it does not become a row.
+    if (
+      visible != null &&
+      snapshot != null &&
+      (snapshot.date < visible.start || snapshot.date > visible.end)
+    ) {
+      continue;
+    }
+
     const outsidePeriod =
       period != null &&
       snapshot != null &&
