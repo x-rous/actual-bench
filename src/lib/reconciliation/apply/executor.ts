@@ -127,6 +127,7 @@ async function runOperation(
             payeeName: operation.payeeName,
             categoryId: operation.categoryId,
             notes: operation.notes,
+            cleared: operation.cleared,
             importedId: operation.marker,
           },
         ]);
@@ -148,6 +149,7 @@ async function runOperation(
           payeeId: patchValue(operation.patch, "payeeId"),
           categoryId: patchValue(operation.patch, "categoryId"),
           notes: patchValue(operation.patch, "notes"),
+          cleared: operation.cleared,
         });
         return {
           operationId: operation.id,

@@ -166,6 +166,7 @@ export function createReconciliationTransport(
           payeeName: input.payeeName,
           categoryId: input.categoryId,
           notes: input.notes,
+          cleared: input.cleared,
           importedId: input.importedId,
         }))
       );

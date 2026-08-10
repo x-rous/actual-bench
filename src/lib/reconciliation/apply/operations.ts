@@ -32,6 +32,8 @@ export type CreateOperation = OperationBase & {
   payeeId: string | null;
   categoryId: string | null;
   notes: string | null;
+  /** Marked as cleared on creation, when the user asked for that. */
+  cleared?: boolean;
   /**
    * Deterministic marker derived from the session and the statement row
    * (RD-071 D14). It is what makes a retry after a partial failure safe: the
@@ -52,6 +54,14 @@ export type UpdateOperation = OperationBase & {
   amount: MinorUnitAmount;
   /** Only the fields that actually differ. */
   patch: StagedPatch;
+  /**
+   * Set when the update exists to mark the transaction cleared.
+   *
+   * An update may carry this and nothing else: confirming that a transaction
+   * appeared on the statement is a change worth making even when none of its
+   * fields differ.
+   */
+  cleared?: boolean;
 };
 
 export type DeleteOperation = OperationBase & {

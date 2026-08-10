@@ -34,9 +34,22 @@ export type ApplyConfig = {
    * be what a rule reads to pick the payee itself.
    */
   descriptionTarget: "payee" | "notes";
+  /**
+   * Which transactions to mark cleared.
+   *
+   * Confirming that a transaction appeared on the statement is what a
+   * reconciliation is for, so this is a real option rather than a detail. But
+   * `reconciled` turns matched rows that needed no write into writes, which the
+   * change count has to reflect honestly — hence a deliberate choice rather than
+   * a default.
+   */
+  clearedTarget: "none" | "created" | "reconciled";
 };
 
-export const DEFAULT_APPLY_CONFIG: ApplyConfig = { descriptionTarget: "payee" };
+export const DEFAULT_APPLY_CONFIG: ApplyConfig = {
+  descriptionTarget: "payee",
+  clearedTarget: "none",
+};
 
 export type PlanInput = {
   sessionId: string;
@@ -68,6 +81,7 @@ export function createMarker(input: {
 }
 
 export function buildApplyPlan(input: PlanInput): ApplyPlan {
+  const applyConfig = input.applyConfig ?? DEFAULT_APPLY_CONFIG;
   const operations: ApplyOperation[] = [];
   const blocked: { itemId: string; reason: string }[] = [];
   let noWriteMatches = 0;
@@ -93,6 +107,24 @@ export function buildApplyPlan(input: PlanInput): ApplyPlan {
 
         if (!hasStagedChanges(item.stagedChanges)) {
           if (item.disposition === "correct-amount") break;
+
+          // Marking a matched transaction cleared is a change worth making even
+          // when no field differs — but only where it would actually change
+          // something. A row already cleared, or already reconciled in Actual,
+          // needs no write, and pretending otherwise would inflate the count the
+          // user is about to approve.
+          if (
+            applyConfig.clearedTarget === "reconciled" &&
+            !transaction.cleared &&
+            !item.guards.protectedReconciled
+          ) {
+            operations.push({
+              ...updateOperationFor(item, transaction),
+              cleared: true,
+            });
+            break;
+          }
+
           // Reconciled, but nothing to write. Counting this as a change is how
           // an Apply button ends up offering to make 248 changes when 12 were
           // meant (feature spec §39).
@@ -114,7 +146,12 @@ export function buildApplyPlan(input: PlanInput): ApplyPlan {
           break;
         }
 
-        operations.push(updateOperationFor(item, transaction));
+        operations.push({
+          ...updateOperationFor(item, transaction),
+          ...(applyConfig.clearedTarget === "reconciled" && !transaction.cleared
+            ? { cleared: true }
+            : {}),
+        });
         break;
       }
 
@@ -157,7 +194,8 @@ function createOperationFor(
   input: PlanInput
 ): CreateOperation {
   const patch = item.stagedChanges;
-  const descriptionTarget = (input.applyConfig ?? DEFAULT_APPLY_CONFIG).descriptionTarget;
+  const config = input.applyConfig ?? DEFAULT_APPLY_CONFIG;
+  const descriptionTarget = config.descriptionTarget;
   return {
     id: operationId("create", item.id),
     kind: "create",
@@ -179,6 +217,7 @@ function createOperationFor(
     notes:
       patch?.notes?.staged ??
       (descriptionTarget === "notes" ? row.description || null : null),
+    cleared: config.clearedTarget !== "none",
     marker: createMarker({
       budgetSyncId: input.budgetSyncId,
       accountId: input.accountId,

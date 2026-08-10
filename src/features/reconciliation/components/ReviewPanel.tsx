@@ -88,10 +88,52 @@ export function ReviewPanel({
       </div>
 
       {/*
-        Asked here rather than in the matching options: this shapes the write,
-        not the match, and this is the screen where the created rows are in
+        Asked here rather than in the matching options: these shape the write,
+        not the match, and this is the screen where the affected rows are in
         front of the user.
       */}
+      <section className="rounded-md border border-border/60 p-3">
+        <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          Mark as cleared
+        </h3>
+        <fieldset className="flex flex-col gap-1.5">
+          <legend className="sr-only">Which transactions to mark cleared</legend>
+          {(
+            [
+              ["none", "Leave cleared status alone", "Nothing's cleared flag changes."],
+              [
+                "created",
+                "New transactions only",
+                "Transactions created from this statement start out cleared.",
+              ],
+              [
+                "reconciled",
+                "Everything this statement confirms",
+                "Also clears matched transactions that are not cleared yet — the point of reconciling, but it turns rows needing no change into writes.",
+              ],
+            ] as const
+          ).map(([value, label, hint]) => (
+            <label key={value} className="flex items-start gap-2 text-xs">
+              <input
+                type="radio"
+                name="cleared-target"
+                className="mt-0.5"
+                checked={applyConfig.clearedTarget === value}
+                onChange={() => onApplyConfigChange({ ...applyConfig, clearedTarget: value })}
+              />
+              <span>
+                {label}
+                <span className="block text-[11px] text-muted-foreground">{hint}</span>
+              </span>
+            </label>
+          ))}
+        </fieldset>
+        <p className="mt-2 text-[11px] text-muted-foreground">
+          Transactions already cleared, or already reconciled in Actual, are left untouched — the
+          count above only ever includes writes that change something.
+        </p>
+      </section>
+
       {counts.create > 0 && (
         <section className="rounded-md border border-border/60 p-3">
           <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">

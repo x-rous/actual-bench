@@ -33,6 +33,7 @@ export type TransactionCreateDraft = {
   payeeName?: string | null;
   categoryId?: string | null;
   notes?: string | null;
+  cleared?: boolean;
   /**
    * Deterministic marker derived from the session and statement row, so a retry
    * after a partial Apply can never create the same transaction twice
@@ -50,6 +51,7 @@ export type TransactionUpdateInput = {
   payeeName?: string | null;
   categoryId?: string | null;
   notes?: string | null;
+  cleared?: boolean;
 };
 
 export type CreatedTransaction = {

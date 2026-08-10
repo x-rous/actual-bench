@@ -171,7 +171,7 @@ describe("create operations", () => {
       [item({ id: "i1", disposition: "create", statementRowIds: ["s1"] })],
       [row({ id: "s1" })],
       [],
-      { descriptionTarget: "notes" }
+      { descriptionTarget: "notes", clearedTarget: "none" }
     );
 
     const operation = result.operations[0];
@@ -193,7 +193,7 @@ describe("create operations", () => {
       ],
       [row({ id: "s1" })],
       [],
-      { descriptionTarget: "notes" }
+      { descriptionTarget: "notes", clearedTarget: "none" }
     );
 
     const operation = result.operations[0];
@@ -381,6 +381,113 @@ describe("correcting a wrong amount", () => {
     );
 
     expect(result.operations).toHaveLength(0);
+  });
+});
+
+describe("marking transactions cleared", () => {
+  // Confirming that a transaction appeared on the statement is what a
+  // reconciliation is for, so it is offered — but only where it would change
+  // something, or the count the user approves would be inflated by writes that
+  // do nothing.
+  const cleared = (target: ApplyConfig["clearedTarget"]): ApplyConfig => ({
+    descriptionTarget: "payee",
+    clearedTarget: target,
+  });
+
+  it("leaves the cleared flag alone by default", () => {
+    const result = plan(
+      [item({ id: "i1", disposition: "matched", actualTransactionIds: ["t1"] })],
+      [],
+      [txn({ id: "t1", cleared: false })]
+    );
+    expect(result.operations).toHaveLength(0);
+    expect(result.noWriteMatches).toBe(1);
+  });
+
+  it("marks a created transaction cleared when asked", () => {
+    const result = plan(
+      [item({ id: "i1", disposition: "create", statementRowIds: ["s1"] })],
+      [row({ id: "s1" })],
+      [],
+      cleared("created")
+    );
+    const operation = result.operations[0];
+    if (operation.kind === "create") expect(operation.cleared).toBe(true);
+  });
+
+  it("does not touch matched transactions when only creates are cleared", () => {
+    const result = plan(
+      [item({ id: "i1", disposition: "matched", actualTransactionIds: ["t1"] })],
+      [],
+      [txn({ id: "t1", cleared: false })],
+      cleared("created")
+    );
+    expect(result.operations).toHaveLength(0);
+  });
+
+  it("clears a matched transaction that is not yet cleared", () => {
+    const result = plan(
+      [item({ id: "i1", disposition: "matched", actualTransactionIds: ["t1"] })],
+      [],
+      [txn({ id: "t1", cleared: false })],
+      cleared("reconciled")
+    );
+
+    expect(result.operations).toHaveLength(1);
+    const operation = result.operations[0];
+    expect(operation.kind).toBe("update");
+    if (operation.kind === "update") expect(operation.cleared).toBe(true);
+  });
+
+  it("writes nothing for a transaction already cleared", () => {
+    const result = plan(
+      [item({ id: "i1", disposition: "matched", actualTransactionIds: ["t1"] })],
+      [],
+      [txn({ id: "t1", cleared: true })],
+      cleared("reconciled")
+    );
+    expect(result.operations).toHaveLength(0);
+    expect(result.noWriteMatches).toBe(1);
+  });
+
+  it("leaves a reconciled transaction alone, which is already settled", () => {
+    const result = plan(
+      [
+        item({
+          id: "i1",
+          disposition: "matched",
+          actualTransactionIds: ["t1"],
+          guards: { protectedReconciled: true, splitParent: false, transfer: "no" },
+        }),
+      ],
+      [],
+      [txn({ id: "t1", cleared: false, reconciled: true })],
+      cleared("reconciled")
+    );
+    expect(result.operations).toHaveLength(0);
+  });
+
+  it("adds the cleared flag to an update that was happening anyway", () => {
+    const result = plan(
+      [
+        item({
+          id: "i1",
+          disposition: "matched",
+          actualTransactionIds: ["t1"],
+          stagedChanges: NOTES_PATCH,
+        }),
+      ],
+      [],
+      [txn({ id: "t1", cleared: false })],
+      cleared("reconciled")
+    );
+
+    expect(result.operations).toHaveLength(1);
+    const operation = result.operations[0];
+    if (operation.kind === "update") {
+      expect(operation.cleared).toBe(true);
+      expect(operation.patch.notes?.staged).toBe("#2026-07 DUBAI TAXI");
+    }
   });
 });
 
