@@ -142,7 +142,9 @@ async function runOperation(
           transactionId: operation.transactionId,
           accountId: operation.accountId,
           date: patchValue(operation.patch, "date") ?? operation.date,
-          amount: operation.amount,
+          // A corrected amount, or the existing one when the user did not
+          // change it. The transport needs the amount either way.
+          amount: patchValue(operation.patch, "amount") ?? operation.amount,
           payeeId: patchValue(operation.patch, "payeeId"),
           categoryId: patchValue(operation.patch, "categoryId"),
           notes: patchValue(operation.patch, "notes"),

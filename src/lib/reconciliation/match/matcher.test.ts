@@ -218,12 +218,29 @@ describe("amount is a hard gate (feature spec §11)", () => {
     expect(graph.ambiguous).toHaveLength(0);
   });
 
-  it("does not offer a review pairing when the amounts are wildly apart", () => {
+  it("relates a wildly-apart pair by merchant and date instead of by amount", () => {
+    // The ratio cap still refuses it as an amount mismatch, but when it is the
+    // only row left on each side for this merchant on this day, the amount is
+    // the least trustworthy field on the row and refusing to relate them would
+    // be trusting the wrong signal.
     const graph = run(
       [row({ id: "s1", amount: -42100, description: "ETISALAT" })],
       [txn({ id: "t1", amount: -100, payeeName: "Etisalat" })]
     );
+
+    expect(graph.matched).toHaveLength(0);
+    expect(graph.ambiguous).toHaveLength(1);
+    expect(graph.ambiguous[0].why).toBe("same-merchant-date");
+  });
+
+  it("relates nothing when both passes are switched off", () => {
+    const graph = run(
+      [row({ id: "s1", amount: -42100, description: "ETISALAT" })],
+      [txn({ id: "t1", amount: -100, payeeName: "Etisalat" })],
+      { reviewAmountMismatch: false, pairLeftoversByMerchantAndDate: false }
+    );
     expect(graph.ambiguous).toHaveLength(0);
+    expect(graph.unmatchedStatementRowIds).toEqual(["s1"]);
   });
 
   it("distinguishes sign: an inflow never matches an outflow", () => {

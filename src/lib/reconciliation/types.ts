@@ -210,6 +210,21 @@ export type MatchConfig = {
   amountMismatchTextFloor: number;
   /** Largest relative amount gap worth showing, as a fraction of the larger amount. */
   amountMismatchMaxRatio: number;
+  /**
+   * Pair the last remaining statement row and transaction for a merchant on a
+   * date, however far apart their amounts are.
+   *
+   * Justified by where the error lives: when transactions are created by an
+   * automation that extracts and converts amounts, the amount is the *least*
+   * reliable field, while merchant text and date are the most reliable. Refusing
+   * to relate them because the amounts disagree would be trusting the wrong
+   * signal. Still review-only, and only when nothing else could be meant.
+   */
+  pairLeftoversByMerchantAndDate: boolean;
+  /** How close the dates must be for that pairing. Deliberately tight. */
+  clusterDateToleranceDays: number;
+  /** Text similarity required to consider two rows the same merchant. */
+  clusterTextFloor: number;
 };
 
 /**
@@ -262,7 +277,12 @@ export type MatchTier =
   /** Exact match on the original-currency amount the bank printed (FX purchase). */
   | "original-amount-text"
   /** Text is convincing but no amount agrees — for review only, never automatic. */
-  | "amount-mismatch-review";
+  | "amount-mismatch-review"
+  /**
+   * Same merchant, same date, and the only rows left on either side — but the
+   * amounts disagree beyond any plausible tolerance. Review only.
+   */
+  | "same-merchant-date-review";
 
 export type ScoredCandidate = {
   statementRowId: string;
@@ -291,7 +311,14 @@ export type MatchOutcome = {
 export type AmbiguousMatch = {
   statementRowId: string;
   candidates: ScoredCandidate[];
-  why: "close-runner-up" | "below-floor" | "amount-mismatch";
+  why:
+    | "close-runner-up"
+    | "below-floor"
+    | "amount-mismatch"
+    /** One row left on each side for this merchant and date. */
+    | "same-merchant-date"
+    /** Several rows left on both sides; the tool will not guess the pairing. */
+    | "merchant-cluster";
 };
 
 export type MatchGraph = {
@@ -336,6 +363,15 @@ export type StagedValue<T> = {
 
 /** The fields V1 can stage on a transaction. */
 export type StagedPatch = {
+  /**
+   * Correcting an amount that is wrong in Actual.
+   *
+   * Held here rather than as a separate mechanism, so it inherits provenance and
+   * precedence like any other field. But it is never staged by a bulk action and
+   * never pre-selected: an amount change moves money in the budget, and only the
+   * user can say which figure is right.
+   */
+  amount?: StagedValue<MinorUnitAmount>;
   date?: StagedValue<string>;
   payeeId?: StagedValue<string | null>;
   categoryId?: StagedValue<string | null>;
@@ -348,6 +384,8 @@ export type ReconciliationDisposition =
   | "create"
   | "keep"
   | "delete"
+  /** The transaction is right, its amount is not — update it in place. */
+  | "correct-amount"
   | "unresolved"
   | "ignored";
 

@@ -62,7 +62,19 @@ export const REASON = {
   outsideStatementPeriod: "outside-statement-period",
   likelyDuplicate: "likely-duplicate",
   amountMismatch: "amount-mismatch",
+  /** One row left on each side for this merchant and date; amounts disagree. */
+  sameMerchantDate: "same-merchant-date",
+  /** Several rows left on both sides; the pairing is the user's to make. */
+  merchantCluster: "merchant-cluster",
 } as const;
+
+const REVIEW_REASON_BY_WHY: Record<string, string> = {
+  "close-runner-up": REASON.ambiguousMatch,
+  "below-floor": REASON.belowConfidenceFloor,
+  "amount-mismatch": REASON.amountMismatch,
+  "same-merchant-date": REASON.sameMerchantDate,
+  "merchant-cluster": REASON.merchantCluster,
+};
 
 function guardsFor(
   snapshot: ActualTransactionSnapshot | undefined,
@@ -121,13 +133,14 @@ export function buildReconciliationItems(input: BuildItemsInput): Reconciliation
       statementRowIds: [ambiguous.statementRowId],
       actualTransactionIds: ambiguous.candidates.map((c) => c.actualTransactionId),
       disposition: "unresolved",
-      reasonCode:
-        ambiguous.why === "close-runner-up"
-          ? REASON.ambiguousMatch
-          : ambiguous.why === "amount-mismatch"
-            ? REASON.amountMismatch
-            : REASON.belowConfidenceFloor,
-      guards: { protectedReconciled: false, splitParent: false, transfer: "no" },
+      reasonCode: REVIEW_REASON_BY_WHY[ambiguous.why] ?? REASON.belowConfidenceFloor,
+      // The guards of the leading candidate, so a review item the user may
+      // resolve by correcting an amount carries the same protections a matched
+      // item would.
+      guards: guardsFor(
+        snapshots.get(ambiguous.candidates[0]?.actualTransactionId ?? ""),
+        transfersReported
+      ),
     });
   }
 
@@ -231,6 +244,8 @@ const REVIEW_REASONS = new Set<string>([
   REASON.ambiguousMatch,
   REASON.belowConfidenceFloor,
   REASON.amountMismatch,
+  REASON.sameMerchantDate,
+  REASON.merchantCluster,
 ]);
 
 export function summarizeCoverage(

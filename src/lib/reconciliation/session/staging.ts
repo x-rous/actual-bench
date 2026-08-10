@@ -36,7 +36,7 @@ export function outranks(incoming: StagedValueSource, existing: StagedValueSourc
 }
 
 /** The fields V1 can stage. Kept explicit so a new field is a deliberate act. */
-export const STAGEABLE_FIELDS = ["date", "payeeId", "categoryId", "notes"] as const;
+export const STAGEABLE_FIELDS = ["amount", "date", "payeeId", "categoryId", "notes"] as const;
 export type StageableField = (typeof STAGEABLE_FIELDS)[number];
 
 export type StageFieldInput<T> = {
@@ -170,6 +170,24 @@ export function canStageField(
       allowed: false,
       reason:
         "This transaction is reconciled in Actual, which does not change reconciled rows. Unreconcile it in Actual first.",
+    };
+  }
+
+  if (item.guards.splitParent && field === "amount") {
+    return {
+      allowed: false,
+      reason:
+        "This is a split transaction, and its amount must equal the sum of its split lines. Correct it in Actual so the splits can be adjusted with it.",
+    };
+  }
+
+  if (item.guards.transfer !== "no" && field === "amount") {
+    return {
+      allowed: false,
+      reason:
+        item.guards.transfer === "yes"
+          ? "This is one leg of a transfer. Changing its amount here would leave the other account disagreeing with it."
+          : "This connection does not report whether a transaction is part of a transfer, so its amount is not changed here.",
     };
   }
 

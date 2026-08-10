@@ -249,6 +249,105 @@ describe("delete operations", () => {
   });
 });
 
+describe("correcting a wrong amount", () => {
+  // The transaction is the right one; only its amount is wrong, because the
+  // automation that created it extracted or converted badly. Fixing it must
+  // never destroy the row, or the notes the user added to it go with it.
+  const AMOUNT_PATCH: StagedPatch = {
+    amount: { original: -2438, staged: -6615, source: "manual" },
+  };
+
+  it("updates in place rather than deleting and recreating", () => {
+    const result = plan(
+      [
+        item({
+          id: "i1",
+          disposition: "correct-amount",
+          actualTransactionIds: ["t1"],
+          stagedChanges: AMOUNT_PATCH,
+        }),
+      ],
+      [],
+      [txn({ id: "t1", amount: -2438 })]
+    );
+
+    expect(result.operations).toHaveLength(1);
+    const operation = result.operations[0];
+    expect(operation.kind).toBe("update");
+    if (operation.kind === "update") {
+      expect(operation.transactionId).toBe("t1");
+      expect(operation.patch.amount?.staged).toBe(-6615);
+    }
+    // Nothing is deleted, so notes, payee, category and links all survive.
+    expect(result.operations.some((entry) => entry.kind === "delete")).toBe(false);
+  });
+
+  it("emits nothing when no new amount has been chosen yet", () => {
+    const result = plan(
+      [item({ id: "i1", disposition: "correct-amount", actualTransactionIds: ["t1"] })],
+      [],
+      [txn({ id: "t1" })]
+    );
+    expect(result.operations).toHaveLength(0);
+  });
+
+  it("refuses on a split parent, whose amount must equal its split lines", () => {
+    const result = plan(
+      [
+        item({
+          id: "i1",
+          disposition: "correct-amount",
+          actualTransactionIds: ["t1"],
+          stagedChanges: AMOUNT_PATCH,
+          guards: { protectedReconciled: false, splitParent: true, transfer: "no" },
+        }),
+      ],
+      [],
+      [txn({ id: "t1", isParent: true })]
+    );
+
+    expect(result.operations).toHaveLength(0);
+    expect(result.blocked[0].reason).toMatch(/split/i);
+  });
+
+  it("refuses on a transfer leg, which would desync the other account", () => {
+    const result = plan(
+      [
+        item({
+          id: "i1",
+          disposition: "correct-amount",
+          actualTransactionIds: ["t1"],
+          stagedChanges: AMOUNT_PATCH,
+          guards: { protectedReconciled: false, splitParent: false, transfer: "yes" },
+        }),
+      ],
+      [],
+      [txn({ id: "t1", transferId: "x1" })]
+    );
+
+    expect(result.operations).toHaveLength(0);
+    expect(result.blocked[0].reason).toMatch(/transfer/i);
+  });
+
+  it("refuses on a reconciled transaction", () => {
+    const result = plan(
+      [
+        item({
+          id: "i1",
+          disposition: "correct-amount",
+          actualTransactionIds: ["t1"],
+          stagedChanges: AMOUNT_PATCH,
+          guards: { protectedReconciled: true, splitParent: false, transfer: "no" },
+        }),
+      ],
+      [],
+      [txn({ id: "t1", reconciled: true })]
+    );
+
+    expect(result.operations).toHaveLength(0);
+  });
+});
+
 describe("the create marker (RD-071 D14)", () => {
   const base = {
     budgetSyncId: "budget-1",

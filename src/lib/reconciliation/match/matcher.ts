@@ -20,7 +20,11 @@ import type {
 } from "../types";
 import { amountDateSlice, buildActualIndex, dateSlice, type ActualIndex } from "./actualIndex";
 import { assignMatches } from "./assign";
-import { scoreAmountMismatchCandidate, scoreCandidate } from "./score";
+import {
+  scoreAmountMismatchCandidate,
+  scoreCandidate,
+  scoreSameMerchantCandidate,
+} from "./score";
 
 export type MatchInput = {
   statementRows: StatementRow[];
@@ -59,13 +63,112 @@ export function match(input: MatchInput): MatchGraph {
   });
 
   const withMismatches = addAmountMismatchReviews(result, statementRows, index, config);
+  const withClusters = addMerchantDateLeftovers(withMismatches, statementRows, index, config);
 
   return {
-    matched: withMismatches.matched,
-    ambiguous: withMismatches.ambiguous,
-    unmatchedStatementRowIds: withMismatches.unmatchedStatementRowIds,
-    unmatchedActualTransactionIds: withMismatches.unmatchedActualTransactionIds,
-    likelyDuplicates: withMismatches.likelyDuplicates,
+    matched: withClusters.matched,
+    ambiguous: withClusters.ambiguous,
+    unmatchedStatementRowIds: withClusters.unmatchedStatementRowIds,
+    unmatchedActualTransactionIds: withClusters.unmatchedActualTransactionIds,
+    likelyDuplicates: withClusters.likelyDuplicates,
+  };
+}
+
+/**
+ * Relate what is left over for the same merchant on the same date.
+ *
+ * When transactions are created by an automation that extracts and converts
+ * amounts, the amount is the least reliable field on the row while the merchant
+ * text and date are the most reliable. So after every amount-based avenue is
+ * exhausted, rows that plainly concern the same merchant on the same day are
+ * related to each other regardless of how far apart their amounts are.
+ *
+ * Two outcomes, and the distinction is the whole point:
+ *
+ * - **exactly one left on each side** → a review pairing. Nothing else could be
+ *   meant, so relating them costs nothing and finding it by hand costs the user.
+ * - **more than one on either side** → a cluster, listing all of them, pairing
+ *   none. Guessing which of two belongs to which is precisely the judgement the
+ *   tool should not make silently.
+ *
+ * Never an automatic match: the amounts disagree, and only the user can say
+ * which figure is right.
+ */
+function addMerchantDateLeftovers(
+  result: ReturnType<typeof assignMatches>,
+  statementRows: StatementRow[],
+  index: ActualIndex,
+  config: MatchConfig
+): ReturnType<typeof assignMatches> {
+  if (!config.pairLeftoversByMerchantAndDate) return result;
+  if (result.unmatchedStatementRowIds.length === 0) return result;
+  if (result.unmatchedActualTransactionIds.length === 0) return result;
+
+  const rowsById = new Map(statementRows.map((row) => [row.id, row]));
+  const leftoverRows = result.unmatchedStatementRowIds
+    .map((id) => rowsById.get(id))
+    .filter((row): row is StatementRow => row !== undefined);
+  const leftoverTransactions = result.unmatchedActualTransactionIds
+    .map((id) => index.byId.get(id))
+    .filter((transaction): transaction is ActualTransactionSnapshot => transaction !== undefined);
+
+  // Bipartite edges between leftovers that look like the same merchant on the
+  // same day. Degree is what decides pairing versus cluster.
+  const edges = new Map<string, ScoredCandidate[]>();
+  const byTransaction = new Map<string, ScoredCandidate[]>();
+
+  for (const row of leftoverRows) {
+    for (const transaction of leftoverTransactions) {
+      const candidate = scoreSameMerchantCandidate(row, transaction, config, index);
+      if (!candidate) continue;
+      const forRow = edges.get(row.id);
+      if (forRow) forRow.push(candidate);
+      else edges.set(row.id, [candidate]);
+      const forTransaction = byTransaction.get(transaction.id);
+      if (forTransaction) forTransaction.push(candidate);
+      else byTransaction.set(transaction.id, [candidate]);
+    }
+  }
+
+  if (edges.size === 0) return result;
+
+  const ambiguous = [...result.ambiguous];
+  const pairedRows = new Set<string>();
+  const pairedTransactions = new Set<string>();
+
+  for (const [statementRowId, candidates] of edges) {
+    const only = candidates.length === 1 ? candidates[0] : null;
+    if (!only) continue;
+    // The transaction must point back at this row alone, or the pairing is a
+    // guess dressed up as a conclusion.
+    if ((byTransaction.get(only.actualTransactionId) ?? []).length !== 1) continue;
+
+    pairedRows.add(statementRowId);
+    pairedTransactions.add(only.actualTransactionId);
+    ambiguous.push({ statementRowId, candidates: [only], why: "same-merchant-date" });
+  }
+
+  // Whatever remains related but not uniquely so becomes a cluster.
+  for (const [statementRowId, candidates] of edges) {
+    if (pairedRows.has(statementRowId)) continue;
+    const remaining = candidates.filter(
+      (candidate) => !pairedTransactions.has(candidate.actualTransactionId)
+    );
+    if (remaining.length === 0) continue;
+    pairedRows.add(statementRowId);
+    for (const candidate of remaining) pairedTransactions.add(candidate.actualTransactionId);
+    ambiguous.push({ statementRowId, candidates: remaining, why: "merchant-cluster" });
+  }
+
+  return {
+    ...result,
+    ambiguous,
+    unmatchedStatementRowIds: result.unmatchedStatementRowIds.filter(
+      (id) => !pairedRows.has(id)
+    ),
+    unmatchedActualTransactionIds: result.unmatchedActualTransactionIds.filter(
+      (id) => !pairedTransactions.has(id)
+    ),
   };
 }
 

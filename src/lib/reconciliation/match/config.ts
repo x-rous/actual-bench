@@ -105,4 +105,7 @@ export const DEFAULT_MATCH_CONFIG: MatchConfig = {
   reviewAmountMismatch: true,
   amountMismatchTextFloor: 0.75,
   amountMismatchMaxRatio: 0.25,
+  pairLeftoversByMerchantAndDate: true,
+  clusterDateToleranceDays: 1,
+  clusterTextFloor: 0.8,
 };

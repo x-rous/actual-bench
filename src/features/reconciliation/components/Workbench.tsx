@@ -32,6 +32,7 @@ type FilterId =
   | "needs-review"
   | "ambiguous"
   | "amount-mismatch"
+  | "wrong-amount"
   | "duplicates"
   | "create"
   | "matched"
@@ -59,6 +60,7 @@ const STATEMENT_FILTERS: FilterDef[] = [
   { id: "needs-review", label: "Needs review", dot: "bg-amber-500/70" },
   { id: "ambiguous", label: "Several candidates", dot: "bg-amber-500/40", child: true },
   { id: "amount-mismatch", label: "Amount differs", dot: "bg-amber-500/40", child: true },
+  { id: "wrong-amount", label: "Amount looks wrong", dot: "bg-amber-500/40", child: true },
   { id: "duplicates", label: "Duplicates", dot: "bg-amber-500/40", child: true },
   { id: "create", label: "Not in Actual", dot: "bg-sky-500/60" },
   { id: "matched", label: "Matched", dot: "bg-emerald-500/70" },
@@ -84,6 +86,8 @@ function matchesFilter(item: ReconciliationItem, filter: FilterId): boolean {
         (item.reasonCode === REASON.ambiguousMatch ||
           item.reasonCode === REASON.belowConfidenceFloor ||
           item.reasonCode === REASON.amountMismatch ||
+          item.reasonCode === REASON.sameMerchantDate ||
+          item.reasonCode === REASON.merchantCluster ||
           item.reasonCode === REASON.likelyDuplicate)
       );
     case "ambiguous":
@@ -93,6 +97,11 @@ function matchesFilter(item: ReconciliationItem, filter: FilterId): boolean {
       );
     case "amount-mismatch":
       return item.reasonCode === REASON.amountMismatch;
+    case "wrong-amount":
+      return (
+        item.reasonCode === REASON.sameMerchantDate ||
+        item.reasonCode === REASON.merchantCluster
+      );
     case "duplicates":
       // A matched row can carry the duplicate flag; it belongs under Matched,
       // not under the work still to do.

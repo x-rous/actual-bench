@@ -296,7 +296,11 @@ describe("foreign-currency transactions", () => {
       actualTransactions: [
         txn({ id: "t1", date: "2026-07-14", amount: -9007, notes: "#API AIRALO" }),
       ],
-      config: { ...DEFAULT_MATCH_CONFIG, reviewAmountMismatch: false },
+      config: {
+        ...DEFAULT_MATCH_CONFIG,
+        reviewAmountMismatch: false,
+        pairLeftoversByMerchantAndDate: false,
+      },
     });
 
     expect(graph.ambiguous).toHaveLength(0);
@@ -386,6 +390,143 @@ describe("duplicate transactions and their competing candidates", () => {
 
     const appearances = items.flatMap((item) => item.actualTransactionIds);
     expect(appearances.sort()).toEqual(["dup-a", "dup-b", "other-1", "other-2"]);
+  });
+});
+
+describe("amounts mangled upstream (same merchant, same date)", () => {
+  // Transactions here are created by an automation that extracts fields from an
+  // SMS and converts currency, so the amount can be wrong by an arbitrary
+  // factor while the merchant text and date stay reliable. Refusing to relate
+  // these rows because the amounts disagree would trust the least trustworthy
+  // field on the row.
+
+  it("pairs the last row left on each side, however far apart the amounts", () => {
+    // Real case: SAR65.00 posted as -66.15; the automation recorded -24.38.
+    const graph = match({
+      statementRows: parse(
+        [
+          "Date\tDescription\tDebit\tCredit",
+          "19/07/2026\tNajoum Hala Trading Co KHOBAR SAU SAR65.00\t66.15\t0",
+        ].join("\n")
+      ),
+      actualTransactions: [
+        txn({ id: "t1", date: "2026-07-19", amount: -2438, notes: "#API Najoum Hala Trading Co" }),
+      ],
+      config: DEFAULT_MATCH_CONFIG,
+    });
+
+    expect(graph.matched).toHaveLength(0);
+    expect(graph.ambiguous).toHaveLength(1);
+    expect(graph.ambiguous[0].why).toBe("same-merchant-date");
+    expect(graph.ambiguous[0].candidates[0].reasons).toContainEqual({
+      kind: "amount-mismatch",
+      statementAmount: -6615,
+      actualAmount: -2438,
+      difference: 4177,
+    });
+  });
+
+  it("pairs the leftover after an exact match has taken its partner", () => {
+    // Real case: two rows each side on the same day. SAR47.00 matches -47.00 on
+    // the original amount, leaving one row on each side to be related.
+    const graph = match({
+      statementRows: parse(
+        [
+          "Date\tDescription\tDebit\tCredit",
+          "16/07/2026\tFATIMAH ABU ALSAUD RES QATIF SAU SAR47.00\t47.83\t0",
+          "16/07/2026\tFATIMAH ABU ALSAUD RES QATIF SAU SAR20.00\t20.36\t0",
+        ].join("\n")
+      ),
+      actualTransactions: [
+        txn({ id: "exact", date: "2026-07-16", amount: -4700, notes: "#API FATIMAH ABU ALSAUD RES" }),
+        txn({ id: "wrong", date: "2026-07-16", amount: -7504, notes: "#API FATIMAH ABU ALSAUD RES" }),
+      ],
+      config: DEFAULT_MATCH_CONFIG,
+    });
+
+    expect(graph.matched).toHaveLength(1);
+    expect(graph.matched[0].actualTransactionId).toBe("exact");
+
+    const leftover = graph.ambiguous.find((entry) => entry.why === "same-merchant-date");
+    expect(leftover?.candidates[0].actualTransactionId).toBe("wrong");
+    // Nothing is left dangling on either side.
+    expect(graph.unmatchedStatementRowIds).toHaveLength(0);
+    expect(graph.unmatchedActualTransactionIds).toHaveLength(0);
+  });
+
+  it("refuses to guess when several rows remain on both sides", () => {
+    // Two unmatched each side for the same merchant and day: which belongs to
+    // which is exactly the judgement the tool must not make silently.
+    const graph = match({
+      statementRows: parse(
+        [
+          "Date\tDescription\tDebit\tCredit",
+          "16/07/2026\tFATIMAH ABU ALSAUD RES QATIF SAU SAR20.00\t20.36\t0",
+          "16/07/2026\tFATIMAH ABU ALSAUD RES QATIF SAU SAR30.00\t30.55\t0",
+        ].join("\n")
+      ),
+      actualTransactions: [
+        txn({ id: "a", date: "2026-07-16", amount: -7504, notes: "#API FATIMAH ABU ALSAUD RES" }),
+        txn({ id: "b", date: "2026-07-16", amount: -8801, notes: "#API FATIMAH ABU ALSAUD RES" }),
+      ],
+      config: DEFAULT_MATCH_CONFIG,
+    });
+
+    expect(graph.matched).toHaveLength(0);
+    const clusters = graph.ambiguous.filter((entry) => entry.why === "merchant-cluster");
+    expect(clusters.length).toBeGreaterThan(0);
+    expect(clusters[0].candidates.length).toBeGreaterThan(1);
+  });
+
+  it("does not relate rows on different days", () => {
+    const graph = match({
+      statementRows: parse(
+        [
+          "Date\tDescription\tDebit\tCredit",
+          "19/07/2026\tNajoum Hala Trading Co KHOBAR SAU SAR65.00\t66.15\t0",
+        ].join("\n")
+      ),
+      actualTransactions: [
+        txn({ id: "t1", date: "2026-07-25", amount: -2438, notes: "#API Najoum Hala Trading Co" }),
+      ],
+      config: DEFAULT_MATCH_CONFIG,
+    });
+
+    expect(graph.ambiguous).toHaveLength(0);
+  });
+
+  it("does not relate different merchants that happen to share a day", () => {
+    const graph = match({
+      statementRows: parse(
+        [
+          "Date\tDescription\tDebit\tCredit",
+          "19/07/2026\tNajoum Hala Trading Co KHOBAR SAU SAR65.00\t66.15\t0",
+        ].join("\n")
+      ),
+      actualTransactions: [
+        txn({ id: "t1", date: "2026-07-19", amount: -2438, notes: "#API Costa Coffee" }),
+      ],
+      config: DEFAULT_MATCH_CONFIG,
+    });
+
+    expect(graph.ambiguous).toHaveLength(0);
+  });
+
+  it("does not relate an inflow to an outflow", () => {
+    const graph = match({
+      statementRows: parse(
+        [
+          "Date\tDescription\tDebit\tCredit",
+          "19/07/2026\tNajoum Hala Trading Co KHOBAR SAU SAR65.00\t0\t66.15",
+        ].join("\n")
+      ),
+      actualTransactions: [
+        txn({ id: "t1", date: "2026-07-19", amount: -2438, notes: "#API Najoum Hala Trading Co" }),
+      ],
+      config: DEFAULT_MATCH_CONFIG,
+    });
+
+    expect(graph.ambiguous).toHaveLength(0);
   });
 });
 

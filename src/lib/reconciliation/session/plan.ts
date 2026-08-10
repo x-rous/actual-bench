@@ -64,11 +64,17 @@ export function buildApplyPlan(input: PlanInput): ApplyPlan {
         break;
       }
 
+      // An amount correction resolves a review item: the transaction is the
+      // right one, its amount is simply wrong. It stays an update in place, so
+      // the id, notes, payee, category and any schedule or transfer link
+      // survive — nothing the user wrote is destroyed to fix a number.
+      case "correct-amount":
       case "matched": {
         const transaction = input.transactions.get(item.actualTransactionIds[0] ?? "");
         if (!transaction) break;
 
         if (!hasStagedChanges(item.stagedChanges)) {
+          if (item.disposition === "correct-amount") break;
           // Reconciled, but nothing to write. Counting this as a change is how
           // an Apply button ends up offering to make 248 changes when 12 were
           // meant (feature spec §39).

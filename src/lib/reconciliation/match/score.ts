@@ -165,6 +165,55 @@ export function scoreAmountMismatchCandidate(
 }
 
 /**
+ * Score a leftover pairing: same merchant, same date, amounts unrelated.
+ *
+ * No amount evidence exists, so the score reflects text and date only and the
+ * label is always `low`. Returns null when the text is not convincing enough to
+ * call them the same merchant.
+ */
+export function scoreSameMerchantCandidate(
+  row: StatementRow,
+  transaction: ActualTransactionSnapshot,
+  config: MatchConfig,
+  index: ActualIndex
+): ScoredCandidate | null {
+  const delta = dayDelta(row.postedDate, transaction.date);
+  if (Math.abs(delta) > config.clusterDateToleranceDays) return null;
+  if (Math.sign(transaction.amount) !== Math.sign(row.amount)) return null;
+
+  const text = scoreText(
+    row.description,
+    {
+      payeeName: transaction.payeeName,
+      importedPayee: transaction.importedPayee,
+      notes: transaction.notes,
+    },
+    config.text,
+    config.needleFloor,
+    index.notesCorpus
+  );
+  if (text.similarity === null || text.similarity < config.clusterTextFloor) return null;
+
+  return {
+    statementRowId: row.id,
+    actualTransactionId: transaction.id,
+    score: Math.round(text.similarity * POINTS.text + datePoints(delta)),
+    label: "low",
+    tier: "same-merchant-date-review",
+    reasons: [
+      {
+        kind: "amount-mismatch",
+        statementAmount: row.amount,
+        actualAmount: transaction.amount,
+        difference: transaction.amount - row.amount,
+      },
+      { kind: "date", deltaDays: delta },
+      ...text.reasons,
+    ],
+  };
+}
+
+/**
  * Score one candidate pair. The caller guarantees the amounts are equal and the
  * date is inside the window (see `amountDateSlice`).
  */

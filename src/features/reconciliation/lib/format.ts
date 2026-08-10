@@ -27,6 +27,32 @@ export function formatShortDate(iso: string): string {
   });
 }
 
+/**
+ * How the recorded amount relates to the statement's, when the two disagree.
+ *
+ * Surfaced because a *recurring* ratio is diagnostic rather than random: an
+ * automation that converts currency with the wrong rate produces the same
+ * factor over and over, and seeing `0.375×` on several rows points at the
+ * converter rather than at the individual transactions.
+ *
+ * Returns null when the ratio would not tell the user anything — a tiny
+ * difference, or a sign flip that makes the quotient meaningless.
+ */
+export function amountRatio(
+  statementAmount: number,
+  actualAmount: number
+): string | null {
+  if (statementAmount === 0) return null;
+  if (Math.sign(statementAmount) !== Math.sign(actualAmount)) return null;
+
+  const ratio = Math.abs(actualAmount) / Math.abs(statementAmount);
+  if (ratio > 0.95 && ratio < 1.05) return null;
+
+  // Two significant figures is enough to spot a repeat without implying more
+  // precision than a rounded pair of amounts can support.
+  return ratio >= 1 ? ratio.toFixed(2).replace(/0$/, "") : ratio.toFixed(3).replace(/0$/, "");
+}
+
 export function confidenceLabelText(label: ConfidenceLabel): string {
   switch (label) {
     case "exact":
@@ -81,9 +107,14 @@ export function describeReason(reason: MatchReason): string {
         : "Bank reference found in notes";
     case "amount-mismatch": {
       const difference = Math.abs(reason.difference);
-      return `Amount differs by ${formatMinorUnits(difference)} (statement ${formatMinorUnits(
-        Math.abs(reason.statementAmount)
-      )}, Actual ${formatMinorUnits(Math.abs(reason.actualAmount))})`;
+      const ratio = amountRatio(reason.statementAmount, reason.actualAmount);
+      return (
+        `Amount differs by ${formatMinorUnits(difference)} ` +
+        `(statement ${formatMinorUnits(Math.abs(reason.statementAmount))}, ` +
+        `Actual ${formatMinorUnits(Math.abs(reason.actualAmount))}` +
+        (ratio ? ` — recorded ${ratio}× the statement` : "") +
+        ")"
+      );
     }
     case "original-amount":
       // The posted amount is a conversion; the match is on the original amount

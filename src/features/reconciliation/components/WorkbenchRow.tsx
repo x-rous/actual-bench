@@ -85,6 +85,20 @@ function middleState(item: ReconciliationItem): MiddleState {
         tone: "text-amber-600 dark:text-amber-400",
         icon: TriangleAlert,
       };
+    case REASON.sameMerchantDate:
+      return {
+        label: "Amount looks wrong",
+        detail: "Same merchant and date",
+        tone: "text-amber-600 dark:text-amber-400",
+        icon: TriangleAlert,
+      };
+    case REASON.merchantCluster:
+      return {
+        label: "Several here",
+        detail: "Same merchant and date, amounts unclear",
+        tone: "text-amber-600 dark:text-amber-400",
+        icon: TriangleAlert,
+      };
     case REASON.likelyDuplicate:
       return {
         label: "Likely duplicate",
