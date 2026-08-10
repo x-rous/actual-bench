@@ -247,6 +247,90 @@ export type MatchGraph = {
   likelyDuplicates: LikelyDuplicate[];
 };
 
+// ---------------------------------------------------------------------------
+// Session items
+// ---------------------------------------------------------------------------
+
+/**
+ * Where a staged field value came from. Ordered by precedence, highest first
+ * (feature spec §33): a bulk transformation must not clobber a value the user
+ * edited by hand unless they explicitly opt into overriding manual edits.
+ */
+export type StagedValueSource =
+  | "manual"
+  | "transform"
+  | "suggestion"
+  | "actual"
+  | "statement";
+
+/**
+ * One staged field, retaining what it was and why it changed (feature spec §36).
+ * This is what powers preview, in-session undo, drift detection, and audit.
+ */
+export type StagedValue<T> = {
+  original: T;
+  staged: T;
+  source: StagedValueSource;
+};
+
+/** The fields V1 can stage on a transaction. */
+export type StagedPatch = {
+  date?: StagedValue<string>;
+  payeeId?: StagedValue<string | null>;
+  categoryId?: StagedValue<string | null>;
+  notes?: StagedValue<string | null>;
+};
+
+/** What the user is being asked to decide, or has decided (feature spec §16). */
+export type ReconciliationDisposition =
+  | "matched"
+  | "create"
+  | "keep"
+  | "delete"
+  | "unresolved"
+  | "ignored";
+
+/**
+ * Read-only facts about the Actual side that constrain what may be staged
+ * (RD-071 A1-A3). Derived from the snapshot; never user-editable.
+ */
+export type ReconciliationGuards = {
+  /** Actual's own reconciliation skips reconciled rows; so does ours. */
+  protectedReconciled: boolean;
+  /** A split parent has no meaningful own category — it lives on the children. */
+  splitParent: boolean;
+  /**
+   * `unknown` when the transport does not report transfer membership at all, in
+   * which case the delete guardrail must take its conservative branch.
+   */
+  transfer: "yes" | "no" | "unknown";
+};
+
+/**
+ * One reconciliation relationship.
+ *
+ * The id arrays hold at most one entry each in V1, but are arrays so a grouped
+ * N:M relationship (several statement rows against several transactions) needs
+ * no schema migration later (RD-071 S2).
+ */
+export type ReconciliationItem = {
+  id: string;
+  statementRowIds: string[];
+  actualTransactionIds: string[];
+  match?: {
+    type: "exact" | "suggested" | "manual";
+    evidenceSource: MatchEvidenceSource;
+    confidence?: number;
+    label: ConfidenceLabel;
+    reasons: MatchReason[];
+  };
+  disposition: ReconciliationDisposition;
+  /** Why it is in this disposition — drives the workbench's explanatory text. */
+  reasonCode?: string;
+  guards: ReconciliationGuards;
+  stagedChanges?: StagedPatch;
+};
+
 export type LikelyDuplicate = {
   statementRowId: string;
   /** The row that won the assignment. */
