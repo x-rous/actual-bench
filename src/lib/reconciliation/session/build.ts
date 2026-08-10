@@ -70,6 +70,7 @@ export const REASON = {
 
 const REVIEW_REASON_BY_WHY: Record<string, string> = {
   "close-runner-up": REASON.ambiguousMatch,
+  "duplicate-candidates": REASON.likelyDuplicate,
   "below-floor": REASON.belowConfidenceFloor,
   "amount-mismatch": REASON.amountMismatch,
   "same-merchant-date": REASON.sameMerchantDate,
@@ -202,6 +203,70 @@ export function buildReconciliationItems(input: BuildItemsInput): Reconciliation
   }
 
   return items;
+}
+
+/**
+ * Resolve a review item to one transaction, returning the released ones to
+ * rows of their own.
+ *
+ * The invariant is that **every transaction has exactly one row**. It holds
+ * after matching, and it has to keep holding after a decision: candidates the
+ * user did not pick were only ever visible through the item that offered them,
+ * so dropping the reference would make them disappear from the workbench
+ * entirely — present in the budget, absent from the screen, impossible to
+ * decide about.
+ *
+ * Releasing them is also what makes "none of these" work without inventing a
+ * deferred-cleanup rule: the leftovers simply become ordinary rows to keep or
+ * delete.
+ */
+export function resolveToTransaction(input: {
+  item: ReconciliationItem;
+  /** The transaction the user picked, or null for "none of these". */
+  transactionId: string | null;
+  transactions: Map<string, ActualTransactionSnapshot>;
+  transfersReported: boolean;
+  makeId: () => string;
+}): { item: ReconciliationItem; released: ReconciliationItem[] } {
+  const { item, transactionId, transactions, transfersReported, makeId } = input;
+
+  const releasedIds = item.actualTransactionIds.filter((id) => id !== transactionId);
+  const released = releasedIds.map((id) => ({
+    id: makeId(),
+    statementRowIds: [],
+    actualTransactionIds: [id],
+    // Never `delete`: the user declined to match it, which is not the same as
+    // asking for it to be removed.
+    disposition: "unresolved" as const,
+    reasonCode: REASON.notOnStatement,
+    guards: guardsFor(transactions.get(id), transfersReported),
+  }));
+
+  const resolved: ReconciliationItem = transactionId
+    ? {
+        ...item,
+        actualTransactionIds: [transactionId],
+        disposition: "matched",
+        reasonCode: undefined,
+        match: {
+          type: "manual",
+          evidenceSource: "manual",
+          label: "exact",
+          reasons: [],
+        },
+      }
+    : {
+        ...item,
+        actualTransactionIds: [],
+        // Back to undecided rather than straight to create: declining these
+        // candidates is not the same as asking for a new transaction.
+        disposition: "unresolved",
+        reasonCode: REASON.noActualCandidate,
+        match: undefined,
+        guards: { protectedReconciled: false, splitParent: false, transfer: "no" },
+      };
+
+  return { item: resolved, released };
 }
 
 // ---------------------------------------------------------------------------

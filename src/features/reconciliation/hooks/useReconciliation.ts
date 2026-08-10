@@ -100,6 +100,13 @@ export function useReconciliationMutations() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["reconciliation", "profiles"] }),
   });
 
+  /** Rewrite the whole item set — used when a decision adds or removes rows. */
+  const replaceItems = useMutation({
+    mutationFn: ({ sessionId, items }: { sessionId: string; items: unknown[] }) =>
+      api.putItems(sessionId, items),
+    onSuccess: (_result, variables) => invalidateSession(variables.sessionId),
+  });
+
   const patchItem = useMutation({
     mutationFn: ({ id, payload }: { id: string; payload: unknown; sessionId: string }) =>
       api.patchItem(id, payload),
@@ -113,5 +120,6 @@ export function useReconciliationMutations() {
     saveParsedStatement,
     saveProfile,
     patchItem,
+    replaceItems,
   };
 }

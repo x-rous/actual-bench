@@ -38,7 +38,7 @@ export type InspectorProps = {
   categories: Option[];
   onClose: () => void;
   onDisposition: (disposition: ReconciliationDisposition) => void;
-  onUseCandidate: (transactionId: string) => void;
+  onUseCandidate: (transactionId: string | null) => void;
   onCorrectAmount: (transactionId: string, amount: number) => void;
   onStage: (field: StageableField, value: string | null) => void;
   onUnstage: (field: StageableField) => void;

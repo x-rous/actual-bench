@@ -28,7 +28,8 @@ export type ItemActionsProps = {
   statementRow: StatementRow | undefined;
   transactions: ActualTransactionSnapshot[];
   onDisposition: (disposition: ReconciliationDisposition) => void;
-  onUseCandidate: (transactionId: string) => void;
+  /** null means "none of these" — every candidate is released. */
+  onUseCandidate: (transactionId: string | null) => void;
   onCorrectAmount: (transactionId: string, amount: number) => void;
 };
 
@@ -69,6 +70,7 @@ export function ItemActions({
 
   const decided = item.disposition !== "unresolved";
   const primary = transactions[0];
+  const isDuplicate = item.reasonCode === REASON.likelyDuplicate;
 
   return (
     <section className="flex flex-col gap-3 border-t border-border/50 pt-3">
@@ -78,9 +80,17 @@ export function ItemActions({
           depends on which transaction this row is actually about. */}
       {transactions.length > 1 && item.disposition === "unresolved" && (
         <div className="flex flex-col gap-1.5">
-          <p className="text-[11px] text-muted-foreground">
-            Which transaction is this statement row?
-          </p>
+          {isDuplicate ? (
+            <p className="text-[11px] text-muted-foreground">
+              These look like the same transaction recorded more than once. Keep one — the others
+              become rows of their own, to delete or keep as you decide.
+            </p>
+          ) : (
+            <p className="text-[11px] text-muted-foreground">
+              Which transaction is this statement row? The ones you do not pick become rows of their
+              own, so nothing disappears.
+            </p>
+          )}
           {transactions.map((transaction) => (
             <Button
               key={transaction.id}
@@ -110,6 +120,17 @@ export function ItemActions({
               </span>
             </Button>
           ))}
+
+          {hasStatementRow && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="justify-start text-xs"
+              onClick={() => onUseCandidate(null)}
+            >
+              None of these — this row is not in Actual
+            </Button>
+          )}
         </div>
       )}
 

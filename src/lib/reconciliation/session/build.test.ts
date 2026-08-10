@@ -1,7 +1,12 @@
 import { DEFAULT_MATCH_CONFIG } from "../match/config";
 import { match } from "../match/matcher";
 import type { ActualTransactionSnapshot, StatementRow } from "../types";
-import { REASON, buildReconciliationItems, summarizeCoverage } from "./build";
+import {
+  REASON,
+  buildReconciliationItems,
+  resolveToTransaction,
+  summarizeCoverage,
+} from "./build";
 
 let counter = 0;
 const makeId = () => `item-${++counter}`;
@@ -298,5 +303,77 @@ describe("summarizeCoverage", () => {
     expect(coverage.statement.total).toBe(0);
     expect(coverage.actual.total).toBe(0);
     expect(coverage.loadedAsHeadroom).toBe(0);
+  });
+});
+
+
+describe("resolving a review item to one transaction", () => {
+  const transactions = new Map([
+    ["t1", txn({ id: "t1" })],
+    ["t2", txn({ id: "t2" })],
+    ["t3", txn({ id: "t3", transferId: "x1" })],
+  ]);
+
+  const reviewItem = {
+    id: "i1",
+    statementRowIds: ["s1"],
+    actualTransactionIds: ["t1", "t2", "t3"],
+    disposition: "unresolved" as const,
+    reasonCode: REASON.ambiguousMatch,
+    guards: { protectedReconciled: false, splitParent: false, transfer: "no" as const },
+  };
+
+  function resolve(transactionId: string | null) {
+    let counter = 0;
+    return resolveToTransaction({
+      item: reviewItem,
+      transactionId,
+      transactions,
+      transfersReported: true,
+      makeId: () => `released-${++counter}`,
+    });
+  }
+
+  it("matches the chosen transaction and records it as the user's own decision", () => {
+    const { item } = resolve("t1");
+    expect(item.actualTransactionIds).toEqual(["t1"]);
+    expect(item.disposition).toBe("matched");
+    expect(item.match?.evidenceSource).toBe("manual");
+  });
+
+  it("gives every unpicked transaction a row of its own", () => {
+    // Without this they vanish: they were only visible through the item that
+    // offered them, so dropping the reference removes them from the workbench
+    // while leaving them in the budget.
+    const { released } = resolve("t1");
+    expect(released.map((entry) => entry.actualTransactionIds[0]).sort()).toEqual(["t2", "t3"]);
+    expect(released.every((entry) => entry.disposition === "unresolved")).toBe(true);
+  });
+
+  it("never marks a released transaction for deletion", () => {
+    // Declining to match something is not the same as asking to remove it.
+    const { released } = resolve("t1");
+    expect(released.some((entry) => entry.disposition === "delete")).toBe(false);
+  });
+
+  it("carries each released transaction's guardrails with it", () => {
+    const { released } = resolve("t1");
+    const transfer = released.find((entry) => entry.actualTransactionIds[0] === "t3");
+    expect(transfer?.guards.transfer).toBe("yes");
+  });
+
+  it("releases all of them when the user picks none", () => {
+    const { item, released } = resolve(null);
+    expect(item.actualTransactionIds).toEqual([]);
+    expect(item.reasonCode).toBe(REASON.noActualCandidate);
+    // Undecided, not create: declining these is not a request for a new one.
+    expect(item.disposition).toBe("unresolved");
+    expect(released).toHaveLength(3);
+  });
+
+  it("keeps every transaction represented exactly once", () => {
+    const { item, released } = resolve("t2");
+    const all = [...item.actualTransactionIds, ...released.flatMap((e) => e.actualTransactionIds)];
+    expect(all.sort()).toEqual(["t1", "t2", "t3"]);
   });
 });

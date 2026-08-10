@@ -15,6 +15,7 @@ import {
 import { match } from "@/lib/reconciliation/match/matcher";
 import {
   buildReconciliationItems,
+  resolveToTransaction,
   summarizeCoverage,
 } from "@/lib/reconciliation/session/build";
 import type { NormalizedStatement } from "@/lib/reconciliation/statement/normalize";
@@ -388,20 +389,49 @@ export function ReconciliationView() {
     }));
   }
 
-  /** Pick one of several competing candidates. A manual choice, recorded as one. */
-  function handleUseCandidate(itemId: string, transactionId: string) {
-    updateItem(itemId, (item) => ({
-      ...item,
-      actualTransactionIds: [transactionId],
-      disposition: "matched",
-      reasonCode: undefined,
-      match: {
-        type: "manual",
-        evidenceSource: "manual",
-        label: "exact",
-        reasons: [],
-      },
-    }));
+  /**
+   * Pick one of several competing candidates, or none of them.
+   *
+   * The transactions not picked are returned to rows of their own. They were
+   * only ever visible through the item that offered them, so simply dropping
+   * the reference would leave them in the budget and absent from the screen.
+   */
+  function handleUseCandidate(itemId: string, transactionId: string | null) {
+    const current = items.find((entry) => entry.id === itemId);
+    if (!current) return;
+
+    const { item, released } = resolveToTransaction({
+      item: current,
+      transactionId,
+      transactions: transactionsById,
+      transfersReported: true,
+      makeId: () => generateId(),
+    });
+
+    const next = items.flatMap((entry) =>
+      entry.id === itemId ? [item, ...released] : [entry]
+    );
+    setItems(next);
+
+    // Rows were added, so the whole set is rewritten rather than patched.
+    void mutations.replaceItems
+      .mutateAsync({
+        sessionId: sessionId ?? "",
+        items: next.map((entry) => ({
+          id: entry.id,
+          statementRowIds: entry.statementRowIds,
+          actualTransactionIds: entry.actualTransactionIds,
+          disposition: entry.disposition,
+          reasonCode: entry.reasonCode ?? null,
+          match: entry.match,
+          guards: entry.guards,
+          actualSnapshot: transactionsSnapshotFor(entry, snapshot) ?? null,
+          stagedChanges: entry.stagedChanges ?? null,
+        })),
+      })
+      .catch((error: unknown) => {
+        setMatchError(error instanceof Error ? error.message : "Could not save that decision");
+      });
   }
 
   function handleBulkDisposition(itemIds: string[], disposition: ReconciliationDisposition) {

@@ -132,10 +132,26 @@ export function assignMatches(input: AssignmentInput): AssignmentResult {
       const contenders = rivals.filter(
         (rival) => candidate.score - rival.score <= config.ambiguityDelta
       );
+
+      // "Which of these is it?" and "this was entered twice" are different
+      // questions. When the contenders are near-identical to the winner rather
+      // than merely close, picking between them is arbitrary and the loser is
+      // redundant — asking the user to choose would be asking a question with
+      // no meaningful answer.
+      const duplicates =
+        contenders.length > 0 &&
+        contenders.every(
+          (rival) =>
+            candidate.score - rival.score <= DUPLICATE_EVIDENCE_DELTA &&
+            matchedOnPostedAmount(rival) &&
+            matchedOnPostedAmount(candidate) &&
+            Math.abs(dateDeltaOf(rival) - dateDeltaOf(candidate)) <= 1
+        );
+
       ambiguousByRow.set(candidate.statementRowId, {
         statementRowId: candidate.statementRowId,
         candidates: [candidate, ...contenders],
-        why: "close-runner-up",
+        why: duplicates ? "duplicate-candidates" : "close-runner-up",
       });
       continue;
     }
@@ -199,6 +215,11 @@ function compareCandidates(a: ScoredCandidate, b: ScoredCandidate): number {
     return a.statementRowId < b.statementRowId ? -1 : 1;
   }
   return a.actualTransactionId < b.actualTransactionId ? -1 : 1;
+}
+
+/** True when the pair agreed on the posted amount, rather than an original one. */
+function matchedOnPostedAmount(candidate: ScoredCandidate): boolean {
+  return candidate.reasons.some((reason) => reason.kind === "amount");
 }
 
 function dateDeltaOf(candidate: ScoredCandidate): number {

@@ -315,6 +315,8 @@ export type AmbiguousMatch = {
     | "close-runner-up"
     | "below-floor"
     | "amount-mismatch"
+    /** Near-identical transactions: the same thing recorded more than once. */
+    | "duplicate-candidates"
     /** One row left on each side for this merchant and date. */
     | "same-merchant-date"
     /** Several rows left on both sides; the tool will not guess the pairing. */
