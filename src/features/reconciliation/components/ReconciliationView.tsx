@@ -37,7 +37,11 @@ import type { ReconciliationDisposition } from "@/lib/reconciliation/types";
 import { useConnectionStore, selectActiveInstance } from "@/store/connection";
 import { useAccounts } from "@/features/accounts/hooks/useAccounts";
 import { loadCandidateWindow } from "../lib/loadCandidates";
-import { buildApplyPlan } from "@/lib/reconciliation/session/plan";
+import {
+  DEFAULT_APPLY_CONFIG,
+  buildApplyPlan,
+  type ApplyConfig,
+} from "@/lib/reconciliation/session/plan";
 import { executeApplyPlan, type ApplyRunResult } from "@/lib/reconciliation/apply/executor";
 import type { OperationResult } from "@/lib/reconciliation/apply/operations";
 import { createReconciliationTransport } from "@/lib/reconciliation/transportAdapter";
@@ -107,6 +111,7 @@ export function ReconciliationView() {
   const [loadedSessionId, setLoadedSessionId] = useState<string | null>(null);
   const [isApplying, setIsApplying] = useState(false);
   const [applyResult, setApplyResult] = useState<ApplyRunResult | null>(null);
+  const [applyConfig, setApplyConfig] = useState<ApplyConfig>(DEFAULT_APPLY_CONFIG);
 
   // Matching options live with the session (and, once saved, the import
   // profile) because they describe how this account's transactions are created.
@@ -184,6 +189,7 @@ export function ReconciliationView() {
     }
     setStatementName(data.session.statementName);
     if (data.session.matchConfig) setMatchConfig(data.session.matchConfig as MatchConfig);
+    if (data.session.applyConfig) setApplyConfig(data.session.applyConfig as ApplyConfig);
     setLoadedSessionId(data.session.id);
   }, [sessionQuery.data, hydratedSessionId, screen, loadedSessionId]);
 
@@ -245,8 +251,17 @@ export function ReconciliationView() {
         items,
         statementRows: statementRowsById,
         transactions: transactionsById,
+        applyConfig,
       }),
-    [sessionId, connection, sessionQuery.data, items, statementRowsById, transactionsById]
+    [
+      sessionId,
+      connection,
+      sessionQuery.data,
+      items,
+      statementRowsById,
+      transactionsById,
+      applyConfig,
+    ]
   );
 
   const coverage = useMemo(
@@ -685,6 +700,16 @@ export function ReconciliationView() {
             statementRows={statementRowsById}
             transactions={transactionsById}
             isApplying={isApplying}
+            applyConfig={applyConfig}
+            onApplyConfigChange={(config) => {
+              setApplyConfig(config);
+              if (sessionId) {
+                void mutations.updateSession.mutateAsync({
+                  id: sessionId,
+                  payload: { applyConfig: config },
+                });
+              }
+            }}
             onBack={() => setScreen({ name: "workbench", sessionId: screen.sessionId })}
             onApply={() => void handleApply()}
           />

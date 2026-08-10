@@ -70,6 +70,7 @@ export function updateSession(
     matchConfig: unknown;
     totals: unknown;
     applyResults: unknown;
+    applyConfig: unknown;
     appliedAt: string | null;
   }>
 ) {

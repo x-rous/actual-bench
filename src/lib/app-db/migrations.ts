@@ -28,7 +28,7 @@ import {
 import { KDF_VERSION_META_KEY, SALT_META_KEY, VERIFIER_META_KEY } from "./vaultMetaKeys";
 import { AppDbUnavailableError } from "./errors";
 
-export const LATEST_SCHEMA_VERSION = 13;
+export const LATEST_SCHEMA_VERSION = 14;
 
 type Migration = {
   version: number;
@@ -188,7 +188,16 @@ const MIGRATIONS: readonly Migration[] = [
     // resumable without repeating writes that already succeeded.
     apply: applyReconciliationApplyResults,
   },
+  {
+    version: 14,
+    // How writes are shaped, as distinct from how rows are matched (RD-071).
+    apply: applyReconciliationApplyConfig,
+  },
 ];
+
+function applyReconciliationApplyConfig(db: SqliteDatabase): void {
+  addColumnIfMissing(db, "reconciliation_sessions", "apply_config_json", "text");
+}
 
 function applyReconciliationApplyResults(db: SqliteDatabase): void {
   addColumnIfMissing(db, "reconciliation_sessions", "apply_results_json", "text");

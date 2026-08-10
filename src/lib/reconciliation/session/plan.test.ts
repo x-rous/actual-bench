@@ -5,7 +5,7 @@ import type {
   StagedPatch,
   StatementRow,
 } from "../types";
-import { buildApplyPlan, createMarker } from "./plan";
+import { buildApplyPlan, createMarker, type ApplyConfig } from "./plan";
 
 function row(overrides: Partial<StatementRow> & Pick<StatementRow, "id">): StatementRow {
   return {
@@ -58,9 +58,11 @@ function item(overrides: Partial<ReconciliationItem> & Pick<ReconciliationItem, 
 function plan(
   items: ReconciliationItem[],
   rows: StatementRow[] = [],
-  transactions: ActualTransactionSnapshot[] = []
+  transactions: ActualTransactionSnapshot[] = [],
+  applyConfig?: ApplyConfig
 ) {
   return buildApplyPlan({
+    applyConfig,
     sessionId: "sess-1",
     budgetSyncId: "budget-1",
     accountId: "acct-1",
@@ -162,6 +164,40 @@ describe("create operations", () => {
       expect(operation.date).toBe("2026-07-12");
       expect(operation.payeeName).toBe("DUBAI TAXI CORPORATION");
     }
+  });
+
+  it("puts the description in the notes when asked", () => {
+    const result = plan(
+      [item({ id: "i1", disposition: "create", statementRowIds: ["s1"] })],
+      [row({ id: "s1" })],
+      [],
+      { descriptionTarget: "notes" }
+    );
+
+    const operation = result.operations[0];
+    if (operation.kind === "create") {
+      expect(operation.notes).toBe("DUBAI TAXI CORPORATION");
+      expect(operation.payeeName).toBeNull();
+    }
+  });
+
+  it("never lets the description overwrite a note the user wrote", () => {
+    const result = plan(
+      [
+        item({
+          id: "i1",
+          disposition: "create",
+          statementRowIds: ["s1"],
+          stagedChanges: { notes: { original: null, staged: "Paid for Dad", source: "manual" } },
+        }),
+      ],
+      [row({ id: "s1" })],
+      [],
+      { descriptionTarget: "notes" }
+    );
+
+    const operation = result.operations[0];
+    if (operation.kind === "create") expect(operation.notes).toBe("Paid for Dad");
   });
 
   it("prefers a staged payee over the bank's text", () => {

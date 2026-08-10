@@ -81,6 +81,8 @@ export type ReconciliationSessionRecord = {
   totals: unknown | null;
   /** Outcome of each apply operation from the most recent attempt. */
   applyResults: unknown | null;
+  /** How staged changes are turned into writes. */
+  applyConfig: unknown | null;
   createdAt: string;
   updatedAt: string;
   appliedAt: string | null;
@@ -149,6 +151,7 @@ type SessionRow = {
   match_config_json: string | null;
   totals_json: string | null;
   apply_results_json: string | null;
+  apply_config_json: string | null;
   created_at: string;
   updated_at: string;
   applied_at: string | null;
@@ -260,6 +263,7 @@ function sessionToRecord(row: SessionRow): ReconciliationSessionRecord {
     matchConfig: parseJson(row.match_config_json),
     totals: parseJson(row.totals_json),
     applyResults: parseJson(row.apply_results_json),
+    applyConfig: parseJson(row.apply_config_json),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     appliedAt: row.applied_at,
@@ -475,6 +479,7 @@ export type UpdateSessionInput = {
   matchConfig?: unknown;
   totals?: unknown;
   applyResults?: unknown;
+  applyConfig?: unknown;
   appliedAt?: string | null;
 };
 
@@ -509,6 +514,9 @@ export function updateReconciliationSession(
   if (input.totals !== undefined) set("totals_json", JSON.stringify(input.totals ?? null));
   if (input.applyResults !== undefined) {
     set("apply_results_json", JSON.stringify(input.applyResults ?? null));
+  }
+  if (input.applyConfig !== undefined) {
+    set("apply_config_json", JSON.stringify(input.applyConfig ?? null));
   }
   if (input.appliedAt !== undefined) set("applied_at", input.appliedAt);
 

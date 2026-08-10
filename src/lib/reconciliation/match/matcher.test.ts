@@ -361,7 +361,10 @@ describe("ambiguity guard", () => {
 });
 
 describe("duplicate Actual rows (feature spec §19)", () => {
-  it("keeps one and flags the near-identical loser as a likely duplicate", () => {
+  it("keeps one and flags the surplus as a likely duplicate", () => {
+    // One statement row against two identical transactions. Asking which one it
+    // is has no answer — they are interchangeable — so one is matched and the
+    // one left over is surplus.
     const graph = run(
       [row({ id: "s1", postedDate: "2026-07-07", amount: -5599, description: "NETFLIX.COM" })],
       [
@@ -370,11 +373,70 @@ describe("duplicate Actual rows (feature spec §19)", () => {
       ]
     );
 
-    // Identical evidence, so this is ambiguous rather than auto-matched — but the
-    // duplicate relationship is what the user needs to see either way.
-    expect(graph.matched.length + graph.ambiguous.length).toBe(1);
-    const involved = graph.ambiguous[0]?.candidates.map((c) => c.actualTransactionId) ?? [];
-    expect(involved.sort()).toEqual(["t1", "t2"]);
+    expect(graph.matched).toHaveLength(1);
+    expect(graph.ambiguous).toHaveLength(0);
+    expect(graph.likelyDuplicates).toHaveLength(1);
+    expect(graph.likelyDuplicates[0].duplicateActualTransactionIds).toHaveLength(1);
+  });
+
+  it("calls nothing a duplicate when the counts match on both sides", () => {
+    // Three identical statement rows against three identical transactions is a
+    // clean correspondence, not triplication. Duplication is a count mismatch,
+    // not a property of how alike two rows look.
+    const graph = run(
+      [
+        row({ id: "s1", postedDate: "2026-07-16", amount: -3, description: "VAT ON SERVICE CHARGES" }),
+        row({ id: "s2", postedDate: "2026-07-16", amount: -3, description: "VAT ON SERVICE CHARGES" }),
+        row({ id: "s3", postedDate: "2026-07-16", amount: -3, description: "VAT ON SERVICE CHARGES" }),
+      ],
+      [
+        txn({ id: "t1", date: "2026-07-16", amount: -3, payeeName: "VAT ON SERVICE CHARGES" }),
+        txn({ id: "t2", date: "2026-07-16", amount: -3, payeeName: "VAT ON SERVICE CHARGES" }),
+        txn({ id: "t3", date: "2026-07-16", amount: -3, payeeName: "VAT ON SERVICE CHARGES" }),
+      ]
+    );
+
+    expect(graph.matched).toHaveLength(3);
+    expect(graph.ambiguous).toHaveLength(0);
+    expect(graph.likelyDuplicates).toHaveLength(0);
+    expect(graph.unmatchedActualTransactionIds).toHaveLength(0);
+  });
+
+  it("matches each row to its own date rather than calling the pair ambiguous", () => {
+    // Identical text and amount a day apart. Each transaction is wanted more by
+    // the row it shares a date with, so neither is really contested.
+    const graph = run(
+      [
+        row({ id: "s1", postedDate: "2026-07-16", amount: -9, description: "VAT ON SERVICE CHARGES" }),
+        row({ id: "s2", postedDate: "2026-07-17", amount: -9, description: "VAT ON SERVICE CHARGES" }),
+      ],
+      [
+        txn({ id: "t16", date: "2026-07-16", amount: -9, payeeName: "VAT ON SERVICE CHARGES" }),
+        txn({ id: "t17", date: "2026-07-17", amount: -9, payeeName: "VAT ON SERVICE CHARGES" }),
+      ]
+    );
+
+    expect(graph.matched).toHaveLength(2);
+    expect(graph.ambiguous).toHaveLength(0);
+    const byRow = new Map(
+      graph.matched.map((entry) => [entry.statementRowId, entry.actualTransactionId])
+    );
+    expect(byRow.get("s1")).toBe("t16");
+    expect(byRow.get("s2")).toBe("t17");
+  });
+
+  it("still flags a surplus when more transactions than statement rows are alike", () => {
+    const graph = run(
+      [row({ id: "s1", postedDate: "2026-07-16", amount: -3, description: "VAT ON SERVICE CHARGES" })],
+      [
+        txn({ id: "t1", date: "2026-07-16", amount: -3, payeeName: "VAT ON SERVICE CHARGES" }),
+        txn({ id: "t2", date: "2026-07-16", amount: -3, payeeName: "VAT ON SERVICE CHARGES" }),
+        txn({ id: "t3", date: "2026-07-16", amount: -3, payeeName: "VAT ON SERVICE CHARGES" }),
+      ]
+    );
+
+    expect(graph.matched).toHaveLength(1);
+    expect(graph.likelyDuplicates[0].duplicateActualTransactionIds).toHaveLength(2);
   });
 
   it("flags a duplicate when one row is clearly the better match", () => {

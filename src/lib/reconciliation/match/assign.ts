@@ -82,8 +82,23 @@ export function assignMatches(input: AssignmentInput): AssignmentResult {
 
   const ordered = [...byStatementRow.values()].flat().sort(compareCandidates);
 
+  // The best score any statement row achieves with each transaction. A rival
+  // that some other row wants more is not competing for this one, and treating
+  // it as competition makes a clean one-to-one assignment look ambiguous.
+  const bestScoreByTransaction = new Map<string, number>();
+  for (const candidate of ordered) {
+    const best = bestScoreByTransaction.get(candidate.actualTransactionId);
+    if (best === undefined || candidate.score > best) {
+      bestScoreByTransaction.set(candidate.actualTransactionId, candidate.score);
+    }
+  }
+
   const ambiguousByRow = new Map<string, AmbiguousMatch>();
   const duplicatesByRow = new Map<string, LikelyDuplicate>();
+  const duplicateRivals = new Map<
+    string,
+    { keptActualTransactionId: string; rivals: ScoredCandidate[] }
+  >();
 
   for (const candidate of ordered) {
     if (consumedStatementRows.has(candidate.statementRowId)) continue;
@@ -112,10 +127,31 @@ export function assignMatches(input: AssignmentInput): AssignmentResult {
       continue;
     }
 
-    const rivals = availableFor(candidate.statementRowId).filter(
-      (other) => other.actualTransactionId !== candidate.actualTransactionId
-    );
+    const rivals = availableFor(candidate.statementRowId)
+      .filter((other) => other.actualTransactionId !== candidate.actualTransactionId)
+      // Drop transactions another statement row scores higher: they were never
+      // contested here, and the global pass will give them to the row that
+      // wants them more.
+      .filter(
+        (other) =>
+          other.score >= (bestScoreByTransaction.get(other.actualTransactionId) ?? other.score)
+      );
     const runnerUp = rivals[0];
+
+    // Interchangeable candidates are not a question. When rivals carry exactly
+    // the same evidence as the winner — same score, same date distance, same
+    // text agreement — asking which one it is has no answer, because either
+    // choice produces the same reconciliation. Take one and let the rest fall
+    // to other statement rows; whatever is genuinely surplus surfaces as a
+    // duplicate once the whole pass is done.
+    const interchangeable =
+      runnerUp !== undefined &&
+      rivals.every(
+        (rival) =>
+          rival.score === candidate.score &&
+          dateDeltaOf(rival) === dateDeltaOf(candidate) &&
+          bestTextSimilarity(rival) === bestTextSimilarity(candidate)
+      );
 
     // Close scores alone do not make two candidates indistinguishable. Two fee
     // rows differing only in the amount they quote score 100 and 95 while their
@@ -134,6 +170,7 @@ export function assignMatches(input: AssignmentInput): AssignmentResult {
     if (
       runnerUp &&
       !textSeparates &&
+      !interchangeable &&
       runnerUp.score >= config.autoMatchFloor &&
       candidate.score - runnerUp.score <= config.ambiguityDelta
     ) {
@@ -174,22 +211,29 @@ export function assignMatches(input: AssignmentInput): AssignmentResult {
     matched.push({ ...candidate, evidenceSource: "bench" });
     consumedStatementRows.add(candidate.statementRowId);
     consumedTransactions.add(candidate.actualTransactionId);
+    duplicateRivals.set(candidate.statementRowId, {
+      keptActualTransactionId: candidate.actualTransactionId,
+      rivals: rivals.filter(
+        (rival) => candidate.score - rival.score <= DUPLICATE_EVIDENCE_DELTA
+      ),
+    });
+  }
 
-    // Duplicate detection falls out of one-to-one assignment: a rival with
-    // near-identical evidence that lost is a likely duplicate Actual row, not
-    // merely a weaker match. This is the SMS/n8n double-entry case.
-    const nearIdentical = rivals.filter(
-      (rival) =>
-        !consumedTransactions.has(rival.actualTransactionId) &&
-        candidate.score - rival.score <= DUPLICATE_EVIDENCE_DELTA
+  // Duplicates are a *count* mismatch, not a similarity property: three
+  // statement rows against three identical transactions is a clean
+  // correspondence, not triplication. So this runs once the whole assignment is
+  // known — a rival still unclaimed at the end is surplus; one that another row
+  // took was simply another real transaction.
+  for (const [statementRowId, entry] of duplicateRivals) {
+    const surplus = entry.rivals.filter(
+      (rival) => !consumedTransactions.has(rival.actualTransactionId)
     );
-    if (nearIdentical.length > 0) {
-      duplicatesByRow.set(candidate.statementRowId, {
-        statementRowId: candidate.statementRowId,
-        keptActualTransactionId: candidate.actualTransactionId,
-        duplicateActualTransactionIds: nearIdentical.map((r) => r.actualTransactionId),
-      });
-    }
+    if (surplus.length === 0) continue;
+    duplicatesByRow.set(statementRowId, {
+      statementRowId,
+      keptActualTransactionId: entry.keptActualTransactionId,
+      duplicateActualTransactionIds: surplus.map((rival) => rival.actualTransactionId),
+    });
   }
 
   return {

@@ -322,6 +322,10 @@ CREATE TABLE IF NOT EXISTS reconciliation_sessions (
   -- write happens so an interrupted apply leaves a truthful record of what
   -- already ran, and a retry can skip it rather than repeat it.
   apply_results_json text,
+  -- How staged changes are turned into writes: where the statement description
+  -- goes on a created transaction, and anything else that shapes the write
+  -- rather than the match.
+  apply_config_json text,
   created_at text NOT NULL,
   updated_at text NOT NULL,
   applied_at text

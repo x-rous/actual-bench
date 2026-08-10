@@ -21,6 +21,23 @@ import type {
 } from "../types";
 import { canStageDelete, canStageField, hasStagedChanges, stagedFields } from "./staging";
 
+/**
+ * How a staged decision becomes a write, as distinct from how rows are matched.
+ */
+export type ApplyConfig = {
+  /**
+   * Where the bank's description goes on a transaction being created.
+   *
+   * The payee by default, because that is what a merchant name is. Notes suit
+   * people whose payees are a curated list they do not want the bank's raw text
+   * added to — with rules running on create, a description in the notes can also
+   * be what a rule reads to pick the payee itself.
+   */
+  descriptionTarget: "payee" | "notes";
+};
+
+export const DEFAULT_APPLY_CONFIG: ApplyConfig = { descriptionTarget: "payee" };
+
 export type PlanInput = {
   sessionId: string;
   budgetSyncId: string;
@@ -28,6 +45,7 @@ export type PlanInput = {
   items: ReconciliationItem[];
   statementRows: Map<string, StatementRow>;
   transactions: Map<string, ActualTransactionSnapshot>;
+  applyConfig?: ApplyConfig;
 };
 
 /**
@@ -139,6 +157,7 @@ function createOperationFor(
   input: PlanInput
 ): CreateOperation {
   const patch = item.stagedChanges;
+  const descriptionTarget = (input.applyConfig ?? DEFAULT_APPLY_CONFIG).descriptionTarget;
   return {
     id: operationId("create", item.id),
     kind: "create",
@@ -150,11 +169,16 @@ function createOperationFor(
     date: patch?.date?.staged ?? row.postedDate,
     amount: row.amount,
     payeeId: patch?.payeeId?.staged ?? null,
-    // Falls back to the bank's own text so a created transaction is never
-    // anonymous, even when no payee was chosen.
-    payeeName: patch?.payeeId?.staged ? null : row.description || null,
+    // The bank's description goes where the user asked. A staged payee always
+    // wins over it, and a staged note is never overwritten by it.
+    payeeName:
+      patch?.payeeId?.staged || descriptionTarget === "notes"
+        ? null
+        : row.description || null,
     categoryId: patch?.categoryId?.staged ?? null,
-    notes: patch?.notes?.staged ?? null,
+    notes:
+      patch?.notes?.staged ??
+      (descriptionTarget === "notes" ? row.description || null : null),
     marker: createMarker({
       budgetSyncId: input.budgetSyncId,
       accountId: input.accountId,

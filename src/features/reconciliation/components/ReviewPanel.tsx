@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { planCounts, totalChanges, type ApplyPlan } from "@/lib/reconciliation/apply/operations";
 import { stagedFields } from "@/lib/reconciliation/session/staging";
+import type { ApplyConfig } from "@/lib/reconciliation/session/plan";
 import type { ActualTransactionSnapshot, StatementRow } from "@/lib/reconciliation/types";
 import { formatMinorUnits } from "../lib/format";
 
@@ -33,6 +34,8 @@ export type ReviewPanelProps = {
   statementRows: Map<string, StatementRow>;
   transactions: Map<string, ActualTransactionSnapshot>;
   isApplying: boolean;
+  applyConfig: ApplyConfig;
+  onApplyConfigChange: (config: ApplyConfig) => void;
   onBack: () => void;
   onApply: () => void;
 };
@@ -42,6 +45,8 @@ export function ReviewPanel({
   statementRows,
   transactions,
   isApplying,
+  applyConfig,
+  onApplyConfigChange,
   onBack,
   onApply,
 }: ReviewPanelProps) {
@@ -81,6 +86,50 @@ export function ReviewPanel({
         <Stat label="Delete" value={counts.delete} icon={Trash2} destructive />
         <Stat label="No change needed" value={plan.noWriteMatches} muted />
       </div>
+
+      {/*
+        Asked here rather than in the matching options: this shapes the write,
+        not the match, and this is the screen where the created rows are in
+        front of the user.
+      */}
+      {counts.create > 0 && (
+        <section className="rounded-md border border-border/60 p-3">
+          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            New transactions
+          </h3>
+          <fieldset className="flex flex-col gap-1.5">
+            <legend className="mb-1 text-xs">Put the bank&apos;s description in</legend>
+            {(
+              [
+                ["payee", "The payee", "What a merchant name normally is."],
+                [
+                  "notes",
+                  "The notes",
+                  "Keeps a curated payee list free of raw bank text — and gives your rules something to read.",
+                ],
+              ] as const
+            ).map(([value, label, hint]) => (
+              <label key={value} className="flex items-start gap-2 text-xs">
+                <input
+                  type="radio"
+                  name="description-target"
+                  className="mt-0.5"
+                  checked={applyConfig.descriptionTarget === value}
+                  onChange={() => onApplyConfigChange({ ...applyConfig, descriptionTarget: value })}
+                />
+                <span>
+                  {label}
+                  <span className="block text-[11px] text-muted-foreground">{hint}</span>
+                </span>
+              </label>
+            ))}
+          </fieldset>
+          <p className="mt-2 text-[11px] text-muted-foreground">
+            A payee or note you set on a row yourself is always kept — this only decides where the
+            description goes when you have not.
+          </p>
+        </section>
+      )}
 
       {fieldCounts.size > 0 && (
         <section className="rounded-md border border-border/60 p-3">
