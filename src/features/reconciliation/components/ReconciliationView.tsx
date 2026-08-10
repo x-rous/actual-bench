@@ -23,6 +23,7 @@ import type {
   ActualTransactionSnapshot,
   MatchConfig,
   ReconciliationItem,
+  StagedPatch,
   StatementRow,
 } from "@/lib/reconciliation/types";
 import { useStagedStore } from "@/store/staged";
@@ -493,6 +494,29 @@ export function ReconciliationView() {
       });
   }
 
+  /**
+   * Everything a transformation rule needs to judge one row, resolved to the
+   * names the user sees rather than the ids the model holds.
+   */
+  function transformContextFor(entry: ReconciliationItem) {
+    return {
+      item: entry,
+      statementRow: statementRowsById.get(entry.statementRowIds[0] ?? ""),
+      transaction: transactionsById.get(entry.actualTransactionIds[0] ?? ""),
+      categoryName: (id: string | null) =>
+        categoryOptions.find((option) => option.id === id)?.name ?? null,
+      payeeName: (id: string | null) =>
+        payeeOptions.find((option) => option.id === id)?.name ?? null,
+    };
+  }
+
+  /** Stage what a transformation produced, one write per changed row. */
+  function handleTransform(changes: { itemId: string; patch: StagedPatch | undefined }[]) {
+    for (const change of changes) {
+      updateItem(change.itemId, (entry) => ({ ...entry, stagedChanges: change.patch }));
+    }
+  }
+
   function handleBulkDisposition(itemIds: string[], disposition: ReconciliationDisposition) {
     for (const itemId of itemIds) handleDisposition(itemId, disposition);
   }
@@ -775,6 +799,8 @@ export function ReconciliationView() {
           onUnstage={handleUnstage}
           onBulkDisposition={handleBulkDisposition}
           onBulkCorrectAmount={handleBulkCorrectAmount}
+          transformContextFor={transformContextFor}
+          onTransform={handleTransform}
           changeCount={applyPlan.operations.length}
           onReview={() => setScreen({ name: "review", sessionId: screen.sessionId })}
           onMatchConfigChange={(preset, config) => {

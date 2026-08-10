@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { RefreshCw, Search, SlidersHorizontal } from "lucide-react";
+import { RefreshCw, Search, SlidersHorizontal, Wand2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
@@ -17,11 +17,14 @@ import type { TextTargetPreset } from "@/lib/reconciliation/match/config";
 import type { StageableField } from "@/lib/reconciliation/session/staging";
 import type { ReconciliationDisposition } from "@/lib/reconciliation/types";
 import type { Option } from "./StagedFields";
+import type { TransformContext } from "@/lib/reconciliation/transform/rules";
+import type { StagedPatch } from "@/lib/reconciliation/types";
 import { useTableSelection } from "@/hooks/useTableSelection";
 import { BulkDecisionBar } from "./BulkDecisionBar";
 import { CoverageSummary } from "./CoverageSummary";
 import { Inspector } from "./Inspector";
 import { MatchOptions } from "./MatchOptions";
+import { TransformDialog } from "./TransformDialog";
 import { WorkbenchRow } from "./WorkbenchRow";
 
 /**
@@ -215,6 +218,8 @@ export type WorkbenchProps = {
   /** Writes the plan would make, named on the button rather than a row count. */
   changeCount: number;
   onReview: () => void;
+  transformContextFor: (item: ReconciliationItem) => TransformContext;
+  onTransform: (changes: { itemId: string; patch: StagedPatch | undefined }[]) => void;
 };
 
 function FilterButton({
@@ -274,6 +279,8 @@ export function Workbench({
   onBulkCorrectAmount,
   changeCount,
   onReview,
+  transformContextFor,
+  onTransform,
 }: WorkbenchProps) {
   const [filter, setFilter] = useState<FilterId>("all");
   const [decisionFilter, setDecisionFilter] = useState<DecisionFilter>("any");
@@ -282,6 +289,7 @@ export function Workbench({
   const { selectedIds, toggleSelect, toggleSelectAll, clearSelection } = useTableSelection();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [optionsOpen, setOptionsOpen] = useState(false);
+  const [transformOpen, setTransformOpen] = useState(false);
 
   const counts = useMemo(() => {
     const result = {} as Record<FilterId, number>;
@@ -480,6 +488,15 @@ export function Workbench({
           <Button
             variant="outline"
             size="sm"
+            aria-expanded={transformOpen}
+            onClick={() => setTransformOpen((open) => !open)}
+          >
+            <Wand2 className="mr-1 h-3.5 w-3.5" />
+            Transform
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
             aria-expanded={optionsOpen}
             onClick={() => setOptionsOpen((open) => !open)}
           >
@@ -571,6 +588,21 @@ export function Workbench({
           </span>
         </div>
       </div>
+
+      {transformOpen && (
+        <TransformDialog
+          items={items}
+          selectedIds={selectedIds}
+          contextFor={transformContextFor}
+          payees={payees}
+          categories={categories}
+          onClose={() => setTransformOpen(false)}
+          onApply={(changes) => {
+            onTransform(changes);
+            clearSelection();
+          }}
+        />
+      )}
 
       {optionsOpen && (
         <div className="border-b border-border/50 px-4 py-3">
