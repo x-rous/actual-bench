@@ -34,6 +34,12 @@ export type BuildItemsInput = {
    * takes its conservative branch (RD-071 D13).
    */
   transfersReported: boolean;
+  /**
+   * The statement's own period. Transactions loaded outside it come from the
+   * candidate padding: the statement makes no claim about those dates, so they
+   * are flagged rather than counted as unexplained.
+   */
+  statementPeriod?: { start: string; end: string } | null;
   makeId: () => string;
 };
 
@@ -43,6 +49,7 @@ export const REASON = {
   belowConfidenceFloor: "below-confidence-floor",
   noActualCandidate: "no-actual-candidate",
   notOnStatement: "not-on-statement",
+  outsideStatementPeriod: "outside-statement-period",
   likelyDuplicate: "likely-duplicate",
 } as const;
 
@@ -123,17 +130,25 @@ export function buildReconciliationItems(input: BuildItemsInput): Reconciliation
     });
   }
 
+  const period = input.statementPeriod ?? null;
   for (const transactionId of graph.unmatchedActualTransactionIds) {
     const snapshot = snapshots.get(transactionId);
+    const outsidePeriod =
+      period != null &&
+      snapshot != null &&
+      (snapshot.date < period.start || snapshot.date > period.end);
+
     items.push({
       id: makeId(),
       statementRowIds: [],
       actualTransactionIds: [transactionId],
       // Never `delete`, and not silently `keep` — the user explains it.
       disposition: "unresolved",
-      reasonCode: duplicateTransactionIds.has(transactionId)
-        ? REASON.likelyDuplicate
-        : REASON.notOnStatement,
+      reasonCode: outsidePeriod
+        ? REASON.outsideStatementPeriod
+        : duplicateTransactionIds.has(transactionId)
+          ? REASON.likelyDuplicate
+          : REASON.notOnStatement,
       guards: guardsFor(snapshot, transfersReported),
     });
   }
@@ -166,6 +181,11 @@ export type ReconciliationCoverage = {
   unresolved: number;
   ignored: number;
   likelyDuplicates: number;
+  /**
+   * Loaded only because of the candidate padding, and outside the statement's
+   * own dates. Reported separately so they do not read as unexplained.
+   */
+  outsideStatementPeriod: number;
 };
 
 const RESOLVED_DISPOSITIONS = new Set(["matched", "create", "keep", "delete", "ignored"]);
@@ -186,9 +206,17 @@ export function summarizeCoverage(
     unresolved: 0,
     ignored: 0,
     likelyDuplicates: 0,
+    outsideStatementPeriod: 0,
   };
 
   for (const item of items) {
+    if (item.reasonCode === REASON.outsideStatementPeriod) {
+      // The statement says nothing about these dates, so they are neither
+      // resolved nor a gap — they are excluded from both sides of the ratio.
+      coverage.outsideStatementPeriod += 1;
+      coverage.actualTransactions = Math.max(0, coverage.actualTransactions - 1);
+      continue;
+    }
     const resolved = RESOLVED_DISPOSITIONS.has(item.disposition);
     if (resolved) {
       coverage.statementRowsResolved += item.statementRowIds.length;

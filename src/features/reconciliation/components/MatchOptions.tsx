@@ -90,7 +90,7 @@ export function MatchOptions({ config, preset, onChange }: MatchOptionsProps) {
 
         <div className="flex flex-col gap-1">
           <Label htmlFor="match-tolerance" className="text-xs">
-            Date tolerance (days)
+            Match within (days)
           </Label>
           <input
             id="match-tolerance"
@@ -105,6 +105,28 @@ export function MatchOptions({ config, preset, onChange }: MatchOptionsProps) {
           />
           <p className="text-[11px] text-muted-foreground">
             A bank&apos;s posting date often differs from the date you recorded it.
+          </p>
+        </div>
+
+        <div className="flex flex-col gap-1">
+          <Label htmlFor="match-padding" className="text-xs">
+            Look beyond the statement period (days)
+          </Label>
+          <input
+            id="match-padding"
+            type="number"
+            min={0}
+            max={60}
+            value={config.candidatePaddingDays}
+            onChange={(event) =>
+              patch({ candidatePaddingDays: Math.max(0, Number(event.target.value) || 0) })
+            }
+            className="h-8 rounded-md border border-input bg-background px-2 text-sm"
+          />
+          <p className="text-[11px] text-muted-foreground">
+            How far either side of {"the statement's dates"} to load transactions. Anything loaded
+            beyond the period is listed separately, not counted as missing from the statement.
+            Raised to the match window if you set it lower.
           </p>
         </div>
 

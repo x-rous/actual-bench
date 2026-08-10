@@ -61,6 +61,13 @@ function middleState(item: ReconciliationItem): MiddleState {
         tone: "text-sky-600 dark:text-sky-400",
         icon: Plus,
       };
+    case REASON.outsideStatementPeriod:
+      return {
+        label: "Outside period",
+        detail: "Dated outside this statement",
+        tone: "text-muted-foreground",
+        icon: null,
+      };
     case REASON.notOnStatement:
       return {
         label: "Actual only",

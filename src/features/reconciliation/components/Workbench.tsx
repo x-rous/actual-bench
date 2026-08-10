@@ -22,13 +22,21 @@ import { WorkbenchRow } from "./WorkbenchRow";
  * with the apply pipeline, so nothing here can change the budget.
  */
 
-type FilterId = "all" | "needs-review" | "create" | "actual-only" | "duplicates" | "matched";
+type FilterId =
+  | "all"
+  | "needs-review"
+  | "create"
+  | "actual-only"
+  | "outside-period"
+  | "duplicates"
+  | "matched";
 
 const FILTERS: { id: FilterId; label: string }[] = [
   { id: "all", label: "All" },
   { id: "needs-review", label: "Needs review" },
   { id: "create", label: "Not in Actual" },
   { id: "actual-only", label: "Actual only" },
+  { id: "outside-period", label: "Outside period" },
   { id: "duplicates", label: "Duplicates" },
   { id: "matched", label: "Matched" },
 ];
@@ -47,6 +55,8 @@ function matchesFilter(item: ReconciliationItem, filter: FilterId): boolean {
       return item.reasonCode === REASON.noActualCandidate;
     case "actual-only":
       return item.reasonCode === REASON.notOnStatement;
+    case "outside-period":
+      return item.reasonCode === REASON.outsideStatementPeriod;
     case "duplicates":
       return item.reasonCode === REASON.likelyDuplicate;
     default:
@@ -157,6 +167,12 @@ export function Workbench({
               {percent(coverage.actualTransactionsExplained, coverage.actualTransactions)})
             </dd>
           </div>
+          {coverage.outsideStatementPeriod > 0 && (
+            <div className="flex gap-1.5">
+              <dt className="text-muted-foreground">Outside the statement period</dt>
+              <dd className="tabular-nums">{coverage.outsideStatementPeriod}</dd>
+            </div>
+          )}
         </dl>
       </header>
 

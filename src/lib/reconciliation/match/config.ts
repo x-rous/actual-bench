@@ -95,6 +95,7 @@ export const DEFAULT_MATCH_CONFIG: MatchConfig = {
   // Actual's own fuzzy matcher uses ±7 days; matching a narrower window while
   // claiming parity would be misleading (V2 §9).
   dateToleranceDays: 7,
+  candidatePaddingDays: 7,
   autoMatchFloor: 60,
   ambiguityDelta: 8,
   text: TEXT_TARGET_PRESETS[DEFAULT_TEXT_PRESET],

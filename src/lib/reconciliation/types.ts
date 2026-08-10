@@ -164,8 +164,21 @@ export type NeedleFloor = {
 };
 
 export type MatchConfig = {
-  /** Candidate window either side of the statement period (feature spec §9). */
+  /**
+   * How many days apart a statement row and a transaction may be and still
+   * match (feature spec §9). Actual's own fuzzy matcher uses 7.
+   */
   dateToleranceDays: number;
+  /**
+   * How far outside the statement period to *load* transactions.
+   *
+   * Deliberately separate from `dateToleranceDays`. Loading must reach at least
+   * as far as matching or a legitimate pair would be invisible — but everything
+   * loaded beyond the statement period that does not match becomes "Actual
+   * only" noise, because the statement makes no claim about those dates at all.
+   * Kept small by default and clamped to at least the match tolerance.
+   */
+  candidatePaddingDays: number;
   /** Below this score a pair is a candidate, not an automatic match. */
   autoMatchFloor: number;
   /**

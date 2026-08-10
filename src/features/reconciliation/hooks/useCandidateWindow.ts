@@ -11,23 +11,32 @@ export type CandidateWindowInput = {
   /** Statement period, ISO `YYYY-MM-DD`. */
   statementStart: string | null;
   statementEnd: string | null;
-  toleranceDays: number;
+  /** How far apart a pair may be and still match. */
+  matchToleranceDays: number;
+  /** How far outside the statement period to load. */
+  paddingDays: number;
 };
 
 /**
  * Loads the Actual transactions the statement could match against.
  *
- * The window is the statement period widened by the tolerance either side
- * (feature spec §9), because a bank's posting date routinely differs from the
- * date a transaction was entered or authorised. Actual's own fuzzy matcher uses
- * ±7 days, so anything narrower would under-report candidates.
+ * The window is the statement period widened by the padding either side, because
+ * a bank's posting date routinely differs from the date a transaction was
+ * entered or authorised (feature spec §9).
+ *
+ * The padding is clamped to at least the match tolerance: loading a narrower
+ * range than matching reaches would hide a legitimate pair entirely. Everything
+ * beyond the statement period that does not match is reported separately rather
+ * than as an unexplained transaction — the statement makes no claim about dates
+ * it does not cover.
  */
 export function useCandidateWindow(input: CandidateWindowInput) {
   const connection = useConnectionStore(selectActiveInstance);
-  const { accountId, statementStart, statementEnd, toleranceDays } = input;
+  const { accountId, statementStart, statementEnd, matchToleranceDays, paddingDays } = input;
 
-  const startDate = statementStart ? shiftDate(statementStart, -toleranceDays) : null;
-  const endDate = statementEnd ? shiftDate(statementEnd, toleranceDays) : null;
+  const padding = Math.max(paddingDays, matchToleranceDays);
+  const startDate = statementStart ? shiftDate(statementStart, -padding) : null;
+  const endDate = statementEnd ? shiftDate(statementEnd, padding) : null;
 
   return useQuery({
     queryKey: [

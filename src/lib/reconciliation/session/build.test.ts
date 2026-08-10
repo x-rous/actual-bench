@@ -51,7 +51,8 @@ function txn(
 function build(
   statementRows: StatementRow[],
   actualTransactions: ActualTransactionSnapshot[],
-  transfersReported = true
+  transfersReported = true,
+  statementPeriod?: { start: string; end: string } | null
 ) {
   const graph = match({ statementRows, actualTransactions, config: DEFAULT_MATCH_CONFIG });
   return buildReconciliationItems({
@@ -59,6 +60,7 @@ function build(
     actualTransactions,
     graph,
     transfersReported,
+    statementPeriod,
     makeId,
   });
 }
@@ -180,6 +182,51 @@ describe("buildReconciliationItems — duplicates", () => {
     // ambiguous — both are acceptable, but it must never be silently dropped.
     const ambiguous = items.filter((item) => item.reasonCode === REASON.ambiguousMatch);
     expect(duplicates.length + ambiguous.length).toBeGreaterThan(0);
+  });
+});
+
+describe("transactions loaded outside the statement period", () => {
+  const period = { start: "2026-07-07", end: "2026-08-06" };
+
+  it("flags a padded-window transaction rather than calling it missing from the statement", () => {
+    // Loaded only because the candidate window pads either side. The statement
+    // makes no claim about these dates, so it is not an unexplained transaction.
+    const items = build([], [txn({ id: "t1", date: "2026-08-10" })], true, period);
+    expect(items[0].reasonCode).toBe(REASON.outsideStatementPeriod);
+  });
+
+  it("flags one before the period too", () => {
+    const items = build([], [txn({ id: "t1", date: "2026-07-02" })], true, period);
+    expect(items[0].reasonCode).toBe(REASON.outsideStatementPeriod);
+  });
+
+  it("still calls an in-period transaction missing from the statement", () => {
+    const items = build([], [txn({ id: "t1", date: "2026-07-20" })], true, period);
+    expect(items[0].reasonCode).toBe(REASON.notOnStatement);
+  });
+
+  it("excludes it from the explained ratio instead of counting it as a gap", () => {
+    const items = build(
+      [row({ id: "s1", postedDate: "2026-07-20" })],
+      [
+        txn({ id: "t1", date: "2026-07-20" }),
+        txn({ id: "t2", date: "2026-08-10", amount: -999 }),
+      ],
+      true,
+      period
+    );
+
+    const coverage = summarizeCoverage(items, { statementRows: 1, actualTransactions: 2 });
+    // One transaction in period, matched. The padded one is reported separately.
+    expect(coverage.actualTransactions).toBe(1);
+    expect(coverage.actualTransactionsExplained).toBe(1);
+    expect(coverage.outsideStatementPeriod).toBe(1);
+    expect(coverage.unresolved).toBe(0);
+  });
+
+  it("keeps the old behaviour when no period is supplied", () => {
+    const items = build([], [txn({ id: "t1", date: "2026-08-10" })]);
+    expect(items[0].reasonCode).toBe(REASON.notOnStatement);
   });
 });
 

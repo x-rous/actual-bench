@@ -83,7 +83,8 @@ export function ReconciliationView() {
     accountId: screen.name === "import" ? screen.accountId : null,
     statementStart: period?.start ?? null,
     statementEnd: period?.end ?? null,
-    toleranceDays: matchConfig.dateToleranceDays,
+    matchToleranceDays: matchConfig.dateToleranceDays,
+    paddingDays: matchConfig.candidatePaddingDays,
   });
 
   const capabilities = useMemo(
@@ -190,6 +191,7 @@ export function ReconciliationView() {
         actualTransactions: transactions,
         graph,
         transfersReported: loaded.data?.transfersReported ?? false,
+        statementPeriod: result.period,
         makeId: () => generateId(),
       });
       setItems(built);
