@@ -117,8 +117,23 @@ export function assignMatches(input: AssignmentInput): AssignmentResult {
     );
     const runnerUp = rivals[0];
 
+    // Close scores alone do not make two candidates indistinguishable. Two fee
+    // rows differing only in the amount they quote score 100 and 95 while their
+    // text scores 1.0 and 0.79 — the evidence plainly separates them, and the
+    // scores are close only because text carries a quarter of the budget.
+    //
+    // But a signal only separates when nothing else contradicts it. A candidate
+    // whose text agrees better while its date agrees worse is the genuinely
+    // ambiguous case, and belongs to the user.
+    const textSeparates =
+      runnerUp !== undefined &&
+      bestTextSimilarity(candidate) - bestTextSimilarity(runnerUp) >=
+        config.textSeparationMargin &&
+      Math.abs(dateDeltaOf(candidate)) <= Math.abs(dateDeltaOf(runnerUp));
+
     if (
       runnerUp &&
+      !textSeparates &&
       runnerUp.score >= config.autoMatchFloor &&
       candidate.score - runnerUp.score <= config.ambiguityDelta
     ) {
@@ -215,6 +230,15 @@ function compareCandidates(a: ScoredCandidate, b: ScoredCandidate): number {
     return a.statementRowId < b.statementRowId ? -1 : 1;
   }
   return a.actualTransactionId < b.actualTransactionId ? -1 : 1;
+}
+
+/** The strongest text agreement behind a candidate, or 0 when text said nothing. */
+function bestTextSimilarity(candidate: ScoredCandidate): number {
+  let best = 0;
+  for (const reason of candidate.reasons) {
+    if (reason.kind === "text" && reason.similarity > best) best = reason.similarity;
+  }
+  return best;
 }
 
 /** True when the pair agreed on the posted amount, rather than an original one. */

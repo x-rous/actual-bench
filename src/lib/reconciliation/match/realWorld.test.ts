@@ -423,6 +423,72 @@ describe("a fee row must not borrow another purchase's original amount", () => {
   });
 });
 
+describe("rows distinguished only by the amount quoted in their text", () => {
+  // Two fee rows on the same day for the same tiny amount, told apart solely by
+  // the purchase amount each quotes. Their scores land within the ambiguity
+  // window because text is a quarter of the budget, but the text itself agrees
+  // exactly with one and only approximately with the other.
+  const STATEMENT = [
+    "Date\tDescription\tDebit\tCredit",
+    "03/08/2026\tVAT ON SERVICE CHARGES SAR15.95\t0.03\t0",
+    "03/08/2026\tVAT ON SERVICE CHARGES SAR12.96\t0.03\t0",
+  ].join("\n");
+
+  const LEDGER = [
+    txn({
+      id: "vat-15",
+      date: "2026-08-03",
+      amount: -3,
+      payeeName: "VAT ON SERVICE CHARGES SAR15.95",
+      notes: null,
+    }),
+    txn({
+      id: "vat-12",
+      date: "2026-08-03",
+      amount: -3,
+      payeeName: "VAT ON SERVICE CHARGES SAR12.96",
+      notes: null,
+    }),
+  ];
+
+  it("matches each row to the transaction whose text agrees exactly", () => {
+    const rows = parse(STATEMENT);
+    const graph = match({
+      statementRows: rows,
+      actualTransactions: LEDGER,
+      config: DEFAULT_MATCH_CONFIG,
+    });
+
+    expect(graph.matched).toHaveLength(2);
+    expect(graph.ambiguous).toHaveLength(0);
+
+    const byRow = new Map(
+      graph.matched.map((entry) => [entry.statementRowId, entry.actualTransactionId])
+    );
+    const [first, second] = rows;
+    expect(byRow.get(first.id)).toBe("vat-15");
+    expect(byRow.get(second.id)).toBe("vat-12");
+  });
+
+  it("still asks when one candidate reads better but the other is dated better", () => {
+    // Text pointing one way and the date the other is real ambiguity, not an
+    // artefact of the scoring weights.
+    const graph = match({
+      statementRows: parse(
+        ["Date\tDescription\tDebit\tCredit", "08/07/2026\tAMAZON AE\t110\t0"].join("\n")
+      ),
+      actualTransactions: [
+        txn({ id: "a", date: "2026-07-07", amount: -11000, payeeName: "Amazon" }),
+        txn({ id: "b", date: "2026-07-08", amount: -11000, payeeName: "Amazon Marketplace" }),
+      ],
+      config: DEFAULT_MATCH_CONFIG,
+    });
+
+    expect(graph.matched).toHaveLength(0);
+    expect(graph.ambiguous).toHaveLength(1);
+  });
+});
+
 describe("amounts mangled upstream (same merchant, same date)", () => {
   // Transactions here are created by an automation that extracts fields from an
   // SMS and converts currency, so the amount can be wrong by an arbitrary

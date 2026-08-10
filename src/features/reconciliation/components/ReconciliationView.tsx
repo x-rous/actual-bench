@@ -97,6 +97,14 @@ export function ReconciliationView() {
   const [statementName, setStatementName] = useState<string | null>(null);
   const [matchError, setMatchError] = useState<string | null>(null);
   const [isMatching, setIsMatching] = useState(false);
+  /**
+   * Which session the in-memory rows and items belong to.
+   *
+   * Without this the workbench cannot tell "nothing loaded yet" from "another
+   * session's work is loaded", and opening a second session shows the first
+   * one's decisions under the second one's header.
+   */
+  const [loadedSessionId, setLoadedSessionId] = useState<string | null>(null);
   const [isApplying, setIsApplying] = useState(false);
   const [applyResult, setApplyResult] = useState<ApplyRunResult | null>(null);
 
@@ -127,9 +135,11 @@ export function ReconciliationView() {
   useEffect(() => {
     const data = sessionQuery.data;
     if (!data || screen.name !== "workbench" || data.session.id !== screen.sessionId) return;
-    // Only hydrate when this component has nothing for the session, so a fresh
-    // match result is never overwritten by the persisted copy behind it.
-    if (parsedRows.length > 0 || items.length > 0) return;
+    // Hydrate whenever the loaded state belongs to a different session — or to
+    // none. Keying on emptiness instead would leave another session's decisions
+    // on screen, and skipping when it already matches keeps a fresh match result
+    // from being overwritten by the persisted copy behind it.
+    if (loadedSessionId === data.session.id) return;
 
     setParsedRows(
       data.statementRows.map((row) => ({
@@ -174,7 +184,8 @@ export function ReconciliationView() {
     }
     setStatementName(data.session.statementName);
     if (data.session.matchConfig) setMatchConfig(data.session.matchConfig as MatchConfig);
-  }, [sessionQuery.data, hydratedSessionId, screen, parsedRows.length, items.length]);
+    setLoadedSessionId(data.session.id);
+  }, [sessionQuery.data, hydratedSessionId, screen, loadedSessionId]);
 
   const capabilities = useMemo(
     () => (connection ? getBudgetFileSyncCapabilities(connection) : null),
@@ -280,6 +291,8 @@ export function ReconciliationView() {
     setItems([]);
     setPeriod(null);
     setSnapshot([]);
+    setApplyResult(null);
+    setLoadedSessionId(null);
     setScreen({
       name: "import",
       sessionId: session.id,
@@ -336,6 +349,7 @@ export function ReconciliationView() {
       setParsedRows(input.statementRows);
       setPeriod(input.statementPeriod);
       setItems(built);
+      setLoadedSessionId(input.sessionId);
       if (input.statementName !== undefined) setStatementName(input.statementName);
 
       await mutations.saveParsedStatement.mutateAsync({
@@ -800,14 +814,25 @@ export function ReconciliationView() {
         </Button>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-auto">
-        <SessionList
+      <SessionList
           sessions={sessionsQuery.data ?? []}
-          onOpen={(session) => setScreen({ name: "workbench", sessionId: session.id })}
+          onOpen={(session) => {
+            // Cleared rather than left for the effect to replace, so the
+            // previous session's rows are never briefly shown under this one.
+            if (loadedSessionId !== session.id) {
+              setParsedRows([]);
+              setItems([]);
+              setSnapshot([]);
+              setPeriod(null);
+              setStatementName(null);
+              setApplyResult(null);
+              setLoadedSessionId(null);
+            }
+            setScreen({ name: "workbench", sessionId: session.id });
+          }}
           onDelete={(session) => void mutations.deleteSession.mutateAsync(session.id)}
-          onNew={() => document.getElementById("reconciliation-account")?.focus()}
-        />
-      </div>
+        onNew={() => document.getElementById("reconciliation-account")?.focus()}
+      />
     </PageLayout>
   );
 }

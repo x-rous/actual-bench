@@ -186,6 +186,18 @@ export type MatchConfig = {
    * `autoMatchFloor`, do not auto-match — ask the user (feature spec §10 L3).
    */
   ambiguityDelta: number;
+  /**
+   * How much better the winner's text must agree for the pair to count as
+   * separated, even when the scores are close.
+   *
+   * Text is a quarter of the score budget, so an exact textual identity against
+   * a merely similar one can land inside `ambiguityDelta` and be reported as
+   * indistinguishable. Two fee rows differing only in the amount they quote
+   * score 100 and 95 while their text scores 1.0 and 0.79 — the evidence plainly
+   * separates them, and asking the user to choose wastes a decision the data
+   * has already made.
+   */
+  textSeparationMargin: number;
   text: TextMatchConfig;
   needleFloor: NeedleFloor;
   /** Locked `true` in V1 (RD-071 D9). Automatic matches require exact amounts. */

@@ -98,6 +98,7 @@ export const DEFAULT_MATCH_CONFIG: MatchConfig = {
   candidatePaddingDays: 7,
   autoMatchFloor: 60,
   ambiguityDelta: 8,
+  textSeparationMargin: 0.15,
   text: TEXT_TARGET_PRESETS[DEFAULT_TEXT_PRESET],
   needleFloor: DEFAULT_NEEDLE_FLOOR,
   requireExactAmount: true,
