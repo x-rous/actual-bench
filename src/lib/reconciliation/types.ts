@@ -388,7 +388,6 @@ export type StagedPatch = {
   amount?: StagedValue<MinorUnitAmount>;
   date?: StagedValue<string>;
   payeeId?: StagedValue<string | null>;
-  categoryId?: StagedValue<string | null>;
   notes?: StagedValue<string | null>;
 };
 

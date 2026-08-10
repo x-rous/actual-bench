@@ -205,18 +205,20 @@ export async function updateHttpTransactionForSync(
   if (!payeeId && input.payeeName) {
     payeeId = (await createOrResolveHttpPayee(connection, input.payeeName)).id;
   }
+  // Only fields the caller supplied are sent: `undefined` means "leave alone",
+  // and coercing it to null wipes what the transaction holds. Budget File Sync
+  // passes every field, so its behaviour is unchanged.
+  const transaction: Record<string, unknown> = { date: input.date, amount: input.amount };
+  if (payeeId !== null || input.payeeId !== undefined || input.payeeName !== undefined) {
+    transaction.payee = payeeId;
+  }
+  if (input.categoryId !== undefined) transaction.category = input.categoryId;
+  if (input.notes !== undefined) transaction.notes = input.notes;
+  if (input.cleared !== undefined) transaction.cleared = input.cleared;
+
   await apiRequest(connection, `/transactions/${input.transactionId}`, {
     method: "PATCH",
-    body: {
-      transaction: {
-        date: input.date,
-        amount: input.amount,
-        payee: payeeId,
-        category: input.categoryId ?? null,
-        notes: input.notes ?? null,
-        cleared: input.cleared ?? false,
-      },
-    },
+    body: { transaction },
   });
   return readHttpTargetTransactionForSync(connection, {
     accountId: input.accountId,

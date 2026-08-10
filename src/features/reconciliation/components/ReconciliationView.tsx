@@ -568,11 +568,9 @@ export function ReconciliationView() {
       const original =
         field === "payeeId"
           ? snapshot?.payeeId ?? null
-          : field === "categoryId"
-            ? snapshot?.categoryId ?? null
-            : field === "notes"
-              ? snapshot?.notes ?? null
-              : snapshot?.date ?? null;
+          : field === "notes"
+            ? snapshot?.notes ?? null
+            : snapshot?.date ?? null;
 
       const { patch } = stageField({
         patch: item.stagedChanges,

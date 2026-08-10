@@ -825,14 +825,19 @@ async function updateBrowserTransactionForSync(
     }
     if (!payeeId) payeeId = await api.createPayee({ name: input.payeeName });
   }
-  await api.updateTransaction(input.transactionId, {
-    date: input.date,
-    amount: input.amount,
-    payee: payeeId,
-    category: input.categoryId ?? null,
-    notes: input.notes ?? null,
-    cleared: input.cleared ?? false,
-  });
+  // Only fields the caller actually supplied are sent. `undefined` means
+  // "leave this alone"; coercing it to null wipes whatever the transaction
+  // holds, which for a partial update is silent data loss. Budget File Sync
+  // always passes every field, so nothing changes for it.
+  const fields: Record<string, unknown> = { date: input.date, amount: input.amount };
+  if (payeeId !== null || input.payeeId !== undefined || input.payeeName !== undefined) {
+    fields.payee = payeeId;
+  }
+  if (input.categoryId !== undefined) fields.category = input.categoryId;
+  if (input.notes !== undefined) fields.notes = input.notes;
+  if (input.cleared !== undefined) fields.cleared = input.cleared;
+
+  await api.updateTransaction(input.transactionId, fields);
   return readBrowserTargetTransaction(connection, {
     accountId: input.accountId,
     transactionId: input.transactionId,

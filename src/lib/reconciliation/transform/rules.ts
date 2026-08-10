@@ -68,7 +68,6 @@ export type Condition = {
 // ---------------------------------------------------------------------------
 
 export type TransformAction =
-  | { kind: "setCategory"; categoryId: string | null }
   | { kind: "setPayee"; payeeId: string | null }
   /**
    * `position` matters more than it looks: users who tag by workflow write the
@@ -219,7 +218,8 @@ export function ruleMatches(rule: TransformRule, context: TransformContext): boo
 // ---------------------------------------------------------------------------
 
 export type FieldChange = {
-  field: "categoryId" | "payeeId" | "notes";
+  /** Category is absent by design — see STAGEABLE_FIELDS. */
+  field: "payeeId" | "notes";
   value: string | null;
 };
 
@@ -245,9 +245,6 @@ export function changesFor(rule: TransformRule, context: TransformContext): Fiel
 
   for (const action of rule.actions) {
     switch (action.kind) {
-      case "setCategory":
-        changes.push({ field: "categoryId", value: action.categoryId });
-        break;
       case "setPayee":
         changes.push({ field: "payeeId", value: action.payeeId });
         break;

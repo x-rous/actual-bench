@@ -61,7 +61,6 @@ const ACTIONS: { id: ActionKind; label: string }[] = [
   { id: "removeTag", label: "Remove tag" },
   { id: "appendNote", label: "Append to notes" },
   { id: "prependNote", label: "Put at the start of notes" },
-  { id: "setCategory", label: "Set category" },
   { id: "setPayee", label: "Set payee" },
 ];
 
@@ -75,8 +74,6 @@ function emptyAction(kind: ActionKind): TransformAction {
       return { kind, from: "", to: "" };
     case "appendNote":
       return { kind, text: "" };
-    case "setCategory":
-      return { kind, categoryId: null };
     case "setPayee":
       return { kind, payeeId: null };
     case "prependNote":
@@ -392,31 +389,23 @@ export function TransformDialog({
               />
             )}
 
-            {(action.kind === "setCategory" || action.kind === "setPayee") && (
+            {action.kind === "setPayee" && (
               <select
                 className="h-8 w-52 rounded-md border border-input bg-background px-2 text-xs"
-                aria-label={action.kind === "setCategory" ? "Category" : "Payee"}
-                value={
-                  action.kind === "setCategory"
-                    ? action.categoryId ?? ""
-                    : action.payeeId ?? ""
-                }
+                aria-label="Payee"
+                value={action.payeeId ?? ""}
                 onChange={(event) =>
                   setActions((previous) =>
-                    previous.map((entry, i) => {
-                      if (i !== index) return entry;
-                      const value = event.target.value || null;
-                      return entry.kind === "setCategory"
-                        ? { ...entry, categoryId: value }
-                        : entry.kind === "setPayee"
-                          ? { ...entry, payeeId: value }
-                          : entry;
-                    })
+                    previous.map((entry, i) =>
+                      i === index && entry.kind === "setPayee"
+                        ? { ...entry, payeeId: event.target.value || null }
+                        : entry
+                    )
                   )
                 }
               >
                 <option value="">None</option>
-                {(action.kind === "setCategory" ? categories : payees).map((option) => (
+                {payees.map((option) => (
                   <option key={option.id} value={option.id}>
                     {option.name}
                   </option>

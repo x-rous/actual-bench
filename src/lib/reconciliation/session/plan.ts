@@ -214,7 +214,9 @@ function createOperationFor(
       patch?.payeeId?.staged || descriptionTarget === "notes"
         ? null
         : row.description || null,
-    categoryId: patch?.categoryId?.staged ?? null,
+    // Left unset so Actual's rules decide it on the way in, which is where
+    // categorising belongs.
+    categoryId: null,
     // Shared with the transformation engine, so a rule that adds a tag to a new
     // transaction and the write that creates it agree on what its note is.
     notes: prospectiveTransaction({

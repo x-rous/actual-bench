@@ -71,7 +71,6 @@ export function StagedFields({
   const [notesDraft, setNotesDraft] = useState<string | null>(null);
 
   const payeeValue = patch?.payeeId?.staged ?? current.payeeId ?? "";
-  const categoryValue = patch?.categoryId?.staged ?? current.categoryId ?? "";
   const notesValue = notesDraft ?? patch?.notes?.staged ?? current.notes ?? "";
 
   const field = (name: StageableField) => canStageField(item, name);
@@ -127,32 +126,20 @@ export function StagedFields({
         )}
       </div>
 
+      {/*
+        Category is shown but not editable. Categorising belongs in Actual,
+        where the rules and the budget context are; a reconciliation confirms
+        what posted. It is displayed so the user can see what the transaction
+        already carries and know it is being left alone.
+      */}
       <div className="flex flex-col gap-1">
-        <div className="flex items-center justify-between">
-          <Label htmlFor="staged-category" className="text-[11px] uppercase tracking-wide">
-            Category
-          </Label>
-          <ChangedMark patch={patch} field="categoryId" onUnstage={() => onUnstage("categoryId")} />
-        </div>
-        <select
-          id="staged-category"
-          className="h-8 rounded-md border border-input bg-background px-2 text-sm disabled:opacity-50"
-          value={categoryValue}
-          disabled={!field("categoryId").allowed}
-          onChange={(event) => onStage("categoryId", event.target.value || null)}
-        >
-          <option value="">No category</option>
-          {categories.map((category) => (
-            <option key={category.id} value={category.id}>
-              {category.name}
-            </option>
-          ))}
-        </select>
-        {!field("categoryId").allowed && (
-          <p className="text-[11px] text-muted-foreground">
-            {(field("categoryId") as { reason: string }).reason}
-          </p>
-        )}
+        <span className="text-[11px] uppercase tracking-wide text-muted-foreground">
+          Category
+        </span>
+        <p className="text-xs">
+          {categories.find((option) => option.id === current.categoryId)?.name ?? "—"}
+          <span className="ml-1 text-muted-foreground">· set in Actual</span>
+        </p>
       </div>
 
       <div className="flex flex-col gap-1">

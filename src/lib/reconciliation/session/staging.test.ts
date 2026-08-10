@@ -1,5 +1,6 @@
 import type { ReconciliationGuards, StagedPatch } from "../types";
 import {
+  STAGEABLE_FIELDS,
   canStageDelete,
   canStageField,
   effectiveValue,
@@ -37,14 +38,14 @@ describe("stageField", () => {
   it("records the original, the staged value, and where it came from", () => {
     const { patch, applied } = stageField({
       patch: undefined,
-      field: "categoryId",
+      field: "payeeId",
       original: "cat-old",
       next: "cat-new",
       source: "manual",
     });
 
     expect(applied).toBe(true);
-    expect(patch.categoryId).toEqual({
+    expect(patch.payeeId).toEqual({
       original: "cat-old",
       staged: "cat-new",
       source: "manual",
@@ -125,20 +126,20 @@ describe("stageField", () => {
     // nothing, and inflate the count of updates shown before Apply.
     const first = stageField({
       patch: undefined,
-      field: "categoryId",
+      field: "payeeId",
       original: "cat-old",
       next: "cat-new",
       source: "manual",
     });
     const second = stageField({
       patch: first.patch,
-      field: "categoryId",
+      field: "payeeId",
       original: "cat-old",
       next: "cat-old",
       source: "manual",
     });
 
-    expect(second.patch.categoryId).toBeUndefined();
+    expect(second.patch.payeeId).toBeUndefined();
     expect(hasStagedChanges(second.patch)).toBe(false);
   });
 
@@ -163,13 +164,13 @@ describe("stageField", () => {
     });
     const second = stageField({
       patch: first.patch,
-      field: "categoryId",
+      field: "payeeId",
       original: "c1",
       next: "c2",
       source: "transform",
     });
 
-    expect(stagedFields(second.patch).sort()).toEqual(["categoryId", "notes"]);
+    expect(stagedFields(second.patch).sort()).toEqual(["notes", "payeeId"]);
   });
 });
 
@@ -177,9 +178,9 @@ describe("unstageField", () => {
   it("removes one field and leaves the rest", () => {
     const patch: StagedPatch = {
       notes: { original: "a", staged: "b", source: "manual" },
-      categoryId: { original: "c1", staged: "c2", source: "manual" },
+      payeeId: { original: "c1", staged: "c2", source: "manual" },
     };
-    expect(stagedFields(unstageField(patch, "notes"))).toEqual(["categoryId"]);
+    expect(stagedFields(unstageField(patch, "notes"))).toEqual(["payeeId"]);
   });
 
   it("is a no-op for a field that was never staged", () => {
@@ -200,19 +201,19 @@ describe("effectiveValue", () => {
 
 describe("guardrails — field edits (RD-071 D11–D13)", () => {
   it("blocks every edit on a reconciled transaction", () => {
-    for (const field of ["date", "payeeId", "categoryId", "notes"] as const) {
+    for (const field of ["date", "payeeId", "notes"] as const) {
       expect(canStageField(guards({ protectedReconciled: true }), field).allowed).toBe(false);
     }
   });
 
-  it("blocks a category on a split parent but allows notes", () => {
-    expect(canStageField(guards({ splitParent: true }), "categoryId").allowed).toBe(false);
+  it("blocks a payee on a split parent but allows notes", () => {
+    expect(canStageField(guards({ splitParent: true }), "payeeId").allowed).toBe(false);
     expect(canStageField(guards({ splitParent: true }), "notes").allowed).toBe(true);
   });
 
-  it("blocks a payee change on a transfer leg but allows the category", () => {
+  it("blocks a payee change on a transfer leg but allows notes", () => {
     expect(canStageField(guards({ transfer: "yes" }), "payeeId").allowed).toBe(false);
-    expect(canStageField(guards({ transfer: "yes" }), "categoryId").allowed).toBe(true);
+    expect(canStageField(guards({ transfer: "yes" }), "notes").allowed).toBe(true);
   });
 
   it("treats unknown transfer status as a transfer for the payee", () => {
@@ -220,7 +221,7 @@ describe("guardrails — field edits (RD-071 D11–D13)", () => {
   });
 
   it("allows ordinary edits on an ordinary transaction", () => {
-    expect(canStageField(guards(), "categoryId").allowed).toBe(true);
+    expect(canStageField(guards(), "payeeId").allowed).toBe(true);
     expect(canStageField(guards(), "notes").allowed).toBe(true);
   });
 
@@ -253,5 +254,18 @@ describe("guardrails — delete", () => {
 
   it("allows deleting a split parent, which is a whole transaction", () => {
     expect(canStageDelete(guards({ splitParent: true })).allowed).toBe(true);
+  });
+});
+
+
+describe("category is never staged", () => {
+  it("is not a field reconciliation can change", () => {
+    // Categorising belongs in Actual, where the rules and budget context live.
+    // Leaving it out of the model is also what makes it impossible for a
+    // partial update to clear one by accident.
+    expect(stagedFields({ notes: { original: "a", staged: "b", source: "manual" } })).toEqual([
+      "notes",
+    ]);
+    expect(STAGEABLE_FIELDS).not.toContain("categoryId");
   });
 });

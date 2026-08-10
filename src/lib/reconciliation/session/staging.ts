@@ -36,7 +36,15 @@ export function outranks(incoming: StagedValueSource, existing: StagedValueSourc
 }
 
 /** The fields V1 can stage. Kept explicit so a new field is a deliberate act. */
-export const STAGEABLE_FIELDS = ["amount", "date", "payeeId", "categoryId", "notes"] as const;
+/**
+ * The fields reconciliation may change.
+ *
+ * **Category is deliberately absent.** Categorising belongs in Actual, where
+ * the rules and the budget context live; a reconciliation exists to confirm
+ * what posted, not to reorganise a budget. Leaving it out also removes any way
+ * for a partial update to clear one by accident.
+ */
+export const STAGEABLE_FIELDS = ["amount", "date", "payeeId", "notes"] as const;
 export type StageableField = (typeof STAGEABLE_FIELDS)[number];
 
 export type StageFieldInput<T> = {
@@ -142,7 +150,7 @@ export function effectiveTransaction(
   return {
     date: effectiveValue(patch, "date", snapshot.date),
     payeeId: effectiveValue(patch, "payeeId", snapshot.payeeId),
-    categoryId: effectiveValue(patch, "categoryId", snapshot.categoryId),
+    categoryId: snapshot.categoryId,
     notes: effectiveValue(patch, "notes", snapshot.notes),
   };
 }
@@ -191,13 +199,10 @@ export function canStageField(
     };
   }
 
-  if (item.guards.splitParent && (field === "categoryId" || field === "payeeId")) {
+  if (item.guards.splitParent && field === "payeeId") {
     return {
       allowed: false,
-      reason:
-        field === "categoryId"
-          ? "This is a split transaction — its category lives on the split lines, so there is no parent category to set."
-          : "Changing the payee of a split transaction is not supported here.",
+      reason: "Changing the payee of a split transaction is not supported here.",
     };
   }
 

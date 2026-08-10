@@ -60,7 +60,8 @@ export function prospectiveTransaction(input: {
   return {
     notes: effectiveValue(patch, "notes", baselineNotes),
     payeeId: effectiveValue(patch, "payeeId", transaction?.payeeId ?? null),
-    categoryId: effectiveValue(patch, "categoryId", transaction?.categoryId ?? null),
+    // Read, never staged: reconciliation does not categorise.
+    categoryId: transaction?.categoryId ?? null,
     amount: effectiveValue(
       patch,
       "amount",

@@ -54,7 +54,7 @@ export type PreviewInput = {
   overrideManual?: boolean;
 };
 
-function labelFor(field: "categoryId" | "payeeId" | "notes"): StageableField {
+function labelFor(field: "payeeId" | "notes"): StageableField {
   return field;
 }
 
@@ -150,8 +150,6 @@ function currentValue(
       return context.pending.notes;
     case "payeeId":
       return context.pending.payeeId;
-    case "categoryId":
-      return context.pending.categoryId;
     default:
       return originalValue(context, field);
   }
@@ -163,8 +161,6 @@ function originalValue(context: TransformContext, field: StageableField): string
   switch (field) {
     case "payeeId":
       return transaction?.payeeId ?? null;
-    case "categoryId":
-      return transaction?.categoryId ?? null;
     case "notes":
       return transaction?.notes ?? null;
     default:

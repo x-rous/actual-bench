@@ -123,7 +123,7 @@ describe("update operations", () => {
     if (operation.kind === "update") {
       expect(operation.transactionId).toBe("t1");
       expect(operation.patch.notes?.staged).toBe("#2026-07 DUBAI TAXI");
-      expect(operation.patch.categoryId).toBeUndefined();
+      expect(operation.patch.payeeId).toBeUndefined();
     }
   });
 

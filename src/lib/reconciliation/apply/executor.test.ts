@@ -52,6 +52,13 @@ const DELETE: ApplyOperation = {
   amount: -100,
 };
 
+/** The payload one operation produces, for asserting what is *not* sent. */
+function transportCallFor(operation: ApplyOperation): unknown {
+  const transport = fakeTransport();
+  void executeApplyPlan({ plan: planOf([operation]), transport });
+  return (transport.updateTransaction as jest.Mock).mock.calls[0]?.[0];
+}
+
 function planOf(operations: ApplyOperation[]): ApplyPlan {
   return { operations, noWriteMatches: 0, unresolved: 0, blocked: [] };
 }
@@ -91,10 +98,18 @@ describe("executeApplyPlan", () => {
       expect.objectContaining({
         transactionId: "t1",
         notes: "#2026-07 X",
-        categoryId: undefined,
         payeeId: undefined,
       })
     );
+  });
+
+  it("never sends a category, so an update cannot clear one", () => {
+    // Categorising belongs in Actual. The field is absent from the model, so
+    // there is no path by which reconciliation can set or clear it.
+    const sent = Object.keys(
+      (transportCallFor(UPDATE) ?? {}) as Record<string, unknown>
+    );
+    expect(sent).not.toContain("categoryId");
   });
 
   it("distinguishes clearing a field from leaving it alone", async () => {
@@ -103,14 +118,16 @@ describe("executeApplyPlan", () => {
       plan: planOf([
         {
           ...UPDATE,
-          patch: { categoryId: { original: "c1", staged: null, source: "manual" } },
+          patch: { payeeId: { original: "p1", staged: null, source: "manual" } },
         } as ApplyOperation,
       ]),
       transport,
     });
 
+    // null means clear it; undefined means leave it alone. Collapsing the two
+    // is what wiped fields nobody asked to change.
     expect(transport.updateTransaction).toHaveBeenCalledWith(
-      expect.objectContaining({ categoryId: null, notes: undefined })
+      expect.objectContaining({ payeeId: null, notes: undefined })
     );
   });
 });

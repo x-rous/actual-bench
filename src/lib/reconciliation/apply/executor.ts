@@ -147,7 +147,8 @@ async function runOperation(
           // change it. The transport needs the amount either way.
           amount: patchValue(operation.patch, "amount") ?? operation.amount,
           payeeId: patchValue(operation.patch, "payeeId"),
-          categoryId: patchValue(operation.patch, "categoryId"),
+          // Never sent. Reconciliation does not categorise, and omitting the
+          // field is what keeps an update from clearing one.
           notes: patchValue(operation.patch, "notes"),
           cleared: operation.cleared,
         });

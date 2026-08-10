@@ -169,11 +169,11 @@ describe("conditions (feature spec §28/§29)", () => {
     // §32: a rule tests what the transaction will be, not what it was before an
     // earlier rule ran.
     const staged: StagedPatch = {
-      categoryId: { original: "c1", staged: "c2", source: "transform" },
+      notes: { original: "#API Dinner", staged: "#2026-07 Dinner", source: "transform" },
     };
     expect(
       evaluateCondition(
-        condition({ field: "category", operator: "equals", value: "Taxi" }),
+        condition({ field: "notes", operator: "hasTag", value: "#2026-07" }),
         context({ item: item({ stagedChanges: staged }) })
       )
     ).toBe(true);
@@ -243,22 +243,12 @@ describe("actions (feature spec §30)", () => {
     expect(changes).toEqual([]);
   });
 
-  it("sets a category and a payee", () => {
+  it("sets a payee", () => {
     const changes = changesFor(
-      {
-        id: "r1",
-        conditions: [],
-        actions: [
-          { kind: "setCategory", categoryId: "c2" },
-          { kind: "setPayee", payeeId: "p9" },
-        ],
-      },
+      { id: "r1", conditions: [], actions: [{ kind: "setPayee", payeeId: "p9" }] },
       context()
     );
-    expect(changes).toEqual([
-      { field: "categoryId", value: "c2" },
-      { field: "payeeId", value: "p9" },
-    ]);
+    expect(changes).toEqual([{ field: "payeeId", value: "p9" }]);
   });
 
   it("composes on the staged note, not the original (feature spec §32)", () => {
