@@ -32,6 +32,7 @@ function config(overrides: Partial<TextMatchConfig> = {}): TextMatchConfig {
     ],
     combine: "best-of",
     priorityFirstThreshold: 0.6,
+    ignoreTagsInNotes: true,
     ...overrides,
   };
 }

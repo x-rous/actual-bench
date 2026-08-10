@@ -7,7 +7,11 @@ import { Label } from "@/components/ui/label";
 import { PageLayout } from "@/components/layout/PageLayout";
 import { getBudgetFileSyncCapabilities } from "@/lib/sync/capabilities";
 import { generateId } from "@/lib/uuid";
-import { DEFAULT_MATCH_CONFIG } from "@/lib/reconciliation/match/config";
+import {
+  DEFAULT_MATCH_CONFIG,
+  DEFAULT_TEXT_PRESET,
+  type TextTargetPreset,
+} from "@/lib/reconciliation/match/config";
 import { match } from "@/lib/reconciliation/match/matcher";
 import {
   buildReconciliationItems,
@@ -16,6 +20,7 @@ import {
 import type { NormalizedStatement } from "@/lib/reconciliation/statement/normalize";
 import type {
   ActualTransactionSnapshot,
+  MatchConfig,
   ReconciliationItem,
   StatementRow,
 } from "@/lib/reconciliation/types";
@@ -66,6 +71,11 @@ export function ReconciliationView() {
   const [statementName, setStatementName] = useState<string | null>(null);
   const [matchError, setMatchError] = useState<string | null>(null);
 
+  // Matching options live with the session (and, once saved, the import
+  // profile) because they describe how this account's transactions are created.
+  const [matchConfig, setMatchConfig] = useState<MatchConfig>(DEFAULT_MATCH_CONFIG);
+  const [matchPreset, setMatchPreset] = useState<TextTargetPreset>(DEFAULT_TEXT_PRESET);
+
   const sessionId = screen.name === "home" ? null : screen.sessionId;
   const sessionQuery = useReconciliationSession(sessionId);
 
@@ -73,7 +83,7 @@ export function ReconciliationView() {
     accountId: screen.name === "import" ? screen.accountId : null,
     statementStart: period?.start ?? null,
     statementEnd: period?.end ?? null,
-    toleranceDays: DEFAULT_MATCH_CONFIG.dateToleranceDays,
+    toleranceDays: matchConfig.dateToleranceDays,
   });
 
   const capabilities = useMemo(
@@ -172,7 +182,7 @@ export function ReconciliationView() {
       const graph = match({
         statementRows: result.rows,
         actualTransactions: transactions,
-        config: DEFAULT_MATCH_CONFIG,
+        config: matchConfig,
       });
 
       const built = buildReconciliationItems({
@@ -204,6 +214,7 @@ export function ReconciliationView() {
           statementStart: result.period.start,
           statementEnd: result.period.end,
           totals: result.totals,
+          matchConfig,
         },
       });
 
@@ -232,6 +243,12 @@ export function ReconciliationView() {
         )}
         <ImportPanel
           accountName={screen.accountName}
+          matchConfig={matchConfig}
+          matchPreset={matchPreset}
+          onMatchConfigChange={(preset, config) => {
+            setMatchPreset(preset);
+            setMatchConfig(config);
+          }}
           onCancel={() => setScreen({ name: "home" })}
           onParsed={(result, fileName) => void handleParsed(result, fileName)}
           isSaving={mutations.saveParsedStatement.isPending || candidates.isFetching}

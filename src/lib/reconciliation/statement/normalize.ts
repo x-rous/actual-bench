@@ -45,6 +45,13 @@ export type ColumnMapping = {
    * units, so this is 2 unless a profile is explicitly told otherwise.
    */
   minorUnitDigits: number;
+  /**
+   * Recover the original-currency amount the bank printed in the description of
+   * a foreign-currency transaction. On by default: it costs one regex per row
+   * and it is the difference between matching a foreign purchase exactly and
+   * not matching it at all.
+   */
+  detectOriginalCurrencyAmount: boolean;
 };
 
 export const DEFAULT_MAPPING: Omit<ColumnMapping, "date" | "description"> = {
@@ -56,6 +63,7 @@ export const DEFAULT_MAPPING: Omit<ColumnMapping, "date" | "description"> = {
   signConvention: "signed",
   decimalSeparator: ".",
   minorUnitDigits: 2,
+  detectOriginalCurrencyAmount: true,
 };
 
 export type StatementRowError = {
@@ -81,6 +89,30 @@ export type StatementTotals = {
   net: MinorUnitAmount;
   rowCount: number;
 };
+
+/**
+ * Trailing original-currency amount printed by the bank on a foreign-currency
+ * transaction, e.g. `... KHOBAR SAU SAR225.70` or `AIRALO AMSTERDAM NH USD24.50`.
+ *
+ * This matters more than it looks. When a card transaction is made abroad, an
+ * SMS/automation-created transaction in Actual usually carries the **original**
+ * amount, while the statement posts the **converted** amount. The two never
+ * match on the posted figure — but the bank prints the original amount right
+ * there in the description, so it can be recovered exactly rather than guessed
+ * at with a tolerance.
+ */
+const ORIGINAL_AMOUNT_PATTERN = /\b([A-Z]{3})\s?(\d*\.?\d+)\s*$/;
+
+export function extractOriginalAmount(
+  description: string,
+  minorUnitDigits = 2
+): { currency: string; amount: MinorUnitAmount } | null {
+  const match = ORIGINAL_AMOUNT_PATTERN.exec(description.trim());
+  if (!match) return null;
+  const amount = parseMoneyToMinorUnits(match[2], ".", minorUnitDigits);
+  if (amount === null || amount === 0) return null;
+  return { currency: match[1], amount };
+}
 
 const MONTHS: Record<string, number> = {
   jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6,
@@ -150,6 +182,117 @@ export function parseMoneyToMinorUnits(
   if (!Number.isFinite(magnitude)) return null;
 
   return negative ? -magnitude : magnitude;
+}
+
+/**
+ * Guess the column mapping from the parsed table.
+ *
+ * Getting this wrong is not a small inconvenience: mapping a **Debit** column as
+ * a signed amount yields positive amounts for money that left the account, and
+ * since automatic matching requires the exact *signed* amount, every single row
+ * then fails to match. So debit/credit layouts are detected explicitly, from the
+ * header names when present and otherwise from the shape of the data — two
+ * numeric columns where each row populates only one of them.
+ */
+export function detectColumnMapping(table: DelimitedTable): ColumnMapping {
+  const headers = (table.headers ?? []).map((header) => header.trim().toLowerCase());
+  const width = Math.max(table.headers?.length ?? 0, ...table.rows.map((row) => row.length), 0);
+
+  const headerIndex = (...names: string[]) =>
+    headers.findIndex((header) => names.some((name) => header === name || header.includes(name)));
+
+  const numericColumns: number[] = [];
+  for (let column = 0; column < width; column++) {
+    const values = table.rows.slice(0, 40).map((row) => row[column] ?? "");
+    const parsed = values.filter((value) => parseMoneyToMinorUnits(value) !== null);
+    if (values.length > 0 && parsed.length >= values.length * 0.8) numericColumns.push(column);
+  }
+
+  const dateColumn = (() => {
+    const byHeader = headerIndex("date");
+    if (byHeader >= 0) return byHeader;
+    for (let column = 0; column < width; column++) {
+      const values = table.rows.slice(0, 20).map((row) => row[column] ?? "");
+      if (values.every((value) => looksLikeDateCell(value))) return column;
+    }
+    return 0;
+  })();
+
+  const debitHeader = headerIndex("debit", "withdrawal", "money out");
+  const creditHeader = headerIndex("credit", "deposit", "money in");
+
+  // Two numeric columns where each row fills exactly one is the classic
+  // debit/credit layout even when the headers are unhelpful.
+  const complementaryPair = (() => {
+    for (let i = 0; i < numericColumns.length; i++) {
+      for (let j = i + 1; j < numericColumns.length; j++) {
+        const a = numericColumns[i];
+        const b = numericColumns[j];
+        const rows = table.rows.slice(0, 40);
+        if (rows.length === 0) continue;
+        const exclusive = rows.filter((row) => {
+          const left = parseMoneyToMinorUnits(row[a] ?? "") ?? 0;
+          const right = parseMoneyToMinorUnits(row[b] ?? "") ?? 0;
+          return (left === 0) !== (right === 0);
+        });
+        if (exclusive.length >= rows.length * 0.9) return [a, b] as const;
+      }
+    }
+    return null;
+  })();
+
+  const dateSamples = table.rows.slice(0, 20).map((row) => row[dateColumn] ?? "");
+  const base = {
+    ...DEFAULT_MAPPING,
+    date: dateColumn,
+    dateFormat: detectDateFormat(dateSamples),
+  };
+
+  const descriptionColumn = (() => {
+    const byHeader = headerIndex("description", "narrative", "details", "particulars", "payee");
+    if (byHeader >= 0) return byHeader;
+    for (let column = 0; column < width; column++) {
+      if (column === dateColumn || numericColumns.includes(column)) continue;
+      return column;
+    }
+    return Math.min(dateColumn + 1, Math.max(width - 1, 0));
+  })();
+
+  if (debitHeader >= 0 && creditHeader >= 0) {
+    return {
+      ...base,
+      description: descriptionColumn,
+      debit: debitHeader,
+      credit: creditHeader,
+      signConvention: "debit-credit",
+    };
+  }
+
+  if (complementaryPair) {
+    const [first, second] = complementaryPair;
+    return {
+      ...base,
+      description: descriptionColumn,
+      debit: first,
+      credit: second,
+      signConvention: "debit-credit",
+    };
+  }
+
+  const amountColumn =
+    headerIndex("amount", "value") >= 0
+      ? headerIndex("amount", "value")
+      : numericColumns[0] ?? Math.max(width - 1, 0);
+
+  return { ...base, description: descriptionColumn, amount: amountColumn };
+}
+
+function looksLikeDateCell(value: string): boolean {
+  return parseStatementDate(value, "iso") !== null ||
+    parseStatementDate(value, "dmy") !== null ||
+    parseStatementDate(value, "mdy") !== null ||
+    parseStatementDate(value, "dmy-name") !== null ||
+    parseStatementDate(value, "ymd-compact") !== null;
 }
 
 /** Parse a statement date cell into ISO `YYYY-MM-DD`, or null. */
@@ -279,14 +422,23 @@ export function normalizeStatement(
     }
 
     const reference = cell(cells, mapping.reference).trim();
+    const description = cell(cells, mapping.description).trim();
+    const original = mapping.detectOriginalCurrencyAmount
+      ? extractOriginalAmount(description, mapping.minorUnitDigits)
+      : null;
 
     rows.push({
       id: makeId(index),
       sourceRowNumber,
       postedDate,
       amount,
-      description: cell(cells, mapping.description).trim(),
+      description,
       reference: reference || undefined,
+      // Sign follows the posted amount: a foreign purchase is an outflow in both
+      // currencies.
+      originalAmount:
+        original && amount !== 0 ? Math.sign(amount) * Math.abs(original.amount) : undefined,
+      originalCurrency: original?.currency,
       raw: table.headers ? zip(table.headers, cells) : [...cells],
       fingerprint: fingerprintRow(cells, sourceRowNumber),
     });

@@ -135,6 +135,15 @@ export type TextMatchConfig = {
    */
   combine: "best-of" | "priority-first";
   priorityFirstThreshold: number;
+  /**
+   * Ignore `#tags` in notes when comparing text.
+   *
+   * On by default. Users whose transactions are created by automation routinely
+   * prefix notes with a workflow tag (`#API ADNOC AL CORNICHE 933`) that is not
+   * part of the bank's text, and comparing it dilutes every score. Turning this
+   * off compares notes verbatim, tags included.
+   */
+  ignoreTagsInNotes: boolean;
 };
 
 /**
@@ -168,6 +177,12 @@ export type MatchConfig = {
   needleFloor: NeedleFloor;
   /** Locked `true` in V1 (RD-071 D9). Automatic matches require exact amounts. */
   requireExactAmount: true;
+  /**
+   * Also match against the original-currency amount printed in a foreign
+   * transaction's description. Still an exact-amount match, just against the
+   * other amount the bank stated; requires text corroboration to be accepted.
+   */
+  matchOriginalCurrencyAmount: boolean;
 };
 
 /**
@@ -189,7 +204,15 @@ export type MatchReason =
       field: TextTargetField;
       why: "empty" | "below-needle-floor" | "no-statement-text";
     }
-  | { kind: "reference"; where: "importedId" | "notes" };
+  | { kind: "reference"; where: "importedId" | "notes" }
+  | {
+      kind: "original-amount";
+      currency: string;
+      /** The original-currency amount, in integer minor units. */
+      amount: MinorUnitAmount;
+      /** The converted amount the statement actually posted. */
+      postedAmount: MinorUnitAmount;
+    };
 
 export type ConfidenceLabel = "exact" | "high" | "medium" | "low";
 
@@ -201,7 +224,9 @@ export type MatchTier =
   | "reference-imported-id"
   | "reference-in-notes"
   | "amount-date-text"
-  | "amount-date";
+  | "amount-date"
+  /** Exact match on the original-currency amount the bank printed (FX purchase). */
+  | "original-amount-text";
 
 export type ScoredCandidate = {
   statementRowId: string;

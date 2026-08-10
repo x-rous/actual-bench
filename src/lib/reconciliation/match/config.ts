@@ -60,21 +60,25 @@ export const TEXT_TARGET_PRESETS: Record<TextTargetPreset, TextMatchConfig> = {
     targets: [payeeTarget("payeeName", 1)],
     combine: "best-of",
     priorityFirstThreshold: 0.6,
+    ignoreTagsInNotes: true,
   },
   "imported-payee": {
     targets: [payeeTarget("importedPayee", 1), payeeTarget("payeeName", 2)],
     combine: "priority-first",
     priorityFirstThreshold: 0.6,
+    ignoreTagsInNotes: true,
   },
   notes: {
     targets: [notesTarget(1), payeeTarget("payeeName", 2)],
     combine: "priority-first",
     priorityFirstThreshold: 0.6,
+    ignoreTagsInNotes: true,
   },
   "all-best-match": {
     targets: [notesTarget(1), payeeTarget("importedPayee", 2), payeeTarget("payeeName", 3)],
     combine: "best-of",
     priorityFirstThreshold: 0.6,
+    ignoreTagsInNotes: true,
   },
 };
 
@@ -96,4 +100,5 @@ export const DEFAULT_MATCH_CONFIG: MatchConfig = {
   text: TEXT_TARGET_PRESETS[DEFAULT_TEXT_PRESET],
   needleFloor: DEFAULT_NEEDLE_FLOOR,
   requireExactAmount: true,
+  matchOriginalCurrencyAmount: true,
 };

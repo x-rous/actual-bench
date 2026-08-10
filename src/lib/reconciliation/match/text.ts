@@ -116,17 +116,24 @@ export function symmetricSimilarity(a: string, b: string): number {
 }
 
 /**
- * Asymmetric containment: does `needle` occur inside `haystack`?
+ * Containment: does either string contain the other?
  *
- * This is what makes the notes target work. For a user whose transactions are
- * created by SMS/n8n automation, notes hold the bank's own text verbatim plus
- * the user's own comment — `"<bank text> #One | paid for Dad"`. A contiguous
- * token-aligned hit scores 1.0 and the user's extra words cost nothing; a
- * symmetric metric would score that true match around 0.65.
+ * This is what makes the notes target work, and it is **bidirectional** because
+ * real data runs both ways:
  *
- * Falls back to the fraction of needle tokens present in the haystack when
- * there is no contiguous hit, so a reordered or partially-rewritten note still
- * contributes proportionally.
+ * - the note is *longer* — an SMS/n8n note holds the bank's text plus the
+ *   user's own words: `"<bank text> #One | paid for Dad"`;
+ * - the note is *shorter* — the automation captured a truncated merchant name
+ *   while the statement adds location and country tokens:
+ *   notes `"ADNOC AL CORNICHE 933"` vs statement
+ *   `"ADNOC AL CORNICHE 933 ABUDHABI UAE"`.
+ *
+ * A one-directional test scores the second case ~0.67 and loses a certain
+ * match; whichever side is shorter, a full token-aligned hit is a full match.
+ * A symmetric metric would penalise both cases for the extra words.
+ *
+ * Falls back to the best token-overlap ratio when there is no contiguous hit,
+ * so a reordered or partially-rewritten note still contributes proportionally.
  */
 export function containmentSimilarity(needle: string, haystack: string): number {
   const n = normalizeForCompare(needle);
@@ -134,16 +141,21 @@ export function containmentSimilarity(needle: string, haystack: string): number 
   if (!n || !h) return 0;
 
   // Pad so matching is token-aligned: "FEE" must not hit inside "COFFEE".
-  if (` ${h} `.includes(` ${n} `)) return 1;
+  const paddedNeedle = ` ${n} `;
+  const paddedHaystack = ` ${h} `;
+  if (paddedHaystack.includes(paddedNeedle) || paddedNeedle.includes(paddedHaystack)) return 1;
 
   const needleTokens = new Set(tokenize(n));
-  if (needleTokens.size === 0) return 0;
   const haystackTokens = new Set(tokenize(h));
-  let present = 0;
+  if (needleTokens.size === 0 || haystackTokens.size === 0) return 0;
+
+  let shared = 0;
   for (const token of needleTokens) {
-    if (haystackTokens.has(token)) present += 1;
+    if (haystackTokens.has(token)) shared += 1;
   }
-  return present / needleTokens.size;
+  // Divide by the smaller side: extra words on either side must not be read as
+  // evidence against the match.
+  return shared / Math.min(needleTokens.size, haystackTokens.size);
 }
 
 // ---------------------------------------------------------------------------
@@ -263,7 +275,9 @@ export function evaluateTarget(
   values: TextTargetValues,
   target: TextTarget,
   floor: NeedleFloor,
-  corpus?: TextCorpus
+  corpus?: TextCorpus,
+  /** Overrides the target's own steps; set by `scoreText` from the config flag. */
+  steps: TextPreprocessStep[] = target.preprocess
 ): TextEvaluation {
   const statementText = normalizeForCompare(statementDescription);
   if (!statementText) {
@@ -274,7 +288,7 @@ export function evaluateTarget(
   }
 
   const rawValue = values[target.field];
-  const value = rawValue ? applyPreprocess(rawValue, target.preprocess) : "";
+  const value = rawValue ? applyPreprocess(rawValue, steps) : "";
   if (!normalizeForCompare(value)) {
     return {
       similarity: null,
@@ -332,7 +346,15 @@ export function scoreText(
   let best: { similarity: number; field: TextTargetField } | null = null;
 
   for (const target of enabled) {
-    const evaluation = evaluateTarget(statementDescription, values, target, floor, corpus);
+    // The tag rule is a single user-facing switch, so it wins over whatever the
+    // individual target was configured with.
+    const steps: TextPreprocessStep[] =
+      target.field === "notes" && config.ignoreTagsInNotes
+        ? ["strip-tags"]
+        : target.field === "notes"
+          ? []
+          : target.preprocess;
+    const evaluation = evaluateTarget(statementDescription, values, target, floor, corpus, steps);
     reasons.push(...evaluation.reasons);
     if (evaluation.similarity === null) continue;
 

@@ -96,21 +96,38 @@ function pinByImportedId(rows: StatementRow[], index: ActualIndex): MatchOutcome
 }
 
 /**
- * Candidate generation: one hash lookup on the exact signed amount, then a
- * binary-searched date slice. Text is never consulted here — it only ranks
- * candidates that are already financially plausible (RD-071 D9).
+ * Candidate generation: hash lookups on exact amounts, then a binary-searched
+ * date slice. Text is never consulted here — it only ranks candidates that are
+ * already financially plausible (RD-071 D9).
+ *
+ * Two amounts are looked up, both exact:
+ *
+ * 1. the **posted** amount;
+ * 2. the **original-currency** amount, when the bank printed one in the
+ *    description. A foreign card purchase posts as a converted figure, while an
+ *    SMS/automation-created transaction in Actual usually carries the original
+ *    amount — so the posted figure never matches, but the original one matches
+ *    exactly. This is not a tolerance: it is an exact match against a second
+ *    amount the bank itself stated. Scoring keeps it a weaker tier and requires
+ *    text corroboration (see `score.ts`).
  */
 function candidatesFor(
   row: StatementRow,
   index: ActualIndex,
   config: MatchConfig
 ): ActualTransactionSnapshot[] {
-  return amountDateSlice(
-    index,
-    row.amount,
-    shiftDate(row.postedDate, -config.dateToleranceDays),
-    shiftDate(row.postedDate, config.dateToleranceDays)
+  const from = shiftDate(row.postedDate, -config.dateToleranceDays);
+  const to = shiftDate(row.postedDate, config.dateToleranceDays);
+
+  const posted = amountDateSlice(index, row.amount, from, to);
+  if (!config.matchOriginalCurrencyAmount || row.originalAmount == null) return posted;
+  if (row.originalAmount === row.amount) return posted;
+
+  const seen = new Set(posted.map((transaction) => transaction.id));
+  const original = amountDateSlice(index, row.originalAmount, from, to).filter(
+    (transaction) => !seen.has(transaction.id)
   );
+  return [...posted, ...original];
 }
 
 /** Shift an ISO `YYYY-MM-DD` date by whole days, staying in UTC. */

@@ -1,0 +1,297 @@
+/**
+ * Regression fixtures taken from a real credit-card reconciliation that matched
+ * 0 of 219 rows before these defects were fixed (RD-071, 2026-08-10).
+ *
+ * Each case here is a shape that occurs in genuine bank/automation data and that
+ * the first implementation got wrong. They are deliberately concrete: the value
+ * of a fixture like this is that it fails loudly if a scoring tweak regresses it.
+ */
+
+import { DEFAULT_MATCH_CONFIG, TEXT_TARGET_PRESETS } from "./config";
+import { match } from "./matcher";
+import { parseStatementText } from "../statement/parse";
+import {
+  detectColumnMapping,
+  extractOriginalAmount,
+  normalizeStatement,
+} from "../statement/normalize";
+import type { ActualTransactionSnapshot, StatementRow } from "../types";
+
+function txn(
+  overrides: Partial<ActualTransactionSnapshot> & Pick<ActualTransactionSnapshot, "id">
+): ActualTransactionSnapshot {
+  return {
+    accountId: "acct-1",
+    date: "2026-07-07",
+    amount: -14137,
+    payeeId: null,
+    payeeName: null,
+    importedPayee: null,
+    categoryId: null,
+    categoryName: null,
+    notes: null,
+    cleared: true,
+    reconciled: false,
+    importedId: null,
+    transferId: null,
+    scheduleId: null,
+    isParent: false,
+    isChild: false,
+    parentId: null,
+    splitLines: [],
+    ...overrides,
+  };
+}
+
+function parse(text: string): StatementRow[] {
+  const table = parseStatementText(text);
+  let counter = 0;
+  return normalizeStatement(table, detectColumnMapping(table), () => `s${++counter}`).rows;
+}
+
+describe("debit/credit statements (the 0% defect)", () => {
+  // The bank exports Date/Description/Debit/Credit, with spend as a positive
+  // number in Debit. Mapping Debit as a signed amount produces +141.37 for money
+  // that left the account. Since automatic matching requires the exact *signed*
+  // amount, every row then fails — 0 of 219 matched.
+  const STATEMENT = [
+    "Date\tDescription\tDebit\tCredit",
+    "07/07/2026\tADNOC AL CORNICHE 933 ABUDHABI UAE\t141.37\t0",
+    "20/07/2026\tCASHBACK RECEIVED\t0\t342.00",
+  ].join("\n");
+
+  it("detects a debit/credit layout from its headers", () => {
+    const mapping = detectColumnMapping(parseStatementText(STATEMENT));
+    expect(mapping.signConvention).toBe("debit-credit");
+    expect(mapping.debit).toBe(2);
+    expect(mapping.credit).toBe(3);
+  });
+
+  it("signs debits negative and credits positive", () => {
+    const rows = parse(STATEMENT);
+    expect(rows.map((row) => row.amount)).toEqual([-14137, 34200]);
+  });
+
+  it("detects the layout without usable headers, from the data shape", () => {
+    // Two numeric columns where each row fills exactly one of them.
+    const mapping = detectColumnMapping(
+      parseStatementText(
+        [
+          "07/07/2026\tADNOC AL CORNICHE 933\t141.37\t0",
+          "08/07/2026\tDU Apple Pay DUBAI ARE\t350.20\t0",
+          "20/07/2026\tCASHBACK RECEIVED\t0\t342.00",
+        ].join("\n")
+      )
+    );
+    expect(mapping.signConvention).toBe("debit-credit");
+  });
+
+  it("still reads a genuinely signed single-amount statement", () => {
+    const mapping = detectColumnMapping(
+      parseStatementText(
+        ["Date,Description,Amount", "2026-07-01,CARREFOUR,-342.85", "2026-07-03,REFUND,50.00"].join(
+          "\n"
+        )
+      )
+    );
+    expect(mapping.signConvention).toBe("signed");
+    expect(mapping.amount).toBe(2);
+  });
+
+  it("matches once the layout is read correctly", () => {
+    const rows = parse(STATEMENT);
+    const graph = match({
+      statementRows: rows,
+      actualTransactions: [
+        txn({ id: "t1", notes: "#API ADNOC AL CORNICHE 933", payeeName: "ADNOC Fuel Station" }),
+      ],
+      config: DEFAULT_MATCH_CONFIG,
+    });
+
+    expect(graph.matched).toHaveLength(1);
+    expect(graph.matched[0].actualTransactionId).toBe("t1");
+  });
+});
+
+describe("notes shorter than the statement text", () => {
+  // Automation captures a truncated merchant name; the statement adds location
+  // and country tokens. A one-directional containment test scored this 0.67 and
+  // lost the text evidence entirely.
+  it("treats a truncated note as a full text match", () => {
+    const rows = parse(
+      ["Date\tDescription\tDebit\tCredit", "07/07/2026\tADNOC AL CORNICHE 933 ABUDHABI UAE\t141.37\t0"].join(
+        "\n"
+      )
+    );
+
+    const graph = match({
+      statementRows: rows,
+      actualTransactions: [txn({ id: "t1", notes: "#API ADNOC AL CORNICHE 933" })],
+      config: DEFAULT_MATCH_CONFIG,
+    });
+
+    expect(graph.matched[0].reasons).toContainEqual({
+      kind: "text",
+      field: "notes",
+      mode: "containment",
+      similarity: 1,
+    });
+    expect(graph.matched[0].label).toBe("high");
+  });
+
+  it("ignores the automation tag in the note by default", () => {
+    const rows = parse(
+      ["Date\tDescription\tDebit\tCredit", "07/07/2026\tPK MART FZ LLC DUBAI ARE\t8\t0"].join("\n")
+    );
+
+    const withTagIgnored = match({
+      statementRows: rows,
+      actualTransactions: [txn({ id: "t1", amount: -800, notes: "#API PK MART FZ LLC" })],
+      config: DEFAULT_MATCH_CONFIG,
+    });
+    expect(withTagIgnored.matched[0].reasons).toContainEqual(
+      expect.objectContaining({ kind: "text", field: "notes", similarity: 1 })
+    );
+
+    const withTagKept = match({
+      statementRows: rows,
+      actualTransactions: [txn({ id: "t1", amount: -800, notes: "#API PK MART FZ LLC" })],
+      config: {
+        ...DEFAULT_MATCH_CONFIG,
+        text: { ...DEFAULT_MATCH_CONFIG.text, ignoreTagsInNotes: false },
+      },
+    });
+    // Still matches on amount+date, but the tag dilutes the text evidence.
+    const kept = withTagKept.matched[0].reasons.find(
+      (reason) => reason.kind === "text" && reason.field === "notes"
+    );
+    expect(kept && kept.kind === "text" ? kept.similarity : 1).toBeLessThan(1);
+  });
+});
+
+describe("foreign-currency transactions", () => {
+  // A card purchase abroad posts a converted amount, while the SMS-created
+  // transaction in Actual carries the original amount. The posted figures never
+  // agree — but the bank prints the original amount in the description, so it can
+  // be matched exactly rather than with a tolerance.
+  const STATEMENT = [
+    "Date\tDescription\tDebit\tCredit",
+    "16/07/2026\tALDAWAA PHARMACY 060 KHOBAR SAU SAR225.70\t229.71\t0",
+  ].join("\n");
+
+  it("extracts the original-currency amount from the description", () => {
+    expect(extractOriginalAmount("ALDAWAA PHARMACY 060 KHOBAR SAU SAR225.70")).toEqual({
+      currency: "SAR",
+      amount: 22570,
+    });
+    expect(extractOriginalAmount("AIRALO AMSTERDAM NH USD24.50")).toEqual({
+      currency: "USD",
+      amount: 2450,
+    });
+    expect(extractOriginalAmount("PK MART FZ LLC DUBAI ARE")).toBeNull();
+  });
+
+  it("signs the original amount like the posted amount", () => {
+    const [row] = parse(STATEMENT);
+    expect(row.amount).toBe(-22971);
+    expect(row.originalAmount).toBe(-22570);
+    expect(row.originalCurrency).toBe("SAR");
+  });
+
+  it("matches on the original amount when the posted amount cannot", () => {
+    const graph = match({
+      statementRows: parse(STATEMENT),
+      actualTransactions: [
+        txn({ id: "t1", date: "2026-07-16", amount: -22570, notes: "#API ALDAWAA PHARMACY 060" }),
+      ],
+      config: DEFAULT_MATCH_CONFIG,
+    });
+
+    expect(graph.matched).toHaveLength(1);
+    expect(graph.matched[0].tier).toBe("original-amount-text");
+    expect(graph.matched[0].reasons).toContainEqual({
+      kind: "original-amount",
+      currency: "SAR",
+      amount: -22570,
+      postedAmount: -22971,
+    });
+  });
+
+  it("refuses an original-amount match with no text corroboration", () => {
+    // A "VAT ON SERVICE CHARGES SAR122.94" fee row repeats the *purchase's*
+    // original amount in its own description. Without the text floor it would
+    // claim the purchase's transaction.
+    const graph = match({
+      statementRows: parse(
+        [
+          "Date\tDescription\tDebit\tCredit",
+          "16/07/2026\tVAT ON SERVICE CHARGES SAR122.94\t0.24\t0",
+        ].join("\n")
+      ),
+      actualTransactions: [
+        txn({ id: "t1", date: "2026-07-16", amount: -12294, notes: "#API S103 TAMIMI MARKETS" }),
+      ],
+      config: DEFAULT_MATCH_CONFIG,
+    });
+
+    expect(graph.matched).toHaveLength(0);
+  });
+
+  it("lets the real purchase win over the VAT row competing for the same transaction", () => {
+    const graph = match({
+      statementRows: parse(
+        [
+          "Date\tDescription\tDebit\tCredit",
+          "16/07/2026\tS103 TAMIMI MARKETS KHOBAR SAU SAR122.94\t125.10\t0",
+          "16/07/2026\tVAT ON SERVICE CHARGES SAR122.94\t0.24\t0",
+        ].join("\n")
+      ),
+      actualTransactions: [
+        txn({ id: "t1", date: "2026-07-16", amount: -12294, notes: "#API S103 TAMIMI MARKETS" }),
+      ],
+      config: DEFAULT_MATCH_CONFIG,
+    });
+
+    expect(graph.matched).toHaveLength(1);
+    // The purchase claims it; the VAT row is left for the user to create.
+    expect(graph.unmatchedStatementRowIds).toHaveLength(1);
+  });
+
+  it("does not match when neither the posted nor the original amount agrees", () => {
+    // The automation captured a third figure (a pre-markup conversion). Text is
+    // strong, but the exact-amount gate holds: this is a conflict for the user,
+    // not an automatic match.
+    const graph = match({
+      statementRows: parse(
+        ["Date\tDescription\tDebit\tCredit", "14/07/2026\tAIRALO AMSTERDAM NH USD24.50\t93.62\t0"].join(
+          "\n"
+        )
+      ),
+      actualTransactions: [
+        txn({ id: "t1", date: "2026-07-14", amount: -9007, notes: "#API AIRALO" }),
+      ],
+      config: DEFAULT_MATCH_CONFIG,
+    });
+
+    expect(graph.matched).toHaveLength(0);
+    expect(graph.unmatchedStatementRowIds).toHaveLength(1);
+  });
+});
+
+describe("profile presets on this data shape", () => {
+  it("matches with the notes preset when the payee is unhelpful", () => {
+    const graph = match({
+      statementRows: parse(
+        ["Date\tDescription\tDebit\tCredit", "09/07/2026\tROYAL CATERING SERVICE ABU DHABI UAE\t18\t0"].join(
+          "\n"
+        )
+      ),
+      actualTransactions: [
+        txn({ id: "t1", date: "2026-07-09", amount: -1800, payeeName: null, notes: "#API ROYAL CATERING SERVICE" }),
+      ],
+      config: { ...DEFAULT_MATCH_CONFIG, text: TEXT_TARGET_PRESETS.notes },
+    });
+
+    expect(graph.matched).toHaveLength(1);
+  });
+});

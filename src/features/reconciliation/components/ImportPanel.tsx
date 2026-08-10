@@ -8,14 +8,16 @@ import { CSV_MAX_BYTES } from "@/lib/csv";
 import { generateId } from "@/lib/uuid";
 import { parseStatementText } from "@/lib/reconciliation/statement/parse";
 import {
-  DEFAULT_MAPPING,
-  detectDateFormat,
+  detectColumnMapping,
   normalizeStatement,
   type ColumnMapping,
   type NormalizedStatement,
   type SignConvention,
   type StatementDateFormat,
 } from "@/lib/reconciliation/statement/normalize";
+import type { MatchConfig } from "@/lib/reconciliation/types";
+import type { TextTargetPreset } from "@/lib/reconciliation/match/config";
+import { MatchOptions } from "./MatchOptions";
 import { formatMinorUnits } from "../lib/format";
 
 /**
@@ -78,12 +80,23 @@ function ColumnSelect({ id, label, value, columns, onChange, optional }: ColumnS
 
 export type ImportPanelProps = {
   accountName: string;
+  matchConfig: MatchConfig;
+  matchPreset: TextTargetPreset;
+  onMatchConfigChange: (preset: TextTargetPreset, config: MatchConfig) => void;
   onCancel: () => void;
   onParsed: (result: NormalizedStatement, statementName: string | null) => void;
   isSaving?: boolean;
 };
 
-export function ImportPanel({ accountName, onCancel, onParsed, isSaving }: ImportPanelProps) {
+export function ImportPanel({
+  accountName,
+  matchConfig,
+  matchPreset,
+  onMatchConfigChange,
+  onCancel,
+  onParsed,
+  isSaving,
+}: ImportPanelProps) {
   const [text, setText] = useState("");
   const [fileName, setFileName] = useState<string | null>(null);
   const [fileError, setFileError] = useState<string | null>(null);
@@ -97,21 +110,12 @@ export function ImportPanel({ accountName, onCancel, onParsed, isSaving }: Impor
     return Array.from({ length: width }, (_, index) => table.headers?.[index] || `Column ${index + 1}`);
   }, [table]);
 
-  // Seed the mapping from the parsed shape the first time a table appears, so
-  // the common "Date, Description, Amount" layout needs no configuration.
+  // Seed the mapping by detection the first time a table appears. Getting the
+  // debit/credit case wrong here signs every outflow positive, and since
+  // matching requires the exact signed amount, nothing would match at all.
   const effectiveMapping = useMemo<ColumnMapping | null>(() => {
     if (!table || columns.length === 0) return null;
-    if (mapping) return mapping;
-
-    const dateIndex = 0;
-    const samples = table.rows.slice(0, 20).map((row) => row[dateIndex] ?? "");
-    return {
-      ...DEFAULT_MAPPING,
-      date: dateIndex,
-      description: Math.min(1, columns.length - 1),
-      amount: columns.length > 2 ? 2 : undefined,
-      dateFormat: detectDateFormat(samples),
-    };
+    return mapping ?? detectColumnMapping(table);
   }, [table, columns, mapping]);
 
   const parsed = useMemo(() => {
@@ -301,6 +305,12 @@ export function ImportPanel({ accountName, onCancel, onParsed, isSaving }: Impor
               </div>
             </div>
           </div>
+
+          <MatchOptions
+            config={matchConfig}
+            preset={matchPreset}
+            onChange={onMatchConfigChange}
+          />
 
           {parsed && (
             <div className="rounded-md border border-border/60">
