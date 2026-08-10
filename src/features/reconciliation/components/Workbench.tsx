@@ -14,6 +14,9 @@ import type {
   StatementRow,
 } from "@/lib/reconciliation/types";
 import type { TextTargetPreset } from "@/lib/reconciliation/match/config";
+import type { StageableField } from "@/lib/reconciliation/session/staging";
+import type { ReconciliationDisposition } from "@/lib/reconciliation/types";
+import type { Option } from "./StagedFields";
 import { CoverageSummary } from "./CoverageSummary";
 import { Inspector } from "./Inspector";
 import { MatchOptions } from "./MatchOptions";
@@ -129,8 +132,15 @@ export type WorkbenchProps = {
   matchPreset: TextTargetPreset;
   isMatching: boolean;
   canRematch: boolean;
+  payees: Option[];
+  categories: Option[];
   onMatchConfigChange: (preset: TextTargetPreset, config: MatchConfig) => void;
   onRematch: () => void;
+  onDisposition: (itemId: string, disposition: ReconciliationDisposition) => void;
+  onUseCandidate: (itemId: string, transactionId: string) => void;
+  onCorrectAmount: (itemId: string, transactionId: string, amount: number) => void;
+  onStage: (itemId: string, field: StageableField, value: string | null) => void;
+  onUnstage: (itemId: string, field: StageableField) => void;
 };
 
 function FilterButton({
@@ -177,8 +187,15 @@ export function Workbench({
   matchPreset,
   isMatching,
   canRematch,
+  payees,
+  categories,
   onMatchConfigChange,
   onRematch,
+  onDisposition,
+  onUseCandidate,
+  onCorrectAmount,
+  onStage,
+  onUnstage,
 }: WorkbenchProps) {
   const [filter, setFilter] = useState<FilterId>("all");
   const [search, setSearch] = useState("");
@@ -422,7 +439,16 @@ export function Workbench({
             transactions={selected.actualTransactionIds
               .map((id) => transactions.get(id))
               .filter((t): t is ActualTransactionSnapshot => Boolean(t))}
+            payees={payees}
+            categories={categories}
             onClose={() => setSelectedId(null)}
+            onDisposition={(disposition) => onDisposition(selected.id, disposition)}
+            onUseCandidate={(transactionId) => onUseCandidate(selected.id, transactionId)}
+            onCorrectAmount={(transactionId, amount) =>
+              onCorrectAmount(selected.id, transactionId, amount)
+            }
+            onStage={(field, value) => onStage(selected.id, field, value)}
+            onUnstage={(field) => onUnstage(selected.id, field)}
           />
         )}
       </div>

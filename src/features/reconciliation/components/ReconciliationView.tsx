@@ -25,6 +25,14 @@ import type {
   StatementRow,
 } from "@/lib/reconciliation/types";
 import { useStagedStore } from "@/store/staged";
+import { usePayees } from "@/features/payees/hooks/usePayees";
+import { useCategoryGroups } from "@/features/categories/hooks/useCategoryGroups";
+import {
+  stageField,
+  unstageField,
+  type StageableField,
+} from "@/lib/reconciliation/session/staging";
+import type { ReconciliationDisposition } from "@/lib/reconciliation/types";
 import { useConnectionStore, selectActiveInstance } from "@/store/connection";
 import { useAccounts } from "@/features/accounts/hooks/useAccounts";
 import { loadCandidateWindow } from "../lib/loadCandidates";
@@ -58,6 +66,11 @@ export function ReconciliationView() {
   const connection = useConnectionStore(selectActiveInstance);
   useAccounts();
   const accounts = useStagedStore((state) => state.accounts);
+
+  usePayees();
+  useCategoryGroups();
+  const stagedPayees = useStagedStore((state) => state.payees);
+  const stagedCategories = useStagedStore((state) => state.categories);
 
   const sessionsQuery = useReconciliationSessions();
   const mutations = useReconciliationMutations();
@@ -174,6 +187,24 @@ export function ReconciliationView() {
   const transactionsById = useMemo(
     () => new Map(snapshot.map((transaction) => [transaction.id, transaction])),
     [snapshot]
+  );
+
+  const payeeOptions = useMemo(
+    () =>
+      Object.values(stagedPayees)
+        .filter((staged) => !staged.isDeleted)
+        .map((staged) => ({ id: staged.entity.id, name: staged.entity.name }))
+        .sort((a, b) => a.name.localeCompare(b.name)),
+    [stagedPayees]
+  );
+
+  const categoryOptions = useMemo(
+    () =>
+      Object.values(stagedCategories)
+        .filter((staged) => !staged.isDeleted)
+        .map((staged) => ({ id: staged.entity.id, name: staged.entity.name }))
+        .sort((a, b) => a.name.localeCompare(b.name)),
+    [stagedCategories]
   );
 
   const coverage = useMemo(
@@ -307,6 +338,130 @@ export function ReconciliationView() {
     }
   }
 
+  /**
+   * Apply a change to one item, in memory and in the database.
+   *
+   * Updated locally first so the workbench responds immediately, then persisted;
+   * a decision the user can see but that was never saved is worse than a slow
+   * one, so a failed write surfaces rather than being swallowed.
+   */
+  function updateItem(
+    itemId: string,
+    change: (item: ReconciliationItem) => ReconciliationItem
+  ) {
+    const current = items.find((entry) => entry.id === itemId);
+    if (!current) return;
+    const next = change(current);
+
+    setItems((previous) => previous.map((entry) => (entry.id === itemId ? next : entry)));
+
+    void mutations.patchItem
+      .mutateAsync({
+        id: itemId,
+        sessionId: sessionId ?? "",
+        payload: {
+          disposition: next.disposition,
+          reasonCode: next.reasonCode ?? null,
+          actualTransactionIds: next.actualTransactionIds,
+          stagedChanges: next.stagedChanges ?? null,
+          match: next.match,
+        },
+      })
+      .catch((error: unknown) => {
+        setMatchError(
+          error instanceof Error ? error.message : "Could not save that decision"
+        );
+      });
+  }
+
+  function snapshotFor(item: ReconciliationItem): ActualTransactionSnapshot | undefined {
+    return transactionsById.get(item.actualTransactionIds[0] ?? "");
+  }
+
+  function handleDisposition(itemId: string, disposition: ReconciliationDisposition) {
+    updateItem(itemId, (item) => ({
+      ...item,
+      disposition,
+      // Returning a row to undecided drops what was staged for it: keeping edits
+      // attached to a decision the user withdrew would apply them by surprise.
+      stagedChanges: disposition === "unresolved" ? undefined : item.stagedChanges,
+    }));
+  }
+
+  /** Pick one of several competing candidates. A manual choice, recorded as one. */
+  function handleUseCandidate(itemId: string, transactionId: string) {
+    updateItem(itemId, (item) => ({
+      ...item,
+      actualTransactionIds: [transactionId],
+      disposition: "matched",
+      reasonCode: undefined,
+      match: {
+        type: "manual",
+        evidenceSource: "manual",
+        label: "exact",
+        reasons: [],
+      },
+    }));
+  }
+
+  function handleCorrectAmount(itemId: string, transactionId: string, amount: number) {
+    updateItem(itemId, (item) => {
+      const snapshot = transactionsById.get(transactionId);
+      if (!snapshot) return item;
+      const { patch } = stageField({
+        patch: item.stagedChanges,
+        field: "amount",
+        original: snapshot.amount,
+        next: amount,
+        source: "manual",
+      });
+      return {
+        ...item,
+        actualTransactionIds: [transactionId],
+        disposition: "correct-amount",
+        stagedChanges: patch,
+      };
+    });
+  }
+
+  function handleStage(itemId: string, field: StageableField, value: string | null) {
+    updateItem(itemId, (item) => {
+      const snapshot = snapshotFor(item);
+      const original =
+        field === "payeeId"
+          ? snapshot?.payeeId ?? null
+          : field === "categoryId"
+            ? snapshot?.categoryId ?? null
+            : field === "notes"
+              ? snapshot?.notes ?? null
+              : snapshot?.date ?? null;
+
+      const { patch } = stageField({
+        patch: item.stagedChanges,
+        field,
+        original,
+        next: value,
+        source: "manual",
+      });
+      return { ...item, stagedChanges: patch };
+    });
+  }
+
+  function handleUnstage(itemId: string, field: StageableField) {
+    updateItem(itemId, (item) => {
+      const patch = unstageField(item.stagedChanges, field);
+      return {
+        ...item,
+        stagedChanges: Object.keys(patch).length > 0 ? patch : undefined,
+        // Withdrawing the amount change withdraws the decision it was made for.
+        disposition:
+          field === "amount" && item.disposition === "correct-amount"
+            ? "unresolved"
+            : item.disposition,
+      };
+    });
+  }
+
   async function handleParsed(result: NormalizedStatement, fileName: string | null) {
     if (screen.name !== "import" || !result.period) return;
     await runMatch({
@@ -398,6 +553,13 @@ export function ReconciliationView() {
           matchPreset={matchPreset}
           isMatching={isMatching}
           canRematch={canRematch}
+          payees={payeeOptions}
+          categories={categoryOptions}
+          onDisposition={handleDisposition}
+          onUseCandidate={handleUseCandidate}
+          onCorrectAmount={handleCorrectAmount}
+          onStage={handleStage}
+          onUnstage={handleUnstage}
           onMatchConfigChange={(preset, config) => {
             setMatchPreset(preset);
             setMatchConfig(config);

@@ -7,6 +7,10 @@ import type {
   ReconciliationItem,
   StatementRow,
 } from "@/lib/reconciliation/types";
+import type { StageableField } from "@/lib/reconciliation/session/staging";
+import type { ReconciliationDisposition } from "@/lib/reconciliation/types";
+import { ItemActions } from "./ItemActions";
+import { StagedFields, type Option } from "./StagedFields";
 import { confidenceLabelText, describeReason, formatMinorUnits } from "../lib/format";
 
 /**
@@ -30,10 +34,29 @@ export type InspectorProps = {
   item: ReconciliationItem;
   statementRow: StatementRow | undefined;
   transactions: ActualTransactionSnapshot[];
+  payees: Option[];
+  categories: Option[];
   onClose: () => void;
+  onDisposition: (disposition: ReconciliationDisposition) => void;
+  onUseCandidate: (transactionId: string) => void;
+  onCorrectAmount: (transactionId: string, amount: number) => void;
+  onStage: (field: StageableField, value: string | null) => void;
+  onUnstage: (field: StageableField) => void;
 };
 
-export function Inspector({ item, statementRow, transactions, onClose }: InspectorProps) {
+export function Inspector({
+  item,
+  statementRow,
+  transactions,
+  payees,
+  categories,
+  onClose,
+  onDisposition,
+  onUseCandidate,
+  onCorrectAmount,
+  onStage,
+  onUnstage,
+}: InspectorProps) {
   const primary = transactions[0];
   const reasons = item.match?.reasons ?? [];
 
@@ -109,6 +132,34 @@ export function Inspector({ item, statementRow, transactions, onClose }: Inspect
             ))}
           </ul>
         </section>
+      )}
+
+      <ItemActions
+        item={item}
+        statementRow={statementRow}
+        transactions={transactions}
+        onDisposition={onDisposition}
+        onUseCandidate={onUseCandidate}
+        onCorrectAmount={onCorrectAmount}
+      />
+
+      {/* Editing is offered once the row is about a specific transaction, or is
+          going to become one. Until then there is nothing to edit. */}
+      {(item.disposition === "create" ||
+        item.disposition === "matched" ||
+        item.disposition === "correct-amount") && (
+        <StagedFields
+          item={item}
+          current={{
+            payeeId: primary?.payeeId ?? null,
+            categoryId: primary?.categoryId ?? null,
+            notes: primary?.notes ?? null,
+          }}
+          payees={payees}
+          categories={categories}
+          onStage={onStage}
+          onUnstage={onUnstage}
+        />
       )}
 
       {(item.guards.protectedReconciled ||
