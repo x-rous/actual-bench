@@ -194,6 +194,15 @@ export type UpdateTransactionForSyncInput = {
   categoryId?: string | null;
   notes?: string | null;
   cleared?: boolean;
+  /**
+   * Read the row back after writing and return its persisted fields.
+   *
+   * Defaults to true, which Budget File Sync relies on to refresh its mapping
+   * fingerprint. A caller that ignores the result should pass false: the
+   * read-back is a range query per update, and doing it for a discarded value
+   * is the difference between a fast reconciliation and a ten-minute one.
+   */
+  returnApplied?: boolean;
 };
 
 /**

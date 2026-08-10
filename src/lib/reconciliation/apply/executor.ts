@@ -11,9 +11,14 @@
  * 3. **Keep going where it is safe to.** One failure does not abandon the rest,
  *    but it is never hidden either.
  *
- * Writes are issued one at a time rather than in parallel: the Direct transport
- * serialises writes anyway, and a stable order makes a partial failure
- * intelligible ("stopped after 12 of 18") instead of arbitrary.
+ * Updates and deletes are issued one at a time rather than in parallel: the
+ * Direct transport serialises writes anyway, and a stable order makes a partial
+ * failure intelligible ("stopped after 12 of 18") instead of arbitrary.
+ *
+ * Creates are the exception. The transport resolves every payee in the budget
+ * once per call and reads the account back once to recover the new ids, so
+ * calling it per transaction repeats that work for every row. They are sent as
+ * one batch instead.
  */
 
 import type { ReconciliationTransport } from "../ports";
@@ -21,6 +26,7 @@ import type { StagedPatch } from "../types";
 import type {
   ApplyOperation,
   ApplyPlan,
+  CreateOperation,
   OperationResult,
 } from "./operations";
 
@@ -68,26 +74,85 @@ export async function executeApplyPlan(input: ApplyExecutorInput): Promise<Apply
   const results: OperationResult[] = [];
   let completed = 0;
 
+  // Creates first, in one call. Anything already done — recorded as applied, or
+  // recognisable by its marker in the account — is settled here rather than
+  // sent again.
+  const createResults = new Map<string, OperationResult>();
+  const pendingCreates: CreateOperation[] = [];
+
+  for (const operation of plan.operations) {
+    if (operation.kind !== "create") continue;
+    const previous = alreadyApplied.get(operation.id);
+    if (previous) {
+      createResults.set(operation.id, previous);
+      continue;
+    }
+    if (existingMarkers.has(operation.marker)) {
+      createResults.set(operation.id, {
+        operationId: operation.id,
+        status: "skipped",
+        skippedBecause: "This transaction was already created by an earlier attempt.",
+      });
+      continue;
+    }
+    pendingCreates.push(operation);
+  }
+
+  if (pendingCreates.length > 0) {
+    try {
+      const created = await transport.createTransactions(
+        pendingCreates.map((operation) => ({
+          accountId: operation.accountId,
+          date: operation.date,
+          amount: operation.amount,
+          payeeId: operation.payeeId,
+          payeeName: operation.payeeName,
+          categoryId: operation.categoryId,
+          notes: operation.notes,
+          cleared: operation.cleared,
+          importedId: operation.marker,
+        }))
+      );
+
+      const byIndex = new Map(created.map((entry) => [entry.requestIndex, entry]));
+      pendingCreates.forEach((operation, index) => {
+        createResults.set(operation.id, {
+          operationId: operation.id,
+          status: "applied",
+          transactionId: byIndex.get(index)?.transactionId ?? null,
+        });
+      });
+    } catch (error) {
+      // One call, so one outcome: every create in the batch failed together,
+      // and each is reported as such rather than left unexplained.
+      const message = error instanceof Error ? error.message : String(error);
+      for (const operation of pendingCreates) {
+        createResults.set(operation.id, {
+          operationId: operation.id,
+          status: "failed",
+          error: message,
+        });
+      }
+    }
+  }
+
   for (const operation of plan.operations) {
     input.onProgress?.({ completed, total: plan.operations.length, operation });
     completed += 1;
+
+    // Creates were settled in the batch above.
+    const batched = createResults.get(operation.id);
+    if (batched) {
+      results.push(batched);
+      await input.onResult?.(batched);
+      continue;
+    }
 
     // Re-running a session that partly succeeded: keep the earlier outcome
     // rather than issuing the write again.
     const previous = alreadyApplied.get(operation.id);
     if (previous) {
       results.push(previous);
-      continue;
-    }
-
-    if (operation.kind === "create" && existingMarkers.has(operation.marker)) {
-      const result: OperationResult = {
-        operationId: operation.id,
-        status: "skipped",
-        skippedBecause: "This transaction was already created by an earlier attempt.",
-      };
-      results.push(result);
-      await input.onResult?.(result);
       continue;
     }
 
@@ -117,26 +182,9 @@ async function runOperation(
 ): Promise<OperationResult> {
   try {
     switch (operation.kind) {
-      case "create": {
-        const [created] = await transport.createTransactions([
-          {
-            accountId: operation.accountId,
-            date: operation.date,
-            amount: operation.amount,
-            payeeId: operation.payeeId,
-            payeeName: operation.payeeName,
-            categoryId: operation.categoryId,
-            notes: operation.notes,
-            cleared: operation.cleared,
-            importedId: operation.marker,
-          },
-        ]);
-        return {
-          operationId: operation.id,
-          status: "applied",
-          transactionId: created?.transactionId ?? null,
-        };
-      }
+      case "create":
+        // Handled as a batch before the sequential pass.
+        return { operationId: operation.id, status: "skipped", skippedBecause: "Already handled" };
 
       case "update": {
         await transport.updateTransaction({

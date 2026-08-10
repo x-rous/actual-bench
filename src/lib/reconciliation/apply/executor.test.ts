@@ -270,3 +270,107 @@ describe("an empty plan", () => {
     expect(transport.createTransactions).not.toHaveBeenCalled();
   });
 });
+
+describe("creates are sent as one batch", () => {
+  const secondCreate: ApplyOperation = {
+    ...CREATE,
+    id: "create:i9",
+    itemId: "i9",
+    statementRowId: "s9",
+    marker: "recon:def",
+  };
+
+  it("issues a single call for many creates", async () => {
+    // The transport resolves every payee in the budget once per call and reads
+    // the account back to recover ids, so one call per row repeats that work
+    // for every row — the difference between seconds and minutes.
+    const transport = fakeTransport({
+      createTransactions: jest.fn().mockResolvedValue([
+        { requestIndex: 0, transactionId: "new-1", importedId: "recon:abc" },
+        { requestIndex: 1, transactionId: "new-2", importedId: "recon:def" },
+      ]),
+    });
+
+    const result = await executeApplyPlan({
+      plan: planOf([CREATE, secondCreate]),
+      transport,
+    });
+
+    expect(transport.createTransactions).toHaveBeenCalledTimes(1);
+    expect((transport.createTransactions as jest.Mock).mock.calls[0][0]).toHaveLength(2);
+    expect(result.applied).toBe(2);
+  });
+
+  it("maps each created id back to the operation that asked for it", async () => {
+    const transport = fakeTransport({
+      createTransactions: jest.fn().mockResolvedValue([
+        { requestIndex: 0, transactionId: "new-1", importedId: "recon:abc" },
+        { requestIndex: 1, transactionId: "new-2", importedId: "recon:def" },
+      ]),
+    });
+
+    const result = await executeApplyPlan({
+      plan: planOf([CREATE, secondCreate]),
+      transport,
+    });
+
+    const byOperation = new Map(result.results.map((entry) => [entry.operationId, entry]));
+    expect(byOperation.get("create:i1")?.transactionId).toBe("new-1");
+    expect(byOperation.get("create:i9")?.transactionId).toBe("new-2");
+  });
+
+  it("leaves an already-created row out of the batch", async () => {
+    const transport = fakeTransport({
+      createTransactions: jest
+        .fn()
+        .mockResolvedValue([{ requestIndex: 0, transactionId: "new-2", importedId: "recon:def" }]),
+    });
+
+    const result = await executeApplyPlan({
+      plan: planOf([CREATE, secondCreate]),
+      transport,
+      existingMarkers: new Set(["recon:abc"]),
+    });
+
+    expect((transport.createTransactions as jest.Mock).mock.calls[0][0]).toHaveLength(1);
+    expect(result.skipped).toBe(1);
+    expect(result.applied).toBe(1);
+  });
+
+  it("reports every create as failed when the batch fails", async () => {
+    // One call means one outcome; each is still reported rather than left
+    // unexplained.
+    const transport = fakeTransport({
+      createTransactions: jest.fn().mockRejectedValue(new Error("server said no")),
+    });
+
+    const result = await executeApplyPlan({
+      plan: planOf([CREATE, secondCreate, DELETE]),
+      transport,
+    });
+
+    expect(result.failed).toBe(2);
+    // The delete still ran.
+    expect(transport.deleteTransaction).toHaveBeenCalledTimes(1);
+    expect(result.applied).toBe(1);
+  });
+
+  it("still reports results in plan order", async () => {
+    const transport = fakeTransport({
+      createTransactions: jest
+        .fn()
+        .mockResolvedValue([{ requestIndex: 0, transactionId: "new-1", importedId: "recon:abc" }]),
+    });
+
+    const result = await executeApplyPlan({
+      plan: planOf([UPDATE, CREATE, DELETE]),
+      transport,
+    });
+
+    expect(result.results.map((entry) => entry.operationId)).toEqual([
+      "update:i2",
+      "create:i1",
+      "delete:i3",
+    ]);
+  });
+});

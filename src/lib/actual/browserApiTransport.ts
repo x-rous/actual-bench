@@ -838,6 +838,7 @@ async function updateBrowserTransactionForSync(
   if (input.cleared !== undefined) fields.cleared = input.cleared;
 
   await api.updateTransaction(input.transactionId, fields);
+  if (input.returnApplied === false) return null;
   return readBrowserTargetTransaction(connection, {
     accountId: input.accountId,
     transactionId: input.transactionId,

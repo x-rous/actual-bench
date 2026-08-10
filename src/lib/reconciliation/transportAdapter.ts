@@ -178,7 +178,11 @@ export function createReconciliationTransport(
     },
 
     async updateTransaction(input: TransactionUpdateInput) {
-      return appliedFrom(await transport.updateTransactionForSync(input));
+      // Nothing here reads the persisted snapshot, and asking for it costs a
+      // range query per update.
+      return appliedFrom(
+        await transport.updateTransactionForSync({ ...input, returnApplied: false })
+      );
     },
 
     async deleteTransaction(input) {

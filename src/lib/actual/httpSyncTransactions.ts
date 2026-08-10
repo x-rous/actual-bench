@@ -220,6 +220,7 @@ export async function updateHttpTransactionForSync(
     method: "PATCH",
     body: { transaction },
   });
+  if (input.returnApplied === false) return null;
   return readHttpTargetTransactionForSync(connection, {
     accountId: input.accountId,
     transactionId: input.transactionId,
