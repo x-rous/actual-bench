@@ -128,13 +128,13 @@ describe("createReconciliationTransport", () => {
       ])
     );
 
-    const rows = await transport.loadTransactions({
+    const loaded = await transport.loadTransactions({
       accountId: "acct-1",
       startDate: "2026-06-24",
       endDate: "2026-08-07",
     });
 
-    expect(rows.map((r) => r.id)).toEqual(["parent"]);
+    expect(loaded.transactions.map((r) => r.id)).toEqual(["parent"]);
   });
 
   it("passes the date window straight through", async () => {

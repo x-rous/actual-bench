@@ -19,6 +19,7 @@ import type { ActualBenchTransport, SyncSourceTransaction } from "@/lib/actual/t
 import type {
   AppliedSnapshot,
   CreatedTransaction,
+  LoadedCandidateWindow,
   LoadTransactionsInput,
   ReconciliationTransport,
   TransactionCreateDraft,
@@ -101,16 +102,19 @@ export function createReconciliationTransport(
   transport: ActualBenchTransport
 ): ReconciliationTransport {
   return {
-    async loadTransactions(input: LoadTransactionsInput): Promise<ActualTransactionSnapshot[]> {
+    async loadTransactions(input: LoadTransactionsInput): Promise<LoadedCandidateWindow> {
       const rows = await transport.listTransactionsForSync({
         accountId: input.accountId,
         startDate: input.startDate,
         endDate: input.endDate,
       });
       const transfersReported = transportReportsTransfers(rows);
-      return rows
-        .filter((row) => !row.isChild)
-        .map((row) => toActualSnapshot(row, { transfersReported }));
+      return {
+        transfersReported,
+        transactions: rows
+          .filter((row) => !row.isChild)
+          .map((row) => toActualSnapshot(row, { transfersReported })),
+      };
     },
 
     async readTransaction(input) {

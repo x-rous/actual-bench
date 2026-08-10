@@ -77,6 +77,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }
 
   const isBudgetPage = pathname?.startsWith("/budget-management") ?? false;
+  // The reconciliation workbench needs the full content width for its
+  // three-column Bank | Match | Actual grid, and stages its own changes rather
+  // than through the entity staged store, so the global draft panel is hidden.
+  const isReconciliationPage = pathname?.startsWith("/reconciliation") ?? false;
 
   return (
     <ConnectionHealthContext.Provider value={health}>
@@ -92,7 +96,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <main className="flex min-h-0 flex-1 flex-col overflow-hidden">
             {children}
           </main>
-          {isBudgetPage ? <BudgetDraftPanel /> : <DraftPanel />}
+          {isReconciliationPage ? null : isBudgetPage ? <BudgetDraftPanel /> : <DraftPanel />}
         </div>
       </div>
     </VersionCheckContext.Provider>

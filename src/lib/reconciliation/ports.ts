@@ -67,9 +67,23 @@ export type AppliedSnapshot = {
   notes: string | null;
 };
 
+/**
+ * The loaded candidate window.
+ *
+ * `transfersReported` travels with the transactions because it is a property of
+ * the *transport*, not of any row: a connection that never populates transfer
+ * membership is indistinguishable, row by row, from an account with no
+ * transfers. Normalising it away would silently turn "unknown" into "no"
+ * (RD-071 D13).
+ */
+export type LoadedCandidateWindow = {
+  transactions: ActualTransactionSnapshot[];
+  transfersReported: boolean;
+};
+
 export type ReconciliationTransport = {
   /** Load the candidate window. Split children are excluded. */
-  loadTransactions(input: LoadTransactionsInput): Promise<ActualTransactionSnapshot[]>;
+  loadTransactions(input: LoadTransactionsInput): Promise<LoadedCandidateWindow>;
   /**
    * Re-read one transaction, or null when it no longer exists.
    *
