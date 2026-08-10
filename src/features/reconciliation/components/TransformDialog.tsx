@@ -61,6 +61,7 @@ const ACTIONS: { id: ActionKind; label: string }[] = [
   { id: "removeTag", label: "Remove tag" },
   { id: "appendNote", label: "Append to notes" },
   { id: "prependNote", label: "Put at the start of notes" },
+  { id: "useStatementDescription", label: "Use the statement's full description" },
   { id: "setPayee", label: "Set payee" },
 ];
 
@@ -78,6 +79,8 @@ function emptyAction(kind: ActionKind): TransformAction {
       return { kind, payeeId: null };
     case "prependNote":
       return { kind, text: "" };
+    case "useStatementDescription":
+      return { kind };
     default:
       return { kind: "addTag", tag: "" };
   }
@@ -89,7 +92,6 @@ export type TransformDialogProps = {
   selectedIds: Set<string>;
   contextFor: (item: ReconciliationItem) => TransformContext;
   payees: Option[];
-  categories: Option[];
   onClose: () => void;
   onApply: (changes: { itemId: string; patch: ReconciliationItem["stagedChanges"] }[]) => void;
 };
@@ -99,7 +101,6 @@ export function TransformDialog({
   selectedIds,
   contextFor,
   payees,
-  categories,
   onClose,
   onApply,
 }: TransformDialogProps) {
@@ -387,6 +388,12 @@ export function TransformDialog({
                   )
                 }
               />
+            )}
+
+            {action.kind === "useStatementDescription" && (
+              <span className="text-[11px] text-muted-foreground">
+                Extends the merchant text already in the note; tags and your own words stay.
+              </span>
             )}
 
             {action.kind === "setPayee" && (

@@ -22,6 +22,7 @@ import {
   removeNoteTag,
   replaceNoteTag,
 } from "../noteTags";
+import { mergeDescriptionIntoNotes } from "./mergeDescription";
 import type { ProspectiveTransaction } from "../session/prospective";
 import type {
   ActualTransactionSnapshot,
@@ -78,7 +79,12 @@ export type TransformAction =
   | { kind: "removeTag"; tag: string }
   | { kind: "replaceTag"; from: string; to: string }
   | { kind: "appendNote"; text: string }
-  | { kind: "prependNote"; text: string };
+  | { kind: "prependNote"; text: string }
+  /**
+   * Bring the note's merchant text up to the statement's full description,
+   * leaving tags and the user's own words in place.
+   */
+  | { kind: "useStatementDescription" };
 
 /**
  * A saved transformation.
@@ -268,6 +274,17 @@ export function changesFor(rule: TransformRule, context: TransformContext): Fiel
         notes = prependNoteText(notes, action.text);
         notesTouched = true;
         break;
+      case "useStatementDescription": {
+        const merged = mergeDescriptionIntoNotes(
+          notes,
+          context.statementRow?.description ?? ""
+        );
+        if (merged.changed) {
+          notes = merged.notes;
+          notesTouched = true;
+        }
+        break;
+      }
     }
   }
 

@@ -595,7 +595,6 @@ export function Workbench({
           selectedIds={selectedIds}
           contextFor={transformContextFor}
           payees={payees}
-          categories={categories}
           onClose={() => setTransformOpen(false)}
           onApply={(changes) => {
             onTransform(changes);
