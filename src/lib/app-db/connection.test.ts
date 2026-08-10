@@ -17,6 +17,7 @@ import {
   SYNC_FLOW_RUN_TABLE_SQL,
   SYNC_FLOW_TABLE_SQL,
 } from "./schema";
+import { LATEST_SCHEMA_VERSION } from "./migrations";
 import type { SqliteDatabase } from "./types";
 
 function tempDbPath(): { root: string; dbPath: string } {
@@ -58,7 +59,7 @@ describe("app DB connection", () => {
       const health = getAppDbHealth(dbPath);
       expect(health.ready).toBe(true);
       expect(health.writable).toBe(true);
-      expect(health.schemaVersion).toBe(10);
+      expect(health.schemaVersion).toBe(LATEST_SCHEMA_VERSION);
       expect(health.runtime).toBe("vercel");
       expect(health.durable).toBe(false);
     } finally {
@@ -96,7 +97,7 @@ describe("app DB connection", () => {
       const version = db
         .prepare("SELECT value FROM app_meta WHERE key = ?")
         .get<{ value: string }>("schema_version");
-      expect(version?.value).toBe("10");
+      expect(version?.value).toBe(String(LATEST_SCHEMA_VERSION));
 
       const sameDb = getAppDb(dbPath);
       expect(sameDb).toBe(db);
@@ -104,7 +105,7 @@ describe("app DB connection", () => {
       const health = getAppDbHealth(dbPath);
       expect(health.ready).toBe(true);
       expect(health.writable).toBe(true);
-      expect(health.schemaVersion).toBe(10);
+      expect(health.schemaVersion).toBe(LATEST_SCHEMA_VERSION);
       expect(health.configuredPath).toBe(dbPath);
     } finally {
       resetAppDbForTests();
@@ -136,9 +137,18 @@ describe("app DB connection", () => {
         .prepare("SELECT COUNT(*) AS count FROM sqlite_schema WHERE type = 'table' AND name = ?")
         .get<{ count: number }>("sync_mappings");
 
-      expect(version?.value).toBe("10");
+      const reconciliationTables = migrated
+        .prepare(
+          "SELECT COUNT(*) AS count FROM sqlite_schema WHERE type = 'table' AND name LIKE 'reconciliation_%'"
+        )
+        .get<{ count: number }>();
+
+      expect(version?.value).toBe(String(LATEST_SCHEMA_VERSION));
       expect(flowTypeColumn.some((column) => column.name === "flow_type")).toBe(true);
       expect(mappingTable?.count).toBe(1);
+      // Every later migration runs in the same chain, including reconciliation
+      // (profiles, sessions, statement rows, items).
+      expect(reconciliationTables?.count).toBe(4);
     } finally {
       resetAppDbForTests();
       rmSync(root, { recursive: true, force: true });

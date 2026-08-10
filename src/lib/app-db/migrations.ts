@@ -3,6 +3,11 @@ import {
   APP_META_TABLE_SQL,
   BUDGET_ENCRYPTION_CREDENTIAL_TABLE_SQL,
   CONNECTION_CREDENTIAL_TABLE_SQL,
+  RECONCILIATION_INDEX_SQL,
+  RECONCILIATION_ITEM_TABLE_SQL,
+  RECONCILIATION_PROFILE_TABLE_SQL,
+  RECONCILIATION_SESSION_TABLE_SQL,
+  RECONCILIATION_STATEMENT_ROW_TABLE_SQL,
   REMEMBERED_BUDGET_TABLE_SQL,
   SAVED_QUERY_TABLE_SQL,
   SERVER_CREDENTIAL_TABLE_SQL,
@@ -23,7 +28,7 @@ import {
 import { KDF_VERSION_META_KEY, SALT_META_KEY, VERIFIER_META_KEY } from "./vaultMetaKeys";
 import { AppDbUnavailableError } from "./errors";
 
-export const LATEST_SCHEMA_VERSION = 10;
+export const LATEST_SCHEMA_VERSION = 11;
 
 type Migration = {
   version: number;
@@ -158,6 +163,17 @@ const MIGRATIONS: readonly Migration[] = [
     version: 10,
     // Persistent, cross-budget saved ActualQL queries (RD-064 / PR-029).
     statements: [SAVED_QUERY_TABLE_SQL],
+  },
+  {
+    version: 11,
+    // Bank statement reconciliation sessions (RD-071 / PR-034a).
+    statements: [
+      RECONCILIATION_PROFILE_TABLE_SQL,
+      RECONCILIATION_SESSION_TABLE_SQL,
+      RECONCILIATION_STATEMENT_ROW_TABLE_SQL,
+      RECONCILIATION_ITEM_TABLE_SQL,
+      ...RECONCILIATION_INDEX_SQL,
+    ],
   },
 ];
 
