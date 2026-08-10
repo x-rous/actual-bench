@@ -181,6 +181,17 @@ export type SyncTargetSplitChild = {
   notes?: string | null;
 };
 
+/** One row of a batched write: an id plus only the fields that change. */
+export type BatchTransactionUpdate = {
+  id: string;
+  date?: string;
+  amount?: MinorUnitAmount;
+  payeeId?: string | null;
+  categoryId?: string | null;
+  notes?: string | null;
+  cleared?: boolean;
+};
+
 /** Fields of an existing target transaction to overwrite (RD-057 §4). */
 export type UpdateTransactionForSyncInput = {
   transactionId: string;
@@ -350,6 +361,18 @@ export interface ActualBenchTransport {
   ): Promise<SyncAppliedSnapshot | null>;
   /** Delete a previously-synced target transaction (RD-057 §5). */
   deleteTransactionForSync(input: { transactionId: string }): Promise<void>;
+  /**
+   * Apply many updates and deletes in one call, when the transport can.
+   *
+   * Each single-transaction write costs a full re-read of the row plus its own
+   * mutation and undo entry, so a few hundred of them is minutes of work for
+   * seconds of writing. Optional: a transport without a batch primitive simply
+   * omits it and callers fall back to writing one at a time.
+   */
+  batchWriteTransactionsForSync?(input: {
+    updated: BatchTransactionUpdate[];
+    deleted: string[];
+  }): Promise<void>;
   /** Load target payees + existing sync markers for dedupe/apply checks. */
   getTargetLookupForSync(
     input: ListTransactionsForSyncInput

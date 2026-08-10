@@ -136,6 +136,58 @@ export async function executeApplyPlan(input: ApplyExecutorInput): Promise<Apply
     }
   }
 
+  // Updates and deletes go together too, where the transport can take them.
+  // Each single write re-reads its row and carries its own mutation and undo
+  // entry, so a few hundred of them is minutes of overhead for seconds of
+  // writing.
+  const batchedWrites = new Map<string, OperationResult>();
+  if (transport.batchWrite) {
+    const updates = plan.operations.filter(
+      (operation): operation is Extract<ApplyOperation, { kind: "update" }> =>
+        operation.kind === "update" && !alreadyApplied.has(operation.id)
+    );
+    const deletes = plan.operations.filter(
+      (operation): operation is Extract<ApplyOperation, { kind: "delete" }> =>
+        operation.kind === "delete" && !alreadyApplied.has(operation.id)
+    );
+
+    if (updates.length + deletes.length > 1) {
+      try {
+        await transport.batchWrite({
+          updated: updates.map((operation) => ({
+            transactionId: operation.transactionId,
+            accountId: operation.accountId,
+            date: patchValue(operation.patch, "date") ?? operation.date,
+            amount: patchValue(operation.patch, "amount") ?? operation.amount,
+            payeeId: patchValue(operation.patch, "payeeId"),
+            notes: patchValue(operation.patch, "notes"),
+            cleared: operation.cleared,
+          })),
+          deleted: deletes.map((operation) => operation.transactionId),
+        });
+
+        for (const operation of [...updates, ...deletes]) {
+          batchedWrites.set(operation.id, {
+            operationId: operation.id,
+            status: "applied",
+            transactionId: operation.transactionId,
+          });
+        }
+      } catch (error) {
+        // One call, one outcome — reported per operation rather than left
+        // unexplained.
+        const message = error instanceof Error ? error.message : String(error);
+        for (const operation of [...updates, ...deletes]) {
+          batchedWrites.set(operation.id, {
+            operationId: operation.id,
+            status: "failed",
+            error: message,
+          });
+        }
+      }
+    }
+  }
+
   for (const operation of plan.operations) {
     input.onProgress?.({ completed, total: plan.operations.length, operation });
     completed += 1;
@@ -153,6 +205,13 @@ export async function executeApplyPlan(input: ApplyExecutorInput): Promise<Apply
     const previous = alreadyApplied.get(operation.id);
     if (previous) {
       results.push(previous);
+      continue;
+    }
+
+    const batchedWrite = batchedWrites.get(operation.id);
+    if (batchedWrite) {
+      results.push(batchedWrite);
+      await input.onResult?.(batchedWrite);
       continue;
     }
 

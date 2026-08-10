@@ -189,6 +189,30 @@ export function createReconciliationTransport(
       await transport.deleteTransactionForSync(input);
     },
 
+    // Only offered when the transport has a batch primitive; otherwise the
+    // caller keeps writing one at a time.
+    ...(transport.batchWriteTransactionsForSync
+      ? {
+          batchWrite: async (input: {
+            updated: (TransactionUpdateInput & { transactionId: string })[];
+            deleted: string[];
+          }) => {
+            await transport.batchWriteTransactionsForSync!({
+              updated: input.updated.map((entry) => ({
+                id: entry.transactionId,
+                date: entry.date,
+                amount: entry.amount,
+                payeeId: entry.payeeId,
+                categoryId: entry.categoryId,
+                notes: entry.notes,
+                cleared: entry.cleared,
+              })),
+              deleted: input.deleted,
+            });
+          },
+        }
+      : {}),
+
     resolvePayee(input) {
       return transport.createOrResolvePayee(input);
     },

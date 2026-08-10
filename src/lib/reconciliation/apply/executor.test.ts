@@ -374,3 +374,89 @@ describe("creates are sent as one batch", () => {
     ]);
   });
 });
+
+describe("updates and deletes go together where the transport allows", () => {
+  const secondUpdate: ApplyOperation = { ...UPDATE, id: "update:i7", itemId: "i7", transactionId: "t7" };
+
+  function batchingTransport(overrides: Partial<ReconciliationTransport> = {}) {
+    return fakeTransport({ batchWrite: jest.fn().mockResolvedValue(undefined), ...overrides });
+  }
+
+  it("sends them in one call instead of one each", async () => {
+    const transport = batchingTransport();
+    const result = await executeApplyPlan({
+      plan: planOf([UPDATE, secondUpdate, DELETE]),
+      transport,
+    });
+
+    expect(transport.batchWrite).toHaveBeenCalledTimes(1);
+    expect(transport.updateTransaction).not.toHaveBeenCalled();
+    expect(transport.deleteTransaction).not.toHaveBeenCalled();
+    expect(result.applied).toBe(3);
+  });
+
+  it("carries only the staged fields into the batch", async () => {
+    const transport = batchingTransport();
+    await executeApplyPlan({ plan: planOf([UPDATE, secondUpdate]), transport });
+
+    const sent = (transport.batchWrite as jest.Mock).mock.calls[0][0];
+    expect(sent.updated[0]).toMatchObject({ transactionId: "t1", notes: "#2026-07 X" });
+    expect(sent.updated[0].payeeId).toBeUndefined();
+  });
+
+  it("reports each operation as failed when the batch fails", async () => {
+    const transport = batchingTransport({
+      batchWrite: jest.fn().mockRejectedValue(new Error("server said no")),
+    });
+
+    const result = await executeApplyPlan({
+      plan: planOf([UPDATE, secondUpdate]),
+      transport,
+    });
+
+    expect(result.failed).toBe(2);
+    expect(result.results.every((entry) => entry.error === "server said no")).toBe(true);
+  });
+
+  it("leaves already-applied operations out of the batch", async () => {
+    const thirdUpdate: ApplyOperation = {
+      ...UPDATE,
+      id: "update:i8",
+      itemId: "i8",
+      transactionId: "t8",
+    };
+    const transport = batchingTransport();
+    await executeApplyPlan({
+      plan: planOf([UPDATE, secondUpdate, thirdUpdate]),
+      transport,
+      previousResults: [{ operationId: "update:i2", status: "applied", transactionId: "t1" }],
+    });
+
+    const sent = (transport.batchWrite as jest.Mock).mock.calls[0][0];
+    expect(sent.updated.map((entry: { transactionId: string }) => entry.transactionId)).toEqual([
+      "t7",
+      "t8",
+    ]);
+  });
+
+  it("writes one at a time when the transport cannot batch", async () => {
+    // HTTP mode has no batch primitive; the sequential path must still work.
+    const transport = fakeTransport();
+    const result = await executeApplyPlan({
+      plan: planOf([UPDATE, secondUpdate, DELETE]),
+      transport,
+    });
+
+    expect(transport.updateTransaction).toHaveBeenCalledTimes(2);
+    expect(transport.deleteTransaction).toHaveBeenCalledTimes(1);
+    expect(result.applied).toBe(3);
+  });
+
+  it("does not batch a single write", async () => {
+    const transport = batchingTransport();
+    await executeApplyPlan({ plan: planOf([UPDATE]), transport });
+
+    expect(transport.batchWrite).not.toHaveBeenCalled();
+    expect(transport.updateTransaction).toHaveBeenCalledTimes(1);
+  });
+});

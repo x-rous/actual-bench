@@ -114,5 +114,15 @@ export type ReconciliationTransport = {
   createTransactions(inputs: TransactionCreateDraft[]): Promise<CreatedTransaction[]>;
   updateTransaction(input: TransactionUpdateInput): Promise<AppliedSnapshot | null>;
   deleteTransaction(input: { transactionId: string }): Promise<void>;
+  /**
+   * Apply many updates and deletes at once, where the transport can.
+   *
+   * Absent on transports that write one row per request, which then keep the
+   * sequential path. Present, it collapses a few hundred round trips into one.
+   */
+  batchWrite?(input: {
+    updated: (TransactionUpdateInput & { transactionId: string })[];
+    deleted: string[];
+  }): Promise<void>;
   resolvePayee(input: { name: string }): Promise<{ id: string; name: string; created: boolean }>;
 };

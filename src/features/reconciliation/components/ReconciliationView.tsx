@@ -79,6 +79,10 @@ import { Workbench } from "./Workbench";
  */
 const PROGRESS_FLUSH_MS = 1000;
 
+/** How often the on-screen counter moves. Often enough to read, rarely enough
+ * that redrawing the review table does not compete with the writing. */
+const PROGRESS_UI_MS = 250;
+
 type Screen =
   | { name: "home" }
   | { name: "import"; sessionId: string; accountId: string; accountName: string }
@@ -642,6 +646,7 @@ export function ReconciliationView() {
        * them, not that it repeats them.
        */
       let lastFlush = 0;
+      let lastProgressAt = 0;
       let pending = false;
 
       const flush = async (force: boolean) => {
@@ -663,8 +668,16 @@ export function ReconciliationView() {
           pending = true;
           await flush(false);
         },
-        onProgress: (progress) =>
-          setApplyProgress({ done: progress.completed, total: progress.total }),
+        onProgress: (progress) => {
+          // Throttled: the review screen stays mounted during a run, and its
+          // comparison table redraws every row on each state change. Updating
+          // per operation makes the UI the bottleneck rather than the writes.
+          const now = Date.now();
+          const finished = progress.completed >= progress.total;
+          if (!finished && now - lastProgressAt < PROGRESS_UI_MS) return;
+          lastProgressAt = now;
+          setApplyProgress({ done: progress.completed, total: progress.total });
+        },
       });
 
       await flush(true);
