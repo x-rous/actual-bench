@@ -193,9 +193,37 @@ describe("amount is a hard gate (feature spec §11)", () => {
       [txn({ id: "t1", amount: -41200, payeeName: "Etisalat" })]
     );
 
+    // The gate holds: no automatic match. The pair is offered for review
+    // instead, with the difference stated, rather than silently disappearing.
     expect(graph.matched).toHaveLength(0);
+    expect(graph.ambiguous).toHaveLength(1);
+    expect(graph.ambiguous[0].why).toBe("amount-mismatch");
+  });
+
+  it("does not offer a review pairing across a sign change", () => {
+    // A refund is not the same event as the purchase it reverses.
+    const graph = run(
+      [row({ id: "s1", amount: 42100, description: "ETISALAT" })],
+      [txn({ id: "t1", amount: -41200, payeeName: "Etisalat" })]
+    );
+    expect(graph.ambiguous).toHaveLength(0);
     expect(graph.unmatchedStatementRowIds).toEqual(["s1"]);
-    expect(graph.unmatchedActualTransactionIds).toEqual(["t1"]);
+  });
+
+  it("does not offer a review pairing when the text is unrelated", () => {
+    const graph = run(
+      [row({ id: "s1", amount: -42100, description: "ETISALAT" })],
+      [txn({ id: "t1", amount: -41200, payeeName: "Carrefour Market" })]
+    );
+    expect(graph.ambiguous).toHaveLength(0);
+  });
+
+  it("does not offer a review pairing when the amounts are wildly apart", () => {
+    const graph = run(
+      [row({ id: "s1", amount: -42100, description: "ETISALAT" })],
+      [txn({ id: "t1", amount: -100, payeeName: "Etisalat" })]
+    );
+    expect(graph.ambiguous).toHaveLength(0);
   });
 
   it("distinguishes sign: an inflow never matches an outflow", () => {

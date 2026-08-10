@@ -102,4 +102,7 @@ export const DEFAULT_MATCH_CONFIG: MatchConfig = {
   needleFloor: DEFAULT_NEEDLE_FLOOR,
   requireExactAmount: true,
   matchOriginalCurrencyAmount: true,
+  reviewAmountMismatch: true,
+  amountMismatchTextFloor: 0.75,
+  amountMismatchMaxRatio: 0.25,
 };

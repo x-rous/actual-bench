@@ -79,6 +79,12 @@ export function describeReason(reason: MatchReason): string {
       return reason.where === "importedId"
         ? "Bank reference matches the imported ID"
         : "Bank reference found in notes";
+    case "amount-mismatch": {
+      const difference = Math.abs(reason.difference);
+      return `Amount differs by ${formatMinorUnits(difference)} (statement ${formatMinorUnits(
+        Math.abs(reason.statementAmount)
+      )}, Actual ${formatMinorUnits(Math.abs(reason.actualAmount))})`;
+    }
     case "original-amount":
       // The posted amount is a conversion; the match is on the original amount
       // the bank printed, so say so rather than implying the amounts agree.

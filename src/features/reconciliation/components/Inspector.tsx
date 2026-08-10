@@ -98,7 +98,7 @@ export function Inspector({ item, statementRow, transactions, onClose }: Inspect
       {transactions.length > 1 && (
         <section className="flex flex-col gap-2">
           <h4 className="text-[11px] font-semibold uppercase tracking-wide">
-            Other candidates ({transactions.length - 1})
+            Equally likely ({transactions.length - 1})
           </h4>
           <ul className="space-y-1 text-xs text-muted-foreground">
             {transactions.slice(1).map((transaction) => (

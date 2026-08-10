@@ -22,6 +22,15 @@ import { buildTextCorpus, type TextCorpus } from "./text";
 export type ActualIndex = {
   /** Every indexed row, by id. */
   byId: Map<string, ActualTransactionSnapshot>;
+  /**
+   * Every indexed row ordered by date, for the amount-mismatch review scan.
+   *
+   * That scan cannot use the amount as a blocking key — the amounts are what
+   * disagree — so it walks a date slice instead. It only runs for statement
+   * rows that found no exact-amount match, and the slice is a couple of weeks
+   * wide, so the cost stays bounded.
+   */
+  byDate: ActualTransactionSnapshot[];
   /** Actual `imported_id` -> row id, for the strongest tier. */
   byImportedId: Map<string, string>;
   /** Exact signed minor-unit amount -> rows, ascending by date. */
@@ -69,10 +78,15 @@ export function buildActualIndex(
     bucket.sort((a, b) => (a.date === b.date ? compareIds(a.id, b.id) : a.date < b.date ? -1 : 1));
   }
 
+  const byDate = [...byId.values()].sort((a, b) =>
+    a.date === b.date ? compareIds(a.id, b.id) : a.date < b.date ? -1 : 1
+  );
+
   return {
     byId,
     byImportedId,
     byAmount,
+    byDate,
     notesCorpus: buildTextCorpus([...byId.values()].map((t) => t.notes)),
   };
 }
@@ -100,6 +114,20 @@ export function amountDateSlice(
   const slice: ActualTransactionSnapshot[] = [];
   for (let i = start; i < bucket.length && bucket[i].date <= maxDate; i++) {
     slice.push(bucket[i]);
+  }
+  return slice;
+}
+
+/** Rows dated within `[minDate, maxDate]`, whatever their amount. */
+export function dateSlice(
+  index: ActualIndex,
+  minDate: string,
+  maxDate: string
+): ActualTransactionSnapshot[] {
+  const rows = index.byDate;
+  const slice: ActualTransactionSnapshot[] = [];
+  for (let i = lowerBound(rows, minDate); i < rows.length && rows[i].date <= maxDate; i++) {
+    slice.push(rows[i]);
   }
   return slice;
 }

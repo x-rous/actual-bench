@@ -196,6 +196,20 @@ export type MatchConfig = {
    * other amount the bank stated; requires text corroboration to be accepted.
    */
   matchOriginalCurrencyAmount: boolean;
+  /**
+   * Surface a transaction whose text clearly matches but whose amount does not,
+   * as a review item.
+   *
+   * Never an automatic match — feature spec §11 is explicit that a differing
+   * amount is a conflict for the user, not a fuzzy match. But saying nothing at
+   * all is worse: the pair is obvious to a human, and finding it by hand across
+   * a few hundred rows is exactly the work this feature exists to remove.
+   */
+  reviewAmountMismatch: boolean;
+  /** Text similarity a mismatched-amount pair must reach to be worth showing. */
+  amountMismatchTextFloor: number;
+  /** Largest relative amount gap worth showing, as a fraction of the larger amount. */
+  amountMismatchMaxRatio: number;
 };
 
 /**
@@ -219,6 +233,13 @@ export type MatchReason =
     }
   | { kind: "reference"; where: "importedId" | "notes" }
   | {
+      kind: "amount-mismatch";
+      statementAmount: MinorUnitAmount;
+      actualAmount: MinorUnitAmount;
+      /** `actual - statement`, in integer minor units. */
+      difference: MinorUnitAmount;
+    }
+  | {
       kind: "original-amount";
       currency: string;
       /** The original-currency amount, in integer minor units. */
@@ -239,7 +260,9 @@ export type MatchTier =
   | "amount-date-text"
   | "amount-date"
   /** Exact match on the original-currency amount the bank printed (FX purchase). */
-  | "original-amount-text";
+  | "original-amount-text"
+  /** Text is convincing but no amount agrees — for review only, never automatic. */
+  | "amount-mismatch-review";
 
 export type ScoredCandidate = {
   statementRowId: string;
@@ -268,7 +291,7 @@ export type MatchOutcome = {
 export type AmbiguousMatch = {
   statementRowId: string;
   candidates: ScoredCandidate[];
-  why: "close-runner-up" | "below-floor";
+  why: "close-runner-up" | "below-floor" | "amount-mismatch";
 };
 
 export type MatchGraph = {

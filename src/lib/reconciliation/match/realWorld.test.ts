@@ -10,6 +10,7 @@
 import { DEFAULT_MATCH_CONFIG, TEXT_TARGET_PRESETS } from "./config";
 import { match } from "./matcher";
 import { parseStatementText } from "../statement/parse";
+import { REASON, buildReconciliationItems } from "../session/build";
 import {
   detectColumnMapping,
   extractOriginalAmount,
@@ -257,10 +258,11 @@ describe("foreign-currency transactions", () => {
     expect(graph.unmatchedStatementRowIds).toHaveLength(1);
   });
 
-  it("does not match when neither the posted nor the original amount agrees", () => {
-    // The automation captured a third figure (a pre-markup conversion). Text is
-    // strong, but the exact-amount gate holds: this is a conflict for the user,
-    // not an automatic match.
+  it("offers a review pairing when neither the posted nor the original amount agrees", () => {
+    // The automation captured a third figure (a pre-markup conversion), so
+    // -93.62 posted against -90.07 recorded. The exact-amount gate holds — this
+    // is never an automatic match — but the pair is obvious to a person, so it
+    // is surfaced for review with the difference stated.
     const graph = match({
       statementRows: parse(
         ["Date\tDescription\tDebit\tCredit", "14/07/2026\tAIRALO AMSTERDAM NH USD24.50\t93.62\t0"].join(
@@ -274,7 +276,116 @@ describe("foreign-currency transactions", () => {
     });
 
     expect(graph.matched).toHaveLength(0);
+    expect(graph.ambiguous).toHaveLength(1);
+    expect(graph.ambiguous[0].why).toBe("amount-mismatch");
+    expect(graph.ambiguous[0].candidates[0].reasons).toContainEqual({
+      kind: "amount-mismatch",
+      statementAmount: -9362,
+      actualAmount: -9007,
+      difference: 355,
+    });
+  });
+
+  it("stays silent about a mismatch the user switched off", () => {
+    const graph = match({
+      statementRows: parse(
+        ["Date\tDescription\tDebit\tCredit", "14/07/2026\tAIRALO AMSTERDAM NH USD24.50\t93.62\t0"].join(
+          "\n"
+        )
+      ),
+      actualTransactions: [
+        txn({ id: "t1", date: "2026-07-14", amount: -9007, notes: "#API AIRALO" }),
+      ],
+      config: { ...DEFAULT_MATCH_CONFIG, reviewAmountMismatch: false },
+    });
+
+    expect(graph.ambiguous).toHaveLength(0);
     expect(graph.unmatchedStatementRowIds).toHaveLength(1);
+  });
+});
+
+describe("duplicate transactions and their competing candidates", () => {
+  // A statement row of -41.00 on 12 Jul against two identical transactions the
+  // automation entered twice, plus two unrelated -41.00 rows later that month.
+  const STATEMENT = [
+    "Date\tDescription\tDebit\tCredit",
+    "12/07/2026\tBabies More DUBAI 784\t41\t0",
+  ].join("\n");
+
+  const LEDGER = [
+    txn({ id: "dup-a", date: "2026-07-12", amount: -4100, payeeName: "Babies & More", notes: "#API Babies More" }),
+    txn({ id: "dup-b", date: "2026-07-12", amount: -4100, payeeName: "Babies & More", notes: "#API Babies More" }),
+    txn({ id: "other-1", date: "2026-07-15", amount: -4100, payeeName: "Costa Coffee", notes: "#API Costa Coffee" }),
+    txn({ id: "other-2", date: "2026-07-18", amount: -4100, payeeName: null, notes: null }),
+  ];
+
+  it("offers only the genuine rivals, not everything sharing the amount", () => {
+    // Sharing an amount inside the date window makes a transaction a candidate,
+    // not a competing match. Listing the far-off unrelated ones as "possible
+    // matches" is misleading.
+    const graph = match({
+      statementRows: parse(STATEMENT),
+      actualTransactions: LEDGER,
+      config: DEFAULT_MATCH_CONFIG,
+    });
+
+    expect(graph.ambiguous).toHaveLength(1);
+    expect(graph.ambiguous[0].candidates.map((c) => c.actualTransactionId).sort()).toEqual([
+      "dup-a",
+      "dup-b",
+    ]);
+  });
+
+  it("does not also list a competing candidate as missing from the statement", () => {
+    // These transactions are already on screen awaiting a decision. Repeating
+    // them as "Actual only" would double-count them and misrepresent a
+    // transaction the statement did reach as one it never mentioned — precisely
+    // the row a later version might offer to delete.
+    const rows = parse(STATEMENT);
+    const graph = match({
+      statementRows: rows,
+      actualTransactions: LEDGER,
+      config: DEFAULT_MATCH_CONFIG,
+    });
+
+    let counter = 0;
+    const items = buildReconciliationItems({
+      statementRows: rows,
+      actualTransactions: LEDGER,
+      graph,
+      transfersReported: true,
+      makeId: () => `i${++counter}`,
+    });
+
+    const actualOnlyIds = items
+      .filter((item) => item.reasonCode === REASON.notOnStatement)
+      .flatMap((item) => item.actualTransactionIds);
+
+    expect(actualOnlyIds).not.toContain("dup-a");
+    expect(actualOnlyIds).not.toContain("dup-b");
+    // The genuinely unrelated ones are still reported as Actual-only.
+    expect(actualOnlyIds.sort()).toEqual(["other-1", "other-2"]);
+  });
+
+  it("gives every transaction exactly one representation", () => {
+    const rows = parse(STATEMENT);
+    const graph = match({
+      statementRows: rows,
+      actualTransactions: LEDGER,
+      config: DEFAULT_MATCH_CONFIG,
+    });
+
+    let counter = 0;
+    const items = buildReconciliationItems({
+      statementRows: rows,
+      actualTransactions: LEDGER,
+      graph,
+      transfersReported: true,
+      makeId: () => `i${++counter}`,
+    });
+
+    const appearances = items.flatMap((item) => item.actualTransactionIds);
+    expect(appearances.sort()).toEqual(["dup-a", "dup-b", "other-1", "other-2"]);
   });
 });
 

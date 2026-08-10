@@ -32,6 +32,7 @@ type FilterId =
   | "create"
   | "actual-only"
   | "outside-period"
+  | "amount-mismatch"
   | "duplicates"
   | "matched";
 
@@ -41,6 +42,7 @@ const FILTERS: { id: FilterId; label: string }[] = [
   { id: "create", label: "Not in Actual" },
   { id: "actual-only", label: "Actual only" },
   { id: "outside-period", label: "Outside period" },
+  { id: "amount-mismatch", label: "Amount differs" },
   { id: "duplicates", label: "Duplicates" },
   { id: "matched", label: "Matched" },
 ];
@@ -53,7 +55,8 @@ function matchesFilter(item: ReconciliationItem, filter: FilterId): boolean {
       return (
         item.disposition === "unresolved" &&
         (item.reasonCode === REASON.ambiguousMatch ||
-          item.reasonCode === REASON.belowConfidenceFloor)
+          item.reasonCode === REASON.belowConfidenceFloor ||
+          item.reasonCode === REASON.amountMismatch)
       );
     case "create":
       return item.reasonCode === REASON.noActualCandidate;
@@ -61,6 +64,8 @@ function matchesFilter(item: ReconciliationItem, filter: FilterId): boolean {
       return item.reasonCode === REASON.notOnStatement;
     case "outside-period":
       return item.reasonCode === REASON.outsideStatementPeriod;
+    case "amount-mismatch":
+      return item.reasonCode === REASON.amountMismatch;
     case "duplicates":
       return item.reasonCode === REASON.likelyDuplicate;
     default:
@@ -291,32 +296,33 @@ export function Workbench({
 
       <div className="flex min-h-0 flex-1">
         <div className="min-h-0 flex-1 overflow-auto">
-          <table className="w-full table-fixed border-collapse">
+          <table className="w-full border-collapse">
             <caption className="sr-only">
               Bank statement rows matched against Actual transactions
             </caption>
             <thead className="sticky top-0 z-10 bg-background text-[11px] uppercase tracking-wide text-muted-foreground">
               <tr className="border-b border-border/30">
-                <th scope="colgroup" colSpan={3} className="px-3 pt-2 text-left font-semibold">
+                <th scope="colgroup" colSpan={3} className="px-2 pt-2 text-left font-semibold">
                   Bank statement
                 </th>
-                <th scope="col" className="border-x border-border/40 px-3 pt-2 text-left font-semibold">
+                <th scope="col" className="border-x border-border/40 px-2 pt-2 text-left font-semibold">
                   Match
                 </th>
-                <th scope="colgroup" colSpan={3} className="px-3 pt-2 text-left font-semibold">
+                <th scope="colgroup" colSpan={4} className="px-2 pt-2 text-left font-semibold">
                   Actual
                 </th>
               </tr>
               <tr className="border-b border-border/50">
-                <th scope="col" className="w-[8%] px-3 pb-2 text-left font-medium">Date</th>
-                <th scope="col" className="w-[24%] px-3 pb-2 text-left font-medium">Description</th>
-                <th scope="col" className="w-[9%] px-3 pb-2 text-right font-medium">Amount</th>
-                <th scope="col" className="w-[18%] border-x border-border/40 px-3 pb-2 text-left font-medium">
+                <th scope="col" className="w-14 px-2 pb-2 text-left font-medium">Date</th>
+                <th scope="col" className="px-2 pb-2 text-left font-medium">Description</th>
+                <th scope="col" className="w-24 px-2 pb-2 text-right font-medium">Amount</th>
+                <th scope="col" className="w-40 border-x border-border/40 px-2 pb-2 text-left font-medium">
                   Result
                 </th>
-                <th scope="col" className="w-[8%] px-3 pb-2 text-left font-medium">Date</th>
-                <th scope="col" className="w-[24%] px-3 pb-2 text-left font-medium">Payee / notes</th>
-                <th scope="col" className="w-[9%] px-3 pb-2 text-right font-medium">Amount</th>
+                <th scope="col" className="w-14 px-2 pb-2 text-left font-medium">Date</th>
+                <th scope="col" className="w-[18%] px-2 pb-2 text-left font-medium">Payee</th>
+                <th scope="col" className="px-2 pb-2 text-left font-medium">Notes</th>
+                <th scope="col" className="w-24 px-2 pb-2 text-right font-medium">Amount</th>
               </tr>
             </thead>
             <tbody>

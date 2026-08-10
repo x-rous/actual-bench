@@ -78,6 +78,13 @@ function middleState(item: ReconciliationItem): MiddleState {
         tone: "text-muted-foreground",
         icon: null,
       };
+    case REASON.amountMismatch:
+      return {
+        label: "Amount differs",
+        detail: null,
+        tone: "text-amber-600 dark:text-amber-400",
+        icon: TriangleAlert,
+      };
     case REASON.likelyDuplicate:
       return {
         label: "Likely duplicate",
@@ -118,7 +125,13 @@ export function WorkbenchRow({
   // The single strongest reason keeps the row to one line; the inspector shows
   // the full evidence list.
   const topReason = (item.match?.reasons ?? [])
-    .filter((reason) => reason.kind === "text" || reason.kind === "reference" || reason.kind === "original-amount")
+    .filter(
+      (reason) =>
+        reason.kind === "text" ||
+        reason.kind === "reference" ||
+        reason.kind === "original-amount" ||
+        reason.kind === "amount-mismatch"
+    )
     .map(describeReason)
     .filter(Boolean)[0];
 
@@ -132,18 +145,18 @@ export function WorkbenchRow({
       )}
     >
       {/* Bank statement */}
-      <td className="whitespace-nowrap px-3 py-1.5 tabular-nums text-muted-foreground">
+      <td className="whitespace-nowrap px-2 py-1.5 tabular-nums text-muted-foreground">
         {statementRow ? formatShortDate(statementRow.postedDate) : EMPTY}
       </td>
-      <td className="max-w-0 truncate px-3 py-1.5" title={statementRow?.description}>
+      <td className="max-w-0 truncate px-2 py-1.5" title={statementRow?.description}>
         {statementRow ? statementRow.description : EMPTY}
       </td>
-      <td className="whitespace-nowrap px-3 py-1.5 text-right tabular-nums">
+      <td className="whitespace-nowrap px-2 py-1.5 text-right tabular-nums">
         {statementRow ? formatMinorUnits(statementRow.amount) : EMPTY}
       </td>
 
       {/* Match */}
-      <td className="border-x border-border/40 px-3 py-1.5">
+      <td className="border-x border-border/40 px-2 py-1.5">
         <div className={cn("flex items-center gap-1 font-medium", state.tone)}>
           {Icon && <Icon className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />}
           <span className="truncate">{state.label}</span>
@@ -156,14 +169,16 @@ export function WorkbenchRow({
       </td>
 
       {/* Actual */}
-      <td className="whitespace-nowrap px-3 py-1.5 tabular-nums text-muted-foreground">
+      <td className="whitespace-nowrap px-2 py-1.5 tabular-nums text-muted-foreground">
         {primary ? formatShortDate(primary.date) : EMPTY}
       </td>
-      <td className="max-w-0 px-3 py-1.5">
+      <td className="max-w-0 px-2 py-1.5">
         {primary ? (
           <div className="flex items-center gap-1.5">
-            <span className="truncate" title={primary.notes ?? primary.payeeName ?? undefined}>
-              {primary.payeeName ?? primary.notes ?? "No payee"}
+            <span className="truncate" title={primary.payeeName ?? undefined}>
+              {primary.payeeName ?? (
+                <span className="text-muted-foreground/70">No payee</span>
+              )}
             </span>
             {item.guards.protectedReconciled && (
               <Lock className="h-3 w-3 shrink-0 text-muted-foreground" aria-label="Reconciled" />
@@ -187,7 +202,13 @@ export function WorkbenchRow({
           EMPTY
         )}
       </td>
-      <td className="whitespace-nowrap px-3 py-1.5 text-right tabular-nums">
+      <td
+        className="max-w-0 truncate px-2 py-1.5 text-muted-foreground"
+        title={primary?.notes ?? undefined}
+      >
+        {primary?.notes ?? EMPTY}
+      </td>
+      <td className="whitespace-nowrap px-2 py-1.5 text-right tabular-nums">
         {primary ? formatMinorUnits(primary.amount) : EMPTY}
       </td>
     </tr>

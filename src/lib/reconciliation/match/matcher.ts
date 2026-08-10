@@ -18,9 +18,9 @@ import type {
   ScoredCandidate,
   StatementRow,
 } from "../types";
-import { amountDateSlice, buildActualIndex, type ActualIndex } from "./actualIndex";
+import { amountDateSlice, buildActualIndex, dateSlice, type ActualIndex } from "./actualIndex";
 import { assignMatches } from "./assign";
-import { scoreCandidate } from "./score";
+import { scoreAmountMismatchCandidate, scoreCandidate } from "./score";
 
 export type MatchInput = {
   statementRows: StatementRow[];
@@ -58,12 +58,91 @@ export function match(input: MatchInput): MatchGraph {
     config,
   });
 
+  const withMismatches = addAmountMismatchReviews(result, statementRows, index, config);
+
   return {
-    matched: result.matched,
-    ambiguous: result.ambiguous,
-    unmatchedStatementRowIds: result.unmatchedStatementRowIds,
-    unmatchedActualTransactionIds: result.unmatchedActualTransactionIds,
-    likelyDuplicates: result.likelyDuplicates,
+    matched: withMismatches.matched,
+    ambiguous: withMismatches.ambiguous,
+    unmatchedStatementRowIds: withMismatches.unmatchedStatementRowIds,
+    unmatchedActualTransactionIds: withMismatches.unmatchedActualTransactionIds,
+    likelyDuplicates: withMismatches.likelyDuplicates,
+  };
+}
+
+/**
+ * Offer a review pairing where the text is convincing but no amount agrees.
+ *
+ * A foreign purchase can post a converted figure while the recorded transaction
+ * holds neither that figure nor the printed original — a pre-markup conversion,
+ * say. `AIRALO AMSTERDAM NH USD24.50` posting −93.62 against a recorded −90.07
+ * is obvious to a person and invisible to an exact-amount matcher.
+ *
+ * These are **never** automatic matches: feature spec §11 is explicit that a
+ * differing amount is a conflict the user resolves. They are surfaced as review
+ * items, with the difference stated, so the pair can be confirmed in one action
+ * instead of hunted for by hand.
+ *
+ * Runs only for statement rows that ended with nothing, against transactions
+ * nothing claimed, so it cannot displace or weaken any real match.
+ */
+function addAmountMismatchReviews(
+  result: ReturnType<typeof assignMatches>,
+  statementRows: StatementRow[],
+  index: ActualIndex,
+  config: MatchConfig
+): ReturnType<typeof assignMatches> {
+  if (!config.reviewAmountMismatch || result.unmatchedStatementRowIds.length === 0) {
+    return result;
+  }
+
+  const rowsById = new Map(statementRows.map((row) => [row.id, row]));
+  const available = new Set(result.unmatchedActualTransactionIds);
+  const claimed = new Set<string>();
+  const ambiguous = [...result.ambiguous];
+  const stillUnmatched: string[] = [];
+
+  for (const statementRowId of result.unmatchedStatementRowIds) {
+    const row = rowsById.get(statementRowId);
+    if (!row) {
+      stillUnmatched.push(statementRowId);
+      continue;
+    }
+
+    const candidates = dateSlice(
+      index,
+      shiftDate(row.postedDate, -config.dateToleranceDays),
+      shiftDate(row.postedDate, config.dateToleranceDays)
+    )
+      .filter(
+        (transaction) => available.has(transaction.id) && !claimed.has(transaction.id)
+      )
+      .map((transaction) => scoreAmountMismatchCandidate(row, transaction, config, index))
+      .filter((candidate): candidate is NonNullable<typeof candidate> => candidate !== null)
+      .sort((a, b) => b.score - a.score);
+
+    if (candidates.length === 0) {
+      stillUnmatched.push(statementRowId);
+      continue;
+    }
+
+    // One review pairing per transaction: offering the same transaction to two
+    // statement rows would recreate the double-claim this design forbids.
+    for (const candidate of candidates) claimed.add(candidate.actualTransactionId);
+
+    ambiguous.push({
+      statementRowId,
+      candidates,
+      why: "amount-mismatch",
+    });
+  }
+
+  return {
+    ...result,
+    ambiguous,
+    unmatchedStatementRowIds: stillUnmatched,
+    unmatchedActualTransactionIds: result.unmatchedActualTransactionIds.filter(
+      (id) => !claimed.has(id)
+    ),
   };
 }
 

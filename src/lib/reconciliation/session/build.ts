@@ -61,6 +61,7 @@ export const REASON = {
   notOnStatement: "not-on-statement",
   outsideStatementPeriod: "outside-statement-period",
   likelyDuplicate: "likely-duplicate",
+  amountMismatch: "amount-mismatch",
 } as const;
 
 function guardsFor(
@@ -123,7 +124,9 @@ export function buildReconciliationItems(input: BuildItemsInput): Reconciliation
       reasonCode:
         ambiguous.why === "close-runner-up"
           ? REASON.ambiguousMatch
-          : REASON.belowConfidenceFloor,
+          : ambiguous.why === "amount-mismatch"
+            ? REASON.amountMismatch
+            : REASON.belowConfidenceFloor,
       guards: { protectedReconciled: false, splitParent: false, transfer: "no" },
     });
   }
@@ -140,9 +143,19 @@ export function buildReconciliationItems(input: BuildItemsInput): Reconciliation
     });
   }
 
+  // A transaction offered as a candidate on an ambiguous item is already on
+  // screen and already awaiting a decision. Listing it again as "Actual only"
+  // would double-count it and, worse, present a transaction the statement *did*
+  // reach as one the statement never mentioned — which is exactly the row a
+  // later version might offer to delete.
+  const ambiguousCandidateIds = new Set(
+    graph.ambiguous.flatMap((entry) => entry.candidates.map((c) => c.actualTransactionId))
+  );
+
   const period = input.statementPeriod ?? null;
   const visible = input.visibleWindow ?? null;
   for (const transactionId of graph.unmatchedActualTransactionIds) {
+    if (ambiguousCandidateIds.has(transactionId)) continue;
     const snapshot = snapshots.get(transactionId);
 
     // Loaded purely as matching headroom and not matched: the user never asked

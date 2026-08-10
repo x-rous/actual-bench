@@ -103,6 +103,68 @@ export function referenceAppearsInNotes(
 }
 
 /**
+ * Score a pair whose text agrees but whose amounts do not.
+ *
+ * Returned for **review only** — `assignMatches` never promotes one of these to
+ * a match, whatever it scores. The score exists solely to rank which mismatched
+ * candidate to show first.
+ *
+ * Returns null when the text is not convincing enough, or the amounts are too
+ * far apart to plausibly be the same transaction.
+ */
+export function scoreAmountMismatchCandidate(
+  row: StatementRow,
+  transaction: ActualTransactionSnapshot,
+  config: MatchConfig,
+  index: ActualIndex
+): ScoredCandidate | null {
+  if (transaction.amount === row.amount) return null;
+  // Direction must agree: an outflow is never the same event as an inflow.
+  if (Math.sign(transaction.amount) !== Math.sign(row.amount)) return null;
+
+  const larger = Math.max(Math.abs(transaction.amount), Math.abs(row.amount));
+  if (larger === 0) return null;
+  const gap = Math.abs(Math.abs(transaction.amount) - Math.abs(row.amount));
+  if (gap / larger > config.amountMismatchMaxRatio) return null;
+
+  const text = scoreText(
+    row.description,
+    {
+      payeeName: transaction.payeeName,
+      importedPayee: transaction.importedPayee,
+      notes: transaction.notes,
+    },
+    config.text,
+    config.needleFloor,
+    index.notesCorpus
+  );
+  if (text.similarity === null || text.similarity < config.amountMismatchTextFloor) return null;
+
+  const delta = dayDelta(row.postedDate, transaction.date);
+  const reasons: MatchReason[] = [
+    {
+      kind: "amount-mismatch",
+      statementAmount: row.amount,
+      actualAmount: transaction.amount,
+      difference: transaction.amount - row.amount,
+    },
+    { kind: "date", deltaDays: delta },
+    ...text.reasons,
+  ];
+
+  // Text and date only; there is no amount evidence to award points for.
+  const score = Math.round(text.similarity * POINTS.text + datePoints(delta));
+  return {
+    statementRowId: row.id,
+    actualTransactionId: transaction.id,
+    score,
+    label: "low",
+    tier: "amount-mismatch-review",
+    reasons,
+  };
+}
+
+/**
  * Score one candidate pair. The caller guarantees the amounts are equal and the
  * date is inside the window (see `amountDateSlice`).
  */

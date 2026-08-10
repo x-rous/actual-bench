@@ -46,6 +46,9 @@ export type AssignmentResult = {
  */
 const DUPLICATE_EVIDENCE_DELTA = 3;
 
+/** Weak candidates worth offering when nothing cleared the floor. */
+const MAX_WEAK_CANDIDATES = 5;
+
 export function assignMatches(input: AssignmentInput): AssignmentResult {
   const { candidates, config } = input;
   const consumedStatementRows = new Set<string>();
@@ -81,11 +84,12 @@ export function assignMatches(input: AssignmentInput): AssignmentResult {
     if (ambiguousByRow.has(candidate.statementRowId)) continue;
 
     if (candidate.score < config.autoMatchFloor) {
-      // Everything below here for this row is weaker still; surface the whole
-      // list so the user can pick rather than silently dropping the row.
+      // Nothing here is confident enough to match. Offer the plausible few so
+      // the user can pick, rather than silently dropping the row or listing
+      // every transaction that happens to share the amount.
       ambiguousByRow.set(candidate.statementRowId, {
         statementRowId: candidate.statementRowId,
-        candidates: availableFor(candidate.statementRowId),
+        candidates: availableFor(candidate.statementRowId).slice(0, MAX_WEAK_CANDIDATES),
         why: "below-floor",
       });
       continue;
@@ -103,9 +107,17 @@ export function assignMatches(input: AssignmentInput): AssignmentResult {
     ) {
       // Two plausible candidates too close to separate. The matcher must not
       // silently choose between a 94% and a 91% (feature spec §10 Level 3).
+      //
+      // Only genuine rivals are carried: a transaction that merely shares the
+      // amount and falls in the date window is a *candidate*, not a competing
+      // match, and listing it as one turns "these two are indistinguishable"
+      // into a misleading pile of unrelated rows.
+      const contenders = rivals.filter(
+        (rival) => candidate.score - rival.score <= config.ambiguityDelta
+      );
       ambiguousByRow.set(candidate.statementRowId, {
         statementRowId: candidate.statementRowId,
-        candidates: [candidate, ...rivals],
+        candidates: [candidate, ...contenders],
         why: "close-runner-up",
       });
       continue;
