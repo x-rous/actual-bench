@@ -1,6 +1,7 @@
 "use client";
 
-import { AlertTriangle, Check } from "lucide-react";
+import { AlertTriangle, ArrowLeft, Check } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import type { ReconciliationSessionRecord } from "../lib/reconciliationApi";
@@ -90,6 +91,15 @@ export type SessionHeaderProps = {
   /** Navigate to a step. Only offered for steps the session has already reached. */
   onNavigate?: (step: SessionStep) => void;
   /**
+   * Leave the feature entirely.
+   *
+   * Lives here rather than in the toolbar because it is the one action that
+   * means the same thing on every screen. With it in the phase buttons, "back"
+   * retreated one step on three screens and left the feature on the fourth, and
+   * finishing meant walking backwards through screens the user was done with.
+   */
+  onExit?: () => void;
+  /**
    * Steps that cannot be returned to, and why.
    *
    * Rendered as plain text with the reason on hover rather than as a button
@@ -106,6 +116,7 @@ export function SessionHeader({
   statementName,
   onNavigate,
   blockedSteps,
+  onExit,
 }: SessionHeaderProps) {
   const status = session?.status ?? "draft";
   const reached = reachedIndex(status);
@@ -117,6 +128,18 @@ export function SessionHeader({
 
   return (
     <div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-b border-border/50 px-4 py-2">
+      {onExit && (
+        <Button
+          variant="ghost"
+          size="sm"
+          className="-ml-2 h-7 shrink-0 text-muted-foreground hover:text-foreground"
+          onClick={onExit}
+        >
+          <ArrowLeft className="mr-1 h-3.5 w-3.5" />
+          All reconciliations
+        </Button>
+      )}
+
       <div className="flex flex-wrap items-baseline gap-x-2">
         <span className="text-sm font-semibold">{session?.accountName ?? "Reconciliation"}</span>
         {session?.tag && (

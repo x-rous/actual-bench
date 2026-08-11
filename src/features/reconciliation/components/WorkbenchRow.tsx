@@ -155,7 +155,7 @@ function middleState(item: ReconciliationItem): MiddleState {
 
 const EMPTY = (
   <span className="text-muted-foreground/60" aria-hidden="true">
-    —
+    -
   </span>
 );
 
@@ -197,6 +197,9 @@ export function WorkbenchRow({
 
   return (
     <tr
+      // Addressable so keyboard movement can bring the selected row into view;
+      // moving the selection to a row nobody can see is worse than not moving.
+      data-item-id={item.id}
       aria-selected={selected}
       onClick={onSelect}
       className={cn(

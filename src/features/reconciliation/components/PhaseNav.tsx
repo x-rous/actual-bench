@@ -36,8 +36,20 @@ export type PhaseNavProps = {
 export function PhaseNav({ back, secondary, next }: PhaseNavProps) {
   return (
     <>
+      {/*
+        Announced, not just shown. This is the only status in the feature that
+        changes on its own during a wait of any length — writing 200 rows,
+        checking for drift, matching a statement — and it was silent to anyone
+        not watching the pixels.
+      */}
       {next?.progress && (
-        <span className="mr-1 text-xs tabular-nums text-muted-foreground">{next.progress}</span>
+        <span
+          role="status"
+          aria-live="polite"
+          className="mr-1 text-xs tabular-nums text-muted-foreground"
+        >
+          {next.progress}
+        </span>
       )}
       {back && (
         <Button variant="ghost" size="sm" onClick={back.onClick} disabled={back.disabled}>
@@ -55,6 +67,11 @@ export function PhaseNav({ back, secondary, next }: PhaseNavProps) {
         >
           {secondary.label}
         </Button>
+      )}
+      {/* Divider so retreating and finishing do not read as one row of equal
+          choices — the primary sits apart from the ways out. */}
+      {(back || secondary) && next && (
+        <span className="mx-1 h-4 w-px bg-border" aria-hidden="true" />
       )}
       {next && (
         <Button size="sm" onClick={next.onClick} disabled={next.disabled || next.busy}>
