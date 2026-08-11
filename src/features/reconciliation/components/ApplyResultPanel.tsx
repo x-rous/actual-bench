@@ -158,7 +158,7 @@ export function ApplyResultPanel({
                 return (
                   <li key={`${issue.operationId}-${issue.kind}`}>
                     <span className="font-medium">{operation?.kind ?? "Change"}</span>
-                    <span className="text-muted-foreground"> — {issue.detail}</span>
+                    <span className="text-muted-foreground"> - {issue.detail}</span>
                   </li>
                 );
               })}
@@ -168,7 +168,7 @@ export function ApplyResultPanel({
       ) : null}
 
       {/*
-        What was written, row by row, with the statement it came from beside it.
+        What was applied, row by row, with the statement it came from beside it.
 
         The panel previously listed only failures, which left a successful apply
         — and every reopened session — showing a headline and nothing at all.
@@ -178,7 +178,7 @@ export function ApplyResultPanel({
       {written.length > 0 && (
         <section className="-mx-4 flex min-h-[18rem] flex-1 flex-col border-y border-border/60">
           <h3 className="shrink-0 border-b border-border/50 px-3 py-2 text-xs font-semibold">
-            What was written
+            What was applied
           </h3>
           <div className="min-h-0 flex-1 overflow-auto">
             <table className="w-full border-collapse text-xs">
@@ -252,13 +252,13 @@ export function ApplyResultPanel({
                   return (
                     <tr key={entry.operationId} className="border-b border-border/20">
                       <td className="whitespace-nowrap px-3 py-1 tabular-nums text-muted-foreground">
-                        {statementRow ? formatShortDate(statementRow.postedDate) : "—"}
+                        {statementRow ? formatShortDate(statementRow.postedDate) : "-"}
                       </td>
                       <td className="max-w-0 truncate px-3 py-1" title={statementRow?.description}>
-                        {statementRow?.description ?? "—"}
+                        {statementRow?.description ?? "-"}
                       </td>
                       <td className="whitespace-nowrap px-3 py-1 text-right tabular-nums">
-                        {statementRow ? formatMinorUnits(statementRow.amount) : "—"}
+                        {statementRow ? formatMinorUnits(statementRow.amount) : "-"}
                       </td>
 
                       <td
@@ -281,21 +281,21 @@ export function ApplyResultPanel({
                       ) : (
                         <>
                           <td className="whitespace-nowrap px-3 py-1 tabular-nums text-muted-foreground">
-                            {pending?.date ? formatShortDate(pending.date) : "—"}
+                            {pending?.date ? formatShortDate(pending.date) : "-"}
                           </td>
                           <td className="max-w-0 truncate px-3 py-1">
                             {payeeName(pending?.payeeId ?? null) ??
                               (pending?.isNew && applyConfig.descriptionTarget === "payee"
-                                ? statementRow?.description ?? "—"
-                                : "—")}
+                                ? statementRow?.description ?? "-"
+                                : "-")}
                           </td>
                           <td className="max-w-0 truncate px-3 py-1" title={pending?.notes ?? undefined}>
-                            {pending?.notes ?? "—"}
+                            {pending?.notes ?? "-"}
                           </td>
                           <td className="whitespace-nowrap px-3 py-1 text-right tabular-nums">
                             {pending && pending.amount !== null
                               ? formatMinorUnits(pending.amount)
-                              : "—"}
+                              : "-"}
                           </td>
                         </>
                       )}

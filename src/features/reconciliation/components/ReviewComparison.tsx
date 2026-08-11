@@ -309,16 +309,16 @@ export function ReviewComparison({
               return (
                 <tr key={row.item.id} className="border-b border-border/20">
                   <td className="whitespace-nowrap px-2 py-1 tabular-nums text-muted-foreground">
-                    {row.statementRow ? formatShortDate(row.statementRow.postedDate) : "—"}
+                    {row.statementRow ? formatShortDate(row.statementRow.postedDate) : "-"}
                   </td>
                   <td
                     className="max-w-0 truncate px-2 py-1"
                     title={row.statementRow?.description}
                   >
-                    {row.statementRow?.description ?? "—"}
+                    {row.statementRow?.description ?? "-"}
                   </td>
                   <td className="whitespace-nowrap px-2 py-1 text-right tabular-nums">
-                    {row.statementRow ? formatMinorUnits(row.statementRow.amount) : "—"}
+                    {row.statementRow ? formatMinorUnits(row.statementRow.amount) : "-"}
                   </td>
 
                   <td
@@ -339,7 +339,7 @@ export function ReviewComparison({
                     <>
                       <td className="whitespace-nowrap px-2 py-1 tabular-nums text-muted-foreground">
                         <Changed changed={row.changedFields.has("date")} was={row.transaction?.date}>
-                          {row.pending.date ? formatShortDate(row.pending.date) : "—"}
+                          {row.pending.date ? formatShortDate(row.pending.date) : "-"}
                         </Changed>
                       </td>
                       <td className="max-w-0 truncate px-2 py-1" title={payeeName ?? undefined}>
@@ -349,8 +349,8 @@ export function ReviewComparison({
                         >
                           {payeeName ??
                             (row.pending.isNew && applyConfig.descriptionTarget === "payee"
-                              ? row.statementRow?.description ?? "—"
-                              : "—")}
+                              ? row.statementRow?.description ?? "-"
+                              : "-")}
                         </Changed>
                       </td>
                       <td className="max-w-0 truncate px-2 py-1" title={row.pending.notes ?? undefined}>
@@ -358,7 +358,7 @@ export function ReviewComparison({
                           changed={row.changedFields.has("notes")}
                           was={row.transaction?.notes}
                         >
-                          {row.pending.notes ?? "—"}
+                          {row.pending.notes ?? "-"}
                         </Changed>
                       </td>
                       <td className="max-w-0 truncate px-2 py-1" title={categoryName ?? undefined}>
@@ -366,7 +366,7 @@ export function ReviewComparison({
                           changed={row.changedFields.has("categoryId")}
                           was={row.transaction?.categoryName}
                         >
-                          {categoryName ?? "—"}
+                          {categoryName ?? "-"}
                         </Changed>
                       </td>
                       <td className="whitespace-nowrap px-2 py-1 text-right tabular-nums">
@@ -376,7 +376,7 @@ export function ReviewComparison({
                             row.transaction ? formatMinorUnits(row.transaction.amount) : undefined
                           }
                         >
-                          {row.pending.amount !== null ? formatMinorUnits(row.pending.amount) : "—"}
+                          {row.pending.amount !== null ? formatMinorUnits(row.pending.amount) : "-"}
                         </Changed>
                       </td>
                       {/* Whether this row ends up cleared, since that is a
@@ -388,7 +388,7 @@ export function ReviewComparison({
                         ) : row.willBeCleared === "already" ? (
                           <span className="text-muted-foreground">Already</span>
                         ) : (
-                          <span className="text-muted-foreground">—</span>
+                          <span className="text-muted-foreground">-</span>
                         )}
                       </td>
                     </>
@@ -408,13 +408,13 @@ export function ReviewComparison({
 
       <div className="shrink-0 space-y-1 border-t border-border/60 px-3 py-1.5 text-[11px] text-muted-foreground">
         <p>
-          Values in amber are changing — hover one to see what it is now. Everything else is shown
+          Values in amber are changing - hover one to see what it is now. Everything else is shown
           as it already stands.
         </p>
         {unresolved > 0 && (
           <p>
             {unresolved} row{unresolved === 1 ? "" : "s"} still have no decision. They will be left
-            exactly as they are — you can come back to them.
+            exactly as they are - you can come back to them.
           </p>
         )}
       </div>

@@ -123,7 +123,7 @@ function verifyOne(
       issues.push({
         operationId: operation.id,
         kind: "duplicate-create",
-        detail: `This transaction appears ${count} times in the account — it was created more than once.`,
+        detail: `This transaction appears ${count} times in the account - it was created more than once.`,
       });
     }
     return issues;

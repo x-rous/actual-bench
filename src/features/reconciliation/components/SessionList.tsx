@@ -122,7 +122,7 @@ function formatTimestamp(iso: string): string {
 }
 
 function periodOf(session: ReconciliationSessionRecord): string {
-  if (!session.statementStart || !session.statementEnd) return "—";
+  if (!session.statementStart || !session.statementEnd) return "-";
   return `${session.statementStart} → ${session.statementEnd}`;
 }
 
@@ -478,12 +478,12 @@ export function SessionList({ sessions, onOpen, onDelete, onRetag, onNew }: Sess
                   )}
                 </td>
                 <td className="max-w-0 truncate px-3 py-1.5 text-muted-foreground">
-                  {session.statementName ?? "—"}
+                  {session.statementName ?? "-"}
                 </td>
                 <td className="whitespace-nowrap px-3 py-1.5 tabular-nums text-muted-foreground">
                   {periodOf(session)}
                 </td>
-                <td className="px-3 py-1.5 tabular-nums">{rowCountOf(session) ?? "—"}</td>
+                <td className="px-3 py-1.5 tabular-nums">{rowCountOf(session) ?? "-"}</td>
                 <td className="px-3 py-1.5">
                   <Badge variant="outline" className={cn("text-[11px]", statusTone(session.status))}>
                     {STATUS_LABELS[session.status] ?? session.status}

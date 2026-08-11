@@ -69,7 +69,7 @@ function ColumnSelect({ id, label, value, columns, onChange, optional }: ColumnS
           onChange(event.target.value === "" ? undefined : Number(event.target.value))
         }
       >
-        <option value="">—</option>
+        <option value="">-</option>
         {columns.map((column, index) => (
           <option key={`${column}-${index}`} value={index}>
             {column}
@@ -432,7 +432,7 @@ export function ImportPanel({
                     <tr key={row.id} className="border-b border-border/20 last:border-0">
                       <td className="px-3 py-1.5 tabular-nums">{row.postedDate}</td>
                       <td className="max-w-0 truncate px-3 py-1.5">{row.description}</td>
-                      <td className="px-3 py-1.5 text-muted-foreground">{row.reference ?? "—"}</td>
+                      <td className="px-3 py-1.5 text-muted-foreground">{row.reference ?? "-"}</td>
                       <td className="px-3 py-1.5 text-right tabular-nums">
                         {formatMinorUnits(row.amount)}
                       </td>
@@ -525,8 +525,8 @@ export function ImportPanel({
           <p className="mt-0.5 text-muted-foreground">
             The same rows were imported for {duplicateOf.accountName ?? "this account"}
             {duplicateOf.tag ? ` (${duplicateOf.tag})` : ""} on{" "}
-            {new Date(duplicateOf.createdAt).toLocaleDateString()}. Carrying on is fine — matching
-            reads what is in Actual now, and anything already applied is recognised and skipped —
+            {new Date(duplicateOf.createdAt).toLocaleDateString()}. Carrying on is fine - matching
+            reads what is in Actual now, and anything already applied is recognised and skipped -
             but if you meant to resume that reconciliation, go back and open it instead.
           </p>
         </div>

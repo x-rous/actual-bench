@@ -192,7 +192,7 @@ export function ReviewPanel({
             {
               value: "reconciled",
               label: "Everything confirmed",
-              hint: "Also clears matched transactions that are not cleared yet — the point of reconciling, but it turns rows needing no change into writes. Rows already cleared or reconciled in Actual are left untouched.",
+              hint: "Also clears matched transactions that are not cleared yet - the point of reconciling, but it turns rows needing no change into writes. Rows already cleared or reconciled in Actual are left untouched.",
             },
           ]}
         />
@@ -213,7 +213,7 @@ export function ReviewPanel({
               {
                 value: "notes",
                 label: "The notes",
-                hint: "Keeps a curated payee list free of raw bank text — and gives your rules something to read.",
+                hint: "Keeps a curated payee list free of raw bank text - and gives your rules something to read.",
               },
             ]}
           />

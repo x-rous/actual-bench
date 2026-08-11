@@ -135,6 +135,8 @@ export function ReconciliationView() {
   const [statementName, setStatementName] = useState<string | null>(null);
   const [matchError, setMatchError] = useState<string | null>(null);
   const [isMatching, setIsMatching] = useState(false);
+  /** Which part of matching is running, so a long wait explains itself. */
+  const [matchStage, setMatchStage] = useState<string | null>(null);
   /**
    * Which session the in-memory rows and items belong to.
    *
@@ -518,7 +520,7 @@ export function ReconciliationView() {
     const rematchBlockedReason =
       appliedSession &&
       (appliedSession.status === "completed" || appliedSession.status === "partial")
-        ? "This reconciliation has already been applied. Matching again would lose the record of what was written — start a new reconciliation to check the account as it stands now."
+        ? "This reconciliation has already been applied. Matching again would lose the record of what was written - start a new reconciliation to check the account as it stands now."
         : null;
 
     /**
@@ -613,6 +615,14 @@ export function ReconciliationView() {
       if (!connection) return;
       setIsMatching(true);
       setMatchError(null);
+      /*
+       * Staged, because this is the longest unexplained wait in the feature.
+       * Applying says "Writing 12 of 200"; matching said only "Matching…" while
+       * it fetched a candidate window over the network and then scored several
+       * hundred rows against it — seconds of silence with no sense of progress
+       * or of which part was slow.
+       */
+      setMatchStage("Loading transactions from Actual…");
 
       try {
         const window = await loadCandidateWindow(connection, {
@@ -622,6 +632,15 @@ export function ReconciliationView() {
           matchToleranceDays: input.config.dateToleranceDays,
           paddingDays: input.config.candidatePaddingDays,
         });
+
+        setMatchStage(
+          `Matching ${input.statementRows.length} statement row${
+            input.statementRows.length === 1 ? "" : "s"
+          } against ${window.transactions.length}…`
+        );
+        // Yielded to the browser so the stage above actually paints before the
+        // matcher takes the thread for a few hundred rows.
+        await new Promise((resolve) => setTimeout(resolve, 0));
 
         const graph = match({
           statementRows: input.statementRows,
@@ -646,6 +665,7 @@ export function ReconciliationView() {
         setLoadedSessionId(input.sessionId);
         if (input.statementName !== undefined) setStatementName(input.statementName);
 
+        setMatchStage("Saving the results…");
         await mutations.saveParsedStatement.mutateAsync({
           sessionId: input.sessionId,
           statementRows: input.statementRows,
@@ -677,6 +697,7 @@ export function ReconciliationView() {
         setMatchError(error instanceof Error ? error.message : "Could not match the statement");
       } finally {
         setIsMatching(false);
+        setMatchStage(null);
       }
     }
 
@@ -1094,16 +1115,21 @@ export function ReconciliationView() {
           title="Bank Reconciliation"
           actions={
             <PhaseNav
-              back={{
-                label: hasParsedStatement ? "Back to the workbench" : "All reconciliations",
-                onClick: () =>
-                  hasParsedStatement
-                    ? setScreen({ name: "workbench", sessionId: screen.sessionId })
-                    : setScreen({ name: "home" }),
-                disabled: isMatching,
-              }}
+              back={
+                // Only when there is a workbench to go back to. On a first
+                // import there is no previous phase; leaving is what the exit
+                // in the header is for.
+                hasParsedStatement
+                  ? {
+                      label: "Back to the workbench",
+                      onClick: () => setScreen({ name: "workbench", sessionId: screen.sessionId }),
+                      disabled: isMatching,
+                    }
+                  : undefined
+              }
               next={{
                 label: isMatching ? "Matching…" : "Match against Actual",
+                progress: matchStage,
                 onClick: () => {
                   if (pendingStatement) {
                     void handleParsed(pendingStatement.result, pendingStatement.fileName);
@@ -1125,6 +1151,7 @@ export function ReconciliationView() {
             onNavigate={
               hasParsedStatement ? (step) => goToStep(step, screen.sessionId) : undefined
             }
+            onExit={() => setScreen({ name: "home" })}
           />
           {matchError && (
             <p role="alert" className="px-4 pt-3 text-xs text-destructive">
@@ -1196,6 +1223,17 @@ export function ReconciliationView() {
                   setScreen({ name: "workbench", sessionId: screen.sessionId });
                 },
               }}
+              /*
+               * Finishing is a step, and it had no button. On the result screen
+               * the primary slot stood empty exactly when the user was most
+               * likely to be done, so leaving meant retreating through the
+               * workbench — a screen an applied session can no longer use.
+               */
+              secondary={
+                screen.name === "result" && applyResult && !applyResult.complete
+                  ? { label: "Done", onClick: () => setScreen({ name: "home" }) }
+                  : undefined
+              }
               next={
                 screen.name === "review"
                   ? {
@@ -1211,11 +1249,16 @@ export function ReconciliationView() {
                     }
                   : applyResult && !applyResult.complete
                     ? {
+                        // Still something to put right, so retrying stays the
+                        // primary and finishing sits beside it.
                         label: "Retry what failed",
                         onClick: () => void handleApply(),
                         busy: isApplying,
                       }
-                    : undefined
+                    : {
+                        label: "Done",
+                        onClick: () => setScreen({ name: "home" }),
+                      }
               }
             />
           }
@@ -1230,6 +1273,7 @@ export function ReconciliationView() {
             blockedSteps={
               rematchBlockedReason ? { import: rematchBlockedReason } : undefined
             }
+            onExit={() => setScreen({ name: "home" })}
           />
           {matchError && (
             <p role="alert" className="px-4 pt-3 text-xs text-destructive">
@@ -1292,7 +1336,6 @@ export function ReconciliationView() {
           title="Bank Reconciliation"
           actions={
             <PhaseNav
-              back={{ label: "All reconciliations", onClick: () => setScreen({ name: "home" }) }}
               secondary={
                 session
                   ? {
@@ -1330,6 +1373,7 @@ export function ReconciliationView() {
             blockedSteps={
               rematchBlockedReason ? { import: rematchBlockedReason } : undefined
             }
+            onExit={() => setScreen({ name: "home" })}
           />
           {matchError && (
             <p role="alert" className="px-4 pt-3 text-xs text-destructive">
@@ -1346,6 +1390,7 @@ export function ReconciliationView() {
             isMatching={isMatching}
             canRematch={canRematch}
             rematchBlockedReason={rematchBlockedReason}
+          readOnly={Boolean(rematchBlockedReason)}
             payees={payeeOptions}
             categories={categoryOptions}
             onDisposition={handleDisposition}

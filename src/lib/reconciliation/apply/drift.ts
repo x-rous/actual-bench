@@ -125,7 +125,7 @@ export function reconcilePlanWithDrift(input: DriftInput): {
         verdicts.push({
           operationId: operation.id,
           status: "vanished",
-          reason: "Already deleted in Actual — nothing left to do.",
+          reason: "Already deleted in Actual - nothing left to do.",
         });
         continue;
       }

@@ -1,12 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FileCheck, RefreshCw, Search, SlidersHorizontal, Wand2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { MultiPillGroup, PillGroup } from "@/components/ui/pill-group";
 import { cn } from "@/lib/utils";
 import { REASON } from "@/lib/reconciliation/session/build";
+import { canStageDelete } from "@/lib/reconciliation/session/staging";
 import type { ReconciliationCoverage } from "@/lib/reconciliation/session/build";
 import type {
   ActualTransactionSnapshot,
@@ -22,9 +23,10 @@ import type { TransformContext } from "@/lib/reconciliation/transform/rules";
 import type { StagedPatch } from "@/lib/reconciliation/types";
 import { useTableSelection } from "@/hooks/useTableSelection";
 import { BulkDecisionBar } from "./BulkDecisionBar";
-import { CoverageSummary } from "./CoverageSummary";
+import { CoverageSummary, DecisionProgressMeter } from "./CoverageSummary";
 import { Inspector } from "./Inspector";
 import { MatchOptions } from "./MatchOptions";
+import { ShortcutsHelp } from "./ShortcutsHelp";
 import { TransformDialog } from "./TransformDialog";
 import { WorkbenchRow } from "./WorkbenchRow";
 
@@ -55,6 +57,14 @@ type FilterDef = {
   dot: string;
   /** Indented under the filter it refines. */
   child?: boolean;
+  /**
+   * What this filter actually means, on hover.
+   *
+   * The labels are necessarily terse, and several of them ("Amount differs" vs
+   * "Amount looks wrong") only make sense once you know the matcher's rules —
+   * which the user should not have to.
+   */
+  hint: string;
 };
 
 /**
@@ -65,14 +75,53 @@ type FilterDef = {
  * one of the rows needing review.
  */
 const STATEMENT_FILTERS: FilterDef[] = [
-  { id: "all", label: "All", dot: "bg-muted-foreground/40" },
-  { id: "needs-review", label: "Needs review", dot: "bg-amber-500/70" },
-  { id: "ambiguous", label: "Several candidates", dot: "bg-amber-500/40", child: true },
-  { id: "amount-mismatch", label: "Amount differs", dot: "bg-amber-500/40", child: true },
-  { id: "wrong-amount", label: "Amount looks wrong", dot: "bg-amber-500/40", child: true },
-  { id: "duplicates", label: "Duplicates", dot: "bg-amber-500/40", child: true },
-  { id: "create", label: "Not in Actual", dot: "bg-sky-500/60" },
-  { id: "matched", label: "Matched", dot: "bg-emerald-500/70" },
+  { id: "all", label: "All", dot: "bg-muted-foreground/40", hint: "Every row on this statement." },
+  {
+    id: "needs-review",
+    label: "Needs review",
+    dot: "bg-amber-500/70",
+    hint: "Rows the matcher would not decide on its own. Select this to break them down by reason.",
+  },
+  {
+    id: "ambiguous",
+    label: "Several candidates",
+    dot: "bg-amber-500/40",
+    child: true,
+    hint: "More than one transaction in Actual fits this row, and none is clearly the right one.",
+  },
+  {
+    id: "amount-mismatch",
+    label: "Amount differs",
+    dot: "bg-amber-500/40",
+    child: true,
+    hint: "The text matches a transaction plainly, but the amounts do not agree.",
+  },
+  {
+    id: "wrong-amount",
+    label: "Amount looks wrong",
+    dot: "bg-amber-500/40",
+    child: true,
+    hint: "Same merchant and date as the only transaction left, but the amount is far off - often a conversion done wrong before it reached the budget.",
+  },
+  {
+    id: "duplicates",
+    label: "Duplicates",
+    dot: "bg-amber-500/40",
+    child: true,
+    hint: "One statement row, but more than one transaction in Actual recording it.",
+  },
+  {
+    id: "create",
+    label: "Not in Actual",
+    dot: "bg-sky-500/60",
+    hint: "On the statement with nothing in Actual to match - these become new transactions if you create them.",
+  },
+  {
+    id: "matched",
+    label: "Matched",
+    dot: "bg-emerald-500/70",
+    hint: "Paired with a transaction in Actual. Nothing is written unless you have staged a change.",
+  },
 ];
 
 /**
@@ -80,10 +129,37 @@ const STATEMENT_FILTERS: FilterDef[] = [
  * of the statement's total: nothing here counts towards how much of the
  * statement is covered.
  */
+/** The reasons a row lands in review — children of `needs-review`. */
+const REVIEW_REASON_FILTERS = STATEMENT_FILTERS.filter((entry) => entry.child);
+
 const ACTUAL_ONLY_FILTERS: FilterDef[] = [
-  { id: "actual-only", label: "Actual only", dot: "bg-violet-500/60" },
-  { id: "outside-period", label: "Outside period", dot: "bg-muted-foreground/40" },
+  {
+    id: "actual-only",
+    // Named as the coverage bar names it: one thing, one word for it.
+    label: "Not on statement",
+    dot: "bg-violet-500/60",
+    hint: "In Actual within the statement's dates, but the statement does not mention them. Not counted against the statement's coverage.",
+  },
+  {
+    id: "outside-period",
+    label: "Outside period",
+    dot: "bg-muted-foreground/40",
+    hint: "Loaded to help matching near the edges of the period, but dated outside it. The statement makes no claim about these.",
+  },
 ];
+
+/**
+ * Single-key decisions.
+ *
+ * The loop this screen exists for is "look at a row, decide, move on", a few
+ * hundred times. Moving was already on the keyboard; deciding was not, so every
+ * row meant reaching for the mouse and coming back. These are the whole closed
+ * set of dispositions, one key each.
+ *
+ * `Enter` is deliberately the contextual one — accept whatever this row is
+ * plainly for — because most rows only ever need that.
+ */
+const DECISION_KEYS = new Set(["Enter", "c", "d", "i", "u"]);
 
 /**
  * A second axis: where the row stands in the user's own workflow, rather than
@@ -205,6 +281,14 @@ export type WorkbenchProps = {
    * button, because "why can I not do this" is the next question.
    */
   rematchBlockedReason?: string | null;
+  /**
+   * The session has been applied, so it is a record rather than a workspace.
+   *
+   * Staging more changes on it invites the user to build up work that cannot be
+   * re-matched and would need a second write against a budget that has already
+   * moved. Reading it stays useful; editing it does not.
+   */
+  readOnly?: boolean;
   payees: Option[];
   categories: Option[];
   onMatchConfigChange: (preset: TextTargetPreset, config: MatchConfig) => void;
@@ -241,9 +325,10 @@ function FilterButton({
       type="button"
       aria-pressed={active}
       onClick={onSelect}
+      title={entry.hint}
       className={cn(
         "flex items-center gap-1.5 rounded-md px-2 py-1 text-xs transition-colors",
-        entry.child && "ml-1 text-[11px]",
+        entry.child && "text-[11px]",
         active
           ? "bg-accent text-accent-foreground"
           : "text-muted-foreground hover:bg-accent/50",
@@ -267,6 +352,7 @@ export function Workbench({
   isMatching,
   canRematch,
   rematchBlockedReason,
+  readOnly = false,
   payees,
   categories,
   onMatchConfigChange,
@@ -286,6 +372,9 @@ export function Workbench({
   const [decisionFilter, setDecisionFilter] = useState<DecisionFilter>("any");
   const [attributeFilters, setAttributeFilters] = useState<Set<AttributeFilter>>(new Set());
   const [search, setSearch] = useState("");
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  /** The scroll container the grid lives in, for revealing the selected row. */
+  const gridRef = useRef<HTMLDivElement>(null);
   const { selectedIds, toggleSelect, toggleSelectAll, clearSelection } = useTableSelection();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [optionsOpen, setOptionsOpen] = useState(false);
@@ -365,6 +454,26 @@ export function Workbench({
   }, [sorted, filter, decisionFilter, attributeFilters, search, statementRows, transactions]);
 
   const visibleIds = useMemo(() => visible.map((item) => item.id), [visible]);
+
+  /*
+   * The reasons appear only once the user is actually in that branch.
+   *
+   * Opening them whenever a reason merely had rows meant they were expanded by
+   * default on most sessions, costing a whole row of width for a breakdown
+   * nobody had asked for. The parent's own count is the signal that there is
+   * something in there; clicking it is what reveals why.
+   */
+  const reviewBranchOpen =
+    filter === "needs-review" || REVIEW_REASON_FILTERS.some((entry) => filter === entry.id);
+
+  /*
+   * And only the reasons that have rows, plus whichever is selected — a
+   * breakdown of four where three are always zero is noise, and the width it
+   * costs is what pushes this row onto a second line.
+   */
+  const visibleReviewReasons = REVIEW_REASON_FILTERS.filter(
+    (entry) => counts[entry.id] > 0 || filter === entry.id
+  );
   const allVisibleSelected =
     visibleIds.length > 0 && visibleIds.every((id) => selectedIds.has(id));
   const selectedItems = useMemo(
@@ -384,14 +493,22 @@ export function Workbench({
    * sequential: look at a row, decide, move on. j/k and the arrow keys follow
    * the visible order, so the filter in force defines what "next" means.
    */
+  /** Brings a row into view after the keyboard moves the selection to it. */
+  const reveal = useCallback((itemId: string) => {
+    gridRef.current
+      ?.querySelector(`[data-item-id="${itemId}"]`)
+      ?.scrollIntoView({ block: "nearest" });
+  }, []);
+
   const step = useCallback(
     (delta: number) => {
       if (visible.length === 0) return;
       const index = visible.findIndex((item) => item.id === selectedId);
       const next = index === -1 ? 0 : Math.min(visible.length - 1, Math.max(0, index + delta));
       setSelectedId(visible[next].id);
+      reveal(visible[next].id);
     },
-    [visible, selectedId]
+    [visible, selectedId, reveal]
   );
 
   /** Jump to the next row still waiting on a decision. */
@@ -399,11 +516,79 @@ export function Workbench({
     const index = visible.findIndex((item) => item.id === selectedId);
     const after = visible.slice(index + 1).find((item) => item.disposition === "unresolved");
     const wrapped = after ?? visible.find((item) => item.disposition === "unresolved");
-    if (wrapped) setSelectedId(wrapped.id);
-  }, [visible, selectedId]);
+    if (wrapped) {
+      setSelectedId(wrapped.id);
+      reveal(wrapped.id);
+    }
+  }, [visible, selectedId, reveal]);
+
+  /**
+   * Apply a keyed decision to the selected row.
+   *
+   * Guards are checked here rather than assumed: the buttons refuse a delete on
+   * a transfer or a reconciled row, and a keystroke must refuse it for the same
+   * reason. Anything not offered for this row is simply ignored — a key that
+   * silently does the wrong thing is worse than one that does nothing.
+   */
+  const decideSelected = useCallback(
+    (key: string) => {
+      if (readOnly) return;
+      const item = visible.find((entry) => entry.id === selectedId);
+      if (!item) return;
+
+      const hasStatementRow = item.statementRowIds.length > 0;
+      const hasTransaction = item.actualTransactionIds.length > 0;
+
+      const advance = () => goToNextUndecided();
+
+      if (key === "u") {
+        if (item.disposition !== "unresolved") onDisposition(item.id, "unresolved");
+        return;
+      }
+
+      if (key === "i") {
+        onDisposition(item.id, "ignored");
+        advance();
+        return;
+      }
+
+      if (key === "c") {
+        // Creating only makes sense for a row the statement has and Actual does not.
+        if (hasStatementRow && !hasTransaction) {
+          onDisposition(item.id, "create");
+          advance();
+        }
+        return;
+      }
+
+      if (key === "d") {
+        if (!hasTransaction) return;
+        if (!canStageDelete(item).allowed) return;
+        onDisposition(item.id, "delete");
+        advance();
+        return;
+      }
+
+      if (key === "Enter") {
+        // Whatever this row is plainly for: confirm the pair, create what is
+        // missing, or keep what the statement does not mention.
+        if (hasStatementRow && hasTransaction) onDisposition(item.id, "matched");
+        else if (hasStatementRow) onDisposition(item.id, "create");
+        else if (hasTransaction) onDisposition(item.id, "keep");
+        else return;
+        advance();
+      }
+    },
+    [visible, selectedId, onDisposition, goToNextUndecided, readOnly]
+  );
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
+      // Never act behind a dialog. The listener is on the window, so without
+      // this an Enter meant for the transform dialog's button would also decide
+      // whichever row happens to be selected underneath it.
+      if (document.querySelector('[role="dialog"]')) return;
+
       // Never steal a key from someone typing in the search box or a note.
       const target = event.target as HTMLElement | null;
       if (
@@ -425,14 +610,20 @@ export function Workbench({
       } else if (event.key === "n") {
         event.preventDefault();
         goToNextUndecided();
+      } else if (event.key === "?") {
+        event.preventDefault();
+        setShortcutsOpen((open) => !open);
       } else if (event.key === "Escape") {
         setSelectedId(null);
+      } else if (DECISION_KEYS.has(event.key)) {
+        event.preventDefault();
+        decideSelected(event.key);
       }
     }
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [step, goToNextUndecided]);
+  }, [step, goToNextUndecided, decideSelected]);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -443,15 +634,37 @@ export function Workbench({
       </header>
 
       <div className="flex flex-wrap items-center gap-2 border-b border-border/50 px-4 py-2">
+        {/*
+          The four reasons a row needs review are children of "Needs review",
+          and rendered as a flat row they read as eight unrelated filters — five
+          of which are usually zero. They now appear only when that branch is in
+          play, bracketed and indented so the relationship is visible rather
+          than implied by a slightly smaller font.
+        */}
         <div role="group" aria-label="Filter statement rows" className="flex flex-wrap items-center gap-1">
-          {STATEMENT_FILTERS.map((entry) => (
-            <FilterButton
-              key={entry.id}
-              entry={entry}
-              active={filter === entry.id}
-              count={counts[entry.id]}
-              onSelect={() => setFilter(entry.id)}
-            />
+          {STATEMENT_FILTERS.filter((entry) => !entry.child).map((entry) => (
+            <span key={entry.id} className="flex items-center gap-1">
+              <FilterButton
+                entry={entry}
+                active={filter === entry.id}
+                count={counts[entry.id]}
+                onSelect={() => setFilter(entry.id)}
+              />
+
+              {entry.id === "needs-review" && reviewBranchOpen && (
+                <span className="flex items-center gap-1 rounded-md border border-amber-500/30 bg-amber-500/5 px-1 py-0.5">
+                  {visibleReviewReasons.map((child) => (
+                    <FilterButton
+                      key={child.id}
+                      entry={child}
+                      active={filter === child.id}
+                      count={counts[child.id]}
+                      onSelect={() => setFilter(child.id)}
+                    />
+                  ))}
+                </span>
+              )}
+            </span>
           ))}
         </div>
 
@@ -493,6 +706,8 @@ export function Workbench({
             variant="outline"
             size="sm"
             aria-expanded={transformOpen}
+            disabled={readOnly}
+            title={readOnly ? rematchBlockedReason ?? undefined : undefined}
             onClick={() => setTransformOpen((open) => !open)}
           >
             <Wand2 className="mr-1 h-3.5 w-3.5" />
@@ -502,6 +717,8 @@ export function Workbench({
             variant="outline"
             size="sm"
             aria-expanded={optionsOpen}
+            disabled={readOnly}
+            title={readOnly ? rematchBlockedReason ?? undefined : undefined}
             onClick={() => setOptionsOpen((open) => !open)}
           >
             <SlidersHorizontal className="mr-1 h-3.5 w-3.5" />
@@ -542,6 +759,8 @@ export function Workbench({
           onChange={setDecisionFilter}
         />
 
+        <DecisionProgressMeter coverage={coverage} />
+
         <span className="ml-2 text-muted-foreground">Show only</span>
         <MultiPillGroup
           options={ATTRIBUTE_FILTERS.map((entry) => ({ value: entry.id, label: entry.label }))}
@@ -553,13 +772,24 @@ export function Workbench({
         <div className="ml-auto flex items-center gap-2">
           <Button size="sm" variant="ghost" className="h-6 text-xs" onClick={goToNextUndecided}>
             Next undecided
-            <kbd className="ml-1.5 rounded border border-border px-1 text-[10px]">n</kbd>
+            <kbd className="ml-1.5 rounded border border-border px-1 text-[11px]">n</kbd>
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-6 text-xs"
+            aria-label="Keyboard shortcuts"
+            onClick={() => setShortcutsOpen(true)}
+          >
+            <kbd className="rounded border border-border px-1 text-[11px]">?</kbd>
           </Button>
           <span className="tabular-nums text-muted-foreground">
             {visible.length} of {items.length} rows
           </span>
         </div>
       </div>
+
+      <ShortcutsHelp open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
 
       {transformOpen && (
         <TransformDialog
@@ -579,13 +809,13 @@ export function Workbench({
         <div className="border-b border-border/50 px-4 py-3">
           <MatchOptions config={matchConfig} preset={matchPreset} onChange={onMatchConfigChange} />
           <p className="mt-2 text-[11px] text-muted-foreground">
-            Changing these does not re-match on its own — choose Re-run when you are ready.
+            Changing these does not re-match on its own - choose Re-run when you are ready.
           </p>
         </div>
       )}
 
       <div className="flex min-h-0 flex-1">
-        <div className="min-h-0 flex-1 overflow-auto">
+        <div ref={gridRef} className="min-h-0 flex-1 overflow-auto">
           <table className="w-full border-collapse">
             <caption className="sr-only">
               Bank statement rows matched against Actual transactions
@@ -665,7 +895,7 @@ export function Workbench({
               </tr>
             </thead>
             <tbody>
-              {visible.map((item) => (
+              {!isMatching && visible.map((item) => (
                 <WorkbenchRow
                   key={item.id}
                   item={item}
@@ -684,7 +914,27 @@ export function Workbench({
             </tbody>
           </table>
 
-          {visible.length === 0 && (
+          {/* Re-running replaces every row, so the grid below is about to be
+              wrong. A skeleton says "this is being rebuilt" where stale rows
+              under a spinning button say nothing at all. */}
+          {isMatching && (
+            <div className="space-y-1 p-2" aria-busy="true" aria-label="Matching…">
+              {Array.from({ length: 10 }).map((_, index) => (
+                <div key={index} className="flex items-center gap-3 px-2 py-1.5">
+                  <div className="h-3 w-14 shrink-0 animate-pulse rounded bg-muted" />
+                  <div
+                    className={cn(
+                      "h-3 animate-pulse rounded bg-muted",
+                      index % 3 === 0 ? "w-64" : index % 3 === 1 ? "w-48" : "w-56"
+                    )}
+                  />
+                  <div className="ml-auto h-3 w-20 shrink-0 animate-pulse rounded bg-muted" />
+                </div>
+              ))}
+            </div>
+          )}
+
+          {!isMatching && visible.length === 0 && (
             <p className="px-4 py-8 text-center text-xs text-muted-foreground">
               {items.length === 0
                 ? "No matching has run for this session yet. Choose Re-run to match it against Actual."
@@ -708,6 +958,7 @@ export function Workbench({
               .filter((t): t is ActualTransactionSnapshot => Boolean(t))}
             payees={payees}
             categories={categories}
+            readOnly={readOnly}
             onClose={() => setSelectedId(null)}
             onDisposition={(disposition) => onDisposition(selected.id, disposition)}
             onUseCandidate={(transactionId) => onUseCandidate(selected.id, transactionId)}
@@ -720,20 +971,22 @@ export function Workbench({
         )}
       </div>
 
-      <BulkDecisionBar
-        selected={selectedItems}
-        statementRows={statementRows}
-        transactions={transactions}
-        onClear={clearSelection}
-        onBulkDisposition={(itemIds, disposition) => {
-          onBulkDisposition(itemIds, disposition);
-          clearSelection();
-        }}
-        onBulkCorrectAmount={(entries) => {
-          onBulkCorrectAmount(entries);
-          clearSelection();
-        }}
-      />
+      {!readOnly && (
+        <BulkDecisionBar
+          selected={selectedItems}
+          statementRows={statementRows}
+          transactions={transactions}
+          onClear={clearSelection}
+          onBulkDisposition={(itemIds, disposition) => {
+            onBulkDisposition(itemIds, disposition);
+            clearSelection();
+          }}
+          onBulkCorrectAmount={(entries) => {
+            onBulkCorrectAmount(entries);
+            clearSelection();
+          }}
+        />
+      )}
     </div>
   );
 }

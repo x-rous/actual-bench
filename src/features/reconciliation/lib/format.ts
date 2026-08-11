@@ -112,7 +112,7 @@ export function describeReason(reason: MatchReason): string {
         `Amount differs by ${formatMinorUnits(difference)} ` +
         `(statement ${formatMinorUnits(Math.abs(reason.statementAmount))}, ` +
         `Actual ${formatMinorUnits(Math.abs(reason.actualAmount))}` +
-        (ratio ? ` — recorded ${ratio}× the statement` : "") +
+        (ratio ? ` - recorded ${ratio}× the statement` : "") +
         ")"
       );
     }
