@@ -71,7 +71,12 @@ type SidebarSection =
   | { type: "item"; item: NavItem }
   | { type: "group"; group: NavGroup };
 
-const SIDEBAR_SECTIONS: SidebarSection[] = [
+/**
+ * Exported so the overview page's cards can be checked against this order
+ * rather than drifting from it — two lists of the same destinations in two
+ * different orders read as two different sets of tools.
+ */
+export const SIDEBAR_SECTIONS: SidebarSection[] = [
   {
     type: "item",
     item: {
