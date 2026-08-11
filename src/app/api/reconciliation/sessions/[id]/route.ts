@@ -62,6 +62,7 @@ export async function PATCH(request: Request, context: RouteContext) {
     if ("accountName" in body) patch.accountName = body.accountName as string | null;
     if ("profileId" in body) patch.profileId = body.profileId as string | null;
     if ("statementName" in body) patch.statementName = body.statementName as string | null;
+    if ("tag" in body) patch.tag = body.tag as string | null;
     if ("statementStart" in body) patch.statementStart = body.statementStart as string | null;
     if ("statementEnd" in body) patch.statementEnd = body.statementEnd as string | null;
     if ("candidateStart" in body) patch.candidateStart = body.candidateStart as string | null;

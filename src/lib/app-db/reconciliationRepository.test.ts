@@ -121,6 +121,35 @@ describe("reconciliation sessions", () => {
     expect(getReconciliationSession(db, session.id)?.applyResults).toEqual(results);
   });
 
+  it("round-trips the tag it was created with", () => {
+    // The rule this feature learned the hard way: a field the UI reads has to
+    // survive persistence, or it fails silently on a resumed session.
+    const db = tempDb();
+    const session = createReconciliationSession(db, {
+      budgetSyncId: "budget-1",
+      accountId: "account-1",
+      accountName: "Global Money Credit Card",
+      tag: "July close",
+    });
+
+    expect(session.tag).toBe("July close");
+    expect(getReconciliationSession(db, session.id)?.tag).toBe("July close");
+  });
+
+  it("leaves the tag null when none was given", () => {
+    const db = tempDb();
+    expect(newSession(db).tag).toBeNull();
+  });
+
+  it("lets a tag be changed or removed later", () => {
+    const db = tempDb();
+    const session = newSession(db);
+
+    expect(updateReconciliationSession(db, session.id, { tag: "Q3 audit" })?.tag).toBe("Q3 audit");
+    // `null` clears it; leaving the key out entirely would leave it alone.
+    expect(updateReconciliationSession(db, session.id, { tag: null })?.tag).toBeNull();
+  });
+
   it("rejects an unknown status rather than persisting it", () => {
     const db = tempDb();
     const session = newSession(db);

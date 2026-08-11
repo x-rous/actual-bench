@@ -3,6 +3,7 @@ import {
   DEFAULT_MAPPING,
   detectDateFormat,
   fingerprintRow,
+  fingerprintStatement,
   normalizeStatement,
   parseMoneyToMinorUnits,
   parseStatementDate,
@@ -141,6 +142,38 @@ describe("detectDateFormat", () => {
   it("defaults to day-first when nothing disambiguates", () => {
     // Deliberate: the mapping UI must show this choice rather than trust it.
     expect(detectDateFormat(["03/07/2026"])).toBe("dmy");
+  });
+});
+
+describe("fingerprintStatement", () => {
+  const rows = (...ids: string[]) => ids.map((fingerprint) => ({ fingerprint }));
+
+  it("is stable for the same statement", () => {
+    expect(fingerprintStatement(rows("a", "b", "c"))).toBe(fingerprintStatement(rows("a", "b", "c")));
+  });
+
+  it("ignores the order the rows arrived in", () => {
+    // The same export sorted the other way round is the same statement.
+    expect(fingerprintStatement(rows("a", "b", "c"))).toBe(fingerprintStatement(rows("c", "a", "b")));
+  });
+
+  it("changes when a row changes", () => {
+    expect(fingerprintStatement(rows("a", "b"))).not.toBe(fingerprintStatement(rows("a", "z")));
+  });
+
+  it("changes when a row is added", () => {
+    // Next month's statement contains last month's rows plus more, and must
+    // not be mistaken for a re-import of it.
+    expect(fingerprintStatement(rows("a", "b"))).not.toBe(fingerprintStatement(rows("a", "b", "c")));
+  });
+
+  it("distinguishes a repeated row from a single one", () => {
+    // Two identical charges on the same day are two rows, not one.
+    expect(fingerprintStatement(rows("a"))).not.toBe(fingerprintStatement(rows("a", "a")));
+  });
+
+  it("has no fingerprint for an empty statement", () => {
+    expect(fingerprintStatement([])).toBeNull();
   });
 });
 

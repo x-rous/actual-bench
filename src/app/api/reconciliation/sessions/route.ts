@@ -45,6 +45,7 @@ export async function POST(request: Request) {
       accountName: typeof body.accountName === "string" ? body.accountName : null,
       profileId: typeof body.profileId === "string" ? body.profileId : null,
       statementName: typeof body.statementName === "string" ? body.statementName : null,
+      tag: typeof body.tag === "string" ? body.tag : null,
     });
 
     return NextResponse.json({ session }, { status: 201 });

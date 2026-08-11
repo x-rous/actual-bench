@@ -49,6 +49,7 @@ export function createSession(payload: {
   accountName?: string | null;
   profileId?: string | null;
   statementName?: string | null;
+  tag?: string | null;
 }) {
   return request<{ session: ReconciliationSessionRecord }>("/api/reconciliation/sessions", {
     method: "POST",
@@ -71,6 +72,7 @@ export function updateSession(
     totals: unknown;
     applyResults: unknown;
     applyConfig: unknown;
+    tag: string | null;
     appliedAt: string | null;
   }>
 ) {

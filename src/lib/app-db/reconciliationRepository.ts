@@ -83,6 +83,8 @@ export type ReconciliationSessionRecord = {
   applyResults: unknown | null;
   /** How staged changes are turned into writes. */
   applyConfig: unknown | null;
+  /** A short label the user gave this session, for telling reruns apart. */
+  tag: string | null;
   createdAt: string;
   updatedAt: string;
   appliedAt: string | null;
@@ -152,6 +154,7 @@ type SessionRow = {
   totals_json: string | null;
   apply_results_json: string | null;
   apply_config_json: string | null;
+  tag: string | null;
   created_at: string;
   updated_at: string;
   applied_at: string | null;
@@ -264,6 +267,7 @@ function sessionToRecord(row: SessionRow): ReconciliationSessionRecord {
     totals: parseJson(row.totals_json),
     applyResults: parseJson(row.apply_results_json),
     applyConfig: parseJson(row.apply_config_json),
+    tag: row.tag,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     appliedAt: row.applied_at,
@@ -415,6 +419,7 @@ export type CreateSessionInput = {
   accountName?: string | null;
   profileId?: string | null;
   statementName?: string | null;
+  tag?: string | null;
 };
 
 export function createReconciliationSession(
@@ -428,8 +433,8 @@ export function createReconciliationSession(
 
   db.prepare(
     `INSERT INTO reconciliation_sessions
-       (id, budget_sync_id, account_id, account_name, profile_id, status, statement_name, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, 'draft', ?, ?, ?)`
+       (id, budget_sync_id, account_id, account_name, profile_id, status, statement_name, tag, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?)`
   ).run(
     id,
     budgetSyncId,
@@ -437,6 +442,7 @@ export function createReconciliationSession(
     optionalText(input.accountName, "account name"),
     input.profileId ?? null,
     optionalText(input.statementName, "statement name"),
+    optionalText(input.tag, "tag"),
     timestamp,
     timestamp
   );
@@ -480,6 +486,7 @@ export type UpdateSessionInput = {
   totals?: unknown;
   applyResults?: unknown;
   applyConfig?: unknown;
+  tag?: string | null;
   appliedAt?: string | null;
 };
 
@@ -510,6 +517,7 @@ export function updateReconciliationSession(
   if (input.candidateStart !== undefined) set("candidate_start", input.candidateStart);
   if (input.candidateEnd !== undefined) set("candidate_end", input.candidateEnd);
   if (input.statementFingerprint !== undefined) set("statement_fingerprint", input.statementFingerprint);
+  if (input.tag !== undefined) set("tag", optionalText(input.tag, "tag"));
   if (input.matchConfig !== undefined) set("match_config_json", JSON.stringify(input.matchConfig ?? null));
   if (input.totals !== undefined) set("totals_json", JSON.stringify(input.totals ?? null));
   if (input.applyResults !== undefined) {

@@ -326,6 +326,10 @@ CREATE TABLE IF NOT EXISTS reconciliation_sessions (
   -- goes on a created transaction, and anything else that shapes the write
   -- rather than the match.
   apply_config_json text,
+  -- A short label the user gives a session ("July close", "Q3 audit"), so a
+  -- list of reruns and corrections for one account can be told apart by what
+  -- they were *for* rather than only by when they were made.
+  tag text,
   created_at text NOT NULL,
   updated_at text NOT NULL,
   applied_at text

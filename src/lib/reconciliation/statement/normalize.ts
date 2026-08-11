@@ -382,6 +382,26 @@ export function fingerprintRow(cells: string[], sourceRowNumber: number): string
   return fnv1aHex(`${sourceRowNumber} ${cells.join("")}`);
 }
 
+/**
+ * Stable fingerprint of a whole statement, for recognising a re-import.
+ *
+ * Built from the rows' own fingerprints, **sorted** — the same statement
+ * exported twice can arrive in a different order, and someone who reversed the
+ * sort in their banking app has not produced a different statement.
+ *
+ * Derived from the rows rather than the file, so a statement pasted one month
+ * and uploaded the next is still recognised, and re-parsing under a corrected
+ * column mapping does not invent a new identity for the same document.
+ *
+ * Uses the same NUL/SOH separators as `fingerprintRow`, so no field's contents
+ * can imitate a separator and collide with a different statement.
+ */
+export function fingerprintStatement(rows: { fingerprint: string }[]): string | null {
+  if (rows.length === 0) return null;
+  const sorted = rows.map((row) => row.fingerprint).sort();
+  return fnv1aHex(`${rows.length}\x00${sorted.join("\x01")}`);
+}
+
 function cell(cells: string[], index: number | undefined): string {
   if (index == null) return "";
   return cells[index] ?? "";

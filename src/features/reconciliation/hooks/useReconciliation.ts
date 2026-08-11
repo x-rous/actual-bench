@@ -57,7 +57,12 @@ export function useReconciliationMutations() {
     queryClient.invalidateQueries({ queryKey: sessionKey(id) });
 
   const createSession = useMutation({
-    mutationFn: (payload: { accountId: string; accountName?: string; statementName?: string }) =>
+    mutationFn: (payload: {
+      accountId: string;
+      accountName?: string;
+      statementName?: string;
+      tag?: string | null;
+    }) =>
       api.createSession({ budgetSyncId: budgetSyncId!, ...payload }),
     onSuccess: invalidateSessions,
   });

@@ -28,7 +28,7 @@ import {
 import { KDF_VERSION_META_KEY, SALT_META_KEY, VERIFIER_META_KEY } from "./vaultMetaKeys";
 import { AppDbUnavailableError } from "./errors";
 
-export const LATEST_SCHEMA_VERSION = 14;
+export const LATEST_SCHEMA_VERSION = 15;
 
 type Migration = {
   version: number;
@@ -193,7 +193,17 @@ const MIGRATIONS: readonly Migration[] = [
     // How writes are shaped, as distinct from how rows are matched (RD-071).
     apply: applyReconciliationApplyConfig,
   },
+  {
+    version: 15,
+    // A user-supplied label per session (RD-071), for telling a month's reruns
+    // and corrections apart in the list.
+    apply: applyReconciliationSessionTag,
+  },
 ];
+
+function applyReconciliationSessionTag(db: SqliteDatabase): void {
+  addColumnIfMissing(db, "reconciliation_sessions", "tag", "text");
+}
 
 function applyReconciliationApplyConfig(db: SqliteDatabase): void {
   addColumnIfMissing(db, "reconciliation_sessions", "apply_config_json", "text");
