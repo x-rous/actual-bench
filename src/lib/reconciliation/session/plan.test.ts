@@ -59,10 +59,12 @@ function plan(
   items: ReconciliationItem[],
   rows: StatementRow[] = [],
   transactions: ActualTransactionSnapshot[] = [],
-  applyConfig?: ApplyConfig
+  applyConfig?: ApplyConfig,
+  appliedOperationIds?: Set<string>
 ) {
   return buildApplyPlan({
     applyConfig,
+    appliedOperationIds,
     sessionId: "sess-1",
     budgetSyncId: "budget-1",
     accountId: "acct-1",
@@ -550,6 +552,55 @@ describe("the plan as a whole", () => {
     expect(totalChanges(result)).toBe(3);
     expect(result.noWriteMatches).toBe(1);
     expect(result.unresolved).toBe(1);
+  });
+
+  it("does not re-plan work an earlier run already wrote", () => {
+    // A reconciliation does not become un-applied because its decisions are
+    // still on screen. Without this, reopening an applied session offers to
+    // apply the whole thing over again.
+    const items = [
+      item({ id: "i1", disposition: "create", statementRowIds: ["s1"] }),
+      item({
+        id: "i2",
+        disposition: "matched",
+        actualTransactionIds: ["t1"],
+        stagedChanges: NOTES_PATCH,
+      }),
+    ];
+    const rows = [row({ id: "s1" })];
+    const transactions = [txn({ id: "t1" })];
+
+    const first = plan(items, rows, transactions);
+    expect(totalChanges(first)).toBe(2);
+
+    const applied = new Set(first.operations.map((operation) => operation.id));
+    const second = plan(items, rows, transactions, undefined, applied);
+
+    expect(totalChanges(second)).toBe(0);
+    expect(second.alreadyApplied).toBe(2);
+  });
+
+  it("leaves an operation that failed still to do", () => {
+    // A partial apply must go on offering exactly what did not succeed.
+    const items = [
+      item({ id: "i1", disposition: "create", statementRowIds: ["s1"] }),
+      item({
+        id: "i2",
+        disposition: "matched",
+        actualTransactionIds: ["t1"],
+        stagedChanges: NOTES_PATCH,
+      }),
+    ];
+    const rows = [row({ id: "s1" })];
+    const transactions = [txn({ id: "t1" })];
+
+    const first = plan(items, rows, transactions);
+    const onlyOne = new Set([first.operations[0].id]);
+    const second = plan(items, rows, transactions, undefined, onlyOne);
+
+    expect(totalChanges(second)).toBe(1);
+    expect(second.alreadyApplied).toBe(1);
+    expect(second.operations[0].id).toBe(first.operations[1].id);
   });
 
   it("gives each operation a stable id across replans", () => {

@@ -60,6 +60,14 @@ export type PlanInput = {
   statementRows: Map<string, StatementRow>;
   transactions: Map<string, ActualTransactionSnapshot>;
   applyConfig?: ApplyConfig;
+  /**
+   * Operation ids an earlier run already wrote, from the session's own record.
+   *
+   * A reconciliation does not become un-applied because its decisions are still
+   * on screen: without this the same staged changes are replanned every time,
+   * and an applied session goes on offering to apply itself.
+   */
+  appliedOperationIds?: ReadonlySet<string>;
 };
 
 /**
@@ -181,7 +189,20 @@ export function buildApplyPlan(input: PlanInput): ApplyPlan {
     }
   }
 
-  return { operations, noWriteMatches, unresolved, blocked };
+  // Filtered at the end rather than at each branch, so every operation is
+  // built the same way and only then checked against what has already run.
+  const applied = input.appliedOperationIds;
+  const remaining = applied
+    ? operations.filter((operation) => !applied.has(operation.id))
+    : operations;
+
+  return {
+    operations: remaining,
+    alreadyApplied: operations.length - remaining.length,
+    noWriteMatches,
+    unresolved,
+    blocked,
+  };
 }
 
 function operationId(kind: string, itemId: string): string {

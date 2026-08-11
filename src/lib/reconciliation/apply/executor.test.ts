@@ -60,7 +60,7 @@ function transportCallFor(operation: ApplyOperation): unknown {
 }
 
 function planOf(operations: ApplyOperation[]): ApplyPlan {
-  return { operations, noWriteMatches: 0, unresolved: 0, blocked: [] };
+  return { operations, alreadyApplied: 0, noWriteMatches: 0, unresolved: 0, blocked: [] };
 }
 
 describe("executeApplyPlan", () => {

@@ -95,6 +95,14 @@ export type OperationResult = {
  */
 export type ApplyPlan = {
   operations: ApplyOperation[];
+  /**
+   * Operations an earlier run already wrote.
+   *
+   * Excluded from `operations` rather than merely marked, because the plan is
+   * what the review screen counts and what the executor runs: leaving them in
+   * would offer to apply an applied session all over again.
+   */
+  alreadyApplied: number;
   /** Statement rows that are reconciled but need no write. */
   noWriteMatches: number;
   /** Rows the user has not decided yet; Apply does not touch them. */
@@ -102,6 +110,57 @@ export type ApplyPlan = {
   /** Rows a guardrail refused to stage, with the reason. */
   blocked: { itemId: string; reason: string }[];
 };
+
+/**
+ * Fold a run's outcomes into the session's existing record.
+ *
+ * A retry runs only what did not succeed, so its results describe a fraction of
+ * the session. Storing them as *the* record would erase every operation that
+ * already worked — and since the plan excludes operations it knows were
+ * applied, erasing that knowledge brings the applied work back as work still to
+ * do. A second Apply would then rewrite transactions that were already correct.
+ *
+ * The later outcome for an operation wins; everything else is carried forward,
+ * in its original order so the record reads chronologically.
+ */
+export function mergeOperationResults(
+  previous: OperationResult[],
+  next: OperationResult[]
+): OperationResult[] {
+  const byId = new Map(previous.map((entry) => [entry.operationId, entry]));
+  const merged = [...previous];
+
+  for (const entry of next) {
+    const existing = byId.get(entry.operationId);
+    if (existing) {
+      merged[merged.indexOf(existing)] = entry;
+      byId.set(entry.operationId, entry);
+    } else {
+      merged.push(entry);
+      byId.set(entry.operationId, entry);
+    }
+  }
+
+  return merged;
+}
+
+/** Totals across a set of outcomes, for the result screen and the session status. */
+export function summarizeResults(results: OperationResult[]): {
+  applied: number;
+  failed: number;
+  skipped: number;
+  complete: boolean;
+} {
+  let applied = 0;
+  let failed = 0;
+  let skipped = 0;
+  for (const entry of results) {
+    if (entry.status === "applied") applied += 1;
+    else if (entry.status === "failed") failed += 1;
+    else if (entry.status === "skipped") skipped += 1;
+  }
+  return { applied, failed, skipped, complete: failed === 0 };
+}
 
 export function planCounts(plan: ApplyPlan): Record<OperationKind, number> {
   const counts: Record<OperationKind, number> = { create: 0, update: 0, delete: 0 };
