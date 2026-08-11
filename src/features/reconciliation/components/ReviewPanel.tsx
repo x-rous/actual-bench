@@ -1,7 +1,6 @@
 "use client";
 
-import { AlertTriangle, CheckCircle2, Loader2, Plus, Trash2, Pencil } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { AlertTriangle, CheckCircle2, Plus, Trash2, Pencil } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   balanceImpact,
@@ -66,17 +65,10 @@ export type ReviewPanelProps = {
   transactions: Map<string, ActualTransactionSnapshot>;
   payees: Option[];
   categories: Option[];
-  isApplying: boolean;
-  /** The pre-flight re-read is in progress. */
-  isCheckingDrift: boolean;
   /** What moved in Actual since the session loaded, once checked. */
   drift: DriftReport | null;
-  /** How far a run in flight has got, so a long apply is legible. */
-  progress: { done: number; total: number } | null;
   applyConfig: ApplyConfig;
   onApplyConfigChange: (config: ApplyConfig) => void;
-  onBack: () => void;
-  onApply: () => void;
 };
 
 export function ReviewPanel({
@@ -86,14 +78,9 @@ export function ReviewPanel({
   transactions,
   payees,
   categories,
-  isApplying,
-  isCheckingDrift,
   drift,
-  progress,
   applyConfig,
   onApplyConfigChange,
-  onBack,
-  onApply,
 }: ReviewPanelProps) {
   const counts = planCounts(plan);
   const total = totalChanges(plan);
@@ -106,7 +93,6 @@ export function ReviewPanel({
   // that will actually happen rather than the work that was planned.
   const withheld = drift?.withheld.length ?? 0;
   const applicable = Math.max(total - withheld, 0);
-  const busy = isApplying || isCheckingDrift;
 
   const fieldCounts = new Map<string, number>();
   for (const operation of plan.operations) {
@@ -244,51 +230,22 @@ export function ReviewPanel({
         />
       )}
 
-      {/* The decision sits with the table it is about, at the top where it is
-          reachable without scrolling past two hundred rows first. */}
-      <div className="flex flex-wrap items-center gap-2 border-t border-border/50 pt-3">
-        {/* Which fields the updates touch, on the same line as the decision it
-            informs rather than in a panel of its own above it. */}
-        {fieldCounts.size > 0 && (
-          <div className="text-xs">
-            <p className="text-muted-foreground">The changes will include:</p>
-            <p className="flex flex-wrap items-baseline gap-x-3">
-              {[...fieldCounts].map(([field, count]) => (
-                <span key={field}>
-                  <span className="font-medium tabular-nums">{count}</span>{" "}
-                  {pluralFieldLabel(field, count)}
-                </span>
-              ))}
-            </p>
-          </div>
-        )}
-
-        {/* A spinner alone cannot distinguish slow from stuck. */}
-        {isApplying && progress && (
-          <span className="text-xs tabular-nums text-muted-foreground">
-            Writing {progress.done} of {progress.total}…
-          </span>
-        )}
-        {isCheckingDrift && (
-          <span className="text-xs text-muted-foreground">
-            Checking what has changed in Actual…
-          </span>
-        )}
-
-        <div className="ml-auto flex items-center gap-2">
-          <Button variant="ghost" onClick={onBack} disabled={busy}>
-            Cancel
-          </Button>
-          <Button onClick={onApply} disabled={busy || applicable === 0}>
-            {busy && <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />}
-            {applicable === 0
-              ? "Nothing to apply"
-              : withheld > 0
-                ? `Apply the other ${applicable} change${applicable === 1 ? "" : "s"}`
-                : `Apply ${applicable} change${applicable === 1 ? "" : "s"}`}
-          </Button>
+      {/* Which fields the updates touch. The Apply and Cancel buttons that used
+          to sit here now live in the page toolbar, with the rest of the phase
+          navigation. */}
+      {fieldCounts.size > 0 && (
+        <div className="border-t border-border/50 pt-3 text-xs">
+          <p className="text-muted-foreground">The changes will include:</p>
+          <p className="flex flex-wrap items-baseline gap-x-3">
+            {[...fieldCounts].map(([field, count]) => (
+              <span key={field}>
+                <span className="font-medium tabular-nums">{count}</span>{" "}
+                {pluralFieldLabel(field, count)}
+              </span>
+            ))}
+          </p>
         </div>
-      </div>
+      )}
 
       <ReviewComparison
         plan={plan}

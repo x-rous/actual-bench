@@ -219,10 +219,8 @@ export type WorkbenchProps = {
     entries: { itemId: string; transactionId: string; amount: number }[]
   ) => void;
   /** Writes the plan would make, named on the button rather than a row count. */
-  changeCount: number;
   /** Set when this session has already been applied, so its outcome is reachable. */
   onViewResult?: () => void;
-  onReview: () => void;
   transformContextFor: (item: ReconciliationItem) => TransformContext;
   onTransform: (changes: { itemId: string; patch: StagedPatch | undefined }[]) => void;
 };
@@ -280,9 +278,7 @@ export function Workbench({
   onUnstage,
   onBulkDisposition,
   onBulkCorrectAmount,
-  changeCount,
   onViewResult,
-  onReview,
   transformContextFor,
   onTransform,
 }: WorkbenchProps) {
@@ -532,11 +528,6 @@ export function Workbench({
           {/* Named in changes, not rows: most of a reconciliation needs no
               write, and offering to "apply 248" when 12 will change is how a
               user stops trusting the numbers. */}
-          <Button size="sm" disabled={changeCount === 0} onClick={onReview}>
-            {changeCount === 0
-              ? "Nothing to review"
-              : `Review ${changeCount} change${changeCount === 1 ? "" : "s"}`}
-          </Button>
         </div>
       </div>
 

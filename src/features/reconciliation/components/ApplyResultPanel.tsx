@@ -1,7 +1,6 @@
 "use client";
 
-import { AlertTriangle, CheckCircle2, RefreshCw } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { AlertTriangle, CheckCircle2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { ApplyConfig } from "@/lib/reconciliation/session/plan";
 import { prospectiveTransaction } from "@/lib/reconciliation/session/prospective";
@@ -39,8 +38,6 @@ export type ApplyResultPanelProps = {
   /** The read-back check, once it has run. `null` while it is still running. */
   verification: VerificationReport | null;
   isVerifying: boolean;
-  isApplying: boolean;
-  onRetry: () => void;
 };
 
 export function ApplyResultPanel({
@@ -53,8 +50,6 @@ export function ApplyResultPanel({
   result,
   verification,
   isVerifying,
-  isApplying,
-  onRetry,
 }: ApplyResultPanelProps) {
   const failures = result.results.filter((entry) => entry.status === "failed");
 
@@ -335,16 +330,6 @@ export function ApplyResultPanel({
         </section>
       )}
 
-      {/* No back button here: the progress header and the page toolbar both
-          already lead out of this screen. */}
-      <div className="flex items-center justify-end gap-2 border-t border-border/50 pt-3">
-        {!result.complete && (
-          <Button onClick={onRetry} disabled={isApplying}>
-            <RefreshCw className="mr-1 h-3.5 w-3.5" />
-            Retry what failed
-          </Button>
-        )}
-      </div>
     </div>
   );
 }

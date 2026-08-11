@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -90,8 +90,12 @@ export type ImportPanelProps = {
   onApplyProfile: (profile: ReconciliationProfileRecord) => void;
   onSaveProfile: (name: string, mapping: ColumnMapping) => void;
   isSavingProfile?: boolean;
-  onCancel: () => void;
-  onParsed: (result: NormalizedStatement, statementName: string | null) => void;
+  /**
+   * Reports the parsed statement upward as it changes, so the phase button can
+   * live in the page toolbar with the other navigation rather than at the foot
+   * of this panel where it reads as one more control among many.
+   */
+  onReadyChange: (result: NormalizedStatement | null, statementName: string | null) => void;
   /**
    * Statements already imported, by fingerprint. Held here rather than resolved
    * by the caller because only this panel knows what has been parsed yet.
@@ -102,7 +106,6 @@ export type ImportPanelProps = {
     tag: string | null;
     createdAt: string;
   }[];
-  isSaving?: boolean;
 };
 
 export function ImportPanel({
@@ -114,10 +117,8 @@ export function ImportPanel({
   onApplyProfile,
   onSaveProfile,
   isSavingProfile,
-  onCancel,
-  onParsed,
+  onReadyChange,
   knownStatements,
-  isSaving,
 }: ImportPanelProps) {
   const [text, setText] = useState("");
   const [fileName, setFileName] = useState<string | null>(null);
@@ -179,6 +180,12 @@ export function ImportPanel({
 
   const totals = parsed?.totals;
   const canContinue = Boolean(parsed && parsed.rows.length > 0);
+
+  // Reported rather than acted on here: the panel owns parsing, the page owns
+  // moving to the next phase.
+  useEffect(() => {
+    onReadyChange(canContinue && parsed ? parsed : null, fileName);
+  }, [canContinue, parsed, fileName, onReadyChange]);
 
   // Recognised by the rows themselves, so a statement pasted last month and
   // uploaded this month is still the same statement.
@@ -525,17 +532,7 @@ export function ImportPanel({
         </div>
       )}
 
-      <div className="flex items-center justify-end gap-2">
-        <Button variant="ghost" onClick={onCancel}>
-          Cancel
-        </Button>
-        <Button
-          disabled={!canContinue || isSaving}
-          onClick={() => parsed && onParsed(parsed, fileName)}
-        >
-          {isSaving ? "Matching…" : "Match against Actual"}
-        </Button>
-      </div>
+
     </div>
   );
 }

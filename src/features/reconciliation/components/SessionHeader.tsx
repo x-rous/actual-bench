@@ -89,6 +89,14 @@ export type SessionHeaderProps = {
   statementName?: string | null;
   /** Navigate to a step. Only offered for steps the session has already reached. */
   onNavigate?: (step: SessionStep) => void;
+  /**
+   * Steps that cannot be returned to, and why.
+   *
+   * Rendered as plain text with the reason on hover rather than as a button
+   * that quietly does nothing — a control that looks live and is not is worse
+   * than one that is plainly unavailable.
+   */
+  blockedSteps?: Partial<Record<SessionStep, string>>;
 };
 
 export function SessionHeader({
@@ -97,6 +105,7 @@ export function SessionHeader({
   period,
   statementName,
   onNavigate,
+  blockedSteps,
 }: SessionHeaderProps) {
   const status = session?.status ?? "draft";
   const reached = reachedIndex(status);
@@ -138,7 +147,8 @@ export function SessionHeader({
           const isCurrent = index === currentIndex;
           // Only somewhere the session has actually been. Offering Review on a
           // session with nothing decided would lead to an empty screen.
-          const reachable = Boolean(onNavigate) && index <= reached && !isCurrent;
+          const blocked = blockedSteps?.[step.id];
+          const reachable = Boolean(onNavigate) && index <= reached && !isCurrent && !blocked;
 
           const content = (
             <span
@@ -189,7 +199,13 @@ export function SessionHeader({
                   {content}
                 </button>
               ) : (
-                <span aria-current={isCurrent ? "step" : undefined}>{content}</span>
+                <span
+                  aria-current={isCurrent ? "step" : undefined}
+                  title={blocked ?? undefined}
+                  className={cn(blocked && "cursor-not-allowed opacity-60")}
+                >
+                  {content}
+                </span>
               )}
             </li>
           );
