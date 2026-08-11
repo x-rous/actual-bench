@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -69,7 +69,7 @@ function ColumnSelect({ id, label, value, columns, onChange, optional }: ColumnS
           onChange(event.target.value === "" ? undefined : Number(event.target.value))
         }
       >
-        <option value="">—</option>
+        <option value="">-</option>
         {columns.map((column, index) => (
           <option key={`${column}-${index}`} value={index}>
             {column}
@@ -90,8 +90,12 @@ export type ImportPanelProps = {
   onApplyProfile: (profile: ReconciliationProfileRecord) => void;
   onSaveProfile: (name: string, mapping: ColumnMapping) => void;
   isSavingProfile?: boolean;
-  onCancel: () => void;
-  onParsed: (result: NormalizedStatement, statementName: string | null) => void;
+  /**
+   * Reports the parsed statement upward as it changes, so the phase button can
+   * live in the page toolbar with the other navigation rather than at the foot
+   * of this panel where it reads as one more control among many.
+   */
+  onReadyChange: (result: NormalizedStatement | null, statementName: string | null) => void;
   /**
    * Statements already imported, by fingerprint. Held here rather than resolved
    * by the caller because only this panel knows what has been parsed yet.
@@ -102,7 +106,6 @@ export type ImportPanelProps = {
     tag: string | null;
     createdAt: string;
   }[];
-  isSaving?: boolean;
 };
 
 export function ImportPanel({
@@ -114,10 +117,8 @@ export function ImportPanel({
   onApplyProfile,
   onSaveProfile,
   isSavingProfile,
-  onCancel,
-  onParsed,
+  onReadyChange,
   knownStatements,
-  isSaving,
 }: ImportPanelProps) {
   const [text, setText] = useState("");
   const [fileName, setFileName] = useState<string | null>(null);
@@ -179,6 +180,12 @@ export function ImportPanel({
 
   const totals = parsed?.totals;
   const canContinue = Boolean(parsed && parsed.rows.length > 0);
+
+  // Reported rather than acted on here: the panel owns parsing, the page owns
+  // moving to the next phase.
+  useEffect(() => {
+    onReadyChange(canContinue && parsed ? parsed : null, fileName);
+  }, [canContinue, parsed, fileName, onReadyChange]);
 
   // Recognised by the rows themselves, so a statement pasted last month and
   // uploaded this month is still the same statement.
@@ -425,7 +432,7 @@ export function ImportPanel({
                     <tr key={row.id} className="border-b border-border/20 last:border-0">
                       <td className="px-3 py-1.5 tabular-nums">{row.postedDate}</td>
                       <td className="max-w-0 truncate px-3 py-1.5">{row.description}</td>
-                      <td className="px-3 py-1.5 text-muted-foreground">{row.reference ?? "—"}</td>
+                      <td className="px-3 py-1.5 text-muted-foreground">{row.reference ?? "-"}</td>
                       <td className="px-3 py-1.5 text-right tabular-nums">
                         {formatMinorUnits(row.amount)}
                       </td>
@@ -518,24 +525,14 @@ export function ImportPanel({
           <p className="mt-0.5 text-muted-foreground">
             The same rows were imported for {duplicateOf.accountName ?? "this account"}
             {duplicateOf.tag ? ` (${duplicateOf.tag})` : ""} on{" "}
-            {new Date(duplicateOf.createdAt).toLocaleDateString()}. Carrying on is fine — matching
-            reads what is in Actual now, and anything already applied is recognised and skipped —
+            {new Date(duplicateOf.createdAt).toLocaleDateString()}. Carrying on is fine - matching
+            reads what is in Actual now, and anything already applied is recognised and skipped -
             but if you meant to resume that reconciliation, go back and open it instead.
           </p>
         </div>
       )}
 
-      <div className="flex items-center justify-end gap-2">
-        <Button variant="ghost" onClick={onCancel}>
-          Cancel
-        </Button>
-        <Button
-          disabled={!canContinue || isSaving}
-          onClick={() => parsed && onParsed(parsed, fileName)}
-        >
-          {isSaving ? "Matching…" : "Match against Actual"}
-        </Button>
-      </div>
+
     </div>
   );
 }

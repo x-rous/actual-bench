@@ -329,12 +329,21 @@ export type ReconciliationCoverage = {
   loadedAsHeadroom: number;
 };
 
-const REVIEW_REASONS = new Set<string>([
+/**
+ * Every reason a row is one the matcher would not settle on its own.
+ *
+ * Exported because the workbench filters read the same fact, and when each kept
+ * its own copy they drifted: the bar counted a likely duplicate as simply
+ * unaccounted for while the filter counted it as needing review, so the two
+ * disagreed about the same row.
+ */
+export const REVIEW_REASONS = new Set<string>([
   REASON.ambiguousMatch,
   REASON.belowConfidenceFloor,
   REASON.amountMismatch,
   REASON.sameMerchantDate,
   REASON.merchantCluster,
+  REASON.likelyDuplicate,
 ]);
 
 export function summarizeCoverage(
@@ -359,6 +368,13 @@ export function summarizeCoverage(
     statement.total += statementCount;
     actual.total += transactionIds.length;
 
+    /*
+     * Classified by *why* the matcher put the row here, not by what the user
+     * has since decided. "Needs review" describes the kind of row it is, and
+     * deciding one does not change what kind of row it was - the count is meant
+     * to hold still while it is worked through. How much is left to do is the
+     * decision meter's job, and it is the only figure here that moves.
+     */
     if (item.disposition === "matched") {
       statement.matched += statementCount;
       actual.matched += transactionIds.length;

@@ -1,6 +1,7 @@
 "use client";
 
-import { AlertTriangle, Check } from "lucide-react";
+import { AlertTriangle, ArrowLeft, Check } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import type { ReconciliationSessionRecord } from "../lib/reconciliationApi";
@@ -89,6 +90,23 @@ export type SessionHeaderProps = {
   statementName?: string | null;
   /** Navigate to a step. Only offered for steps the session has already reached. */
   onNavigate?: (step: SessionStep) => void;
+  /**
+   * Leave the feature entirely.
+   *
+   * Lives here rather than in the toolbar because it is the one action that
+   * means the same thing on every screen. With it in the phase buttons, "back"
+   * retreated one step on three screens and left the feature on the fourth, and
+   * finishing meant walking backwards through screens the user was done with.
+   */
+  onExit?: () => void;
+  /**
+   * Steps that cannot be returned to, and why.
+   *
+   * Rendered as plain text with the reason on hover rather than as a button
+   * that quietly does nothing — a control that looks live and is not is worse
+   * than one that is plainly unavailable.
+   */
+  blockedSteps?: Partial<Record<SessionStep, string>>;
 };
 
 export function SessionHeader({
@@ -97,6 +115,8 @@ export function SessionHeader({
   period,
   statementName,
   onNavigate,
+  blockedSteps,
+  onExit,
 }: SessionHeaderProps) {
   const status = session?.status ?? "draft";
   const reached = reachedIndex(status);
@@ -108,6 +128,18 @@ export function SessionHeader({
 
   return (
     <div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-b border-border/50 px-4 py-2">
+      {onExit && (
+        <Button
+          variant="ghost"
+          size="sm"
+          className="-ml-2 h-7 shrink-0 text-muted-foreground hover:text-foreground"
+          onClick={onExit}
+        >
+          <ArrowLeft className="mr-1 h-3.5 w-3.5" />
+          All reconciliations
+        </Button>
+      )}
+
       <div className="flex flex-wrap items-baseline gap-x-2">
         <span className="text-sm font-semibold">{session?.accountName ?? "Reconciliation"}</span>
         {session?.tag && (
@@ -138,7 +170,8 @@ export function SessionHeader({
           const isCurrent = index === currentIndex;
           // Only somewhere the session has actually been. Offering Review on a
           // session with nothing decided would lead to an empty screen.
-          const reachable = Boolean(onNavigate) && index <= reached && !isCurrent;
+          const blocked = blockedSteps?.[step.id];
+          const reachable = Boolean(onNavigate) && index <= reached && !isCurrent && !blocked;
 
           const content = (
             <span
@@ -189,7 +222,18 @@ export function SessionHeader({
                   {content}
                 </button>
               ) : (
-                <span aria-current={isCurrent ? "step" : undefined}>{content}</span>
+                <span
+                  aria-current={isCurrent ? "step" : undefined}
+                  title={blocked ?? undefined}
+                  className={cn(blocked && "cursor-not-allowed opacity-60")}
+                >
+                  {content}
+                  {/* `title` reaches a mouse and nothing else. This step is not
+                      focusable, so without text in the flow a keyboard or
+                      screen-reader user is told the step exists and never why
+                      it cannot be returned to. */}
+                  {blocked && <span className="sr-only"> - {blocked}</span>}
+                </span>
               )}
             </li>
           );

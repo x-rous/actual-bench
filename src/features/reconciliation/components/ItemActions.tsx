@@ -82,7 +82,7 @@ export function ItemActions({
         <div className="flex flex-col gap-1.5">
           {isDuplicate ? (
             <p className="text-[11px] text-muted-foreground">
-              These look like the same transaction recorded more than once. Keep one — the others
+              These look like the same transaction recorded more than once. Keep one - the others
               become rows of their own, to delete or keep as you decide.
             </p>
           ) : (
@@ -128,7 +128,7 @@ export function ItemActions({
               className="justify-start text-xs"
               onClick={() => onUseCandidate(null)}
             >
-              None of these — this row is not in Actual
+              None of these - this row is not in Actual
             </Button>
           )}
         </div>

@@ -22,7 +22,17 @@ type Segment = {
   dot: string;
 };
 
-function segmentsFor(side: SideCoverage, unaccountedLabel: string): Segment[] {
+/**
+ * `unaccountedTone` is passed in because the third segment means something
+ * different on each side — missing from Actual, versus missing from the
+ * statement — and they were sharing a colour while the filters gave them two.
+ * Each now matches the filter that selects it.
+ */
+function segmentsFor(
+  side: SideCoverage,
+  unaccountedLabel: string,
+  unaccountedTone: string
+): Segment[] {
   return [
     {
       key: "matched",
@@ -42,8 +52,8 @@ function segmentsFor(side: SideCoverage, unaccountedLabel: string): Segment[] {
       key: "unaccounted",
       label: unaccountedLabel,
       value: side.unaccounted,
-      bar: "bg-sky-500/60",
-      dot: "bg-sky-500/60",
+      bar: unaccountedTone,
+      dot: unaccountedTone,
     },
   ];
 }
@@ -107,10 +117,56 @@ function Side({
   );
 }
 
+/**
+ * How much of the work is done, as a compact meter.
+ *
+ * Separate from coverage, and deliberately small. Coverage answers "how much of
+ * the statement is accounted for" and is a composition; this answers "how far
+ * through am I", which is the only figure here that climbs to 100% as the user
+ * works — so it belongs beside the rows rather than in the header, and it is a
+ * short meter rather than a third full-width bar competing with the two above.
+ */
+export function DecisionProgressMeter({ coverage }: { coverage: ReconciliationCoverage }) {
+  const { decisions } = coverage;
+  const total = decisions.decided + decisions.pending;
+  if (total === 0) return null;
+
+  const percent = Math.round((decisions.decided / total) * 100);
+
+  return (
+    <div
+      className="flex items-center gap-2 text-xs"
+      title={`${decisions.automatic} more matched automatically and needed no decision`}
+    >
+      <span className="whitespace-nowrap tabular-nums">
+        <span className="font-medium">{decisions.decided}</span>
+        <span className="text-muted-foreground"> of {total} decided</span>
+      </span>
+      <div
+        className="h-1.5 w-16 overflow-hidden rounded-full bg-muted"
+        role="progressbar"
+        aria-valuenow={decisions.decided}
+        aria-valuemin={0}
+        aria-valuemax={total}
+        aria-label="Rows decided"
+      >
+        <div
+          className={cn(
+            "h-full transition-all",
+            decisions.pending === 0 ? "bg-emerald-500/70" : "bg-amber-500/70"
+          )}
+          style={{ width: `${percent}%` }}
+        />
+      </div>
+      {decisions.pending === 0 && (
+        <span className="whitespace-nowrap text-emerald-600 dark:text-emerald-400">All decided</span>
+      )}
+    </div>
+  );
+}
+
 export function CoverageSummary({ coverage }: { coverage: ReconciliationCoverage }) {
-  const { statement, actual, decisions } = coverage;
-  const statementOpen = statement.needsReview + statement.unaccounted;
-  const needingDecision = decisions.decided + decisions.pending;
+  const { statement, actual } = coverage;
 
   const actualNote = [
     coverage.outsideStatementPeriod > 0
@@ -130,48 +186,23 @@ export function CoverageSummary({ coverage }: { coverage: ReconciliationCoverage
           title="Statement"
           total={statement.total}
           totalLabel="rows"
-          segments={segmentsFor(statement, "Not in Actual")}
-          note={
-            statementOpen === 0
-              ? "Every statement row is accounted for."
-              : `${statementOpen} still need a decision.`
-          }
+          segments={segmentsFor(statement, "Not in Actual", "bg-sky-500/60")}
+          /*
+           * No note here. It claimed to count work outstanding, but these
+           * segments are classified by *why* a row landed where it did, not by
+           * what the user has since decided — so the figure never moved as they
+           * worked. The bar and its legend already say what this side is made
+           * of, and how much is left to decide is the meter's job.
+           */
         />
         <Side
           title="Actual"
           total={actual.total}
           totalLabel="transactions in view"
-          segments={segmentsFor(actual, "Not on statement")}
+          segments={segmentsFor(actual, "Not on statement", "bg-violet-500/60")}
           note={actualNote || undefined}
         />
       </div>
-
-      {/*
-        Coverage answers "how much of the statement is accounted for". This
-        answers "how much is left for me to do", which is the question someone
-        working through a reconciliation is actually asking. An automatic match
-        is counted apart from both: it never needed deciding, and folding it in
-        would flatter the number.
-      */}
-      {needingDecision > 0 && (
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-md bg-muted/40 px-3 py-2 text-xs">
-          <span className="font-medium">
-            {decisions.decided} of {needingDecision} decided
-          </span>
-          {decisions.pending > 0 ? (
-            <span className="text-amber-600 dark:text-amber-400">
-              {decisions.pending} still to decide
-            </span>
-          ) : (
-            <span className="text-emerald-600 dark:text-emerald-400">
-              Everything has been decided
-            </span>
-          )}
-          <span className="text-muted-foreground">
-            {decisions.automatic} matched without needing you
-          </span>
-        </div>
-      )}
     </section>
   );
 }

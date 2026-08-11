@@ -41,7 +41,7 @@ function Field({
   return (
     <div className="grid grid-cols-[5.5rem_1fr] items-baseline gap-2">
       <dt className="text-[11px] uppercase tracking-wide text-muted-foreground">{label}</dt>
-      <dd className={cn("break-words text-xs", numeric && "tabular-nums")}>{value || "—"}</dd>
+      <dd className={cn("break-words text-xs", numeric && "tabular-nums")}>{value || "-"}</dd>
     </div>
   );
 }
@@ -71,7 +71,7 @@ function Compared({
   return (
     <div className="grid grid-cols-[3.5rem_1fr_1fr] items-baseline gap-2">
       <dt className="text-[11px] uppercase tracking-wide text-muted-foreground">{label}</dt>
-      <dd className="tabular-nums text-xs">{statement || "—"}</dd>
+      <dd className="tabular-nums text-xs">{statement || "-"}</dd>
       <dd
         className={cn(
           "tabular-nums text-xs",
@@ -79,7 +79,7 @@ function Compared({
         )}
         title={note ?? undefined}
       >
-        {actual || "—"}
+        {actual || "-"}
         {differs && note && <span className="block text-[10px]">{note}</span>}
       </dd>
     </div>
@@ -107,6 +107,8 @@ export type InspectorProps = {
   onCorrectAmount: (transactionId: string, amount: number) => void;
   onStage: (field: StageableField, value: string | null) => void;
   onUnstage: (field: StageableField) => void;
+  /** The session has been applied: show the record, offer no more decisions. */
+  readOnly?: boolean;
 };
 
 export function Inspector({
@@ -121,6 +123,7 @@ export function Inspector({
   onCorrectAmount,
   onStage,
   onUnstage,
+  readOnly = false,
 }: InspectorProps) {
   const primary = transactions[0];
   const reasons = item.match?.reasons ?? [];
@@ -251,20 +254,28 @@ export function Inspector({
         </section>
       )}
 
-      <ItemActions
-        item={item}
-        statementRow={statementRow}
-        transactions={transactions}
-        onDisposition={onDisposition}
-        onUseCandidate={onUseCandidate}
-        onCorrectAmount={onCorrectAmount}
-      />
+      {readOnly ? (
+        <p className="rounded-md border border-border/60 bg-muted/30 px-2.5 py-2 text-[11px] text-muted-foreground">
+          This reconciliation has been applied, so its decisions are a record rather than something
+          still to settle. Start a new reconciliation to check the account as it stands now.
+        </p>
+      ) : (
+        <ItemActions
+          item={item}
+          statementRow={statementRow}
+          transactions={transactions}
+          onDisposition={onDisposition}
+          onUseCandidate={onUseCandidate}
+          onCorrectAmount={onCorrectAmount}
+        />
+      )}
 
       {/* Editing is offered once the row is about a specific transaction, or is
           going to become one. Until then there is nothing to edit. */}
-      {(item.disposition === "create" ||
-        item.disposition === "matched" ||
-        item.disposition === "correct-amount") && (
+      {!readOnly &&
+        (item.disposition === "create" ||
+          item.disposition === "matched" ||
+          item.disposition === "correct-amount") && (
         <StagedFields
           item={item}
           current={{

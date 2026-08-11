@@ -29,6 +29,10 @@ export function useKeyboardShortcuts() {
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
       const mod = e.ctrlKey || e.metaKey;
+      // `key` is absent on synthetic keydowns — browser autofill and some
+      // password managers dispatch them — and this handler is bound to the
+      // window on every page, so an unguarded read throws for the whole app.
+      if (!e.key) return;
       const key = e.key.toLowerCase();
 
       // Bare "N" — open quick-create only when no input/dialog is focused

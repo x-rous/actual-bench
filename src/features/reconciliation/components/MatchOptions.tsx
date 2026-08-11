@@ -21,7 +21,7 @@ const PRESETS: { id: TextTargetPreset; label: string; hint: string }[] = [
   {
     id: "all-best-match",
     label: "All fields, best match wins",
-    hint: "Safest default — an empty or irrelevant field simply contributes nothing.",
+    hint: "Safest default - an empty or irrelevant field simply contributes nothing.",
   },
   {
     id: "notes",

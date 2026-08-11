@@ -1,6 +1,7 @@
 import {
   ArrowLeftRight,
   Calendar,
+  ClipboardCheck,
   Database,
   FileSearch,
   Landmark,
@@ -88,24 +89,26 @@ export const ENTITY_CARDS: OverviewActionCard[] = [
   },
 ];
 
+/**
+ * In the same order as the Tools section of the sidebar.
+ *
+ * Two lists of the same links in two different orders makes the overview read
+ * as a different set of tools rather than the same ones — so this follows the
+ * navigation.
+ *
+ * Not every navigation entry earns a card: FX Rates exists to support currency
+ * conversion in Budget File Sync rather than as somewhere to go in its own
+ * right, so it stays in the sidebar and out of here.
+ */
 export const TOOL_CARDS: OverviewActionCard[] = [
   {
-    id: "query",
-    label: "ActualQL Queries",
+    id: "rule-diagnostics",
+    label: "Rule Diagnostics",
     description:
-      "Explore budget data with custom ActualQL queries, inspect the results, and export the output.",
-    href: "/query",
-    icon: Terminal,
+      "Analyse rule coverage and conflicts across your transactions to identify gaps and overlapping conditions.",
+    icon: ShieldCheck,
     tone: "tool",
-  },
-  {
-    id: "diagnostics",
-    label: "Budget File Health",
-    description:
-      "Inspect the exported budget file in a read-only workspace with an overview and deterministic health checks.",
-    icon: FileSearch,
-    tone: "tool",
-    href: "/budget-diagnostics",
+    href: "/rules/diagnostics",
   },
   {
     id: "sync",
@@ -117,6 +120,24 @@ export const TOOL_CARDS: OverviewActionCard[] = [
     href: "/sync",
   },
   {
+    id: "reconciliation",
+    label: "Bank Reconciliation",
+    description:
+      "Check a bank statement against an account, settle the differences row by row, and apply only what you have reviewed.",
+    icon: ClipboardCheck,
+    tone: "tool",
+    href: "/reconciliation",
+  },
+  {
+    id: "query",
+    label: "ActualQL Queries",
+    description:
+      "Explore budget data with custom ActualQL queries, inspect the results, and export the output.",
+    href: "/query",
+    icon: Terminal,
+    tone: "tool",
+  },
+  {
     id: "data-browser",
     label: "Data Browser",
     description:
@@ -126,12 +147,12 @@ export const TOOL_CARDS: OverviewActionCard[] = [
     href: "/data-browser",
   },
   {
-    id: "rule-diagnostics",
-    label: "Rule Diagnostics",
+    id: "diagnostics",
+    label: "Budget File Health",
     description:
-      "Analyse rule coverage and conflicts across your transactions to identify gaps and overlapping conditions.",
-    icon: ShieldCheck,
+      "Inspect the exported budget file in a read-only workspace with an overview and deterministic health checks.",
+    icon: FileSearch,
     tone: "tool",
-    href: "/rules/diagnostics",
+    href: "/budget-diagnostics",
   },
 ];

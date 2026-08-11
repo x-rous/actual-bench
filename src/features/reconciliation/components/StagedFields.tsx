@@ -134,12 +134,20 @@ export function StagedFields({
         what posted. It is displayed so the user can see what the transaction
         already carries and know it is being left alone.
       */}
-      <div className="flex flex-col gap-1">
+      {/* Laid out as a fact rather than as a field: label beside value on one
+          line, so it reads as something being reported rather than a control
+          the user is hunting for the edit affordance on. The qualifier stays
+          visible - that reconciliation never touches categories is a promise
+          worth seeing rather than discovering on hover. */}
+      <div
+        className="grid grid-cols-[5.5rem_1fr] items-baseline gap-2"
+        title="Categories are set in Actual, where the rules and the budget context are. A reconciliation never changes them."
+      >
         <span className="text-[11px] uppercase tracking-wide text-muted-foreground">
           Category
         </span>
         <p className="text-xs">
-          {categories.find((option) => option.id === current.categoryId)?.name ?? "—"}
+          {categories.find((option) => option.id === current.categoryId)?.name ?? "-"}
           <span className="ml-1 text-muted-foreground">· set in Actual</span>
         </p>
       </div>

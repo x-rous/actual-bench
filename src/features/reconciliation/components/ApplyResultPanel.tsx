@@ -1,7 +1,6 @@
 "use client";
 
-import { AlertTriangle, CheckCircle2, RefreshCw } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { AlertTriangle, CheckCircle2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { ApplyConfig } from "@/lib/reconciliation/session/plan";
 import { prospectiveTransaction } from "@/lib/reconciliation/session/prospective";
@@ -39,8 +38,6 @@ export type ApplyResultPanelProps = {
   /** The read-back check, once it has run. `null` while it is still running. */
   verification: VerificationReport | null;
   isVerifying: boolean;
-  isApplying: boolean;
-  onRetry: () => void;
 };
 
 export function ApplyResultPanel({
@@ -53,8 +50,6 @@ export function ApplyResultPanel({
   result,
   verification,
   isVerifying,
-  isApplying,
-  onRetry,
 }: ApplyResultPanelProps) {
   const failures = result.results.filter((entry) => entry.status === "failed");
 
@@ -163,7 +158,7 @@ export function ApplyResultPanel({
                 return (
                   <li key={`${issue.operationId}-${issue.kind}`}>
                     <span className="font-medium">{operation?.kind ?? "Change"}</span>
-                    <span className="text-muted-foreground"> — {issue.detail}</span>
+                    <span className="text-muted-foreground"> - {issue.detail}</span>
                   </li>
                 );
               })}
@@ -173,7 +168,7 @@ export function ApplyResultPanel({
       ) : null}
 
       {/*
-        What was written, row by row, with the statement it came from beside it.
+        What was applied, row by row, with the statement it came from beside it.
 
         The panel previously listed only failures, which left a successful apply
         — and every reopened session — showing a headline and nothing at all.
@@ -183,7 +178,7 @@ export function ApplyResultPanel({
       {written.length > 0 && (
         <section className="-mx-4 flex min-h-[18rem] flex-1 flex-col border-y border-border/60">
           <h3 className="shrink-0 border-b border-border/50 px-3 py-2 text-xs font-semibold">
-            What was written
+            What was applied
           </h3>
           <div className="min-h-0 flex-1 overflow-auto">
             <table className="w-full border-collapse text-xs">
@@ -257,13 +252,13 @@ export function ApplyResultPanel({
                   return (
                     <tr key={entry.operationId} className="border-b border-border/20">
                       <td className="whitespace-nowrap px-3 py-1 tabular-nums text-muted-foreground">
-                        {statementRow ? formatShortDate(statementRow.postedDate) : "—"}
+                        {statementRow ? formatShortDate(statementRow.postedDate) : "-"}
                       </td>
                       <td className="max-w-0 truncate px-3 py-1" title={statementRow?.description}>
-                        {statementRow?.description ?? "—"}
+                        {statementRow?.description ?? "-"}
                       </td>
                       <td className="whitespace-nowrap px-3 py-1 text-right tabular-nums">
-                        {statementRow ? formatMinorUnits(statementRow.amount) : "—"}
+                        {statementRow ? formatMinorUnits(statementRow.amount) : "-"}
                       </td>
 
                       <td
@@ -286,21 +281,21 @@ export function ApplyResultPanel({
                       ) : (
                         <>
                           <td className="whitespace-nowrap px-3 py-1 tabular-nums text-muted-foreground">
-                            {pending?.date ? formatShortDate(pending.date) : "—"}
+                            {pending?.date ? formatShortDate(pending.date) : "-"}
                           </td>
                           <td className="max-w-0 truncate px-3 py-1">
                             {payeeName(pending?.payeeId ?? null) ??
                               (pending?.isNew && applyConfig.descriptionTarget === "payee"
-                                ? statementRow?.description ?? "—"
-                                : "—")}
+                                ? statementRow?.description ?? "-"
+                                : "-")}
                           </td>
                           <td className="max-w-0 truncate px-3 py-1" title={pending?.notes ?? undefined}>
-                            {pending?.notes ?? "—"}
+                            {pending?.notes ?? "-"}
                           </td>
                           <td className="whitespace-nowrap px-3 py-1 text-right tabular-nums">
                             {pending && pending.amount !== null
                               ? formatMinorUnits(pending.amount)
-                              : "—"}
+                              : "-"}
                           </td>
                         </>
                       )}
@@ -335,16 +330,6 @@ export function ApplyResultPanel({
         </section>
       )}
 
-      {/* No back button here: the progress header and the page toolbar both
-          already lead out of this screen. */}
-      <div className="flex items-center justify-end gap-2 border-t border-border/50 pt-3">
-        {!result.complete && (
-          <Button onClick={onRetry} disabled={isApplying}>
-            <RefreshCw className="mr-1 h-3.5 w-3.5" />
-            Retry what failed
-          </Button>
-        )}
-      </div>
     </div>
   );
 }
