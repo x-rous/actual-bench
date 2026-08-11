@@ -98,6 +98,7 @@ export function SearchableCombobox({
   placeholder = "- select -",
   footer,
   triggerClassName,
+  ariaLabel,
 }: {
   options: ComboboxOption[];
   value: string;
@@ -105,6 +106,12 @@ export function SearchableCombobox({
   placeholder?: string;
   footer?: (search: string) => React.ReactNode;
   triggerClassName?: string;
+  /**
+   * Names the control where no visible `<label>` can point at it — the trigger
+   * is a button, so `htmlFor` has nothing to bind to and the accessible name
+   * would otherwise be whichever option happens to be selected.
+   */
+  ariaLabel?: string;
 }) {
   const { open, openDropdown, closeDropdown, search, setSearch, containerRef, searchRef } =
     useComboboxState();
@@ -121,6 +128,7 @@ export function SearchableCombobox({
     <div ref={containerRef} className="relative flex-1">
       <button
         type="button"
+        aria-label={ariaLabel}
         onClick={() => (open ? closeDropdown() : openDropdown())}
         className={cn(
           "flex h-8 w-full items-center justify-between rounded-md border border-input bg-background px-2 text-xs focus:outline-none focus:ring-2 focus:ring-ring/50",

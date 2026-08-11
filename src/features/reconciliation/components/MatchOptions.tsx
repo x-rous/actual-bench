@@ -130,42 +130,47 @@ export function MatchOptions({ config, preset, onChange }: MatchOptionsProps) {
           </p>
         </div>
 
-        <fieldset className="flex flex-col gap-1.5">
+        {/* Spans the grid and lays its two options side by side: parked in a
+            single narrow column, the explanatory text below each one made this
+            block taller than the three settings above it put together. */}
+        <fieldset className="flex flex-col gap-1.5 sm:col-span-2 lg:col-span-3">
           <legend className="mb-1 text-xs font-medium">Text handling</legend>
 
-          <label className="flex items-start gap-2 text-xs">
-            <input
-              type="checkbox"
-              className="mt-0.5"
-              checked={config.text.ignoreTagsInNotes}
-              onChange={(event) =>
-                patch({ text: { ...config.text, ignoreTagsInNotes: event.target.checked } })
-              }
-            />
-            <span>
-              Ignore <span className="font-mono">#tags</span> in notes
-              <span className="block text-[11px] text-muted-foreground">
-                Workflow tags such as <span className="font-mono">#API</span> are not part of the
-                bank&apos;s text, so comparing them weakens every score.
+          <div className="grid gap-x-6 gap-y-1.5 sm:grid-cols-2">
+            <label className="flex items-start gap-2 text-xs">
+              <input
+                type="checkbox"
+                className="mt-0.5"
+                checked={config.text.ignoreTagsInNotes}
+                onChange={(event) =>
+                  patch({ text: { ...config.text, ignoreTagsInNotes: event.target.checked } })
+                }
+              />
+              <span>
+                Ignore <span className="font-mono">#tags</span> in notes
+                <span className="block text-[11px] text-muted-foreground">
+                  Workflow tags such as <span className="font-mono">#API</span> are not part of the
+                  bank&apos;s text, so comparing them weakens every score.
+                </span>
               </span>
-            </span>
-          </label>
+            </label>
 
-          <label className="flex items-start gap-2 text-xs">
-            <input
-              type="checkbox"
-              className="mt-0.5"
-              checked={config.matchOriginalCurrencyAmount}
-              onChange={(event) => patch({ matchOriginalCurrencyAmount: event.target.checked })}
-            />
-            <span>
-              Match foreign transactions on their original amount
-              <span className="block text-[11px] text-muted-foreground">
-                A purchase abroad posts as a converted figure while your recorded transaction often
-                holds the original. Still an exact match, against the amount the bank printed.
+            <label className="flex items-start gap-2 text-xs">
+              <input
+                type="checkbox"
+                className="mt-0.5"
+                checked={config.matchOriginalCurrencyAmount}
+                onChange={(event) => patch({ matchOriginalCurrencyAmount: event.target.checked })}
+              />
+              <span>
+                Match foreign transactions on their original amount
+                <span className="block text-[11px] text-muted-foreground">
+                  A purchase abroad posts as a converted figure while your recorded transaction often
+                  holds the original. Still an exact match, against the amount the bank printed.
+                </span>
               </span>
-            </span>
-          </label>
+            </label>
+          </div>
         </fieldset>
       </div>
     </div>

@@ -9,6 +9,7 @@ import { generateId } from "@/lib/uuid";
 import { parseStatementText } from "@/lib/reconciliation/statement/parse";
 import {
   detectColumnMapping,
+  fingerprintStatement,
   normalizeStatement,
   type ColumnMapping,
   type NormalizedStatement,
@@ -91,6 +92,16 @@ export type ImportPanelProps = {
   isSavingProfile?: boolean;
   onCancel: () => void;
   onParsed: (result: NormalizedStatement, statementName: string | null) => void;
+  /**
+   * Statements already imported, by fingerprint. Held here rather than resolved
+   * by the caller because only this panel knows what has been parsed yet.
+   */
+  knownStatements?: {
+    fingerprint: string;
+    accountName: string | null;
+    tag: string | null;
+    createdAt: string;
+  }[];
   isSaving?: boolean;
 };
 
@@ -105,6 +116,7 @@ export function ImportPanel({
   isSavingProfile,
   onCancel,
   onParsed,
+  knownStatements,
   isSaving,
 }: ImportPanelProps) {
   const [text, setText] = useState("");
@@ -168,15 +180,22 @@ export function ImportPanel({
   const totals = parsed?.totals;
   const canContinue = Boolean(parsed && parsed.rows.length > 0);
 
+  // Recognised by the rows themselves, so a statement pasted last month and
+  // uploaded this month is still the same statement.
+  const duplicateOf = useMemo(() => {
+    if (!parsed || parsed.rows.length === 0 || !knownStatements?.length) return null;
+    const fingerprint = fingerprintStatement(parsed.rows);
+    if (!fingerprint) return null;
+    return knownStatements.find((entry) => entry.fingerprint === fingerprint) ?? null;
+  }, [parsed, knownStatements]);
+
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-auto p-4">
-      <div>
-        <h2 className="text-sm font-semibold">Import statement</h2>
-        <p className="text-xs text-muted-foreground">
-          {accountName} · paste from a spreadsheet or upload a CSV. Nothing is written to your
-          budget at this stage.
-        </p>
-      </div>
+      {/* The account is named in the session header above; repeating it here
+          just pushed the uploader further down the page. */}
+      <p className="text-xs text-muted-foreground">
+        Paste from a spreadsheet or upload a CSV. Nothing is written to your budget at this stage.
+      </p>
 
       {suggestedProfile && !appliedProfile && (
         <div className="flex flex-wrap items-center gap-2 rounded-md border border-border/60 bg-muted/40 px-3 py-2 text-xs">
@@ -478,6 +497,30 @@ export function ImportPanel({
           <p className="w-full text-[11px] text-muted-foreground">
             Stores the column mapping and the matching options, so next month&apos;s statement needs
             no setting up. Saving again under the same name replaces it.
+          </p>
+        </div>
+      )}
+
+      {/*
+        Warned, not blocked. Re-importing a statement is a legitimate thing to
+        do — after a partial apply, or to redo a month with a corrected mapping
+        — so this says what it found and leaves the decision alone.
+      */}
+      {duplicateOf && canContinue && (
+        <div
+          role="status"
+          className="rounded-md border border-amber-500/50 bg-amber-500/5 px-3 py-2 text-xs"
+        >
+          <p className="flex items-center gap-1.5 font-medium">
+            <AlertTriangle className="h-3.5 w-3.5" aria-hidden="true" />
+            This statement has been imported before
+          </p>
+          <p className="mt-0.5 text-muted-foreground">
+            The same rows were imported for {duplicateOf.accountName ?? "this account"}
+            {duplicateOf.tag ? ` (${duplicateOf.tag})` : ""} on{" "}
+            {new Date(duplicateOf.createdAt).toLocaleDateString()}. Carrying on is fine — matching
+            reads what is in Actual now, and anything already applied is recognised and skipped —
+            but if you meant to resume that reconciliation, go back and open it instead.
           </p>
         </div>
       )}

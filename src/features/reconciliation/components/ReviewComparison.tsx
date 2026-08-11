@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { Search, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { ApplyPlan } from "@/lib/reconciliation/apply/operations";
 import type { ApplyConfig } from "@/lib/reconciliation/session/plan";
@@ -83,6 +84,8 @@ export type ReviewComparisonProps = {
   payees: Option[];
   categories: Option[];
   applyConfig: ApplyConfig;
+  /** Rows with no decision, reported under the table they are absent from. */
+  unresolved?: number;
 };
 
 export function ReviewComparison({
@@ -93,8 +96,10 @@ export function ReviewComparison({
   payees,
   categories,
   applyConfig,
+  unresolved = 0,
 }: ReviewComparisonProps) {
   const [showUnchanged, setShowUnchanged] = useState(false);
+  const [search, setSearch] = useState("");
 
   const nameOf = (options: Option[], id: string | null) =>
     id ? options.find((option) => option.id === id)?.name ?? null : null;
@@ -148,16 +153,67 @@ export function ReviewComparison({
 
   const changing = rows.filter((row) => row.action !== "unchanged" && row.action !== "later");
   const quiet = rows.filter((row) => row.action === "unchanged" || row.action === "later");
-  const visible = showUnchanged ? rows : changing;
+  const shown = showUnchanged ? rows : changing;
 
+  /*
+   * Searched across both sides at once. Someone looking for a row is looking
+   * for a merchant or an amount and does not know, or care, which of the two
+   * columns it will turn up in.
+   */
+  const needle = search.trim().toLowerCase();
+  const visible = needle
+    ? shown.filter((row) => {
+        const payeeName = nameOf(payees, row.pending.payeeId);
+        return [
+          row.statementRow?.description,
+          row.statementRow ? formatMinorUnits(row.statementRow.amount) : null,
+          row.statementRow?.postedDate,
+          payeeName,
+          row.pending.notes,
+          row.transaction?.payeeName,
+          row.transaction?.notes,
+          row.pending.amount !== null ? formatMinorUnits(row.pending.amount) : null,
+        ]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase()
+          .includes(needle);
+      })
+    : shown;
+
+  // Bled to the full width of the page, like the workbench grid: this is the
+  // table the screen exists for, and every column in it is earning its space.
   return (
-    <section className="rounded-md border border-border/60">
-      <div className="flex flex-wrap items-center gap-2 border-b border-border/60 px-3 py-2">
+    // `min-h` so a short viewport shrinks the table rather than erasing it.
+    <section className="-mx-4 flex min-h-[14rem] flex-1 flex-col border-y border-border/60">
+      <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border/60 px-3 py-2">
         <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
           Your statement, after applying
         </h3>
+
+        <div className="relative flex items-center">
+          <Search className="absolute left-1.5 h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />
+          <input
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Search…"
+            aria-label="Search the rows being applied"
+            className="h-6 w-44 rounded border border-border bg-background pl-6 pr-6 text-xs outline-none focus:ring-1 focus:ring-ring"
+          />
+          {search && (
+            <button
+              type="button"
+              onClick={() => setSearch("")}
+              aria-label="Clear the search"
+              className="absolute right-1.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+            >
+              <X className="h-3 w-3" />
+            </button>
+          )}
+        </div>
+
         {quiet.length > 0 && (
-          <label className="ml-auto flex items-center gap-1.5 text-xs text-muted-foreground">
+          <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
             <input
               type="checkbox"
               checked={showUnchanged}
@@ -166,40 +222,82 @@ export function ReviewComparison({
             Also show the {quiet.length} rows nothing happens to
           </label>
         )}
+
+        <span className="ml-auto whitespace-nowrap text-xs tabular-nums text-muted-foreground">
+          {visible.length} of {shown.length}
+        </span>
       </div>
 
-      <div className="overflow-x-auto">
+      <div className="min-h-0 flex-1 overflow-auto">
         <table className="w-full border-collapse text-xs">
           <caption className="sr-only">
             Each statement row and the transaction it will correspond to after applying
           </caption>
-          <thead className="text-[11px] uppercase tracking-wide text-muted-foreground">
-            <tr className="border-b border-border/30">
-              <th scope="colgroup" colSpan={3} className="px-2 pt-1.5 text-left font-semibold">
-                Bank statement
+          {/*
+            Same treatment as the workbench grid: group headings carry the side,
+            a band runs down the statement's columns, and every cell paints an
+            opaque background of its own so the sticky header does not let the
+            rows show through it.
+          */}
+          <thead className="sticky top-0 z-10 text-[11px] uppercase tracking-wide text-muted-foreground">
+            <tr>
+              <th
+                scope="colgroup"
+                colSpan={3}
+                className="bg-muted px-2 pt-1.5 text-left font-semibold text-foreground"
+              >
+                From the bank statement
               </th>
-              <th scope="col" className="border-x border-border/40 px-2 pt-1.5 text-left font-semibold">
+              <th
+                scope="col"
+                className="border-x border-border bg-background px-2 pt-1.5 text-left font-semibold text-foreground"
+              >
                 Will
               </th>
-              <th scope="colgroup" colSpan={6} className="px-2 pt-1.5 text-left font-semibold">
+              <th
+                scope="colgroup"
+                colSpan={6}
+                className="bg-background px-2 pt-1.5 text-left font-semibold text-foreground"
+              >
                 Resulting transaction in Actual
               </th>
             </tr>
-            <tr className="border-b border-border/50">
-              <th scope="col" className="w-14 px-2 pb-1.5 text-left font-medium">Date</th>
+            <tr>
+              <th scope="col" className="w-14 border-b border-border bg-muted px-2 pb-1.5 text-left font-medium">
+                Date
+              </th>
               {/* Capped: the statement side is context, the resulting side is
                   what the user is agreeing to and needs the room. */}
-              <th scope="col" className="w-[20%] px-2 pb-1.5 text-left font-medium">Description</th>
-              <th scope="col" className="w-20 px-2 pb-1.5 text-right font-medium">Amount</th>
-              <th scope="col" className="w-20 border-x border-border/40 px-2 pb-1.5 text-left font-medium">
+              <th scope="col" className="w-[20%] border-b border-border bg-muted px-2 pb-1.5 text-left font-medium">
+                Description
+              </th>
+              <th scope="col" className="w-20 border-b border-border bg-muted px-2 pb-1.5 text-right font-medium">
+                Amount
+              </th>
+              <th
+                scope="col"
+                className="w-20 border-x border-b border-border bg-background px-2 pb-1.5 text-left font-medium"
+              >
                 Action
               </th>
-              <th scope="col" className="w-14 px-2 pb-1.5 text-left font-medium">Date</th>
-              <th scope="col" className="w-[16%] px-2 pb-1.5 text-left font-medium">Payee</th>
-              <th scope="col" className="w-[26%] px-2 pb-1.5 text-left font-medium">Notes</th>
-              <th scope="col" className="w-[14%] px-2 pb-1.5 text-left font-medium">Category</th>
-              <th scope="col" className="w-20 px-2 pb-1.5 text-right font-medium">Amount</th>
-              <th scope="col" className="w-16 px-2 pb-1.5 text-left font-medium">Cleared</th>
+              <th scope="col" className="w-14 border-b border-border bg-background px-2 pb-1.5 text-left font-medium">
+                Date
+              </th>
+              <th scope="col" className="w-[16%] border-b border-border bg-background px-2 pb-1.5 text-left font-medium">
+                Payee
+              </th>
+              <th scope="col" className="w-[26%] border-b border-border bg-background px-2 pb-1.5 text-left font-medium">
+                Notes
+              </th>
+              <th scope="col" className="w-[14%] border-b border-border bg-background px-2 pb-1.5 text-left font-medium">
+                Category
+              </th>
+              <th scope="col" className="w-20 border-b border-border bg-background px-2 pb-1.5 text-right font-medium">
+                Amount
+              </th>
+              <th scope="col" className="w-16 border-b border-border bg-background px-2 pb-1.5 text-left font-medium">
+                Cleared
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -303,15 +401,23 @@ export function ReviewComparison({
 
         {visible.length === 0 && (
           <p className="px-3 py-6 text-center text-xs text-muted-foreground">
-            Nothing will change in your budget.
+            {needle ? "No rows match that search." : "Nothing will change in your budget."}
           </p>
         )}
       </div>
 
-      <p className="border-t border-border/60 px-3 py-1.5 text-[11px] text-muted-foreground">
-        Values in amber are changing — hover one to see what it is now. Everything else is shown as
-        it already stands.
-      </p>
+      <div className="shrink-0 space-y-1 border-t border-border/60 px-3 py-1.5 text-[11px] text-muted-foreground">
+        <p>
+          Values in amber are changing — hover one to see what it is now. Everything else is shown
+          as it already stands.
+        </p>
+        {unresolved > 0 && (
+          <p>
+            {unresolved} row{unresolved === 1 ? "" : "s"} still have no decision. They will be left
+            exactly as they are — you can come back to them.
+          </p>
+        )}
+      </div>
     </section>
   );
 }

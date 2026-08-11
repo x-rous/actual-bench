@@ -1,9 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { RefreshCw, Search, SlidersHorizontal, Wand2 } from "lucide-react";
+import { FileCheck, RefreshCw, Search, SlidersHorizontal, Wand2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { MultiPillGroup, PillGroup } from "@/components/ui/pill-group";
 import { cn } from "@/lib/utils";
 import { REASON } from "@/lib/reconciliation/session/build";
 import type { ReconciliationCoverage } from "@/lib/reconciliation/session/build";
@@ -191,9 +192,6 @@ function matchesFilter(item: ReconciliationItem, filter: FilterId): boolean {
 }
 
 export type WorkbenchProps = {
-  accountName: string;
-  statementName: string | null;
-  period: { start: string; end: string } | null;
   items: ReconciliationItem[];
   statementRows: Map<string, StatementRow>;
   transactions: Map<string, ActualTransactionSnapshot>;
@@ -202,6 +200,11 @@ export type WorkbenchProps = {
   matchPreset: TextTargetPreset;
   isMatching: boolean;
   canRematch: boolean;
+  /**
+   * Why re-running is refused, when it is. Present rather than a bare disabled
+   * button, because "why can I not do this" is the next question.
+   */
+  rematchBlockedReason?: string | null;
   payees: Option[];
   categories: Option[];
   onMatchConfigChange: (preset: TextTargetPreset, config: MatchConfig) => void;
@@ -217,6 +220,8 @@ export type WorkbenchProps = {
   ) => void;
   /** Writes the plan would make, named on the button rather than a row count. */
   changeCount: number;
+  /** Set when this session has already been applied, so its outcome is reachable. */
+  onViewResult?: () => void;
   onReview: () => void;
   transformContextFor: (item: ReconciliationItem) => TransformContext;
   onTransform: (changes: { itemId: string; patch: StagedPatch | undefined }[]) => void;
@@ -255,9 +260,6 @@ function FilterButton({
 }
 
 export function Workbench({
-  accountName,
-  statementName,
-  period,
   items,
   statementRows,
   transactions,
@@ -266,6 +268,7 @@ export function Workbench({
   matchPreset,
   isMatching,
   canRematch,
+  rematchBlockedReason,
   payees,
   categories,
   onMatchConfigChange,
@@ -278,6 +281,7 @@ export function Workbench({
   onBulkDisposition,
   onBulkCorrectAmount,
   changeCount,
+  onViewResult,
   onReview,
   transformContextFor,
   onTransform,
@@ -436,22 +440,10 @@ export function Workbench({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <header className="border-b border-border/50 px-4 py-3">
-        <div className="flex flex-wrap items-baseline gap-x-2">
-          <h2 className="text-sm font-semibold">{accountName}</h2>
-          {period && (
-            <span className="text-xs text-muted-foreground">
-              {period.start} → {period.end}
-            </span>
-          )}
-          {statementName && (
-            <span className="text-xs text-muted-foreground">· {statementName}</span>
-          )}
-        </div>
-
-        <div className="mt-2">
-          <CoverageSummary coverage={coverage} />
-        </div>
+      {/* The session's identity now sits beside the page title, so this row
+          carries only what changes as you work. */}
+      <header className="border-b border-border/50 px-4 py-2">
+        <CoverageSummary coverage={coverage} />
       </header>
 
       <div className="flex flex-wrap items-center gap-2 border-b border-border/50 px-4 py-2">
@@ -485,6 +477,22 @@ export function Workbench({
         </div>
 
         <div className="ml-auto flex items-center gap-2">
+          {/* Beside the actions rather than on a row of its own: full width, it
+              cost a line of vertical space to hold a field nobody types more
+              than a few characters into. */}
+          <div className="relative flex items-center">
+            <Search
+              className="pointer-events-none absolute left-2 h-3.5 w-3.5 text-muted-foreground"
+              aria-hidden="true"
+            />
+            <Input
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search rows…"
+              aria-label="Search reconciliation rows"
+              className="h-7 w-72 pl-7 text-xs"
+            />
+          </div>
           <Button
             variant="outline"
             size="sm"
@@ -503,80 +511,53 @@ export function Workbench({
             <SlidersHorizontal className="mr-1 h-3.5 w-3.5" />
             Matching
           </Button>
-          <Button size="sm" variant="outline" disabled={!canRematch || isMatching} onClick={onRematch}>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={!canRematch || isMatching || Boolean(rematchBlockedReason)}
+            title={rematchBlockedReason ?? undefined}
+            onClick={onRematch}
+          >
             <RefreshCw className={cn("mr-1 h-3.5 w-3.5", isMatching && "animate-spin")} />
             {isMatching ? "Matching…" : "Re-run"}
           </Button>
+          {/* An applied session's outcome is a record worth being able to
+              return to — what was written, what failed, what can be retried. */}
+          {onViewResult && (
+            <Button size="sm" variant="outline" onClick={onViewResult}>
+              <FileCheck className="mr-1 h-3.5 w-3.5" />
+              What was applied
+            </Button>
+          )}
           {/* Named in changes, not rows: most of a reconciliation needs no
               write, and offering to "apply 248" when 12 will change is how a
               user stops trusting the numbers. */}
           <Button size="sm" disabled={changeCount === 0} onClick={onReview}>
-            Review {changeCount} change{changeCount === 1 ? "" : "s"}
+            {changeCount === 0
+              ? "Nothing to review"
+              : `Review ${changeCount} change${changeCount === 1 ? "" : "s"}`}
           </Button>
-        </div>
-
-        <div className="relative w-full">
-          <Search
-            className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground"
-            aria-hidden="true"
-          />
-          <Input
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            placeholder="Search description, payee, amount…"
-            aria-label="Search reconciliation rows"
-            className="h-8 w-full pl-7 text-xs"
-          />
         </div>
       </div>
 
-      <div className="flex flex-wrap items-center gap-2 border-b border-border/50 px-4 py-1.5 text-xs">
+      {/* Segmented controls rather than loose buttons, matching the other list
+          pages: the grouping is what tells the reader these are two separate
+          questions — one answer to the first, any number to the second. */}
+      <div className="flex flex-wrap items-center gap-2 border-b border-border/40 bg-muted/10 px-4 py-1.5 text-xs">
         <span className="text-muted-foreground">Progress</span>
-        <div role="group" aria-label="Filter by decision state" className="flex gap-1">
-          {DECISION_FILTERS.map((entry) => (
-            <button
-              key={entry.id}
-              type="button"
-              aria-pressed={decisionFilter === entry.id}
-              onClick={() => setDecisionFilter(entry.id)}
-              className={cn(
-                "rounded-md px-2 py-0.5 transition-colors",
-                decisionFilter === entry.id
-                  ? "bg-accent text-accent-foreground"
-                  : "text-muted-foreground hover:bg-accent/50"
-              )}
-            >
-              {entry.label}
-            </button>
-          ))}
-        </div>
+        <PillGroup
+          options={DECISION_FILTERS.map((entry) => ({ value: entry.id, label: entry.label }))}
+          value={decisionFilter}
+          onChange={setDecisionFilter}
+        />
 
         <span className="ml-2 text-muted-foreground">Show only</span>
-        <div role="group" aria-label="Filter by attribute" className="flex gap-1">
-          {ATTRIBUTE_FILTERS.map((entry) => (
-            <button
-              key={entry.id}
-              type="button"
-              aria-pressed={attributeFilters.has(entry.id)}
-              onClick={() =>
-                setAttributeFilters((previous) => {
-                  const next = new Set(previous);
-                  if (next.has(entry.id)) next.delete(entry.id);
-                  else next.add(entry.id);
-                  return next;
-                })
-              }
-              className={cn(
-                "rounded-md px-2 py-0.5 transition-colors",
-                attributeFilters.has(entry.id)
-                  ? "bg-accent text-accent-foreground"
-                  : "text-muted-foreground hover:bg-accent/50"
-              )}
-            >
-              {entry.label}
-            </button>
-          ))}
-        </div>
+        <MultiPillGroup
+          options={ATTRIBUTE_FILTERS.map((entry) => ({ value: entry.id, label: entry.label }))}
+          values={[...attributeFilters]}
+          onChange={(next) => setAttributeFilters(new Set(next))}
+          emptyMeansAll={false}
+        />
 
         <div className="ml-auto flex items-center gap-2">
           <Button size="sm" variant="ghost" className="h-6 text-xs" onClick={goToNextUndecided}>
@@ -618,21 +599,42 @@ export function Workbench({
             <caption className="sr-only">
               Bank statement rows matched against Actual transactions
             </caption>
-            <thead className="sticky top-0 z-10 bg-background text-[11px] uppercase tracking-wide text-muted-foreground">
-              <tr className="border-b border-border/30">
-                <th scope="col" className="w-8 px-2 pt-2" />
-                <th scope="colgroup" colSpan={3} className="px-2 pt-2 text-left font-semibold">
-                  Bank statement
+            {/*
+              Two sides, and Date and Amount appear on both, so the split is
+              carried by the group headings, a band down the statement's columns,
+              and a solid divider between them.
+
+              Every cell paints its own **opaque** background. A background on
+              the `<thead>` is not painted under `border-collapse`, and a
+              translucent one lets the rows scroll through underneath — both of
+              which leave a sticky header with body text showing through it.
+            */}
+            <thead className="sticky top-0 z-10 text-[11px] uppercase tracking-wide text-muted-foreground">
+              <tr>
+                <th scope="col" className="w-8 bg-muted px-2 pt-2" />
+                <th
+                  scope="colgroup"
+                  colSpan={3}
+                  className="bg-muted px-2 pt-2 text-left font-semibold text-foreground"
+                >
+                  From the bank statement
                 </th>
-                <th scope="col" className="border-x border-border/40 px-2 pt-2 text-left font-semibold">
+                <th
+                  scope="col"
+                  className="border-x border-border bg-background px-2 pt-2 text-left font-semibold text-foreground"
+                >
                   Match
                 </th>
-                <th scope="colgroup" colSpan={4} className="px-2 pt-2 text-left font-semibold">
-                  Actual
+                <th
+                  scope="colgroup"
+                  colSpan={4}
+                  className="bg-background px-2 pt-2 text-left font-semibold text-foreground"
+                >
+                  In Actual
                 </th>
               </tr>
-              <tr className="border-b border-border/50">
-                <th scope="col" className="w-8 px-2 pb-2">
+              <tr>
+                <th scope="col" className="w-8 border-b border-border bg-muted px-2 pb-2">
                   <input
                     type="checkbox"
                     aria-label={
@@ -642,16 +644,33 @@ export function Workbench({
                     onChange={() => toggleSelectAll(visibleIds, allVisibleSelected)}
                   />
                 </th>
-                <th scope="col" className="w-14 px-2 pb-2 text-left font-medium">Date</th>
-                <th scope="col" className="px-2 pb-2 text-left font-medium">Description</th>
-                <th scope="col" className="w-24 px-2 pb-2 text-right font-medium">Amount</th>
-                <th scope="col" className="w-40 border-x border-border/40 px-2 pb-2 text-left font-medium">
+                <th scope="col" className="w-14 border-b border-border bg-muted px-2 pb-2 text-left font-medium">
+                  Date
+                </th>
+                <th scope="col" className="border-b border-border bg-muted px-2 pb-2 text-left font-medium">
+                  Description
+                </th>
+                <th scope="col" className="w-24 border-b border-border bg-muted px-2 pb-2 text-right font-medium">
+                  Amount
+                </th>
+                <th
+                  scope="col"
+                  className="w-40 border-x border-b border-border bg-background px-2 pb-2 text-left font-medium"
+                >
                   Result
                 </th>
-                <th scope="col" className="w-14 px-2 pb-2 text-left font-medium">Date</th>
-                <th scope="col" className="w-[18%] px-2 pb-2 text-left font-medium">Payee</th>
-                <th scope="col" className="px-2 pb-2 text-left font-medium">Notes</th>
-                <th scope="col" className="w-24 px-2 pb-2 text-right font-medium">Amount</th>
+                <th scope="col" className="w-14 border-b border-border bg-background px-2 pb-2 text-left font-medium">
+                  Date
+                </th>
+                <th scope="col" className="w-[18%] border-b border-border bg-background px-2 pb-2 text-left font-medium">
+                  Payee
+                </th>
+                <th scope="col" className="border-b border-border bg-background px-2 pb-2 text-left font-medium">
+                  Notes
+                </th>
+                <th scope="col" className="w-24 border-b border-border bg-background px-2 pb-2 text-right font-medium">
+                  Amount
+                </th>
               </tr>
             </thead>
             <tbody>

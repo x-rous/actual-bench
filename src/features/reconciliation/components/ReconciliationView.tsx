@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { ArrowLeft, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Label } from "@/components/ui/label";
 import { PageLayout } from "@/components/layout/PageLayout";
 import { getBudgetFileSyncCapabilities } from "@/lib/sync/capabilities";
 import { generateId } from "@/lib/uuid";
@@ -18,7 +17,10 @@ import {
   resolveToTransaction,
   summarizeCoverage,
 } from "@/lib/reconciliation/session/build";
-import type { NormalizedStatement } from "@/lib/reconciliation/statement/normalize";
+import {
+  fingerprintStatement,
+  type NormalizedStatement,
+} from "@/lib/reconciliation/statement/normalize";
 import type {
   ActualTransactionSnapshot,
   MatchConfig,
@@ -46,11 +48,23 @@ import {
 import { prospectiveTransaction } from "@/lib/reconciliation/session/prospective";
 import { updateSession as updateSessionQuietly } from "../lib/reconciliationApi";
 import { executeApplyPlan, type ApplyRunResult } from "@/lib/reconciliation/apply/executor";
-import type { OperationResult } from "@/lib/reconciliation/apply/operations";
+import {
+  driftTargets,
+  reconcilePlanWithDrift,
+  type DriftReport,
+} from "@/lib/reconciliation/apply/drift";
+import { loadLatestForDrift } from "../lib/loadDrift";
+import { verifyApply, type VerificationReport } from "@/lib/reconciliation/apply/verification";
+import {
+  mergeOperationResults,
+  summarizeResults,
+  type OperationResult,
+} from "@/lib/reconciliation/apply/operations";
 import { createReconciliationTransport } from "@/lib/reconciliation/transportAdapter";
 import { getTransport } from "@/lib/actual";
 import { ApplyResultPanel } from "./ApplyResultPanel";
 import { ReviewPanel } from "./ReviewPanel";
+import { SessionHeader, type SessionStep } from "./SessionHeader";
 import {
   useReconciliationMutations,
   useReconciliationProfiles,
@@ -60,7 +74,9 @@ import {
 import type { ReconciliationProfileRecord } from "../lib/reconciliationApi";
 import type { ColumnMapping } from "@/lib/reconciliation/statement/normalize";
 import { ImportPanel } from "./ImportPanel";
-import { SessionList } from "./SessionList";
+import { ConfirmDialog, type ConfirmState } from "@/components/ui/confirm-dialog";
+import { NewSessionDialog } from "./NewSessionDialog";
+import { SessionList, rowCountOf } from "./SessionList";
 import { Workbench } from "./Workbench";
 
 /**
@@ -127,6 +143,22 @@ export function ReconciliationView() {
   const [applyResult, setApplyResult] = useState<ApplyRunResult | null>(null);
   const [applyProgress, setApplyProgress] = useState<{ done: number; total: number } | null>(null);
   const [applyConfig, setApplyConfig] = useState<ApplyConfig>(DEFAULT_APPLY_CONFIG);
+  /**
+   * What moved in Actual since this session read it, from the check that runs
+   * immediately before writing.
+   *
+   * Held rather than acted on, because rows a guardrail withheld are a decision
+   * for the user: the first Apply reports them and writes nothing, and only an
+   * explicit second press proceeds with the rest.
+   */
+  const [driftReport, setDriftReport] = useState<DriftReport | null>(null);
+  const [driftAcknowledged, setDriftAcknowledged] = useState(false);
+  const [isCheckingDrift, setIsCheckingDrift] = useState(false);
+  /** The read-back check that runs after a write, and whether it is running. */
+  const [verification, setVerification] = useState<VerificationReport | null>(null);
+  const [isVerifying, setIsVerifying] = useState(false);
+  const [newSessionOpen, setNewSessionOpen] = useState(false);
+  const [confirm, setConfirm] = useState<ConfirmState | null>(null);
 
   // Matching options live with the session (and, once saved, the import
   // profile) because they describe how this account's transactions are created.
@@ -199,6 +231,19 @@ export function ReconciliationView() {
         .map((item) => item.actualSnapshot as ActualTransactionSnapshot | null)
         .filter((snapshot): snapshot is ActualTransactionSnapshot => snapshot != null)
     );
+
+    // Rebuild what the last apply did, from the record kept as it happened.
+    // Without this the outcome is written faithfully to the database and then
+    // unreachable: reopening an applied session landed on the grid with no way
+    // to see what was written, or what failed and could be retried.
+    const persisted = Array.isArray(data.session.applyResults)
+      ? (data.session.applyResults as OperationResult[])
+      : null;
+    setApplyResult(
+      persisted && persisted.length > 0
+        ? { results: persisted, ...summarizeResults(persisted) }
+        : null
+    );
     if (data.session.statementStart && data.session.statementEnd) {
       setPeriod({ start: data.session.statementStart, end: data.session.statementEnd });
     }
@@ -257,7 +302,30 @@ export function ReconciliationView() {
    * The review screen and the executor read the same plan, so what is shown and
    * what runs cannot drift apart.
    */
-  const applyPlan = useMemo(
+  /**
+   * What this session has already written, by operation id.
+   *
+   * Kept out of the plan so an applied session stops offering to apply itself,
+   * while a partial one goes on offering exactly what failed.
+   */
+  const appliedOperationIds = useMemo(() => {
+    const results = sessionQuery.data?.session.applyResults;
+    if (!Array.isArray(results)) return undefined;
+    return new Set(
+      (results as OperationResult[])
+        .filter((entry) => entry.status === "applied" || entry.status === "skipped")
+        .map((entry) => entry.operationId)
+    );
+  }, [sessionQuery.data]);
+
+  /**
+   * The plan without the already-applied filter.
+   *
+   * The result screen describes work that has *run*, which the plan proper
+   * deliberately excludes — so it needs the unfiltered view to say what each
+   * operation did. Cheap: same pure function, same inputs.
+   */
+  const fullPlan = useMemo(
     () =>
       buildApplyPlan({
         sessionId: sessionId ?? "",
@@ -279,6 +347,30 @@ export function ReconciliationView() {
     ]
   );
 
+  const applyPlan = useMemo(
+    () =>
+      buildApplyPlan({
+        sessionId: sessionId ?? "",
+        budgetSyncId: connection?.budgetSyncId ?? "",
+        accountId: sessionQuery.data?.session.accountId ?? "",
+        items,
+        statementRows: statementRowsById,
+        transactions: transactionsById,
+        applyConfig,
+        appliedOperationIds,
+      }),
+    [
+      appliedOperationIds,
+      sessionId,
+      connection,
+      sessionQuery.data,
+      items,
+      statementRowsById,
+      transactionsById,
+      applyConfig,
+    ]
+  );
+
   const coverage = useMemo(
     () =>
       summarizeCoverage(items, {
@@ -287,6 +379,41 @@ export function ReconciliationView() {
       }),
     [items, parsedRows.length, snapshot.length]
   );
+
+  /**
+   * Keep the session's status in step with the work.
+   *
+   * Only `needs_review` and the post-apply outcomes were ever written, so a
+   * session with every row decided still read "In progress" — and the list
+   * could not answer the one question worth asking it: which of these are
+   * ready to apply?
+   *
+   * Derived from the items rather than set by each handler, because a decision
+   * can be made a dozen ways (per row, in bulk, by a transformation, by
+   * correcting an amount) and every one of them would otherwise have to
+   * remember to do this.
+   */
+  const sessionStatus = sessionQuery.data?.session.status;
+  const derivedStatus = useMemo<"needs_review" | "ready" | null>(() => {
+    if (items.length === 0) return null;
+    return items.some((item) => item.disposition === "unresolved") ? "needs_review" : "ready";
+  }, [items]);
+
+  useEffect(() => {
+    if (!sessionId || !derivedStatus || loadedSessionId !== sessionId) return;
+    // Terminal and in-flight states describe an apply, not the decisions, and
+    // must not be overwritten by them.
+    if (sessionStatus !== "needs_review" && sessionStatus !== "ready") return;
+    if (sessionStatus === derivedStatus) return;
+    // Through the mutation so the list refreshes with it. It converges: the
+    // refetched status then equals the derived one and this stops.
+    void mutations.updateSession.mutateAsync({
+      id: sessionId,
+      payload: { status: derivedStatus },
+    });
+    // `mutations` is recreated each render; depending on it would loop.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId, derivedStatus, sessionStatus, loadedSessionId]);
 
   if (!connection) {
     return (
@@ -310,12 +437,19 @@ export function ReconciliationView() {
     );
   }
 
-  async function startSession() {
-    const account = visibleAccounts.find((entry) => entry.id === accountId);
+  /**
+   * `chosenId` is passed rather than read from state: the dialog sets the
+   * account and starts in the same handler, and reading the state it just set
+   * would read the previous render's value.
+   */
+  async function startSession(chosenId?: string, tag?: string | null) {
+    const account = visibleAccounts.find((entry) => entry.id === (chosenId ?? accountId));
     if (!account) return;
+    setNewSessionOpen(false);
     const { session } = await mutations.createSession.mutateAsync({
       accountId: account.id,
       accountName: account.name,
+      tag: tag ?? null,
     });
     setParsedRows([]);
     setItems([]);
@@ -329,6 +463,20 @@ export function ReconciliationView() {
       accountId: account.id,
       accountName: account.name,
     });
+  }
+
+  /**
+   * Move between the steps of a session from its progress header.
+   *
+   * Only ever backwards or to somewhere already reached — the header reports
+   * progress, it does not skip work.
+   */
+  function goToStep(step: SessionStep, id: string) {
+    setDriftReport(null);
+    setDriftAcknowledged(false);
+    if (step === "reconcile") setScreen({ name: "workbench", sessionId: id });
+    else if (step === "review") setScreen({ name: "review", sessionId: id });
+    else if (step === "applied") setScreen({ name: "result", sessionId: id });
   }
 
   /**
@@ -399,6 +547,9 @@ export function ReconciliationView() {
           status: "needs_review",
           statementStart: input.statementPeriod.start,
           statementEnd: input.statementPeriod.end,
+          // Recorded so importing the same statement again can be recognised
+          // and questioned rather than quietly reconciled twice.
+          statementFingerprint: fingerprintStatement(input.statementRows),
           matchConfig: input.config,
           ...(input.statementName !== undefined ? { statementName: input.statementName } : {}),
           ...(input.totals !== undefined ? { totals: input.totals } : {}),
@@ -605,7 +756,16 @@ export function ReconciliationView() {
   /**
    * Write the plan.
    *
-   * Markers already in the account are read first, so a create that succeeded in
+   * Before anything is written, every row the plan touches is re-read and
+   * compared against what this session saw when it loaded. A session can be
+   * hours or days old, and Actual is not frozen in the meantime: a note edited
+   * elsewhere would otherwise be overwritten by a staged change, and an amount
+   * corrected elsewhere would be reverted by an update that was never about the
+   * amount at all. Rows that moved harmlessly are brought up to date and applied;
+   * rows where the user's own edit is at stake are withheld and reported, and
+   * writing proceeds only when they press Apply a second time.
+   *
+   * Markers already in the account are read too, so a create that succeeded in
    * an earlier attempt is recognised and skipped even if this session's own
    * record of it was lost. Each outcome is persisted as it happens rather than
    * in one write at the end, so an interruption leaves a truthful record.
@@ -614,10 +774,57 @@ export function ReconciliationView() {
     const session = sessionQuery.data?.session;
     if (!connection || !session || applyPlan.operations.length === 0) return;
 
-    setIsApplying(true);
     setMatchError(null);
-    setApplyProgress({ done: 0, total: applyPlan.operations.length });
+    // A previous run's check describes a previous run.
+    setVerification(null);
     const transport = createReconciliationTransport(getTransport(connection));
+
+    let plan = applyPlan;
+    try {
+      setIsCheckingDrift(true);
+      const targets = driftTargets(applyPlan);
+      const dates = snapshot.map((transaction) => transaction.date).sort();
+      const latest = await loadLatestForDrift({
+        transport,
+        accountId: session.accountId,
+        transactionIds: targets,
+        startDate: dates[0] ?? session.statementStart ?? "",
+        endDate: dates[dates.length - 1] ?? session.statementEnd ?? "",
+      });
+
+      const checked = reconcilePlanWithDrift({
+        plan: applyPlan,
+        snapshots: transactionsById,
+        latest,
+      });
+      plan = checked.plan;
+      setDriftReport(checked.report);
+
+      // Something is at stake that only the user can settle. Report it and
+      // write nothing; pressing Apply again proceeds with the rest.
+      //
+      // The screen is set explicitly because a retry can arrive from the result
+      // screen, and a warning shown somewhere the user is not looking is the
+      // same as no warning at all.
+      if (checked.report.withheld.length > 0 && !driftAcknowledged) {
+        setDriftAcknowledged(true);
+        setScreen({ name: "review", sessionId: session.id });
+        return;
+      }
+      if (plan.operations.length === 0) return;
+    } catch (error) {
+      setMatchError(
+        error instanceof Error
+          ? `Could not check for changes made in Actual: ${error.message}`
+          : "Could not check for changes made in Actual"
+      );
+      return;
+    } finally {
+      setIsCheckingDrift(false);
+    }
+
+    setIsApplying(true);
+    setApplyProgress({ done: 0, total: plan.operations.length });
 
     try {
       const existingMarkers = await transport.readExistingMarkers({
@@ -655,11 +862,15 @@ export function ReconciliationView() {
         if (!force && now - lastFlush < PROGRESS_FLUSH_MS) return;
         lastFlush = now;
         pending = false;
-        await updateSessionQuietly(session.id, { applyResults: [...collected] });
+        // Merged, not replaced: a retry's results describe only what it ran,
+        // and overwriting would erase every operation that already succeeded.
+        await updateSessionQuietly(session.id, {
+          applyResults: mergeOperationResults(previousResults, collected),
+        });
       };
 
       const result = await executeApplyPlan({
-        plan: applyPlan,
+        plan,
         transport,
         existingMarkers,
         previousResults,
@@ -681,21 +892,60 @@ export function ReconciliationView() {
       });
 
       await flush(true);
-      setApplyResult(result);
+
+      // The session's whole history, not just this run's part of it. The result
+      // screen reports what the *session* did, and the plan reads this back to
+      // decide what is left — so a retry that replaced it would resurrect work
+      // that had already been written.
+      const history = mergeOperationResults(previousResults, result.results);
+      const totals = summarizeResults(history);
+      setApplyResult({ results: history, ...totals });
 
       // One invalidating write at the end, so the session list and the
       // workbench refresh once rather than once per operation.
       await mutations.updateSession.mutateAsync({
         id: session.id,
         payload: {
-          applyResults: result.results,
-          status: result.complete ? "completed" : "partial",
+          applyResults: history,
+          status: totals.complete ? "completed" : "partial",
           appliedAt: new Date().toISOString(),
         },
       });
 
       // Direct-mode writes need the browser runtime told about them.
       await getTransport(connection).sync();
+
+      // Read the account back and compare it against what was approved. A
+      // transport reporting success for a field it dropped, or a create that
+      // landed twice, is invisible from the write side alone.
+      setIsVerifying(true);
+      try {
+        const dates = plan.operations.map((operation) => operation.date).sort();
+        const window = await transport.loadTransactions({
+          accountId: session.accountId,
+          startDate: dates[0] ?? session.statementStart ?? "",
+          endDate: dates[dates.length - 1] ?? session.statementEnd ?? "",
+        });
+        setVerification(
+          verifyApply({
+            plan,
+            results: result.results,
+            latest: window.transactions,
+            snapshots: transactionsById,
+          })
+        );
+      } catch {
+        // A check that cannot run is not a failed apply, and saying nothing is
+        // better than reporting problems it did not actually find.
+        setVerification(null);
+      } finally {
+        setIsVerifying(false);
+      }
+
+      // A retry is a fresh decision: whatever was withheld a moment ago has to
+      // be put in front of the user again rather than carried through on an
+      // acknowledgement they gave about a different run.
+      setDriftAcknowledged(false);
       setScreen({ name: "result", sessionId: session.id });
     } catch (error) {
       setMatchError(error instanceof Error ? error.message : "Could not apply the changes");
@@ -730,6 +980,7 @@ export function ReconciliationView() {
         }
         scrollManaged
       >
+        <SessionHeader session={sessionQuery.data?.session} current="import" />
         {matchError && (
           <p role="alert" className="px-4 pt-3 text-xs text-destructive">
             {matchError}
@@ -757,6 +1008,16 @@ export function ReconciliationView() {
             setMatchPreset(preset);
             setMatchConfig(config);
           }}
+          knownStatements={(sessionsQuery.data ?? [])
+            // The session being imported into has no statement yet, so it can
+            // never be its own duplicate.
+            .filter((entry) => entry.statementFingerprint && entry.id !== screen.sessionId)
+            .map((entry) => ({
+              fingerprint: entry.statementFingerprint!,
+              accountName: entry.accountName,
+              tag: entry.tag,
+              createdAt: entry.createdAt,
+            }))}
           onCancel={() => setScreen({ name: "home" })}
           onParsed={(result, fileName) => void handleParsed(result, fileName)}
           isSaving={isMatching}
@@ -768,7 +1029,34 @@ export function ReconciliationView() {
   if (screen.name === "review" || screen.name === "result") {
     const session = sessionQuery.data?.session;
     return (
-      <PageLayout title="Bank Reconciliation" scrollManaged>
+      <PageLayout
+        title="Bank Reconciliation"
+        // Leaving is a navigation action, and navigation lives in the toolbar
+        // on every other page.
+        actions={
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={isApplying || isCheckingDrift}
+            onClick={() => {
+              setDriftReport(null);
+              setDriftAcknowledged(false);
+              setScreen({ name: "workbench", sessionId: screen.sessionId });
+            }}
+          >
+            <ArrowLeft className="mr-1 h-3.5 w-3.5" />
+            Back to the workbench
+          </Button>
+        }
+        scrollManaged
+      >
+        <SessionHeader
+          session={session}
+          current={screen.name === "review" ? "review" : "applied"}
+          period={period}
+          statementName={statementName}
+          onNavigate={(step) => goToStep(step, screen.sessionId)}
+        />
         {matchError && (
           <p role="alert" className="px-4 pt-3 text-xs text-destructive">
             {matchError}
@@ -783,6 +1071,8 @@ export function ReconciliationView() {
             payees={payeeOptions}
             categories={categoryOptions}
             isApplying={isApplying}
+            isCheckingDrift={isCheckingDrift}
+            drift={driftReport}
             progress={applyProgress}
             applyConfig={applyConfig}
             onApplyConfigChange={(config) => {
@@ -794,17 +1084,29 @@ export function ReconciliationView() {
                 });
               }
             }}
-            onBack={() => setScreen({ name: "workbench", sessionId: screen.sessionId })}
+            onBack={() => {
+              // Decisions can change on the workbench, so a drift check made
+              // against the old plan no longer describes what would be written.
+              setDriftReport(null);
+              setDriftAcknowledged(false);
+              setScreen({ name: "workbench", sessionId: screen.sessionId });
+            }}
             onApply={() => void handleApply()}
           />
         ) : (
           applyResult && (
             <ApplyResultPanel
-              plan={applyPlan}
+              plan={fullPlan}
+              items={items}
+              statementRows={statementRowsById}
+              transactions={transactionsById}
+              payees={payeeOptions}
+              applyConfig={applyConfig}
               result={applyResult}
+              verification={verification}
+              isVerifying={isVerifying}
               isApplying={isApplying}
               onRetry={() => void handleApply()}
-              onBack={() => setScreen({ name: "workbench", sessionId: screen.sessionId })}
             />
           )
         )}
@@ -822,6 +1124,22 @@ export function ReconciliationView() {
   if (screen.name === "workbench") {
     const session = sessionQuery.data?.session;
     const canRematch = Boolean(session && period && parsedRows.length > 0);
+
+    /*
+     * Re-matching rebuilds the items from scratch, which mints new item ids —
+     * and the record of what was already applied is keyed by those ids. Running
+     * it on a session that has written to the budget would therefore lose track
+     * of that work and offer to update the same transactions a second time.
+     *
+     * So it is refused once a session has applied, and the user is pointed at
+     * the operation that is actually correct: a fresh reconciliation, which
+     * reads Actual as it stands now rather than as it stood before the writes.
+     */
+    const rematchBlockedReason =
+      session && (session.status === "completed" || session.status === "partial")
+        ? "This reconciliation has already been applied. Matching again would lose the record of what was written — start a new reconciliation to check the account as it stands now."
+        : null;
+
     return (
       <PageLayout
         title="Bank Reconciliation"
@@ -833,15 +1151,19 @@ export function ReconciliationView() {
         }
         scrollManaged
       >
+        <SessionHeader
+          session={session}
+          current="reconcile"
+          period={period}
+          statementName={statementName}
+          onNavigate={(step) => goToStep(step, screen.sessionId)}
+        />
         {matchError && (
           <p role="alert" className="px-4 pt-3 text-xs text-destructive">
             {matchError}
           </p>
         )}
         <Workbench
-          accountName={session?.accountName ?? "Account"}
-          statementName={statementName ?? session?.statementName ?? null}
-          period={period}
           items={items}
           statementRows={statementRowsById}
           transactions={transactionsById}
@@ -850,6 +1172,7 @@ export function ReconciliationView() {
           matchPreset={matchPreset}
           isMatching={isMatching}
           canRematch={canRematch}
+          rematchBlockedReason={rematchBlockedReason}
           payees={payeeOptions}
           categories={categoryOptions}
           onDisposition={handleDisposition}
@@ -862,6 +1185,11 @@ export function ReconciliationView() {
           transformContextFor={transformContextFor}
           onTransform={handleTransform}
           changeCount={applyPlan.operations.length}
+          onViewResult={
+            applyResult
+              ? () => setScreen({ name: "result", sessionId: screen.sessionId })
+              : undefined
+          }
           onReview={() => setScreen({ name: "review", sessionId: screen.sessionId })}
           onMatchConfigChange={(preset, config) => {
             setMatchPreset(preset);
@@ -895,35 +1223,30 @@ export function ReconciliationView() {
       error={sessionsQuery.error}
       onRetry={() => void sessionsQuery.refetch()}
       scrollManaged
-    >
-      <div className="flex flex-wrap items-end gap-2 border-b border-border/50 px-4 py-3">
-        <div className="flex flex-col gap-1">
-          <Label htmlFor="reconciliation-account" className="text-xs">
-            Account
-          </Label>
-          <select
-            id="reconciliation-account"
-            className="h-8 min-w-64 rounded-md border border-input bg-background px-2 text-sm"
-            value={accountId}
-            onChange={(event) => setAccountId(event.target.value)}
-          >
-            <option value="">Select an account…</option>
-            {visibleAccounts.map((account) => (
-              <option key={account.id} value={account.id}>
-                {account.name}
-              </option>
-            ))}
-          </select>
-        </div>
-        <Button
-          size="sm"
-          disabled={!accountId || mutations.createSession.isPending}
-          onClick={() => void startSession()}
-        >
+      actions={
+        <Button size="sm" onClick={() => setNewSessionOpen(true)}>
           <Plus className="mr-1 h-3.5 w-3.5" />
           New reconciliation
         </Button>
-      </div>
+      }
+    >
+      <NewSessionDialog
+        open={newSessionOpen}
+        onOpenChange={setNewSessionOpen}
+        accounts={visibleAccounts.map((account) => ({ id: account.id, name: account.name }))}
+        knownTags={[
+          ...new Set(
+            (sessionsQuery.data ?? [])
+              .map((session) => session.tag)
+              .filter((tag): tag is string => Boolean(tag))
+          ),
+        ].sort()}
+        isCreating={mutations.createSession.isPending}
+        onStart={(id, tag) => {
+          setAccountId(id);
+          void startSession(id, tag);
+        }}
+      />
 
       <SessionList
           sessions={sessionsQuery.data ?? []}
@@ -941,8 +1264,35 @@ export function ReconciliationView() {
             }
             setScreen({ name: "workbench", sessionId: session.id });
           }}
-          onDelete={(session) => void mutations.deleteSession.mutateAsync(session.id)}
-        onNew={() => document.getElementById("reconciliation-account")?.focus()}
+          onDelete={(session) => {
+            // Deleting takes the statement rows and every decision staged
+            // against them with it, and there is no undo — one stray click on
+            // a trash icon should not be able to do that.
+            const decided = rowCountOf(session);
+            setConfirm({
+              title: "Delete this reconciliation?",
+              message: (
+                <>
+                  {session.accountName ?? "This account"}
+                  {session.tag ? ` · ${session.tag}` : ""}
+                  {decided !== null ? ` · ${decided} statement rows` : ""}. The statement and every
+                  decision staged against it are removed. Nothing in your budget changes, and
+                  anything already applied stays applied.
+                </>
+              ),
+              onConfirm: () => void mutations.deleteSession.mutateAsync(session.id),
+            });
+          }}
+        onRetag={(session, tag) =>
+          void mutations.updateSession.mutateAsync({ id: session.id, payload: { tag } })
+        }
+        onNew={() => setNewSessionOpen(true)}
+      />
+
+      <ConfirmDialog
+        open={confirm !== null}
+        onOpenChange={(open) => { if (!open) setConfirm(null); }}
+        state={confirm}
       />
     </PageLayout>
   );

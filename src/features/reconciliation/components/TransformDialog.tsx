@@ -3,6 +3,13 @@
 import { useMemo, useState } from "react";
 import { Plus, Trash2, Wand2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { generateId } from "@/lib/uuid";
 import { previewTransform } from "@/lib/reconciliation/transform/preview";
@@ -52,6 +59,14 @@ const OPERATORS: { id: ConditionOperator; label: string }[] = [
   { id: "lessThan", label: "is less than" },
   { id: "between", label: "is between" },
 ];
+
+/** Column headings for the fields a rule can change. */
+const FIELD_LABELS: Record<string, string> = {
+  notes: "Notes",
+  payeeId: "Payee",
+  amount: "Amount",
+  date: "Date",
+};
 
 type ActionKind = TransformAction["kind"];
 
@@ -125,6 +140,27 @@ export function TransformDialog({
     [conditions, actions]
   );
 
+  /**
+   * How a row is named in the impact table.
+   *
+   * The bank's own description first: it is what the user recognises, and for a
+   * row about to be created it is the only name that exists yet.
+   */
+  const labelFor = useMemo(() => {
+    const byId = new Map(items.map((item) => [item.id, item]));
+    return (itemId: string): string => {
+      const item = byId.get(itemId);
+      if (!item) return "—";
+      const context = contextFor(item);
+      return (
+        context.statementRow?.description ??
+        context.transaction?.payeeName ??
+        context.transaction?.notes ??
+        "—"
+      );
+    };
+  }, [items, contextFor]);
+
   // Recomputed as the rule is edited, with the same code that will apply it, so
   // the preview cannot disagree with the outcome.
   const preview = useMemo(
@@ -144,14 +180,29 @@ export function TransformDialog({
     });
 
   return (
-    <div className="flex flex-col gap-4 border-b border-border/50 bg-muted/20 p-4">
-      <div className="flex items-center gap-2">
-        <Wand2 className="h-4 w-4" aria-hidden="true" />
-        <h3 className="text-sm font-semibold">Change many rows at once</h3>
-        <Button variant="ghost" size="sm" className="ml-auto" onClick={onClose}>
-          Close
-        </Button>
-      </div>
+    <Dialog open onOpenChange={(next) => { if (!next) onClose(); }}>
+      {/*
+        Wide and tall on purpose. The rule is only half of this screen — the
+        other half is every row it touches, and a preview capped at five
+        examples asks the user to approve two hundred changes on the strength of
+        five. The table below is the whole list.
+      */}
+      <DialogContent className="flex h-[85vh] max-h-[85vh] flex-col gap-3 sm:max-w-[min(1200px,95vw)]">
+        <DialogHeader className="shrink-0">
+          <DialogTitle className="flex items-center gap-2">
+            <Wand2 className="h-4 w-4" aria-hidden="true" />
+            Change many rows at once
+          </DialogTitle>
+          <DialogDescription>
+            Nothing is written to your budget — this stages the changes, and you still review them
+            before applying.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden">
+        {/* Bounded, so a rule with several conditions scrolls rather than
+            squeezing the impact table it exists to explain. */}
+        <div className="max-h-[45%] shrink-0 space-y-3 overflow-y-auto pr-1">
 
       {selectedIds.size > 0 && (
         <div className="flex items-center gap-2 text-xs">
@@ -457,66 +508,109 @@ export function TransformDialog({
         </span>
       </label>
 
-      <section className="rounded-md border border-border/60 bg-background p-3">
-        <p className="text-xs font-medium">
-          {preview.changed.length} row{preview.changed.length === 1 ? "" : "s"} will change
-          {preview.matched !== preview.changed.length && (
-            <span className="font-normal text-muted-foreground">
-              {" "}
-              · {preview.matched} matched the condition
-            </span>
-          )}
-        </p>
+        </div>
 
-        {preview.changed.length > 0 && (
-          <ul className="mt-2 space-y-1.5 text-[11px]">
-            {preview.changed.slice(0, 5).map((row) =>
-              row.changes.map((change, index) => (
-                <li key={`${row.itemId}-${index}`} className="flex flex-col">
-                  <span className="text-muted-foreground line-through">{change.before ?? "—"}</span>
-                  <span>{change.after ?? "—"}</span>
-                </li>
-              ))
+        <section className="flex min-h-0 flex-1 flex-col rounded-md border border-border/60 bg-background">
+          <div className="flex shrink-0 flex-wrap items-baseline gap-x-3 gap-y-1 border-b border-border/50 px-3 py-2">
+            <p className="text-xs font-medium">
+              {preview.changed.length} row{preview.changed.length === 1 ? "" : "s"} will change
+              {preview.matched !== preview.changed.length && (
+                <span className="font-normal text-muted-foreground">
+                  {" "}
+                  · {preview.matched} matched the condition
+                </span>
+              )}
+            </p>
+
+            {preview.skipped.length > 0 && (
+              <details className="text-[11px]">
+                <summary className="cursor-pointer text-muted-foreground">
+                  {preview.skipped.length} left alone
+                </summary>
+                <ul className="mt-1 space-y-0.5 text-muted-foreground">
+                  {[...new Set(preview.skipped.map((entry) => entry.detail))].map((detail) => (
+                    <li key={detail}>{detail}</li>
+                  ))}
+                </ul>
+              </details>
             )}
-            {preview.changed.length > 5 && (
-              <li className="text-muted-foreground">
-                and {preview.changed.length - 5} more
-              </li>
+          </div>
+
+          <div className="min-h-0 flex-1 overflow-auto">
+            {preview.changed.length === 0 ? (
+              <p className="px-3 py-8 text-center text-xs text-muted-foreground">
+                {ready
+                  ? "Nothing matches this rule yet."
+                  : "Fill in the rule above to see what it would change."}
+              </p>
+            ) : (
+              <table className="w-full border-collapse text-xs">
+                <caption className="sr-only">
+                  Every row this rule would change, with its current and resulting value
+                </caption>
+                <thead className="sticky top-0 z-10 text-[11px] uppercase tracking-wide text-muted-foreground">
+                  <tr>
+                    <th scope="col" className="w-[22%] border-b border-border bg-background px-3 py-1.5 text-left font-medium">
+                      Row
+                    </th>
+                    <th scope="col" className="w-16 border-b border-border bg-background px-3 py-1.5 text-left font-medium">
+                      Field
+                    </th>
+                    <th scope="col" className="border-b border-border bg-background px-3 py-1.5 text-left font-medium">
+                      Now
+                    </th>
+                    <th scope="col" className="border-b border-border bg-background px-3 py-1.5 text-left font-medium">
+                      After
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {preview.changed.map((row) =>
+                    row.changes.map((change, index) => (
+                      <tr key={`${row.itemId}-${change.field}`} className="border-b border-border/20">
+                        {/* The row is named once, on its first changed field,
+                            so a rule touching two fields reads as one row
+                            rather than two. */}
+                        <td className="max-w-0 truncate px-3 py-1 align-top text-muted-foreground">
+                          {index === 0 ? labelFor(row.itemId) : ""}
+                        </td>
+                        <td className="px-3 py-1 align-top text-muted-foreground">
+                          {FIELD_LABELS[change.field] ?? change.field}
+                        </td>
+                        <td className="px-3 py-1 align-top text-muted-foreground">
+                          {change.before ?? "—"}
+                        </td>
+                        <td className="px-3 py-1 align-top text-amber-600 dark:text-amber-400">
+                          {change.after ?? "—"}
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
             )}
-          </ul>
-        )}
+          </div>
+        </section>
+        </div>
 
-        {preview.skipped.length > 0 && (
-          <details className="mt-2 text-[11px]">
-            <summary className="cursor-pointer text-muted-foreground">
-              {preview.skipped.length} left alone
-            </summary>
-            <ul className="mt-1 space-y-0.5 text-muted-foreground">
-              {[...new Set(preview.skipped.map((entry) => entry.detail))].map((detail) => (
-                <li key={detail}>{detail}</li>
-              ))}
-            </ul>
-          </details>
-        )}
-      </section>
-
-      <div className="flex items-center justify-end gap-2">
-        <Button variant="ghost" onClick={onClose}>
-          Cancel
-        </Button>
-        <Button
-          disabled={!ready || preview.changed.length === 0}
-          onClick={() => {
-            onApply(
-              preview.changed.map((row) => ({ itemId: row.itemId, patch: row.patch }))
-            );
-            onClose();
-          }}
-        >
-          Change {preview.changed.length} row{preview.changed.length === 1 ? "" : "s"}
-        </Button>
-      </div>
-    </div>
+        <div className="flex shrink-0 items-center justify-end gap-2 border-t border-border/50 pt-3">
+          <Button variant="ghost" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button
+            disabled={!ready || preview.changed.length === 0}
+            onClick={() => {
+              onApply(
+                preview.changed.map((row) => ({ itemId: row.itemId, patch: row.patch }))
+              );
+              onClose();
+            }}
+          >
+            Change {preview.changed.length} row{preview.changed.length === 1 ? "" : "s"}
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 

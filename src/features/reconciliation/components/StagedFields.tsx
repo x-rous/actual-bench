@@ -4,6 +4,7 @@ import { useState } from "react";
 import { RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
+import { SearchableCombobox } from "@/components/ui/combobox";
 import { canStageField } from "@/lib/reconciliation/session/staging";
 import type { StageableField } from "@/lib/reconciliation/session/staging";
 import type { ReconciliationItem, StagedPatch } from "@/lib/reconciliation/types";
@@ -100,25 +101,26 @@ export function StagedFields({
 
       <div className="flex flex-col gap-1">
         <div className="flex items-center justify-between">
-          <Label htmlFor="staged-payee" className="text-[11px] uppercase tracking-wide">
-            Payee
-          </Label>
+          <Label className="text-[11px] uppercase tracking-wide">Payee</Label>
           <ChangedMark patch={patch} field="payeeId" onUnstage={() => onUnstage("payeeId")} />
         </div>
-        <select
-          id="staged-payee"
-          className="h-8 rounded-md border border-input bg-background px-2 text-sm disabled:opacity-50"
-          value={payeeValue}
-          disabled={!field("payeeId").allowed}
-          onChange={(event) => onStage("payeeId", event.target.value || null)}
-        >
-          <option value="">No payee</option>
-          {payees.map((payee) => (
-            <option key={payee.id} value={payee.id}>
-              {payee.name}
-            </option>
-          ))}
-        </select>
+        {/* Searchable: a budget's payee list runs to hundreds of entries, and
+            scrolling one to reach "Talabat" is not a way to work. */}
+        {field("payeeId").allowed ? (
+          <SearchableCombobox
+            options={[{ id: "", name: "No payee" }, ...payees]}
+            value={payeeValue}
+            onChange={(next) => onStage("payeeId", next || null)}
+            placeholder="No payee"
+            ariaLabel="Payee"
+          />
+        ) : (
+          // A guard refuses this field, so it reads as what it is: the current
+          // value, plainly shown and not editable.
+          <p className="flex h-8 items-center rounded-md border border-input bg-muted/40 px-2 text-xs text-muted-foreground">
+            {payees.find((payee) => payee.id === payeeValue)?.name ?? "No payee"}
+          </p>
+        )}
         {!field("payeeId").allowed && (
           <p className="text-[11px] text-muted-foreground">
             {(field("payeeId") as { reason: string }).reason}
