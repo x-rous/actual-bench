@@ -38,7 +38,7 @@ import { WorkbenchRow } from "./WorkbenchRow";
  * with the apply pipeline, so nothing here can change the budget.
  */
 
-type FilterId =
+export type FilterId =
   | "all"
   | "needs-review"
   | "ambiguous"
@@ -226,36 +226,49 @@ function matchesAttributes(
   return true;
 }
 
-function matchesFilter(item: ReconciliationItem, filter: FilterId): boolean {
+/**
+ * Every reason a row lands in review.
+ *
+ * Declared once so the parent filter cannot drift from the children that break
+ * it down — which is exactly how the two came to disagree.
+ */
+const REVIEW_REASON_CODES: string[] = [
+  REASON.ambiguousMatch,
+  REASON.belowConfidenceFloor,
+  REASON.amountMismatch,
+  REASON.sameMerchantDate,
+  REASON.merchantCluster,
+  REASON.likelyDuplicate,
+];
+
+/** A row still waiting on the user, for one of the given reasons. */
+function isUndecidedReview(item: ReconciliationItem, reasons: string[]): boolean {
+  return item.disposition === "unresolved" && reasons.includes(item.reasonCode ?? "");
+}
+
+export function matchesFilter(item: ReconciliationItem, filter: FilterId): boolean {
   switch (filter) {
     case "matched":
       return item.disposition === "matched";
+    // "Needs review" and the four reasons beneath it are one question asked at
+    // two levels, so they share the same test. They did not: the parent counted
+    // only rows still undecided while the children counted by reason alone, so
+    // deciding a row removed it from the parent and left it in the child —
+    // "Needs review 0" above "Amount differs 14".
+    //
+    // Both now mean "still to review". They shrink together as the work is done,
+    // and the parent is exactly the union of its children. Revisiting rows
+    // already settled is what the Progress axis is for.
     case "needs-review":
-      return (
-        item.disposition === "unresolved" &&
-        (item.reasonCode === REASON.ambiguousMatch ||
-          item.reasonCode === REASON.belowConfidenceFloor ||
-          item.reasonCode === REASON.amountMismatch ||
-          item.reasonCode === REASON.sameMerchantDate ||
-          item.reasonCode === REASON.merchantCluster ||
-          item.reasonCode === REASON.likelyDuplicate)
-      );
+      return isUndecidedReview(item, REVIEW_REASON_CODES);
     case "ambiguous":
-      return (
-        item.reasonCode === REASON.ambiguousMatch ||
-        item.reasonCode === REASON.belowConfidenceFloor
-      );
+      return isUndecidedReview(item, [REASON.ambiguousMatch, REASON.belowConfidenceFloor]);
     case "amount-mismatch":
-      return item.reasonCode === REASON.amountMismatch;
+      return isUndecidedReview(item, [REASON.amountMismatch]);
     case "wrong-amount":
-      return (
-        item.reasonCode === REASON.sameMerchantDate ||
-        item.reasonCode === REASON.merchantCluster
-      );
+      return isUndecidedReview(item, [REASON.sameMerchantDate, REASON.merchantCluster]);
     case "duplicates":
-      // A matched row can carry the duplicate flag; it belongs under Matched,
-      // not under the work still to do.
-      return item.disposition !== "matched" && item.reasonCode === REASON.likelyDuplicate;
+      return isUndecidedReview(item, [REASON.likelyDuplicate]);
     case "create":
       return item.reasonCode === REASON.noActualCandidate;
     case "actual-only":
