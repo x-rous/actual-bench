@@ -334,6 +334,37 @@ describe("resolving a review item to one transaction", () => {
     });
   }
 
+  it("carries the chosen transaction's guardrails, not the leading candidate's", () => {
+    /*
+     * A review item holds the *leading* candidate's guards, because that is the
+     * one it would have matched. Picking a different candidate must recompute
+     * them: staging, deletion and the apply plan all enforce protection by
+     * reading this one field, so keeping the leader's guards would strip a
+     * reconciled row, split parent or transfer leg of its protection at the
+     * exact moment the user chose it deliberately.
+     */
+    const { item } = resolve("t3");
+    expect(item.actualTransactionIds).toEqual(["t3"]);
+    expect(item.guards.transfer).toBe("yes");
+  });
+
+  it("recomputes the reconciled and split guards too", () => {
+    const protectedTransactions = new Map([
+      ["t1", txn({ id: "t1" })],
+      ["t2", txn({ id: "t2", reconciled: true, isParent: true })],
+    ]);
+    const { item } = resolveToTransaction({
+      item: { ...reviewItem, actualTransactionIds: ["t1", "t2"] },
+      transactionId: "t2",
+      transactions: protectedTransactions,
+      transfersReported: true,
+      makeId: () => "released-1",
+    });
+
+    expect(item.guards.protectedReconciled).toBe(true);
+    expect(item.guards.splitParent).toBe(true);
+  });
+
   it("matches the chosen transaction and records it as the user's own decision", () => {
     const { item } = resolve("t1");
     expect(item.actualTransactionIds).toEqual(["t1"]);

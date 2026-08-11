@@ -248,6 +248,13 @@ export function resolveToTransaction(input: {
         actualTransactionIds: [transactionId],
         disposition: "matched",
         reasonCode: undefined,
+        // Recomputed for the transaction actually chosen. A review item carries
+        // the *leading* candidate's guards, so spreading them onto a different
+        // candidate would hand one transaction another's protections — and
+        // every layer that enforces them (staging, delete, the plan) reads this
+        // one field, so a reconciled row, split parent or transfer leg would
+        // lose its guard precisely when the user picked it deliberately.
+        guards: guardsFor(transactions.get(transactionId), transfersReported),
         match: {
           type: "manual",
           evidenceSource: "manual",

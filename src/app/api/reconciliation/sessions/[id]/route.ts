@@ -21,7 +21,16 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-const NOT_FOUND = NextResponse.json({ error: "Reconciliation session not found" }, { status: 404 });
+/**
+ * A fresh 404 per call.
+ *
+ * A `Response` body is a one-shot stream: once Next.js has sent it, it is
+ * consumed and locked, so a module-level instance shared by these handlers
+ * would fail on the second miss with `ReadableStream is locked`.
+ */
+function notFound() {
+  return NextResponse.json({ error: "Reconciliation session not found" }, { status: 404 });
+}
 
 /**
  * Returns the session and, unless `?shallow=1`, its statement rows and items.
@@ -34,7 +43,7 @@ export async function GET(request: Request, context: RouteContext) {
     const { id } = await context.params;
     const db = getAppDb();
     const session = getReconciliationSession(db, id);
-    if (!session) return NOT_FOUND;
+    if (!session) return notFound();
 
     if (new URL(request.url).searchParams.get("shallow") === "1") {
       return NextResponse.json({ session });
@@ -77,7 +86,7 @@ export async function PATCH(request: Request, context: RouteContext) {
     if ("appliedAt" in body) patch.appliedAt = body.appliedAt as string | null;
 
     const session = updateReconciliationSession(getAppDb(), id, patch);
-    if (!session) return NOT_FOUND;
+    if (!session) return notFound();
     return NextResponse.json({ session });
   } catch (error) {
     return appDbErrorResponse(error);
@@ -88,7 +97,7 @@ export async function DELETE(_request: Request, context: RouteContext) {
   try {
     const { id } = await context.params;
     // Cascades to the session's statement rows and items.
-    if (!deleteReconciliationSession(getAppDb(), id)) return NOT_FOUND;
+    if (!deleteReconciliationSession(getAppDb(), id)) return notFound();
     return new NextResponse(null, { status: 204 });
   } catch (error) {
     return appDbErrorResponse(error);
