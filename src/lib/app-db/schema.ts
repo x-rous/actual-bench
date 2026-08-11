@@ -276,3 +276,120 @@ export const FX_INDEX_SQL = [
   "CREATE UNIQUE INDEX IF NOT EXISTS idx_fx_rates_active_pair_date ON fx_rates(base_currency, quote_currency, requested_date) WHERE status = 'active'",
   "CREATE UNIQUE INDEX IF NOT EXISTS idx_transaction_fx_transaction ON transaction_fx(transaction_id)",
 ];
+
+// ── Bank statement reconciliation (RD-071 / PR-034a) ─────────────────────────
+// A reconciliation session survives navigation, browser restart, and a partial
+// Apply. Unlike the sync tables, these rows hold *budget content* — the
+// normalized statement the user imported — so the docs call that out and
+// sessions are user-deletable.
+//
+// Nothing here is written to Actual: everything in these tables is a staged
+// proposal until the user explicitly applies it.
+export const RECONCILIATION_PROFILE_TABLE_SQL = `
+CREATE TABLE IF NOT EXISTS reconciliation_profiles (
+  id text PRIMARY KEY,
+  budget_sync_id text NOT NULL,
+  account_id text NOT NULL,
+  name text NOT NULL,
+  -- Column mapping + date/sign/decimal conventions (ColumnMapping).
+  mapping_json text NOT NULL,
+  -- Matching config incl. the user's text-target selection (MatchConfig).
+  match_config_json text NOT NULL,
+  created_at text NOT NULL,
+  updated_at text NOT NULL
+);
+`;
+
+export const RECONCILIATION_SESSION_TABLE_SQL = `
+CREATE TABLE IF NOT EXISTS reconciliation_sessions (
+  id text PRIMARY KEY,
+  budget_sync_id text NOT NULL,
+  account_id text NOT NULL,
+  account_name text,
+  profile_id text REFERENCES reconciliation_profiles(id) ON DELETE SET NULL,
+  status text NOT NULL,
+  statement_name text,
+  statement_start text,
+  statement_end text,
+  candidate_start text,
+  candidate_end text,
+  -- Fingerprint of the imported source, for duplicate-statement detection.
+  statement_fingerprint text,
+  -- Session-level overrides of the profile's match config, when set.
+  match_config_json text,
+  totals_json text,
+  -- Outcome of each apply operation, keyed by operation id. Persisted as each
+  -- write happens so an interrupted apply leaves a truthful record of what
+  -- already ran, and a retry can skip it rather than repeat it.
+  apply_results_json text,
+  -- How staged changes are turned into writes: where the statement description
+  -- goes on a created transaction, and anything else that shapes the write
+  -- rather than the match.
+  apply_config_json text,
+  -- A short label the user gives a session ("July close", "Q3 audit"), so a
+  -- list of reruns and corrections for one account can be told apart by what
+  -- they were *for* rather than only by when they were made.
+  tag text,
+  created_at text NOT NULL,
+  updated_at text NOT NULL,
+  applied_at text
+);
+`;
+
+export const RECONCILIATION_STATEMENT_ROW_TABLE_SQL = `
+CREATE TABLE IF NOT EXISTS reconciliation_statement_rows (
+  id text PRIMARY KEY,
+  session_id text NOT NULL REFERENCES reconciliation_sessions(id) ON DELETE CASCADE,
+  source_row_number integer NOT NULL,
+  posted_date text NOT NULL,
+  -- Integer minor units, sign preserved exactly.
+  amount integer NOT NULL,
+  description text NOT NULL,
+  reference text,
+  -- Some statements distinguish the transaction date from the posting date.
+  transaction_date text,
+  -- Foreign-currency transactions: the amount the bank printed in the original
+  -- currency, in integer minor units. Persisted because matching uses it as a
+  -- second exact key, so a resumed session that lost it would silently stop
+  -- matching every foreign purchase.
+  original_amount integer,
+  original_currency text,
+  -- Stable hash of the raw cells; backs the deterministic create marker.
+  fingerprint text NOT NULL,
+  -- The untouched source row, never overwritten.
+  raw_json text NOT NULL
+);
+`;
+
+export const RECONCILIATION_ITEM_TABLE_SQL = `
+CREATE TABLE IF NOT EXISTS reconciliation_items (
+  id text PRIMARY KEY,
+  session_id text NOT NULL REFERENCES reconciliation_sessions(id) ON DELETE CASCADE,
+  -- Arrays, so a later grouped N:M relationship needs no migration. V1 writes
+  -- at most one id in each.
+  statement_row_ids_json text NOT NULL DEFAULT '[]',
+  actual_transaction_ids_json text NOT NULL DEFAULT '[]',
+  disposition text NOT NULL,
+  reason_code text,
+  -- Match evidence: type, confidence, label, tier, structured reasons, and the
+  -- evidence source (bench/manual, with native reserved).
+  match_json text,
+  -- Guardrail classification derived from the Actual snapshot.
+  guards_json text,
+  -- The snapshot the session matched against, for drift detection before Apply.
+  actual_snapshot_json text,
+  -- Per-field { original, staged, source } provenance.
+  staged_changes_json text,
+  updated_at text NOT NULL
+);
+`;
+
+export const RECONCILIATION_INDEX_SQL = [
+  "CREATE INDEX IF NOT EXISTS idx_reconciliation_sessions_account ON reconciliation_sessions(budget_sync_id, account_id, updated_at)",
+  "CREATE INDEX IF NOT EXISTS idx_reconciliation_sessions_status ON reconciliation_sessions(status, updated_at)",
+  "CREATE INDEX IF NOT EXISTS idx_reconciliation_statement_rows_session ON reconciliation_statement_rows(session_id, source_row_number)",
+  "CREATE INDEX IF NOT EXISTS idx_reconciliation_items_session ON reconciliation_items(session_id)",
+  "CREATE INDEX IF NOT EXISTS idx_reconciliation_items_disposition ON reconciliation_items(session_id, disposition)",
+  // One profile name per account keeps the "previous profile found" lookup unambiguous.
+  "CREATE UNIQUE INDEX IF NOT EXISTS idx_reconciliation_profiles_account_name ON reconciliation_profiles(budget_sync_id, account_id, name)",
+] as const;

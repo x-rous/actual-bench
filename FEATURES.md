@@ -121,6 +121,58 @@ Consolidate budgets kept in **different currencies**: a transaction flow can con
 
 - Not in scope: true Actual transfer-linked sync (same-budget uses a plain copy), automatic (non-review) target deletes, category auto-create, fuzzy duplicate auto-mapping, unattended sync for **Direct**-mode flows (HTTP API mode is supported), FX gain/loss accounting, multi-currency within a single budget file, and silent recalculation of past conversions
 
+## Bank Statement Reconciliation
+
+A workbench for checking a bank statement against an account in Actual and settling the differences. Import the statement, match it, decide each row, review, then apply — nothing is written to your budget until the explicit Apply, and the review screen names **changes**, not rows.
+
+### Importing a statement
+
+- Paste or upload CSV/TSV; the delimiter is detected by column consistency rather than character frequency, and a header row is recognised by the absence of a usable date and amount
+- Column mapping is detected, including the common **separate Debit and Credit columns** layout — a statement that reports outflows in their own column is not treated as a set of positive amounts
+- Foreign-currency rows keep the **original amount and currency** the bank printed alongside the converted amount that actually posted
+- Amounts are parsed as integer minor units throughout — never via floating point
+- Sessions are persistent: import today, decide over several sittings, apply when you are ready. Each session records its statement, its decisions, and what was written
+- Give a session an optional **tag** when you create it ("July close", "after the refund") to tell a month's reruns and corrections apart; tags are editable in place, filterable, and searchable
+- Importing a statement that has already been imported is **recognised and flagged** — matched on the rows themselves, so a re-paste or a re-export still counts. It warns rather than blocks, since re-importing after a partial apply is a legitimate thing to do
+- The session list shows where each one stands, including **Ready to apply** once every row has a decision, so you can see at a glance what is waiting on you
+- Every screen carries a **progress header** — Import › Reconcile › Review › Applied — showing which account and period you are working on and how far the session has got. Once applied, a session says so and stops offering to apply itself again; re-matching is refused there too, since it would lose the record of what was written
+- Deleting a session asks first, and says what goes with it — nothing in your budget changes, and anything already applied stays applied
+
+### Matching
+
+Exact signed amount is a hard requirement for an automatic match. Text never *finds* a match — it only ranks the candidates an amount already produced — which is what keeps the results explainable.
+
+- **You choose what the statement's text is compared against**: the payee, the imported payee, or the notes, with priority and weights. Notes are compared by containment (bank text can sit inside a longer note), payees symmetrically
+- `#tags` in notes are ignored when comparing, on by default, since automation-written notes routinely carry a workflow tag that is not part of the bank's text
+- Short or generic text (`FEE`, `PAYMENT`) is rejected as evidence rather than allowed to match a large fraction of an account
+- FX rows can also match on the **original-currency amount**, with text corroboration required
+- Where the amounts disagree but the text plainly does not, the pair is offered **for review** — never as an automatic match
+- Close calls are surfaced as a choice rather than guessed at, and near-identical transactions are reported as **likely duplicates** — a count mismatch, not a resemblance
+- Reconciliation profiles save a column mapping and matching options per account
+
+### Deciding
+
+- Per row: accept the match, pick a different candidate, create the transaction, delete a duplicate, correct an amount in place, or leave it for later
+- Selecting a row opens a details panel that **compares** the two sides rather than listing them twice: date and amount appear once with both readings, and a difference is marked and quantified ("2 days later", "−12.50")
+- Staged changes are previewed with what the value was and where the new one came from; a bulk transformation never overwrites something you edited by hand
+- A **transformation engine** for notes: add, remove, replace or reposition tags, append or prepend text, and bring a shortened merchant name up to the statement's full description (`ROYAL CATERING SERVICE` → `ROYAL CATERING SERVICE ABU DHABI UAE`) — replacing only the run of words that came from the bank, so tags and your own words survive
+- Transfers, split parents, and rows already reconciled in Actual are protected
+- **Categories are never touched.** Reconciliation does not read, stage, or write a category; categorisation belongs in Actual
+
+### Reviewing and applying
+
+- Statement row by statement row, what each will look like in the budget afterwards, with changed values marked and carrying their previous value
+- The **effect on the account balance** is stated before the fact
+- Choose where the bank's description goes on a created transaction (payee or notes), and which transactions to mark cleared
+- **Before anything is written, every affected row is re-read and compared against what the session loaded.** A note edited in Actual in the meantime has the staged change replayed onto the current text rather than overwriting it; an amount or date corrected in Actual is left as Actual has it rather than reverted; and where a change cannot be reconciled safely, the row is held back and reported instead of applied
+- Created transactions carry a deterministic marker, so retrying after a partial failure never creates the same transaction twice — even if the session's own record of the run was lost
+- Updates and deletes are written in a single batched call where the transport supports it
+- A partial failure is reported as a partial success, and retrying re-attempts only what did not succeed. The outcome is kept with the session, so **what was applied stays readable afterwards** — reopen a finished reconciliation and **What was applied** shows each statement row beside the transaction it became, alongside anything skipped or failed
+- Afterwards the account is **read back and compared against what was approved** — created rows present and present once, updated fields holding the approved values, deleted rows gone, split parents still adding up, nothing reconciled in Actual moved
+- Actual's rules run on created transactions, so a created row's payee or category may end up different from the preview; this is stated on the review screen rather than discovered afterwards
+
+Sessions — the normalized statement rows, your decisions, the matching options, and the record of what was written — are stored in the **Actual Bench metadata database on the server**, which is what makes them resumable and a retry safe. They are deletable from the session list at any time; deleting one removes its statement rows and never touches your budget.
+
 ## Data Browser
 
 A standalone page (own navigation item) for browsing the active budget's exported SQLite directly. Reuses the cached Budget File Health snapshot, so it opens instantly once the budget has been loaded anywhere.

@@ -54,6 +54,7 @@ import {
   type SyncSourceTransaction,
   type SyncTargetLookup,
   type SyncTargetLookupTransaction,
+  type BatchTransactionUpdate,
   type SyncTargetTransactionInput,
   type UpdateTransactionForSyncInput,
   type TransportBudgetMonth,
@@ -660,6 +661,9 @@ function toSyncSourceTransaction(
     cleared: raw.cleared === true,
     reconciled: raw.reconciled === true,
     importedId: asString(raw.imported_id) ?? null,
+    importedPayee: asString(raw.imported_payee) ?? null,
+    transferId: asString(raw.transfer_id) ?? null,
+    scheduleId: asString(raw.schedule) ?? null,
     isParent,
     isChild: raw.is_child === true,
     parentId: asString(raw.parent_id) ?? null,
@@ -822,14 +826,20 @@ async function updateBrowserTransactionForSync(
     }
     if (!payeeId) payeeId = await api.createPayee({ name: input.payeeName });
   }
-  await api.updateTransaction(input.transactionId, {
-    date: input.date,
-    amount: input.amount,
-    payee: payeeId,
-    category: input.categoryId ?? null,
-    notes: input.notes ?? null,
-    cleared: input.cleared ?? false,
-  });
+  // Only fields the caller actually supplied are sent. `undefined` means
+  // "leave this alone"; coercing it to null wipes whatever the transaction
+  // holds, which for a partial update is silent data loss. Budget File Sync
+  // always passes every field, so nothing changes for it.
+  const fields: Record<string, unknown> = { date: input.date, amount: input.amount };
+  if (payeeId !== null || input.payeeId !== undefined || input.payeeName !== undefined) {
+    fields.payee = payeeId;
+  }
+  if (input.categoryId !== undefined) fields.category = input.categoryId;
+  if (input.notes !== undefined) fields.notes = input.notes;
+  if (input.cleared !== undefined) fields.cleared = input.cleared;
+
+  await api.updateTransaction(input.transactionId, fields);
+  if (input.returnApplied === false) return null;
   return readBrowserTargetTransaction(connection, {
     accountId: input.accountId,
     transactionId: input.transactionId,
@@ -852,6 +862,45 @@ async function readBrowserTargetTransaction(
     }
   }
   return null;
+}
+
+/**
+ * Apply many updates and deletes in a single call.
+ *
+ * `api.updateTransaction` re-reads the row with an AQL query, diffs it, and then
+ * hands a one-row batch to Actual's own `transactions-batch-update` — inside a
+ * mutation with its own undo entry. Doing that per transaction is what makes a
+ * few hundred writes take minutes, so this calls the same batch handler once
+ * with the whole set, which is what Actual's own bulk edit does.
+ *
+ * `send` reaches Actual's internal handlers, as the budget export already does.
+ * That is a deliberate dependency on an unsupported surface: callers must be
+ * ready for it to be unavailable, and fall back to writing one at a time.
+ */
+async function batchWriteBrowserTransactionsForSync(
+  connection: BrowserApiConnection,
+  input: { updated: BatchTransactionUpdate[]; deleted: string[] }
+): Promise<void> {
+  const api = await getBrowserApiRuntime(connection);
+  if (input.updated.length === 0 && input.deleted.length === 0) return;
+
+  // Only fields the caller supplied travel, so a batch cannot clear what it was
+  // not asked to change — the same contract as a single update.
+  const updated = input.updated.map((entry) => {
+    const row: Record<string, unknown> = { id: entry.id };
+    if (entry.date !== undefined) row.date = entry.date;
+    if (entry.amount !== undefined) row.amount = entry.amount;
+    if (entry.payeeId !== undefined) row.payee = entry.payeeId;
+    if (entry.categoryId !== undefined) row.category = entry.categoryId;
+    if (entry.notes !== undefined) row.notes = entry.notes;
+    if (entry.cleared !== undefined) row.cleared = entry.cleared;
+    return row;
+  });
+
+  await api.send("transactions-batch-update", {
+    updated,
+    deleted: input.deleted.map((id) => ({ id })),
+  });
 }
 
 async function deleteBrowserTransactionForSync(
@@ -1150,6 +1199,8 @@ export function createBrowserApiTransport(
       readBrowserTargetTransaction(connection, input),
     deleteTransactionForSync: (input) =>
       deleteBrowserTransactionForSync(connection, input),
+    batchWriteTransactionsForSync: (input) =>
+      batchWriteBrowserTransactionsForSync(connection, input),
     getTargetLookupForSync: (input) =>
       getBrowserTargetLookupForSync(connection, input),
 

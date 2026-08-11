@@ -3,6 +3,11 @@ import {
   APP_META_TABLE_SQL,
   BUDGET_ENCRYPTION_CREDENTIAL_TABLE_SQL,
   CONNECTION_CREDENTIAL_TABLE_SQL,
+  RECONCILIATION_INDEX_SQL,
+  RECONCILIATION_ITEM_TABLE_SQL,
+  RECONCILIATION_PROFILE_TABLE_SQL,
+  RECONCILIATION_SESSION_TABLE_SQL,
+  RECONCILIATION_STATEMENT_ROW_TABLE_SQL,
   REMEMBERED_BUDGET_TABLE_SQL,
   SAVED_QUERY_TABLE_SQL,
   SERVER_CREDENTIAL_TABLE_SQL,
@@ -23,7 +28,7 @@ import {
 import { KDF_VERSION_META_KEY, SALT_META_KEY, VERIFIER_META_KEY } from "./vaultMetaKeys";
 import { AppDbUnavailableError } from "./errors";
 
-export const LATEST_SCHEMA_VERSION = 10;
+export const LATEST_SCHEMA_VERSION = 15;
 
 type Migration = {
   version: number;
@@ -159,7 +164,60 @@ const MIGRATIONS: readonly Migration[] = [
     // Persistent, cross-budget saved ActualQL queries (RD-064 / PR-029).
     statements: [SAVED_QUERY_TABLE_SQL],
   },
+  {
+    version: 11,
+    // Bank statement reconciliation sessions (RD-071 / PR-034a).
+    statements: [
+      RECONCILIATION_PROFILE_TABLE_SQL,
+      RECONCILIATION_SESSION_TABLE_SQL,
+      RECONCILIATION_STATEMENT_ROW_TABLE_SQL,
+      RECONCILIATION_ITEM_TABLE_SQL,
+      ...RECONCILIATION_INDEX_SQL,
+    ],
+  },
+  {
+    version: 12,
+    // Statement rows keep their original-currency amount (RD-071). Without it a
+    // resumed session stops matching foreign purchases, because the converted
+    // amount the statement posts never equals the amount recorded in Actual.
+    apply: applyReconciliationOriginalAmounts,
+  },
+  {
+    version: 13,
+    // Per-operation apply outcomes (RD-071 / PR-034b), so a partial apply is
+    // resumable without repeating writes that already succeeded.
+    apply: applyReconciliationApplyResults,
+  },
+  {
+    version: 14,
+    // How writes are shaped, as distinct from how rows are matched (RD-071).
+    apply: applyReconciliationApplyConfig,
+  },
+  {
+    version: 15,
+    // A user-supplied label per session (RD-071), for telling a month's reruns
+    // and corrections apart in the list.
+    apply: applyReconciliationSessionTag,
+  },
 ];
+
+function applyReconciliationSessionTag(db: SqliteDatabase): void {
+  addColumnIfMissing(db, "reconciliation_sessions", "tag", "text");
+}
+
+function applyReconciliationApplyConfig(db: SqliteDatabase): void {
+  addColumnIfMissing(db, "reconciliation_sessions", "apply_config_json", "text");
+}
+
+function applyReconciliationApplyResults(db: SqliteDatabase): void {
+  addColumnIfMissing(db, "reconciliation_sessions", "apply_results_json", "text");
+}
+
+function applyReconciliationOriginalAmounts(db: SqliteDatabase): void {
+  addColumnIfMissing(db, "reconciliation_statement_rows", "transaction_date", "text");
+  addColumnIfMissing(db, "reconciliation_statement_rows", "original_amount", "integer");
+  addColumnIfMissing(db, "reconciliation_statement_rows", "original_currency", "text");
+}
 
 function nowIso(): string {
   return new Date().toISOString();
