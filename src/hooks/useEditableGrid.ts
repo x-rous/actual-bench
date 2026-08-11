@@ -126,6 +126,9 @@ export function useEditableGrid<Col extends string>({
   }
 
   function handleGridKeyDown(e: React.KeyboardEvent<HTMLDivElement>) {
+    // Synthetic keydowns (autofill, some password managers) arrive without a
+    // `key`, and the default branch below reads its length.
+    if (!e.key) return;
     if (!selectedCell) return;
     if (editingCell?.rowId === selectedCell.rowId && editingCell?.colId === selectedCell.colId) return;
     if (!rowIndexById.has(selectedCell.rowId)) return;
