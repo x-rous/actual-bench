@@ -146,6 +146,10 @@ export function SearchableCombobox({
   }
 
   function handleKeyDown(event: React.KeyboardEvent<HTMLInputElement>) {
+    // A search that matches nothing leaves nothing to walk: moving would set an
+    // index no option has, and point `aria-activedescendant` at an id that is
+    // not on the page.
+    if (navigable.length === 0) return;
     if (event.key === "ArrowDown") {
       event.preventDefault();
       moveTo(activeIndex >= navigable.length - 1 ? 0 : activeIndex + 1);
@@ -212,7 +216,7 @@ export function SearchableCombobox({
               role="combobox"
               aria-expanded
               aria-controls={listId}
-              aria-activedescendant={optionId(activeIndex)}
+              aria-activedescendant={navigable[activeIndex] === undefined ? undefined : optionId(activeIndex)}
               aria-label="Search options"
               className="h-5 flex-1 bg-transparent text-xs text-foreground placeholder:text-muted-foreground focus:outline-none"
             />
@@ -327,6 +331,10 @@ export function MultiSearchableCombobox({
   }
 
   function handleKeyDown(event: React.KeyboardEvent<HTMLInputElement>) {
+    // A search that matches nothing leaves nothing to walk: moving would set an
+    // index no option has, and point `aria-activedescendant` at an id that is
+    // not on the page.
+    if (navigable.length === 0) return;
     if (event.key === "ArrowDown") {
       event.preventDefault();
       moveTo(activeIndex >= navigable.length - 1 ? 0 : activeIndex + 1);
@@ -406,7 +414,7 @@ export function MultiSearchableCombobox({
               role="combobox"
               aria-expanded
               aria-controls={listId}
-              aria-activedescendant={optionId(activeIndex)}
+              aria-activedescendant={navigable[activeIndex] === undefined ? undefined : optionId(activeIndex)}
               aria-label="Search options"
               className="h-5 flex-1 bg-transparent text-xs text-foreground placeholder:text-muted-foreground focus:outline-none"
             />

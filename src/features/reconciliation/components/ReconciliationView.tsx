@@ -483,11 +483,28 @@ export function ReconciliationView() {
       const account = visibleAccounts.find((entry) => entry.id === (chosenId ?? accountId));
       if (!account) return;
       setNewSessionOpen(false);
-      const { session } = await mutations.createSession.mutateAsync({
-        accountId: account.id,
-        accountName: account.name,
-        tag: tag ?? null,
-      });
+      setPendingStatement(null);
+      setMatchError(null);
+
+      // Caught here because the caller fires this and forgets it. Without it a
+      // failed write is an unhandled rejection: the dialog has already closed,
+      // so the user lands back on the list with no session and no explanation.
+      let session: ReconciliationSessionRecord;
+      try {
+        ({ session } = await mutations.createSession.mutateAsync({
+          accountId: account.id,
+          accountName: account.name,
+          tag: tag ?? null,
+        }));
+      } catch (error) {
+        setMatchError(
+          error instanceof Error
+            ? `Could not start the reconciliation: ${error.message}`
+            : "Could not start the reconciliation"
+        );
+        return;
+      }
+
       setParsedRows([]);
       setItems([]);
       setPeriod(null);
@@ -1446,6 +1463,15 @@ export function ReconciliationView() {
           </Button>
         }
       >
+        {/* Starting a session fails *here*, on the list, so the message has to
+            be here too — the other screens render it, but this is the one the
+            user is looking at when the write is refused. */}
+        {matchError && (
+          <p role="alert" className="px-4 pt-3 text-xs text-destructive">
+            {matchError}
+          </p>
+        )}
+
         <NewSessionDialog
           open={newSessionOpen}
           onOpenChange={setNewSessionOpen}

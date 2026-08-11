@@ -228,6 +228,11 @@ export function SessionHeader({
                   className={cn(blocked && "cursor-not-allowed opacity-60")}
                 >
                   {content}
+                  {/* `title` reaches a mouse and nothing else. This step is not
+                      focusable, so without text in the flow a keyboard or
+                      screen-reader user is told the step exists and never why
+                      it cannot be returned to. */}
+                  {blocked && <span className="sr-only"> - {blocked}</span>}
                 </span>
               )}
             </li>
