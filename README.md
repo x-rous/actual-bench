@@ -39,6 +39,7 @@ It is not trying to replace Actual Budget's day-to-day transaction entry experie
 - **Bulk data management** - manage accounts, payees, categories, schedules, tags, and rules with inline editing, filters, CSV import/export, bulk actions, and impact-aware confirmations.
 - **Diagnostics without mutation** - inspect exported budget snapshots locally in the browser, run deterministic health checks, browse SQLite tables/views, and export findings or data.
 - **ActualQL workspace** - run, format, explain, save, replay, and export ActualQL queries with table, raw JSON, scalar, and tree result views.
+- **Bank statement reconciliation** - import a statement, match it against an account, settle the differences row by row, and apply once — with a drift check that will not overwrite an edit you made in Actual meanwhile.
 - **Multi-budget friendly** - save multiple connections, switch between budgets, and keep staged data and query cache scoped per connection.
 
 
@@ -137,6 +138,19 @@ Sync data between budget files as saved one-way flows. One unified engine covers
 - **Multi-currency consolidation:** a transaction flow can **convert amounts** between budgets in different currencies (its *Convert currency* option). Rates come from a database-backed registry filled automatically from the free [Frankfurter](https://frankfurter.dev) provider (no API key, weekend/holiday fallback); you can override any date or import a CSV. The preview shows original → rate → converted with currency labels; a missing or future rate goes to review as *FX pending*. Each converted transaction stores a locked-by-default rate snapshot and a compact audit note, and rates lock at first sync so past conversions never silently change. A dedicated **FX Rates** page (Tools → FX Rates) shows the trend and coverage and lets you fill, override, or import rates — overriding a rate that affects already-synced transactions shows an impact preview, and an opt-in flow setting can push corrected rates to those transactions through the normal previewed update path, replacing the existing snapshot in place
 - Opt-in automation per flow: auto-apply safe items, or auto-sync on a schedule **while the app is open** (client-side, minimum 15 min). For **HTTP API mode** flows, an opt-in **unattended server schedule** runs the same safe-only sync with the app closed — credentials are stored in an encrypted, env-keyed server vault (`SYNC_VAULT_KEY`); see [`docs/UNATTENDED_SYNC.md`](docs/UNATTENDED_SYNC.md). Uncertain items collect in a review queue; exact duplicates can be auto-mapped (opt-in); failed items can be retried; and a flow auto-pauses after repeated failures
 - Target-budget rules may post-process created transactions; this is surfaced as a warning. Not in scope: true transfer-linked sync, non-review updates/deletes, category auto-create, fuzzy duplicate auto-map, unattended sync for Direct-mode flows, FX gain/loss accounting, multi-currency within a single budget file, and silent recalculation of past conversions
+
+### Bank Statement Reconciliation
+
+A workbench (Tools → Bank Reconciliation) for checking a bank statement against an account and settling the differences. Sessions are persistent, and nothing reaches your budget until an explicit Apply.
+
+- Paste or upload CSV/TSV; the delimiter, header row, and column mapping are detected — including statements that report outflows in a separate **Debit** column, and foreign-currency rows that print an original amount alongside the converted one
+- **Exact signed amount is required for an automatic match**; text only ranks the candidates an amount already produced. You choose what the statement's text is compared against — payee, imported payee, or notes — with priority and weights, and `#tags` in notes are ignored by default
+- Pairs whose amounts disagree but whose text plainly matches are offered **for review**, never matched automatically; close calls and likely duplicates are surfaced as a choice rather than guessed at
+- Decide per row — accept, choose another candidate, create, delete a duplicate, correct an amount in place, or leave it for later — with transfers, splits, and already-reconciled rows protected. **Categories are never touched**; categorisation belongs in Actual
+- A transformation engine for notes covers tags (add / remove / replace / reposition), appended or prepended text, and bringing a shortened merchant name up to the statement's full description without disturbing your own words
+- The review screen shows each statement row as it will look afterwards, the effect on the account balance, and what will be marked cleared
+- **Before writing, every affected row is re-read.** A note edited in Actual has the staged change replayed onto the current text instead of overwriting it; an amount or date corrected in Actual is kept; anything that cannot be reconciled safely is held back and reported
+- Created transactions carry a deterministic marker, so a retry after a partial failure never duplicates them; updates and deletes are written in one batched call where the transport supports it
 
 ### ActualQL Queries
 

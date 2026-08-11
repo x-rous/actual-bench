@@ -70,6 +70,7 @@ Rules:
 | Carryover toggle | Current intentional direct-write exception through `useCarryoverToggle`; explicit action with per-item results |
 | Notes | Intentional immediate-save exception through transport note methods |
 | Budget File Sync | Preview first; write only through explicit **Apply** or an opted-in safe-only automation policy |
+| Bank Statement Reconciliation | Stage decisions in the session; write only through explicit **Apply**, and only after a pre-flight re-read confirms the targeted rows have not changed in Actual. Never writes a category |
 | Sync flows, run history, FX registry, app health metadata | Persist to the Actual Bench app database according to the action |
 | Diagnostics and ActualQL | Read-only unless a separately named workflow explicitly applies changes |
 
@@ -176,7 +177,7 @@ Unattended HTTP-mode sync is opt-in and server-side:
 | Zustand `budgetEdits.ts` | Budget-cell and hold edits, selection state, inverse-patch undo/redo |
 | Zustand `connection.ts` | Active memory-only connections |
 | Zustand `savedServers.ts` | Non-secret server presets in session storage |
-| Actual Bench app DB | Sync flows/runs/mappings, encrypted opt-in vault records, FX registry/snapshots |
+| Actual Bench app DB | Sync flows/runs/mappings, encrypted opt-in vault records, FX registry/snapshots, reconciliation sessions/profiles/results |
 | Local React state | Ephemeral component UI only |
 
 ### Query behavior
@@ -412,6 +413,7 @@ Keep product claims internally consistent. Avoid absolute phrases such as “not
 | Budget File Sync engine | `src/lib/sync/`, `src/features/sync/` |
 | Actual Bench metadata DB | `src/lib/app-db/`, related `src/app/api/` routes |
 | FX engine and registry | `src/lib/fx/`, `src/features/fx-rates/`, related API routes |
+| Reconciliation engine | `src/lib/reconciliation/`, `src/features/reconciliation/`, related API routes |
 | Server startup scheduler | `src/instrumentation.ts`, `src/lib/sync/schedulerRuntime.ts` |
 | Diagnostics / SQLite browser | `src/features/budget-diagnostics/` |
 | End-user documentation site | `docs-site/` |

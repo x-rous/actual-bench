@@ -1,0 +1,253 @@
+---
+title: Bank Reconciliation
+description: Check a bank statement against an account in Actual — import, match, decide, review, apply — with amount-exact matching, a configurable text target, and a drift check that protects edits made in Actual meanwhile.
+sidebar:
+  order: 15
+---
+
+The **Bank Reconciliation** workbench checks a bank statement against one account in your budget and
+helps you settle the differences. Open it from **Bank Reconciliation** under the **Tools** sidebar
+section (`/reconciliation`).
+
+Sessions are persistent: import a statement today, work through it over several sittings, and apply
+when you are ready. **Nothing is written to your budget until you press Apply**, and the review screen
+counts *changes*, not rows — a 248-row statement where twelve things need fixing offers you twelve
+changes.
+
+:::note[Reconciliation does not touch categories]
+It never reads, stages, or writes a transaction's category. Categorisation belongs in Actual, where
+your rules and your own judgement live. A reconciliation that quietly blanked categories would undo
+work this tool has no business undoing.
+:::
+
+## Where a session is up to
+
+Every screen carries the same header: which account and statement period you are working on, its
+tag, and a progress trail — **Import › Reconcile › Review › Applied**. Steps already reached are
+ticked, the one you are looking at is highlighted, and you can click back to any step the session
+has actually been through.
+
+The trail reflects the **session's own status**, not the screen you happen to be on, so opening the
+workbench of a finished reconciliation still says Applied. A run that partly failed says
+*Applied with problems* rather than pretending otherwise.
+
+Once a session has been applied, the work it wrote is excluded from any new plan. It stops offering
+to apply itself a second time, and a partial run goes on offering exactly what failed — nothing
+more.
+
+**Re-running the match is refused on an applied session.** Matching rebuilds the rows from scratch,
+and the record of what was already written is tied to them — re-running would lose that and offer to
+update the same transactions again. To check the account after applying, start a new reconciliation:
+it reads Actual as it stands *now*, which is what you actually want to compare against.
+
+## Starting a reconciliation
+
+**New reconciliation** asks for the account — searchable, because a budget's account list is rarely
+short — and an optional tag.
+
+### Tagging a session
+
+Give a session an optional **tag** when you create it — `July close`, `after the refund`, `Q3 audit`.
+With several sessions per account, reruns and corrections are otherwise told apart only by
+timestamp. Tags are suggested from ones you have already used, can be changed in place from the
+list, and can be filtered and searched on.
+
+They are free text and deliberately separate from your budget's own tags: these labels are
+disposable notes about the reconciliation, not data about your transactions.
+
+## 1. Import a statement
+
+Paste the statement or upload a CSV/TSV file.
+
+- The **delimiter** is detected by which candidate produces a consistent column count, not by which
+  character appears most often — a description full of commas does not turn a semicolon-delimited
+  file into a mess.
+- A **header row** is recognised by the absence of a usable date and amount, so a statement without
+  headers still parses.
+- **Column mapping** is detected, including the common layout where outflows sit in their own
+  **Debit** column and inflows in a **Credit** column. A statement like that is not read as a list of
+  positive amounts.
+- Foreign-currency rows keep the **original amount and currency** the bank printed, alongside the
+  converted amount that actually posted.
+
+Amounts are handled as integer minor units end to end — never through floating point — so nothing
+drifts by a cent.
+
+### Importing the same statement twice
+
+If the rows you are importing have been imported before, Actual Bench says so — naming the earlier
+session and when it was created. It matches on the **rows themselves**, so a statement pasted one
+month and uploaded the next is still recognised, and re-sorting it in your banking app does not
+disguise it.
+
+This is a warning, not a block. Re-importing is a legitimate thing to do: after a partial apply, or
+to redo a month with a corrected column mapping. Matching always reads what is in Actual *now*, and
+anything already applied is recognised and skipped.
+
+### Reconciliation profiles
+
+Save the column mapping and matching options for an account as a **profile**, and apply it next month
+in one click. Statements from the same bank rarely change shape.
+
+## 2. Matching
+
+Matching is deliberately conservative, and the reason is worth stating: **an exact signed amount is
+required for an automatic match**. Text never *finds* a match — it only ranks the candidates an amount
+has already produced. That is what makes every result explainable.
+
+### Choose what the text is compared against
+
+Statements carry a description. Where that text lives in Actual differs from person to person, so you
+choose:
+
+| Target | Compared how | Typical use |
+| --- | --- | --- |
+| **Payee** | Symmetric | A curated payee list, where a length mismatch is real evidence |
+| **Imported payee** | Symmetric | The raw merchant text Actual stored at import |
+| **Notes** | Containment | Notes written by an automation that captured the bank's text |
+
+Enable any combination, give each a priority and a weight, and choose whether to score every enabled
+target and take the best (*best of*) or walk them in priority order and take the first that clears a
+threshold (*priority first*).
+
+Notes are compared by **containment** rather than similarity because the bank's text may sit inside a
+longer note next to your own words — and, just as often, the note is *shorter* than the statement's
+text because the automation captured only part of it. Containment is checked in both directions for
+exactly that reason.
+
+### Guards that stop bad matches
+
+- **`#tags` in notes are ignored** when comparing, on by default. Automation-written notes routinely
+  begin with a workflow tag that is not part of the bank's text, and comparing it dilutes every score.
+- **Short or generic text is refused as evidence.** `FEE` or `PAYMENT` would otherwise match a large
+  fraction of an account. Text that appears in most of the candidate window carries no information and
+  is treated as carrying none.
+- **Close calls are asked, not guessed.** When the runner-up is nearly as good as the winner, you get
+  the choice — unless the text plainly separates them, in which case asking would waste a decision the
+  data has already made.
+
+### Things it surfaces rather than decides
+
+- **Amount differs.** The text plainly matches but the amounts do not. This is a conflict for you to
+  settle, never an automatic match — but staying silent about a pair that is obvious to a human would
+  leave you to find it by hand.
+- **Foreign-currency rows.** A purchase abroad carries two amounts, and Actual may hold either. The
+  original-currency amount is tried as a second exact key, with text corroboration required.
+- **Likely duplicates.** The same thing recorded more than once in Actual. This is a *count* mismatch
+  — one statement row, two transactions — not a matter of resemblance.
+
+## 3. Decide each row
+
+For every row you can:
+
+- **Accept** the match, or **pick a different candidate** — the ones you did not pick stay available.
+- **Create** the transaction in Actual.
+- **Delete** a duplicate, keeping the one you want.
+- **Correct an amount** in place, so the transaction's id, notes, payee, and any schedule or transfer
+  link survive. Nothing you wrote is destroyed to fix a number.
+- **Leave it for later.** Rows with no decision are untouched by Apply.
+
+Selecting a row opens a details panel. Date and amount are shown **once, with both readings side by
+side**, and any difference is marked and quantified — "2 days later", "−12.50" — rather than left
+for you to work out from two separate lists. Foreign-currency rows also show the original amount the
+bank printed.
+
+Staged changes show what the value was and where the new one came from. A bulk transformation never
+overwrites a value you edited by hand unless you say so. Transfers, split parents, and rows already
+reconciled in Actual are protected from changes that would break them.
+
+### Transforming notes
+
+A transformation can be applied to many rows at once and previewed before it is staged:
+
+- **Tags** — add, remove, replace, or move a tag to the front or back of the note.
+- **Text** — append or prepend a fixed string.
+- **Extend the merchant name to the statement's description.** Where the note says
+  `ROYAL CATERING SERVICE` and the statement says `ROYAL CATERING SERVICE ABU DHABI UAE`, only the run
+  of words that came from the bank is replaced — a leading `#2026-08` tag and a trailing
+  `| dinner with Ahmad` both survive. Where no such run can be identified, the note is left alone and
+  you are told why, rather than guessed at.
+
+## 4. Review
+
+The review screen shows, statement row by statement row, what each will look like in your budget
+afterwards. Changed values are marked and carry their previous value.
+
+It also states:
+
+- **The effect on the account balance** — created transactions, less deleted ones, plus the difference
+  on any corrected amount. A reconciliation that moves money is something to agree to knowingly.
+- **Where the bank's description goes** on a transaction being created: the payee (what a merchant
+  name normally is) or the notes (which keeps a curated payee list free of raw bank text, and gives
+  your rules something to read).
+- **What gets marked cleared** — nothing, only new transactions, or everything the statement confirms.
+  The last option turns matched rows that needed no write into writes, so the change count reflects it
+  honestly.
+
+## 5. Apply
+
+### The drift check
+
+A session outlives the state it was built from, and Actual does not stand still in the meantime. So
+**immediately before writing, every row the plan touches is re-read** and compared against what the
+session saw when it loaded. Three things can happen:
+
+- **A note you edited in Actual.** The staged change is *replayed onto the current text* rather than
+  replacing it. If the session staged `#One` → `#Two` and you appended `| Manual text` in Actual, the
+  result is `Imported #Two | Manual text` — both changes survive.
+- **An amount or date corrected in Actual.** An update carries these fields whether or not it is
+  changing them, so a stale copy would quietly revert your correction. Instead the live value is kept,
+  and you are told it happened.
+- **Anything that cannot be reconciled safely** — a payee changed on both sides, a note whose words no
+  longer support the staged change, a transaction deleted or reconciled in Actual. These rows are
+  **held back and reported**. Nothing is written on that first press; press Apply again to write the
+  rest and come back to them.
+
+### Writing
+
+Created transactions carry a **deterministic marker** derived from the session and the statement row,
+so retrying after a partial failure never creates the same transaction twice — even if this session's
+own record of the run was lost with a closed tab. Updates and deletes are written in a single batched
+call where the transport supports it.
+
+A partial failure is reported as a **partial success**, not rounded down to a failure. The session
+survives it, and **Retry what failed** re-attempts only what did not succeed.
+
+The outcome is stored with the session, so it stays readable afterwards. Reopen a finished
+reconciliation and **What was applied** lists every change written — what it did, which transaction,
+and whether it was written now or recognised as already done — alongside anything that failed. A
+reconciliation you did last month is still auditable this month.
+
+### Rules on created transactions
+
+Actual's rules **do** run on transactions as they are created, so a created row's payee or category may
+end up different from what the review screen previewed. That is Actual doing its job, not the
+reconciliation losing your choice — but it is worth knowing before you compare the two afterwards.
+
+### The check afterwards
+
+Once the writes are done, the account is read back and compared against what you approved: created
+transactions are present and present *once*, updated fields hold the approved values, deleted rows are
+gone, split parents still add up, and nothing reconciled in Actual moved. A transport can report
+success for a field it quietly dropped, so this is confirmed rather than assumed.
+
+## What is stored, and where
+
+Reconciliation sessions live in the **Actual Bench metadata database on the server**, not in your
+budget file. A session holds the normalized statement rows, your decisions, the matching options used,
+and the record of what was written.
+
+That is what makes a session resumable across sittings and machines, and what makes a retry after a
+partial failure safe. It also means the statement's contents leave your browser: if that matters for a
+particular statement, delete the session when you are done. **Sessions are deletable from the session
+list at any time** — you are asked to confirm, and told what goes with it — and deleting one removes
+its statement rows and decisions. Deleting a session never touches anything in your budget, and
+anything already applied stays applied.
+
+## Limitations
+
+- One account per session.
+- Split children are read-only: a split transaction can be matched, but its lines are not edited here.
+- Categories are never written (see the note at the top).
+- Automatic matches always require an exact signed amount. Pairs whose amounts differ are review
+  items, never matches.
