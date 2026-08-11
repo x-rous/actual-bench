@@ -1,6 +1,10 @@
 import { DEFAULT_MATCH_CONFIG } from "../match/config";
 import { match } from "../match/matcher";
-import type { ActualTransactionSnapshot, StatementRow } from "../types";
+import type {
+  ActualTransactionSnapshot,
+  ReconciliationItem,
+  StatementRow,
+} from "../types";
 import {
   REASON,
   buildReconciliationItems,
@@ -259,6 +263,52 @@ describe("summarizeCoverage", () => {
     expect(statement.matched).toBe(1);
     expect(statement.needsReview).toBe(1);
     expect(statement.unaccounted).toBe(1);
+  });
+
+  it("keeps counting a row as needing review after it is decided", () => {
+    /*
+     * "Needs review" says what kind of row this is - one the matcher would not
+     * settle on its own - and deciding it does not change that. The count is
+     * meant to hold still while the statement is worked through; how much is
+     * left to do is the decision meter's job.
+     */
+    const reviewItem: ReconciliationItem = {
+      id: "i1",
+      statementRowIds: ["s1"],
+      actualTransactionIds: ["t1"],
+      disposition: "unresolved",
+      reasonCode: REASON.amountMismatch,
+      guards: { protectedReconciled: false, splitParent: false, transfer: "no" },
+    };
+    const counted = { statementRows: 1, loadedTransactions: 1 };
+
+    expect(summarizeCoverage([reviewItem], counted).statement.needsReview).toBe(1);
+
+    for (const disposition of ["ignored", "create", "correct-amount", "delete"] as const) {
+      const decided = summarizeCoverage([{ ...reviewItem, disposition }], counted);
+      expect(decided.statement.needsReview).toBe(1);
+    }
+  });
+
+  it("moves a row out of review only when it is paired", () => {
+    // Picking a candidate is the one decision that changes what kind of row it
+    // is: it stops being an open question and becomes a match.
+    const paired = summarizeCoverage(
+      [
+        {
+          id: "i1",
+          statementRowIds: ["s1"],
+          actualTransactionIds: ["t1"],
+          disposition: "matched",
+          reasonCode: REASON.ambiguousMatch,
+          guards: { protectedReconciled: false, splitParent: false, transfer: "no" },
+        },
+      ],
+      { statementRows: 1, loadedTransactions: 1 }
+    );
+
+    expect(paired.statement.matched).toBe(1);
+    expect(paired.statement.needsReview).toBe(0);
   });
 
   it("breaks Actual into parts that sum to its total", () => {

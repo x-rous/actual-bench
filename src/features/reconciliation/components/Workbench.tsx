@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { MultiPillGroup, PillGroup } from "@/components/ui/pill-group";
 import { cn } from "@/lib/utils";
-import { REASON } from "@/lib/reconciliation/session/build";
+import { REASON, REVIEW_REASONS } from "@/lib/reconciliation/session/build";
 import { canStageDelete } from "@/lib/reconciliation/session/staging";
 import type { ReconciliationCoverage } from "@/lib/reconciliation/session/build";
 import type {
@@ -227,48 +227,39 @@ function matchesAttributes(
 }
 
 /**
- * Every reason a row lands in review.
+ * A row the matcher would not settle, for one of the given reasons.
  *
- * Declared once so the parent filter cannot drift from the children that break
- * it down — which is exactly how the two came to disagree.
+ * Deliberately the same test the coverage bar uses, and deliberately *not*
+ * keyed on whether the user has decided it. "Needs review" says what kind of
+ * row this is, and deciding one does not change what kind of row it was - the
+ * count is meant to hold still while the statement is worked through. Picking a
+ * candidate is the exception: that turns an open question into a match, which
+ * is a change of kind rather than a decision about it.
+ *
+ * How much is left to do is the decision meter's job, and the progress filters
+ * compose with these to narrow by it.
  */
-const REVIEW_REASON_CODES: string[] = [
-  REASON.ambiguousMatch,
-  REASON.belowConfidenceFloor,
-  REASON.amountMismatch,
-  REASON.sameMerchantDate,
-  REASON.merchantCluster,
-  REASON.likelyDuplicate,
-];
-
-/** A row still waiting on the user, for one of the given reasons. */
-function isUndecidedReview(item: ReconciliationItem, reasons: string[]): boolean {
-  return item.disposition === "unresolved" && reasons.includes(item.reasonCode ?? "");
+function isReviewRow(item: ReconciliationItem, reasons: string[]): boolean {
+  return item.disposition !== "matched" && reasons.includes(item.reasonCode ?? "");
 }
 
 export function matchesFilter(item: ReconciliationItem, filter: FilterId): boolean {
   switch (filter) {
     case "matched":
       return item.disposition === "matched";
-    // "Needs review" and the four reasons beneath it are one question asked at
-    // two levels, so they share the same test. They did not: the parent counted
-    // only rows still undecided while the children counted by reason alone, so
-    // deciding a row removed it from the parent and left it in the child —
-    // "Needs review 0" above "Amount differs 14".
-    //
-    // Both now mean "still to review". They shrink together as the work is done,
-    // and the parent is exactly the union of its children. Revisiting rows
-    // already settled is what the Progress axis is for.
+    // One test for the parent and the reasons beneath it, and the same one the
+    // coverage bar uses - the three disagreed, so the bar could read
+    // "Needs review 20" above a filter reading 0.
     case "needs-review":
-      return isUndecidedReview(item, REVIEW_REASON_CODES);
+      return isReviewRow(item, [...REVIEW_REASONS]);
     case "ambiguous":
-      return isUndecidedReview(item, [REASON.ambiguousMatch, REASON.belowConfidenceFloor]);
+      return isReviewRow(item, [REASON.ambiguousMatch, REASON.belowConfidenceFloor]);
     case "amount-mismatch":
-      return isUndecidedReview(item, [REASON.amountMismatch]);
+      return isReviewRow(item, [REASON.amountMismatch]);
     case "wrong-amount":
-      return isUndecidedReview(item, [REASON.sameMerchantDate, REASON.merchantCluster]);
+      return isReviewRow(item, [REASON.sameMerchantDate, REASON.merchantCluster]);
     case "duplicates":
-      return isUndecidedReview(item, [REASON.likelyDuplicate]);
+      return isReviewRow(item, [REASON.likelyDuplicate]);
     case "create":
       return item.reasonCode === REASON.noActualCandidate;
     case "actual-only":
