@@ -102,6 +102,17 @@ export function lintQuery(query: ActualQLQuery): LintWarning[] {
     });
   }
 
+  // Empty $or / $and — compiles away to no constraint at all, so the filter
+  // silently widens instead of narrowing. Reported separately from $oneof
+  // because the failure mode is the opposite: too many rows, not zero.
+  if (query.filter && hasEmptyCompound(query.filter)) {
+    warnings.push({
+      id: "empty-compound",
+      message:
+        'Empty "$or"/"$and" array - this applies no constraint at all, so the query scans every row instead of narrowing. Remove the operator or populate it.',
+    });
+  }
+
   // groupBy without an aggregate in select — every group will return its
   // raw rows, which is rarely what the user intends
   if (
@@ -145,17 +156,43 @@ function hasQueryValue(value: unknown): boolean {
   return value !== undefined && value !== null;
 }
 
+function hasEmptyCompound(filter: unknown): boolean {
+  if (Array.isArray(filter)) return filter.some((item) => hasEmptyCompound(item));
+  if (!filter || typeof filter !== "object") return false;
+  const obj = filter as Record<string, unknown>;
+
+  for (const key of ["$and", "$or"] as const) {
+    if (key in obj && Array.isArray(obj[key])) {
+      const clauses = obj[key] as unknown[];
+      if (clauses.length === 0) return true;
+      if (clauses.some((clause) => hasEmptyCompound(clause))) return true;
+    }
+  }
+
+  // Recurse into nested filter objects (e.g. dotted-path sub-objects)
+  for (const [key, val] of Object.entries(obj)) {
+    if (key === "$and" || key === "$or") continue;
+    if (typeof val === "object" && val !== null && hasEmptyCompound(val)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 function hasEmptyOneof(filter: unknown): boolean {
   if (Array.isArray(filter)) return filter.some((item) => hasEmptyOneof(item));
   if (!filter || typeof filter !== "object") return false;
   const obj = filter as Record<string, unknown>;
 
-  // Handle $and / $or compound operators at this level
-  if ("$and" in obj && Array.isArray(obj["$and"])) {
-    return (obj["$and"] as unknown[]).some((clause) => hasEmptyOneof(clause));
-  }
-  if ("$or" in obj && Array.isArray(obj["$or"])) {
-    return (obj["$or"] as unknown[]).some((clause) => hasEmptyOneof(clause));
+  // Handle $and / $or compound operators at this level. These are checked
+  // alongside sibling fields, not instead of them — a filter may mix
+  // `{ $or: [...] }` with plain field constraints at the same level.
+  for (const key of ["$and", "$or"] as const) {
+    if (key in obj && Array.isArray(obj[key])) {
+      const clauses = obj[key] as unknown[];
+      if (clauses.some((clause) => hasEmptyOneof(clause))) return true;
+    }
   }
 
   // Check each field's operator object for an empty $oneof
