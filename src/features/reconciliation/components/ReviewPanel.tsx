@@ -21,6 +21,7 @@ import { statementText } from "@/lib/reconciliation/statement/text";
 import { ReviewComparison } from "./ReviewComparison";
 import { formatMinorUnits } from "../lib/format";
 import type { Option } from "./StagedFields";
+import { WriteSetting } from "./WriteSetting";
 
 /**
  * The last screen before anything is written (feature spec §38).
@@ -211,61 +212,6 @@ export function ReviewPanel({
           ]}
         />
 
-        {/*
-          Two independent questions, because they are two independent fields.
-          Whatever is chosen here, the bank's own merchant text is recorded as
-          the transaction's imported payee — that is provenance, not a place to
-          put text because there was nowhere else for it.
-        */}
-        {counts.create > 0 && (
-          <>
-            <WriteSetting
-              label="Payee on a new transaction"
-              legend="Where a created transaction's payee comes from"
-              name="payee-strategy"
-              value={applyConfig.payeeStrategy}
-              onChange={(next) => onApplyConfigChange({ ...applyConfig, payeeStrategy: next })}
-              options={[
-                {
-                  value: "imported-payee",
-                  label: "The bank's merchant text",
-                  hint: "Resolved to a payee, creating one if it is new. A payee you set on a row yourself is always kept.",
-                },
-                {
-                  value: "leave-unset",
-                  label: "Leave it to your rules",
-                  hint: "Keeps a curated payee list free of raw bank text. Actual's rules run on created transactions and can set the payee themselves.",
-                },
-              ]}
-            />
-
-            <WriteSetting
-              label="Notes on a new transaction"
-              legend="Where a created transaction's notes come from"
-              name="notes-strategy"
-              value={applyConfig.notesStrategy}
-              onChange={(next) => onApplyConfigChange({ ...applyConfig, notesStrategy: next })}
-              options={[
-                {
-                  value: "bank-notes",
-                  label: "The bank's memo",
-                  hint: "The statement's own memo field, when it has one. Left empty when it does not.",
-                },
-                {
-                  value: "imported-payee",
-                  label: "Also the merchant text",
-                  hint: "Falls back to the merchant text when there is no memo - a deliberate duplicate, for rules that read the notes.",
-                },
-                {
-                  value: "leave-unset",
-                  label: "Leave empty",
-                  hint: "Nothing from the statement goes into the notes.",
-                },
-              ]}
-            />
-          </>
-        )}
-
         <WriteSetting
           label="Record the bank's merchant text"
           legend="Whether matched transactions gain the bank's own merchant text"
@@ -277,17 +223,45 @@ export function ReviewPanel({
           options={[
             {
               value: "on",
-              label: "On matched rows too",
-              hint: "Their payee, notes and category are left exactly as they are; only the imported payee is attached. Rows reconciled in Actual are skipped.",
+              label: "On new and matched rows",
+              hint: "A matched transaction keeps its payee, notes and category exactly as they are - only the bank's merchant text is attached. Rows already reconciled in Actual are skipped.",
             },
             {
               value: "off",
-              label: "New transactions only",
-              hint: "Matched transactions are not written to at all unless you staged a change on them.",
+              label: "On new rows only",
+              hint: "Only transactions created from this statement record it. Matched transactions are not written to at all unless you staged a change on them, and keep whatever imported payee they already have.",
             },
           ]}
         />
       </div>
+
+      {/*
+        Stated, not offered. Where a new transaction's payee and notes come from
+        is chosen on the import screen, because the transformation engine reads
+        the note a row is going to carry — a source picked after transformations
+        have run would move every untouched row and leave the transformed ones
+        behind. Naming it here keeps the review complete.
+      */}
+      {counts.create > 0 && (
+        <p className="text-[11px] text-muted-foreground">
+          New transactions take their payee from{" "}
+          <span className="font-medium">
+            {applyConfig.payeeStrategy === "imported-payee"
+              ? "the bank's merchant text"
+              : "your rules"}
+          </span>{" "}
+          and their notes from{" "}
+          <span className="font-medium">
+            {applyConfig.notesStrategy === "bank-notes"
+              ? "the bank's memo"
+              : applyConfig.notesStrategy === "imported-payee"
+                ? "the bank's memo, or its merchant text where there is none"
+                : "nothing"}
+          </span>
+          . The bank&apos;s merchant text is recorded as the imported payee either way. Change this
+          on the import screen.
+        </p>
+      )}
 
       {drift && (
         <DriftNotice
@@ -477,59 +451,6 @@ function DriftNotice({
  * whichever option is selected. Every option a user might pick still explains
  * itself; it just does so when they are looking at it.
  */
-function WriteSetting<T extends string>({
-  label,
-  legend,
-  name,
-  value,
-  onChange,
-  options,
-}: {
-  label: string;
-  legend: string;
-  name: string;
-  value: T;
-  onChange: (value: T) => void;
-  options: { value: T; label: string; hint: string }[];
-}) {
-  const selected = options.find((option) => option.value === value);
-  return (
-    <section className="rounded-md border border-border/60 px-3 py-2">
-      <fieldset>
-        <legend className="sr-only">{legend}</legend>
-        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-          <span className="text-xs font-semibold text-muted-foreground">{label}</span>
-          <div className="flex flex-wrap gap-px rounded border border-border bg-muted/40 p-px">
-            {options.map((option) => (
-              <label
-                key={option.value}
-                className={cn(
-                  "cursor-pointer rounded px-2 py-0.5 text-xs transition-colors",
-                  option.value === value
-                    ? "bg-background font-medium shadow-sm"
-                    : "text-muted-foreground hover:text-foreground"
-                )}
-              >
-                <input
-                  type="radio"
-                  name={name}
-                  className="sr-only"
-                  checked={option.value === value}
-                  onChange={() => onChange(option.value)}
-                />
-                {option.label}
-              </label>
-            ))}
-          </div>
-        </div>
-        {selected && (
-          <p className="mt-1 text-[11px] text-muted-foreground">{selected.hint}</p>
-        )}
-      </fieldset>
-    </section>
-  );
-}
-
 function Stat({
   label,
   value,

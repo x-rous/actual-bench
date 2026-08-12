@@ -816,6 +816,22 @@ export function ReconciliationView() {
     }
 
     /**
+     * Persist a change to how decisions become writes.
+     *
+     * Shared by the import screen, the workbench and the review screen: one
+     * setting, one place it is written, whichever control the user reached.
+     */
+    function handleApplyConfigChange(config: ApplyConfig) {
+      setApplyConfig(config);
+      if (sessionId) {
+        void mutations.updateSession.mutateAsync({
+          id: sessionId,
+          payload: { applyConfig: config },
+        });
+      }
+    }
+
+    /**
      * Everything a transformation rule needs to judge one row, resolved to the
      * names the user sees rather than the ids the model holds.
      */
@@ -1181,6 +1197,8 @@ export function ReconciliationView() {
           )}
           <ImportPanel
             accountName={screen.accountName}
+            applyConfig={applyConfig}
+            onApplyConfigChange={handleApplyConfigChange}
             previousStatement={
               sessionQuery.data?.session.statementName
                 ? {
@@ -1320,15 +1338,7 @@ export function ReconciliationView() {
               categories={categoryOptions}
               drift={driftReport}
               applyConfig={applyConfig}
-              onApplyConfigChange={(config) => {
-                setApplyConfig(config);
-                if (sessionId) {
-                  void mutations.updateSession.mutateAsync({
-                    id: sessionId,
-                    payload: { applyConfig: config },
-                  });
-                }
-              }}
+              onApplyConfigChange={handleApplyConfigChange}
             />
           ) : (
             applyResult && (
@@ -1431,6 +1441,8 @@ export function ReconciliationView() {
             onBulkDisposition={handleBulkDisposition}
             onBulkCorrectAmount={handleBulkCorrectAmount}
             transformContextFor={transformContextFor}
+            applyConfig={applyConfig}
+            onApplyConfigChange={handleApplyConfigChange}
             onTransform={handleTransform}
             onViewResult={
               applyResult

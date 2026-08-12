@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { FileCheck, RefreshCw, Search, SlidersHorizontal, Wand2 } from "lucide-react";
+import { FileCheck, FilePlus2, RefreshCw, Search, SlidersHorizontal, Wand2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -20,11 +20,13 @@ import type { TextTargetPreset } from "@/lib/reconciliation/match/config";
 import type { StageableField } from "@/lib/reconciliation/session/staging";
 import type { ReconciliationDisposition } from "@/lib/reconciliation/types";
 import type { Option } from "./StagedFields";
+import type { ApplyConfig } from "@/lib/reconciliation/session/plan";
 import type { TransformContext } from "@/lib/reconciliation/transform/rules";
 import type { StagedPatch } from "@/lib/reconciliation/types";
 import { useTableSelection } from "@/hooks/useTableSelection";
 import { BulkDecisionBar } from "./BulkDecisionBar";
 import { CoverageSummary, DecisionProgressStrip } from "./CoverageSummary";
+import { NewTransactionOptions } from "./NewTransactionOptions";
 import { Inspector } from "./Inspector";
 import { MatchOptions } from "./MatchOptions";
 import { ShortcutsHelp } from "./ShortcutsHelp";
@@ -311,6 +313,16 @@ export type WorkbenchProps = {
   /** Set when this session has already been applied, so its outcome is reachable. */
   onViewResult?: () => void;
   transformContextFor: (item: ReconciliationItem) => TransformContext;
+  /**
+   * How a statement row Actual does not have becomes a transaction.
+   *
+   * Mirrored from the import screen, where it is chosen before anything can
+   * consume it. Offered again here for a change of mind, with the one caveat
+   * that applies to a late change: rows whose notes are already staged keep
+   * what they were given.
+   */
+  applyConfig: ApplyConfig;
+  onApplyConfigChange: (config: ApplyConfig) => void;
   onTransform: (changes: { itemId: string; patch: StagedPatch | undefined }[]) => void;
 };
 
@@ -371,6 +383,8 @@ export function Workbench({
   onBulkCorrectAmount,
   onViewResult,
   transformContextFor,
+  applyConfig,
+  onApplyConfigChange,
   onTransform,
 }: WorkbenchProps) {
   const [filter, setFilter] = useState<FilterId>("all");
@@ -383,6 +397,26 @@ export function Workbench({
   const { selectedIds, toggleSelect, toggleSelectAll, clearSelection } = useTableSelection();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [optionsOpen, setOptionsOpen] = useState(false);
+  const [createOptionsOpen, setCreateOptionsOpen] = useState(false);
+
+  /*
+   * Rows the statement has and Actual does not — the only rows the create
+   * settings can affect. Counted from what could be created rather than from
+   * what has been decided, so the control is there while the user is deciding
+   * rather than appearing once they already have.
+   */
+  const creatableRows = useMemo(
+    () =>
+      items.filter((item) => item.statementRowIds.length > 0 && item.actualTransactionIds.length === 0)
+        .length,
+    [items]
+  );
+
+  /** Rows whose notes a transformation or a manual edit has already settled. */
+  const stagedNotesCount = useMemo(
+    () => items.filter((item) => item.stagedChanges?.notes !== undefined).length,
+    [items]
+  );
   const [transformOpen, setTransformOpen] = useState(false);
 
   const counts = useMemo(() => {
@@ -761,6 +795,33 @@ export function Workbench({
               </p>
             </PopoverContent>
           </Popover>
+          {creatableRows > 0 && (
+            <Popover open={createOptionsOpen} onOpenChange={setCreateOptionsOpen}>
+              <PopoverTrigger
+                render={
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={readOnly}
+                    title={readOnly ? rematchBlockedReason ?? undefined : undefined}
+                  >
+                    <FilePlus2 className="mr-1 h-3.5 w-3.5" />
+                    New rows
+                  </Button>
+                }
+              />
+              <PopoverContent align="end" className="w-[30rem] max-w-[90vw] p-3">
+                <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  When a row isn&apos;t in Actual
+                </h3>
+                <NewTransactionOptions
+                  config={applyConfig}
+                  onChange={onApplyConfigChange}
+                  stagedNotesCount={stagedNotesCount}
+                />
+              </PopoverContent>
+            </Popover>
+          )}
           <Button
             size="sm"
             variant="outline"

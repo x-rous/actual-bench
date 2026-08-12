@@ -28,10 +28,12 @@ import {
   hasAmbiguousDates,
   parseStatement,
 } from "@/lib/reconciliation/statement/source";
+import type { ApplyConfig } from "@/lib/reconciliation/session/plan";
 import type { MatchConfig } from "@/lib/reconciliation/types";
 import type { TextTargetPreset } from "@/lib/reconciliation/match/config";
 import type { ReconciliationProfileRecord } from "../lib/reconciliationApi";
 import { MatchOptions } from "./MatchOptions";
+import { NewTransactionOptions } from "./NewTransactionOptions";
 import { formatMinorUnits } from "../lib/format";
 
 /**
@@ -168,6 +170,15 @@ export type ImportPanelProps = {
   accountName: string;
   matchConfig: MatchConfig;
   matchPreset: TextTargetPreset;
+  /**
+   * How a statement row becomes a transaction Actual does not have.
+   *
+   * Chosen here rather than at review time because the notes source feeds the
+   * transformation engine, and a source picked after transformations have run
+   * cannot reach the rows they touched.
+   */
+  applyConfig: ApplyConfig;
+  onApplyConfigChange: (config: ApplyConfig) => void;
   /** Saved profiles for this account, most recently used first. */
   profiles: ReconciliationProfileRecord[];
   onMatchConfigChange: (preset: TextTargetPreset, config: MatchConfig) => void;
@@ -204,6 +215,8 @@ export function ImportPanel({
   accountName,
   matchConfig,
   matchPreset,
+  applyConfig,
+  onApplyConfigChange,
   profiles,
   onMatchConfigChange,
   onApplyProfile,
@@ -688,6 +701,13 @@ export function ImportPanel({
                 onChange={onMatchConfigChange}
                 headingLevel="none"
               />
+            </Section>
+
+            {/* Only rows Actual does not already have are affected, so the
+                heading says so rather than calling them "new transactions"
+                before anything has been matched. */}
+            <Section title="When a row isn't in Actual">
+              <NewTransactionOptions config={applyConfig} onChange={onApplyConfigChange} />
             </Section>
             {profileSection}
           </div>

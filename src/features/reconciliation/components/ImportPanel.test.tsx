@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { DEFAULT_MATCH_CONFIG, DEFAULT_TEXT_PRESET } from "@/lib/reconciliation/match/config";
+import { DEFAULT_APPLY_CONFIG } from "@/lib/reconciliation/session/plan";
 import { ImportPanel } from "./ImportPanel";
 
 /**
@@ -33,6 +34,8 @@ function renderWith(text: string) {
       accountName="Global Money Credit Card"
       matchConfig={DEFAULT_MATCH_CONFIG}
       matchPreset={DEFAULT_TEXT_PRESET}
+      applyConfig={DEFAULT_APPLY_CONFIG}
+      onApplyConfigChange={() => {}}
       profiles={[]}
       onMatchConfigChange={() => {}}
       onApplyProfile={() => {}}
@@ -114,6 +117,13 @@ describe("import preview", () => {
     expect(screen.getByLabelText("Match transactions within (days)")).toBeInTheDocument();
     expect(screen.getByLabelText("Look beyond the statement period (days)")).toBeInTheDocument();
 
+    // Moved here from the review screen: the notes source feeds the transform
+    // engine, so it has to be settled before any transformation runs.
+    expect(screen.getByRole("radio", { name: "The bank's merchant text" })).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: "Leave it to your rules" })).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: "The bank's memo" })).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: "Leave empty" })).toBeInTheDocument();
+
     expect(screen.getByLabelText("Profile name")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /save profile/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /edit pasted statement/i })).toBeInTheDocument();
@@ -194,5 +204,17 @@ describe("import preview", () => {
     // The filename belongs to the source card; row count and period describe the
     // preview and live over it. Three copies of one name is what this replaced.
     expect(screen.getAllByText("Pasted statement")).toHaveLength(1);
+  });
+
+  it("says the bank's text is kept as the imported payee whichever payee you choose", () => {
+    renderWith(statement(3));
+
+    // The gap this closes: "Leave it to your rules" read as though the bank's
+    // text would be discarded, when it is recorded either way.
+    for (const option of ["The bank's merchant text", "Leave it to your rules"]) {
+      const radio = screen.getByRole("radio", { name: option });
+      fireEvent.click(radio);
+      expect(screen.getByText(/recorded as the imported payee either way|still recorded as the imported payee/i)).toBeInTheDocument();
+    }
   });
 });
