@@ -2,7 +2,11 @@ import React from "react";
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useConnectForm } from "./useConnectForm";
-import { useConnectionStore, type ConnectionInstance } from "@/store/connection";
+import {
+  useConnectionStore,
+  type ConnectionInstance,
+  type ConnectionMode,
+} from "@/store/connection";
 import { useSavedServersStore } from "@/store/savedServers";
 import { useStagedStore } from "@/store/staged";
 
@@ -68,7 +72,34 @@ function resetStores() {
   useStagedStore.getState().discardAll();
 }
 
-describe("useConnectForm Direct redirects", () => {
+/**
+ * The hook must never navigate. Redirecting to /overview belongs to ConnectForm's
+ * effect: an imperative push from an async connect handler outlives the component
+ * and lands wherever the user has since navigated, which bounced Direct-mode users
+ * back to /overview seconds after they left it.
+ */
+function expectNoNavigation() {
+  expect(mockPush).not.toHaveBeenCalled();
+  expect(mockReplace).not.toHaveBeenCalled();
+}
+
+/**
+ * Waits for the connection the test selected — not merely "some" connection — to
+ * become active. Identity matters here: the redirect ConnectForm performs is
+ * driven off the active instance, so activating the wrong budget or mode would
+ * still redirect and still look green under a truthiness check.
+ */
+async function expectActiveInstance(expected: { budgetSyncId: string; mode: ConnectionMode }) {
+  await waitFor(
+    () => {
+      const { instances, activeInstanceId } = useConnectionStore.getState();
+      expect(instances.find((i) => i.id === activeInstanceId)).toMatchObject(expected);
+    },
+    { timeout: 2_000 }
+  );
+}
+
+describe("useConnectForm connection activation", () => {
   beforeEach(() => {
     mockPush.mockReset();
     mockReplace.mockReset();
@@ -102,7 +133,7 @@ describe("useConnectForm Direct redirects", () => {
     });
   });
 
-  it("redirects a successful Direct budget connection to overview", async () => {
+  it("activates a successful Direct budget connection without navigating", async () => {
     mockLoadBrowserApiBudgetList.mockResolvedValue({
       budgets: [{ groupId: "budget-1", name: "Budget One" }],
       serverVersion: "25.1.0",
@@ -130,8 +161,8 @@ describe("useConnectForm Direct redirects", () => {
       result.current.handleConnect();
     });
 
-    await waitFor(() => expect(mockPush).toHaveBeenCalledWith("/overview"), { timeout: 2_000 });
-    expect(mockPush).not.toHaveBeenCalledWith("/accounts");
+    await expectActiveInstance({ budgetSyncId: "budget-1", mode: "browser-api" });
+    expectNoNavigation();
     const [savedServer] = useSavedServersStore.getState().servers;
     expect(savedServer).toEqual(
       expect.objectContaining({
@@ -257,7 +288,8 @@ describe("useConnectForm Direct redirects", () => {
       result.current.handleConnect();
     });
 
-    await waitFor(() => expect(mockPush).toHaveBeenCalledWith("/overview"), { timeout: 2_000 });
+    await expectActiveInstance({ budgetSyncId: "local-budget-1", mode: "browser-api" });
+    expectNoNavigation();
     expect(mockEnsureTransportReady).toHaveBeenCalledWith(
       expect.objectContaining({ budgetSyncId: "local-budget-1" })
     );
@@ -290,7 +322,7 @@ describe("useConnectForm Direct redirects", () => {
     expect(mockRevealServerSecret).toHaveBeenCalledWith(expect.any(String), "budget-1");
   });
 
-  it("opens a remembered budget in one click, straight to overview", async () => {
+  it("opens a remembered budget in one click", async () => {
     mockRevealServerSecret.mockResolvedValue({
       mode: "http-api",
       baseUrl: "https://api.example.com",
@@ -308,7 +340,8 @@ describe("useConnectForm Direct redirects", () => {
       );
     });
 
-    await waitFor(() => expect(mockPush).toHaveBeenCalledWith("/overview"), { timeout: 2_000 });
+    await expectActiveInstance({ budgetSyncId: "b1", mode: "http-api" });
+    expectNoNavigation();
     // Revealed with the budget id so an encrypted budget's password comes along.
     expect(mockRevealServerSecret).toHaveBeenCalledWith("fp", "b1");
     // No budget picker was involved — the instance went straight in.
@@ -360,7 +393,7 @@ describe("useConnectForm Direct redirects", () => {
     expect(mockPush).not.toHaveBeenCalledWith("/overview");
   });
 
-  it("redirects a successful Direct reconnect to overview", async () => {
+  it("activates a successful Direct reconnect without navigating", async () => {
     const instance: ConnectionInstance = {
       id: "direct-1",
       mode: "browser-api",
@@ -380,7 +413,9 @@ describe("useConnectForm Direct redirects", () => {
       result.current.handleReconnect(instance);
     });
 
-    await waitFor(() => expect(mockPush).toHaveBeenCalledWith("/overview"), { timeout: 2_000 });
-    expect(mockPush).not.toHaveBeenCalledWith("/accounts");
+    await waitFor(() => expect(useConnectionStore.getState().activeInstanceId).toBe("direct-1"), {
+      timeout: 2_000,
+    });
+    expectNoNavigation();
   });
 });
