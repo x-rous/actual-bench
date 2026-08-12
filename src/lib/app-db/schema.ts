@@ -344,8 +344,18 @@ CREATE TABLE IF NOT EXISTS reconciliation_statement_rows (
   posted_date text NOT NULL,
   -- Integer minor units, sign preserved exactly.
   amount integer NOT NULL,
-  description text NOT NULL,
-  reference text,
+  -- The bank's own merchant/payee text (RD-072): what Actual stores as
+  -- imported_payee, and the candidate a payee is resolved from. Named for its
+  -- destination rather than "description", because the statement's two text
+  -- channels go to two different Actual fields.
+  imported_payee text NOT NULL,
+  -- The bank's separate memo/details field, when the statement supplied one.
+  bank_notes text,
+  bank_reference text,
+  -- A stable bank transaction id (OFX FITID). Matching evidence only: it is
+  -- never written as Actual's imported_id, which carries our own deterministic
+  -- retry marker.
+  external_id text,
   -- Some statements distinguish the transaction date from the posting date.
   transaction_date text,
   -- Foreign-currency transactions: the amount the bank printed in the original

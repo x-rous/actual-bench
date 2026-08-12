@@ -4,6 +4,7 @@ import { AlertTriangle, CheckCircle2, Plus, Trash2, Pencil } from "lucide-react"
 import { cn } from "@/lib/utils";
 import {
   balanceImpact,
+  classifyPlan,
   planCounts,
   totalChanges,
   type ApplyPlan,
@@ -16,6 +17,7 @@ import type {
   StatementRow,
 } from "@/lib/reconciliation/types";
 import type { DriftReport, DriftVerdict } from "@/lib/reconciliation/apply/drift";
+import { statementText } from "@/lib/reconciliation/statement/text";
 import { ReviewComparison } from "./ReviewComparison";
 import { formatMinorUnits } from "../lib/format";
 import type { Option } from "./StagedFields";
@@ -85,6 +87,10 @@ export function ReviewPanel({
   const counts = planCounts(plan);
   const total = totalChanges(plan);
   const balance = balanceImpact(plan);
+  // Provenance writes are writes, so they are counted — but they are not
+  // changes the user staged, and reporting them as such would overstate what
+  // is about to happen to their budget (RD-072 §2.4).
+  const { enrichments } = classifyPlan(plan);
 
   // Counted per field rather than per operation: one update that changes a
   // category and a note is two metadata changes, and that is what the user is
@@ -123,6 +129,14 @@ export function ReviewPanel({
           <Stat label="Update" value={counts.update} icon={Pencil} />
           <Stat label="Delete" value={counts.delete} icon={Trash2} destructive />
           <Stat label="No change needed" value={plan.noWriteMatches} muted />
+          {enrichments > 0 && (
+            <span
+              className="text-muted-foreground"
+              title="Matched transactions that keep their payee, notes and category, and gain the merchant text your bank used."
+            >
+              {enrichments} bank {enrichments === 1 ? "detail" : "details"} recorded
+            </span>
+          )}
         </div>
 
         <div className="flex items-baseline gap-1.5 border-l border-border/60 pl-3 text-xs">
@@ -197,27 +211,82 @@ export function ReviewPanel({
           ]}
         />
 
+        {/*
+          Two independent questions, because they are two independent fields.
+          Whatever is chosen here, the bank's own merchant text is recorded as
+          the transaction's imported payee — that is provenance, not a place to
+          put text because there was nowhere else for it.
+        */}
         {counts.create > 0 && (
-          <WriteSetting
-            label="Put the bank's description in"
-            legend="Where the statement description goes on a new transaction"
-            name="description-target"
-            value={applyConfig.descriptionTarget}
-            onChange={(next) => onApplyConfigChange({ ...applyConfig, descriptionTarget: next })}
-            options={[
-              {
-                value: "payee",
-                label: "The payee",
-                hint: "What a merchant name normally is. A payee you set on a row yourself is always kept.",
-              },
-              {
-                value: "notes",
-                label: "The notes",
-                hint: "Keeps a curated payee list free of raw bank text - and gives your rules something to read.",
-              },
-            ]}
-          />
+          <>
+            <WriteSetting
+              label="Payee on a new transaction"
+              legend="Where a created transaction's payee comes from"
+              name="payee-strategy"
+              value={applyConfig.payeeStrategy}
+              onChange={(next) => onApplyConfigChange({ ...applyConfig, payeeStrategy: next })}
+              options={[
+                {
+                  value: "imported-payee",
+                  label: "The bank's merchant text",
+                  hint: "Resolved to a payee, creating one if it is new. A payee you set on a row yourself is always kept.",
+                },
+                {
+                  value: "leave-unset",
+                  label: "Leave it to your rules",
+                  hint: "Keeps a curated payee list free of raw bank text. Actual's rules run on created transactions and can set the payee themselves.",
+                },
+              ]}
+            />
+
+            <WriteSetting
+              label="Notes on a new transaction"
+              legend="Where a created transaction's notes come from"
+              name="notes-strategy"
+              value={applyConfig.notesStrategy}
+              onChange={(next) => onApplyConfigChange({ ...applyConfig, notesStrategy: next })}
+              options={[
+                {
+                  value: "bank-notes",
+                  label: "The bank's memo",
+                  hint: "The statement's own memo field, when it has one. Left empty when it does not.",
+                },
+                {
+                  value: "imported-payee",
+                  label: "Also the merchant text",
+                  hint: "Falls back to the merchant text when there is no memo - a deliberate duplicate, for rules that read the notes.",
+                },
+                {
+                  value: "leave-unset",
+                  label: "Leave empty",
+                  hint: "Nothing from the statement goes into the notes.",
+                },
+              ]}
+            />
+          </>
         )}
+
+        <WriteSetting
+          label="Record the bank's merchant text"
+          legend="Whether matched transactions gain the bank's own merchant text"
+          name="enrich-imported-payee"
+          value={applyConfig.enrichImportedPayee ? "on" : "off"}
+          onChange={(next) =>
+            onApplyConfigChange({ ...applyConfig, enrichImportedPayee: next === "on" })
+          }
+          options={[
+            {
+              value: "on",
+              label: "On matched rows too",
+              hint: "Their payee, notes and category are left exactly as they are; only the imported payee is attached. Rows reconciled in Actual are skipped.",
+            },
+            {
+              value: "off",
+              label: "New transactions only",
+              hint: "Matched transactions are not written to at all unless you staged a change on them.",
+            },
+          ]}
+        />
       </div>
 
       {drift && (
@@ -318,7 +387,7 @@ function DriftNotice({
     const operation = operationById.get(verdict.operationId);
     const item = operation ? itemById.get(operation.itemId) : undefined;
     const row = item ? statementRows.get(item.statementRowIds[0] ?? "") : undefined;
-    if (row) return `${row.postedDate} · ${row.description}`;
+    if (row) return `${row.postedDate} · ${statementText(row)}`;
     const transaction = item ? transactions.get(item.actualTransactionIds[0] ?? "") : undefined;
     if (transaction) {
       return `${transaction.date} · ${transaction.payeeName ?? transaction.notes ?? "transaction"}`;

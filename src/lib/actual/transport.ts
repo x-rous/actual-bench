@@ -157,6 +157,15 @@ export type SyncTargetTransactionInput = {
   payeeId?: string | null;
   /** Resolve/create a payee by name when no `payeeId` is given. */
   payeeName?: string | null;
+  /**
+   * The source/bank merchant text (Actual `imported_payee`).
+   *
+   * Distinct from both `payeeId` and `payeeName`: those decide which payee
+   * entity the transaction belongs to, this records what the import source
+   * called it. Actual keeps the two apart deliberately, and reconciliation
+   * relies on that (RD-072 §2).
+   */
+  importedPayee?: string | null;
   categoryId?: string | null;
   notes?: string | null;
   cleared?: boolean;
@@ -190,6 +199,8 @@ export type BatchTransactionUpdate = {
   categoryId?: string | null;
   notes?: string | null;
   cleared?: boolean;
+  /** Source/bank merchant text (Actual `imported_payee`); omit to leave alone. */
+  importedPayee?: string | null;
 };
 
 /** Fields of an existing target transaction to overwrite (RD-057 §4). */
@@ -202,6 +213,8 @@ export type UpdateTransactionForSyncInput = {
   payeeId?: string | null;
   /** Resolve/create a payee by name when no `payeeId` is given. */
   payeeName?: string | null;
+  /** Source/bank merchant text (Actual `imported_payee`); omit to leave alone. */
+  importedPayee?: string | null;
   categoryId?: string | null;
   notes?: string | null;
   cleared?: boolean;
@@ -228,6 +241,13 @@ export type SyncAppliedSnapshot = {
   categoryId: string | null;
   payeeId: string | null;
   notes: string | null;
+  /**
+   * Source/bank merchant text as persisted (Actual `imported_payee`).
+   *
+   * Optional so existing sync fixtures are unaffected; reconciliation's
+   * post-apply verification reads it to confirm provenance actually landed.
+   */
+  importedPayee?: string | null;
 };
 
 export type SyncCreatedTransaction = {

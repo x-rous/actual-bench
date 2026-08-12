@@ -28,7 +28,7 @@ import {
 import { KDF_VERSION_META_KEY, SALT_META_KEY, VERIFIER_META_KEY } from "./vaultMetaKeys";
 import { AppDbUnavailableError } from "./errors";
 
-export const LATEST_SCHEMA_VERSION = 15;
+export const LATEST_SCHEMA_VERSION = 16;
 
 type Migration = {
   version: number;
@@ -199,7 +199,144 @@ const MIGRATIONS: readonly Migration[] = [
     // and corrections apart in the list.
     apply: applyReconciliationSessionTag,
   },
+  {
+    version: 16,
+    // The canonical statement model (RD-072): a statement row's two text
+    // channels become the two Actual fields they belong to, and the write
+    // configuration stops framing payee and notes as an either/or.
+    apply: applyReconciliationImportSemantics,
+  },
 ];
+
+/**
+ * RD-072: statement rows, saved profiles and apply configs move to the
+ * canonical import model.
+ *
+ * A table rebuild rather than added columns, because `description` was `NOT
+ * NULL` and would have to go on being written forever — leaving two names for
+ * the same channel and no way to tell which one a reader should trust. The
+ * feature is days old with no adoption, so the honest migration is the one that
+ * leaves a single correct schema behind.
+ *
+ * Idempotent by inspection: a database created after this change already has
+ * the new shape (the table SQL in `schema.ts` is the current one), so the
+ * rebuild only runs where the old columns are actually present.
+ */
+function applyReconciliationImportSemantics(db: SqliteDatabase): void {
+  if (
+    tableExists(db, "reconciliation_statement_rows") &&
+    !columnExists(db, "reconciliation_statement_rows", "imported_payee")
+  ) {
+    db.exec(
+      "ALTER TABLE reconciliation_statement_rows RENAME TO reconciliation_statement_rows_old"
+    );
+    db.exec(RECONCILIATION_STATEMENT_ROW_TABLE_SQL);
+    db.exec(`
+      INSERT INTO reconciliation_statement_rows
+        (id, session_id, source_row_number, posted_date, amount, imported_payee, bank_notes,
+         bank_reference, external_id, transaction_date, original_amount, original_currency,
+         fingerprint, raw_json)
+      SELECT id, session_id, source_row_number, posted_date, amount, description, NULL,
+             reference, NULL, transaction_date, original_amount, original_currency,
+             fingerprint, raw_json
+      FROM reconciliation_statement_rows_old
+    `);
+    db.exec("DROP TABLE reconciliation_statement_rows_old");
+    // Dropping the table dropped its indexes; only those are recreated, since
+    // the other tables' indexes are untouched and re-running them all would
+    // depend on tables this step has no business requiring.
+    for (const statement of RECONCILIATION_INDEX_SQL) {
+      if (statement.includes("ON reconciliation_statement_rows")) db.exec(statement);
+    }
+  }
+
+  migrateReconciliationJson(
+    db,
+    "reconciliation_profiles",
+    "mapping_json",
+    migrateProfileMapping
+  );
+  migrateReconciliationJson(
+    db,
+    "reconciliation_sessions",
+    "apply_config_json",
+    migrateApplyConfig
+  );
+}
+
+/** Rewrite one JSON column row by row, leaving anything unparseable alone. */
+function migrateReconciliationJson(
+  db: SqliteDatabase,
+  table: string,
+  column: string,
+  transform: (value: Record<string, unknown>) => Record<string, unknown> | null
+): void {
+  if (!tableExists(db, table) || !columnExists(db, table, column)) return;
+
+  const rows = db
+    .prepare(`SELECT id, ${column} AS value FROM ${table} WHERE ${column} IS NOT NULL`)
+    .all<{ id: string; value: string }>();
+
+  const update = db.prepare(`UPDATE ${table} SET ${column} = ? WHERE id = ?`);
+  for (const row of rows) {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(row.value);
+    } catch {
+      // Not our problem to fix here: the app reads these defensively, and
+      // failing the whole migration over one corrupt row would be worse.
+      continue;
+    }
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) continue;
+    const next = transform(parsed as Record<string, unknown>);
+    if (next) update.run(JSON.stringify(next), row.id);
+  }
+}
+
+/** Saved column mapping → `StatementParseConfig` (RD-072 §2.5). */
+function migrateProfileMapping(
+  mapping: Record<string, unknown>
+): Record<string, unknown> | null {
+  if (mapping.columns !== undefined || mapping.format !== undefined) return null;
+
+  const { date, description, amount, debit, credit, reference, ...rest } = mapping;
+  return {
+    ...rest,
+    format: "delimited",
+    columns: {
+      date: date ?? 0,
+      importedPayee: description ?? 1,
+      notes: undefined,
+      amount,
+      debit,
+      credit,
+      reference,
+    },
+    swapPayeeAndMemo: false,
+    fallbackPayeeToMemo: true,
+  };
+}
+
+/**
+ * `descriptionTarget` → independent payee/notes strategies (RD-072 §2.2).
+ *
+ * The old "notes" choice becomes "leave the payee to rules, put the bank's text
+ * in the notes" — the same workflow, except the bank's text is now also
+ * recorded as the imported payee, which is the point of the change.
+ */
+function migrateApplyConfig(config: Record<string, unknown>): Record<string, unknown> | null {
+  if (config.payeeStrategy !== undefined) return null;
+
+  const toNotes = config.descriptionTarget === "notes";
+  const rest = { ...config };
+  delete rest.descriptionTarget;
+  return {
+    ...rest,
+    payeeStrategy: toNotes ? "leave-unset" : "imported-payee",
+    notesStrategy: toNotes ? "imported-payee" : "bank-notes",
+    enrichImportedPayee: true,
+  };
+}
 
 function applyReconciliationSessionTag(db: SqliteDatabase): void {
   addColumnIfMissing(db, "reconciliation_sessions", "tag", "text");

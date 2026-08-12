@@ -13,7 +13,7 @@ function row(overrides: Partial<StatementRow> & Pick<StatementRow, "id">): State
     sourceRowNumber: 1,
     postedDate: "2026-07-03",
     amount: -4250,
-    description: "STARBUCKS MALL OF EMIRATES",
+    importedPayee: "STARBUCKS MALL OF EMIRATES",
     raw: {},
     fingerprint: `fp-${overrides.id}`,
     ...overrides,
@@ -61,7 +61,7 @@ function run(
 describe("exact reference match (tier 1)", () => {
   it("pins an imported_id hit and reports it as exact", () => {
     const graph = run(
-      [row({ id: "s1", reference: "BANKREF-9931" })],
+      [row({ id: "s1", bankReference: "BANKREF-9931" })],
       [txn({ id: "t1", importedId: "BANKREF-9931", date: "2026-06-20", payeeName: "Anything" })]
     );
 
@@ -77,7 +77,7 @@ describe("exact reference match (tier 1)", () => {
   it("outranks a closer, better-looking candidate", () => {
     // t2 is same-day with an identical payee; t1 only has the identity match.
     const graph = run(
-      [row({ id: "s1", reference: "BANKREF-9931" })],
+      [row({ id: "s1", bankReference: "BANKREF-9931" })],
       [
         txn({ id: "t1", importedId: "BANKREF-9931", date: "2026-06-20", payeeName: "Unrelated" }),
         txn({ id: "t2", date: "2026-07-03", payeeName: "Starbucks" }),
@@ -89,10 +89,71 @@ describe("exact reference match (tier 1)", () => {
   });
 });
 
+describe("the statement's own text channels (RD-072)", () => {
+  it("pins an OFX transaction id against Actual's imported_id", () => {
+    const graph = run(
+      [row({ id: "s1", externalId: "FITID-2026080100001" })],
+      [txn({ id: "t1", importedId: "FITID-2026080100001", date: "2026-06-20" })]
+    );
+
+    expect(graph.matched[0]).toMatchObject({ tier: "reference-imported-id", label: "exact" });
+  });
+
+  it("falls back to the bank reference when the external id matches nothing", () => {
+    // An OFX file carries a FITID for every row; the account may only have
+    // imported the row under its own reference. Trying one identifier and
+    // stopping would lose a certain match to a merely-present one.
+    const graph = run(
+      [row({ id: "s1", externalId: "FITID-UNKNOWN", bankReference: "BANKREF-9931" })],
+      [txn({ id: "t1", importedId: "BANKREF-9931", date: "2026-06-20" })]
+    );
+
+    expect(graph.matched[0]).toMatchObject({
+      actualTransactionId: "t1",
+      tier: "reference-imported-id",
+    });
+  });
+
+  it("prefers the external id when both identifiers match different rows", () => {
+    const graph = run(
+      [row({ id: "s1", externalId: "FITID-1", bankReference: "BANKREF-9931" })],
+      [
+        txn({ id: "t1", importedId: "BANKREF-9931", date: "2026-06-20" }),
+        txn({ id: "t2", importedId: "FITID-1", date: "2026-06-21" }),
+      ]
+    );
+
+    // The bank's own transaction id is the stronger claim of the two.
+    expect(graph.matched[0].actualTransactionId).toBe("t2");
+  });
+
+  it("compares the bank's merchant text, not its memo, when both exist", () => {
+    const graph = run(
+      [row({ id: "s1", importedPayee: "STARBUCKS MALL OF EMIRATES", bankNotes: "CARD PURCHASE" })],
+      [txn({ id: "t1", payeeName: "Starbucks Mall of Emirates" })]
+    );
+
+    const text = graph.matched[0].reasons.find((reason) => reason.kind === "text");
+    expect(text).toMatchObject({ field: "payeeName" });
+  });
+
+  it("falls back to the memo when the bank left the merchant field empty", () => {
+    // Nothing to compare otherwise: a row with no merchant text would match on
+    // amount and date alone and score as a weak pair.
+    const graph = run(
+      [row({ id: "s1", importedPayee: "", bankNotes: "STARBUCKS MALL OF EMIRATES" })],
+      [txn({ id: "t1", payeeName: "Starbucks Mall of Emirates" })]
+    );
+
+    expect(graph.matched).toHaveLength(1);
+    expect(graph.matched[0].tier).toBe("amount-date-text");
+  });
+});
+
 describe("reference found in notes (tier 2)", () => {
   it("matches when the bank reference sits verbatim in the notes", () => {
     const graph = run(
-      [row({ id: "s1", reference: "88721", description: "TALABAT AE" })],
+      [row({ id: "s1", bankReference: "88721", importedPayee: "TALABAT AE" })],
       [txn({ id: "t1", payeeName: "Talabat", notes: "TALABAT AE 88721 #One | Dinner" })]
     );
 
@@ -110,7 +171,7 @@ describe("amount + date + text (tier 3)", () => {
 
   it("matches on notes containment when the payee carries nothing", () => {
     const graph = run(
-      [row({ id: "s1", description: "TALABAT AE 88721" })],
+      [row({ id: "s1", importedPayee: "TALABAT AE 88721" })],
       [
         txn({
           id: "t1",
@@ -131,7 +192,7 @@ describe("amount + date + text (tier 3)", () => {
 
   it("respects a profile that only compares the payee", () => {
     const graph = run(
-      [row({ id: "s1", description: "TALABAT AE 88721" })],
+      [row({ id: "s1", importedPayee: "TALABAT AE 88721" })],
       [txn({ id: "t1", payeeName: "Food", notes: "TALABAT AE 88721" })],
       { text: TEXT_TARGET_PRESETS["payee-only"] }
     );
@@ -189,7 +250,7 @@ describe("date drift", () => {
 describe("amount is a hard gate (feature spec §11)", () => {
   it("never matches a different amount, however similar the text", () => {
     const graph = run(
-      [row({ id: "s1", amount: -42100, description: "ETISALAT" })],
+      [row({ id: "s1", amount: -42100, importedPayee: "ETISALAT" })],
       [txn({ id: "t1", amount: -41200, payeeName: "Etisalat" })]
     );
 
@@ -203,7 +264,7 @@ describe("amount is a hard gate (feature spec §11)", () => {
   it("does not offer a review pairing across a sign change", () => {
     // A refund is not the same event as the purchase it reverses.
     const graph = run(
-      [row({ id: "s1", amount: 42100, description: "ETISALAT" })],
+      [row({ id: "s1", amount: 42100, importedPayee: "ETISALAT" })],
       [txn({ id: "t1", amount: -41200, payeeName: "Etisalat" })]
     );
     expect(graph.ambiguous).toHaveLength(0);
@@ -212,7 +273,7 @@ describe("amount is a hard gate (feature spec §11)", () => {
 
   it("does not offer a review pairing when the text is unrelated", () => {
     const graph = run(
-      [row({ id: "s1", amount: -42100, description: "ETISALAT" })],
+      [row({ id: "s1", amount: -42100, importedPayee: "ETISALAT" })],
       [txn({ id: "t1", amount: -41200, payeeName: "Carrefour Market" })]
     );
     expect(graph.ambiguous).toHaveLength(0);
@@ -224,7 +285,7 @@ describe("amount is a hard gate (feature spec §11)", () => {
     // the least trustworthy field on the row and refusing to relate them would
     // be trusting the wrong signal.
     const graph = run(
-      [row({ id: "s1", amount: -42100, description: "ETISALAT" })],
+      [row({ id: "s1", amount: -42100, importedPayee: "ETISALAT" })],
       [txn({ id: "t1", amount: -100, payeeName: "Etisalat" })]
     );
 
@@ -235,7 +296,7 @@ describe("amount is a hard gate (feature spec §11)", () => {
 
   it("relates nothing when both passes are switched off", () => {
     const graph = run(
-      [row({ id: "s1", amount: -42100, description: "ETISALAT" })],
+      [row({ id: "s1", amount: -42100, importedPayee: "ETISALAT" })],
       [txn({ id: "t1", amount: -100, payeeName: "Etisalat" })],
       { reviewAmountMismatch: false, pairLeftoversByMerchantAndDate: false }
     );
@@ -252,7 +313,7 @@ describe("amount is a hard gate (feature spec §11)", () => {
 describe("statement row missing in Actual", () => {
   it("reports it as unmatched so it can be staged as a Create", () => {
     const graph = run(
-      [row({ id: "s1", description: "DUBAI TAXI CORPORATION", amount: -6850 })],
+      [row({ id: "s1", importedPayee: "DUBAI TAXI CORPORATION", amount: -6850 })],
       []
     );
     expect(graph.unmatchedStatementRowIds).toEqual(["s1"]);
@@ -270,8 +331,8 @@ describe("one Actual transaction is never claimed twice (feature spec §15)", ()
   it("assigns a contested transaction to exactly one statement row", () => {
     const graph = run(
       [
-        row({ id: "s1", postedDate: "2026-07-10", amount: -5599, description: "NETFLIX" }),
-        row({ id: "s2", postedDate: "2026-07-12", amount: -5599, description: "NETFLIX" }),
+        row({ id: "s1", postedDate: "2026-07-10", amount: -5599, importedPayee: "NETFLIX" }),
+        row({ id: "s2", postedDate: "2026-07-12", amount: -5599, importedPayee: "NETFLIX" }),
       ],
       [txn({ id: "t1", date: "2026-07-10", amount: -5599, payeeName: "Netflix" })]
     );
@@ -288,8 +349,8 @@ describe("one Actual transaction is never claimed twice (feature spec §15)", ()
     // Row-by-row greedy would let s1 take t1 and leave s2 stranded.
     const graph = run(
       [
-        row({ id: "s1", postedDate: "2026-07-01", amount: -1000, description: "UNRELATED TEXT" }),
-        row({ id: "s2", postedDate: "2026-07-06", amount: -1000, description: "CARREFOUR MARKET" }),
+        row({ id: "s1", postedDate: "2026-07-01", amount: -1000, importedPayee: "UNRELATED TEXT" }),
+        row({ id: "s2", postedDate: "2026-07-06", amount: -1000, importedPayee: "CARREFOUR MARKET" }),
       ],
       [txn({ id: "t1", date: "2026-07-06", amount: -1000, payeeName: "Carrefour" })]
     );
@@ -302,7 +363,7 @@ describe("one Actual transaction is never claimed twice (feature spec §15)", ()
 describe("ambiguity guard", () => {
   it("does not silently choose between two close candidates", () => {
     const graph = run(
-      [row({ id: "s1", postedDate: "2026-07-08", amount: -11000, description: "AMAZON AE" })],
+      [row({ id: "s1", postedDate: "2026-07-08", amount: -11000, importedPayee: "AMAZON AE" })],
       [
         txn({ id: "t1", date: "2026-07-07", amount: -11000, payeeName: "Amazon" }),
         txn({ id: "t2", date: "2026-07-08", amount: -11000, payeeName: "Amazon Marketplace" }),
@@ -320,7 +381,7 @@ describe("ambiguity guard", () => {
 
   it("does auto-match when one candidate is clearly better", () => {
     const graph = run(
-      [row({ id: "s1", postedDate: "2026-07-08", amount: -11000, description: "AMAZON AE" })],
+      [row({ id: "s1", postedDate: "2026-07-08", amount: -11000, importedPayee: "AMAZON AE" })],
       [
         txn({ id: "t1", date: "2026-07-08", amount: -11000, payeeName: "Amazon" }),
         txn({ id: "t2", date: "2026-07-15", amount: -11000, payeeName: "Totally Different" }),
@@ -335,7 +396,7 @@ describe("ambiguity guard", () => {
     // Same amount, three days apart, and the text agrees: not confident enough
     // to match automatically, but plainly worth showing.
     const graph = run(
-      [row({ id: "s1", postedDate: "2026-07-01", amount: -1000, description: "CARREFOUR MARKET" })],
+      [row({ id: "s1", postedDate: "2026-07-01", amount: -1000, importedPayee: "CARREFOUR MARKET" })],
       [txn({ id: "t1", date: "2026-07-04", amount: -1000, payeeName: "Carrefour" })],
       { autoMatchFloor: 95 }
     );
@@ -349,7 +410,7 @@ describe("ambiguity guard", () => {
     // candidate. Offering it spends the user's attention on a pair that no
     // evidence supports; the row is better presented as missing from Actual.
     const graph = run(
-      [row({ id: "s1", postedDate: "2026-07-01", amount: -1000, description: "XYZ" })],
+      [row({ id: "s1", postedDate: "2026-07-01", amount: -1000, importedPayee: "XYZ" })],
       [txn({ id: "t1", date: "2026-07-08", amount: -1000, payeeName: "Totally Unrelated" })],
       { dateToleranceDays: 10 }
     );
@@ -366,7 +427,7 @@ describe("duplicate Actual rows (feature spec §19)", () => {
     // is has no answer — they are interchangeable — so one is matched and the
     // one left over is surplus.
     const graph = run(
-      [row({ id: "s1", postedDate: "2026-07-07", amount: -5599, description: "NETFLIX.COM" })],
+      [row({ id: "s1", postedDate: "2026-07-07", amount: -5599, importedPayee: "NETFLIX.COM" })],
       [
         txn({ id: "t1", date: "2026-07-07", amount: -5599, payeeName: "Netflix" }),
         txn({ id: "t2", date: "2026-07-07", amount: -5599, payeeName: "Netflix" }),
@@ -385,9 +446,9 @@ describe("duplicate Actual rows (feature spec §19)", () => {
     // not a property of how alike two rows look.
     const graph = run(
       [
-        row({ id: "s1", postedDate: "2026-07-16", amount: -3, description: "VAT ON SERVICE CHARGES" }),
-        row({ id: "s2", postedDate: "2026-07-16", amount: -3, description: "VAT ON SERVICE CHARGES" }),
-        row({ id: "s3", postedDate: "2026-07-16", amount: -3, description: "VAT ON SERVICE CHARGES" }),
+        row({ id: "s1", postedDate: "2026-07-16", amount: -3, importedPayee: "VAT ON SERVICE CHARGES" }),
+        row({ id: "s2", postedDate: "2026-07-16", amount: -3, importedPayee: "VAT ON SERVICE CHARGES" }),
+        row({ id: "s3", postedDate: "2026-07-16", amount: -3, importedPayee: "VAT ON SERVICE CHARGES" }),
       ],
       [
         txn({ id: "t1", date: "2026-07-16", amount: -3, payeeName: "VAT ON SERVICE CHARGES" }),
@@ -407,8 +468,8 @@ describe("duplicate Actual rows (feature spec §19)", () => {
     // the row it shares a date with, so neither is really contested.
     const graph = run(
       [
-        row({ id: "s1", postedDate: "2026-07-16", amount: -9, description: "VAT ON SERVICE CHARGES" }),
-        row({ id: "s2", postedDate: "2026-07-17", amount: -9, description: "VAT ON SERVICE CHARGES" }),
+        row({ id: "s1", postedDate: "2026-07-16", amount: -9, importedPayee: "VAT ON SERVICE CHARGES" }),
+        row({ id: "s2", postedDate: "2026-07-17", amount: -9, importedPayee: "VAT ON SERVICE CHARGES" }),
       ],
       [
         txn({ id: "t16", date: "2026-07-16", amount: -9, payeeName: "VAT ON SERVICE CHARGES" }),
@@ -427,7 +488,7 @@ describe("duplicate Actual rows (feature spec §19)", () => {
 
   it("still flags a surplus when more transactions than statement rows are alike", () => {
     const graph = run(
-      [row({ id: "s1", postedDate: "2026-07-16", amount: -3, description: "VAT ON SERVICE CHARGES" })],
+      [row({ id: "s1", postedDate: "2026-07-16", amount: -3, importedPayee: "VAT ON SERVICE CHARGES" })],
       [
         txn({ id: "t1", date: "2026-07-16", amount: -3, payeeName: "VAT ON SERVICE CHARGES" }),
         txn({ id: "t2", date: "2026-07-16", amount: -3, payeeName: "VAT ON SERVICE CHARGES" }),
@@ -441,7 +502,7 @@ describe("duplicate Actual rows (feature spec §19)", () => {
 
   it("flags a duplicate when one row is clearly the better match", () => {
     const graph = run(
-      [row({ id: "s1", postedDate: "2026-07-07", amount: -8640, description: "TALABAT" })],
+      [row({ id: "s1", postedDate: "2026-07-07", amount: -8640, importedPayee: "TALABAT" })],
       [
         txn({ id: "t1", date: "2026-07-07", amount: -8640, payeeName: "Talabat" }),
         // Same evidence but a day out, so it loses by a small, duplicate-sized margin.
@@ -463,7 +524,7 @@ describe("duplicate Actual rows (feature spec §19)", () => {
 describe("splits", () => {
   it("matches the split parent on its posted amount and ignores children", () => {
     const graph = run(
-      [row({ id: "s1", postedDate: "2026-07-22", amount: -53000, description: "COSTCO" })],
+      [row({ id: "s1", postedDate: "2026-07-22", amount: -53000, importedPayee: "COSTCO" })],
       [
         txn({
           id: "parent",
@@ -492,8 +553,8 @@ describe("splits", () => {
 describe("determinism", () => {
   it("produces an identical graph for identical inputs", () => {
     const rows = [
-      row({ id: "s1", postedDate: "2026-07-01", amount: -1000, description: "A SHOP" }),
-      row({ id: "s2", postedDate: "2026-07-02", amount: -1000, description: "B SHOP" }),
+      row({ id: "s1", postedDate: "2026-07-01", amount: -1000, importedPayee: "A SHOP" }),
+      row({ id: "s2", postedDate: "2026-07-02", amount: -1000, importedPayee: "B SHOP" }),
     ];
     const transactions = [
       txn({ id: "t1", date: "2026-07-01", amount: -1000, payeeName: "A Shop" }),
@@ -504,7 +565,7 @@ describe("determinism", () => {
   });
 
   it("is unaffected by the input ordering of Actual transactions", () => {
-    const rows = [row({ id: "s1", postedDate: "2026-07-01", amount: -1000, description: "A SHOP" })];
+    const rows = [row({ id: "s1", postedDate: "2026-07-01", amount: -1000, importedPayee: "A SHOP" })];
     const a = txn({ id: "t1", date: "2026-07-01", amount: -1000, payeeName: "A Shop" });
     const b = txn({ id: "t2", date: "2026-07-01", amount: -1000, payeeName: "A Shop" });
 
@@ -540,7 +601,7 @@ describe("performance shape", () => {
           id: `s-${i}`,
           postedDate: shiftDate("2026-07-01", i % 28),
           amount: -(1000 + i),
-          description: `MERCHANT ${i}`,
+          importedPayee: `MERCHANT ${i}`,
         })
       );
     }

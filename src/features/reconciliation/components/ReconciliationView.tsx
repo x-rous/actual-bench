@@ -76,7 +76,7 @@ import type {
   ReconciliationProfileRecord,
   ReconciliationSessionRecord,
 } from "../lib/reconciliationApi";
-import type { ColumnMapping } from "@/lib/reconciliation/statement/normalize";
+import type { StatementParseConfig } from "@/lib/reconciliation/statement/normalize";
 import { ImportPanel } from "./ImportPanel";
 import { ConfirmDialog, type ConfirmState } from "@/components/ui/confirm-dialog";
 import { NewSessionDialog } from "./NewSessionDialog";
@@ -227,8 +227,10 @@ export function ReconciliationView() {
         sourceRowNumber: row.sourceRowNumber,
         postedDate: row.postedDate,
         amount: row.amount,
-        description: row.description,
-        reference: row.reference ?? undefined,
+        importedPayee: row.importedPayee,
+        bankNotes: row.bankNotes ?? undefined,
+        bankReference: row.bankReference ?? undefined,
+        externalId: row.externalId ?? undefined,
         transactionDate: row.transactionDate ?? undefined,
         // Without these a resumed session silently stops matching foreign
         // purchases on their original amount.
@@ -1185,11 +1187,11 @@ export function ReconciliationView() {
               const saved = profile.matchConfig as MatchConfig | null;
               if (saved) setMatchConfig({ ...DEFAULT_MATCH_CONFIG, ...saved });
             }}
-            onSaveProfile={(name: string, mapping: ColumnMapping) => {
+            onSaveProfile={(name: string, parseConfig: StatementParseConfig) => {
               void mutations.saveProfile.mutateAsync({
                 accountId: screen.accountId,
                 name,
-                mapping,
+                mapping: parseConfig,
                 matchConfig,
               });
             }}

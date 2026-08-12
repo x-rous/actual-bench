@@ -35,7 +35,10 @@ import type {
 // ---------------------------------------------------------------------------
 
 export type ConditionField =
-  | "statementDescription"
+  /** The bank's merchant text for this row — what becomes Actual's imported payee. */
+  | "statementImportedPayee"
+  /** The bank's separate memo, when the statement supplied one. */
+  | "statementBankNotes"
   | "payee"
   | "category"
   | "notes"
@@ -81,10 +84,10 @@ export type TransformAction =
   | { kind: "appendNote"; text: string }
   | { kind: "prependNote"; text: string }
   /**
-   * Bring the note's merchant text up to the statement's full description,
+   * Bring the note's merchant text up to the statement's full merchant text,
    * leaving tags and the user's own words in place.
    */
-  | { kind: "useStatementDescription" };
+  | { kind: "useStatementImportedPayee" };
 
 /**
  * A saved transformation.
@@ -132,8 +135,10 @@ function fieldValue(field: ConditionField, context: TransformContext): string | 
   const { item, statementRow, pending } = context;
 
   switch (field) {
-    case "statementDescription":
-      return statementRow?.description ?? null;
+    case "statementImportedPayee":
+      return statementRow?.importedPayee ?? null;
+    case "statementBankNotes":
+      return statementRow?.bankNotes ?? null;
     case "payee":
       return context.payeeName(pending.payeeId);
     case "category":
@@ -274,10 +279,10 @@ export function changesFor(rule: TransformRule, context: TransformContext): Fiel
         notes = prependNoteText(notes, action.text);
         notesTouched = true;
         break;
-      case "useStatementDescription": {
+      case "useStatementImportedPayee": {
         const merged = mergeDescriptionIntoNotes(
           notes,
-          context.statementRow?.description ?? ""
+          context.statementRow?.importedPayee ?? ""
         );
         if (merged.changed) {
           notes = merged.notes;

@@ -211,4 +211,49 @@ describe("createReconciliationTransport", () => {
       { requestIndex: 0, transactionId: "new-1", importedId: "recon:abc" },
     ]);
   });
+
+  it("forwards the bank's merchant text on create, beside the payee", async () => {
+    const inner = fakeTransport([]);
+    (inner.createTransactionsForSync as jest.Mock).mockResolvedValue({ created: [] });
+
+    await createReconciliationTransport(inner).createTransactions([
+      {
+        accountId: "acct-1",
+        date: "2026-08-01",
+        amount: -12550,
+        payeeId: "payee-amazon",
+        importedPayee: "AMZN Mktp AE*23981",
+        importedId: "recon:abc",
+      },
+    ]);
+
+    expect(inner.createTransactionsForSync).toHaveBeenCalledWith([
+      expect.objectContaining({
+        payeeId: "payee-amazon",
+        importedPayee: "AMZN Mktp AE*23981",
+      }),
+    ]);
+  });
+
+  it("forwards provenance on an update without inventing other fields", async () => {
+    const inner = fakeTransport([]);
+    (inner.updateTransactionForSync as jest.Mock).mockResolvedValue(null);
+
+    await createReconciliationTransport(inner).updateTransaction({
+      transactionId: "t1",
+      accountId: "acct-1",
+      date: "2026-08-01",
+      amount: -12550,
+      importedPayee: "AMZN Mktp AE*23981",
+    });
+
+    const [input] = (inner.updateTransactionForSync as jest.Mock).mock.calls[0];
+    expect(input).toMatchObject({
+      transactionId: "t1",
+      importedPayee: "AMZN Mktp AE*23981",
+      returnApplied: false,
+    });
+    expect(input.notes).toBeUndefined();
+    expect(input.payeeId).toBeUndefined();
+  });
 });

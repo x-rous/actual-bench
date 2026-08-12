@@ -8,6 +8,7 @@ import type {
   StatementRow,
 } from "@/lib/reconciliation/types";
 import { REASON } from "@/lib/reconciliation/session/build";
+import { statementText } from "@/lib/reconciliation/statement/text";
 import { confidenceLabelText, describeReason, formatMinorUnits, formatShortDate } from "../lib/format";
 
 /**
@@ -214,7 +215,7 @@ export function WorkbenchRow({
           onChange={(event) => onToggleChecked(event.target.checked)}
           aria-label={
             statementRow
-              ? `Select ${statementRow.description}`
+              ? `Select ${statementText(statementRow)}`
               : `Select ${primary?.payeeName ?? "transaction"}`
           }
         />
@@ -224,8 +225,15 @@ export function WorkbenchRow({
       <td className="whitespace-nowrap px-2 py-1.5 tabular-nums text-muted-foreground">
         {statementRow ? formatShortDate(statementRow.postedDate) : EMPTY}
       </td>
-      <td className="max-w-0 truncate px-2 py-1.5" title={statementRow?.description}>
-        {statementRow ? statementRow.description : EMPTY}
+      <td
+        className="max-w-0 truncate px-2 py-1.5"
+        title={
+          statementRow
+            ? [statementRow.importedPayee, statementRow.bankNotes].filter(Boolean).join(" · ")
+            : undefined
+        }
+      >
+        {statementRow ? statementText(statementRow) || EMPTY : EMPTY}
       </td>
       <td className="whitespace-nowrap px-2 py-1.5 text-right tabular-nums">
         {statementRow ? formatMinorUnits(statementRow.amount) : EMPTY}

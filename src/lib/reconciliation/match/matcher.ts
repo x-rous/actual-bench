@@ -251,18 +251,28 @@ function addAmountMismatchReviews(
 }
 
 /**
- * Tier 1 — the statement's reference equals an Actual `imported_id`.
+ * Tier 1 — a statement identifier equals an Actual `imported_id`.
  *
  * Pinned before any scoring and removed from the candidate pool: this is an
  * identity match, so no amount of text or date evidence can outrank it.
+ *
+ * Both identifiers the statement can carry are tried, external id first: OFX's
+ * `FITID` is a genuine bank transaction id, while a CSV reference column is
+ * whatever the bank chose to put there. Neither is *written* as `imported_id`
+ * (RD-072 §2.6) — but if the row in Actual arrived through a bank import that
+ * did store one, that is identity evidence and worth using.
  */
 function pinByImportedId(rows: StatementRow[], index: ActualIndex): MatchOutcome[] {
   const pinned: MatchOutcome[] = [];
   const taken = new Set<string>();
 
   for (const row of rows) {
-    if (!row.reference) continue;
-    const transactionId = index.byImportedId.get(row.reference);
+    // Tried in order of authority, not exclusively: an OFX `FITID` that Actual
+    // has never seen must not stop the row's own reference — which the account
+    // may well carry — from being looked up.
+    const transactionId = [row.externalId, row.bankReference]
+      .map((identifier) => (identifier ? index.byImportedId.get(identifier) : undefined))
+      .find((found) => found !== undefined);
     if (!transactionId || taken.has(transactionId)) continue;
     taken.add(transactionId);
     pinned.push({

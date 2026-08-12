@@ -14,6 +14,7 @@ const create = (amount: number, id = "c"): ApplyOperation => ({
   amount,
   payeeId: null,
   payeeName: null,
+  importedPayee: null,
   categoryId: null,
   notes: null,
   marker: `recon:${id}`,

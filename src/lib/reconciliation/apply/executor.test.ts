@@ -26,6 +26,7 @@ const CREATE: ApplyOperation = {
   amount: -6850,
   payeeId: null,
   payeeName: "DUBAI TAXI",
+  importedPayee: null,
   categoryId: null,
   notes: null,
   marker: "recon:abc",
@@ -458,5 +459,55 @@ describe("updates and deletes go together where the transport allows", () => {
 
     expect(transport.batchWrite).not.toHaveBeenCalled();
     expect(transport.updateTransaction).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("bank provenance through the executor (RD-072)", () => {
+  it("sends the create's imported payee to the transport", async () => {
+    const transport = fakeTransport();
+    await executeApplyPlan({
+      plan: planOf([{ ...CREATE, importedPayee: "AMZN Mktp AE*23981" } as ApplyOperation]),
+      transport,
+    });
+
+    expect((transport.createTransactions as jest.Mock).mock.calls[0][0][0]).toMatchObject({
+      importedPayee: "AMZN Mktp AE*23981",
+      importedId: "recon:abc",
+    });
+  });
+
+  it("sends an enrichment-only update as provenance and nothing else", async () => {
+    const transport = fakeTransport();
+    await executeApplyPlan({
+      plan: planOf([
+        {
+          id: "update:i9",
+          kind: "update",
+          itemId: "i9",
+          transactionId: "t9",
+          accountId: "acct-1",
+          date: "2026-08-01",
+          amount: -12550,
+          patch: {},
+          importedPayee: "AMZN Mktp AE*23981",
+        } as ApplyOperation,
+      ]),
+      transport,
+    });
+
+    const [payload] = (transport.updateTransaction as jest.Mock).mock.calls[0];
+    expect(payload.importedPayee).toBe("AMZN Mktp AE*23981");
+    // The user's fields are absent, which is what stops a provenance write from
+    // clearing a note or a payee.
+    expect(payload.notes).toBeUndefined();
+    expect(payload.payeeId).toBeUndefined();
+  });
+
+  it("leaves provenance undefined on an ordinary staged update", async () => {
+    const transport = fakeTransport();
+    await executeApplyPlan({ plan: planOf([UPDATE]), transport });
+
+    const [payload] = (transport.updateTransaction as jest.Mock).mock.calls[0];
+    expect(payload.importedPayee).toBeUndefined();
   });
 });

@@ -86,7 +86,14 @@ export function transferStatusOf(
 }
 
 function appliedFrom(
-  applied: { amount: number; date: string; categoryId: string | null; payeeId: string | null; notes: string | null } | null
+  applied: {
+    amount: number;
+    date: string;
+    categoryId: string | null;
+    payeeId: string | null;
+    notes: string | null;
+    importedPayee?: string | null;
+  } | null
 ): AppliedSnapshot | null {
   if (!applied) return null;
   return {
@@ -95,6 +102,7 @@ function appliedFrom(
     categoryId: applied.categoryId,
     payeeId: applied.payeeId,
     notes: applied.notes,
+    importedPayee: applied.importedPayee ?? null,
   };
 }
 
@@ -129,7 +137,7 @@ export function createReconciliationTransport(
         amount: applied.amount,
         payeeId: applied.payeeId,
         payeeName: null,
-        importedPayee: null,
+        importedPayee: applied.importedPayee ?? null,
         categoryId: applied.categoryId,
         categoryName: null,
         notes: applied.notes,
@@ -164,6 +172,7 @@ export function createReconciliationTransport(
           amount: input.amount,
           payeeId: input.payeeId,
           payeeName: input.payeeName,
+          importedPayee: input.importedPayee,
           categoryId: input.categoryId,
           notes: input.notes,
           cleared: input.cleared,
@@ -206,6 +215,7 @@ export function createReconciliationTransport(
                 categoryId: entry.categoryId,
                 notes: entry.notes,
                 cleared: entry.cleared,
+                importedPayee: entry.importedPayee,
               })),
               deleted: input.deleted,
             });

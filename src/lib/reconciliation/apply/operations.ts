@@ -30,6 +30,13 @@ export type CreateOperation = OperationBase & {
   amount: MinorUnitAmount;
   payeeName: string | null;
   payeeId: string | null;
+  /**
+   * The bank's own merchant text, written to Actual's `imported_payee`.
+   *
+   * Independent of `payeeName` and `notes` by design: it records what the bank
+   * called this transaction, whoever the user decides the payee is (RD-072 §2).
+   */
+  importedPayee: string | null;
   categoryId: string | null;
   notes: string | null;
   /** Marked as cleared on creation, when the user asked for that. */
@@ -62,6 +69,17 @@ export type UpdateOperation = OperationBase & {
    * fields differ.
    */
   cleared?: boolean;
+  /**
+   * Bank provenance to attach to an existing transaction (RD-072 §2.4).
+   *
+   * Deliberately outside `patch`: `patch` is what the *user* staged, carries
+   * per-field provenance, is subject to drift replay and the staging
+   * guardrails, and is what the review screen counts as a change. This is
+   * neither staged nor user-visible-as-an-edit — it is the bank's own text being
+   * recorded against a transaction whose payee, notes and category are left
+   * exactly as the user curated them.
+   */
+  importedPayee?: string | null;
 };
 
 export type DeleteOperation = OperationBase & {
@@ -166,6 +184,34 @@ export function planCounts(plan: ApplyPlan): Record<OperationKind, number> {
   const counts: Record<OperationKind, number> = { create: 0, update: 0, delete: 0 };
   for (const operation of plan.operations) counts[operation.kind] += 1;
   return counts;
+}
+
+/**
+ * Split the plan into changes the user staged and provenance the bank supplied.
+ *
+ * Both are writes and both are counted — hiding a write would be worse than
+ * over-reporting one. But they are not the same claim: "12 changes" and "37
+ * transactions gained their bank's merchant text" mean different things to
+ * someone deciding whether to press Apply, and reporting 49 changes would be
+ * the review screen misleading them (feature spec §39, RD-072 §2.4).
+ */
+export function classifyPlan(plan: ApplyPlan): {
+  userChanges: number;
+  enrichments: number;
+} {
+  let enrichments = 0;
+  for (const operation of plan.operations) {
+    if (operation.kind !== "update") continue;
+    if (isEnrichmentOnly(operation)) enrichments += 1;
+  }
+  return { userChanges: plan.operations.length - enrichments, enrichments };
+}
+
+/** True when an update exists only to record the bank's merchant text. */
+export function isEnrichmentOnly(operation: UpdateOperation): boolean {
+  if (operation.importedPayee == null) return false;
+  if (operation.cleared !== undefined) return false;
+  return Object.keys(operation.patch).length === 0;
 }
 
 /**

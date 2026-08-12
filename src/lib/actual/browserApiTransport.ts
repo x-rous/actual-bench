@@ -749,6 +749,11 @@ async function createBrowserTransactionsForSync(
       cleared: input.cleared ?? false,
     };
     if (input.importedId) payload.imported_id = input.importedId;
+    // The payee is resolved to an id above; this is the *source* text, which
+    // Actual stores separately. Sent only when supplied — Actual's own
+    // normalization would otherwise fall back to `payee_name`, which this
+    // transport does not send at all.
+    if (input.importedPayee != null) payload.imported_payee = input.importedPayee;
     // Grouped split (RD-057 §6): create children inline under this parent. Their
     // payees are resolved to ids the same way as the parent's.
     if (input.subtransactions && input.subtransactions.length > 0) {
@@ -837,6 +842,7 @@ async function updateBrowserTransactionForSync(
   if (input.categoryId !== undefined) fields.category = input.categoryId;
   if (input.notes !== undefined) fields.notes = input.notes;
   if (input.cleared !== undefined) fields.cleared = input.cleared;
+  if (input.importedPayee !== undefined) fields.imported_payee = input.importedPayee;
 
   await api.updateTransaction(input.transactionId, fields);
   if (input.returnApplied === false) return null;
@@ -894,6 +900,7 @@ async function batchWriteBrowserTransactionsForSync(
     if (entry.categoryId !== undefined) row.category = entry.categoryId;
     if (entry.notes !== undefined) row.notes = entry.notes;
     if (entry.cleared !== undefined) row.cleared = entry.cleared;
+    if (entry.importedPayee !== undefined) row.imported_payee = entry.importedPayee;
     return row;
   });
 
@@ -919,6 +926,7 @@ function appliedFromRow(row: ApiTransaction, fallbackDate: string): SyncAppliedS
     categoryId: asString(row.category) ?? null,
     payeeId: asString(row.payee) ?? null,
     notes: asString(row.notes) ?? null,
+    importedPayee: asString(row.imported_payee) ?? null,
   };
 }
 

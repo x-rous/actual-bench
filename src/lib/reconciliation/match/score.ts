@@ -16,6 +16,7 @@ import type {
   ScoredCandidate,
   StatementRow,
 } from "../types";
+import { statementText } from "../statement/text";
 import type { ActualIndex } from "./actualIndex";
 import { containmentSimilarity, normalizeForCompare, scoreText } from "./text";
 
@@ -128,7 +129,7 @@ export function scoreAmountMismatchCandidate(
   if (gap / larger > config.amountMismatchMaxRatio) return null;
 
   const text = scoreText(
-    row.description,
+    statementText(row),
     {
       payeeName: transaction.payeeName,
       importedPayee: transaction.importedPayee,
@@ -182,7 +183,7 @@ export function scoreSameMerchantCandidate(
   if (Math.sign(transaction.amount) !== Math.sign(row.amount)) return null;
 
   const text = scoreText(
-    row.description,
+    statementText(row),
     {
       payeeName: transaction.payeeName,
       importedPayee: transaction.importedPayee,
@@ -254,7 +255,7 @@ export function scoreCandidate(
 
   let tier: MatchTier = "amount-date";
 
-  if (referenceAppearsInNotes(row.reference, transaction.notes)) {
+  if (referenceAppearsInNotes(row.bankReference, transaction.notes)) {
     reasons.push({ kind: "reference", where: "notes" });
     tier = "reference-in-notes";
     // A verbatim reference hit is stronger than any text similarity, so it takes
@@ -262,7 +263,7 @@ export function scoreCandidate(
     score += POINTS.text;
   } else {
     const text = scoreText(
-      row.description,
+      statementText(row),
       {
         payeeName: transaction.payeeName,
         importedPayee: transaction.importedPayee,

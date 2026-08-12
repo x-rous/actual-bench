@@ -1,7 +1,10 @@
 import { parseStatementText } from "./parse";
 import {
-  DEFAULT_MAPPING,
+  DEFAULT_COLUMN_MAPPING,
+  DEFAULT_PARSE_CONFIG,
   detectDateFormat,
+  detectDelimitedConfig,
+  normalizeParseConfig,
   fingerprintRow,
   fingerprintStatement,
   normalizeStatement,
@@ -9,12 +12,35 @@ import {
   parseStatementDate,
   totalsFor,
   type ColumnMapping,
+  type StatementParseConfig,
 } from "./normalize";
 
 const makeId = (index: number) => `row-${index}`;
 
-function mapping(overrides: Partial<ColumnMapping> = {}): ColumnMapping {
-  return { ...DEFAULT_MAPPING, date: 0, description: 1, amount: 2, ...overrides };
+/**
+ * A parse config for the fixtures' usual shape: date, text, amount.
+ *
+ * Column overrides are accepted flat, because that is how these tests read —
+ * `mapping({ notes: 3 })` says which column, not how a value is interpreted.
+ */
+function mapping(
+  overrides: Partial<ColumnMapping> & Partial<Omit<StatementParseConfig, "columns">> = {}
+): StatementParseConfig {
+  const { date, importedPayee, notes, amount, debit, credit, reference, ...config } = overrides;
+  return {
+    ...DEFAULT_PARSE_CONFIG,
+    ...config,
+    columns: {
+      date: date ?? 0,
+      importedPayee:
+        importedPayee === undefined && "importedPayee" in overrides ? undefined : importedPayee ?? 1,
+      amount: amount === undefined && "amount" in overrides ? undefined : amount ?? 2,
+      notes,
+      debit,
+      credit,
+      reference,
+    },
+  };
 }
 
 describe("parseMoneyToMinorUnits — integer minor units, no floating point", () => {
@@ -281,7 +307,7 @@ describe("normalizeStatement", () => {
       ["Date,Description,Amount,Ref", "2026-07-01,TALABAT,-86.40,88721"].join("\n")
     );
     const result = normalizeStatement(table, mapping({ reference: 3 }), makeId);
-    expect(result.rows[0].reference).toBe("88721");
+    expect(result.rows[0].bankReference).toBe("88721");
   });
 
   it("leaves reference undefined when the column is blank", () => {
@@ -289,7 +315,7 @@ describe("normalizeStatement", () => {
       ["Date,Description,Amount,Ref", "2026-07-01,TALABAT,-86.40,"].join("\n")
     );
     const result = normalizeStatement(table, mapping({ reference: 3 }), makeId);
-    expect(result.rows[0].reference).toBeUndefined();
+    expect(result.rows[0].bankReference).toBeUndefined();
   });
 
   it("parses a tab-separated clipboard paste with no header", () => {
@@ -309,6 +335,242 @@ describe("normalizeStatement", () => {
     const table = parseStatementText("2026-07-01\tSHOP\t-10.00");
     const result = normalizeStatement(table, mapping(), makeId);
     expect(result.rows[0].raw).toEqual(["2026-07-01", "SHOP", "-10.00"]);
+  });
+});
+
+describe("two text channels (RD-072 §2.1)", () => {
+  it("maps a merchant column and a memo column to their own fields", () => {
+    const table = parseStatementText(
+      ["Date,Merchant,Memo,Amount", "2026-08-01,AMAZON AE,Online purchase,-125.50"].join("\n")
+    );
+    const result = normalizeStatement(
+      table,
+      mapping({ importedPayee: 1, notes: 2, amount: 3 }),
+      makeId
+    );
+
+    expect(result.rows[0]).toMatchObject({
+      importedPayee: "AMAZON AE",
+      bankNotes: "Online purchase",
+    });
+  });
+
+  it("leaves the bank notes undefined when the statement has one text column", () => {
+    const table = parseStatementText(
+      ["Date,Description,Amount", "2026-08-01,AMAZON AE,-125.50"].join("\n")
+    );
+    const result = normalizeStatement(table, mapping(), makeId);
+
+    expect(result.rows[0].importedPayee).toBe("AMAZON AE");
+    // Not a copy of the description: duplicating it here is a workflow choice
+    // made at Apply, not something the parser decides (RD-072 §2.3).
+    expect(result.rows[0].bankNotes).toBeUndefined();
+  });
+
+  it("leaves the merchant channel empty when no column is mapped to it", () => {
+    // A statement whose one text column is genuinely a memo: it goes to the
+    // notes alone rather than being duplicated into the provenance field.
+    const table = parseStatementText(
+      ["Date,Memo,Amount", "2026-08-01,Transfer to savings,-125.50"].join("\n")
+    );
+    const result = normalizeStatement(
+      table,
+      mapping({ importedPayee: undefined, notes: 1 }),
+      makeId
+    );
+
+    expect(result.errors).toEqual([]);
+    expect(result.rows[0].importedPayee).toBe("");
+    expect(result.rows[0].bankNotes).toBe("Transfer to savings");
+  });
+
+  it("recovers a foreign amount printed in the memo rather than the merchant text", () => {
+    const table = parseStatementText(
+      ["Date,Merchant,Memo,Amount", "2026-08-01,CARD PURCHASE,AIRALO AMSTERDAM NH USD24.50,-90.00"].join("\n")
+    );
+    const result = normalizeStatement(
+      table,
+      mapping({ importedPayee: 1, notes: 2, amount: 3 }),
+      makeId
+    );
+
+    expect(result.rows[0].originalAmount).toBe(-2450);
+    expect(result.rows[0].originalCurrency).toBe("USD");
+  });
+});
+
+describe("detectDelimitedConfig — the two text channels", () => {
+  it("separates a memo column from the merchant column", () => {
+    const config = detectDelimitedConfig(
+      parseStatementText(
+        ["Date,Merchant,Memo,Amount", "2026-08-01,AMAZON AE,Online purchase,-125.50"].join("\n")
+      )
+    );
+
+    expect(config.columns.importedPayee).toBe(1);
+    expect(config.columns.notes).toBe(2);
+  });
+
+  it("gives a lone text column to the merchant channel, not the memo", () => {
+    const config = detectDelimitedConfig(
+      parseStatementText(["Date,Narrative,Amount", "2026-08-01,AMAZON AE,-125.50"].join("\n"))
+    );
+
+    // `narrative` and `details` are used for the merchant at least as often as
+    // for a memo, so they belong to the channel that always has to be filled.
+    expect(config.columns.importedPayee).toBe(1);
+    expect(config.columns.notes).toBeUndefined();
+  });
+
+  it("reads an ambiguous label as the merchant when a real memo column follows it", () => {
+    const config = detectDelimitedConfig(
+      parseStatementText(
+        [
+          "Date,Transaction Details,Memo,Amount",
+          "2026-08-01,AMAZON AE,Online purchase,-125.50",
+        ].join("\n")
+      )
+    );
+
+    expect(config.columns.importedPayee).toBe(1);
+    expect(config.columns.notes).toBe(2);
+  });
+
+  it("prefers an exact header name over a substring hit", () => {
+    const config = detectDelimitedConfig(
+      parseStatementText(
+        [
+          "Date,Additional Information,Description,Amount",
+          "2026-08-01,Online purchase,AMAZON AE,-125.50",
+        ].join("\n")
+      )
+    );
+
+    expect(config.columns.importedPayee).toBe(2);
+    expect(config.columns.notes).toBe(1);
+  });
+
+  it("never claims one column as both channels", () => {
+    const config = detectDelimitedConfig(
+      parseStatementText(
+        ["Date,Transaction Details,Amount", "2026-08-01,AMAZON AE,-125.50"].join("\n")
+      )
+    );
+
+    expect(config.columns.notes).not.toBe(config.columns.importedPayee);
+    expect(config.columns.importedPayee).toBe(1);
+  });
+
+  it("treats a column named Reference Text as the memo, not the reference", () => {
+    // `reference` matches inside `reference text`, so the reference detector
+    // used to claim it — and since the reference is barred from both text
+    // channels, the bank's memo was lost outright.
+    const config = detectDelimitedConfig(
+      parseStatementText(
+        [
+          "Date,Description,Reference Text,Amount",
+          "2026-08-01,AMAZON AE,Online purchase,-125.50",
+        ].join("\n")
+      )
+    );
+
+    expect(config.columns.notes).toBe(2);
+    expect(config.columns.reference).toBeUndefined();
+    expect(config.columns.importedPayee).toBe(1);
+  });
+
+  it("picks up a reference column and keeps it out of the text channels", () => {
+    const config = detectDelimitedConfig(
+      parseStatementText(
+        ["Date,Description,Reference,Amount", "2026-08-01,TALABAT,88721,-86.40"].join("\n")
+      )
+    );
+
+    expect(config.columns.reference).toBe(2);
+    expect(config.columns.importedPayee).toBe(1);
+  });
+
+  it("reads a tab-separated paste with a merchant and a memo column", () => {
+    const table = parseStatementText(
+      [
+        "Date\tDescription\tMemo\tDebit\tCredit",
+        "01/08/2026\tAMAZON AE\tOnline purchase\t125.50\t",
+        "05/08/2026\tSALARY\t\t\t5000.00",
+      ].join("\n")
+    );
+    const config = detectDelimitedConfig(table);
+    const result = normalizeStatement(table, config, makeId);
+
+    expect(table.delimiter).toBe("\t");
+    expect(config.signConvention).toBe("debit-credit");
+    expect(result.rows.map((row) => [row.importedPayee, row.bankNotes, row.amount])).toEqual([
+      ["AMAZON AE", "Online purchase", -12550],
+      ["SALARY", undefined, 500000],
+    ]);
+  });
+});
+
+describe("normalizeParseConfig", () => {
+  it("fills in a configuration that is missing everything", () => {
+    // What a saved profile written by an older version — or one whose migration
+    // was skipped over a JSON error — can look like on the way back in.
+    expect(normalizeParseConfig({})).toEqual(DEFAULT_PARSE_CONFIG);
+  });
+
+  it("survives values that are not objects at all", () => {
+    for (const value of [null, undefined, 42, "config", []]) {
+      expect(normalizeParseConfig(value)).toEqual(DEFAULT_PARSE_CONFIG);
+    }
+  });
+
+  it("gives a profile with no columns the default mapping rather than an empty one", () => {
+    // An unmapped date column parses nothing, so an empty mapping is worse than
+    // a wrong one the user can see and correct.
+    const config = normalizeParseConfig({ format: "delimited", dateFormat: "dmy" });
+    expect(config.columns).toEqual(DEFAULT_COLUMN_MAPPING);
+    expect(config.dateFormat).toBe("dmy");
+  });
+
+  it("keeps the values a real profile carries", () => {
+    const saved = {
+      format: "qif",
+      columns: { date: 2, importedPayee: 0, notes: 3, amount: 4, reference: 5 },
+      dateFormat: "mdy",
+      signConvention: "debit-credit",
+      decimalSeparator: ",",
+      minorUnitDigits: 3,
+      detectOriginalCurrencyAmount: false,
+      swapPayeeAndMemo: true,
+      fallbackPayeeToMemo: false,
+    };
+
+    expect(normalizeParseConfig(saved)).toEqual(saved);
+  });
+
+  it("preserves a deliberately unmapped merchant column", () => {
+    const config = normalizeParseConfig({ columns: { date: 0, notes: 1, amount: 2 } });
+    expect(config.columns.importedPayee).toBeUndefined();
+    expect(config.columns.notes).toBe(1);
+  });
+
+  it("rejects values of the wrong shape rather than trusting them", () => {
+    const config = normalizeParseConfig({
+      format: "spreadsheet",
+      columns: { date: "first", importedPayee: -1, notes: 1.5 },
+      dateFormat: "yyyy",
+      signConvention: "reversed",
+      minorUnitDigits: 99,
+      swapPayeeAndMemo: "yes",
+    });
+
+    expect(config.format).toBe("delimited");
+    expect(config.columns.date).toBe(DEFAULT_COLUMN_MAPPING.date);
+    expect(config.columns.importedPayee).toBeUndefined();
+    expect(config.columns.notes).toBeUndefined();
+    expect(config.dateFormat).toBe("iso");
+    expect(config.signConvention).toBe("signed");
+    expect(config.minorUnitDigits).toBe(2);
+    expect(config.swapPayeeAndMemo).toBe(false);
   });
 });
 

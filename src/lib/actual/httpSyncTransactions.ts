@@ -177,6 +177,7 @@ function appliedFromRaw(row: RawHttpTransaction): SyncAppliedSnapshot {
     categoryId: row.category ?? null,
     payeeId: row.payee ?? null,
     notes: row.notes ?? null,
+    importedPayee: row.imported_payee ?? null,
   };
 }
 
@@ -215,6 +216,7 @@ export async function updateHttpTransactionForSync(
   if (input.categoryId !== undefined) transaction.category = input.categoryId;
   if (input.notes !== undefined) transaction.notes = input.notes;
   if (input.cleared !== undefined) transaction.cleared = input.cleared;
+  if (input.importedPayee !== undefined) transaction.imported_payee = input.importedPayee;
 
   await apiRequest(connection, `/transactions/${input.transactionId}`, {
     method: "PATCH",
@@ -256,7 +258,7 @@ export async function createHttpTransactionsForSync(
   }
 
   type ApiSub = { amount: number; category: string | null; payee: string | null; notes: string | null };
-  type ApiInsert = { date: string; amount: number; payee: string | null; category: string | null; notes: string | null; cleared: boolean; imported_id: string | null; subtransactions?: ApiSub[] };
+  type ApiInsert = { date: string; amount: number; payee: string | null; category: string | null; notes: string | null; cleared: boolean; imported_id: string | null; imported_payee?: string | null; subtransactions?: ApiSub[] };
   type Entry = { index: number; input: SyncTargetTransactionInput; payload: ApiInsert; payeeId: string | null };
   const byAccount = new Map<string, { entries: Entry[]; minDate: string; maxDate: string }>();
   for (let index = 0; index < inputs.length; index++) {
@@ -272,6 +274,10 @@ export async function createHttpTransactionsForSync(
       cleared: input.cleared ?? false,
       imported_id: input.importedId ?? null,
     };
+    // The bank's own merchant text, kept apart from the resolved payee id. The
+    // `Transaction` schema this endpoint accepts declares the field, and Actual
+    // preserves an explicitly supplied value through its normalization.
+    if (input.importedPayee != null) payload.imported_payee = input.importedPayee;
     // Grouped split (RD-057 §6): actual-http-api accepts inline subtransactions.
     if (input.subtransactions && input.subtransactions.length > 0) {
       payload.subtransactions = [];
@@ -314,7 +320,7 @@ export async function createHttpTransactionsForSync(
         importedId: marker,
         resolvedPayeeId: entry.payeeId,
         applied: row
-          ? { amount: num(row.amount), date: row.date, cleared: row.cleared === true, categoryId: row.category ?? null, payeeId: row.payee ?? null, notes: row.notes ?? null }
+          ? { amount: num(row.amount), date: row.date, cleared: row.cleared === true, categoryId: row.category ?? null, payeeId: row.payee ?? null, notes: row.notes ?? null, importedPayee: row.imported_payee ?? null }
           : null,
       };
     }

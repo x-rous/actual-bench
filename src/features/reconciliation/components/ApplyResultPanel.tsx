@@ -14,6 +14,7 @@ import type {
   StatementRow,
 } from "@/lib/reconciliation/types";
 import type { VerificationReport } from "@/lib/reconciliation/apply/verification";
+import { statementText } from "@/lib/reconciliation/statement/text";
 
 /**
  * What actually happened (feature spec §40).
@@ -75,7 +76,7 @@ export function ApplyResultPanel({
     const item = itemById.get(itemId);
     if (!item) return "A transaction";
     const row = statementRows.get(item.statementRowIds[0] ?? "");
-    if (row) return `${row.postedDate} · ${row.description}`;
+    if (row) return `${row.postedDate} · ${statementText(row)}`;
     const transaction = transactions.get(item.actualTransactionIds[0] ?? "");
     if (transaction) {
       return `${transaction.date} · ${transaction.payeeName ?? transaction.notes ?? "transaction"}`;
@@ -254,8 +255,17 @@ export function ApplyResultPanel({
                       <td className="whitespace-nowrap px-3 py-1 tabular-nums text-muted-foreground">
                         {statementRow ? formatShortDate(statementRow.postedDate) : "-"}
                       </td>
-                      <td className="max-w-0 truncate px-3 py-1" title={statementRow?.description}>
-                        {statementRow?.description ?? "-"}
+                      <td
+                        className="max-w-0 truncate px-3 py-1"
+                        title={
+                          statementRow
+                            ? [statementRow.importedPayee, statementRow.bankNotes]
+                                .filter(Boolean)
+                                .join(" · ")
+                            : undefined
+                        }
+                      >
+                        {statementText(statementRow) || "-"}
                       </td>
                       <td className="whitespace-nowrap px-3 py-1 text-right tabular-nums">
                         {statementRow ? formatMinorUnits(statementRow.amount) : "-"}
@@ -284,10 +294,7 @@ export function ApplyResultPanel({
                             {pending?.date ? formatShortDate(pending.date) : "-"}
                           </td>
                           <td className="max-w-0 truncate px-3 py-1">
-                            {payeeName(pending?.payeeId ?? null) ??
-                              (pending?.isNew && applyConfig.descriptionTarget === "payee"
-                                ? statementRow?.description ?? "-"
-                                : "-")}
+                            {payeeName(pending?.payeeId ?? null) ?? pending?.payeeName ?? "-"}
                           </td>
                           <td className="max-w-0 truncate px-3 py-1" title={pending?.notes ?? undefined}>
                             {pending?.notes ?? "-"}

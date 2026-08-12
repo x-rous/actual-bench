@@ -31,6 +31,12 @@ export type TransactionCreateDraft = {
   amount: MinorUnitAmount;
   payeeId?: string | null;
   payeeName?: string | null;
+  /**
+   * The bank's own merchant text (Actual `imported_payee`). Sent alongside a
+   * resolved `payeeId`, not instead of it: the two answer different questions
+   * (RD-072 §2).
+   */
+  importedPayee?: string | null;
   categoryId?: string | null;
   notes?: string | null;
   cleared?: boolean;
@@ -52,6 +58,13 @@ export type TransactionUpdateInput = {
   categoryId?: string | null;
   notes?: string | null;
   cleared?: boolean;
+  /**
+   * Bank provenance attached to an existing transaction (RD-072 §2.4).
+   *
+   * `undefined` leaves it alone — which is what every other reconciliation
+   * update does, since nothing else here has any business rewriting it.
+   */
+  importedPayee?: string | null;
 };
 
 export type CreatedTransaction = {
@@ -67,6 +80,7 @@ export type AppliedSnapshot = {
   categoryId: string | null;
   payeeId: string | null;
   notes: string | null;
+  importedPayee?: string | null;
 };
 
 /**

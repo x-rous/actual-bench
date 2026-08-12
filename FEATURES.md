@@ -127,8 +127,11 @@ A workbench for checking a bank statement against an account in Actual and settl
 
 ### Importing a statement
 
-- Paste or upload CSV/TSV; the delimiter is detected by column consistency rather than character frequency, and a header row is recognised by the absence of a usable date and amount
+- Paste rows, or upload **CSV/TSV, OFX/QFX, or QIF** — the format is recognised from the file's own content, so a `.txt` holding an OFX export is still read as OFX and a `.qfx` goes through the OFX path
+- For delimited files the delimiter is detected by column consistency rather than character frequency, and a header row is recognised by the absence of a usable date and amount
 - Column mapping is detected, including the common **separate Debit and Credit columns** layout — a statement that reports outflows in their own column is not treated as a set of positive amounts
+- **The statement's two text channels are kept apart**: the bank's merchant/description text and its memo/details field map to separate fields, so a statement carrying both no longer loses one of them. Either channel can be left unmapped — a statement whose one text column is really a memo maps it to Notes alone, and the panel states what that costs. Structured formats state the split themselves (OFX `NAME`/`MEMO`, QIF `P`/`M`), with the payee/memo **swap** and **fallback** repairs available for banks that fill them the wrong way round or leave the payee empty
+- OFX/QFX transaction ids (`FITID`) are kept as statement metadata and used as matching evidence; they are never written as Actual's `imported_id`, which carries the deterministic retry marker
 - Foreign-currency rows keep the **original amount and currency** the bank printed alongside the converted amount that actually posted
 - Amounts are parsed as integer minor units throughout — never via floating point
 - Sessions are persistent: import today, decide over several sittings, apply when you are ready. Each session records its statement, its decisions, and what was written
@@ -163,7 +166,9 @@ Exact signed amount is a hard requirement for an automatic match. Text never *fi
 
 - Statement row by statement row, what each will look like in the budget afterwards, with changed values marked and carrying their previous value
 - The **effect on the account balance** is stated before the fact
-- Choose where the bank's description goes on a created transaction (payee or notes), and which transactions to mark cleared
+- **Imported Payee, Payee and Notes are three independent fields**, as they are in Actual. A created transaction always records the bank's own merchant text as its **imported payee** — provenance that survives whatever payee you settle on — while the payee and the notes are chosen separately: resolve the merchant text into a payee or leave it to your rules, and take the notes from the bank's memo, from the merchant text as well, or from neither
+- A matched existing transaction can be given the bank's merchant text too, **keeping its payee, notes and category exactly as they are** (rows reconciled in Actual are skipped). These provenance writes are counted and named separately from the changes you staged, so the Apply button never reports 49 changes when 12 were yours
+- Choose which transactions to mark cleared
 - **Before anything is written, every affected row is re-read and compared against what the session loaded.** A note edited in Actual in the meantime has the staged change replayed onto the current text rather than overwriting it; an amount or date corrected in Actual is left as Actual has it rather than reverted; and where a change cannot be reconciled safely, the row is held back and reported instead of applied
 - Created transactions carry a deterministic marker, so retrying after a partial failure never creates the same transaction twice — even if the session's own record of the run was lost
 - Updates and deletes are written in a single batched call where the transport supports it
