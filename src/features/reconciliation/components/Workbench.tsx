@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FileCheck, RefreshCw, Search, SlidersHorizontal, Wand2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { MultiPillGroup, PillGroup } from "@/components/ui/pill-group";
 import { cn } from "@/lib/utils";
 import { REASON, REVIEW_REASONS } from "@/lib/reconciliation/session/build";
@@ -23,7 +24,7 @@ import type { TransformContext } from "@/lib/reconciliation/transform/rules";
 import type { StagedPatch } from "@/lib/reconciliation/types";
 import { useTableSelection } from "@/hooks/useTableSelection";
 import { BulkDecisionBar } from "./BulkDecisionBar";
-import { CoverageSummary, DecisionProgressMeter } from "./CoverageSummary";
+import { CoverageSummary, DecisionProgressStrip } from "./CoverageSummary";
 import { Inspector } from "./Inspector";
 import { MatchOptions } from "./MatchOptions";
 import { ShortcutsHelp } from "./ShortcutsHelp";
@@ -724,17 +725,42 @@ export function Workbench({
             <Wand2 className="mr-1 h-3.5 w-3.5" />
             Transform
           </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            aria-expanded={optionsOpen}
-            disabled={readOnly}
-            title={readOnly ? rematchBlockedReason ?? undefined : undefined}
-            onClick={() => setOptionsOpen((open) => !open)}
-          >
-            <SlidersHorizontal className="mr-1 h-3.5 w-3.5" />
-            Matching
-          </Button>
+          {/*
+            Anchored to its own button rather than inserted above the grid: as a
+            full-width block these settings pushed the comparison table — the
+            thing being worked on — off the screen every time they were opened.
+          */}
+          <Popover open={optionsOpen} onOpenChange={setOptionsOpen}>
+            <PopoverTrigger
+              render={
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={readOnly}
+                  title={readOnly ? rematchBlockedReason ?? undefined : undefined}
+                >
+                  <SlidersHorizontal className="mr-1 h-3.5 w-3.5" />
+                  Matching
+                </Button>
+              }
+            />
+            <PopoverContent align="end" className="w-[26rem] max-w-[90vw] p-3">
+              <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Matching
+              </h3>
+              <div className="max-h-[60vh] overflow-auto">
+                <MatchOptions
+                  config={matchConfig}
+                  preset={matchPreset}
+                  onChange={onMatchConfigChange}
+                  headingLevel="none"
+                />
+              </div>
+              <p className="mt-2 border-t border-border/50 pt-2 text-[11px] text-muted-foreground">
+                Changing these does not re-match on its own - choose Re-run when you are ready.
+              </p>
+            </PopoverContent>
+          </Popover>
           <Button
             size="sm"
             variant="outline"
@@ -770,8 +796,6 @@ export function Workbench({
           onChange={setDecisionFilter}
         />
 
-        <DecisionProgressMeter coverage={coverage} />
-
         <span className="ml-2 text-muted-foreground">Show only</span>
         <MultiPillGroup
           options={ATTRIBUTE_FILTERS.map((entry) => ({ value: entry.id, label: entry.label }))}
@@ -780,20 +804,14 @@ export function Workbench({
           emptyMeansAll={false}
         />
 
-        <div className="ml-auto flex items-center gap-2">
-          <Button size="sm" variant="ghost" className="h-6 text-xs" onClick={goToNextUndecided}>
-            Next undecided
-            <kbd className="ml-1.5 rounded border border-border px-1 text-[11px]">n</kbd>
-          </Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            className="h-6 text-xs"
-            aria-label="Keyboard shortcuts"
-            onClick={() => setShortcutsOpen(true)}
-          >
-            <kbd className="rounded border border-border px-1 text-[11px]">?</kbd>
-          </Button>
+        {/* The decision queue sits with the filters that narrow it, not up in
+            the coverage header: this row is where the user works the queue. */}
+        <div className="ml-auto flex flex-wrap items-center gap-x-3 gap-y-1">
+          <DecisionProgressStrip
+            coverage={coverage}
+            onNextUndecided={goToNextUndecided}
+            onShowShortcuts={() => setShortcutsOpen(true)}
+          />
           <span className="tabular-nums text-muted-foreground">
             {visible.length} of {items.length} rows
           </span>
@@ -814,15 +832,6 @@ export function Workbench({
             clearSelection();
           }}
         />
-      )}
-
-      {optionsOpen && (
-        <div className="border-b border-border/50 px-4 py-3">
-          <MatchOptions config={matchConfig} preset={matchPreset} onChange={onMatchConfigChange} />
-          <p className="mt-2 text-[11px] text-muted-foreground">
-            Changing these does not re-match on its own - choose Re-run when you are ready.
-          </p>
-        </div>
       )}
 
       <div className="flex min-h-0 flex-1">

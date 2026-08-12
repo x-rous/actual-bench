@@ -1131,47 +1131,49 @@ export function ReconciliationView() {
 
       return (
         <PageLayout
-          title="Bank Reconciliation"
-          actions={
-            <PhaseNav
-              back={
-                // Only when there is a workbench to go back to. On a first
-                // import there is no previous phase; leaving is what the exit
-                // in the header is for.
-                hasParsedStatement
-                  ? {
-                      label: "Back to the workbench",
-                      onClick: () => setScreen({ name: "workbench", sessionId: screen.sessionId }),
-                      disabled: isMatching,
-                    }
-                  : undefined
+          header={
+            <SessionHeader
+              session={sessionQuery.data?.session}
+              current="import"
+              // Navigable only once the session has a statement to go back to.
+              // On a first import there is no workbench yet, so the steps would
+              // lead nowhere.
+              onNavigate={
+                hasParsedStatement ? (step) => goToStep(step, screen.sessionId) : undefined
               }
-              next={{
-                label: isMatching ? "Matching…" : "Match against Actual",
-                progress: matchStage,
-                onClick: () => {
-                  if (pendingStatement) {
-                    void handleParsed(pendingStatement.result, pendingStatement.fileName);
+              onExit={() => setScreen({ name: "home" })}
+              actions={
+                <PhaseNav
+                  back={
+                    // Only when there is a workbench to go back to. On a first
+                    // import there is no previous phase; leaving is what the
+                    // exit in the header is for.
+                    hasParsedStatement
+                      ? {
+                          label: "Back to the workbench",
+                          onClick: () =>
+                            setScreen({ name: "workbench", sessionId: screen.sessionId }),
+                          disabled: isMatching,
+                        }
+                      : undefined
                   }
-                },
-                disabled: !pendingStatement,
-                busy: isMatching,
-              }}
+                  next={{
+                    label: isMatching ? "Matching…" : "Match against Actual",
+                    progress: matchStage,
+                    onClick: () => {
+                      if (pendingStatement) {
+                        void handleParsed(pendingStatement.result, pendingStatement.fileName);
+                      }
+                    },
+                    disabled: !pendingStatement,
+                    busy: isMatching,
+                  }}
+                />
+              }
             />
           }
           scrollManaged
         >
-          <SessionHeader
-            session={sessionQuery.data?.session}
-            current="import"
-            // Navigable only once the session has a statement to go back to.
-            // On a first import there is no workbench yet, so the steps would
-            // lead nowhere.
-            onNavigate={
-              hasParsedStatement ? (step) => goToStep(step, screen.sessionId) : undefined
-            }
-            onExit={() => setScreen({ name: "home" })}
-          />
           {matchError && (
             <p role="alert" className="px-4 pt-3 text-xs text-destructive">
               {matchError}
@@ -1179,6 +1181,15 @@ export function ReconciliationView() {
           )}
           <ImportPanel
             accountName={screen.accountName}
+            previousStatement={
+              sessionQuery.data?.session.statementName
+                ? {
+                    name: sessionQuery.data.session.statementName,
+                    start: sessionQuery.data.session.statementStart,
+                    end: sessionQuery.data.session.statementEnd,
+                  }
+                : null
+            }
             matchConfig={matchConfig}
             matchPreset={matchPreset}
             profiles={profilesQuery.data ?? []}
@@ -1230,70 +1241,70 @@ export function ReconciliationView() {
 
       return (
         <PageLayout
-          title="Bank Reconciliation"
-          actions={
-            <PhaseNav
-              back={{
-                label: "Back to the workbench",
-                disabled: isApplying || isCheckingDrift,
-                onClick: () => {
-                  setDriftReport(null);
-                  setDriftAcknowledged(false);
-                  setScreen({ name: "workbench", sessionId: screen.sessionId });
-                },
-              }}
-              /*
-               * Finishing is a step, and it had no button. On the result screen
-               * the primary slot stood empty exactly when the user was most
-               * likely to be done, so leaving meant retreating through the
-               * workbench — a screen an applied session can no longer use.
-               */
-              secondary={
-                screen.name === "result" && applyResult && !applyResult.complete
-                  ? { label: "Done", onClick: () => setScreen({ name: "home" }) }
-                  : undefined
-              }
-              next={
-                screen.name === "review"
-                  ? {
-                      label: applyButtonLabel,
-                      onClick: () => void handleApply(),
-                      disabled: applicableChanges === 0,
-                      busy: isApplying || isCheckingDrift,
-                      progress: isCheckingDrift
-                        ? "Checking what has changed in Actual…"
-                        : applyProgress
-                          ? `Writing ${applyProgress.done} of ${applyProgress.total}…`
-                          : null,
-                    }
-                  : applyResult && !applyResult.complete
-                    ? {
-                        // Still something to put right, so retrying stays the
-                        // primary and finishing sits beside it.
-                        label: "Retry what failed",
-                        onClick: () => void handleApply(),
-                        busy: isApplying,
-                      }
-                    : {
-                        label: "Done",
-                        onClick: () => setScreen({ name: "home" }),
-                      }
+          header={
+            <SessionHeader
+              session={session}
+              current={screen.name === "review" ? "review" : "applied"}
+              period={period}
+              statementName={statementName}
+              onNavigate={(step) => goToStep(step, screen.sessionId)}
+              blockedSteps={rematchBlockedReason ? { import: rematchBlockedReason } : undefined}
+              onExit={() => setScreen({ name: "home" })}
+              actions={
+                <PhaseNav
+                  back={{
+                    label: "Back to the workbench",
+                    disabled: isApplying || isCheckingDrift,
+                    onClick: () => {
+                      setDriftReport(null);
+                      setDriftAcknowledged(false);
+                      setScreen({ name: "workbench", sessionId: screen.sessionId });
+                    },
+                  }}
+                  /*
+                   * Finishing is a step, and it had no button. On the result
+                   * screen the primary slot stood empty exactly when the user
+                   * was most likely to be done, so leaving meant retreating
+                   * through the workbench — a screen an applied session can no
+                   * longer use.
+                   */
+                  secondary={
+                    screen.name === "result" && applyResult && !applyResult.complete
+                      ? { label: "Done", onClick: () => setScreen({ name: "home" }) }
+                      : undefined
+                  }
+                  next={
+                    screen.name === "review"
+                      ? {
+                          label: applyButtonLabel,
+                          onClick: () => void handleApply(),
+                          disabled: applicableChanges === 0,
+                          busy: isApplying || isCheckingDrift,
+                          progress: isCheckingDrift
+                            ? "Checking what has changed in Actual…"
+                            : applyProgress
+                              ? `Writing ${applyProgress.done} of ${applyProgress.total}…`
+                              : null,
+                        }
+                      : applyResult && !applyResult.complete
+                        ? {
+                            // Still something to put right, so retrying stays
+                            // the primary and finishing sits beside it.
+                            label: "Retry what failed",
+                            onClick: () => void handleApply(),
+                            busy: isApplying,
+                          }
+                        : {
+                            label: "Done",
+                            onClick: () => setScreen({ name: "home" }),
+                          }
+                  }
+                />
               }
             />
           }
           scrollManaged
         >
-          <SessionHeader
-            session={session}
-            current={screen.name === "review" ? "review" : "applied"}
-            period={period}
-            statementName={statementName}
-            onNavigate={(step) => goToStep(step, screen.sessionId)}
-            blockedSteps={
-              rematchBlockedReason ? { import: rematchBlockedReason } : undefined
-            }
-            onExit={() => setScreen({ name: "home" })}
-          />
           {matchError && (
             <p role="alert" className="px-4 pt-3 text-xs text-destructive">
               {matchError}
@@ -1352,48 +1363,48 @@ export function ReconciliationView() {
 
       return (
         <PageLayout
-          title="Bank Reconciliation"
-          actions={
-            <PhaseNav
-              secondary={
-                session
-                  ? {
-                      label: "Import again",
-                      onClick: () => reimport(session),
-                      // Refused on an applied session for the same reason
-                      // re-running the match is: importing again rebuilds the
-                      // rows, which orphans the record of what was written and
-                      // would offer the same transactions for a second write.
-                      disabled: isMatching || Boolean(rematchBlockedReason),
-                      title: rematchBlockedReason ?? undefined,
-                    }
-                  : undefined
+          header={
+            <SessionHeader
+              session={session}
+              current="reconcile"
+              period={period}
+              statementName={statementName}
+              onNavigate={(step) => goToStep(step, screen.sessionId)}
+              blockedSteps={rematchBlockedReason ? { import: rematchBlockedReason } : undefined}
+              onExit={() => setScreen({ name: "home" })}
+              actions={
+                <PhaseNav
+                  secondary={
+                    session
+                      ? {
+                          label: "Import again",
+                          onClick: () => reimport(session),
+                          // Refused on an applied session for the same reason
+                          // re-running the match is: importing again rebuilds
+                          // the rows, which orphans the record of what was
+                          // written and would offer the same transactions for a
+                          // second write.
+                          disabled: isMatching || Boolean(rematchBlockedReason),
+                          title: rematchBlockedReason ?? undefined,
+                        }
+                      : undefined
+                  }
+                  next={{
+                    label:
+                      applyPlan.operations.length === 0
+                        ? "Nothing to review"
+                        : `Review ${applyPlan.operations.length} change${
+                            applyPlan.operations.length === 1 ? "" : "s"
+                          }`,
+                    onClick: () => setScreen({ name: "review", sessionId: screen.sessionId }),
+                    disabled: applyPlan.operations.length === 0,
+                  }}
+                />
               }
-              next={{
-                label:
-                  applyPlan.operations.length === 0
-                    ? "Nothing to review"
-                    : `Review ${applyPlan.operations.length} change${
-                        applyPlan.operations.length === 1 ? "" : "s"
-                      }`,
-                onClick: () => setScreen({ name: "review", sessionId: screen.sessionId }),
-                disabled: applyPlan.operations.length === 0,
-              }}
             />
           }
           scrollManaged
         >
-          <SessionHeader
-            session={session}
-            current="reconcile"
-            period={period}
-            statementName={statementName}
-            onNavigate={(step) => goToStep(step, screen.sessionId)}
-            blockedSteps={
-              rematchBlockedReason ? { import: rematchBlockedReason } : undefined
-            }
-            onExit={() => setScreen({ name: "home" })}
-          />
           {matchError && (
             <p role="alert" className="px-4 pt-3 text-xs text-destructive">
               {matchError}

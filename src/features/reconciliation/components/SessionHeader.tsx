@@ -107,6 +107,15 @@ export type SessionHeaderProps = {
    * than one that is plainly unavailable.
    */
   blockedSteps?: Partial<Record<SessionStep, string>>;
+  /**
+   * The phase actions for this screen — normally a `PhaseNav`.
+   *
+   * Carried here rather than by the page toolbar so identity, position and next
+   * action share one row. As two rows, the title bar and the session bar each
+   * held part of the answer to "where am I and what happens next", and the
+   * pairing changed shape from phase to phase.
+   */
+  actions?: React.ReactNode;
 };
 
 export function SessionHeader({
@@ -117,50 +126,70 @@ export function SessionHeader({
   onNavigate,
   blockedSteps,
   onExit,
+  actions,
 }: SessionHeaderProps) {
   const status = session?.status ?? "draft";
   const reached = reachedIndex(status);
   const currentIndex = STEPS.findIndex((step) => step.id === current);
   const outcome = outcomeLabel(status);
 
-  const start = period?.start ?? session?.statementStart;
-  const end = period?.end ?? session?.statementEnd;
+  /*
+   * The Import screen owns the statement's identity while you are choosing one,
+   * so this header stays out of it there. Showing both is how a discarded file
+   * leaves a stale name and period sitting above a screen that says "no
+   * statement loaded yet", and how a re-import shows two statements at once.
+   */
+  const showsStatement = current !== "import";
+  const start = showsStatement ? period?.start ?? session?.statementStart : null;
+  const end = showsStatement ? period?.end ?? session?.statementEnd : null;
+  const statement = showsStatement ? statementName ?? session?.statementName : null;
 
+  /*
+   * One row, three fixed areas: which reconciliation you are in, where you are
+   * in it, and what you can do next. A grid rather than a flex row so the steps
+   * stay centred whatever the account is called and however many buttons the
+   * phase offers — with flex they drifted as the sides changed width, and
+   * staying put is the one thing a progress indicator has to do.
+   */
   return (
-    <div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-b border-border/50 px-4 py-2">
-      {onExit && (
-        <Button
-          variant="ghost"
-          size="sm"
-          className="-ml-2 h-7 shrink-0 text-muted-foreground hover:text-foreground"
-          onClick={onExit}
-        >
-          <ArrowLeft className="mr-1 h-3.5 w-3.5" />
-          All reconciliations
-        </Button>
-      )}
+    <div className="grid shrink-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-x-3 border-b border-border/50 px-4 py-2">
+      <div className="flex min-w-0 items-center gap-x-2">
+        {onExit && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="-ml-2 h-7 shrink-0 text-muted-foreground hover:text-foreground"
+            onClick={onExit}
+          >
+            <ArrowLeft className="mr-1 h-3.5 w-3.5" />
+            All reconciliations
+          </Button>
+        )}
 
-      <div className="flex flex-wrap items-baseline gap-x-2">
-        <span className="text-sm font-semibold">{session?.accountName ?? "Reconciliation"}</span>
-        {session?.tag && (
-          <Badge variant="outline" className="text-[11px]">
-            {session.tag}
-          </Badge>
-        )}
-        {start && end && (
-          <span className="text-xs tabular-nums text-muted-foreground">
-            {start} → {end}
+        <div className="flex min-w-0 items-baseline gap-x-2">
+          <span className="truncate text-sm font-semibold">
+            {session?.accountName ?? "Reconciliation"}
           </span>
-        )}
-        {(statementName ?? session?.statementName) && (
-          <span className="text-xs text-muted-foreground">
-            · {statementName ?? session?.statementName}
-          </span>
-        )}
+          {session?.tag && (
+            <Badge variant="outline" className="shrink-0 text-[11px]">
+              {session.tag}
+            </Badge>
+          )}
+          {start && end && (
+            <span className="whitespace-nowrap text-xs tabular-nums text-muted-foreground">
+              {start} → {end}
+            </span>
+          )}
+          {statement && (
+            <span className="truncate text-xs text-muted-foreground" title={statement}>
+              · {statement}
+            </span>
+          )}
+        </div>
       </div>
 
       <ol
-        className="ml-auto flex flex-wrap items-center gap-1"
+        className="flex items-center gap-1"
         aria-label={`Progress: ${STEPS[currentIndex]?.label ?? ""}`}
       >
         {STEPS.map((step, index) => {
@@ -239,6 +268,10 @@ export function SessionHeader({
           );
         })}
       </ol>
+
+      {/* The forward action stays at the far right on every phase, so "what
+          happens next" is always in the same place. */}
+      <div className="flex min-w-0 items-center justify-end gap-2">{actions}</div>
     </div>
   );
 }

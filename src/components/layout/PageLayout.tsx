@@ -2,8 +2,17 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 interface PageLayoutProps {
-  /** Page heading shown in the toolbar left side */
-  title: string;
+  /** Page heading shown in the toolbar left side. Omit only when passing `header`. */
+  title?: string;
+  /**
+   * A complete toolbar row, replacing the default title/count/actions one.
+   *
+   * For a page whose header is not "a name and some buttons" — a workflow that
+   * carries its own identity, position and next action across several screens,
+   * and would otherwise stack a second header row beneath this one. The header
+   * owns its own padding and bottom border.
+   */
+  header?: React.ReactNode;
   /** Optional subtitle / count string shown next to the title */
   count?: string;
   /** Action buttons rendered in the toolbar right side */
@@ -56,6 +65,7 @@ function SkeletonRows() {
  */
 export function PageLayout({
   title,
+  header,
   count,
   actions,
   isLoading,
@@ -96,17 +106,19 @@ export function PageLayout({
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
       {/* Toolbar - always visible regardless of loading/error state */}
-      <div className="flex shrink-0 items-center justify-between gap-3 border-b border-border px-4 py-2">
-        <div className="flex items-center gap-2">
-          <h1 className="text-sm font-semibold">{title}</h1>
-          {count && (
-            <span className="text-xs text-muted-foreground">{count}</span>
+      {header ?? (
+        <div className="flex shrink-0 items-center justify-between gap-3 border-b border-border px-4 py-2">
+          <div className="flex items-center gap-2">
+            <h1 className="text-sm font-semibold">{title}</h1>
+            {count && (
+              <span className="text-xs text-muted-foreground">{count}</span>
+            )}
+          </div>
+          {actions && (
+            <div className="flex items-center gap-2">{actions}</div>
           )}
         </div>
-        {actions && (
-          <div className="flex items-center gap-2">{actions}</div>
-        )}
-      </div>
+      )}
 
       {/* Content area */}
       {(isLoading || isError || emptyState) ? (
