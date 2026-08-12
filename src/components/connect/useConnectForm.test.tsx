@@ -2,7 +2,11 @@ import React from "react";
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useConnectForm } from "./useConnectForm";
-import { useConnectionStore, type ConnectionInstance } from "@/store/connection";
+import {
+  useConnectionStore,
+  type ConnectionInstance,
+  type ConnectionMode,
+} from "@/store/connection";
 import { useSavedServersStore } from "@/store/savedServers";
 import { useStagedStore } from "@/store/staged";
 
@@ -79,6 +83,22 @@ function expectNoNavigation() {
   expect(mockReplace).not.toHaveBeenCalled();
 }
 
+/**
+ * Waits for the connection the test selected — not merely "some" connection — to
+ * become active. Identity matters here: the redirect ConnectForm performs is
+ * driven off the active instance, so activating the wrong budget or mode would
+ * still redirect and still look green under a truthiness check.
+ */
+async function expectActiveInstance(expected: { budgetSyncId: string; mode: ConnectionMode }) {
+  await waitFor(
+    () => {
+      const { instances, activeInstanceId } = useConnectionStore.getState();
+      expect(instances.find((i) => i.id === activeInstanceId)).toMatchObject(expected);
+    },
+    { timeout: 2_000 }
+  );
+}
+
 describe("useConnectForm connection activation", () => {
   beforeEach(() => {
     mockPush.mockReset();
@@ -141,9 +161,7 @@ describe("useConnectForm connection activation", () => {
       result.current.handleConnect();
     });
 
-    await waitFor(() => expect(useConnectionStore.getState().activeInstanceId).toBeTruthy(), {
-      timeout: 2_000,
-    });
+    await expectActiveInstance({ budgetSyncId: "budget-1", mode: "browser-api" });
     expectNoNavigation();
     const [savedServer] = useSavedServersStore.getState().servers;
     expect(savedServer).toEqual(
@@ -270,9 +288,7 @@ describe("useConnectForm connection activation", () => {
       result.current.handleConnect();
     });
 
-    await waitFor(() => expect(useConnectionStore.getState().activeInstanceId).toBeTruthy(), {
-      timeout: 2_000,
-    });
+    await expectActiveInstance({ budgetSyncId: "local-budget-1", mode: "browser-api" });
     expectNoNavigation();
     expect(mockEnsureTransportReady).toHaveBeenCalledWith(
       expect.objectContaining({ budgetSyncId: "local-budget-1" })
@@ -324,9 +340,7 @@ describe("useConnectForm connection activation", () => {
       );
     });
 
-    await waitFor(() => expect(useConnectionStore.getState().activeInstanceId).toBeTruthy(), {
-      timeout: 2_000,
-    });
+    await expectActiveInstance({ budgetSyncId: "b1", mode: "http-api" });
     expectNoNavigation();
     // Revealed with the budget id so an encrypted budget's password comes along.
     expect(mockRevealServerSecret).toHaveBeenCalledWith("fp", "b1");
