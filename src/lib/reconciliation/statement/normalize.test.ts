@@ -1,8 +1,10 @@
 import { parseStatementText } from "./parse";
 import {
+  DEFAULT_COLUMN_MAPPING,
   DEFAULT_PARSE_CONFIG,
   detectDateFormat,
   detectDelimitedConfig,
+  normalizeParseConfig,
   fingerprintRow,
   fingerprintStatement,
   normalizeStatement,
@@ -459,6 +461,24 @@ describe("detectDelimitedConfig — the two text channels", () => {
     expect(config.columns.importedPayee).toBe(1);
   });
 
+  it("treats a column named Reference Text as the memo, not the reference", () => {
+    // `reference` matches inside `reference text`, so the reference detector
+    // used to claim it — and since the reference is barred from both text
+    // channels, the bank's memo was lost outright.
+    const config = detectDelimitedConfig(
+      parseStatementText(
+        [
+          "Date,Description,Reference Text,Amount",
+          "2026-08-01,AMAZON AE,Online purchase,-125.50",
+        ].join("\n")
+      )
+    );
+
+    expect(config.columns.notes).toBe(2);
+    expect(config.columns.reference).toBeUndefined();
+    expect(config.columns.importedPayee).toBe(1);
+  });
+
   it("picks up a reference column and keeps it out of the text channels", () => {
     const config = detectDelimitedConfig(
       parseStatementText(
@@ -487,6 +507,70 @@ describe("detectDelimitedConfig — the two text channels", () => {
       ["AMAZON AE", "Online purchase", -12550],
       ["SALARY", undefined, 500000],
     ]);
+  });
+});
+
+describe("normalizeParseConfig", () => {
+  it("fills in a configuration that is missing everything", () => {
+    // What a saved profile written by an older version — or one whose migration
+    // was skipped over a JSON error — can look like on the way back in.
+    expect(normalizeParseConfig({})).toEqual(DEFAULT_PARSE_CONFIG);
+  });
+
+  it("survives values that are not objects at all", () => {
+    for (const value of [null, undefined, 42, "config", []]) {
+      expect(normalizeParseConfig(value)).toEqual(DEFAULT_PARSE_CONFIG);
+    }
+  });
+
+  it("gives a profile with no columns the default mapping rather than an empty one", () => {
+    // An unmapped date column parses nothing, so an empty mapping is worse than
+    // a wrong one the user can see and correct.
+    const config = normalizeParseConfig({ format: "delimited", dateFormat: "dmy" });
+    expect(config.columns).toEqual(DEFAULT_COLUMN_MAPPING);
+    expect(config.dateFormat).toBe("dmy");
+  });
+
+  it("keeps the values a real profile carries", () => {
+    const saved = {
+      format: "qif",
+      columns: { date: 2, importedPayee: 0, notes: 3, amount: 4, reference: 5 },
+      dateFormat: "mdy",
+      signConvention: "debit-credit",
+      decimalSeparator: ",",
+      minorUnitDigits: 3,
+      detectOriginalCurrencyAmount: false,
+      swapPayeeAndMemo: true,
+      fallbackPayeeToMemo: false,
+    };
+
+    expect(normalizeParseConfig(saved)).toEqual(saved);
+  });
+
+  it("preserves a deliberately unmapped merchant column", () => {
+    const config = normalizeParseConfig({ columns: { date: 0, notes: 1, amount: 2 } });
+    expect(config.columns.importedPayee).toBeUndefined();
+    expect(config.columns.notes).toBe(1);
+  });
+
+  it("rejects values of the wrong shape rather than trusting them", () => {
+    const config = normalizeParseConfig({
+      format: "spreadsheet",
+      columns: { date: "first", importedPayee: -1, notes: 1.5 },
+      dateFormat: "yyyy",
+      signConvention: "reversed",
+      minorUnitDigits: 99,
+      swapPayeeAndMemo: "yes",
+    });
+
+    expect(config.format).toBe("delimited");
+    expect(config.columns.date).toBe(DEFAULT_COLUMN_MAPPING.date);
+    expect(config.columns.importedPayee).toBeUndefined();
+    expect(config.columns.notes).toBeUndefined();
+    expect(config.dateFormat).toBe("iso");
+    expect(config.signConvention).toBe("signed");
+    expect(config.minorUnitDigits).toBe(2);
+    expect(config.swapPayeeAndMemo).toBe(false);
   });
 });
 

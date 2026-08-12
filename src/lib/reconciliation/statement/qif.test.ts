@@ -43,6 +43,28 @@ describe("looksLikeQif", () => {
   it("does not claim a CSV", () => {
     expect(looksLikeQif("Date,Description,Amount\n2026-08-01,SHOP,-10.00")).toBe(false);
   });
+
+  it("sees past an !Account block, as a real Quicken export has", () => {
+    // Judging the first line alone called this "not QIF", which an upload
+    // survived on its extension but a paste did not — it was read as a
+    // delimited table and produced nonsense rows with no error.
+    const withAccount = ["!Account", "NChecking", "TBank", "^", FILE].join("\n");
+    expect(looksLikeQif(withAccount)).toBe(true);
+  });
+
+  it("does not claim a CSV whose header happens to start with a letter", () => {
+    const csv = [
+      "Description,Date,Amount",
+      "SHOP,2026-08-01,-10.00",
+      "CAFE,2026-08-02,-20.00",
+    ].join("\n");
+    expect(looksLikeQif(csv)).toBe(false);
+  });
+
+  it("gives up rather than scanning a whole file that never declares a type", () => {
+    const notQif = Array.from({ length: 500 }, (_, index) => `Line${index}`).join("\n");
+    expect(looksLikeQif(notQif)).toBe(false);
+  });
 });
 
 describe("parseQif", () => {

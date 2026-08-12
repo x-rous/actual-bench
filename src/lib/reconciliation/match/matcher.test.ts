@@ -99,6 +99,34 @@ describe("the statement's own text channels (RD-072)", () => {
     expect(graph.matched[0]).toMatchObject({ tier: "reference-imported-id", label: "exact" });
   });
 
+  it("falls back to the bank reference when the external id matches nothing", () => {
+    // An OFX file carries a FITID for every row; the account may only have
+    // imported the row under its own reference. Trying one identifier and
+    // stopping would lose a certain match to a merely-present one.
+    const graph = run(
+      [row({ id: "s1", externalId: "FITID-UNKNOWN", bankReference: "BANKREF-9931" })],
+      [txn({ id: "t1", importedId: "BANKREF-9931", date: "2026-06-20" })]
+    );
+
+    expect(graph.matched[0]).toMatchObject({
+      actualTransactionId: "t1",
+      tier: "reference-imported-id",
+    });
+  });
+
+  it("prefers the external id when both identifiers match different rows", () => {
+    const graph = run(
+      [row({ id: "s1", externalId: "FITID-1", bankReference: "BANKREF-9931" })],
+      [
+        txn({ id: "t1", importedId: "BANKREF-9931", date: "2026-06-20" }),
+        txn({ id: "t2", importedId: "FITID-1", date: "2026-06-21" }),
+      ]
+    );
+
+    // The bank's own transaction id is the stronger claim of the two.
+    expect(graph.matched[0].actualTransactionId).toBe("t2");
+  });
+
   it("compares the bank's merchant text, not its memo, when both exist", () => {
     const graph = run(
       [row({ id: "s1", importedPayee: "STARBUCKS MALL OF EMIRATES", bankNotes: "CARD PURCHASE" })],

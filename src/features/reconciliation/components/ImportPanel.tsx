@@ -8,6 +8,7 @@ import { CSV_MAX_BYTES } from "@/lib/csv";
 import { generateId } from "@/lib/uuid";
 import {
   fingerprintStatement,
+  normalizeParseConfig,
   type NormalizedStatement,
   type SignConvention,
   type StatementDateFormat,
@@ -209,7 +210,9 @@ export function ImportPanel({
   }
 
   function applyProfile(profile: ReconciliationProfileRecord) {
-    const saved = profile.mapping as StatementParseConfig | null;
+    // Checked rather than cast: a profile is JSON from the app database, and one
+    // missing its `columns` would otherwise throw while rendering this panel.
+    const saved = profile.mapping == null ? null : normalizeParseConfig(profile.mapping);
     // A profile carries column indexes for one file shape; the format still
     // comes from the file in front of us.
     if (saved) setConfig(detectedFormat ? { ...saved, format: detectedFormat } : saved);

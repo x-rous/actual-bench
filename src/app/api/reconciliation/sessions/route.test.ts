@@ -166,6 +166,59 @@ describe("/api/reconciliation/sessions", () => {
     });
   });
 
+  it("refuses a statement row whose imported payee is not text", async () => {
+    const session = await createSession();
+
+    // Coercing it would persist "[object Object]" as a transaction's bank
+    // provenance - text no bank wrote, and text the matcher would compare.
+    const response = await PUT_ROWS(
+      jsonRequest({
+        statementRows: [
+          {
+            id: "srow-1",
+            sourceRowNumber: 1,
+            postedDate: "2026-08-01",
+            amount: -100,
+            importedPayee: { value: "AMAZON" },
+            fingerprint: "abc",
+            raw: null,
+          },
+        ],
+      }),
+      context(session.id)
+    );
+
+    expect(response.status).toBe(400);
+  });
+
+  it("keeps an omitted imported payee as an empty merchant channel", async () => {
+    const session = await createSession();
+
+    await PUT_ROWS(
+      jsonRequest({
+        statementRows: [
+          {
+            id: "srow-1",
+            sourceRowNumber: 1,
+            postedDate: "2026-08-01",
+            amount: -100,
+            bankNotes: "Transfer to savings",
+            fingerprint: "abc",
+            raw: null,
+          },
+        ],
+      }),
+      context(session.id)
+    );
+
+    const response = await GET_ONE(urlRequest("http://x/s"), context(session.id));
+    const body = (await response.json()) as { statementRows: Record<string, unknown>[] };
+    expect(body.statementRows[0]).toMatchObject({
+      importedPayee: "",
+      bankNotes: "Transfer to savings",
+    });
+  });
+
   it("supports a shallow read for the session list", async () => {
     const session = await createSession();
     const response = await GET_ONE(urlRequest("http://x/s?shallow=1"), context(session.id));

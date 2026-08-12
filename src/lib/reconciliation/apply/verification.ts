@@ -83,9 +83,11 @@ export function verifyApply(input: VerificationInput): VerificationReport {
 
   const byId = new Map(input.latest.map((transaction) => [transaction.id, transaction]));
   const markerCounts = new Map<string, number>();
+  const byMarker = new Map<string, ActualTransactionSnapshot>();
   for (const transaction of input.latest) {
     if (!transaction.importedId) continue;
     markerCounts.set(transaction.importedId, (markerCounts.get(transaction.importedId) ?? 0) + 1);
+    if (!byMarker.has(transaction.importedId)) byMarker.set(transaction.importedId, transaction);
   }
 
   const issues: VerificationIssue[] = [];
@@ -95,7 +97,7 @@ export function verifyApply(input: VerificationInput): VerificationReport {
     const operation = operationById.get(operationId);
     if (!operation) continue;
     checked += 1;
-    issues.push(...verifyOne(operation, { byId, markerCounts, snapshots: input.snapshots }));
+    issues.push(...verifyOne(operation, { byId, byMarker, markerCounts, snapshots: input.snapshots }));
   }
 
   return { checked, issues, ok: issues.length === 0 };
@@ -105,6 +107,7 @@ function verifyOne(
   operation: ApplyOperation,
   context: {
     byId: Map<string, ActualTransactionSnapshot>;
+    byMarker: Map<string, ActualTransactionSnapshot>;
     markerCounts: Map<string, number>;
     snapshots: Map<string, ActualTransactionSnapshot>;
   }
@@ -125,6 +128,19 @@ function verifyOne(
         kind: "duplicate-create",
         detail: `This transaction appears ${count} times in the account - it was created more than once.`,
       });
+    } else if (operation.importedPayee != null) {
+      // Creates are the main provenance path, and `imported_payee` is the field
+      // a transport can most plausibly accept and drop — so the row that was
+      // just created is checked for it exactly as an updated row is.
+      const created = context.byMarker.get(operation.marker);
+      if (created && (created.importedPayee ?? "").trim() !== operation.importedPayee.trim()) {
+        issues.push({
+          operationId: operation.id,
+          kind: "unapplied-field",
+          detail:
+            "This transaction was created but the bank's imported payee was not recorded with it.",
+        });
+      }
     }
     return issues;
   }

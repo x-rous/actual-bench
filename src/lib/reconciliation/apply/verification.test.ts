@@ -157,6 +157,34 @@ describe("reading the account back after applying", () => {
     expect(report.issues[0].detail).toContain("imported payee");
   });
 
+  it("catches a created transaction that landed without its imported payee", () => {
+    // Creates are the main provenance path, so the check that exists for
+    // updates has to exist here too — otherwise the transport most likely to
+    // drop the field is the one nothing verifies.
+    const plan = planOf({ ...createOperation, importedPayee: "AMZN Mktp AE*23981" });
+    const report = verifyApply({
+      plan,
+      results: allApplied(plan),
+      latest: [snapshot({ importedId: "recon:abc", importedPayee: null })],
+      snapshots: new Map(),
+    });
+
+    expect(report.issues[0]).toMatchObject({ kind: "unapplied-field" });
+    expect(report.issues[0].detail).toContain("imported payee");
+  });
+
+  it("passes a created transaction that carries its imported payee", () => {
+    const plan = planOf({ ...createOperation, importedPayee: "AMZN Mktp AE*23981" });
+    const report = verifyApply({
+      plan,
+      results: allApplied(plan),
+      latest: [snapshot({ importedId: "recon:abc", importedPayee: "AMZN Mktp AE*23981" })],
+      snapshots: new Map(),
+    });
+
+    expect(report.ok).toBe(true);
+  });
+
   it("passes an enrichment that landed", () => {
     const plan = planOf({
       ...updateOperation,

@@ -50,12 +50,21 @@ export async function PUT(request: Request, context: RouteContext) {
       if (!isRecord(row)) {
         throw new AppDbValidationError(`Statement row ${index} must be an object`);
       }
+      // Coercing this one with `String()` would persist "[object Object]" as a
+      // transaction's bank provenance — text no bank ever wrote, and text the
+      // matcher would then compare against. The other text channels are already
+      // type-checked below; this is the one that has a non-null default.
+      if (row.importedPayee !== undefined && typeof row.importedPayee !== "string") {
+        throw new AppDbValidationError(
+          `Statement row ${index} importedPayee must be a string`
+        );
+      }
       return {
         id: String(row.id ?? ""),
         sourceRowNumber: Number(row.sourceRowNumber ?? index + 1),
         postedDate: String(row.postedDate ?? ""),
         amount: Number(row.amount),
-        importedPayee: String(row.importedPayee ?? ""),
+        importedPayee: row.importedPayee ?? "",
         bankNotes: typeof row.bankNotes === "string" ? row.bankNotes : null,
         bankReference: typeof row.bankReference === "string" ? row.bankReference : null,
         externalId: typeof row.externalId === "string" ? row.externalId : null,

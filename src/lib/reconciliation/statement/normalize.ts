@@ -127,6 +127,87 @@ export const DEFAULT_PARSE_CONFIG: StatementParseConfig = {
   fallbackPayeeToMemo: true,
 };
 
+const STATEMENT_FORMATS: StatementFormat[] = ["delimited", "ofx", "qif"];
+const STATEMENT_DATE_FORMATS: StatementDateFormat[] = [
+  "iso",
+  "dmy",
+  "mdy",
+  "dmy-name",
+  "ymd-compact",
+];
+const SIGN_CONVENTIONS: SignConvention[] = ["signed", "debit-credit", "signed-inverted"];
+
+/**
+ * Coerce a stored parse configuration into a usable one.
+ *
+ * Saved profiles are JSON in the app database: written by an older version of
+ * this app, migrated by a step that may have skipped an unparseable row, or
+ * simply hand-edited. Casting one straight to `StatementParseConfig` is how a
+ * profile with no `columns` becomes a `TypeError` thrown while rendering the
+ * import panel — a blank screen with no way back except deleting the profile.
+ *
+ * Every field is checked against what it is allowed to be and falls back to the
+ * default, so the worst a bad profile can do is import under settings the user
+ * can see and correct. Not a compatibility shim for a superseded model: this is
+ * the boundary check any persisted structure deserves.
+ */
+export function normalizeParseConfig(value: unknown): StatementParseConfig {
+  const raw = asRecord(value) ?? {};
+  const columns = asRecord(raw.columns);
+
+  return {
+    format: oneOf(raw.format, STATEMENT_FORMATS, DEFAULT_PARSE_CONFIG.format),
+    // A config with no columns at all gets the default mapping rather than an
+    // empty one: an unmapped date column parses nothing.
+    columns: columns
+      ? {
+          date: columnIndex(columns.date) ?? DEFAULT_COLUMN_MAPPING.date,
+          importedPayee: columnIndex(columns.importedPayee),
+          notes: columnIndex(columns.notes),
+          amount: columnIndex(columns.amount),
+          debit: columnIndex(columns.debit),
+          credit: columnIndex(columns.credit),
+          reference: columnIndex(columns.reference),
+        }
+      : { ...DEFAULT_COLUMN_MAPPING },
+    dateFormat: oneOf(raw.dateFormat, STATEMENT_DATE_FORMATS, DEFAULT_PARSE_CONFIG.dateFormat),
+    signConvention: oneOf(raw.signConvention, SIGN_CONVENTIONS, DEFAULT_PARSE_CONFIG.signConvention),
+    decimalSeparator: raw.decimalSeparator === "," ? "," : ".",
+    minorUnitDigits:
+      typeof raw.minorUnitDigits === "number" &&
+      Number.isInteger(raw.minorUnitDigits) &&
+      raw.minorUnitDigits >= 0 &&
+      raw.minorUnitDigits <= 6
+        ? raw.minorUnitDigits
+        : DEFAULT_PARSE_CONFIG.minorUnitDigits,
+    detectOriginalCurrencyAmount: boolean(
+      raw.detectOriginalCurrencyAmount,
+      DEFAULT_PARSE_CONFIG.detectOriginalCurrencyAmount
+    ),
+    swapPayeeAndMemo: boolean(raw.swapPayeeAndMemo, DEFAULT_PARSE_CONFIG.swapPayeeAndMemo),
+    fallbackPayeeToMemo: boolean(raw.fallbackPayeeToMemo, DEFAULT_PARSE_CONFIG.fallbackPayeeToMemo),
+  };
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+/** A column index is a non-negative integer; anything else is "not mapped". */
+function columnIndex(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isInteger(value) && value >= 0 ? value : undefined;
+}
+
+function oneOf<T extends string>(value: unknown, allowed: T[], fallback: T): T {
+  return typeof value === "string" && (allowed as string[]).includes(value) ? (value as T) : fallback;
+}
+
+function boolean(value: unknown, fallback: boolean): boolean {
+  return typeof value === "boolean" ? value : fallback;
+}
+
 export type StatementRowError = {
   sourceRowNumber: number;
   /** The offending cells, kept so the user can see what failed. */
@@ -290,6 +371,8 @@ const PAYEE_HEADERS = [
   "transaction",
 ];
 
+const REFERENCE_HEADERS = ["reference", "ref no", "auth", "cheque", "check no"];
+
 /**
  * Guess the parse configuration from the parsed table.
  *
@@ -349,7 +432,15 @@ export function detectDelimitedConfig(table: DelimitedTable): StatementParseConf
 
   const dateSamples = table.rows.slice(0, 20).map((row) => row[dateColumn] ?? "");
   const referenceColumn = (() => {
-    const byHeader = headerIndex("reference", "ref no", "auth", "cheque", "check no");
+    // Excluding the memo family matters more than it looks: `reference` matches
+    // inside `reference text`, so a bank that calls its memo column that would
+    // have had it taken as the reference — and since the reference is then
+    // barred from both text channels, the memo would be lost outright.
+    const byHeader = headers.findIndex(
+      (header) =>
+        !MEMO_HEADERS.includes(header) &&
+        REFERENCE_HEADERS.some((name) => header === name || header.includes(name))
+    );
     return byHeader >= 0 ? byHeader : undefined;
   })();
 

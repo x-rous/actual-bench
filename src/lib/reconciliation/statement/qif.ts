@@ -20,12 +20,32 @@
 
 import type { StructuredStatementTransaction } from "./structured";
 
-/** Does this text look like a QIF file? */
+/**
+ * Does this text look like a QIF file?
+ *
+ * Scans past the file's preamble rather than judging the first line. Quicken
+ * routinely writes an `!Account` block ahead of `!Type:Bank`, and stopping at
+ * line one calls that file "not QIF" — which an upload survives on its
+ * extension, but a paste or a `.txt` export does not: it is then read as a
+ * delimited table and produces nonsense rows with no error to explain them.
+ *
+ * The scan gives up as soon as it sees something no QIF file contains, so a CSV
+ * costs a line or two rather than a full pass. Only an explicit `!Type:` header
+ * returns true, so nothing can be mistaken *for* QIF.
+ */
 export function looksLikeQif(text: string): boolean {
+  let inspected = 0;
   for (const line of text.split(/\r?\n/)) {
     const trimmed = line.trim();
     if (!trimmed) continue;
-    return /^!type:/i.test(trimmed);
+    if (/^!type:/i.test(trimmed)) return true;
+
+    // Everything legitimately above a `!Type:` header is section material:
+    // other `!` directives, the single-letter tag lines of an `!Account` block,
+    // and the `^` that terminates them.
+    const isSectionMaterial = /^[!^]/.test(trimmed) || /^[A-Za-z$]/.test(trimmed);
+    if (!isSectionMaterial) return false;
+    if (++inspected >= 40) return false;
   }
   return false;
 }

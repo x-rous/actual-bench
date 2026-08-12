@@ -267,9 +267,12 @@ function pinByImportedId(rows: StatementRow[], index: ActualIndex): MatchOutcome
   const taken = new Set<string>();
 
   for (const row of rows) {
-    const identifier = row.externalId || row.bankReference;
-    if (!identifier) continue;
-    const transactionId = index.byImportedId.get(identifier);
+    // Tried in order of authority, not exclusively: an OFX `FITID` that Actual
+    // has never seen must not stop the row's own reference — which the account
+    // may well carry — from being looked up.
+    const transactionId = [row.externalId, row.bankReference]
+      .map((identifier) => (identifier ? index.byImportedId.get(identifier) : undefined))
+      .find((found) => found !== undefined);
     if (!transactionId || taken.has(transactionId)) continue;
     taken.add(transactionId);
     pinned.push({
