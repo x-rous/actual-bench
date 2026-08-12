@@ -61,9 +61,19 @@ describe("looksLikeQif", () => {
     expect(looksLikeQif(csv)).toBe(false);
   });
 
-  it("gives up rather than scanning a whole file that never declares a type", () => {
-    const notQif = Array.from({ length: 500 }, (_, index) => `Line${index}`).join("\n");
-    expect(looksLikeQif(notQif)).toBe(false);
+  it("stops scanning before a type header buried past the preamble", () => {
+    // The bound is what keeps a large non-QIF file from being read line by
+    // line. A file with no header at all would return false either way, so it
+    // takes a header placed *beyond* the bound to prove the scan really stops.
+    const buried = [
+      ...Array.from({ length: 40 }, (_, index) => `Line${index}`),
+      "!Type:Bank",
+      "D01/08/2026",
+      "T-10.00",
+      "^",
+    ].join("\n");
+
+    expect(looksLikeQif(buried)).toBe(false);
   });
 });
 
