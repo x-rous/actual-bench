@@ -3,6 +3,7 @@ import {
   createOrResolveHttpPayee,
   getHttpTargetLookupForSync,
   listHttpTransactionsForSync,
+  updateHttpTransactionForSync,
 } from "./httpSyncTransactions";
 import { apiRequest } from "../api/client";
 import type { ConnectionInstance } from "@/store/connection";
@@ -70,6 +71,15 @@ function mockApi(options: {
         rows.push({ ...t, id: `txn-${nextId++}`, account: acct });
       }
       byAccount.set(acct, rows);
+      return { message: "ok" } as never;
+    }
+    const patch = path.match(/^\/transactions\/([^/]+)$/);
+    if (patch && method === "PATCH") {
+      const fields = (opts?.body as { transaction: RawRow }).transaction;
+      for (const rows of byAccount.values()) {
+        const row = rows.find((r) => r.id === patch[1]);
+        if (row) Object.assign(row, fields);
+      }
       return { message: "ok" } as never;
     }
     const list = path.match(/^\/accounts\/([^/]+)\/transactions/);
@@ -219,5 +229,100 @@ describe("createHttpTransactionsForSync", () => {
     const byPath = new Map(batchCalls.map(([, path, opts]) => [path, (opts?.body as { transactions: { imported_id: string }[] }).transactions]));
     expect(byPath.get("/accounts/acct-a/transactions/batch")?.map((t) => t.imported_id)).toEqual(["a1", "a2"]);
     expect(byPath.get("/accounts/acct-b/transactions/batch")?.map((t) => t.imported_id)).toEqual(["b1"]);
+  });
+});
+
+/**
+ * Bank provenance over HTTP (RD-072 §2).
+ *
+ * `imported_payee` is a separate boundary from Actual's own model: the wrapper's
+ * request schema has to accept it, which is why the payload is asserted rather
+ * than assumed. Both `Transaction` schemas in the actual-http-api swagger — the
+ * batch create and the transaction PATCH — declare the field.
+ */
+describe("imported_payee over HTTP", () => {
+  it("sends the bank's merchant text alongside the resolved payee id", async () => {
+    mockApi({ payees: [{ id: "p1", name: "Amazon" }] });
+
+    await createHttpTransactionsForSync(connection, [
+      {
+        accountId: "acct-tgt",
+        date: "2026-08-01",
+        amount: -12550,
+        payeeName: "Amazon",
+        importedPayee: "AMZN Mktp AE*23981",
+        importedId: "recon:abc",
+      },
+    ]);
+
+    const [, , opts] = mockApiRequest.mock.calls.find(
+      ([, path, o]) => path.endsWith("/transactions/batch") && o?.method === "POST"
+    )!;
+    const [payload] = (opts?.body as { transactions: RawRow[] }).transactions;
+    // Two different facts about the same transaction, both sent.
+    expect(payload.payee).toBe("p1");
+    expect(payload.imported_payee).toBe("AMZN Mktp AE*23981");
+  });
+
+  it("round-trips: what is written comes back on the next read", async () => {
+    mockApi({ payees: [{ id: "p1", name: "Amazon" }] });
+
+    await createHttpTransactionsForSync(connection, [
+      {
+        accountId: "acct-tgt",
+        date: "2026-08-01",
+        amount: -12550,
+        payeeId: "p1",
+        importedPayee: "AMZN Mktp AE*23981",
+        importedId: "recon:abc",
+      },
+    ]);
+
+    const [row] = await listHttpTransactionsForSync(connection, { accountId: "acct-tgt" });
+    expect(row.importedPayee).toBe("AMZN Mktp AE*23981");
+    expect(row.payeeName).toBe("Amazon");
+  });
+
+  it("omits the field entirely when the caller did not supply one", async () => {
+    mockApi({ payees: [] });
+
+    await createHttpTransactionsForSync(connection, [
+      { accountId: "acct-tgt", date: "2026-08-01", amount: -100, importedId: "m1" },
+    ]);
+
+    const [, , opts] = mockApiRequest.mock.calls.find(
+      ([, path, o]) => path.endsWith("/transactions/batch") && o?.method === "POST"
+    )!;
+    const [payload] = (opts?.body as { transactions: RawRow[] }).transactions;
+    expect("imported_payee" in payload).toBe(false);
+  });
+
+  it("attaches provenance to an existing transaction without touching anything else", async () => {
+    mockApi({
+      payees: [{ id: "p1", name: "Amazon" }],
+      transactions: [
+        { id: "t1", account: "acct-tgt", date: "2026-08-01", amount: -12550, payee: "p1", category: "c1", notes: "School supplies", cleared: true, reconciled: false, imported_id: null, is_parent: false, is_child: false, parent_id: null },
+      ],
+    });
+
+    await updateHttpTransactionForSync(connection, {
+      transactionId: "t1",
+      accountId: "acct-tgt",
+      date: "2026-08-01",
+      amount: -12550,
+      importedPayee: "AMZN Mktp AE*23981",
+      returnApplied: false,
+    });
+
+    const [, , opts] = mockApiRequest.mock.calls.find(
+      ([, path, o]) => path === "/transactions/t1" && o?.method === "PATCH"
+    )!;
+    const { transaction } = opts?.body as { transaction: RawRow };
+    expect(transaction.imported_payee).toBe("AMZN Mktp AE*23981");
+    // The user's curated fields are not in the payload at all, so they cannot be
+    // overwritten by a provenance write (RD-072 §2.4).
+    expect("notes" in transaction).toBe(false);
+    expect("category" in transaction).toBe(false);
+    expect("payee" in transaction).toBe(false);
   });
 });

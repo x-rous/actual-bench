@@ -200,7 +200,10 @@ export function Inspector({
           <h4 className="text-[11px] font-semibold uppercase tracking-wide">Bank statement</h4>
           <dl className="flex flex-col gap-1.5">
             {!primary && <Field label="Date" value={statementRow.postedDate} />}
-            <Field label="Description" value={statementRow.description} />
+            <Field label="Imported payee" value={statementRow.importedPayee} />
+            {statementRow.bankNotes && (
+              <Field label="Bank notes" value={statementRow.bankNotes} />
+            )}
             {!primary && (
               <Field label="Amount" value={formatMinorUnits(statementRow.amount)} numeric />
             )}
@@ -215,7 +218,10 @@ export function Inspector({
                 numeric
               />
             )}
-            <Field label="Reference" value={statementRow.reference ?? null} />
+            <Field
+              label="Reference"
+              value={statementRow.bankReference ?? statementRow.externalId ?? null}
+            />
           </dl>
         </section>
       )}

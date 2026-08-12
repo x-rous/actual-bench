@@ -107,6 +107,10 @@ export async function executeApplyPlan(input: ApplyExecutorInput): Promise<Apply
           amount: operation.amount,
           payeeId: operation.payeeId,
           payeeName: operation.payeeName,
+          // Bank provenance travels with the create rather than as a follow-up
+          // write: a transaction that exists for a moment without it would be
+          // indistinguishable from one that was never imported.
+          importedPayee: operation.importedPayee,
           categoryId: operation.categoryId,
           notes: operation.notes,
           cleared: operation.cleared,
@@ -162,6 +166,7 @@ export async function executeApplyPlan(input: ApplyExecutorInput): Promise<Apply
             payeeId: patchValue(operation.patch, "payeeId"),
             notes: patchValue(operation.patch, "notes"),
             cleared: operation.cleared,
+            importedPayee: operation.importedPayee,
           })),
           deleted: deletes.map((operation) => operation.transactionId),
         });
@@ -258,6 +263,9 @@ async function runOperation(
           // field is what keeps an update from clearing one.
           notes: patchValue(operation.patch, "notes"),
           cleared: operation.cleared,
+          // Bank provenance, when this update is carrying any. Left undefined
+          // otherwise so an ordinary staged edit cannot rewrite it.
+          importedPayee: operation.importedPayee,
         });
         return {
           operationId: operation.id,

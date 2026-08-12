@@ -12,7 +12,7 @@ import { match } from "./matcher";
 import { parseStatementText } from "../statement/parse";
 import { REASON, buildReconciliationItems } from "../session/build";
 import {
-  detectColumnMapping,
+  detectDelimitedConfig,
   extractOriginalAmount,
   normalizeStatement,
 } from "../statement/normalize";
@@ -47,7 +47,7 @@ function txn(
 function parse(text: string): StatementRow[] {
   const table = parseStatementText(text);
   let counter = 0;
-  return normalizeStatement(table, detectColumnMapping(table), () => `s${++counter}`).rows;
+  return normalizeStatement(table, detectDelimitedConfig(table), () => `s${++counter}`).rows;
 }
 
 describe("debit/credit statements (the 0% defect)", () => {
@@ -62,10 +62,10 @@ describe("debit/credit statements (the 0% defect)", () => {
   ].join("\n");
 
   it("detects a debit/credit layout from its headers", () => {
-    const mapping = detectColumnMapping(parseStatementText(STATEMENT));
+    const mapping = detectDelimitedConfig(parseStatementText(STATEMENT));
     expect(mapping.signConvention).toBe("debit-credit");
-    expect(mapping.debit).toBe(2);
-    expect(mapping.credit).toBe(3);
+    expect(mapping.columns.debit).toBe(2);
+    expect(mapping.columns.credit).toBe(3);
   });
 
   it("signs debits negative and credits positive", () => {
@@ -75,7 +75,7 @@ describe("debit/credit statements (the 0% defect)", () => {
 
   it("detects the layout without usable headers, from the data shape", () => {
     // Two numeric columns where each row fills exactly one of them.
-    const mapping = detectColumnMapping(
+    const mapping = detectDelimitedConfig(
       parseStatementText(
         [
           "07/07/2026\tADNOC AL CORNICHE 933\t141.37\t0",
@@ -88,7 +88,7 @@ describe("debit/credit statements (the 0% defect)", () => {
   });
 
   it("still reads a genuinely signed single-amount statement", () => {
-    const mapping = detectColumnMapping(
+    const mapping = detectDelimitedConfig(
       parseStatementText(
         ["Date,Description,Amount", "2026-07-01,CARREFOUR,-342.85", "2026-07-03,REFUND,50.00"].join(
           "\n"
@@ -96,7 +96,7 @@ describe("debit/credit statements (the 0% defect)", () => {
       )
     );
     expect(mapping.signConvention).toBe("signed");
-    expect(mapping.amount).toBe(2);
+    expect(mapping.columns.amount).toBe(2);
   });
 
   it("matches once the layout is read correctly", () => {

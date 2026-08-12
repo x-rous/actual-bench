@@ -18,7 +18,18 @@ export type MinorUnitAmount = number;
 // ---------------------------------------------------------------------------
 
 /**
- * One normalized row parsed from a bank statement (feature spec §8).
+ * One normalized row parsed from a bank statement (RD-072 §2.1).
+ *
+ * The two text channels are named for where they belong in Actual, because that
+ * is the whole point of normalizing: every format — CSV, OFX/QFX, QIF — resolves
+ * its own idea of "the text" into these two before anything downstream sees it,
+ * and nothing downstream then needs to know which format it came from.
+ *
+ * ```text
+ * importedPayee ─┬─► Actual imported_payee   (bank provenance, always preserved)
+ *                └─► Actual payee            (via resolution, when configured)
+ * bankNotes ───────► Actual notes
+ * ```
  *
  * `raw` is retained for the lifetime of the session so the user can always
  * inspect exactly what the bank supplied; nothing downstream may destroy it.
@@ -32,9 +43,29 @@ export type StatementRow = {
   /** ISO `YYYY-MM-DD`; some statements distinguish transaction from posting. */
   transactionDate?: string;
   amount: MinorUnitAmount;
-  description: string;
-  /** Bank reference / auth number when the statement provides one. */
-  reference?: string;
+  /**
+   * The bank's own merchant/payee/description text — OFX `NAME`, QIF `P`, or the
+   * CSV column mapped as the description. Source truth, never user-edited: it is
+   * what Actual stores as `imported_payee`, and the candidate a Payee is
+   * resolved from.
+   */
+  importedPayee: string;
+  /**
+   * A *separate* bank memo/details field when the statement supplies one — OFX
+   * `MEMO`, QIF `M`, a mapped CSV memo column. Distinct from the user's notes:
+   * this is what the bank said, and it is only ever a starting value.
+   */
+  bankNotes?: string;
+  /** Bank reference / auth / cheque number when the statement provides one. */
+  bankReference?: string;
+  /**
+   * A stable bank-side transaction id (OFX `FITID`).
+   *
+   * Matching evidence only. It is deliberately **not** written as Actual's
+   * `imported_id`: that field carries Bench's deterministic retry marker, whose
+   * idempotency guarantee is stronger than a bank id's (RD-072 §2.6).
+   */
+  externalId?: string;
   /** Original-currency amount when the statement reports an FX transaction. */
   originalAmount?: MinorUnitAmount;
   originalCurrency?: string;

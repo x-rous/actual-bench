@@ -36,6 +36,7 @@ const createOperation: ApplyOperation = {
   date: "2026-07-04",
   amount: -1000,
   payeeName: "Shop",
+  importedPayee: null,
   payeeId: null,
   categoryId: null,
   notes: null,
@@ -134,6 +135,42 @@ describe("reading the account back after applying", () => {
 
     expect(report.issues[0]).toMatchObject({ kind: "unapplied-field" });
     expect(report.issues[0].detail).toContain("notes");
+  });
+
+  it("catches provenance the transport accepted and dropped", () => {
+    // The likeliest silent failure of the whole feature: `imported_payee` is not
+    // part of most transaction write paths, so a wrapper can take it and ignore
+    // it without erroring.
+    const plan = planOf({
+      ...updateOperation,
+      patch: {},
+      importedPayee: "AMZN Mktp AE*23981",
+    });
+    const report = verifyApply({
+      plan,
+      results: allApplied(plan),
+      latest: [snapshot({ importedPayee: null })],
+      snapshots: new Map([["t1", snapshot()]]),
+    });
+
+    expect(report.issues[0]).toMatchObject({ kind: "unapplied-field" });
+    expect(report.issues[0].detail).toContain("imported payee");
+  });
+
+  it("passes an enrichment that landed", () => {
+    const plan = planOf({
+      ...updateOperation,
+      patch: {},
+      importedPayee: "AMZN Mktp AE*23981",
+    });
+    const report = verifyApply({
+      plan,
+      results: allApplied(plan),
+      latest: [snapshot({ importedPayee: "AMZN Mktp AE*23981" })],
+      snapshots: new Map([["t1", snapshot()]]),
+    });
+
+    expect(report.ok).toBe(true);
   });
 
   it("catches a clear that did not take", () => {

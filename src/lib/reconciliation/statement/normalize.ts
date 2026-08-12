@@ -28,16 +28,55 @@ export type StatementDateFormat =
  */
 export type SignConvention = "signed" | "debit-credit" | "signed-inverted";
 
+/** Which source format a statement was read from (RD-072 §2.5). */
+export type StatementFormat = "delimited" | "ofx" | "qif";
+
+/**
+ * Which column carries what, for a delimited statement.
+ *
+ * Indexes only. How the *values* in those columns are read — date format, sign
+ * convention, decimal separator — belongs to `StatementParseConfig`, because
+ * those conventions apply to structured formats too, where there are no columns
+ * at all.
+ */
 export type ColumnMapping = {
   date: number;
-  description: number;
+  /**
+   * The bank's merchant/payee/description column.
+   *
+   * Optional, though detection always proposes one: a statement whose only text
+   * column is genuinely a memo should be able to say so and map it to `notes`
+   * alone. Leaving this unset yields an empty merchant channel — no
+   * `imported_payee` is written, no payee is resolved from it, and matching
+   * compares the memo instead (RD-072 §2.1).
+   */
+  importedPayee?: number;
+  /** A *separate* memo/details column, when the statement has one. */
+  notes?: number;
   /** Required when `signConvention` is `signed` or `signed-inverted`. */
   amount?: number;
   /** Required when `signConvention` is `debit-credit`. */
   debit?: number;
   credit?: number;
   reference?: number;
+};
+
+/**
+ * Everything needed to turn a statement file into `StatementRow`s.
+ *
+ * One shape across all formats. The delimited-only and structured-only members
+ * are both present rather than split into a union, because the import UI edits
+ * one object and a saved profile stores one object — and a user who imports a
+ * CSV this month and an OFX the next should not lose their decimal convention
+ * on the way.
+ */
+export type StatementParseConfig = {
+  format: StatementFormat;
+  /** Delimited only. */
+  columns: ColumnMapping;
+  /** Delimited and QIF; OFX dates are unambiguous and ignore this. */
   dateFormat: StatementDateFormat;
+  /** Delimited only: structured formats state the sign themselves. */
   signConvention: SignConvention;
   decimalSeparator: "." | ",";
   /**
@@ -52,18 +91,40 @@ export type ColumnMapping = {
    * not matching it at all.
    */
   detectOriginalCurrencyAmount: boolean;
+  /**
+   * Structured formats: this bank puts the merchant in the memo field and
+   * something else in the payee field. Mirrors Actual's `swapPayeeAndMemo` — a
+   * bank-specific repair, not a change in what the fields mean.
+   */
+  swapPayeeAndMemo: boolean;
+  /**
+   * Structured formats: when the payee field is empty, promote the memo to the
+   * payee. Mirrors Actual's `fallbackMissingPayeeToMemo`, including its rule
+   * that a memo *consumed* this way does not also become the note.
+   */
+  fallbackPayeeToMemo: boolean;
 };
 
-export const DEFAULT_MAPPING: Omit<ColumnMapping, "date" | "description"> = {
+export const DEFAULT_COLUMN_MAPPING: ColumnMapping = {
+  date: 0,
+  importedPayee: 1,
+  notes: undefined,
   amount: undefined,
   debit: undefined,
   credit: undefined,
   reference: undefined,
+};
+
+export const DEFAULT_PARSE_CONFIG: StatementParseConfig = {
+  format: "delimited",
+  columns: DEFAULT_COLUMN_MAPPING,
   dateFormat: "iso",
   signConvention: "signed",
   decimalSeparator: ".",
   minorUnitDigits: 2,
   detectOriginalCurrencyAmount: true,
+  swapPayeeAndMemo: false,
+  fallbackPayeeToMemo: true,
 };
 
 export type StatementRowError = {
@@ -185,7 +246,52 @@ export function parseMoneyToMinorUnits(
 }
 
 /**
- * Guess the column mapping from the parsed table.
+ * Header families for the two text channels (RD-072 §2.1).
+ *
+ * Deliberately asymmetric, and deliberately ordered: the **payee** column is
+ * chosen first, from the whole table, and the memo is then chosen from what is
+ * left. Claiming a merchant column as the memo is the expensive mistake — it
+ * leaves the imported payee empty, and an empty imported payee matches nothing
+ * and writes no provenance — while a memo column mistaken for the merchant is
+ * merely untidy.
+ *
+ * That ordering is also what makes ambiguous labels behave. `Transaction
+ * Details` beside a `Memo` column reads as the merchant and the memo in that
+ * order, which is how banks that use both actually mean them; matching the memo
+ * family first would have reversed the pair.
+ *
+ * Exact header names win over substring hits within each family, so
+ * `Description` beside `Transaction Details` still takes the description.
+ */
+const MEMO_HEADERS = [
+  "memo",
+  "notes",
+  "note",
+  "remarks",
+  "remark",
+  "additional information",
+  "additional info",
+  "transaction details",
+  "transaction information",
+  "reference text",
+  "comment",
+  "comments",
+];
+
+const PAYEE_HEADERS = [
+  "payee",
+  "merchant",
+  "description",
+  "narrative",
+  "counterparty",
+  "beneficiary",
+  "details",
+  "particulars",
+  "transaction",
+];
+
+/**
+ * Guess the parse configuration from the parsed table.
  *
  * Getting this wrong is not a small inconvenience: mapping a **Debit** column as
  * a signed amount yields positive amounts for money that left the account, and
@@ -194,7 +300,7 @@ export function parseMoneyToMinorUnits(
  * header names when present and otherwise from the shape of the data — two
  * numeric columns where each row populates only one of them.
  */
-export function detectColumnMapping(table: DelimitedTable): ColumnMapping {
+export function detectDelimitedConfig(table: DelimitedTable): StatementParseConfig {
   const headers = (table.headers ?? []).map((header) => header.trim().toLowerCase());
   const width = Math.max(table.headers?.length ?? 0, ...table.rows.map((row) => row.length), 0);
 
@@ -242,28 +348,63 @@ export function detectColumnMapping(table: DelimitedTable): ColumnMapping {
   })();
 
   const dateSamples = table.rows.slice(0, 20).map((row) => row[dateColumn] ?? "");
-  const base = {
-    ...DEFAULT_MAPPING,
-    date: dateColumn,
-    dateFormat: detectDateFormat(dateSamples),
+  const referenceColumn = (() => {
+    const byHeader = headerIndex("reference", "ref no", "auth", "cheque", "check no");
+    return byHeader >= 0 ? byHeader : undefined;
+  })();
+
+  /** A text column this file could plausibly map to one of the two channels. */
+  const isTextColumn = (column: number, taken: number | undefined) =>
+    column !== dateColumn &&
+    column !== referenceColumn &&
+    column !== taken &&
+    !numericColumns.includes(column);
+
+  /** Exact header name first, then a substring hit; both skip non-text columns. */
+  const matchHeader = (family: string[], taken: number | undefined) => {
+    const exact = headers.findIndex(
+      (header, index) => isTextColumn(index, taken) && family.includes(header)
+    );
+    if (exact >= 0) return exact;
+    const partial = headers.findIndex(
+      (header, index) => isTextColumn(index, taken) && family.some((name) => header.includes(name))
+    );
+    return partial >= 0 ? partial : undefined;
   };
 
-  const descriptionColumn = (() => {
-    const byHeader = headerIndex("description", "narrative", "details", "particulars", "payee");
-    if (byHeader >= 0) return byHeader;
-    for (let column = 0; column < width; column++) {
-      if (column === dateColumn || numericColumns.includes(column)) continue;
-      return column;
-    }
-    return Math.min(dateColumn + 1, Math.max(width - 1, 0));
-  })();
+  const payeeColumn =
+    matchHeader(PAYEE_HEADERS, undefined) ??
+    // No usable header: the first column that is neither the date, an amount,
+    // nor the reference. Something has to fill this channel.
+    (() => {
+      for (let column = 0; column < width; column++) {
+        if (isTextColumn(column, undefined)) return column;
+      }
+      return Math.min(dateColumn + 1, Math.max(width - 1, 0));
+    })();
+
+  // Only ever a column the payee did not take, so one column can never fill both
+  // channels — duplicating the merchant text into the notes is exactly the
+  // conflation this model exists to remove.
+  const memoColumn = matchHeader(MEMO_HEADERS, payeeColumn);
+
+  const columns: ColumnMapping = {
+    date: dateColumn,
+    importedPayee: payeeColumn,
+    notes: memoColumn,
+    reference: referenceColumn === payeeColumn ? undefined : referenceColumn,
+  };
+
+  const base: StatementParseConfig = {
+    ...DEFAULT_PARSE_CONFIG,
+    columns,
+    dateFormat: detectDateFormat(dateSamples),
+  };
 
   if (debitHeader >= 0 && creditHeader >= 0) {
     return {
       ...base,
-      description: descriptionColumn,
-      debit: debitHeader,
-      credit: creditHeader,
+      columns: { ...columns, debit: debitHeader, credit: creditHeader },
       signConvention: "debit-credit",
     };
   }
@@ -272,9 +413,7 @@ export function detectColumnMapping(table: DelimitedTable): ColumnMapping {
     const [first, second] = complementaryPair;
     return {
       ...base,
-      description: descriptionColumn,
-      debit: first,
-      credit: second,
+      columns: { ...columns, debit: first, credit: second },
       signConvention: "debit-credit",
     };
   }
@@ -284,7 +423,7 @@ export function detectColumnMapping(table: DelimitedTable): ColumnMapping {
       ? headerIndex("amount", "value")
       : numericColumns[0] ?? Math.max(width - 1, 0);
 
-  return { ...base, description: descriptionColumn, amount: amountColumn };
+  return { ...base, columns: { ...columns, amount: amountColumn } };
 }
 
 function looksLikeDateCell(value: string): boolean {
@@ -295,12 +434,30 @@ function looksLikeDateCell(value: string): boolean {
     parseStatementDate(value, "ymd-compact") !== null;
 }
 
+/**
+ * Tidy a date cell into the shape the format patterns expect.
+ *
+ * Quicken writes QIF dates as `8/12'26` and pads them as `8/ 1/26`; both are the
+ * ordinary separated form once the apostrophe and the padding are gone, so they
+ * are normalized here rather than given a format of their own.
+ *
+ * Shared by the parser **and** the detector on purpose: a cell the detector
+ * cannot recognise but the parser can — or the reverse — is how a file ends up
+ * detected as one format and read as another.
+ */
+export function normalizeDateText(text: string): string {
+  return String(text ?? "")
+    .trim()
+    .replace(/'/g, "/")
+    .replace(/\s*\/\s*/g, "/");
+}
+
 /** Parse a statement date cell into ISO `YYYY-MM-DD`, or null. */
 export function parseStatementDate(
   text: string,
   format: StatementDateFormat
 ): string | null {
-  const value = String(text ?? "").trim();
+  const value = normalizeDateText(text);
   if (!value) return null;
 
   if (format === "ymd-compact") {
@@ -349,10 +506,10 @@ function isoDate(year: number, month: number, day: number): string | null {
  * Ambiguity between `dmy` and `mdy` is only resolvable when some sample has a
  * first component above 12; when nothing disambiguates, `dmy` is returned and
  * the caller is expected to show the choice in the mapping UI rather than
- * silently trusting it.
+ * silently trusting it — see `isDateFormatAmbiguous`.
  */
 export function detectDateFormat(samples: string[]): StatementDateFormat {
-  const values = samples.map((s) => String(s ?? "").trim()).filter(Boolean);
+  const values = dateSamples(samples);
   if (values.length === 0) return "iso";
 
   if (values.every((v) => /^\d{4}[-/.]\d{1,2}[-/.]\d{1,2}$/.test(v))) return "iso";
@@ -369,6 +526,38 @@ export function detectDateFormat(samples: string[]): StatementDateFormat {
   }
   if (sawMonthFirst && !sawDayFirst) return "mdy";
   return "dmy";
+}
+
+/**
+ * True when the samples cannot settle day-first versus month-first.
+ *
+ * `03/07/2026` is either the 3rd of July or the 7th of March, and no amount of
+ * inspection resolves it — only a sample with a component above 12 does. Where a
+ * whole statement happens to fall in the first twelve days of each month,
+ * detection has to guess, and every row is mis-dated if it guesses wrong.
+ *
+ * So the ambiguity is reported rather than hidden. It is the caller's job to say
+ * so next to the format selector; the detector's job is only to be honest about
+ * what the data supports.
+ */
+export function isDateFormatAmbiguous(samples: string[]): boolean {
+  const values = dateSamples(samples);
+  if (values.length === 0) return false;
+
+  let separated = 0;
+  for (const value of values) {
+    const match = value.match(/^(\d{1,2})[-/.](\d{1,2})[-/.]\d{2,4}$/);
+    if (!match) continue;
+    separated += 1;
+    // Either component above 12 settles it for the whole file.
+    if (+match[1] > 12 || +match[2] > 12) return false;
+  }
+  return separated > 0;
+}
+
+/** Trimmed, non-empty samples in the shape the format patterns expect. */
+function dateSamples(samples: string[]): string[] {
+  return samples.map((sample) => normalizeDateText(sample)).filter(Boolean);
 }
 
 /**
@@ -407,30 +596,57 @@ function cell(cells: string[], index: number | undefined): string {
   return cells[index] ?? "";
 }
 
-/** Apply a column mapping to a parsed table. */
+/**
+ * The original-currency amount, resolved from whichever text channel the bank
+ * printed it in and signed to follow the posted amount.
+ *
+ * Shared with the structured parsers: a foreign purchase is an outflow in both
+ * currencies, and which field the bank chose to print the original amount in is
+ * a formatting decision, not a semantic one.
+ */
+export function originalAmountFor(
+  texts: (string | undefined)[],
+  amount: MinorUnitAmount,
+  config: Pick<StatementParseConfig, "detectOriginalCurrencyAmount" | "minorUnitDigits">
+): { originalAmount?: MinorUnitAmount; originalCurrency?: string } {
+  if (!config.detectOriginalCurrencyAmount) return {};
+  for (const text of texts) {
+    if (!text) continue;
+    const original = extractOriginalAmount(text, config.minorUnitDigits);
+    if (!original) continue;
+    return {
+      originalAmount: amount !== 0 ? Math.sign(amount) * Math.abs(original.amount) : undefined,
+      originalCurrency: original.currency,
+    };
+  }
+  return {};
+}
+
+/** Apply a parse config to a delimited table. */
 export function normalizeStatement(
   table: DelimitedTable,
-  mapping: ColumnMapping,
+  config: StatementParseConfig,
   makeId: (index: number) => string
 ): NormalizedStatement {
   const rows: StatementRow[] = [];
   const errors: StatementRowError[] = [];
+  const columns = config.columns;
 
   table.rows.forEach((cells, index) => {
     const sourceRowNumber = table.sourceRowNumbers[index] ?? index + 1;
 
-    const postedDate = parseStatementDate(cell(cells, mapping.date), mapping.dateFormat);
+    const postedDate = parseStatementDate(cell(cells, columns.date), config.dateFormat);
     if (!postedDate) {
       errors.push({
         sourceRowNumber,
         cells,
         reason: "unparseable-date",
-        detail: `Could not read "${cell(cells, mapping.date)}" as a ${mapping.dateFormat} date`,
+        detail: `Could not read "${cell(cells, columns.date)}" as a ${config.dateFormat} date`,
       });
       return;
     }
 
-    const amount = readAmount(cells, mapping);
+    const amount = readAmount(cells, config);
     if (amount === null) {
       errors.push({
         sourceRowNumber,
@@ -441,24 +657,21 @@ export function normalizeStatement(
       return;
     }
 
-    const reference = cell(cells, mapping.reference).trim();
-    const description = cell(cells, mapping.description).trim();
-    const original = mapping.detectOriginalCurrencyAmount
-      ? extractOriginalAmount(description, mapping.minorUnitDigits)
-      : null;
+    const reference = cell(cells, columns.reference).trim();
+    const importedPayee = cell(cells, columns.importedPayee).trim();
+    const bankNotes = cell(cells, columns.notes).trim();
 
     rows.push({
       id: makeId(index),
       sourceRowNumber,
       postedDate,
       amount,
-      description,
-      reference: reference || undefined,
-      // Sign follows the posted amount: a foreign purchase is an outflow in both
-      // currencies.
-      originalAmount:
-        original && amount !== 0 ? Math.sign(amount) * Math.abs(original.amount) : undefined,
-      originalCurrency: original?.currency,
+      importedPayee,
+      bankNotes: bankNotes || undefined,
+      bankReference: reference || undefined,
+      // The bank prints the foreign amount in whichever text column it feels
+      // like; the payee text is by far the commoner of the two.
+      ...originalAmountFor([importedPayee, bankNotes], amount, config),
       raw: table.headers ? zip(table.headers, cells) : [...cells],
       fingerprint: fingerprintRow(cells, sourceRowNumber),
     });
@@ -467,12 +680,12 @@ export function normalizeStatement(
   return { rows, errors, totals: totalsFor(rows), period: periodFor(rows) };
 }
 
-function readAmount(cells: string[], mapping: ColumnMapping): MinorUnitAmount | null {
-  const { decimalSeparator, minorUnitDigits } = mapping;
+function readAmount(cells: string[], config: StatementParseConfig): MinorUnitAmount | null {
+  const { decimalSeparator, minorUnitDigits, columns } = config;
 
-  if (mapping.signConvention === "debit-credit") {
-    const debit = parseMoneyToMinorUnits(cell(cells, mapping.debit), decimalSeparator, minorUnitDigits);
-    const credit = parseMoneyToMinorUnits(cell(cells, mapping.credit), decimalSeparator, minorUnitDigits);
+  if (config.signConvention === "debit-credit") {
+    const debit = parseMoneyToMinorUnits(cell(cells, columns.debit), decimalSeparator, minorUnitDigits);
+    const credit = parseMoneyToMinorUnits(cell(cells, columns.credit), decimalSeparator, minorUnitDigits);
     // Debit columns are written as positive magnitudes; money leaving the
     // account is negative in Actual.
     if (debit !== null && debit !== 0) return -Math.abs(debit);
@@ -482,9 +695,9 @@ function readAmount(cells: string[], mapping: ColumnMapping): MinorUnitAmount | 
     return null;
   }
 
-  const amount = parseMoneyToMinorUnits(cell(cells, mapping.amount), decimalSeparator, minorUnitDigits);
+  const amount = parseMoneyToMinorUnits(cell(cells, columns.amount), decimalSeparator, minorUnitDigits);
   if (amount === null) return null;
-  return mapping.signConvention === "signed-inverted" ? -amount : amount;
+  return config.signConvention === "signed-inverted" ? -amount : amount;
 }
 
 function zip(headers: string[], cells: string[]): Record<string, string> {
@@ -505,7 +718,7 @@ export function totalsFor(rows: StatementRow[]): StatementTotals {
   return { debits, credits, net: debits + credits, rowCount: rows.length };
 }
 
-function periodFor(rows: StatementRow[]): { start: string; end: string } | null {
+export function periodFor(rows: StatementRow[]): { start: string; end: string } | null {
   if (rows.length === 0) return null;
   let start = rows[0].postedDate;
   let end = rows[0].postedDate;

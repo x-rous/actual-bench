@@ -1,4 +1,4 @@
-import { planCounts, totalChanges } from "../apply/operations";
+import { classifyPlan, planCounts, totalChanges } from "../apply/operations";
 import type {
   ActualTransactionSnapshot,
   ReconciliationItem,
@@ -12,7 +12,7 @@ function row(overrides: Partial<StatementRow> & Pick<StatementRow, "id">): State
     sourceRowNumber: 1,
     postedDate: "2026-07-12",
     amount: -6850,
-    description: "DUBAI TAXI CORPORATION",
+    importedPayee: "DUBAI TAXI CORPORATION",
     raw: {},
     fingerprint: `fp-${overrides.id}`,
     ...overrides,
@@ -168,12 +168,17 @@ describe("create operations", () => {
     }
   });
 
-  it("puts the description in the notes when asked", () => {
+  it("puts the bank's merchant text in the notes when asked", () => {
     const result = plan(
       [item({ id: "i1", disposition: "create", statementRowIds: ["s1"] })],
       [row({ id: "s1" })],
       [],
-      { descriptionTarget: "notes", clearedTarget: "none" }
+      {
+        payeeStrategy: "leave-unset",
+        notesStrategy: "imported-payee",
+        clearedTarget: "none",
+        enrichImportedPayee: true,
+      }
     );
 
     const operation = result.operations[0];
@@ -183,7 +188,7 @@ describe("create operations", () => {
     }
   });
 
-  it("never lets the description overwrite a note the user wrote", () => {
+  it("never lets the bank's text overwrite a note the user wrote", () => {
     const result = plan(
       [
         item({
@@ -195,7 +200,12 @@ describe("create operations", () => {
       ],
       [row({ id: "s1" })],
       [],
-      { descriptionTarget: "notes", clearedTarget: "none" }
+      {
+        payeeStrategy: "leave-unset",
+        notesStrategy: "imported-payee",
+        clearedTarget: "none",
+        enrichImportedPayee: true,
+      }
     );
 
     const operation = result.operations[0];
@@ -237,6 +247,230 @@ describe("create operations", () => {
 
     const operation = result.operations[0];
     if (operation.kind === "create") expect(operation.date).toBe("2026-07-11");
+  });
+});
+
+describe("imported payee, payee and notes are three fields (RD-072)", () => {
+  const withMemo = (id: string) =>
+    row({ id, importedPayee: "AMZN Mktp AE*23981", bankNotes: "ONLINE CARD PURCHASE" });
+
+  const createItem = (overrides: Partial<ReconciliationItem> = {}) =>
+    item({ id: "i1", disposition: "create", statementRowIds: ["s1"], ...overrides });
+
+  it("writes the bank's text as the imported payee whatever the payee strategy", () => {
+    for (const payeeStrategy of ["imported-payee", "leave-unset"] as const) {
+      const result = plan([createItem()], [withMemo("s1")], [], {
+        payeeStrategy,
+        notesStrategy: "bank-notes",
+        clearedTarget: "none",
+        enrichImportedPayee: true,
+      });
+
+      const operation = result.operations[0];
+      if (operation.kind !== "create") throw new Error("expected a create");
+      expect(operation.importedPayee).toBe("AMZN Mktp AE*23981");
+    }
+  });
+
+  it("keeps the bank's text as provenance even when the user chose the payee", () => {
+    const result = plan(
+      [
+        createItem({
+          stagedChanges: { payeeId: { original: null, staged: "payee-amazon", source: "manual" } },
+        }),
+      ],
+      [withMemo("s1")]
+    );
+
+    const operation = result.operations[0];
+    if (operation.kind !== "create") throw new Error("expected a create");
+    // The three fields, each answering its own question.
+    expect(operation.importedPayee).toBe("AMZN Mktp AE*23981");
+    expect(operation.payeeId).toBe("payee-amazon");
+    expect(operation.payeeName).toBeNull();
+    expect(operation.notes).toBe("ONLINE CARD PURCHASE");
+  });
+
+  it("puts the bank's memo in the notes, not its merchant text", () => {
+    const result = plan([createItem()], [withMemo("s1")]);
+
+    const operation = result.operations[0];
+    if (operation.kind !== "create") throw new Error("expected a create");
+    expect(operation.payeeName).toBe("AMZN Mktp AE*23981");
+    expect(operation.notes).toBe("ONLINE CARD PURCHASE");
+  });
+
+  it("leaves the notes empty when the statement has no memo", () => {
+    const result = plan([createItem()], [row({ id: "s1" })]);
+
+    const operation = result.operations[0];
+    if (operation.kind !== "create") throw new Error("expected a create");
+    expect(operation.notes).toBeNull();
+    expect(operation.importedPayee).toBe("DUBAI TAXI CORPORATION");
+  });
+
+  it("still prefers a real memo when the notes fall back to the merchant text", () => {
+    const result = plan([createItem()], [withMemo("s1")], [], {
+      payeeStrategy: "imported-payee",
+      notesStrategy: "imported-payee",
+      clearedTarget: "none",
+      enrichImportedPayee: true,
+    });
+
+    const operation = result.operations[0];
+    if (operation.kind !== "create") throw new Error("expected a create");
+    expect(operation.notes).toBe("ONLINE CARD PURCHASE");
+  });
+
+  it("writes nothing into the notes when asked to leave them alone", () => {
+    const result = plan([createItem()], [withMemo("s1")], [], {
+      payeeStrategy: "imported-payee",
+      notesStrategy: "leave-unset",
+      clearedTarget: "none",
+      enrichImportedPayee: true,
+    });
+
+    const operation = result.operations[0];
+    if (operation.kind !== "create") throw new Error("expected a create");
+    expect(operation.notes).toBeNull();
+  });
+
+  it("writes only notes when the statement's one text column is a memo", () => {
+    // The mapping said this file has no merchant column, so there is no bank
+    // provenance to record and no payee to resolve — but the memo is still a
+    // note (RD-072 §2.1).
+    const result = plan(
+      [createItem()],
+      [row({ id: "s1", importedPayee: "", bankNotes: "Transfer to savings" })]
+    );
+
+    const operation = result.operations[0];
+    if (operation.kind !== "create") throw new Error("expected a create");
+    expect(operation.importedPayee).toBeNull();
+    expect(operation.payeeName).toBeNull();
+    expect(operation.notes).toBe("Transfer to savings");
+  });
+
+  it("carries no imported payee when the statement supplied no text at all", () => {
+    const result = plan([createItem()], [row({ id: "s1", importedPayee: "  " })]);
+
+    const operation = result.operations[0];
+    if (operation.kind !== "create") throw new Error("expected a create");
+    expect(operation.importedPayee).toBeNull();
+  });
+});
+
+describe("provenance on matched transactions (RD-072 §2.4)", () => {
+  const matched = (overrides: Partial<ReconciliationItem> = {}) =>
+    item({
+      id: "i1",
+      disposition: "matched",
+      statementRowIds: ["s1"],
+      actualTransactionIds: ["t1"],
+      ...overrides,
+    });
+
+  it("attaches the bank's text without touching the curated payee, notes or category", () => {
+    const result = plan(
+      [matched()],
+      [row({ id: "s1", importedPayee: "AMZN Mktp AE*23981" })],
+      [txn({ id: "t1", payeeName: "Amazon", notes: "School supplies" })]
+    );
+
+    expect(result.operations).toHaveLength(1);
+    const operation = result.operations[0];
+    if (operation.kind !== "update") throw new Error("expected an update");
+    expect(operation.importedPayee).toBe("AMZN Mktp AE*23981");
+    // Nothing of the user's is in the patch, so nothing of the user's is written.
+    expect(operation.patch).toEqual({});
+    expect(operation.cleared).toBeUndefined();
+  });
+
+  it("has nothing to attach when the statement has no merchant column", () => {
+    const result = plan(
+      [matched()],
+      [row({ id: "s1", importedPayee: "", bankNotes: "Transfer to savings" })],
+      [txn({ id: "t1" })]
+    );
+
+    expect(result.operations).toHaveLength(0);
+    expect(result.noWriteMatches).toBe(1);
+  });
+
+  it("writes nothing when Actual already holds that text", () => {
+    const result = plan(
+      [matched()],
+      [row({ id: "s1", importedPayee: "AMZN Mktp AE*23981" })],
+      [txn({ id: "t1", importedPayee: "AMZN Mktp AE*23981" })]
+    );
+
+    expect(result.operations).toHaveLength(0);
+    expect(result.noWriteMatches).toBe(1);
+  });
+
+  it("leaves a row reconciled in Actual alone", () => {
+    const result = plan(
+      [matched({ guards: { protectedReconciled: true, splitParent: false, transfer: "no" } })],
+      [row({ id: "s1", importedPayee: "AMZN Mktp AE*23981" })],
+      [txn({ id: "t1", reconciled: true })]
+    );
+
+    expect(result.operations).toHaveLength(0);
+  });
+
+  it("does nothing when the setting is off", () => {
+    const result = plan(
+      [matched()],
+      [row({ id: "s1", importedPayee: "AMZN Mktp AE*23981" })],
+      [txn({ id: "t1" })],
+      {
+        payeeStrategy: "imported-payee",
+        notesStrategy: "bank-notes",
+        clearedTarget: "none",
+        enrichImportedPayee: false,
+      }
+    );
+
+    expect(result.operations).toHaveLength(0);
+    expect(result.noWriteMatches).toBe(1);
+  });
+
+  it("rides along with a staged change rather than becoming a second write", () => {
+    const result = plan(
+      [matched({ stagedChanges: NOTES_PATCH })],
+      [row({ id: "s1", importedPayee: "AMZN Mktp AE*23981" })],
+      [txn({ id: "t1" })]
+    );
+
+    expect(result.operations).toHaveLength(1);
+    const operation = result.operations[0];
+    if (operation.kind !== "update") throw new Error("expected an update");
+    expect(operation.importedPayee).toBe("AMZN Mktp AE*23981");
+    expect(operation.patch.notes?.staged).toBe("#2026-07 DUBAI TAXI");
+  });
+
+  it("is counted apart from the changes the user staged", () => {
+    const result = plan(
+      [
+        matched(),
+        item({
+          id: "i2",
+          disposition: "matched",
+          statementRowIds: ["s2"],
+          actualTransactionIds: ["t2"],
+          stagedChanges: NOTES_PATCH,
+        }),
+      ],
+      [
+        row({ id: "s1", importedPayee: "AMZN Mktp AE*23981" }),
+        row({ id: "s2", importedPayee: "DUBAI TAXI CORPORATION" }),
+      ],
+      [txn({ id: "t1" }), txn({ id: "t2" })]
+    );
+
+    // Two writes, but only one of them is a change the user made.
+    expect(result.operations).toHaveLength(2);
+    expect(classifyPlan(result)).toEqual({ userChanges: 1, enrichments: 1 });
   });
 });
 
@@ -392,8 +626,12 @@ describe("marking transactions cleared", () => {
   // something, or the count the user approves would be inflated by writes that
   // do nothing.
   const cleared = (target: ApplyConfig["clearedTarget"]): ApplyConfig => ({
-    descriptionTarget: "payee",
+    payeeStrategy: "imported-payee",
+    notesStrategy: "bank-notes",
     clearedTarget: target,
+    // Isolated from provenance enrichment, which would otherwise turn every
+    // no-write match in these fixtures into a write of its own.
+    enrichImportedPayee: false,
   });
 
   it("leaves the cleared flag alone by default", () => {

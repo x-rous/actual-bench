@@ -39,7 +39,7 @@ const ROW = {
   sourceRowNumber: 2,
   postedDate: "2026-07-01",
   amount: -34285,
-  description: "CARREFOUR MARKET",
+  importedPayee: "CARREFOUR MARKET",
   fingerprint: "abc12345",
   raw: { Date: "2026-07-01", Amount: "-342.85" },
 };
@@ -188,7 +188,7 @@ describe("statement rows", () => {
     expect(stored.raw).toEqual({ Date: "2026-07-01", Amount: "-342.85" });
     expect(stored.amount).toBe(-34285);
     expect(stored.fingerprint).toBe("abc12345");
-    expect(stored.reference).toBeNull();
+    expect(stored.bankReference).toBeNull();
   });
 
   it("round-trips every field the matcher reads", () => {
@@ -201,7 +201,7 @@ describe("statement rows", () => {
 
     const full = {
       ...ROW,
-      reference: "88721",
+      bankReference: "88721",
       transactionDate: "2026-06-30",
       originalAmount: -22570,
       originalCurrency: "SAR",
@@ -213,8 +213,8 @@ describe("statement rows", () => {
       sourceRowNumber: full.sourceRowNumber,
       postedDate: full.postedDate,
       amount: full.amount,
-      description: full.description,
-      reference: "88721",
+      importedPayee: full.importedPayee,
+      bankReference: "88721",
       transactionDate: "2026-06-30",
       originalAmount: -22570,
       originalCurrency: "SAR",
@@ -397,7 +397,7 @@ describe("import profiles", () => {
     budgetSyncId: "budget-1",
     accountId: "acct-1",
     name: "Global Money Credit Card Statement",
-    mapping: { date: 0, description: 1, amount: 2, dateFormat: "dmy" },
+    mapping: { date: 0, importedPayee: 1, amount: 2, dateFormat: "dmy" },
     matchConfig: { dateToleranceDays: 7, text: { combine: "best-of" } },
   };
 
@@ -415,11 +415,11 @@ describe("import profiles", () => {
     const first = saveReconciliationProfile(db, profile);
     const second = saveReconciliationProfile(db, {
       ...profile,
-      mapping: { date: 1, description: 2, amount: 3, dateFormat: "iso" },
+      mapping: { date: 1, importedPayee: 2, amount: 3, dateFormat: "iso" },
     });
 
     expect(second.id).toBe(first.id);
-    expect(second.mapping).toEqual({ date: 1, description: 2, amount: 3, dateFormat: "iso" });
+    expect(second.mapping).toEqual({ date: 1, importedPayee: 2, amount: 3, dateFormat: "iso" });
     expect(listReconciliationProfiles(db, "budget-1", "acct-1")).toHaveLength(1);
   });
 

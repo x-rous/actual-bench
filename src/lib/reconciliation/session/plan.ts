@@ -24,17 +24,33 @@ import { canStageDelete, canStageField, hasStagedChanges, stagedFields } from ".
 
 /**
  * How a staged decision becomes a write, as distinct from how rows are matched.
+ *
+ * The bank's merchant text is **not** configurable: it always becomes Actual's
+ * `imported_payee` on a created transaction (RD-072 §2.2). That is provenance —
+ * what the bank called this transaction — and it is not in competition with the
+ * payee you curate or the note you write. What *is* configurable is which of
+ * those two the statement's text should also seed.
  */
 export type ApplyConfig = {
   /**
-   * Where the bank's description goes on a transaction being created.
+   * Where a created transaction's Payee comes from.
    *
-   * The payee by default, because that is what a merchant name is. Notes suit
-   * people whose payees are a curated list they do not want the bank's raw text
-   * added to — with rules running on create, a description in the notes can also
-   * be what a rule reads to pick the payee itself.
+   * `imported-payee` resolves the bank's merchant text into an Actual payee,
+   * which is what a merchant name is for. `leave-unset` suits a curated payee
+   * list the bank's raw text should not be added to — Actual's rules run on
+   * create and can set the payee themselves, and the raw text is still recorded
+   * as the imported payee either way.
    */
-  descriptionTarget: "payee" | "notes";
+  payeeStrategy: "imported-payee" | "leave-unset";
+  /**
+   * Where a created transaction's Notes come from.
+   *
+   * `bank-notes` uses the statement's own memo field when it has one — the
+   * closest thing to what notes are for. `imported-payee` copies the merchant
+   * text in as well, which some people's rules read; it is a deliberate
+   * duplicate of the imported payee, not the only place that text survives.
+   */
+  notesStrategy: "bank-notes" | "imported-payee" | "leave-unset";
   /**
    * Which transactions to mark cleared.
    *
@@ -45,11 +61,23 @@ export type ApplyConfig = {
    * a default.
    */
   clearedTarget: "none" | "created" | "reconciled";
+  /**
+   * Attach the bank's merchant text to matched *existing* transactions.
+   *
+   * Mirrors what Actual's own import does on a match: keep the user's payee,
+   * notes and category, and refresh `imported_payee` from the bank. It makes a
+   * transaction more informative without undoing anything — but it is still a
+   * write, so it is counted and shown separately from the changes the user
+   * staged (RD-072 §2.4).
+   */
+  enrichImportedPayee: boolean;
 };
 
 export const DEFAULT_APPLY_CONFIG: ApplyConfig = {
-  descriptionTarget: "payee",
+  payeeStrategy: "imported-payee",
+  notesStrategy: "bank-notes",
   clearedTarget: "none",
+  enrichImportedPayee: true,
 };
 
 export type PlanInput = {
@@ -114,6 +142,8 @@ export function buildApplyPlan(input: PlanInput): ApplyPlan {
         const transaction = input.transactions.get(item.actualTransactionIds[0] ?? "");
         if (!transaction) break;
 
+        const enrichment = enrichmentFor(item, transaction, input, applyConfig);
+
         if (!hasStagedChanges(item.stagedChanges)) {
           if (item.disposition === "correct-amount") break;
 
@@ -122,14 +152,16 @@ export function buildApplyPlan(input: PlanInput): ApplyPlan {
           // something. A row already cleared, or already reconciled in Actual,
           // needs no write, and pretending otherwise would inflate the count the
           // user is about to approve.
-          if (
+          const markCleared =
             applyConfig.clearedTarget === "reconciled" &&
             !transaction.cleared &&
-            !item.guards.protectedReconciled
-          ) {
+            !item.guards.protectedReconciled;
+
+          if (markCleared || enrichment !== null) {
             operations.push({
               ...updateOperationFor(item, transaction),
-              cleared: true,
+              ...(markCleared ? { cleared: true } : {}),
+              ...(enrichment !== null ? { importedPayee: enrichment } : {}),
             });
             break;
           }
@@ -160,6 +192,7 @@ export function buildApplyPlan(input: PlanInput): ApplyPlan {
           ...(applyConfig.clearedTarget === "reconciled" && !transaction.cleared
             ? { cleared: true }
             : {}),
+          ...(enrichment !== null ? { importedPayee: enrichment } : {}),
         });
         break;
       }
@@ -217,7 +250,7 @@ function createOperationFor(
 ): CreateOperation {
   const patch = item.stagedChanges;
   const config = input.applyConfig ?? DEFAULT_APPLY_CONFIG;
-  const descriptionTarget = config.descriptionTarget;
+  const importedPayee = row.importedPayee.trim() || null;
   return {
     id: operationId("create", item.id),
     kind: "create",
@@ -229,12 +262,16 @@ function createOperationFor(
     date: patch?.date?.staged ?? row.postedDate,
     amount: row.amount,
     payeeId: patch?.payeeId?.staged ?? null,
-    // The bank's description goes where the user asked. A staged payee always
-    // wins over it, and a staged note is never overwritten by it.
+    // Bank provenance. Derived from the statement alone, never from the payee
+    // or notes strategy: whatever the user does with the text, this is what the
+    // bank called the transaction (RD-072 §2.2).
+    importedPayee,
+    // The payee candidate. A staged payee id always wins; leaving this null
+    // hands the decision to Actual's rules, which run on create.
     payeeName:
-      patch?.payeeId?.staged || descriptionTarget === "notes"
+      patch?.payeeId?.staged || config.payeeStrategy !== "imported-payee"
         ? null
-        : row.description || null,
+        : importedPayee,
     // Left unset so Actual's rules decide it on the way in, which is where
     // categorising belongs.
     categoryId: null,
@@ -254,6 +291,32 @@ function createOperationFor(
       fingerprint: row.fingerprint,
     }),
   };
+}
+
+/**
+ * The bank text to attach to a matched existing transaction, or null for none.
+ *
+ * Null in every case where the write would achieve nothing or would not be
+ * ours to make: the setting is off, the statement has no merchant text, Actual
+ * already holds exactly that text, or the row is reconciled in Actual — which
+ * Actual's own importer skips too, and which this feature has protected from
+ * the start.
+ */
+function enrichmentFor(
+  item: ReconciliationItem,
+  transaction: ActualTransactionSnapshot,
+  input: PlanInput,
+  config: ApplyConfig
+): string | null {
+  if (!config.enrichImportedPayee) return null;
+  if (item.guards.protectedReconciled) return null;
+
+  const row = input.statementRows.get(item.statementRowIds[0] ?? "");
+  const importedPayee = row?.importedPayee.trim();
+  if (!importedPayee) return null;
+  if ((transaction.importedPayee ?? "").trim() === importedPayee) return null;
+
+  return importedPayee;
 }
 
 function updateOperationFor(

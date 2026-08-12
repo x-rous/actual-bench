@@ -440,7 +440,14 @@ export function Workbench({
       const haystacks: string[] = [];
       for (const id of item.statementRowIds) {
         const row = statementRows.get(id);
-        if (row) haystacks.push(row.description, row.reference ?? "", String(row.amount));
+        if (row) {
+          haystacks.push(
+            row.importedPayee,
+            row.bankNotes ?? "",
+            row.bankReference ?? "",
+            String(row.amount)
+          );
+        }
       }
       for (const id of item.actualTransactionIds) {
         const transaction = transactions.get(id);

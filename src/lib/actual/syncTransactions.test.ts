@@ -41,6 +41,8 @@ type FakeRuntimeOptions = {
 
 function buildFakeRuntime(options: FakeRuntimeOptions = {}) {
   const addTransactions = jest.fn().mockResolvedValue("ok");
+  const updateTransaction = jest.fn().mockResolvedValue(undefined);
+  const send = jest.fn().mockResolvedValue(undefined);
   const importTransactions = jest.fn().mockResolvedValue({ added: [], updated: [], errors: [] });
   const createPayee = jest.fn().mockResolvedValue("payee-new");
 
@@ -69,10 +71,20 @@ function buildFakeRuntime(options: FakeRuntimeOptions = {}) {
     addTransactions,
     importTransactions,
     createPayee,
+    updateTransaction,
+    send,
   };
 
   mockGetBrowserApiRuntime.mockResolvedValue(runtime as never);
-  return { runtime, addTransactions, importTransactions, createPayee, getTransactions };
+  return {
+    runtime,
+    addTransactions,
+    importTransactions,
+    createPayee,
+    getTransactions,
+    updateTransaction,
+    send,
+  };
 }
 
 beforeEach(() => {
@@ -269,7 +281,15 @@ describe("createTransactionsForSync (Direct)", () => {
         transactionId: "created-1",
         importedId: "sync-marker-1",
         resolvedPayeeId: "tp1",
-        applied: { amount: 1250, date: "2026-07-01", cleared: false, categoryId: null, payeeId: null, notes: null },
+        applied: {
+          amount: 1250,
+          date: "2026-07-01",
+          cleared: false,
+          categoryId: null,
+          payeeId: null,
+          notes: null,
+          importedPayee: null,
+        },
       },
     ]);
   });
@@ -340,5 +360,105 @@ describe("getSyncCapabilities", () => {
     expect(typeof transport.createOrResolvePayee).toBe("function");
     expect(typeof transport.createTransactionsForSync).toBe("function");
     expect(typeof transport.getTargetLookupForSync).toBe("function");
+  });
+});
+
+/**
+ * Bank provenance through the Direct transport (RD-072 §2).
+ *
+ * The payee is resolved to an id before writing, so nothing downstream could
+ * derive `imported_payee` from a `payee_name` — Actual's own fallback never gets
+ * the chance to run. It has to be sent explicitly, and these fixtures hold the
+ * transport to that.
+ */
+describe("imported_payee (Direct)", () => {
+  it("sends the bank's merchant text alongside the resolved payee id", async () => {
+    const { addTransactions } = buildFakeRuntime({ payees: [{ id: "p1", name: "Amazon" }] });
+    const transport = createBrowserApiTransport(browserConnection);
+
+    await transport.createTransactionsForSync([
+      {
+        accountId: "acct-tgt",
+        date: "2026-08-01",
+        amount: -12550,
+        payeeName: "Amazon",
+        importedPayee: "AMZN Mktp AE*23981",
+        importedId: "recon:abc",
+      },
+    ]);
+
+    expect(addTransactions.mock.calls[0][1][0]).toMatchObject({
+      payee: "p1",
+      imported_payee: "AMZN Mktp AE*23981",
+    });
+  });
+
+  it("omits the field when the caller supplied none", async () => {
+    const { addTransactions } = buildFakeRuntime({});
+    const transport = createBrowserApiTransport(browserConnection);
+
+    await transport.createTransactionsForSync([
+      { accountId: "acct-tgt", date: "2026-08-01", amount: -100 },
+    ]);
+
+    expect("imported_payee" in addTransactions.mock.calls[0][1][0]).toBe(false);
+  });
+
+  it("reads back what was written, as the raw merchant text and not as the payee", async () => {
+    buildFakeRuntime({
+      payees: [{ id: "p1", name: "Amazon" }],
+      transactions: [
+        {
+          id: "t1",
+          account: "acct-tgt",
+          date: "2026-08-01",
+          amount: -12550,
+          payee: "p1",
+          imported_payee: "AMZN Mktp AE*23981",
+        },
+      ],
+    });
+    const transport = createBrowserApiTransport(browserConnection);
+
+    const [row] = await transport.listTransactionsForSync({ accountId: "acct-tgt" });
+    expect(row).toMatchObject({
+      payeeName: "Amazon",
+      importedPayee: "AMZN Mktp AE*23981",
+    });
+  });
+
+  it("attaches provenance to an existing transaction without sending its other fields", async () => {
+    const { updateTransaction } = buildFakeRuntime({});
+    const transport = createBrowserApiTransport(browserConnection);
+
+    await transport.updateTransactionForSync({
+      transactionId: "t1",
+      accountId: "acct-tgt",
+      date: "2026-08-01",
+      amount: -12550,
+      importedPayee: "AMZN Mktp AE*23981",
+      returnApplied: false,
+    });
+
+    const [id, fields] = updateTransaction.mock.calls[0];
+    expect(id).toBe("t1");
+    expect(fields.imported_payee).toBe("AMZN Mktp AE*23981");
+    // Curated fields the caller did not name are not in the payload at all.
+    expect("notes" in fields).toBe(false);
+    expect("category" in fields).toBe(false);
+    expect("payee" in fields).toBe(false);
+  });
+
+  it("carries provenance through the batched write path too", async () => {
+    const { send } = buildFakeRuntime({});
+    const transport = createBrowserApiTransport(browserConnection);
+
+    await transport.batchWriteTransactionsForSync!({
+      updated: [{ id: "t1", importedPayee: "AMZN Mktp AE*23981" }],
+      deleted: [],
+    });
+
+    const [, payload] = send.mock.calls[0];
+    expect(payload.updated).toEqual([{ id: "t1", imported_payee: "AMZN Mktp AE*23981" }]);
   });
 });

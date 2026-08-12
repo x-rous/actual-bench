@@ -97,8 +97,13 @@ export type ReconciliationStatementRowRecord = {
   postedDate: string;
   /** Integer minor units, sign preserved exactly. */
   amount: number;
-  description: string;
-  reference: string | null;
+  /** The bank's own merchant/payee text — Actual's `imported_payee`. */
+  importedPayee: string;
+  /** The bank's separate memo field, when the statement supplied one. */
+  bankNotes: string | null;
+  bankReference: string | null;
+  /** Stable bank transaction id (OFX FITID); matching evidence only. */
+  externalId: string | null;
   transactionDate: string | null;
   /** Integer minor units, in the transaction's original currency. */
   originalAmount: number | null;
@@ -166,8 +171,10 @@ type StatementRowRow = {
   source_row_number: number;
   posted_date: string;
   amount: number;
-  description: string;
-  reference: string | null;
+  imported_payee: string;
+  bank_notes: string | null;
+  bank_reference: string | null;
+  external_id: string | null;
   transaction_date: string | null;
   original_amount: number | null;
   original_currency: string | null;
@@ -281,8 +288,10 @@ function statementRowToRecord(row: StatementRowRow): ReconciliationStatementRowR
     sourceRowNumber: row.source_row_number,
     postedDate: row.posted_date,
     amount: row.amount,
-    description: row.description,
-    reference: row.reference,
+    importedPayee: row.imported_payee,
+    bankNotes: row.bank_notes,
+    bankReference: row.bank_reference,
+    externalId: row.external_id,
     transactionDate: row.transaction_date,
     originalAmount: row.original_amount,
     originalCurrency: row.original_currency,
@@ -554,8 +563,10 @@ export type StatementRowInput = {
   sourceRowNumber: number;
   postedDate: string;
   amount: number;
-  description: string;
-  reference?: string | null;
+  importedPayee: string;
+  bankNotes?: string | null;
+  bankReference?: string | null;
+  externalId?: string | null;
   transactionDate?: string | null;
   originalAmount?: number | null;
   originalCurrency?: string | null;
@@ -577,9 +588,10 @@ export function replaceStatementRows(
 ): number {
   const insert = db.prepare(
     `INSERT INTO reconciliation_statement_rows
-       (id, session_id, source_row_number, posted_date, amount, description, reference,
-        transaction_date, original_amount, original_currency, fingerprint, raw_json)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+       (id, session_id, source_row_number, posted_date, amount, imported_payee, bank_notes,
+        bank_reference, external_id, transaction_date, original_amount, original_currency,
+        fingerprint, raw_json)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   );
 
   const run = db.transaction(() => {
@@ -603,8 +615,10 @@ export function replaceStatementRows(
         row.sourceRowNumber,
         row.postedDate,
         row.amount,
-        row.description,
-        row.reference ?? null,
+        row.importedPayee,
+        row.bankNotes ?? null,
+        row.bankReference ?? null,
+        row.externalId ?? null,
         row.transactionDate ?? null,
         row.originalAmount ?? null,
         row.originalCurrency ?? null,

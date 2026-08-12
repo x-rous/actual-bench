@@ -49,7 +49,7 @@ function statementRow(overrides: Partial<StatementRow> = {}): StatementRow {
     sourceRowNumber: 1,
     postedDate: "2026-07-12",
     amount: -6850,
-    description: "DUBAI TAXI CORPORATION",
+    importedPayee: "DUBAI TAXI CORPORATION",
     raw: {},
     fingerprint: "fp",
     ...overrides,
@@ -96,10 +96,10 @@ const condition = (overrides: Partial<Condition> & Pick<Condition, "field" | "op
 });
 
 describe("conditions (feature spec §28/§29)", () => {
-  it("matches on the statement description", () => {
+  it("matches on the statement's merchant text", () => {
     expect(
       evaluateCondition(
-        condition({ field: "statementDescription", operator: "contains", value: "dubai taxi" }),
+        condition({ field: "statementImportedPayee", operator: "contains", value: "dubai taxi" }),
         context()
       )
     ).toBe(true);
@@ -311,7 +311,12 @@ describe("preview (feature spec §31)", () => {
             item: createItem,
             statementRow: statementRow(),
             transaction: undefined,
-            applyConfig: { descriptionTarget: "notes", clearedTarget: "none" },
+            applyConfig: {
+              payeeStrategy: "leave-unset",
+              notesStrategy: "imported-payee",
+              clearedTarget: "none",
+              enrichImportedPayee: true,
+            },
           }),
         }),
     });
@@ -324,7 +329,7 @@ describe("preview (feature spec §31)", () => {
     });
   });
 
-  it("tags a new transaction whose description went to the payee", () => {
+  it("tags a new transaction whose merchant text went to the payee", () => {
     const createItem = item({ id: "new", disposition: "create", actualTransactionIds: [] });
 
     const result = previewTransform({
@@ -342,7 +347,12 @@ describe("preview (feature spec §31)", () => {
             item: createItem,
             statementRow: statementRow(),
             transaction: undefined,
-            applyConfig: { descriptionTarget: "payee", clearedTarget: "none" },
+            applyConfig: {
+              payeeStrategy: "imported-payee",
+              notesStrategy: "bank-notes",
+              clearedTarget: "none",
+              enrichImportedPayee: true,
+            },
           }),
         }),
     });

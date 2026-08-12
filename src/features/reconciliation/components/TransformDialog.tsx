@@ -22,6 +22,7 @@ import type {
   TransformRule,
 } from "@/lib/reconciliation/transform/rules";
 import type { ReconciliationItem } from "@/lib/reconciliation/types";
+import { statementText } from "@/lib/reconciliation/statement/text";
 import type { Option } from "./StagedFields";
 
 /**
@@ -38,7 +39,8 @@ import type { Option } from "./StagedFields";
 
 const FIELDS: { id: ConditionField; label: string }[] = [
   { id: "notes", label: "Notes" },
-  { id: "statementDescription", label: "Statement description" },
+  { id: "statementImportedPayee", label: "Statement merchant text" },
+  { id: "statementBankNotes", label: "Statement memo" },
   { id: "payee", label: "Payee" },
   { id: "category", label: "Category" },
   { id: "amount", label: "Amount" },
@@ -79,7 +81,8 @@ const FIELD_LABELS: Record<string, string> = {
 const OPERATORS_BY_FIELD: Record<ConditionField, ConditionOperator[]> = {
   // Tags live in the notes, so only notes can be asked about them.
   notes: ["hasTag", "doesNotHaveTag", "contains", "notContains", "equals", "notEquals", "startsWith", "endsWith"],
-  statementDescription: ["contains", "notContains", "equals", "notEquals", "startsWith", "endsWith"],
+  statementImportedPayee: ["contains", "notContains", "equals", "notEquals", "startsWith", "endsWith"],
+  statementBankNotes: ["contains", "notContains", "equals", "notEquals", "startsWith", "endsWith"],
   payee: ["contains", "notContains", "equals", "notEquals", "startsWith", "endsWith"],
   category: ["contains", "notContains", "equals", "notEquals", "startsWith", "endsWith"],
   amount: ["equals", "notEquals", "greaterThan", "lessThan", "between"],
@@ -120,7 +123,7 @@ const ACTIONS: { id: ActionKind; label: string }[] = [
   { id: "removeTag", label: "Remove tag" },
   { id: "appendNote", label: "Append to notes" },
   { id: "prependNote", label: "Put at the start of notes" },
-  { id: "useStatementDescription", label: "Use the statement's full description" },
+  { id: "useStatementImportedPayee", label: "Use the statement's full merchant text" },
   { id: "setPayee", label: "Set payee" },
 ];
 
@@ -138,7 +141,7 @@ function emptyAction(kind: ActionKind): TransformAction {
       return { kind, payeeId: null };
     case "prependNote":
       return { kind, text: "" };
-    case "useStatementDescription":
+    case "useStatementImportedPayee":
       return { kind };
     default:
       return { kind: "addTag", tag: "" };
@@ -197,9 +200,9 @@ export function TransformDialog({
       if (!item) return "-";
       const context = contextFor(item);
       return (
-        context.statementRow?.description ??
-        context.transaction?.payeeName ??
-        context.transaction?.notes ??
+        statementText(context.statementRow) ||
+        context.transaction?.payeeName ||
+        context.transaction?.notes ||
         "-"
       );
     };
@@ -519,7 +522,7 @@ export function TransformDialog({
               />
             )}
 
-            {action.kind === "useStatementDescription" && (
+            {action.kind === "useStatementImportedPayee" && (
               <span className="text-[11px] text-muted-foreground">
                 Extends the merchant text already in the note; tags and your own words stay.
               </span>

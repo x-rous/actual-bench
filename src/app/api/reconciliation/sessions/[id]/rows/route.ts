@@ -55,8 +55,10 @@ export async function PUT(request: Request, context: RouteContext) {
         sourceRowNumber: Number(row.sourceRowNumber ?? index + 1),
         postedDate: String(row.postedDate ?? ""),
         amount: Number(row.amount),
-        description: String(row.description ?? ""),
-        reference: typeof row.reference === "string" ? row.reference : null,
+        importedPayee: String(row.importedPayee ?? ""),
+        bankNotes: typeof row.bankNotes === "string" ? row.bankNotes : null,
+        bankReference: typeof row.bankReference === "string" ? row.bankReference : null,
+        externalId: typeof row.externalId === "string" ? row.externalId : null,
         transactionDate: typeof row.transactionDate === "string" ? row.transactionDate : null,
         originalAmount:
           typeof row.originalAmount === "number" ? row.originalAmount : null,

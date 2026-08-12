@@ -171,6 +171,21 @@ function verifyOne(
     });
   }
 
+  // Provenance is the one field a transport can plausibly accept and quietly
+  // drop — it is not part of most transaction write paths — so it is checked
+  // like any other approved value rather than assumed.
+  if (
+    operation.importedPayee != null &&
+    (live.importedPayee ?? "").trim() !== operation.importedPayee.trim()
+  ) {
+    issues.push({
+      operationId: operation.id,
+      kind: "unapplied-field",
+      detail:
+        "The bank's imported payee was reported as attached but the account still reads differently.",
+    });
+  }
+
   // A split parent whose lines no longer add up is corrupt in a way Actual will
   // not surface on its own.
   if (live.isParent && live.splitLines.length > 0) {

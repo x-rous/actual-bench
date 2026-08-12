@@ -1,6 +1,6 @@
 ---
 title: Bank Reconciliation
-description: Check a bank statement against an account in Actual — import, match, decide, review, apply — with amount-exact matching, a configurable text target, and a drift check that protects edits made in Actual meanwhile.
+description: Check a bank statement against an account in Actual — import CSV/TSV, OFX/QFX or QIF, match, decide, review, apply — with amount-exact matching, bank provenance kept apart from your curated payees and notes, and a drift check that protects edits made in Actual meanwhile.
 sidebar:
   order: 15
 ---
@@ -57,7 +57,24 @@ disposable notes about the reconciliation, not data about your transactions.
 
 ## 1. Import a statement
 
-Paste the statement or upload a CSV/TSV file.
+Paste the statement, or upload a **CSV/TSV**, **OFX/QFX** or **QIF** file. The format is recognised
+from the file's own content rather than only its name, so a `.txt` holding an OFX export is still
+read as OFX — and, as in Actual itself, `.qfx` goes through the OFX path.
+
+### The two text channels
+
+A bank statement carries up to two pieces of text per transaction, and they mean different things:
+
+| The bank calls it | Actual Bench calls it | Where it ends up |
+| --- | --- | --- |
+| `NAME` (OFX) · `P` (QIF) · the merchant/description column | **Imported payee** | Actual's `imported_payee`, and the candidate a Payee is resolved from |
+| `MEMO` (OFX) · `M` (QIF) · a memo/details column | **Notes** | Actual's `notes` |
+
+Keeping them apart is the point. A statement that supplies both no longer has to throw one away, and
+the same normalized shape comes out whichever format went in — so matching, deciding and applying
+behave identically for a CSV and an OFX file.
+
+For **CSV/TSV**:
 
 - The **delimiter** is detected by which candidate produces a consistent column count, not by which
   character appears most often — a description full of commas does not turn a semicolon-delimited
@@ -67,11 +84,44 @@ Paste the statement or upload a CSV/TSV file.
 - **Column mapping** is detected, including the common layout where outflows sit in their own
   **Debit** column and inflows in a **Credit** column. A statement like that is not read as a list of
   positive amounts.
-- Foreign-currency rows keep the **original amount and currency** the bank printed, alongside the
-  converted amount that actually posted.
+- A **Notes / memo** column is detected separately from the description column, and never claimed as
+  both. Ambiguous headers such as *Narrative* and *Details* go to the description, since that is the
+  channel a statement's single text column normally belongs to.
+- The description/payee column can also be left **unmapped**, for a statement whose one text column
+  is genuinely a memo. Nothing is then recorded as the imported payee, no payee is resolved from the
+  statement, and matching compares the notes column instead — the panel says so when you do it. The
+  **date** column, by contrast, cannot be unset: a row without a date can be neither matched nor
+  created.
+
+QIF files also get their **date format detected** from the dates in the file, the same way a CSV date
+column does — QIF states no date convention of its own, so a Quicken export writes whatever the
+machine that produced it uses, including its `8/12'26` apostrophe form. OFX needs no detection: its
+dates are unambiguous by definition.
+
+Where a file's dates could genuinely be read either way round — every day of the month being 12 or
+under, so `03/07` is either the 3rd of July or the 7th of March — the panel says so and asks you to
+check the preview. Nothing in the data can settle that, and guessing wrong mis-dates every row.
+
+For **OFX/QFX and QIF**, the file states the split itself, and two repairs are offered for banks that
+get it wrong:
+
+- **Swap payee and memo** — some banks put the real merchant in the memo field.
+- **Use the memo when the payee field is empty** — the memo becomes the merchant text, and is *not*
+  repeated in the notes. Duplicating the same text into both fields merely because the bank left
+  `NAME` blank is noise, not provenance.
+
+Foreign-currency rows keep the **original amount and currency** the bank printed, alongside the
+converted amount that actually posted — read from whichever text channel the bank printed it in.
 
 Amounts are handled as integer minor units end to end — never through floating point — so nothing
 drifts by a cent.
+
+:::note[Bank transaction ids]
+OFX files carry a `FITID` per transaction. It is kept as statement metadata and used as **matching
+evidence** against transactions Actual imported from your bank. It is deliberately *not* written as
+Actual's `imported_id`: that field holds Actual Bench's own deterministic marker, which is what makes
+retrying a partly-applied reconciliation safe.
+:::
 
 ### Importing the same statement twice
 
@@ -86,8 +136,9 @@ anything already applied is recognised and skipped.
 
 ### Reconciliation profiles
 
-Save the column mapping and matching options for an account as a **profile**, and apply it next month
-in one click. Statements from the same bank rarely change shape.
+Save how a statement is read — column mapping, date and amount conventions, payee/memo handling — and
+the matching options for an account as a **profile**, and apply it next month in one click.
+Statements from the same bank rarely change shape.
 
 ## 2. Matching
 
@@ -97,8 +148,9 @@ has already produced. That is what makes every result explainable.
 
 ### Choose what the text is compared against
 
-Statements carry a description. Where that text lives in Actual differs from person to person, so you
-choose:
+The statement's merchant text is what gets compared — its memo is used only when the bank left the
+merchant field empty. Where that text lives in Actual differs from person to person, so you choose
+what it is compared against:
 
 | Target | Compared how | Typical use |
 | --- | --- | --- |
@@ -177,12 +229,44 @@ It also states:
 
 - **The effect on the account balance** — created transactions, less deleted ones, plus the difference
   on any corrected amount. A reconciliation that moves money is something to agree to knowingly.
-- **Where the bank's description goes** on a transaction being created: the payee (what a merchant
-  name normally is) or the notes (which keeps a curated payee list free of raw bank text, and gives
-  your rules something to read).
 - **What gets marked cleared** — nothing, only new transactions, or everything the statement confirms.
   The last option turns matched rows that needed no write into writes, so the change count reflects it
   honestly.
+- **What the statement fills in** on a transaction being created, and whether matched transactions
+  gain the bank's merchant text — see below.
+
+### What actually gets written
+
+Actual keeps three separate facts about a transaction, and so does this feature:
+
+| Field | What it holds |
+| --- | --- |
+| **Imported payee** | The bank's own merchant text. Provenance: what your bank called this transaction. |
+| **Payee** | The payee *you* keep — an Actual payee entity, curated, renameable, and the thing your reports group by. |
+| **Notes** | The bank's memo, your own words, workflow tags. |
+
+They are not alternatives to one another, so you are not asked to choose between them:
+
+- **A created transaction always records the bank's merchant text as its imported payee** — whichever
+  payee you end up with, whether a rule changes it, and whether or not you also copy the text into
+  the notes. There is no setting for this, because there is no sensible reason to throw the bank's
+  own text away.
+- **Payee on a new transaction**: resolve the merchant text into a payee (creating one if it is new),
+  or leave it unset for your rules to decide. A payee you set on a row yourself always wins.
+- **Notes on a new transaction**: the bank's memo, the merchant text as well when there is no memo
+  (a deliberate duplicate, for rules that read the notes), or nothing.
+
+### Matched transactions keep what you curated
+
+When a statement row matches a transaction you already have, its **payee, notes and category are left
+exactly as they are**. What can be added is the bank's merchant text as the imported payee — the same
+thing Actual's own bank import does on a match, and the reason the field exists.
+
+That is still a write, so it is reported as one. But it is counted and named separately: the review
+screen says how many *changes* you staged and, beside it, how many transactions are simply gaining
+the merchant text their bank used. Rows already reconciled in Actual are skipped, and a row whose
+imported payee already matches is not written to at all. You can turn the whole behaviour off with
+**Record the bank's merchant text → New transactions only**.
 
 ## 5. Apply
 

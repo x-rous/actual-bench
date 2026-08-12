@@ -24,7 +24,7 @@ function row(overrides: Partial<StatementRow> & Pick<StatementRow, "id">): State
     sourceRowNumber: 1,
     postedDate: "2026-07-03",
     amount: -4250,
-    description: "STARBUCKS",
+    importedPayee: "STARBUCKS",
     raw: {},
     fingerprint: `fp-${overrides.id}`,
     ...overrides,
@@ -107,7 +107,7 @@ describe("buildReconciliationItems — dispositions", () => {
 
   it("keeps every competing candidate on an ambiguous item", () => {
     const items = build(
-      [row({ id: "s1", postedDate: "2026-07-08", amount: -11000, description: "AMAZON AE" })],
+      [row({ id: "s1", postedDate: "2026-07-08", amount: -11000, importedPayee: "AMAZON AE" })],
       [
         txn({ id: "t1", date: "2026-07-07", amount: -11000, payeeName: "Amazon" }),
         txn({ id: "t2", date: "2026-07-08", amount: -11000, payeeName: "Amazon Marketplace" }),
@@ -121,7 +121,7 @@ describe("buildReconciliationItems — dispositions", () => {
 
   it("gives every statement row and every Actual row an item", () => {
     const items = build(
-      [row({ id: "s1" }), row({ id: "s2", amount: -999, description: "NOTHING" })],
+      [row({ id: "s1" }), row({ id: "s2", amount: -999, importedPayee: "NOTHING" })],
       [txn({ id: "t1" }), txn({ id: "t2", amount: -777 })]
     );
 
@@ -181,7 +181,7 @@ describe("buildReconciliationItems — guardrails", () => {
 describe("buildReconciliationItems — duplicates", () => {
   it("marks the losing near-identical row as a likely duplicate", () => {
     const items = build(
-      [row({ id: "s1", postedDate: "2026-07-07", amount: -8640, description: "TALABAT" })],
+      [row({ id: "s1", postedDate: "2026-07-07", amount: -8640, importedPayee: "TALABAT" })],
       [
         txn({ id: "t1", date: "2026-07-07", amount: -8640, payeeName: "Talabat" }),
         txn({ id: "t2", date: "2026-07-08", amount: -8640, payeeName: "Talabat" }),
@@ -245,8 +245,8 @@ describe("summarizeCoverage", () => {
     const items = build(
       [
         row({ id: "s1" }),
-        row({ id: "s2", amount: -999, description: "NOT IN ACTUAL" }),
-        row({ id: "s3", postedDate: "2026-07-08", amount: -11000, description: "AMAZON AE" }),
+        row({ id: "s2", amount: -999, importedPayee: "NOT IN ACTUAL" }),
+        row({ id: "s3", postedDate: "2026-07-08", amount: -11000, importedPayee: "AMAZON AE" }),
       ],
       [
         txn({ id: "t1" }),
@@ -326,7 +326,7 @@ describe("summarizeCoverage", () => {
 
   it("counts a transaction once even when several review candidates share an item", () => {
     const items = build(
-      [row({ id: "s1", postedDate: "2026-07-08", amount: -11000, description: "AMAZON AE" })],
+      [row({ id: "s1", postedDate: "2026-07-08", amount: -11000, importedPayee: "AMAZON AE" })],
       [
         txn({ id: "t1", date: "2026-07-07", amount: -11000, payeeName: "Amazon" }),
         txn({ id: "t2", date: "2026-07-08", amount: -11000, payeeName: "Amazon Marketplace" }),

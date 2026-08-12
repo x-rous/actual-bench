@@ -99,7 +99,7 @@ describe("/api/reconciliation/sessions", () => {
             sourceRowNumber: 2,
             postedDate: "2026-07-01",
             amount: -34285,
-            description: "CARREFOUR MARKET",
+            importedPayee: "CARREFOUR MARKET",
             fingerprint: "abc12345",
             raw: { Amount: "-342.85" },
           },
@@ -125,6 +125,45 @@ describe("/api/reconciliation/sessions", () => {
     expect(body.session.id).toBe(session.id);
     expect(body.statementRows).toEqual([expect.objectContaining({ id: "srow-1", amount: -34285 })]);
     expect(body.items).toEqual([expect.objectContaining({ id: "item-1" })]);
+  });
+
+  it("round-trips a statement row's two text channels and its identifiers", async () => {
+    const session = await createSession();
+
+    await PUT_ROWS(
+      jsonRequest({
+        statementRows: [
+          {
+            id: "srow-1",
+            sourceRowNumber: 2,
+            postedDate: "2026-08-01",
+            amount: -12550,
+            importedPayee: "AMZN Mktp AE*23981",
+            bankNotes: "ONLINE CARD PURCHASE",
+            bankReference: "88721",
+            externalId: "FITID-1",
+            fingerprint: "abc12345",
+            raw: { NAME: "AMZN Mktp AE*23981" },
+          },
+        ],
+      }),
+      context(session.id)
+    );
+
+    const response = await GET_ONE(urlRequest("http://x/s"), context(session.id));
+    const body = (await response.json()) as {
+      statementRows: Record<string, unknown>[];
+    };
+
+    // The channels have to survive the boundary intact: a row that arrives with
+    // an empty imported payee matches nothing and writes no provenance, and
+    // nothing downstream would report why.
+    expect(body.statementRows[0]).toMatchObject({
+      importedPayee: "AMZN Mktp AE*23981",
+      bankNotes: "ONLINE CARD PURCHASE",
+      bankReference: "88721",
+      externalId: "FITID-1",
+    });
   });
 
   it("supports a shallow read for the session list", async () => {

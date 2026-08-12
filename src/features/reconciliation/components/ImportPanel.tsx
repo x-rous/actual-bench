@@ -6,16 +6,20 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { CSV_MAX_BYTES } from "@/lib/csv";
 import { generateId } from "@/lib/uuid";
-import { parseStatementText } from "@/lib/reconciliation/statement/parse";
 import {
-  detectColumnMapping,
   fingerprintStatement,
-  normalizeStatement,
-  type ColumnMapping,
   type NormalizedStatement,
   type SignConvention,
   type StatementDateFormat,
+  type StatementParseConfig,
 } from "@/lib/reconciliation/statement/normalize";
+import {
+  STATEMENT_FORMAT_LABELS,
+  detectParseConfig,
+  detectStatementFormat,
+  hasAmbiguousDates,
+  parseStatement,
+} from "@/lib/reconciliation/statement/source";
 import type { MatchConfig } from "@/lib/reconciliation/types";
 import type { TextTargetPreset } from "@/lib/reconciliation/match/config";
 import type { ReconciliationProfileRecord } from "../lib/reconciliationApi";
@@ -45,6 +49,9 @@ const SIGN_CONVENTIONS: { value: SignConvention; label: string }[] = [
   { value: "signed-inverted", label: "One amount column, spend shown positive" },
 ];
 
+/** What the file picker offers, and what the paste box can also be. */
+const ACCEPTED_EXTENSIONS = ".csv,.tsv,.txt,.ofx,.qfx,.qif";
+
 type ColumnSelectProps = {
   id: string;
   label: string;
@@ -52,9 +59,26 @@ type ColumnSelectProps = {
   columns: string[];
   onChange: (value: number | undefined) => void;
   optional?: boolean;
+  /**
+   * Omit the "-" choice.
+   *
+   * For a column the statement cannot do without. Offering "-" for one of those
+   * was worse than not offering it: the choice could not be honoured, so it
+   * silently snapped the mapping to column 0 — which is normally the date, and
+   * would have put dates into the field.
+   */
+  required?: boolean;
 };
 
-function ColumnSelect({ id, label, value, columns, onChange, optional }: ColumnSelectProps) {
+function ColumnSelect({
+  id,
+  label,
+  value,
+  columns,
+  onChange,
+  optional,
+  required,
+}: ColumnSelectProps) {
   return (
     <div className="flex flex-col gap-1">
       <Label htmlFor={id} className="text-xs">
@@ -69,7 +93,7 @@ function ColumnSelect({ id, label, value, columns, onChange, optional }: ColumnS
           onChange(event.target.value === "" ? undefined : Number(event.target.value))
         }
       >
-        <option value="">-</option>
+        {!required && <option value="">-</option>}
         {columns.map((column, index) => (
           <option key={`${column}-${index}`} value={index}>
             {column}
@@ -88,7 +112,7 @@ export type ImportPanelProps = {
   profiles: ReconciliationProfileRecord[];
   onMatchConfigChange: (preset: TextTargetPreset, config: MatchConfig) => void;
   onApplyProfile: (profile: ReconciliationProfileRecord) => void;
-  onSaveProfile: (name: string, mapping: ColumnMapping) => void;
+  onSaveProfile: (name: string, parseConfig: StatementParseConfig) => void;
   isSavingProfile?: boolean;
   /**
    * Reports the parsed statement upward as it changes, so the phase button can
@@ -123,11 +147,47 @@ export function ImportPanel({
   const [text, setText] = useState("");
   const [fileName, setFileName] = useState<string | null>(null);
   const [fileError, setFileError] = useState<string | null>(null);
-  const [mapping, setMapping] = useState<ColumnMapping | null>(null);
+  const [config, setConfig] = useState<StatementParseConfig | null>(null);
   const [appliedProfileId, setAppliedProfileId] = useState<string | null>(null);
   const [profileName, setProfileName] = useState("");
 
-  const table = useMemo(() => (text.trim() ? parseStatementText(text) : null), [text]);
+  const source = useMemo(
+    () => (text.trim() ? { text, fileName } : null),
+    [text, fileName]
+  );
+
+  // What the file *is*, decided from its content and name — not from whatever
+  // the last profile happened to be about. A saved CSV profile applied to an
+  // OFX export must not read it as a table of one enormous column.
+  const detectedFormat = useMemo(
+    () => (source ? detectStatementFormat(source) : null),
+    [source]
+  );
+
+  // Seeded by detection the first time a statement appears. Getting the
+  // debit/credit case wrong here signs every outflow positive, and since
+  // matching requires the exact signed amount, nothing would match at all.
+  const effectiveConfig = useMemo<StatementParseConfig | null>(() => {
+    if (!source || !detectedFormat) return null;
+    if (config && config.format === detectedFormat) return config;
+    return detectParseConfig(source);
+  }, [source, detectedFormat, config]);
+
+  const parsed = useMemo(() => {
+    if (!source || !effectiveConfig) return null;
+    return parseStatement(source, effectiveConfig, () => generateId());
+  }, [source, effectiveConfig]);
+
+  const table = parsed?.table ?? null;
+  const isDelimited = effectiveConfig?.format === "delimited";
+
+  // Unresolvable from the file, so it has to be said out loud: where every date
+  // falls in the first twelve days of its month, `03/07` is either the 3rd of
+  // July or the 7th of March and detection had to pick one.
+  const datesAmbiguous = useMemo(
+    () => (source && effectiveConfig ? hasAmbiguousDates(source, effectiveConfig) : false),
+    [source, effectiveConfig]
+  );
 
   const columns = useMemo(() => {
     if (!table) return [];
@@ -135,30 +195,24 @@ export function ImportPanel({
     return Array.from({ length: width }, (_, index) => table.headers?.[index] || `Column ${index + 1}`);
   }, [table]);
 
-  // Seed the mapping by detection the first time a table appears. Getting the
-  // debit/credit case wrong here signs every outflow positive, and since
-  // matching requires the exact signed amount, nothing would match at all.
-  const effectiveMapping = useMemo<ColumnMapping | null>(() => {
-    if (!table || columns.length === 0) return null;
-    return mapping ?? detectColumnMapping(table);
-  }, [table, columns, mapping]);
-
-  const parsed = useMemo(() => {
-    if (!table || !effectiveMapping) return null;
-    return normalizeStatement(table, effectiveMapping, () => generateId());
-  }, [table, effectiveMapping]);
-
-  function update(patch: Partial<ColumnMapping>) {
-    if (!effectiveMapping) return;
-    setMapping({ ...effectiveMapping, ...patch });
-    // Once the user edits the mapping it is no longer the saved profile, and
+  function update(patch: Partial<StatementParseConfig>) {
+    if (!effectiveConfig) return;
+    setConfig({ ...effectiveConfig, ...patch });
+    // Once the user edits the settings they are no longer the saved profile, and
     // saying otherwise would be a lie about what is about to run.
     setAppliedProfileId(null);
   }
 
+  function updateColumns(patch: Partial<StatementParseConfig["columns"]>) {
+    if (!effectiveConfig) return;
+    update({ columns: { ...effectiveConfig.columns, ...patch } });
+  }
+
   function applyProfile(profile: ReconciliationProfileRecord) {
-    const saved = profile.mapping as ColumnMapping | null;
-    if (saved) setMapping(saved);
+    const saved = profile.mapping as StatementParseConfig | null;
+    // A profile carries column indexes for one file shape; the format still
+    // comes from the file in front of us.
+    if (saved) setConfig(detectedFormat ? { ...saved, format: detectedFormat } : saved);
     setAppliedProfileId(profile.id);
     setProfileName(profile.name);
     onApplyProfile(profile);
@@ -176,6 +230,10 @@ export function ImportPanel({
     }
     setText(await file.text());
     setFileName(file.name);
+    // A new file is a new shape: settings chosen for the previous one — column
+    // indexes above all — would silently mis-read it.
+    setConfig(null);
+    setAppliedProfileId(null);
   }
 
   const totals = parsed?.totals;
@@ -201,7 +259,8 @@ export function ImportPanel({
       {/* The account is named in the session header above; repeating it here
           just pushed the uploader further down the page. */}
       <p className="text-xs text-muted-foreground">
-        Paste from a spreadsheet or upload a CSV. Nothing is written to your budget at this stage.
+        Paste from a spreadsheet, or upload a CSV/TSV, OFX/QFX or QIF file. Nothing is written to
+        your budget at this stage.
       </p>
 
       {suggestedProfile && !appliedProfile && (
@@ -231,7 +290,7 @@ export function ImportPanel({
             size="sm"
             className="h-7"
             onClick={() => {
-              setMapping(null);
+              setConfig(null);
               setAppliedProfileId(null);
             }}
           >
@@ -243,15 +302,23 @@ export function ImportPanel({
       <div className="flex flex-wrap items-center gap-2">
         <label className="inline-flex h-8 cursor-pointer items-center rounded-md border border-input px-3 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground focus-within:ring-2 focus-within:ring-ring">
           <Upload className="mr-1 h-3.5 w-3.5" aria-hidden="true" />
-          Upload CSV
+          Upload a statement
           <input
             type="file"
-            accept=".csv,text/csv,text/plain"
+            accept={ACCEPTED_EXTENSIONS}
             className="sr-only"
             onChange={(event) => void handleFile(event.target.files?.[0])}
           />
         </label>
         {fileName && <span className="text-xs text-muted-foreground">{fileName}</span>}
+        {/* Said out loud, because everything below it depends on the answer:
+            which mapping controls appear, whether dates need a format, and how
+            the two text channels were filled. */}
+        {effectiveConfig && (
+          <span className="rounded-full border border-border/60 px-2 py-0.5 text-[11px] text-muted-foreground">
+            Read as {STATEMENT_FORMAT_LABELS[effectiveConfig.format]}
+          </span>
+        )}
       </div>
 
       {fileError && (
@@ -269,8 +336,9 @@ export function ImportPanel({
           value={text}
           onChange={(event) => {
             setText(event.target.value);
-            // A new paste invalidates a mapping chosen for the previous shape.
-            setMapping(null);
+            // A new paste invalidates settings chosen for the previous shape.
+            setConfig(null);
+            setFileName(null);
           }}
           rows={6}
           spellCheck={false}
@@ -279,119 +347,207 @@ export function ImportPanel({
         />
       </div>
 
-      {table && effectiveMapping && (
+      {effectiveConfig && (
         <>
           <div className="rounded-md border border-border/60 p-3">
             <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              Column mapping
+              {isDelimited ? "Column mapping" : "How this file is read"}
             </h3>
+
+            {/*
+              Named for where they end up, not for what the bank calls them.
+              "Description / payee" becomes the imported payee — the bank's own
+              text, kept whatever payee you settle on — and "Notes / memo" is a
+              separate channel, not an alternative to it.
+            */}
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-              <ColumnSelect
-                id="map-date"
-                label="Posted date"
-                value={effectiveMapping.date}
-                columns={columns}
-                onChange={(value) => update({ date: value ?? 0 })}
-              />
-              <ColumnSelect
-                id="map-description"
-                label="Description"
-                value={effectiveMapping.description}
-                columns={columns}
-                onChange={(value) => update({ description: value ?? 0 })}
-              />
-              {effectiveMapping.signConvention === "debit-credit" ? (
+              {isDelimited && (
                 <>
                   <ColumnSelect
-                    id="map-debit"
-                    label="Debit (money out)"
-                    value={effectiveMapping.debit}
+                    id="map-date"
+                    label="Posted date"
+                    value={effectiveConfig.columns.date}
                     columns={columns}
-                    onChange={(value) => update({ debit: value })}
+                    required
+                    onChange={(value) => updateColumns({ date: value ?? 0 })}
                   />
                   <ColumnSelect
-                    id="map-credit"
-                    label="Credit (money in)"
-                    value={effectiveMapping.credit}
+                    id="map-imported-payee"
+                    label="Description / payee"
+                    value={effectiveConfig.columns.importedPayee}
                     columns={columns}
-                    onChange={(value) => update({ credit: value })}
+                    onChange={(value) => updateColumns({ importedPayee: value })}
+                  />
+                  <ColumnSelect
+                    id="map-notes"
+                    label="Notes / memo"
+                    value={effectiveConfig.columns.notes}
+                    columns={columns}
+                    onChange={(value) => updateColumns({ notes: value })}
+                    optional
+                  />
+                  {effectiveConfig.signConvention === "debit-credit" ? (
+                    <>
+                      <ColumnSelect
+                        id="map-debit"
+                        label="Debit (money out)"
+                        value={effectiveConfig.columns.debit}
+                        columns={columns}
+                        onChange={(value) => updateColumns({ debit: value })}
+                      />
+                      <ColumnSelect
+                        id="map-credit"
+                        label="Credit (money in)"
+                        value={effectiveConfig.columns.credit}
+                        columns={columns}
+                        onChange={(value) => updateColumns({ credit: value })}
+                      />
+                    </>
+                  ) : (
+                    <ColumnSelect
+                      id="map-amount"
+                      label="Amount"
+                      value={effectiveConfig.columns.amount}
+                      columns={columns}
+                      onChange={(value) => updateColumns({ amount: value })}
+                    />
+                  )}
+                  <ColumnSelect
+                    id="map-reference"
+                    label="Reference"
+                    value={effectiveConfig.columns.reference}
+                    columns={columns}
+                    onChange={(value) => updateColumns({ reference: value })}
+                    optional
                   />
                 </>
-              ) : (
-                <ColumnSelect
-                  id="map-amount"
-                  label="Amount"
-                  value={effectiveMapping.amount}
-                  columns={columns}
-                  onChange={(value) => update({ amount: value })}
-                />
               )}
-              <ColumnSelect
-                id="map-reference"
-                label="Reference"
-                value={effectiveMapping.reference}
-                columns={columns}
-                onChange={(value) => update({ reference: value })}
-                optional
-              />
 
-              <div className="flex flex-col gap-1">
-                <Label htmlFor="map-date-format" className="text-xs">
-                  Date format
-                </Label>
-                <select
-                  id="map-date-format"
-                  className="h-8 rounded-md border border-input bg-background px-2 text-sm"
-                  value={effectiveMapping.dateFormat}
-                  onChange={(event) =>
-                    update({ dateFormat: event.target.value as StatementDateFormat })
-                  }
-                >
-                  {DATE_FORMATS.map((format) => (
-                    <option key={format.value} value={format.value}>
-                      {format.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
+              {/* OFX states its dates unambiguously; QIF does not. */}
+              {effectiveConfig.format !== "ofx" && (
+                <div className="flex flex-col gap-1">
+                  <Label htmlFor="map-date-format" className="text-xs">
+                    Date format
+                  </Label>
+                  <select
+                    id="map-date-format"
+                    className="h-8 rounded-md border border-input bg-background px-2 text-sm"
+                    value={effectiveConfig.dateFormat}
+                    onChange={(event) =>
+                      update({ dateFormat: event.target.value as StatementDateFormat })
+                    }
+                  >
+                    {DATE_FORMATS.map((format) => (
+                      <option key={format.value} value={format.value}>
+                        {format.label}
+                      </option>
+                    ))}
+                  </select>
+                  {datesAmbiguous && (
+                    <p className="text-[11px] text-amber-600 dark:text-amber-400">
+                      Every date in this file could be read either way round - check the preview
+                      below and correct this if the days and months are swapped.
+                    </p>
+                  )}
+                </div>
+              )}
 
-              <div className="flex flex-col gap-1">
-                <Label htmlFor="map-sign" className="text-xs">
-                  Amount convention
-                </Label>
-                <select
-                  id="map-sign"
-                  className="h-8 rounded-md border border-input bg-background px-2 text-sm"
-                  value={effectiveMapping.signConvention}
-                  onChange={(event) =>
-                    update({ signConvention: event.target.value as SignConvention })
-                  }
-                >
-                  {SIGN_CONVENTIONS.map((convention) => (
-                    <option key={convention.value} value={convention.value}>
-                      {convention.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
+              {isDelimited && (
+                <div className="flex flex-col gap-1">
+                  <Label htmlFor="map-sign" className="text-xs">
+                    Amount convention
+                  </Label>
+                  <select
+                    id="map-sign"
+                    className="h-8 rounded-md border border-input bg-background px-2 text-sm"
+                    value={effectiveConfig.signConvention}
+                    onChange={(event) =>
+                      update({ signConvention: event.target.value as SignConvention })
+                    }
+                  >
+                    {SIGN_CONVENTIONS.map((convention) => (
+                      <option key={convention.value} value={convention.value}>
+                        {convention.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
 
-              <div className="flex flex-col gap-1">
-                <Label htmlFor="map-decimal" className="text-xs">
-                  Decimal separator
-                </Label>
-                <select
-                  id="map-decimal"
-                  className="h-8 rounded-md border border-input bg-background px-2 text-sm"
-                  value={effectiveMapping.decimalSeparator}
-                  onChange={(event) =>
-                    update({ decimalSeparator: event.target.value as "." | "," })
-                  }
-                >
-                  <option value=".">1,234.56</option>
-                  <option value=",">1.234,56</option>
-                </select>
-              </div>
+              {effectiveConfig.format !== "ofx" && (
+                <div className="flex flex-col gap-1">
+                  <Label htmlFor="map-decimal" className="text-xs">
+                    Decimal separator
+                  </Label>
+                  <select
+                    id="map-decimal"
+                    className="h-8 rounded-md border border-input bg-background px-2 text-sm"
+                    value={effectiveConfig.decimalSeparator}
+                    onChange={(event) =>
+                      update({ decimalSeparator: event.target.value as "." | "," })
+                    }
+                  >
+                    <option value=".">1,234.56</option>
+                    <option value=",">1.234,56</option>
+                  </select>
+                </div>
+              )}
             </div>
+
+            {/*
+              Leaving the merchant column unmapped is allowed — a statement whose
+              one text column is genuinely a memo should be able to say so — but
+              it changes what reconciliation can do with the file, so it says
+              what it costs rather than letting the user find out later.
+            */}
+            {isDelimited && effectiveConfig.columns.importedPayee === undefined && (
+              <p role="status" className="mt-3 border-t border-border/50 pt-3 text-[11px] text-muted-foreground">
+                No description/payee column: nothing will be recorded as the imported payee, and no
+                payee will be resolved from the statement.{" "}
+                {effectiveConfig.columns.notes === undefined
+                  ? "With no notes column either, rows will be matched on amount and date alone."
+                  : "Matching will compare the notes column instead."}
+              </p>
+            )}
+
+            {/*
+              Structured files say which text is the payee and which is the
+              memo — but some banks fill those fields the wrong way round, or
+              leave the payee empty. These are repairs for that, exactly as
+              Actual's own importer offers them.
+            */}
+            {!isDelimited && (
+              <div className="mt-3 flex flex-col gap-2 border-t border-border/50 pt-3">
+                <label className="flex items-start gap-2 text-xs">
+                  <input
+                    type="checkbox"
+                    className="mt-0.5"
+                    checked={effectiveConfig.swapPayeeAndMemo}
+                    onChange={(event) => update({ swapPayeeAndMemo: event.target.checked })}
+                  />
+                  <span>
+                    This bank swaps the payee and memo fields
+                    <span className="block text-[11px] text-muted-foreground">
+                      Use the memo as the merchant text and the payee field as the notes.
+                    </span>
+                  </span>
+                </label>
+                <label className="flex items-start gap-2 text-xs">
+                  <input
+                    type="checkbox"
+                    className="mt-0.5"
+                    checked={effectiveConfig.fallbackPayeeToMemo}
+                    onChange={(event) => update({ fallbackPayeeToMemo: event.target.checked })}
+                  />
+                  <span>
+                    Use the memo when the payee field is empty
+                    <span className="block text-[11px] text-muted-foreground">
+                      The memo becomes the merchant text and is not repeated in the notes.
+                    </span>
+                  </span>
+                </label>
+              </div>
+            )}
           </div>
 
           <MatchOptions
@@ -422,7 +578,8 @@ export function ImportPanel({
                 <thead className="text-muted-foreground">
                   <tr className="border-b border-border/40">
                     <th scope="col" className="px-3 py-1.5 text-left font-medium">Date</th>
-                    <th scope="col" className="px-3 py-1.5 text-left font-medium">Description</th>
+                    <th scope="col" className="px-3 py-1.5 text-left font-medium">Imported payee</th>
+                    <th scope="col" className="px-3 py-1.5 text-left font-medium">Notes</th>
                     <th scope="col" className="px-3 py-1.5 text-left font-medium">Reference</th>
                     <th scope="col" className="px-3 py-1.5 text-right font-medium">Amount</th>
                   </tr>
@@ -431,8 +588,13 @@ export function ImportPanel({
                   {parsed.rows.slice(0, 8).map((row) => (
                     <tr key={row.id} className="border-b border-border/20 last:border-0">
                       <td className="px-3 py-1.5 tabular-nums">{row.postedDate}</td>
-                      <td className="max-w-0 truncate px-3 py-1.5">{row.description}</td>
-                      <td className="px-3 py-1.5 text-muted-foreground">{row.reference ?? "-"}</td>
+                      <td className="max-w-0 truncate px-3 py-1.5">{row.importedPayee}</td>
+                      <td className="max-w-0 truncate px-3 py-1.5 text-muted-foreground">
+                        {row.bankNotes ?? "-"}
+                      </td>
+                      <td className="px-3 py-1.5 text-muted-foreground">
+                        {row.bankReference ?? row.externalId ?? "-"}
+                      </td>
                       <td className="px-3 py-1.5 text-right tabular-nums">
                         {formatMinorUnits(row.amount)}
                       </td>
@@ -477,7 +639,7 @@ export function ImportPanel({
         </>
       )}
 
-      {table && effectiveMapping && (
+      {effectiveConfig && (
         <div className="flex flex-wrap items-end gap-2 rounded-md border border-border/60 p-3">
           <div className="flex flex-col gap-1">
             <Label htmlFor="profile-name" className="text-xs">
@@ -496,14 +658,14 @@ export function ImportPanel({
             size="sm"
             disabled={isSavingProfile}
             onClick={() =>
-              onSaveProfile(profileName.trim() || `${accountName} statement`, effectiveMapping)
+              onSaveProfile(profileName.trim() || `${accountName} statement`, effectiveConfig)
             }
           >
             {isSavingProfile ? "Saving…" : "Save profile"}
           </Button>
           <p className="w-full text-[11px] text-muted-foreground">
-            Stores the column mapping and the matching options, so next month&apos;s statement needs
-            no setting up. Saving again under the same name replaces it.
+            Stores how this statement is read and the matching options, so next month&apos;s
+            statement needs no setting up. Saving again under the same name replaces it.
           </p>
         </div>
       )}

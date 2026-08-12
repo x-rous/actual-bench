@@ -7,6 +7,7 @@ import type { ApplyPlan } from "@/lib/reconciliation/apply/operations";
 import type { ApplyConfig } from "@/lib/reconciliation/session/plan";
 import { prospectiveTransaction } from "@/lib/reconciliation/session/prospective";
 import { stagedFields } from "@/lib/reconciliation/session/staging";
+import { statementText } from "@/lib/reconciliation/statement/text";
 import type {
   ActualTransactionSnapshot,
   ReconciliationItem,
@@ -165,7 +166,9 @@ export function ReviewComparison({
     ? shown.filter((row) => {
         const payeeName = nameOf(payees, row.pending.payeeId);
         return [
-          row.statementRow?.description,
+          row.statementRow?.importedPayee,
+          row.statementRow?.bankNotes,
+          row.statementRow?.bankReference,
           row.statementRow ? formatMinorUnits(row.statementRow.amount) : null,
           row.statementRow?.postedDate,
           payeeName,
@@ -313,9 +316,15 @@ export function ReviewComparison({
                   </td>
                   <td
                     className="max-w-0 truncate px-2 py-1"
-                    title={row.statementRow?.description}
+                    title={
+                      row.statementRow
+                        ? [row.statementRow.importedPayee, row.statementRow.bankNotes]
+                            .filter(Boolean)
+                            .join(" · ")
+                        : undefined
+                    }
                   >
-                    {row.statementRow?.description ?? "-"}
+                    {statementText(row.statementRow) || "-"}
                   </td>
                   <td className="whitespace-nowrap px-2 py-1 text-right tabular-nums">
                     {row.statementRow ? formatMinorUnits(row.statementRow.amount) : "-"}
@@ -347,10 +356,10 @@ export function ReviewComparison({
                           changed={row.changedFields.has("payeeId")}
                           was={row.transaction?.payeeName}
                         >
-                          {payeeName ??
-                            (row.pending.isNew && applyConfig.descriptionTarget === "payee"
-                              ? row.statementRow?.description ?? "-"
-                              : "-")}
+                          {/* A payee about to be resolved from the bank's text has
+                              no id yet; the prospective row knows which name it
+                              will be resolved from. */}
+                          {payeeName ?? row.pending.payeeName ?? "-"}
                         </Changed>
                       </td>
                       <td className="max-w-0 truncate px-2 py-1" title={row.pending.notes ?? undefined}>

@@ -55,6 +55,12 @@ export type ApiImportTransaction = {
   amount: number;
   payee?: string | null;
   payee_name?: string;
+  /**
+   * Raw source/bank merchant text. Actual keeps this separate from the resolved
+   * payee and preserves an explicitly supplied value through its own
+   * normalization (`imported_payee = imported_payee || payee_name`).
+   */
+  imported_payee?: string | null;
   category?: string | null;
   notes?: string | null;
   cleared?: boolean;
