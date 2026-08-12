@@ -1,5 +1,4 @@
 import { useState, useMemo, useRef } from "react";
-import { useRouter } from "next/navigation";
 import type { ConfirmState } from "@/components/ui/confirm-dialog";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
@@ -66,7 +65,6 @@ export type SavedBudgetRef = {
 };
 
 export function useConnectForm({ savedBudgets = [] }: { savedBudgets?: SavedBudgetRef[] } = {}) {
-  const router = useRouter();
   const queryClient = useQueryClient();
   const addInstance = useConnectionStore((s) => s.addInstance);
   const removeInstance = useConnectionStore((s) => s.removeInstance);
@@ -251,9 +249,7 @@ export function useConnectForm({ savedBudgets = [] }: { savedBudgets?: SavedBudg
         discardAll();
         queryClient.clear();
         setActiveInstance(instance.id);
-        toast.success("Direct connection opened. Redirecting…");
-        await new Promise((r) => setTimeout(r, 600));
-        router.push("/overview");
+        toast.success("Direct connection opened.");
       } finally {
         setReconnectBusyId(null);
       }
@@ -282,9 +278,7 @@ export function useConnectForm({ savedBudgets = [] }: { savedBudgets?: SavedBudg
       discardAll();
       queryClient.clear();
       setActiveInstance(instance.id);
-      toast.success("Connected! Redirecting…");
-      await new Promise((r) => setTimeout(r, 600));
-      router.push("/overview");
+      toast.success("Connected!");
     } finally {
       setReconnectBusyId(null);
     }
@@ -592,9 +586,7 @@ export function useConnectForm({ savedBudgets = [] }: { savedBudgets?: SavedBudg
         setActiveInstance(directConnection.id);
         await maybeRemember(directConnection);
         setConnectStatus({ kind: "success" });
-        toast.success("Direct connection opened. Redirecting…");
-        await new Promise((r) => setTimeout(r, 800));
-        router.push("/overview");
+        toast.success("Direct connection opened.");
       } catch (err) {
         setConnectStatus({ kind: "error", message: parseApiError(err) });
       }
@@ -674,9 +666,7 @@ export function useConnectForm({ savedBudgets = [] }: { savedBudgets?: SavedBudg
       setActiveInstance(finalInstance.id);
       await maybeRemember(finalInstance);
       setConnectStatus({ kind: "success" });
-      toast.success("Connected! Redirecting…");
-      await new Promise((r) => setTimeout(r, 800));
-      router.push("/overview");
+      toast.success("Connected!");
     } catch (err) {
       const status =
         err && typeof err === "object" && "status" in err

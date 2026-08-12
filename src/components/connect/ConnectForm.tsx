@@ -119,6 +119,11 @@ export function ConnectForm({ directBrowserApiEnabled }: ConnectFormProps) {
   // calm CTA so the saved list stays the focus).
   const [addingServer, setAddingServer] = useState(false);
 
+  // Single owner of the post-connect redirect. Connect/reconnect handlers must
+  // NOT navigate themselves: an imperative `router.push` in an async handler
+  // outlives this component and fires wherever the user has since navigated.
+  // That produced a bounce back to /overview in Direct mode, where the busy
+  // main thread left the stale navigation pending for seconds.
   useEffect(() => {
     if (hydrated && connectedInstance) {
       router.replace("/overview");
