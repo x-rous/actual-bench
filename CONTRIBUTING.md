@@ -164,7 +164,7 @@ src/
 
 ## Preview & demo deployments
 
-There is a public demo at **[actual-bench-demo.vercel.app](https://actual-bench-demo.vercel.app)** — the Next.js UI on Vercel (auto-deploys on every merge to `main`) plus a separate **[Hugging Face Space](https://huggingface.co/spaces/x-rous/actual-bench-demo)** backend (an `actual-server` + `actual-http-api` with a seeded budget that resets periodically).
+There is a public demo at **[actual-bench-demo.vercel.app](https://actual-bench-demo.vercel.app)** — the Next.js UI on Vercel (auto-deploys on every merge to `main`) plus a separate **[Hugging Face Space](https://huggingface.co/spaces/x-rous/actual-bench-demo)** backend (an `actual-server` + `actual-http-api` with seeded Envelope and Tracking budgets that reset periodically).
 
 A few things to know as a contributor:
 

@@ -6,7 +6,12 @@ import { Loader2, Rocket } from "lucide-react";
 import { useConnectionStore } from "@/store/connection";
 import { generateId } from "@/lib/uuid";
 
-type DemoConnection = { baseUrl: string; apiKey: string; budgetSyncId: string };
+type DemoBudget = { label: string; budgetSyncId: string };
+type DemoConnection = {
+  baseUrl: string;
+  apiKey: string;
+  budgets: [DemoBudget, DemoBudget];
+};
 
 /**
  * "Try the live demo" entry point on the connect screen.
@@ -14,8 +19,8 @@ type DemoConnection = { baseUrl: string; apiKey: string; budgetSyncId: string };
  * Fetches the demo connection from /api/demo after the server-rendered connect
  * page confirms DEMO_MODE=1 + the DEMO_* vars are present. Self-hosted builds
  * do not render this component, so they do not probe the demo endpoint. Clicking
- * it registers the demo as the active connection and drops the visitor straight
- * into the app — the normal "bring your own actual-http-api"
+ * it registers both demo budgets, opens the Envelope budget, and drops the
+ * visitor straight into the app — the normal "bring your own actual-http-api"
  * form below remains the default path.
  */
 export function DemoButton() {
@@ -44,16 +49,23 @@ export function DemoButton() {
 
   const start = () => {
     setConnecting(true);
-    const id = generateId();
-    addInstance({
-      id,
-      label: "Live Demo",
-      mode: "http-api",
-      baseUrl: demo.baseUrl,
-      apiKey: demo.apiKey,
-      budgetSyncId: demo.budgetSyncId,
-    });
-    setActiveInstance(id);
+    const [defaultBudget] = demo.budgets;
+    let defaultInstanceId = "";
+
+    for (const budget of demo.budgets) {
+      const id = generateId();
+      if (budget === defaultBudget) defaultInstanceId = id;
+      addInstance({
+        id,
+        label: budget.label,
+        mode: "http-api",
+        baseUrl: demo.baseUrl,
+        apiKey: demo.apiKey,
+        budgetSyncId: budget.budgetSyncId,
+      });
+    }
+
+    setActiveInstance(defaultInstanceId);
     router.push("/overview");
   };
 
@@ -62,7 +74,7 @@ export function DemoButton() {
       <div className="flex flex-col gap-1">
         <span className="font-semibold">New here? Try the live demo</span>
         <span className="text-sm text-muted-foreground">
-          Explore a sample budget instantly — no server setup required.
+          Compare Envelope and Tracking budgets — no server setup required.
         </span>
       </div>
       <button
