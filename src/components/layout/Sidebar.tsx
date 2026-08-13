@@ -109,13 +109,13 @@ export const SIDEBAR_SECTIONS: SidebarSection[] = [
       label: "Tools",
       items: [
         { id: "rule-diagnostics", label: "Rule Diagnostics", href: "/rules/diagnostics", icon: ShieldCheck },
-        { id: "sync", label: "Budget File Sync", href: "/sync", icon: ArrowLeftRight },
         {
           id: "reconciliation",
           label: "Bank Reconciliation",
           href: "/reconciliation",
           icon: ClipboardCheck,
         },
+        { id: "sync", label: "Budget File Sync", href: "/sync", icon: ArrowLeftRight },
         { id: "fx-rates", label: "FX Rates", href: "/fx-rates", icon: Banknote },
         { id: "query", label: "ActualQL Queries", href: "/query", icon: Terminal },
         { id: "data-browser", label: "Data Browser", href: "/data-browser", icon: Database },

@@ -47,6 +47,13 @@ describe("overview cards follow the sidebar", () => {
     expect(TOOL_CARDS.some((card) => card.href === "/reconciliation")).toBe(true);
   });
 
+  it("places bank reconciliation immediately after rule diagnostics", () => {
+    const expectedPair = ["/rules/diagnostics", "/reconciliation"];
+
+    expect(navHrefs("Tools").slice(0, 2)).toEqual(expectedPair);
+    expect(TOOL_CARDS.slice(0, 2).map((card) => card.href)).toEqual(expectedPair);
+  });
+
   it("leaves FX Rates to the sidebar", () => {
     // It supports currency conversion in Budget File Sync rather than being
     // somewhere to go in its own right.
