@@ -20,9 +20,12 @@ describe("DemoButton", () => {
         baseUrl: "https://demo.example.com",
         apiKey: "public-demo-key",
         budgets: [
-          { label: "Live Demo", budgetSyncId: "envelope-sync-id" },
           {
-            label: "Live Demo - Tracking Mode",
+            label: "Live Demo - Envelope",
+            budgetSyncId: "envelope-sync-id",
+          },
+          {
+            label: "Live Demo - Tracking",
             budgetSyncId: "tracking-sync-id",
           },
         ],
@@ -47,17 +50,17 @@ describe("DemoButton", () => {
       expect(instances).toEqual(
         expect.arrayContaining([
           expect.objectContaining({
-            label: "Live Demo",
+            label: "Live Demo - Envelope",
             budgetSyncId: "envelope-sync-id",
           }),
           expect.objectContaining({
-            label: "Live Demo - Tracking Mode",
+            label: "Live Demo - Tracking",
             budgetSyncId: "tracking-sync-id",
           }),
         ])
       );
       expect(instances.find((instance) => instance.id === activeInstanceId)).toMatchObject({
-        label: "Live Demo",
+        label: "Live Demo - Envelope",
         budgetSyncId: "envelope-sync-id",
       });
     });

@@ -38,9 +38,9 @@ own server-side proxy, exactly like a self-hosted deployment.
    configured. It answers only when the deployment opts in via demo env vars;
    otherwise it returns `404` and the button never appears.
 2. On click, the app registers both returned demo-budget connections and drops
-   the visitor into `Live Demo`, the Envelope file.
-3. The existing top-bar connection menu lists `Live Demo` and
-   `Live Demo - Tracking Mode`, so the visitor can switch between equivalent
+   the visitor into `Live Demo - Envelope`.
+3. The existing top-bar connection menu lists `Live Demo - Envelope` and
+   `Live Demo - Tracking`, so the visitor can switch between equivalent
    datasets and compare the two budgeting models.
 4. From there each behaves like any other connection: the server-side proxy
    talks to the demo backend, which serves the selected sample budget.
@@ -52,10 +52,19 @@ the same screen.
 
 - Two rich, realistic sample budgets are generated from deterministic equivalent
   data by **`demo/generate-seed.mjs`** and **baked into the backend image**:
-  `Live Demo` uses Envelope mode; `Live Demo - Tracking Mode` uses Tracking mode
-  and also plans income. Both contain multiple accounts, category groups, payees
-  (including intentional duplicates to showcase merging), rules, schedules,
-  several months of transactions, and budgeted amounts.
+  `Live Demo - Envelope` uses Envelope mode; `Live Demo - Tracking` uses Tracking
+  mode and also plans income. Both contain twelve completed months plus the
+  current partial month, a broad household category structure, seasonal budget
+  plans, intentionally good and difficult months, duplicate payees, 30+ rules,
+  rule-diagnostic examples, 12 schedules, 10 tags with tagged activity, real
+  transfers, split purchases, imported metadata, notes, and mixed transaction
+  clearing/reconciliation states.
+- The generator validates minimum entity and transaction counts, expected mode,
+  rule-diagnostic coverage, and equivalent transactions/expense plans before it
+  publishes the seed directory.
+- The committed seed retains stable Sync IDs across regenerations, avoiding a
+  coordinated Demo UI environment update for ordinary data refreshes. If those
+  IDs are intentionally changed, update both Vercel variables before deployment.
 - On every container start the backend restores that baked copy, so the demo
   **self-resets to a clean state** — visitor edits never persist. This is the
   reset mechanism; there is no separate cleanup job.

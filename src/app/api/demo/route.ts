@@ -39,11 +39,11 @@ export function GET() {
     apiKey: DEMO_API_KEY,
     budgets: [
       {
-        label: "Live Demo",
+        label: "Live Demo - Envelope",
         budgetSyncId: DEMO_BUDGET_SYNC_ID,
       },
       {
-        label: "Live Demo - Tracking Mode",
+        label: "Live Demo - Tracking",
         budgetSyncId: DEMO_TRACKING_BUDGET_SYNC_ID,
       },
     ],
