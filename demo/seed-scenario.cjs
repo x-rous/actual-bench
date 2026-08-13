@@ -221,7 +221,8 @@ function budgetPlanForMonth(month) {
   }
 
   if ([3, 4, 5].includes(number)) plan.homeMaintenance = 24000;
-  if ([6, 7].includes(number)) plan.vacationFund = 32000;
+  // June pre-funds the trip; July spends the rollover without new funding.
+  if (number === 6) plan.vacationFund = 32000;
   if (number === 7) plan.vacationFund = 0;
   if (number === 8 || number === 9) plan.school = 26000;
   if (number === 11) plan.gifts = 22000;
@@ -266,7 +267,6 @@ function scenarioForMonth(month, index) {
   if (index === 10) {
     scenario.label = "bonus-recovery";
     scenario.discretionaryFactor = 0.9;
-    scenario.incomeAdjustment = 180000;
     scenario.event = "bonus";
   }
   if (month.monthNumber === 12) {

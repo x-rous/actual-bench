@@ -2,6 +2,7 @@
 const scenario = require("./seed-scenario.cjs") as {
   BASE_BUDGETS: Record<string, number>;
   CATEGORY_GROUPS: Array<{
+    income?: boolean;
     categories: Array<[string, string]>;
   }>;
   DEMO_BUDGETS: Array<{ name: string; mode: string; stableGroupId: string }>;
@@ -15,7 +16,7 @@ const scenario = require("./seed-scenario.cjs") as {
   scenarioForMonth(
     month: { monthNumber: number; isCurrent: boolean },
     index: number
-  ): { label: string };
+  ): { label: string; incomeAdjustment: number; event: string | null };
 };
 
 describe("demo seed scenario", () => {
@@ -40,10 +41,15 @@ describe("demo seed scenario", () => {
       (total, group) => total + group.categories.length,
       0
     );
+    const expenseCategoryKeys = scenario.CATEGORY_GROUPS.filter(
+      (group) => !group.income
+    ).flatMap((group) => group.categories.map(([key]) => key));
 
     expect(scenario.CATEGORY_GROUPS).toHaveLength(10);
     expect(categoryCount).toBeGreaterThanOrEqual(40);
-    expect(Object.keys(scenario.BASE_BUDGETS)).toHaveLength(categoryCount - 5);
+    expect(Object.keys(scenario.BASE_BUDGETS).sort()).toEqual(
+      [...expenseCategoryKeys].sort()
+    );
     expect(scenario.TAGS).toHaveLength(10);
     expect(scenario.TAGS.every(([, color, description]) => color && description)).toBe(true);
   });
@@ -53,6 +59,7 @@ describe("demo seed scenario", () => {
     const summer = scenario.budgetPlanForMonth({ monthNumber: 7 });
     expect(winter.naturalGas).toBeGreaterThan(summer.naturalGas);
     expect(summer.electric).toBeGreaterThan(winter.electric);
+    expect(summer.vacationFund).toBe(0);
 
     const months = scenario.buildMonths(new Date(2026, 7, 14));
     const labels = months.map((month, index) =>
@@ -61,5 +68,8 @@ describe("demo seed scenario", () => {
     expect(labels).toContain("good");
     expect(labels.some((label) => label.startsWith("bad-"))).toBe(true);
     expect(labels).toContain("current-partial");
+
+    const bonus = scenario.scenarioForMonth(months[10], 10);
+    expect(bonus).toMatchObject({ event: "bonus", incomeAdjustment: 0 });
   });
 });

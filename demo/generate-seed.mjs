@@ -14,6 +14,7 @@
 // Env overrides: SEED_PASSWORD (server password), SEED_PORT (default 5006).
 
 import { spawn } from "node:child_process";
+import { once } from "node:events";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { rm, mkdir, mkdtemp, rename, writeFile } from "node:fs/promises";
@@ -1061,8 +1062,16 @@ async function main() {
     });
 
   } finally {
-    server.kill("SIGTERM");
-    await sleep(500);
+    if (server.exitCode === null && server.signalCode === null) {
+      const exitPromise = once(server, "exit");
+      server.kill("SIGTERM");
+      await Promise.race([exitPromise, sleep(10000)]);
+    }
+    if (server.exitCode === null && server.signalCode === null) {
+      const exitPromise = once(server, "exit");
+      server.kill("SIGKILL");
+      await exitPromise;
+    }
   }
 
   if (!generatedBudgets) throw new Error("generated budget metadata was not captured");
