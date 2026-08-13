@@ -119,6 +119,9 @@ describe("reconciliation review write labels", () => {
     const action = screen.getByText("Bank text").closest("td");
     expect(action).toHaveClass("text-muted-foreground");
     expect(action).not.toHaveClass("text-amber-600");
+    expect(action).toHaveTextContent(
+      "records the statement description as the imported payee; payee, notes and category are unchanged"
+    );
     expect(action).toHaveAttribute(
       "title",
       "Records the statement description as this transaction's imported payee."

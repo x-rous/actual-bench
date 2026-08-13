@@ -296,6 +296,8 @@ export type WorkbenchProps = {
    * moved. Reading it stays useful; editing it does not.
    */
   readOnly?: boolean;
+  /** Lock persisted write choices as soon as Apply starts. */
+  writeSettingsLocked?: boolean;
   payees: Option[];
   categories: Option[];
   onMatchConfigChange: (preset: TextTargetPreset, config: MatchConfig) => void;
@@ -370,6 +372,7 @@ export function Workbench({
   canRematch,
   rematchBlockedReason,
   readOnly = false,
+  writeSettingsLocked = false,
   payees,
   categories,
   onMatchConfigChange,
@@ -630,6 +633,10 @@ export function Workbench({
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
+      // Popovers are not dialogs, but their controls still sit above the grid.
+      // Do not let row navigation or decision shortcuts act behind them.
+      if (optionsOpen || createOptionsOpen) return;
+
       // Never act behind a dialog. The listener is on the window, so without
       // this an Enter meant for the transform dialog's button would also decide
       // whichever row happens to be selected underneath it.
@@ -669,7 +676,7 @@ export function Workbench({
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [step, goToNextUndecided, decideSelected]);
+  }, [step, goToNextUndecided, decideSelected, optionsOpen, createOptionsOpen]);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -818,6 +825,7 @@ export function Workbench({
                   config={applyConfig}
                   onChange={onApplyConfigChange}
                   stagedNotesCount={stagedNotesCount}
+                  disabled={writeSettingsLocked}
                 />
               </PopoverContent>
             </Popover>

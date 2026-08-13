@@ -47,6 +47,7 @@ export function WriteSetting<T extends string>({
                 key={option.value}
                 className={cn(
                   "cursor-pointer rounded px-2 py-0.5 text-xs transition-colors",
+                  "has-[input:focus-visible]:ring-2 has-[input:focus-visible]:ring-ring",
                   disabled && "cursor-not-allowed opacity-60",
                   option.value === value
                     ? "bg-background font-medium shadow-sm"

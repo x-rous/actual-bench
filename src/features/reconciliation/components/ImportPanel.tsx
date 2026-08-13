@@ -179,6 +179,8 @@ export type ImportPanelProps = {
    */
   applyConfig: ApplyConfig;
   onApplyConfigChange: (config: ApplyConfig) => void;
+  /** Keep persisted write choices visible after Apply starts, but not editable. */
+  writeSettingsLocked?: boolean;
   /** Saved profiles for this account, most recently used first. */
   profiles: ReconciliationProfileRecord[];
   onMatchConfigChange: (preset: TextTargetPreset, config: MatchConfig) => void;
@@ -217,6 +219,7 @@ export function ImportPanel({
   matchPreset,
   applyConfig,
   onApplyConfigChange,
+  writeSettingsLocked = false,
   profiles,
   onMatchConfigChange,
   onApplyProfile,
@@ -275,7 +278,11 @@ export function ImportPanel({
    */
   const sourceColumns = useMemo<SourceColumn[]>(() => {
     if (!table) return [];
-    const width = Math.max(table.headers?.length ?? 0, ...table.rows.map((row) => row.length), 0);
+    const widestRow = table.rows.reduce(
+      (widest, row) => Math.max(widest, row.length),
+      0
+    );
+    const width = Math.max(table.headers?.length ?? 0, widestRow);
     return Array.from({ length: width }, (_, index) => {
       const header = table.headers?.[index]?.trim();
       const sample = table.rows.find((row) => (row[index] ?? "").trim())?.[index]?.trim() ?? "";
@@ -707,7 +714,11 @@ export function ImportPanel({
                 heading says so rather than calling them "new transactions"
                 before anything has been matched. */}
             <Section title="When a row isn't in Actual">
-              <NewTransactionOptions config={applyConfig} onChange={onApplyConfigChange} />
+              <NewTransactionOptions
+                config={applyConfig}
+                onChange={onApplyConfigChange}
+                disabled={writeSettingsLocked}
+              />
             </Section>
             {profileSection}
           </div>
@@ -744,7 +755,8 @@ export function ImportPanel({
             {parsed && parsed.errors.length > 0 && (
               <details className="border-b border-border/60 bg-amber-500/5 px-3 py-2 text-xs">
                 <summary className="cursor-pointer font-medium">
-                  {parsed.errors.length} rows could not be read
+                  {parsed.errors.length} {parsed.errors.length === 1 ? "row" : "rows"} could not be
+                  read
                 </summary>
                 <ul className="mt-2 space-y-1 text-muted-foreground">
                   {parsed.errors.slice(0, 10).map((error) => (

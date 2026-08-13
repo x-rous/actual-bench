@@ -846,6 +846,7 @@ export function ReconciliationView() {
      * setting, one place it is written, whichever control the user reached.
      */
     function handleApplyConfigChange(config: ApplyConfig) {
+      if (writeSettingsLocked) return;
       setApplyConfig(config);
       if (sessionId) {
         const write = applyConfigWriteQueue.current
@@ -1233,6 +1234,7 @@ export function ReconciliationView() {
             accountName={screen.accountName}
             applyConfig={applyConfig}
             onApplyConfigChange={handleApplyConfigChange}
+            writeSettingsLocked={writeSettingsLocked}
             previousStatement={
               sessionQuery.data?.session.statementName
                 ? {
@@ -1472,7 +1474,8 @@ export function ReconciliationView() {
             isMatching={isMatching}
             canRematch={canRematch}
             rematchBlockedReason={rematchBlockedReason}
-          readOnly={Boolean(rematchBlockedReason)}
+            readOnly={Boolean(rematchBlockedReason)}
+            writeSettingsLocked={writeSettingsLocked}
             payees={payeeOptions}
             categories={categoryOptions}
             onDisposition={handleDisposition}

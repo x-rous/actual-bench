@@ -23,4 +23,10 @@ describe("reconciliation review settings", () => {
 
     expect(applyConfigAfterLeavingReview(config, true)).toBe(config);
   });
+
+  it("returns the same config when the enrichment choice is already the default", () => {
+    const config = { ...DEFAULT_APPLY_CONFIG, clearedTarget: "created" as const };
+
+    expect(applyConfigAfterLeavingReview(config, false)).toBe(config);
+  });
 });

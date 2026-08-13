@@ -51,7 +51,10 @@ function transaction(): ActualTransactionSnapshot {
   };
 }
 
-function renderResult(patch: StagedPatch = {}) {
+function renderResult(
+  patch: StagedPatch = {},
+  outcome: { operationId?: string; status?: "applied" | "skipped" } = {}
+) {
   const reconciliationItem: ReconciliationItem = {
     id: "i1",
     statementRowIds: ["s1"],
@@ -82,11 +85,18 @@ function renderResult(patch: StagedPatch = {}) {
     unresolved: 0,
     blocked: [],
   };
+  const status = outcome.status ?? "applied";
   const result: ApplyRunResult = {
-    results: [{ operationId: operation.id, status: "applied", transactionId: "t1" }],
-    applied: 1,
+    results: [
+      {
+        operationId: outcome.operationId ?? operation.id,
+        status,
+        transactionId: "t1",
+      },
+    ],
+    applied: status === "applied" ? 1 : 0,
     failed: 0,
-    skipped: 0,
+    skipped: status === "skipped" ? 1 : 0,
     complete: true,
   };
 
@@ -125,5 +135,18 @@ describe("reconciliation apply-result write labels", () => {
 
     expect(screen.getByText("1 change written")).toBeInTheDocument();
     expect(screen.getByText("Updated + bank text")).toBeInTheDocument();
+  });
+
+  it("counts an outcome missing from the restored plan as a user change", () => {
+    renderResult({}, { operationId: "update:stale" });
+
+    expect(screen.getByText("1 change written")).toBeInTheDocument();
+  });
+
+  it("reports skipped writes in the headline and marks their row already done", () => {
+    renderResult({}, { status: "skipped" });
+
+    expect(screen.getByText(/0 changes written · 1 bank detail already done/)).toBeInTheDocument();
+    expect(screen.getByText("already done")).toBeInTheDocument();
   });
 });

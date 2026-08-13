@@ -248,7 +248,7 @@ export function ApplyResultPanel({
                   <th scope="col" className="w-24 border-b border-border bg-muted px-3 pb-1.5 text-right font-medium">
                     Amount
                   </th>
-                  <th scope="col" className="w-20 border-x border-b border-border bg-background px-3 pb-1.5 text-left font-medium">
+                  <th scope="col" className="w-32 border-x border-b border-border bg-background px-3 pb-1.5 text-left font-medium">
                     Action
                   </th>
                   <th scope="col" className="w-16 border-b border-border bg-background px-3 pb-1.5 text-left font-medium">

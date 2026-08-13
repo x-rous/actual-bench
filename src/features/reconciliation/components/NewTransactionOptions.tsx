@@ -29,10 +29,13 @@ export function NewTransactionOptions({
    * run: their notes are settled, and this setting can no longer reach them.
    */
   stagedNotesCount = 0,
+  disabled = false,
 }: {
   config: ApplyConfig;
   onChange: (config: ApplyConfig) => void;
   stagedNotesCount?: number;
+  /** Keep the choices visible as an audit record once Apply has started. */
+  disabled?: boolean;
 }) {
   return (
     <div className="flex flex-col gap-2">
@@ -41,6 +44,7 @@ export function NewTransactionOptions({
         legend="Where a created transaction's payee comes from"
         name="payee-strategy"
         value={config.payeeStrategy}
+        disabled={disabled}
         onChange={(next) => onChange({ ...config, payeeStrategy: next })}
         options={[
           {
@@ -61,6 +65,7 @@ export function NewTransactionOptions({
         legend="Where a created transaction's notes come from"
         name="notes-strategy"
         value={config.notesStrategy}
+        disabled={disabled}
         onChange={(next) => onChange({ ...config, notesStrategy: next })}
         options={[
           {

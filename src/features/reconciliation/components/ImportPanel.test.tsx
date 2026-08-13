@@ -28,13 +28,14 @@ function statement(rowCount: number): string {
 }
 
 /** Render the panel and paste a statement into it, as a user without a file does. */
-function renderWith(text: string) {
+function renderWith(text: string, writeSettingsLocked = false) {
   render(
     <ImportPanel
       accountName="Global Money Credit Card"
       matchConfig={DEFAULT_MATCH_CONFIG}
       matchPreset={DEFAULT_TEXT_PRESET}
       applyConfig={DEFAULT_APPLY_CONFIG}
+      writeSettingsLocked={writeSettingsLocked}
       onApplyConfigChange={() => {}}
       profiles={[]}
       onMatchConfigChange={() => {}}
@@ -96,7 +97,7 @@ describe("import preview", () => {
     );
 
     expect(previewRows()).toHaveLength(3);
-    expect(screen.getByText(/1 could not be read/)).toBeInTheDocument();
+    expect(screen.getByText(/1 row could not be read/)).toBeInTheDocument();
   });
 
   it("keeps every control available after the layout change", () => {
@@ -216,5 +217,17 @@ describe("import preview", () => {
       fireEvent.click(radio);
       expect(screen.getByText(/recorded as the imported payee either way|still recorded as the imported payee/i)).toBeInTheDocument();
     }
+  });
+
+  it("locks write choices after Apply starts and keeps their focus target visible", () => {
+    renderWith(statement(3), true);
+
+    const payeeChoice = screen.getByRole("radio", { name: "The bank's merchant text" });
+    const notesChoice = screen.getByRole("radio", { name: "The bank's memo" });
+    expect(payeeChoice).toBeDisabled();
+    expect(notesChoice).toBeDisabled();
+    expect(payeeChoice.closest("label")).toHaveClass(
+      "has-[input:focus-visible]:ring-2"
+    );
   });
 });
