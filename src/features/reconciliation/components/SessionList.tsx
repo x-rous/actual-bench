@@ -1,7 +1,18 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { ArrowRight, ArrowUpDown, FileText, Search, Trash2, X } from "lucide-react";
+import {
+  ArrowRight,
+  ArrowUpDown,
+  ChevronDown,
+  ChevronRight,
+  ChevronsDownUp,
+  ChevronsUpDown,
+  FileText,
+  Search,
+  Trash2,
+  X,
+} from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { EditableCellInput } from "@/components/ui/editable-cell";
@@ -126,6 +137,10 @@ function periodOf(session: ReconciliationSessionRecord): string {
   return `${session.statementStart} → ${session.statementEnd}`;
 }
 
+function accountNameOf(session: ReconciliationSessionRecord): string {
+  return session.accountName ?? "Unnamed account";
+}
+
 /**
  * Declared outside the list so it is not recreated on every render, which would
  * reset its state and defeat React's reconciliation.
@@ -182,6 +197,8 @@ export function SessionList({ sessions, onOpen, onDelete, onRetag, onNew }: Sess
   const [search, setSearch] = useState("");
   const [statusFilters, setStatusFilters] = useState<string[]>([]);
   const [tagFilter, setTagFilter] = useState("all");
+  const [accountFilter, setAccountFilter] = useState("all");
+  const [accountExpansion, setAccountExpansion] = useState<Record<string, boolean>>({});
   const [year, setYear] = useState("all");
   const [month, setMonth] = useState("all");
   const [sortKey, setSortKey] = useState<SortKey>("updated");
@@ -219,6 +236,16 @@ export function SessionList({ sessions, onOpen, onDelete, onRetag, onNew }: Sess
     [sessions]
   );
 
+  const accounts = useMemo(() => {
+    const byId = new Map<string, string>();
+    for (const session of sessions) {
+      if (!byId.has(session.accountId)) byId.set(session.accountId, accountNameOf(session));
+    }
+    return [...byId]
+      .map(([id, label]) => ({ id, label }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+  }, [sessions]);
+
   const years = useMemo(() => {
     const present = new Set<string>();
     for (const months of monthsBySession.values()) {
@@ -231,6 +258,7 @@ export function SessionList({ sessions, onOpen, onDelete, onRetag, onNew }: Sess
     search.trim().length > 0 ||
     statusFilters.length > 0 ||
     tagFilter !== "all" ||
+    accountFilter !== "all" ||
     year !== "all" ||
     month !== "all";
 
@@ -238,6 +266,7 @@ export function SessionList({ sessions, onOpen, onDelete, onRetag, onNew }: Sess
     setSearch("");
     setStatusFilters([]);
     setTagFilter("all");
+    setAccountFilter("all");
     setYear("all");
     setMonth("all");
   }
@@ -248,6 +277,7 @@ export function SessionList({ sessions, onOpen, onDelete, onRetag, onNew }: Sess
     const filtered = sessions.filter((session) => {
       if (selectedStatuses.size > 0 && !selectedStatuses.has(session.status)) return false;
       if (tagFilter !== "all" && (session.tag ?? "") !== tagFilter) return false;
+      if (accountFilter !== "all" && session.accountId !== accountFilter) return false;
 
       if (year !== "all" || month !== "all") {
         const months = monthsBySession.get(session.id) ?? [];
@@ -267,11 +297,27 @@ export function SessionList({ sessions, onOpen, onDelete, onRetag, onNew }: Sess
         .includes(needle);
     });
 
+    return filtered;
+  }, [sessions, search, statusFilters, tagFilter, accountFilter, year, month, monthsBySession]);
+
+  const accountGroups = useMemo(() => {
+    const grouped = new Map<
+      string,
+      { accountId: string; accountName: string; sessions: ReconciliationSessionRecord[] }
+    >();
+    for (const session of visible) {
+      const group = grouped.get(session.accountId) ?? {
+        accountId: session.accountId,
+        accountName: accountNameOf(session),
+        sessions: [],
+      };
+      group.sessions.push(session);
+      grouped.set(session.accountId, group);
+    }
+
     const direction = ascending ? 1 : -1;
-    return [...filtered].sort((a, b) => {
+    const compareSessions = (a: ReconciliationSessionRecord, b: ReconciliationSessionRecord) => {
       switch (sortKey) {
-        case "account":
-          return direction * (a.accountName ?? "").localeCompare(b.accountName ?? "");
         case "status":
           return direction * a.status.localeCompare(b.status);
         case "rows":
@@ -281,8 +327,62 @@ export function SessionList({ sessions, onOpen, onDelete, onRetag, onNew }: Sess
         default:
           return direction * a.updatedAt.localeCompare(b.updatedAt);
       }
+    };
+
+    const groups = [...grouped.values()];
+    groups.sort((a, b) => {
+      const order = a.accountName.localeCompare(b.accountName);
+      return sortKey === "account" ? direction * order : order;
     });
-  }, [sessions, search, statusFilters, tagFilter, year, month, monthsBySession, sortKey, ascending]);
+    for (const group of groups) {
+      group.sessions.sort(
+        sortKey === "account"
+          ? (a, b) => b.updatedAt.localeCompare(a.updatedAt)
+          : compareSessions
+      );
+    }
+    return groups.map((group) => ({
+      ...group,
+      needsAttention: group.sessions.filter((session) => session.status !== "completed").length,
+    }));
+  }, [visible, sortKey, ascending]);
+
+  const filterContext = [
+    search.trim().toLowerCase(),
+    [...statusFilters].sort().join(","),
+    tagFilter,
+    accountFilter,
+    year,
+    month,
+  ].join("\u0000");
+
+  function expansionKey(accountId: string): string {
+    return JSON.stringify([filterContext, accountId]);
+  }
+
+  function groupIsExpanded(group: (typeof accountGroups)[number]): boolean {
+    return (
+      accountExpansion[expansionKey(group.accountId)] ??
+      (filtersActive || group.needsAttention > 0)
+    );
+  }
+
+  function setGroupExpanded(accountId: string, expanded: boolean) {
+    const key = expansionKey(accountId);
+    setAccountExpansion((previous) => ({ ...previous, [key]: expanded }));
+  }
+
+  const allGroupsCollapsed =
+    accountGroups.length > 0 && accountGroups.every((group) => !groupIsExpanded(group));
+
+  function toggleAllGroups() {
+    const expanded = allGroupsCollapsed;
+    setAccountExpansion((previous) => {
+      const next = { ...previous };
+      for (const group of accountGroups) next[expansionKey(group.accountId)] = expanded;
+      return next;
+    });
+  }
 
   if (sessions.length === 0) {
     return (
@@ -342,6 +442,22 @@ export function SessionList({ sessions, onOpen, onDelete, onRetag, onNew }: Sess
           />
         )}
 
+        {accounts.length > 0 && (
+          <select
+            value={accountFilter}
+            onChange={(event) => setAccountFilter(event.target.value)}
+            aria-label="Filter by account"
+            className="h-6 max-w-56 rounded border border-border bg-background px-1 text-xs outline-none focus:ring-1 focus:ring-ring"
+          >
+            <option value="all">Any account</option>
+            {accounts.map((account) => (
+              <option key={account.id} value={account.id}>
+                {account.label}
+              </option>
+            ))}
+          </select>
+        )}
+
         {tags.length > 0 && (
           <select
             value={tagFilter}
@@ -392,6 +508,27 @@ export function SessionList({ sessions, onOpen, onDelete, onRetag, onNew }: Sess
           </div>
         )}
 
+        {accountGroups.length > 0 && (
+          <Button
+            size="xs"
+            variant="ghost"
+            onClick={toggleAllGroups}
+            aria-label={allGroupsCollapsed ? "Expand all groups" : "Collapse all groups"}
+          >
+            {allGroupsCollapsed ? (
+              <>
+                <ChevronsUpDown />
+                Expand All
+              </>
+            ) : (
+              <>
+                <ChevronsDownUp />
+                Collapse All
+              </>
+            )}
+          </Button>
+        )}
+
         {filtersActive && (
           <button
             type="button"
@@ -419,10 +556,10 @@ export function SessionList({ sessions, onOpen, onDelete, onRetag, onNew }: Sess
               <th scope="col" className="border-b border-border bg-background px-3 py-2 text-left font-medium">
                 Tag
               </th>
-              <th scope="col" className="border-b border-border bg-background px-3 py-2 text-left font-medium">
+              <th scope="col" className="w-[20%] min-w-36 border-b border-border bg-background px-3 py-2 text-left font-medium">
                 Statement
               </th>
-              <th scope="col" className="border-b border-border bg-background px-3 py-2 text-left font-medium">
+              <th scope="col" className="w-[20%] min-w-48 border-b border-border bg-background px-3 py-2 text-left font-medium">
                 Period
               </th>
               <SortableHeader column="rows" label="Rows" sortKey={sortKey} ascending={ascending} onSort={sortBy} />
@@ -432,17 +569,48 @@ export function SessionList({ sessions, onOpen, onDelete, onRetag, onNew }: Sess
               <th scope="col" className="w-24 border-b border-border bg-background px-3 py-2" />
             </tr>
           </thead>
-          <tbody>
-            {visible.map((session) => (
+          {accountGroups.map((group) => {
+            const expanded = groupIsExpanded(group);
+            return (
+              <tbody key={group.accountId}>
+                <tr className="border-y border-border bg-muted/50">
+                  <th scope="rowgroup" colSpan={9} className="p-0 text-left">
+                    <button
+                      type="button"
+                      aria-expanded={expanded}
+                      aria-label={
+                        (expanded ? "Collapse " : "Expand ") + group.accountName + " sessions"
+                      }
+                      onClick={() => setGroupExpanded(group.accountId, !expanded)}
+                      className="flex w-full items-center gap-2 px-3 py-1.5 font-medium outline-none transition-colors hover:bg-accent/40 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                    >
+                      {expanded ? (
+                        <ChevronDown className="h-4 w-4 shrink-0" aria-hidden="true" />
+                      ) : (
+                        <ChevronRight className="h-4 w-4 shrink-0" aria-hidden="true" />
+                      )}
+                      <span>{group.accountName}</span>
+                      <span className="font-normal tabular-nums text-muted-foreground">
+                        · {group.sessions.length} {group.sessions.length === 1 ? "session" : "sessions"}
+                        {" · "}
+                        {group.needsAttention === 0
+                          ? "all applied"
+                          : group.needsAttention === 1
+                            ? "1 needs attention"
+                            : group.needsAttention + " need attention"}
+                      </span>
+                    </button>
+                  </th>
+                </tr>
+                {expanded &&
+                  group.sessions.map((session) => (
               <tr
                 key={session.id}
                 className="cursor-pointer border-b border-border/30 hover:bg-accent/40"
                 onClick={() => onOpen(session)}
               >
-                <td className="px-3 py-1.5 font-medium">
-                  {session.accountName ?? "Unnamed account"}
-                </td>
-                <td className="px-3 py-1.5" onClick={(event) => event.stopPropagation()}>
+                <td className="px-3 py-0.5" />
+                <td className="px-3 py-0.5" onClick={(event) => event.stopPropagation()}>
                   {editingTagId === session.id ? (
                     <EditableCellInput
                       initialValue={session.tag ?? ""}
@@ -477,44 +645,52 @@ export function SessionList({ sessions, onOpen, onDelete, onRetag, onNew }: Sess
                     </button>
                   )}
                 </td>
-                <td className="max-w-0 truncate px-3 py-1.5 text-muted-foreground">
+                <td
+                  className="w-[20%] min-w-36 max-w-0 truncate px-3 py-0.5 text-muted-foreground"
+                  title={session.statementName ?? undefined}
+                >
                   {session.statementName ?? "-"}
                 </td>
-                <td className="whitespace-nowrap px-3 py-1.5 tabular-nums text-muted-foreground">
+                <td
+                  className="w-[20%] min-w-48 truncate whitespace-nowrap px-3 py-0.5 tabular-nums text-muted-foreground"
+                  title={periodOf(session)}
+                >
                   {periodOf(session)}
                 </td>
-                <td className="px-3 py-1.5 tabular-nums">{rowCountOf(session) ?? "-"}</td>
-                <td className="px-3 py-1.5">
+                <td className="px-3 py-0.5 tabular-nums">{rowCountOf(session) ?? "-"}</td>
+                <td className="px-3 py-0.5">
                   <Badge variant="outline" className={cn("text-[11px]", statusTone(session.status))}>
                     {STATUS_LABELS[session.status] ?? session.status}
                   </Badge>
                 </td>
-                <td className="whitespace-nowrap px-3 py-1.5 text-muted-foreground">
+                <td className="whitespace-nowrap px-3 py-0.5 text-muted-foreground">
                   {formatTimestamp(session.createdAt)}
                 </td>
-                <td className="whitespace-nowrap px-3 py-1.5 text-muted-foreground">
+                <td className="whitespace-nowrap px-3 py-0.5 text-muted-foreground">
                   {formatTimestamp(session.updatedAt)}
                 </td>
-                <td className="px-3 py-1.5" onClick={(event) => event.stopPropagation()}>
+                <td className="px-3 py-0.5" onClick={(event) => event.stopPropagation()}>
                   <div className="flex items-center justify-end gap-1">
                     <Button
                       variant="ghost"
                       size="icon"
-                      className="h-7 w-7"
+                      className="h-6 w-6"
                       aria-label={`Delete the reconciliation for ${session.accountName ?? "this account"} created ${formatTimestamp(session.createdAt)}`}
                       onClick={() => onDelete(session)}
                     >
                       <Trash2 className="h-3.5 w-3.5" />
                     </Button>
-                    <Button variant="ghost" size="sm" className="h-7" onClick={() => onOpen(session)}>
+                    <Button variant="ghost" size="sm" className="h-6" onClick={() => onOpen(session)}>
                       {session.status === "completed" ? "View" : "Open"}
                       <ArrowRight className="ml-1 h-3 w-3" />
                     </Button>
                   </div>
                 </td>
               </tr>
-            ))}
-          </tbody>
+                  ))}
+              </tbody>
+            );
+          })}
         </table>
 
         {visible.length === 0 && (

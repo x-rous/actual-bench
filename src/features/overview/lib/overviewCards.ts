@@ -111,15 +111,6 @@ export const TOOL_CARDS: OverviewActionCard[] = [
     href: "/rules/diagnostics",
   },
   {
-    id: "sync",
-    label: "Budget File Sync",
-    description:
-      "Copy transactions, payees, and categories between budget files as preview-first, one-way flows with run history and safe automation.",
-    icon: ArrowLeftRight,
-    tone: "tool",
-    href: "/sync",
-  },
-  {
     id: "reconciliation",
     label: "Bank Reconciliation",
     description:
@@ -127,6 +118,15 @@ export const TOOL_CARDS: OverviewActionCard[] = [
     icon: ClipboardCheck,
     tone: "tool",
     href: "/reconciliation",
+  },
+  {
+    id: "sync",
+    label: "Budget File Sync",
+    description:
+      "Copy transactions, payees, and categories between budget files as preview-first, one-way flows with run history and safe automation.",
+    icon: ArrowLeftRight,
+    tone: "tool",
+    href: "/sync",
   },
   {
     id: "query",
