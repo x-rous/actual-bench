@@ -41,6 +41,7 @@ const FIELD_LABELS: Record<string, string> = {
   payeeId: "Payee",
   categoryId: "Category",
   notes: "Notes",
+  importedPayee: "Imported Payee",
 };
 
 /**
@@ -55,6 +56,7 @@ function pluralFieldLabel(field: string, count: number): string {
     amount: "amount",
     date: "date",
     payeeId: "payee",
+    importedPayee: "imported payee",
     notes: "note",
   };
   const singular = one[field] ?? (FIELD_LABELS[field] ?? field).toLowerCase();
@@ -72,6 +74,8 @@ export type ReviewPanelProps = {
   drift: DriftReport | null;
   applyConfig: ApplyConfig;
   onApplyConfigChange: (config: ApplyConfig) => void;
+  /** The choices are an audit record once Apply has started. */
+  writeSettingsLocked?: boolean;
 };
 
 export function ReviewPanel({
@@ -84,6 +88,7 @@ export function ReviewPanel({
   drift,
   applyConfig,
   onApplyConfigChange,
+  writeSettingsLocked = false,
 }: ReviewPanelProps) {
   const counts = planCounts(plan);
   const total = totalChanges(plan);
@@ -92,6 +97,7 @@ export function ReviewPanel({
   // changes the user staged, and reporting them as such would overstate what
   // is about to happen to their budget (RD-072 §2.4).
   const { enrichments } = classifyPlan(plan);
+  const visibleUpdateCount = counts.update - enrichments;
 
   // Counted per field rather than per operation: one update that changes a
   // category and a note is two metadata changes, and that is what the user is
@@ -102,12 +108,17 @@ export function ReviewPanel({
   const applicable = Math.max(total - withheld, 0);
 
   const fieldCounts = new Map<string, number>();
+  let importedPayeeWrites = 0;
   for (const operation of plan.operations) {
     if (operation.kind !== "update") continue;
     for (const field of stagedFields(operation.patch)) {
       fieldCounts.set(field, (fieldCounts.get(field) ?? 0) + 1);
     }
+    if (operation.importedPayee != null) importedPayeeWrites += 1;
   }
+  // Added after staged fields so the user's edits read first, followed by the
+  // bank provenance that may ride on the same operations.
+  if (importedPayeeWrites > 0) fieldCounts.set("importedPayee", importedPayeeWrites);
 
   return (
     // The summary, settings and decision stay put; only the table scrolls.
@@ -127,7 +138,7 @@ export function ReviewPanel({
         <h2 className="text-sm font-semibold">Review before applying</h2>
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
           <Stat label="Create" value={counts.create} icon={Plus} />
-          <Stat label="Update" value={counts.update} icon={Pencil} />
+          <Stat label="Update" value={visibleUpdateCount} icon={Pencil} />
           <Stat label="Delete" value={counts.delete} icon={Trash2} destructive />
           <Stat label="No change needed" value={plan.noWriteMatches} muted />
           {enrichments > 0 && (
@@ -187,11 +198,18 @@ export function ReviewPanel({
         than the table they are about.
       */}
       <div className="grid gap-3 lg:grid-cols-2">
+        {writeSettingsLocked && (
+          <p className="text-[11px] text-muted-foreground lg:col-span-2">
+            These settings are locked because this reconciliation is being or has been applied.
+            They show the choices used for its writes.
+          </p>
+        )}
         <WriteSetting
           label="Mark as cleared"
           legend="Which transactions to mark cleared"
           name="cleared-target"
           value={applyConfig.clearedTarget}
+          disabled={writeSettingsLocked}
           onChange={(next) => onApplyConfigChange({ ...applyConfig, clearedTarget: next })}
           options={[
             {
@@ -217,6 +235,7 @@ export function ReviewPanel({
           legend="Whether matched transactions gain the bank's own merchant text"
           name="enrich-imported-payee"
           value={applyConfig.enrichImportedPayee ? "on" : "off"}
+          disabled={writeSettingsLocked}
           onChange={(next) =>
             onApplyConfigChange({ ...applyConfig, enrichImportedPayee: next === "on" })
           }
@@ -278,12 +297,17 @@ export function ReviewPanel({
           navigation. */}
       {fieldCounts.size > 0 && (
         <div className="border-t border-border/50 pt-3 text-xs">
-          <p className="text-muted-foreground">The changes will include:</p>
+          <p className="text-muted-foreground">Fields that will be written:</p>
           <p className="flex flex-wrap items-baseline gap-x-3">
             {[...fieldCounts].map(([field, count]) => (
               <span key={field}>
                 <span className="font-medium tabular-nums">{count}</span>{" "}
                 {pluralFieldLabel(field, count)}
+                {field === "importedPayee" && (
+                  <span className="text-muted-foreground">
+                    {" "}— set from the bank statement&apos;s merchant text
+                  </span>
+                )}
               </span>
             ))}
           </p>

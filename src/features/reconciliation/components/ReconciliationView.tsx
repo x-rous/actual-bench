@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { PageLayout } from "@/components/layout/PageLayout";
@@ -47,6 +47,11 @@ import {
 } from "@/lib/reconciliation/session/plan";
 import { prospectiveTransaction } from "@/lib/reconciliation/session/prospective";
 import { updateSession as updateSessionQuietly } from "../lib/reconciliationApi";
+import {
+  withoutOperations,
+  writeActionLabel,
+} from "../lib/writeSummary";
+import { applyConfigAfterLeavingReview } from "../lib/reviewSettings";
 import { executeApplyPlan, type ApplyRunResult } from "@/lib/reconciliation/apply/executor";
 import {
   driftTargets,
@@ -149,6 +154,11 @@ export function ReconciliationView() {
   const [applyResult, setApplyResult] = useState<ApplyRunResult | null>(null);
   const [applyProgress, setApplyProgress] = useState<{ done: number; total: number } | null>(null);
   const [applyConfig, setApplyConfig] = useState<ApplyConfig>(DEFAULT_APPLY_CONFIG);
+  // Config controls persist immediately. Serialising those writes makes a quick
+  // toggle followed by Back deterministic: the reset is guaranteed to reach
+  // the session after the choice it replaces.
+  const applyConfigWriteQueue = useRef<Promise<void>>(Promise.resolve());
+
   /**
    * What moved in Actual since this session read it, from the check that runs
    * immediately before writing.
@@ -541,6 +551,12 @@ export function ReconciliationView() {
       (appliedSession.status === "completed" || appliedSession.status === "partial")
         ? "This reconciliation has already been applied. Matching again would lose the record of what was written - start a new reconciliation to check the account as it stands now."
         : null;
+    const writeSettingsLocked = Boolean(
+      isApplying ||
+        isCheckingDrift ||
+        appliedSession?.status === "applying" ||
+        appliedSession?.appliedAt
+    );
 
     /**
      * Go back to the statement and import it again.
@@ -611,8 +627,16 @@ export function ReconciliationView() {
         // rows, whichever control the user reached it by.
         const current = sessionQuery.data?.session;
         if (current) reimport(current);
-      } else if (step === "reconcile") setScreen({ name: "workbench", sessionId: id });
-      else if (step === "review") setScreen({ name: "review", sessionId: id });
+      } else if (step === "reconcile") {
+        // This is a review-time choice, not a sticky workbench preference. Both
+        // the progress header and the toolbar pass through here so Back cannot
+        // behave differently depending on which control the user chose.
+        if (screen.name === "review") {
+          const nextConfig = applyConfigAfterLeavingReview(applyConfig, writeSettingsLocked);
+          if (nextConfig !== applyConfig) handleApplyConfigChange(nextConfig);
+        }
+        setScreen({ name: "workbench", sessionId: id });
+      } else if (step === "review") setScreen({ name: "review", sessionId: id });
       else if (step === "applied") setScreen({ name: "result", sessionId: id });
     }
 
@@ -824,9 +848,19 @@ export function ReconciliationView() {
     function handleApplyConfigChange(config: ApplyConfig) {
       setApplyConfig(config);
       if (sessionId) {
-        void mutations.updateSession.mutateAsync({
-          id: sessionId,
-          payload: { applyConfig: config },
+        const write = applyConfigWriteQueue.current
+          .catch(() => undefined)
+          .then(async () => {
+            await mutations.updateSession.mutateAsync({
+              id: sessionId,
+              payload: { applyConfig: config },
+            });
+          });
+        applyConfigWriteQueue.current = write;
+        void write.catch((error: unknown) => {
+          setMatchError(
+            error instanceof Error ? error.message : "Could not save the reconciliation settings"
+          );
         });
       }
     }
@@ -1247,15 +1281,25 @@ export function ReconciliationView() {
     if (screen.name === "review" || screen.name === "result") {
       const session = sessionQuery.data?.session;
 
-      // What Apply will actually do, once drift has withheld anything it must.
-      const withheldCount = driftReport?.withheld.length ?? 0;
-      const applicableChanges = Math.max(applyPlan.operations.length - withheldCount, 0);
+      /*
+       * Named apart, because they are not the same claim. Recording the bank's
+       * merchant text on a matched row changes nothing of the user's, and
+       * rolling both into "Apply 88 changes" is how a screen that exists to
+       * count changes honestly stops being believed.
+       *
+       * A drift check names the exact operations it withholds, so the second
+       * Apply can classify the remaining plan rather than falling back to
+       * calling every remaining write a change.
+       */
+      const withheldIds = new Set(
+        driftReport?.withheld.map((verdict) => verdict.operationId) ?? []
+      );
+      const applicablePlan = withoutOperations(applyPlan, withheldIds);
+      const applicableChanges = applicablePlan.operations.length;
       const applyButtonLabel =
         applicableChanges === 0
           ? "Nothing to apply"
-          : withheldCount > 0
-            ? `Apply the other ${applicableChanges} change${applicableChanges === 1 ? "" : "s"}`
-            : `Apply ${applicableChanges} change${applicableChanges === 1 ? "" : "s"}`;
+          : writeActionLabel("Apply", applicablePlan, { other: withheldIds.size > 0 });
 
       return (
         <PageLayout
@@ -1274,9 +1318,7 @@ export function ReconciliationView() {
                     label: "Back to the workbench",
                     disabled: isApplying || isCheckingDrift,
                     onClick: () => {
-                      setDriftReport(null);
-                      setDriftAcknowledged(false);
-                      setScreen({ name: "workbench", sessionId: screen.sessionId });
+                      goToStep("reconcile", screen.sessionId);
                     },
                   }}
                   /*
@@ -1339,6 +1381,7 @@ export function ReconciliationView() {
               drift={driftReport}
               applyConfig={applyConfig}
               onApplyConfigChange={handleApplyConfigChange}
+              writeSettingsLocked={writeSettingsLocked}
             />
           ) : (
             applyResult && (
@@ -1370,6 +1413,7 @@ export function ReconciliationView() {
       const session = sessionQuery.data?.session;
       const canRematch = Boolean(session && period && parsedRows.length > 0);
 
+      const reviewButtonLabel = writeActionLabel("Review", applyPlan);
 
       return (
         <PageLayout
@@ -1403,9 +1447,7 @@ export function ReconciliationView() {
                     label:
                       applyPlan.operations.length === 0
                         ? "Nothing to review"
-                        : `Review ${applyPlan.operations.length} change${
-                            applyPlan.operations.length === 1 ? "" : "s"
-                          }`,
+                        : reviewButtonLabel,
                     onClick: () => setScreen({ name: "review", sessionId: screen.sessionId }),
                     disabled: applyPlan.operations.length === 0,
                   }}

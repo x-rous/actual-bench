@@ -18,6 +18,7 @@ export function WriteSetting<T extends string>({
   value,
   onChange,
   options,
+  disabled = false,
 }: {
   label: string;
   legend: string;
@@ -25,11 +26,18 @@ export function WriteSetting<T extends string>({
   value: T;
   onChange: (value: T) => void;
   options: { value: T; label: string; hint: string }[];
+  /** Keep a historical choice visible without allowing it to be changed. */
+  disabled?: boolean;
 }) {
   const selected = options.find((option) => option.value === value);
   return (
-    <section className="rounded-md border border-border/60 px-3 py-2">
-      <fieldset>
+    <section
+      className={cn(
+        "rounded-md border border-border/60 px-3 py-2",
+        disabled && "bg-muted/20"
+      )}
+    >
+      <fieldset disabled={disabled}>
         <legend className="sr-only">{legend}</legend>
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
           <span className="text-xs font-semibold text-muted-foreground">{label}</span>
@@ -39,9 +47,10 @@ export function WriteSetting<T extends string>({
                 key={option.value}
                 className={cn(
                   "cursor-pointer rounded px-2 py-0.5 text-xs transition-colors",
+                  disabled && "cursor-not-allowed opacity-60",
                   option.value === value
                     ? "bg-background font-medium shadow-sm"
-                    : "text-muted-foreground hover:text-foreground"
+                    : cn("text-muted-foreground", !disabled && "hover:text-foreground")
                 )}
               >
                 <input
@@ -49,6 +58,7 @@ export function WriteSetting<T extends string>({
                   name={name}
                   className="sr-only"
                   checked={option.value === value}
+                  disabled={disabled}
                   onChange={() => onChange(option.value)}
                 />
                 {option.label}

@@ -3,7 +3,11 @@
 import { useMemo, useState } from "react";
 import { Search, X } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { ApplyPlan } from "@/lib/reconciliation/apply/operations";
+import {
+  isEnrichmentOnly,
+  type ApplyPlan,
+  type UpdateOperation,
+} from "@/lib/reconciliation/apply/operations";
 import type { ApplyConfig } from "@/lib/reconciliation/session/plan";
 import { prospectiveTransaction } from "@/lib/reconciliation/session/prospective";
 import { stagedFields } from "@/lib/reconciliation/session/staging";
@@ -34,6 +38,22 @@ type ReviewRow = {
   statementRow: StatementRow | undefined;
   transaction: ActualTransactionSnapshot | undefined;
   action: "create" | "update" | "delete" | "unchanged" | "later";
+  /**
+   * Bank provenance attached by this update, either alone or alongside a
+   * staged change.
+   *
+   * A flag rather than another `action`, deliberately: the row is still an
+   * update, still counted, still in the changing list, and every filter and
+   * branch that reads `action` goes on behaving as it does today. Only how it
+   * is *named* differs, because calling a pure provenance write "Update" in amber
+   * puts a screenful of alarm next to rows where nothing of yours moves.
+   */
+  provenance: {
+    /** The imported payee this row is about to replace, when it had one. */
+    previous: string | null;
+    /** Nothing besides imported payee is written by this operation. */
+    only: boolean;
+  } | null;
   pending: ReturnType<typeof prospectiveTransaction>;
   changedFields: Set<string>;
   /** `yes` = this run clears it, `already` = it is cleared and stays so. */
@@ -119,6 +139,20 @@ export function ReviewComparison({
           ? "later"
           : "unchanged";
 
+      /*
+       * Deliberately not added to `changedFields`: that set is what the review
+       * screen counts as staged user fields ("3 payees, 2 notes") and what puts
+       * a cell in amber. Provenance is neither.
+       */
+      const provenanceOperation: UpdateOperation | null =
+        operation?.kind === "update" && operation.importedPayee != null ? operation : null;
+      const provenance = provenanceOperation
+        ? {
+            previous: transaction?.importedPayee?.trim() || null,
+            only: isEnrichmentOnly(provenanceOperation),
+          }
+        : null;
+
       const changedFields = new Set<string>(stagedFields(item.stagedChanges));
       const clearedByThisRun =
         (operation?.kind === "update" && operation.cleared === true) ||
@@ -137,6 +171,7 @@ export function ReviewComparison({
         statementRow,
         transaction,
         action,
+        provenance,
         pending: prospectiveTransaction({ item, statementRow, transaction, applyConfig }),
         changedFields,
       };
@@ -279,7 +314,7 @@ export function ReviewComparison({
               </th>
               <th
                 scope="col"
-                className="w-20 border-x border-b border-border bg-background px-2 pb-1.5 text-left font-medium"
+                className="w-32 border-x border-b border-border bg-background px-2 pb-1.5 text-left font-medium"
               >
                 Action
               </th>
@@ -330,13 +365,53 @@ export function ReviewComparison({
                     {row.statementRow ? formatMinorUnits(row.statementRow.amount) : "-"}
                   </td>
 
+                  {/*
+                    Amber means "your data is changing". A row that only gains
+                    the bank's merchant text is muted instead — unless it is
+                    replacing an imported payee that was already there, which is
+                    the one case where something is genuinely being overwritten
+                    and earns both the colour and a line saying what it was.
+                  */}
                   <td
                     className={cn(
-                      "whitespace-nowrap border-x border-border/40 px-2 py-1 font-medium",
-                      ACTION_TONES[row.action]
+                      "border-x border-border/40 px-2 py-1 font-medium",
+                      row.provenance?.only
+                        ? row.provenance.previous
+                          ? ACTION_TONES.update
+                          : "text-muted-foreground"
+                        : ACTION_TONES[row.action],
+                      !row.provenance?.previous && "whitespace-nowrap"
                     )}
+                    title={
+                      row.provenance
+                        ? row.provenance.previous
+                          ? `Records the statement description as this transaction's imported payee, replacing: ${row.provenance.previous}`
+                          : "Records the statement description as this transaction's imported payee."
+                        : undefined
+                    }
                   >
-                    {ACTION_LABELS[row.action]}
+                    {row.provenance?.only
+                      ? "Bank text"
+                      : row.provenance
+                        ? `${ACTION_LABELS[row.action]} + bank text`
+                        : ACTION_LABELS[row.action]}
+                    {row.provenance && (
+                      // The visible label carries the distinction; this spells
+                      // out the field and destination for assistive technology.
+                      <span className="sr-only">
+                        {row.provenance.only
+                          ? " - records the statement description as the imported payee; payee, notes and category are unchanged"
+                          : " - also records the statement description as the imported payee"}
+                      </span>
+                    )}
+                    {row.provenance?.previous && (
+                      <span
+                        className="block max-w-28 truncate text-[11px] font-normal"
+                        title={`Imported payee was: ${row.provenance.previous}`}
+                      >
+                        was: {row.provenance.previous}
+                      </span>
+                    )}
                   </td>
 
                   {deleted ? (
