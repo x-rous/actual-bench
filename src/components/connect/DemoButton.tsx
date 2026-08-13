@@ -19,7 +19,7 @@ type DemoConnection = {
  * Fetches the demo connection from /api/demo after the server-rendered connect
  * page confirms DEMO_MODE=1 + the DEMO_* vars are present. Self-hosted builds
  * do not render this component, so they do not probe the demo endpoint. Clicking
- * it registers both demo budgets, opens the Envelope budget, and drops the
+ * it registers both demo budgets, opens Live Demo - Envelope, and drops the
  * visitor straight into the app — the normal "bring your own actual-http-api"
  * form below remains the default path.
  */

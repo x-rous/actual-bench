@@ -4,7 +4,7 @@
 
 - Two-step connect flow: validate server credentials (URL + API key), then pick from the list of budgets returned by the server
 - Add multiple in-memory budget connections and switch between them with one click from the top bar
-- The hosted **Try the live demo** entry point registers equivalent `Live Demo` (Envelope) and `Live Demo - Tracking Mode` files so both budgeting models can be compared from that same switcher
+- The hosted **Try the live demo** entry point registers equivalent `Live Demo - Envelope` and `Live Demo - Tracking` files so both budgeting models can be compared from the same switcher; each contains 13 months of deterministic household history, seasonal budgets, good and difficult months, rich rules and diagnostics examples, schedules, transfers, split transactions, and tagged activity
 - Saved server presets keep non-secret URLs/labels for reconnecting without retyping the server URL
 - Optional encryption password for end-to-end encrypted budgets
 - Direct Actual Server mode is the target architecture and opens a selected budget through the browser API worker without an `actual-http-api` proxy; core entity pages, Budget Management, Budget File Health, Data Browser, and ActualQL Queries support the Direct transport
