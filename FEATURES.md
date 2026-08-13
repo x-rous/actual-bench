@@ -123,11 +123,12 @@ Consolidate budgets kept in **different currencies**: a transaction flow can con
 
 ## Bank Statement Reconciliation
 
-A workbench for checking a bank statement against an account in Actual and settling the differences. Import the statement, match it, decide each row, review, then apply — nothing is written to your budget until the explicit Apply, and the review screen names **changes**, not rows.
+A workbench for checking a bank statement against an account in Actual and settling the differences. Import the statement, match it, decide each row, review, then apply — nothing is written to your budget until the explicit Apply, and the review screen names staged **changes** separately from bank-provenance writes.
 
 ### Importing a statement
 
 - Paste rows, or upload **CSV/TSV, OFX/QFX, or QIF** — the format is recognised from the file's own content, so a `.txt` holding an OFX export is still read as OFX and a `.qfx` goes through the OFX path
+- Import is a two-pane workbench on desktop: compact configuration on the left and the **entire parsed statement** on the right, with a sticky header and totals outside the row scroller. CSV/TSV mapping controls sit directly above the columns they feed; once parsing succeeds, the statement source collapses but remains available through **Change statement** and **View raw statement**
 - For delimited files the delimiter is detected by column consistency rather than character frequency, and a header row is recognised by the absence of a usable date and amount
 - Column mapping is detected, including the common **separate Debit and Credit columns** layout — a statement that reports outflows in their own column is not treated as a set of positive amounts
 - **The statement's two text channels are kept apart**: the bank's merchant/description text and its memo/details field map to separate fields, so a statement carrying both no longer loses one of them. Either channel can be left unmapped — a statement whose one text column is really a memo maps it to Notes alone, and the panel states what that costs. Structured formats state the split themselves (OFX `NAME`/`MEMO`, QIF `P`/`M`), with the payee/memo **swap** and **fallback** repairs available for banks that fill them the wrong way round or leave the payee empty
@@ -138,6 +139,7 @@ A workbench for checking a bank statement against an account in Actual and settl
 - Give a session an optional **tag** when you create it ("July close", "after the refund") to tell a month's reruns and corrections apart; tags are editable in place, filterable, and searchable
 - Importing a statement that has already been imported is **recognised and flagged** — matched on the rows themselves, so a re-paste or a re-export still counts. It warns rather than blocks, since re-importing after a partial apply is a legitimate thing to do
 - The session list shows where each one stands, including **Ready to apply** once every row has a decision, so you can see at a glance what is waiting on you
+- Before matching, **When a row isn't in Actual** chooses whether a created transaction's payee comes from the bank text or Actual's rules, and whether its notes use the memo, also fall back to merchant text, or stay empty. The same choices are available from **New rows** on the workbench; notes already edited or transformed keep what you set
 - Every screen carries a **progress header** — Import › Reconcile › Review › Applied — showing which account and period you are working on and how far the session has got. Once applied, a session says so and stops offering to apply itself again; re-matching is refused there too, since it would lose the record of what was written
 - Deleting a session asks first, and says what goes with it — nothing in your budget changes, and anything already applied stays applied
 
@@ -155,6 +157,7 @@ Exact signed amount is a hard requirement for an automatic match. Text never *fi
 
 ### Deciding
 
+- The workbench keeps the statement in view: coverage says **Statement → Actual** and **Actual → Statement**, decision progress lives in the table toolbar, and matching options open in a popover instead of pushing the comparison grid down
 - Per row: accept the match, pick a different candidate, create the transaction, delete a duplicate, correct an amount in place, or leave it for later
 - Selecting a row opens a details panel that **compares** the two sides rather than listing them twice: date and amount appear once with both readings, and a difference is marked and quantified ("2 days later", "−12.50")
 - Staged changes are previewed with what the value was and where the new one came from; a bulk transformation never overwrites something you edited by hand
@@ -167,8 +170,9 @@ Exact signed amount is a hard requirement for an automatic match. Text never *fi
 - Statement row by statement row, what each will look like in the budget afterwards, with changed values marked and carrying their previous value
 - The **effect on the account balance** is stated before the fact
 - **Imported Payee, Payee and Notes are three independent fields**, as they are in Actual. A created transaction always records the bank's own merchant text as its **imported payee** — provenance that survives whatever payee you settle on — while the payee and the notes are chosen separately: resolve the merchant text into a payee or leave it to your rules, and take the notes from the bank's memo, from the merchant text as well, or from neither
-- A matched existing transaction can be given the bank's merchant text too, **keeping its payee, notes and category exactly as they are** (rows reconciled in Actual are skipped). These provenance writes are counted and named separately from the changes you staged, so the Apply button never reports 49 changes when 12 were yours
+- A matched existing transaction can be given the bank's merchant text too, **keeping its payee, notes and category exactly as they are** (rows reconciled in Actual are skipped). These provenance writes are counted and named separately from the changes you staged: the row says **Bank text** rather than an amber Update, mixed writes say **Update + bank text**, and replacing an existing imported payee shows what it was. Review also lists how many imported payees will be set from the statement text
 - Choose which transactions to mark cleared
+- **Record the bank's merchant text** defaults to **On new and matched rows**. Choosing **On new rows only** affects that Review; returning to Reconcile restores the default. Once Apply starts, this choice and **Mark as cleared** are locked at the values used, so an applied session remains an accurate audit record
 - **Before anything is written, every affected row is re-read and compared against what the session loaded.** A note edited in Actual in the meantime has the staged change replayed onto the current text rather than overwriting it; an amount or date corrected in Actual is left as Actual has it rather than reverted; and where a change cannot be reconciled safely, the row is held back and reported instead of applied
 - Created transactions carry a deterministic marker, so retrying after a partial failure never creates the same transaction twice — even if the session's own record of the run was lost
 - Updates and deletes are written in a single batched call where the transport supports it

@@ -11,8 +11,9 @@ section (`/reconciliation`).
 
 Sessions are persistent: import a statement today, work through it over several sittings, and apply
 when you are ready. **Nothing is written to your budget until you press Apply**, and the review screen
-counts *changes*, not rows — a 248-row statement where twelve things need fixing offers you twelve
-changes.
+names the work precisely: staged *changes* are counted separately from bank-detail writes that only
+record the statement's merchant text as an imported payee. A fully matched statement therefore does
+not present a screenful of provenance as unexplained edits to your payees or notes.
 
 :::note[Reconciliation does not touch categories]
 It never reads, stages, or writes a transaction's category. Categorisation belongs in Actual, where
@@ -34,6 +35,10 @@ workbench of a finished reconciliation still says Applied. A run that partly fai
 Once a session has been applied, the work it wrote is excluded from any new plan. It stops offering
 to apply itself a second time, and a partial run goes on offering exactly what failed — nothing
 more.
+
+The Review page remains readable as an audit, but its **Mark as cleared** and **Record the bank's
+merchant text** choices are disabled. They show the values used by Apply rather than controls that
+could rewrite history after the fact.
 
 **Re-running the match is refused on an applied session.** Matching rebuilds the rows from scratch,
 and the record of what was already written is tied to them — re-running would lose that and offer to
@@ -60,6 +65,37 @@ disposable notes about the reconciliation, not data about your transactions.
 Paste the statement, or upload a **CSV/TSV**, **OFX/QFX** or **QIF** file. The format is recognised
 from the file's own content rather than only its name, so a `.txt` holding an OFX export is still
 read as OFX — and, as in Actual itself, `.qfx` goes through the OFX path.
+
+### The import workbench
+
+On desktop, configuration stays in a compact left pane and the **complete parsed statement** fills
+the right. The statement rows have their own scroller and sticky header; totals stay visible outside
+that scroller. There is no eight-row preview cap and no pagination hiding the rest of the file.
+
+For CSV/TSV, each mapping control sits directly above the normalized column it feeds, so changing a
+mapping changes the values immediately below it. Debit and Credit each get their own selector when
+the statement uses separate amount columns. Structured formats omit the mapping row because OFX/QFX
+and QIF define their fields themselves.
+
+After a statement parses successfully, its source collapses to the file name and detected format to
+leave room for configuration. **Change statement** replaces it; **View raw statement** opens the
+original contents without expanding the whole page.
+
+### Choose how missing rows will be created
+
+Before matching, **When a row isn't in Actual** chooses the starting values for a transaction that
+will need to be created:
+
+- **Payee** — resolve the bank's merchant text into a payee, or leave the payee unset for Actual's
+  rules.
+- **Notes** — use the bank's memo, also fall back to merchant text where there is no memo, or leave
+  notes empty.
+
+These choices happen before matching because the notes source is an input to transformations. After
+matching, the same choices remain available from **New rows** on the Reconcile toolbar. If you have
+already edited or transformed a row's notes, that row keeps what you set when the source changes.
+
+The bank's merchant text is still recorded as the imported payee in every option.
 
 ### The two text channels
 
@@ -190,6 +226,12 @@ exactly that reason.
 
 ## 3. Decide each row
 
+Coverage names both questions it answers: **Statement → Actual** shows how much of the statement has
+a counterpart, while **Actual → Statement** shows how much of the loaded account window the statement
+explains. Decision progress and **Next undecided** stay in the table toolbar. **Matching** opens its
+options in a popover, so checking or changing a tolerance does not push the comparison table off the
+screen; choose **Re-run** explicitly when you want those options applied.
+
 For every row you can:
 
 - **Accept** the match, or **pick a different candidate** — the ones you did not pick stay available.
@@ -223,7 +265,13 @@ A transformation can be applied to many rows at once and previewed before it is 
 ## 4. Review
 
 The review screen shows, statement row by statement row, what each will look like in your budget
-afterwards. Changed values are marked and carry their previous value.
+afterwards. Changed values are marked and carry their previous value. The Action column distinguishes
+what kind of write is planned:
+
+- **Bank text** in a neutral tone means only the imported payee is being filled.
+- **Update + bank text** means a staged change and the provenance write travel together.
+- If an imported payee already exists and will be replaced, the row turns amber and shows its
+  previous value.
 
 It also states:
 
@@ -232,8 +280,10 @@ It also states:
 - **What gets marked cleared** — nothing, only new transactions, or everything the statement confirms.
   The last option turns matched rows that needed no write into writes, so the change count reflects it
   honestly.
-- **What the statement fills in** on a transaction being created, and whether matched transactions
-  gain the bank's merchant text — see below.
+- **What the statement fills in** on a transaction being created. The Payee and Notes choices made
+  during Import are stated here rather than changed after transformations have already used them.
+- **Whether matched transactions gain the bank's merchant text** — **On new and matched rows** or
+  **On new rows only** — see below.
 
 ### What actually gets written
 
@@ -256,17 +306,30 @@ They are not alternatives to one another, so you are not asked to choose between
 - **Notes on a new transaction**: the bank's memo, the merchant text as well when there is no memo
   (a deliberate duplicate, for rules that read the notes), or nothing.
 
+The Payee and Notes sources are chosen during Import, before matching and transformations, and are
+summarized read-only on Review. To change them after matching, go back to Import or use **New rows**
+on the Reconcile toolbar; notes already staged on a row remain untouched.
+
 ### Matched transactions keep what you curated
 
 When a statement row matches a transaction you already have, its **payee, notes and category are left
 exactly as they are**. What can be added is the bank's merchant text as the imported payee — the same
 thing Actual's own bank import does on a match, and the reason the field exists.
 
-That is still a write, so it is reported as one. But it is counted and named separately: the review
-screen says how many *changes* you staged and, beside it, how many transactions are simply gaining
-the merchant text their bank used. Rows already reconciled in Actual are skipped, and a row whose
-imported payee already matches is not written to at all. You can turn the whole behaviour off with
-**Record the bank's merchant text → New transactions only**.
+That is still a write, so it is reported as one. But it is counted and named separately: Review and
+Apply can say, for example, **3 changes · 126 bank details**, and **Fields that will be written**
+names the imported payees as values set from the statement's merchant text. The Applied result keeps
+the same distinction.
+
+Rows already reconciled in Actual are skipped, and a row whose imported payee already matches is not
+written to at all. **Record the bank's merchant text** defaults to **On new and matched rows**. Choose
+**On new rows only** when this Review should leave matched transactions' existing imported payees
+alone. If you return to Reconcile, the choice resets to the default; **Mark as cleared** and the
+new-row Payee/Notes choices are left alone.
+
+Once Apply starts, **Record the bank's merchant text** and **Mark as cleared** are disabled. On a
+reopened applied or partially applied reconciliation, they show what was executed and cannot be
+changed.
 
 ## 5. Apply
 
@@ -298,9 +361,10 @@ A partial failure is reported as a **partial success**, not rounded down to a fa
 survives it, and **Retry what failed** re-attempts only what did not succeed.
 
 The outcome is stored with the session, so it stays readable afterwards. Reopen a finished
-reconciliation and **What was applied** lists every change written — what it did, which transaction,
-and whether it was written now or recognised as already done — alongside anything that failed. A
-reconciliation you did last month is still auditable this month.
+reconciliation and **What was applied** lists every write — including **Bank text** separately from
+curated-data updates — with what it did, which transaction, and whether it was written now or
+recognised as already done, alongside anything that failed. A reconciliation you did last month is
+still auditable this month.
 
 ### Rules on created transactions
 

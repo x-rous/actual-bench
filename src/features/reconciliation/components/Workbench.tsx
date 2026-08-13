@@ -1,9 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { FileCheck, RefreshCw, Search, SlidersHorizontal, Wand2 } from "lucide-react";
+import { FileCheck, FilePlus2, RefreshCw, Search, SlidersHorizontal, Wand2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { MultiPillGroup, PillGroup } from "@/components/ui/pill-group";
 import { cn } from "@/lib/utils";
 import { REASON, REVIEW_REASONS } from "@/lib/reconciliation/session/build";
@@ -19,11 +20,13 @@ import type { TextTargetPreset } from "@/lib/reconciliation/match/config";
 import type { StageableField } from "@/lib/reconciliation/session/staging";
 import type { ReconciliationDisposition } from "@/lib/reconciliation/types";
 import type { Option } from "./StagedFields";
+import type { ApplyConfig } from "@/lib/reconciliation/session/plan";
 import type { TransformContext } from "@/lib/reconciliation/transform/rules";
 import type { StagedPatch } from "@/lib/reconciliation/types";
 import { useTableSelection } from "@/hooks/useTableSelection";
 import { BulkDecisionBar } from "./BulkDecisionBar";
-import { CoverageSummary, DecisionProgressMeter } from "./CoverageSummary";
+import { CoverageSummary, DecisionProgressStrip } from "./CoverageSummary";
+import { NewTransactionOptions } from "./NewTransactionOptions";
 import { Inspector } from "./Inspector";
 import { MatchOptions } from "./MatchOptions";
 import { ShortcutsHelp } from "./ShortcutsHelp";
@@ -293,6 +296,8 @@ export type WorkbenchProps = {
    * moved. Reading it stays useful; editing it does not.
    */
   readOnly?: boolean;
+  /** Lock persisted write choices as soon as Apply starts. */
+  writeSettingsLocked?: boolean;
   payees: Option[];
   categories: Option[];
   onMatchConfigChange: (preset: TextTargetPreset, config: MatchConfig) => void;
@@ -310,6 +315,16 @@ export type WorkbenchProps = {
   /** Set when this session has already been applied, so its outcome is reachable. */
   onViewResult?: () => void;
   transformContextFor: (item: ReconciliationItem) => TransformContext;
+  /**
+   * How a statement row Actual does not have becomes a transaction.
+   *
+   * Mirrored from the import screen, where it is chosen before anything can
+   * consume it. Offered again here for a change of mind, with the one caveat
+   * that applies to a late change: rows whose notes are already staged keep
+   * what they were given.
+   */
+  applyConfig: ApplyConfig;
+  onApplyConfigChange: (config: ApplyConfig) => void;
   onTransform: (changes: { itemId: string; patch: StagedPatch | undefined }[]) => void;
 };
 
@@ -357,6 +372,7 @@ export function Workbench({
   canRematch,
   rematchBlockedReason,
   readOnly = false,
+  writeSettingsLocked = false,
   payees,
   categories,
   onMatchConfigChange,
@@ -370,6 +386,8 @@ export function Workbench({
   onBulkCorrectAmount,
   onViewResult,
   transformContextFor,
+  applyConfig,
+  onApplyConfigChange,
   onTransform,
 }: WorkbenchProps) {
   const [filter, setFilter] = useState<FilterId>("all");
@@ -382,6 +400,26 @@ export function Workbench({
   const { selectedIds, toggleSelect, toggleSelectAll, clearSelection } = useTableSelection();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [optionsOpen, setOptionsOpen] = useState(false);
+  const [createOptionsOpen, setCreateOptionsOpen] = useState(false);
+
+  /*
+   * Rows the statement has and Actual does not — the only rows the create
+   * settings can affect. Counted from what could be created rather than from
+   * what has been decided, so the control is there while the user is deciding
+   * rather than appearing once they already have.
+   */
+  const creatableRows = useMemo(
+    () =>
+      items.filter((item) => item.statementRowIds.length > 0 && item.actualTransactionIds.length === 0)
+        .length,
+    [items]
+  );
+
+  /** Rows whose notes a transformation or a manual edit has already settled. */
+  const stagedNotesCount = useMemo(
+    () => items.filter((item) => item.stagedChanges?.notes !== undefined).length,
+    [items]
+  );
   const [transformOpen, setTransformOpen] = useState(false);
 
   const counts = useMemo(() => {
@@ -595,6 +633,10 @@ export function Workbench({
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
+      // Popovers are not dialogs, but their controls still sit above the grid.
+      // Do not let row navigation or decision shortcuts act behind them.
+      if (optionsOpen || createOptionsOpen) return;
+
       // Never act behind a dialog. The listener is on the window, so without
       // this an Enter meant for the transform dialog's button would also decide
       // whichever row happens to be selected underneath it.
@@ -634,7 +676,7 @@ export function Workbench({
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [step, goToNextUndecided, decideSelected]);
+  }, [step, goToNextUndecided, decideSelected, optionsOpen, createOptionsOpen]);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -724,17 +766,70 @@ export function Workbench({
             <Wand2 className="mr-1 h-3.5 w-3.5" />
             Transform
           </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            aria-expanded={optionsOpen}
-            disabled={readOnly}
-            title={readOnly ? rematchBlockedReason ?? undefined : undefined}
-            onClick={() => setOptionsOpen((open) => !open)}
-          >
-            <SlidersHorizontal className="mr-1 h-3.5 w-3.5" />
-            Matching
-          </Button>
+          {/*
+            Anchored to its own button rather than inserted above the grid: as a
+            full-width block these settings pushed the comparison table — the
+            thing being worked on — off the screen every time they were opened.
+          */}
+          <Popover open={optionsOpen} onOpenChange={setOptionsOpen}>
+            <PopoverTrigger
+              render={
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={readOnly}
+                  title={readOnly ? rematchBlockedReason ?? undefined : undefined}
+                >
+                  <SlidersHorizontal className="mr-1 h-3.5 w-3.5" />
+                  Matching
+                </Button>
+              }
+            />
+            <PopoverContent align="end" className="w-[26rem] max-w-[90vw] p-3">
+              <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Matching
+              </h3>
+              <div className="max-h-[60vh] overflow-auto">
+                <MatchOptions
+                  config={matchConfig}
+                  preset={matchPreset}
+                  onChange={onMatchConfigChange}
+                  headingLevel="none"
+                />
+              </div>
+              <p className="mt-2 border-t border-border/50 pt-2 text-[11px] text-muted-foreground">
+                Changing these does not re-match on its own - choose Re-run when you are ready.
+              </p>
+            </PopoverContent>
+          </Popover>
+          {creatableRows > 0 && (
+            <Popover open={createOptionsOpen} onOpenChange={setCreateOptionsOpen}>
+              <PopoverTrigger
+                render={
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={readOnly}
+                    title={readOnly ? rematchBlockedReason ?? undefined : undefined}
+                  >
+                    <FilePlus2 className="mr-1 h-3.5 w-3.5" />
+                    New rows
+                  </Button>
+                }
+              />
+              <PopoverContent align="end" className="w-[30rem] max-w-[90vw] p-3">
+                <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  When a row isn&apos;t in Actual
+                </h3>
+                <NewTransactionOptions
+                  config={applyConfig}
+                  onChange={onApplyConfigChange}
+                  stagedNotesCount={stagedNotesCount}
+                  disabled={writeSettingsLocked}
+                />
+              </PopoverContent>
+            </Popover>
+          )}
           <Button
             size="sm"
             variant="outline"
@@ -770,8 +865,6 @@ export function Workbench({
           onChange={setDecisionFilter}
         />
 
-        <DecisionProgressMeter coverage={coverage} />
-
         <span className="ml-2 text-muted-foreground">Show only</span>
         <MultiPillGroup
           options={ATTRIBUTE_FILTERS.map((entry) => ({ value: entry.id, label: entry.label }))}
@@ -780,20 +873,14 @@ export function Workbench({
           emptyMeansAll={false}
         />
 
-        <div className="ml-auto flex items-center gap-2">
-          <Button size="sm" variant="ghost" className="h-6 text-xs" onClick={goToNextUndecided}>
-            Next undecided
-            <kbd className="ml-1.5 rounded border border-border px-1 text-[11px]">n</kbd>
-          </Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            className="h-6 text-xs"
-            aria-label="Keyboard shortcuts"
-            onClick={() => setShortcutsOpen(true)}
-          >
-            <kbd className="rounded border border-border px-1 text-[11px]">?</kbd>
-          </Button>
+        {/* The decision queue sits with the filters that narrow it, not up in
+            the coverage header: this row is where the user works the queue. */}
+        <div className="ml-auto flex flex-wrap items-center gap-x-3 gap-y-1">
+          <DecisionProgressStrip
+            coverage={coverage}
+            onNextUndecided={goToNextUndecided}
+            onShowShortcuts={() => setShortcutsOpen(true)}
+          />
           <span className="tabular-nums text-muted-foreground">
             {visible.length} of {items.length} rows
           </span>
@@ -814,15 +901,6 @@ export function Workbench({
             clearSelection();
           }}
         />
-      )}
-
-      {optionsOpen && (
-        <div className="border-b border-border/50 px-4 py-3">
-          <MatchOptions config={matchConfig} preset={matchPreset} onChange={onMatchConfigChange} />
-          <p className="mt-2 text-[11px] text-muted-foreground">
-            Changing these does not re-match on its own - choose Re-run when you are ready.
-          </p>
-        </div>
       )}
 
       <div className="flex min-h-0 flex-1">

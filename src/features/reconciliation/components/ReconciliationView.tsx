@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { PageLayout } from "@/components/layout/PageLayout";
@@ -47,6 +47,11 @@ import {
 } from "@/lib/reconciliation/session/plan";
 import { prospectiveTransaction } from "@/lib/reconciliation/session/prospective";
 import { updateSession as updateSessionQuietly } from "../lib/reconciliationApi";
+import {
+  withoutOperations,
+  writeActionLabel,
+} from "../lib/writeSummary";
+import { applyConfigAfterLeavingReview } from "../lib/reviewSettings";
 import { executeApplyPlan, type ApplyRunResult } from "@/lib/reconciliation/apply/executor";
 import {
   driftTargets,
@@ -149,6 +154,11 @@ export function ReconciliationView() {
   const [applyResult, setApplyResult] = useState<ApplyRunResult | null>(null);
   const [applyProgress, setApplyProgress] = useState<{ done: number; total: number } | null>(null);
   const [applyConfig, setApplyConfig] = useState<ApplyConfig>(DEFAULT_APPLY_CONFIG);
+  // Config controls persist immediately. Serialising those writes makes a quick
+  // toggle followed by Back deterministic: the reset is guaranteed to reach
+  // the session after the choice it replaces.
+  const applyConfigWriteQueue = useRef<Promise<void>>(Promise.resolve());
+
   /**
    * What moved in Actual since this session read it, from the check that runs
    * immediately before writing.
@@ -541,6 +551,12 @@ export function ReconciliationView() {
       (appliedSession.status === "completed" || appliedSession.status === "partial")
         ? "This reconciliation has already been applied. Matching again would lose the record of what was written - start a new reconciliation to check the account as it stands now."
         : null;
+    const writeSettingsLocked = Boolean(
+      isApplying ||
+        isCheckingDrift ||
+        appliedSession?.status === "applying" ||
+        appliedSession?.appliedAt
+    );
 
     /**
      * Go back to the statement and import it again.
@@ -611,8 +627,16 @@ export function ReconciliationView() {
         // rows, whichever control the user reached it by.
         const current = sessionQuery.data?.session;
         if (current) reimport(current);
-      } else if (step === "reconcile") setScreen({ name: "workbench", sessionId: id });
-      else if (step === "review") setScreen({ name: "review", sessionId: id });
+      } else if (step === "reconcile") {
+        // This is a review-time choice, not a sticky workbench preference. Both
+        // the progress header and the toolbar pass through here so Back cannot
+        // behave differently depending on which control the user chose.
+        if (screen.name === "review") {
+          const nextConfig = applyConfigAfterLeavingReview(applyConfig, writeSettingsLocked);
+          if (nextConfig !== applyConfig) handleApplyConfigChange(nextConfig);
+        }
+        setScreen({ name: "workbench", sessionId: id });
+      } else if (step === "review") setScreen({ name: "review", sessionId: id });
       else if (step === "applied") setScreen({ name: "result", sessionId: id });
     }
 
@@ -813,6 +837,33 @@ export function ReconciliationView() {
         .catch((error: unknown) => {
           setMatchError(error instanceof Error ? error.message : "Could not save that decision");
         });
+    }
+
+    /**
+     * Persist a change to how decisions become writes.
+     *
+     * Shared by the import screen, the workbench and the review screen: one
+     * setting, one place it is written, whichever control the user reached.
+     */
+    function handleApplyConfigChange(config: ApplyConfig) {
+      if (writeSettingsLocked) return;
+      setApplyConfig(config);
+      if (sessionId) {
+        const write = applyConfigWriteQueue.current
+          .catch(() => undefined)
+          .then(async () => {
+            await mutations.updateSession.mutateAsync({
+              id: sessionId,
+              payload: { applyConfig: config },
+            });
+          });
+        applyConfigWriteQueue.current = write;
+        void write.catch((error: unknown) => {
+          setMatchError(
+            error instanceof Error ? error.message : "Could not save the reconciliation settings"
+          );
+        });
+      }
     }
 
     /**
@@ -1131,47 +1182,49 @@ export function ReconciliationView() {
 
       return (
         <PageLayout
-          title="Bank Reconciliation"
-          actions={
-            <PhaseNav
-              back={
-                // Only when there is a workbench to go back to. On a first
-                // import there is no previous phase; leaving is what the exit
-                // in the header is for.
-                hasParsedStatement
-                  ? {
-                      label: "Back to the workbench",
-                      onClick: () => setScreen({ name: "workbench", sessionId: screen.sessionId }),
-                      disabled: isMatching,
-                    }
-                  : undefined
+          header={
+            <SessionHeader
+              session={sessionQuery.data?.session}
+              current="import"
+              // Navigable only once the session has a statement to go back to.
+              // On a first import there is no workbench yet, so the steps would
+              // lead nowhere.
+              onNavigate={
+                hasParsedStatement ? (step) => goToStep(step, screen.sessionId) : undefined
               }
-              next={{
-                label: isMatching ? "Matching…" : "Match against Actual",
-                progress: matchStage,
-                onClick: () => {
-                  if (pendingStatement) {
-                    void handleParsed(pendingStatement.result, pendingStatement.fileName);
+              onExit={() => setScreen({ name: "home" })}
+              actions={
+                <PhaseNav
+                  back={
+                    // Only when there is a workbench to go back to. On a first
+                    // import there is no previous phase; leaving is what the
+                    // exit in the header is for.
+                    hasParsedStatement
+                      ? {
+                          label: "Back to the workbench",
+                          onClick: () =>
+                            setScreen({ name: "workbench", sessionId: screen.sessionId }),
+                          disabled: isMatching,
+                        }
+                      : undefined
                   }
-                },
-                disabled: !pendingStatement,
-                busy: isMatching,
-              }}
+                  next={{
+                    label: isMatching ? "Matching…" : "Match against Actual",
+                    progress: matchStage,
+                    onClick: () => {
+                      if (pendingStatement) {
+                        void handleParsed(pendingStatement.result, pendingStatement.fileName);
+                      }
+                    },
+                    disabled: !pendingStatement,
+                    busy: isMatching,
+                  }}
+                />
+              }
             />
           }
           scrollManaged
         >
-          <SessionHeader
-            session={sessionQuery.data?.session}
-            current="import"
-            // Navigable only once the session has a statement to go back to.
-            // On a first import there is no workbench yet, so the steps would
-            // lead nowhere.
-            onNavigate={
-              hasParsedStatement ? (step) => goToStep(step, screen.sessionId) : undefined
-            }
-            onExit={() => setScreen({ name: "home" })}
-          />
           {matchError && (
             <p role="alert" className="px-4 pt-3 text-xs text-destructive">
               {matchError}
@@ -1179,6 +1232,18 @@ export function ReconciliationView() {
           )}
           <ImportPanel
             accountName={screen.accountName}
+            applyConfig={applyConfig}
+            onApplyConfigChange={handleApplyConfigChange}
+            writeSettingsLocked={writeSettingsLocked}
+            previousStatement={
+              sessionQuery.data?.session.statementName
+                ? {
+                    name: sessionQuery.data.session.statementName,
+                    start: sessionQuery.data.session.statementStart,
+                    end: sessionQuery.data.session.statementEnd,
+                  }
+                : null
+            }
             matchConfig={matchConfig}
             matchPreset={matchPreset}
             profiles={profilesQuery.data ?? []}
@@ -1218,82 +1283,90 @@ export function ReconciliationView() {
     if (screen.name === "review" || screen.name === "result") {
       const session = sessionQuery.data?.session;
 
-      // What Apply will actually do, once drift has withheld anything it must.
-      const withheldCount = driftReport?.withheld.length ?? 0;
-      const applicableChanges = Math.max(applyPlan.operations.length - withheldCount, 0);
+      /*
+       * Named apart, because they are not the same claim. Recording the bank's
+       * merchant text on a matched row changes nothing of the user's, and
+       * rolling both into "Apply 88 changes" is how a screen that exists to
+       * count changes honestly stops being believed.
+       *
+       * A drift check names the exact operations it withholds, so the second
+       * Apply can classify the remaining plan rather than falling back to
+       * calling every remaining write a change.
+       */
+      const withheldIds = new Set(
+        driftReport?.withheld.map((verdict) => verdict.operationId) ?? []
+      );
+      const applicablePlan = withoutOperations(applyPlan, withheldIds);
+      const applicableChanges = applicablePlan.operations.length;
       const applyButtonLabel =
         applicableChanges === 0
           ? "Nothing to apply"
-          : withheldCount > 0
-            ? `Apply the other ${applicableChanges} change${applicableChanges === 1 ? "" : "s"}`
-            : `Apply ${applicableChanges} change${applicableChanges === 1 ? "" : "s"}`;
+          : writeActionLabel("Apply", applicablePlan, { other: withheldIds.size > 0 });
 
       return (
         <PageLayout
-          title="Bank Reconciliation"
-          actions={
-            <PhaseNav
-              back={{
-                label: "Back to the workbench",
-                disabled: isApplying || isCheckingDrift,
-                onClick: () => {
-                  setDriftReport(null);
-                  setDriftAcknowledged(false);
-                  setScreen({ name: "workbench", sessionId: screen.sessionId });
-                },
-              }}
-              /*
-               * Finishing is a step, and it had no button. On the result screen
-               * the primary slot stood empty exactly when the user was most
-               * likely to be done, so leaving meant retreating through the
-               * workbench — a screen an applied session can no longer use.
-               */
-              secondary={
-                screen.name === "result" && applyResult && !applyResult.complete
-                  ? { label: "Done", onClick: () => setScreen({ name: "home" }) }
-                  : undefined
-              }
-              next={
-                screen.name === "review"
-                  ? {
-                      label: applyButtonLabel,
-                      onClick: () => void handleApply(),
-                      disabled: applicableChanges === 0,
-                      busy: isApplying || isCheckingDrift,
-                      progress: isCheckingDrift
-                        ? "Checking what has changed in Actual…"
-                        : applyProgress
-                          ? `Writing ${applyProgress.done} of ${applyProgress.total}…`
-                          : null,
-                    }
-                  : applyResult && !applyResult.complete
-                    ? {
-                        // Still something to put right, so retrying stays the
-                        // primary and finishing sits beside it.
-                        label: "Retry what failed",
-                        onClick: () => void handleApply(),
-                        busy: isApplying,
-                      }
-                    : {
-                        label: "Done",
-                        onClick: () => setScreen({ name: "home" }),
-                      }
+          header={
+            <SessionHeader
+              session={session}
+              current={screen.name === "review" ? "review" : "applied"}
+              period={period}
+              statementName={statementName}
+              onNavigate={(step) => goToStep(step, screen.sessionId)}
+              blockedSteps={rematchBlockedReason ? { import: rematchBlockedReason } : undefined}
+              onExit={() => setScreen({ name: "home" })}
+              actions={
+                <PhaseNav
+                  back={{
+                    label: "Back to the workbench",
+                    disabled: isApplying || isCheckingDrift,
+                    onClick: () => {
+                      goToStep("reconcile", screen.sessionId);
+                    },
+                  }}
+                  /*
+                   * Finishing is a step, and it had no button. On the result
+                   * screen the primary slot stood empty exactly when the user
+                   * was most likely to be done, so leaving meant retreating
+                   * through the workbench — a screen an applied session can no
+                   * longer use.
+                   */
+                  secondary={
+                    screen.name === "result" && applyResult && !applyResult.complete
+                      ? { label: "Done", onClick: () => setScreen({ name: "home" }) }
+                      : undefined
+                  }
+                  next={
+                    screen.name === "review"
+                      ? {
+                          label: applyButtonLabel,
+                          onClick: () => void handleApply(),
+                          disabled: applicableChanges === 0,
+                          busy: isApplying || isCheckingDrift,
+                          progress: isCheckingDrift
+                            ? "Checking what has changed in Actual…"
+                            : applyProgress
+                              ? `Writing ${applyProgress.done} of ${applyProgress.total}…`
+                              : null,
+                        }
+                      : applyResult && !applyResult.complete
+                        ? {
+                            // Still something to put right, so retrying stays
+                            // the primary and finishing sits beside it.
+                            label: "Retry what failed",
+                            onClick: () => void handleApply(),
+                            busy: isApplying,
+                          }
+                        : {
+                            label: "Done",
+                            onClick: () => setScreen({ name: "home" }),
+                          }
+                  }
+                />
               }
             />
           }
           scrollManaged
         >
-          <SessionHeader
-            session={session}
-            current={screen.name === "review" ? "review" : "applied"}
-            period={period}
-            statementName={statementName}
-            onNavigate={(step) => goToStep(step, screen.sessionId)}
-            blockedSteps={
-              rematchBlockedReason ? { import: rematchBlockedReason } : undefined
-            }
-            onExit={() => setScreen({ name: "home" })}
-          />
           {matchError && (
             <p role="alert" className="px-4 pt-3 text-xs text-destructive">
               {matchError}
@@ -1309,15 +1382,8 @@ export function ReconciliationView() {
               categories={categoryOptions}
               drift={driftReport}
               applyConfig={applyConfig}
-              onApplyConfigChange={(config) => {
-                setApplyConfig(config);
-                if (sessionId) {
-                  void mutations.updateSession.mutateAsync({
-                    id: sessionId,
-                    payload: { applyConfig: config },
-                  });
-                }
-              }}
+              onApplyConfigChange={handleApplyConfigChange}
+              writeSettingsLocked={writeSettingsLocked}
             />
           ) : (
             applyResult && (
@@ -1349,51 +1415,50 @@ export function ReconciliationView() {
       const session = sessionQuery.data?.session;
       const canRematch = Boolean(session && period && parsedRows.length > 0);
 
+      const reviewButtonLabel = writeActionLabel("Review", applyPlan);
 
       return (
         <PageLayout
-          title="Bank Reconciliation"
-          actions={
-            <PhaseNav
-              secondary={
-                session
-                  ? {
-                      label: "Import again",
-                      onClick: () => reimport(session),
-                      // Refused on an applied session for the same reason
-                      // re-running the match is: importing again rebuilds the
-                      // rows, which orphans the record of what was written and
-                      // would offer the same transactions for a second write.
-                      disabled: isMatching || Boolean(rematchBlockedReason),
-                      title: rematchBlockedReason ?? undefined,
-                    }
-                  : undefined
+          header={
+            <SessionHeader
+              session={session}
+              current="reconcile"
+              period={period}
+              statementName={statementName}
+              onNavigate={(step) => goToStep(step, screen.sessionId)}
+              blockedSteps={rematchBlockedReason ? { import: rematchBlockedReason } : undefined}
+              onExit={() => setScreen({ name: "home" })}
+              actions={
+                <PhaseNav
+                  secondary={
+                    session
+                      ? {
+                          label: "Import again",
+                          onClick: () => reimport(session),
+                          // Refused on an applied session for the same reason
+                          // re-running the match is: importing again rebuilds
+                          // the rows, which orphans the record of what was
+                          // written and would offer the same transactions for a
+                          // second write.
+                          disabled: isMatching || Boolean(rematchBlockedReason),
+                          title: rematchBlockedReason ?? undefined,
+                        }
+                      : undefined
+                  }
+                  next={{
+                    label:
+                      applyPlan.operations.length === 0
+                        ? "Nothing to review"
+                        : reviewButtonLabel,
+                    onClick: () => setScreen({ name: "review", sessionId: screen.sessionId }),
+                    disabled: applyPlan.operations.length === 0,
+                  }}
+                />
               }
-              next={{
-                label:
-                  applyPlan.operations.length === 0
-                    ? "Nothing to review"
-                    : `Review ${applyPlan.operations.length} change${
-                        applyPlan.operations.length === 1 ? "" : "s"
-                      }`,
-                onClick: () => setScreen({ name: "review", sessionId: screen.sessionId }),
-                disabled: applyPlan.operations.length === 0,
-              }}
             />
           }
           scrollManaged
         >
-          <SessionHeader
-            session={session}
-            current="reconcile"
-            period={period}
-            statementName={statementName}
-            onNavigate={(step) => goToStep(step, screen.sessionId)}
-            blockedSteps={
-              rematchBlockedReason ? { import: rematchBlockedReason } : undefined
-            }
-            onExit={() => setScreen({ name: "home" })}
-          />
           {matchError && (
             <p role="alert" className="px-4 pt-3 text-xs text-destructive">
               {matchError}
@@ -1409,7 +1474,8 @@ export function ReconciliationView() {
             isMatching={isMatching}
             canRematch={canRematch}
             rematchBlockedReason={rematchBlockedReason}
-          readOnly={Boolean(rematchBlockedReason)}
+            readOnly={Boolean(rematchBlockedReason)}
+            writeSettingsLocked={writeSettingsLocked}
             payees={payeeOptions}
             categories={categoryOptions}
             onDisposition={handleDisposition}
@@ -1420,6 +1486,8 @@ export function ReconciliationView() {
             onBulkDisposition={handleBulkDisposition}
             onBulkCorrectAmount={handleBulkCorrectAmount}
             transformContextFor={transformContextFor}
+            applyConfig={applyConfig}
+            onApplyConfigChange={handleApplyConfigChange}
             onTransform={handleTransform}
             onViewResult={
               applyResult

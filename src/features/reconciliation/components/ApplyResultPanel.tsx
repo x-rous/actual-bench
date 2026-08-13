@@ -7,7 +7,12 @@ import { prospectiveTransaction } from "@/lib/reconciliation/session/prospective
 import { formatMinorUnits, formatShortDate } from "../lib/format";
 import type { Option } from "./StagedFields";
 import type { ApplyRunResult } from "@/lib/reconciliation/apply/executor";
-import type { ApplyOperation, ApplyPlan } from "@/lib/reconciliation/apply/operations";
+import {
+  classifyPlan,
+  isEnrichmentOnly,
+  type ApplyOperation,
+  type ApplyPlan,
+} from "@/lib/reconciliation/apply/operations";
 import type {
   ActualTransactionSnapshot,
   ReconciliationItem,
@@ -15,6 +20,7 @@ import type {
 } from "@/lib/reconciliation/types";
 import type { VerificationReport } from "@/lib/reconciliation/apply/verification";
 import { statementText } from "@/lib/reconciliation/statement/text";
+import { describeWrites } from "../lib/writeSummary";
 
 /**
  * What actually happened (feature spec §40).
@@ -91,6 +97,32 @@ export function ApplyResultPanel({
     delete: "Deleted",
   };
 
+  const summaryFor = (status: "applied" | "skipped") => {
+    let unknown = 0;
+    const operations: ApplyOperation[] = [];
+    for (const entry of result.results) {
+      if (entry.status !== status) continue;
+      const operation = operationsById.get(entry.operationId);
+      if (operation) operations.push(operation);
+      else unknown += 1;
+    }
+    const summary = classifyPlan({ ...plan, operations });
+    // An old stored result may outlive enough session detail to rebuild its
+    // operation. Count it as a write without guessing it was provenance-only.
+    return { ...summary, userChanges: summary.userChanges + unknown };
+  };
+
+  const operationLabel = (operation: ApplyOperation | undefined, fallbackKind: string): string => {
+    if (operation?.kind === "update") {
+      if (isEnrichmentOnly(operation)) return "Bank text";
+      if (operation.importedPayee != null) return "Updated + bank text";
+    }
+    return KIND_LABELS[operation?.kind ?? fallbackKind] ?? fallbackKind;
+  };
+
+  const appliedSummary = summaryFor("applied");
+  const skippedSummary = summaryFor("skipped");
+
   const written = result.results.filter(
     (entry) => entry.status === "applied" || entry.status === "skipped"
   );
@@ -116,8 +148,8 @@ export function ApplyResultPanel({
             {result.complete ? "Applied" : "Applied with problems"}
           </h2>
           <p className="text-xs text-muted-foreground">
-            {result.applied} change{result.applied === 1 ? "" : "s"} written
-            {result.skipped > 0 && ` · ${result.skipped} already done`}
+            {describeWrites(appliedSummary)} written
+            {result.skipped > 0 && ` · ${describeWrites(skippedSummary)} already done`}
             {result.failed > 0 && ` · ${result.failed} failed`}
           </p>
         </div>
@@ -125,7 +157,7 @@ export function ApplyResultPanel({
 
       {result.skipped > 0 && (
         <p className="text-xs text-muted-foreground">
-          Changes marked already done were written by an earlier attempt. They were recognised and
+          Writes marked already done were written by an earlier attempt. They were recognised and
           left alone rather than repeated.
         </p>
       )}
@@ -140,7 +172,7 @@ export function ApplyResultPanel({
       ) : verification ? (
         verification.ok ? (
           <p className="rounded-md border border-border/60 px-3 py-2 text-xs text-muted-foreground">
-            Checked the account afterwards: all {verification.checked} change
+            Checked the account afterwards: all {verification.checked} write
             {verification.checked === 1 ? "" : "s"} are there as approved.
           </p>
         ) : (
@@ -184,7 +216,7 @@ export function ApplyResultPanel({
           <div className="min-h-0 flex-1 overflow-auto">
             <table className="w-full border-collapse text-xs">
               <caption className="sr-only">
-                Every change written to the budget, with the statement row behind it
+                Every write made to the budget, with the statement row behind it
               </caption>
               <thead className="sticky top-0 z-10 text-[11px] uppercase tracking-wide text-muted-foreground">
                 <tr>
@@ -216,7 +248,7 @@ export function ApplyResultPanel({
                   <th scope="col" className="w-24 border-b border-border bg-muted px-3 pb-1.5 text-right font-medium">
                     Amount
                   </th>
-                  <th scope="col" className="w-20 border-x border-b border-border bg-background px-3 pb-1.5 text-left font-medium">
+                  <th scope="col" className="w-32 border-x border-b border-border bg-background px-3 pb-1.5 text-left font-medium">
                     Action
                   </th>
                   <th scope="col" className="w-16 border-b border-border bg-background px-3 pb-1.5 text-left font-medium">
@@ -277,7 +309,7 @@ export function ApplyResultPanel({
                           entry.status === "skipped" && "text-muted-foreground"
                         )}
                       >
-                        {KIND_LABELS[kind] ?? kind}
+                        {operationLabel(operation, kind)}
                         {entry.status === "skipped" && (
                           <span className="block text-[10px] font-normal">already done</span>
                         )}
@@ -324,7 +356,7 @@ export function ApplyResultPanel({
               return (
                 <li key={failure.operationId}>
                   <span className="font-medium">
-                    {KIND_LABELS[operation?.kind ?? ""] ?? "Change"} · {describe(failure.operationId)}
+                    {operationLabel(operation, "Change")} · {describe(failure.operationId)}
                   </span>
                   <span className="block text-muted-foreground">{failure.error}</span>
                 </li>
@@ -332,7 +364,7 @@ export function ApplyResultPanel({
             })}
           </ul>
           <p className="mt-2 text-[11px] text-muted-foreground">
-            Retrying re-attempts only these. Changes that succeeded are not written again.
+            Retrying re-attempts only these. Writes that succeeded are not repeated.
           </p>
         </section>
       )}

@@ -165,6 +165,75 @@ export function DecisionProgressMeter({ coverage }: { coverage: ReconciliationCo
   );
 }
 
+/**
+ * The decision queue, as its own strip.
+ *
+ * Kept apart from coverage above it because it answers a different question:
+ * coverage is what the statement and the account are *made of*, which barely
+ * moves as you work, while this is how much of the work is done — the only
+ * figure on the screen that climbs to 100% as the user decides rows.
+ *
+ * Composed from the existing meter rather than recalculated, so there is still
+ * one definition of "decided".
+ */
+export function DecisionProgressStrip({
+  coverage,
+  onNextUndecided,
+  onShowShortcuts,
+}: {
+  coverage: ReconciliationCoverage;
+  onNextUndecided: () => void;
+  onShowShortcuts: () => void;
+}) {
+  const { decisions } = coverage;
+  const total = decisions.decided + decisions.pending;
+
+  /*
+   * Rendered even when there is nothing to decide. The meter inside it hides
+   * itself in that case, but the row's actions must not go with it: a session
+   * where everything matched automatically still needs its keyboard help, and
+   * a jump control that disappears exactly when the queue empties is a control
+   * the user cannot rely on being there.
+   */
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+      <span className="font-semibold text-muted-foreground">Decisions</span>
+      {total === 0 ? (
+        <span className="text-muted-foreground">Nothing to decide</span>
+      ) : (
+        <DecisionProgressMeter coverage={coverage} />
+      )}
+      {decisions.pending > 0 && (
+        <span className="tabular-nums text-muted-foreground">{decisions.pending} left</span>
+      )}
+      {decisions.automatic > 0 && (
+        <span className="text-muted-foreground">
+          {decisions.automatic} matched automatically
+        </span>
+      )}
+
+      <div className="flex items-center gap-1">
+        <button
+          type="button"
+          onClick={onNextUndecided}
+          className="inline-flex h-6 items-center rounded-md px-2 text-xs font-medium transition-colors hover:bg-accent hover:text-accent-foreground"
+        >
+          Next undecided
+          <kbd className="ml-1.5 rounded border border-border px-1 text-[11px]">n</kbd>
+        </button>
+        <button
+          type="button"
+          onClick={onShowShortcuts}
+          aria-label="Keyboard shortcuts"
+          className="inline-flex h-6 items-center rounded-md px-2 transition-colors hover:bg-accent hover:text-accent-foreground"
+        >
+          <kbd className="rounded border border-border px-1 text-[11px]">?</kbd>
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function CoverageSummary({ coverage }: { coverage: ReconciliationCoverage }) {
   const { statement, actual } = coverage;
 
@@ -183,7 +252,9 @@ export function CoverageSummary({ coverage }: { coverage: ReconciliationCoverage
     <section aria-label="Reconciliation coverage" className="flex flex-col gap-3">
       <div className="flex flex-wrap gap-x-8 gap-y-3">
         <Side
-          title="Statement"
+          // Named by direction: the two sides answer different questions, and
+          // "Statement"/"Actual" alone read as two views of one number.
+          title="Statement → Actual"
           total={statement.total}
           totalLabel="rows"
           segments={segmentsFor(statement, "Not in Actual", "bg-sky-500/60")}
@@ -196,7 +267,7 @@ export function CoverageSummary({ coverage }: { coverage: ReconciliationCoverage
            */
         />
         <Side
-          title="Actual"
+          title="Actual → Statement"
           total={actual.total}
           totalLabel="transactions in view"
           segments={segmentsFor(actual, "Not on statement", "bg-violet-500/60")}
