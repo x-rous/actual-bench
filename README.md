@@ -22,7 +22,7 @@
 
 <p align="center">
   <a href="https://actual-bench-demo.vercel.app"><strong>🚀 Try the live demo →</strong></a><br />
-  <sub>Explore a fully-loaded sample budget — no setup required. (Shared sandbox; resets periodically.)</sub>
+  <sub>Compare fully-loaded Envelope and Tracking budgets — no setup required. (Shared sandbox; resets periodically.)</sub>
 </p>
 
 ---

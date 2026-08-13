@@ -26,7 +26,7 @@ visitor ─► Demo UI (Next.js, managed host)
            Demo backend (single container)
               ├─ actual-http-api   (REST, public port)
               └─ actual-server     (sync, internal only)
-                 └─ seed budget (baked into the image)
+                 └─ Envelope + Tracking seed budgets (baked into the image)
 ```
 
 The UI never talks to the backend from the browser — calls go through the app’s
@@ -37,20 +37,25 @@ own server-side proxy, exactly like a self-hosted deployment.
 1. The connect screen asks the server route **`/api/demo`** whether a demo is
    configured. It answers only when the deployment opts in via demo env vars;
    otherwise it returns `404` and the button never appears.
-2. On click, the app registers the returned demo connection and drops the
-   visitor straight into the app.
-3. From there it behaves like any other connection: the server-side proxy talks
-   to the demo backend, which serves a ready-made sample budget.
+2. On click, the app registers both returned demo-budget connections and drops
+   the visitor into `Live Demo`, the Envelope file.
+3. The existing top-bar connection menu lists `Live Demo` and
+   `Live Demo - Tracking Mode`, so the visitor can switch between equivalent
+   datasets and compare the two budgeting models.
+4. From there each behaves like any other connection: the server-side proxy
+   talks to the demo backend, which serves the selected sample budget.
 
 The normal **“bring your own actual-http-api”** form remains the default path on
 the same screen.
 
 ## The seed budget & self-reset
 
-- A rich, realistic sample budget (multiple accounts, category groups,
-  payees — including intentional duplicates to showcase merging — rules,
-  schedules, several months of transactions, and budgeted amounts) is generated
-  by **`demo/generate-seed.mjs`** and **baked into the backend image**.
+- Two rich, realistic sample budgets are generated from deterministic equivalent
+  data by **`demo/generate-seed.mjs`** and **baked into the backend image**:
+  `Live Demo` uses Envelope mode; `Live Demo - Tracking Mode` uses Tracking mode
+  and also plans income. Both contain multiple accounts, category groups, payees
+  (including intentional duplicates to showcase merging), rules, schedules,
+  several months of transactions, and budgeted amounts.
 - On every container start the backend restores that baked copy, so the demo
   **self-resets to a clean state** — visitor edits never persist. This is the
   reset mechanism; there is no separate cleanup job.
@@ -60,7 +65,8 @@ the same screen.
 The demo layer is inert anywhere it isn’t explicitly enabled:
 
 - **`/api/demo`** and the **“Try the live demo”** button activate only when the
-  demo env vars are present. Self-hosted builds → endpoint `404`s, button hidden.
+  demo env vars are present, including both distinct budget Sync IDs. Self-hosted
+  builds → endpoint `404`s, button hidden.
 - **Analytics** is loaded through a build-flag-gated dynamic import, so it is
   **tree-shaken out of non-demo builds** entirely — no script, no network calls.
 - The build output directory differs only on the managed UI host (it expects the
@@ -87,8 +93,11 @@ self-host.
 | `src/components/connect/DemoButton.tsx` | “Try the live demo” button |
 | `src/components/demo-analytics.tsx` | Analytics wrapper (demo-only, tree-shaken) |
 | `demo/Dockerfile`, `demo/start.sh` | Demo backend image (sync + REST in one) |
-| `demo/generate-seed.mjs` | Regenerates the seed budget |
-| `demo/seed-data/` | The baked seed budget |
+| `demo/generate-seed.mjs` | Regenerates both seed budgets |
+| `demo/seed-data/` | The two baked seed budgets |
 
-To regenerate the seed budget, run `node demo/generate-seed.mjs` (see the script
-header for prerequisites).
+To regenerate the seed budgets, run `node demo/generate-seed.mjs` (see the script
+header for prerequisites). Configure the printed `DEMO_BUDGET_SYNC_ID` and
+`DEMO_TRACKING_BUDGET_SYNC_ID` values on the Demo UI deployment. The backend
+uses pinned `26.8.1` Actual Server and HTTP API images so generation and runtime
+interpret the budget files with the same release line.

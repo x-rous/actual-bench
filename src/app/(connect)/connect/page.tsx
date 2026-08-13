@@ -10,13 +10,20 @@ export const metadata: Metadata = {
 };
 
 function isDemoConfigured() {
-  const { DEMO_MODE, DEMO_BASE_URL, DEMO_API_KEY, DEMO_BUDGET_SYNC_ID } =
-    process.env;
+  const {
+    DEMO_MODE,
+    DEMO_BASE_URL,
+    DEMO_API_KEY,
+    DEMO_BUDGET_SYNC_ID,
+    DEMO_TRACKING_BUDGET_SYNC_ID,
+  } = process.env;
   return (
     DEMO_MODE === "1" &&
     Boolean(DEMO_BASE_URL) &&
     Boolean(DEMO_API_KEY) &&
-    Boolean(DEMO_BUDGET_SYNC_ID)
+    Boolean(DEMO_BUDGET_SYNC_ID) &&
+    Boolean(DEMO_TRACKING_BUDGET_SYNC_ID) &&
+    DEMO_BUDGET_SYNC_ID !== DEMO_TRACKING_BUDGET_SYNC_ID
   );
 }
 

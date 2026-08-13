@@ -5,7 +5,7 @@ set -e
 rm -rf /data
 cp -r /seed-data /data
 
-# Sync server (holds the demo budget) in the background. Paths are set
+# Sync server (holds both demo budgets) in the background. Paths are set
 # explicitly to match how the seed was generated (generate-seed.mjs), so the
 # baked budget is found regardless of default-path derivation.
 echo "seed contents:" && ls -R /data 2>/dev/null | head -40

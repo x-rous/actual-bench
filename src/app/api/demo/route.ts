@@ -15,14 +15,21 @@ export const dynamic = "force-dynamic";
  * throwaway, self-resetting sandbox (see docs/DEMO_DEPLOYMENT.md).
  */
 export function GET() {
-  const { DEMO_MODE, DEMO_BASE_URL, DEMO_API_KEY, DEMO_BUDGET_SYNC_ID } =
-    process.env;
+  const {
+    DEMO_MODE,
+    DEMO_BASE_URL,
+    DEMO_API_KEY,
+    DEMO_BUDGET_SYNC_ID,
+    DEMO_TRACKING_BUDGET_SYNC_ID,
+  } = process.env;
 
   if (
     DEMO_MODE !== "1" ||
     !DEMO_BASE_URL ||
     !DEMO_API_KEY ||
-    !DEMO_BUDGET_SYNC_ID
+    !DEMO_BUDGET_SYNC_ID ||
+    !DEMO_TRACKING_BUDGET_SYNC_ID ||
+    DEMO_BUDGET_SYNC_ID === DEMO_TRACKING_BUDGET_SYNC_ID
   ) {
     return new NextResponse(null, { status: 404 });
   }
@@ -30,6 +37,15 @@ export function GET() {
   return NextResponse.json({
     baseUrl: DEMO_BASE_URL,
     apiKey: DEMO_API_KEY,
-    budgetSyncId: DEMO_BUDGET_SYNC_ID,
+    budgets: [
+      {
+        label: "Live Demo",
+        budgetSyncId: DEMO_BUDGET_SYNC_ID,
+      },
+      {
+        label: "Live Demo - Tracking Mode",
+        budgetSyncId: DEMO_TRACKING_BUDGET_SYNC_ID,
+      },
+    ],
   });
 }
