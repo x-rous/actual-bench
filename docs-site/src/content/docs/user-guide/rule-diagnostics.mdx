@@ -5,14 +5,17 @@ sidebar:
   order: 9
 ---
 
-Rule Diagnostics is a **read-only, advisory linter** for your rules — a capability Actual Budget has no
-equivalent for. It never modifies, creates, or deletes anything as a side effect, and it runs entirely
-in the browser against your current working set, **including unsaved staged edits**.
+Use **Rule Diagnostics** when a growing rule set has become hard to trust: references may point at
+deleted entities, broad rules may shadow specific ones, or duplicates may be doing the same work twice.
+Actual runs rules one transaction at a time; this workspace audits the set as a whole.
+
+**Write model:** read-only and advisory. It includes unsaved staged rules, but never modifies anything
+unless you follow a finding into the normal staged rule editor or confirm a merge.
 
 Open **Rule Diagnostics** from the **Tools** sidebar section, or the **Diagnostics** button on the
 Rules toolbar. The URL `/rules/diagnostics` is bookmarkable.
 
-## Why this doesn't exist in Actual Budget
+## What Actual Bench adds
 
 Actual Budget runs rules but gives you no way to audit them in aggregate. As a rule set grows, problems
 accumulate silently — a rule pointing at a deleted category, two rules that quietly shadow each other,

@@ -5,15 +5,24 @@ sidebar:
   order: 13
 ---
 
-When you consolidate budgets kept in **different currencies**, Actual Bench converts transaction amounts
-during sync. The **FX Rates** page manages the exchange rates it uses. Open it from **FX Rates** under
-the **Tools** sidebar section (`/fx-rates`).
+Use **FX Rates** only when a transaction [Budget Sync](../budget-sync/) flow moves money between budget
+files kept in different currencies. It is not a general currency feature and does not add
+multi-currency accounts to one Actual budget.
 
-:::note[FX applies to cross-currency sync, not single-file multi-currency]
-Currency conversion is part of transaction [Budget Sync](../budget-sync/) between budgets configured
-with different currencies. Actual Bench does not add multi-currency accounts inside a single Actual
-budget file.
-:::
+Actual Bench adds date-specific rates, missing-rate coverage, manual overrides, and immutable audit
+snapshots so a later market-rate change cannot silently rewrite past conversions.
+
+**Write model:** changing the rate registry writes Actual Bench metadata. Actual transactions change
+only through a separately previewed and applied sync update.
+
+Open **FX Rates** under **Tools** after you have configured a converting flow.
+
+## Get a converting flow ready
+
+1. Enable **Convert currency** on a transaction flow and choose its source and target currencies.
+2. Open **FX Rates** and inspect coverage for that pair and date range.
+3. Fill gaps from Frankfurter, import rates, or set a deliberate override.
+4. Preview the flow and verify the original amount, rate, and converted amount before Apply.
 
 ## When currency conversion is used
 

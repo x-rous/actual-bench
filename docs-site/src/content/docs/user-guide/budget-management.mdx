@@ -1,21 +1,40 @@
 ---
 title: Budget Management
-description: Edit a full-year budget in Actual Bench's spreadsheet-grade workspace — cells, multi-cell selection, fill actions, envelope and tracking modes, notes, and CSV import/export.
+description: See and edit a full year in focused Budget, Actuals, or Balance views, with model-aware context and spreadsheet-grade tools.
 sidebar:
   order: 1
 ---
 
-Budget Management is a full-width, 12-month budget editor for both envelope and tracking budgets. It
-behaves like a spreadsheet: select ranges, paste from Excel or Google Sheets, fill values, and review
-everything in a draft panel before you **Save**.
+Use **Budget Management** when you need to understand the year as a whole, not only work inside a
+compact month-to-month budget view. Actual Budget can display up to six months and shows Budget,
+Spent, and Balance together. That is useful for everyday budgeting, but it can be difficult to scan
+one measure across an entire year.
+
+Actual Bench shows 12 consecutive months and lets the whole grid focus on **Budget**, **Actuals**, or
+**Balance**. The separation is especially valuable for Tracking budgets, where seeing the annual plan,
+actual activity, running balance, and model-specific variance in context matters more than envelope
+availability. Spreadsheet-style selection, paste, fill, and staged editing are available when you want
+to revise the plan—not just inspect it.
+
+**Write model:** budget amounts, holds, and transfers are staged until **Save**. Notes and carryover
+toggles are explicit immediate writes.
 
 Open it from the **Budget** item in the sidebar (under **Data Management**), or go to
 `/budget-management`.
 
-:::note[Staged like the rest of the app]
-Budget cell edits are staged locally and only written to your Actual Server when you **Save**. See
-[Core Concepts](../../getting-started/core-concepts/) for the staging model.
-:::
+## Get the full-year view
+
+1. Confirm the **Envelope** or **Tracking** badge matches your budget.
+2. Choose **Budget**, **Actuals**, or **Balance** to focus the entire 12-month grid on one measure.
+3. Scan category and group rows across the year; use the details panel for the selected period and the
+   KPIs that belong to your budget model.
+4. If you need to revise the plan, edit a cell, paste a range, or use a fill action.
+5. Review the pending changes and select **Save** when the staged draft is ready.
+
+Everything below is reference for working faster or using model-specific actions.
+
+<details>
+<summary>Understand the workspace, budget models, and cell views</summary>
 
 ## Understand the workspace
 
@@ -73,6 +92,11 @@ amber as you approach the limit, and adding a red segment when you go over. A ce
 funding shows a distinct red bar. The exact spent and balance numbers stay in the cell's hover tooltip and
 the details panel. Turn the bars off or on with the **Spending Bars** toggle in the toolbar (on by
 default); income rows never show a bar.
+
+</details>
+
+<details>
+<summary>Navigate, select, paste, fill, and use bulk actions</summary>
 
 ## Navigate months and years
 
@@ -138,8 +162,11 @@ Right-click a category budget cell for a context menu:
 - **Set Budget**: Copy previous month, Copy specific month…, Set to zero, Set to fixed amount…, Apply
   % change…, and 3-, 6-, or 12-month averages (averages use each prior month's **budgeted** amount).
 
-No-input actions run immediately as one undo step; actions that need input open a two-step
-(parameters → preview) dialog.
+Budget-setting actions stage as one undo step; actions that need input open a two-step
+(parameters → preview) dialog. Carryover is the exception: its explicit toggle writes directly and
+reports its result immediately.
+
+</details>
 
 ## Review staged changes and Save
 
@@ -151,6 +178,9 @@ No-input actions run immediately as one undo step; actions that need input open 
 - Partial failures are reported with a **Retry Failed** option; only changes the server accepted are
   cleared.
 - Undo/redo works across staged edits (`Ctrl/Cmd+Z`, `Ctrl/Cmd+Shift+Z` / `Ctrl+Y`), up to 50 steps.
+
+<details>
+<summary>Notes, Envelope and Tracking actions, import/export, and shortcuts</summary>
 
 ## Use notes
 
@@ -175,7 +205,8 @@ Holds and transfers are envelope-mode only.
 
 In tracking mode the workspace uses planning language rather than envelope balances. Past months show
 actual performance, the current month is marked partial, and future months show budgeted context
-instead of a zero-actual result. Rollover (carryover) is toggled per category from the right-click menu.
+instead of a zero-actual result. Rollover (carryover) is toggled per category from the right-click menu
+and writes immediately after the explicit action; it is not part of the staged cell draft.
 
 ## Import and export
 
@@ -197,10 +228,12 @@ Press `?` (or `F1`, `Ctrl/Cmd+/`, or the toolbar **Shortcuts** button) to open t
 generated from the app's keymap. Bare-letter shortcuts (`V`, `F`, `H`, `E`, `[`, `]`) don't fire while
 you're typing in a cell.
 
+</details>
+
 ## Safety and limitations
 
-- Rollover (carryover) is toggled via the right-click menu (tracking mode); it is shown but not directly
-  editable as a grid cell.
+- Rollover (carryover) is an immediate explicit write through the right-click menu (tracking mode); it
+  is not a staged grid-cell edit.
 - Category-to-pool transfers (omitting a source or destination category) are not supported.
 - The grid is not virtualized, so very large category lists may scroll more slowly.
 

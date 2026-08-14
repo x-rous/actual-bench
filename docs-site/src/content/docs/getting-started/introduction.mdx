@@ -1,102 +1,63 @@
 ---
-title: Introduction
-description: What Actual Bench is, who it is for, how it connects to Actual Budget, and the safety model to understand before you make changes.
+title: What Actual Bench adds
+description: Decide whether Actual Bench fits the work you do in Actual Budget and choose the first workflow worth trying.
 sidebar:
   order: 1
 ---
 
-This page explains what Actual Bench is, what it is not, and how to approach it. It is for anyone
-evaluating or getting started with Actual Bench, whether you are a budgeting power user or the person
-self-hosting it.
+Actual Bench is for the jobs around an Actual Budget file that become tedious or difficult to verify
+in the everyday budgeting interface. It complements Actual; it does not ask you to move your normal
+budgeting or transaction entry somewhere new.
 
-:::note[Independent companion app]
-Actual Bench is an independent companion application for [Actual Budget](https://actualbudget.org/).
-It is **not** the official Actual Budget application or official Actual Budget documentation.
-:::
+## Is it for you?
 
-## What is Actual Bench?
+Actual Bench is likely useful when at least one of these sounds familiar:
 
-Actual Bench is a companion app for Actual Budget. It provides a focused interface for the work that
-is cumbersome or unavailable in the native Actual Budget UI: bulk setup, master-data cleanup, advanced
-rule maintenance, full-year budget editing, diagnostics, ad-hoc ActualQL analysis, and cross-budget
-synchronization.
+- You manage enough accounts, payees, categories, schedules, tags, or rules that one-at-a-time
+  maintenance is getting painful.
+- You plan several months at once or prepare numbers in Excel or Google Sheets.
+- You have accumulated rules and want to find broken references, duplicates, or surprising overlaps.
+- You reconcile from downloaded bank statements and want a persistent, review-first workflow.
+- You keep separate budget files for people, businesses, purposes, or currencies.
+- You need to inspect or query details that are not exposed in Actual's normal screens.
 
-It is the workbench you open when you need to **inspect, repair, seed, audit, or reshape** your budget
-data with confidence — not a replacement for everyday budgeting.
+If you mainly enter transactions, check balances, and adjust the current month's budget, continue doing
+that in Actual Budget. Actual Bench is the occasional workbench for larger jobs.
 
-## Who should use it?
+## Choose the first workflow
 
-Actual Bench is aimed at power users and administrators, including people who:
-
-- Manage large or complex budget files.
-- Need to make bulk changes to accounts, payees, categories, schedules, tags, or rules.
-- Build advanced rules or want to lint existing ones.
-- Run ad-hoc queries against their budget data.
-- Consolidate several budget files, including budgets kept in different currencies.
-- Self-host and operate the deployment.
+| Your job | Start here |
+|---|---|
+| Plan or revise a whole year | [Budget Management](../../user-guide/budget-management/) |
+| Seed a new budget or clean up an established one | [Set up and clean up data](../../user-guide/managing-your-data/) |
+| Create complex automation or audit existing rules | [Rules](../../user-guide/rules/) |
+| Compare a downloaded statement with an account | [Bank Reconciliation](../../user-guide/bank-reconciliation/) |
+| Copy selected data between budget files | [Budget Sync](../../user-guide/budget-sync/) |
+| Investigate the contents or health of a budget | [Budget File Tools](../../user-guide/budget-file-tools/) |
+| Ask a custom question of saved budget data | [ActualQL](../../user-guide/actualql/) |
 
 ## What it does not replace
 
-Actual Bench supplements Actual Budget. It is **not** intended to replace:
+Actual Bench is not intended to replace:
 
-- Normal day-to-day transaction entry.
-- Reconciliation in Actual Budget.
-- Everyday mobile budgeting.
+- Everyday transaction entry and mobile budgeting in Actual.
+- Actual's normal budget views and reports.
+- Actual's own bank-sync and day-to-day reconciliation experience. Actual Bench adds a separate,
+  statement-driven workbench for cases where you want to import and audit a complete statement.
 - The official Actual Budget documentation.
 
-## Main workspaces
+## Why the workflows feel different
 
-At a glance, Actual Bench is organized into these areas (each has its own guide):
+The safest interaction depends on the job. Most maintenance work is staged until **Save**; sync and
+statement reconciliation use **Preview/Review → Apply**; diagnostic tools are read-only; notes and
+carryover toggles are explicit immediate writes. [Work safely](../core-concepts/) explains these
+patterns in a few minutes.
 
-- **Budget Overview** — the landing page and navigation hub for a connected budget.
-- **Budget Management** — a spreadsheet-grade 12-month budget editor.
-- **Accounts, Payees, Categories, and Tags** — dedicated master-data admin pages, each focused on what
-  Actual Bench adds over Actual Budget (bulk actions, CSV, usage visibility).
-- **Schedules** — recurring and one-time planned transactions.
-- **Rules** and **Rule Diagnostics** — build rules, and lint your rule set for problems.
-- **ActualQL** — a query console for advanced analysis.
-- **Budget File Health and Data Browser** — read-only inspection of exported budget snapshots.
-- **Budget Sync and FX Rates** — sync data between budgets and manage currency conversion.
-- **App Health** — diagnostics for Actual Bench's own metadata storage.
+## What you need
 
-## How it connects to Actual Budget
+- An existing Actual Server and a modern browser.
+- An Actual Bench installation, or the [live demo](https://actual-bench-demo.vercel.app) for evaluation.
+- `actual-http-api` only when your installation uses HTTP API Server mode.
 
-Actual Bench can connect to your budget in two ways:
-
-- **Direct Actual Server mode** — connects to your Actual Server and runs Actual's engine in your
-  browser. This is the target architecture for new browser-based workflows.
-- **HTTP API Server mode** — connects through a separate [actual-http-api](https://github.com/jhonderson/actual-http-api)
-  server. This remains fully supported for deployments and integrations that prefer or require it.
-
-The two modes differ in networking requirements and in a few capabilities. See
-[Connect to Actual Budget](../connecting/) for a full comparison and step-by-step setup.
-
-## Safety philosophy
-
-Actual Bench is built around reviewing changes before they reach your budget. You will encounter a few
-distinct patterns:
-
-- **Staged editing** — most changes stay local until you click **Save**.
-- **Immediate-save exceptions** — a few actions (such as editing notes) save right away.
-- **Preview and Apply** — Budget File Sync previews a run and writes only the items you select.
-- **Read-only inspection** — Budget File Health and the Data Browser never write to your budget.
-- **Confirmation dialogs** — destructive actions show their impact before you commit.
-
-[Core Concepts](../core-concepts/) explains each pattern in detail. It is worth reading before you make
-larger changes.
-
-## What you need before starting
-
-- A running [Actual Budget](https://github.com/actualbudget/actual) server.
-- A modern browser.
-- A supported way to run Actual Bench, such as Docker (see [Installation](../installation/)).
-- An [actual-http-api](https://github.com/jhonderson/actual-http-api) instance **only** if you plan to
-  use HTTP API Server mode.
-
-## Recommended learning path
-
-1. [Install Actual Bench](../installation/).
-2. [Connect to Actual Budget](../connecting/).
-3. Read [Core Concepts](../core-concepts/).
-4. Make a small edit and Save it.
-5. Explore the feature guides in the **User Guide** section.
+Ready to use your own budget? [Install Actual Bench](../installation/) and then
+[connect to a budget](../connecting/).

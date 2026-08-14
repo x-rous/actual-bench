@@ -12,8 +12,8 @@ a roadmap and includes no delivery promises.
 ## Product scope
 
 - **Actual Bench does not replace everyday budgeting.** It supplements Actual Budget for administration,
-  cleanup, diagnostics, queries, and cross-budget sync — not day-to-day transaction entry or
-  reconciliation.
+  cleanup, statement-driven reconciliation, diagnostics, queries, and cross-budget sync—not day-to-day
+  transaction entry, mobile budgeting, or Actual's normal bank-sync workflow.
 
 ## Connection modes
 
@@ -40,9 +40,9 @@ Server executions, not Direct mode.
 
 **Applies to:** the "Remember this server" option.
 
-Remembered secrets are stored in the server's metadata database, so the option is **only offered when
-that database is durable** (a mounted `/data` volume). On an ephemeral runtime such as the public demo,
-it is hidden.
+Remembered secrets are stored in the server's metadata database and survive only when `/data` is
+persistent. The public demo disables remembering. Self-hosters must verify their volume mount; a
+writable container directory is not enough to survive container replacement.
 
 ### A forgotten passphrase can't be recovered
 
@@ -108,7 +108,8 @@ Not currently in scope:
 
 - True Actual **transfer-linked** sync (same-budget flows use a plain copy).
 - **Automatic (non-review) target deletes** — deletion is always review-first.
-- **Category auto-create** during sync.
+- Transaction-flow **category auto-create**. Dedicated Category flows can create missing categories
+  under a placeable target group.
 - **Fuzzy duplicate auto-mapping** — only exact duplicates can be auto-mapped (opt-in); fuzzy duplicates
   always go to the review queue.
 

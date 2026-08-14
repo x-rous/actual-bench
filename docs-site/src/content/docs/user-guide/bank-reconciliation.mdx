@@ -1,25 +1,48 @@
 ---
 title: Bank Reconciliation
-description: Check a bank statement against an account in Actual — import CSV/TSV, OFX/QFX or QIF, match, decide, review, apply — with amount-exact matching, bank provenance kept apart from your curated payees and notes, and a drift check that protects edits made in Actual meanwhile.
+description: Import a bank statement, compare it with one Actual account, decide the differences, and apply only the changes you reviewed.
 sidebar:
   order: 15
 ---
 
-The **Bank Reconciliation** workbench checks a bank statement against one account in your budget and
-helps you settle the differences. Open it from **Bank Reconciliation** under the **Tools** sidebar
-section (`/reconciliation`).
+Use **Bank Reconciliation** when you have a complete downloaded statement and want to prove that one
+Actual account agrees with it—especially when bank sync is unavailable, a period needs auditing, or
+you expect missing, duplicate, or incorrect transactions.
 
-Sessions are persistent: import a statement today, work through it over several sittings, and apply
-when you are ready. **Nothing is written to your budget until you press Apply**, and the review screen
-names the work precisely: staged *changes* are counted separately from bank-detail writes that only
-record the statement's merchant text as an imported payee. A fully matched statement therefore does
-not present a screenful of provenance as unexplained edits to your payees or notes.
+Actual Bench adds persistent sessions, conservative amount-first matching, row-by-row decisions, a
+review of the exact writes, and a final drift check. It complements Actual's everyday import and
+reconciliation tools; it does not replace routine transaction entry.
+
+**Write model:** decide → review → **Apply**. Nothing is written before Apply. Categories are never
+read or written by this workflow.
+
+Open **Bank Reconciliation** under **Tools** (`/reconciliation`).
+
+## The workflow in five steps
+
+1. **Start** a session for one account and optionally give it a memorable tag.
+2. **Import** a CSV/TSV, OFX/QFX, or QIF statement and verify the parsed dates, amounts, payee text,
+   and notes.
+3. **Reconcile** each row: accept a match, choose another candidate, create a missing transaction,
+   correct an amount, delete a duplicate, or leave it undecided.
+4. **Review** the account-balance effect, clearing choice, bank-text writes, and every planned change.
+5. **Apply**. Actual Bench re-reads affected transactions first, writes what is still safe, and keeps
+   failures available for retry.
+
+Sessions survive browser sessions, so you can stop between steps. Once applied, the session becomes an
+audit record and does not offer the same writes again.
 
 :::note[Reconciliation does not touch categories]
 It never reads, stages, or writes a transaction's category. Categorisation belongs in Actual, where
 your rules and your own judgement live. A reconciliation that quietly blanked categories would undo
 work this tool has no business undoing.
 :::
+
+The rest of this page is detailed reference. For a first reconciliation, follow the five steps above
+and use the relevant section only when a choice needs explanation.
+
+<details>
+<summary>Sessions and detailed statement-import behavior</summary>
 
 ## Where a session is up to
 
@@ -190,6 +213,11 @@ Save how a statement is read — column mapping, date and amount conventions, pa
 the matching options for an account as a **profile**, and apply it next month in one click.
 Statements from the same bank rarely change shape.
 
+</details>
+
+<details>
+<summary>Matching evidence, safeguards, decisions, and note transformations</summary>
+
 ## 2. Matching
 
 Matching is deliberately conservative, and the reason is worth stating: **an exact signed amount is
@@ -276,6 +304,8 @@ A transformation can be applied to many rows at once and previewed before it is 
   `| dinner with Ahmad` both survive. Where no such run can be identified, the note is left alone and
   you are told why, rather than guessed at.
 
+</details>
+
 ## 4. Review
 
 The review screen shows, statement row by statement row, what each will look like in your budget
@@ -298,6 +328,9 @@ It also states:
   during Import are stated here rather than changed after transformations have already used them.
 - **Whether matched transactions gain the bank's merchant text** — **On new and matched rows** or
   **On new rows only** — see below.
+
+<details>
+<summary>Exact field behavior for imported payee, payee, and notes</summary>
 
 ### What actually gets written
 
@@ -345,7 +378,16 @@ Once Apply starts, **Record the bank's merchant text** and **Mark as cleared** a
 reopened applied or partially applied reconciliation, they show what was executed and cannot be
 changed.
 
+</details>
+
 ## 5. Apply
+
+Apply first re-reads every affected transaction. Safe rows are written, changed or conflicting rows
+are held back, partial successes are recorded honestly, and **Retry what failed** attempts only the
+unfinished work.
+
+<details>
+<summary>Drift handling, idempotent writes, rules, and post-write verification</summary>
 
 ### The drift check
 
@@ -392,6 +434,8 @@ Once the writes are done, the account is read back and compared against what you
 transactions are present and present *once*, updated fields hold the approved values, deleted rows are
 gone, split parents still add up, and nothing reconciled in Actual moved. A transport can report
 success for a field it quietly dropped, so this is confirmed rather than assumed.
+
+</details>
 
 ## What is stored, and where
 

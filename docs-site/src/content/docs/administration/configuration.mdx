@@ -5,8 +5,9 @@ sidebar:
   order: 2
 ---
 
-Actual Bench needs **no environment variables for a basic setup**. This page documents the settings you
-can provide for specific features and deployments.
+This is operator reference. Someone who only uses Actual Bench does not need these settings. A basic
+self-hosted installation needs persistent `/data` storage and no mandatory environment variables;
+configure only the feature you intend to enable.
 
 ## How configuration is loaded
 
@@ -74,8 +75,8 @@ the user sets** — no environment variable is involved. Credentials are server-
 opens any of its budgets); budget encryption passwords are sealed separately, per budget. The passphrase
 and derived key are never stored (only the ciphertext and a salt), so the server cannot decrypt on its
 own; the user unlocks once per session. This is **separate** from the `SYNC_VAULT_KEY` unattended-sync
-vault below — the two never share ciphertext or a key. The feature is only offered when this database is
-durable, so it is inert on non-durable runtimes. Back up `/data` to preserve remembered servers; a lost
+vault below—the two never share ciphertext or a key. Back up and persist `/data` to preserve remembered
+servers across container replacement; a writable path by itself does not prove durability. A lost
 passphrase means the user resets the vault and re-saves.
 
 ## Unattended sync settings
