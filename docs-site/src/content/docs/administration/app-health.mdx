@@ -5,14 +5,14 @@ sidebar:
   order: 4
 ---
 
-App Health is a compact diagnostics page for **Actual Bench's own server-side metadata database** —
-not your budget. Use it to confirm the app can persist its workflow data (sync flows, run history, FX
-registry) across restarts. Open it from **App Health** under the **Tools** sidebar section.
+Use **App Health** when you operate Actual Bench and need to verify its own metadata database or
+unattended scheduler. It diagnoses Actual Bench, not the connected budget; normal end users can ignore
+it unless an administrator asks for these details.
 
 :::note[This is about Actual Bench, not your budget]
-The metadata database holds Actual Bench workflow data only. It is **not** a copy of your Actual Budget
-data and does **not** store Actual credentials, API keys, server passwords, or budget encryption
-passwords. See [Core Concepts](../../getting-started/core-concepts/#where-data-lives).
+The metadata database is not a copy of your Actual Budget. It holds workflow metadata and can hold the
+two explicit encrypted credential opt-ins: remembered servers and unattended sync. It never stores
+those credentials in plaintext. See [Work safely](../../getting-started/core-concepts/#where-data-lives).
 :::
 
 ## What it reports
@@ -22,7 +22,8 @@ passwords. See [Core Concepts](../../getting-started/core-concepts/#where-data-l
 - **Writable** — whether Actual Bench can write to the database. Should be **Yes**.
 - **Schema** — the current schema version, or `Not initialized` if the database hasn't been set up.
 - **Migration status** — whether migrations are up to date.
-- **Persistence** — a reminder that data is *Persistent when `/data` is mounted*.
+- **Persistence** — a reminder that `/data` must be mounted externally. Writable storage alone does
+  not prove it will survive container replacement.
 
 ## Verify a healthy install
 

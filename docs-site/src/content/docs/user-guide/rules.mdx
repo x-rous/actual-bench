@@ -5,14 +5,22 @@ sidebar:
   order: 8
 ---
 
-Rules automate changes to transactions in Actual Budget. Actual Bench gives you a full condition/action
-builder that shows resolved entity names instead of raw IDs, plus power tools — templates, formulas,
-duplicate merging, and CSV round-trip — that the native rule editor doesn't offer. To *find* problems
-across your rule set, use the separate [Rule Diagnostics](../rule-diagnostics/) linter.
+Use **Rules** when your automation has grown beyond a few simple categorization rules: you need
+readable entity references, advanced actions, bulk import/export, or a safe way to consolidate
+duplicates. Actual still executes the rules; Actual Bench makes the rule set easier to build and audit.
+
+**Write model:** stage → review → **Save**. [Rule Diagnostics](../rule-diagnostics/) is read-only until
+you explicitly open or merge a rule.
 
 Open **Rules** from the **Data Management** sidebar section.
 
-## What you get beyond Actual Budget
+## Start with the job you have
+
+- **Create or edit automation:** use the rule builder below.
+- **Find broken, overlapping, or duplicate rules:** run [Rule Diagnostics](../rule-diagnostics/).
+- **Move or bulk-edit a rule set:** export it to CSV, edit it, then import and review the staged result.
+
+## Why use Actual Bench for rules?
 
 - **Resolved entity names everywhere** — payees, categories, and accounts show as readable chips, and
   search matches them by name, so you never hunt through raw IDs.

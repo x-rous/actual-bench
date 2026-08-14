@@ -5,9 +5,10 @@ sidebar:
   order: 3
 ---
 
-This guide helps administrators upgrade Actual Bench safely and protect its data. The most important
-idea: **the only server-side state Actual Bench owns is its metadata database under `/data`** — your
-budget data lives in Actual Budget, not here.
+This guide is for operators replacing an Actual Bench container or moving it to another host. The rule
+that matters most is: **reuse and back up the same `/data` storage**. Your budgets remain in Actual;
+Actual Bench's sessions, flows, saved queries, rates, and encrypted credential opt-ins live in its own
+metadata database.
 
 ## What needs to be backed up
 
@@ -17,10 +18,11 @@ budget data lives in Actual Budget, not here.
 | Actual Bench metadata | `/data` volume (SQLite) | **Yes** |
 | Configuration | Your Compose file / environment | Yes |
 | `SYNC_VAULT_KEY` | Your secret manager | Yes — **store it separately and safely** |
-| Browser session state | The browser | No (transient; re-enter secrets on reconnect) |
+| Remembered-server passphrase | Known by the user | Yes, separately—the database cannot recover it |
+| Browser session state | The browser | No (transient; unlock or reconnect after restart) |
 
-The metadata database holds sync flows, run history, and (if enabled) **encrypted** unattended-sync
-credentials. It does not contain your budget data or plaintext Actual credentials.
+The metadata database does not contain your budget data or plaintext credentials. It can contain the
+two explicit encrypted opt-ins: remembered-server secrets and unattended-sync credentials.
 
 ## Before upgrading
 
@@ -29,7 +31,8 @@ credentials. It does not contain your budget data or plaintext Actual credential
 3. **Back up `/data`** (see [Backup](#back-up-the-metadata-database)).
 4. Back up your Compose file and environment configuration.
 5. Ensure `SYNC_VAULT_KEY` is safely retained (needed to keep unattended credentials usable).
-6. Prefer upgrading to a **pinned `:<version>`** rather than a moving tag, for a controlled change.
+6. If you use remembered servers, confirm the user still knows the vault passphrase.
+7. Prefer upgrading to a **pinned `:<version>`** rather than a moving tag, for a controlled change.
 
 ## Upgrade procedures
 
@@ -74,7 +77,8 @@ container. Keep the same `/data` volume so your metadata carries over.
 1. The app loads and shows the new version in the sidebar footer.
 2. App Health: **Writable = Yes**, **Schema** current, **Persistence** as expected.
 3. Your sync flows and run history are present.
-4. If you use unattended sync, its scheduler section on App Health looks healthy.
+4. Remembered servers are still listed; the vault is expected to be locked until a user unlocks it.
+5. If you use unattended sync, its scheduler section on App Health looks healthy.
 
 ## Rollback
 

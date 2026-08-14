@@ -1,85 +1,100 @@
 ---
 title: Actual Bench documentation
-description: Learn how to install, connect, use, and self-host Actual Bench — the advanced admin, budgeting, diagnostics, and ActualQL workbench for Actual Budget.
+description: Explore the main tools Actual Bench adds for advanced budgeting, administration, reconciliation, synchronization, and analysis.
 template: splash
 hero:
-  tagline: The advanced admin, budgeting, diagnostics, and query workbench for Actual Budget. Inspect, repair, seed, audit, and reshape your budget data — with every change staged until you Save.
+  tagline: Advanced tools for Actual Budget. See the full year clearly, manage budget data in bulk, audit rules, reconcile statements, sync budget files, and investigate the details.
   image:
     file: ../../assets/actual-bench-icon.png
     alt: Actual Bench
   actions:
-    - text: Get started
-      link: /actual-bench/getting-started/introduction/
+    - text: Explore the main functions
+      link: '#main-functions'
       icon: right-arrow
-    - text: View on GitHub
-      link: https://github.com/x-rous/actual-bench
+    - text: Try the live demo
+      link: https://actual-bench-demo.vercel.app
       icon: external
       variant: minimal
 ---
 
 import { Card, CardGrid, LinkCard } from '@astrojs/starlight/components';
 
+Actual Budget remains the place for everyday budgeting and transaction entry. **Actual Bench** is the
+independent companion you open when a larger job becomes slow, repetitive, difficult to inspect, or
+risky to do one item at a time.
+
 :::note[Independent companion app]
-Actual Bench is an independent companion application for [Actual Budget](https://actualbudget.org/). It is **not** the official Actual Budget application or official Actual Budget documentation, and it does not replace normal day-to-day transaction entry in Actual Budget.
+Actual Bench is not the official Actual Budget application or documentation. It connects to an
+existing Actual Server and adds focused administration, planning, audit, and data tools.
 :::
 
-## What Actual Bench helps you do
+## Main functions
 
 <CardGrid>
-	<Card title="Manage & clean up data" icon="list-format">
-		Bulk-edit accounts, payees, categories, schedules, tags, and rules with filters, inline editing, and impact-aware confirmations.
+	<Card title="Full-year Budget Workspace" icon="setting">
+		See 12 consecutive months in a focused Budget, Actuals, or Balance view. This gives Envelope and especially Tracking users a clearer throughout-the-year perspective, plus spreadsheet-style editing when needed.
+		[Explore the Budget Workspace →](/actual-bench/user-guide/budget-management/)
 	</Card>
-	<Card title="Edit a full-year budget" icon="setting">
-		A spreadsheet-grade 12-month budget workspace with multi-cell selection, copy/paste, fill actions, and a draft review panel.
+	<Card title="Data Management" icon="list-format">
+		Bulk-create, merge, reorganize, import, export, and audit accounts, payees, categories, schedules, tags, and rules—with staged review before Save.
+		[Manage budget data →](/actual-bench/user-guide/managing-your-data/)
 	</Card>
-	<Card title="Build & diagnose rules" icon="approve-check">
-		Create, merge, and lint Actual Budget rules with resolved entity names, templates, and formulas.
+	<Card title="Rules and Rule Diagnostics" icon="approve-check">
+		Build advanced rules with readable references, then audit the entire rule set for broken references, overlaps, broad matches, and duplicates.
+		[Build and audit rules →](/actual-bench/user-guide/rules/)
 	</Card>
-	<Card title="Query with ActualQL" icon="magnifier">
-		Run, explain, save, and export ActualQL queries with table, JSON, scalar, and tree result views.
+	<Card title="Bank Reconciliation" icon="check-circle">
+		Import a complete statement, match it conservatively against one account, decide the differences, and apply only the changes you reviewed.
+		[Explore Bank Reconciliation →](/actual-bench/user-guide/bank-reconciliation/)
 	</Card>
-	<Card title="Inspect budget files" icon="seti:db">
-		Open exported budget snapshots locally in the browser for read-only health checks and SQLite data browsing.
+	<Card title="Budget File Sync and FX Rates" icon="random">
+		Create saved, preview-first flows for transactions, payees, and categories, including controlled conversion between budgets kept in different currencies.
+		[Explore Budget File Sync →](/actual-bench/user-guide/budget-sync/)
 	</Card>
-	<Card title="Sync & convert currencies" icon="random">
-		Sync data between budget files as preview-first flows, including multi-currency conversion with managed FX rates.
+	<Card title="ActualQL and Budget File Tools" icon="magnifier">
+		Query saved budget data, inspect an exported file, run structural health checks, or browse its SQLite tables without writing anything back.
+		[Explore analysis and diagnostics →](/actual-bench/user-guide/budget-file-tools/)
 	</Card>
 </CardGrid>
 
-## Who Actual Bench is for
+## How it complements Actual Budget
 
-Actual Bench is aimed at **Actual Budget power users** and **self-hosting administrators**:
+| Area | What Actual Budget already does well | What Actual Bench adds |
+|---|---|---|
+| Budgeting | A compact working view with Budget, Spent, and Balance together for up to six months | A focused 12-month Budget, Actuals, or Balance view, annual context, and spreadsheet-style editing |
+| Budget structure | Everyday creation and maintenance inside the budgeting experience | Bulk actions, CSV, duplicate handling, dependency visibility, and staged review |
+| Rules | Executes automation as transactions arrive | Richer authoring plus a whole-rule-set diagnostics pass |
+| Reconciliation | Everyday importing, bank sync, and normal reconciliation | A persistent, statement-driven comparison and correction workflow |
+| Multiple budget files | Keeps each budget independent | Controlled one-way synchronization, mappings, history, review queues, and FX conversion |
+| Investigation | Reports and normal data views | ActualQL, exported-file diagnostics, and read-only SQLite inspection |
 
-- Users managing large or complex budget files.
-- Users who need bulk maintenance and cleanup.
-- Users building advanced rules or running ad-hoc queries.
-- Users consolidating multiple budget files, including across currencies.
-- Administrators running a self-hosted deployment.
+Actual Bench remains a companion, not a replacement. Continue using Actual Budget for everyday
+transaction entry, normal budgeting, reports, bank sync, and mobile use.
 
-## Choose your path
+## How changes reach your budget
+
+Actual Bench uses different safety models for different jobs:
+
+- **Stage → review → Save** for most entity and budget edits.
+- **Preview → select → Apply** for Budget File Sync and Bank Reconciliation.
+- **Read-only** for ActualQL, Rule Diagnostics, Budget File Health, and the Data Browser.
+- **Immediate explicit actions** for notes and carryover toggles.
+
+The relevant guide states its write model before its instructions. Read [Work safely](/actual-bench/getting-started/core-concepts/)
+for the complete model.
+
+## Start using it
 
 <CardGrid>
-	<LinkCard title="New here? Start with the Introduction" href="/actual-bench/getting-started/introduction/" description="What Actual Bench is, how it connects, and the safety model — then install and connect." />
-	<LinkCard title="Install Actual Bench" href="/actual-bench/getting-started/installation/" description="Run Actual Bench with Docker or Docker Compose." />
-	<LinkCard title="Connect to Actual Budget" href="/actual-bench/getting-started/connecting/" description="Choose Direct Actual Server mode or HTTP API Server mode and open a budget." />
-	<LinkCard title="Understand core concepts" href="/actual-bench/getting-started/core-concepts/" description="Staged edits, the Save model, connection scoping, and where data lives." />
+	<LinkCard title="See whether it fits" href="/actual-bench/getting-started/introduction/" description="A short guide to who benefits, what Actual Bench complements, and where it adds value." />
+	<LinkCard title="Try the demo" href="https://actual-bench-demo.vercel.app" description="Explore realistic Envelope and Tracking household budgets without connecting your own data." />
+	<LinkCard title="Install Actual Bench" href="/actual-bench/getting-started/installation/" description="Run the container and keep its metadata persistent." />
+	<LinkCard title="Connect a budget" href="/actual-bench/getting-started/connecting/" description="Choose the connection mode your installation supports and open a budget." />
 </CardGrid>
 
-## How Actual Bench keeps changes safe
-
-Most work in Actual Bench is deliberate and reversible before it reaches your budget:
-
-- **Staged changes** — most creates, edits, and deletes stay local until you click **Save**; a Draft Changes panel shows what is pending, with undo and redo.
-- **Preview before apply** — Budget File Sync produces a dry-run preview and only writes the items you select.
-- **Impact-aware confirmations** — destructive actions show transaction counts, rule references, and other impact before you commit.
-- **Read-only inspection** — Budget File Health and the Data Browser never write back to your budget.
-
-Some specific actions (such as editing notes) save immediately — see [Core Concepts](/actual-bench/getting-started/core-concepts/) for the full model.
-
-## Project & support links
+## Project and support
 
 - [GitHub repository](https://github.com/x-rous/actual-bench)
 - [Releases](https://github.com/x-rous/actual-bench/releases)
 - [Issue tracker](https://github.com/x-rous/actual-bench/issues)
-- [Live demo](https://actual-bench-demo.vercel.app) — shared `Live Demo - Envelope` and `Live Demo - Tracking` household budgets with 13 months of history that reset periodically
-- [Actual Budget](https://actualbudget.org/) · [actual-http-api](https://github.com/jhonderson/actual-http-api)
+- [Actual Budget](https://actualbudget.org/)

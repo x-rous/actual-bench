@@ -71,8 +71,10 @@ included.
 - **Rate override** — a manually entered rate for a specific date.
 - **Locked rate** — a rate captured at first sync that won't silently change.
 - **Immutable rate snapshot** — the stored rate and amounts kept with a converted transaction.
-- **Vault** — the encrypted store for unattended-sync credentials.
-- **`SYNC_VAULT_KEY`** — the environment secret that enables and encrypts that vault.
+- **Remembered-server vault** — optional saved server credentials encrypted with a user passphrase.
+- **Unattended-sync vault** — optional HTTP API credentials encrypted for server-side scheduled sync.
+- **`SYNC_VAULT_KEY`** — the operator environment secret that enables and encrypts the unattended-sync
+  vault; it is unrelated to the remembered-server passphrase.
 - **Unattended sync** — safe-only server-side sync that runs with the app closed (HTTP API mode).
 - **Auto-pause** — a flow automatically pausing after repeated failed automated runs.
 

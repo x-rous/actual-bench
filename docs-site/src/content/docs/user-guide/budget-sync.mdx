@@ -5,12 +5,29 @@ sidebar:
   order: 12
 ---
 
-Budget File Sync copies data between budget files as saved, one-way **flows**. One unified engine covers
-**transactions, payees, and categories**, so preview, apply, run history, the review queue, and the
-safe-only automation layer work the same way for each. It is **preview-first** and conservative by
-default (**create-only**), with opt-in advanced modes that never write silently.
+Use **Budget File Sync** when you deliberately keep separate budget files but need selected
+transactions, payees, or categories to move between them—for example household consolidation,
+business/personal separation, an archive, or budgets kept in different currencies.
+
+Actual Bench adds saved one-way **flows**, a dry-run preview, durable mappings, history, and a review
+queue. It does not try to make two Actual files behave like one live database.
+
+**Write model:** Preview never writes. Only an explicit **Apply**, or an opted-in safe-only automation
+policy, writes classified safe items. Uncertain rows remain for review.
 
 Open it from **Budget File Sync** under the **Tools** sidebar section (`/sync`).
+
+## Get the first flow working
+
+1. Create a flow and choose Transactions, Payees, or Categories.
+2. Pick one source and one target; choose accounts for a transaction flow.
+3. Keep the conservative create-only defaults for the first run.
+4. Select **Preview** and read the row classifications.
+5. Select only safe **New** rows and **Apply**.
+6. Preview again to confirm they now appear as **Already synced**.
+
+Add updates, deletion review, currency conversion, or automation only after that basic loop behaves as
+you expect.
 
 ## The safety model
 
@@ -45,6 +62,9 @@ A source and target on the same budget is allowed for transaction flows (between
 accounts); entity flows require two different budgets. A true self-sync (same account on both sides) is
 blocked.
 
+<details>
+<summary>Transaction filters, transforms, and entity-flow behavior</summary>
+
 ## Transaction flow settings
 
 ### Filters
@@ -73,6 +93,8 @@ blocked.
   review** unless you enable **create missing groups**. Income and expense categories stay distinct.
 - **No renames, deletes, or hides** — create-only. Mappings let reruns skip already-synced entities.
 
+</details>
+
 ## Preview a flow
 
 Select **Preview** to produce a dry-run. Each row is classified. The exact labels you'll see:
@@ -98,6 +120,9 @@ Select the safe **New** rows and **Apply**:
 - Only the selected safe items are written; each create is stamped with a durable target-side marker
   (`imported_id`), and an app-owned **mapping** is recorded immediately after each success.
 - Partial failures are reported and never lose earlier successes.
+
+<details>
+<summary>Mappings, updates, deletion review, retries, and flow portability</summary>
 
 ### Mappings and idempotency
 
@@ -139,6 +164,11 @@ retry, and act on changes.
   connections on import.
 - **Export a run's audit** to CSV.
 
+</details>
+
+<details>
+<summary>Automation, flow health, and target-rule behavior</summary>
+
 ## Automation (opt-in)
 
 Each flow has a **review policy**:
@@ -178,11 +208,15 @@ Because Actual Budget rules run when a transaction is created, an applied target
 from the preview (payee, category, notes, or cleared state). Actual Bench surfaces this as a **warning**,
 not an error.
 
+</details>
+
 ## Limitations
 
 Not in scope: true Actual transfer-linked sync (same-budget uses a plain copy), automatic (non-review)
-target deletes, category auto-create, fuzzy duplicate auto-mapping, unattended sync for **Direct**-mode
-flows, FX gain/loss accounting, and multi-currency within a single budget file. See
+target deletes, transaction-flow category auto-creation, fuzzy duplicate auto-mapping, unattended sync
+for **Direct**-mode flows, FX gain/loss accounting, and multi-currency within a single budget file. A
+dedicated **Category** flow can create missing categories under an existing, selected, or explicitly
+created group. See
 [Known Limitations](../../help/known-limitations/).
 
 ## Troubleshooting

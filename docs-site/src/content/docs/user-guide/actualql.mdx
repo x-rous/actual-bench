@@ -5,19 +5,26 @@ sidebar:
   order: 10
 ---
 
-The ActualQL workspace lets you run arbitrary ActualQL queries against the open budget for advanced
-analysis. Open it from **ActualQL Queries** under the **Tools** sidebar section (`/query`). It works in
-both Direct Actual Server mode and HTTP API Server mode.
+Use **ActualQL** when you have a precise question that Actual's normal reports do not answer—for
+example, a targeted transaction subset, an aggregate by month, or a cleanup check. It is best suited to
+people comfortable editing structured JSON; start from the built-in examples rather than a blank page.
+
+**Write model:** read-only. Queries see saved server state, not unsaved drafts.
+
+Open **ActualQL Queries** under **Tools**. It works in both connection modes.
+
+## Get an answer quickly
+
+1. Open **Examples** and choose the closest question.
+2. Adjust its table, fields, filters, or dates.
+3. Select **Explain** to check your intent without running it.
+4. Select **Run**, then choose Table, Raw JSON, Scalar, or Tree.
+5. Save a useful query or export the result.
 
 ## What ActualQL is
 
 ActualQL is Actual Budget's query language, expressed as **JSON** (not SQL). In Actual Bench this
 workspace is used for reading and analyzing data.
-
-:::note[Read-only from Actual Bench's side]
-Running a query does not stage or write anything. Results reflect **saved server state**, not your
-unsaved staged edits.
-:::
 
 ## Open the workspace and understand the editor
 

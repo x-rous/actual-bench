@@ -5,9 +5,12 @@ sidebar:
   order: 1
 ---
 
-This guide covers running Actual Bench in production. For a first install, start with
-[Installation](../../getting-started/installation/); this page adds architecture, networking, reverse
-proxy, and hardening detail.
+This guide is for the person operating Actual Bench, not someone who only uses the application. Start
+with [Installation](../../getting-started/installation/) for one working container; return here when
+you need production networking, HTTPS, or hardening.
+
+For most single-VPS installations, the goal is simple: one container, one persistent `/data` volume,
+one HTTPS endpoint, and a network path to the selected Actual connection mode.
 
 ## Deployment architecture
 

@@ -5,9 +5,14 @@ sidebar:
   order: 2
 ---
 
-Accounts, Payees, Categories, and Tags are Actual Bench's **master-data** pages, opened from the
-**Data Management** section of the sidebar. They share one editing model, so this page explains it
-once — each entity's own guide then focuses on what it adds over Actual Budget.
+Use these pages when you are setting up a budget, cleaning up years of imported names, reorganizing
+its structure, or auditing what depends on an entity before you change it. Actual Budget is excellent
+for everyday maintenance; Actual Bench adds the bulk and review tools for a larger cleanup pass.
+
+Accounts, Payees, Categories, and Tags share one editing model. This page is the shortest route to
+understanding it; the entity references cover only their special cases.
+
+**Write model:** stage → review → **Save**. Notes are the immediate-save exception.
 
 ## Why manage this data in Actual Bench?
 
@@ -25,6 +30,17 @@ doesn't offer:
 - **Staged review** — creates, edits, and deletes are collected as drafts and only written when you
   **Save**, so you can review a whole cleanup pass before it touches your budget.
 - **Duplicate detection** — name clashes are flagged as you work.
+
+## Start with one cleanup pass
+
+1. Open the entity page that contains the problem.
+2. Filter or search until the affected rows are visible.
+3. Inspect usage before deleting or merging anything important.
+4. Stage the edits or bulk action.
+5. Review **Draft Changes**, then **Save**.
+
+For moving an entire structure in or out, use [Bundle Export / Import](../bundle-export-import/)
+instead of repeating that flow page by page.
 
 ## The shared editing model
 

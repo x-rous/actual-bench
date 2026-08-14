@@ -63,9 +63,13 @@ Redact secrets before sharing any logs.
 
 ## Browser state
 
-- **Saved preset but must re-enter secrets** — expected: secrets are held in memory only and are never
-  saved.
-- **Refresh requires reconnecting** — expected, for the same reason.
+- **Recent connection but must re-enter secrets** — expected for non-secret recent connection details;
+  use the optional remembered-server vault if you want encrypted reconnect credentials.
+- **Remembered servers remain but the vault is locked** — expected after an Actual Bench restart;
+  unlock it with the vault passphrase.
+- **Remembered servers disappeared** — the metadata database or `/data` volume was replaced. Ask the
+  operator to verify the deployment and restore a backup if one exists.
+- **Refresh requires reconnecting** — expected for memory-only connections.
 - **Stale worker/cache in Direct mode** — as a last resort, clear this site's browser data. This removes
   saved presets and cached worker state and requires reconnecting.
 
@@ -75,6 +79,8 @@ Redact secrets before sharing any logs.
   error, with a retry option.
 - **A note "won't discard"** — notes save immediately and are not part of the staged Save. See
   [Core Concepts](../../getting-started/core-concepts/#immediate-save-exceptions).
+- **A carryover toggle is not in Draft Changes** — carryover is an explicit immediate write, not a
+  staged budget-cell edit.
 - **Wrong budget affected** — confirm the active connection before saving; staged data is scoped per
   connection.
 

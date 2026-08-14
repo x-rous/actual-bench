@@ -5,8 +5,9 @@ sidebar:
   order: 2
 ---
 
-This page helps you get Actual Bench running with the simplest supported installation. Actual Bench is
-distributed as a Docker image, so Docker (with or without Compose) is the recommended way to run it.
+This page is for the person running Actual Bench. If someone else already hosts it, skip to
+[Connect to a budget](../connecting/). The supported installation is a Docker container; Compose is
+the shortest path for a persistent self-hosted instance.
 
 :::note[You still need Actual Budget]
 Actual Bench connects to an existing [Actual Budget](https://github.com/actualbudget/actual) server —
@@ -125,9 +126,8 @@ Actual Bench stores its own workflow metadata in a SQLite database at `/data/act
 across container recreation.
 
 :::note[What `/data` is — and isn't]
-The metadata database holds Actual Bench workflow data only (such as sync flows and run history). It is
-**not** a copy of your Actual Budget data and does **not** store Actual credentials, API keys, Actual
-Server passwords, or budget encryption passwords.
+The metadata database is not a copy of your Actual Budget. It holds Actual Bench workflow data and,
+only when explicitly enabled, encrypted remembered-server or unattended-sync credentials.
 :::
 
 ## Update the container
