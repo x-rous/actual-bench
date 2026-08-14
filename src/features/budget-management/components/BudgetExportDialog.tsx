@@ -294,7 +294,7 @@ export function BudgetExportDialog({
               <select
                 value={rangeFrom}
                 onChange={(e) => handleRangeFromChange(e.target.value)}
-                className="w-full text-xs border border-border rounded px-2 py-1.5 bg-background font-mono"
+                className="h-7 w-full rounded border border-border bg-background px-2 py-1 text-xs font-mono"
                 aria-label="Range start month"
               >
                 {availableMonths.map((m) => (
@@ -308,7 +308,7 @@ export function BudgetExportDialog({
               <select
                 value={rangeTo}
                 onChange={(e) => handleRangeToChange(e.target.value)}
-                className="w-full text-xs border border-border rounded px-2 py-1.5 bg-background font-mono"
+                className="h-7 w-full rounded border border-border bg-background px-2 py-1 text-xs font-mono"
                 aria-label="Range end month"
               >
                 {availableMonths.map((m) => (
@@ -330,6 +330,7 @@ export function BudgetExportDialog({
               values={selectMonths}
               onChange={setSelectMonths}
               placeholder="Search and select months…"
+              triggerClassName="h-7"
             />
           </div>
         )}
@@ -359,7 +360,7 @@ export function BudgetExportDialog({
         <fieldset className="mb-4 space-y-2">
           <legend className="text-sm font-medium mb-2">Options</legend>
 
-          <label className="flex items-center gap-2 text-sm cursor-pointer">
+          <label className="flex items-center gap-2 text-xs cursor-pointer">
             <input
               type="checkbox"
               checked={includeHidden}
@@ -369,7 +370,7 @@ export function BudgetExportDialog({
             Include hidden categories
           </label>
 
-          <label className="flex items-center gap-2 text-sm cursor-pointer">
+          <label className="flex items-center gap-2 text-xs cursor-pointer">
             <input
               type="checkbox"
               checked={includeIncome}
@@ -380,7 +381,7 @@ export function BudgetExportDialog({
           </label>
 
           {stagedEdits && Object.keys(stagedEdits).length > 0 && (
-            <label className="flex items-center gap-2 text-sm cursor-pointer">
+            <label className="flex items-center gap-2 text-xs cursor-pointer">
               <input
                 type="checkbox"
                 checked={includeStagedView}

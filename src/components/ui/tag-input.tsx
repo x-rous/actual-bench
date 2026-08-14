@@ -2,15 +2,18 @@
 
 import { useState } from "react";
 import { X } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 export function TagInput({
   values,
   onChange,
   placeholder = "Type and press Enter…",
+  compact = false,
 }: {
   values: string[];
   onChange: (v: string[]) => void;
   placeholder?: string;
+  compact?: boolean;
 }) {
   const [input, setInput] = useState("");
 
@@ -27,7 +30,12 @@ export function TagInput({
   }
 
   return (
-    <div className="flex flex-1 flex-wrap items-center gap-1 rounded-md border border-input bg-background px-2 py-1 min-h-8">
+    <div
+      className={cn(
+        "flex min-h-8 flex-1 flex-wrap items-center gap-1 rounded-md border border-input bg-background px-2 py-1",
+        compact && "min-h-7 py-0.5"
+      )}
+    >
       {values.map((v, i) => (
         <span
           key={i}

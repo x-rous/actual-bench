@@ -123,14 +123,14 @@ export function BulkActionDialog({
             <div className="space-y-3 mb-4">
               {!initialAction && (
                 <div>
-                  <label htmlFor="bulk-action-type" className="block text-sm font-medium mb-1">
+                  <label htmlFor="bulk-action-type" className="block text-xs font-medium mb-1">
                     Action
                   </label>
                   <select
                     id="bulk-action-type"
                     value={action}
                     onChange={(e) => setAction(e.target.value as BulkActionType)}
-                    className="w-full text-sm border border-border rounded px-2 py-1.5 bg-background"
+                    className="h-7 w-full rounded border border-border bg-background px-2 py-1 text-xs"
                   >
                     {(Object.keys(ACTION_LABELS) as BulkActionType[]).map((a) => (
                       <option key={a} value={a}>
@@ -143,7 +143,7 @@ export function BulkActionDialog({
 
               {needsFixed && (
                 <div>
-                  <label htmlFor="bulk-fixed-amount" className="block text-sm font-medium mb-1">
+                  <label htmlFor="bulk-fixed-amount" className="block text-xs font-medium mb-1">
                     Amount ($)
                   </label>
                   <input
@@ -154,7 +154,7 @@ export function BulkActionDialog({
                     value={fixedAmount}
                     onChange={(e) => setFixedAmount(e.target.value)}
                     placeholder="0.00"
-                    className="w-full text-sm border border-border rounded px-2 py-1.5 bg-background font-mono"
+                    className="h-7 w-full rounded border border-border bg-background px-2 py-1 text-xs font-mono"
                     aria-label="Fixed amount in dollars"
                   />
                 </div>
@@ -162,14 +162,14 @@ export function BulkActionDialog({
 
               {needsSourceMonth && (
                 <div>
-                  <label htmlFor="bulk-source-month" className="block text-sm font-medium mb-1">
+                  <label htmlFor="bulk-source-month" className="block text-xs font-medium mb-1">
                     Source month
                   </label>
                   <select
                     id="bulk-source-month"
                     value={sourceMonth}
                     onChange={(e) => setSourceMonth(e.target.value)}
-                    className="w-full text-sm border border-border rounded px-2 py-1.5 bg-background"
+                    className="h-7 w-full rounded border border-border bg-background px-2 py-1 text-xs"
                   >
                     {activeMonths.map((m) => (
                       <option key={m} value={m}>{m}</option>
@@ -180,7 +180,7 @@ export function BulkActionDialog({
 
               {needsPercentage && (
                 <div>
-                  <label htmlFor="bulk-percentage" className="block text-sm font-medium mb-1">
+                  <label htmlFor="bulk-percentage" className="block text-xs font-medium mb-1">
                     New value as % of current (e.g. 110 = 10% increase)
                   </label>
                   <input
@@ -190,7 +190,7 @@ export function BulkActionDialog({
                     step="1"
                     value={percentage}
                     onChange={(e) => setPercentage(e.target.value)}
-                    className="w-full text-sm border border-border rounded px-2 py-1.5 bg-background font-mono"
+                    className="h-7 w-full rounded border border-border bg-background px-2 py-1 text-xs font-mono"
                     aria-label="Percentage of current value"
                   />
                 </div>

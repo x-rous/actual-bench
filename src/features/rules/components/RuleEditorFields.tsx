@@ -32,6 +32,7 @@ type Props = {
   onActionDelete: (clientId: string) => void;
   onActionTouched: (clientId: string) => void;
   children?: ReactNode;
+  compact?: boolean;
 };
 
 export function RuleEditorFields({
@@ -56,6 +57,7 @@ export function RuleEditorFields({
   onActionDelete,
   onActionTouched,
   children,
+  compact = false,
 }: Props) {
   const visibleFormErrors = showValidation ? validation.formErrors : [];
 
@@ -173,6 +175,7 @@ export function RuleEditorFields({
                   scheduleLinked={scheduleLinked}
                   entityOptions={entityOptions}
                   error={rowErrors[0]}
+                  compact={compact}
                   onChange={(updated) => {
                     onConditionTouched(entry.clientId);
                     onConditionChange(entry.clientId, updated);
@@ -214,6 +217,7 @@ export function RuleEditorFields({
                   action={entry.part}
                   entityOptions={entityOptions}
                   error={rowErrors[0]}
+                  compact={compact}
                   onChange={(updated) => {
                     onActionTouched(entry.clientId);
                     onActionChange(entry.clientId, updated);

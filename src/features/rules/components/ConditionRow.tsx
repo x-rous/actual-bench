@@ -35,11 +35,13 @@ function ConditionValueInput({
   entityOptions,
   onChange,
   onQuickCreate,
+  compact = false,
 }: {
   condition: ConditionOrAction;
   entityOptions: RuleEntityOptionsMap;
   onChange: (c: ConditionOrAction) => void;
   onQuickCreate: (entity: QuickCreateEntityType, name: string) => void;
+  compact?: boolean;
 }) {
   const fieldDef = CONDITION_FIELDS[condition.field ?? ""];
   const ops = getConditionOps(condition.field ?? "");
@@ -60,7 +62,7 @@ function ConditionValueInput({
       <div className="flex flex-1 items-center gap-1">
         <input
           type="number"
-          className={inputCls}
+          className={cn(inputCls, compact && "h-7")}
           value={range.num1}
           onChange={(e) =>
             onChange({ ...condition, value: { ...range, num1: Number(e.target.value) } })
@@ -70,7 +72,7 @@ function ConditionValueInput({
         <span className="text-xs text-muted-foreground shrink-0">–</span>
         <input
           type="number"
-          className={inputCls}
+          className={cn(inputCls, compact && "h-7")}
           value={range.num2}
           onChange={(e) =>
             onChange({ ...condition, value: { ...range, num2: Number(e.target.value) } })
@@ -93,6 +95,7 @@ function ConditionValueInput({
         options={entityOptions[fieldDef.entity]}
         values={arr}
         onChange={(v) => onChange({ ...condition, value: v })}
+        compact={compact}
       />
     );
   }
@@ -108,6 +111,7 @@ function ConditionValueInput({
         values={arr}
         onChange={(v) => onChange({ ...condition, value: v })}
         placeholder="Type and press Enter…"
+        compact={compact}
       />
     );
   }
@@ -125,6 +129,7 @@ function ConditionValueInput({
         value={scalar}
         onChange={(v) => onChange({ ...condition, value: v })}
         onQuickCreate={quickCreateEntity ? (name) => onQuickCreate(quickCreateEntity, name) : undefined}
+        compact={compact}
       />
     );
   }
@@ -133,7 +138,7 @@ function ConditionValueInput({
     return (
       <input
         type="number"
-        className={inputCls}
+        className={cn(inputCls, compact && "h-7")}
         value={valueToString(condition.value)}
         onChange={(e) =>
           onChange({
@@ -151,7 +156,7 @@ function ConditionValueInput({
   return isRegex ? (
     <div className="flex flex-1 flex-col gap-0.5">
       <input
-        className={inputCls}
+        className={cn(inputCls, compact && "h-7")}
         value={valueToString(condition.value)}
         onChange={(e) => onChange({ ...condition, value: e.target.value })}
         placeholder="regex pattern…"
@@ -162,7 +167,7 @@ function ConditionValueInput({
     </div>
   ) : (
     <input
-      className={inputCls}
+      className={cn(inputCls, compact && "h-7")}
       value={valueToString(condition.value)}
       onChange={(e) => onChange({ ...condition, value: e.target.value })}
       placeholder="value…"
@@ -179,6 +184,7 @@ export function ConditionRow({
   error,
   onChange,
   onDelete,
+  compact = false,
 }: {
   condition: ConditionOrAction;
   scheduleLinked?: boolean;
@@ -186,6 +192,7 @@ export function ConditionRow({
   error?: string;
   onChange: (c: ConditionOrAction) => void;
   onDelete: () => void;
+  compact?: boolean;
 }) {
   const openQuickCreate = useQuickCreateStore((s) => s.open);
   const field = condition.field ?? "";
@@ -258,6 +265,7 @@ export function ConditionRow({
           <div
             className={cn(
               selectCls,
+              compact && "h-7",
               "flex w-32 shrink-0 items-center bg-muted/30 text-muted-foreground"
             )}
           >
@@ -267,6 +275,7 @@ export function ConditionRow({
           <div
             className={cn(
               selectCls,
+              compact && "h-7",
               "flex w-32 shrink-0 items-center bg-muted/30 text-muted-foreground"
             )}
           >
@@ -274,7 +283,7 @@ export function ConditionRow({
           </div>
 
           <div className="flex-1">
-            <ConditionValueInput condition={condition} entityOptions={entityOptions} onChange={onChange} onQuickCreate={openQuickCreate} />
+            <ConditionValueInput condition={condition} entityOptions={entityOptions} onChange={onChange} onQuickCreate={openQuickCreate} compact={compact} />
           </div>
 
           <span className="mt-2 shrink-0 text-[10px] italic text-muted-foreground/60">
@@ -290,7 +299,7 @@ export function ConditionRow({
     <div className="space-y-1">
       <div className="flex items-start gap-1.5">
         <select
-          className={cn(conditionFieldSelectCls, "w-32 shrink-0")}
+          className={cn(conditionFieldSelectCls, compact && "h-7", "w-32 shrink-0")}
           value={field ?? ""}
           onChange={(e) => setField(e.target.value)}
         >
@@ -302,7 +311,7 @@ export function ConditionRow({
         </select>
 
         <select
-          className={cn(selectCls, "w-32 shrink-0")}
+          className={cn(selectCls, compact && "h-7", "w-32 shrink-0")}
           value={condition.op ?? ""}
           onChange={(e) => handleOpChange(e.target.value)}
         >
@@ -313,7 +322,7 @@ export function ConditionRow({
           ))}
         </select>
 
-        <ConditionValueInput condition={condition} entityOptions={entityOptions} onChange={onChange} onQuickCreate={openQuickCreate} />
+        <ConditionValueInput condition={condition} entityOptions={entityOptions} onChange={onChange} onQuickCreate={openQuickCreate} compact={compact} />
 
         <Button
           variant="ghost"

@@ -22,12 +22,14 @@ export function ActionRow({
   error,
   onChange,
   onDelete,
+  compact = false,
 }: {
   action: ConditionOrAction;
   entityOptions: RuleEntityOptionsMap;
   error?: string;
   onChange: (a: ConditionOrAction) => void;
   onDelete: () => void;
+  compact?: boolean;
 }) {
   const op = action.op ?? "set";
   const field = action.field ?? "";
@@ -117,7 +119,7 @@ export function ActionRow({
       <div className="space-y-1">
         <div className="flex items-start gap-1.5">
           <select
-            className={cn(selectCls, "w-48 shrink-0")}
+            className={cn(selectCls, compact && "h-7", "w-48 shrink-0")}
             value={op}
             onChange={(e) => handleOpChange(e.target.value)}
           >
@@ -147,7 +149,7 @@ export function ActionRow({
       <div className="space-y-1">
         <div className="flex items-start gap-1.5">
           <select
-            className={cn(selectCls, "w-48 shrink-0")}
+            className={cn(selectCls, compact && "h-7", "w-48 shrink-0")}
             value={op}
             onChange={(e) => handleOpChange(e.target.value)}
           >
@@ -156,7 +158,7 @@ export function ActionRow({
             ))}
           </select>
           <input
-            className={inputCls}
+            className={cn(inputCls, compact && "h-7")}
             value={valueToString(action.value)}
             onChange={(e) => onChange({ ...action, value: e.target.value })}
             placeholder="text to prepend/append…"
@@ -181,7 +183,7 @@ export function ActionRow({
     <div className="space-y-1">
       <div className="flex items-start gap-1.5">
         <select
-          className={cn(selectCls, "w-32 shrink-0")}
+          className={cn(selectCls, compact && "h-7", "w-32 shrink-0")}
           value={op}
           onChange={(e) => handleOpChange(e.target.value)}
         >
@@ -191,7 +193,7 @@ export function ActionRow({
         </select>
 
         <select
-          className={cn(fieldSelectCls, "w-32 shrink-0")}
+          className={cn(fieldSelectCls, compact && "h-7", "w-32 shrink-0")}
           value={field}
           onChange={(e) => handleFieldChange(e.target.value)}
         >
@@ -205,7 +207,7 @@ export function ActionRow({
         {isFormula ? (
           <div className="flex flex-1 flex-col gap-0.5">
             <input
-              className={inputCls}
+              className={cn(inputCls, compact && "h-7")}
               value={action.options?.formula ?? ""}
               onChange={(e) => onChange({ ...action, options: { formula: e.target.value } })}
               placeholder="=IF(ISBLANK(notes), …)"
@@ -217,7 +219,7 @@ export function ActionRow({
         ) : isTemplate ? (
           <div className="flex flex-1 flex-col gap-0.5">
             <input
-              className={inputCls}
+              className={cn(inputCls, compact && "h-7")}
               value={action.options?.template ?? ""}
               onChange={(e) => onChange({ ...action, options: { template: e.target.value } })}
               placeholder="{{handlebars expression…}}"
@@ -227,7 +229,7 @@ export function ActionRow({
             </span>
           </div>
         ) : fieldDef?.type === "boolean" ? (
-          <div className="flex h-8 flex-1 items-center gap-2">
+          <div className={cn("flex h-8 flex-1 items-center gap-2", compact && "h-7")}>
             <input
               type="checkbox"
               checked={action.value === true || action.value === "true"}
@@ -241,7 +243,7 @@ export function ActionRow({
         ) : fieldDef?.type === "number" ? (
           <input
             type="number"
-            className={inputCls}
+            className={cn(inputCls, compact && "h-7")}
             value={typeof action.value === "number" ? action.value : typeof action.value === "string" ? action.value : ""}
             onChange={(e) => onChange({ ...action, value: e.target.value === "" ? "" : Number(e.target.value) })}
             placeholder="0.00"
@@ -250,7 +252,7 @@ export function ActionRow({
         ) : fieldDef?.type === "date" ? (
           <input
             type="date"
-            className={inputCls}
+            className={cn(inputCls, compact && "h-7")}
             value={valueToString(action.value)}
             onChange={(e) => onChange({ ...action, value: e.target.value })}
           />
@@ -261,10 +263,11 @@ export function ActionRow({
             value={valueToString(action.value)}
             onChange={(v) => onChange({ ...action, value: v })}
             onQuickCreate={(name) => openQuickCreate(fieldDef.entity as QuickCreateEntityType, name)}
+            compact={compact}
           />
         ) : (
           <input
-            className={inputCls}
+            className={cn(inputCls, compact && "h-7")}
             value={valueToString(action.value)}
             onChange={(e) => onChange({ ...action, value: e.target.value })}
             placeholder="value…"
