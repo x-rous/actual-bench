@@ -80,7 +80,7 @@ export function NextMonthHoldDialog({
         </h2>
 
         <div className="mb-4">
-          <label htmlFor="hold-amount" className="block text-sm font-medium mb-1">
+          <label htmlFor="hold-amount" className="block text-xs font-medium mb-1">
             Amount to hold
           </label>
           <input
@@ -93,7 +93,7 @@ export function NextMonthHoldDialog({
             onChange={(e) => setAmountStr(e.target.value)}
             onKeyDown={(e) => { if (e.key === "Enter" && amountStr !== "") handleSet(); }}
             placeholder="0.00"
-            className="w-full text-sm border border-border rounded px-2 py-1.5 bg-background font-mono"
+            className="h-7 w-full rounded border border-border bg-background px-2 py-1 text-xs font-mono"
             aria-label="Hold amount in dollars"
           />
         </div>

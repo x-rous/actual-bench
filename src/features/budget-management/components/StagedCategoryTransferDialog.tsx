@@ -228,7 +228,7 @@ export function StagedCategoryTransferDialog({
                 setValidationError(null);
               }}
               placeholder="0.00"
-              className="w-full text-sm border border-border rounded px-2 py-1.5 bg-background font-mono focus:outline-none focus:ring-1 focus:ring-ring"
+              className="h-7 w-full rounded border border-border bg-background px-2 py-1 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-ring"
               aria-label="Transfer amount in dollars"
             />
             <div className="text-[10px] text-muted-foreground mt-0.5">

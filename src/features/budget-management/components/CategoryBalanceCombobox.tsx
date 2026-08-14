@@ -118,7 +118,7 @@ export function CategoryBalanceCombobox({
         autoComplete="off"
         value={displayValue}
         placeholder={placeholder}
-        className="w-full text-sm border border-border rounded px-2 py-1.5 bg-background focus:outline-none focus:ring-1 focus:ring-ring"
+        className="h-7 w-full rounded border border-border bg-background px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-ring"
         onFocus={() => setOpen(true)}
         onClick={() => setOpen(true)}
         onChange={(e) => {

@@ -2,6 +2,7 @@
 
 import { Plus } from "lucide-react";
 import { SearchableCombobox, MultiSearchableCombobox } from "@/components/ui/combobox";
+import { cn } from "@/lib/utils";
 import type { ComboboxOption } from "@/components/ui/combobox";
 import type { RuleEntityType } from "../lib/ruleEditor";
 
@@ -11,12 +12,14 @@ export function EntityCombobox({
   value,
   onChange,
   onQuickCreate,
+  compact = false,
 }: {
   entity: RuleEntityType;
   options: ComboboxOption[];
   value: string;
   onChange: (v: string) => void;
   onQuickCreate?: (name: string) => void;
+  compact?: boolean;
 }) {
   const placeholder =
     entity === "payee"
@@ -36,7 +39,10 @@ export function EntityCombobox({
       value={value}
       onChange={onChange}
       placeholder={placeholder}
-      triggerClassName="bg-sky-50 border-sky-200 dark:bg-sky-950/20 dark:border-sky-800"
+      triggerClassName={cn(
+        "border-sky-200 bg-sky-50 dark:border-sky-800 dark:bg-sky-950/20",
+        compact && "h-7"
+      )}
       footer={
         canQuickCreate
           ? (search) =>
@@ -61,11 +67,13 @@ export function MultiEntityCombobox({
   options,
   values,
   onChange,
+  compact = false,
 }: {
   entity: RuleEntityType;
   options: ComboboxOption[];
   values: string[];
   onChange: (v: string[]) => void;
+  compact?: boolean;
 }) {
   const placeholder =
     entity === "payee"
@@ -81,7 +89,10 @@ export function MultiEntityCombobox({
       values={values}
       onChange={onChange}
       placeholder={placeholder}
-      triggerClassName="bg-sky-50 border-sky-200 dark:bg-sky-950/20 dark:border-sky-800"
+      triggerClassName={cn(
+        "border-sky-200 bg-sky-50 dark:border-sky-800 dark:bg-sky-950/20",
+        compact && "h-7"
+      )}
     />
   );
 }
