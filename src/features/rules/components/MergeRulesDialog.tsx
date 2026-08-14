@@ -252,6 +252,7 @@ export function MergeRulesDialog({
           showValidation={saveAttempted}
           touchedConditionIds={touchedConditionIds}
           touchedActionIds={touchedActionIds}
+          compact
           onStageChange={setStage}
           onConditionsOpChange={setConditionsOp}
           onAddCondition={addCondition}
@@ -274,7 +275,7 @@ export function MergeRulesDialog({
               />
               <label
                 htmlFor="merge-delete-originals"
-                className="cursor-pointer select-none text-sm font-medium"
+                className="cursor-pointer select-none text-xs font-medium"
               >
                 Delete original {ruleCount} rule{ruleCount !== 1 ? "s" : ""} after merging
               </label>

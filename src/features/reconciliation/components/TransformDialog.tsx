@@ -278,7 +278,7 @@ export function TransformDialog({
         {conditions.map((condition, index) => (
           <div key={index} className="flex flex-wrap items-center gap-1.5">
             <select
-              className="h-8 rounded-md border border-input bg-background px-2 text-xs"
+              className="h-7 rounded-md border border-input bg-background px-2 text-xs"
               value={condition.field}
               aria-label="Field"
               onChange={(event) => {
@@ -307,7 +307,7 @@ export function TransformDialog({
             </select>
 
             <select
-              className="h-8 rounded-md border border-input bg-background px-2 text-xs"
+              className="h-7 rounded-md border border-input bg-background px-2 text-xs"
               value={condition.operator}
               aria-label="Comparison"
               onChange={(event) =>
@@ -332,7 +332,7 @@ export function TransformDialog({
                 of anyone. */}
             {condition.field === "matchStatus" ? (
               <select
-                className="h-8 w-40 rounded-md border border-input bg-background px-2 text-xs"
+                className="h-7 w-40 rounded-md border border-input bg-background px-2 text-xs"
                 value={condition.value}
                 aria-label="Decision"
                 onChange={(event) =>
@@ -351,7 +351,7 @@ export function TransformDialog({
               </select>
             ) : (
               <input
-                className="h-8 w-40 rounded-md border border-input bg-background px-2 text-xs"
+                className="h-7 w-40 rounded-md border border-input bg-background px-2 text-xs"
                 value={condition.value}
                 aria-label="Value"
                 placeholder={condition.operator.includes("Tag") ? "#API" : ""}
@@ -367,7 +367,7 @@ export function TransformDialog({
 
             {condition.operator === "between" && (
               <input
-                className="h-8 w-28 rounded-md border border-input bg-background px-2 text-xs"
+                className="h-7 w-28 rounded-md border border-input bg-background px-2 text-xs"
                 value={condition.value2 ?? ""}
                 aria-label="Upper bound"
                 onChange={(event) =>
@@ -412,7 +412,7 @@ export function TransformDialog({
         {actions.map((action, index) => (
           <div key={index} className="flex flex-wrap items-center gap-1.5">
             <select
-              className="h-8 rounded-md border border-input bg-background px-2 text-xs"
+              className="h-7 rounded-md border border-input bg-background px-2 text-xs"
               value={action.kind}
               aria-label="Action"
               onChange={(event) =>
@@ -433,7 +433,7 @@ export function TransformDialog({
             {action.kind === "replaceTag" && (
               <>
                 <input
-                  className="h-8 w-32 rounded-md border border-input bg-background px-2 text-xs"
+                  className="h-7 w-32 rounded-md border border-input bg-background px-2 text-xs"
                   value={action.from}
                   placeholder="#API"
                   aria-label="Tag to replace"
@@ -449,7 +449,7 @@ export function TransformDialog({
                 />
                 <span className="text-xs text-muted-foreground">with</span>
                 <input
-                  className="h-8 w-32 rounded-md border border-input bg-background px-2 text-xs"
+                  className="h-7 w-32 rounded-md border border-input bg-background px-2 text-xs"
                   value={action.to}
                   placeholder="#2026-07"
                   aria-label="Replacement tag"
@@ -468,7 +468,7 @@ export function TransformDialog({
 
             {action.kind === "addTag" && (
               <select
-                className="h-8 rounded-md border border-input bg-background px-2 text-xs"
+                className="h-7 rounded-md border border-input bg-background px-2 text-xs"
                 aria-label="Where the tag goes"
                 value={action.position ?? "end"}
                 onChange={(event) =>
@@ -488,7 +488,7 @@ export function TransformDialog({
 
             {(action.kind === "addTag" || action.kind === "removeTag") && (
               <input
-                className="h-8 w-32 rounded-md border border-input bg-background px-2 text-xs"
+                className="h-7 w-32 rounded-md border border-input bg-background px-2 text-xs"
                 value={action.tag}
                 placeholder="#2026-07"
                 aria-label="Tag"
@@ -506,7 +506,7 @@ export function TransformDialog({
 
             {(action.kind === "appendNote" || action.kind === "prependNote") && (
               <input
-                className="h-8 w-64 rounded-md border border-input bg-background px-2 text-xs"
+                className="h-7 w-64 rounded-md border border-input bg-background px-2 text-xs"
                 value={action.text}
                 placeholder="Checked against statement"
                 aria-label="Text to append"
@@ -530,7 +530,7 @@ export function TransformDialog({
 
             {action.kind === "setPayee" && (
               <select
-                className="h-8 w-52 rounded-md border border-input bg-background px-2 text-xs"
+                className="h-7 w-52 rounded-md border border-input bg-background px-2 text-xs"
                 aria-label="Payee"
                 value={action.payeeId ?? ""}
                 onChange={(event) =>
