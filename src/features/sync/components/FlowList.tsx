@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import { Plus, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { connectionFingerprint } from "@/lib/sync/connectionRef";
+import { connectionFingerprint, connectionMatchesBudget } from "@/lib/sync/connectionRef";
 import { decodeFlowPlanConfig } from "@/lib/sync/flowConfig";
 import { latestRunLabel, runNeedsAttention, runQueuedCount } from "../lib/runsView";
 import { computeUnattendedStatus, nextRunPhrase } from "../lib/unattendedStatus";
@@ -22,9 +22,15 @@ type FlowListProps = {
   onCreate: () => void;
 };
 
-function connectionAvailable(fingerprint: string, connections: ConnectionInstance[]): boolean {
-  if (!fingerprint) return false;
-  return connections.some((c) => connectionFingerprint(c) === fingerprint);
+function connectionAvailable(
+  fingerprint: string,
+  budgetSyncId: string,
+  connections: ConnectionInstance[]
+): boolean {
+  const exactMatch = fingerprint
+    ? connections.some((connection) => connectionFingerprint(connection) === fingerprint)
+    : false;
+  return exactMatch || connections.some((connection) => connectionMatchesBudget(connection, budgetSyncId));
 }
 
 function isHttpFingerprint(fingerprint: string, connections: ConnectionInstance[]): boolean {
@@ -92,8 +98,16 @@ export function FlowList({
               const selected = flow.id === selectedFlowId;
               const config = decodeFlowPlanConfig(flow);
               const connected =
-                connectionAvailable(config.sourceConnectionFingerprint, connections) &&
-                connectionAvailable(config.targetConnectionFingerprint, connections);
+                connectionAvailable(
+                  config.sourceConnectionFingerprint,
+                  config.sourceBudgetId,
+                  connections
+                ) &&
+                connectionAvailable(
+                  config.targetConnectionFingerprint,
+                  config.targetBudgetId,
+                  connections
+                );
               const latestRun = latestRuns.get(flow.id);
               const autoPaused = !flow.enabled && !!config.autoPausedAt;
               const lastRunMs = latestRun ? new Date(latestRun.finishedAt ?? latestRun.startedAt).getTime() : null;

@@ -102,6 +102,24 @@ describe("SyncView", () => {
     expect(screen.queryByText(/needs a connection/i)).not.toBeInTheDocument();
   });
 
+  it("recognizes open flow budgets when the live connection details changed", () => {
+    const httpSource: ConnectionInstance = { id: "http-src", label: "Home", mode: "http-api", baseUrl: "https://api.example.com", apiKey: "k", budgetSyncId: "b-src" };
+    const httpTarget: ConnectionInstance = { id: "http-tgt", label: "Family", mode: "http-api", baseUrl: "https://api.example.com", apiKey: "k", budgetSyncId: "b-tgt" };
+    setup([httpSource, httpTarget]);
+
+    render(<SyncView />);
+
+    expect(screen.queryByText("Needs connection")).not.toBeInTheDocument();
+  });
+
+  it("still flags a flow when one of its budgets is not open", () => {
+    setup([conn1]);
+
+    render(<SyncView />);
+
+    expect(screen.getByText("Needs connection")).toBeInTheDocument();
+  });
+
   it("opens the editor dialog with default transform (same sign, create payee)", async () => {
     setup([conn1, conn2]);
     render(<SyncView />);
