@@ -9,6 +9,10 @@ import {
   listReconciliationProfiles,
   listStatementRows,
 } from "./reconciliationRepository";
+import {
+  createPayeeCleanupSuppression,
+  listPayeeCleanupSuppressions,
+} from "./payeeCleanupSuppressionRepository";
 
 /**
  * Upgrading a database that already holds real work.
@@ -222,6 +226,31 @@ describe("upgrading an existing database", () => {
         dateFormat: "dmy",
         columns: { date: 0, importedPayee: 1, amount: 2, reference: 3 },
       });
+    } finally {
+      resetAppDbForTests();
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("adds the payee-cleanup suppression table to an older database (v17)", () => {
+    // Purely additive, so the thing worth proving is that an install carrying
+    // real reconciliation work gains the table without losing any of it.
+    const { root, path } = olderDatabase();
+    try {
+      const db = getAppDb(path);
+
+      const created = createPayeeCleanupSuppression(db, {
+        budgetSyncId: "budget-1",
+        kind: "not-duplicates",
+        payeeIds: ["p1", "p2"],
+        normalizedNames: ["EMIRATES", "EMIRATES NBD"],
+        detectorIds: ["fuzzy-similarity"],
+      });
+      expect(listPayeeCleanupSuppressions(db, "budget-1")).toHaveLength(1);
+      expect(created.budgetSyncId).toBe("budget-1");
+
+      // The pre-existing session is still there.
+      expect(getReconciliationSession(db, "sess-old")).not.toBeNull();
     } finally {
       resetAppDbForTests();
       rmSync(root, { recursive: true, force: true });

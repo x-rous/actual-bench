@@ -209,6 +209,35 @@ CREATE TABLE IF NOT EXISTS saved_queries (
 );
 `;
 
+// ── Payee cleanup suppressions (RD-078 / PR-041d) ────────────────────────────
+//
+// A user's "these are not duplicates" decisions. Budget-scoped, because payee
+// ids and names belong to one budget file.
+//
+// Both `payee_ids` and `normalized_names` are stored on purpose. Ids are the
+// precise key but do not survive the merge or deletion of the payees involved;
+// normalized names outlive them but can collide with a genuinely new payee. A
+// suppression matches when *either* still identifies the same relationship, and
+// the pair as a whole is what is suppressed — never an individual payee, which
+// must stay eligible for other clusters.
+export const PAYEE_CLEANUP_SUPPRESSION_TABLE_SQL = `
+CREATE TABLE IF NOT EXISTS payee_cleanup_suppressions (
+  id text PRIMARY KEY,
+  budget_sync_id text NOT NULL,
+  kind text NOT NULL,
+  payee_ids text NOT NULL,
+  normalized_names text NOT NULL,
+  detector_ids text NOT NULL,
+  note text,
+  created_at text NOT NULL
+);
+`;
+
+export const PAYEE_CLEANUP_SUPPRESSION_INDEX_SQL = `
+CREATE INDEX IF NOT EXISTS idx_payee_cleanup_suppressions_budget
+  ON payee_cleanup_suppressions (budget_sync_id);
+`;
+
 // ── FX / multi-currency consolidation (RD-056 / PR-025a) ─────────────────────
 // The database is the authoritative FX registry; Frankfurter only populates it.
 export const FX_RATE_IMPORT_BATCH_TABLE_SQL = `

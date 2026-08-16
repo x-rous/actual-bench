@@ -379,6 +379,28 @@ export type RememberedBudgetInput = {
 // Global (not budget-scoped). `isFavorite` is stored as an integer column and
 // normalized to boolean by the repository. Shape is structurally compatible
 // with the query feature's client-side `SavedQuery` type.
+/**
+ * A "these are not duplicates" decision, or a rejected learned affix
+ * (RD-078 §14 / PR-041d).
+ *
+ * Suppression is a property of the *relationship*, not of a payee: marking
+ * `EMIRATES` and `EMIRATES NBD` as unrelated must not hide either of them from
+ * a different, well-evidenced cluster.
+ */
+export type PayeeCleanupSuppressionRecord = {
+  id: string;
+  budgetSyncId: string;
+  kind: "not-duplicates" | "rejected-affix";
+  /** Precise, but gone once the payees are merged or deleted. */
+  payeeIds: string[];
+  /** Outlives the ids; for an affix, the affix tokens. */
+  normalizedNames: string[];
+  /** Which detector or reducer produced the rejected proposal, when known. */
+  detectorIds: string[];
+  note?: string;
+  createdAt: string;
+};
+
 export type SavedQueryRecord = {
   id: string;
   name: string;

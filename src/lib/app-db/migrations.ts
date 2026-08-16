@@ -9,6 +9,8 @@ import {
   RECONCILIATION_SESSION_TABLE_SQL,
   RECONCILIATION_STATEMENT_ROW_TABLE_SQL,
   REMEMBERED_BUDGET_TABLE_SQL,
+  PAYEE_CLEANUP_SUPPRESSION_INDEX_SQL,
+  PAYEE_CLEANUP_SUPPRESSION_TABLE_SQL,
   SAVED_QUERY_TABLE_SQL,
   SERVER_CREDENTIAL_TABLE_SQL,
   FX_INDEX_SQL,
@@ -28,7 +30,7 @@ import {
 import { KDF_VERSION_META_KEY, SALT_META_KEY, VERIFIER_META_KEY } from "./vaultMetaKeys";
 import { AppDbUnavailableError } from "./errors";
 
-export const LATEST_SCHEMA_VERSION = 16;
+export const LATEST_SCHEMA_VERSION = 17;
 
 type Migration = {
   version: number;
@@ -205,6 +207,15 @@ const MIGRATIONS: readonly Migration[] = [
     // channels become the two Actual fields they belong to, and the write
     // configuration stops framing payee and notes as an either/or.
     apply: applyReconciliationImportSemantics,
+  },
+  {
+    version: 17,
+    // Payee Cleanup's "not duplicates" decisions (RD-078). Purely additive: a
+    // new table and its index, nothing existing is touched.
+    statements: [
+      PAYEE_CLEANUP_SUPPRESSION_TABLE_SQL,
+      PAYEE_CLEANUP_SUPPRESSION_INDEX_SQL,
+    ],
   },
 ];
 
