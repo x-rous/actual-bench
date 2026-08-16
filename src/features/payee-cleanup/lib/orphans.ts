@@ -13,9 +13,11 @@
  *   AND not referenced by a rule *condition* on the payee field
  *
  * **Bench is deliberately stricter on the last clause.** Actual checks only rule
- * conditions with `field = 'description'`; Bench also counts rule *actions* and
- * the `imported_payee` field, so a payee that some rule writes to is never
- * offered for deletion. Stricter is the right direction for a destructive
+ * conditions with `field = 'description'`; Bench also counts rule *actions*, so
+ * a payee that some rule writes to is never offered for deletion. Only
+ * payee-*id* conditions and actions protect a candidate: an `imported_payee`
+ * condition carries merchant text rather than an id, so it could never match one
+ * and is not consulted. Stricter is the right direction for a destructive
  * operation — the cost is leaving a genuinely unused payee in place, which is
  * recoverable, versus deleting one that a rule still targets, which is not.
  *
@@ -29,7 +31,12 @@ import type { StagedMap } from "@/types/staged";
 import { isCleanupEligible } from "./eligibility";
 import type { PayeeCleanupCandidate } from "../types";
 
-const PAYEE_FIELDS = ["payee", "imported_payee"];
+/**
+ * The rule fields whose values are payee ids. `imported_payee` is deliberately
+ * absent: it holds the bank's text, so it can never equal a payee id and only
+ * gave the appearance of a wider check.
+ */
+const PAYEE_FIELDS = ["payee"];
 
 export type OrphanPayee = {
   payee: PayeeCleanupCandidate;

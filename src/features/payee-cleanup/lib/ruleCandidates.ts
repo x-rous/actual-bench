@@ -386,7 +386,15 @@ export function analyzeFutureResolution(input: {
   // *residual*. A merchant whose every past import already equals the surviving
   // name needs no rule; one that also arrives as `WOOLWORTHS 0183` does, however
   // much of its history matched by name.
-  const residual = best ? best.expectedMatches - exactName.transactionCount : 0;
+  //
+  // Only an `imported_payee` candidate can be netted off this way:
+  // `exactNameCoverage` counts `imported_payee` rows, and subtracting those from
+  // a `notes` candidate's matches drove the residual to zero and declared the
+  // merchant "already resolved by name" for text name matching never sees.
+  const residual =
+    best && best.candidate.field === "imported_payee"
+      ? best.expectedMatches - exactName.transactionCount
+      : (best?.expectedMatches ?? 0);
 
   let skipReason: FutureResolution["skipReason"] = null;
   if (relatedRules.some((r) => r.interaction === "already-resolves")) {

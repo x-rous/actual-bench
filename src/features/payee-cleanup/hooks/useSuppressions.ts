@@ -2,6 +2,7 @@
 
 import { useCallback, useMemo } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import { useConnectionStore, selectActiveInstance } from "@/store/connection";
 import type { PayeeCleanupSuppressionRecord } from "@/lib/app-db/types";
 import type { PayeeCluster } from "../lib/clusterResolver";
@@ -56,6 +57,11 @@ export function useSuppressions(options: { enabled: boolean }) {
       if (!response.ok) throw new Error("Could not save that decision");
     },
     onSuccess: invalidate,
+    // Reported rather than swallowed: the card disappears locally either way,
+    // so a silent failure would look like a saved decision until the next scan
+    // brought the group back with no explanation.
+    onError: (error: Error) =>
+      toast.error(`${error.message} — it will reappear on the next scan.`),
   });
 
   const remove = useMutation({
@@ -66,6 +72,7 @@ export function useSuppressions(options: { enabled: boolean }) {
       if (!response.ok) throw new Error("Could not undo that decision");
     },
     onSuccess: invalidate,
+    onError: (error: Error) => toast.error(error.message),
   });
 
   const clearAll = useMutation({
@@ -77,6 +84,7 @@ export function useSuppressions(options: { enabled: boolean }) {
       if (!response.ok) throw new Error("Could not clear your decisions");
     },
     onSuccess: invalidate,
+    onError: (error: Error) => toast.error(error.message),
   });
 
   return {
@@ -92,7 +100,12 @@ export function useSuppressions(options: { enabled: boolean }) {
       create.mutate(buildAffixSuppression(budgetSyncId, affix));
     },
     undo: (id: string) => remove.mutate(id),
-    clearAll: () => clearAll.mutate(),
+    // Guarded like the others. Without a budget id this sent an unscoped DELETE
+    // — a destructive request with nothing to scope it to.
+    clearAll: () => {
+      if (!budgetSyncId) return;
+      clearAll.mutate();
+    },
     isSaving: create.isPending || remove.isPending || clearAll.isPending,
   };
 }

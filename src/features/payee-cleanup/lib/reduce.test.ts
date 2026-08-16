@@ -163,6 +163,27 @@ describe("card networks and terminals", () => {
   it("removes standalone network and terminal tokens", () => {
     expect(stem("ACME STORE VISA ATMA896")).toBe("ACME STORE");
   });
+
+  it("keeps ordinary words that merely start with a terminal prefix", () => {
+    // A generated terminal id always carries a number. Matching on the letters
+    // alone deleted `POSTAL` and `ATMOS` — real words, not scaffolding.
+    expect(stem("AUSTRALIA POSTAL")).toBe("AUSTRALIA POSTAL");
+    expect(stem("ATMOS ENERGY")).toBe("ATMOS ENERGY");
+  });
+});
+
+describe("currency amounts", () => {
+  it("removes a code with a real amount beside it", () => {
+    expect(stem("HOTEL BOOKING AUD 1,234.56")).toBe("HOTEL BOOKING");
+    expect(stem("HOTEL BOOKING AED 45.90")).toBe("HOTEL BOOKING");
+  });
+
+  it("keeps a three-letter merchant followed by a store number", () => {
+    // The amount has to look like money. Accepting a bare integer made every
+    // three-letter name plus a branch number look like a charge, and `KFC 1234
+    // SYDNEY` reduced to `SYDNEY`.
+    expect(stem("KFC 1234 SYDNEY")).toBe("KFC 1234 SYDNEY");
+  });
 });
 
 describe("safety", () => {

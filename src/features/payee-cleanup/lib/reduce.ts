@@ -106,14 +106,21 @@ const CARD_PATTERN =
  * A three-letter ISO code is a shape, not a list of the user's currencies.
  */
 /**
- * A currency code with its amount: `AUD 14.95`, `SAR 1,234.56`, `USD 20`.
+ * A currency code with its amount: `AUD 14.95`, `SAR 1,234.56`.
  *
  * Real statements print the charged amount into the payee field, and it varies
  * per transaction — so it both survives into the payee name and stops variants
  * from converging. A three-letter code beside a number is a shape, not a list of
  * anyone's currencies.
+ *
+ * The number must *look like money* — a decimal part, or grouped thousands.
+ * Accepting a bare integer matched any three-letter word followed by a store
+ * number, so `KFC 1234 SYDNEY` reduced to `SYDNEY`: a real merchant deleted on
+ * the strength of its name being three letters long. Losing `USD 20` to that
+ * guard is the cheaper mistake.
  */
-const CURRENCY_AMOUNT_PATTERN = /\b[A-Z]{3}\s*[\d,]+(\.\d{1,2})?\b/;
+const CURRENCY_AMOUNT_PATTERN =
+  /\b[A-Z]{3}\s*(?:\d{1,3}(?:,\d{3})+(?:\.\d{1,2})?|\d+\.\d{1,2})\b/;
 
 const FX_PATTERN =
   /\b([A-Z]{3}\/[A-Z]{3}\s*\.?[\d.]+|FX\s+[A-Z]{3}\s+[\d,.]+\s+AT\s+[\d.]+)\b/i;
@@ -137,9 +144,13 @@ const LABELLED_PATTERN =
 /**
  * Card networks and terminal identifiers appearing as standalone scaffolding.
  * Card-industry terms, not one bank's wording.
+ *
+ * A terminal code must carry a digit. `ATM[A-Z0-9]{2,6}` alone deleted `ATMOS`,
+ * and the `POS` form deleted `POSTAL` — ordinary words that happen to start with
+ * a terminal prefix. A generated terminal id never lacks a number.
  */
 const NETWORK_TOKEN =
-  /^(VISA|MASTERCARD|MAESTRO|AMEX|DISCOVER|EFTPOS|CIRRUS|ATM[A-Z0-9]{2,6}|POS[A-Z0-9]{2,6})$/i;
+  /^(VISA|MASTERCARD|MAESTRO|AMEX|DISCOVER|EFTPOS|CIRRUS|(?:ATM|POS)(?=[A-Z0-9]{2,6}$)[A-Z0-9]*\d[A-Z0-9]*)$/i;
 
 // ─── Reducers ────────────────────────────────────────────────────────────────
 

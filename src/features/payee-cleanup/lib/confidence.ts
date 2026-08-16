@@ -83,14 +83,24 @@ export function computeConfidence(
         delta: 0,
         reason: `Names match exactly once this is removed: ${describeLabel(structural[0].label)}`,
       });
-    } else {
+    } else if (contextual.length > 0) {
       // Contextual only: a plausible transform, not a certainty.
       score = 68;
       reasons.push({
         delta: 0,
         reason: `Names match only after an interpreted change: ${describeLabel(
-          contextual[0]?.label ?? "contextual"
+          contextual[0].label
         )}`,
+      });
+    } else {
+      // No evidence survived attribution: the names converged, but nothing can
+      // say how. Naming a detector that never fired would be worse than
+      // admitting there is nothing to show, so this states the bare fact and
+      // scores low enough to stay out of the confident bands.
+      score = 60;
+      reasons.push({
+        delta: 0,
+        reason: "These names reduce to the same thing, but nothing explains why",
       });
     }
 

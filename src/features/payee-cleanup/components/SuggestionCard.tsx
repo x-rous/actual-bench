@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
   AlertTriangle,
   ArrowRight,
@@ -101,6 +101,27 @@ export function SuggestionCard({
     impact?.behavior.favoriteDiffers === true ||
     impact?.behavior.learnCategoriesDiffers === true;
   const activeRules = impact ? impact.rules.regular + impact.rules.activeSchedule : 0;
+  /**
+   * The picker resolves the typed text back to a payee, so every option has to
+   * be unique. Real budgets hold payees with identical names — the browser then
+   * showed two identical rows and the lookup always returned the first, quietly
+   * adding the wrong payee to the merge. Only the duplicated names carry the
+   * disambiguating id, so the common case stays clean.
+   */
+  const addableOptions = useMemo(() => {
+    const nameCounts = new Map<string, number>();
+    for (const payee of addablePayees) {
+      nameCounts.set(payee.name, (nameCounts.get(payee.name) ?? 0) + 1);
+    }
+    return addablePayees.map((payee) => ({
+      id: payee.id,
+      label:
+        (nameCounts.get(payee.name) ?? 0) > 1
+          ? `${payee.name} · ${payee.id.slice(0, 6)}`
+          : payee.name,
+    }));
+  }, [addablePayees]);
+
   const countFor = (id: string) =>
     impact?.members.find((m) => m.payeeId === id)?.transactionCount;
 
@@ -245,7 +266,9 @@ export function SuggestionCard({
             className="mt-1.5 h-7 w-full rounded-md border border-dashed border-border bg-background px-2 text-xs"
             onFocus={() => setPickerOpen(true)}
             onChange={(e) => {
-              const match = addablePayees.find((p) => p.name === e.target.value);
+              const match = addableOptions.find(
+                (o) => o.label === e.target.value
+              );
               if (match) {
                 onAddMember(match.id);
                 e.target.value = "";
@@ -254,8 +277,8 @@ export function SuggestionCard({
           />
           <datalist id={`add-payee-${cluster.id}`}>
             {pickerOpen
-              ? addablePayees.slice(0, 200).map((p) => (
-                  <option key={p.id} value={p.name} />
+              ? addableOptions.slice(0, 200).map((o) => (
+                  <option key={o.id} value={o.label} />
                 ))
               : null}
           </datalist>

@@ -165,7 +165,10 @@ export function findCorpusAffixes(
 function mostlyNumeric(remainders: Set<string>): boolean {
   let numeric = 0;
   for (const remainder of remainders) {
-    if (!/[A-Za-z]/.test(remainder)) numeric += 1;
+    // Any Unicode letter counts as a word. An ASCII-only test called every
+    // non-Latin merchant name "numeric", so a shared wrapper around Arabic or
+    // Cyrillic remainders was rejected as a run of branch numbers.
+    if (!/\p{L}/u.test(remainder)) numeric += 1;
   }
   return numeric / remainders.size > 0.5;
 }

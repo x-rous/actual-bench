@@ -213,6 +213,10 @@ export function detectionSummary(suggestion: CleanupSuggestion): string {
  * because an earlier step already rewrote that span — is simply not highlighted
  * rather than approximated.
  */
+function escapeRegex(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 export function annotateNoise(
   rawName: string,
   removals: string[]
@@ -223,9 +227,12 @@ export function annotateNoise(
     for (const piece of removal.split(" · ")) {
       const needle = piece.trim();
       if (needle.length < 2) continue;
-      const index = rawName.toUpperCase().indexOf(needle.toUpperCase());
-      if (index === -1) continue;
-      spans.push({ start: index, end: index + needle.length });
+      // Searched case-insensitively against the original string rather than an
+      // upper-cased copy: upper-casing can change length (`ß` → `SS`), which
+      // shifts every later index and strikes through the wrong characters.
+      const match = new RegExp(escapeRegex(needle), "i").exec(rawName);
+      if (!match) continue;
+      spans.push({ start: match.index, end: match.index + match[0].length });
     }
   }
 

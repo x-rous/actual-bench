@@ -324,8 +324,10 @@ describe("validatePlan", () => {
       plan,
       context(a, b, payee("a2"), payee("b2"))
     );
+    // Quoted as the user typed it. Echoing the normalized key back — "OPTUS" —
+    // reads like the app renamed the payee behind their back.
     expect(
-      problems.some((p) => /would all end up named "OPTUS"/i.test(p.message))
+      problems.some((p) => p.message.includes('would all end up named "Optus"'))
     ).toBe(true);
   });
 

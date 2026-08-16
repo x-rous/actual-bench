@@ -273,6 +273,15 @@ describe("suppressions", () => {
     expect(applySuppressions([wider], [record()])).toHaveLength(1);
   });
 
+  it("does not suppress a cluster that merely reuses a normalized name", () => {
+    // `EMIRATES` and `Emirates` both key to EMIRATES, so this cluster's names
+    // are ["EMIRATES", "EMIRATES"]. Compared as sets that looked identical to a
+    // stored ["EMIRATES", "EMIRATES NBD"] and silently dropped a grouping the
+    // user never rejected — and case-only pairs are exactly what this finds.
+    const caseOnly = cluster([payee("p5", "EMIRATES"), payee("p6", "Emirates")]);
+    expect(suppressesCluster(record(), caseOnly)).toBe(false);
+  });
+
   it("does not suppress anything when the record has no matchable key", () => {
     expect(
       suppressesCluster(record({ payeeIds: [], normalizedNames: [] }), emirates)

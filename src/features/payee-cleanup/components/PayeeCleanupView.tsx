@@ -35,11 +35,13 @@ import { usePayeeCleanupPlan, type StageOutcome } from "../hooks/usePayeeCleanup
 import { buildPlan, planOperationCount } from "../lib/plan";
 
 /**
- * Payee Cleanup workspace — read-only (RD-078 Milestone 1).
+ * The Payee Cleanup workspace: scan, review, correct, accept, stage.
  *
- * This slice can find and explain variants; it cannot change anything. There is
- * deliberately no accept, merge or save control until the correction (041d) and
- * staging (041e) slices land, so there is no path from here to a write.
+ * Every write leaves through `stage(plan)` and lands in the shared staged store,
+ * so this screen never touches the budget directly — the Payees page's Save is
+ * still the only thing that writes. The scan itself is derived state: it re-runs
+ * from the candidates, the impact sources and the user's corrections, which is
+ * why both hooks feeding it memoize their results.
  */
 export function PayeeCleanupView() {
   const { partition: scanned, isLoading, error, refetch } =
@@ -139,33 +141,49 @@ export function PayeeCleanupView() {
       .filter((s) => s.correction.decision === "accepted")
       .map((s) => s.cluster.id);
 
-    void stage(plan).then((outcome) => {
-      setStageOutcome(outcome);
-      if (outcome.status !== "staged") return;
+    void stage(plan).then(
+      (outcome) => {
+        setStageOutcome(outcome);
+        if (outcome.status !== "staged") return;
 
-      // A confirmation is a moment, not a state: it says the click worked and
-      // then gets out of the way. The standing "staged and waiting" reminder in
-      // the strip is what persists.
-      toast.success(
-        `${outcome.operations} ${
-          outcome.operations === 1 ? "change" : "changes"
-        } staged — save on the Payees page to apply.`
-      );
+        // A confirmation is a moment, not a state: it says the click worked and
+        // then gets out of the way. The standing "staged and waiting" reminder
+        // in the strip is what persists.
+        toast.success(
+          `${outcome.operations} ${
+            outcome.operations === 1 ? "change" : "changes"
+          } staged — save on the Payees page to apply.`
+        );
 
-      // Clear only what was staged. Wiping every correction threw away renames,
-      // target choices and combined groups the user was still working on — and
-      // looked like the work had been lost.
-      setCorrections((c) => {
-        const next = { ...c };
-        for (const id of stagedClusterIds) delete next[id];
-        return next;
-      });
-    });
+        // Clear only what was staged. Wiping every correction threw away
+        // renames, target choices and combined groups the user was still
+        // working on — and looked like the work had been lost.
+        setCorrections((c) => {
+          const next = { ...c };
+          for (const id of stagedClusterIds) delete next[id];
+          return next;
+        });
+      },
+      // A rejected promise used to be dropped: the click looked like it worked
+      // while nothing was staged. The corrections are deliberately left intact
+      // so the user can simply try again.
+      (error: Error) =>
+        toast.error(
+          error.message || "Could not stage this cleanup. Nothing was changed."
+        )
+    );
   }
 
   const candidateById = useMemo(
     () => new Map(partition.eligible.map((c) => [c.id, c])),
     [partition.eligible]
+  );
+
+  // The tab pill counts what the tab would show, ignoring the search box: a
+  // count that fell as you typed would read like suggestions disappearing.
+  const visibleBandCount = useMemo(
+    () => result.suggestions.filter((s) => s.confidence.band !== "hidden").length,
+    [result.suggestions]
   );
 
   const visible = useMemo(() => {
@@ -267,7 +285,9 @@ export function PayeeCleanupView() {
         search={search}
         onSearchChange={setSearch}
         counts={{
-          suggestions: result.suggestions.length,
+          // The same set the tab renders. Counting every suggestion included
+          // the hidden band, so the pill could read 12 above a list of 8.
+          suggestions: visibleBandCount,
           unused: result.orphans.length,
           dismissed: suppressions.length,
         }}

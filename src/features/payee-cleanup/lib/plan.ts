@@ -298,17 +298,24 @@ export function validatePlan(
   // This is checked across the plan *and* against the payees already in the
   // budget, since renaming onto an existing name collides just as badly.
   const finalNames = new Map<string, string[]>();
+  // Keyed by the comparison form, but reported as the user typed it: telling
+  // someone their groups "would all end up named OPTUS PREPAID" when they typed
+  // "Optus PrePaid" reads like the app renamed it behind their back.
+  const displayNames = new Map<string, string>();
+
+  const recordFinalName = (finalName: string, payeeId: string) => {
+    const key = nameKey(finalName);
+    finalNames.set(key, [...(finalNames.get(key) ?? []), payeeId]);
+    if (!displayNames.has(key)) displayNames.set(key, finalName);
+  };
 
   for (const merge of plan.merges) {
     const rename = plan.renames.find((r) => r.payeeId === merge.targetId);
-    const finalName = rename ? rename.to : merge.targetName;
-    const key = nameKey(finalName);
-    finalNames.set(key, [...(finalNames.get(key) ?? []), merge.targetId]);
+    recordFinalName(rename ? rename.to : merge.targetName, merge.targetId);
   }
   for (const rename of plan.renames) {
     if (plan.merges.some((m) => m.targetId === rename.payeeId)) continue;
-    const key = nameKey(rename.to);
-    finalNames.set(key, [...(finalNames.get(key) ?? []), rename.payeeId]);
+    recordFinalName(rename.to, rename.payeeId);
   }
 
   const survivingIds = new Set([
@@ -320,7 +327,7 @@ export function validatePlan(
   for (const [key, payeeIds] of finalNames) {
     if (payeeIds.length > 1) {
       block(
-        `${payeeIds.length} groups would all end up named "${key}" — that leaves ${payeeIds.length} payees with the same name. Give them different names, or put them in one group.`,
+        `${payeeIds.length} groups would all end up named "${displayNames.get(key) ?? key}" — that leaves ${payeeIds.length} payees with the same name. Give them different names, or put them in one group.`,
         payeeIds
       );
       continue;

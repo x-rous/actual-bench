@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Undo2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { PayeeCleanupSuppressionRecord } from "@/lib/app-db/types";
@@ -16,6 +17,11 @@ type Props = {
  * every future scan and there is no way to find out why.
  */
 export function SuppressionList({ suppressions, onUndo, onClearAll }: Props) {
+  // Two-step rather than one click. Undoing a single row is reversible; clearing
+  // the list discards every decision the user has made about this budget and
+  // cannot be recovered from anywhere.
+  const [confirming, setConfirming] = useState(false);
+
   if (suppressions.length === 0) {
     return (
       <p className="rounded-md border border-dashed border-border/70 p-8 text-center text-sm text-muted-foreground">
@@ -30,9 +36,30 @@ export function SuppressionList({ suppressions, onUndo, onClearAll }: Props) {
         <p className="text-xs text-muted-foreground">
           These are hidden from your suggestions. Undo one to see it again.
         </p>
-        <Button size="sm" variant="ghost" onClick={onClearAll}>
-          Clear all
-        </Button>
+        {confirming ? (
+          <span className="flex shrink-0 items-center gap-1">
+            <span className="text-xs text-muted-foreground">
+              Clear all {suppressions.length}?
+            </span>
+            <Button
+              size="sm"
+              variant="destructive"
+              onClick={() => {
+                setConfirming(false);
+                onClearAll();
+              }}
+            >
+              Clear all
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => setConfirming(false)}>
+              Cancel
+            </Button>
+          </span>
+        ) : (
+          <Button size="sm" variant="ghost" onClick={() => setConfirming(true)}>
+            Clear all
+          </Button>
+        )}
       </div>
       <ul className="divide-y divide-border/40 rounded-md border border-border/70">
         {suppressions.map((suppression) => (

@@ -32,10 +32,25 @@ export function suppressionKey(name: string): string {
     .join(" ");
 }
 
-function sameSet(a: string[], b: string[]): boolean {
+/**
+ * Multiset equality, not set equality.
+ *
+ * `suppressionKey` folds case and punctuation, so one cluster can legitimately
+ * hold two members with the same key — `EMIRATES` and `Emirates` are exactly the
+ * kind of pair this feature exists to find. Comparing as sets made
+ * `["EMIRATES", "EMIRATES"]` equal to `["EMIRATES", "EMIRATES NBD"]` and
+ * suppressed a cluster the user had never rejected.
+ */
+function sameMultiset(a: string[], b: string[]): boolean {
   if (a.length !== b.length) return false;
-  const left = new Set(a);
-  return b.every((value) => left.has(value));
+  const counts = new Map<string, number>();
+  for (const value of a) counts.set(value, (counts.get(value) ?? 0) + 1);
+  for (const value of b) {
+    const remaining = counts.get(value);
+    if (!remaining) return false;
+    counts.set(value, remaining - 1);
+  }
+  return true;
 }
 
 /**
@@ -55,7 +70,7 @@ export function suppressesCluster(
   const clusterIds = cluster.members.map((m) => m.id);
   if (
     suppression.payeeIds.length > 0 &&
-    sameSet(suppression.payeeIds, clusterIds)
+    sameMultiset(suppression.payeeIds, clusterIds)
   ) {
     return true;
   }
@@ -65,7 +80,7 @@ export function suppressesCluster(
   const clusterNames = cluster.members.map((m) => suppressionKey(m.name));
   return (
     suppression.normalizedNames.length > 0 &&
-    sameSet(suppression.normalizedNames, clusterNames)
+    sameMultiset(suppression.normalizedNames, clusterNames)
   );
 }
 
@@ -96,7 +111,7 @@ export function applyAffixSuppressions(
   if (rejected.length === 0) return affixes;
 
   return affixes.filter(
-    (affix) => !rejected.some((s) => sameSet(s.normalizedNames, affix.tokens))
+    (affix) => !rejected.some((s) => sameMultiset(s.normalizedNames, affix.tokens))
   );
 }
 

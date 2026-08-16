@@ -367,6 +367,16 @@ describe("annotateNoise", () => {
     ]);
   });
 
+  it("keeps the offsets aligned when upper-casing would change length", () => {
+    // `ß` upper-cases to `SS`, so searching an upper-cased copy and slicing the
+    // original shifted every later index and struck through the wrong letters.
+    const parts = annotateNoise("STRAßE 12 Card xx4534", ["Card xx4534"]);
+    expect(parts.map((p) => p.text).join("")).toBe("STRAßE 12 Card xx4534");
+    expect(parts.filter((p) => p.noise).map((p) => p.text)).toEqual([
+      "Card xx4534",
+    ]);
+  });
+
   it("never loses or duplicates a character", () => {
     const raw = "TARGET 5121 PRESTON AU AUS Card xx9166 Value Date: 07/01/2025";
     const parts = annotateNoise(raw, ["AU AUS", "Card xx9166", "Value Date: 07/01/2025"]);

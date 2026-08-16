@@ -37,6 +37,25 @@ function readPackageSource(pkg: string, relativePath: string): string {
   return readFileSync(path, "utf8");
 }
 
+/**
+ * Slices between two markers, failing loudly when either is missing.
+ *
+ * These tests exist to pin upstream behaviour, and every assertion in the sliced
+ * region is a `not.toContain`. A renamed marker makes `indexOf` return -1, the
+ * slice comes back empty or wrong, and the negative assertions all pass for the
+ * wrong reason — the exact failure mode pinning tests are supposed to prevent.
+ */
+function sliceBetween(source: string, from: string, to: string): string {
+  const start = source.indexOf(from);
+  const end = source.indexOf(to);
+  if (start === -1) throw new Error(`Upstream marker not found: ${from}`);
+  if (end === -1) throw new Error(`Upstream marker not found: ${to}`);
+  if (end <= start) {
+    throw new Error(`Upstream markers out of order: ${from} / ${to}`);
+  }
+  return source.slice(start, end);
+}
+
 describe("Actual native payee semantics (pinned)", () => {
   describe("the public payee model", () => {
     const apiModels = readPackageSource(
@@ -57,9 +76,10 @@ describe("Actual native payee semantics (pinned)", () => {
       // Bench's `Payee.categoryId` and `ApiPayee.category` are vestigial (F-095):
       // actual-http-api still declares `category` in its schema, but upstream
       // never populates it.
-      const toExternal = apiModels.slice(
-        apiModels.indexOf("export const payeeModel"),
-        apiModels.indexOf("export type APITagEntity")
+      const toExternal = sliceBetween(
+        apiModels,
+        "export const payeeModel",
+        "export type APITagEntity"
       );
       expect(toExternal).toContain("id: payee.id");
       expect(toExternal).toContain("name: payee.name");
@@ -87,10 +107,7 @@ describe("Actual native payee semantics (pinned)", () => {
       "@actual-app/core",
       "src/server/aql/schema/index.ts"
     );
-    const payeesTable = schema.slice(
-      schema.indexOf("  payees: {"),
-      schema.indexOf("  accounts: {")
-    );
+    const payeesTable = sliceBetween(schema, "  payees: {", "  accounts: {");
 
     it("exposes the fields cleanup reads over ActualQL", () => {
       // This is what makes `getPayeeCleanupMetadata` work in BOTH transports.
@@ -109,9 +126,10 @@ describe("Actual native payee semantics (pinned)", () => {
 
   describe("native merge", () => {
     const db = readPackageSource("@actual-app/core", "src/server/db/index.ts");
-    const mergePayees = db.slice(
-      db.indexOf("export async function mergePayees"),
-      db.indexOf("export function getPayees()")
+    const mergePayees = sliceBetween(
+      db,
+      "export async function mergePayees",
+      "export function getPayees()"
     );
 
     it("no-ops when the target is a transfer payee", () => {
@@ -162,9 +180,10 @@ describe("Actual native payee semantics (pinned)", () => {
 
   describe("the native orphan predicate", () => {
     const db = readPackageSource("@actual-app/core", "src/server/db/index.ts");
-    const query = db.slice(
-      db.indexOf("const orphanedPayeesQuery"),
-      db.indexOf("export function syncGetOrphanedPayees")
+    const query = sliceBetween(
+      db,
+      "const orphanedPayeesQuery",
+      "export function syncGetOrphanedPayees"
     );
 
     it("excludes tombstoned and transfer payees", () => {

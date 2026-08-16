@@ -78,7 +78,11 @@ describe("structural clustering", () => {
       "SOME VERY LONG MERCHANT NAME THAT KEEPS GOING AND GOING BRANCH 0183",
       "SOME VERY LONG MERCHANT NAME THAT KEEPS GOING AND GOING BRANCH 0291",
     ]);
-    for (const evidence of junk[0]?.evidence ?? []) {
+    // Asserted before the loop: if the junk names failed to cluster at all, the
+    // loop body would never run and this test would pass having checked nothing.
+    expect(junk).toHaveLength(1);
+    expect(junk[0].evidence.length).toBeGreaterThan(0);
+    for (const evidence of junk[0].evidence) {
       expect(evidence.pattern).toBeUndefined();
     }
   });

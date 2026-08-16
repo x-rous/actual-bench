@@ -85,6 +85,23 @@ describe("the same mechanism on a bank it has never seen", () => {
   });
 });
 
+describe("non-Latin merchant names", () => {
+  it("learns a wrapper around remainders written in another script", () => {
+    // The numeric-remainder guard used to ask whether a remainder held an ASCII
+    // letter, so every Arabic merchant name counted as "just a branch number"
+    // and the shared wrapper was thrown away.
+    const names = [
+      "POS PURCHASE \u0643\u0627\u0631\u0641\u0648\u0631",
+      "POS PURCHASE \u0644\u0648\u0644\u0648",
+      "POS PURCHASE \u0633\u0628\u064a\u0646\u064a\u0632",
+      "POS PURCHASE \u0627\u0644\u0645\u0632\u0631\u0639\u0629",
+      "POS PURCHASE \u0646\u0648\u0646",
+      "POS PURCHASE \u0637\u0644\u0628\u0627\u062a",
+    ];
+    expect(phrases(names, "prefix")).toContain("POS PURCHASE");
+  });
+});
+
 describe("what it must refuse to learn", () => {
   it("does not treat a repeated merchant name as boilerplate", () => {
     // Three payees opening with WOOLWORTHS are the same shop, not a wrapper.

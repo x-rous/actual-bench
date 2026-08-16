@@ -28,7 +28,7 @@ function toText(value: unknown): string | null {
 async function readField(
   connection: ConnectionInstance,
   field: SourceField
-): Promise<ImportedTextRow[]> {
+): Promise<{ rows: ImportedTextRow[]; hitLimit: boolean }> {
   const response = await runQuery<{ data: QueryRow[] }>(connection, {
     ActualQLquery: {
       table: "transactions",
@@ -44,8 +44,14 @@ async function readField(
     },
   });
 
+  const returned = response.data ?? [];
+  // Recorded before filtering. Blank and unusable rows are dropped below, so a
+  // limit-sized response containing one of them would otherwise come back
+  // *under* the limit and be reported as a complete read.
+  const hitLimit = returned.length >= ROW_LIMIT;
+
   const rows: ImportedTextRow[] = [];
-  for (const row of response.data ?? []) {
+  for (const row of returned) {
     const text = toText(row[field]);
     if (!text) continue;
     rows.push({
@@ -60,7 +66,7 @@ async function readField(
         typeof row.transactionCount === "number" ? row.transactionCount : 0,
     });
   }
-  return rows;
+  return { rows, hitLimit };
 }
 
 /**
@@ -90,8 +96,7 @@ export async function getImportedTextIndex(
   const notes = await readField(connection, "notes");
 
   return {
-    rows: [...importedPayee, ...notes],
-    truncated:
-      importedPayee.length >= ROW_LIMIT || notes.length >= ROW_LIMIT,
+    rows: [...importedPayee.rows, ...notes.rows],
+    truncated: importedPayee.hitLimit || notes.hitLimit,
   };
 }
