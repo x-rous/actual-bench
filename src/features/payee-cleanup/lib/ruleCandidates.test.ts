@@ -5,6 +5,7 @@ import {
   buildNormalizationRule,
   classifyRelatedRules,
   exactNameCoverage,
+  normalizePatternText,
   rankCandidates,
   scoreCandidate,
   type ImportedTextRow,
@@ -257,6 +258,25 @@ describe("classifyRelatedRules", () => {
     expect(related.interaction).toBe("compatible");
   });
 
+  it("recognises a oneOf rule that already resolves this payee text", () => {
+    // An `imported_payee oneOf [...]` rule carries an array. Reading only string
+    // values classified it as a conflict and proposed a second rule for a
+    // merchant already handled — the rule sprawl this ordering exists to stop.
+    const existing = rule("r4", {
+      conditions: [
+        {
+          field: "imported_payee",
+          op: "oneOf",
+          value: ["WOOLWORTHS 0183", "WOOLWORTHS 0291"],
+        },
+      ],
+      actions: [{ field: "payee", op: "set", value: "p1" }],
+    });
+    const [related] = classifyRelatedRules([existing], new Set(["p1"]), "WOOLWORTHS");
+
+    expect(related.interaction).toBe("already-resolves");
+  });
+
   it("ignores rules with nothing to do with this cluster", () => {
     const unrelated = rule("r3", {
       conditions: [{ field: "imported_payee", op: "contains", value: "TESCO" }],
@@ -419,6 +439,17 @@ describe("analyzeFutureResolution", () => {
     });
 
     expect(result.recommended?.candidate.field).toBe("notes");
+  });
+});
+
+describe("pattern text normalization", () => {
+  it("collapses repeated whitespace in text the user typed", () => {
+    // Splitting raw text on a single space produced an empty segment, so the
+    // pattern gained two adjacent `[^A-Za-z0-9]*` quantifiers — ambiguous, and
+    // quadratic to backtrack over a long run of separators.
+    expect(normalizePatternText("HUNGRY  JACKS")).toBe("HUNGRY JACKS");
+    expect(buildCandidates(normalizePatternText("HUNGRY  JACKS"), "imported_payee")[0]
+      .value).toBe("^HUNGRY[^A-Za-z0-9]*JACKS\\b");
   });
 });
 

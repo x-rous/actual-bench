@@ -163,7 +163,12 @@ export type ValidationContext = {
   byId: Map<string, PayeeCleanupCandidate>;
 };
 
-/** Names compare case- and punctuation-insensitively, as Actual matches them. */
+/**
+ * The comparison form for a final payee name: case-folded, whitespace
+ * collapsed. Punctuation is deliberately significant — `Optus` and `Optus.` are
+ * two different payees to Actual, so treating them as a collision would block a
+ * plan that is in fact fine.
+ */
 function nameKey(value: string): string {
   return value.trim().toUpperCase().replace(/\s+/g, " ");
 }

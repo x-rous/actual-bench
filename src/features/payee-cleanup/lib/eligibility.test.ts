@@ -55,9 +55,14 @@ describe("isCleanupEligible", () => {
   });
 
   it("treats an empty transfer account id as no transfer account", () => {
-    // The metadata reader normalizes "" to null; this guards the boundary
-    // against a raw row slipping through with an empty string.
-    expect(isCleanupEligible(metadata({ transferAccountId: null }))).toBe(true);
+    // The reader normalizes "" to null (payeeMetadata.test.ts covers that), but
+    // this predicate is also reachable from a raw row, so the empty string is
+    // exercised here rather than assumed away.
+    expect(
+      isCleanupEligible(
+        metadata({ transferAccountId: "" as unknown as string | null })
+      )
+    ).toBe(true);
   });
 });
 

@@ -59,6 +59,14 @@ describe("looksHumanReadable", () => {
     expect(looksHumanReadable(deriveForms(name))).toBe(expected);
   });
 
+  it("accepts a multi-word name in a script with no case distinction", () => {
+    // `toUpperCase()` returns these unchanged, so the all-caps test was always
+    // true and every such name lost the merge-target bonus and the
+    // canonical-name preference.
+    expect(looksHumanReadable(deriveForms("\u6771\u4eac \u30b9\u30fc\u30d1\u30fc"))).toBe(true);
+    expect(looksHumanReadable(deriveForms("\u0645\u0637\u0639\u0645 \u0627\u0644\u0628\u064a\u062a"))).toBe(true);
+  });
+
   it("rejects a date even though its digits are punctuation-delimited", () => {
     // An earlier version required whitespace around a digit run, so a name
     // ending `Value Date: 10/11/2025` read as clean and was suggested verbatim
@@ -124,6 +132,31 @@ describe("detectAll", () => {
       (h) => h.detectorId === "full-reduction" && h.kind === "structural"
     );
     expect(structural.length).toBeGreaterThan(0);
+  });
+
+  it("does not emit a reduction hit whose stem is below the length floor", () => {
+    // The resolver groups on the stem alone, so a one-character stem would
+    // collect every unrelated payee that reduced to the same letter.
+    const [detected] = detectAll([payee("A-- 1234")]);
+    for (const hit of detected.hits.filter((h) => h.detectorId === "full-reduction")) {
+      expect(hit.stem.length).toBeGreaterThanOrEqual(3);
+    }
+  });
+
+  it("never emits a structural hit with nothing structural to report", () => {
+    // When every step was interpretive the structural hit was still built, with
+    // an empty label ("Removed ") and nothing recorded as removed.
+    for (const [detected] of [
+      detectAll([payee("Acme Pty Ltd")]),
+      detectAll([payee("Acme Pty Ltd 0559")]),
+    ].map((d) => d)) {
+      for (const hit of detected.hits.filter(
+        (h) => h.detectorId === "full-reduction" && h.kind === "structural"
+      )) {
+        expect(hit.label).not.toBe("Removed ");
+        expect(hit.removed).not.toBe("");
+      }
+    }
   });
 
   it("carries the reduction result for later slices", () => {

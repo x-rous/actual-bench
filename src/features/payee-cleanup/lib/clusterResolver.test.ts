@@ -154,8 +154,12 @@ describe("fuzzy clustering is never transitive", () => {
       true
     );
 
-    for (const c of clusters) {
-      if (c.fuzzyOnly) expect(c.members).toHaveLength(2);
+    // Asserted up front: with no fuzzy cluster at all, the loop and the size
+    // bound below both pass while the behaviour they guard has disappeared.
+    const fuzzy = clusters.filter((c) => c.fuzzyOnly);
+    expect(fuzzy).toHaveLength(1);
+    for (const c of fuzzy) {
+      expect(c.members).toHaveLength(2);
     }
     const clusteredIds = clusters.flatMap((c) => c.members.map((m) => m.id));
     expect(new Set(clusteredIds).size).toBeLessThanOrEqual(2);
@@ -177,6 +181,9 @@ describe("fuzzy clustering is never transitive", () => {
       true
     );
 
+    // Two structural clusters, TESCO and TESC0, and neither absorbs the other.
+    // Without this the loop body never runs if clustering stops entirely.
+    expect(clusters).toHaveLength(2);
     for (const c of clusters) {
       const stems = new Set(
         c.members.map((m) => m.name.replace(/\s*\d+$/, ""))
@@ -192,8 +199,11 @@ describe("fuzzy clustering is never transitive", () => {
       true
     );
 
+    // `expect(undefined).not.toContain(...)` passes, so the structural cluster
+    // has to be proven to exist before its membership means anything.
     const structural = clusters.find((c) => !c.fuzzyOnly);
-    expect(structural?.members.map((m) => m.name)).not.toContain("WOOLWORTH");
+    expect(structural).toBeDefined();
+    expect(structural!.members.map((m) => m.name)).not.toContain("WOOLWORTH");
   });
 
   it("marks fuzzy-only clusters so scoring can treat them as weak", () => {

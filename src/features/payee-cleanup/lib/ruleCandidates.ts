@@ -267,12 +267,18 @@ export function classifyRelatedRules(
     // proposed rule even when it names no payee in the cluster.
     const matchesStem = rule.conditions.some((c) => {
       if (c.field !== "imported_payee" && c.field !== "notes") return false;
-      return (
-        typeof c.value === "string" &&
-        stemUpper.length > 0 &&
-        (c.value.toUpperCase().includes(stemUpper) ||
-          stemUpper.includes(c.value.toUpperCase()))
-      );
+      if (stemUpper.length === 0) return false;
+      // Arrays too: an `imported_payee oneOf [...]` rule already resolves this
+      // merchant. Reading only string values classified it as a conflict and
+      // proposed a second rule for something already handled — the rule sprawl
+      // this decision order exists to prevent. `referencesCluster` above
+      // already normalizes arrays; these two agreed on nothing else.
+      const values = Array.isArray(c.value) ? c.value : [c.value];
+      return values.some((value) => {
+        if (typeof value !== "string") return false;
+        const upper = value.toUpperCase();
+        return upper.includes(stemUpper) || stemUpper.includes(upper);
+      });
     });
 
     if (!referencesCluster && !matchesStem) continue;
@@ -330,14 +336,26 @@ export type FutureResolution = {
  * offer a rule catching `HUNGRY JACKS` — the narrower stem would miss every
  * future import from a different suburb.
  */
+/**
+ * The comparison form for text a pattern is built from.
+ *
+ * Shared with the override path on purpose. Passing the user's raw text through
+ * meant `HUNGRY  JACKS` split on a single space into an empty segment, so the
+ * pattern gained two adjacent `[^A-Za-z0-9]*` quantifiers — ambiguous to match,
+ * quadratic to backtrack over a long run of separators — and the double space
+ * leaked into the description and the editor.
+ */
+export function normalizePatternText(value: string): string {
+  return value
+    .trim()
+    .toUpperCase()
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 export function candidateStems(stem: string, finalName: string): string[] {
-  const normalize = (value: string) =>
-    value
-      .trim()
-      .toUpperCase()
-      .replace(/[^\p{L}\p{N}]+/gu, " ")
-      .replace(/\s+/g, " ")
-      .trim();
+  const normalize = normalizePatternText;
 
   return [...new Set([normalize(stem), normalize(finalName)])].filter(
     (value) => value.length >= 3
@@ -361,7 +379,7 @@ export function analyzeFutureResolution(input: {
   const relatedRules = classifyRelatedRules(input.rules, clusterPayeeIds, input.stem);
 
   const stems = input.override
-    ? [input.override.text]
+    ? [normalizePatternText(input.override.text)].filter(Boolean)
     : candidateStems(input.stem, input.finalName);
   const fields: SourceField[] = input.override
     ? [input.override.field]

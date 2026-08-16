@@ -37,7 +37,12 @@ export function FutureRulePanel({
 }: Props) {
   const { recommended, skipReason, exactName, relatedRules, candidates } = resolution;
   const [draft, setDraft] = useState<string | null>(null);
-  const field: SourceField = recommended?.candidate.field ?? "imported_payee";
+  // Edit state, not a view of the detected field: a field whose pattern the
+  // backtest cannot recommend produced no candidate, so the select snapped back
+  // to `imported_payee` and the next blur committed that over the user's choice.
+  const [fieldOverride, setFieldOverride] = useState<SourceField | null>(null);
+  const field: SourceField =
+    fieldOverride ?? recommended?.candidate.field ?? "imported_payee";
 
   return (
     <section className="mt-3 border-t border-border/60 pt-3 text-xs">
@@ -99,16 +104,25 @@ export function FutureRulePanel({
           ) : null}
 
           <div className="ml-6 space-y-1">
-            <label className="flex flex-wrap items-center gap-2">
+            {/* A group, not a label: one <label> can only name one control, and
+                this row holds a select and an input. Both carry their own
+                aria-label. */}
+            <div
+              role="group"
+              aria-label="Rule pattern"
+              className="flex flex-wrap items-center gap-2"
+            >
               <span className="text-muted-foreground">Match on</span>
               <select
                 value={field}
-                onChange={(e) =>
+                onChange={(e) => {
+                  const next = e.target.value as SourceField;
+                  setFieldOverride(next);
                   onPatternChange({
-                    field: e.target.value as SourceField,
+                    field: next,
                     text: draft ?? resolution.matchText,
-                  })
-                }
+                  });
+                }}
                 className="h-7 rounded-md border border-border bg-background px-1 text-xs"
                 aria-label="Which field the rule matches on"
               >
@@ -129,7 +143,7 @@ export function FutureRulePanel({
                 className="h-7 min-w-[12rem] rounded-md border border-border bg-background px-2 text-xs"
                 aria-label="Text the rule should match"
               />
-            </label>
+            </div>
 
             <code className="inline-block rounded bg-muted px-1 py-0.5 font-mono text-[11px] break-all">
               {recommended.candidate.field} {recommended.candidate.op}{" "}

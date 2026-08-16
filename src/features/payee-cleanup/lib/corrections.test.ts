@@ -317,6 +317,41 @@ describe("suppressions", () => {
     expect(applyAffixSuppressions([affix], [suppression])).toEqual([]);
   });
 
+  it("does not let a rejected prefix suppress the reversed or opposite affix", () => {
+    // An affix is an ordered sequence at one end of a name. Compared as an
+    // unordered bag, rejecting the prefix ["BANK","TRANSFER"] also silenced a
+    // ["TRANSFER","BANK"] affix and the matching suffix — suggestions lost that
+    // the user never rejected.
+    const rejected = record({
+      ...buildAffixSuppression("b1", {
+        kind: "prefix",
+        tokens: ["BANK", "TRANSFER"],
+        payeeCount: 20,
+        distinctRemainders: 18,
+      }),
+      id: "s4",
+      createdAt: "2026-08-16T00:00:00.000Z",
+    });
+
+    const reversed = {
+      kind: "prefix" as const,
+      tokens: ["TRANSFER", "BANK"],
+      payeeCount: 20,
+      distinctRemainders: 18,
+    };
+    const sameTokensOtherEnd = {
+      kind: "suffix" as const,
+      tokens: ["BANK", "TRANSFER"],
+      payeeCount: 20,
+      distinctRemainders: 18,
+    };
+
+    expect(applyAffixSuppressions([reversed], [rejected])).toEqual([reversed]);
+    expect(applyAffixSuppressions([sameTokensOtherEnd], [rejected])).toEqual([
+      sameTokensOtherEnd,
+    ]);
+  });
+
   it("leaves other affixes alone", () => {
     const kept = {
       kind: "suffix" as const,

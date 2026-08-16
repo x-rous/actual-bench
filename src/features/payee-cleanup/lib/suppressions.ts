@@ -110,8 +110,21 @@ export function applyAffixSuppressions(
   const rejected = suppressions.filter((s) => s.kind === "rejected-affix");
   if (rejected.length === 0) return affixes;
 
+  // Ordered, and matched on kind. An affix is a token *sequence* at one end of a
+  // name, so an unordered comparison let a rejected prefix ["BANK","TRANSFER"]
+  // suppress a learned ["TRANSFER","BANK"], and rejecting a prefix silenced the
+  // matching suffix — a suggestion lost that the user never rejected.
+  const affixDetectorId = (affix: CorpusAffix) =>
+    affix.kind === "prefix" ? "corpus-prefix" : "corpus-suffix";
+
   return affixes.filter(
-    (affix) => !rejected.some((s) => sameMultiset(s.normalizedNames, affix.tokens))
+    (affix) =>
+      !rejected.some(
+        (s) =>
+          s.detectorIds.includes(affixDetectorId(affix)) &&
+          s.normalizedNames.length === affix.tokens.length &&
+          s.normalizedNames.every((token, i) => token === affix.tokens[i])
+      )
   );
 }
 

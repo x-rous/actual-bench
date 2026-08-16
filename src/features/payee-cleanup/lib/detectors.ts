@@ -156,6 +156,11 @@ export type DetectedPayee = {
  */
 function reductionHit(reduction: ReductionResult): DetectorHit | null {
   if (reduction.steps.length === 0) return null;
+  // The individual reducers guard their intermediate text, but the composed
+  // stem can still come out below the floor — `A-- 1234` reduces to `A`. The
+  // resolver groups on the stem alone, so a one-character stem would collect
+  // every unrelated payee that happened to reduce to the same letter.
+  if (reduction.stem.length < MIN_STEM_LENGTH) return null;
 
   const contextual = reduction.steps.some((s) => s.contextual);
   const labels = [...new Set(reduction.steps.map((s) => s.label))];
@@ -187,23 +192,24 @@ export function detectAll(
     // The structural-only stem, when the full reduction needed an interpretive
     // step to get further. Two payees that already match here differ only in
     // noise we are certain about, so the cluster earns structural confidence.
+    // Only when a structural step actually fired. If every step was
+    // interpretive there is nothing structural to report, and the hit was being
+    // built with an empty label ("Removed ") and nothing removed.
+    const structuralSteps = reduction.steps.filter((s) => !s.contextual);
     if (
+      structuralSteps.length > 0 &&
+      reduction.structuralStem.length >= MIN_STEM_LENGTH &&
       reduction.structuralStem !== reduction.stem &&
       !hits.some((h) => h.stem === reduction.structuralStem)
     ) {
       hits.push({
         detectorId: "full-reduction",
         kind: "structural",
-        label: `Removed ${[
-          ...new Set(reduction.steps.filter((s) => !s.contextual).map((s) => s.label)),
-        ]
+        label: `Removed ${[...new Set(structuralSteps.map((s) => s.label))]
           .join(", ")
           .toLowerCase()}`,
         stem: reduction.structuralStem,
-        removed: reduction.steps
-          .filter((s) => !s.contextual)
-          .map((s) => s.removed)
-          .join(" · "),
+        removed: structuralSteps.map((s) => s.removed).join(" · "),
       });
     }
 

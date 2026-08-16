@@ -61,7 +61,15 @@ export function looksHumanReadable(forms: PayeeDerivedForms): boolean {
 
   // ALL CAPS across multiple tokens reads as bank text, not a typed name.
   // A single all-caps token can be a legitimate brand (IKEA, HSBC).
-  if (forms.tokenized.length > 1 && name === name.toUpperCase()) return false;
+  //
+  // The test only means anything for a script that *has* case. Japanese, Arabic,
+  // Chinese, Hebrew and Thai all return themselves from `toUpperCase()`, so this
+  // rejected every multi-word name in those scripts — costing them the merge
+  // target bonus and the canonical-name preference for no reason.
+  const hasCase = name !== name.toLowerCase();
+  if (hasCase && forms.tokenized.length > 1 && name === name.toUpperCase()) {
+    return false;
+  }
 
   // Any run of 3+ digits is a store, terminal, reference or date number.
   // Originally this required whitespace on both sides, which let

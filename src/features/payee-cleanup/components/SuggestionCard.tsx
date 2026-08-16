@@ -79,6 +79,14 @@ export function SuggestionCard({
 }: Props) {
   const [showReasoning, setShowReasoning] = useState(false);
   const [patternDraft, setPatternDraft] = useState<string | null>(null);
+  // The chosen field is edit state, not a view of the detected one. Deriving it
+  // from the recommended candidate meant a field the backtest could not
+  // recommend — because the new pattern matched nothing — snapped back to
+  // `imported_payee`, and the next blur committed that instead of the user's
+  // choice.
+  const [fieldOverride, setFieldOverride] = useState<
+    "imported_payee" | "notes" | null
+  >(null);
   // Fifty cards each rendering 200 <option> elements is 10,000 nodes nobody is
   // looking at, so the list is built when the picker is first focused.
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -121,6 +129,12 @@ export function SuggestionCard({
           : payee.name,
     }));
   }, [addablePayees]);
+
+  const ruleField =
+    fieldOverride ??
+    suggestion.correction.rulePattern?.field ??
+    suggestion.futureResolution?.recommended?.candidate.field ??
+    "imported_payee";
 
   const countFor = (id: string) =>
     impact?.members.find((m) => m.payeeId === id)?.transactionCount;
@@ -381,13 +395,15 @@ export function SuggestionCard({
 
               <div className="mt-1.5 flex items-center gap-1.5">
                 <select
-                  value={future.recommended.candidate.field}
-                  onChange={(e) =>
+                  value={ruleField}
+                  onChange={(e) => {
+                    const field = e.target.value as "imported_payee" | "notes";
+                    setFieldOverride(field);
                     onRulePatternChange({
-                      field: e.target.value as "imported_payee" | "notes",
+                      field,
                       text: patternDraft ?? future.matchText,
-                    })
-                  }
+                    });
+                  }}
                   aria-label="Which field the rule matches on"
                   className="h-7 rounded-md border border-border bg-background px-1"
                 >
@@ -402,10 +418,7 @@ export function SuggestionCard({
                     if (patternDraft !== null && patternDraft !== future.matchText) {
                       onRulePatternChange(
                         patternDraft.trim()
-                          ? {
-                              field: future.recommended!.candidate.field,
-                              text: patternDraft,
-                            }
+                          ? { field: ruleField, text: patternDraft }
                           : undefined
                       );
                     }

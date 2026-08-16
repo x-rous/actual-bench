@@ -30,7 +30,11 @@ export type IneligibleReason = "transfer-payee" | "tombstoned";
 export function isCleanupEligible(
   payee: Pick<PayeeCleanupMetadata, "tombstone" | "transferAccountId">
 ): boolean {
-  return payee.transferAccountId == null && !payee.tombstone;
+  // Falsy rather than nullish. This predicate is documented as safe to run on a
+  // raw metadata row, and a raw row can carry `transfer_acct: ""` — never a real
+  // account id, but enough to hide an ordinary payee from cleanup with no
+  // explanation anywhere in the UI.
+  return !payee.transferAccountId && !payee.tombstone;
 }
 
 /**
@@ -42,7 +46,7 @@ export function isCleanupEligible(
 export function ineligibleReason(
   payee: Pick<PayeeCleanupMetadata, "tombstone" | "transferAccountId">
 ): IneligibleReason | null {
-  if (payee.transferAccountId != null) return "transfer-payee";
+  if (payee.transferAccountId) return "transfer-payee";
   if (payee.tombstone) return "tombstoned";
   return null;
 }
