@@ -277,6 +277,21 @@ describe("classifyRelatedRules", () => {
     expect(related.interaction).toBe("already-resolves");
   });
 
+  it("treats a matching rule that assigns a different payee as a conflict", () => {
+    // Text that overlaps this merchant but resolves to someone else does not
+    // cover it. Calling that "already resolves" set skipReason to
+    // existing-rule-covers-it and dropped the rule cleanup actually needed.
+    const existing = rule("r5", {
+      conditions: [
+        { field: "imported_payee", op: "oneOf", value: ["WOOLWORTHS 0183"] },
+      ],
+      actions: [{ field: "payee", op: "set", value: "someone-else" }],
+    });
+    const [related] = classifyRelatedRules([existing], new Set(["p1"]), "WOOLWORTHS");
+
+    expect(related.interaction).toBe("potential-conflict");
+  });
+
   it("ignores rules with nothing to do with this cluster", () => {
     const unrelated = rule("r3", {
       conditions: [{ field: "imported_payee", op: "contains", value: "TESCO" }],

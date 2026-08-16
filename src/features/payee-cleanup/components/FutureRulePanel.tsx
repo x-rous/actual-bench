@@ -70,8 +70,13 @@ export function FutureRulePanel({
         <p className="mt-1 text-muted-foreground">{SKIP_COPY[skipReason]}</p>
       ) : null}
 
-      {recommended ? (
+      {/* The editor survives an override that finds nothing. Hiding it whenever
+          there is no recommendation trapped the user: choosing a field with no
+          historical matches removed the very controls needed to choose another
+          one, or to type text that would match. */}
+      {recommended || fieldOverride !== null ? (
         <div className="mt-2 space-y-1">
+          {recommended ? (
           <label className="flex items-start gap-2">
             <Checkbox
               checked={enabled}
@@ -94,7 +99,14 @@ export function FutureRulePanel({
             </span>
           </label>
 
-          {recommended.unexpectedMatches > 0 ? (
+          ) : (
+            <p className="text-amber-700 dark:text-amber-400">
+              No pattern on this field matches your import history. Change the
+              field or the text below, or leave the rule off.
+            </p>
+          )}
+
+          {recommended && recommended.unexpectedMatches > 0 ? (
             <p className="ml-6 text-amber-700 dark:text-amber-400">
               Not selected for you, because it would also catch{" "}
               {recommended.unexpectedExamples
@@ -145,12 +157,14 @@ export function FutureRulePanel({
               />
             </div>
 
-            <code className="inline-block rounded bg-muted px-1 py-0.5 font-mono text-[11px] break-all">
-              {recommended.candidate.field} {recommended.candidate.op}{" "}
-              {recommended.candidate.value}
-            </code>
+            {recommended ? (
+              <code className="inline-block rounded bg-muted px-1 py-0.5 font-mono text-[11px] break-all">
+                {recommended.candidate.field} {recommended.candidate.op}{" "}
+                {recommended.candidate.value}
+              </code>
+            ) : null}
 
-            {candidates.length > 1 ? (
+            {recommended && candidates.length > 1 ? (
               <p className="text-muted-foreground">
                 {candidates.length - 1} other pattern
                 {candidates.length === 2 ? "" : "s"} considered

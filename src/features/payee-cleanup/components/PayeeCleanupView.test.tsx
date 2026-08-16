@@ -478,6 +478,45 @@ describe("PayeeCleanupView", () => {
     expect(screen.getByText(/\^HUNGRY/)).toBeInTheDocument();
   });
 
+  it("keeps the pattern editor reachable after choosing a field with no matches", () => {
+    // Selecting a field the history cannot match leaves no recommendation. If
+    // that also removed the editor, the user could not choose another field or
+    // type text that would match — a one-way trip out of the rule.
+    candidates = [payee("HUNGRY JACKS 0183"), payee("HUNGRY JACKS 0291")];
+    importedText = [
+      {
+        field: "imported_payee",
+        text: "HUNGRY JACKS 0183",
+        payeeId: "p-HUNGRY JACKS 0183",
+        transactionCount: 4,
+      },
+      {
+        field: "imported_payee",
+        text: "HUNGRY JACKS 0291",
+        payeeId: "p-HUNGRY JACKS 0291",
+        transactionCount: 6,
+      },
+    ];
+
+    render(<PayeeCleanupView />);
+
+    const field = screen.getByLabelText(/which field the rule matches on/i);
+    fireEvent.change(field, { target: { value: "notes" } });
+
+    // Nothing in the history is a note, so there is no recommendation — but the
+    // controls are still there, and they still show the user's choice.
+    expect(screen.getByLabelText(/which field the rule matches on/i)).toHaveValue(
+      "notes"
+    );
+    expect(screen.getByLabelText(/text the rule should match/i)).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText(/which field the rule matches on/i), {
+      target: { value: "imported_payee" },
+    });
+    // Back on a field the history can match, the recommendation returns.
+    expect(screen.getByText(/\^HUNGRY/)).toBeInTheDocument();
+  });
+
   it("keeps the deep reasoning behind an inline toggle, not a dialog", () => {
     candidates = [payee("WOOLWORTHS 0183"), payee("WOOLWORTHS 0291")];
     render(<PayeeCleanupView />);

@@ -257,6 +257,15 @@ export function classifyRelatedRules(
 
   for (const rule of rules) {
     const setsPayee = rule.actions.some((a) => a.field === "payee");
+    // ...and specifically to a payee in this cluster. A rule whose text matches
+    // this merchant but which assigns *someone else* does not resolve it;
+    // treating it as though it did set `existing-rule-covers-it` and dropped the
+    // rule the cleanup actually needed.
+    const setsClusterPayee = rule.actions.some((a) => {
+      if (a.field !== "payee") return false;
+      const values = Array.isArray(a.value) ? a.value : [a.value];
+      return values.some((v) => typeof v === "string" && clusterPayeeIds.has(v));
+    });
     const referencesCluster = [...rule.conditions, ...rule.actions].some((part) => {
       if (part.field !== "payee" && part.field !== "imported_payee") return false;
       const values = Array.isArray(part.value) ? part.value : [part.value];
@@ -283,7 +292,7 @@ export function classifyRelatedRules(
 
     if (!referencesCluster && !matchesStem) continue;
 
-    if (setsPayee && matchesStem) {
+    if (setsClusterPayee && matchesStem) {
       related.push({
         rule,
         kind: "payee-resolution",

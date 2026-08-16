@@ -382,16 +382,29 @@ export function SuggestionCard({
         <section className="min-w-0">
           <h4 className="font-medium text-foreground">Future imports</h4>
 
-          {future?.recommended ? (
+          {/* The editor stays once the user has overridden the field. Hiding it
+              whenever there is no recommendation trapped them: picking a field
+              with no historical matches removed the controls needed to pick
+              another one, or to type text that would match. */}
+          {future && (future.recommended || fieldOverride !== null) ? (
             <>
-              <label className="mt-1 flex items-start gap-2">
-                <Checkbox
-                  checked={correction.createRule === true}
-                  onCheckedChange={(value) => onToggleRule(value === true)}
-                  aria-label="Create a rule so future imports match this payee"
-                />
-                <span className="text-foreground">Create a rule to prevent this recurring</span>
-              </label>
+              {future.recommended ? (
+                <label className="mt-1 flex items-start gap-2">
+                  <Checkbox
+                    checked={correction.createRule === true}
+                    onCheckedChange={(value) => onToggleRule(value === true)}
+                    aria-label="Create a rule so future imports match this payee"
+                  />
+                  <span className="text-foreground">
+                    Create a rule to prevent this recurring
+                  </span>
+                </label>
+              ) : (
+                <p className="mt-1 text-amber-700 dark:text-amber-400">
+                  No pattern on this field matches your import history. Change the
+                  field or the text, or leave the rule off.
+                </p>
+              )}
 
               <div className="mt-1.5 flex items-center gap-1.5">
                 <select
@@ -431,6 +444,8 @@ export function SuggestionCard({
 
               {/* What will actually be created — one line, because "starts with
                   X" and a regex are not the same promise. */}
+              {future.recommended ? (
+              <>
               <code className="mt-1 block truncate rounded bg-muted px-1 py-0.5 font-mono text-[11px]">
                 {future.recommended.candidate.field} {future.recommended.candidate.op}{" "}
                 {future.recommended.candidate.value}
@@ -469,6 +484,8 @@ export function SuggestionCard({
                   </>
                 )}
               </p>
+              </>
+              ) : null}
             </>
           ) : (
             <p className="mt-1 text-muted-foreground">
