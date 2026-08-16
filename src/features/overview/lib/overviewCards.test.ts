@@ -47,11 +47,19 @@ describe("overview cards follow the sidebar", () => {
     expect(TOOL_CARDS.some((card) => card.href === "/reconciliation")).toBe(true);
   });
 
-  it("places bank reconciliation immediately after rule diagnostics", () => {
-    const expectedPair = ["/rules/diagnostics", "/reconciliation"];
+  it("keeps the sidebar and the cards in the same order position for position", () => {
+    // The original form of this test pinned one specific adjacent pair, so it
+    // failed the first time a tool was inserted between them even though both
+    // lists stayed consistent. What actually matters is that the cards, in
+    // order, are the nav order with any card-less entries removed.
+    const cards = TOOL_CARDS.map((card) => card.href);
+    const navForCards = navHrefs("Tools").filter((href) => cards.includes(href));
 
-    expect(navHrefs("Tools").slice(0, 2)).toEqual(expectedPair);
-    expect(TOOL_CARDS.slice(0, 2).map((card) => card.href)).toEqual(expectedPair);
+    expect(cards).toEqual(navForCards);
+  });
+
+  it("offers a card for payee cleanup", () => {
+    expect(TOOL_CARDS.some((card) => card.href === "/payees/cleanup")).toBe(true);
   });
 
   it("leaves FX Rates to the sidebar", () => {

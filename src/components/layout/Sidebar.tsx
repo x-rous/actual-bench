@@ -35,6 +35,7 @@ import {
   Keyboard,
   Settings,
   ClipboardCheck,
+  Sparkles,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useConnectionStore } from "@/store/connection";
@@ -109,6 +110,7 @@ export const SIDEBAR_SECTIONS: SidebarSection[] = [
       label: "Tools",
       items: [
         { id: "rule-diagnostics", label: "Rule Diagnostics", href: "/rules/diagnostics", icon: ShieldCheck },
+        { id: "payee-cleanup", label: "Payee Cleanup", href: "/payees/cleanup", icon: Sparkles },
         {
           id: "reconciliation",
           label: "Bank Reconciliation",
