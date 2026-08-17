@@ -45,6 +45,7 @@ import {
   commonTokenRun,
   coreTokens,
   followedInSomeText,
+  hasMarker,
   maximalCommonRun,
   measureTokenSpread,
   type TokenSpread,
@@ -446,7 +447,15 @@ export function findRuleGaps(inputs: RuleGapInputs): RuleGap[] {
     // and that is worth refusing outright rather than relying on one guard.
     if (duplicatesExistingRule(proposal, ownRules)) continue;
 
-    const cautions = collectCautions(proposal, texts, inputs, related, payee.id, ownRules);
+    const cautions = collectCautions(
+      proposal,
+      texts,
+      inputs,
+      related,
+      payee.id,
+      ownRules,
+      transactionCount
+    );
     gaps.push({
       payee,
       transactionCount,
@@ -548,9 +557,16 @@ function proposeRule(
   const weights = uncovered.map((row) => row.transactionCount);
   const run = commonTokenRun(uncoveredTexts, weights, 0.5, spread);
   const runLength = run ? run.split(" ").length : 0;
+
+  // Text carrying a marker *does* vary, whatever is left once the marker is
+  // stripped. Asking this of the stripped text was inconsistent: two imports
+  // reading `#2023-10 BK Dareen RIYADH` and `#2023-09 BK Dareen RIYADH` were
+  // judged identical, and then listed verbatim — producing a rule that matches
+  // one month and never fires again.
+  const dated = uncoveredTexts.some(hasMarker);
   const variesAroundRun =
     run !== null &&
-    uncoveredTexts.some((text) => coreTokens(text).length > runLength);
+    (dated || uncoveredTexts.some((text) => coreTokens(text).length > runLength));
 
   if (variesAroundRun && run) {
     // Did anything ever follow the *longest* thing these imports share? If not,
@@ -577,16 +593,18 @@ function proposeRule(
   }
 
   // Nothing varies around a shared core, so an exact list is the only honest
-  // shape — but only for text that has actually been seen more than once.
-  // A one-off string is as dead as a varying one: listing it catches the
-  // transaction already on record and nothing ever again.
-  const recurring = uncovered.filter((row) => row.transactionCount > 1);
-  if (recurring.length === 0) return null;
+  // shape — but only for text that has actually been seen more than once, and
+  // only for text carrying no marker. A one-off string is as dead as a dated
+  // one: both catch what is already on record and nothing ever again.
+  const listable = uncovered.filter(
+    (row) => row.transactionCount > 1 && !hasMarker(row.text)
+  );
+  if (listable.length === 0) return null;
 
   return {
     shape: "one-of",
     field,
-    texts: recurring.map((row) => row.text),
+    texts: listable.map((row) => row.text),
     extendsRule,
   };
 }
@@ -629,7 +647,8 @@ function collectCautions(
   inputs: RuleGapInputs,
   related: ReturnType<typeof classifyRelatedRules>,
   payeeId: string,
-  ownRules: ExistingPayeeRule[]
+  ownRules: ExistingPayeeRule[],
+  transactionCount: number
 ): string[] {
   const cautions: string[] = [];
 
@@ -667,6 +686,17 @@ function collectCautions(
         "Only the most recent imports were checked, so this pattern may catch more than is shown."
       );
     }
+  }
+
+  // A proposal drawn from a fraction of what the payee actually has is thin
+  // evidence, whatever the backtest said about the part it could see. The
+  // history read is capped, and a payee whose text is mostly beyond that cap
+  // looks identical on screen to one read in full.
+  const textTransactions = texts.reduce((sum, row) => sum + row.transactionCount, 0);
+  if (transactionCount > 0 && textTransactions * 2 < transactionCount) {
+    cautions.push(
+      `Only ${textTransactions} of this payee's ${transactionCount} transactions had import text that was read, so this rests on part of its history.`
+    );
   }
 
   // Said only when it is true. `classifyRelatedRules` reports a rule as a

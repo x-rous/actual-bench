@@ -57,6 +57,10 @@ export function RuleGapList({
           const isOpen = expanded === gap.payee.id;
           const { proposal } = gap;
           const extending = proposal.extendsRule !== null;
+          const textTransactions = gap.texts.reduce(
+            (sum, row) => sum + row.transactionCount,
+            0
+          );
 
           return (
             <li key={gap.payee.id} className="px-3 py-2 text-sm">
@@ -163,6 +167,15 @@ export function RuleGapList({
                     <div className="text-[11px] uppercase tracking-wider text-muted-foreground">
                       Imports on record
                     </div>
+                    {/* The row counts the payee's transactions; this list counts
+                        the ones whose text was read before the history cap. When
+                        they differ the gap is a fact about the read, not a bug. */}
+                    {textTransactions < gap.transactionCount ? (
+                      <p className="text-muted-foreground">
+                        {textTransactions} of {gap.transactionCount} transactions have
+                        import text that was read.
+                      </p>
+                    ) : null}
                     <ul className="mt-1 space-y-0.5">
                       {gap.texts.slice(0, 6).map((row) => (
                         <li
@@ -259,10 +272,11 @@ function RuleConditionEditor({
   onOverride: (payeeId: string, override: RuleGapOverride | undefined) => void;
 }) {
   const { proposal } = gap;
+  // For an exact list, the first text rather than all of them run together: the
+  // editor only speaks `contains` and `matches`, so joining the list produced a
+  // value matching a string that appears nowhere in the budget.
   const currentValue =
-    proposal.shape === "matches"
-      ? proposal.candidate.value
-      : proposal.texts.map((t) => t).join(" ");
+    proposal.shape === "matches" ? proposal.candidate.value : (proposal.texts[0] ?? "");
   const currentOp: "matches" | "contains" =
     proposal.shape === "matches" ? proposal.candidate.op : "contains";
   const edited = proposal.shape === "matches" && proposal.edited === true;

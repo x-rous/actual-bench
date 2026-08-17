@@ -124,8 +124,10 @@ A payee appears only when all of these are true, which is why the list is short:
 Two rule shapes, picked from your own history — on whether the text *varies*, not on how many
 different strings there are:
 
-- **The same text every time** gets an exact match, the shape Actual writes itself. It cannot catch
-  anything else, so it needs no backtest.
+- **The same text every time, with nothing dating it,** gets an exact match — the shape Actual writes
+  itself. It cannot catch anything else, so it needs no backtest. Text carrying a `#2026-05` marker
+  never qualifies, however identical the rest of it looks: a rule matching one month would never fire
+  again.
 - **Text that varies around a core** gets a pattern built from the words every import shares, so it
   also catches variants you have not seen yet. That one *is* backtested, and you are told if it would
   catch another payee's transactions.

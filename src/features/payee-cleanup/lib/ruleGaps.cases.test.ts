@@ -79,6 +79,25 @@ const CASES: Record<string, [string, number][]> = {
     ["#2026-05 Etihad Credit Bureau", 1],
     ["-84 IRR (FX rate: #2026-02 ETIHAD CREDIT BUREAU DUBAI UAE)", 1],
   ],
+  // The second batch, reported once markers were being stripped from the core
+  // but not from the exact list — so each of these produced a rule keyed to a
+  // single month, which can never fire again.
+  "Panda Hypermarket": [["#2023-07 Panda Retail Co TAIF", 2]],
+  BurgerKing: [
+    ["#2023-09 BK Dareen RIYADH", 7], ["#2023-10 BK Dareen RIYADH", 5],
+    ["#2023-10 BK 8260 RIYADH", 3], ["BurgerKingPrHamoud", 1],
+    ["#2026-03 BURGERKING ETHIHAD DUBAI 784", 1],
+  ],
+  "MAX Fashion": [
+    ["#API MAX", 2], ["#2026-06 MAX DUBAI 784", 2],
+    ["-112 IRR (FX rate: #2026-04 MAX DUBAI 784)", 1],
+  ],
+  "Dr. Omar Yahia Dental Clinic": [["#API OMAR YAHIA DENTAL SURG", 2]],
+  HungerStation: [["#API HUNGERSTATION LLC", 2]],
+  "Tamimi Markets": [["#2024-02 TAMIMI MARKETS RIYADH", 6], ["#2024-05 TAMIMI MARKETS RIYADH", 4]],
+  Carrefour: [["#2024-02 CARREFOUR DUBAI ARE", 6], ["#2024-05 CARREFOUR RIYADH", 4]],
+  Jarir: [["#2024-02 JARIR BOOKSTORE RIYADH", 6], ["#2024-06 JARIR BOOKSTORE DUBAI", 4]],
+
 };
 
 
@@ -169,6 +188,18 @@ describe("what a real budget should produce", () => {
     // closes half the budget's imports.
     ["Emirates Airlines", "contains EMIRATES"],
     ["Etihad Credit Bureau", "contains ETIHAD CREDIT BUREAU"],
+    // A date marker means the text varies, whatever is left once it is stripped,
+    // so a list of dated strings is never the answer — each of these produced a
+    // rule keyed to one month.
+    ["Panda Hypermarket", "contains PANDA RETAIL"],
+    ["BurgerKing", "contains BK DAREEN"],
+    ["MAX Fashion", "contains MAX DUBAI"],
+    ["Dr. Omar Yahia Dental Clinic", "contains OMAR YAHIA"],
+    ["HungerStation", "contains HUNGERSTATION"],
+    // Scenery, present only so the cities above read as cities.
+    ["Tamimi Markets", "contains TAMIMI MARKETS"],
+    ["Carrefour", "contains CARREFOUR"],
+    ["Jarir", "contains JARIR BOOKSTORE"],
   ])("%s → %s", (payee, expected) => {
     expect(conditions.get(payee)).toBe(expected);
   });

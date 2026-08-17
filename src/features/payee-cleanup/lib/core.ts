@@ -60,6 +60,11 @@ function withoutMarkers(text: string): string {
   return text.replace(/#\S+/g, " ");
 }
 
+/** True when a marker was removed, i.e. this text carries something that dates it. */
+export function hasMarker(text: string): boolean {
+  return withoutMarkers(text) !== text;
+}
+
 export function coreTokens(text: string): string[] {
   return normalizePatternText(withoutMarkers(text)).split(" ").filter(Boolean);
 }
@@ -165,15 +170,21 @@ export function commonTokenRun(
   };
 
   // Seeded from the text carrying the most transactions, since that is the one
-  // most likely to be representative.
-  const seed = [...entries].sort((a, b) => b.weight - a.weight)[0].tokens;
+  // most likely to be representative. Ties go to the longer text: only runs
+  // *within* the seed are considered, so seeding on a one-word import — `#API
+  // MAX`, as heavy as anything else that payee had — leaves nothing to find.
+  const seed = [...entries].sort(
+    (a, b) => b.weight - a.weight || b.tokens.length - a.tokens.length
+  )[0].tokens;
 
-  let best: {
+  type Candidate = {
     run: string[];
     coverage: number;
     quality: number;
     rarest: number;
-  } | null = null;
+  };
+  let best: Candidate | null = null;
+  let fallback: Candidate | null = null;
 
   for (let length = Math.min(seed.length, MAX_CORE_TOKENS); length >= 1; length--) {
     for (let start = 0; start + length <= seed.length; start++) {
@@ -185,7 +196,12 @@ export function commonTokenRun(
 
       const coverage =
         matching.reduce((sum, entry) => sum + entry.weight, 0) / total;
-      if (coverage < minShare) continue;
+
+      // Applied here rather than to the winner. A run too short to hang a rule
+      // on used to win on coverage and then be rejected at the end, taking every
+      // runner-up with it: `MAX` appears in all of MAX Fashion's imports, so it
+      // beat `MAX DUBAI`, failed the floor, and left the payee with nothing.
+      if (run.length < 2 && run[0].length < 4) continue;
 
       const quality = runQuality(run, spread);
       const rarest = rarestToken(run, spread);
@@ -196,6 +212,17 @@ export function commonTokenRun(
       // catching nine in ten if that costs the merchant's name: one payee
       // writing `LVLUP` once must not reduce `LVL UP FITNESS` to `FITNESS`.
       const candidate = { run, coverage, quality, rarest };
+
+      // Below the share gate a run is a fallback, not a choice. Kept because the
+      // alternative is listing raw text: `EMIRATES` covers only two in five of
+      // that payee's imports once `EMIRATES62385176881` variants are counted
+      // separately, and it is still a far better rule than one dated string.
+      if (coverage < minShare) {
+        if (quality > 0 && (fallback === null || quality > fallback.quality)) {
+          fallback = candidate;
+        }
+        continue;
+      }
 
       // Anything that reads like a name beats anything that reads like scenery,
       // whatever the coverage. Generic words have high coverage *because* they
@@ -222,12 +249,8 @@ export function commonTokenRun(
     }
   }
 
-  if (!best) return null;
-  const joined = best.run.join(" ");
-  // A laxer floor than the trimming one: `COLES` and `IKEA` are whole merchants,
-  // and the evidence says so. `MIN_CORE_LENGTH` stops the ladder shortening
-  // *past* the evidence; it does not overrule it.
-  return best.run.length >= 2 || best.run[0].length >= 4 ? joined : null;
+  const chosen = best ?? fallback;
+  return chosen ? chosen.run.join(" ") : null;
 }
 
 /** Whether any text carries more words after this run. */
