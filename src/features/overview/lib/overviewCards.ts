@@ -8,6 +8,7 @@ import {
   LayoutList,
   ScrollText,
   ShieldCheck,
+  Sparkles,
   Tag,
   Terminal,
   Users,
@@ -109,6 +110,15 @@ export const TOOL_CARDS: OverviewActionCard[] = [
     icon: ShieldCheck,
     tone: "tool",
     href: "/rules/diagnostics",
+  },
+  {
+    id: "payee-cleanup",
+    label: "Payee Cleanup",
+    description:
+      "Find payees that are really the same merchant under different bank spellings, with the evidence behind every suggestion.",
+    icon: Sparkles,
+    tone: "tool",
+    href: "/payees/cleanup",
   },
   {
     id: "reconciliation",

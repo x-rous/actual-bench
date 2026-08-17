@@ -268,6 +268,45 @@ A standalone page (own navigation item) for browsing the active budget's exporte
 - Every delete action (single and bulk) always confirms, showing the payee's transaction count and rule reference count — previously single deletes with no rule references skipped the confirmation entirely; transfer payees are excluded from bulk delete and counted separately in the dialog
 - Info button on each regular payee row opens the Usage Inspector drawer (see below)
 
+## Payee Cleanup
+
+Finds payees that are really the same merchant under different bank spellings, and helps you
+consolidate them safely. Nothing is written until you save.
+
+- **Finds the variants for you.** Bank text carries dates, times, card numbers, reference numbers,
+  store numbers, exchange rates and web addresses; cleanup removes them by *shape*, so it works the
+  same for any bank in any country without knowing yours.
+- **Learns your bank's own boilerplate.** Wrapping that no pattern can identify — a channel prefix, a
+  trailing city and country — is recognised because it repeats across many otherwise unrelated
+  payees. Anything learned this way is treated as a guess and lands in Needs review.
+- **Decides on one screen.** Each suggestion is a single card in three columns — the result and the
+  payees behind it, what changes, and future imports — with no dialog to open. Struck-through text
+  shows exactly what each name lost, and *Reasoning* expands the detector's own account.
+- **Shows the blast radius before you decide** — transactions that will move, regular rules, active
+  and completed schedule-linked rules counted separately, and any disagreement over Favorite or
+  Category learning.
+- **You correct it.** Drop a member, add one the scan missed, choose which payee survives, edit the
+  final name, or mark a group as *not duplicates* — which is remembered, per budget, and reversible
+  from the Dismissed tab. *Undo my changes* restores the detector's original proposal.
+- **Accepts the unambiguous ones in bulk.** *Accept n safe* takes only the structural matches with no
+  settings conflict, no rule reaching beyond the group and counts already loaded — not simply
+  everything above a score.
+- **Will not create the duplicate you were removing.** Two accepted groups heading for the same payee
+  name block the stage and are offered as one combined group instead.
+- **Keyboard triage** — `A` accept, `R` reasoning, `N` not duplicates on the focused card.
+- **Unused payees** — those with no transactions and no rules — are listed separately for deletion.
+- **Optional rule to stop it recurring.** Where cleanup alone will not fix future imports, cleanup
+  proposes a rule that catches the merchant, backtested against your own history so you can see what
+  it would and would not have matched. The matched text and the field it matches on are editable.
+- **Merging uses Actual's own operation.** Transactions follow automatically; rules keep pointing at
+  the old payee and Actual resolves them afterwards. Actual Bench never rewrites transactions or
+  rules itself.
+
+Known limits: `Favorite` and `Category learning` cannot be changed from outside Actual, so the payee
+you keep decides them. Saved payee locations cannot be read through Actual's API, so cleanup does not
+report or move them. The unused-payee check is slightly stricter than Actual's own, because it also
+counts rules that *set* a payee.
+
 ## Categories
 
 - Create and manage category groups (income or expense type)
