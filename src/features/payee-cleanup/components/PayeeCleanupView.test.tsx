@@ -896,16 +896,16 @@ describe("PayeeCleanupView", () => {
     render(<PayeeCleanupView />);
     fireEvent.click(screen.getByRole("button", { name: /needs a rule/i }));
 
-    // The generated pattern is on the row itself, not only behind Details.
-    expect(screen.getByText(/ETIHAD\[\^A-Za-z0-9\]\*CREDIT/)).toBeInTheDocument();
+    // The condition is on the row itself, not only behind Details.
+    expect(screen.getByText(/ETIHAD CREDIT/)).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /details for/i }));
     const input = screen.getByLabelText(/text the rule .* should match/i);
-    fireEvent.change(input, { target: { value: "ETIHAD CREDIT" } });
+    fireEvent.change(input, { target: { value: "ETIHAD BUREAU" } });
     fireEvent.blur(input);
 
     expect(screen.getByLabelText(/text the rule .* should match/i)).toHaveValue(
-      "ETIHAD CREDIT"
+      "ETIHAD BUREAU"
     );
     expect(screen.getByRole("button", { name: /undo my changes/i })).toBeInTheDocument();
   });

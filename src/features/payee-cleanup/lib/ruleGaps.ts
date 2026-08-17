@@ -44,6 +44,13 @@ import {
   type SourceField,
 } from "./ruleCandidates";
 
+/**
+ * How far the ladder may shorten a core. `LVL UP` and `FITNESS` are too little
+ * to hang a rule on; `EMIRATES` and `READY SET` are enough. It does not apply to
+ * the run itself — see `coreLadder`.
+ */
+const MIN_CORE_LENGTH = 8;
+
 /** Below this, a payee is a one-off rather than a pattern worth automating. */
 export const DEFAULT_TRANSACTION_FLOOR = 2;
 
@@ -346,7 +353,10 @@ function proposeRule(
   // recur, so an exact list of them catches the transactions already on record
   // and nothing ever again. What matters is whether anything varies around a
   // shared core, which is what a pattern is for.
-  const run = commonTokenRun(uncoveredTexts);
+  const run = commonTokenRun(
+    uncoveredTexts,
+    uncovered.map((row) => row.transactionCount)
+  );
   const runLength = run ? run.split(" ").length : 0;
   const variesAroundRun =
     run !== null &&
@@ -355,15 +365,22 @@ function proposeRule(
     );
 
   if (variesAroundRun && run) {
-    const scored = buildCandidates(run, field).map((candidate) =>
-      scoreCandidate(
-        candidate,
-        inputs.rows,
-        new Set([payee.id]),
-        new Set([payee.name.toUpperCase()])
-      )
-    );
-    const best = rankCandidates(scored)[0];
+    // Did anything ever follow the core? If not, its end is an artefact of the
+    // sample rather than a fact about the merchant — three identical
+    // `Google Storage Mountain View CA SAR10.99` imports make the price look
+    // like part of the name.
+    const runTokens = run.split(" ");
+    const boundaryShown = uncoveredTexts.some((text) => {
+      const tokens = normalizePatternText(text).split(" ").filter(Boolean);
+      for (let i = 0; i + runTokens.length <= tokens.length; i++) {
+        if (runTokens.every((word, k) => tokens[i + k] === word)) {
+          return i + runTokens.length < tokens.length;
+        }
+      }
+      return false;
+    });
+
+    const best = chooseCondition(run, field, inputs.rows, payee, !boundaryShown);
     if (!best || best.expectedMatches === 0) return null;
 
     return { shape: "matches", field, candidate: best.candidate, score: best, extendsRule: null };
@@ -385,28 +402,38 @@ function proposeRule(
 }
 
 /**
- * The longest run of words that every import text contains.
+ * The longest run of words that *most* of the import text contains.
  *
  * This is what makes a rule catch text it has never seen. Requiring the texts to
- * *reduce* to the same stem was too strict: the reducer is tuned for payee
- * names, so `#API Etihad Credit Bureau`, `#2026-05 Etihad Credit Bureau` and
- * `-84 IRR (FX rate: #2026-02 ETIHAD CREDIT BUREAU DUBAI UAE)` keep their own
- * leading noise and reduce to three different stems — while plainly sharing
- * `ETIHAD CREDIT BUREAU`, which is the merchant.
+ * *reduce* to the same stem was too strict — the reducer is tuned for payee
+ * names and leaves different leading noise on each one — but so was requiring
+ * the run in every single text. One outlier is enough to ruin it: nine imports
+ * reading `LVL UP FITNESS CTR DUBAI UAE` and one reading `LVLUP FITNESS` share
+ * only `FITNESS`, and a stray `EMIRATES62385176881` means the payee's other
+ * fifteen `EMIRATES` imports share nothing at all.
+ *
+ * So the run has to cover a **majority of the transactions**, not every distinct
+ * string — weighted by transaction count, because a one-off oddity should not
+ * outvote text that arrives every month.
  *
  * Contiguous by design: `buildCandidates` joins the words with "any run of
  * non-alphanumerics", which only means anything if they were adjacent.
  */
-export function commonTokenRun(texts: string[]): string | null {
-  const tokenized = texts
-    .map((text) => normalizePatternText(text).split(" ").filter(Boolean))
-    .filter((tokens) => tokens.length > 0);
-  if (tokenized.length === 0) return null;
+export function commonTokenRun(
+  texts: string[],
+  weights?: number[],
+  minShare = 0.5
+): string | null {
+  const entries = texts
+    .map((text, i) => ({
+      tokens: normalizePatternText(text).split(" ").filter(Boolean),
+      weight: weights?.[i] ?? 1,
+    }))
+    .filter((entry) => entry.tokens.length > 0);
+  if (entries.length === 0) return null;
 
-  // The shortest text bounds the answer, and searching it longest-first means
-  // the first run that fits every text is the longest one.
-  const seed = [...tokenized].sort((a, b) => a.length - b.length)[0];
-  const others = tokenized.filter((tokens) => tokens !== seed);
+  const total = entries.reduce((sum, entry) => sum + entry.weight, 0);
+  if (total === 0) return null;
 
   const containsRun = (tokens: string[], run: string[]) => {
     for (let i = 0; i + run.length <= tokens.length; i++) {
@@ -415,17 +442,106 @@ export function commonTokenRun(texts: string[]): string | null {
     return false;
   };
 
+  // Seeded from the text carrying the most transactions, since that is the one
+  // most likely to be representative — the shortest string is as often the
+  // oddity as the essence.
+  const seed = [...entries].sort((a, b) => b.weight - a.weight)[0].tokens;
+
   for (let length = seed.length; length >= 1; length--) {
     for (let start = 0; start + length <= seed.length; start++) {
       const run = seed.slice(start, start + length);
-      if (!others.every((tokens) => containsRun(tokens, run))) continue;
+      const matching = entries.filter((entry) => containsRun(entry.tokens, run));
+      // Shared by at least two texts when there is more than one, or a single
+      // dominant string defines the run all by itself — date and all.
+      if (entries.length > 1 && matching.length < 2) continue;
 
-      // One short word is not a merchant: `\bTHE\b` would catch the budget.
-      const meaningful = run.length >= 2 || run[0].length >= 4;
-      return meaningful ? run.join(" ") : null;
+      const covered = matching.reduce((sum, entry) => sum + entry.weight, 0);
+      if (covered / total < minShare) continue;
+
+      // A laxer floor than the trimming one below: `COLES` and `IKEA` are whole
+      // merchants, and the evidence says so. `MIN_CORE_LENGTH` exists to stop
+      // the ladder shortening *past* the evidence, not to overrule it.
+      const joined = run.join(" ");
+      return run.length >= 2 || run[0].length >= 4 ? joined : null;
     }
   }
   return null;
+}
+
+/**
+ * Shorter and shorter leading parts of the run, longest first.
+ *
+ * The run is the longest core the history *permits*, not the shortest that
+ * *works*. Three identical `Google Storage Mountain View CA SAR10.99` imports
+ * make the price look like part of the merchant, and a rule carrying it breaks
+ * the day the price changes.
+ */
+function coreLadder(run: string): string[] {
+  const tokens = run.split(" ");
+  // The full run is always allowed however short it is — it is what the imports
+  // actually share. Only the shortened forms have to clear the floor.
+  const ladder: string[] = [run];
+  for (let length = tokens.length - 1; length >= 1; length--) {
+    const core = tokens.slice(0, length).join(" ");
+    if (core.length >= MIN_CORE_LENGTH) ladder.push(core);
+  }
+  return ladder;
+}
+
+/**
+ * The simplest condition that catches this payee and nothing else.
+ *
+ * Two preferences, in order:
+ *
+ * 1. **The shortest safe core.** Shortening can only ever match *more*, so the
+ *    shortest core the backtest still clears is the one most likely to catch a
+ *    variant that has not arrived yet — which is the entire point of the rule.
+ *    It also drops trailing noise, like a subscription price, without needing to
+ *    know what it is.
+ * 2. **`contains` over a pattern.** `contains "READY SET GO KIDS"` and
+ *    `matches \bREADY[^A-Za-z0-9]*SET[^A-Za-z0-9]*GO[^A-Za-z0-9]*KIDS\b` do the
+ *    same job, and only one of them can be read at a glance. The pattern is kept
+ *    for what it exists for: text whose punctuation varies between imports,
+ *    where a literal substring would miss.
+ */
+function chooseCondition(
+  run: string,
+  field: SourceField,
+  rows: ImportedTextRow[],
+  payee: PayeeCleanupCandidate,
+  trimmable: boolean
+): CandidateScore | null {
+  const clusterIds = new Set([payee.id]);
+  const clusterNames = new Set([payee.name.toUpperCase()]);
+  // Only shorten when the imports never showed where the merchant ends. If
+  // something follows the run in some text — `READY SET GO KIDS` then `AMUS` in
+  // one import and `DUBAI` in another — the data located the boundary and
+  // second-guessing it would throw away the evidence.
+  const ladder = trimmable ? coreLadder(run) : coreLadder(run).slice(0, 1);
+  if (ladder.length === 0) return null;
+
+  let longestAttempt: CandidateScore | null = null;
+
+  // Shortest first, so the first safe one wins.
+  for (const core of [...ladder].reverse()) {
+    const scored = buildCandidates(core, field).map((candidate) =>
+      scoreCandidate(candidate, rows, clusterIds, clusterNames)
+    );
+    const safe = scored.filter((s) => s.unexpectedMatches === 0 && s.expectedMatches > 0);
+
+    if (safe.length === 0) {
+      // Keep the longest core's best attempt: a payee whose text cannot be
+      // caught safely still deserves a proposal and an explanation rather than
+      // disappearing from the list.
+      if (core === ladder[0]) longestAttempt = rankCandidates(scored)[0] ?? null;
+      continue;
+    }
+
+    const simplest = safe.find((s) => s.candidate.op === "contains");
+    return simplest ?? rankCandidates(safe)[0] ?? null;
+  }
+
+  return longestAttempt;
 }
 
 /** Why a proposal needs a human, in the user's terms rather than the model's. */

@@ -251,11 +251,10 @@ describe("rule shape", () => {
     const proposal = gaps[0].proposal;
     expect(proposal.shape).toBe("matches");
     if (proposal.shape !== "matches") throw new Error("wrong shape");
-    // Unanchored: two of the three texts do not start with the merchant, so an
-    // anchored pattern would match neither.
-    expect(proposal.candidate.value).toBe(
-      "\\bETIHAD[^A-Za-z0-9]*CREDIT[^A-Za-z0-9]*BUREAU\\b"
-    );
+    // A plain substring, because one is enough here: a pattern is kept for text
+    // whose punctuation varies, not used for its own sake.
+    expect(proposal.candidate.op).toBe("contains");
+    expect(proposal.candidate.value).toBe("ETIHAD CREDIT BUREAU");
     expect(proposal.score.expectedMatches).toBe(6);
   });
 
@@ -486,9 +485,6 @@ describe("a condition the user typed", () => {
 
 describe("commonTokenRun", () => {
   it("finds the merchant inside text that reduces to different stems", () => {
-    // The case that exposed the count heuristic: each text carries its own
-    // leading noise, so the reducer gives three different stems, but all three
-    // plainly share the merchant.
     expect(
       commonTokenRun([
         "#API Etihad Credit Bureau",
@@ -498,28 +494,164 @@ describe("commonTokenRun", () => {
     ).toBe("ETIHAD CREDIT BUREAU");
   });
 
-  it("returns the longest run, not the first one it finds", () => {
+  it("survives an outlier that shares almost nothing", () => {
+    // One import written differently must not collapse the core to a fragment.
+    // Nine `LVL UP FITNESS CTR` imports and one `LVLUP FITNESS` share only
+    // `FITNESS`, which is far too little to hang a rule on.
     expect(
-      commonTokenRun(["ACME COFFEE HOUSE 01", "ACME COFFEE HOUSE 02"])
+      commonTokenRun(
+        [
+          "#2025-07 LVL UP FITNESS CTR DUBAI UAE",
+          "#2025-06 (SM-PAY)- LVL UP FITNESS CTR DUBAI UAE",
+          "#2024-11 LVL UP fitness center Dubai DXB",
+          "#2023-02 LVLUP FITNESS DUBAI",
+        ],
+        [2, 3, 3, 1]
+      )
+      // The run itself still carries the trailing location; trimming it back to
+      // `LVL UP FITNESS` is the ladder's job, covered below.
+    ).toBe("LVL UP FITNESS CTR DUBAI UAE");
+  });
+
+  it("weights by transactions, not by distinct string", () => {
+    // A one-off oddity should not outvote text that arrives every month.
+    expect(
+      commonTokenRun(
+        ["ACME COFFEE HOUSE 01", "ACME COFFEE HOUSE 02", "SOMETHING ELSE ENTIRELY"],
+        [40, 40, 1]
+      )
     ).toBe("ACME COFFEE HOUSE");
+  });
+
+  it("will not let one dominant string define the whole run", () => {
+    // Otherwise the core swallows that string's own date.
+    expect(
+      commonTokenRun(
+        ["#2024-06 READY SET GO KIDS AMUS DUBAI ARE", "#2024-09 READY SET GO KIDS DUBAI ARE"],
+        [9, 5]
+      )
+    ).toBe("READY SET GO KIDS");
   });
 
   it("requires the words to be adjacent", () => {
     // The pattern joins words with "any run of non-alphanumerics", which only
     // means anything if they were next to each other.
-    expect(commonTokenRun(["ALPHA ONE BRAVO", "ALPHA TWO BRAVO"])).toBe("ALPHA");
+    expect(commonTokenRun(["ALPHA ONE BRAVO WORD", "ALPHA TWO BRAVO WORD"])).toBe(
+      "BRAVO WORD"
+    );
   });
 
   it("returns null when the texts share nothing", () => {
     expect(commonTokenRun(["WOOLWORTHS 0183", "COLES 0559"])).toBeNull();
   });
 
-  it("refuses a single short word, which would catch the whole budget", () => {
+  it("refuses a core too short to hang a rule on", () => {
     expect(commonTokenRun(["THE ALPHA", "THE BRAVO"])).toBeNull();
-    expect(commonTokenRun(["ACME ALPHA", "ACME BRAVO"])).toBe("ACME");
+    expect(commonTokenRun(["EMIRATES ALPHA", "EMIRATES BRAVO"])).toBe("EMIRATES");
+    // A whole short merchant is evidence, not a truncation.
+    expect(commonTokenRun(["COLES 0183", "COLES 0291"])).toBe("COLES");
+  });
+});
+
+describe("keeping the condition simple (real cases)", () => {
+  function gapsFor(
+    name: string,
+    texts: [string, number][],
+    others: ImportedTextRow[] = []
+  ) {
+    const rows = texts.map(([text, n]) => row(text, "p1", n, "notes"));
+    const total = texts.reduce((sum, [, n]) => sum + n, 0);
+    return findRuleGaps(
+      inputs({
+        candidates: [payee("p1", name)],
+        rows: [...rows, ...others],
+        transactionCounts: new Map([["p1", total]]),
+      })
+    );
+  }
+
+  function condition(gaps: ReturnType<typeof findRuleGaps>) {
+    const proposal = gaps[0]?.proposal;
+    if (!proposal) return "none";
+    return proposal.shape === "one-of"
+      ? `oneOf ${JSON.stringify(proposal.texts)}`
+      : `${proposal.candidate.op} ${proposal.candidate.value}`;
+  }
+
+  it("catches the merchant, not each dated import", () => {
+    // Listing six dated strings catches the transactions already on record and
+    // nothing ever again.
+    expect(
+      condition(
+        gapsFor("Level Up Fitness", [
+          ["#2025-07 LVL UP FITNESS CTR DUBAI UAE", 2],
+          ["#2025-07 (SM-PAY)- LVL UP FITNESS CTR DUBAI UAE", 2],
+          ["#2025-06 (SM-PAY)- LVL UP FITNESS CTR DUBAI UAE", 3],
+          ["#2024-11 LVL UP fitness center Dubai DXB", 3],
+          ["#2023-02 LVLUP FITNESS DUBAI", 1],
+        ])
+      )
+    ).toBe("contains LVL UP FITNESS");
   });
 
-  it("handles a single text by returning all of it", () => {
-    expect(commonTokenRun(["NETFLIX COM 4821"])).toBe("NETFLIX COM 4821");
+  it("drops a subscription price the sample made look permanent", () => {
+    // All three imports are identical apart from the month, so nothing in the
+    // data says where the merchant ends — and a rule carrying the price breaks
+    // the day the price changes.
+    expect(
+      condition(
+        gapsFor("Google Storage", [
+          ["#2024-07 Google Storage Mountain View CA SAR10.99", 1],
+          ["#2024-06 Google Storage Mountain View CA SAR10.99", 1],
+          ["#2024-05 Google Storage Mountain View CA SAR10.99", 1],
+        ])
+      )
+    ).toBe("contains GOOGLE STORAGE");
+  });
+
+  it("keeps a boundary the imports actually demonstrated", () => {
+    // `AMUS` in one import and `DUBAI` in another show where the name ends, so
+    // trimming further would throw away evidence.
+    expect(
+      condition(
+        gapsFor("Ready Set Go", [
+          ["#2024-06 READY SET GO KIDS AMUS DUBAI ARE", 9],
+          ["#2024-09 READY SET GO KIDS DUBAI ARE", 5],
+          ["#2024-11 READY SET GO KIDS DUBAI ARE", 1],
+        ])
+      )
+    ).toBe("contains READY SET GO KIDS");
+  });
+
+  it("is not defeated by a reference number welded to the merchant", () => {
+    // `EMIRATES62385176881` is a different token from `EMIRATES`, which used to
+    // mean the payee's imports shared nothing at all.
+    expect(
+      condition(
+        gapsFor("Emirates Airlines", [
+          ["#2024-08 EMIRATES DUBAI ARE", 2],
+          ["#2026-08 EMIRATES", 1],
+          ["#2025-03 EMIRATES DUBAI ARE", 1],
+          ["#2025-03 EMIRATES62385176881-2 DUBAI ARE", 1],
+          ["#2024-09 EMIRATES62378111182-2 DUBAI ARE", 1],
+        ])
+      )
+    ).toBe("contains EMIRATES");
+  });
+
+  it("keeps a longer core when a shorter one would reach another payee", () => {
+    // The trimming is bounded by the backtest, not by taste.
+    expect(
+      condition(
+        gapsFor(
+          "Google Storage",
+          [
+            ["#2024-07 Google Storage Mountain View CA SAR10.99", 1],
+            ["#2024-06 Google Storage Mountain View CA SAR10.99", 1],
+          ],
+          [row("GOOGLE ADS IRELAND", "p2", 12, "notes")]
+        )
+      )
+    ).toBe("contains GOOGLE STORAGE");
   });
 });
