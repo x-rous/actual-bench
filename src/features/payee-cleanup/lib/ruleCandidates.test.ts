@@ -1,7 +1,6 @@
 import {
   analyzeFutureResolution,
   buildCandidates,
-  candidateStems,
   buildNormalizationRule,
   classifyRelatedRules,
   exactNameCoverage,
@@ -188,26 +187,6 @@ describe("rankCandidates", () => {
     };
     const broad = { ...base, expectedMatches: 20, unexpectedMatches: 0 };
     expect(rankCandidates([broad, anchored])[0]).toBe(anchored);
-  });
-});
-
-describe("candidateStems", () => {
-  it("offers the final name as well as the reduced stem", () => {
-    // A cluster reduced to `HUNGRY JACKS MELBOURNE` whose final name is
-    // `Hungry Jacks` must be able to propose a rule catching `HUNGRY JACKS` —
-    // the narrower stem would miss every import from a different suburb.
-    expect(candidateStems("HUNGRY JACKS MELBOURNE", "Hungry Jacks")).toEqual([
-      "HUNGRY JACKS MELBOURNE",
-      "HUNGRY JACKS",
-    ]);
-  });
-
-  it("does not repeat itself when they agree", () => {
-    expect(candidateStems("WOOLWORTHS", "Woolworths")).toEqual(["WOOLWORTHS"]);
-  });
-
-  it("drops a stem too short to discriminate", () => {
-    expect(candidateStems("A", "Ab")).toEqual([]);
   });
 });
 

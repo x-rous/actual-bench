@@ -1,4 +1,5 @@
 import { findRuleGaps } from "./ruleGaps";
+import { measureTokenSpread } from "./core";
 import type { ImportedTextRow } from "./ruleCandidates";
 import type { PayeeCleanupCandidate } from "../types";
 
@@ -158,5 +159,16 @@ describe("rule gap scan cost", () => {
     // Bounded by the number of candidates considered, which is a handful per
     // payee. Compiling per row would put this in the millions.
     expect(constructed).toBeLessThan(rows.length);
+  });
+
+  it("measures the budget's vocabulary once, not once per cluster", () => {
+    // Both halves of cleanup need it, but the future-rule analysis runs once per
+    // cluster — so recomputing it there walked every row in the budget dozens of
+    // times per scan. Forty clusters over a full history cost about two seconds
+    // before it was memoized on the row set.
+    const first = measureTokenSpread(rows);
+    for (let i = 0; i < 40; i++) {
+      expect(measureTokenSpread(rows)).toBe(first);
+    }
   });
 });

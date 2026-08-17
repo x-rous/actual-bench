@@ -79,7 +79,27 @@ export function coreTokens(text: string): string[] {
  */
 export type TokenSpread = { payeesFor: Map<string, number>; payeeCount: number };
 
+/**
+ * Memoized on the row set, which is one query result shared by the whole scan.
+ *
+ * Both callers need the same answer, but one of them — the future-rule analysis
+ * — runs once per cluster, so recomputing it there walked every row in the
+ * budget dozens of times per scan. Forty clusters over a full history cost
+ * around two seconds before this, on the main thread, in a memo that re-runs
+ * whenever a correction changes.
+ */
+const spreadCache = new WeakMap<ImportedTextRow[], TokenSpread>();
+
 export function measureTokenSpread(rows: ImportedTextRow[]): TokenSpread {
+  const cached = spreadCache.get(rows);
+  if (cached) return cached;
+
+  const measured = computeTokenSpread(rows);
+  spreadCache.set(rows, measured);
+  return measured;
+}
+
+function computeTokenSpread(rows: ImportedTextRow[]): TokenSpread {
   const seen = new Map<string, Set<string>>();
   for (const row of rows) {
     if (!row.payeeId) continue;

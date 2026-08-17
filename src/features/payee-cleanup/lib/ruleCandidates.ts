@@ -366,23 +366,6 @@ export type FutureResolution = {
   historyTruncated: boolean;
 };
 
-/**
- * The texts a pattern can be built from.
- *
- * Both the reduced stem *and* the final name, because they often differ and the
- * final name is the one the user chose. A cluster reduced to
- * `HUNGRY JACKS MELBOURNE` whose final name is `Hungry Jacks` should be able to
- * offer a rule catching `HUNGRY JACKS` — the narrower stem would miss every
- * future import from a different suburb.
- */
-export function candidateStems(stem: string, finalName: string): string[] {
-  const normalize = normalizePatternText;
-
-  return [...new Set([normalize(stem), normalize(finalName)])].filter(
-    (value) => value.length >= 3
-  );
-}
-
 export function analyzeFutureResolution(input: {
   stem: string;
   finalName: string;
@@ -505,13 +488,7 @@ export function analyzeFutureResolution(input: {
     // What the editor starts from: the text of whatever was actually chosen,
     // so editing begins from what the user can see rather than from a stem they
     // were never shown.
-    matchText:
-      input.override?.text ??
-      (best
-        ? Array.isArray(best.candidate.value)
-          ? String(best.candidate.value)
-          : best.candidate.value
-        : ""),
+    matchText: input.override?.text ?? best?.candidate.value ?? "",
     historyTruncated: input.historyTruncated === true,
   };
 }
