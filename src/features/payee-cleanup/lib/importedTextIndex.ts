@@ -25,6 +25,11 @@ import type { ImportedTextRow, SourceField } from "./ruleCandidates";
  * carries a date or a reference number that approach this, because almost every
  * transaction then produces a unique string.
  *
+ * **Per field, not per scan.** `imported_payee` and `notes` are read separately
+ * and each carries this limit, so a budget using both can return twice it. The
+ * timings below are per row read, whichever field it came from — a two-field
+ * budget at the cap costs about double.
+ *
  * The cost of raising it is real and roughly linear: every proposed pattern is
  * tested against every row. Measured on a 450-payee budget whose text carries a
  * date — so nearly every transaction is its own string — the rule-gap scan takes
