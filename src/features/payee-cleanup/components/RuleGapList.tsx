@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { AlertTriangle, ChevronDown, ChevronRight, Plus } from "lucide-react";
+import Link from "next/link";
+import { AlertTriangle, ChevronDown, ChevronRight, ExternalLink, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import type { RuleGap, RuleGapOverride } from "../lib/ruleGaps";
@@ -76,6 +77,13 @@ export function RuleGapList({
                   // budget accumulating one rule per merchant.
                   <span className="rounded-full border border-border px-2 py-0.5 text-[11px] text-muted-foreground">
                     adds to this payee&apos;s existing rule
+                  </span>
+                ) : null}
+
+                {gap.existingRules.length > 0 ? (
+                  <span className="rounded-full border border-border px-2 py-0.5 text-[11px] text-muted-foreground">
+                    {gap.existingRules.length === 1 ? "1 rule" : `${gap.existingRules.length} rules`}{" "}
+                    already set this payee
                   </span>
                 ) : null}
 
@@ -167,6 +175,32 @@ export function RuleGapList({
                     ) : null}
                   </div>
 
+                  {gap.existingRules.length > 0 ? (
+                    <div>
+                      <div className="text-[11px] uppercase tracking-wider text-muted-foreground">
+                        Rules that already set this payee
+                      </div>
+                      <ul className="mt-1 space-y-0.5">
+                        {gap.existingRules.map(({ rule, covered, total, fullyChecked }) => (
+                          <li key={rule.id} className="flex items-center gap-2">
+                            <Link
+                              href={`/rules?highlight=${rule.id}`}
+                              className="inline-flex items-center gap-1 underline underline-offset-2 hover:text-foreground"
+                              aria-label={`Open the existing rule for ${gap.payee.name}`}
+                            >
+                              {describeConditions(rule)}
+                              <ExternalLink className="size-3" aria-hidden="true" />
+                            </Link>
+                            <span className="shrink-0 text-muted-foreground">
+                              catches {covered} of {total}
+                              {fullyChecked ? "" : " (plus conditions not checked here)"}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : null}
+
                   <RuleConditionEditor gap={gap} onOverride={onOverride} />
                 </div>
               ) : null}
@@ -176,6 +210,16 @@ export function RuleGapList({
       </ul>
     </div>
   );
+}
+
+/** A rule's conditions in the same words the rest of the tab uses. */
+function describeConditions(rule: RuleGap["existingRules"][number]["rule"]): string {
+  const parts = rule.conditions.map((c) => {
+    const value = Array.isArray(c.value) ? c.value.join(", ") : String(c.value ?? "");
+    const field = c.field === "imported_payee" ? "imported payee" : c.field;
+    return `${field} ${c.op} ${value}`;
+  });
+  return parts.length > 0 ? parts.join(rule.conditionsOp === "or" ? " or " : " and ") : "this rule";
 }
 
 /**

@@ -51,6 +51,9 @@ import {
  */
 const MIN_CORE_LENGTH = 8;
 
+/** The share of a payee's transactions an existing rule must catch to settle it. */
+const COVERED_SHARE = 0.5;
+
 /** Below this, a payee is a one-off rather than a pattern worth automating. */
 export const DEFAULT_TRANSACTION_FLOOR = 2;
 
@@ -79,6 +82,21 @@ export type RuleGapProposal =
       invalid?: boolean;
     };
 
+/** A rule that already sets this payee, and how much of its history it catches. */
+export type ExistingPayeeRule = {
+  rule: Rule;
+  /** Transactions of this payee whose import text the rule already matches. */
+  covered: number;
+  /** Total transactions the payee has import text for. */
+  total: number;
+  /**
+   * True when every condition could be checked against the import text. A rule
+   * that also tests an amount or an account cannot be judged from here, so it is
+   * shown but never used to rule a payee out.
+   */
+  fullyChecked: boolean;
+};
+
 export type RuleGap = {
   payee: PayeeCleanupCandidate;
   transactionCount: number;
@@ -92,6 +110,12 @@ export type RuleGap = {
   safe: boolean;
   /** Why it is not safe, in the user's terms. Empty when it is. */
   cautions: string[];
+  /**
+   * Rules that already set this payee. Present when they do not cover enough of
+   * its history to rule it out — the user should be able to see and open the
+   * rule they already have rather than be told, wrongly, that there isn't one.
+   */
+  existingRules: ExistingPayeeRule[];
 };
 
 /** A condition the user typed themselves, replacing the proposed one. */
@@ -150,6 +174,102 @@ export function findRenameRuleFor(rules: Rule[], payeeId: string): Rule | null {
         )
     ) ?? null
   );
+}
+
+/**
+ * Whether one rule condition matches a piece of import text.
+ *
+ * `null` means "cannot be judged from here" — a condition on the amount, the
+ * account or the date says nothing about the text, and pretending otherwise
+ * would let a rule about £5 purchases rule a payee out.
+ */
+function conditionMatches(
+  condition: Rule["conditions"][number],
+  field: SourceField,
+  text: string
+): boolean | null {
+  if (condition.field !== field) return null;
+
+  const upper = text.toUpperCase();
+  const value = condition.value;
+  const asString = typeof value === "string" ? value.toUpperCase() : null;
+  const asList = Array.isArray(value)
+    ? value.filter((v): v is string => typeof v === "string").map((v) => v.toUpperCase())
+    : null;
+
+  switch (condition.op) {
+    case "is":
+      return asString === null ? null : upper === asString;
+    case "contains":
+      return asString === null ? null : upper.includes(asString);
+    case "doesNotContain":
+      return asString === null ? null : !upper.includes(asString);
+    case "oneOf":
+      return asList === null ? null : asList.includes(upper);
+    case "notOneOf":
+      return asList === null ? null : !asList.includes(upper);
+    case "matches":
+      if (asString === null) return null;
+      try {
+        return new RegExp(String(value), "i").test(text);
+      } catch {
+        return false;
+      }
+    default:
+      return null;
+  }
+}
+
+function ruleMatchesText(
+  rule: Rule,
+  field: SourceField,
+  text: string
+): { matches: boolean; fullyChecked: boolean } {
+  const results = rule.conditions.map((c) => conditionMatches(c, field, text));
+  const checkable = results.filter((r): r is boolean => r !== null);
+  if (checkable.length === 0) return { matches: false, fullyChecked: false };
+
+  const matches =
+    rule.conditionsOp === "or" ? checkable.some(Boolean) : checkable.every(Boolean);
+  return { matches, fullyChecked: checkable.length === results.length };
+}
+
+/**
+ * The rules that already set this payee, measured against its own import text.
+ *
+ * The stem of the payee's *name* is the wrong thing to compare: a payee called
+ * `R&B Fashion` whose imports read `R AND B DUBAI` shares no words with either,
+ * so a rule reading `notes contains "R AND B"` looked unrelated — and the payee
+ * was reported as needing the rule it already had.
+ */
+export function rulesSettingPayee(
+  rules: Rule[],
+  payeeId: string,
+  texts: ImportedTextRow[]
+): ExistingPayeeRule[] {
+  const total = texts.reduce((sum, row) => sum + row.transactionCount, 0);
+  const found: ExistingPayeeRule[] = [];
+
+  for (const rule of rules) {
+    const setsThisPayee = rule.actions.some((a) => {
+      if (a.field !== "payee" || a.op !== "set") return false;
+      const values = Array.isArray(a.value) ? a.value : [a.value];
+      return values.some((v) => typeof v === "string" && v === payeeId);
+    });
+    if (!setsThisPayee) continue;
+
+    let covered = 0;
+    let fullyChecked = true;
+    for (const row of texts) {
+      const result = ruleMatchesText(rule, row.field, row.text);
+      if (result.matches) covered += row.transactionCount;
+      if (!result.fullyChecked) fullyChecked = false;
+    }
+
+    found.push({ rule, covered, total, fullyChecked });
+  }
+
+  return found.sort((a, b) => b.covered - a.covered);
 }
 
 /** The texts an existing rename rule already covers, for the comparison form. */
@@ -240,25 +360,36 @@ export function findRuleGaps(inputs: RuleGapInputs): RuleGap[] {
     const exact = exactNameCoverage(payee.name, texts);
     if (importedRows.length > 0 && exact.covered === importedRows.length) continue;
 
-    // 5 — an existing rule already sets this payee. Includes schedule-linked
-    // rules, which reach their payee through a rule of their own.
+    // 5 — is this payee already handled?
     //
-    // The payee's *own* rename rule is deliberately not disqualifying: it
-    // resolves the texts it lists and nothing else, so a text it has never seen
-    // still needs adding. `proposeRule` decides whether anything is missing.
+    // Measured against the payee's own import text, not against the stem of its
+    // name. A payee called `R&B Fashion` whose imports read `R AND B DUBAI`
+    // shares no words with either, so a rule reading `notes contains "R AND B"`
+    // looked unrelated and the payee was reported as needing the rule it already
+    // had — while being told, wrongly, that the rule set a *different* payee.
+    //
+    // Rules that also test something invisible from here (an amount, an account)
+    // are never used to rule a payee out, only shown.
     const renameRule = findRenameRuleFor(inputs.rules, payee.id);
+    const ownRules = rulesSettingPayee(inputs.rules, payee.id, texts);
+    const totalTextTransactions = texts.reduce((sum, r) => sum + r.transactionCount, 0);
+    const alreadyHandled = ownRules.some(
+      (r) =>
+        r.fullyChecked &&
+        r.rule.id !== renameRule?.id &&
+        totalTextTransactions > 0 &&
+        r.covered / totalTextTransactions >= COVERED_SHARE
+    );
+    if (alreadyHandled) continue;
+
+    // The payee's own rename rule is deliberately not disqualifying: it resolves
+    // the texts it lists and nothing else, so a text it has never seen still
+    // needs adding. `proposeRule` decides whether anything is missing.
     const related = classifyRelatedRules(
       inputs.rules,
       new Set([payee.id]),
       reduceFully(payee.name).stem
     );
-    if (
-      related.some(
-        (r) => r.interaction === "already-resolves" && r.rule.id !== renameRule?.id
-      )
-    ) {
-      continue;
-    }
 
     // 6 — one transaction is a coincidence, not a pattern.
     const transactionCount = inputs.transactionCounts.get(payee.id) ?? 0;
@@ -268,7 +399,7 @@ export function findRuleGaps(inputs: RuleGapInputs): RuleGap[] {
     const proposal = proposeRule(payee, texts, inputs, renameRule);
     if (!proposal) continue;
 
-    const cautions = collectCautions(proposal, texts, inputs, related, payee.id);
+    const cautions = collectCautions(proposal, texts, inputs, related, payee.id, ownRules);
     gaps.push({
       payee,
       transactionCount,
@@ -276,6 +407,9 @@ export function findRuleGaps(inputs: RuleGapInputs): RuleGap[] {
       proposal,
       safe: cautions.length === 0,
       cautions,
+      // Only the rules that do not already settle the matter — those excluded
+      // the payee above.
+      existingRules: ownRules,
     });
   }
 
@@ -550,7 +684,8 @@ function collectCautions(
   texts: ImportedTextRow[],
   inputs: RuleGapInputs,
   related: ReturnType<typeof classifyRelatedRules>,
-  payeeId: string
+  payeeId: string,
+  ownRules: ExistingPayeeRule[]
 ): string[] {
   const cautions: string[] = [];
 
@@ -590,8 +725,26 @@ function collectCautions(
     }
   }
 
-  if (related.some((r) => r.interaction === "potential-conflict")) {
+  // Said only when it is true. `classifyRelatedRules` reports a rule as a
+  // potential conflict whenever it cannot tie the rule to the payee by name,
+  // which includes rules that set this very payee — so claiming a different
+  // payee on that basis alone was simply wrong.
+  const ownRuleIds = new Set(ownRules.map((r) => r.rule.id));
+  if (
+    related.some(
+      (r) => r.interaction === "potential-conflict" && !ownRuleIds.has(r.rule.id)
+    )
+  ) {
     cautions.push("An existing rule matches this text and sets a different payee.");
+  }
+
+  const partial = ownRules.find((r) => r.covered > 0);
+  if (partial) {
+    cautions.push(
+      `A rule you already have catches ${partial.covered} of these ${partial.total} transactions${
+        partial.fullyChecked ? "" : ", and also tests something this page cannot check"
+      }.`
+    );
   }
 
   return cautions;

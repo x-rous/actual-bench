@@ -114,7 +114,9 @@ A payee appears only when all of these are true, which is why the list is short:
 
 - its imports **don't already equal its name** — those resolve on their own, and most payees fall out
   here;
-- **no existing rule** already sets it, including a rule behind a schedule;
+- **no existing rule** already sets it — judged by running your rules against this payee's own import
+  text, not by comparing names, so a rule reading `notes contains "R AND B"` is recognised as covering
+  a payee called `R&B Fashion`;
 - it has import text on record and more than one transaction;
 - **an honest rule exists.** If the text neither repeats nor shares a recognisable stem, no rule can
   catch it and the payee is not listed.
@@ -138,6 +140,10 @@ nothing, will not compile, or reaches another payee. Your edits survive a re-sca
 
 Where the payee already has a rule of this kind, cleanup **adds the missing text to it** rather than
 creating a second rule — so tidying ten payees does not mean ten new rules.
+
+Where a rule covers only *part* of a payee's history — or tests something this page cannot check, like
+an amount — the payee stays listed and the rule is shown with how much it catches, and a link to open
+it on the Rules page.
 
 **Create _n_ safe rules** takes only the ones with nothing to judge. Everything else is opted into one
 at a time, and **Doesn't need one** dismisses a payee for good, reversibly, from the Dismissed tab.

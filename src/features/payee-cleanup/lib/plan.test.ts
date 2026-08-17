@@ -414,6 +414,7 @@ describe("rule gaps in the plan", () => {
       },
       safe: true,
       cautions: [],
+      existingRules: [],
     };
   }
 
@@ -447,6 +448,7 @@ describe("rule gaps in the plan", () => {
       },
       safe: true,
       cautions: [],
+      existingRules: [],
     };
   }
 

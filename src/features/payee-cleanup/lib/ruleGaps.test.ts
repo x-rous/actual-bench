@@ -483,6 +483,108 @@ describe("a condition the user typed", () => {
   });
 });
 
+describe("a rule that already sets this payee", () => {
+  const rbTexts: [string, number][] = [
+    ["#2026-08 R AND B DUBAI 784", 3],
+    ["#2026-02 R AND B DUBAI", 2],
+    ["#2025-12 (SM-PAY)- R AND B DUBAI 784", 2],
+    ["R&B", 1],
+    ["#2026-07 R AND B DUBAI ARE", 1],
+  ];
+
+  const rbInputs = (rules: Rule[]) =>
+    inputs({
+      candidates: [payee("p1", "R&B Fashion")],
+      rows: rbTexts.map(([text, n]) => row(text, "p1", n, "notes")),
+      rules,
+      transactionCounts: new Map([["p1", 9]]),
+    });
+
+  const existing = rule({
+    id: "rb-rule",
+    conditions: [{ field: "notes", op: "contains", value: "R AND B" }],
+    actions: [{ field: "payee", op: "set", value: "p1" }],
+  });
+
+  it("does not ask for a rule the payee already has", () => {
+    // The payee is called `R&B Fashion` and its imports read `R AND B DUBAI`, so
+    // neither shares a word with the other. Comparing the rule against the
+    // payee's *name* found nothing and reported a rule as missing that was
+    // sitting right there.
+    expect(findRuleGaps(rbInputs([existing]))).toEqual([]);
+  });
+
+  it("does not claim that rule sets a different payee", () => {
+    // It sets this one. Saying otherwise sends the user looking for a conflict
+    // that does not exist.
+    const gaps = findRuleGaps(
+      rbInputs([
+        rule({
+          id: "rb-partial",
+          conditions: [{ field: "notes", op: "contains", value: "R AND B DUBAI ARE" }],
+          actions: [{ field: "payee", op: "set", value: "p1" }],
+        }),
+      ])
+    );
+
+    expect(gaps).toHaveLength(1);
+    expect(gaps[0].cautions.join(" ")).not.toMatch(/different payee/i);
+  });
+
+  it("shows a rule that covers only part of the history, and how much", () => {
+    const gaps = findRuleGaps(
+      rbInputs([
+        rule({
+          id: "rb-partial",
+          conditions: [{ field: "notes", op: "contains", value: "R AND B DUBAI ARE" }],
+          actions: [{ field: "payee", op: "set", value: "p1" }],
+        }),
+      ])
+    );
+
+    expect(gaps[0].existingRules.map((r) => r.rule.id)).toEqual(["rb-partial"]);
+    expect(gaps[0].existingRules[0].covered).toBe(1);
+    expect(gaps[0].cautions.join(" ")).toMatch(/catches 1 of these 9/i);
+  });
+
+  it("will not be ruled out by a rule it cannot fully check", () => {
+    // A rule that also tests an amount says nothing this page can verify, so it
+    // is shown but never used to hide the payee.
+    const gaps = findRuleGaps(
+      rbInputs([
+        rule({
+          id: "rb-amount",
+          conditions: [
+            { field: "notes", op: "contains", value: "R AND B" },
+            { field: "amount", op: "is", value: 500 },
+          ],
+          actions: [{ field: "payee", op: "set", value: "p1" }],
+        }),
+      ])
+    );
+
+    expect(gaps).toHaveLength(1);
+    expect(gaps[0].existingRules[0].fullyChecked).toBe(false);
+    expect(gaps[0].cautions.join(" ")).toMatch(/cannot check/i);
+  });
+
+  it("still hides a payee whose rule matches on the imported payee field", () => {
+    const gaps = findRuleGaps(
+      inputs({
+        rules: [
+          rule({
+            conditions: [
+              { field: "imported_payee", op: "matches", value: "^NETFLIX" },
+            ],
+            actions: [{ field: "payee", op: "set", value: "p1" }],
+          }),
+        ],
+      })
+    );
+    expect(gaps).toEqual([]);
+  });
+});
+
 describe("commonTokenRun", () => {
   it("finds the merchant inside text that reduces to different stems", () => {
     expect(
