@@ -30,7 +30,7 @@ times, card numbers, long reference and authorization numbers, `Label: value` me
 rates, trailing store numbers and web addresses. These work the same for any bank in any country —
 nothing here knows about yours.
 
-**Learned boilerplate** covers what no pattern can identify. If `DUBAI UAE` closes forty otherwise
+**Learned boilerplate** covers what no pattern can identify. If `ASHDOWN UAE` closes forty otherwise
 unrelated payees, or `NFC - (AP-PAY)-` opens sixty of them, it is wrapping rather than a name. This
 is worked out from your own payees, so a French `CARTE … RETRAIT DAB` is found by the same rule.
 
@@ -93,7 +93,7 @@ anything.
 
 Where a rule *is* worth it, cleanup builds one and backtests it against your own import history:
 
-> Also create a rule: when imported payee starts with "WOOLWORTHS", set the payee.
+> Also create a rule: when imported payee starts with "GROCERGO", set the payee.
 > Matches 92 past transactions of this payee and nothing else.
 
 It is never pre-selected if it would also catch another payee's transactions — you are told which
@@ -115,8 +115,8 @@ A payee appears only when all of these are true, which is why the list is short:
 - its imports **don't already equal its name** — those resolve on their own, and most payees fall out
   here;
 - **no existing rule** already sets it — judged by running your rules against this payee's own import
-  text, not by comparing names, so a rule reading `notes contains "R AND B"` is recognised as covering
-  a payee called `R&B Fashion`;
+  text, not by comparing names, so a rule reading `notes contains "K AND M"` is recognised as covering
+  a payee called `K&M Fashion`;
 - it has import text on record and more than one transaction;
 - **an honest rule exists.** If the text neither repeats nor shares a recognisable stem, no rule can
   catch it and the payee is not listed.
@@ -132,8 +132,8 @@ different strings there are:
   also catches variants you have not seen yet. That one *is* backtested, and you are told if it would
   catch another payee's transactions.
 
-For example, three imports reading `#API Etihad Credit Bureau`, `#2026-05 Etihad Credit Bureau` and
-`-84 IRR (FX rate: #2026-02 ETIHAD CREDIT BUREAU DUBAI UAE)` share `ETIHAD CREDIT BUREAU`, so the rule
+For example, three imports reading `#API Summit Credit Bureau`, `#2026-05 Summit Credit Bureau` and
+`-84 IRR (FX rate: #2026-02 SUMMIT CREDIT BUREAU ASHDOWN UAE)` share `SUMMIT CREDIT BUREAU`, so the rule
 matches that anywhere in the text rather than listing three strings that will never arrive again.
 
 Picking those words out takes more than finding what the imports have in common, because a lot of what
@@ -141,15 +141,15 @@ they have in common isn't the merchant:
 
 - **Hashtag markers are ignored.** `#2026-05` is a date and `#API` is a channel. Two payees whose
   imports happen to fall in the same month would otherwise appear to share `05`.
-- **Words shared with many other payees are discounted.** `DUBAI` closes hundreds of imports across a
-  budget, so it says nothing about *which* payee an import belongs to, while `MUDON` belongs to one.
+- **Words shared with many other payees are discounted.** `ASHDOWN` closes hundreds of imports across a
+  budget, so it says nothing about *which* payee an import belongs to, while `NOVARA` belongs to one.
   This is measured from your own payees — no list of cities is involved, and it works anywhere.
 - **Numbers are discounted.** A phone number or an IBAN is perfectly stable and perfectly useless as a
   name, and a rule built on one breaks the day it changes.
 - **A core stops at four words**, because a bank transfer record is mostly reference data and the
   longest thing two of them share is nearly the whole record.
-- **A run that catches every import doesn't automatically win.** One import written `LVLUP` shouldn't
-  reduce `LVL UP FITNESS` to `FITNESS`.
+- **A run that catches every import doesn't automatically win.** One import written `GYMGO` shouldn't
+  reduce `GYM GO FITNESS` to `FITNESS`.
 
 The same reasoning produces the rule offered on a merge suggestion, so one budget
 gets one kind of rule wherever it was proposed from.

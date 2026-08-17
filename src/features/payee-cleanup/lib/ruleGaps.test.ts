@@ -65,8 +65,8 @@ function rule(parts: Partial<Rule>): Rule {
 
 function inputs(overrides: Partial<RuleGapInputs> = {}): RuleGapInputs {
   return {
-    candidates: [payee("p1", "Netflix")],
-    rows: [row("NETFLIX.COM 4821", "p1")],
+    candidates: [payee("p1", "Filmbox")],
+    rows: [row("FILMBOX.COM 4821", "p1")],
     rules: [],
     transactionCounts: new Map([["p1", 5]]),
     clusteredPayeeIds: new Set(),
@@ -76,21 +76,21 @@ function inputs(overrides: Partial<RuleGapInputs> = {}): RuleGapInputs {
 
 describe("who needs a rule", () => {
   it("proposes one for a curated payee whose imports no longer match its name", () => {
-    // The whole point: Actual resolves by name, so `NETFLIX.COM 4821` will not
-    // find the payee now called `Netflix` — it will create a duplicate.
+    // The whole point: Actual resolves by name, so `FILMBOX.COM 4821` will not
+    // find the payee now called `Filmbox` — it will create a duplicate.
     const gaps = findRuleGaps(inputs());
 
     expect(gaps).toHaveLength(1);
-    expect(gaps[0].payee.name).toBe("Netflix");
+    expect(gaps[0].payee.name).toBe("Filmbox");
     expect(gaps[0].safe).toBe(true);
     // The trailing number is dropped even from a single sample: it carries a
     // digit and the merchant does not, and a rule keyed on it would break the
     // first time the number changed.
     // A pattern rather than a substring, because the text writes it
-    // `NETFLIX.COM` and a literal `NETFLIX COM` would never match.
+    // `FILMBOX.COM` and a literal `FILMBOX COM` would never match.
     const proposal = gaps[0].proposal;
     if (proposal.shape !== "matches") throw new Error("wrong shape");
-    expect(proposal.candidate.value).toBe("^NETFLIX.*COM");
+    expect(proposal.candidate.value).toBe("^FILMBOX.*COM");
   });
 
   it("ignores a payee whose imports already equal its name", () => {
@@ -99,20 +99,20 @@ describe("who needs a rule", () => {
     expect(
       findRuleGaps(
         inputs({
-          candidates: [payee("p1", "Netflix")],
-          rows: [row("Netflix", "p1")],
+          candidates: [payee("p1", "Filmbox")],
+          rows: [row("Filmbox", "p1")],
         })
       )
     ).toEqual([]);
   });
 
   it("ignores a payee whose imports match its name in a different case", () => {
-    // `getPayeeByName` folds case, so `NETFLIX` resolves to `Netflix`.
+    // `getPayeeByName` folds case, so `FILMBOX` resolves to `Filmbox`.
     expect(
       findRuleGaps(
         inputs({
-          candidates: [payee("p1", "Netflix")],
-          rows: [row("NETFLIX", "p1")],
+          candidates: [payee("p1", "Filmbox")],
+          rows: [row("FILMBOX", "p1")],
         })
       )
     ).toEqual([]);
@@ -125,7 +125,7 @@ describe("who needs a rule", () => {
           rules: [
             rule({
               conditions: [
-                { field: "imported_payee", op: "contains", value: "NETFLIX" },
+                { field: "imported_payee", op: "contains", value: "FILMBOX" },
               ],
               actions: [{ field: "payee", op: "set", value: "p1" }],
             }),
@@ -151,11 +151,11 @@ describe("who needs a rule", () => {
   it("ignores transfer and tombstoned payees", () => {
     expect(
       findRuleGaps(
-        inputs({ candidates: [payee("p1", "Netflix", { transferAccountId: "a1" })] })
+        inputs({ candidates: [payee("p1", "Filmbox", { transferAccountId: "a1" })] })
       )
     ).toEqual([]);
     expect(
-      findRuleGaps(inputs({ candidates: [payee("p1", "Netflix", { tombstone: true })] }))
+      findRuleGaps(inputs({ candidates: [payee("p1", "Filmbox", { tombstone: true })] }))
     ).toEqual([]);
   });
 
@@ -175,15 +175,15 @@ describe("who needs a rule", () => {
   it("ranks by the transactions the rule would have assigned", () => {
     const gaps = findRuleGaps(
       inputs({
-        candidates: [payee("p1", "Netflix"), payee("p2", "Spotify")],
-        rows: [row("NETFLIX.COM 4821", "p1"), row("SPOTIFY AB 991", "p2")],
+        candidates: [payee("p1", "Filmbox"), payee("p2", "Spotify")],
+        rows: [row("FILMBOX.COM 4821", "p1"), row("SPOTIFY AB 991", "p2")],
         transactionCounts: new Map([
           ["p1", 4],
           ["p2", 40],
         ]),
       })
     );
-    expect(gaps.map((g) => g.payee.name)).toEqual(["Spotify", "Netflix"]);
+    expect(gaps.map((g) => g.payee.name)).toEqual(["Spotify", "Filmbox"]);
   });
 });
 
@@ -232,15 +232,36 @@ describe("exclusion order", () => {
 });
 
 describe("rule shape", () => {
+  it("never lists text that differs only by its date marker", () => {
+    // Both imports reduce to the same words once the marker is stripped, so
+    // "nothing varies" looked true — and the list was then built from the raw
+    // text, giving a rule matching March and September and no month after.
+    const gaps = findRuleGaps(
+      inputs({
+        candidates: [payee("p1", "Candle Works")],
+        rows: [
+          row("#2024-03 CANDLE WORKS", "p1", 2),
+          row("#2024-09 CANDLE WORKS", "p1", 2),
+        ],
+        transactionCounts: new Map([["p1", 4]]),
+      })
+    );
+
+    const proposal = gaps[0].proposal;
+    expect(proposal.shape).toBe("matches");
+    if (proposal.shape !== "matches") throw new Error("wrong shape");
+    expect(proposal.candidate.value).not.toMatch(/2024/);
+  });
+
   it("uses an exact list when there is nothing to build a pattern from", () => {
     // Actual's own idiom, and it cannot misfire. Reached when the text holds no
     // core worth matching on beyond the whole of itself.
-    const gaps = findRuleGaps(inputs({ rows: [row("NFLX", "p1", 9)] }));
+    const gaps = findRuleGaps(inputs({ rows: [row("FLMB", "p1", 9)] }));
 
     const proposal = gaps[0].proposal;
     expect(proposal.shape).toBe("one-of");
     if (proposal.shape !== "one-of") throw new Error("wrong shape");
-    expect(proposal.texts).toEqual(["NFLX"]);
+    expect(proposal.texts).toEqual(["FLMB"]);
   });
 
   it("uses a pattern as soon as the text varies, however few texts there are", () => {
@@ -249,11 +270,11 @@ describe("rule shape", () => {
     // is the case that made the old distinct-count heuristic wrong.
     const gaps = findRuleGaps(
       inputs({
-        candidates: [payee("p1", "Al Etihad Credit Bureau")],
+        candidates: [payee("p1", "Al Summit Credit Bureau")],
         rows: [
-          row("#API Etihad Credit Bureau", "p1", 4, "notes"),
-          row("#2026-05 Etihad Credit Bureau", "p1", 1, "notes"),
-          row("-84 IRR (FX rate: #2026-02 ETIHAD CREDIT BUREAU DUBAI UAE)", "p1", 1, "notes"),
+          row("#API Summit Credit Bureau", "p1", 4, "notes"),
+          row("#2026-05 Summit Credit Bureau", "p1", 1, "notes"),
+          row("-84 IRR (FX rate: #2026-02 SUMMIT CREDIT BUREAU ASHDOWN UAE)", "p1", 1, "notes"),
         ],
         transactionCounts: new Map([["p1", 6]]),
       })
@@ -265,18 +286,18 @@ describe("rule shape", () => {
     // A plain substring, because one is enough here: a pattern is kept for text
     // whose punctuation varies, not used for its own sake.
     expect(proposal.candidate.op).toBe("contains");
-    expect(proposal.candidate.value).toBe("ETIHAD CREDIT BUREAU");
+    expect(proposal.candidate.value).toBe("SUMMIT CREDIT BUREAU");
     expect(proposal.score.expectedMatches).toBe(6);
   });
 
   it("uses a pattern when the text varies but shares a stem", () => {
     // An exact list could never keep up with a changing store number.
     const rows = Array.from({ length: 6 }, (_, i) =>
-      row(`WOOLWORTHS 0${180 + i}`, "p1", 3)
+      row(`GROCERGO 0${180 + i}`, "p1", 3)
     );
     const gaps = findRuleGaps(
       inputs({
-        candidates: [payee("p1", "Woolworths Metro")],
+        candidates: [payee("p1", "GrocerGo Metro")],
         rows,
         transactionCounts: new Map([["p1", 18]]),
       })
@@ -285,7 +306,7 @@ describe("rule shape", () => {
     const proposal = gaps[0].proposal;
     expect(proposal.shape).toBe("matches");
     if (proposal.shape !== "matches") throw new Error("wrong shape");
-    expect(proposal.candidate.value).toMatch(/WOOLWORTHS/);
+    expect(proposal.candidate.value).toMatch(/GROCERGO/);
   });
 
   it("proposes nothing when the text neither repeats nor shares a core", () => {
@@ -317,7 +338,7 @@ describe("extending an existing rename rule", () => {
   const renameRule = rule({
     id: "rename-1",
     stage: "pre",
-    conditions: [{ field: "imported_payee", op: "oneOf", value: ["NFLX"] }],
+    conditions: [{ field: "imported_payee", op: "oneOf", value: ["FLMB"] }],
     actions: [{ field: "payee", op: "set", value: "p1" }],
   });
 
@@ -331,7 +352,7 @@ describe("extending an existing rename rule", () => {
     // merges into the existing `oneOf` list.
     const gaps = findRuleGaps(
       inputs({
-        rows: [row("NFLX", "p1"), row("NFLXPREMIUM", "p1")],
+        rows: [row("FLMB", "p1"), row("FLMBPREMIUM", "p1")],
         rules: [renameRule],
       })
     );
@@ -340,12 +361,12 @@ describe("extending an existing rename rule", () => {
     if (proposal.shape !== "one-of") throw new Error("wrong shape");
     expect(proposal.extendsRule?.id).toBe("rename-1");
     // Only what is missing — restating what the rule already does is noise.
-    expect(proposal.texts).toEqual(["NFLXPREMIUM"]);
+    expect(proposal.texts).toEqual(["FLMBPREMIUM"]);
   });
 
   it("proposes nothing when the rule already covers every text", () => {
     expect(
-      findRuleGaps(inputs({ rows: [row("NFLX", "p1")], rules: [renameRule] }))
+      findRuleGaps(inputs({ rows: [row("FLMB", "p1")], rules: [renameRule] }))
     ).toEqual([]);
   });
 });
@@ -383,11 +404,11 @@ describe("when a human should look", () => {
 
   it("does not trust a pattern backtested over a truncated history", () => {
     const rows = Array.from({ length: 6 }, (_, i) =>
-      row(`WOOLWORTHS 0${180 + i}`, "p1", 3)
+      row(`GROCERGO 0${180 + i}`, "p1", 3)
     );
     const gaps = findRuleGaps(
       inputs({
-        candidates: [payee("p1", "Woolworths Metro")],
+        candidates: [payee("p1", "GrocerGo Metro")],
         rows,
         transactionCounts: new Map([["p1", 18]]),
         truncated: true,
@@ -401,7 +422,7 @@ describe("when a human should look", () => {
   it("still trusts an exact list over a truncated history", () => {
     // An exact string does not rest on having seen the whole history: it either
     // equals the text or it does not.
-    const gaps = findRuleGaps(inputs({ rows: [row("NFLX", "p1", 9)], truncated: true }));
+    const gaps = findRuleGaps(inputs({ rows: [row("FLMB", "p1", 9)], truncated: true }));
     expect(gaps[0].proposal.shape).toBe("one-of");
     expect(gaps[0].safe).toBe(true);
   });
@@ -412,7 +433,7 @@ describe("when a human should look", () => {
         rules: [
           rule({
             conditions: [
-              { field: "imported_payee", op: "contains", value: "NETFLIX" },
+              { field: "imported_payee", op: "contains", value: "FILMBOX" },
             ],
             actions: [{ field: "payee", op: "set", value: "someone-else" }],
           }),
@@ -428,10 +449,10 @@ describe("when a human should look", () => {
 describe("a condition the user typed", () => {
   const etihad = () =>
     inputs({
-      candidates: [payee("p1", "Al Etihad Credit Bureau")],
+      candidates: [payee("p1", "Al Summit Credit Bureau")],
       rows: [
-        row("#API Etihad Credit Bureau", "p1", 4, "notes"),
-        row("#2026-05 Etihad Credit Bureau", "p1", 1, "notes"),
+        row("#API Summit Credit Bureau", "p1", 4, "notes"),
+        row("#2026-05 Summit Credit Bureau", "p1", 1, "notes"),
       ],
       transactionCounts: new Map([["p1", 5]]),
     });
@@ -440,13 +461,13 @@ describe("a condition the user typed", () => {
     const gaps = findRuleGaps({
       ...etihad(),
       overrides: new Map([
-        ["p1", { field: "notes" as const, op: "matches" as const, value: "ETIHAD" }],
+        ["p1", { field: "notes" as const, op: "matches" as const, value: "SUMMIT" }],
       ]),
     });
 
     const proposal = gaps[0].proposal;
     if (proposal.shape !== "matches") throw new Error("wrong shape");
-    expect(proposal.candidate.value).toBe("ETIHAD");
+    expect(proposal.candidate.value).toBe("SUMMIT");
     expect(proposal.edited).toBe(true);
     // Re-scored against the real history rather than carried over.
     expect(proposal.score.expectedMatches).toBe(5);
@@ -470,7 +491,7 @@ describe("a condition the user typed", () => {
     const gaps = findRuleGaps({
       ...etihad(),
       overrides: new Map([
-        ["p1", { field: "notes" as const, op: "matches" as const, value: "ETIHAD(" }],
+        ["p1", { field: "notes" as const, op: "matches" as const, value: "SUMMIT(" }],
       ]),
     });
 
@@ -484,9 +505,9 @@ describe("a condition the user typed", () => {
     const base = etihad();
     const gaps = findRuleGaps({
       ...base,
-      rows: [...base.rows, row("SOMETHING ETIHAD ELSE", "p2", 3, "notes")],
+      rows: [...base.rows, row("SOMETHING SUMMIT ELSE", "p2", 3, "notes")],
       overrides: new Map([
-        ["p1", { field: "notes" as const, op: "contains" as const, value: "ETIHAD" }],
+        ["p1", { field: "notes" as const, op: "contains" as const, value: "SUMMIT" }],
       ]),
     });
 
@@ -497,16 +518,16 @@ describe("a condition the user typed", () => {
 
 describe("a rule that already sets this payee", () => {
   const rbTexts: [string, number][] = [
-    ["#2026-08 R AND B DUBAI 784", 3],
-    ["#2026-02 R AND B DUBAI", 2],
-    ["#2025-12 (SM-PAY)- R AND B DUBAI 784", 2],
-    ["R&B", 1],
-    ["#2026-07 R AND B DUBAI ARE", 1],
+    ["#2026-08 K AND M ASHDOWN 784", 3],
+    ["#2026-02 K AND M ASHDOWN", 2],
+    ["#2025-12 (SM-PAY)- K AND M ASHDOWN 784", 2],
+    ["K&M", 1],
+    ["#2026-07 K AND M ASHDOWN ARE", 1],
   ];
 
   const rbInputs = (rules: Rule[]) =>
     inputs({
-      candidates: [payee("p1", "R&B Fashion")],
+      candidates: [payee("p1", "K&M Fashion")],
       rows: rbTexts.map(([text, n]) => row(text, "p1", n, "notes")),
       rules,
       transactionCounts: new Map([["p1", 9]]),
@@ -514,12 +535,12 @@ describe("a rule that already sets this payee", () => {
 
   const existing = rule({
     id: "rb-rule",
-    conditions: [{ field: "notes", op: "contains", value: "R AND B" }],
+    conditions: [{ field: "notes", op: "contains", value: "K AND M" }],
     actions: [{ field: "payee", op: "set", value: "p1" }],
   });
 
   it("does not ask for a rule the payee already has", () => {
-    // The payee is called `R&B Fashion` and its imports read `R AND B DUBAI`, so
+    // The payee is called `K&M Fashion` and its imports read `K AND M ASHDOWN`, so
     // neither shares a word with the other. Comparing the rule against the
     // payee's *name* found nothing and reported a rule as missing that was
     // sitting right there.
@@ -533,7 +554,7 @@ describe("a rule that already sets this payee", () => {
       rbInputs([
         rule({
           id: "rb-partial",
-          conditions: [{ field: "notes", op: "contains", value: "R AND B DUBAI ARE" }],
+          conditions: [{ field: "notes", op: "contains", value: "K AND M ASHDOWN ARE" }],
           actions: [{ field: "payee", op: "set", value: "p1" }],
         }),
       ])
@@ -548,7 +569,7 @@ describe("a rule that already sets this payee", () => {
       rbInputs([
         rule({
           id: "rb-partial",
-          conditions: [{ field: "notes", op: "contains", value: "R AND B DUBAI ARE" }],
+          conditions: [{ field: "notes", op: "contains", value: "K AND M ASHDOWN ARE" }],
           actions: [{ field: "payee", op: "set", value: "p1" }],
         }),
       ])
@@ -567,7 +588,7 @@ describe("a rule that already sets this payee", () => {
         rule({
           id: "rb-amount",
           conditions: [
-            { field: "notes", op: "contains", value: "R AND B" },
+            { field: "notes", op: "contains", value: "K AND M" },
             { field: "amount", op: "is", value: 500 },
           ],
           actions: [{ field: "payee", op: "set", value: "p1" }],
@@ -581,24 +602,24 @@ describe("a rule that already sets this payee", () => {
   });
 
   it("understands an `or` rule whose conditions cover different fields", () => {
-    // `notes contains CAREEM or imported payee contains CAREEM` catches every
+    // `notes contains RIDEGO or imported payee contains RIDEGO` catches every
     // one of the payee's imports, but only one of its two conditions applies to
     // any given row. Treating the other as unreadable said the rule could not be
     // checked, and the payee was listed as needing the rule it already had.
     const careem = inputs({
-      candidates: [payee("p1", "Careem")],
+      candidates: [payee("p1", "RideGo")],
       rows: [
-        row("#API CAREEM RIDE", "p1", 9, "notes"),
-        row("#2024-10 CAREEM HALA RIDE Dubai ARE", "p1", 7, "notes"),
-        row("CAREEM RIDE", "p1", 4, "imported_payee"),
+        row("#API RIDEGO RIDE", "p1", 9, "notes"),
+        row("#2024-10 RIDEGO PLUS RIDE Ashdown ARE", "p1", 7, "notes"),
+        row("RIDEGO RIDE", "p1", 4, "imported_payee"),
       ],
       rules: [
         rule({
           id: "careem",
           conditionsOp: "or",
           conditions: [
-            { field: "notes", op: "contains", value: "CAREEM" },
-            { field: "imported_payee", op: "contains", value: "CAREEM" },
+            { field: "notes", op: "contains", value: "RIDEGO" },
+            { field: "imported_payee", op: "contains", value: "RIDEGO" },
           ],
           actions: [{ field: "payee", op: "set", value: "p1" }],
         }),
@@ -612,20 +633,20 @@ describe("a rule that already sets this payee", () => {
   it("does not propose the rule the payee already has", () => {
     // The core was derived from every text the payee had, including the text the
     // existing rule already catches — so it landed on the same words and offered
-    // `notes contains GOOGLE MICROSOFT APPS` beside a rule reading exactly that.
+    // `notes contains NIMBUS OFFICE APPS` beside a rule reading exactly that.
     const onedrive = inputs({
-      candidates: [payee("p1", "Microsoft OneDrive")],
+      candidates: [payee("p1", "Vault Drive")],
       rows: [
-        row("#2025-07 Google Microsoft Apps Mountain View CA", "p1", 1, "notes"),
-        row("#2025-06 Google Microsoft Apps Mountain View CA", "p1", 1, "notes"),
-        row("#2025-05 Google Microsoft Apps Mountain View CA", "p1", 1, "notes"),
-        row("#2025-04 Google Microsoft Apps Mountain View CA", "p1", 1, "notes"),
+        row("#2025-07 Nimbus Office Apps Spring Valley CA", "p1", 1, "notes"),
+        row("#2025-06 Nimbus Office Apps Spring Valley CA", "p1", 1, "notes"),
+        row("#2025-05 Nimbus Office Apps Spring Valley CA", "p1", 1, "notes"),
+        row("#2025-04 Nimbus Office Apps Spring Valley CA", "p1", 1, "notes"),
       ],
       rules: [
         rule({
           id: "onedrive",
           conditions: [
-            { field: "notes", op: "contains", value: "GOOGLE MICROSOFT APPS" },
+            { field: "notes", op: "contains", value: "NIMBUS OFFICE APPS" },
           ],
           actions: [{ field: "payee", op: "set", value: "p1" }],
         }),
@@ -641,18 +662,18 @@ describe("a rule that already sets this payee", () => {
     // only what it does not catch, and the proposal should address that.
     const gaps = findRuleGaps(
       inputs({
-        candidates: [payee("p1", "Microsoft OneDrive")],
+        candidates: [payee("p1", "Vault Drive")],
         rows: [
-          row("#2025-07 Google Microsoft Apps Mountain View CA", "p1", 1, "notes"),
-          row("#2025-06 Google Microsoft Apps Mountain View CA", "p1", 1, "notes"),
-          row("#2025-05 ONEDRIVE SUBSCRIPTION REDMOND WA", "p1", 4, "notes"),
-          row("#2025-04 ONEDRIVE SUBSCRIPTION SEATTLE", "p1", 4, "notes"),
+          row("#2025-07 Nimbus Office Apps Spring Valley CA", "p1", 1, "notes"),
+          row("#2025-06 Nimbus Office Apps Spring Valley CA", "p1", 1, "notes"),
+          row("#2025-05 VAULTDRIVE SUBSCRIPTION REDMOND WA", "p1", 4, "notes"),
+          row("#2025-04 VAULTDRIVE SUBSCRIPTION SEATTLE", "p1", 4, "notes"),
         ],
         rules: [
           rule({
             id: "onedrive",
             conditions: [
-              { field: "notes", op: "contains", value: "GOOGLE MICROSOFT APPS" },
+              { field: "notes", op: "contains", value: "NIMBUS OFFICE APPS" },
             ],
             actions: [{ field: "payee", op: "set", value: "p1" }],
           }),
@@ -664,7 +685,7 @@ describe("a rule that already sets this payee", () => {
     const proposal = gaps[0].proposal;
     if (proposal.shape !== "matches") throw new Error("wrong shape");
     // Derived from the text the existing rule leaves behind, not from all of it.
-    expect(proposal.candidate.value).toMatch(/ONEDRIVE/);
+    expect(proposal.candidate.value).toMatch(/VAULTDRIVE/);
     expect(proposal.candidate.value).not.toMatch(/GOOGLE/);
   });
 
@@ -678,7 +699,7 @@ describe("a rule that already sets this payee", () => {
           rule({
             conditionsOp: "and",
             conditions: [
-              { field: "imported_payee", op: "contains", value: "NETFLIX" },
+              { field: "imported_payee", op: "contains", value: "FILMBOX" },
               { field: "amount", op: "is", value: 500 },
             ],
             actions: [{ field: "payee", op: "set", value: "p1" }],
@@ -696,16 +717,16 @@ describe("a rule that already sets this payee", () => {
     // have matching notes. Reading that as "cannot check this rule" left a payee
     // listed whose rule already caught 170 of its 182 transactions.
     const noon = inputs({
-      candidates: [payee("p1", "Noon Minutes")],
+      candidates: [payee("p1", "Zeno Minutes")],
       rows: [
-        row("#2026-02 Noon Minutes DUBAI ARE", "p1", 17, "notes"),
-        row("#2025-10 NOON Minutes DUBAI DXB", "p1", 16, "notes"),
-        row("NOON Minutes DUBAI DXB", "p1", 10, "imported_payee"),
+        row("#2026-02 Zeno Minutes ASHDOWN ARE", "p1", 17, "notes"),
+        row("#2025-10 ZENO Minutes ASHDOWN DXB", "p1", 16, "notes"),
+        row("ZENO Minutes ASHDOWN DXB", "p1", 10, "imported_payee"),
       ],
       rules: [
         rule({
           id: "noon",
-          conditions: [{ field: "notes", op: "contains", value: "NOON Minutes" }],
+          conditions: [{ field: "notes", op: "contains", value: "ZENO Minutes" }],
           actions: [{ field: "payee", op: "set", value: "p1" }],
         }),
       ],
@@ -724,7 +745,7 @@ describe("a rule that already sets this payee", () => {
           rule({
             conditionsOp: "and",
             conditions: [
-              { field: "imported_payee", op: "contains", value: "NETFLIX" },
+              { field: "imported_payee", op: "contains", value: "FILMBOX" },
               { field: "amount", op: "is", value: 500 },
             ],
             actions: [{ field: "payee", op: "set", value: "p1" }],
@@ -743,7 +764,7 @@ describe("a rule that already sets this payee", () => {
         rules: [
           rule({
             conditions: [
-              { field: "imported_payee", op: "matches", value: "^NETFLIX" },
+              { field: "imported_payee", op: "matches", value: "^FILMBOX" },
             ],
             actions: [{ field: "payee", op: "set", value: "p1" }],
           }),
@@ -758,28 +779,28 @@ describe("commonTokenRun", () => {
   it("finds the merchant inside text that reduces to different stems", () => {
     expect(
       commonTokenRun([
-        "#API Etihad Credit Bureau",
-        "#2026-05 Etihad Credit Bureau",
-        "-84 IRR (FX rate: #2026-02 ETIHAD CREDIT BUREAU DUBAI UAE)",
+        "#API Summit Credit Bureau",
+        "#2026-05 Summit Credit Bureau",
+        "-84 IRR (FX rate: #2026-02 SUMMIT CREDIT BUREAU ASHDOWN UAE)",
       ])
-    ).toBe("ETIHAD CREDIT BUREAU");
+    ).toBe("SUMMIT CREDIT BUREAU");
   });
 
   it("survives an outlier that shares almost nothing", () => {
     // One import written differently must not collapse the core to a fragment.
-    // Nine `LVL UP FITNESS CTR` imports and one `LVLUP FITNESS` share only
+    // Nine `GYM GO FITNESS CTR` imports and one `GYMGO FITNESS` share only
     // `FITNESS`, which is far too little to hang a rule on.
     expect(
       commonTokenRun(
         [
-          "#2025-07 LVL UP FITNESS CTR DUBAI UAE",
-          "#2025-06 (SM-PAY)- LVL UP FITNESS CTR DUBAI UAE",
-          "#2024-11 LVL UP fitness center Dubai DXB",
-          "#2023-02 LVLUP FITNESS DUBAI",
+          "#2025-07 GYM GO FITNESS CTR ASHDOWN UAE",
+          "#2025-06 (SM-PAY)- GYM GO FITNESS CTR ASHDOWN UAE",
+          "#2024-11 GYM GO fitness center Ashdown DXB",
+          "#2023-02 GYMGO FITNESS ASHDOWN",
         ],
         [2, 3, 3, 1]
       )
-    ).toBe("LVL UP FITNESS");
+    ).toBe("GYM GO FITNESS");
   });
 
   it("weights by transactions, not by distinct string", () => {
@@ -796,10 +817,10 @@ describe("commonTokenRun", () => {
     // Otherwise the core swallows that string's own date.
     expect(
       commonTokenRun(
-        ["#2024-06 READY SET GO KIDS AMUS DUBAI ARE", "#2024-09 READY SET GO KIDS DUBAI ARE"],
+        ["#2024-06 SPRINT SET GO KIDS AMUS ASHDOWN ARE", "#2024-09 SPRINT SET GO KIDS ASHDOWN ARE"],
         [9, 5]
       )
-    ).toBe("READY SET GO KIDS");
+    ).toBe("SPRINT SET GO KIDS");
   });
 
   it("requires the words to be adjacent", () => {
@@ -811,12 +832,12 @@ describe("commonTokenRun", () => {
   });
 
   it("returns null when the texts share nothing", () => {
-    expect(commonTokenRun(["WOOLWORTHS 0183", "COLES 0559"])).toBeNull();
+    expect(commonTokenRun(["GROCERGO 0183", "COLES 0559"])).toBeNull();
   });
 
   it("refuses a core too short to hang a rule on", () => {
     expect(commonTokenRun(["THE ALPHA", "THE BRAVO"])).toBeNull();
-    expect(commonTokenRun(["EMIRATES ALPHA", "EMIRATES BRAVO"])).toBe("EMIRATES");
+    expect(commonTokenRun(["ATLANTIS ALPHA", "ATLANTIS BRAVO"])).toBe("ATLANTIS");
     // A whole short merchant is evidence, not a truncation.
     expect(commonTokenRun(["COLES 0183", "COLES 0291"])).toBe("COLES");
   });
@@ -852,15 +873,15 @@ describe("keeping the condition simple (real cases)", () => {
     // nothing ever again.
     expect(
       condition(
-        gapsFor("Level Up Fitness", [
-          ["#2025-07 LVL UP FITNESS CTR DUBAI UAE", 2],
-          ["#2025-07 (SM-PAY)- LVL UP FITNESS CTR DUBAI UAE", 2],
-          ["#2025-06 (SM-PAY)- LVL UP FITNESS CTR DUBAI UAE", 3],
-          ["#2024-11 LVL UP fitness center Dubai DXB", 3],
-          ["#2023-02 LVLUP FITNESS DUBAI", 1],
+        gapsFor("Gym Go Fitness", [
+          ["#2025-07 GYM GO FITNESS CTR ASHDOWN UAE", 2],
+          ["#2025-07 (SM-PAY)- GYM GO FITNESS CTR ASHDOWN UAE", 2],
+          ["#2025-06 (SM-PAY)- GYM GO FITNESS CTR ASHDOWN UAE", 3],
+          ["#2024-11 GYM GO fitness center Ashdown DXB", 3],
+          ["#2023-02 GYMGO FITNESS ASHDOWN", 1],
         ])
       )
-    ).toBe("contains LVL UP FITNESS");
+    ).toBe("contains GYM GO FITNESS");
   });
 
   it("drops a subscription price the sample made look permanent", () => {
@@ -869,54 +890,54 @@ describe("keeping the condition simple (real cases)", () => {
     // the day the price changes.
     expect(
       condition(
-        gapsFor("Google Storage", [
-          ["#2024-07 Google Storage Mountain View CA SAR10.99", 1],
-          ["#2024-06 Google Storage Mountain View CA SAR10.99", 1],
-          ["#2024-05 Google Storage Mountain View CA SAR10.99", 1],
+        gapsFor("Nimbus Storage", [
+          ["#2024-07 Nimbus Storage Spring Valley CA USD10.99", 1],
+          ["#2024-06 Nimbus Storage Spring Valley CA USD10.99", 1],
+          ["#2024-05 Nimbus Storage Spring Valley CA USD10.99", 1],
         ])
       )
-    ).toBe("contains GOOGLE STORAGE");
+    ).toBe("contains NIMBUS STORAGE");
   });
 
   it("keeps a boundary the imports actually demonstrated", () => {
-    // `AMUS` in one import and `DUBAI` in another show where the name ends, so
+    // `AMUS` in one import and `ASHDOWN` in another show where the name ends, so
     // trimming further would throw away evidence.
     expect(
       condition(
-        gapsFor("Ready Set Go", [
-          ["#2024-06 READY SET GO KIDS AMUS DUBAI ARE", 9],
-          ["#2024-09 READY SET GO KIDS DUBAI ARE", 5],
-          ["#2024-11 READY SET GO KIDS DUBAI ARE", 1],
+        gapsFor("Sprint Set Go", [
+          ["#2024-06 SPRINT SET GO KIDS AMUS ASHDOWN ARE", 9],
+          ["#2024-09 SPRINT SET GO KIDS ASHDOWN ARE", 5],
+          ["#2024-11 SPRINT SET GO KIDS ASHDOWN ARE", 1],
         ])
       )
-    ).toBe("contains READY SET GO KIDS");
+    ).toBe("contains SPRINT SET GO KIDS");
   });
 
   it("is not defeated by a reference number welded to the merchant", () => {
-    // `EMIRATES62385176881` is a different token from `EMIRATES`, which used to
+    // `ATLANTIS71234567890` is a different token from `ATLANTIS`, which used to
     // mean the payee's imports shared nothing at all.
     //
-    // The other payees matter: `DUBAI ARE` closes half this budget's imports, so
+    // The other payees matter: `ASHDOWN ARE` closes half this budget's imports, so
     // it reads as scenery rather than a name — but only a corpus can say so.
     expect(
       condition(
         gapsFor(
-          "Emirates Airlines",
+          "Atlantis Airways",
           [
-            ["#2024-08 EMIRATES DUBAI ARE", 2],
-            ["#2026-08 EMIRATES", 1],
-            ["#2025-03 EMIRATES DUBAI ARE", 1],
-            ["#2025-03 EMIRATES62385176881-2 DUBAI ARE", 1],
-            ["#2024-09 EMIRATES62378111182-2 DUBAI ARE", 1],
+            ["#2024-08 ATLANTIS ASHDOWN ARE", 2],
+            ["#2026-08 ATLANTIS", 1],
+            ["#2025-03 ATLANTIS ASHDOWN ARE", 1],
+            ["#2025-03 ATLANTIS71234567890-2 ASHDOWN ARE", 1],
+            ["#2024-09 ATLANTIS71234444440-2 ASHDOWN ARE", 1],
           ],
           [
-            row("#2024-01 CARREFOUR DUBAI ARE", "p2", 4, "notes"),
-            row("#2024-02 TALABAT DUBAI ARE", "p3", 4, "notes"),
-            row("#2024-03 NOON DUBAI ARE", "p4", 4, "notes"),
+            row("#2024-01 MARKETWAY ASHDOWN ARE", "p2", 4, "notes"),
+            row("#2024-02 DELIVERO ASHDOWN ARE", "p3", 4, "notes"),
+            row("#2024-03 ZENO ASHDOWN ARE", "p4", 4, "notes"),
           ]
         )
       )
-    ).toBe("contains EMIRATES");
+    ).toBe("contains ATLANTIS");
   });
 
   it("keeps a longer core when a shorter one would reach another payee", () => {
@@ -924,14 +945,14 @@ describe("keeping the condition simple (real cases)", () => {
     expect(
       condition(
         gapsFor(
-          "Google Storage",
+          "Nimbus Storage",
           [
-            ["#2024-07 Google Storage Mountain View CA SAR10.99", 1],
-            ["#2024-06 Google Storage Mountain View CA SAR10.99", 1],
+            ["#2024-07 Nimbus Storage Spring Valley CA USD10.99", 1],
+            ["#2024-06 Nimbus Storage Spring Valley CA USD10.99", 1],
           ],
-          [row("GOOGLE ADS IRELAND", "p2", 12, "notes")]
+          [row("NIMBUS ADS IRELAND", "p2", 12, "notes")]
         )
       )
-    ).toBe("contains GOOGLE STORAGE");
+    ).toBe("contains NIMBUS STORAGE");
   });
 });

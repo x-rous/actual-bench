@@ -447,7 +447,7 @@ export function analyzeFutureResolution(input: {
   // The question for step 2 is not "does exact-name matching cover a lot?" but
   // "does the rule catch anything exact-name matching would miss?" — the
   // *residual*. A merchant whose every past import already equals the surviving
-  // name needs no rule; one that also arrives as `WOOLWORTHS 0183` does, however
+  // name needs no rule; one that also arrives as `GROCERGO 0183` does, however
   // much of its history matched by name.
   //
   // Only an `imported_payee` candidate can be netted off this way:
@@ -503,7 +503,7 @@ export function analyzeFutureResolution(input: {
  *    variant that has not arrived yet — which is the entire point of the rule.
  *    It also drops trailing noise, like a subscription price, without needing to
  *    know what it is.
- * 2. **`contains` over a pattern.** `contains "READY SET GO KIDS"` and
+ * 2. **`contains` over a pattern.** `contains "SPRINT SET GO KIDS"` and
  *    `matches \bREADY[^A-Za-z0-9]*SET[^A-Za-z0-9]*GO[^A-Za-z0-9]*KIDS\b` do the
  *    same job, and only one of them can be read at a glance. The pattern is kept
  *    for what it exists for: text whose punctuation varies between imports,
@@ -518,8 +518,8 @@ export function chooseCondition(
   trimmable: boolean
 ): CandidateScore | null {
   // Only shorten when the imports never showed where the merchant ends. If
-  // something follows the run in some text — `READY SET GO KIDS` then `AMUS` in
-  // one import and `DUBAI` in another — the data located the boundary and
+  // something follows the run in some text — `SPRINT SET GO KIDS` then `AMUS` in
+  // one import and `ASHDOWN` in another — the data located the boundary and
   // second-guessing it would throw away the evidence.
   const ladder = trimmable ? coreLadder(run) : coreLadder(run).slice(0, 1);
   if (ladder.length === 0) return null;

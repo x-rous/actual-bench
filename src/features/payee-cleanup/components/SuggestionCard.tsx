@@ -408,11 +408,15 @@ export function SuggestionCard({
         <section className="min-w-0">
           <h4 className="font-medium text-foreground">Future imports</h4>
 
-          {/* The editor stays once the user has overridden the field. Hiding it
-              whenever there is no recommendation trapped them: picking a field
-              with no historical matches removed the controls needed to pick
-              another one, or to type text that would match. */}
-          {future && (future.recommended || fieldOverride !== null) ? (
+          {/* The editor stays once the user has touched it at all — the field
+              *or* the text. Hiding it whenever there is no recommendation
+              trapped them: typing text that matches nothing removed the very
+              controls needed to correct it, and the field-only guard missed
+              that half. */}
+          {future &&
+          (future.recommended ||
+            fieldOverride !== null ||
+            correction.rulePattern !== undefined) ? (
             <>
               {future.recommended ? (
                 <label className="mt-1 flex items-start gap-2">

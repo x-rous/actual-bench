@@ -27,8 +27,8 @@ export function normalizePatternText(value: string): string {
 
 /**
  * The shortest a merchant core may be once the ladder starts shortening it.
- * `LVL UP` and `FITNESS` are too little to hang a rule on; `EMIRATES` and
- * `READY SET` are enough. It does not apply to the run itself — see `coreLadder`.
+ * `GYM GO` and `FITNESS` are too little to hang a rule on; `ATLANTIS` and
+ * `SPRINT SET` are enough. It does not apply to the run itself — see `coreLadder`.
  */
 export const MIN_CORE_LENGTH = 8;
 
@@ -52,8 +52,8 @@ const COVERAGE_MARGIN = 0.15;
 /**
  * Hashtags are markers, never merchant text: `#2026-05` is a date and `#API` is
  * a channel. Left in, they corrupt the core — two payees whose imports happen to
- * fall in the same month share `05`, which is how `Green Planet` became
- * `05 GREEN PLANET`. Stripped before the core is derived, never from the text the
+ * fall in the same month share `05`, which is how `Verde Garden` became
+ * `05 VERDE GARDEN`. Stripped before the core is derived, never from the text the
  * rule is matched against.
  */
 function withoutMarkers(text: string): string {
@@ -73,7 +73,7 @@ export function coreTokens(text: string): string[] {
  * How many payees each word turns up for.
  *
  * The budget's own answer to "is this word a merchant, or is it scenery?" —
- * `MUDON` belongs to one payee, `DUBAI` to dozens. No list of cities is needed,
+ * `NOVARA` belongs to one payee, `ASHDOWN` to dozens. No list of cities is needed,
  * and it works for any country: the same reasoning the cleanup scan uses to
  * learn a bank's boilerplate, applied a word at a time.
  */
@@ -123,8 +123,8 @@ function computeTokenSpread(rows: ImportedTextRow[]): TokenSpread {
  *
  * A word counts for it, a word shared with many other payees counts against, and
  * anything carrying a digit counts against. Without the first two, the longest
- * shared run wins on length alone: Grammarly got a rule keyed on the phone
- * number in its statement line, and a builder got `LA ROSA` — the street its
+ * shared run wins on length alone: Wordcraft got a rule keyed on the phone
+ * number in its statement line, and a builder got `OAK RIDGE` — the street its
  * invoices mention — instead of its own name.
  */
 function runQuality(tokens: string[], spread: TokenSpread | undefined): number {
@@ -157,9 +157,9 @@ function rarestToken(tokens: string[], spread: TokenSpread | undefined): number 
  * *reduce* to the same stem was too strict — the reducer is tuned for payee
  * names and leaves different leading noise on each one — but so was requiring
  * the run in every single text. One outlier is enough to ruin it: nine imports
- * reading `LVL UP FITNESS CTR DUBAI UAE` and one reading `LVLUP FITNESS` share
- * only `FITNESS`, and a stray `EMIRATES62385176881` means the payee's other
- * fifteen `EMIRATES` imports share nothing at all.
+ * reading `GYM GO FITNESS CTR ASHDOWN UAE` and one reading `GYMGO FITNESS` share
+ * only `FITNESS`, and a stray `ATLANTIS71234567890` means the payee's other
+ * fifteen `ATLANTIS` imports share nothing at all.
  *
  * So the run has to cover a **majority of the transactions**, not every distinct
  * string — weighted by transaction count, because a one-off oddity should not
@@ -219,23 +219,23 @@ export function commonTokenRun(
 
       // Applied here rather than to the winner. A run too short to hang a rule
       // on used to win on coverage and then be rejected at the end, taking every
-      // runner-up with it: `MAX` appears in all of MAX Fashion's imports, so it
-      // beat `MAX DUBAI`, failed the floor, and left the payee with nothing.
+      // runner-up with it: `MAX` appears in all of TOP Fashion's imports, so it
+      // beat `TOP ASHDOWN`, failed the floor, and left the payee with nothing.
       if (run.length < 2 && run[0].length < 4) continue;
 
       const quality = runQuality(run, spread);
       const rarest = rarestToken(run, spread);
 
       // Coverage first, but only when it is *materially* better. A run catching
-      // every import beats one catching half — `LIFE 29 PHY` over
-      // `LIFE 29 PHY 1264 DUBAI`. A run catching every import does not beat one
+      // every import beats one catching half — `MEDIX 29 PHY` over
+      // `MEDIX 29 PHY 1264 ASHDOWN`. A run catching every import does not beat one
       // catching nine in ten if that costs the merchant's name: one payee
-      // writing `LVLUP` once must not reduce `LVL UP FITNESS` to `FITNESS`.
+      // writing `GYMGO` once must not reduce `GYM GO FITNESS` to `FITNESS`.
       const candidate = { run, coverage, quality, rarest };
 
       // Below the share gate a run is a fallback, not a choice. Kept because the
-      // alternative is listing raw text: `EMIRATES` covers only two in five of
-      // that payee's imports once `EMIRATES62385176881` variants are counted
+      // alternative is listing raw text: `ATLANTIS` covers only two in five of
+      // that payee's imports once `ATLANTIS71234567890` variants are counted
       // separately, and it is still a far better rule than one dated string.
       if (coverage < minShare) {
         if (quality > 0 && (fallback === null || quality > fallback.quality)) {
@@ -246,8 +246,8 @@ export function commonTokenRun(
 
       // Anything that reads like a name beats anything that reads like scenery,
       // whatever the coverage. Generic words have high coverage *because* they
-      // are generic — `DUBAI` closes more of this payee's imports than
-      // `EMIRATES` does, and a rule built on it would catch half the budget.
+      // are generic — `ASHDOWN` closes more of this payee's imports than
+      // `ATLANTIS` does, and a rule built on it would catch half the budget.
       const namelike = quality > 0;
       const bestNamelike = best !== null && best.quality > 0;
 
@@ -324,7 +324,7 @@ export function maximalCommonRun(texts: string[], weights: number[]): string[] |
  * Shorter and shorter leading parts of the run, longest first.
  *
  * The run is the longest core the history *permits*, not the shortest that
- * *works*. Three identical `Google Storage Mountain View CA SAR10.99` imports
+ * *works*. Three identical `Nimbus Storage Spring Valley CA USD10.99` imports
  * make the price look like part of the merchant, and a rule carrying it breaks
  * the day the price changes.
  */

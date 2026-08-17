@@ -247,7 +247,7 @@ function conditionMatches(
  * - **`or`** — a condition that matches is enough on its own, so anything the
  *   unreadable conditions might do can only *add* matches. The count is a lower
  *   bound, and a lower bound is exactly what an exclusion needs. A rule reading
- *   `notes contains CAREEM or imported payee contains CAREEM` is fully
+ *   `notes contains RIDEGO or imported payee contains RIDEGO` is fully
  *   understood even though only one of its two conditions applies to any given
  *   row.
  * - **`and`** — every condition must hold, so a condition we cannot read might
@@ -277,8 +277,8 @@ function ruleMatchesText(
  * The rules that already set this payee, measured against its own import text.
  *
  * The stem of the payee's *name* is the wrong thing to compare: a payee called
- * `R&B Fashion` whose imports read `R AND B DUBAI` shares no words with either,
- * so a rule reading `notes contains "R AND B"` looked unrelated — and the payee
+ * `K&M Fashion` whose imports read `K AND M ASHDOWN` shares no words with either,
+ * so a rule reading `notes contains "K AND M"` looked unrelated — and the payee
  * was reported as needing the rule it already had.
  */
 export function rulesSettingPayee(
@@ -405,8 +405,8 @@ export function findRuleGaps(inputs: RuleGapInputs): RuleGap[] {
     // 5 — is this payee already handled?
     //
     // Measured against the payee's own import text, not against the stem of its
-    // name. A payee called `R&B Fashion` whose imports read `R AND B DUBAI`
-    // shares no words with either, so a rule reading `notes contains "R AND B"`
+    // name. A payee called `K&M Fashion` whose imports read `K AND M ASHDOWN`
+    // shares no words with either, so a rule reading `notes contains "K AND M"`
     // looked unrelated and the payee was reported as needing the rule it already
     // had — while being told, wrongly, that the rule set a *different* payee.
     //
@@ -504,8 +504,8 @@ function proposeRule(
   // Only the texts nothing already handles. Subtracting the rename rule's own
   // list is not enough: *any* rule that sets this payee already catches what it
   // matches, and deriving the core from that text produced a rule identical to
-  // the one already doing the job — `notes contains GOOGLE MICROSOFT APPS`
-  // proposed alongside `notes contains GOOGLE MICROSOFT APPS`.
+  // the one already doing the job — `notes contains NIMBUS OFFICE APPS`
+  // proposed alongside `notes contains NIMBUS OFFICE APPS`.
   const uncovered = source.filter((row) => {
     if (alreadyListed.has(row.text.trim().toUpperCase())) return false;
     // Only rules we could read in full. A rule that also tests an amount was
@@ -560,7 +560,7 @@ function proposeRule(
 
   // Text carrying a marker *does* vary, whatever is left once the marker is
   // stripped. Asking this of the stripped text was inconsistent: two imports
-  // reading `#2023-10 BK Dareen RIYADH` and `#2023-09 BK Dareen RIYADH` were
+  // reading `#2023-10 BB Kestrel BELMONT` and `#2023-09 BB Kestrel BELMONT` were
   // judged identical, and then listed verbatim — producing a rule that matches
   // one month and never fires again.
   const dated = uncoveredTexts.some(hasMarker);
@@ -571,7 +571,7 @@ function proposeRule(
   if (variesAroundRun && run) {
     // Did anything ever follow the *longest* thing these imports share? If not,
     // where the merchant ends is an artefact of the sample rather than a fact —
-    // three identical `Google Storage Mountain View CA SAR10.99` imports make
+    // three identical `Nimbus Storage Spring Valley CA USD10.99` imports make
     // the price look like part of the name.
     //
     // Asked of the longest shared run, not of the core: the core is capped at

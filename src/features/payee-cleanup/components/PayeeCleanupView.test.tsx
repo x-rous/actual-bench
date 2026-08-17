@@ -137,10 +137,10 @@ function openReasoning() {
 describe("PayeeCleanupView", () => {
   it("shows a suggestion with its members, evidence and target", () => {
     candidates = [
-      payee("WOOLWORTHS 0183"),
-      payee("WOOLWORTHS 0291"),
-      payee("WOOLWORTHS 8442"),
-      payee("Woolworths"),
+      payee("GROCERGO 0183"),
+      payee("GROCERGO 0291"),
+      payee("GROCERGO 8442"),
+      payee("GrocerGo"),
     ];
 
     render(<PayeeCleanupView />);
@@ -148,12 +148,12 @@ describe("PayeeCleanupView", () => {
     // Everything a decision needs is on one screen: the result, the payees it
     // comes from with their counts, and what was detected.
     const card = screen.getByRole("article");
-    expect(within(card).getByLabelText(/final payee name/i)).toHaveValue("Woolworths");
+    expect(within(card).getByLabelText(/final payee name/i)).toHaveValue("GrocerGo");
     expect(within(card).getByText(/4 payees/)).toBeInTheDocument();
     // The name renders as spans with the detected noise dimmed, so match the
     // row rather than a contiguous text node.
-    expect(within(card).getByTitle("WOOLWORTHS 0183")).toBeInTheDocument();
-    expect(within(card).getByLabelText(/^keep Woolworths$/i)).toBeChecked();
+    expect(within(card).getByTitle("GROCERGO 0183")).toBeInTheDocument();
+    expect(within(card).getByLabelText(/^keep GrocerGo$/i)).toBeChecked();
     expect(within(card).getByText(/store or terminal number/i)).toBeInTheDocument();
   });
 
@@ -333,7 +333,7 @@ describe("PayeeCleanupView", () => {
   });
 
   it("does not convey confidence by colour alone", () => {
-    candidates = [payee("WOOLWORTHS 0183"), payee("WOOLWORTHS 0291")];
+    candidates = [payee("GROCERGO 0183"), payee("GROCERGO 0291")];
     render(<PayeeCleanupView />);
 
     // The band is words, not a colour — and not a percentage either, which
@@ -344,7 +344,7 @@ describe("PayeeCleanupView", () => {
   });
 
   it("tells the user plainly when there is nothing to clean up", () => {
-    candidates = [payee("Woolworths"), payee("Tesco")];
+    candidates = [payee("GrocerGo"), payee("Tesco")];
     render(<PayeeCleanupView />);
 
     expect(
@@ -476,20 +476,20 @@ describe("PayeeCleanupView", () => {
 
   it("lets the user narrow the rule's matched text", () => {
     // The generated pattern anchors on the reduced stem, which can be narrower
-    // than the merchant: a rule for "HUNGRY JACKS MELBOURNE" misses every other
+    // than the merchant: a rule for "SNACK SHACK MELBOURNE" misses every other
     // suburb.
-    candidates = [payee("HUNGRY JACKS 0183"), payee("HUNGRY JACKS 0291")];
+    candidates = [payee("SNACK SHACK 0183"), payee("SNACK SHACK 0291")];
     importedText = [
       {
         field: "imported_payee",
-        text: "HUNGRY JACKS 0183",
-        payeeId: "p-HUNGRY JACKS 0183",
+        text: "SNACK SHACK 0183",
+        payeeId: "p-SNACK SHACK 0183",
         transactionCount: 4,
       },
       {
         field: "imported_payee",
-        text: "HUNGRY JACKS 0291",
-        payeeId: "p-HUNGRY JACKS 0291",
+        text: "SNACK SHACK 0291",
+        payeeId: "p-SNACK SHACK 0291",
         transactionCount: 6,
       },
     ];
@@ -498,30 +498,61 @@ describe("PayeeCleanupView", () => {
 
 
     const input = screen.getByLabelText(/text the rule should match/i);
-    fireEvent.change(input, { target: { value: "HUNGRY" } });
+    fireEvent.change(input, { target: { value: "SNACK" } });
     fireEvent.blur(input);
 
     // The pattern is rebuilt and re-scored from what the user typed.
-    expect(screen.getByLabelText(/text the rule should match/i)).toHaveValue("HUNGRY");
-    expect(screen.getByText(/\^HUNGRY/)).toBeInTheDocument();
+    expect(screen.getByLabelText(/text the rule should match/i)).toHaveValue("SNACK");
+    expect(screen.getByText(/\^SNACK/)).toBeInTheDocument();
+  });
+
+  it("keeps the editor when the text typed matches nothing", () => {
+    // The mirror of the field case: an override that finds nothing leaves no
+    // recommendation, and hiding the editor then removes the only way to
+    // correct what was just typed. Guarding on the field alone missed this half.
+    candidates = [payee("SNACK SHACK 0183"), payee("SNACK SHACK 0291")];
+    importedText = [
+      {
+        field: "imported_payee",
+        text: "SNACK SHACK 0183",
+        payeeId: "p-SNACK SHACK 0183",
+        transactionCount: 4,
+      },
+      {
+        field: "imported_payee",
+        text: "SNACK SHACK 0291",
+        payeeId: "p-SNACK SHACK 0291",
+        transactionCount: 6,
+      },
+    ];
+
+    render(<PayeeCleanupView />);
+
+    const input = screen.getByLabelText(/text the rule should match/i);
+    fireEvent.change(input, { target: { value: "NOTHING MATCHES THIS" } });
+    fireEvent.blur(input);
+
+    expect(screen.getByLabelText(/text the rule should match/i)).toHaveValue(
+      "NOTHING MATCHES THIS"
+    );
   });
 
   it("keeps the pattern editor reachable after choosing a field with no matches", () => {
     // Selecting a field the history cannot match leaves no recommendation. If
     // that also removed the editor, the user could not choose another field or
     // type text that would match — a one-way trip out of the rule.
-    candidates = [payee("HUNGRY JACKS 0183"), payee("HUNGRY JACKS 0291")];
+    candidates = [payee("SNACK SHACK 0183"), payee("SNACK SHACK 0291")];
     importedText = [
       {
         field: "imported_payee",
-        text: "HUNGRY JACKS 0183",
-        payeeId: "p-HUNGRY JACKS 0183",
+        text: "SNACK SHACK 0183",
+        payeeId: "p-SNACK SHACK 0183",
         transactionCount: 4,
       },
       {
         field: "imported_payee",
-        text: "HUNGRY JACKS 0291",
-        payeeId: "p-HUNGRY JACKS 0291",
+        text: "SNACK SHACK 0291",
+        payeeId: "p-SNACK SHACK 0291",
         transactionCount: 6,
       },
     ];
@@ -547,11 +578,11 @@ describe("PayeeCleanupView", () => {
       target: { value: "imported_payee" },
     });
     // Back on a field the history can match, the recommendation returns.
-    expect(screen.getByText(/\^HUNGRY/)).toBeInTheDocument();
+    expect(screen.getByText(/\^SNACK/)).toBeInTheDocument();
   });
 
   it("keeps the deep reasoning behind an inline toggle, not a dialog", () => {
-    candidates = [payee("WOOLWORTHS 0183"), payee("WOOLWORTHS 0291")];
+    candidates = [payee("GROCERGO 0183"), payee("GROCERGO 0291")];
     render(<PayeeCleanupView />);
 
     // The score lives here, next to the reasoning that produced it — not on the
@@ -568,7 +599,7 @@ describe("PayeeCleanupView", () => {
     // The complaint was density: correct information, badly rationed. The
     // reasoning, the impact breakdown and every editing control belong behind
     // the toggle; the decision itself does not.
-    candidates = [payee("WOOLWORTHS 0183"), payee("WOOLWORTHS 0291")];
+    candidates = [payee("GROCERGO 0183"), payee("GROCERGO 0291")];
     render(<PayeeCleanupView />);
 
     expect(screen.getByRole("button", { name: /^accept$/i })).toBeInTheDocument();
@@ -677,15 +708,15 @@ describe("PayeeCleanupView", () => {
   it("accepts the confident suggestions in one action, never the uncertain ones", () => {
     // Forty cards each needing a click is the same complaint in another form.
     candidates = [
-      payee("WOOLWORTHS 0183"),
-      payee("WOOLWORTHS 0291"),
-      payee("WOOLWORTHS 8442"),
+      payee("GROCERGO 0183"),
+      payee("GROCERGO 0291"),
+      payee("GROCERGO 8442"),
       payee("TESCO 0001"),
       payee("TESCO 0002"),
       payee("TESCO 0003"),
       // A fuzzy-only pair lands in "needs review" and must be left alone.
-      payee("Carrefour Market"),
-      payee("Carrefour Markt"),
+      payee("Marketway Market"),
+      payee("Marketway Markt"),
     ];
     render(<PayeeCleanupView />);
 
@@ -698,8 +729,8 @@ describe("PayeeCleanupView", () => {
     // merchant — the scan could not see it because the names reduce to
     // different stems. Blocking alone leaves them to reconcile it by hand.
     candidates = [
-      payee("WOOLWORTHS 0183"),
-      payee("WOOLWORTHS 0291"),
+      payee("GROCERGO 0183"),
+      payee("GROCERGO 0291"),
       payee("TESCO 0001"),
       payee("TESCO 0002"),
     ];
@@ -733,11 +764,11 @@ describe("PayeeCleanupView", () => {
   it("says what a risky rule catches as well as what it over-catches", () => {
     // "Also catches 1 transaction of X" alone gives no sense of whether the
     // rule is otherwise doing its job.
-    candidates = [payee("WOOLWORTHS 0183"), payee("WOOLWORTHS 0291")];
+    candidates = [payee("GROCERGO 0183"), payee("GROCERGO 0291")];
     importedText = [
-      { field: "imported_payee", text: "WOOLWORTHS 0183", payeeId: "p-WOOLWORTHS 0183", transactionCount: 4 },
-      { field: "imported_payee", text: "WOOLWORTHS 0291", payeeId: "p-WOOLWORTHS 0291", transactionCount: 2 },
-      { field: "imported_payee", text: "WOOLWORTHS MOBILE", payeeId: "p-other", transactionCount: 1 },
+      { field: "imported_payee", text: "GROCERGO 0183", payeeId: "p-GROCERGO 0183", transactionCount: 4 },
+      { field: "imported_payee", text: "GROCERGO 0291", payeeId: "p-GROCERGO 0291", transactionCount: 2 },
+      { field: "imported_payee", text: "GROCERGO MOBILE", payeeId: "p-other", transactionCount: 1 },
     ];
 
     render(<PayeeCleanupView />);
@@ -753,13 +784,13 @@ describe("PayeeCleanupView", () => {
     // The candidate list comes from a fresh read that knows nothing about the
     // staged store. Without this, staging left every suggestion on screen and
     // the same merge could be staged twice.
-    candidates = [payee("WOOLWORTHS 0183"), payee("WOOLWORTHS 0291")];
+    candidates = [payee("GROCERGO 0183"), payee("GROCERGO 0291")];
 
     const { rerender } = render(<PayeeCleanupView />);
     expect(screen.getAllByRole("article")).toHaveLength(1);
 
     pendingPayeeMerges = [
-      { targetId: "p-WOOLWORTHS 0183", mergeIds: ["p-WOOLWORTHS 0291"] },
+      { targetId: "p-GROCERGO 0183", mergeIds: ["p-GROCERGO 0291"] },
     ];
     rerender(<PayeeCleanupView />);
 
@@ -770,10 +801,10 @@ describe("PayeeCleanupView", () => {
     // The staged store holds every loaded payee, not only the edited ones, so
     // counting its keys announced "441 changes are staged" on a page where
     // nothing had been touched.
-    candidates = [payee("WOOLWORTHS 0183"), payee("WOOLWORTHS 0291")];
+    candidates = [payee("GROCERGO 0183"), payee("GROCERGO 0291")];
     stagedPayeeEntries = {
-      "p-WOOLWORTHS 0183": { isNew: false, isUpdated: false, isDeleted: false },
-      "p-WOOLWORTHS 0291": { isNew: false, isUpdated: false, isDeleted: false },
+      "p-GROCERGO 0183": { isNew: false, isUpdated: false, isDeleted: false },
+      "p-GROCERGO 0291": { isNew: false, isUpdated: false, isDeleted: false },
     };
 
     render(<PayeeCleanupView />);
@@ -784,9 +815,9 @@ describe("PayeeCleanupView", () => {
   it("counts a staged rename, which produces no merge at all", () => {
     // A rename-only plan was reported as nothing pending — the one case this
     // reminder exists for.
-    candidates = [payee("WOOLWORTHS 0183"), payee("WOOLWORTHS 0291")];
+    candidates = [payee("GROCERGO 0183"), payee("GROCERGO 0291")];
     stagedPayeeEntries = {
-      "p-WOOLWORTHS 0183": { isNew: false, isUpdated: true, isDeleted: false },
+      "p-GROCERGO 0183": { isNew: false, isUpdated: true, isDeleted: false },
     };
 
     render(<PayeeCleanupView />);
@@ -795,14 +826,14 @@ describe("PayeeCleanupView", () => {
   });
 
   it("lists a curated payee whose imports will not resolve to it again", () => {
-    // Actual matches an imported payee by name alone, so `NETFLIX.COM 4821`
-    // will not find the payee now called `Netflix` — it will create a duplicate.
-    candidates = [payee("Netflix"), payee("Spotify")];
+    // Actual matches an imported payee by name alone, so `FILMBOX.COM 4821`
+    // will not find the payee now called `Filmbox` — it will create a duplicate.
+    candidates = [payee("Filmbox"), payee("Spotify")];
     importedText = [
       {
         field: "imported_payee",
-        text: "NETFLIX.COM 4821",
-        payeeId: "p-Netflix",
+        text: "FILMBOX.COM 4821",
+        payeeId: "p-Filmbox",
         transactionCount: 9,
       },
       {
@@ -813,7 +844,7 @@ describe("PayeeCleanupView", () => {
       },
     ];
     transactionCounts = new Map([
-      ["p-Netflix", 9],
+      ["p-Filmbox", 9],
       ["p-Spotify", 9],
     ]);
 
@@ -821,7 +852,7 @@ describe("PayeeCleanupView", () => {
     fireEvent.click(screen.getByRole("button", { name: /needs a rule/i }));
 
     // Spotify already resolves by name, so it must not be listed.
-    expect(screen.getByText("Netflix")).toBeInTheDocument();
+    expect(screen.getByText("Filmbox")).toBeInTheDocument();
     expect(screen.queryByText("Spotify")).not.toBeInTheDocument();
     expect(screen.getByText(/nothing here changes a payee/i)).toBeInTheDocument();
   });
@@ -831,16 +862,16 @@ describe("PayeeCleanupView", () => {
     // here than on the suggestions tab. The condition carries no "when …, set
     // the payee" wrapper: every row does that, and repeating it cost more width
     // than the condition itself.
-    candidates = [payee("Netflix")];
+    candidates = [payee("Filmbox")];
     importedText = [
       {
         field: "imported_payee",
-        text: "NETFLIX.COM 4821",
-        payeeId: "p-Netflix",
+        text: "FILMBOX.COM 4821",
+        payeeId: "p-Filmbox",
         transactionCount: 9,
       },
     ];
-    transactionCounts = new Map([["p-Netflix", 9]]);
+    transactionCounts = new Map([["p-Filmbox", 9]]);
 
     render(<PayeeCleanupView />);
     fireEvent.click(screen.getByRole("button", { name: /needs a rule/i }));
@@ -863,16 +894,16 @@ describe("PayeeCleanupView", () => {
     // and a pre-stage `imported_payee oneOf` rule has to exist for that payee
     // already — which only Actual's own rename flow or this tab creates. Worth
     // pinning, because "it works" was an assertion rather than an observation.
-    candidates = [payee("Netflix")];
+    candidates = [payee("Filmbox")];
     importedText = [
       {
         field: "imported_payee",
-        text: "NFLXPREMIUM",
-        payeeId: "p-Netflix",
+        text: "FLMBPREMIUM",
+        payeeId: "p-Filmbox",
         transactionCount: 9,
       },
     ];
-    transactionCounts = new Map([["p-Netflix", 9]]);
+    transactionCounts = new Map([["p-Filmbox", 9]]);
     stagedRules = {
       "rename-1": {
         entity: {
@@ -880,9 +911,9 @@ describe("PayeeCleanupView", () => {
           stage: "pre",
           conditionsOp: "and",
           conditions: [
-            { field: "imported_payee", op: "oneOf", value: ["NFLX"] },
+            { field: "imported_payee", op: "oneOf", value: ["FLMB"] },
           ],
-          actions: [{ field: "payee", op: "set", value: "p-Netflix" }],
+          actions: [{ field: "payee", op: "set", value: "p-Filmbox" }],
         },
         original: null,
         isNew: false,
@@ -899,16 +930,16 @@ describe("PayeeCleanupView", () => {
   });
 
   it("offers to create the safe rules in bulk", () => {
-    candidates = [payee("Netflix")];
+    candidates = [payee("Filmbox")];
     importedText = [
       {
         field: "imported_payee",
-        text: "NETFLIX.COM 4821",
-        payeeId: "p-Netflix",
+        text: "FILMBOX.COM 4821",
+        payeeId: "p-Filmbox",
         transactionCount: 9,
       },
     ];
-    transactionCounts = new Map([["p-Netflix", 9]]);
+    transactionCounts = new Map([["p-Filmbox", 9]]);
 
     render(<PayeeCleanupView />);
     fireEvent.click(screen.getByRole("button", { name: /needs a rule/i }));
@@ -917,44 +948,44 @@ describe("PayeeCleanupView", () => {
     fireEvent.click(bulk);
 
     expect(
-      screen.getByRole("checkbox", { name: /create a rule for Netflix/i })
+      screen.getByRole("checkbox", { name: /create a rule for Filmbox/i })
     ).toBeChecked();
   });
 
   it("records that a payee does not need a rule", () => {
-    candidates = [payee("Netflix")];
+    candidates = [payee("Filmbox")];
     importedText = [
       {
         field: "imported_payee",
-        text: "NETFLIX.COM 4821",
-        payeeId: "p-Netflix",
+        text: "FILMBOX.COM 4821",
+        payeeId: "p-Filmbox",
         transactionCount: 9,
       },
     ];
-    transactionCounts = new Map([["p-Netflix", 9]]);
+    transactionCounts = new Map([["p-Filmbox", 9]]);
 
     render(<PayeeCleanupView />);
     fireEvent.click(screen.getByRole("button", { name: /needs a rule/i }));
     fireEvent.click(screen.getByRole("button", { name: /not needed/i }));
 
     expect(rejectRuleGap).toHaveBeenCalledWith(
-      expect.objectContaining({ name: "Netflix" })
+      expect.objectContaining({ name: "Filmbox" })
     );
   });
 
   it("opens on the rule tab when the Rules page links to it", () => {
     // A user asking "why wasn't this import assigned?" starts on the Rules page.
     searchParams = new URLSearchParams("tab=rule-gaps");
-    candidates = [payee("Netflix")];
+    candidates = [payee("Filmbox")];
     importedText = [
       {
         field: "imported_payee",
-        text: "NETFLIX.COM 4821",
-        payeeId: "p-Netflix",
+        text: "FILMBOX.COM 4821",
+        payeeId: "p-Filmbox",
         transactionCount: 9,
       },
     ];
-    transactionCounts = new Map([["p-Netflix", 9]]);
+    transactionCounts = new Map([["p-Filmbox", 9]]);
 
     render(<PayeeCleanupView />);
 
@@ -962,42 +993,42 @@ describe("PayeeCleanupView", () => {
   });
 
   it("lets the user rewrite the rule condition, and re-scores it", () => {
-    candidates = [payee("Al Etihad Credit Bureau")];
+    candidates = [payee("Al Summit Credit Bureau")];
     importedText = [
       {
         field: "notes",
-        text: "#API Etihad Credit Bureau",
-        payeeId: "p-Al Etihad Credit Bureau",
+        text: "#API Summit Credit Bureau",
+        payeeId: "p-Al Summit Credit Bureau",
         transactionCount: 4,
       },
       {
         field: "notes",
-        text: "#2026-05 Etihad Credit Bureau",
-        payeeId: "p-Al Etihad Credit Bureau",
+        text: "#2026-05 Summit Credit Bureau",
+        payeeId: "p-Al Summit Credit Bureau",
         transactionCount: 1,
       },
       {
         field: "notes",
-        text: "-84 IRR (FX rate: #2026-02 ETIHAD CREDIT BUREAU DUBAI UAE)",
-        payeeId: "p-Al Etihad Credit Bureau",
+        text: "-84 IRR (FX rate: #2026-02 SUMMIT CREDIT BUREAU ASHDOWN UAE)",
+        payeeId: "p-Al Summit Credit Bureau",
         transactionCount: 1,
       },
     ];
-    transactionCounts = new Map([["p-Al Etihad Credit Bureau", 6]]);
+    transactionCounts = new Map([["p-Al Summit Credit Bureau", 6]]);
 
     render(<PayeeCleanupView />);
     fireEvent.click(screen.getByRole("button", { name: /needs a rule/i }));
 
     // The condition is on the row itself, not only behind Details.
-    expect(screen.getByText(/ETIHAD CREDIT/)).toBeInTheDocument();
+    expect(screen.getByText(/SUMMIT CREDIT/)).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /details for/i }));
     const input = screen.getByLabelText(/text the rule .* should match/i);
-    fireEvent.change(input, { target: { value: "ETIHAD BUREAU" } });
+    fireEvent.change(input, { target: { value: "SUMMIT BUREAU" } });
     fireEvent.blur(input);
 
     expect(screen.getByLabelText(/text the rule .* should match/i)).toHaveValue(
-      "ETIHAD BUREAU"
+      "SUMMIT BUREAU"
     );
     expect(screen.getByRole("button", { name: /undo my changes/i })).toBeInTheDocument();
   });
@@ -1006,7 +1037,7 @@ describe("PayeeCleanupView", () => {
     // `isLoading` is only true before there is any data, so the button used to
     // look inert for the whole of a re-scan — the one time the user is waiting
     // on it deliberately.
-    candidates = [payee("WOOLWORTHS 0183"), payee("WOOLWORTHS 0291")];
+    candidates = [payee("GROCERGO 0183"), payee("GROCERGO 0291")];
     candidatesFetching = true;
 
     render(<PayeeCleanupView />);
@@ -1018,7 +1049,7 @@ describe("PayeeCleanupView", () => {
 
   it("re-reads the import history too, not just the payees", () => {
     // Otherwise "Scan again" quietly reuses yesterday's history.
-    candidates = [payee("WOOLWORTHS 0183"), payee("WOOLWORTHS 0291")];
+    candidates = [payee("GROCERGO 0183"), payee("GROCERGO 0291")];
     render(<PayeeCleanupView />);
 
     fireEvent.click(screen.getByRole("button", { name: /scan again/i }));
@@ -1032,8 +1063,8 @@ describe("PayeeCleanupView", () => {
     // choices and combined groups the user was still working on — which looked
     // exactly like the work had been lost.
     candidates = [
-      payee("WOOLWORTHS 0183"),
-      payee("WOOLWORTHS 0291"),
+      payee("GROCERGO 0183"),
+      payee("GROCERGO 0291"),
       payee("TESCO 0001"),
       payee("TESCO 0002"),
     ];

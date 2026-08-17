@@ -10,93 +10,93 @@ import type { PayeeCleanupCandidate } from "../types";
  * different way of picking the wrong words. They are kept as one scan rather
  * than a case each because two of the signals — how widely a word is shared, and
  * therefore whether it names a merchant or is just scenery — only exist across a
- * whole budget. Tested one at a time, `DUBAI` looks as distinctive as `EMIRATES`.
+ * whole budget. Tested one at a time, `ASHDOWN` looks as distinctive as `ATLANTIS`.
  */
 
 const CASES: Record<string, [string, number][]> = {
-  Grammarly: [
-    ["#2025-06 GRAMMARLY CO*FAMO8QU 8883186146 CA USD144.00", 1],
-    ["#2024-06 GRAMMARLY COG4SRUFO 8883186146 CA USD144.00", 1],
-    ["#2023-06 GRAMMARLY COKY729VF 8883186146 CA USD144.00", 1],
+  Wordcraft: [
+    ["#2025-06 WORDCRAFT CO*FAMO8QU 5550117420 CA USD144.00", 1],
+    ["#2024-06 WORDCRAFT COG4SRUFO 5550117420 CA USD144.00", 1],
+    ["#2023-06 WORDCRAFT COKY729VF 5550117420 CA USD144.00", 1],
   ],
-  "Green Planet": [
-    ["#2024-05 GREEN PLANET DUBAI UAE", 3],
-    ["#2026-05 GREEN PLANET", 1],
+  "Verde Garden": [
+    ["#2024-05 VERDE GARDEN ASHDOWN UAE", 3],
+    ["#2026-05 VERDE GARDEN", 1],
   ],
-  "Mudon Contractor": [
-    ["#2025-04 04-0913 TRANSFER AEV05045BA8QKOXS HIB- 497203X773365 La Rosa 497 MUDON IRRIGATION AE750400000552809186001 TTS La Rosa 497 IBAI27985 INTERNET BANKING", 1],
-    ["#2025-04 04-0910 TRANSFER AEV03045BA8JRFGG HIB- 715724X729450 La Rosa 3 497 MUDON IRRIGATION AE750400000552809186001 TTS La Rosa 3 497 IBAI19058 INTERNET BANKING", 1],
-    ["#2025-03 04-0903 TRANSFER AEV270358I7X4H1C OW IPP RTP PYMT HIB- 787115X732819 La Rosa 497 MUDON IRRIGATION AE750400000552809186001 PIN La Rosa 497 IBAH04037 INTERNET BANKING", 1],
-    ["#2023-11 04-0677 TRANSFER AEV271132YUB87NK HIB- 144040X900437 MUDON IRRIGATION AE750400000552809186001 GDS MANAF ABUROUS LA ROSA 3 497 INSTALLATION WORK IBAF01589 INTERNET BANKING", 1],
+  "Novara Contractor": [
+    ["#2025-04 04-0913 TRANSFER AEV05045BA8QKOXS HIB- 497203X773365 Oak Ridge 497 NOVARA IRRIGATION AE900000111122223333444 TTS Oak Ridge 497 IBAI27985 INTERNET BANKING", 1],
+    ["#2025-04 04-0910 TRANSFER AEV03045BA8JRFGG HIB- 715724X729450 Oak Ridge 3 497 NOVARA IRRIGATION AE900000111122223333444 TTS Oak Ridge 3 497 IBAI19058 INTERNET BANKING", 1],
+    ["#2025-03 04-0903 TRANSFER AEV270358I7X4H1C OW IPP RTP PYMT HIB- 787115X732819 Oak Ridge 497 NOVARA IRRIGATION AE900000111122223333444 PIN Oak Ridge 497 IBAH04037 INTERNET BANKING", 1],
+    ["#2023-11 04-0677 TRANSFER AEV271132YUB87NK HIB- 144040X900437 NOVARA IRRIGATION AE900000111122223333444 GDS SAMPLE CUSTOMER OAK RIDGE 3 497 INSTALLATION WORK IBAF01589 INTERNET BANKING", 1],
   ],
-  "Reliable Squad": [
-    ["#2023-12 04-0690 TRANSFER AEV11123BAVL8NWG HIB- 179410X943831 RELIABLE SQUAD TECHNICAL SERVICES L AE610030012374099820001 GDS RSTS MAN 1223 1205 MANAF ABU ROUS LA ROSA 3 VILLA 497 IBAF50845 INTERNET BANKING", 1],
-    ["#2023-12 04-0689 TRANSFER AEV07123BAV8DR5S HIB- 144040X564866 RELIABLE SQUAD TECHNICAL SERVICES L AE610030012374099820001 GDS RSTS MAN 1223 1203 MANAF ABU ROUS IBAB48090 INTERNET BANKING", 1],
-    ["#2023-11 04-0678 TRANSFER AEV28113BAUEKPOG HIB- 280X834806 RELIABLE SQUAD TECHNICAL SERVICES L AE610030012374099820001 GDS MANAF ABU ROUS VILLA 497 LA ROSA 3 SPC FLOORING IBAH95869 INTERNET BANKING", 1],
+  "Primefix Building": [
+    ["#2023-12 04-0690 TRANSFER AEV11123BAVL8NWG HIB- 179410X943831 PRIMEFIX BUILDING TECHNICAL SERVICES L AE900000555566667777888 GDS PBTS REF 1223 1205 SAMPLE CUSTOMER OAK RIDGE 3 VILLA 312 IBAF50845 INTERNET BANKING", 1],
+    ["#2023-12 04-0689 TRANSFER AEV07123BAV8DR5S HIB- 144040X564866 PRIMEFIX BUILDING TECHNICAL SERVICES L AE900000555566667777888 GDS PBTS REF 1223 1203 SAMPLE CUSTOMER IBAB48090 INTERNET BANKING", 1],
+    ["#2023-11 04-0678 TRANSFER AEV28113BAUEKPOG HIB- 280X834806 PRIMEFIX BUILDING TECHNICAL SERVICES L AE900000555566667777888 GDS SAMPLE CUSTOMER VILLA 497 OAK RIDGE 3 SPC FLOORING IBAH95869 INTERNET BANKING", 1],
   ],
-  "Life Pharmacy": [
-    ["#2026-01 LIFE 29 PHY-1264 DUBAI ARE", 1],
-    ["#2024-08 1264-LIFE 29 PHY DUBAI ARE", 1],
-    ["#2024-06 1264-LIFE 29 PHY DUBAI ARE", 1],
-    ["#2023-06 LIFE 29 PHY-1264 Dubai DXB", 1],
-    ["#2023-05 (SM-PAY)- LIFE 29 PHY-1264 Dubai DXB", 1],
+  "Medix Pharmacy": [
+    ["#2026-01 MEDIX 29 PHY-1264 ASHDOWN ARE", 1],
+    ["#2024-08 1264-MEDIX 29 PHY ASHDOWN ARE", 1],
+    ["#2024-06 1264-MEDIX 29 PHY ASHDOWN ARE", 1],
+    ["#2023-06 MEDIX 29 PHY-1264 Ashdown DXB", 1],
+    ["#2023-05 (SM-PAY)- MEDIX 29 PHY-1264 Ashdown DXB", 1],
   ],
-  "Cigna ME": [
-    ["#2025-03 04-0889 TRANSFER AE1SWIF2506400F3 AER060358I5Y5VLW 1/CIGNA INSURANCE MIDDLE EAST SAL /REF/INS INSURANCE SERVICES /ROC/6850000014138977 YPI408697 OTHER SOURCE", 1],
-    ["#2025-02 04-0882 TRANSFER AE1SWIF2505000SH AER200258I4O1UTI 1/CIGNA INSURANCE MIDDLE EAST SAL /REF/INS INSURANCE SERVICES /ROC/6850000014099541 YPI421127 OTHER SOURCE", 1],
-    ["#2025-01 04-0869 TRANSFER AE1SWIF2500900QX AER100158I0XATFL 1/CIGNA INSURANCE MIDDLE EAST SAL /REF/INS INSURANCE SERVICES /ROC/6850000013989869 YPI517356 OTHER SOURCE", 1],
+  "Orion ME": [
+    ["#2025-03 04-0889 TRANSFER AE1SWIF2506400F3 AER060358I5Y5VLW 1/ORION INSURANCE MIDDLE EAST SAL /REF/INS INSURANCE SERVICES /ROC/6850000014138977 YPI408697 OTHER SOURCE", 1],
+    ["#2025-02 04-0882 TRANSFER AE1SWIF2505000SH AER200258I4O1UTI 1/ORION INSURANCE MIDDLE EAST SAL /REF/INS INSURANCE SERVICES /ROC/6850000014099541 YPI421127 OTHER SOURCE", 1],
+    ["#2025-01 04-0869 TRANSFER AE1SWIF2500900QX AER100158I0XATFL 1/ORION INSURANCE MIDDLE EAST SAL /REF/INS INSURANCE SERVICES /ROC/6850000013989869 YPI517356 OTHER SOURCE", 1],
   ],
-  miniBOUNCE: [
-    ["#2025-05 (SM-PAY)- MINI BOUNCE DUBAI 784", 2],
-    ["#2025-04 (AP-PAY)- MINI BOUNCE DUBAI 784", 2],
-    ["#2025-06 (SM-PAY)- MINI BOUNCE DUBAI 784", 1],
-    ["#2025-05 MINI BOUNCE DUBAI DXB", 1],
-    ["#2025-04 MINI BOUNCE DUBAI 784", 1],
+  jumpHOUSE: [
+    ["#2025-05 (SM-PAY)- JUMP HOUSE ASHDOWN 784", 2],
+    ["#2025-04 (AP-PAY)- JUMP HOUSE ASHDOWN 784", 2],
+    ["#2025-06 (SM-PAY)- JUMP HOUSE ASHDOWN 784", 1],
+    ["#2025-05 JUMP HOUSE ASHDOWN DXB", 1],
+    ["#2025-04 JUMP HOUSE ASHDOWN 784", 1],
   ],
-  "Level Up Fitness": [
-    ["#2025-07 LVL UP FITNESS CTR DUBAI UAE", 2],
-    ["#2025-06 (SM-PAY)- LVL UP FITNESS CTR DUBAI UAE", 3],
-    ["#2024-11 LVL UP fitness center Dubai DXB", 3],
-    ["#2023-02 LVLUP FITNESS DUBAI", 1],
+  "Gym Go Fitness": [
+    ["#2025-07 GYM GO FITNESS CTR ASHDOWN UAE", 2],
+    ["#2025-06 (SM-PAY)- GYM GO FITNESS CTR ASHDOWN UAE", 3],
+    ["#2024-11 GYM GO fitness center Ashdown DXB", 3],
+    ["#2023-02 GYMGO FITNESS ASHDOWN", 1],
   ],
-  "Google Storage": [
-    ["#2024-07 Google Storage Mountain View CA SAR10.99", 1],
-    ["#2024-06 Google Storage Mountain View CA SAR10.99", 1],
-    ["#2024-05 Google Storage Mountain View CA SAR10.99", 1],
+  "Nimbus Storage": [
+    ["#2024-07 Nimbus Storage Spring Valley CA USD10.99", 1],
+    ["#2024-06 Nimbus Storage Spring Valley CA USD10.99", 1],
+    ["#2024-05 Nimbus Storage Spring Valley CA USD10.99", 1],
   ],
-  "Ready Set Go": [
-    ["#2024-06 READY SET GO KIDS AMUS DUBAI ARE", 9],
-    ["#2024-09 READY SET GO KIDS DUBAI ARE", 5],
-    ["#2024-11 READY SET GO KIDS DUBAI ARE", 1],
+  "Sprint Set Go": [
+    ["#2024-06 SPRINT SET GO KIDS AMUS ASHDOWN ARE", 9],
+    ["#2024-09 SPRINT SET GO KIDS ASHDOWN ARE", 5],
+    ["#2024-11 SPRINT SET GO KIDS ASHDOWN ARE", 1],
   ],
-  "Emirates Airlines": [
-    ["#2024-08 EMIRATES DUBAI ARE", 2],
-    ["#2026-08 EMIRATES", 1],
-    ["#2025-03 EMIRATES62385176881-2 DUBAI ARE", 1],
+  "Atlantis Airways": [
+    ["#2024-08 ATLANTIS ASHDOWN ARE", 2],
+    ["#2026-08 ATLANTIS", 1],
+    ["#2025-03 ATLANTIS71234567890-2 ASHDOWN ARE", 1],
   ],
-  "Etihad Credit Bureau": [
-    ["#API Etihad Credit Bureau", 4],
-    ["#2026-05 Etihad Credit Bureau", 1],
-    ["-84 IRR (FX rate: #2026-02 ETIHAD CREDIT BUREAU DUBAI UAE)", 1],
+  "Summit Credit Bureau": [
+    ["#API Summit Credit Bureau", 4],
+    ["#2026-05 Summit Credit Bureau", 1],
+    ["-84 IRR (FX rate: #2026-02 SUMMIT CREDIT BUREAU ASHDOWN UAE)", 1],
   ],
   // The second batch, reported once markers were being stripped from the core
   // but not from the exact list — so each of these produced a rule keyed to a
   // single month, which can never fire again.
-  "Panda Hypermarket": [["#2023-07 Panda Retail Co TAIF", 2]],
-  BurgerKing: [
-    ["#2023-09 BK Dareen RIYADH", 7], ["#2023-10 BK Dareen RIYADH", 5],
-    ["#2023-10 BK 8260 RIYADH", 3], ["BurgerKingPrHamoud", 1],
-    ["#2026-03 BURGERKING ETHIHAD DUBAI 784", 1],
+  "Parque Hypermarket": [["#2023-07 Parque Retail Co WESTON", 2]],
+  BurgerBarn: [
+    ["#2023-09 BB Kestrel BELMONT", 7], ["#2023-10 BB Kestrel BELMONT", 5],
+    ["#2023-10 BB 8260 BELMONT", 3], ["BurgerBarnPrHaven", 1],
+    ["#2026-03 BURGERBARN CROSSING ASHDOWN 784", 1],
   ],
-  "MAX Fashion": [
-    ["#API MAX", 2], ["#2026-06 MAX DUBAI 784", 2],
-    ["-112 IRR (FX rate: #2026-04 MAX DUBAI 784)", 1],
+  "TOP Fashion": [
+    ["#API TOP", 2], ["#2026-06 TOP ASHDOWN 784", 2],
+    ["-112 IRR (FX rate: #2026-04 TOP ASHDOWN 784)", 1],
   ],
-  "Dr. Omar Yahia Dental Clinic": [["#API OMAR YAHIA DENTAL SURG", 2]],
-  HungerStation: [["#API HUNGERSTATION LLC", 2]],
-  "Tamimi Markets": [["#2024-02 TAMIMI MARKETS RIYADH", 6], ["#2024-05 TAMIMI MARKETS RIYADH", 4]],
-  Carrefour: [["#2024-02 CARREFOUR DUBAI ARE", 6], ["#2024-05 CARREFOUR RIYADH", 4]],
-  Jarir: [["#2024-02 JARIR BOOKSTORE RIYADH", 6], ["#2024-06 JARIR BOOKSTORE DUBAI", 4]],
+  "Dr. Elms Valley Dental Clinic": [["#API ELMS VALLEY DENTAL SURG", 2]],
+  MealExpress: [["#API MEALEXPRESS LLC", 2]],
+  "Harbour Markets": [["#2024-02 HARBOUR MARKETS BELMONT", 6], ["#2024-05 HARBOUR MARKETS BELMONT", 4]],
+  Marketway: [["#2024-02 MARKETWAY ASHDOWN ARE", 6], ["#2024-05 MARKETWAY BELMONT", 4]],
+  Penlight: [["#2024-02 PENLIGHT BOOKSTORE BELMONT", 6], ["#2024-06 PENLIGHT BOOKSTORE ASHDOWN", 4]],
 
 };
 
@@ -160,46 +160,46 @@ describe("what a real budget should produce", () => {
   it.each([
     // A phone number is stable across every statement line, and was winning on
     // length. The merchant's own name is one word and was losing.
-    ["Grammarly", "contains GRAMMARLY"],
+    ["Wordcraft", "contains WORDCRAFT"],
     // Both imports fell in May, so the date's `05` looked like shared merchant
     // text — which is why hashtag markers are stripped before the core is read.
-    ["Green Planet", "contains GREEN PLANET"],
+    ["Verde Garden", "contains VERDE GARDEN"],
     // The street its invoices mention is shared with other contractors; its own
     // name is not.
-    ["Mudon Contractor", "contains MUDON IRRIGATION"],
+    ["Novara Contractor", "contains NOVARA IRRIGATION"],
     // A transfer record is mostly IBAN and reference; four words is enough.
-    ["Reliable Squad", "contains RELIABLE SQUAD TECHNICAL SERVICES"],
+    ["Primefix Building", "contains PRIMEFIX BUILDING TECHNICAL SERVICES"],
     // `1264` moves from the front to the middle between imports, so the run that
     // covers every one of them is shorter than the run that covers half.
-    ["Life Pharmacy", "contains LIFE 29 PHY"],
-    ["Cigna ME", "contains CIGNA INSURANCE MIDDLE EAST"],
+    ["Medix Pharmacy", "contains MEDIX 29 PHY"],
+    ["Orion ME", "contains ORION INSURANCE MIDDLE EAST"],
     // `PAY` comes from the `(SM-PAY)` channel marker and covers only the imports
     // that carry it.
-    ["miniBOUNCE", "contains MINI BOUNCE"],
-    // One import written `LVLUP` must not reduce the core to `FITNESS`.
-    ["Level Up Fitness", "contains LVL UP FITNESS"],
+    ["jumpHOUSE", "contains JUMP HOUSE"],
+    // One import written `GYMGO` must not reduce the core to `FITNESS`.
+    ["Gym Go Fitness", "contains GYM GO FITNESS"],
     // Nothing follows the shared text in any import, so where the merchant ends
     // is unknown and the price must not be treated as part of the name.
-    ["Google Storage", "contains GOOGLE STORAGE"],
-    // Here something *does* follow it — `AMUS` in one, `DUBAI` in another — so
+    ["Nimbus Storage", "contains NIMBUS STORAGE"],
+    // Here something *does* follow it — `AMUS` in one, `ASHDOWN` in another — so
     // the boundary is evidence and is kept.
-    ["Ready Set Go", "contains READY SET GO KIDS"],
-    // `EMIRATES62385176881` is a different word from `EMIRATES`, and `DUBAI ARE`
+    ["Sprint Set Go", "contains SPRINT SET GO KIDS"],
+    // `ATLANTIS71234567890` is a different word from `ATLANTIS`, and `ASHDOWN ARE`
     // closes half the budget's imports.
-    ["Emirates Airlines", "contains EMIRATES"],
-    ["Etihad Credit Bureau", "contains ETIHAD CREDIT BUREAU"],
+    ["Atlantis Airways", "contains ATLANTIS"],
+    ["Summit Credit Bureau", "contains SUMMIT CREDIT BUREAU"],
     // A date marker means the text varies, whatever is left once it is stripped,
     // so a list of dated strings is never the answer — each of these produced a
     // rule keyed to one month.
-    ["Panda Hypermarket", "contains PANDA RETAIL"],
-    ["BurgerKing", "contains BK DAREEN"],
-    ["MAX Fashion", "contains MAX DUBAI"],
-    ["Dr. Omar Yahia Dental Clinic", "contains OMAR YAHIA"],
-    ["HungerStation", "contains HUNGERSTATION"],
+    ["Parque Hypermarket", "contains PARQUE RETAIL"],
+    ["BurgerBarn", "contains BB KESTREL"],
+    ["TOP Fashion", "contains TOP ASHDOWN"],
+    ["Dr. Elms Valley Dental Clinic", "contains ELMS VALLEY"],
+    ["MealExpress", "contains MEALEXPRESS"],
     // Scenery, present only so the cities above read as cities.
-    ["Tamimi Markets", "contains TAMIMI MARKETS"],
-    ["Carrefour", "contains CARREFOUR"],
-    ["Jarir", "contains JARIR BOOKSTORE"],
+    ["Harbour Markets", "contains HARBOUR MARKETS"],
+    ["Marketway", "contains MARKETWAY"],
+    ["Penlight", "contains PENLIGHT BOOKSTORE"],
   ])("%s → %s", (payee, expected) => {
     expect(conditions.get(payee)).toBe(expected);
   });
@@ -210,7 +210,7 @@ describe("both halves of cleanup answer the same way", () => {
     // The two used different derivations, so one budget produced two shaped
     // rules depending on which tab happened to propose them — and only one of
     // them knew that a date is not a merchant.
-    const texts = CASES["Level Up Fitness"];
+    const texts = CASES["Gym Go Fitness"];
     const rows: ImportedTextRow[] = texts.map(([text, n]) => ({
       field: "notes",
       text,
@@ -220,12 +220,12 @@ describe("both halves of cleanup answer the same way", () => {
     }));
 
     const fromMerge = analyzeFutureResolution({
-      stem: "LVL UP FITNESS CTR",
-      finalName: "Level Up Fitness",
+      stem: "GYM GO FITNESS CTR",
+      finalName: "Gym Go Fitness",
       members: [
         {
           id: "p1",
-          name: "Level Up Fitness",
+          name: "Gym Go Fitness",
           metadata: {
             id: "p1",
             favorite: false,
@@ -239,10 +239,10 @@ describe("both halves of cleanup answer the same way", () => {
       rules: [],
     });
 
-    const fromGap = scan().get("Level Up Fitness");
+    const fromGap = scan().get("Gym Go Fitness");
 
     expect(fromMerge.recommended?.candidate.op).toBe("contains");
-    expect(fromMerge.recommended?.candidate.value).toBe("LVL UP FITNESS");
-    expect(fromGap).toBe("contains LVL UP FITNESS");
+    expect(fromMerge.recommended?.candidate.value).toBe("GYM GO FITNESS");
+    expect(fromGap).toBe("contains GYM GO FITNESS");
   });
 });
