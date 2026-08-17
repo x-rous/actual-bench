@@ -17,7 +17,20 @@ import type { ConnectionInstance } from "@/store/connection";
 import type { ImportedTextRow, SourceField } from "./ruleCandidates";
 
 /** Guard against a pathological budget; well above any realistic distinct-string count. */
-const ROW_LIMIT = 5000;
+/**
+ * How many distinct import strings to read.
+ *
+ * Distinct *strings*, not transactions — a budget with 23,000 transactions may
+ * hold only a few hundred if the text repeats. It is the budgets whose text
+ * carries a date or a reference number that approach this, because almost every
+ * transaction then produces a unique string.
+ *
+ * The cost of raising it is real and linear: every proposed pattern is tested
+ * against every row, so the scan runs roughly four times longer at 23,000 rows
+ * than at 5,000. 7,500 covers more budgets without making the common case worse,
+ * and anything beyond it is disclosed rather than hidden.
+ */
+const ROW_LIMIT = 7500;
 
 type QueryRow = Record<string, unknown> & { transactionCount?: number };
 

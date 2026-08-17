@@ -263,6 +263,36 @@ describe("Actual native payee semantics (pinned)", () => {
     });
   });
 
+  describe("how a rule compares text (RD-087)", () => {
+    const condition = readPackageSource(
+      "@actual-app/core",
+      "src/server/rules/condition.ts"
+    );
+
+    it("lower-cases a string condition's value when the rule is parsed", () => {
+      // Half of why `contains "CASSETTE"` catches `Cassette Restaurant`. If this
+      // stopped happening, every generated condition — which is built from an
+      // upper-cased core — would silently match nothing.
+      const stringType = sliceBetween(condition, "  string: {", "  number: {");
+      expect(stringType).toContain("return value.toLowerCase();");
+    });
+
+    it("lower-cases the transaction's own text before comparing", () => {
+      expect(condition).toContain("fieldValue = fieldValue.toLowerCase();");
+    });
+
+    it("compares with a plain substring and a plain regex, relying on that", () => {
+      // Neither carries a case-insensitive flag of its own, so the folding above
+      // is the only thing making the comparison case-insensitive. Bench's own
+      // backtest folds case the same way; if either side changed, the backtest
+      // would start promising matches that never happen.
+      expect(condition).toContain(
+        "return String(fieldValue).indexOf(this.value) !== -1;"
+      );
+      expect(condition).toContain("return new RegExp(this.value).test(fieldValue);");
+    });
+  });
+
   describe("Actual's own payee-rename rule (RD-087 §1.1)", () => {
     const rules = readPackageSource(
       "@actual-app/core",
