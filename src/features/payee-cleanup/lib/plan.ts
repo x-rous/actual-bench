@@ -468,7 +468,24 @@ export function validatePlan(
   // in the same plan have no history to compare against, so a pattern for one
   // merchant can silently shadow the exact list for another — which Rule
   // Diagnostics would later report as a finding the user never chose to create.
-  const newRules = [...plan.rules];
+  //
+  // Extensions count too: adding "X" to one payee's rename rule while creating
+  // `oneOf ["X"]` for another is exactly the same collision, and comparing only
+  // the creations let it through. An extension is an `imported_payee oneOf`
+  // addition, so it maps onto the same comparison.
+  const newRules: CreateRuleOperation[] = [
+    ...plan.rules,
+    ...plan.ruleExtensions.map((extension) => ({
+      kind: "create-rule" as const,
+      targetPayeeId: extension.targetPayeeId,
+      targetName: extension.targetName,
+      field: "imported_payee" as const,
+      op: "oneOf" as const,
+      value: extension.addTexts,
+      description: extension.description,
+      expectedMatches: 0,
+    })),
+  ];
   for (let i = 0; i < newRules.length; i++) {
     for (let j = i + 1; j < newRules.length; j++) {
       const a = newRules[i];

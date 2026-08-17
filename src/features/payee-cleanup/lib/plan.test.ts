@@ -504,6 +504,36 @@ describe("rule gaps in the plan", () => {
     ).toBe(true);
   });
 
+  it("blocks an extension that collides with a new rule", () => {
+    // Adding a text to one payee's rename rule while creating the same exact
+    // match for another is the same collision as two new rules, and comparing
+    // only the creations let it through.
+    const existing = {
+      id: "rename-1",
+      stage: "pre" as const,
+      conditionsOp: "and" as const,
+      conditions: [{ field: "imported_payee", op: "oneOf", value: ["FLMB"] }],
+      actions: [{ field: "payee", op: "set", value: "p1" }],
+    };
+    const plan = buildPlan(
+      [],
+      [],
+      [
+        exactGap("p1", "Filmbox", ["SHARED TEXT"], existing as never),
+        exactGap("p2", "Streamly", ["SHARED TEXT"]),
+      ]
+    );
+
+    expect(plan.ruleExtensions).toHaveLength(1);
+    const problems = validatePlan(
+      plan,
+      context(payee("p1", "Filmbox"), payee("p2", "Streamly"))
+    );
+    expect(
+      problems.some((p) => /would both match the same imported text/i.test(p.message))
+    ).toBe(true);
+  });
+
   it("allows two new rules that cannot both match", () => {
     const plan = buildPlan(
       [],

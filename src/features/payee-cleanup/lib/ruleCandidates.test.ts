@@ -71,6 +71,42 @@ describe("buildCandidates", () => {
   });
 });
 
+describe("the backtest matches how a saved rule compares", () => {
+  // The tests below build their own regular expressions, which is exactly how a
+  // difference between the backtest and the rule engine would go unnoticed —
+  // so these go through `scoreCandidate`, the path the user's numbers come from.
+  const rowsFor = (text: string): ImportedTextRow[] => [
+    { field: "imported_payee", text, payeeId: "p1", payeeName: null, transactionCount: 1 },
+  ];
+  const score = (candidate: Parameters<typeof scoreCandidate>[0], text: string) =>
+    scoreCandidate(candidate, rowsFor(text), new Set(["p1"]), new Set()).expectedMatches;
+
+  it("folds case, because the engine lower-cases both sides", () => {
+    expect(
+      score(
+        { field: "imported_payee", op: "contains", value: "CASSETTE", description: "" },
+        "Cassette Restaurant"
+      )
+    ).toBe(1);
+    expect(
+      score(
+        { field: "imported_payee", op: "matches", value: "^SNACK.*SHACK", description: "" },
+        "Snack.Shack 0183"
+      )
+    ).toBe(1);
+  });
+
+  it("lower-cases the pattern itself, as the engine does when it parses it", () => {
+    // `\D` means "not a digit" and `\d` means "a digit". Actual lower-cases the
+    // condition's value, so a pattern written with the upper-case form inverts
+    // once saved — and a backtest using a case-insensitive flag instead would
+    // promise the opposite of what the rule delivers.
+    const upper = { field: "imported_payee" as const, op: "matches" as const, value: "^\\D+$", description: "" };
+    expect(score(upper, "abc")).toBe(0);
+    expect(score(upper, "123")).toBe(1);
+  });
+});
+
 describe("scoreCandidate", () => {
   const rows = [
     row("GROCERGO 0183", "p1", 47),

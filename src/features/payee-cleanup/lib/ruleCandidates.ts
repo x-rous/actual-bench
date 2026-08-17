@@ -130,21 +130,30 @@ export function buildCandidates(stem: string, field: SourceField): RuleCandidate
  * instance is safe to reuse.
  */
 function compileMatcher(candidate: RuleCandidate): (text: string) => boolean {
+  // Exactly what the rule engine does, rather than something equivalent-looking.
+  // `condition.ts` lower-cases the condition's value when the rule is parsed and
+  // the transaction's text when it runs, then compares with a plain `indexOf`
+  // or a plain `RegExp` carrying no flags — all pinned in
+  // `nativeSemantics.test.ts`.
+  //
+  // A case-insensitive flag is *not* the same thing. Actual lower-cases the
+  // pattern source too, so `\D` becomes `\d` and inverts; a user-typed override
+  // containing one would behave differently in the backtest than in the rule it
+  // produces, and the backtest is what the user is asked to trust.
+  const needle = candidate.value.toLowerCase();
+
   if (candidate.op === "contains") {
-    const needle = candidate.value.toUpperCase();
-    return (text) => text.toUpperCase().includes(needle);
+    return (text) => text.toLowerCase().includes(needle);
   }
 
   let regex: RegExp | null = null;
   try {
-    // Actual compiles `matches` to `$regexp`; case-insensitive here because the
-    // stem is upper-cased and real import text is not.
-    regex = new RegExp(candidate.value, "i");
+    regex = new RegExp(needle);
   } catch {
     // A pattern that will not compile can never be offered.
     regex = null;
   }
-  return (text) => (regex !== null ? regex.test(text) : false);
+  return (text) => (regex !== null ? regex.test(text.toLowerCase()) : false);
 }
 
 /**

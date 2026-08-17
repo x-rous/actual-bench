@@ -301,7 +301,8 @@ consolidate them safely. Nothing is written until you save.
   every time, a backtested pattern built from the words every import shares where it varies — adding to
   the payee's existing rule rather than creating a second one. The condition is editable per row
   (field, `matches`/`contains`, and the pattern itself) with the backtest re-run as you type. Payees
-  that already resolve by name, or that a rule already sets, are never listed.
+  that already resolve by name, or whose existing rules already catch most of their history, are never
+  listed; where a rule covers only part of it, the payee stays listed with that rule shown and linked.
 - **Optional rule to stop it recurring.** Where cleanup alone will not fix future imports, cleanup
   proposes a rule that catches the merchant, backtested against your own history so you can see what
   it would and would not have matched. The matched text and the field it matches on are editable.

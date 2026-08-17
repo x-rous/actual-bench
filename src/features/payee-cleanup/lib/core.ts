@@ -134,7 +134,11 @@ function runQuality(tokens: string[], spread: TokenSpread | undefined): number {
   for (const token of tokens) {
     if (/\d/.test(token)) {
       score -= 1;
-    } else if (/^[A-Z]{2,}$/.test(token)) {
+    } else if (/^\p{L}{2,}$/u.test(token)) {
+      // The same class the tokenizer keeps. An ASCII-only test scored `CAFÉ`,
+      // `ÖRESUND` and `МАГАЗИН` as neither word nor number, so nothing read as
+      // name-like and the ranking fell back to coverage alone — which is how a
+      // city beats a merchant.
       score += (spread?.payeesFor.get(token) ?? 1) > generic ? -1 : 1;
     }
   }

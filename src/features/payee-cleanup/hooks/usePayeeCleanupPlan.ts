@@ -134,6 +134,11 @@ export function usePayeeCleanupPlan() {
           );
         }
 
+        // Counted as they are staged, not assumed. A rule that has since gone
+        // from the staged set is skipped here, and reporting it anyway told the
+        // user a change had been made that had not — after `pushUndo`, with
+        // nothing else to signal it.
+        let extended = 0;
         for (const extension of plan.ruleExtensions) {
           // An update, not a create: the payee already has a rename rule and
           // this adds the texts it has not seen. Same mechanism Actual uses.
@@ -142,6 +147,7 @@ export function usePayeeCleanupPlan() {
           stageUpdate("rules", extension.ruleId, {
             conditions: extendExactMatchConditions(existing, extension.addTexts),
           });
+          extended += 1;
         }
 
         return {
@@ -151,7 +157,7 @@ export function usePayeeCleanupPlan() {
             plan.renames.length +
             plan.deletions.length +
             plan.rules.length +
-            plan.ruleExtensions.length,
+            extended,
         };
       } finally {
         setIsStaging(false);

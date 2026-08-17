@@ -209,8 +209,12 @@ export function RuleGapList({
                             <Link
                               href={`/rules?highlight=${rule.id}`}
                               className="inline-flex items-center gap-1 underline underline-offset-2 hover:text-foreground"
-                              aria-label={`Open the existing rule for ${gap.payee.name}`}
+                              title={`Open this rule for ${gap.payee.name}`}
                             >
+                              {/* No aria-label: it would replace the condition
+                                  text as the link's name, leaving every rule on
+                                  a payee sounding identical and unreachable by
+                                  voice. */}
                               {describeConditions(rule)}
                               <ExternalLink className="size-3" aria-hidden="true" />
                             </Link>

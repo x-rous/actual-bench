@@ -627,17 +627,21 @@ function duplicatesExistingRule(
       ? [{ op: proposal.candidate.op, value: normalise(proposal.candidate.value) }]
       : proposal.texts.map((t) => ({ op: "oneOf", value: normalise(t) }));
 
-  return ownRules.some((r) =>
-    r.rule.conditions.some((condition) => {
-      if (condition.field !== proposal.field) return false;
-      const values = Array.isArray(condition.value) ? condition.value : [condition.value];
-      return values.some(
-        (v) =>
-          typeof v === "string" &&
-          proposed.some((p) => p.op === condition.op && p.value === normalise(v))
-      );
-    })
-  );
+  const covered = (candidate: { op: string; value: string }) =>
+    ownRules.some((r) =>
+      r.rule.conditions.some((condition) => {
+        if (condition.field !== proposal.field) return false;
+        if (condition.op !== candidate.op) return false;
+        const values = Array.isArray(condition.value) ? condition.value : [condition.value];
+        return values.some((v) => typeof v === "string" && normalise(v) === candidate.value);
+      })
+    );
+
+  // Every part of it, not any part. A proposal listing ["A", "B"] beside a rule
+  // that lists ["A"] still offers "B", and discarding it for the overlap took
+  // the payee off the tab entirely — reaching past the guard that stops a rule
+  // it cannot fully read from removing that payee's text.
+  return proposed.every(covered);
 }
 
 /** Why a proposal needs a human, in the user's terms rather than the model's. */

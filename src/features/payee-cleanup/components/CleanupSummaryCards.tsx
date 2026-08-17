@@ -116,8 +116,13 @@ export function CleanupSummaryCards({ result, plan }: Props) {
         </div>
         {pendingActive ? (
           <div className="mt-1 text-[11px] text-muted-foreground">
-            {mergedPayeeCount} {mergedPayeeCount === 1 ? "payee stops" : "payees stop"}{" "}
-            existing · not written until you save
+            {/* A plan of rules alone removes nothing, and saying "0 payees stop
+                existing" invited a question that has no answer. */}
+            {mergedPayeeCount > 0
+              ? `${mergedPayeeCount} ${
+                  mergedPayeeCount === 1 ? "payee stops" : "payees stop"
+                } existing · not written until you save`
+              : "not written until you save"}
           </div>
         ) : null}
       </div>

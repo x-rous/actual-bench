@@ -711,6 +711,31 @@ describe("a rule that already sets this payee", () => {
     expect(gaps).toHaveLength(1);
   });
 
+  it("still offers the texts an existing list does not already have", () => {
+    // The duplicate backstop asked whether *any* proposed text was already
+    // listed. A rule listing ["A"] beside a proposal of ["A", "B"] then took the
+    // whole payee off the tab, and "B" was never offered.
+    const gaps = findRuleGaps(
+      inputs({
+        rows: [row("FLMB", "p1", 3), row("FLMBPREMIUM", "p1", 3)],
+        rules: [
+          rule({
+            id: "partial",
+            stage: "pre",
+            conditions: [{ field: "imported_payee", op: "oneOf", value: ["FLMB"] }],
+            actions: [{ field: "payee", op: "set", value: "p1" }],
+          }),
+        ],
+        transactionCounts: new Map([["p1", 6]]),
+      })
+    );
+
+    expect(gaps).toHaveLength(1);
+    const proposal = gaps[0].proposal;
+    if (proposal.shape !== "one-of") throw new Error("wrong shape");
+    expect(proposal.texts).toEqual(["FLMBPREMIUM"]);
+  });
+
   it("is not confused by a rule on one text field when the payee uses both", () => {
     // The index holds one row per field, so a `notes` condition has nothing to
     // say about an `imported_payee` row — the transaction behind it may well
