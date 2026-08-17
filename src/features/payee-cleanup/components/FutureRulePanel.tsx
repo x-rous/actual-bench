@@ -18,7 +18,7 @@ const SKIP_COPY: Record<NonNullable<FutureResolution["skipReason"]>, string> = {
   "no-safe-pattern":
     "No rule offered — no pattern catches this payee without also catching other payees' transactions.",
   "no-matching-pattern":
-    "No rule offered — no pattern built from this name matches the imported text on record.",
+    "No rule offered — nothing in the imported text on record matches this pattern.",
 };
 
 /**

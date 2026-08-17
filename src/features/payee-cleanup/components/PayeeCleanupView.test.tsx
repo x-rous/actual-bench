@@ -512,7 +512,7 @@ describe("PayeeCleanupView", () => {
 
     // And the explanation names the real reason rather than a generic one.
     expect(
-      screen.getByText(/no pattern built from this name matches the imported text/i)
+      screen.getByText(/nothing in the imported text on record matches this pattern/i)
     ).toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText(/which field the rule matches on/i), {
