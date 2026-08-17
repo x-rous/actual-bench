@@ -51,6 +51,99 @@ import {
  */
 const MIN_CORE_LENGTH = 8;
 
+/**
+ * The longest a merchant core may be.
+ *
+ * Bank transfer records are mostly rigid boilerplate — an IBAN, a reference, a
+ * branch code — and all of it is constant across transfers to the same payee, so
+ * the longest shared run is nearly the whole record. Four words is enough to
+ * name any merchant, and the backtest still has to agree the result is safe.
+ */
+const MAX_CORE_TOKENS = 4;
+
+/**
+ * How much better one run's coverage must be to outweigh a worse-looking core.
+ * Below this the two are treated as equally well supported, and the one that
+ * reads more like the merchant's name wins.
+ */
+const COVERAGE_MARGIN = 0.15;
+
+/**
+ * Hashtags are markers, never merchant text: `#2026-05` is a date and `#API` is
+ * a channel. Left in, they corrupt the core — two payees whose imports happen to
+ * fall in the same month share `05`, which is how `Green Planet` became
+ * `05 GREEN PLANET`. Stripped before the core is derived, never from the text the
+ * rule is matched against.
+ */
+function withoutMarkers(text: string): string {
+  return text.replace(/#\S+/g, " ");
+}
+
+function coreTokens(text: string): string[] {
+  return normalizePatternText(withoutMarkers(text)).split(" ").filter(Boolean);
+}
+
+/**
+ * How many payees each word turns up for.
+ *
+ * The budget's own answer to "is this word a merchant, or is it scenery?" —
+ * `MUDON` belongs to one payee, `DUBAI` to dozens. No list of cities is needed,
+ * and it works for any country: the same reasoning the cleanup scan uses to
+ * learn a bank's boilerplate, applied a word at a time.
+ */
+export type TokenSpread = { payeesFor: Map<string, number>; payeeCount: number };
+
+export function measureTokenSpread(rows: ImportedTextRow[]): TokenSpread {
+  const seen = new Map<string, Set<string>>();
+  for (const row of rows) {
+    if (!row.payeeId) continue;
+    for (const token of new Set(coreTokens(row.text))) {
+      const payees = seen.get(token) ?? new Set<string>();
+      payees.add(row.payeeId);
+      seen.set(token, payees);
+    }
+  }
+
+  const payeesFor = new Map<string, number>();
+  for (const [token, payees] of seen) payeesFor.set(token, payees.size);
+  return {
+    payeesFor,
+    payeeCount: new Set(rows.map((r) => r.payeeId).filter(Boolean)).size,
+  };
+}
+
+/**
+ * How much a run looks like this payee's name rather than scenery.
+ *
+ * A word counts for it, a word shared with many other payees counts against, and
+ * anything carrying a digit counts against. Without the first two, the longest
+ * shared run wins on length alone: Grammarly got a rule keyed on the phone
+ * number in its statement line, and a builder got `LA ROSA` — the street its
+ * invoices mention — instead of its own name.
+ */
+function runQuality(tokens: string[], spread: TokenSpread | undefined): number {
+  const generic = Math.max(2, Math.ceil((spread?.payeeCount ?? 0) * 0.05));
+
+  let score = 0;
+  for (const token of tokens) {
+    if (/\d/.test(token)) {
+      score -= 1;
+    } else if (/^[A-Z]{2,}$/.test(token)) {
+      score += (spread?.payeesFor.get(token) ?? 1) > generic ? -1 : 1;
+    }
+  }
+  return score;
+}
+
+/** The rarest word in a run, for choosing between two equally good ones. */
+function rarestToken(tokens: string[], spread: TokenSpread | undefined): number {
+  let rarest = Number.MAX_SAFE_INTEGER;
+  for (const token of tokens) {
+    rarest = Math.min(rarest, spread?.payeesFor.get(token) ?? 1);
+  }
+  return rarest;
+}
+
 /** The share of a payee's transactions an existing rule must catch to settle it. */
 const COVERED_SHARE = 0.5;
 
@@ -374,6 +467,9 @@ export function findRuleGaps(inputs: RuleGapInputs): RuleGap[] {
   if (!inputs.transactionCounts) return [];
 
   const floor = inputs.transactionFloor ?? DEFAULT_TRANSACTION_FLOOR;
+  // Measured once for the whole budget: which words belong to one payee and
+  // which are scenery everyone shares.
+  const spread = measureTokenSpread(inputs.rows);
   const byPayee = groupRowsByPayee(inputs.rows);
   const gaps: RuleGap[] = [];
 
@@ -435,7 +531,7 @@ export function findRuleGaps(inputs: RuleGapInputs): RuleGap[] {
     if (transactionCount < floor) continue;
 
     // 7 — is there an honest rule to propose at all?
-    const proposal = proposeRule(payee, texts, inputs, renameRule, ownRules);
+    const proposal = proposeRule(payee, texts, inputs, renameRule, ownRules, spread);
     if (!proposal) continue;
 
       // Backstop. The subtraction above should already prevent it, but a proposal
@@ -475,7 +571,8 @@ function proposeRule(
   texts: ImportedTextRow[],
   inputs: RuleGapInputs,
   renameRule: Rule | null,
-  ownRules: ExistingPayeeRule[]
+  ownRules: ExistingPayeeRule[],
+  spread: TokenSpread
 ): RuleGapProposal | null {
   const imported = texts.filter((t) => t.field === "imported_payee");
   const notes = texts.filter((t) => t.field === "notes");
@@ -542,32 +639,23 @@ function proposeRule(
   // recur, so an exact list of them catches the transactions already on record
   // and nothing ever again. What matters is whether anything varies around a
   // shared core, which is what a pattern is for.
-  const run = commonTokenRun(
-    uncoveredTexts,
-    uncovered.map((row) => row.transactionCount)
-  );
+  const weights = uncovered.map((row) => row.transactionCount);
+  const run = commonTokenRun(uncoveredTexts, weights, 0.5, spread);
   const runLength = run ? run.split(" ").length : 0;
   const variesAroundRun =
     run !== null &&
-    uncoveredTexts.some(
-      (text) => normalizePatternText(text).split(" ").filter(Boolean).length > runLength
-    );
+    uncoveredTexts.some((text) => coreTokens(text).length > runLength);
 
   if (variesAroundRun && run) {
-    // Did anything ever follow the core? If not, its end is an artefact of the
-    // sample rather than a fact about the merchant — three identical
-    // `Google Storage Mountain View CA SAR10.99` imports make the price look
-    // like part of the name.
-    const runTokens = run.split(" ");
-    const boundaryShown = uncoveredTexts.some((text) => {
-      const tokens = normalizePatternText(text).split(" ").filter(Boolean);
-      for (let i = 0; i + runTokens.length <= tokens.length; i++) {
-        if (runTokens.every((word, k) => tokens[i + k] === word)) {
-          return i + runTokens.length < tokens.length;
-        }
-      }
-      return false;
-    });
+    // Did anything ever follow the *longest* thing these imports share? If not,
+    // where the merchant ends is an artefact of the sample rather than a fact —
+    // three identical `Google Storage Mountain View CA SAR10.99` imports make
+    // the price look like part of the name.
+    //
+    // Asked of the longest shared run, not of the core: the core is capped at
+    // four words, so text following it may be text we cut ourselves.
+    const longest = maximalCommonRun(uncoveredTexts, weights);
+    const boundaryShown = longest !== null && followedInSomeText(longest, uncoveredTexts);
 
     const best = chooseCondition(run, field, inputs.rows, payee, !boundaryShown);
     if (!best || best.expectedMatches === 0) return null;
@@ -611,13 +699,11 @@ function proposeRule(
 export function commonTokenRun(
   texts: string[],
   weights?: number[],
-  minShare = 0.5
+  minShare = 0.5,
+  spread?: TokenSpread
 ): string | null {
   const entries = texts
-    .map((text, i) => ({
-      tokens: normalizePatternText(text).split(" ").filter(Boolean),
-      weight: weights?.[i] ?? 1,
-    }))
+    .map((text, i) => ({ tokens: coreTokens(text), weight: weights?.[i] ?? 1 }))
     .filter((entry) => entry.tokens.length > 0);
   if (entries.length === 0) return null;
 
@@ -632,26 +718,113 @@ export function commonTokenRun(
   };
 
   // Seeded from the text carrying the most transactions, since that is the one
-  // most likely to be representative — the shortest string is as often the
-  // oddity as the essence.
+  // most likely to be representative.
+  const seed = [...entries].sort((a, b) => b.weight - a.weight)[0].tokens;
+
+  let best: {
+    run: string[];
+    coverage: number;
+    quality: number;
+    rarest: number;
+  } | null = null;
+
+  for (let length = Math.min(seed.length, MAX_CORE_TOKENS); length >= 1; length--) {
+    for (let start = 0; start + length <= seed.length; start++) {
+      const run = seed.slice(start, start + length);
+      const matching = entries.filter((entry) => containsRun(entry.tokens, run));
+      // Shared by at least two texts when there is more than one, or a single
+      // dominant string defines the run all by itself.
+      if (entries.length > 1 && matching.length < 2) continue;
+
+      const coverage =
+        matching.reduce((sum, entry) => sum + entry.weight, 0) / total;
+      if (coverage < minShare) continue;
+
+      const quality = runQuality(run, spread);
+      const rarest = rarestToken(run, spread);
+
+      // Coverage first, but only when it is *materially* better. A run catching
+      // every import beats one catching half — `LIFE 29 PHY` over
+      // `LIFE 29 PHY 1264 DUBAI`. A run catching every import does not beat one
+      // catching nine in ten if that costs the merchant's name: one payee
+      // writing `LVLUP` once must not reduce `LVL UP FITNESS` to `FITNESS`.
+      const candidate = { run, coverage, quality, rarest };
+
+      // Anything that reads like a name beats anything that reads like scenery,
+      // whatever the coverage. Generic words have high coverage *because* they
+      // are generic — `DUBAI` closes more of this payee's imports than
+      // `EMIRATES` does, and a rule built on it would catch half the budget.
+      const namelike = quality > 0;
+      const bestNamelike = best !== null && best.quality > 0;
+
+      const better =
+        best === null ||
+        (namelike !== bestNamelike
+          ? namelike
+          : // Then coverage, but only when materially better: a run catching
+            // every import must not beat one catching nine in ten if that costs
+            // the merchant's name.
+            coverage > best.coverage + COVERAGE_MARGIN ||
+            (coverage > best.coverage - COVERAGE_MARGIN &&
+              (quality > best.quality ||
+                (quality === best.quality &&
+                  (rarest < best.rarest ||
+                    (rarest === best.rarest && run.length > best.run.length))))));
+
+      if (better) best = candidate;
+    }
+  }
+
+  if (!best) return null;
+  const joined = best.run.join(" ");
+  // A laxer floor than the trimming one: `COLES` and `IKEA` are whole merchants,
+  // and the evidence says so. `MIN_CORE_LENGTH` stops the ladder shortening
+  // *past* the evidence; it does not overrule it.
+  return best.run.length >= 2 || best.run[0].length >= 4 ? joined : null;
+}
+
+/** Whether any text carries more words after this run. */
+function followedInSomeText(run: string[], texts: string[]): boolean {
+  return texts.some((text) => {
+    const tokens = coreTokens(text);
+    for (let i = 0; i + run.length <= tokens.length; i++) {
+      if (run.every((word, k) => tokens[i + k] === word)) {
+        return i + run.length < tokens.length;
+      }
+    }
+    return false;
+  });
+}
+
+/**
+ * The longest run these texts share, with no cap and no judgement about how it
+ * reads. Used only to ask where the shared text stops.
+ */
+function maximalCommonRun(texts: string[], weights: number[]): string[] | null {
+  const entries = texts
+    .map((text, i) => ({ tokens: coreTokens(text), weight: weights[i] ?? 1 }))
+    .filter((entry) => entry.tokens.length > 0);
+  if (entries.length === 0) return null;
+
+  const total = entries.reduce((sum, entry) => sum + entry.weight, 0);
   const seed = [...entries].sort((a, b) => b.weight - a.weight)[0].tokens;
 
   for (let length = seed.length; length >= 1; length--) {
     for (let start = 0; start + length <= seed.length; start++) {
       const run = seed.slice(start, start + length);
-      const matching = entries.filter((entry) => containsRun(entry.tokens, run));
-      // Shared by at least two texts when there is more than one, or a single
-      // dominant string defines the run all by itself — date and all.
+      const matching = entries.filter((entry) => {
+        for (let i = 0; i + run.length <= entry.tokens.length; i++) {
+          if (run.every((word, k) => entry.tokens[i + k] === word)) return true;
+        }
+        return false;
+      });
+      // Shared, not merely present in the heaviest string. Without this a
+      // dominant text is its own longest run, so nothing follows it and every
+      // core looked safe to shorten.
       if (entries.length > 1 && matching.length < 2) continue;
 
       const covered = matching.reduce((sum, entry) => sum + entry.weight, 0);
-      if (covered / total < minShare) continue;
-
-      // A laxer floor than the trimming one below: `COLES` and `IKEA` are whole
-      // merchants, and the evidence says so. `MIN_CORE_LENGTH` exists to stop
-      // the ladder shortening *past* the evidence, not to overrule it.
-      const joined = run.join(" ");
-      return run.length >= 2 || run[0].length >= 4 ? joined : null;
+      if (covered / total >= 0.5) return run;
     }
   }
   return null;

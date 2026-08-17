@@ -34,6 +34,12 @@ function payee(id: string, name: string): PayeeCleanupCandidate {
   };
 }
 
+/** Distinct word-shaped merchant names, since real ones are words. */
+const WORDS = Array.from({ length: 400 }, (_, i) =>
+  String.fromCharCode(65 + (i % 26), 65 + ((i / 26) | 0) % 26, 65 + ((i / 676) | 0) % 26) +
+  "MART"
+);
+
 function buildBudget() {
   const candidates: PayeeCleanupCandidate[] = [];
   const rows: ImportedTextRow[] = [];
@@ -49,7 +55,7 @@ function buildBudget() {
       for (let v = 0; v < 12; v++) {
         rows.push({
           field: "imported_payee",
-          text: `MERCHANT${i} STORE 0${100 + v}`,
+          text: `ACME${WORDS[i % WORDS.length]} STORE 0${100 + v}`,
           payeeId: id,
           payeeName: null,
           transactionCount: 1,
@@ -72,7 +78,7 @@ function buildBudget() {
       for (let v = 0; v < 3; v++) {
         rows.push({
           field: "imported_payee",
-          text: `#2026-0${v + 1} SHOP${i} PTY LTD`,
+          text: `#2026-0${v + 1} SHOP${WORDS[i % WORDS.length]} PTY LTD`,
           payeeId: id,
           payeeName: null,
           transactionCount: 4,

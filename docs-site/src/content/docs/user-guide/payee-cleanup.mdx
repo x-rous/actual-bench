@@ -134,6 +134,21 @@ For example, three imports reading `#API Etihad Credit Bureau`, `#2026-05 Etihad
 `-84 IRR (FX rate: #2026-02 ETIHAD CREDIT BUREAU DUBAI UAE)` share `ETIHAD CREDIT BUREAU`, so the rule
 matches that anywhere in the text rather than listing three strings that will never arrive again.
 
+Picking those words out takes more than finding what the imports have in common, because a lot of what
+they have in common isn't the merchant:
+
+- **Hashtag markers are ignored.** `#2026-05` is a date and `#API` is a channel. Two payees whose
+  imports happen to fall in the same month would otherwise appear to share `05`.
+- **Words shared with many other payees are discounted.** `DUBAI` closes hundreds of imports across a
+  budget, so it says nothing about *which* payee an import belongs to, while `MUDON` belongs to one.
+  This is measured from your own payees — no list of cities is involved, and it works anywhere.
+- **Numbers are discounted.** A phone number or an IBAN is perfectly stable and perfectly useless as a
+  name, and a rule built on one breaks the day it changes.
+- **A core stops at four words**, because a bank transfer record is mostly reference data and the
+  longest thing two of them share is nearly the whole record.
+- **A run that catches every import doesn't automatically win.** One import written `LVLUP` shouldn't
+  reduce `LVL UP FITNESS` to `FITNESS`.
+
 The pattern is shown on the row, and you can rewrite it: choose the field, choose **matches** or
 **contains**, and type your own. The backtest re-runs as you go, and tells you if it now catches
 nothing, will not compile, or reaches another payee. Your edits survive a re-scan.

@@ -79,8 +79,15 @@ describe("who needs a rule", () => {
 
     expect(gaps).toHaveLength(1);
     expect(gaps[0].payee.name).toBe("Netflix");
-    expect(gaps[0].proposal.shape).toBe("one-of");
     expect(gaps[0].safe).toBe(true);
+    // The trailing number is dropped even from a single sample: it carries a
+    // digit and the merchant does not, and a rule keyed on it would break the
+    // first time the number changed.
+    // A pattern rather than a substring, because the text writes it
+    // `NETFLIX.COM` and a literal `NETFLIX COM` would never match.
+    const proposal = gaps[0].proposal;
+    if (proposal.shape !== "matches") throw new Error("wrong shape");
+    expect(proposal.candidate.value).toBe("^NETFLIX[^A-Za-z0-9]*COM\\b");
   });
 
   it("ignores a payee whose imports already equal its name", () => {
@@ -222,14 +229,15 @@ describe("exclusion order", () => {
 });
 
 describe("rule shape", () => {
-  it("uses an exact list when the same literal text arrives every time", () => {
-    // Actual's own idiom, and it cannot misfire.
-    const gaps = findRuleGaps(inputs({ rows: [row("NETFLIX.COM 4821", "p1", 9)] }));
+  it("uses an exact list when there is nothing to build a pattern from", () => {
+    // Actual's own idiom, and it cannot misfire. Reached when the text holds no
+    // core worth matching on beyond the whole of itself.
+    const gaps = findRuleGaps(inputs({ rows: [row("NFLX", "p1", 9)] }));
 
     const proposal = gaps[0].proposal;
     expect(proposal.shape).toBe("one-of");
     if (proposal.shape !== "one-of") throw new Error("wrong shape");
-    expect(proposal.texts).toEqual(["NETFLIX.COM 4821"]);
+    expect(proposal.texts).toEqual(["NFLX"]);
   });
 
   it("uses a pattern as soon as the text varies, however few texts there are", () => {
@@ -301,12 +309,12 @@ describe("rule shape", () => {
 });
 
 describe("extending an existing rename rule", () => {
+  // Texts sharing no run of words, so the proposal stays an exact list — the
+  // only shape a rename rule can be extended with.
   const renameRule = rule({
     id: "rename-1",
     stage: "pre",
-    conditions: [
-      { field: "imported_payee", op: "oneOf", value: ["NETFLIX.COM 4821"] },
-    ],
+    conditions: [{ field: "imported_payee", op: "oneOf", value: ["NFLX"] }],
     actions: [{ field: "payee", op: "set", value: "p1" }],
   });
 
@@ -320,7 +328,7 @@ describe("extending an existing rename rule", () => {
     // merges into the existing `oneOf` list.
     const gaps = findRuleGaps(
       inputs({
-        rows: [row("NETFLIX.COM 4821", "p1"), row("NETFLIX.COM 9002", "p1")],
+        rows: [row("NFLX", "p1"), row("NFLXPREMIUM", "p1")],
         rules: [renameRule],
       })
     );
@@ -329,12 +337,12 @@ describe("extending an existing rename rule", () => {
     if (proposal.shape !== "one-of") throw new Error("wrong shape");
     expect(proposal.extendsRule?.id).toBe("rename-1");
     // Only what is missing — restating what the rule already does is noise.
-    expect(proposal.texts).toEqual(["NETFLIX.COM 9002"]);
+    expect(proposal.texts).toEqual(["NFLXPREMIUM"]);
   });
 
   it("proposes nothing when the rule already covers every text", () => {
     expect(
-      findRuleGaps(inputs({ rows: [row("NETFLIX.COM 4821", "p1")], rules: [renameRule] }))
+      findRuleGaps(inputs({ rows: [row("NFLX", "p1")], rules: [renameRule] }))
     ).toEqual([]);
   });
 });
@@ -390,7 +398,8 @@ describe("when a human should look", () => {
   it("still trusts an exact list over a truncated history", () => {
     // An exact string does not rest on having seen the whole history: it either
     // equals the text or it does not.
-    const gaps = findRuleGaps(inputs({ truncated: true }));
+    const gaps = findRuleGaps(inputs({ rows: [row("NFLX", "p1", 9)], truncated: true }));
+    expect(gaps[0].proposal.shape).toBe("one-of");
     expect(gaps[0].safe).toBe(true);
   });
 
@@ -633,8 +642,8 @@ describe("a rule that already sets this payee", () => {
         rows: [
           row("#2025-07 Google Microsoft Apps Mountain View CA", "p1", 1, "notes"),
           row("#2025-06 Google Microsoft Apps Mountain View CA", "p1", 1, "notes"),
-          row("#2025-05 ONEDRIVE SUBSCRIPTION REDMOND", "p1", 4, "notes"),
-          row("#2025-04 ONEDRIVE SUBSCRIPTION REDMOND", "p1", 4, "notes"),
+          row("#2025-05 ONEDRIVE SUBSCRIPTION REDMOND WA", "p1", 4, "notes"),
+          row("#2025-04 ONEDRIVE SUBSCRIPTION SEATTLE", "p1", 4, "notes"),
         ],
         rules: [
           rule({
@@ -767,9 +776,7 @@ describe("commonTokenRun", () => {
         ],
         [2, 3, 3, 1]
       )
-      // The run itself still carries the trailing location; trimming it back to
-      // `LVL UP FITNESS` is the ladder's job, covered below.
-    ).toBe("LVL UP FITNESS CTR DUBAI UAE");
+    ).toBe("LVL UP FITNESS");
   });
 
   it("weights by transactions, not by distinct string", () => {
@@ -885,15 +892,26 @@ describe("keeping the condition simple (real cases)", () => {
   it("is not defeated by a reference number welded to the merchant", () => {
     // `EMIRATES62385176881` is a different token from `EMIRATES`, which used to
     // mean the payee's imports shared nothing at all.
+    //
+    // The other payees matter: `DUBAI ARE` closes half this budget's imports, so
+    // it reads as scenery rather than a name — but only a corpus can say so.
     expect(
       condition(
-        gapsFor("Emirates Airlines", [
-          ["#2024-08 EMIRATES DUBAI ARE", 2],
-          ["#2026-08 EMIRATES", 1],
-          ["#2025-03 EMIRATES DUBAI ARE", 1],
-          ["#2025-03 EMIRATES62385176881-2 DUBAI ARE", 1],
-          ["#2024-09 EMIRATES62378111182-2 DUBAI ARE", 1],
-        ])
+        gapsFor(
+          "Emirates Airlines",
+          [
+            ["#2024-08 EMIRATES DUBAI ARE", 2],
+            ["#2026-08 EMIRATES", 1],
+            ["#2025-03 EMIRATES DUBAI ARE", 1],
+            ["#2025-03 EMIRATES62385176881-2 DUBAI ARE", 1],
+            ["#2024-09 EMIRATES62378111182-2 DUBAI ARE", 1],
+          ],
+          [
+            row("#2024-01 CARREFOUR DUBAI ARE", "p2", 4, "notes"),
+            row("#2024-02 TALABAT DUBAI ARE", "p3", 4, "notes"),
+            row("#2024-03 NOON DUBAI ARE", "p4", 4, "notes"),
+          ]
+        )
       )
     ).toBe("contains EMIRATES");
   });

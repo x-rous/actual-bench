@@ -867,7 +867,7 @@ describe("PayeeCleanupView", () => {
     importedText = [
       {
         field: "imported_payee",
-        text: "NETFLIX.COM 9002",
+        text: "NFLXPREMIUM",
         payeeId: "p-Netflix",
         transactionCount: 9,
       },
@@ -880,7 +880,7 @@ describe("PayeeCleanupView", () => {
           stage: "pre",
           conditionsOp: "and",
           conditions: [
-            { field: "imported_payee", op: "oneOf", value: ["NETFLIX.COM 4821"] },
+            { field: "imported_payee", op: "oneOf", value: ["NFLX"] },
           ],
           actions: [{ field: "payee", op: "set", value: "p-Netflix" }],
         },
@@ -976,8 +976,14 @@ describe("PayeeCleanupView", () => {
         payeeId: "p-Al Etihad Credit Bureau",
         transactionCount: 1,
       },
+      {
+        field: "notes",
+        text: "-84 IRR (FX rate: #2026-02 ETIHAD CREDIT BUREAU DUBAI UAE)",
+        payeeId: "p-Al Etihad Credit Bureau",
+        transactionCount: 1,
+      },
     ];
-    transactionCounts = new Map([["p-Al Etihad Credit Bureau", 5]]);
+    transactionCounts = new Map([["p-Al Etihad Credit Bureau", 6]]);
 
     render(<PayeeCleanupView />);
     fireEvent.click(screen.getByRole("button", { name: /needs a rule/i }));
