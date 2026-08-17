@@ -40,6 +40,21 @@ const BAND_LABEL: Record<ConfidenceBand, string> = {
   hidden: "Ambiguous",
 };
 
+/** Why no rule is being offered. One place, because two branches show it. */
+const SKIP_COPY: Record<
+  NonNullable<CleanupSuggestion["futureResolution"]>["skipReason"] & string,
+  string
+> = {
+  "already-resolved-by-name":
+    "No rule needed — after cleanup Actual will match these imports by name.",
+  "existing-rule-covers-it":
+    "No rule needed — an existing rule already sets the payee for this text.",
+  "no-safe-pattern":
+    "No rule offered — no pattern catches this payee without catching others.",
+  "no-matching-pattern":
+    "No rule offered — no pattern built from this name matches the imported text on record.",
+};
+
 const BAND_CLASS: Record<ConfidenceBand, string> = {
   high: "border-emerald-600/40 text-emerald-700 dark:text-emerald-400",
   strong: "border-sky-600/40 text-sky-700 dark:text-sky-400",
@@ -400,9 +415,13 @@ export function SuggestionCard({
                   </span>
                 </label>
               ) : (
-                <p className="mt-1 text-amber-700 dark:text-amber-400">
-                  No pattern on this field matches your import history. Change the
-                  field or the text, or leave the rule off.
+                // `recommended` is null exactly when a skip reason is set, and
+                // that reason is the accurate explanation: "an existing rule
+                // already covers this" is not "nothing matches".
+                <p className="mt-1 text-muted-foreground">
+                  {future.skipReason
+                    ? SKIP_COPY[future.skipReason]
+                    : "Checking your import history…"}
                 </p>
               )}
 
@@ -489,15 +508,9 @@ export function SuggestionCard({
             </>
           ) : (
             <p className="mt-1 text-muted-foreground">
-              {future?.skipReason === "already-resolved-by-name"
-                ? "No rule needed — after cleanup Actual will match these imports by name."
-                : future?.skipReason === "existing-rule-covers-it"
-                  ? "No rule needed — an existing rule already sets the payee for this text."
-                  : future?.skipReason === "no-safe-pattern"
-                    ? "No rule offered — no pattern catches this payee without catching others."
-                    : future?.skipReason === "no-matching-pattern"
-                      ? "No rule offered — no pattern built from this name matches the imported text on record."
-                      : "Checking your import history…"}
+              {future?.skipReason
+                ? SKIP_COPY[future.skipReason]
+                : "Checking your import history…"}
             </p>
           )}
 

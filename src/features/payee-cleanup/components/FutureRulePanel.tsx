@@ -99,12 +99,7 @@ export function FutureRulePanel({
             </span>
           </label>
 
-          ) : (
-            <p className="text-amber-700 dark:text-amber-400">
-              No pattern on this field matches your import history. Change the
-              field or the text below, or leave the rule off.
-            </p>
-          )}
+          ) : null}
 
           {recommended && recommended.unexpectedMatches > 0 ? (
             <p className="ml-6 text-amber-700 dark:text-amber-400">

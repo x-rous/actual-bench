@@ -510,6 +510,11 @@ describe("PayeeCleanupView", () => {
     );
     expect(screen.getByLabelText(/text the rule should match/i)).toBeInTheDocument();
 
+    // And the explanation names the real reason rather than a generic one.
+    expect(
+      screen.getByText(/no pattern built from this name matches the imported text/i)
+    ).toBeInTheDocument();
+
     fireEvent.change(screen.getByLabelText(/which field the rule matches on/i), {
       target: { value: "imported_payee" },
     });
