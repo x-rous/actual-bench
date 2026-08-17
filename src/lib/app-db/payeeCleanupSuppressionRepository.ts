@@ -145,14 +145,23 @@ export function createPayeeCleanupSuppression(
   return rowToRecord(record);
 }
 
-/** Returns true when a row was removed, so the caller can 404 an unknown id. */
+/**
+ * Returns true when a row was removed, so the caller can 404 an unknown id.
+ *
+ * Scoped to the budget as well as the id: every other read and write here is
+ * budget-scoped, and an id alone would let one budget delete another budget's
+ * decision.
+ */
 export function deletePayeeCleanupSuppression(
   db: SqliteDatabase,
-  id: string
+  id: string,
+  budgetSyncId: string
 ): boolean {
   const result = db
-    .prepare("DELETE FROM payee_cleanup_suppressions WHERE id = ?")
-    .run(id);
+    .prepare(
+      "DELETE FROM payee_cleanup_suppressions WHERE id = ? AND budget_sync_id = ?"
+    )
+    .run(id, budgetSyncId);
   return result.changes > 0;
 }
 

@@ -19,6 +19,7 @@ import {
   buildClusterSuppression,
   suppressesCluster,
 } from "./suppressions";
+import type { CorrectionMap } from "./corrections";
 import type { PayeeCluster } from "./clusterResolver";
 import type { PayeeCleanupCandidate } from "../types";
 import type { PayeeCleanupSuppressionRecord } from "@/lib/app-db/types";
@@ -116,6 +117,18 @@ describe("cluster corrections", () => {
     expect(map.c1.excludedIds).toEqual(["p3", "p4"]);
   });
 
+  it("drops a hand-added member that the split removed", () => {
+    // `addedIds` bypassed `excludedIds` entirely, so a payee the user added and
+    // then split away came straight back through the other list.
+    const added = addMember({}, "c1", payee("p9")) as CorrectionMap;
+    const map = splitCluster(added, "c1", ["p1"], ["p1", "p2", "p9"]);
+    expect(
+      correctedMembers([payee("p1"), payee("p2")], map.c1, (id) =>
+        [payee("p1"), payee("p2"), payee("p9")].find((m) => m.id === id)
+      ).map((m) => m.id)
+    ).toEqual(["p1"]);
+  });
+
   it("drops a target that a split removed", () => {
     const withTarget = setTarget({}, "c1", payee("p3")) as Record<string, never>;
     const map = splitCluster(withTarget, "c1", ["p1", "p2"], ["p1", "p2", "p3"]);
@@ -172,6 +185,20 @@ describe("combineGroups", () => {
     );
     expect(map.B.decision).toBe("undecided");
     expect(map.B.targetId).toBeUndefined();
+  });
+
+  it("empties an absorbed group's added members too", () => {
+    // Otherwise the absorbed group keeps its hand-added payees, stays at two
+    // members and remains a live proposal claiming the same source payee as the
+    // survivor — which the validator then blocks, instead of the user getting
+    // the combine they asked for.
+    const withAdded = addMember({}, "B", payee("b9")) as CorrectionMap;
+    const map = combineGroups(
+      withAdded,
+      { clusterId: "A", finalName: "Optus" },
+      [{ clusterId: "B", memberIds: ["b1", "b2"] }]
+    );
+    expect(map.B.addedIds).toEqual([]);
   });
 
   it("is undone one group at a time", () => {

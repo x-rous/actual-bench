@@ -292,6 +292,18 @@ describe("classifyRelatedRules", () => {
     expect(related.interaction).toBe("potential-conflict");
   });
 
+  it("does not treat a two-character condition value as an overlap", () => {
+    // `CO` is a substring of a great many stems. Reading that as "this rule
+    // already covers the merchant" suppressed the rule cleanup needed.
+    const existing = rule("r6", {
+      conditions: [{ field: "imported_payee", op: "contains", value: "CO" }],
+      actions: [{ field: "payee", op: "set", value: "p1" }],
+    });
+    const related = classifyRelatedRules([existing], new Set(["p1"]), "WOOLWORTHS");
+
+    expect(related.every((r) => r.interaction !== "already-resolves")).toBe(true);
+  });
+
   it("ignores rules with nothing to do with this cluster", () => {
     const unrelated = rule("r3", {
       conditions: [{ field: "imported_payee", op: "contains", value: "TESCO" }],

@@ -123,6 +123,7 @@ describe("structural clustering", () => {
       "TESCO 2",
     ]);
 
+    expect(clusters.length).toBeGreaterThan(0);
     const seen = new Set<string>();
     for (const c of clusters) {
       for (const member of c.members) {

@@ -73,7 +73,7 @@ jest.mock("../hooks/useSuppressions", () => ({
 let pendingPayeeMerges: { targetId: string; mergeIds: string[] }[] = [];
 jest.mock("../../../store/staged", () => ({
   useStagedStore: (selector: (s: unknown) => unknown) =>
-    selector({ pendingPayeeMerges, payees: {} }),
+    selector({ pendingPayeeMerges, payees: {}, rules: {} }),
 }));
 
 jest.mock("../hooks/usePayeeCleanupCandidates", () => ({

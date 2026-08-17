@@ -202,7 +202,18 @@ export function SuggestionCard({
             appears, so Accept and Not duplicates never move under the cursor. */}
         <div className="flex items-center gap-2">
           {hasEdits ? (
-            <Button size="sm" variant="ghost" onClick={onReset}>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => {
+                // Local editor state too. Leaving `fieldOverride` set meant the
+                // next text edit rebuilt a rule override on the field the user
+                // had just undone.
+                setFieldOverride(null);
+                setPatternDraft(null);
+                onReset();
+              }}
+            >
               <Undo2 className="size-3.5" aria-hidden="true" />
               Undo my changes
             </Button>

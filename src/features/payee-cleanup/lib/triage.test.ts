@@ -103,6 +103,22 @@ describe("triageBadges", () => {
     expect(settings?.tone).toBe("warning");
   });
 
+  it("does not say counting once the load has stopped without a number", () => {
+    // A failed or disabled query leaves the total unknown and nothing running,
+    // and "counting…" forever describes work that is not happening.
+    const badges = triageBadges(
+      suggestion({
+        impact: {
+          ...suggestion().impact!,
+          transactionTotal: undefined,
+          transactionsLoading: false,
+        },
+      })
+    );
+    expect(badges[0].label).toMatch(/unavailable/i);
+    expect(badges[0].tone).toBe("warning");
+  });
+
   it("does not claim a transaction count while it is loading", () => {
     const badges = triageBadges(
       suggestion({

@@ -120,9 +120,19 @@ describe("payee cleanup suppression repository", () => {
     const db = tempDb();
     const created = createPayeeCleanupSuppression(db, base);
 
-    expect(deletePayeeCleanupSuppression(db, created.id)).toBe(true);
-    expect(deletePayeeCleanupSuppression(db, "not-a-real-id")).toBe(false);
+    expect(deletePayeeCleanupSuppression(db, created.id, "budget-1")).toBe(true);
+    expect(deletePayeeCleanupSuppression(db, "not-a-real-id", "budget-1")).toBe(false);
     expect(listPayeeCleanupSuppressions(db, "budget-1")).toHaveLength(0);
+  });
+
+  it("will not delete another budget's decision by id", () => {
+    // Ids are guessable and every other operation on this table is
+    // budget-scoped; the id alone must not be enough.
+    const db = tempDb();
+    const created = createPayeeCleanupSuppression(db, base);
+
+    expect(deletePayeeCleanupSuppression(db, created.id, "budget-2")).toBe(false);
+    expect(listPayeeCleanupSuppressions(db, "budget-1")).toHaveLength(1);
   });
 
   it("clears every decision for one budget only", () => {

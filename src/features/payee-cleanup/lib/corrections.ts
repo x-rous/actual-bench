@@ -181,6 +181,9 @@ export function splitCluster(
   const existing = current(corrections, clusterId);
   return update(corrections, clusterId, {
     excludedIds: excluded,
+    // A split is a statement about the whole group, so a payee the user added
+    // by hand and then split away has to go too.
+    addedIds: existing.addedIds.filter((id) => keep.has(id)),
     targetId:
       existing.targetId && keep.has(existing.targetId) ? existing.targetId : undefined,
   });
@@ -222,6 +225,12 @@ export function combineGroups(
     // proposal at all.
     next = update(next, group.clusterId, {
       excludedIds: [...new Set(group.memberIds)],
+      // Cleared as well, or the absorbed group keeps its hand-added payees,
+      // stays at two members and remains a live proposal claiming the same
+      // source payee as the survivor — which the validator then blocks as a
+      // merge into more than one payee, instead of the combine the user asked
+      // for.
+      addedIds: [],
       targetId: undefined,
       decision: "undecided",
     });
@@ -255,7 +264,11 @@ export function correctedMembers(
 
   const existing = new Set(kept.map((m) => m.id));
   const added = correction.addedIds
-    .filter((id) => !existing.has(id))
+    // Exclusion wins over addition. The two lists are disjoint after
+    // `excludeMember` or `addMember`, but `splitCluster` and `combineGroups`
+    // write `excludedIds` wholesale, so a hand-added payee could come back
+    // through the side door after the user had removed it.
+    .filter((id) => !existing.has(id) && !excluded.has(id))
     .map(lookup)
     .filter((c): c is PayeeCleanupCandidate => Boolean(c));
 

@@ -51,7 +51,8 @@ const DEFAULTS = {
 
 type Candidate = {
   tokens: string[];
-  payees: Set<string>;
+  /** Indices into the input, so payees sharing a reduced stem still count separately. */
+  payees: Set<number>;
   remainders: Set<string>;
 };
 
@@ -79,8 +80,13 @@ export function findCorpusAffixes(
   if (names.length === 0) return [];
   const threshold = Math.max(minPayees, Math.ceil(names.length * minShare));
 
-  const tokenized = names.map((name) => ({
+  // Indexed, because the caller passes reduced stems and several payees can
+  // reduce to the same one. Keying the payee set by name collapsed those into a
+  // single entry, which both raised the frequency bar and understated the
+  // payee count shown as evidence.
+  const tokenized = names.map((name, index) => ({
     name,
+    index,
     tokens: name.trim().split(/\s+/).filter(Boolean).map(normalizeToken).filter(Boolean),
   }));
 
@@ -107,12 +113,12 @@ export function findCorpusAffixes(
         const key = slice.join(" ");
         const candidate = candidates.get(key);
         if (candidate) {
-          candidate.payees.add(entry.name);
+          candidate.payees.add(entry.index);
           candidate.remainders.add(remainder);
         } else {
           candidates.set(key, {
             tokens: slice,
-            payees: new Set([entry.name]),
+            payees: new Set([entry.index]),
             remainders: new Set([remainder]),
           });
         }

@@ -285,8 +285,14 @@ export function classifyRelatedRules(
       const values = Array.isArray(c.value) ? c.value : [c.value];
       return values.some((value) => {
         if (typeof value !== "string") return false;
-        const upper = value.toUpperCase();
-        return upper.includes(stemUpper) || stemUpper.includes(upper);
+        const upper = value.toUpperCase().trim();
+        if (upper.includes(stemUpper)) return true;
+        // The reverse direction needs a floor. A two-character condition value
+        // like `CO` is a substring of a great many stems, and treating that as
+        // an overlap let an unrelated rule be read as covering this merchant —
+        // which then suppressed the rule cleanup needed. Three characters, the
+        // same floor `buildCandidates` uses.
+        return upper.length >= 3 && stemUpper.includes(upper);
       });
     });
 

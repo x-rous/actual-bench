@@ -138,9 +138,15 @@ describe("detectAll", () => {
     // The resolver groups on the stem alone, so a one-character stem would
     // collect every unrelated payee that reduced to the same letter.
     const [detected] = detectAll([payee("A-- 1234")]);
-    for (const hit of detected.hits.filter((h) => h.detectorId === "full-reduction")) {
-      expect(hit.stem.length).toBeGreaterThanOrEqual(3);
-    }
+    expect(detected.hits.some((h) => h.detectorId === "full-reduction")).toBe(false);
+  });
+
+  it("still emits a reduction hit when the stem clears the floor", () => {
+    // The positive control for the guard above: it must drop short stems
+    // without quietly dropping every reduction.
+    const [detected] = detectAll([payee("COLES 1234")]);
+    const hit = detected.hits.find((h) => h.detectorId === "full-reduction");
+    expect(hit?.stem).toBe("COLES");
   });
 
   it("never emits a structural hit with nothing structural to report", () => {

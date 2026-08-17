@@ -8,12 +8,18 @@ export const runtime = "nodejs";
 
 /** Undoing one decision, so a mistaken rejection is recoverable. */
 export async function DELETE(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const { id } = await params;
-    const removed = deletePayeeCleanupSuppression(getAppDb(), id);
+    // Budget-scoped like every other operation on this table: an id on its own
+    // would let one budget delete another budget's decision.
+    const budgetSyncId = new URL(request.url).searchParams.get("budgetSyncId");
+    if (!budgetSyncId) {
+      return NextResponse.json({ error: "budgetSyncId is required" }, { status: 400 });
+    }
+    const removed = deletePayeeCleanupSuppression(getAppDb(), id, budgetSyncId);
     if (!removed) {
       return NextResponse.json({ error: "Suppression not found" }, { status: 404 });
     }

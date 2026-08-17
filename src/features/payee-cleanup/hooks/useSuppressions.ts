@@ -66,9 +66,12 @@ export function useSuppressions(options: { enabled: boolean }) {
 
   const remove = useMutation({
     mutationFn: async (id: string) => {
-      const response = await fetch(`/api/payee-cleanup-suppressions/${id}`, {
-        method: "DELETE",
-      });
+      const response = await fetch(
+        `/api/payee-cleanup-suppressions/${id}?budgetSyncId=${encodeURIComponent(
+          budgetSyncId ?? ""
+        )}`,
+        { method: "DELETE" }
+      );
       if (!response.ok) throw new Error("Could not undo that decision");
     },
     onSuccess: invalidate,
@@ -99,7 +102,10 @@ export function useSuppressions(options: { enabled: boolean }) {
       if (!budgetSyncId) return;
       create.mutate(buildAffixSuppression(budgetSyncId, affix));
     },
-    undo: (id: string) => remove.mutate(id),
+    undo: (id: string) => {
+      if (!budgetSyncId) return;
+      remove.mutate(id);
+    },
     // Guarded like the others. Without a budget id this sent an unscoped DELETE
     // — a destructive request with nothing to scope it to.
     clearAll: () => {

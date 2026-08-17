@@ -33,11 +33,16 @@ export function triageBadges(suggestion: CleanupSuggestion): TriageBadge[] {
     const total = impact.transactionTotal;
     badges.push({
       id: "transactions",
-      tone: "neutral",
+      tone: total === undefined && !impact.transactionsLoading ? "warning" : "neutral",
       label:
-        total === undefined
-          ? "counting transactions…"
-          : `${total.toLocaleString("en-US")} ${total === 1 ? "transaction" : "transactions"}`,
+        total !== undefined
+          ? `${total.toLocaleString("en-US")} ${total === 1 ? "transaction" : "transactions"}`
+          : impact.transactionsLoading
+            ? "counting transactions…"
+            : // Not loading and still unknown means the read failed or never
+              // ran. Saying "counting…" forever would describe work that is not
+              // happening.
+              "transaction count unavailable",
     });
 
     const activeRules = impact.rules.regular + impact.rules.activeSchedule;
