@@ -26,6 +26,11 @@ export function usePayeeCleanupCandidates(options: { enabled: boolean }): {
   partition: EligibilityPartition;
   capabilities: PayeeCleanupCapabilityReport | null;
   isLoading: boolean;
+  /**
+   * True for a re-scan as well as the first load. `isLoading` is only ever true
+   * before there is data, so a Re-scan button wired to it never changes.
+   */
+  isFetching: boolean;
   error: Error | null;
   refetch: () => void;
 } {
@@ -66,6 +71,7 @@ export function usePayeeCleanupCandidates(options: { enabled: boolean }): {
     partition,
     capabilities,
     isLoading: query.isLoading,
+    isFetching: query.isFetching,
     error: query.error,
     refetch: () => void query.refetch(),
   };

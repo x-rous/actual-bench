@@ -6,6 +6,7 @@ import { Check, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { PageLayout } from "@/components/layout/PageLayout";
+import { cn } from "@/lib/utils";
 import { useStagedStore } from "@/store/staged";
 import { usePayeeCleanupCandidates } from "../hooks/usePayeeCleanupCandidates";
 import { usePayeeCleanupImpact } from "../hooks/usePayeeCleanupImpact";
@@ -47,8 +48,13 @@ import { buildPlan, planOperationCount } from "../lib/plan";
  * why both hooks feeding it memoize their results.
  */
 export function PayeeCleanupView() {
-  const { partition: scanned, isLoading, error, refetch } =
-    usePayeeCleanupCandidates({ enabled: true });
+  const {
+    partition: scanned,
+    isLoading,
+    isFetching: candidatesFetching,
+    error,
+    refetch,
+  } = usePayeeCleanupCandidates({ enabled: true });
 
   // Payees already staged for a merge or deletion are no longer candidates.
   //
@@ -118,8 +124,12 @@ export function PayeeCleanupView() {
     enabled: true,
   });
 
-  const { rows: importedText, truncated: importedTextTruncated } =
-    useImportedTextIndex({ enabled: true });
+  const {
+    rows: importedText,
+    truncated: importedTextTruncated,
+    isFetching: importedTextFetching,
+    refetch: refetchImportedText,
+  } = useImportedTextIndex({ enabled: true });
   const rules = useMemo(
     () =>
       Object.values(impact.stagedRules)
@@ -154,6 +164,10 @@ export function PayeeCleanupView() {
   // Which rule gaps the user has opted in to. Held here rather than in the list
   // so it survives the list re-rendering when the scan re-runs.
   const [selectedRuleGaps, setSelectedRuleGaps] = useState<Set<string>>(new Set());
+
+  // Any of the reads the scan depends on still being in flight counts as
+  // scanning: the user asked for one thing, not three.
+  const scanning = candidatesFetching || importedTextFetching;
 
   const { stage, isStaging } = usePayeeCleanupPlan();
   const [stageOutcome, setStageOutcome] = useState<StageOutcome | null>(null);
@@ -318,14 +332,26 @@ export function PayeeCleanupView() {
               Accept {safeToAccept.length} safe
             </Button>
           ) : null}
+          {/* `isLoading` is only true before there is any data, so a re-scan
+              left the button looking inert while the work happened. `isFetching`
+              covers both, and the label says which of the two is going on. */}
           <Button
             variant="outline"
             size="sm"
-            onClick={() => refetch()}
-            disabled={isLoading}
+            onClick={() => {
+              // Everything the scan reads, not just the payee list — otherwise
+              // "Scan again" quietly reuses yesterday's import history.
+              refetch();
+              refetchImportedText();
+            }}
+            disabled={scanning}
+            aria-busy={scanning}
           >
-            <RefreshCw className="size-3.5" aria-hidden="true" />
-            Scan again
+            <RefreshCw
+              className={cn("size-3.5", scanning && "animate-spin")}
+              aria-hidden="true"
+            />
+            {scanning ? "Scanning…" : "Scan again"}
           </Button>
           <Button
             size="sm"

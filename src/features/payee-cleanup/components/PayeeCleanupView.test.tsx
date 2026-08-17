@@ -45,8 +45,17 @@ jest.mock("../hooks/usePayeeCleanupImpact", () => ({
 // Suppression persistence is exercised in its own suites (the repository and
 // lib/suppressions); here the view just needs the calls recorded.
 let importedText: { field: "imported_payee" | "notes"; text: string; payeeId: string | null; transactionCount: number }[] = [];
+let importedTextFetching = false;
+let candidatesFetching = false;
+const refetchCandidates = jest.fn();
+const refetchImportedText = jest.fn();
 jest.mock("../hooks/useImportedTextIndex", () => ({
-  useImportedTextIndex: () => ({ rows: importedText, isLoading: false }),
+  useImportedTextIndex: () => ({
+    rows: importedText,
+    isLoading: false,
+    isFetching: importedTextFetching,
+    refetch: refetchImportedText,
+  }),
 }));
 
 const toastSuccess = jest.fn();
@@ -92,8 +101,9 @@ jest.mock("../hooks/usePayeeCleanupCandidates", () => ({
     partition: partitionByEligibility(candidates),
     capabilities: getPayeeCleanupCapabilities({ mode }),
     isLoading,
+    isFetching: candidatesFetching,
     error: null,
-    refetch: jest.fn(),
+    refetch: refetchCandidates,
   }),
 }));
 
@@ -113,6 +123,10 @@ beforeEach(() => {
   stageMock.mockReset();
   stageMock.mockResolvedValue({ status: "staged", operations: 1 });
   importedText = [];
+  importedTextFetching = false;
+  candidatesFetching = false;
+  refetchImportedText.mockClear();
+  refetchCandidates.mockClear();
 });
 
 /** Deep reasoning is behind an inline toggle; everything else is on the card. */
@@ -908,6 +922,31 @@ describe("PayeeCleanupView", () => {
       "ETIHAD BUREAU"
     );
     expect(screen.getByRole("button", { name: /undo my changes/i })).toBeInTheDocument();
+  });
+
+  it("says it is scanning while a re-scan is running", () => {
+    // `isLoading` is only true before there is any data, so the button used to
+    // look inert for the whole of a re-scan — the one time the user is waiting
+    // on it deliberately.
+    candidates = [payee("WOOLWORTHS 0183"), payee("WOOLWORTHS 0291")];
+    candidatesFetching = true;
+
+    render(<PayeeCleanupView />);
+
+    const button = screen.getByRole("button", { name: /scanning/i });
+    expect(button).toBeDisabled();
+    expect(button).toHaveAttribute("aria-busy", "true");
+  });
+
+  it("re-reads the import history too, not just the payees", () => {
+    // Otherwise "Scan again" quietly reuses yesterday's history.
+    candidates = [payee("WOOLWORTHS 0183"), payee("WOOLWORTHS 0291")];
+    render(<PayeeCleanupView />);
+
+    fireEvent.click(screen.getByRole("button", { name: /scan again/i }));
+
+    expect(refetchCandidates).toHaveBeenCalled();
+    expect(refetchImportedText).toHaveBeenCalled();
   });
 
   it("keeps unstaged work when only some groups are staged", () => {
