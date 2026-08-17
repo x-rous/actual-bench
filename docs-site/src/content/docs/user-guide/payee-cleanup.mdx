@@ -119,12 +119,22 @@ A payee appears only when all of these are true, which is why the list is short:
 - **an honest rule exists.** If the text neither repeats nor shares a recognisable stem, no rule can
   catch it and the payee is not listed.
 
-Two rule shapes, picked from your own history:
+Two rule shapes, picked from your own history — on whether the text *varies*, not on how many
+different strings there are:
 
-- **Stable text** gets an exact match — the same shape Actual writes itself. It cannot catch anything
-  else, so it needs no backtest.
-- **Varying text** that shares a stem gets a pattern, so it also catches variants you have not seen
-  yet. That one *is* backtested, and you are told if it would catch another payee's transactions.
+- **The same text every time** gets an exact match, the shape Actual writes itself. It cannot catch
+  anything else, so it needs no backtest.
+- **Text that varies around a core** gets a pattern built from the words every import shares, so it
+  also catches variants you have not seen yet. That one *is* backtested, and you are told if it would
+  catch another payee's transactions.
+
+For example, three imports reading `#API Etihad Credit Bureau`, `#2026-05 Etihad Credit Bureau` and
+`-84 IRR (FX rate: #2026-02 ETIHAD CREDIT BUREAU DUBAI UAE)` share `ETIHAD CREDIT BUREAU`, so the rule
+matches that anywhere in the text rather than listing three strings that will never arrive again.
+
+The pattern is shown on the row, and you can rewrite it: choose the field, choose **matches** or
+**contains**, and type your own. The backtest re-runs as you go, and tells you if it now catches
+nothing, will not compile, or reaches another payee. Your edits survive a re-scan.
 
 Where the payee already has a rule of this kind, cleanup **adds the missing text to it** rather than
 creating a second rule — so tidying ten payees does not mean ten new rules.
