@@ -53,6 +53,7 @@ const toastSuccess = jest.fn();
 jest.mock("sonner", () => ({ toast: { success: (m: string) => toastSuccess(m) } }));
 
 const rejectCluster = jest.fn();
+const rejectRuleGap = jest.fn();
 const stageMock = jest.fn();
 jest.mock("../hooks/usePayeeCleanupPlan", () => ({
   usePayeeCleanupPlan: () => ({ stage: stageMock, isStaging: false }),
@@ -61,6 +62,7 @@ jest.mock("../hooks/useSuppressions", () => ({
   useSuppressions: () => ({
     suppressions: [],
     rejectCluster,
+    rejectRuleGap,
     rejectAffix: jest.fn(),
     undo: jest.fn(),
     clearAll: jest.fn(),
@@ -98,6 +100,7 @@ beforeEach(() => {
   transactionCounts = new Map();
   transactionsLoading = false;
   rejectCluster.mockClear();
+  rejectRuleGap.mockClear();
   pendingPayeeMerges = [];
   stagedPayeeEntries = {};
   toastSuccess.mockClear();
@@ -769,6 +772,82 @@ describe("PayeeCleanupView", () => {
     render(<PayeeCleanupView />);
 
     expect(screen.getByText(/1 change is staged and waiting/i)).toBeInTheDocument();
+  });
+
+  it("lists a curated payee whose imports will not resolve to it again", () => {
+    // Actual matches an imported payee by name alone, so `NETFLIX.COM 4821`
+    // will not find the payee now called `Netflix` — it will create a duplicate.
+    candidates = [payee("Netflix"), payee("Spotify")];
+    importedText = [
+      {
+        field: "imported_payee",
+        text: "NETFLIX.COM 4821",
+        payeeId: "p-Netflix",
+        transactionCount: 9,
+      },
+      {
+        field: "imported_payee",
+        text: "Spotify",
+        payeeId: "p-Spotify",
+        transactionCount: 9,
+      },
+    ];
+    transactionCounts = new Map([
+      ["p-Netflix", 9],
+      ["p-Spotify", 9],
+    ]);
+
+    render(<PayeeCleanupView />);
+    fireEvent.click(screen.getByRole("button", { name: /needs a rule/i }));
+
+    // Spotify already resolves by name, so it must not be listed.
+    expect(screen.getByText("Netflix")).toBeInTheDocument();
+    expect(screen.queryByText("Spotify")).not.toBeInTheDocument();
+    expect(screen.getByText(/nothing here changes a payee/i)).toBeInTheDocument();
+  });
+
+  it("offers to create the safe rules in bulk", () => {
+    candidates = [payee("Netflix")];
+    importedText = [
+      {
+        field: "imported_payee",
+        text: "NETFLIX.COM 4821",
+        payeeId: "p-Netflix",
+        transactionCount: 9,
+      },
+    ];
+    transactionCounts = new Map([["p-Netflix", 9]]);
+
+    render(<PayeeCleanupView />);
+    fireEvent.click(screen.getByRole("button", { name: /needs a rule/i }));
+
+    const bulk = screen.getByRole("button", { name: /create 1 safe rule/i });
+    fireEvent.click(bulk);
+
+    expect(
+      screen.getByRole("checkbox", { name: /create a rule for Netflix/i })
+    ).toBeChecked();
+  });
+
+  it("records that a payee does not need a rule", () => {
+    candidates = [payee("Netflix")];
+    importedText = [
+      {
+        field: "imported_payee",
+        text: "NETFLIX.COM 4821",
+        payeeId: "p-Netflix",
+        transactionCount: 9,
+      },
+    ];
+    transactionCounts = new Map([["p-Netflix", 9]]);
+
+    render(<PayeeCleanupView />);
+    fireEvent.click(screen.getByRole("button", { name: /needs a rule/i }));
+    fireEvent.click(screen.getByRole("button", { name: /doesn't need one/i }));
+
+    expect(rejectRuleGap).toHaveBeenCalledWith(
+      expect.objectContaining({ name: "Netflix" })
+    );
   });
 
   it("keeps unstaged work when only some groups are staged", () => {

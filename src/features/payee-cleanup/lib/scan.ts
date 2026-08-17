@@ -13,7 +13,11 @@
 
 import { detectAll } from "./detectors";
 import { findCorpusAffixes } from "./corpusAffixes";
-import { applyAffixSuppressions, applySuppressions } from "./suppressions";
+import {
+  applyAffixSuppressions,
+  applyRuleGapSuppressions,
+  applySuppressions,
+} from "./suppressions";
 import {
   correctedMembers,
   EMPTY_CORRECTION,
@@ -228,14 +232,17 @@ export function scanForCleanup(
   );
 
   const ruleGaps = impactSources
-    ? findRuleGaps({
-        candidates: partition.eligible,
-        rows: importedText ?? [],
-        rules,
-        transactionCounts: impactSources.transactionCounts,
-        clusteredPayeeIds,
-        truncated: importedTextTruncated,
-      })
+    ? applyRuleGapSuppressions(
+        findRuleGaps({
+          candidates: partition.eligible,
+          rows: importedText ?? [],
+          rules,
+          transactionCounts: impactSources.transactionCounts,
+          clusteredPayeeIds,
+          truncated: importedTextTruncated,
+        }),
+        suppressions
+      )
     : [];
 
   return {

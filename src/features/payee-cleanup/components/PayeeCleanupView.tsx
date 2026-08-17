@@ -29,6 +29,7 @@ import { findNameCollisions, isSafeForBulkAccept } from "../lib/triage";
 import { CombineGroupsBanner } from "./CombineGroupsBanner";
 import { CleanupFilterBar, type BandFilter, type CleanupTab } from "./CleanupFilterBar";
 import { UnusedPayeeList } from "./UnusedPayeeList";
+import { CreateSafeRulesButton, RuleGapList } from "./RuleGapList";
 import { SuppressionList } from "./SuppressionList";
 import { ReviewCleanupBar } from "./ReviewCleanupBar";
 import { usePayeeCleanupPlan, type StageOutcome } from "../hooks/usePayeeCleanupPlan";
@@ -101,7 +102,7 @@ export function PayeeCleanupView() {
 
   const [corrections, setCorrections] = useState<CorrectionMap>({});
   const impact = usePayeeCleanupImpact(partition.eligible, { enabled: true });
-  const { suppressions, rejectCluster, undo, clearAll } = useSuppressions({
+  const { suppressions, rejectCluster, rejectRuleGap, undo, clearAll } = useSuppressions({
     enabled: true,
   });
 
@@ -200,6 +201,28 @@ export function PayeeCleanupView() {
     [partition.eligible]
   );
 
+  // Which rule gaps the user has opted in to. Held here rather than in the list
+  // so it survives the list re-rendering when the scan re-runs.
+  const [selectedRuleGaps, setSelectedRuleGaps] = useState<Set<string>>(new Set());
+
+  const visibleRuleGaps = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    if (!query) return result.ruleGaps;
+    return result.ruleGaps.filter(
+      (gap) =>
+        gap.payee.name.toLowerCase().includes(query) ||
+        gap.texts.some((t) => t.text.toLowerCase().includes(query))
+    );
+  }, [result.ruleGaps, search]);
+
+  // Safe means "no reason for a human to look": see `findRuleGaps`. Creating
+  // these in bulk is a smaller risk than accepting merges in bulk, because a
+  // rule is undone by deleting it while a saved merge is not.
+  const safeRuleGaps = useMemo(
+    () => result.ruleGaps.filter((gap) => gap.safe && !selectedRuleGaps.has(gap.payee.id)),
+    [result.ruleGaps, selectedRuleGaps]
+  );
+
   // The tab pill counts what the tab would show, ignoring the search box: a
   // count that fell as you typed would read like suggestions disappearing.
   const visibleBandCount = useMemo(
@@ -239,7 +262,19 @@ export function PayeeCleanupView() {
       }
       actions={
         <div className="flex items-center gap-2">
-          {safeToAccept.length > 0 ? (
+          {tab === "rule-gaps" ? (
+            <CreateSafeRulesButton
+              safeCount={safeRuleGaps.length}
+              onCreate={() =>
+                setSelectedRuleGaps((current) => {
+                  const next = new Set(current);
+                  for (const gap of safeRuleGaps) next.add(gap.payee.id);
+                  return next;
+                })
+              }
+            />
+          ) : null}
+          {tab === "suggestions" && safeToAccept.length > 0 ? (
             <Button
               variant="outline"
               size="sm"
@@ -310,6 +345,7 @@ export function PayeeCleanupView() {
           // the hidden band, so the pill could read 12 above a list of 8.
           suggestions: visibleBandCount,
           unused: result.orphans.length,
+          ruleGaps: result.ruleGaps.length,
           dismissed: suppressions.length,
         }}
       />
@@ -361,6 +397,27 @@ export function PayeeCleanupView() {
           />
         ) : tab === "unused" ? (
           <UnusedPayeeList orphans={result.orphans} />
+        ) : tab === "rule-gaps" ? (
+          <RuleGapList
+            gaps={visibleRuleGaps}
+            selected={selectedRuleGaps}
+            onToggle={(payeeId, enabled) =>
+              setSelectedRuleGaps((current) => {
+                const next = new Set(current);
+                if (enabled) next.add(payeeId);
+                else next.delete(payeeId);
+                return next;
+              })
+            }
+            onDismiss={(gap) => {
+              setSelectedRuleGaps((current) => {
+                const next = new Set(current);
+                next.delete(gap.payee.id);
+                return next;
+              });
+              rejectRuleGap(gap.payee);
+            }}
+          />
         ) : (
         <>
         {visible.length === 0 ? (
