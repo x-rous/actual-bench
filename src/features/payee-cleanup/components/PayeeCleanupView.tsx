@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { Check, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -96,7 +97,12 @@ export function PayeeCleanupView() {
     [scanned, stagedAwayIds]
   );
 
-  const [tab, setTab] = useState<CleanupTab>("suggestions");
+  // `?tab=rule-gaps` so the Rules page can link straight to the rule tab, the
+  // same way Rule Diagnostics is reachable from there.
+  const searchParams = useSearchParams();
+  const [tab, setTab] = useState<CleanupTab>(
+    searchParams.get("tab") === "rule-gaps" ? "rule-gaps" : "suggestions"
+  );
   const [band, setBand] = useState<BandFilter>("all");
   const [search, setSearch] = useState("");
 

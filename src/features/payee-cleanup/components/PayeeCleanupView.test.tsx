@@ -52,6 +52,11 @@ jest.mock("../hooks/useImportedTextIndex", () => ({
 const toastSuccess = jest.fn();
 jest.mock("sonner", () => ({ toast: { success: (m: string) => toastSuccess(m) } }));
 
+let searchParams = new URLSearchParams();
+jest.mock("next/navigation", () => ({
+  useSearchParams: () => searchParams,
+}));
+
 const rejectCluster = jest.fn();
 const rejectRuleGap = jest.fn();
 const stageMock = jest.fn();
@@ -100,6 +105,7 @@ beforeEach(() => {
   transactionCounts = new Map();
   transactionsLoading = false;
   rejectCluster.mockClear();
+  searchParams = new URLSearchParams();
   rejectRuleGap.mockClear();
   pendingPayeeMerges = [];
   stagedPayeeEntries = {};
@@ -848,6 +854,25 @@ describe("PayeeCleanupView", () => {
     expect(rejectRuleGap).toHaveBeenCalledWith(
       expect.objectContaining({ name: "Netflix" })
     );
+  });
+
+  it("opens on the rule tab when the Rules page links to it", () => {
+    // A user asking "why wasn't this import assigned?" starts on the Rules page.
+    searchParams = new URLSearchParams("tab=rule-gaps");
+    candidates = [payee("Netflix")];
+    importedText = [
+      {
+        field: "imported_payee",
+        text: "NETFLIX.COM 4821",
+        payeeId: "p-Netflix",
+        transactionCount: 9,
+      },
+    ];
+    transactionCounts = new Map([["p-Netflix", 9]]);
+
+    render(<PayeeCleanupView />);
+
+    expect(screen.getByText(/nothing here changes a payee/i)).toBeInTheDocument();
   });
 
   it("keeps unstaged work when only some groups are staged", () => {

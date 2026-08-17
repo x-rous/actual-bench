@@ -62,6 +62,7 @@ export default defineConfig({
 						{ label: 'Budget Overview', link: '/getting-started/budget-overview/' },
 						{ label: 'Accounts', link: '/user-guide/accounts/' },
 						{ label: 'Payees', link: '/user-guide/payees/' },
+						{ label: 'Payee Cleanup', link: '/user-guide/payee-cleanup/' },
 						{ label: 'Categories', link: '/user-guide/categories/' },
 						{ label: 'Schedules', link: '/user-guide/schedules/' },
 						{ label: 'Tags', link: '/user-guide/tags/' },
