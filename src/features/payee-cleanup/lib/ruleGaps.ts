@@ -177,18 +177,33 @@ export function findRenameRuleFor(rules: Rule[], payeeId: string): Rule | null {
 }
 
 /**
- * Whether one rule condition matches a piece of import text.
+ * What one rule condition says about a piece of import text.
  *
- * `null` means "cannot be judged from here" — a condition on the amount, the
- * account or the date says nothing about the text, and pretending otherwise
- * would let a rule about £5 purchases rule a payee out.
+ * Three answers, not two, and collapsing the last two was a bug:
+ *
+ * - a **boolean** when the condition is about this very field;
+ * - `"not-applicable"` when it is about the *other* text field. The index holds
+ *   one row per field, so a `notes` condition simply has nothing to say about an
+ *   `imported_payee` row — the transaction behind it may well have matching
+ *   notes we are not looking at. That is not an inability to read the rule;
+ * - `"unreadable"` when it is about something absent from the index entirely —
+ *   an amount, an account, a date. Only this one may stop a rule settling a
+ *   payee, because only this one might be the condition that fails.
  */
+type ConditionVerdict = boolean | "not-applicable" | "unreadable";
+
+const TEXT_FIELDS = new Set<string>(["imported_payee", "notes"]);
+
 function conditionMatches(
   condition: Rule["conditions"][number],
   field: SourceField,
   text: string
-): boolean | null {
-  if (condition.field !== field) return null;
+): ConditionVerdict {
+  if (condition.field !== field) {
+    return condition.field && TEXT_FIELDS.has(condition.field)
+      ? "not-applicable"
+      : "unreadable";
+  }
 
   const upper = text.toUpperCase();
   const value = condition.value;
@@ -199,24 +214,27 @@ function conditionMatches(
 
   switch (condition.op) {
     case "is":
-      return asString === null ? null : upper === asString;
+      return asString === null ? "unreadable" : upper === asString;
     case "contains":
-      return asString === null ? null : upper.includes(asString);
+      return asString === null ? "unreadable" : upper.includes(asString);
     case "doesNotContain":
-      return asString === null ? null : !upper.includes(asString);
+      return asString === null ? "unreadable" : !upper.includes(asString);
     case "oneOf":
-      return asList === null ? null : asList.includes(upper);
+      return asList === null ? "unreadable" : asList.includes(upper);
     case "notOneOf":
-      return asList === null ? null : !asList.includes(upper);
+      return asList === null ? "unreadable" : !asList.includes(upper);
     case "matches":
-      if (asString === null) return null;
+      if (asString === null) return "unreadable";
       try {
+        // Case-insensitive to match the rule engine, which lower-cases both the
+        // condition's value and the transaction's text (pinned in
+        // `nativeSemantics.test.ts`).
         return new RegExp(String(value), "i").test(text);
       } catch {
         return false;
       }
     default:
-      return null;
+      return "unreadable";
   }
 }
 
@@ -241,17 +259,18 @@ function ruleMatchesText(
   field: SourceField,
   text: string
 ): { matches: boolean; fullyChecked: boolean } {
-  const results = rule.conditions.map((c) => conditionMatches(c, field, text));
-  const readable = results.filter((r): r is boolean => r !== null);
-  if (readable.length === 0) return { matches: false, fullyChecked: false };
+  const verdicts = rule.conditions.map((c) => conditionMatches(c, field, text));
+  const answered = verdicts.filter((v): v is boolean => typeof v === "boolean");
+  const unreadable = verdicts.some((v) => v === "unreadable");
+
+  // Nothing to go on for this row: a `notes` rule against an imported-payee row
+  // cannot match it, but that says nothing about how well the rule is understood.
+  if (answered.length === 0) return { matches: false, fullyChecked: !unreadable };
 
   if (rule.conditionsOp === "or") {
-    return { matches: readable.some(Boolean), fullyChecked: true };
+    return { matches: answered.some(Boolean), fullyChecked: true };
   }
-  return {
-    matches: readable.every(Boolean),
-    fullyChecked: readable.length === results.length,
-  };
+  return { matches: answered.every(Boolean), fullyChecked: !unreadable };
 }
 
 /**

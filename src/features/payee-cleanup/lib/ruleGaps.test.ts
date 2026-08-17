@@ -597,6 +597,31 @@ describe("a rule that already sets this payee", () => {
     expect(findRuleGaps(careem)).toEqual([]);
   });
 
+  it("is not confused by a rule on one text field when the payee uses both", () => {
+    // The index holds one row per field, so a `notes` condition has nothing to
+    // say about an `imported_payee` row — the transaction behind it may well
+    // have matching notes. Reading that as "cannot check this rule" left a payee
+    // listed whose rule already caught 170 of its 182 transactions.
+    const noon = inputs({
+      candidates: [payee("p1", "Noon Minutes")],
+      rows: [
+        row("#2026-02 Noon Minutes DUBAI ARE", "p1", 17, "notes"),
+        row("#2025-10 NOON Minutes DUBAI DXB", "p1", 16, "notes"),
+        row("NOON Minutes DUBAI DXB", "p1", 10, "imported_payee"),
+      ],
+      rules: [
+        rule({
+          id: "noon",
+          conditions: [{ field: "notes", op: "contains", value: "NOON Minutes" }],
+          actions: [{ field: "payee", op: "set", value: "p1" }],
+        }),
+      ],
+      transactionCounts: new Map([["p1", 43]]),
+    });
+
+    expect(findRuleGaps(noon)).toEqual([]);
+  });
+
   it("does not trust an `and` rule it cannot read in full", () => {
     // The opposite reasoning: a condition that cannot be read might be the one
     // that fails, so the count is an upper bound and cannot hide a payee.
