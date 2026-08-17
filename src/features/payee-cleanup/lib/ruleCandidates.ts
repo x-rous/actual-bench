@@ -110,18 +110,30 @@ export function buildCandidates(stem: string, field: SourceField): RuleCandidate
   ];
 }
 
-function matchesText(candidate: RuleCandidate, text: string): boolean {
+/**
+ * Compiles a candidate once, rather than per row.
+ *
+ * The pattern is tested against every row in the history — up to `ROW_LIMIT` of
+ * them — so building the `RegExp` inside the loop meant thousands of identical
+ * compilations per candidate. `test` on a non-global regex is stateless, so one
+ * instance is safe to reuse.
+ */
+function compileMatcher(candidate: RuleCandidate): (text: string) => boolean {
   if (candidate.op === "contains") {
-    return text.toUpperCase().includes(candidate.value.toUpperCase());
+    const needle = candidate.value.toUpperCase();
+    return (text) => text.toUpperCase().includes(needle);
   }
+
+  let regex: RegExp | null = null;
   try {
     // Actual compiles `matches` to `$regexp`; case-insensitive here because the
     // stem is upper-cased and real import text is not.
-    return new RegExp(candidate.value, "i").test(text);
+    regex = new RegExp(candidate.value, "i");
   } catch {
     // A pattern that will not compile can never be offered.
-    return false;
+    regex = null;
   }
+  return (text) => (regex !== null ? regex.test(text) : false);
 }
 
 /**
@@ -141,10 +153,11 @@ export function scoreCandidate(
   let unexpectedMatches = 0;
   let matchedTexts = 0;
   const unexpectedExamples: CandidateScore["unexpectedExamples"] = [];
+  const matches = compileMatcher(candidate);
 
   for (const row of rows) {
     if (row.field !== candidate.field) continue;
-    if (!matchesText(candidate, row.text)) continue;
+    if (!matches(row.text)) continue;
 
     matchedTexts += 1;
 

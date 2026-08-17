@@ -11,14 +11,13 @@ import type { PayeeCleanupCandidate } from "../types";
  * `ROW_LIMIT = 5000` grouped rows, on the main thread, every time the scan's
  * dependencies change.
  *
- * What makes it affordable is the exclusion order plus the exact-match shape:
- * most payees never reach a backtest, and the ones with stable text never need
- * one. This file proves that on a budget shaped like a real one, rather than
- * asserting it in a comment.
+ * What makes it affordable is the exclusion order — a payee whose imports
+ * already equal its name never reaches a backtest — and compiling each pattern
+ * once instead of once per row. This file proves it rather than asserting it in
+ * a comment.
  *
- * The budget below is deliberately unkind: 400 payees, 5000 rows, and a quarter
- * of the payees carrying varying text — i.e. the expensive path — which is far
- * more than a curated budget would have.
+ * The budget below is deliberately unkind: 400 payees, the full 5000-row cap,
+ * and every single proposal on the pattern path — the expensive one.
  */
 
 function payee(id: string, name: string): PayeeCleanupCandidate {
@@ -67,15 +66,18 @@ function buildBudget() {
         transactionCount: 12,
       });
     } else {
-      // Stable text: proposed, but with no backtest.
+      // Text that varies around a core — the common case now that the shape is
+      // chosen on variation rather than on how many distinct strings there are.
       candidates.push(payee(id, `Shop ${i}`));
-      rows.push({
-        field: "imported_payee",
-        text: `SHOP${i} PTY LTD 4821`,
-        payeeId: id,
-        payeeName: null,
-        transactionCount: 12,
-      });
+      for (let v = 0; v < 3; v++) {
+        rows.push({
+          field: "imported_payee",
+          text: `#2026-0${v + 1} SHOP${i} PTY LTD`,
+          payeeId: id,
+          payeeName: null,
+          transactionCount: 4,
+        });
+      }
     }
   }
 
@@ -97,6 +99,7 @@ function buildBudget() {
 describe("rule gap scan cost", () => {
   const { candidates, rows, transactionCounts } = buildBudget();
 
+
   it("excludes the payees that resolve by name without touching the history", () => {
     const gaps = findRuleGaps({
       candidates,
@@ -110,9 +113,9 @@ describe("rule gap scan cost", () => {
     expect(gaps).toHaveLength(300);
     expect(gaps.some((g) => g.payee.name.startsWith("Payee "))).toBe(false);
 
-    // And only the varying-text quarter takes the expensive shape.
-    const patterns = gaps.filter((g) => g.proposal.shape === "matches");
-    expect(patterns).toHaveLength(100);
+    // Every proposal here is a pattern, which is the expensive path — the
+    // worst case for the measurement below, and the common case in practice.
+    expect(gaps.every((g) => g.proposal.shape === "matches")).toBe(true);
   });
 
   it("completes a worst-case budget within a frame budget", () => {
@@ -129,9 +132,9 @@ describe("rule gap scan cost", () => {
     });
     const elapsed = Date.now() - started;
 
-    // Measured at ~740ms for this budget on a development machine, with 100 of
-    // the 400 payees on the pattern path. A realistic budget has far fewer.
-    // The threshold is a regression guard, not the measurement.
-    expect(elapsed).toBeLessThan(2000);
+    // Measured at ~215ms on a development machine, with *every* proposal on the
+    // pattern path. It was ~1400ms until `scoreCandidate` stopped compiling its
+    // regex once per row, which is the kind of regression this guards against.
+    expect(elapsed).toBeLessThan(1000);
   });
 });

@@ -15,7 +15,7 @@ jest.mock("./ruleCandidates", () => {
   };
 });
 
-import { findRuleGaps, findRenameRuleFor, sharedStem } from "./ruleGaps";
+import { findRuleGaps, findRenameRuleFor, commonTokenRun } from "./ruleGaps";
 import type { RuleGapInputs } from "./ruleGaps";
 import type { ImportedTextRow } from "./ruleCandidates";
 import type { PayeeCleanupCandidate } from "../types";
@@ -222,18 +222,41 @@ describe("exclusion order", () => {
 });
 
 describe("rule shape", () => {
-  it("uses an exact list when the import text is stable", () => {
+  it("uses an exact list when the same literal text arrives every time", () => {
     // Actual's own idiom, and it cannot misfire.
-    const gaps = findRuleGaps(
-      inputs({
-        rows: [row("NETFLIX.COM 4821", "p1"), row("NETFLIX.COM 4822", "p1")],
-      })
-    );
+    const gaps = findRuleGaps(inputs({ rows: [row("NETFLIX.COM 4821", "p1", 9)] }));
 
     const proposal = gaps[0].proposal;
     expect(proposal.shape).toBe("one-of");
     if (proposal.shape !== "one-of") throw new Error("wrong shape");
-    expect(proposal.texts).toEqual(["NETFLIX.COM 4821", "NETFLIX.COM 4822"]);
+    expect(proposal.texts).toEqual(["NETFLIX.COM 4821"]);
+  });
+
+  it("uses a pattern as soon as the text varies, however few texts there are", () => {
+    // Three texts each carrying their own date are not "stable" — they will
+    // never recur, so an exact list of them would catch nothing in future. This
+    // is the case that made the old distinct-count heuristic wrong.
+    const gaps = findRuleGaps(
+      inputs({
+        candidates: [payee("p1", "Al Etihad Credit Bureau")],
+        rows: [
+          row("#API Etihad Credit Bureau", "p1", 4, "notes"),
+          row("#2026-05 Etihad Credit Bureau", "p1", 1, "notes"),
+          row("-84 IRR (FX rate: #2026-02 ETIHAD CREDIT BUREAU DUBAI UAE)", "p1", 1, "notes"),
+        ],
+        transactionCounts: new Map([["p1", 6]]),
+      })
+    );
+
+    const proposal = gaps[0].proposal;
+    expect(proposal.shape).toBe("matches");
+    if (proposal.shape !== "matches") throw new Error("wrong shape");
+    // Unanchored: two of the three texts do not start with the merchant, so an
+    // anchored pattern would match neither.
+    expect(proposal.candidate.value).toBe(
+      "\\bETIHAD[^A-Za-z0-9]*CREDIT[^A-Za-z0-9]*BUREAU\\b"
+    );
+    expect(proposal.score.expectedMatches).toBe(6);
   });
 
   it("uses a pattern when the text varies but shares a stem", () => {
@@ -255,8 +278,10 @@ describe("rule shape", () => {
     expect(proposal.candidate.value).toMatch(/WOOLWORTHS/);
   });
 
-  it("proposes nothing when the text neither repeats nor shares a stem", () => {
-    // No honest rule exists, so the payee does not appear at all.
+  it("proposes nothing when the text neither repeats nor shares a core", () => {
+    // No honest rule exists, so the payee does not appear at all. A one-off
+    // string is as dead as a varying one: an exact list of it catches the
+    // transaction already on record and nothing ever again.
     const rows = [
       row("ONE OFF ALPHA", "p1", 1),
       row("SOMETHING ELSE BRAVO", "p1", 1),
@@ -389,16 +414,112 @@ describe("when a human should look", () => {
   });
 });
 
-describe("sharedStem", () => {
-  it("returns the stem when every variant reduces to it", () => {
-    expect(sharedStem(["WOOLWORTHS 0183", "WOOLWORTHS 0291"])).toBe("WOOLWORTHS");
+describe("a condition the user typed", () => {
+  const etihad = () =>
+    inputs({
+      candidates: [payee("p1", "Al Etihad Credit Bureau")],
+      rows: [
+        row("#API Etihad Credit Bureau", "p1", 4, "notes"),
+        row("#2026-05 Etihad Credit Bureau", "p1", 1, "notes"),
+      ],
+      transactionCounts: new Map([["p1", 5]]),
+    });
+
+  it("replaces the proposal and re-scores it", () => {
+    const gaps = findRuleGaps({
+      ...etihad(),
+      overrides: new Map([
+        ["p1", { field: "notes" as const, op: "matches" as const, value: "ETIHAD" }],
+      ]),
+    });
+
+    const proposal = gaps[0].proposal;
+    if (proposal.shape !== "matches") throw new Error("wrong shape");
+    expect(proposal.candidate.value).toBe("ETIHAD");
+    expect(proposal.edited).toBe(true);
+    // Re-scored against the real history rather than carried over.
+    expect(proposal.score.expectedMatches).toBe(5);
   });
 
-  it("returns null when they reduce to different things", () => {
-    expect(sharedStem(["WOOLWORTHS 0183", "COLES 0559"])).toBeNull();
+  it("keeps the payee listed when the pattern matches nothing, and says so", () => {
+    // Dropping it would remove the only place the mistake can be fixed.
+    const gaps = findRuleGaps({
+      ...etihad(),
+      overrides: new Map([
+        ["p1", { field: "notes" as const, op: "matches" as const, value: "NOTHING" }],
+      ]),
+    });
+
+    expect(gaps).toHaveLength(1);
+    expect(gaps[0].safe).toBe(false);
+    expect(gaps[0].cautions.join(" ")).toMatch(/nothing in your import history/i);
   });
 
-  it("returns null for a stem too short to build a rule from", () => {
-    expect(sharedStem(["A 1", "A 2"])).toBeNull();
+  it("reports a pattern that will not compile rather than silently matching nothing", () => {
+    const gaps = findRuleGaps({
+      ...etihad(),
+      overrides: new Map([
+        ["p1", { field: "notes" as const, op: "matches" as const, value: "ETIHAD(" }],
+      ]),
+    });
+
+    expect(gaps[0].safe).toBe(false);
+    expect(gaps[0].cautions.join(" ")).toMatch(/not valid/i);
+  });
+
+  it("warns, rather than refusing, when the user widens it onto another payee", () => {
+    // Consistent with the suggestions tab: it drops out of the safe set but the
+    // user can still go ahead.
+    const base = etihad();
+    const gaps = findRuleGaps({
+      ...base,
+      rows: [...base.rows, row("SOMETHING ETIHAD ELSE", "p2", 3, "notes")],
+      overrides: new Map([
+        ["p1", { field: "notes" as const, op: "contains" as const, value: "ETIHAD" }],
+      ]),
+    });
+
+    expect(gaps[0].safe).toBe(false);
+    expect(gaps[0].cautions.join(" ")).toMatch(/also catch/i);
+  });
+});
+
+describe("commonTokenRun", () => {
+  it("finds the merchant inside text that reduces to different stems", () => {
+    // The case that exposed the count heuristic: each text carries its own
+    // leading noise, so the reducer gives three different stems, but all three
+    // plainly share the merchant.
+    expect(
+      commonTokenRun([
+        "#API Etihad Credit Bureau",
+        "#2026-05 Etihad Credit Bureau",
+        "-84 IRR (FX rate: #2026-02 ETIHAD CREDIT BUREAU DUBAI UAE)",
+      ])
+    ).toBe("ETIHAD CREDIT BUREAU");
+  });
+
+  it("returns the longest run, not the first one it finds", () => {
+    expect(
+      commonTokenRun(["ACME COFFEE HOUSE 01", "ACME COFFEE HOUSE 02"])
+    ).toBe("ACME COFFEE HOUSE");
+  });
+
+  it("requires the words to be adjacent", () => {
+    // The pattern joins words with "any run of non-alphanumerics", which only
+    // means anything if they were next to each other.
+    expect(commonTokenRun(["ALPHA ONE BRAVO", "ALPHA TWO BRAVO"])).toBe("ALPHA");
+  });
+
+  it("returns null when the texts share nothing", () => {
+    expect(commonTokenRun(["WOOLWORTHS 0183", "COLES 0559"])).toBeNull();
+  });
+
+  it("refuses a single short word, which would catch the whole budget", () => {
+    expect(commonTokenRun(["THE ALPHA", "THE BRAVO"])).toBeNull();
+    expect(commonTokenRun(["ACME ALPHA", "ACME BRAVO"])).toBe("ACME");
+  });
+
+  it("handles a single text by returning all of it", () => {
+    expect(commonTokenRun(["NETFLIX COM 4821"])).toBe("NETFLIX COM 4821");
   });
 });

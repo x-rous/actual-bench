@@ -30,7 +30,7 @@ import { computeConfidence, type ConfidenceResult } from "./confidence";
 import { buildProposal, type ClusterProposal } from "./targetSelection";
 import { buildClusterImpact, impactSignals, type ClusterImpact, type ImpactSources } from "./impact";
 import { findOrphanPayees, type OrphanPayee } from "./orphans";
-import { findRuleGaps, type RuleGap } from "./ruleGaps";
+import { findRuleGaps, type RuleGap, type RuleGapOverride } from "./ruleGaps";
 import { buildRuleReferenceMap } from "@/lib/referenceCheck";
 import type { EligibilityPartition } from "./eligibility";
 import type { ClusterCorrection } from "./corrections";
@@ -73,6 +73,8 @@ export type CleanupScanResult = {
 };
 
 export type ScanOptions = {
+  /** Rule conditions the user typed on the "Needs a rule" tab, keyed by payee. */
+  ruleGapOverrides?: Map<string, RuleGapOverride>;
   impactSources?: ImpactSources;
   /** The user's rejected clusters and rejected learned affixes. */
   suppressions?: PayeeCleanupSuppressionRecord[];
@@ -97,6 +99,7 @@ export function scanForCleanup(
     importedText,
     importedTextTruncated = false,
     rules = [],
+    ruleGapOverrides,
   } = options;
   // Learn this budget's own boilerplate first: the shape reducers cannot see
   // that `DUBAI UAE` or `INTERNET BANKING` is wrapping, but repetition across
@@ -240,6 +243,7 @@ export function scanForCleanup(
           transactionCounts: impactSources.transactionCounts,
           clusteredPayeeIds,
           truncated: importedTextTruncated,
+          overrides: ruleGapOverrides,
         }),
         suppressions
       )

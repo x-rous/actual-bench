@@ -4,8 +4,7 @@ import { useState } from "react";
 import { AlertTriangle, ChevronDown, ChevronRight, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import { cn } from "@/lib/utils";
-import type { RuleGap } from "../lib/ruleGaps";
+import type { RuleGap, RuleGapOverride } from "../lib/ruleGaps";
 
 type Props = {
   gaps: RuleGap[];
@@ -13,6 +12,7 @@ type Props = {
   selected: Set<string>;
   onToggle: (payeeId: string, enabled: boolean) => void;
   onDismiss: (gap: RuleGap) => void;
+  onOverride: (payeeId: string, override: RuleGapOverride | undefined) => void;
 };
 
 /**
@@ -24,7 +24,13 @@ type Props = {
  * rule, yes or no, and there are more of them. The detail that does exist sits
  * behind an expander rather than making every row tall.
  */
-export function RuleGapList({ gaps, selected, onToggle, onDismiss }: Props) {
+export function RuleGapList({
+  gaps,
+  selected,
+  onToggle,
+  onDismiss,
+  onOverride,
+}: Props) {
   const [expanded, setExpanded] = useState<string | null>(null);
 
   if (gaps.length === 0) {
@@ -101,12 +107,21 @@ export function RuleGapList({ gaps, selected, onToggle, onDismiss }: Props) {
                 </span>
               </div>
 
+              {/* The generated pattern belongs on the row, not behind the
+                  expander: it is the one thing worth eyeballing before you tick
+                  the box, and a wrong one is only obvious when you can see it. */}
               <p className="mt-1 truncate text-xs text-muted-foreground">
-                {proposal.shape === "one-of"
-                  ? `when imported ${proposal.field === "notes" ? "notes" : "payee"} is ${proposal.texts
-                      .map((t) => `"${t}"`)
-                      .join(" or ")}`
-                  : `when imported ${proposal.field === "notes" ? "notes" : "payee"} ${proposal.candidate.description}`}
+                when {proposal.field === "notes" ? "notes" : "imported payee"}{" "}
+                {proposal.shape === "one-of" ? (
+                  `is ${proposal.texts.map((t) => `"${t}"`).join(" or ")}`
+                ) : (
+                  <>
+                    {proposal.candidate.op}{" "}
+                    <code className="rounded bg-muted px-1 font-mono text-[11px]">
+                      {proposal.candidate.value}
+                    </code>
+                  </>
+                )}
                 {" → set the payee"}
               </p>
 
@@ -152,22 +167,123 @@ export function RuleGapList({ gaps, selected, onToggle, onDismiss }: Props) {
                     ) : null}
                   </div>
 
-                  {proposal.shape === "matches" ? (
-                    <code
-                      className={cn(
-                        "inline-block rounded bg-muted px-1 py-0.5 font-mono text-[11px] break-all"
-                      )}
-                    >
-                      {proposal.candidate.field} {proposal.candidate.op}{" "}
-                      {proposal.candidate.value}
-                    </code>
-                  ) : null}
+                  <RuleConditionEditor gap={gap} onOverride={onOverride} />
                 </div>
               ) : null}
             </li>
           );
         })}
       </ul>
+    </div>
+  );
+}
+
+/**
+ * Editing the condition by hand.
+ *
+ * Two ops only: `matches` for a pattern, `contains` for plain text. Actual also
+ * supports `oneOf`, and the scan still proposes it for text that never varies —
+ * but as an *edit* it has no purpose, since anyone typing a condition is trying
+ * to catch something they have not seen yet.
+ *
+ * The controls stay live whatever the pattern does, including when it matches
+ * nothing: hiding them at that point would remove the only way to fix it.
+ */
+function RuleConditionEditor({
+  gap,
+  onOverride,
+}: {
+  gap: RuleGap;
+  onOverride: (payeeId: string, override: RuleGapOverride | undefined) => void;
+}) {
+  const { proposal } = gap;
+  const currentValue =
+    proposal.shape === "matches"
+      ? proposal.candidate.value
+      : proposal.texts.map((t) => t).join(" ");
+  const currentOp: "matches" | "contains" =
+    proposal.shape === "matches" ? proposal.candidate.op : "contains";
+  const edited = proposal.shape === "matches" && proposal.edited === true;
+
+  const [draft, setDraft] = useState<string | null>(null);
+
+  const commit = (value: string, op: "matches" | "contains", field: RuleGapOverride["field"]) => {
+    if (!value.trim()) {
+      onOverride(gap.payee.id, undefined);
+      return;
+    }
+    onOverride(gap.payee.id, { field, op, value });
+  };
+
+  return (
+    <div className="space-y-1">
+      <div className="text-[11px] uppercase tracking-wider text-muted-foreground">
+        Condition
+      </div>
+      <div
+        role="group"
+        aria-label={`Rule condition for ${gap.payee.name}`}
+        className="flex flex-wrap items-center gap-1.5"
+      >
+        <select
+          value={proposal.field}
+          onChange={(e) =>
+            commit(
+              draft ?? currentValue,
+              currentOp,
+              e.target.value as RuleGapOverride["field"]
+            )
+          }
+          aria-label={`Which field the rule for ${gap.payee.name} matches on`}
+          className="h-7 rounded-md border border-border bg-background px-1"
+        >
+          <option value="imported_payee">imported payee</option>
+          <option value="notes">notes</option>
+        </select>
+
+        <select
+          value={currentOp}
+          onChange={(e) =>
+            commit(
+              draft ?? currentValue,
+              e.target.value as "matches" | "contains",
+              proposal.field
+            )
+          }
+          aria-label={`How the rule for ${gap.payee.name} matches`}
+          className="h-7 rounded-md border border-border bg-background px-1"
+        >
+          <option value="matches">matches</option>
+          <option value="contains">contains</option>
+        </select>
+
+        <input
+          type="text"
+          value={draft ?? currentValue}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={() => {
+            if (draft !== null && draft !== currentValue) {
+              commit(draft, currentOp, proposal.field);
+            }
+            setDraft(null);
+          }}
+          aria-label={`Text the rule for ${gap.payee.name} should match`}
+          className="h-7 min-w-0 flex-1 rounded-md border border-border bg-background px-2 font-mono"
+        />
+
+        {edited ? (
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => {
+              setDraft(null);
+              onOverride(gap.payee.id, undefined);
+            }}
+          >
+            Undo my changes
+          </Button>
+        ) : null}
+      </div>
     </div>
   );
 }

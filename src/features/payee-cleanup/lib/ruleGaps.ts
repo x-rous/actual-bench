@@ -44,9 +44,6 @@ import {
   type SourceField,
 } from "./ruleCandidates";
 
-/** Distinct import strings at or below which a payee counts as "stable text". */
-const STABLE_TEXT_LIMIT = 3;
-
 /** Below this, a payee is a one-off rather than a pattern worth automating. */
 export const DEFAULT_TRANSACTION_FLOOR = 2;
 
@@ -69,6 +66,10 @@ export type RuleGapProposal =
       candidate: RuleCandidate;
       score: CandidateScore;
       extendsRule: null;
+      /** True when the user typed this condition rather than the scan proposing it. */
+      edited?: boolean;
+      /** Set when the user's pattern will not compile. */
+      invalid?: boolean;
     };
 
 export type RuleGap = {
@@ -84,6 +85,13 @@ export type RuleGap = {
   safe: boolean;
   /** Why it is not safe, in the user's terms. Empty when it is. */
   cautions: string[];
+};
+
+/** A condition the user typed themselves, replacing the proposed one. */
+export type RuleGapOverride = {
+  field: SourceField;
+  op: "matches" | "contains";
+  value: string;
 };
 
 export type RuleGapInputs = {
@@ -102,7 +110,24 @@ export type RuleGapInputs = {
   /** The history read hit its row cap, so "nothing else matches" is not provable. */
   truncated?: boolean;
   transactionFloor?: number;
+  /**
+   * Edits keyed by payee id, so they survive a re-scan — the same reasoning as
+   * cluster corrections. An override replaces the proposal outright rather than
+   * adjusting it, because the user has said what they want the rule to be.
+   */
+  overrides?: Map<string, RuleGapOverride>;
 };
+
+/** Whether a user-typed pattern will compile at all. */
+export function isValidPattern(value: string): boolean {
+  if (!value.trim()) return false;
+  try {
+    new RegExp(value);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 /** A `pre`-stage `imported_payee oneOf … → set payee <id>` rule, Actual's own shape. */
 export function findRenameRuleFor(rules: Rule[], payeeId: string): Rule | null {
@@ -284,41 +309,123 @@ function proposeRule(
   );
   if (uncovered.length === 0) return null;
 
-  if (uncovered.length <= STABLE_TEXT_LIMIT) {
+  const override = inputs.overrides?.get(payee.id);
+  if (override) {
+    const candidate: RuleCandidate = {
+      field: override.field,
+      op: override.op,
+      value: override.value,
+      description:
+        override.op === "contains"
+          ? `contains "${override.value}"`
+          : `matches ${override.value}`,
+    };
+    const score = scoreCandidate(
+      candidate,
+      inputs.rows,
+      new Set([payee.id]),
+      new Set([payee.name.toUpperCase()])
+    );
     return {
-      shape: "one-of",
-      field,
-      texts: uncovered.map((row) => row.text),
-      extendsRule,
+      shape: "matches",
+      field: override.field,
+      candidate,
+      score,
+      extendsRule: null,
+      edited: true,
+      invalid: override.op === "matches" && !isValidPattern(override.value),
     };
   }
 
-  // Varying text: only worth a pattern if the variants reduce to a shared stem.
-  const stem = sharedStem(uncovered.map((row) => row.text));
-  if (!stem) return null;
+  const uncoveredTexts = uncovered.map((row) => row.text);
 
-  const scored = buildCandidates(stem, field).map((candidate) =>
-    scoreCandidate(candidate, inputs.rows, new Set([payee.id]), new Set([payee.name.toUpperCase()]))
-  );
-  const best = rankCandidates(scored)[0];
-  if (!best || best.expectedMatches === 0) return null;
+  // Does the text vary around a core, or is it the same string every time?
+  //
+  // The count of distinct texts is *not* the test — three texts each carrying
+  // their own date look "stable" by that measure while being guaranteed never to
+  // recur, so an exact list of them catches the transactions already on record
+  // and nothing ever again. What matters is whether anything varies around a
+  // shared core, which is what a pattern is for.
+  const run = commonTokenRun(uncoveredTexts);
+  const runLength = run ? run.split(" ").length : 0;
+  const variesAroundRun =
+    run !== null &&
+    uncoveredTexts.some(
+      (text) => normalizePatternText(text).split(" ").filter(Boolean).length > runLength
+    );
 
-  return { shape: "matches", field, candidate: best.candidate, score: best, extendsRule: null };
+  if (variesAroundRun && run) {
+    const scored = buildCandidates(run, field).map((candidate) =>
+      scoreCandidate(
+        candidate,
+        inputs.rows,
+        new Set([payee.id]),
+        new Set([payee.name.toUpperCase()])
+      )
+    );
+    const best = rankCandidates(scored)[0];
+    if (!best || best.expectedMatches === 0) return null;
+
+    return { shape: "matches", field, candidate: best.candidate, score: best, extendsRule: null };
+  }
+
+  // Nothing varies around a shared core, so an exact list is the only honest
+  // shape — but only for text that has actually been seen more than once.
+  // A one-off string is as dead as a varying one: listing it catches the
+  // transaction already on record and nothing ever again.
+  const recurring = uncovered.filter((row) => row.transactionCount > 1);
+  if (recurring.length === 0) return null;
+
+  return {
+    shape: "one-of",
+    field,
+    texts: recurring.map((row) => row.text),
+    extendsRule,
+  };
 }
 
 /**
- * The stem every variant shares, or null when they have nothing in common.
+ * The longest run of words that every import text contains.
  *
- * Uses the same reduction the cleanup scan uses, so "shares a stem" means the
- * same thing on both tabs.
+ * This is what makes a rule catch text it has never seen. Requiring the texts to
+ * *reduce* to the same stem was too strict: the reducer is tuned for payee
+ * names, so `#API Etihad Credit Bureau`, `#2026-05 Etihad Credit Bureau` and
+ * `-84 IRR (FX rate: #2026-02 ETIHAD CREDIT BUREAU DUBAI UAE)` keep their own
+ * leading noise and reduce to three different stems — while plainly sharing
+ * `ETIHAD CREDIT BUREAU`, which is the merchant.
+ *
+ * Contiguous by design: `buildCandidates` joins the words with "any run of
+ * non-alphanumerics", which only means anything if they were adjacent.
  */
-export function sharedStem(texts: string[]): string | null {
-  const stems = new Set(
-    texts.map((text) => normalizePatternText(reduceFully(text).stem)).filter(Boolean)
-  );
-  if (stems.size !== 1) return null;
-  const [stem] = [...stems];
-  return stem.length >= 3 ? stem : null;
+export function commonTokenRun(texts: string[]): string | null {
+  const tokenized = texts
+    .map((text) => normalizePatternText(text).split(" ").filter(Boolean))
+    .filter((tokens) => tokens.length > 0);
+  if (tokenized.length === 0) return null;
+
+  // The shortest text bounds the answer, and searching it longest-first means
+  // the first run that fits every text is the longest one.
+  const seed = [...tokenized].sort((a, b) => a.length - b.length)[0];
+  const others = tokenized.filter((tokens) => tokens !== seed);
+
+  const containsRun = (tokens: string[], run: string[]) => {
+    for (let i = 0; i + run.length <= tokens.length; i++) {
+      if (run.every((word, k) => tokens[i + k] === word)) return true;
+    }
+    return false;
+  };
+
+  for (let length = seed.length; length >= 1; length--) {
+    for (let start = 0; start + length <= seed.length; start++) {
+      const run = seed.slice(start, start + length);
+      if (!others.every((tokens) => containsRun(tokens, run))) continue;
+
+      // One short word is not a merchant: `\bTHE\b` would catch the budget.
+      const meaningful = run.length >= 2 || run[0].length >= 4;
+      return meaningful ? run.join(" ") : null;
+    }
+  }
+  return null;
 }
 
 /** Why a proposal needs a human, in the user's terms rather than the model's. */
@@ -343,6 +450,11 @@ function collectCautions(
       );
     }
   } else {
+    if (proposal.invalid) {
+      cautions.push("That pattern is not valid, so it would never match anything.");
+    } else if (proposal.edited && proposal.score.expectedMatches === 0) {
+      cautions.push("Nothing in your import history matches this pattern.");
+    }
     if (proposal.score.unexpectedMatches > 0) {
       const names = proposal.score.unexpectedExamples
         .map((e) => e.payeeName ?? e.text)

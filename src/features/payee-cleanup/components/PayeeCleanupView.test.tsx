@@ -875,6 +875,41 @@ describe("PayeeCleanupView", () => {
     expect(screen.getByText(/nothing here changes a payee/i)).toBeInTheDocument();
   });
 
+  it("lets the user rewrite the rule condition, and re-scores it", () => {
+    candidates = [payee("Al Etihad Credit Bureau")];
+    importedText = [
+      {
+        field: "notes",
+        text: "#API Etihad Credit Bureau",
+        payeeId: "p-Al Etihad Credit Bureau",
+        transactionCount: 4,
+      },
+      {
+        field: "notes",
+        text: "#2026-05 Etihad Credit Bureau",
+        payeeId: "p-Al Etihad Credit Bureau",
+        transactionCount: 1,
+      },
+    ];
+    transactionCounts = new Map([["p-Al Etihad Credit Bureau", 5]]);
+
+    render(<PayeeCleanupView />);
+    fireEvent.click(screen.getByRole("button", { name: /needs a rule/i }));
+
+    // The generated pattern is on the row itself, not only behind Details.
+    expect(screen.getByText(/ETIHAD\[\^A-Za-z0-9\]\*CREDIT/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /details for/i }));
+    const input = screen.getByLabelText(/text the rule .* should match/i);
+    fireEvent.change(input, { target: { value: "ETIHAD CREDIT" } });
+    fireEvent.blur(input);
+
+    expect(screen.getByLabelText(/text the rule .* should match/i)).toHaveValue(
+      "ETIHAD CREDIT"
+    );
+    expect(screen.getByRole("button", { name: /undo my changes/i })).toBeInTheDocument();
+  });
+
   it("keeps unstaged work when only some groups are staged", () => {
     // Clearing every correction after a stage threw away renames, target
     // choices and combined groups the user was still working on — which looked

@@ -31,6 +31,7 @@ import { CombineGroupsBanner } from "./CombineGroupsBanner";
 import { CleanupFilterBar, type BandFilter, type CleanupTab } from "./CleanupFilterBar";
 import { UnusedPayeeList } from "./UnusedPayeeList";
 import { CreateSafeRulesButton, RuleGapList } from "./RuleGapList";
+import type { RuleGapOverride } from "../lib/ruleGaps";
 import { SuppressionList } from "./SuppressionList";
 import { ReviewCleanupBar } from "./ReviewCleanupBar";
 import { usePayeeCleanupPlan, type StageOutcome } from "../hooks/usePayeeCleanupPlan";
@@ -107,6 +108,11 @@ export function PayeeCleanupView() {
   const [search, setSearch] = useState("");
 
   const [corrections, setCorrections] = useState<CorrectionMap>({});
+  // Keyed by payee id so an edit survives a re-scan, the same way a cluster
+  // correction does.
+  const [ruleGapOverrides, setRuleGapOverrides] = useState<
+    Map<string, RuleGapOverride>
+  >(new Map());
   const impact = usePayeeCleanupImpact(partition.eligible, { enabled: true });
   const { suppressions, rejectCluster, rejectRuleGap, undo, clearAll } = useSuppressions({
     enabled: true,
@@ -131,6 +137,7 @@ export function PayeeCleanupView() {
         importedText,
         importedTextTruncated,
         rules,
+        ruleGapOverrides,
       }),
     [
       partition,
@@ -140,6 +147,7 @@ export function PayeeCleanupView() {
       importedText,
       importedTextTruncated,
       rules,
+      ruleGapOverrides,
     ]
   );
 
@@ -435,6 +443,14 @@ export function PayeeCleanupView() {
               });
               rejectRuleGap(gap.payee);
             }}
+            onOverride={(payeeId, override) =>
+              setRuleGapOverrides((current) => {
+                const next = new Map(current);
+                if (override) next.set(payeeId, override);
+                else next.delete(payeeId);
+                return next;
+              })
+            }
           />
         ) : (
         <>
