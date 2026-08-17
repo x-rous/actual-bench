@@ -220,18 +220,38 @@ function conditionMatches(
   }
 }
 
+/**
+ * Whether a rule matches one piece of import text, and whether that answer can
+ * be trusted to rule the payee out.
+ *
+ * The two operators need opposite reasoning, and conflating them was a bug:
+ *
+ * - **`or`** — a condition that matches is enough on its own, so anything the
+ *   unreadable conditions might do can only *add* matches. The count is a lower
+ *   bound, and a lower bound is exactly what an exclusion needs. A rule reading
+ *   `notes contains CAREEM or imported payee contains CAREEM` is fully
+ *   understood even though only one of its two conditions applies to any given
+ *   row.
+ * - **`and`** — every condition must hold, so a condition we cannot read might
+ *   be the one that fails. The count is an upper bound, and an upper bound
+ *   cannot be used to hide a payee.
+ */
 function ruleMatchesText(
   rule: Rule,
   field: SourceField,
   text: string
 ): { matches: boolean; fullyChecked: boolean } {
   const results = rule.conditions.map((c) => conditionMatches(c, field, text));
-  const checkable = results.filter((r): r is boolean => r !== null);
-  if (checkable.length === 0) return { matches: false, fullyChecked: false };
+  const readable = results.filter((r): r is boolean => r !== null);
+  if (readable.length === 0) return { matches: false, fullyChecked: false };
 
-  const matches =
-    rule.conditionsOp === "or" ? checkable.some(Boolean) : checkable.every(Boolean);
-  return { matches, fullyChecked: checkable.length === results.length };
+  if (rule.conditionsOp === "or") {
+    return { matches: readable.some(Boolean), fullyChecked: true };
+  }
+  return {
+    matches: readable.every(Boolean),
+    fullyChecked: readable.length === results.length,
+  };
 }
 
 /**

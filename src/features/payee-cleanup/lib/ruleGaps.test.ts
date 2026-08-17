@@ -568,6 +568,57 @@ describe("a rule that already sets this payee", () => {
     expect(gaps[0].cautions.join(" ")).toMatch(/cannot check/i);
   });
 
+  it("understands an `or` rule whose conditions cover different fields", () => {
+    // `notes contains CAREEM or imported payee contains CAREEM` catches every
+    // one of the payee's imports, but only one of its two conditions applies to
+    // any given row. Treating the other as unreadable said the rule could not be
+    // checked, and the payee was listed as needing the rule it already had.
+    const careem = inputs({
+      candidates: [payee("p1", "Careem")],
+      rows: [
+        row("#API CAREEM RIDE", "p1", 9, "notes"),
+        row("#2024-10 CAREEM HALA RIDE Dubai ARE", "p1", 7, "notes"),
+        row("CAREEM RIDE", "p1", 4, "imported_payee"),
+      ],
+      rules: [
+        rule({
+          id: "careem",
+          conditionsOp: "or",
+          conditions: [
+            { field: "notes", op: "contains", value: "CAREEM" },
+            { field: "imported_payee", op: "contains", value: "CAREEM" },
+          ],
+          actions: [{ field: "payee", op: "set", value: "p1" }],
+        }),
+      ],
+      transactionCounts: new Map([["p1", 20]]),
+    });
+
+    expect(findRuleGaps(careem)).toEqual([]);
+  });
+
+  it("does not trust an `and` rule it cannot read in full", () => {
+    // The opposite reasoning: a condition that cannot be read might be the one
+    // that fails, so the count is an upper bound and cannot hide a payee.
+    const gaps = findRuleGaps(
+      inputs({
+        rules: [
+          rule({
+            conditionsOp: "and",
+            conditions: [
+              { field: "imported_payee", op: "contains", value: "NETFLIX" },
+              { field: "amount", op: "is", value: 500 },
+            ],
+            actions: [{ field: "payee", op: "set", value: "p1" }],
+          }),
+        ],
+      })
+    );
+
+    expect(gaps).toHaveLength(1);
+    expect(gaps[0].existingRules[0].fullyChecked).toBe(false);
+  });
+
   it("still hides a payee whose rule matches on the imported payee field", () => {
     const gaps = findRuleGaps(
       inputs({
