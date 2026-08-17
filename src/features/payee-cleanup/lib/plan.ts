@@ -24,6 +24,7 @@
 import { isCleanupEligible } from "./eligibility";
 import type { CleanupSuggestion } from "./scan";
 import type { PayeeCleanupCandidate } from "../types";
+import { compileRuleMatcher } from "./core";
 import type { RuleGap } from "./ruleGaps";
 
 export type MergeOperation = {
@@ -258,24 +259,20 @@ function rulesOverlap(a: CreateRuleOperation, b: CreateRuleOperation): boolean {
   const bTexts = texts(b);
 
   if (aTexts && bTexts) {
-    const left = new Set(aTexts.map((t) => t.trim().toUpperCase()));
-    return bTexts.some((t) => left.has(t.trim().toUpperCase()));
+    // Lower-cased, like the engine. Folding the other way differs for a handful
+    // of characters and there is no reason for this to be the one place that
+    // disagrees.
+    const left = new Set(aTexts.map((t) => t.trim().toLowerCase()));
+    return bTexts.some((t) => left.has(t.trim().toLowerCase()));
   }
 
   const matchesAny = (op: CreateRuleOperation, against: string[]) => {
     const value = pattern(op);
     if (!value) return false;
-    if (op.op === "contains") {
-      return against.some((t) => t.toUpperCase().includes(value.toUpperCase()));
-    }
-    try {
-      const regex = new RegExp(value, "i");
-      return against.some((t) => regex.test(t));
-    } catch {
-      // A pattern that will not compile can never be created, and the empty
-      // pattern check below reports it.
-      return false;
-    }
+    // The shared matcher again, so a pattern and an exact list are compared the
+    // way the engine will compare them once both are saved.
+    const matches = compileRuleMatcher(op.op === "contains" ? "contains" : "matches", value);
+    return against.some((t) => matches(t));
   };
 
   if (aTexts) return matchesAny(b, aTexts);

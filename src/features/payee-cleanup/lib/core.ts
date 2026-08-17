@@ -15,6 +15,39 @@
 
 import type { ImportedTextRow } from "./ruleCandidates";
 
+/**
+ * How Actual's rule engine compares a condition's value to a transaction's text.
+ *
+ * One implementation, because three had already drifted apart. `condition.ts`
+ * lower-cases the condition's value when the rule is parsed and the field's text
+ * when it runs, then compares with a plain `indexOf` or a plain `RegExp`
+ * carrying no flags — pinned in `nativeSemantics.test.ts`.
+ *
+ * A case-insensitive flag is *not* the same thing, and the difference is not
+ * academic: Actual lower-cases the pattern *source*, so `\D` becomes `\d` and
+ * inverts. Anything judging a rule by its own rules rather than by Actual's will
+ * eventually tell the user something the rule does not do.
+ */
+export function compileRuleMatcher(
+  op: "contains" | "matches",
+  value: string
+): (text: string) => boolean {
+  const needle = value.toLowerCase();
+
+  if (op === "contains") {
+    return (text) => text.toLowerCase().includes(needle);
+  }
+
+  let regex: RegExp | null = null;
+  try {
+    regex = new RegExp(needle);
+  } catch {
+    // A pattern that will not compile can never match.
+    regex = null;
+  }
+  return (text) => (regex !== null ? regex.test(text.toLowerCase()) : false);
+}
+
 /** The comparison form for text a pattern is built from. */
 export function normalizePatternText(value: string): string {
   return value

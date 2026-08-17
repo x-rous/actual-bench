@@ -5,6 +5,13 @@ import { PillGroup } from "@/components/ui/pill-group";
 import type { ConfidenceBand } from "../lib/confidence";
 
 export type CleanupTab = "suggestions" | "unused" | "rule-gaps" | "dismissed";
+
+const CLEANUP_TABS: CleanupTab[] = ["suggestions", "unused", "rule-gaps", "dismissed"];
+
+/** Guards the tab read out of the URL, which anyone can type anything into. */
+export function isCleanupTab(value: string | null): value is CleanupTab {
+  return value !== null && (CLEANUP_TABS as string[]).includes(value);
+}
 export type BandFilter = "all" | ConfidenceBand;
 
 const BAND_FILTERS: { value: BandFilter; label: string }[] = [

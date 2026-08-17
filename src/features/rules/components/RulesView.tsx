@@ -231,7 +231,6 @@ export function RulesView() {
             variant="outline"
             size="sm"
             onClick={() => router.push("/payees/cleanup?tab=rule-gaps")}
-            aria-label="Find payees that need a rule"
             title="Find payees whose imports will not resolve to them again"
           >
             <Sparkles />

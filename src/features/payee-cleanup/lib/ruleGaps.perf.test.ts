@@ -1,5 +1,6 @@
 import { findRuleGaps } from "./ruleGaps";
 import { measureTokenSpread } from "./core";
+import { ROW_LIMIT } from "./importedTextIndex";
 import type { ImportedTextRow } from "./ruleCandidates";
 import type { PayeeCleanupCandidate } from "../types";
 
@@ -8,17 +9,18 @@ import type { PayeeCleanupCandidate } from "../types";
  * fixed.
  *
  * The concern: RD-078 backtests once per *cluster* — dozens of times. Rule gaps
- * could naively backtest once per surviving *payee*, against up to
- * `ROW_LIMIT = 5000` grouped rows, on the main thread, every time the scan's
- * dependencies change.
+ * could naively backtest once per surviving *payee*, against a full `ROW_LIMIT`
+ * of grouped rows, on the main thread, every time the scan's dependencies
+ * change.
  *
  * What makes it affordable is the exclusion order — a payee whose imports
  * already equal its name never reaches a backtest — and compiling each pattern
  * once instead of once per row. This file proves it rather than asserting it in
  * a comment.
  *
- * The budget below is deliberately unkind: 400 payees, the full 5000-row cap,
- * and every single proposal on the pattern path — the expensive one.
+ * The budget below is deliberately unkind: 400 payees, the full row cap taken
+ * from the source rather than restated here, and every single proposal on the
+ * pattern path — the expensive one.
  */
 
 function payee(id: string, name: string): PayeeCleanupCandidate {
@@ -90,7 +92,7 @@ function buildBudget() {
 
   // Pad to the row cap with traffic belonging to other payees, which is what
   // every backtest has to scan through.
-  while (rows.length < 5000) {
+  while (rows.length < ROW_LIMIT) {
     rows.push({
       field: "imported_payee",
       text: `UNRELATED TRAFFIC ${rows.length}`,

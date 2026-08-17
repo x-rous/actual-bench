@@ -1058,6 +1058,29 @@ describe("PayeeCleanupView", () => {
     expect(refetchImportedText).toHaveBeenCalled();
   });
 
+  it("follows the link's tab when it changes, not only on first render", () => {
+    // Arriving from the Rules page while already on this page changes the query
+    // without remounting, so a tab seeded once stayed on whatever was showing.
+    candidates = [payee("Filmbox")];
+    importedText = [
+      {
+        field: "imported_payee",
+        text: "FILMBOX.COM 4821",
+        payeeId: "p-Filmbox",
+        transactionCount: 9,
+      },
+    ];
+    transactionCounts = new Map([["p-Filmbox", 9]]);
+
+    const { rerender } = render(<PayeeCleanupView />);
+    expect(screen.queryByText(/nothing here changes a payee/i)).not.toBeInTheDocument();
+
+    searchParams = new URLSearchParams("tab=rule-gaps");
+    rerender(<PayeeCleanupView />);
+
+    expect(screen.getByText(/nothing here changes a payee/i)).toBeInTheDocument();
+  });
+
   it("keeps unstaged work when only some groups are staged", () => {
     // Clearing every correction after a stage threw away renames, target
     // choices and combined groups the user was still working on — which looked

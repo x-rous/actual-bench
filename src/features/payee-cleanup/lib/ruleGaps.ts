@@ -43,6 +43,7 @@ import {
 } from "./ruleCandidates";
 import {
   commonTokenRun,
+  compileRuleMatcher,
   coreTokens,
   followedInSomeText,
   hasMarker,
@@ -216,23 +217,23 @@ function conditionMatches(
     case "is":
       return asString === null ? "unreadable" : upper === asString;
     case "contains":
-      return asString === null ? "unreadable" : upper.includes(asString);
+      return asString === null
+        ? "unreadable"
+        : compileRuleMatcher("contains", String(value))(text);
     case "doesNotContain":
-      return asString === null ? "unreadable" : !upper.includes(asString);
+      return asString === null
+        ? "unreadable"
+        : !compileRuleMatcher("contains", String(value))(text);
     case "oneOf":
       return asList === null ? "unreadable" : asList.includes(upper);
     case "notOneOf":
       return asList === null ? "unreadable" : !asList.includes(upper);
     case "matches":
       if (asString === null) return "unreadable";
-      try {
-        // Case-insensitive to match the rule engine, which lower-cases both the
-        // condition's value and the transaction's text (pinned in
-        // `nativeSemantics.test.ts`).
-        return new RegExp(String(value), "i").test(text);
-      } catch {
-        return false;
-      }
+      // Through the shared matcher, so this agrees with the backtest and with
+      // the engine. It decides whether a payee is already handled and which of
+      // its text to subtract, so a wrong verdict here hides a payee outright.
+      return compileRuleMatcher("matches", String(value))(text);
     default:
       return "unreadable";
   }

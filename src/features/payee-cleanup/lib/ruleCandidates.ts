@@ -20,6 +20,7 @@
 
 import {
   commonTokenRun,
+  compileRuleMatcher,
   coreLadder,
   followedInSomeText,
   maximalCommonRun,
@@ -122,41 +123,6 @@ export function buildCandidates(stem: string, field: SourceField): RuleCandidate
 }
 
 /**
- * Compiles a candidate once, rather than per row.
- *
- * The pattern is tested against every row in the history — up to `ROW_LIMIT` of
- * them — so building the `RegExp` inside the loop meant thousands of identical
- * compilations per candidate. `test` on a non-global regex is stateless, so one
- * instance is safe to reuse.
- */
-function compileMatcher(candidate: RuleCandidate): (text: string) => boolean {
-  // Exactly what the rule engine does, rather than something equivalent-looking.
-  // `condition.ts` lower-cases the condition's value when the rule is parsed and
-  // the transaction's text when it runs, then compares with a plain `indexOf`
-  // or a plain `RegExp` carrying no flags — all pinned in
-  // `nativeSemantics.test.ts`.
-  //
-  // A case-insensitive flag is *not* the same thing. Actual lower-cases the
-  // pattern source too, so `\D` becomes `\d` and inverts; a user-typed override
-  // containing one would behave differently in the backtest than in the rule it
-  // produces, and the backtest is what the user is asked to trust.
-  const needle = candidate.value.toLowerCase();
-
-  if (candidate.op === "contains") {
-    return (text) => text.toLowerCase().includes(needle);
-  }
-
-  let regex: RegExp | null = null;
-  try {
-    regex = new RegExp(needle);
-  } catch {
-    // A pattern that will not compile can never be offered.
-    regex = null;
-  }
-  return (text) => (regex !== null ? regex.test(text.toLowerCase()) : false);
-}
-
-/**
  * Scores one candidate against the budget's own history.
  *
  * "Expected" is a transaction that already belongs to this cluster — the rule
@@ -173,7 +139,10 @@ export function scoreCandidate(
   let unexpectedMatches = 0;
   let matchedTexts = 0;
   const unexpectedExamples: CandidateScore["unexpectedExamples"] = [];
-  const matches = compileMatcher(candidate);
+  // Compiled once rather than per row: the pattern is tested against every
+  // row in the history, and building it inside that loop meant thousands of
+  // identical compilations per candidate.
+  const matches = compileRuleMatcher(candidate.op, candidate.value);
 
   for (const row of rows) {
     if (row.field !== candidate.field) continue;

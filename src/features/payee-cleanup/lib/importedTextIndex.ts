@@ -38,7 +38,7 @@ import type { ImportedTextRow, SourceField } from "./ruleCandidates";
  *
  * Whatever is beyond it is disclosed rather than hidden.
  */
-const ROW_LIMIT = 10000;
+export const ROW_LIMIT = 10000;
 
 type QueryRow = Record<string, unknown> & { transactionCount?: number };
 

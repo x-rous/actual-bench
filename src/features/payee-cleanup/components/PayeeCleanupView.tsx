@@ -29,7 +29,12 @@ import { CleanupSummaryCards } from "./CleanupSummaryCards";
 import { SuggestionCard } from "./SuggestionCard";
 import { findNameCollisions, isSafeForBulkAccept } from "../lib/triage";
 import { CombineGroupsBanner } from "./CombineGroupsBanner";
-import { CleanupFilterBar, type BandFilter, type CleanupTab } from "./CleanupFilterBar";
+import {
+  CleanupFilterBar,
+  isCleanupTab,
+  type BandFilter,
+  type CleanupTab,
+} from "./CleanupFilterBar";
 import { UnusedPayeeList } from "./UnusedPayeeList";
 import { CreateSafeRulesButton, RuleGapList } from "./RuleGapList";
 import type { RuleGapOverride } from "../lib/ruleGaps";
@@ -106,10 +111,25 @@ export function PayeeCleanupView() {
 
   // `?tab=rule-gaps` so the Rules page can link straight to the rule tab, the
   // same way Rule Diagnostics is reachable from there.
+  // `?tab=rule-gaps`, so the Rules page can link straight to the rule tab.
+  //
+  // The link decides the tab whenever it changes, not only on mount: arriving
+  // from Rules while already on this page changes the query without remounting,
+  // and seeding state once left the previous tab showing. Adjusted during
+  // render rather than in an effect — clicking a tab still wins until the link
+  // is followed again.
   const searchParams = useSearchParams();
-  const [tab, setTab] = useState<CleanupTab>(
-    searchParams.get("tab") === "rule-gaps" ? "rule-gaps" : "suggestions"
-  );
+  const tabParam = searchParams.get("tab");
+  const linkedTab: CleanupTab = isCleanupTab(tabParam) ? tabParam : "suggestions";
+
+  const [chosenTab, setChosenTab] = useState<CleanupTab | null>(null);
+  const [lastLinkedTab, setLastLinkedTab] = useState(linkedTab);
+  if (linkedTab !== lastLinkedTab) {
+    setLastLinkedTab(linkedTab);
+    setChosenTab(null);
+  }
+  const tab = chosenTab ?? linkedTab;
+  const setTab = setChosenTab;
   const [band, setBand] = useState<BandFilter>("all");
   const [search, setSearch] = useState("");
 
