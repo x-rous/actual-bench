@@ -435,8 +435,14 @@ export function findRuleGaps(inputs: RuleGapInputs): RuleGap[] {
     if (transactionCount < floor) continue;
 
     // 7 — is there an honest rule to propose at all?
-    const proposal = proposeRule(payee, texts, inputs, renameRule);
+    const proposal = proposeRule(payee, texts, inputs, renameRule, ownRules);
     if (!proposal) continue;
+
+      // Backstop. The subtraction above should already prevent it, but a proposal
+    // identical to a rule that exists would create a second rule doing exactly
+    // what the first does — the sprawl this whole feature is meant to prevent —
+    // and that is worth refusing outright rather than relying on one guard.
+    if (duplicatesExistingRule(proposal, ownRules)) continue;
 
     const cautions = collectCautions(proposal, texts, inputs, related, payee.id, ownRules);
     gaps.push({
@@ -468,7 +474,8 @@ function proposeRule(
   payee: PayeeCleanupCandidate,
   texts: ImportedTextRow[],
   inputs: RuleGapInputs,
-  renameRule: Rule | null
+  renameRule: Rule | null,
+  ownRules: ExistingPayeeRule[]
 ): RuleGapProposal | null {
   const imported = texts.filter((t) => t.field === "imported_payee");
   const notes = texts.filter((t) => t.field === "notes");
@@ -480,13 +487,22 @@ function proposeRule(
 
   // A rename rule matches on `imported_payee`, so it cannot extend a notes proposal.
   const extendsRule = field === "imported_payee" ? renameRule : null;
-  const alreadyCovered = textsAlreadyCovered(extendsRule);
+  const alreadyListed = textsAlreadyCovered(extendsRule);
 
-  // Only the texts that are not already handled — the point of extending a rule
-  // is to add what is missing, not to restate what it does.
-  const uncovered = source.filter(
-    (row) => !alreadyCovered.has(row.text.trim().toUpperCase())
-  );
+  // Only the texts nothing already handles. Subtracting the rename rule's own
+  // list is not enough: *any* rule that sets this payee already catches what it
+  // matches, and deriving the core from that text produced a rule identical to
+  // the one already doing the job — `notes contains GOOGLE MICROSOFT APPS`
+  // proposed alongside `notes contains GOOGLE MICROSOFT APPS`.
+  const uncovered = source.filter((row) => {
+    if (alreadyListed.has(row.text.trim().toUpperCase())) return false;
+    // Only rules we could read in full. A rule that also tests an amount was
+    // deliberately not trusted to hide the payee, and it must not quietly
+    // remove the payee's text either — that would hide it just as effectively.
+    return !ownRules.some(
+      (r) => r.fullyChecked && ruleMatchesText(r.rule, row.field, row.text).matches
+    );
+  });
   if (uncovered.length === 0) return null;
 
   const override = inputs.overrides?.get(payee.id);
@@ -715,6 +731,37 @@ function chooseCondition(
   }
 
   return longestAttempt;
+}
+
+/**
+ * Whether this proposal is a rule the payee already has.
+ *
+ * Compared on what the rule *does* — field, operator and value, with case and
+ * spacing folded — rather than on identity, since the point is that creating it
+ * would change nothing.
+ */
+function duplicatesExistingRule(
+  proposal: RuleGapProposal,
+  ownRules: ExistingPayeeRule[]
+): boolean {
+  const normalise = (value: string) => value.trim().toUpperCase().replace(/\s+/g, " ");
+
+  const proposed =
+    proposal.shape === "matches"
+      ? [{ op: proposal.candidate.op, value: normalise(proposal.candidate.value) }]
+      : proposal.texts.map((t) => ({ op: "oneOf", value: normalise(t) }));
+
+  return ownRules.some((r) =>
+    r.rule.conditions.some((condition) => {
+      if (condition.field !== proposal.field) return false;
+      const values = Array.isArray(condition.value) ? condition.value : [condition.value];
+      return values.some(
+        (v) =>
+          typeof v === "string" &&
+          proposed.some((p) => p.op === condition.op && p.value === normalise(v))
+      );
+    })
+  );
 }
 
 /** Why a proposal needs a human, in the user's terms rather than the model's. */

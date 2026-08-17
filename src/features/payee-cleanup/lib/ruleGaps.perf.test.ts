@@ -118,23 +118,39 @@ describe("rule gap scan cost", () => {
     expect(gaps.every((g) => g.proposal.shape === "matches")).toBe(true);
   });
 
-  it("completes a worst-case budget within a frame budget", () => {
-    // Not a benchmark — a regression guard. The threshold is loose enough not to
-    // flake on a loaded CI box, but tight enough that reintroducing a backtest
-    // per payee (or per row) would blow it.
-    const started = Date.now();
-    findRuleGaps({
-      candidates,
-      rows,
-      rules: [],
-      transactionCounts,
-      clusteredPayeeIds: new Set(),
-    });
-    const elapsed = Date.now() - started;
+  it("compiles each pattern once, not once per row", () => {
+    // The regression this guards against is real: `scoreCandidate` used to build
+    // a fresh RegExp for every row it tested, so one candidate compiled the same
+    // pattern thousands of times and the worst-case scan took ~1400ms instead of
+    // ~215ms.
+    //
+    // Counted rather than timed. A wall-clock threshold low enough to catch a 6x
+    // regression is also low enough to flake when the suite runs in parallel, so
+    // it failed for reasons that had nothing to do with the code.
+    const RealRegExp = global.RegExp;
+    let constructed = 0;
+    class CountingRegExp extends RealRegExp {
+      constructor(...args: ConstructorParameters<typeof RegExp>) {
+        constructed += 1;
+        super(...args);
+      }
+    }
+    global.RegExp = CountingRegExp as unknown as RegExpConstructor;
 
-    // Measured at ~215ms on a development machine, with *every* proposal on the
-    // pattern path. It was ~1400ms until `scoreCandidate` stopped compiling its
-    // regex once per row, which is the kind of regression this guards against.
-    expect(elapsed).toBeLessThan(1000);
+    try {
+      findRuleGaps({
+        candidates,
+        rows,
+        rules: [],
+        transactionCounts,
+        clusteredPayeeIds: new Set(),
+      });
+    } finally {
+      global.RegExp = RealRegExp;
+    }
+
+    // Bounded by the number of candidates considered, which is a handful per
+    // payee. Compiling per row would put this in the millions.
+    expect(constructed).toBeLessThan(rows.length);
   });
 });

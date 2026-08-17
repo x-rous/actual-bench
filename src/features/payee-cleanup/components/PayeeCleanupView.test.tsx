@@ -857,6 +857,47 @@ describe("PayeeCleanupView", () => {
     ]);
   });
 
+  it("shows when a proposal extends the payee's existing rule", () => {
+    // This badge had no coverage above the library, and its path is narrow: the
+    // text has to be in imported_payee, the proposal has to be an exact list,
+    // and a pre-stage `imported_payee oneOf` rule has to exist for that payee
+    // already — which only Actual's own rename flow or this tab creates. Worth
+    // pinning, because "it works" was an assertion rather than an observation.
+    candidates = [payee("Netflix")];
+    importedText = [
+      {
+        field: "imported_payee",
+        text: "NETFLIX.COM 9002",
+        payeeId: "p-Netflix",
+        transactionCount: 9,
+      },
+    ];
+    transactionCounts = new Map([["p-Netflix", 9]]);
+    stagedRules = {
+      "rename-1": {
+        entity: {
+          id: "rename-1",
+          stage: "pre",
+          conditionsOp: "and",
+          conditions: [
+            { field: "imported_payee", op: "oneOf", value: ["NETFLIX.COM 4821"] },
+          ],
+          actions: [{ field: "payee", op: "set", value: "p-Netflix" }],
+        },
+        original: null,
+        isNew: false,
+        isUpdated: false,
+        isDeleted: false,
+        validationErrors: {},
+      },
+    } as never;
+
+    render(<PayeeCleanupView />);
+    fireEvent.click(screen.getByRole("button", { name: /needs a rule/i }));
+
+    expect(screen.getByText(/extends existing/i)).toBeInTheDocument();
+  });
+
   it("offers to create the safe rules in bulk", () => {
     candidates = [payee("Netflix")];
     importedText = [

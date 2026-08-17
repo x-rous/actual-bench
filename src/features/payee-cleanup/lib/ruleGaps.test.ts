@@ -597,6 +597,87 @@ describe("a rule that already sets this payee", () => {
     expect(findRuleGaps(careem)).toEqual([]);
   });
 
+  it("does not propose the rule the payee already has", () => {
+    // The core was derived from every text the payee had, including the text the
+    // existing rule already catches — so it landed on the same words and offered
+    // `notes contains GOOGLE MICROSOFT APPS` beside a rule reading exactly that.
+    const onedrive = inputs({
+      candidates: [payee("p1", "Microsoft OneDrive")],
+      rows: [
+        row("#2025-07 Google Microsoft Apps Mountain View CA", "p1", 1, "notes"),
+        row("#2025-06 Google Microsoft Apps Mountain View CA", "p1", 1, "notes"),
+        row("#2025-05 Google Microsoft Apps Mountain View CA", "p1", 1, "notes"),
+        row("#2025-04 Google Microsoft Apps Mountain View CA", "p1", 1, "notes"),
+      ],
+      rules: [
+        rule({
+          id: "onedrive",
+          conditions: [
+            { field: "notes", op: "contains", value: "GOOGLE MICROSOFT APPS" },
+          ],
+          actions: [{ field: "payee", op: "set", value: "p1" }],
+        }),
+      ],
+      transactionCounts: new Map([["p1", 4]]),
+    });
+
+    expect(findRuleGaps(onedrive)).toEqual([]);
+  });
+
+  it("proposes something for the text an existing rule misses", () => {
+    // The useful half: a rule that covers most of a payee should leave behind
+    // only what it does not catch, and the proposal should address that.
+    const gaps = findRuleGaps(
+      inputs({
+        candidates: [payee("p1", "Microsoft OneDrive")],
+        rows: [
+          row("#2025-07 Google Microsoft Apps Mountain View CA", "p1", 1, "notes"),
+          row("#2025-06 Google Microsoft Apps Mountain View CA", "p1", 1, "notes"),
+          row("#2025-05 ONEDRIVE SUBSCRIPTION REDMOND", "p1", 4, "notes"),
+          row("#2025-04 ONEDRIVE SUBSCRIPTION REDMOND", "p1", 4, "notes"),
+        ],
+        rules: [
+          rule({
+            id: "onedrive",
+            conditions: [
+              { field: "notes", op: "contains", value: "GOOGLE MICROSOFT APPS" },
+            ],
+            actions: [{ field: "payee", op: "set", value: "p1" }],
+          }),
+        ],
+        transactionCounts: new Map([["p1", 10]]),
+      })
+    );
+
+    const proposal = gaps[0].proposal;
+    if (proposal.shape !== "matches") throw new Error("wrong shape");
+    // Derived from the text the existing rule leaves behind, not from all of it.
+    expect(proposal.candidate.value).toMatch(/ONEDRIVE/);
+    expect(proposal.candidate.value).not.toMatch(/GOOGLE/);
+  });
+
+  it("does not let a rule it cannot read in full remove the payee's text", () => {
+    // The same reasoning as refusing to be ruled out by such a rule: if it was
+    // not trusted to hide the payee, it must not quietly empty the evidence
+    // either, which would hide the payee just as effectively.
+    const gaps = findRuleGaps(
+      inputs({
+        rules: [
+          rule({
+            conditionsOp: "and",
+            conditions: [
+              { field: "imported_payee", op: "contains", value: "NETFLIX" },
+              { field: "amount", op: "is", value: 500 },
+            ],
+            actions: [{ field: "payee", op: "set", value: "p1" }],
+          }),
+        ],
+      })
+    );
+
+    expect(gaps).toHaveLength(1);
+  });
+
   it("is not confused by a rule on one text field when the payee uses both", () => {
     // The index holds one row per field, so a `notes` condition has nothing to
     // say about an `imported_payee` row — the transaction behind it may well
