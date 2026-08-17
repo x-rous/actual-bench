@@ -460,7 +460,16 @@ export function analyzeFutureResolution(input: {
   };
 }
 
-/** The staged rule for the recommended candidate, targeting the surviving payee. */
+/**
+ * The staged rule for the recommended candidate, targeting the surviving payee.
+ *
+ * **`pre` stage, matching Actual's own payee-rename rules.** Actual normalizes
+ * the payee in `pre` (`updatePayeeRenameRule` in
+ * `@actual-app/core/src/server/transactions/transaction-rules.ts`) precisely so
+ * that `default`-stage rules matching *on* payee see the corrected value. A
+ * payee-setting rule in `default` runs in the same stage as those rules, which
+ * makes the outcome depend on rule order rather than on stage.
+ */
 export function buildNormalizationRule(
   candidate: RuleCandidate,
   targetPayeeId: string,
@@ -468,7 +477,7 @@ export function buildNormalizationRule(
 ): Rule {
   return {
     id,
-    stage: "default",
+    stage: "pre",
     conditionsOp: "and",
     conditions: [
       { field: candidate.field, op: candidate.op, value: candidate.value, type: "string" },

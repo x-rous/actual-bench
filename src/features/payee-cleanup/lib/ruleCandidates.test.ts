@@ -499,6 +499,9 @@ describe("buildNormalizationRule", () => {
     expect(rule.actions).toEqual([
       { field: "payee", op: "set", value: "target-1", type: "id" },
     ]);
-    expect(rule.stage).toBe("default");
+    // `pre`, like Actual's own rename rules: a payee-setting rule has to run
+    // before the `default`-stage rules that match on payee, or which one wins
+    // depends on rule order.
+    expect(rule.stage).toBe("pre");
   });
 });
