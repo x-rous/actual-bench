@@ -137,11 +137,23 @@ export function PayeeCleanupView() {
     ]
   );
 
+  // Which rule gaps the user has opted in to. Held here rather than in the list
+  // so it survives the list re-rendering when the scan re-runs.
+  const [selectedRuleGaps, setSelectedRuleGaps] = useState<Set<string>>(new Set());
+
   const { stage, isStaging } = usePayeeCleanupPlan();
   const [stageOutcome, setStageOutcome] = useState<StageOutcome | null>(null);
   const clearOutcome = () => setStageOutcome(null);
 
-  const plan = useMemo(() => buildPlan(result.suggestions), [result.suggestions]);
+  const selectedGaps = useMemo(
+    () => result.ruleGaps.filter((gap) => selectedRuleGaps.has(gap.payee.id)),
+    [result.ruleGaps, selectedRuleGaps]
+  );
+
+  const plan = useMemo(
+    () => buildPlan(result.suggestions, [], selectedGaps),
+    [result.suggestions, selectedGaps]
+  );
 
   // Deliberately stricter than "the score is high" — see `isSafeForBulkAccept`.
   // A bulk action meaning "accept everything above 90%" would sweep up exactly
@@ -185,6 +197,10 @@ export function PayeeCleanupView() {
           for (const id of stagedClusterIds) delete next[id];
           return next;
         });
+
+        // Same reasoning for the rule tab: what was staged is done, and leaving
+        // it ticked would offer to stage it a second time.
+        setSelectedRuleGaps(new Set());
       },
       // A rejected promise used to be dropped: the click looked like it worked
       // while nothing was staged. The corrections are deliberately left intact
@@ -200,10 +216,6 @@ export function PayeeCleanupView() {
     () => new Map(partition.eligible.map((c) => [c.id, c])),
     [partition.eligible]
   );
-
-  // Which rule gaps the user has opted in to. Held here rather than in the list
-  // so it survives the list re-rendering when the scan re-runs.
-  const [selectedRuleGaps, setSelectedRuleGaps] = useState<Set<string>>(new Set());
 
   const visibleRuleGaps = useMemo(() => {
     const query = search.trim().toLowerCase();

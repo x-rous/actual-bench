@@ -116,6 +116,7 @@ describe("validatePlan", () => {
       renames: [],
       deletions: [],
       rules: [],
+      ruleExtensions: [],
     };
   }
 
@@ -168,6 +169,7 @@ describe("validatePlan", () => {
       renames: [],
       deletions: [],
       rules: [],
+      ruleExtensions: [],
     };
     const problems = validatePlan(plan, context(target, other, source));
     expect(problems.some((p) => /more than one payee/i.test(p.message))).toBe(true);
@@ -184,6 +186,7 @@ describe("validatePlan", () => {
       renames: [],
       deletions: [],
       rules: [],
+      ruleExtensions: [],
     };
     const problems = validatePlan(plan, context(target, other, source));
     expect(problems.some((p) => /cannot also be the one kept/i.test(p.message))).toBe(true);
@@ -205,6 +208,7 @@ describe("validatePlan", () => {
       renames: [{ kind: "rename-payee", payeeId: "t1", from: "Woolworths", to: "  " }],
       deletions: [],
       rules: [],
+      ruleExtensions: [],
     };
     const problems = validatePlan(plan, context(target));
     expect(problems.some((p) => /empty name/i.test(p.message))).toBe(true);
@@ -234,6 +238,7 @@ describe("validatePlan", () => {
       renames: [],
       deletions: [{ kind: "delete-payee", payeeId: "x1", name: "Transfer" }],
       rules: [],
+      ruleExtensions: [],
     };
     const problems = validatePlan(
       plan,
@@ -252,6 +257,7 @@ describe("validatePlan", () => {
       renames: [{ kind: "rename-payee", payeeId: "missing", from: "Missing", to: "New" }],
       deletions: [{ kind: "delete-payee", payeeId: "absent", name: "Absent" }],
       rules: [],
+      ruleExtensions: [],
     };
     expect(validatePlan(plan, context()).length).toBeGreaterThanOrEqual(3);
   });
@@ -272,6 +278,7 @@ describe("validatePlan", () => {
           expectedMatches: 40,
         },
       ],
+      ruleExtensions: [],
     };
     const problems = validatePlan(plan, context(target, source));
     expect(problems.some((p) => /being merged away/i.test(p.message))).toBe(true);
@@ -294,6 +301,7 @@ describe("validatePlan", () => {
           expectedMatches: 0,
         },
       ],
+      ruleExtensions: [],
     };
     const problems = validatePlan(plan, context(target));
     expect(problems.some((p) => /no pattern/i.test(p.message))).toBe(true);
@@ -318,6 +326,7 @@ describe("validatePlan", () => {
       ],
       deletions: [],
       rules: [],
+      ruleExtensions: [],
     };
 
     const problems = validatePlan(
@@ -340,6 +349,7 @@ describe("validatePlan", () => {
       ],
       deletions: [],
       rules: [],
+      ruleExtensions: [],
     };
     const problems = validatePlan(plan, context(target, source));
     expect(problems.some((p) => /all end up named/i.test(p.message))).toBe(true);
@@ -352,6 +362,7 @@ describe("validatePlan", () => {
       renames: [{ kind: "rename-payee", payeeId: "t1", from: "Woolworths", to: "Optus" }],
       deletions: [],
       rules: [],
+      ruleExtensions: [],
     };
     const problems = validatePlan(plan, context(target, bystander));
     expect(
@@ -372,5 +383,139 @@ describe("validatePlan", () => {
   it("marks everything it reports as blocking", () => {
     const problems = validatePlan(merge(), context(source));
     expect(problems.every((p) => p.severity === "blocking")).toBe(true);
+  });
+});
+
+describe("rule gaps in the plan", () => {
+  function gapPayee(id: string, name: string) {
+    return {
+      id,
+      name,
+      metadata: {
+        id,
+        favorite: false,
+        learnCategories: true,
+        tombstone: false,
+        transferAccountId: null,
+      },
+    };
+  }
+
+  function exactGap(id: string, name: string, texts: string[], extendsRule = null) {
+    return {
+      payee: gapPayee(id, name),
+      transactionCount: 9,
+      texts: [],
+      proposal: {
+        shape: "one-of" as const,
+        field: "imported_payee" as const,
+        texts,
+        extendsRule,
+      },
+      safe: true,
+      cautions: [],
+    };
+  }
+
+  function patternGap(id: string, name: string, value: string) {
+    return {
+      payee: gapPayee(id, name),
+      transactionCount: 9,
+      texts: [],
+      proposal: {
+        shape: "matches" as const,
+        field: "imported_payee" as const,
+        candidate: {
+          field: "imported_payee" as const,
+          op: "matches" as const,
+          value,
+          description: `starts with "${value}"`,
+        },
+        score: {
+          candidate: {
+            field: "imported_payee" as const,
+            op: "matches" as const,
+            value,
+            description: "",
+          },
+          expectedMatches: 9,
+          unexpectedMatches: 0,
+          unexpectedExamples: [],
+          matchedTexts: 3,
+        },
+        extendsRule: null as null,
+      },
+      safe: true,
+      cautions: [],
+    };
+  }
+
+  it("creates an exact-match rule for stable import text", () => {
+    const plan = buildPlan([], [], [exactGap("p1", "Netflix", ["NETFLIX.COM 4821"])]);
+
+    expect(plan.rules).toHaveLength(1);
+    expect(plan.rules[0].op).toBe("oneOf");
+    expect(plan.rules[0].value).toEqual(["NETFLIX.COM 4821"]);
+  });
+
+  it("extends the payee's own rule rather than creating a second one", () => {
+    // Actual's defence against one rule per merchant.
+    const existing = {
+      id: "rename-1",
+      stage: "pre" as const,
+      conditionsOp: "and" as const,
+      conditions: [
+        { field: "imported_payee", op: "oneOf", value: ["NETFLIX.COM 4821"] },
+      ],
+      actions: [{ field: "payee", op: "set", value: "p1" }],
+    };
+    const plan = buildPlan(
+      [],
+      [],
+      [exactGap("p1", "Netflix", ["NETFLIX.COM 9002"], existing as never)]
+    );
+
+    expect(plan.rules).toHaveLength(0);
+    expect(plan.ruleExtensions).toHaveLength(1);
+    expect(plan.ruleExtensions[0].ruleId).toBe("rename-1");
+    expect(plan.ruleExtensions[0].addTexts).toEqual(["NETFLIX.COM 9002"]);
+  });
+
+  it("blocks two new rules that would fight over the same text", () => {
+    // Neither has history to be backtested against the other, so only a
+    // whole-plan check can catch this.
+    const plan = buildPlan(
+      [],
+      [],
+      [
+        exactGap("p1", "Coles", ["COLES EXPRESS 991"]),
+        patternGap("p2", "Coles Express", "^COLES"),
+      ]
+    );
+
+    const problems = validatePlan(
+      plan,
+      context(payee("p1", "Coles"), payee("p2", "Coles Express"))
+    );
+    expect(
+      problems.some((p) => /would both match the same imported text/i.test(p.message))
+    ).toBe(true);
+  });
+
+  it("allows two new rules that cannot both match", () => {
+    const plan = buildPlan(
+      [],
+      [],
+      [
+        exactGap("p1", "Netflix", ["NETFLIX.COM 4821"]),
+        exactGap("p2", "Spotify", ["SPOTIFY AB 991"]),
+      ]
+    );
+
+    const problems = validatePlan(
+      plan,
+      context(payee("p1", "Netflix"), payee("p2", "Spotify"))
+    );
+    expect(problems.filter((p) => p.severity === "blocking")).toEqual([]);
   });
 });

@@ -7,6 +7,7 @@ import { useStagedStore } from "@/store/staged";
 import { getPayeeCleanupMetadata, fallbackMetadata } from "../lib/payeeMetadata";
 import { generateId } from "@/lib/uuid";
 import { buildNormalizationRule } from "../lib/ruleCandidates";
+import { buildExactMatchRule, extendExactMatchConditions } from "../lib/ruleGaps";
 import { validatePlan, type CleanupPlan, type PlanProblem } from "../lib/plan";
 import type { PayeeCleanupCandidate } from "../types";
 
@@ -38,6 +39,9 @@ export function usePayeeCleanupPlan() {
   const stageDelete = useStagedStore((s) => s.stageDelete);
   const stageNew = useStagedStore((s) => s.stageNew);
   const pushUndo = useStagedStore((s) => s.pushUndo);
+  // Needed to extend a payee's existing rename rule rather than create a second
+  // one: the update has to be built from the rule as it currently stands.
+  const stagedRules = useStagedStore((s) => s.rules);
 
   const [isStaging, setIsStaging] = useState(false);
 
@@ -110,12 +114,34 @@ export function usePayeeCleanupPlan() {
           // page for review and is written by the same Save as everything else.
           stageNew(
             "rules",
-            buildNormalizationRule(
-              { field: rule.field, op: rule.op, value: rule.value, description: rule.description },
-              rule.targetPayeeId,
-              generateId()
-            )
+            rule.op === "oneOf"
+              ? buildExactMatchRule(
+                  rule.field,
+                  Array.isArray(rule.value) ? rule.value : [rule.value],
+                  rule.targetPayeeId,
+                  generateId()
+                )
+              : buildNormalizationRule(
+                  {
+                    field: rule.field,
+                    op: rule.op,
+                    value: Array.isArray(rule.value) ? rule.value[0] : rule.value,
+                    description: rule.description,
+                  },
+                  rule.targetPayeeId,
+                  generateId()
+                )
           );
+        }
+
+        for (const extension of plan.ruleExtensions) {
+          // An update, not a create: the payee already has a rename rule and
+          // this adds the texts it has not seen. Same mechanism Actual uses.
+          const existing = stagedRules[extension.ruleId]?.entity;
+          if (!existing) continue;
+          stageUpdate("rules", extension.ruleId, {
+            conditions: extendExactMatchConditions(existing, extension.addTexts),
+          });
         }
 
         return {
@@ -124,13 +150,14 @@ export function usePayeeCleanupPlan() {
             plan.merges.length +
             plan.renames.length +
             plan.deletions.length +
-            plan.rules.length,
+            plan.rules.length +
+            plan.ruleExtensions.length,
         };
       } finally {
         setIsStaging(false);
       }
     },
-    [connection, pushUndo, stageDelete, stageNew, stagePayeeMerge, stageUpdate]
+    [connection, pushUndo, stageDelete, stageNew, stagePayeeMerge, stageUpdate, stagedRules]
   );
 
   return { stage, isStaging };
