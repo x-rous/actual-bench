@@ -39,9 +39,6 @@ export function usePayeeCleanupPlan() {
   const stageDelete = useStagedStore((s) => s.stageDelete);
   const stageNew = useStagedStore((s) => s.stageNew);
   const pushUndo = useStagedStore((s) => s.pushUndo);
-  // Needed to extend a payee's existing rename rule rather than create a second
-  // one: the update has to be built from the rule as it currently stands.
-  const stagedRules = useStagedStore((s) => s.rules);
 
   const [isStaging, setIsStaging] = useState(false);
 
@@ -139,10 +136,15 @@ export function usePayeeCleanupPlan() {
         // user a change had been made that had not — after `pushUndo`, with
         // nothing else to signal it.
         let extended = 0;
+        // Read now, not when this callback was built. Staging waits on the
+        // payee list and its metadata first, and a rule edited during that wait
+        // would otherwise be rewritten from the copy captured at render — the
+        // edit silently replaced by its older self plus the new texts.
+        const rulesNow = useStagedStore.getState().rules;
         for (const extension of plan.ruleExtensions) {
           // An update, not a create: the payee already has a rename rule and
           // this adds the texts it has not seen. Same mechanism Actual uses.
-          const existing = stagedRules[extension.ruleId]?.entity;
+          const existing = rulesNow[extension.ruleId]?.entity;
           if (!existing) continue;
           stageUpdate("rules", extension.ruleId, {
             conditions: extendExactMatchConditions(existing, extension.addTexts),
@@ -163,7 +165,7 @@ export function usePayeeCleanupPlan() {
         setIsStaging(false);
       }
     },
-    [connection, pushUndo, stageDelete, stageNew, stagePayeeMerge, stageUpdate, stagedRules]
+    [connection, pushUndo, stageDelete, stageNew, stagePayeeMerge, stageUpdate]
   );
 
   return { stage, isStaging };
