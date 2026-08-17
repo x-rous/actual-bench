@@ -5,11 +5,11 @@ import {
   buildNormalizationRule,
   classifyRelatedRules,
   exactNameCoverage,
-  normalizePatternText,
   rankCandidates,
   scoreCandidate,
   type ImportedTextRow,
 } from "./ruleCandidates";
+import { normalizePatternText } from "./core";
 import type { Rule } from "@/types/entities";
 import type { PayeeCleanupCandidate } from "../types";
 
@@ -38,30 +38,33 @@ function row(
 }
 
 describe("buildCandidates", () => {
-  it("anchors every pattern on the reduced stem", () => {
-    // A pattern built from a raw name would match exactly one transaction.
+  it("offers the plain substring first, then patterns", () => {
+    // A rule is only useful if its owner can read it, and `contains WOOLWORTHS`
+    // does the same job as a regex here.
     const candidates = buildCandidates("WOOLWORTHS", "imported_payee");
     expect(candidates.map((c) => c.value)).toEqual([
-      "^WOOLWORTHS\\b",
-      "\\bWOOLWORTHS\\b",
+      "WOOLWORTHS",
+      "^WOOLWORTHS",
       "WOOLWORTHS",
     ]);
+    expect(candidates.map((c) => c.op)).toEqual(["contains", "matches", "matches"]);
   });
 
   it("tolerates the punctuation the stem normalized away", () => {
     // The stem is `TEMU COM`; the text it must match is `TEMU.COM`. A literal
     // space here means every merchant with a dot, slash or ampersand in its
     // name silently gets no rule at all.
-    const [anchored] = buildCandidates("TEMU COM PARRAMATTA", "imported_payee");
+    const anchored = buildCandidates("TEMU COM PARRAMATTA", "imported_payee")[1];
+    expect(anchored.value).toBe("^TEMU.*COM.*PARRAMATTA");
     expect(new RegExp(anchored.value, "i").test("TEMU.COM PARRAMATTA NS AUS")).toBe(
       true
     );
   });
 
   it("escapes regex metacharacters in a merchant name", () => {
-    const [first] = buildCandidates("M.O.F", "imported_payee");
-    expect(first.value).toBe("^M\\.O\\.F\\b");
-    expect(() => new RegExp(first.value)).not.toThrow();
+    const pattern = buildCandidates("M.O.F", "imported_payee")[1];
+    expect(pattern.value).toBe("^M\\.O\\.F");
+    expect(() => new RegExp(pattern.value)).not.toThrow();
   });
 
   it("refuses a stem too short to be discriminating", () => {
@@ -398,9 +401,9 @@ describe("analyzeFutureResolution", () => {
     expect(result.recommended).toBeNull();
   });
 
-  it("prefers a broader pattern from the final name when it is still safe", () => {
-    // The user renamed the cluster to `Hungry Jacks`; the rule should catch
-    // that, not just the suburb the reduction happened to leave behind.
+  it("catches the merchant, not the suburb the reduction left behind", () => {
+    // The core comes from what the cluster's own imports share — `HUNGRY JACKS`
+    // — rather than from the reduced stem, which carries one member's suburb.
     const result = analyzeFutureResolution({
       stem: "HUNGRY JACKS MELBOURNE",
       finalName: "Hungry Jacks",
@@ -412,7 +415,10 @@ describe("analyzeFutureResolution", () => {
       rules: [],
     });
 
-    expect(result.recommended?.candidate.value).toBe("^HUNGRY[^A-Za-z0-9]*JACKS\\b");
+    // A plain substring, because one does the job. Both halves of cleanup now
+    // answer this the same way.
+    expect(result.recommended?.candidate.op).toBe("contains");
+    expect(result.recommended?.candidate.value).toBe("HUNGRY JACKS");
     expect(result.recommended?.expectedMatches).toBe(10);
   });
 
@@ -427,7 +433,7 @@ describe("analyzeFutureResolution", () => {
     });
 
     expect(result.matchText).toBe("HUNGRY JACKS");
-    expect(result.recommended?.candidate.value).toBe("^HUNGRY[^A-Za-z0-9]*JACKS\\b");
+    expect(result.recommended?.candidate.value).toBe("^HUNGRY.*JACKS");
   });
 
   it("distinguishes 'nothing matched' from 'everything caught others'", () => {
@@ -475,8 +481,9 @@ describe("pattern text normalization", () => {
     // pattern gained two adjacent `[^A-Za-z0-9]*` quantifiers — ambiguous, and
     // quadratic to backtrack over a long run of separators.
     expect(normalizePatternText("HUNGRY  JACKS")).toBe("HUNGRY JACKS");
-    expect(buildCandidates(normalizePatternText("HUNGRY  JACKS"), "imported_payee")[0]
-      .value).toBe("^HUNGRY[^A-Za-z0-9]*JACKS\\b");
+    expect(
+      buildCandidates(normalizePatternText("HUNGRY  JACKS"), "imported_payee")[1].value
+    ).toBe("^HUNGRY.*JACKS");
   });
 });
 

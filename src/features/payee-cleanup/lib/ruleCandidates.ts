@@ -18,6 +18,14 @@
  * `$regexp` and `contains` to `$like`; `notes` disallows `oneOf`/`notOneOf`.
  */
 
+import {
+  commonTokenRun,
+  coreLadder,
+  followedInSomeText,
+  maximalCommonRun,
+  measureTokenSpread,
+  normalizePatternText,
+} from "./core";
 import type { Rule } from "@/types/entities";
 import type { PayeeCleanupCandidate } from "../types";
 
@@ -78,33 +86,36 @@ export function buildCandidates(stem: string, field: SourceField): RuleCandidate
   const trimmed = stem.trim();
   if (trimmed.length < 3) return [];
 
-  // The stem has had its punctuation normalized to spaces, but the text a rule
+  // The core has had its punctuation normalized to spaces, but the text a rule
   // runs against has not. `TEMU COM PARRAMATTA` must still match
-  // `TEMU.COM PARRAMATTA`, so word gaps become "any run of non-alphanumerics"
-  // rather than a literal space — otherwise every merchant with a dot, slash or
-  // ampersand in its name silently gets no rule at all.
-  const flexible = trimmed
-    .split(" ")
-    .map(escapeRegex)
-    .join("[^A-Za-z0-9]*");
+  // `TEMU.COM PARRAMATTA`, so the gaps between words have to be flexible —
+  // otherwise every merchant with a dot, slash or ampersand in its name silently
+  // gets no rule at all.
+  //
+  // `.*` rather than a class of everything-except-letters-and-digits. It is
+  // broader, which is the point: it also catches a word appearing between two
+  // parts of the name. And a rule is only useful if its owner can read it —
+  // `MAYA.*BORDERS` can be read at a glance, `\bMAYA[^A-Za-z0-9]*BORDERS\b`
+  // cannot. Anything it over-reaches is caught by the backtest.
+  const flexible = trimmed.split(" ").map(escapeRegex).join(".*");
 
   return [
     {
       field,
+      op: "contains",
+      value: trimmed,
+      description: `contains "${trimmed}"`,
+    },
+    {
+      field,
       op: "matches",
-      value: `^${flexible}\\b`,
+      value: `^${flexible}`,
       description: `starts with "${trimmed}"`,
     },
     {
       field,
       op: "matches",
-      value: `\\b${flexible}\\b`,
-      description: `contains the whole words "${trimmed}"`,
-    },
-    {
-      field,
-      op: "contains",
-      value: trimmed,
+      value: flexible,
       description: `contains "${trimmed}"`,
     },
   ];
@@ -364,24 +375,6 @@ export type FutureResolution = {
  * offer a rule catching `HUNGRY JACKS` — the narrower stem would miss every
  * future import from a different suburb.
  */
-/**
- * The comparison form for text a pattern is built from.
- *
- * Shared with the override path on purpose. Passing the user's raw text through
- * meant `HUNGRY  JACKS` split on a single space into an empty segment, so the
- * pattern gained two adjacent `[^A-Za-z0-9]*` quantifiers — ambiguous to match,
- * quadratic to backtrack over a long run of separators — and the double space
- * leaked into the description and the editor.
- */
-export function normalizePatternText(value: string): string {
-  return value
-    .trim()
-    .toUpperCase()
-    .replace(/[^\p{L}\p{N}]+/gu, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
 export function candidateStems(stem: string, finalName: string): string[] {
   const normalize = normalizePatternText;
 
@@ -406,20 +399,61 @@ export function analyzeFutureResolution(input: {
   const exactName = exactNameCoverage(input.finalName, input.rows);
   const relatedRules = classifyRelatedRules(input.rules, clusterPayeeIds, input.stem);
 
-  const stems = input.override
-    ? [normalizePatternText(input.override.text)].filter(Boolean)
-    : candidateStems(input.stem, input.finalName);
-  const fields: SourceField[] = input.override
-    ? [input.override.field]
-    : ["imported_payee", "notes"];
+  // The same derivation the "Needs a rule" tab uses, on the same evidence: the
+  // cluster's own imports. Deriving it from the reduced stem and the final name
+  // instead meant one budget produced two differently shaped rules depending on
+  // which half of cleanup proposed them — and only one of the two knew that a
+  // date is not a merchant, or that a word used by two hundred payees names
+  // none of them.
+  const ownRows = input.rows.filter(
+    (row) =>
+      (row.payeeId !== null && clusterPayeeIds.has(row.payeeId)) ||
+      (row.payeeName != null && clusterPayeeNames.has(row.payeeName.toUpperCase()))
+  );
+  const spread = measureTokenSpread(input.rows);
 
-  const scored = fields.flatMap((field) =>
-    stems.flatMap((stem) =>
-      buildCandidates(stem, field).map((candidate) =>
+  const scored = input.override
+    ? buildCandidates(
+        normalizePatternText(input.override.text),
+        input.override.field
+      ).map((candidate) =>
         scoreCandidate(candidate, input.rows, clusterPayeeIds, clusterPayeeNames)
       )
-    )
-  );
+    : (["imported_payee", "notes"] as SourceField[]).flatMap((field) => {
+        const texts = ownRows.filter((row) => row.field === field);
+        if (texts.length === 0) return [];
+
+        const weights = texts.map((row) => row.transactionCount);
+        const run = commonTokenRun(
+          texts.map((row) => row.text),
+          weights,
+          0.5,
+          spread
+        );
+        if (!run) return [];
+
+        const longest = maximalCommonRun(
+          texts.map((row) => row.text),
+          weights
+        );
+        const boundaryShown =
+          longest !== null &&
+          followedInSomeText(
+            longest,
+            texts.map((row) => row.text)
+          );
+
+        const chosen = chooseCondition(
+          run,
+          field,
+          input.rows,
+          clusterPayeeIds,
+          clusterPayeeNames,
+          !boundaryShown
+        );
+        return chosen ? [chosen] : [];
+      });
+
   // A pattern that catches nothing is not a candidate.
   const matching = scored.filter((s) => s.expectedMatches > 0);
   const candidates = rankCandidates(matching);
@@ -468,9 +502,73 @@ export function analyzeFutureResolution(input: {
       best!.unexpectedMatches === 0 &&
       !skipReason &&
       !input.historyTruncated,
-    matchText: input.override?.text ?? stems[0] ?? "",
+    // What the editor starts from: the text of whatever was actually chosen,
+    // so editing begins from what the user can see rather than from a stem they
+    // were never shown.
+    matchText:
+      input.override?.text ??
+      (best
+        ? Array.isArray(best.candidate.value)
+          ? String(best.candidate.value)
+          : best.candidate.value
+        : ""),
     historyTruncated: input.historyTruncated === true,
   };
+}
+
+/**
+ * The simplest condition that catches these payees and nothing else.
+ *
+ * Two preferences, in order:
+ *
+ * 1. **The shortest safe core.** Shortening can only ever match *more*, so the
+ *    shortest core the backtest still clears is the one most likely to catch a
+ *    variant that has not arrived yet — which is the entire point of the rule.
+ *    It also drops trailing noise, like a subscription price, without needing to
+ *    know what it is.
+ * 2. **`contains` over a pattern.** `contains "READY SET GO KIDS"` and
+ *    `matches \bREADY[^A-Za-z0-9]*SET[^A-Za-z0-9]*GO[^A-Za-z0-9]*KIDS\b` do the
+ *    same job, and only one of them can be read at a glance. The pattern is kept
+ *    for what it exists for: text whose punctuation varies between imports,
+ *    where a literal substring would miss.
+ */
+export function chooseCondition(
+  run: string,
+  field: SourceField,
+  rows: ImportedTextRow[],
+  clusterIds: Set<string>,
+  clusterNames: Set<string>,
+  trimmable: boolean
+): CandidateScore | null {
+  // Only shorten when the imports never showed where the merchant ends. If
+  // something follows the run in some text — `READY SET GO KIDS` then `AMUS` in
+  // one import and `DUBAI` in another — the data located the boundary and
+  // second-guessing it would throw away the evidence.
+  const ladder = trimmable ? coreLadder(run) : coreLadder(run).slice(0, 1);
+  if (ladder.length === 0) return null;
+
+  let longestAttempt: CandidateScore | null = null;
+
+  // Shortest first, so the first safe one wins.
+  for (const core of [...ladder].reverse()) {
+    const scored = buildCandidates(core, field).map((candidate) =>
+      scoreCandidate(candidate, rows, clusterIds, clusterNames)
+    );
+    const safe = scored.filter((s) => s.unexpectedMatches === 0 && s.expectedMatches > 0);
+
+    if (safe.length === 0) {
+      // Keep the longest core's best attempt: a payee whose text cannot be
+      // caught safely still deserves a proposal and an explanation rather than
+      // disappearing from the list.
+      if (core === ladder[0]) longestAttempt = rankCandidates(scored)[0] ?? null;
+      continue;
+    }
+
+    const simplest = safe.find((s) => s.candidate.op === "contains");
+    return simplest ?? rankCandidates(safe)[0] ?? null;
+  }
+
+  return longestAttempt;
 }
 
 /**

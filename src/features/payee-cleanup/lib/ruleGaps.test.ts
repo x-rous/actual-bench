@@ -8,14 +8,17 @@ jest.mock("./ruleCandidates", () => {
     jest.requireActual("./ruleCandidates");
   return {
     ...actual,
-    scoreCandidate: (...args: Parameters<typeof actual.scoreCandidate>) => {
-      scoreCalls.push(args[0].value);
-      return actual.scoreCandidate(...args);
+    // `chooseCondition` is the expensive step — it builds the candidates and
+    // backtests each against the whole history.
+    chooseCondition: (...args: Parameters<typeof actual.chooseCondition>) => {
+      scoreCalls.push(args[0]);
+      return actual.chooseCondition(...args);
     },
   };
 });
 
-import { findRuleGaps, findRenameRuleFor, commonTokenRun } from "./ruleGaps";
+import { findRuleGaps, findRenameRuleFor } from "./ruleGaps";
+import { commonTokenRun } from "./core";
 import type { RuleGapInputs } from "./ruleGaps";
 import type { ImportedTextRow } from "./ruleCandidates";
 import type { PayeeCleanupCandidate } from "../types";
@@ -87,7 +90,7 @@ describe("who needs a rule", () => {
     // `NETFLIX.COM` and a literal `NETFLIX COM` would never match.
     const proposal = gaps[0].proposal;
     if (proposal.shape !== "matches") throw new Error("wrong shape");
-    expect(proposal.candidate.value).toBe("^NETFLIX[^A-Za-z0-9]*COM\\b");
+    expect(proposal.candidate.value).toBe("^NETFLIX.*COM");
   });
 
   it("ignores a payee whose imports already equal its name", () => {

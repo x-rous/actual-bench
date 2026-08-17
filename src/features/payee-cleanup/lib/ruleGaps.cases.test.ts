@@ -1,4 +1,5 @@
 import { findRuleGaps } from "./ruleGaps";
+import { analyzeFutureResolution } from "./ruleCandidates";
 import type { ImportedTextRow } from "./ruleCandidates";
 import type { PayeeCleanupCandidate } from "../types";
 
@@ -170,5 +171,47 @@ describe("what a real budget should produce", () => {
     ["Etihad Credit Bureau", "contains ETIHAD CREDIT BUREAU"],
   ])("%s → %s", (payee, expected) => {
     expect(conditions.get(payee)).toBe(expected);
+  });
+});
+
+describe("both halves of cleanup answer the same way", () => {
+  it("proposes the same condition whether it comes from a merge or a rule gap", () => {
+    // The two used different derivations, so one budget produced two shaped
+    // rules depending on which tab happened to propose them — and only one of
+    // them knew that a date is not a merchant.
+    const texts = CASES["Level Up Fitness"];
+    const rows: ImportedTextRow[] = texts.map(([text, n]) => ({
+      field: "notes",
+      text,
+      payeeId: "p1",
+      payeeName: null,
+      transactionCount: n,
+    }));
+
+    const fromMerge = analyzeFutureResolution({
+      stem: "LVL UP FITNESS CTR",
+      finalName: "Level Up Fitness",
+      members: [
+        {
+          id: "p1",
+          name: "Level Up Fitness",
+          metadata: {
+            id: "p1",
+            favorite: false,
+            learnCategories: true,
+            tombstone: false,
+            transferAccountId: null,
+          },
+        },
+      ],
+      rows,
+      rules: [],
+    });
+
+    const fromGap = scan().get("Level Up Fitness");
+
+    expect(fromMerge.recommended?.candidate.op).toBe("contains");
+    expect(fromMerge.recommended?.candidate.value).toBe("LVL UP FITNESS");
+    expect(fromGap).toBe("contains LVL UP FITNESS");
   });
 });
