@@ -71,9 +71,13 @@ jest.mock("../hooks/useSuppressions", () => ({
 // The staged store is real in these tests: staging has to actually remove the
 // payees it staged from the candidate set.
 let pendingPayeeMerges: { targetId: string; mergeIds: string[] }[] = [];
+let stagedPayeeEntries: Record<
+  string,
+  { isNew: boolean; isUpdated: boolean; isDeleted: boolean }
+> = {};
 jest.mock("../../../store/staged", () => ({
   useStagedStore: (selector: (s: unknown) => unknown) =>
-    selector({ pendingPayeeMerges, payees: {}, rules: {} }),
+    selector({ pendingPayeeMerges, payees: stagedPayeeEntries, rules: {} }),
 }));
 
 jest.mock("../hooks/usePayeeCleanupCandidates", () => ({
@@ -95,6 +99,7 @@ beforeEach(() => {
   transactionsLoading = false;
   rejectCluster.mockClear();
   pendingPayeeMerges = [];
+  stagedPayeeEntries = {};
   toastSuccess.mockClear();
   stageMock.mockReset();
   stageMock.mockResolvedValue({ status: "staged", operations: 1 });
@@ -736,6 +741,34 @@ describe("PayeeCleanupView", () => {
     rerender(<PayeeCleanupView />);
 
     expect(screen.queryByRole("article")).not.toBeInTheDocument();
+  });
+
+  it("does not call an untouched working set staged changes", () => {
+    // The staged store holds every loaded payee, not only the edited ones, so
+    // counting its keys announced "441 changes are staged" on a page where
+    // nothing had been touched.
+    candidates = [payee("WOOLWORTHS 0183"), payee("WOOLWORTHS 0291")];
+    stagedPayeeEntries = {
+      "p-WOOLWORTHS 0183": { isNew: false, isUpdated: false, isDeleted: false },
+      "p-WOOLWORTHS 0291": { isNew: false, isUpdated: false, isDeleted: false },
+    };
+
+    render(<PayeeCleanupView />);
+
+    expect(screen.queryByText(/staged and\s+waiting/i)).not.toBeInTheDocument();
+  });
+
+  it("counts a staged rename, which produces no merge at all", () => {
+    // A rename-only plan was reported as nothing pending — the one case this
+    // reminder exists for.
+    candidates = [payee("WOOLWORTHS 0183"), payee("WOOLWORTHS 0291")];
+    stagedPayeeEntries = {
+      "p-WOOLWORTHS 0183": { isNew: false, isUpdated: true, isDeleted: false },
+    };
+
+    render(<PayeeCleanupView />);
+
+    expect(screen.getByText(/1 change is staged and waiting/i)).toBeInTheDocument();
   });
 
   it("keeps unstaged work when only some groups are staged", () => {

@@ -62,16 +62,19 @@ export function PayeeCleanupView() {
    *
    * A rename-only or rule-only plan produces no merge, so counting
    * `pendingPayeeMerges` reported "nothing pending" while real work sat unsaved
-   * — the one situation this reminder exists for. Staged payee and rule edits
-   * made elsewhere are counted too, and that is correct: they also need Save.
+   * — the one situation this reminder exists for.
+   *
+   * Counts *changed* entries only. The staged store holds the whole working set,
+   * so its key count is every payee in the budget, which read as hundreds of
+   * changes waiting on a page where nothing had been touched.
    */
-  const stagedCount = useMemo(
-    () =>
-      pendingMerges.length +
-      Object.keys(stagedPayees).length +
-      Object.keys(stagedRules).length,
-    [pendingMerges, stagedPayees, stagedRules]
-  );
+  const stagedCount = useMemo(() => {
+    const changed = (
+      map: Record<string, { isNew: boolean; isUpdated: boolean; isDeleted: boolean }>
+    ) => Object.values(map).filter((e) => e.isNew || e.isUpdated || e.isDeleted).length;
+
+    return pendingMerges.length + changed(stagedPayees) + changed(stagedRules);
+  }, [pendingMerges, stagedPayees, stagedRules]);
 
   const stagedAwayIds = useMemo(() => {
     const ids = new Set(pendingMerges.flatMap((m) => m.mergeIds));
