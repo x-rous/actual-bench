@@ -826,6 +826,37 @@ describe("PayeeCleanupView", () => {
     expect(screen.getByText(/nothing here changes a payee/i)).toBeInTheDocument();
   });
 
+  it("keeps a rule gap on one line, with the actions in a fixed place", () => {
+    // The list is long and every row is a yes or no, so density matters more
+    // here than on the suggestions tab. The condition carries no "when …, set
+    // the payee" wrapper: every row does that, and repeating it cost more width
+    // than the condition itself.
+    candidates = [payee("Netflix")];
+    importedText = [
+      {
+        field: "imported_payee",
+        text: "NETFLIX.COM 4821",
+        payeeId: "p-Netflix",
+        transactionCount: 9,
+      },
+    ];
+    transactionCounts = new Map([["p-Netflix", 9]]);
+
+    render(<PayeeCleanupView />);
+    fireEvent.click(screen.getByRole("button", { name: /needs a rule/i }));
+
+    const row = screen.getByRole("listitem");
+    expect(row.textContent).not.toMatch(/set the payee/i);
+
+    // Badges sit before the actions, so the buttons stay at the right edge
+    // whatever a row happens to be carrying.
+    const buttons = within(row).getAllByRole("button");
+    expect(buttons.map((b) => b.textContent?.trim())).toEqual([
+      "Details",
+      "Not needed",
+    ]);
+  });
+
   it("offers to create the safe rules in bulk", () => {
     candidates = [payee("Netflix")];
     importedText = [
@@ -863,7 +894,7 @@ describe("PayeeCleanupView", () => {
 
     render(<PayeeCleanupView />);
     fireEvent.click(screen.getByRole("button", { name: /needs a rule/i }));
-    fireEvent.click(screen.getByRole("button", { name: /doesn't need one/i }));
+    fireEvent.click(screen.getByRole("button", { name: /not needed/i }));
 
     expect(rejectRuleGap).toHaveBeenCalledWith(
       expect.objectContaining({ name: "Netflix" })

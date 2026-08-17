@@ -60,44 +60,72 @@ export function RuleGapList({
 
           return (
             <li key={gap.payee.id} className="px-3 py-2 text-sm">
-              <div className="flex flex-wrap items-center gap-2">
+              {/* One line per payee. The condition sits on the row rather than
+                  behind the expander — it is the thing worth checking before
+                  ticking the box — and the boilerplate around it is gone: every
+                  rule here sets the payee, so repeating that per row spent fifty
+                  characters saying nothing. */}
+              <div className="flex items-center gap-2">
                 <Checkbox
                   checked={selected.has(gap.payee.id)}
                   onCheckedChange={(value) => onToggle(gap.payee.id, value === true)}
                   aria-label={`Create a rule for ${gap.payee.name}`}
                 />
-                <span className="font-medium">{gap.payee.name}</span>
-                <span className="text-xs tabular-nums text-muted-foreground">
-                  {gap.transactionCount}{" "}
-                  {gap.transactionCount === 1 ? "transaction" : "transactions"}
+                <span className="max-w-[14rem] shrink-0 truncate font-medium">
+                  {gap.payee.name}
+                </span>
+                <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+                  {gap.transactionCount} tx
                 </span>
 
+                <span
+                  className="min-w-0 flex-1 truncate text-xs text-muted-foreground"
+                  title={conditionText(proposal)}
+                >
+                  {proposal.field === "notes" ? "notes" : "imported payee"}{" "}
+                  {proposal.shape === "one-of" ? (
+                    proposal.texts.map((t) => `is "${t}"`).join(" or ")
+                  ) : (
+                    <>
+                      {proposal.candidate.op}{" "}
+                      <code className="rounded bg-muted px-1 font-mono text-[11px]">
+                        {proposal.candidate.value}
+                      </code>
+                    </>
+                  )}
+                </span>
+
+                {/* Badges left of the actions, never between them and the edge:
+                    they vary in width, and buttons that move from row to row
+                    cannot be clicked down a list without re-aiming each time. */}
                 {extending ? (
-                  // Worth saying out loud: this is the mechanism that stops a
-                  // budget accumulating one rule per merchant.
-                  <span className="rounded-full border border-border px-2 py-0.5 text-[11px] text-muted-foreground">
-                    adds to this payee&apos;s existing rule
+                  <span className="shrink-0 rounded-full border border-border px-2 py-0.5 text-[11px] text-muted-foreground">
+                    extends existing
                   </span>
                 ) : null}
 
                 {gap.existingRules.length > 0 ? (
-                  <span className="rounded-full border border-border px-2 py-0.5 text-[11px] text-muted-foreground">
-                    {gap.existingRules.length === 1 ? "1 rule" : `${gap.existingRules.length} rules`}{" "}
-                    already set this payee
+                  <span className="shrink-0 rounded-full border border-border px-2 py-0.5 text-[11px] text-muted-foreground">
+                    {gap.existingRules.length === 1
+                      ? "has a rule"
+                      : `has ${gap.existingRules.length} rules`}
                   </span>
                 ) : null}
 
+                {/* Keeps its colour and icon. It is the one thing on the row
+                    saying "do not accept this without looking", and it should
+                    not read like the informational chips beside it. */}
                 {gap.safe ? null : (
-                  <span className="flex items-center gap-1 text-[11px] text-amber-700 dark:text-amber-400">
+                  <span className="flex shrink-0 items-center gap-1 text-[11px] text-amber-700 dark:text-amber-400">
                     <AlertTriangle className="size-3" aria-hidden="true" />
                     needs a look
                   </span>
                 )}
 
-                <span className="ml-auto flex items-center gap-1">
+                <span className="flex shrink-0 items-center gap-1">
                   <Button
                     size="sm"
-                    variant="ghost"
+                    variant="outline"
                     onClick={() => setExpanded(isOpen ? null : gap.payee.id)}
                     aria-expanded={isOpen}
                     aria-label={`Details for ${gap.payee.name}`}
@@ -109,29 +137,11 @@ export function RuleGapList({
                     )}
                     Details
                   </Button>
-                  <Button size="sm" variant="ghost" onClick={() => onDismiss(gap)}>
-                    Doesn&apos;t need one
+                  <Button size="sm" variant="outline" onClick={() => onDismiss(gap)}>
+                    Not needed
                   </Button>
                 </span>
               </div>
-
-              {/* The generated pattern belongs on the row, not behind the
-                  expander: it is the one thing worth eyeballing before you tick
-                  the box, and a wrong one is only obvious when you can see it. */}
-              <p className="mt-1 truncate text-xs text-muted-foreground">
-                when {proposal.field === "notes" ? "notes" : "imported payee"}{" "}
-                {proposal.shape === "one-of" ? (
-                  `is ${proposal.texts.map((t) => `"${t}"`).join(" or ")}`
-                ) : (
-                  <>
-                    {proposal.candidate.op}{" "}
-                    <code className="rounded bg-muted px-1 font-mono text-[11px]">
-                      {proposal.candidate.value}
-                    </code>
-                  </>
-                )}
-                {" → set the payee"}
-              </p>
 
               {isOpen ? (
                 <div className="mt-2 space-y-2 border-l-2 border-border/60 pl-3 text-xs">
@@ -210,6 +220,14 @@ export function RuleGapList({
       </ul>
     </div>
   );
+}
+
+/** The condition as plain text, for the row's hover title when it truncates. */
+function conditionText(proposal: RuleGap["proposal"]): string {
+  const field = proposal.field === "notes" ? "notes" : "imported payee";
+  return proposal.shape === "one-of"
+    ? `${field} ${proposal.texts.map((t) => `is "${t}"`).join(" or ")}`
+    : `${field} ${proposal.candidate.op} ${proposal.candidate.value}`;
 }
 
 /** A rule's conditions in the same words the rest of the tab uses. */
