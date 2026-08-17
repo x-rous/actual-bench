@@ -29,8 +29,13 @@ export function CleanupSummaryCards({ result, plan }: Props) {
     plan.renames.length > 0
       ? `${plan.renames.length} ${plan.renames.length === 1 ? "rename" : "renames"}`
       : null,
-    plan.rules.length > 0
-      ? `${plan.rules.length} ${plan.rules.length === 1 ? "rule" : "rules"}`
+    // Extensions count as rules here on purpose: from the user's side "add this
+    // text to the rule you already have" is one rule change, and splitting the
+    // two apart in a summary would invite the question of what the difference is.
+    plan.rules.length + plan.ruleExtensions.length > 0
+      ? `${plan.rules.length + plan.ruleExtensions.length} ${
+          plan.rules.length + plan.ruleExtensions.length === 1 ? "rule" : "rules"
+        }`
       : null,
     plan.deletions.length > 0 ? `${plan.deletions.length} deleted` : null,
   ].filter(Boolean);

@@ -541,6 +541,7 @@ export function planOperationCount(plan: CleanupPlan): number {
     plan.merges.length +
     plan.renames.length +
     plan.deletions.length +
-    plan.rules.length
+    plan.rules.length +
+    plan.ruleExtensions.length
   );
 }
