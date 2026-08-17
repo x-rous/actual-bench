@@ -25,12 +25,20 @@ import type { ImportedTextRow, SourceField } from "./ruleCandidates";
  * carries a date or a reference number that approach this, because almost every
  * transaction then produces a unique string.
  *
- * The cost of raising it is real and linear: every proposed pattern is tested
- * against every row, so the scan runs roughly four times longer at 23,000 rows
- * than at 5,000. 7,500 covers more budgets without making the common case worse,
- * and anything beyond it is disclosed rather than hidden.
+ * The cost of raising it is real and roughly linear: every proposed pattern is
+ * tested against every row. Measured on a 450-payee budget whose text carries a
+ * date — so nearly every transaction is its own string — the rule-gap scan takes
+ * about 0.8s at 7,500 rows, 1.2s at 10,000 and 2.2s at 15,000.
+ *
+ * 10,000 buys the thing that matters most, which is not coverage of the list but
+ * confidence in the backtest: unexpected matches are only ever counted over rows
+ * that were read, so every unread row is a transaction a proposed rule might
+ * catch unseen. Beyond this the scan starts to feel like it is thinking rather
+ * than responding, and the answer becomes indexing rather than a bigger read.
+ *
+ * Whatever is beyond it is disclosed rather than hidden.
  */
-const ROW_LIMIT = 7500;
+const ROW_LIMIT = 10000;
 
 type QueryRow = Record<string, unknown> & { transactionCount?: number };
 
