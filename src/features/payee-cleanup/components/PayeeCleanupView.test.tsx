@@ -125,6 +125,9 @@ beforeEach(() => {
   importedText = [];
   importedTextFetching = false;
   candidatesFetching = false;
+  // Reset, or the rename-rule fixture below is still in the store for every
+  // later test — which then passes or fails for a reason it does not state.
+  stagedRules = {};
   refetchImportedText.mockClear();
   refetchCandidates.mockClear();
 });

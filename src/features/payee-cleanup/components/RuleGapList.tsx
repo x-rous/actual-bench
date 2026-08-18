@@ -14,6 +14,10 @@ type Props = {
   onToggle: (payeeId: string, enabled: boolean) => void;
   onDismiss: (gap: RuleGap) => void;
   onOverride: (payeeId: string, override: RuleGapOverride | undefined) => void;
+  /** True while the import history is still being read. */
+  loading: boolean;
+  /** True when a search is hiding rows that do exist. */
+  filtered: boolean;
 };
 
 /**
@@ -31,13 +35,22 @@ export function RuleGapList({
   onToggle,
   onDismiss,
   onOverride,
+  loading,
+  filtered,
 }: Props) {
   const [expanded, setExpanded] = useState<string | null>(null);
 
   if (gaps.length === 0) {
+    // Three different reasons, and only one of them is good news. Saying every
+    // payee will survive while the history is still loading, or while a search
+    // is hiding the rows, is a claim the tab has not earned.
     return (
       <p className="rounded-md border border-dashed border-border/70 p-8 text-center text-sm text-muted-foreground">
-        Every payee will survive the next import. Nothing needs a rule.
+        {loading
+          ? "Reading your import history…"
+          : filtered
+            ? "No payees needing a rule match this search."
+            : "Every payee will survive the next import. Nothing needs a rule."}
       </p>
     );
   }

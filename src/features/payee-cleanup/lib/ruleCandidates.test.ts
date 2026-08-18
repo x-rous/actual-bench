@@ -71,6 +71,27 @@ describe("buildCandidates", () => {
   });
 });
 
+describe("what the editor is seeded with", () => {
+  it("offers the words, not the pattern built from them", () => {
+    // The override path normalizes what it is given, so seeding the editor with
+    // `^FILMBOX.*COM` meant editing one character produced `FILMBOX COM` and
+    // quietly dropped the anchor and the gaps.
+    const result = analyzeFutureResolution({
+      stem: "FILMBOX COM",
+      finalName: "Filmbox",
+      members: [payee("p1", "Filmbox")],
+      rows: [
+        { field: "imported_payee", text: "FILMBOX.COM 4821", payeeId: "p1", payeeName: null, transactionCount: 6 },
+        { field: "imported_payee", text: "FILMBOX.COM 9002", payeeId: "p1", payeeName: null, transactionCount: 4 },
+      ],
+      rules: [],
+    });
+
+    expect(result.recommended?.candidate.value).toMatch(/\.\*/);
+    expect(result.matchText).toBe("FILMBOX COM");
+  });
+});
+
 describe("choosing between a substring and a pattern", () => {
   const rows = (texts: [string, number][]): ImportedTextRow[] =>
     texts.map(([text, n]) => ({

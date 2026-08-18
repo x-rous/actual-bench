@@ -374,6 +374,13 @@ export function analyzeFutureResolution(input: {
   );
   const spread = measureTokenSpread(input.rows);
 
+  // The words each candidate was built from, so the editor can be seeded with
+  // something the user can edit. Seeding it with the pattern itself looked
+  // helpful and was not: the override path normalizes what it is given, so
+  // changing one character of `^FILMBOX.*COM` turned it into `FILMBOX COM` and
+  // silently dropped the anchor and the gaps.
+  const coreFor = new Map<CandidateScore, string>();
+
   const scored = input.override
     ? buildCandidates(
         normalizePatternText(input.override.text),
@@ -413,7 +420,9 @@ export function analyzeFutureResolution(input: {
           clusterPayeeNames,
           !boundaryShown
         );
-        return chosen ? [chosen] : [];
+        if (!chosen) return [];
+        coreFor.set(chosen, run);
+        return [chosen];
       });
 
   // A pattern that catches nothing is not a candidate.
@@ -467,7 +476,11 @@ export function analyzeFutureResolution(input: {
     // What the editor starts from: the text of whatever was actually chosen,
     // so editing begins from what the user can see rather than from a stem they
     // were never shown.
-    matchText: input.override?.text ?? best?.candidate.value ?? "",
+    // The core, not the pattern built from it. Both read the same when the
+    // condition is a plain substring, and only one of them survives being
+    // edited.
+    matchText:
+      input.override?.text ?? (best ? (coreFor.get(best) ?? best.candidate.value) : ""),
     historyTruncated: input.historyTruncated === true,
   };
 }

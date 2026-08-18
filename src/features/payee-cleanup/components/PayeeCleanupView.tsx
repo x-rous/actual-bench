@@ -222,6 +222,10 @@ export function PayeeCleanupView() {
     const stagedClusterIds = result.suggestions
       .filter((s) => s.correction.decision === "accepted")
       .map((s) => s.cluster.id);
+    // Captured before staging starts. Clearing the whole set afterwards threw
+    // away anything ticked while the write was in flight, which was never
+    // staged and had no reason to be forgotten.
+    const stagedGapIds = selectedGaps.map((gap) => gap.payee.id);
 
     void stage(plan).then(
       (outcome) => {
@@ -248,7 +252,11 @@ export function PayeeCleanupView() {
 
         // Same reasoning for the rule tab: what was staged is done, and leaving
         // it ticked would offer to stage it a second time.
-        setSelectedRuleGaps(new Set());
+        setSelectedRuleGaps((current) => {
+          const next = new Set(current);
+          for (const id of stagedGapIds) next.delete(id);
+          return next;
+        });
       },
       // A rejected promise used to be dropped: the click looked like it worked
       // while nothing was staged. The corrections are deliberately left intact
@@ -474,6 +482,8 @@ export function PayeeCleanupView() {
           <UnusedPayeeList orphans={result.orphans} />
         ) : tab === "rule-gaps" ? (
           <RuleGapList
+            loading={importedTextFetching && importedText.length === 0}
+            filtered={visibleRuleGaps.length === 0 && result.ruleGaps.length > 0}
             gaps={visibleRuleGaps}
             selected={selectedRuleGaps}
             onToggle={(payeeId, enabled) =>

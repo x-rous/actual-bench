@@ -40,12 +40,30 @@ export function compileRuleMatcher(
 
   let regex: RegExp | null = null;
   try {
-    regex = new RegExp(needle);
+    regex = isTractablePattern(needle) ? new RegExp(needle) : null;
   } catch {
     // A pattern that will not compile can never match.
     regex = null;
   }
   return (text) => (regex !== null ? regex.test(text.toLowerCase()) : false);
+}
+
+/**
+ * Whether a pattern is safe to run against every row of a budget's history.
+ *
+ * A `matches` value can be typed by the user, and it is then tested against
+ * thousands of rows inside a `useMemo` on the render thread. A pattern like
+ * `(a+)+$` compiles cleanly and backtracks for ever, so the tab freezes with
+ * nothing on screen to say why. Compilation failure was already handled; this
+ * is the case that looks like a hang rather than an error.
+ *
+ * Deliberately crude — a quantified group that is itself quantified, or an
+ * unreasonably long pattern. It is a guard against wedging the page, not an
+ * analysis of the language.
+ */
+export function isTractablePattern(value: string): boolean {
+  if (value.length > 200) return false;
+  return !/\([^)]*[+*]\)[+*]|\([^)]*[+*][^)]*\)\{\d/.test(value);
 }
 
 /** The comparison form for text a pattern is built from. */
@@ -339,7 +357,13 @@ export function maximalCommonRun(texts: string[], weights: number[]): string[] |
   // which licenses shortening a core the imports never licensed.
   if (total === 0) return null;
 
-  const seed = [...entries].sort((a, b) => b.weight - a.weight)[0].tokens;
+  // The same comparator `commonTokenRun` uses, and for the same reason: only
+  // runs inside the seed are considered, so a heavy one-word import leaves
+  // nothing to find — and here that makes the boundary read as unshown, which
+  // licenses shortening a core the imports did in fact bound.
+  const seed = [...entries].sort(
+    (a, b) => b.weight - a.weight || b.tokens.length - a.tokens.length
+  )[0].tokens;
 
   for (let length = seed.length; length >= 1; length--) {
     for (let start = 0; start + length <= seed.length; start++) {
