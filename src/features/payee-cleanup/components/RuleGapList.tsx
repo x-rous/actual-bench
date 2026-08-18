@@ -141,7 +141,17 @@ export function RuleGapList({
                     )}
                     Details
                   </Button>
-                  <Button size="sm" variant="outline" onClick={() => onDismiss(gap)}>
+                  {/* Named per row, as Details is: a list of buttons all
+                      reading "Not needed" tells a screen-reader user nothing
+                      about which payee each one dismisses. The visible text
+                      stays inside the accessible name, so voice control still
+                      reaches it. */}
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => onDismiss(gap)}
+                    aria-label={`Not needed for ${gap.payee.name}`}
+                  >
                     Not needed
                   </Button>
                 </span>

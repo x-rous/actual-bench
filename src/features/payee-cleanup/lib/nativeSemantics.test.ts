@@ -326,10 +326,20 @@ describe("Actual native payee semantics (pinned)", () => {
       expect(renameRule).toContain("updateRule(rule)");
     });
 
-    it("is reachable only through `send`, so Bench never triggers it", () => {
-      // Bench renames payees through `updatePayee`, so a curated payee gets no
-      // protection in either transport. That gap is what RD-087 closes.
+    it("has exactly one caller, and it is a `send` handler", () => {
+      // The basis for saying Bench never triggers it, which needs more than the
+      // handler existing: it needs that handler to be the *only* way in. Both
+      // counts matter — one occurrence where it is defined means nothing else in
+      // that file calls it, and one in the app means the handler is the single
+      // entry point. If a sync or import path starts calling it upstream, this
+      // fails rather than leaving a stale claim in the capability report.
+      const occurrences = (source: string) =>
+        source.match(/updatePayeeRenameRule/g)?.length ?? 0;
+
+      expect(occurrences(rules)).toBe(1);
+
       const rulesApp = readPackageSource("@actual-app/core", "src/server/rules/app.ts");
+      expect(occurrences(rulesApp)).toBe(1);
       expect(rulesApp).toContain("'rule-add-payee-rename'");
     });
   });
