@@ -44,6 +44,7 @@ import {
 import {
   compileRuleMatcher,
   coreTokens,
+  isTractablePattern,
   followedInSomeText,
   hasMarker,
   maximalCommonRun,
@@ -153,6 +154,10 @@ export type RuleGapInputs = {
 /** Whether a user-typed pattern will compile at all. */
 export function isValidPattern(value: string): boolean {
   if (!value.trim()) return false;
+  // The same test the matcher applies. Without it the editor called a pattern
+  // valid, the row offered it, and the matcher quietly refused to run it — so a
+  // rule that would hang the page looked merely ineffective.
+  if (!isTractablePattern(value)) return false;
   try {
     new RegExp(value);
     return true;

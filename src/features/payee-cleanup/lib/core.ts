@@ -57,13 +57,19 @@ export function compileRuleMatcher(
  * nothing on screen to say why. Compilation failure was already handled; this
  * is the case that looks like a hang rather than an error.
  *
- * Deliberately crude — a quantified group that is itself quantified, or an
- * unreasonably long pattern. It is a guard against wedging the page, not an
- * analysis of the language.
+ * Deliberately crude: a quantified group whose body can match the same text more
+ * than one way, or an unreasonably long pattern. That covers `(a+)+$` and
+ * `(a|aa)+$` alike — the second is the one that looks harmless, and a
+ * forty-character near-miss against it takes about ten seconds.
+ *
+ * A guard against wedging the page, not an analysis of the language. Something
+ * pathological will get through; the point is that the shapes people actually
+ * paste in do not.
  */
 export function isTractablePattern(value: string): boolean {
   if (value.length > 200) return false;
-  return !/\([^)]*[+*]\)[+*]|\([^)]*[+*][^)]*\)\{\d/.test(value);
+  // A group containing a quantifier or an alternation, itself quantified.
+  return !/\([^()]*[+*|][^()]*\)\s*(?:[+*]|\{\d)/.test(value);
 }
 
 /** The comparison form for text a pattern is built from. */
