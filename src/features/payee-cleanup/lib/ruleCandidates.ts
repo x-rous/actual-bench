@@ -421,8 +421,8 @@ export function analyzeFutureResolution(input: {
           !boundaryShown
         );
         if (!chosen) return [];
-        coreFor.set(chosen, run);
-        return [chosen];
+        coreFor.set(chosen.score, run);
+        return [chosen.score];
       });
 
   // A pattern that catches nothing is not a candidate.
@@ -501,6 +501,12 @@ export function analyzeFutureResolution(input: {
  *    for what it exists for: text whose punctuation varies between imports,
  *    where a literal substring would miss.
  */
+export type ConditionChoice = {
+  score: CandidateScore;
+  /** False when the backtest says it also catches another payee's transactions. */
+  safe: boolean;
+};
+
 export function chooseCondition(
   run: string,
   field: SourceField,
@@ -508,7 +514,7 @@ export function chooseCondition(
   clusterIds: Set<string>,
   clusterNames: Set<string>,
   trimmable: boolean
-): CandidateScore | null {
+): ConditionChoice | null {
   // Only shorten when the imports never showed where the merchant ends. If
   // something follows the run in some text — `SPRINT SET GO KIDS` then `AMUS` in
   // one import and `ASHDOWN` in another — the data located the boundary and
@@ -526,9 +532,11 @@ export function chooseCondition(
     const safe = scored.filter((s) => s.unexpectedMatches === 0 && s.expectedMatches > 0);
 
     if (safe.length === 0) {
-      // Keep the longest core's best attempt: a payee whose text cannot be
-      // caught safely still deserves a proposal and an explanation rather than
-      // disappearing from the list.
+      // The longest core's best attempt is kept, but returned marked. What a
+      // caller should do with a condition that catches other payees differs:
+      // a merge suggestion shows it with the count and lets the user judge,
+      // while the rule tab has nothing to offer and says so by leaving the
+      // payee out.
       if (core === ladder[0]) longestAttempt = rankCandidates(scored)[0] ?? null;
       continue;
     }
@@ -547,10 +555,11 @@ export function chooseCondition(
         s.candidate.op === "contains" &&
         s.expectedMatches >= best * (1 - COVERAGE_MARGIN)
     );
-    return simplest ?? rankCandidates(safe)[0] ?? null;
+    const chosen = simplest ?? rankCandidates(safe)[0];
+    return chosen ? { score: chosen, safe: true } : null;
   }
 
-  return longestAttempt;
+  return longestAttempt ? { score: longestAttempt, safe: false } : null;
 }
 
 /**

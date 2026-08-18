@@ -597,9 +597,21 @@ function proposeRule(
       new Set([payee.name.toUpperCase()]),
       !boundaryShown
     );
-    if (!best || best.expectedMatches === 0) return null;
 
-    return { shape: "matches", field, candidate: best.candidate, score: best, extendsRule: null };
+    // Nothing safe means nothing to offer (RD-087 §3, step 7). Proposing the
+    // best unsafe attempt instead read as helpful and was not: a budget whose
+    // notes all begin the same way put the same doomed condition on every payee
+    // at once, each warning that it would catch the others. A condition the user
+    // types is different — that one is shown, with what it would catch.
+    if (!best || !best.safe || best.score.expectedMatches === 0) return null;
+
+    return {
+      shape: "matches",
+      field,
+      candidate: best.score.candidate,
+      score: best.score,
+      extendsRule: null,
+    };
   }
 
   // Nothing varies around a shared core, so an exact list is the only honest

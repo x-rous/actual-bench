@@ -372,7 +372,10 @@ describe("extending an existing rename rule", () => {
 });
 
 describe("when a human should look", () => {
-  it("refuses to call a pattern safe when it would catch another payee", () => {
+  it("offers nothing when no pattern catches this payee alone", () => {
+    // Not a warning — nothing. Proposing the best unsafe attempt put the same
+    // doomed condition on every payee of a budget whose notes all begin the same
+    // way, each row warning that it would catch the others.
     const rows = [
       ...Array.from({ length: 6 }, (_, i) => row(`COLES 0${180 + i}`, "p1", 3)),
       row("COLES EXPRESS 991", "p2", 7),
@@ -385,8 +388,34 @@ describe("when a human should look", () => {
       })
     );
 
-    expect(gaps[0].safe).toBe(false);
-    expect(gaps[0].cautions.join(" ")).toMatch(/also catch/i);
+    expect(gaps).toEqual([]);
+  });
+
+  it("says nothing about payees whose text all starts the same way", () => {
+    // A test budget where every note opens with `Notes N` produced `^NOTES` for
+    // four payees at once, each warning it would catch the other three.
+    const rows = [
+      row("Notes 10 [AED -234.00 @ 0.4]", "p1", 1, "notes"),
+      row("Notes 10 [Synced from Bench Test / Savings]", "p1", 1, "notes"),
+      row("Notes 7 [AED -34.00 @ 0.4]", "p2", 1, "notes"),
+      row("Notes 7 [Synced from Bench Test / Savings]", "p2", 1, "notes"),
+      row("Notes 1 [AED -6.00 @ 0.4]", "p3", 1, "notes"),
+      row("Notes 1 [Synced from Bench Test / Savings]", "p3", 1, "notes"),
+    ];
+
+    expect(
+      findRuleGaps(
+        inputs({
+          candidates: [payee("p1", "Pharmacy"), payee("p2", "My Payee John"), payee("p3", "Wallmart")],
+          rows,
+          transactionCounts: new Map([
+            ["p1", 2],
+            ["p2", 2],
+            ["p3", 2],
+          ]),
+        })
+      )
+    ).toEqual([]);
   });
 
   it("warns when two payees genuinely receive identical text", () => {
