@@ -278,9 +278,12 @@ export function PayeeCleanupView() {
   // Safe means "no reason for a human to look": see `findRuleGaps`. Creating
   // these in bulk is a smaller risk than accepting merges in bulk, because a
   // rule is undone by deleting it while a saved merge is not.
+  // Drawn from what the tab is showing, not from every gap found. With a search
+  // active the two differ, and a button reading "Create 12 safe rules" that
+  // staged rows scrolled out of sight is not a bulk action the user took.
   const safeRuleGaps = useMemo(
-    () => result.ruleGaps.filter((gap) => gap.safe && !selectedRuleGaps.has(gap.payee.id)),
-    [result.ruleGaps, selectedRuleGaps]
+    () => visibleRuleGaps.filter((gap) => gap.safe && !selectedRuleGaps.has(gap.payee.id)),
+    [visibleRuleGaps, selectedRuleGaps]
   );
 
   // The tab pill counts what the tab would show, ignoring the search box: a

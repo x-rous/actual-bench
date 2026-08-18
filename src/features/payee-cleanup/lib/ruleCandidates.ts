@@ -19,6 +19,7 @@
  */
 
 import {
+  COVERAGE_MARGIN,
   commonTokenRun,
   compileRuleMatcher,
   coreLadder,
@@ -519,7 +520,20 @@ export function chooseCondition(
       continue;
     }
 
-    const simplest = safe.find((s) => s.candidate.op === "contains");
+    // Simplest, but not at any price. A literal substring only reads the same as
+    // the pattern when it catches roughly the same imports, and it need not: a
+    // merchant written `TEMU.COM` in most of its imports and `TEMU COM` in one
+    // gives a `contains` catching the one and a pattern catching all of them.
+    //
+    // Roughly, not exactly — the same margin the core ranking uses. One import
+    // written without its space should not cost the user a readable rule, while
+    // a substring catching a fraction of them should.
+    const best = Math.max(...safe.map((s) => s.expectedMatches));
+    const simplest = safe.find(
+      (s) =>
+        s.candidate.op === "contains" &&
+        s.expectedMatches >= best * (1 - COVERAGE_MARGIN)
+    );
     return simplest ?? rankCandidates(safe)[0] ?? null;
   }
 

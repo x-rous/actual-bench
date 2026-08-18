@@ -336,16 +336,24 @@ function textsAlreadyCovered(rule: Rule | null): Set<string> {
 function textsClaimedByOthers(
   texts: ImportedTextRow[],
   rows: ImportedTextRow[],
-  payeeId: string
+  payeeId: string,
+  payeeName: string
 ): string[] {
   // Field and text in one key, separated by a character no bank statement can
   // contain, so `notes "ACME"` and `imported_payee "ACME"` stay distinct.
   const wanted = new Map(texts.map((t) => [`${t.field}\u0000${t.text.toUpperCase()}`, t.text]));
   const clashes = new Set<string>();
 
+  const ownName = payeeName.toUpperCase();
   for (const row of rows) {
+    // Attributed by id *or* name, exactly as the backtest attributes them: a
+    // grouped read can return one without the other, and skipping every row
+    // with no id meant a text claimed by another payee under its name alone
+    // raised no caution at all.
     if (row.payeeId === payeeId) continue;
-    if (row.payeeId === null) continue;
+    if (row.payeeId === null && (row.payeeName ?? "").toUpperCase() === ownName) continue;
+    if (row.payeeId === null && !row.payeeName) continue;
+
     const hit = wanted.get(`${row.field}\u0000${row.text.toUpperCase()}`);
     if (hit) clashes.add(hit);
   }
@@ -455,7 +463,8 @@ export function findRuleGaps(inputs: RuleGapInputs): RuleGap[] {
       related,
       payee.id,
       ownRules,
-      transactionCount
+      transactionCount,
+      payee.name
     );
     gaps.push({
       payee,
@@ -653,7 +662,8 @@ function collectCautions(
   related: ReturnType<typeof classifyRelatedRules>,
   payeeId: string,
   ownRules: ExistingPayeeRule[],
-  transactionCount: number
+  transactionCount: number,
+  payeeName: string
 ): string[] {
   const cautions: string[] = [];
 
@@ -661,7 +671,8 @@ function collectCautions(
     const clashes = textsClaimedByOthers(
       texts.filter((t) => t.field === proposal.field),
       inputs.rows,
-      payeeId
+      payeeId,
+      payeeName
     );
     if (clashes.length > 0) {
       cautions.push(

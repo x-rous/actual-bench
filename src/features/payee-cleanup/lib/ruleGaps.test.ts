@@ -686,7 +686,10 @@ describe("a rule that already sets this payee", () => {
     if (proposal.shape !== "matches") throw new Error("wrong shape");
     // Derived from the text the existing rule leaves behind, not from all of it.
     expect(proposal.candidate.value).toMatch(/VAULTDRIVE/);
-    expect(proposal.candidate.value).not.toMatch(/GOOGLE/);
+    // The text the existing rule already covers, which is what the core must
+    // *not* be built from. `GOOGLE` appeared in no fixture after the rename, so
+    // asserting on it pinned nothing.
+    expect(proposal.candidate.value).not.toMatch(/NIMBUS/);
   });
 
   it("does not let a rule it cannot read in full remove the payee's text", () => {

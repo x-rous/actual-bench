@@ -80,7 +80,7 @@ export const MAX_CORE_TOKENS = 4;
  * Below this the two count as equally well supported, and the one that reads
  * more like the merchant's name wins.
  */
-const COVERAGE_MARGIN = 0.15;
+export const COVERAGE_MARGIN = 0.15;
 
 /**
  * Hashtags are markers, never merchant text: `#2026-05` is a date and `#API` is
@@ -334,6 +334,11 @@ export function maximalCommonRun(texts: string[], weights: number[]): string[] |
   if (entries.length === 0) return null;
 
   const total = entries.reduce((sum, entry) => sum + entry.weight, 0);
+  // The same guard `commonTokenRun` carries. Without it every share is NaN, no
+  // run ever clears the threshold, and the boundary reads as "nothing shared" —
+  // which licenses shortening a core the imports never licensed.
+  if (total === 0) return null;
+
   const seed = [...entries].sort((a, b) => b.weight - a.weight)[0].tokens;
 
   for (let length = seed.length; length >= 1; length--) {

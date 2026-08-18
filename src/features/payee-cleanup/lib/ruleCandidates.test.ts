@@ -71,6 +71,56 @@ describe("buildCandidates", () => {
   });
 });
 
+describe("choosing between a substring and a pattern", () => {
+  const rows = (texts: [string, number][]): ImportedTextRow[] =>
+    texts.map(([text, n]) => ({
+      field: "imported_payee",
+      text,
+      payeeId: "p1",
+      payeeName: null,
+      transactionCount: n,
+    }));
+
+  it("keeps the pattern when the substring would catch almost nothing", () => {
+    // The core's punctuation is normalized to spaces, so a merchant written
+    // `TEMU.COM` in most of its imports and `TEMU COM` in one gives a literal
+    // that catches the one and a pattern that catches all of them. Choosing on
+    // shape alone traded the rule for its looks.
+    const result = analyzeFutureResolution({
+      stem: "TEMU COM",
+      finalName: "Temu",
+      members: [payee("p1", "Temu")],
+      rows: rows([
+        ["TEMU.COM PARRAMATTA", 9],
+        ["TEMU.COM SYDNEY", 8],
+        ["TEMU COM MELBOURNE", 1],
+      ]),
+      rules: [],
+    });
+
+    expect(result.recommended?.candidate.op).toBe("matches");
+    expect(result.recommended?.expectedMatches).toBe(18);
+  });
+
+  it("keeps the substring when one odd import is all it misses", () => {
+    // The same margin the core ranking uses: a single import written without
+    // its space should not cost the user a rule they can read.
+    const result = analyzeFutureResolution({
+      stem: "SNACK SHACK",
+      finalName: "Snack Shack",
+      members: [payee("p1", "Snack Shack")],
+      rows: rows([
+        ["SNACK SHACK CENTRAL", 9],
+        ["SNACK SHACK NORTH", 8],
+        ["SNACKSHACK WEST", 1],
+      ]),
+      rules: [],
+    });
+
+    expect(result.recommended?.candidate.op).toBe("contains");
+  });
+});
+
 describe("the backtest matches how a saved rule compares", () => {
   // The tests below build their own regular expressions, which is exactly how a
   // difference between the backtest and the rule engine would go unnoticed —
