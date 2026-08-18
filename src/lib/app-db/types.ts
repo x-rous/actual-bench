@@ -390,7 +390,7 @@ export type RememberedBudgetInput = {
 export type PayeeCleanupSuppressionRecord = {
   id: string;
   budgetSyncId: string;
-  kind: "not-duplicates" | "rejected-affix";
+  kind: "not-duplicates" | "rejected-affix" | "rule-not-needed";
   /** Precise, but gone once the payees are merged or deleted. */
   payeeIds: string[];
   /** Outlives the ids; for an affix, the affix tokens. */

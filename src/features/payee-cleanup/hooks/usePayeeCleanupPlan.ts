@@ -7,6 +7,7 @@ import { useStagedStore } from "@/store/staged";
 import { getPayeeCleanupMetadata, fallbackMetadata } from "../lib/payeeMetadata";
 import { generateId } from "@/lib/uuid";
 import { buildNormalizationRule } from "../lib/ruleCandidates";
+import { buildExactMatchRule, extendExactMatchConditions } from "../lib/ruleGaps";
 import { validatePlan, type CleanupPlan, type PlanProblem } from "../lib/plan";
 import type { PayeeCleanupCandidate } from "../types";
 
@@ -110,12 +111,45 @@ export function usePayeeCleanupPlan() {
           // page for review and is written by the same Save as everything else.
           stageNew(
             "rules",
-            buildNormalizationRule(
-              { field: rule.field, op: rule.op, value: rule.value, description: rule.description },
-              rule.targetPayeeId,
-              generateId()
-            )
+            rule.op === "oneOf"
+              ? buildExactMatchRule(
+                  rule.field,
+                  Array.isArray(rule.value) ? rule.value : [rule.value],
+                  rule.targetPayeeId,
+                  generateId()
+                )
+              : buildNormalizationRule(
+                  {
+                    field: rule.field,
+                    op: rule.op,
+                    value: Array.isArray(rule.value) ? rule.value[0] : rule.value,
+                    description: rule.description,
+                  },
+                  rule.targetPayeeId,
+                  generateId()
+                )
           );
+        }
+
+        // Counted as they are staged, not assumed. A rule that has since gone
+        // from the staged set is skipped here, and reporting it anyway told the
+        // user a change had been made that had not — after `pushUndo`, with
+        // nothing else to signal it.
+        let extended = 0;
+        // Read now, not when this callback was built. Staging waits on the
+        // payee list and its metadata first, and a rule edited during that wait
+        // would otherwise be rewritten from the copy captured at render — the
+        // edit silently replaced by its older self plus the new texts.
+        const rulesNow = useStagedStore.getState().rules;
+        for (const extension of plan.ruleExtensions) {
+          // An update, not a create: the payee already has a rename rule and
+          // this adds the texts it has not seen. Same mechanism Actual uses.
+          const existing = rulesNow[extension.ruleId]?.entity;
+          if (!existing) continue;
+          stageUpdate("rules", extension.ruleId, {
+            conditions: extendExactMatchConditions(existing, extension.addTexts),
+          });
+          extended += 1;
         }
 
         return {
@@ -124,7 +158,8 @@ export function usePayeeCleanupPlan() {
             plan.merges.length +
             plan.renames.length +
             plan.deletions.length +
-            plan.rules.length,
+            plan.rules.length +
+            extended,
         };
       } finally {
         setIsStaging(false);

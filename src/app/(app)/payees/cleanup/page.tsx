@@ -1,10 +1,10 @@
 import type { Metadata } from "next";
-import { PayeeCleanupView } from "@/features/payee-cleanup/components/PayeeCleanupView";
+import { PayeeCleanupClient } from "./PayeeCleanupClient";
 
 export const metadata: Metadata = {
   title: "Payee Cleanup - Actual Bench",
 };
 
 export default function PayeeCleanupPage() {
-  return <PayeeCleanupView />;
+  return <PayeeCleanupClient />;
 }

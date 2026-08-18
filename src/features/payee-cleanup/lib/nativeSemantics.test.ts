@@ -227,4 +227,120 @@ describe("Actual native payee semantics (pinned)", () => {
       expect(payeesApp).toContain("'payee-locations-get'");
     });
   });
+
+  describe("how an imported transaction finds its payee (RD-087 §1)", () => {
+    const sync = readPackageSource(
+      "@actual-app/core",
+      "src/server/accounts/sync.ts"
+    );
+    const db = readPackageSource("@actual-app/core", "src/server/db/index.ts");
+
+    it("resolves an imported payee by name alone", () => {
+      // The whole basis of RD-087. There is no historical imported_payee lookup
+      // and no learning: if no payee matches the incoming text by name, Actual
+      // creates a new one. So renaming or merging a payee guarantees the next
+      // import of the old text recreates the duplicate — unless a rule catches
+      // it first.
+      const resolvePayee = sliceBetween(
+        sync,
+        "async function resolvePayee(",
+        "async function normalizeTransactions("
+      );
+      expect(resolvePayee).toContain("db.getPayeeByName(payeeName)");
+      expect(resolvePayee).not.toContain("imported_payee");
+    });
+
+    it("matches that name case-insensitively and exactly", () => {
+      // Basis for the exact-name exclusion: a payee whose imports already equal
+      // its name needs no rule, and the comparison folds case.
+      const getPayeeByName = sliceBetween(
+        db,
+        "export async function getPayeeByName",
+        "export function getAccounts()"
+      );
+      expect(getPayeeByName).toContain("UNICODE_LOWER(name) = ?");
+      expect(getPayeeByName).toContain("tombstone = 0");
+    });
+  });
+
+  describe("how a rule compares text (RD-087)", () => {
+    const condition = readPackageSource(
+      "@actual-app/core",
+      "src/server/rules/condition.ts"
+    );
+
+    it("lower-cases a string condition's value when the rule is parsed", () => {
+      // Half of why `contains "CASSETTE"` catches `Cassette Restaurant`. If this
+      // stopped happening, every generated condition — which is built from an
+      // upper-cased core — would silently match nothing.
+      const stringType = sliceBetween(condition, "  string: {", "  number: {");
+      expect(stringType).toContain("return value.toLowerCase();");
+    });
+
+    it("lower-cases the transaction's own text before comparing", () => {
+      expect(condition).toContain("fieldValue = fieldValue.toLowerCase();");
+    });
+
+    it("compares with a plain substring and a plain regex, relying on that", () => {
+      // Neither carries a case-insensitive flag of its own, so the folding above
+      // is the only thing making the comparison case-insensitive. Bench's own
+      // backtest folds case the same way; if either side changed, the backtest
+      // would start promising matches that never happen.
+      expect(condition).toContain(
+        "return String(fieldValue).indexOf(this.value) !== -1;"
+      );
+      expect(condition).toContain("return new RegExp(this.value).test(fieldValue);");
+    });
+  });
+
+  describe("Actual's own payee-rename rule (RD-087 §1.1)", () => {
+    const rules = readPackageSource(
+      "@actual-app/core",
+      "src/server/transactions/transaction-rules.ts"
+    );
+    const renameRule = sliceBetween(
+      rules,
+      "export async function updatePayeeRenameRule",
+      "export function getProbableCategory"
+    );
+
+    it("uses the `pre` stage", () => {
+      // Basis for `buildNormalizationRule` staging its rules in `pre`: payee
+      // normalization has to run before the rules that match on payee.
+      expect(renameRule).toContain("getOneOfSetterRules('pre', 'imported_payee', 'payee'");
+      expect(renameRule).toContain("stage: 'pre'");
+    });
+
+    it("matches imported_payee with oneOf and sets the payee", () => {
+      // The shape RD-087 adopts for a payee whose import text is stable.
+      expect(renameRule).toContain(
+        "{ op: 'oneOf', field: 'imported_payee', value: fromNames }"
+      );
+      expect(renameRule).toContain("{ op: 'set', field: 'payee', value: to }");
+    });
+
+    it("extends the payee's existing rename rule instead of adding another", () => {
+      // Actual's built-in defence against rule sprawl, and the basis for
+      // RD-087 §5.1: new texts merge into the existing `oneOf` list.
+      expect(renameRule).toContain("fastSetMerge");
+      expect(renameRule).toContain("updateRule(rule)");
+    });
+
+    it("has exactly one caller, and it is a `send` handler", () => {
+      // The basis for saying Bench never triggers it, which needs more than the
+      // handler existing: it needs that handler to be the *only* way in. Both
+      // counts matter — one occurrence where it is defined means nothing else in
+      // that file calls it, and one in the app means the handler is the single
+      // entry point. If a sync or import path starts calling it upstream, this
+      // fails rather than leaving a stale claim in the capability report.
+      const occurrences = (source: string) =>
+        source.match(/updatePayeeRenameRule/g)?.length ?? 0;
+
+      expect(occurrences(rules)).toBe(1);
+
+      const rulesApp = readPackageSource("@actual-app/core", "src/server/rules/app.ts");
+      expect(occurrences(rulesApp)).toBe(1);
+      expect(rulesApp).toContain("'rule-add-payee-rename'");
+    });
+  });
 });

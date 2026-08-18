@@ -14,6 +14,8 @@ import {
 } from "./corrections";
 import {
   applyAffixSuppressions,
+  applyRuleGapSuppressions,
+  buildRuleGapSuppression,
   applySuppressions,
   buildAffixSuppression,
   buildClusterSuppression,
@@ -377,6 +379,49 @@ describe("suppressions", () => {
     expect(applyAffixSuppressions([sameTokensOtherEnd], [rejected])).toEqual([
       sameTokensOtherEnd,
     ]);
+  });
+
+  it("hides a payee the user said does not need a rule", () => {
+    const suppression = record({
+      ...buildRuleGapSuppression("b1", { id: "p1", name: "Netflix" }),
+      id: "s5",
+      createdAt: "2026-08-17T00:00:00.000Z",
+    });
+    const gaps = [{ payee: { id: "p1", name: "Netflix" } }];
+
+    expect(applyRuleGapSuppressions(gaps, [suppression])).toEqual([]);
+  });
+
+  it("still hides it after the payee id has changed", () => {
+    // Ids do not survive a merge or a re-import; the name does.
+    const suppression = record({
+      ...buildRuleGapSuppression("b1", { id: "gone", name: "Netflix" }),
+      id: "s6",
+      createdAt: "2026-08-17T00:00:00.000Z",
+    });
+
+    expect(
+      applyRuleGapSuppressions([{ payee: { id: "p9", name: "Netflix" } }], [suppression])
+    ).toEqual([]);
+  });
+
+  it("does not let a rule dismissal hide a merge suggestion for the same payee", () => {
+    // Different decisions about the same payee. "It does not need a rule" says
+    // nothing about whether it is a duplicate of something else.
+    const suppression = record({
+      ...buildRuleGapSuppression("b1", { id: "p1", name: "EMIRATES" }),
+      id: "s7",
+      createdAt: "2026-08-17T00:00:00.000Z",
+    });
+
+    expect(suppressesCluster(suppression, emirates)).toBe(false);
+    expect(applySuppressions([emirates], [suppression])).toHaveLength(1);
+  });
+
+  it("does not let a cluster dismissal hide a rule gap for the same payee", () => {
+    expect(
+      applyRuleGapSuppressions([{ payee: { id: "p1", name: "EMIRATES" } }], [record()])
+    ).toHaveLength(1);
   });
 
   it("leaves other affixes alone", () => {

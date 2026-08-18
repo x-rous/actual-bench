@@ -1,15 +1,14 @@
 import {
   analyzeFutureResolution,
   buildCandidates,
-  candidateStems,
   buildNormalizationRule,
   classifyRelatedRules,
   exactNameCoverage,
-  normalizePatternText,
   rankCandidates,
   scoreCandidate,
   type ImportedTextRow,
 } from "./ruleCandidates";
+import { normalizePatternText } from "./core";
 import type { Rule } from "@/types/entities";
 import type { PayeeCleanupCandidate } from "../types";
 
@@ -38,30 +37,33 @@ function row(
 }
 
 describe("buildCandidates", () => {
-  it("anchors every pattern on the reduced stem", () => {
-    // A pattern built from a raw name would match exactly one transaction.
-    const candidates = buildCandidates("WOOLWORTHS", "imported_payee");
+  it("offers the plain substring first, then patterns", () => {
+    // A rule is only useful if its owner can read it, and `contains GROCERGO`
+    // does the same job as a regex here.
+    const candidates = buildCandidates("GROCERGO", "imported_payee");
     expect(candidates.map((c) => c.value)).toEqual([
-      "^WOOLWORTHS\\b",
-      "\\bWOOLWORTHS\\b",
-      "WOOLWORTHS",
+      "GROCERGO",
+      "^GROCERGO",
+      "GROCERGO",
     ]);
+    expect(candidates.map((c) => c.op)).toEqual(["contains", "matches", "matches"]);
   });
 
   it("tolerates the punctuation the stem normalized away", () => {
     // The stem is `TEMU COM`; the text it must match is `TEMU.COM`. A literal
     // space here means every merchant with a dot, slash or ampersand in its
     // name silently gets no rule at all.
-    const [anchored] = buildCandidates("TEMU COM PARRAMATTA", "imported_payee");
+    const anchored = buildCandidates("TEMU COM PARRAMATTA", "imported_payee")[1];
+    expect(anchored.value).toBe("^TEMU.*COM.*PARRAMATTA");
     expect(new RegExp(anchored.value, "i").test("TEMU.COM PARRAMATTA NS AUS")).toBe(
       true
     );
   });
 
   it("escapes regex metacharacters in a merchant name", () => {
-    const [first] = buildCandidates("M.O.F", "imported_payee");
-    expect(first.value).toBe("^M\\.O\\.F\\b");
-    expect(() => new RegExp(first.value)).not.toThrow();
+    const pattern = buildCandidates("M.O.F", "imported_payee")[1];
+    expect(pattern.value).toBe("^M\\.O\\.F");
+    expect(() => new RegExp(pattern.value)).not.toThrow();
   });
 
   it("refuses a stem too short to be discriminating", () => {
@@ -69,35 +71,142 @@ describe("buildCandidates", () => {
   });
 });
 
+describe("what the editor is seeded with", () => {
+  it("offers the words, not the pattern built from them", () => {
+    // The override path normalizes what it is given, so seeding the editor with
+    // `^FILMBOX.*COM` meant editing one character produced `FILMBOX COM` and
+    // quietly dropped the anchor and the gaps.
+    const result = analyzeFutureResolution({
+      stem: "FILMBOX COM",
+      finalName: "Filmbox",
+      members: [payee("p1", "Filmbox")],
+      rows: [
+        { field: "imported_payee", text: "FILMBOX.COM 4821", payeeId: "p1", payeeName: null, transactionCount: 6 },
+        { field: "imported_payee", text: "FILMBOX.COM 9002", payeeId: "p1", payeeName: null, transactionCount: 4 },
+      ],
+      rules: [],
+    });
+
+    expect(result.recommended?.candidate.value).toMatch(/\.\*/);
+    expect(result.matchText).toBe("FILMBOX COM");
+  });
+});
+
+describe("choosing between a substring and a pattern", () => {
+  const rows = (texts: [string, number][]): ImportedTextRow[] =>
+    texts.map(([text, n]) => ({
+      field: "imported_payee",
+      text,
+      payeeId: "p1",
+      payeeName: null,
+      transactionCount: n,
+    }));
+
+  it("keeps the pattern when the substring would catch almost nothing", () => {
+    // The core's punctuation is normalized to spaces, so a merchant written
+    // `TEMU.COM` in most of its imports and `TEMU COM` in one gives a literal
+    // that catches the one and a pattern that catches all of them. Choosing on
+    // shape alone traded the rule for its looks.
+    const result = analyzeFutureResolution({
+      stem: "TEMU COM",
+      finalName: "Temu",
+      members: [payee("p1", "Temu")],
+      rows: rows([
+        ["TEMU.COM PARRAMATTA", 9],
+        ["TEMU.COM SYDNEY", 8],
+        ["TEMU COM MELBOURNE", 1],
+      ]),
+      rules: [],
+    });
+
+    expect(result.recommended?.candidate.op).toBe("matches");
+    expect(result.recommended?.expectedMatches).toBe(18);
+  });
+
+  it("keeps the substring when one odd import is all it misses", () => {
+    // The same margin the core ranking uses: a single import written without
+    // its space should not cost the user a rule they can read.
+    const result = analyzeFutureResolution({
+      stem: "SNACK SHACK",
+      finalName: "Snack Shack",
+      members: [payee("p1", "Snack Shack")],
+      rows: rows([
+        ["SNACK SHACK CENTRAL", 9],
+        ["SNACK SHACK NORTH", 8],
+        ["SNACKSHACK WEST", 1],
+      ]),
+      rules: [],
+    });
+
+    expect(result.recommended?.candidate.op).toBe("contains");
+  });
+});
+
+describe("the backtest matches how a saved rule compares", () => {
+  // The tests below build their own regular expressions, which is exactly how a
+  // difference between the backtest and the rule engine would go unnoticed —
+  // so these go through `scoreCandidate`, the path the user's numbers come from.
+  const rowsFor = (text: string): ImportedTextRow[] => [
+    { field: "imported_payee", text, payeeId: "p1", payeeName: null, transactionCount: 1 },
+  ];
+  const score = (candidate: Parameters<typeof scoreCandidate>[0], text: string) =>
+    scoreCandidate(candidate, rowsFor(text), new Set(["p1"]), new Set()).expectedMatches;
+
+  it("folds case, because the engine lower-cases both sides", () => {
+    expect(
+      score(
+        { field: "imported_payee", op: "contains", value: "CASSETTE", description: "" },
+        "Cassette Restaurant"
+      )
+    ).toBe(1);
+    expect(
+      score(
+        { field: "imported_payee", op: "matches", value: "^SNACK.*SHACK", description: "" },
+        "Snack.Shack 0183"
+      )
+    ).toBe(1);
+  });
+
+  it("lower-cases the pattern itself, as the engine does when it parses it", () => {
+    // `\D` means "not a digit" and `\d` means "a digit". Actual lower-cases the
+    // condition's value, so a pattern written with the upper-case form inverts
+    // once saved — and a backtest using a case-insensitive flag instead would
+    // promise the opposite of what the rule delivers.
+    const upper = { field: "imported_payee" as const, op: "matches" as const, value: "^\\D+$", description: "" };
+    expect(score(upper, "abc")).toBe(0);
+    expect(score(upper, "123")).toBe(1);
+  });
+});
+
 describe("scoreCandidate", () => {
   const rows = [
-    row("WOOLWORTHS 0183", "p1", 47),
-    row("WOOLWORTHS 0291", "p2", 23),
-    row("WOOLWORTHS MOBILE 12", "other", 9),
+    row("GROCERGO 0183", "p1", 47),
+    row("GROCERGO 0291", "p2", 23),
+    row("GROCERGO MOBILE 12", "other", 9),
     row("TESCO 4821", "other2", 5),
   ];
   const cluster = new Set(["p1", "p2"]);
 
   it("counts this payee's transactions as expected", () => {
-    const [anchored] = buildCandidates("WOOLWORTHS", "imported_payee");
+    const [anchored] = buildCandidates("GROCERGO", "imported_payee");
     const score = scoreCandidate(anchored, rows, cluster);
 
     expect(score.expectedMatches).toBe(70);
   });
 
   it("counts other payees' transactions as unexpected, with examples", () => {
-    // `WOOLWORTHS MOBILE` is a different business; a rule that swallows it is
+    // `GROCERGO MOBILE` is a different business; a rule that swallows it is
     // worse than no rule.
-    const [anchored] = buildCandidates("WOOLWORTHS", "imported_payee");
+    const [anchored] = buildCandidates("GROCERGO", "imported_payee");
     const score = scoreCandidate(anchored, rows, cluster);
 
     expect(score.unexpectedMatches).toBe(9);
-    expect(score.unexpectedExamples[0].text).toBe("WOOLWORTHS MOBILE 12");
+    expect(score.unexpectedExamples[0].text).toBe("GROCERGO MOBILE 12");
   });
 
   it("ignores rows from the other source field", () => {
-    const notesRows = [row("WOOLWORTHS 0183", "p1", 47, "notes")];
-    const [anchored] = buildCandidates("WOOLWORTHS", "imported_payee");
+    const notesRows = [row("GROCERGO 0183", "p1", 47, "notes")];
+    const [anchored] = buildCandidates("GROCERGO", "imported_payee");
     expect(scoreCandidate(anchored, notesRows, cluster).expectedMatches).toBe(0);
   });
 
@@ -115,13 +224,13 @@ describe("scoreCandidate", () => {
     // A grouped query can return either shape. Mis-attributing a payee's own
     // transactions as someone else's makes a perfectly safe rule look
     // dangerous — which is exactly how it looked in testing.
-    const [anchored] = buildCandidates("WOOLWORTHS", "imported_payee");
-    const named = [row("WOOLWORTHS 0183", null, 47, "imported_payee", "WOOLWORTHS 0183")];
+    const [anchored] = buildCandidates("GROCERGO", "imported_payee");
+    const named = [row("GROCERGO 0183", null, 47, "imported_payee", "GROCERGO 0183")];
     const score = scoreCandidate(
       anchored,
       named,
       new Set(["p1"]),
-      new Set(["WOOLWORTHS 0183"])
+      new Set(["GROCERGO 0183"])
     );
 
     expect(score.expectedMatches).toBe(47);
@@ -131,22 +240,22 @@ describe("scoreCandidate", () => {
   it("ignores a row that belongs to no payee at all", () => {
     // Counting it against the rule reports a conflict with a payee that does
     // not exist.
-    const [anchored] = buildCandidates("WOOLWORTHS", "imported_payee");
-    const orphaned = [row("WOOLWORTHS 9999", null, 12)];
+    const [anchored] = buildCandidates("GROCERGO", "imported_payee");
+    const orphaned = [row("GROCERGO 9999", null, 12)];
     expect(scoreCandidate(anchored, orphaned, cluster).unexpectedMatches).toBe(0);
   });
 
   it("names the payee an unexpected match belongs to", () => {
-    const [anchored] = buildCandidates("WOOLWORTHS", "imported_payee");
-    const rival = [row("WOOLWORTHS MOBILE", "other", 9, "imported_payee", "Woolworths Mobile")];
+    const [anchored] = buildCandidates("GROCERGO", "imported_payee");
+    const rival = [row("GROCERGO MOBILE", "other", 9, "imported_payee", "GrocerGo Mobile")];
     const score = scoreCandidate(anchored, rival, cluster);
 
-    expect(score.unexpectedExamples[0].payeeName).toBe("Woolworths Mobile");
+    expect(score.unexpectedExamples[0].payeeName).toBe("GrocerGo Mobile");
   });
 
   it("matches case-insensitively, because import text is not upper-cased", () => {
-    const [anchored] = buildCandidates("WOOLWORTHS", "imported_payee");
-    const mixed = [row("Woolworths 0183", "p1", 5)];
+    const [anchored] = buildCandidates("GROCERGO", "imported_payee");
+    const mixed = [row("GrocerGo 0183", "p1", 5)];
     expect(scoreCandidate(anchored, mixed, cluster).expectedMatches).toBe(5);
   });
 });
@@ -188,38 +297,18 @@ describe("rankCandidates", () => {
   });
 });
 
-describe("candidateStems", () => {
-  it("offers the final name as well as the reduced stem", () => {
-    // A cluster reduced to `HUNGRY JACKS MELBOURNE` whose final name is
-    // `Hungry Jacks` must be able to propose a rule catching `HUNGRY JACKS` —
-    // the narrower stem would miss every import from a different suburb.
-    expect(candidateStems("HUNGRY JACKS MELBOURNE", "Hungry Jacks")).toEqual([
-      "HUNGRY JACKS MELBOURNE",
-      "HUNGRY JACKS",
-    ]);
-  });
-
-  it("does not repeat itself when they agree", () => {
-    expect(candidateStems("WOOLWORTHS", "Woolworths")).toEqual(["WOOLWORTHS"]);
-  });
-
-  it("drops a stem too short to discriminate", () => {
-    expect(candidateStems("A", "Ab")).toEqual([]);
-  });
-});
-
 describe("exactNameCoverage", () => {
   it("counts imports the surviving name already resolves", () => {
-    const rows = [row("Woolworths", "p1", 30), row("WOOLWORTHS 0183", "p2", 5)];
-    expect(exactNameCoverage("Woolworths", rows)).toEqual({
+    const rows = [row("GrocerGo", "p1", 30), row("GROCERGO 0183", "p2", 5)];
+    expect(exactNameCoverage("GrocerGo", rows)).toEqual({
       covered: 1,
       transactionCount: 30,
     });
   });
 
   it("ignores the notes field, which Actual does not match names against", () => {
-    const rows = [row("Woolworths", "p1", 30, "notes")];
-    expect(exactNameCoverage("Woolworths", rows).covered).toBe(0);
+    const rows = [row("GrocerGo", "p1", 30, "notes")];
+    expect(exactNameCoverage("GrocerGo", rows).covered).toBe(0);
   });
 });
 
@@ -237,10 +326,10 @@ describe("classifyRelatedRules", () => {
 
   it("recognises a rule that already resolves this payee text", () => {
     const existing = rule("r1", {
-      conditions: [{ field: "imported_payee", op: "contains", value: "WOOLWORTHS" }],
+      conditions: [{ field: "imported_payee", op: "contains", value: "GROCERGO" }],
       actions: [{ field: "payee", op: "set", value: "p1" }],
     });
-    const [related] = classifyRelatedRules([existing], new Set(["p1"]), "WOOLWORTHS");
+    const [related] = classifyRelatedRules([existing], new Set(["p1"]), "GROCERGO");
 
     expect(related.kind).toBe("payee-resolution");
     expect(related.interaction).toBe("already-resolves");
@@ -252,7 +341,7 @@ describe("classifyRelatedRules", () => {
       conditions: [{ field: "payee", op: "is", value: "p1" }],
       actions: [{ field: "category", op: "set", value: "c1" }],
     });
-    const [related] = classifyRelatedRules([existing], new Set(["p1"]), "WOOLWORTHS");
+    const [related] = classifyRelatedRules([existing], new Set(["p1"]), "GROCERGO");
 
     expect(related.kind).toBe("category-or-other-action");
     expect(related.interaction).toBe("compatible");
@@ -267,12 +356,12 @@ describe("classifyRelatedRules", () => {
         {
           field: "imported_payee",
           op: "oneOf",
-          value: ["WOOLWORTHS 0183", "WOOLWORTHS 0291"],
+          value: ["GROCERGO 0183", "GROCERGO 0291"],
         },
       ],
       actions: [{ field: "payee", op: "set", value: "p1" }],
     });
-    const [related] = classifyRelatedRules([existing], new Set(["p1"]), "WOOLWORTHS");
+    const [related] = classifyRelatedRules([existing], new Set(["p1"]), "GROCERGO");
 
     expect(related.interaction).toBe("already-resolves");
   });
@@ -283,11 +372,11 @@ describe("classifyRelatedRules", () => {
     // existing-rule-covers-it and dropped the rule cleanup actually needed.
     const existing = rule("r5", {
       conditions: [
-        { field: "imported_payee", op: "oneOf", value: ["WOOLWORTHS 0183"] },
+        { field: "imported_payee", op: "oneOf", value: ["GROCERGO 0183"] },
       ],
       actions: [{ field: "payee", op: "set", value: "someone-else" }],
     });
-    const [related] = classifyRelatedRules([existing], new Set(["p1"]), "WOOLWORTHS");
+    const [related] = classifyRelatedRules([existing], new Set(["p1"]), "GROCERGO");
 
     expect(related.interaction).toBe("potential-conflict");
   });
@@ -299,7 +388,7 @@ describe("classifyRelatedRules", () => {
       conditions: [{ field: "imported_payee", op: "contains", value: "CO" }],
       actions: [{ field: "payee", op: "set", value: "p1" }],
     });
-    const related = classifyRelatedRules([existing], new Set(["p1"]), "WOOLWORTHS");
+    const related = classifyRelatedRules([existing], new Set(["p1"]), "GROCERGO");
 
     expect(related.every((r) => r.interaction !== "already-resolves")).toBe(true);
   });
@@ -309,19 +398,19 @@ describe("classifyRelatedRules", () => {
       conditions: [{ field: "imported_payee", op: "contains", value: "TESCO" }],
       actions: [{ field: "payee", op: "set", value: "other" }],
     });
-    expect(classifyRelatedRules([unrelated], new Set(["p1"]), "WOOLWORTHS")).toEqual([]);
+    expect(classifyRelatedRules([unrelated], new Set(["p1"]), "GROCERGO")).toEqual([]);
   });
 });
 
 describe("analyzeFutureResolution", () => {
-  const members = [payee("p1", "WOOLWORTHS 0183"), payee("p2", "WOOLWORTHS 0291")];
+  const members = [payee("p1", "GROCERGO 0183"), payee("p2", "GROCERGO 0291")];
 
   it("recommends a safe rule and marks it selectable", () => {
     const result = analyzeFutureResolution({
-      stem: "WOOLWORTHS",
-      finalName: "Woolworths",
+      stem: "GROCERGO",
+      finalName: "GrocerGo",
       members,
-      rows: [row("WOOLWORTHS 0183", "p1", 47), row("WOOLWORTHS 0291", "p2", 23)],
+      rows: [row("GROCERGO 0183", "p1", 47), row("GROCERGO 0291", "p2", 23)],
       rules: [],
     });
 
@@ -335,12 +424,12 @@ describe("analyzeFutureResolution", () => {
     // RD-078 §17: a rule with unexplained unexpected matches must not be
     // preselected.
     const result = analyzeFutureResolution({
-      stem: "WOOLWORTHS",
-      finalName: "Woolworths",
+      stem: "GROCERGO",
+      finalName: "GrocerGo",
       members,
       rows: [
-        row("WOOLWORTHS 0183", "p1", 5),
-        row("WOOLWORTHS MOBILE", "other", 40),
+        row("GROCERGO 0183", "p1", 5),
+        row("GROCERGO MOBILE", "other", 40),
       ],
       rules: [],
     });
@@ -350,10 +439,10 @@ describe("analyzeFutureResolution", () => {
 
   it("skips the rule when every past import already matches the surviving name", () => {
     const result = analyzeFutureResolution({
-      stem: "WOOLWORTHS",
-      finalName: "Woolworths",
+      stem: "GROCERGO",
+      finalName: "GrocerGo",
       members,
-      rows: [row("Woolworths", "p1", 100)],
+      rows: [row("GrocerGo", "p1", 100)],
       rules: [],
     });
 
@@ -366,10 +455,10 @@ describe("analyzeFutureResolution", () => {
     // matters is whether anything is left over that would create a new payee
     // again on the next import.
     const result = analyzeFutureResolution({
-      stem: "WOOLWORTHS",
-      finalName: "Woolworths",
+      stem: "GROCERGO",
+      finalName: "GrocerGo",
       members,
-      rows: [row("Woolworths", "p1", 100), row("WOOLWORTHS 0183", "p2", 2)],
+      rows: [row("GrocerGo", "p1", 100), row("GROCERGO 0183", "p2", 2)],
       rules: [],
     });
 
@@ -379,16 +468,16 @@ describe("analyzeFutureResolution", () => {
 
   it("skips the rule when an existing rule already does the job", () => {
     const result = analyzeFutureResolution({
-      stem: "WOOLWORTHS",
-      finalName: "Woolworths",
+      stem: "GROCERGO",
+      finalName: "GrocerGo",
       members,
-      rows: [row("WOOLWORTHS 0183", "p1", 47)],
+      rows: [row("GROCERGO 0183", "p1", 47)],
       rules: [
         {
           id: "r1",
           stage: "default",
           conditionsOp: "and",
-          conditions: [{ field: "imported_payee", op: "contains", value: "WOOLWORTHS" }],
+          conditions: [{ field: "imported_payee", op: "contains", value: "GROCERGO" }],
           actions: [{ field: "payee", op: "set", value: "p1" }],
         },
       ],
@@ -398,36 +487,39 @@ describe("analyzeFutureResolution", () => {
     expect(result.recommended).toBeNull();
   });
 
-  it("prefers a broader pattern from the final name when it is still safe", () => {
-    // The user renamed the cluster to `Hungry Jacks`; the rule should catch
-    // that, not just the suburb the reduction happened to leave behind.
+  it("catches the merchant, not the suburb the reduction left behind", () => {
+    // The core comes from what the cluster's own imports share — `SNACK SHACK`
+    // — rather than from the reduced stem, which carries one member's suburb.
     const result = analyzeFutureResolution({
-      stem: "HUNGRY JACKS MELBOURNE",
-      finalName: "Hungry Jacks",
-      members: [payee("p1", "Hungry Jacks Melbourne"), payee("p2", "Hungry Jacks Sydney")],
+      stem: "SNACK SHACK MELBOURNE",
+      finalName: "Snack Shack",
+      members: [payee("p1", "Snack Shack Melbourne"), payee("p2", "Snack Shack Sydney")],
       rows: [
-        row("HUNGRY JACKS MELBOURNE 12", "p1", 4),
-        row("HUNGRY JACKS SYDNEY 88", "p2", 6),
+        row("SNACK SHACK MELBOURNE 12", "p1", 4),
+        row("SNACK SHACK SYDNEY 88", "p2", 6),
       ],
       rules: [],
     });
 
-    expect(result.recommended?.candidate.value).toBe("^HUNGRY[^A-Za-z0-9]*JACKS\\b");
+    // A plain substring, because one does the job. Both halves of cleanup now
+    // answer this the same way.
+    expect(result.recommended?.candidate.op).toBe("contains");
+    expect(result.recommended?.candidate.value).toBe("SNACK SHACK");
     expect(result.recommended?.expectedMatches).toBe(10);
   });
 
   it("uses the pattern the user typed instead of the generated ones", () => {
     const result = analyzeFutureResolution({
-      stem: "HUNGRY JACKS MELBOURNE",
-      finalName: "Hungry Jacks",
-      members: [payee("p1", "Hungry Jacks Melbourne")],
-      rows: [row("HUNGRY JACKS MELBOURNE 12", "p1", 4)],
+      stem: "SNACK SHACK MELBOURNE",
+      finalName: "Snack Shack",
+      members: [payee("p1", "Snack Shack Melbourne")],
+      rows: [row("SNACK SHACK MELBOURNE 12", "p1", 4)],
       rules: [],
-      override: { field: "imported_payee", text: "HUNGRY JACKS" },
+      override: { field: "imported_payee", text: "SNACK SHACK" },
     });
 
-    expect(result.matchText).toBe("HUNGRY JACKS");
-    expect(result.recommended?.candidate.value).toBe("^HUNGRY[^A-Za-z0-9]*JACKS\\b");
+    expect(result.matchText).toBe("SNACK SHACK");
+    expect(result.recommended?.candidate.value).toBe("^SNACK.*SHACK");
   });
 
   it("distinguishes 'nothing matched' from 'everything caught others'", () => {
@@ -444,10 +536,10 @@ describe("analyzeFutureResolution", () => {
     expect(nothing.skipReason).toBe("no-matching-pattern");
 
     const unsafe = analyzeFutureResolution({
-      stem: "WOOLWORTHS",
-      finalName: "Woolworths",
+      stem: "GROCERGO",
+      finalName: "GrocerGo",
       members,
-      rows: [row("WOOLWORTHS 0183", "p1", 1), row("WOOLWORTHS MOBILE", "other", 40)],
+      rows: [row("GROCERGO 0183", "p1", 1), row("GROCERGO MOBILE", "other", 40)],
       rules: [],
     });
     expect(unsafe.recommended).not.toBeNull();
@@ -458,10 +550,10 @@ describe("analyzeFutureResolution", () => {
     // Where a bank puts the merchant in the memo, a rule that can only read
     // imported_payee has nothing to match on.
     const result = analyzeFutureResolution({
-      stem: "WOOLWORTHS",
-      finalName: "Woolworths",
+      stem: "GROCERGO",
+      finalName: "GrocerGo",
       members,
-      rows: [row("WOOLWORTHS 0183", "p1", 47, "notes")],
+      rows: [row("GROCERGO 0183", "p1", 47, "notes")],
       rules: [],
     });
 
@@ -474,9 +566,10 @@ describe("pattern text normalization", () => {
     // Splitting raw text on a single space produced an empty segment, so the
     // pattern gained two adjacent `[^A-Za-z0-9]*` quantifiers — ambiguous, and
     // quadratic to backtrack over a long run of separators.
-    expect(normalizePatternText("HUNGRY  JACKS")).toBe("HUNGRY JACKS");
-    expect(buildCandidates(normalizePatternText("HUNGRY  JACKS"), "imported_payee")[0]
-      .value).toBe("^HUNGRY[^A-Za-z0-9]*JACKS\\b");
+    expect(normalizePatternText("SNACK  SHACK")).toBe("SNACK SHACK");
+    expect(
+      buildCandidates(normalizePatternText("SNACK  SHACK"), "imported_payee")[1].value
+    ).toBe("^SNACK.*SHACK");
   });
 });
 
@@ -486,7 +579,7 @@ describe("buildNormalizationRule", () => {
       {
         field: "imported_payee",
         op: "matches",
-        value: "^WOOLWORTHS\\b",
+        value: "^GROCERGO\\b",
         description: "",
       },
       "target-1",
@@ -494,11 +587,14 @@ describe("buildNormalizationRule", () => {
     );
 
     expect(rule.conditions).toEqual([
-      { field: "imported_payee", op: "matches", value: "^WOOLWORTHS\\b", type: "string" },
+      { field: "imported_payee", op: "matches", value: "^GROCERGO\\b", type: "string" },
     ]);
     expect(rule.actions).toEqual([
       { field: "payee", op: "set", value: "target-1", type: "id" },
     ]);
-    expect(rule.stage).toBe("default");
+    // `pre`, like Actual's own rename rules: a payee-setting rule has to run
+    // before the `default`-stage rules that match on payee, or which one wins
+    // depends on rule order.
+    expect(rule.stage).toBe("pre");
   });
 });

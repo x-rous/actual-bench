@@ -18,6 +18,16 @@
  * `$regexp` and `contains` to `$like`; `notes` disallows `oneOf`/`notOneOf`.
  */
 
+import {
+  COVERAGE_MARGIN,
+  compileRuleMatcher,
+  coreLadder,
+  followedInSomeText,
+  maximalCommonRun,
+  measureTokenSpread,
+  normalizePatternText,
+  rankedCommonRuns,
+} from "./core";
 import type { Rule } from "@/types/entities";
 import type { PayeeCleanupCandidate } from "../types";
 
@@ -78,50 +88,39 @@ export function buildCandidates(stem: string, field: SourceField): RuleCandidate
   const trimmed = stem.trim();
   if (trimmed.length < 3) return [];
 
-  // The stem has had its punctuation normalized to spaces, but the text a rule
+  // The core has had its punctuation normalized to spaces, but the text a rule
   // runs against has not. `TEMU COM PARRAMATTA` must still match
-  // `TEMU.COM PARRAMATTA`, so word gaps become "any run of non-alphanumerics"
-  // rather than a literal space — otherwise every merchant with a dot, slash or
-  // ampersand in its name silently gets no rule at all.
-  const flexible = trimmed
-    .split(" ")
-    .map(escapeRegex)
-    .join("[^A-Za-z0-9]*");
+  // `TEMU.COM PARRAMATTA`, so the gaps between words have to be flexible —
+  // otherwise every merchant with a dot, slash or ampersand in its name silently
+  // gets no rule at all.
+  //
+  // `.*` rather than a class of everything-except-letters-and-digits. It is
+  // broader, which is the point: it also catches a word appearing between two
+  // parts of the name. And a rule is only useful if its owner can read it —
+  // `MAYA.*BORDERS` can be read at a glance, `\bMAYA[^A-Za-z0-9]*BORDERS\b`
+  // cannot. Anything it over-reaches is caught by the backtest.
+  const flexible = trimmed.split(" ").map(escapeRegex).join(".*");
 
   return [
-    {
-      field,
-      op: "matches",
-      value: `^${flexible}\\b`,
-      description: `starts with "${trimmed}"`,
-    },
-    {
-      field,
-      op: "matches",
-      value: `\\b${flexible}\\b`,
-      description: `contains the whole words "${trimmed}"`,
-    },
     {
       field,
       op: "contains",
       value: trimmed,
       description: `contains "${trimmed}"`,
     },
+    {
+      field,
+      op: "matches",
+      value: `^${flexible}`,
+      description: `starts with "${trimmed}"`,
+    },
+    {
+      field,
+      op: "matches",
+      value: flexible,
+      description: `contains "${trimmed}"`,
+    },
   ];
-}
-
-function matchesText(candidate: RuleCandidate, text: string): boolean {
-  if (candidate.op === "contains") {
-    return text.toUpperCase().includes(candidate.value.toUpperCase());
-  }
-  try {
-    // Actual compiles `matches` to `$regexp`; case-insensitive here because the
-    // stem is upper-cased and real import text is not.
-    return new RegExp(candidate.value, "i").test(text);
-  } catch {
-    // A pattern that will not compile can never be offered.
-    return false;
-  }
 }
 
 /**
@@ -141,10 +140,14 @@ export function scoreCandidate(
   let unexpectedMatches = 0;
   let matchedTexts = 0;
   const unexpectedExamples: CandidateScore["unexpectedExamples"] = [];
+  // Compiled once rather than per row: the pattern is tested against every
+  // row in the history, and building it inside that loop meant thousands of
+  // identical compilations per candidate.
+  const matches = compileRuleMatcher(candidate.op, candidate.value);
 
   for (const row of rows) {
     if (row.field !== candidate.field) continue;
-    if (!matchesText(candidate, row.text)) continue;
+    if (!matches(row.text)) continue;
 
     matchedTexts += 1;
 
@@ -342,41 +345,6 @@ export type FutureResolution = {
   historyTruncated: boolean;
 };
 
-/**
- * The texts a pattern can be built from.
- *
- * Both the reduced stem *and* the final name, because they often differ and the
- * final name is the one the user chose. A cluster reduced to
- * `HUNGRY JACKS MELBOURNE` whose final name is `Hungry Jacks` should be able to
- * offer a rule catching `HUNGRY JACKS` — the narrower stem would miss every
- * future import from a different suburb.
- */
-/**
- * The comparison form for text a pattern is built from.
- *
- * Shared with the override path on purpose. Passing the user's raw text through
- * meant `HUNGRY  JACKS` split on a single space into an empty segment, so the
- * pattern gained two adjacent `[^A-Za-z0-9]*` quantifiers — ambiguous to match,
- * quadratic to backtrack over a long run of separators — and the double space
- * leaked into the description and the editor.
- */
-export function normalizePatternText(value: string): string {
-  return value
-    .trim()
-    .toUpperCase()
-    .replace(/[^\p{L}\p{N}]+/gu, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-export function candidateStems(stem: string, finalName: string): string[] {
-  const normalize = normalizePatternText;
-
-  return [...new Set([normalize(stem), normalize(finalName)])].filter(
-    (value) => value.length >= 3
-  );
-}
-
 export function analyzeFutureResolution(input: {
   stem: string;
   finalName: string;
@@ -393,20 +361,70 @@ export function analyzeFutureResolution(input: {
   const exactName = exactNameCoverage(input.finalName, input.rows);
   const relatedRules = classifyRelatedRules(input.rules, clusterPayeeIds, input.stem);
 
-  const stems = input.override
-    ? [normalizePatternText(input.override.text)].filter(Boolean)
-    : candidateStems(input.stem, input.finalName);
-  const fields: SourceField[] = input.override
-    ? [input.override.field]
-    : ["imported_payee", "notes"];
+  // The same derivation the "Needs a rule" tab uses, on the same evidence: the
+  // cluster's own imports. Deriving it from the reduced stem and the final name
+  // instead meant one budget produced two differently shaped rules depending on
+  // which half of cleanup proposed them — and only one of the two knew that a
+  // date is not a merchant, or that a word used by two hundred payees names
+  // none of them.
+  const ownRows = input.rows.filter(
+    (row) =>
+      (row.payeeId !== null && clusterPayeeIds.has(row.payeeId)) ||
+      (row.payeeName != null && clusterPayeeNames.has(row.payeeName.toUpperCase()))
+  );
+  const spread = measureTokenSpread(input.rows);
 
-  const scored = fields.flatMap((field) =>
-    stems.flatMap((stem) =>
-      buildCandidates(stem, field).map((candidate) =>
+  // The words each candidate was built from, so the editor can be seeded with
+  // something the user can edit. Seeding it with the pattern itself looked
+  // helpful and was not: the override path normalizes what it is given, so
+  // changing one character of `^FILMBOX.*COM` turned it into `FILMBOX COM` and
+  // silently dropped the anchor and the gaps.
+  const coreFor = new Map<CandidateScore, string>();
+
+  const scored = input.override
+    ? buildCandidates(
+        normalizePatternText(input.override.text),
+        input.override.field
+      ).map((candidate) =>
         scoreCandidate(candidate, input.rows, clusterPayeeIds, clusterPayeeNames)
       )
-    )
-  );
+    : (["imported_payee", "notes"] as SourceField[]).flatMap((field) => {
+        const texts = ownRows.filter((row) => row.field === field);
+        if (texts.length === 0) return [];
+
+        const weights = texts.map((row) => row.transactionCount);
+        const runs = rankedCommonRuns(
+          texts.map((row) => row.text),
+          weights,
+          0.5,
+          spread
+        );
+        if (runs.length === 0) return [];
+
+        const longest = maximalCommonRun(
+          texts.map((row) => row.text),
+          weights
+        );
+        const boundaryShown =
+          longest !== null &&
+          followedInSomeText(
+            longest,
+            texts.map((row) => row.text)
+          );
+
+        const chosen = chooseCondition(
+          runs,
+          field,
+          input.rows,
+          clusterPayeeIds,
+          clusterPayeeNames,
+          !boundaryShown
+        );
+        if (!chosen) return [];
+        coreFor.set(chosen.score, runs[0]);
+        return [chosen.score];
+      });
+
   // A pattern that catches nothing is not a candidate.
   const matching = scored.filter((s) => s.expectedMatches > 0);
   const candidates = rankCandidates(matching);
@@ -417,7 +435,7 @@ export function analyzeFutureResolution(input: {
   // The question for step 2 is not "does exact-name matching cover a lot?" but
   // "does the rule catch anything exact-name matching would miss?" — the
   // *residual*. A merchant whose every past import already equals the surviving
-  // name needs no rule; one that also arrives as `WOOLWORTHS 0183` does, however
+  // name needs no rule; one that also arrives as `GROCERGO 0183` does, however
   // much of its history matched by name.
   //
   // Only an `imported_payee` candidate can be netted off this way:
@@ -455,12 +473,113 @@ export function analyzeFutureResolution(input: {
       best!.unexpectedMatches === 0 &&
       !skipReason &&
       !input.historyTruncated,
-    matchText: input.override?.text ?? stems[0] ?? "",
+    // What the editor starts from: the text of whatever was actually chosen,
+    // so editing begins from what the user can see rather than from a stem they
+    // were never shown.
+    // The core, not the pattern built from it. Both read the same when the
+    // condition is a plain substring, and only one of them survives being
+    // edited.
+    matchText:
+      input.override?.text ?? (best ? (coreFor.get(best) ?? best.candidate.value) : ""),
     historyTruncated: input.historyTruncated === true,
   };
 }
 
-/** The staged rule for the recommended candidate, targeting the surviving payee. */
+/**
+ * The simplest condition that catches these payees and nothing else.
+ *
+ * Two preferences, in order:
+ *
+ * 1. **The shortest safe core.** Shortening can only ever match *more*, so the
+ *    shortest core the backtest still clears is the one most likely to catch a
+ *    variant that has not arrived yet — which is the entire point of the rule.
+ *    It also drops trailing noise, like a subscription price, without needing to
+ *    know what it is.
+ * 2. **`contains` over a pattern.** `contains "SPRINT SET GO KIDS"` and
+ *    `matches \bREADY[^A-Za-z0-9]*SET[^A-Za-z0-9]*GO[^A-Za-z0-9]*KIDS\b` do the
+ *    same job, and only one of them can be read at a glance. The pattern is kept
+ *    for what it exists for: text whose punctuation varies between imports,
+ *    where a literal substring would miss.
+ */
+export type ConditionChoice = {
+  score: CandidateScore;
+  /** False when the backtest says it also catches another payee's transactions. */
+  safe: boolean;
+};
+
+export function chooseCondition(
+  runs: string[],
+  field: SourceField,
+  rows: ImportedTextRow[],
+  clusterIds: Set<string>,
+  clusterNames: Set<string>,
+  trimmable: boolean
+): ConditionChoice | null {
+  // Only shorten when the imports never showed where the merchant ends. If
+  // something follows the run in some text — `SPRINT SET GO KIDS` then `AMUS` in
+  // one import and `ASHDOWN` in another — the data located the boundary and
+  // second-guessing it would throw away the evidence.
+  let longestAttempt: CandidateScore | null = null;
+
+  // Each core in turn, best first. Whether a core is usable is not knowable
+  // until it is backtested, so a rejected one has to hand over to the next
+  // rather than end the search — `UBER` is shared with `Uber Eats`, and
+  // `UBR PENDING UBER COM` is not.
+  for (const run of runs) {
+    const ladder = trimmable ? coreLadder(run) : coreLadder(run).slice(0, 1);
+    if (ladder.length === 0) continue;
+
+    // Shortest first, so the first safe one wins.
+    for (const core of [...ladder].reverse()) {
+      const scored = buildCandidates(core, field).map((candidate) =>
+        scoreCandidate(candidate, rows, clusterIds, clusterNames)
+      );
+      const safe = scored.filter((s) => s.unexpectedMatches === 0 && s.expectedMatches > 0);
+
+      if (safe.length === 0) {
+      // The longest core's best attempt is kept, but returned marked. What a
+      // caller should do with a condition that catches other payees differs:
+      // a merge suggestion shows it with the count and lets the user judge,
+      // while the rule tab has nothing to offer and says so by leaving the
+      // payee out.
+        if (!longestAttempt && core === ladder[0]) {
+          longestAttempt = rankCandidates(scored)[0] ?? null;
+        }
+        continue;
+      }
+
+    // Simplest, but not at any price. A literal substring only reads the same as
+    // the pattern when it catches roughly the same imports, and it need not: a
+    // merchant written `TEMU.COM` in most of its imports and `TEMU COM` in one
+    // gives a `contains` catching the one and a pattern catching all of them.
+    //
+    // Roughly, not exactly — the same margin the core ranking uses. One import
+    // written without its space should not cost the user a readable rule, while
+    // a substring catching a fraction of them should.
+      const best = Math.max(...safe.map((s) => s.expectedMatches));
+      const simplest = safe.find(
+        (s) =>
+          s.candidate.op === "contains" &&
+          s.expectedMatches >= best * (1 - COVERAGE_MARGIN)
+      );
+      const chosen = simplest ?? rankCandidates(safe)[0];
+      if (chosen) return { score: chosen, safe: true };
+    }
+  }
+
+  return longestAttempt ? { score: longestAttempt, safe: false } : null;
+}
+
+/**
+ * The staged rule for the recommended candidate, targeting the surviving payee.
+ *
+ * **`pre` stage, matching Actual's own payee-rename rules.** Actual normalizes
+ * the payee in `pre` (`updatePayeeRenameRule` in
+ * `@actual-app/core/src/server/transactions/transaction-rules.ts`) precisely so
+ * that `default`-stage rules matching *on* payee see the corrected value. A
+ * payee-setting rule in `default` runs in the same stage as those rules, which
+ * makes the outcome depend on rule order rather than on stage.
+ */
 export function buildNormalizationRule(
   candidate: RuleCandidate,
   targetPayeeId: string,
@@ -468,7 +587,7 @@ export function buildNormalizationRule(
 ): Rule {
   return {
     id,
-    stage: "default",
+    stage: "pre",
     conditionsOp: "and",
     conditions: [
       { field: candidate.field, op: candidate.op, value: candidate.value, type: "string" },

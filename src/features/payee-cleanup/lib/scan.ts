@@ -13,7 +13,11 @@
 
 import { detectAll } from "./detectors";
 import { findCorpusAffixes } from "./corpusAffixes";
-import { applyAffixSuppressions, applySuppressions } from "./suppressions";
+import {
+  applyAffixSuppressions,
+  applyRuleGapSuppressions,
+  applySuppressions,
+} from "./suppressions";
 import {
   correctedMembers,
   EMPTY_CORRECTION,
@@ -26,6 +30,7 @@ import { computeConfidence, type ConfidenceResult } from "./confidence";
 import { buildProposal, type ClusterProposal } from "./targetSelection";
 import { buildClusterImpact, impactSignals, type ClusterImpact, type ImpactSources } from "./impact";
 import { findOrphanPayees, type OrphanPayee } from "./orphans";
+import { findRuleGaps, type RuleGap, type RuleGapOverride } from "./ruleGaps";
 import { buildRuleReferenceMap } from "@/lib/referenceCheck";
 import type { EligibilityPartition } from "./eligibility";
 import type { ClusterCorrection } from "./corrections";
@@ -54,6 +59,11 @@ export type CleanupScanResult = {
   suggestions: CleanupSuggestion[];
   /** Payees with no transactions and no rule references. */
   orphans: OrphanPayee[];
+  /**
+   * Payees the next import will fail to re-resolve, because Actual matches an
+   * imported payee by name alone (RD-087). Ordered most-valuable-first.
+   */
+  ruleGaps: RuleGap[];
   counts: {
     high: number;
     strong: number;
@@ -63,6 +73,8 @@ export type CleanupScanResult = {
 };
 
 export type ScanOptions = {
+  /** Rule conditions the user typed on the "Needs a rule" tab, keyed by payee. */
+  ruleGapOverrides?: Map<string, RuleGapOverride>;
   impactSources?: ImpactSources;
   /** The user's rejected clusters and rejected learned affixes. */
   suppressions?: PayeeCleanupSuppressionRecord[];
@@ -87,6 +99,7 @@ export function scanForCleanup(
     importedText,
     importedTextTruncated = false,
     rules = [],
+    ruleGapOverrides,
   } = options;
   // Learn this budget's own boilerplate first: the shape reducers cannot see
   // that `DUBAI UAE` or `INTERNET BANKING` is wrapping, but repetition across
@@ -210,9 +223,36 @@ export function scanForCleanup(
       })
     : [];
 
+  // A payee already in a live suggestion is excluded from the rule gaps: that
+  // suggestion's own "Future imports" step already proposes a rule for it, and
+  // offering the same rule from two places with independently editable text is
+  // how a user ends up with two rules for one merchant.
+  //
+  // Derived from `suggestions` rather than the raw clusters, so a payee the user
+  // has excluded by hand correctly becomes a rule-gap candidate again.
+  const clusteredPayeeIds = new Set(
+    suggestions.flatMap((s) => s.cluster.members.map((m) => m.id))
+  );
+
+  const ruleGaps = impactSources
+    ? applyRuleGapSuppressions(
+        findRuleGaps({
+          candidates: partition.eligible,
+          rows: importedText ?? [],
+          rules,
+          transactionCounts: impactSources.transactionCounts,
+          clusteredPayeeIds,
+          truncated: importedTextTruncated,
+          overrides: ruleGapOverrides,
+        }),
+        suppressions
+      )
+    : [];
+
   return {
     learnedAffixes,
     orphans,
+    ruleGaps,
     analyzedCount: partition.eligible.length,
     excludedTransferCount: partition.excludedTransfer.length,
     excludedTombstonedCount: partition.excludedTombstoned.length,

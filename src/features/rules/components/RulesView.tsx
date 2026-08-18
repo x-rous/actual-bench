@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Download, Upload, Plus, Stethoscope } from "lucide-react";
+import { Download, Upload, Plus, Sparkles, Stethoscope } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { PageLayout } from "@/components/layout/PageLayout";
@@ -223,6 +223,18 @@ export function RulesView() {
           >
             <Stethoscope />
             Diagnostics
+          </Button>
+          {/* Someone asking "why wasn't this import assigned?" is on this page,
+              not inside a tool called Payee Cleanup. Same second-entry-point
+              pattern as Diagnostics above. */}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => router.push("/payees/cleanup?tab=rule-gaps")}
+            title="Find payees whose imports will not resolve to them again"
+          >
+            <Sparkles />
+            Needs a rule
           </Button>
           <Button variant="outline" size="sm" onClick={() => importInputRef.current?.click()} title="Import CSV">
             <Download />

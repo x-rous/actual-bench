@@ -24,7 +24,7 @@ type SuppressionRow = {
   created_at: string;
 };
 
-const KINDS = new Set(["not-duplicates", "rejected-affix"]);
+const KINDS = new Set(["not-duplicates", "rejected-affix", "rule-not-needed"]);
 const NOTE_MAX = 500;
 const LIST_MAX = 50;
 
@@ -41,7 +41,10 @@ function rowToRecord(row: SuppressionRow): PayeeCleanupSuppressionRecord {
   return {
     id: row.id,
     budgetSyncId: row.budget_sync_id,
-    kind: row.kind === "rejected-affix" ? "rejected-affix" : "not-duplicates",
+    kind:
+      row.kind === "rejected-affix" || row.kind === "rule-not-needed"
+        ? row.kind
+        : "not-duplicates",
     payeeIds: parseList(row.payee_ids),
     normalizedNames: parseList(row.normalized_names),
     detectorIds: parseList(row.detector_ids),

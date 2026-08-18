@@ -7,7 +7,11 @@ import { useConnectionStore, selectActiveInstance } from "@/store/connection";
 import type { PayeeCleanupSuppressionRecord } from "@/lib/app-db/types";
 import type { PayeeCluster } from "../lib/clusterResolver";
 import type { CorpusAffix } from "../lib/corpusAffixes";
-import { buildAffixSuppression, buildClusterSuppression } from "../lib/suppressions";
+import {
+  buildAffixSuppression,
+  buildClusterSuppression,
+  buildRuleGapSuppression,
+} from "../lib/suppressions";
 
 /**
  * The user's "not duplicates" decisions, persisted per budget.
@@ -96,6 +100,11 @@ export function useSuppressions(options: { enabled: boolean }) {
     rejectCluster: (cluster: PayeeCluster) => {
       if (!budgetSyncId) return;
       create.mutate(buildClusterSuppression(budgetSyncId, cluster));
+    },
+    /** Records that a payee is fine without a rule. */
+    rejectRuleGap: (payee: { id: string; name: string }) => {
+      if (!budgetSyncId) return;
+      create.mutate(buildRuleGapSuppression(budgetSyncId, payee));
     },
     /** Stops a learned fragment being treated as boilerplate anywhere. */
     rejectAffix: (affix: CorpusAffix) => {

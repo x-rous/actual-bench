@@ -295,6 +295,14 @@ consolidate them safely. Nothing is written until you save.
   name block the stage and are offered as one combined group instead.
 - **Keyboard triage** — `A` accept, `R` reasoning, `N` not duplicates on the focused card.
 - **Unused payees** — those with no transactions and no rules — are listed separately for deletion.
+- **Payees that need a rule.** Actual matches an imported payee by name alone, so a payee you rename or
+  merge stops resolving and the duplicate returns on the next import. A separate tab lists the payees
+  in that position and proposes the rule that fixes it — an exact match where the text is identical
+  every time, a backtested pattern built from the words every import shares where it varies — adding to the payee's own
+  rename rule where it has one, rather than creating a second rule beside it. The condition is editable per row
+  (field, `matches`/`contains`, and the pattern itself) with the backtest re-run as you type. Payees
+  that already resolve by name, or whose existing rules already catch most of their history, are never
+  listed; where a rule covers only part of it, the payee stays listed with that rule shown and linked.
 - **Optional rule to stop it recurring.** Where cleanup alone will not fix future imports, cleanup
   proposes a rule that catches the merchant, backtested against your own history so you can see what
   it would and would not have matched. The matched text and the field it matches on are editable.

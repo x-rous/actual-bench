@@ -30,7 +30,7 @@ times, card numbers, long reference and authorization numbers, `Label: value` me
 rates, trailing store numbers and web addresses. These work the same for any bank in any country —
 nothing here knows about yours.
 
-**Learned boilerplate** covers what no pattern can identify. If `DUBAI UAE` closes forty otherwise
+**Learned boilerplate** covers what no pattern can identify. If `ASHDOWN UAE` closes forty otherwise
 unrelated payees, or `NFC - (AP-PAY)-` opens sixty of them, it is wrapping rather than a name. This
 is worked out from your own payees, so a French `CARTE … RETRAIT DAB` is found by the same rule.
 
@@ -93,12 +93,86 @@ anything.
 
 Where a rule *is* worth it, cleanup builds one and backtests it against your own import history:
 
-> Also create a rule: when imported payee starts with "WOOLWORTHS", set the payee.
+> Also create a rule: when imported payee starts with "GROCERGO", set the payee.
 > Matches 92 past transactions of this payee and nothing else.
 
 It is never pre-selected if it would also catch another payee's transactions — you are told which
 ones. The **matched text** and the **field it matches on** (imported payee or notes) are both
 editable, and changing either re-runs the backtest.
+
+## Payees that need a rule
+
+Actual matches an imported transaction to a payee **by name, and only by name**. It does not remember
+which bank text produced which payee. So the moment you tidy a payee — rename it, or merge variants
+into it — the next import of the original text no longer matches anything, and Actual creates the
+duplicate again.
+
+The **Needs a rule** tab lists the payees in that position, and proposes the rule that fixes it.
+Nothing on this tab changes a payee; it only adds automation.
+
+A payee appears only when all of these are true, which is why the list is short:
+
+- its imports **don't already equal its name** — those resolve on their own, and most payees fall out
+  here;
+- **no existing rule** already sets it — judged by running your rules against this payee's own import
+  text, not by comparing names, so a rule reading `notes contains "K AND M"` is recognised as covering
+  a payee called `K&M Fashion`;
+- it has import text on record and more than one transaction;
+- **an honest rule exists.** If the text neither repeats nor shares a recognisable core, or if no
+  core can be found that catches this payee and nobody else, there is nothing to offer and the payee
+  is not listed. You will not be shown a rule that cannot be created safely.
+
+  Where the obvious core is shared, a longer one is tried: `Uber` and `Uber Eats` both contain
+  `UBER`, so `Uber` is identified by the longer text its own imports carry instead.
+
+Two rule shapes, picked from your own history — on whether the text *varies*, not on how many
+different strings there are:
+
+- **The same text every time, with nothing dating it,** gets an exact match — the shape Actual writes
+  itself. It cannot catch anything else, so it needs no backtest. Text carrying a `#2026-05` marker
+  never qualifies, however identical the rest of it looks: a rule matching one month would never fire
+  again.
+- **Text that varies around a core** gets a pattern built from the words every import shares, so it
+  also catches variants you have not seen yet. That one *is* backtested, and you are told if it would
+  catch another payee's transactions.
+
+For example, three imports reading `#API Summit Credit Bureau`, `#2026-05 Summit Credit Bureau` and
+`-84 IRR (FX rate: #2026-02 SUMMIT CREDIT BUREAU ASHDOWN UAE)` share `SUMMIT CREDIT BUREAU`, so the rule
+matches that anywhere in the text rather than listing three strings that will never arrive again.
+
+Picking those words out takes more than finding what the imports have in common, because a lot of what
+they have in common isn't the merchant:
+
+- **Hashtag markers are ignored.** `#2026-05` is a date and `#API` is a channel. Two payees whose
+  imports happen to fall in the same month would otherwise appear to share `05`.
+- **Words shared with many other payees are discounted.** `ASHDOWN` closes hundreds of imports across a
+  budget, so it says nothing about *which* payee an import belongs to, while `NOVARA` belongs to one.
+  This is measured from your own payees — no list of cities is involved, and it works anywhere.
+- **Numbers are discounted.** A phone number or an IBAN is perfectly stable and perfectly useless as a
+  name, and a rule built on one breaks the day it changes.
+- **A core stops at four words**, because a bank transfer record is mostly reference data and the
+  longest thing two of them share is nearly the whole record.
+- **A run that catches every import doesn't automatically win.** One import written `GYMGO` shouldn't
+  reduce `GYM GO FITNESS` to `FITNESS`.
+
+The same reasoning produces the rule offered on a merge suggestion, so one budget
+gets one kind of rule wherever it was proposed from.
+
+The pattern is shown on the row, and you can rewrite it: choose the field, choose **matches** or
+**contains**, and type your own. The backtest re-runs as you go, and tells you if it now catches
+nothing, will not compile, or reaches another payee. Your edits survive a re-scan.
+
+Where the payee already has a rule of this kind, cleanup **adds the missing text to it** rather than
+creating a second rule — so tidying ten payees does not mean ten new rules.
+
+Where a rule covers only *part* of a payee's history — or tests something this page cannot check, like
+an amount — the payee stays listed and the rule is shown with how much it catches, and a link to open
+it on the Rules page.
+
+**Create _n_ safe rules** takes only the ones with nothing to judge. Everything else is opted into one
+at a time, and **Not needed** dismisses a payee for good, reversibly, from the Dismissed tab.
+
+Reachable from **Tools → Payee Cleanup**, or the **Needs a rule** button on the Rules page.
 
 ## Unused payees
 

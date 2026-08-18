@@ -1,10 +1,12 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { Check, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { PageLayout } from "@/components/layout/PageLayout";
+import { cn } from "@/lib/utils";
 import { useStagedStore } from "@/store/staged";
 import { usePayeeCleanupCandidates } from "../hooks/usePayeeCleanupCandidates";
 import { usePayeeCleanupImpact } from "../hooks/usePayeeCleanupImpact";
@@ -27,8 +29,15 @@ import { CleanupSummaryCards } from "./CleanupSummaryCards";
 import { SuggestionCard } from "./SuggestionCard";
 import { findNameCollisions, isSafeForBulkAccept } from "../lib/triage";
 import { CombineGroupsBanner } from "./CombineGroupsBanner";
-import { CleanupFilterBar, type BandFilter, type CleanupTab } from "./CleanupFilterBar";
+import {
+  CleanupFilterBar,
+  isCleanupTab,
+  type BandFilter,
+  type CleanupTab,
+} from "./CleanupFilterBar";
 import { UnusedPayeeList } from "./UnusedPayeeList";
+import { CreateSafeRulesButton, RuleGapList } from "./RuleGapList";
+import type { RuleGapOverride } from "../lib/ruleGaps";
 import { SuppressionList } from "./SuppressionList";
 import { ReviewCleanupBar } from "./ReviewCleanupBar";
 import { usePayeeCleanupPlan, type StageOutcome } from "../hooks/usePayeeCleanupPlan";
@@ -44,8 +53,13 @@ import { buildPlan, planOperationCount } from "../lib/plan";
  * why both hooks feeding it memoize their results.
  */
 export function PayeeCleanupView() {
-  const { partition: scanned, isLoading, error, refetch } =
-    usePayeeCleanupCandidates({ enabled: true });
+  const {
+    partition: scanned,
+    isLoading,
+    isFetching: candidatesFetching,
+    error,
+    refetch,
+  } = usePayeeCleanupCandidates({ enabled: true });
 
   // Payees already staged for a merge or deletion are no longer candidates.
   //
@@ -95,18 +109,47 @@ export function PayeeCleanupView() {
     [scanned, stagedAwayIds]
   );
 
-  const [tab, setTab] = useState<CleanupTab>("suggestions");
+  // `?tab=rule-gaps` so the Rules page can link straight to the rule tab, the
+  // same way Rule Diagnostics is reachable from there.
+  // `?tab=rule-gaps`, so the Rules page can link straight to the rule tab.
+  //
+  // The link decides the tab whenever it changes, not only on mount: arriving
+  // from Rules while already on this page changes the query without remounting,
+  // and seeding state once left the previous tab showing. Adjusted during
+  // render rather than in an effect — clicking a tab still wins until the link
+  // is followed again.
+  const searchParams = useSearchParams();
+  const tabParam = searchParams.get("tab");
+  const linkedTab: CleanupTab = isCleanupTab(tabParam) ? tabParam : "suggestions";
+
+  const [chosenTab, setChosenTab] = useState<CleanupTab | null>(null);
+  const [lastLinkedTab, setLastLinkedTab] = useState(linkedTab);
+  if (linkedTab !== lastLinkedTab) {
+    setLastLinkedTab(linkedTab);
+    setChosenTab(null);
+  }
+  const tab = chosenTab ?? linkedTab;
+  const setTab = setChosenTab;
   const [band, setBand] = useState<BandFilter>("all");
   const [search, setSearch] = useState("");
 
   const [corrections, setCorrections] = useState<CorrectionMap>({});
+  // Keyed by payee id so an edit survives a re-scan, the same way a cluster
+  // correction does.
+  const [ruleGapOverrides, setRuleGapOverrides] = useState<
+    Map<string, RuleGapOverride>
+  >(new Map());
   const impact = usePayeeCleanupImpact(partition.eligible, { enabled: true });
-  const { suppressions, rejectCluster, undo, clearAll } = useSuppressions({
+  const { suppressions, rejectCluster, rejectRuleGap, undo, clearAll } = useSuppressions({
     enabled: true,
   });
 
-  const { rows: importedText, truncated: importedTextTruncated } =
-    useImportedTextIndex({ enabled: true });
+  const {
+    rows: importedText,
+    truncated: importedTextTruncated,
+    isFetching: importedTextFetching,
+    refetch: refetchImportedText,
+  } = useImportedTextIndex({ enabled: true });
   const rules = useMemo(
     () =>
       Object.values(impact.stagedRules)
@@ -124,6 +167,7 @@ export function PayeeCleanupView() {
         importedText,
         importedTextTruncated,
         rules,
+        ruleGapOverrides,
       }),
     [
       partition,
@@ -133,14 +177,31 @@ export function PayeeCleanupView() {
       importedText,
       importedTextTruncated,
       rules,
+      ruleGapOverrides,
     ]
   );
+
+  // Which rule gaps the user has opted in to. Held here rather than in the list
+  // so it survives the list re-rendering when the scan re-runs.
+  const [selectedRuleGaps, setSelectedRuleGaps] = useState<Set<string>>(new Set());
+
+  // Any of the reads the scan depends on still being in flight counts as
+  // scanning: the user asked for one thing, not three.
+  const scanning = candidatesFetching || importedTextFetching;
 
   const { stage, isStaging } = usePayeeCleanupPlan();
   const [stageOutcome, setStageOutcome] = useState<StageOutcome | null>(null);
   const clearOutcome = () => setStageOutcome(null);
 
-  const plan = useMemo(() => buildPlan(result.suggestions), [result.suggestions]);
+  const selectedGaps = useMemo(
+    () => result.ruleGaps.filter((gap) => selectedRuleGaps.has(gap.payee.id)),
+    [result.ruleGaps, selectedRuleGaps]
+  );
+
+  const plan = useMemo(
+    () => buildPlan(result.suggestions, [], selectedGaps),
+    [result.suggestions, selectedGaps]
+  );
 
   // Deliberately stricter than "the score is high" — see `isSafeForBulkAccept`.
   // A bulk action meaning "accept everything above 90%" would sweep up exactly
@@ -161,6 +222,10 @@ export function PayeeCleanupView() {
     const stagedClusterIds = result.suggestions
       .filter((s) => s.correction.decision === "accepted")
       .map((s) => s.cluster.id);
+    // Captured before staging starts. Clearing the whole set afterwards threw
+    // away anything ticked while the write was in flight, which was never
+    // staged and had no reason to be forgotten.
+    const stagedGapIds = selectedGaps.map((gap) => gap.payee.id);
 
     void stage(plan).then(
       (outcome) => {
@@ -184,6 +249,14 @@ export function PayeeCleanupView() {
           for (const id of stagedClusterIds) delete next[id];
           return next;
         });
+
+        // Same reasoning for the rule tab: what was staged is done, and leaving
+        // it ticked would offer to stage it a second time.
+        setSelectedRuleGaps((current) => {
+          const next = new Set(current);
+          for (const id of stagedGapIds) next.delete(id);
+          return next;
+        });
       },
       // A rejected promise used to be dropped: the click looked like it worked
       // while nothing was staged. The corrections are deliberately left intact
@@ -198,6 +271,27 @@ export function PayeeCleanupView() {
   const candidateById = useMemo(
     () => new Map(partition.eligible.map((c) => [c.id, c])),
     [partition.eligible]
+  );
+
+  const visibleRuleGaps = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    if (!query) return result.ruleGaps;
+    return result.ruleGaps.filter(
+      (gap) =>
+        gap.payee.name.toLowerCase().includes(query) ||
+        gap.texts.some((t) => t.text.toLowerCase().includes(query))
+    );
+  }, [result.ruleGaps, search]);
+
+  // Safe means "no reason for a human to look": see `findRuleGaps`. Creating
+  // these in bulk is a smaller risk than accepting merges in bulk, because a
+  // rule is undone by deleting it while a saved merge is not.
+  // Drawn from what the tab is showing, not from every gap found. With a search
+  // active the two differ, and a button reading "Create 12 safe rules" that
+  // staged rows scrolled out of sight is not a bulk action the user took.
+  const safeRuleGaps = useMemo(
+    () => visibleRuleGaps.filter((gap) => gap.safe && !selectedRuleGaps.has(gap.payee.id)),
+    [visibleRuleGaps, selectedRuleGaps]
   );
 
   // The tab pill counts what the tab would show, ignoring the search box: a
@@ -239,7 +333,19 @@ export function PayeeCleanupView() {
       }
       actions={
         <div className="flex items-center gap-2">
-          {safeToAccept.length > 0 ? (
+          {tab === "rule-gaps" ? (
+            <CreateSafeRulesButton
+              safeCount={safeRuleGaps.length}
+              onCreate={() =>
+                setSelectedRuleGaps((current) => {
+                  const next = new Set(current);
+                  for (const gap of safeRuleGaps) next.add(gap.payee.id);
+                  return next;
+                })
+              }
+            />
+          ) : null}
+          {tab === "suggestions" && safeToAccept.length > 0 ? (
             <Button
               variant="outline"
               size="sm"
@@ -257,14 +363,26 @@ export function PayeeCleanupView() {
               Accept {safeToAccept.length} safe
             </Button>
           ) : null}
+          {/* `isLoading` is only true before there is any data, so a re-scan
+              left the button looking inert while the work happened. `isFetching`
+              covers both, and the label says which of the two is going on. */}
           <Button
             variant="outline"
             size="sm"
-            onClick={() => refetch()}
-            disabled={isLoading}
+            onClick={() => {
+              // Everything the scan reads, not just the payee list — otherwise
+              // "Scan again" quietly reuses yesterday's import history.
+              refetch();
+              refetchImportedText();
+            }}
+            disabled={scanning}
+            aria-busy={scanning}
           >
-            <RefreshCw className="size-3.5" aria-hidden="true" />
-            Scan again
+            <RefreshCw
+              className={cn("size-3.5", scanning && "animate-spin")}
+              aria-hidden="true"
+            />
+            {scanning ? "Scanning…" : "Scan again"}
           </Button>
           <Button
             size="sm"
@@ -310,6 +428,7 @@ export function PayeeCleanupView() {
           // the hidden band, so the pill could read 12 above a list of 8.
           suggestions: visibleBandCount,
           unused: result.orphans.length,
+          ruleGaps: result.ruleGaps.length,
           dismissed: suppressions.length,
         }}
       />
@@ -361,6 +480,37 @@ export function PayeeCleanupView() {
           />
         ) : tab === "unused" ? (
           <UnusedPayeeList orphans={result.orphans} />
+        ) : tab === "rule-gaps" ? (
+          <RuleGapList
+            loading={importedTextFetching && importedText.length === 0}
+            filtered={visibleRuleGaps.length === 0 && result.ruleGaps.length > 0}
+            gaps={visibleRuleGaps}
+            selected={selectedRuleGaps}
+            onToggle={(payeeId, enabled) =>
+              setSelectedRuleGaps((current) => {
+                const next = new Set(current);
+                if (enabled) next.add(payeeId);
+                else next.delete(payeeId);
+                return next;
+              })
+            }
+            onDismiss={(gap) => {
+              setSelectedRuleGaps((current) => {
+                const next = new Set(current);
+                next.delete(gap.payee.id);
+                return next;
+              });
+              rejectRuleGap(gap.payee);
+            }}
+            onOverride={(payeeId, override) =>
+              setRuleGapOverrides((current) => {
+                const next = new Map(current);
+                if (override) next.set(payeeId, override);
+                else next.delete(payeeId);
+                return next;
+              })
+            }
+          />
         ) : (
         <>
         {visible.length === 0 ? (

@@ -74,7 +74,9 @@ export function SuppressionList({ suppressions, onUndo, onClearAll }: Props) {
               <span className="ml-2 text-xs text-muted-foreground">
                 {suppression.kind === "rejected-affix"
                   ? "kept as part of the name"
-                  : "not duplicates"}
+                  : suppression.kind === "rule-not-needed"
+                    ? "no rule needed"
+                    : "not duplicates"}
               </span>
             </span>
             <Button

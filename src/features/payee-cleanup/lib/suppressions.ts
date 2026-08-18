@@ -128,6 +128,49 @@ export function applyAffixSuppressions(
   );
 }
 
+/**
+ * Drops the payees the user has said do not need a rule (RD-087 §6).
+ *
+ * Matched on the payee, not on a relationship: "this payee is fine as it is" is
+ * a statement about one payee, unlike "these two are not the same merchant".
+ * Kind-scoped, so it cannot silence a merge suggestion for the same payee.
+ */
+export function applyRuleGapSuppressions<T extends { payee: { id: string; name: string } }>(
+  gaps: T[],
+  suppressions: PayeeCleanupSuppressionRecord[]
+): T[] {
+  const rejected = suppressions.filter((s) => s.kind === "rule-not-needed");
+  if (rejected.length === 0) return gaps;
+
+  const ids = new Set(rejected.flatMap((s) => s.payeeIds));
+  // Names outlive ids, which do not survive a merge or a re-import.
+  const names = new Set(rejected.flatMap((s) => s.normalizedNames));
+
+  return gaps.filter(
+    (gap) => !ids.has(gap.payee.id) && !names.has(suppressionKey(gap.payee.name))
+  );
+}
+
+/** The record to persist when the user says a payee does not need a rule. */
+export function buildRuleGapSuppression(
+  budgetSyncId: string,
+  payee: { id: string; name: string }
+): {
+  budgetSyncId: string;
+  kind: "rule-not-needed";
+  payeeIds: string[];
+  normalizedNames: string[];
+  detectorIds: string[];
+} {
+  return {
+    budgetSyncId,
+    kind: "rule-not-needed",
+    payeeIds: [payee.id],
+    normalizedNames: [suppressionKey(payee.name)],
+    detectorIds: ["rule-gap"],
+  };
+}
+
 /** The record to persist when the user rejects a cluster. */
 export function buildClusterSuppression(
   budgetSyncId: string,

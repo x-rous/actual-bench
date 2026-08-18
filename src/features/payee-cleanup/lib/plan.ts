@@ -24,6 +24,8 @@
 import { isCleanupEligible } from "./eligibility";
 import type { CleanupSuggestion } from "./scan";
 import type { PayeeCleanupCandidate } from "../types";
+import { compileRuleMatcher } from "./core";
+import type { RuleGap } from "./ruleGaps";
 
 export type MergeOperation = {
   kind: "merge-payees";
@@ -53,23 +55,41 @@ export type CreateRuleOperation = {
   targetPayeeId: string;
   targetName: string;
   field: "imported_payee" | "notes";
-  op: "contains" | "matches";
-  value: string;
+  op: "contains" | "matches" | "oneOf";
+  /** A pattern for `contains`/`matches`; the exact texts for `oneOf`. */
+  value: string | string[];
   description: string;
   expectedMatches: number;
+};
+
+/**
+ * Adding texts to a payee's existing rename rule instead of creating a second
+ * one — what Actual's own `updatePayeeRenameRule` does, and what keeps a budget
+ * from accumulating one rule per merchant.
+ */
+export type ExtendRuleOperation = {
+  kind: "extend-rule";
+  ruleId: string;
+  targetPayeeId: string;
+  targetName: string;
+  /** Only the texts that are new; the rule already covers the rest. */
+  addTexts: string[];
+  description: string;
 };
 
 export type CleanupOperation =
   | MergeOperation
   | RenameOperation
   | DeleteOperation
-  | CreateRuleOperation;
+  | CreateRuleOperation
+  | ExtendRuleOperation;
 
 export type CleanupPlan = {
   merges: MergeOperation[];
   renames: RenameOperation[];
   deletions: DeleteOperation[];
   rules: CreateRuleOperation[];
+  ruleExtensions: ExtendRuleOperation[];
 };
 
 export type PlanProblem = {
@@ -83,6 +103,7 @@ export const EMPTY_PLAN: CleanupPlan = {
   renames: [],
   deletions: [],
   rules: [],
+  ruleExtensions: [],
 };
 
 /**
@@ -95,11 +116,14 @@ export const EMPTY_PLAN: CleanupPlan = {
  */
 export function buildPlan(
   suggestions: CleanupSuggestion[],
-  orphansToDelete: PayeeCleanupCandidate[] = []
+  orphansToDelete: PayeeCleanupCandidate[] = [],
+  /** Rule gaps the user opted in to on the "Needs a rule" tab (RD-087). */
+  ruleGaps: RuleGap[] = []
 ): CleanupPlan {
   const merges: MergeOperation[] = [];
   const renames: RenameOperation[] = [];
   const rules: CreateRuleOperation[] = [];
+  const ruleExtensions: ExtendRuleOperation[] = [];
 
   for (const suggestion of suggestions) {
     if (suggestion.correction.decision !== "accepted") continue;
@@ -146,10 +170,54 @@ export function buildPlan(
     }
   }
 
+  for (const gap of ruleGaps) {
+    const { proposal } = gap;
+    if (proposal.shape === "one-of" && proposal.extendsRule) {
+      // Adding to the payee's own rename rule, exactly as Actual does, so the
+      // budget does not accumulate a second rule for the same merchant.
+      ruleExtensions.push({
+        kind: "extend-rule",
+        ruleId: proposal.extendsRule.id,
+        targetPayeeId: gap.payee.id,
+        targetName: gap.payee.name,
+        addTexts: proposal.texts,
+        description: `add ${proposal.texts.length} ${
+          proposal.texts.length === 1 ? "text" : "texts"
+        } to the existing rule`,
+      });
+      continue;
+    }
+
+    rules.push(
+      proposal.shape === "one-of"
+        ? {
+            kind: "create-rule",
+            targetPayeeId: gap.payee.id,
+            targetName: gap.payee.name,
+            field: proposal.field,
+            op: "oneOf",
+            value: proposal.texts,
+            description: `is ${proposal.texts.map((t) => `"${t}"`).join(" or ")}`,
+            expectedMatches: gap.transactionCount,
+          }
+        : {
+            kind: "create-rule",
+            targetPayeeId: gap.payee.id,
+            targetName: gap.payee.name,
+            field: proposal.field,
+            op: proposal.candidate.op,
+            value: proposal.candidate.value,
+            description: proposal.candidate.description,
+            expectedMatches: proposal.score.expectedMatches,
+          }
+    );
+  }
+
   return {
     merges,
     renames,
     rules,
+    ruleExtensions,
     deletions: orphansToDelete.map((payee) => ({
       kind: "delete-payee" as const,
       payeeId: payee.id,
@@ -171,6 +239,48 @@ export type ValidationContext = {
  */
 function nameKey(value: string): string {
   return value.trim().toUpperCase().replace(/\s+/g, " ");
+}
+
+/**
+ * Whether two proposed rules would catch the same imported text.
+ *
+ * Exact against exact is a set intersection. A pattern against an exact list is
+ * decided by running the pattern. Two patterns are only compared literally —
+ * regex containment is undecidable in general, and guessing would either block
+ * valid plans or give false assurance.
+ */
+function rulesOverlap(a: CreateRuleOperation, b: CreateRuleOperation): boolean {
+  const texts = (op: CreateRuleOperation) =>
+    Array.isArray(op.value) ? op.value : null;
+  const pattern = (op: CreateRuleOperation) =>
+    Array.isArray(op.value) ? null : op.value;
+
+  const aTexts = texts(a);
+  const bTexts = texts(b);
+
+  if (aTexts && bTexts) {
+    // Lower-cased, like the engine. Folding the other way differs for a handful
+    // of characters and there is no reason for this to be the one place that
+    // disagrees.
+    const left = new Set(aTexts.map((t) => t.trim().toLowerCase()));
+    return bTexts.some((t) => left.has(t.trim().toLowerCase()));
+  }
+
+  const matchesAny = (op: CreateRuleOperation, against: string[]) => {
+    const value = pattern(op);
+    if (!value) return false;
+    // The shared matcher again, so a pattern and an exact list are compared the
+    // way the engine will compare them once both are saved.
+    const matches = compileRuleMatcher(op.op === "contains" ? "contains" : "matches", value);
+    return against.some((t) => matches(t));
+  };
+
+  if (aTexts) return matchesAny(b, aTexts);
+  if (bTexts) return matchesAny(a, bTexts);
+
+  const aPattern = pattern(a);
+  const bPattern = pattern(b);
+  return Boolean(aPattern && bPattern && aPattern === bPattern);
 }
 
 /**
@@ -349,6 +459,45 @@ export function validatePlan(
     }
   }
 
+  // ── Would two new rules fight over the same import text? ────────────────
+  //
+  // The backtest only compares a candidate against *history*. Two rules created
+  // in the same plan have no history to compare against, so a pattern for one
+  // merchant can silently shadow the exact list for another — which Rule
+  // Diagnostics would later report as a finding the user never chose to create.
+  //
+  // Extensions count too: adding "X" to one payee's rename rule while creating
+  // `oneOf ["X"]` for another is exactly the same collision, and comparing only
+  // the creations let it through. An extension is an `imported_payee oneOf`
+  // addition, so it maps onto the same comparison.
+  const newRules: CreateRuleOperation[] = [
+    ...plan.rules,
+    ...plan.ruleExtensions.map((extension) => ({
+      kind: "create-rule" as const,
+      targetPayeeId: extension.targetPayeeId,
+      targetName: extension.targetName,
+      field: "imported_payee" as const,
+      op: "oneOf" as const,
+      value: extension.addTexts,
+      description: extension.description,
+      expectedMatches: 0,
+    })),
+  ];
+  for (let i = 0; i < newRules.length; i++) {
+    for (let j = i + 1; j < newRules.length; j++) {
+      const a = newRules[i];
+      const b = newRules[j];
+      if (a.targetPayeeId === b.targetPayeeId) continue;
+      if (a.field !== b.field) continue;
+      if (!rulesOverlap(a, b)) continue;
+
+      block(
+        `The rules for "${a.targetName}" and "${b.targetName}" would both match the same imported text, so which one wins would depend on rule order. Narrow one of them.`,
+        [a.targetPayeeId, b.targetPayeeId]
+      );
+    }
+  }
+
   for (const rule of plan.rules) {
     if (disappearing.has(rule.targetPayeeId)) {
       // RD-078 §21: rule creation must never target a payee scheduled to vanish.
@@ -367,7 +516,10 @@ export function validatePlan(
         rule.targetPayeeId,
       ]);
     }
-    if (!rule.value.trim()) {
+    const emptyPattern = Array.isArray(rule.value)
+      ? rule.value.length === 0 || rule.value.every((v) => !v.trim())
+      : !rule.value.trim();
+    if (emptyPattern) {
       block(`The rule for "${rule.targetName}" has no pattern to match.`, [
         rule.targetPayeeId,
       ]);
@@ -403,6 +555,7 @@ export function planOperationCount(plan: CleanupPlan): number {
     plan.merges.length +
     plan.renames.length +
     plan.deletions.length +
-    plan.rules.length
+    plan.rules.length +
+    plan.ruleExtensions.length
   );
 }

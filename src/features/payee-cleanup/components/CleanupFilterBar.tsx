@@ -4,7 +4,14 @@ import { Search, X } from "lucide-react";
 import { PillGroup } from "@/components/ui/pill-group";
 import type { ConfidenceBand } from "../lib/confidence";
 
-export type CleanupTab = "suggestions" | "unused" | "dismissed";
+export type CleanupTab = "suggestions" | "unused" | "rule-gaps" | "dismissed";
+
+const CLEANUP_TABS: CleanupTab[] = ["suggestions", "unused", "rule-gaps", "dismissed"];
+
+/** Guards the tab read out of the URL, which anyone can type anything into. */
+export function isCleanupTab(value: string | null): value is CleanupTab {
+  return value !== null && (CLEANUP_TABS as string[]).includes(value);
+}
 export type BandFilter = "all" | ConfidenceBand;
 
 const BAND_FILTERS: { value: BandFilter; label: string }[] = [
@@ -22,7 +29,12 @@ type Props = {
   onBandChange: (band: BandFilter) => void;
   search: string;
   onSearchChange: (value: string) => void;
-  counts: { suggestions: number; unused: number; dismissed: number };
+  counts: {
+    suggestions: number;
+    unused: number;
+    ruleGaps: number;
+    dismissed: number;
+  };
 };
 
 /**
@@ -69,6 +81,8 @@ export function CleanupFilterBar({
         options={[
           { value: "suggestions" as const, label: `Suggestions ${counts.suggestions}` },
           { value: "unused" as const, label: `Unused ${counts.unused}` },
+          // Third, not last: Dismissed is the archive and belongs at the end.
+          { value: "rule-gaps" as const, label: `Needs a rule ${counts.ruleGaps}` },
           { value: "dismissed" as const, label: `Dismissed ${counts.dismissed}` },
         ]}
         value={tab}

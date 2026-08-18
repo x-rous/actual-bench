@@ -18,10 +18,12 @@ export function useImportedTextIndex(options: { enabled: boolean }): {
   rows: ImportedTextRow[];
   truncated: boolean;
   isLoading: boolean;
+  isFetching: boolean;
+  refetch: () => void;
 } {
   const connection = useConnectionStore(selectActiveInstance);
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isFetching, refetch } = useQuery({
     queryKey: ["payeeCleanupImportedText", connection?.id],
     queryFn: () => {
       if (!connection) throw new Error("No active connection");
@@ -33,5 +35,11 @@ export function useImportedTextIndex(options: { enabled: boolean }): {
   // A fresh `[]` on every render would change the scan's dependencies and
   // re-run the whole pipeline while the history is still loading.
   const rows = useMemo(() => data?.rows ?? EMPTY_ROWS, [data]);
-  return { rows, truncated: data?.truncated ?? false, isLoading };
+  return {
+    rows,
+    truncated: data?.truncated ?? false,
+    isLoading,
+    isFetching,
+    refetch: () => void refetch(),
+  };
 }
