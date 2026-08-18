@@ -223,19 +223,42 @@ function rarestToken(tokens: string[], spread: TokenSpread | undefined): number 
  * Contiguous by design: the pattern built from it joins the words with "anything
  * at all", which only means something if they were adjacent to begin with.
  */
-export function commonTokenRun(
+/**
+ * The cores worth trying, best first.
+ *
+ * Ranking alone is not enough to choose one: whether a core is usable depends on
+ * whether it catches *other* payees, and only a backtest knows that. `UBER`
+ * appears in every one of that payee's imports and so wins on coverage, then
+ * turns out to be shared with `Uber Eats` — at which point there has to be a
+ * next candidate rather than silence. `UBR PENDING UBER COM` is right there and
+ * was being discarded with the winner.
+ *
+ * Only the first candidate may read like scenery. The rest must still look like
+ * a name, or a budget whose notes all open `Notes 7` would fall back through
+ * `NOTES 7`, `NOTES 1` and every other accident of numbering until one of them
+ * happened to be unique.
+ *
+ * Six of them. Each one a caller rejects costs another pass over the history, so
+ * the depth is what bounds the worst case: on a budget where every payee shares
+ * its words — so all of them walk the whole list — 450 payees over 10,000 rows
+ * cost about 1.5s against 1.35s at three, and 1.2s before there were any
+ * fallbacks at all. Depth past this buys little; nothing found a core beyond the
+ * third.
+ */
+export function rankedCommonRuns(
   texts: string[],
   weights?: number[],
   minShare = 0.5,
-  spread?: TokenSpread
-): string | null {
+  spread?: TokenSpread,
+  limit = 6
+): string[] {
   const entries = texts
     .map((text, i) => ({ tokens: coreTokens(text), weight: weights?.[i] ?? 1 }))
     .filter((entry) => entry.tokens.length > 0);
-  if (entries.length === 0) return null;
+  if (entries.length === 0) return [];
 
   const total = entries.reduce((sum, entry) => sum + entry.weight, 0);
-  if (total === 0) return null;
+  if (total === 0) return [];
 
   const containsRun = (tokens: string[], run: string[]) => {
     for (let i = 0; i + run.length <= tokens.length; i++) {
@@ -260,6 +283,7 @@ export function commonTokenRun(
   };
   let best: Candidate | null = null;
   let fallback: Candidate | null = null;
+  const alternatives: Candidate[] = [];
 
   for (let length = Math.min(seed.length, MAX_CORE_TOKENS); length >= 1; length--) {
     for (let start = 0; start + length <= seed.length; start++) {
@@ -320,12 +344,42 @@ export function commonTokenRun(
                   (rarest < best.rarest ||
                     (rarest === best.rarest && run.length > best.run.length))))));
 
+      alternatives.push(candidate);
       if (better) best = candidate;
     }
   }
 
   const chosen = best ?? fallback;
-  return chosen ? chosen.run.join(" ") : null;
+  if (!chosen) return [];
+
+  // Ranked the same way the winner was chosen, so the fallbacks are the
+  // runners-up rather than an arbitrary order.
+  const ranked = [...alternatives].sort(
+    (a, b) =>
+      b.coverage - a.coverage || b.quality - a.quality || a.rarest - b.rarest ||
+      b.run.length - a.run.length
+  );
+  const ordered = [chosen, ...ranked.filter((c) => c !== chosen && c.quality > 0)];
+  const seen = new Set<string>();
+  const runs: string[] = [];
+  for (const candidate of ordered) {
+    const joined = candidate.run.join(" ");
+    if (seen.has(joined)) continue;
+    seen.add(joined);
+    runs.push(joined);
+    if (runs.length >= limit) break;
+  }
+  return runs;
+}
+
+/** The single best core, for callers that only need to know whether one exists. */
+export function commonTokenRun(
+  texts: string[],
+  weights?: number[],
+  minShare = 0.5,
+  spread?: TokenSpread
+): string | null {
+  return rankedCommonRuns(texts, weights, minShare, spread)[0] ?? null;
 }
 
 /** Whether any text carries more words after this run. */

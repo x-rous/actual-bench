@@ -11,7 +11,7 @@ jest.mock("./ruleCandidates", () => {
     // `chooseCondition` is the expensive step — it builds the candidates and
     // backtests each against the whole history.
     chooseCondition: (...args: Parameters<typeof actual.chooseCondition>) => {
-      scoreCalls.push(args[0]);
+      scoreCalls.push(args[0].join(" "));
       return actual.chooseCondition(...args);
     },
   };
@@ -391,9 +391,49 @@ describe("when a human should look", () => {
     expect(gaps).toEqual([]);
   });
 
+  it("falls back to a longer core when the obvious one is shared", () => {
+    // `UBER` is in every one of this payee's imports, so it wins on coverage —
+    // and it is also in Uber Eats', so it cannot be used. There has to be a next
+    // candidate: `UBR PENDING UBER COM` was already ranked and was being thrown
+    // away with the winner, leaving the payee off the tab entirely.
+    const rows = [
+      row("#API UBR* PENDING.UBER.COM AMSTERDAM NH SAR12.65", "u", 1, "notes"),
+      row("#API UBER *TRIP AMSTERDAM NH SAR14.98", "u", 1, "notes"),
+      row("#API UBR* PENDING.UBER.COM AMSTERDAM NH SAR10.91", "u", 2, "notes"),
+      row("#API UBER *TRIP HELP.UBER.C", "u", 1, "notes"),
+      row("#API UBER *EATS AMSTERDAM NH SAR40.00", "e", 6, "notes"),
+      row("#API UBER *EATS HELP.UBER.C", "e", 4, "notes"),
+    ];
+    const gaps = findRuleGaps(
+      inputs({
+        candidates: [payee("u", "Uber"), payee("e", "Uber Eats")],
+        rows,
+        transactionCounts: new Map([
+          ["u", 5],
+          ["e", 10],
+        ]),
+      })
+    );
+
+    const uber = gaps.find((g) => g.payee.name === "Uber");
+    expect(uber).toBeDefined();
+    expect(uber!.safe).toBe(true);
+    const proposal = uber!.proposal;
+    if (proposal.shape !== "matches") throw new Error("wrong shape");
+    expect(proposal.candidate.value).toMatch(/PENDING/);
+
+    // And the sibling still gets its own, which is what made `UBER` unusable.
+    const eats = gaps.find((g) => g.payee.name === "Uber Eats");
+    expect(eats?.safe).toBe(true);
+  });
+
   it("says nothing about payees whose text all starts the same way", () => {
     // A test budget where every note opens with `Notes N` produced `^NOTES` for
     // four payees at once, each warning it would catch the other three.
+    //
+    // The fallback above must not rescue this: `NOTES 10` is unique to one payee
+    // and would backtest clean, but it is a numbering accident rather than a
+    // name — which is why only cores that still read like a name are tried.
     const rows = [
       row("Notes 10 [AED -234.00 @ 0.4]", "p1", 1, "notes"),
       row("Notes 10 [Synced from Bench Test / Savings]", "p1", 1, "notes"),

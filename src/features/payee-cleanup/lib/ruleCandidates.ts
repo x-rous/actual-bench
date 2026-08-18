@@ -20,13 +20,13 @@
 
 import {
   COVERAGE_MARGIN,
-  commonTokenRun,
   compileRuleMatcher,
   coreLadder,
   followedInSomeText,
   maximalCommonRun,
   measureTokenSpread,
   normalizePatternText,
+  rankedCommonRuns,
 } from "./core";
 import type { Rule } from "@/types/entities";
 import type { PayeeCleanupCandidate } from "../types";
@@ -393,13 +393,13 @@ export function analyzeFutureResolution(input: {
         if (texts.length === 0) return [];
 
         const weights = texts.map((row) => row.transactionCount);
-        const run = commonTokenRun(
+        const runs = rankedCommonRuns(
           texts.map((row) => row.text),
           weights,
           0.5,
           spread
         );
-        if (!run) return [];
+        if (runs.length === 0) return [];
 
         const longest = maximalCommonRun(
           texts.map((row) => row.text),
@@ -413,7 +413,7 @@ export function analyzeFutureResolution(input: {
           );
 
         const chosen = chooseCondition(
-          run,
+          runs,
           field,
           input.rows,
           clusterPayeeIds,
@@ -421,7 +421,7 @@ export function analyzeFutureResolution(input: {
           !boundaryShown
         );
         if (!chosen) return [];
-        coreFor.set(chosen.score, run);
+        coreFor.set(chosen.score, runs[0]);
         return [chosen.score];
       });
 
@@ -508,7 +508,7 @@ export type ConditionChoice = {
 };
 
 export function chooseCondition(
-  run: string,
+  runs: string[],
   field: SourceField,
   rows: ImportedTextRow[],
   clusterIds: Set<string>,
@@ -519,27 +519,34 @@ export function chooseCondition(
   // something follows the run in some text — `SPRINT SET GO KIDS` then `AMUS` in
   // one import and `ASHDOWN` in another — the data located the boundary and
   // second-guessing it would throw away the evidence.
-  const ladder = trimmable ? coreLadder(run) : coreLadder(run).slice(0, 1);
-  if (ladder.length === 0) return null;
-
   let longestAttempt: CandidateScore | null = null;
 
-  // Shortest first, so the first safe one wins.
-  for (const core of [...ladder].reverse()) {
-    const scored = buildCandidates(core, field).map((candidate) =>
-      scoreCandidate(candidate, rows, clusterIds, clusterNames)
-    );
-    const safe = scored.filter((s) => s.unexpectedMatches === 0 && s.expectedMatches > 0);
+  // Each core in turn, best first. Whether a core is usable is not knowable
+  // until it is backtested, so a rejected one has to hand over to the next
+  // rather than end the search — `UBER` is shared with `Uber Eats`, and
+  // `UBR PENDING UBER COM` is not.
+  for (const run of runs) {
+    const ladder = trimmable ? coreLadder(run) : coreLadder(run).slice(0, 1);
+    if (ladder.length === 0) continue;
 
-    if (safe.length === 0) {
+    // Shortest first, so the first safe one wins.
+    for (const core of [...ladder].reverse()) {
+      const scored = buildCandidates(core, field).map((candidate) =>
+        scoreCandidate(candidate, rows, clusterIds, clusterNames)
+      );
+      const safe = scored.filter((s) => s.unexpectedMatches === 0 && s.expectedMatches > 0);
+
+      if (safe.length === 0) {
       // The longest core's best attempt is kept, but returned marked. What a
       // caller should do with a condition that catches other payees differs:
       // a merge suggestion shows it with the count and lets the user judge,
       // while the rule tab has nothing to offer and says so by leaving the
       // payee out.
-      if (core === ladder[0]) longestAttempt = rankCandidates(scored)[0] ?? null;
-      continue;
-    }
+        if (!longestAttempt && core === ladder[0]) {
+          longestAttempt = rankCandidates(scored)[0] ?? null;
+        }
+        continue;
+      }
 
     // Simplest, but not at any price. A literal substring only reads the same as
     // the pattern when it catches roughly the same imports, and it need not: a
@@ -549,14 +556,15 @@ export function chooseCondition(
     // Roughly, not exactly — the same margin the core ranking uses. One import
     // written without its space should not cost the user a readable rule, while
     // a substring catching a fraction of them should.
-    const best = Math.max(...safe.map((s) => s.expectedMatches));
-    const simplest = safe.find(
-      (s) =>
-        s.candidate.op === "contains" &&
-        s.expectedMatches >= best * (1 - COVERAGE_MARGIN)
-    );
-    const chosen = simplest ?? rankCandidates(safe)[0];
-    return chosen ? { score: chosen, safe: true } : null;
+      const best = Math.max(...safe.map((s) => s.expectedMatches));
+      const simplest = safe.find(
+        (s) =>
+          s.candidate.op === "contains" &&
+          s.expectedMatches >= best * (1 - COVERAGE_MARGIN)
+      );
+      const chosen = simplest ?? rankCandidates(safe)[0];
+      if (chosen) return { score: chosen, safe: true };
+    }
   }
 
   return longestAttempt ? { score: longestAttempt, safe: false } : null;

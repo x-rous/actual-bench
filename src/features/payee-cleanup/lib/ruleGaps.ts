@@ -42,13 +42,13 @@ import {
   type SourceField,
 } from "./ruleCandidates";
 import {
-  commonTokenRun,
   compileRuleMatcher,
   coreTokens,
   followedInSomeText,
   hasMarker,
   maximalCommonRun,
   measureTokenSpread,
+  rankedCommonRuns,
   type TokenSpread,
 } from "./core";
 
@@ -565,7 +565,8 @@ function proposeRule(
   // and nothing ever again. What matters is whether anything varies around a
   // shared core, which is what a pattern is for.
   const weights = uncovered.map((row) => row.transactionCount);
-  const run = commonTokenRun(uncoveredTexts, weights, 0.5, spread);
+  const runs = rankedCommonRuns(uncoveredTexts, weights, 0.5, spread);
+  const run = runs[0] ?? null;
   const runLength = run ? run.split(" ").length : 0;
 
   // Text carrying a marker *does* vary, whatever is left once the marker is
@@ -590,7 +591,7 @@ function proposeRule(
     const boundaryShown = longest !== null && followedInSomeText(longest, uncoveredTexts);
 
     const best = chooseCondition(
-      run,
+      runs,
       field,
       inputs.rows,
       new Set([payee.id]),
