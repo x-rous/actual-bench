@@ -227,6 +227,10 @@ export function RulesTable({ onEdit, onMerge, payeeId, categoryId, accountId }: 
         onClearPayee={() => router.push("/rules")}
         onClearCategory={() => router.push("/rules")}
         onClearAccount={() => router.push("/rules")}
+        onClearAll={() => {
+          clearFilters();
+          if (payeeId || categoryId || accountId) router.push("/rules");
+        }}
         rowCount={rows.length}
         totalVisible={totalVisible}
         selectedCount={activeSelectedIds.length}

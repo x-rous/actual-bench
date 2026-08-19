@@ -26,6 +26,7 @@ export function FilterBar({
   categoryId, categoryName,
   accountId, accountName,
   onClearPayee, onClearCategory, onClearAccount,
+  onClearAll,
   rowCount, totalVisible,
   selectedCount,
   onDeleteSelected, onMerge, onDeselect,
@@ -39,12 +40,21 @@ export function FilterBar({
   onClearPayee: () => void;
   onClearCategory: () => void;
   onClearAccount: () => void;
+  onClearAll: () => void;
   rowCount: number; totalVisible: number;
   selectedCount: number;
   onDeleteSelected: () => void;
   onMerge: () => void;
   onDeselect: () => void;
 }) {
+  const hasFilters =
+    Boolean(search) ||
+    stageFilter !== "all" ||
+    actionTypeFilter !== "all" ||
+    Boolean(payeeId) ||
+    Boolean(categoryId) ||
+    Boolean(accountId);
+
   if (selectedCount >= 1) {
     return (
       <div className="flex flex-wrap items-center gap-2 border-b border-border/40 bg-primary/5 px-2 py-1.5">
@@ -152,6 +162,15 @@ export function FilterBar({
             <X className="h-3 w-3" />
           </button>
         </div>
+      )}
+
+      {hasFilters && (
+        <button
+          onClick={onClearAll}
+          className="text-xs text-muted-foreground underline hover:text-foreground"
+        >
+          Clear
+        </button>
       )}
 
       <span className="ml-auto text-xs text-muted-foreground whitespace-nowrap">
