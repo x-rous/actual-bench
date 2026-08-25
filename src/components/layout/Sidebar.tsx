@@ -36,6 +36,7 @@ import {
   Settings,
   ClipboardCheck,
   Sparkles,
+  Timer,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useConnectionStore } from "@/store/connection";
@@ -118,6 +119,10 @@ export const SIDEBAR_SECTIONS: SidebarSection[] = [
           icon: ClipboardCheck,
         },
         { id: "sync", label: "Budget File Sync", href: "/sync", icon: ArrowLeftRight },
+        // "Automations" here means *Bench's* scheduled jobs. Actual Budget's own
+        // experimental Budget Automations (RD-047) are a different feature Bench
+        // does not drive, so the label must not read as that.
+        { id: "automations", label: "Automations", href: "/automations", icon: Timer },
         { id: "fx-rates", label: "FX Rates", href: "/fx-rates", icon: Banknote },
         { id: "query", label: "ActualQL Queries", href: "/query", icon: Terminal },
         { id: "data-browser", label: "Data Browser", href: "/data-browser", icon: Database },

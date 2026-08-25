@@ -11,6 +11,7 @@ import {
   Sparkles,
   Tag,
   Terminal,
+  Timer,
   Users,
   Wallet,
 } from "lucide-react";
@@ -137,6 +138,15 @@ export const TOOL_CARDS: OverviewActionCard[] = [
     icon: ArrowLeftRight,
     tone: "tool",
     href: "/sync",
+  },
+  {
+    id: "automations",
+    label: "Automations",
+    description:
+      "See what Actual Bench runs on a schedule, when it last ran and what it did, and whether it runs on the server or only while Bench is open.",
+    icon: Timer,
+    tone: "tool",
+    href: "/automations",
   },
   {
     id: "query",
