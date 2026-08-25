@@ -410,3 +410,116 @@ export type SavedQueryRecord = {
   createdAt: string;
   updatedAt: string;
 };
+
+// ── Automation engine (RD-079 / PR-043a) ─────────────────────────────────────
+
+/**
+ * Where an automation actually executes.
+ *
+ * `server` is unattended: the in-process scheduler runs it with an enrolled
+ * vault credential whether or not anyone has Bench open. `browser` runs only
+ * while Bench is open, which is a convenience, not automation — the UI has to
+ * say so rather than implying a Direct-mode connection can run unattended.
+ */
+export type AutomationExecutionMode = "browser" | "server";
+
+export type AutomationScheduleKind = "interval" | "cron";
+
+export type AutomationRunStatus =
+  | "running"
+  | "succeeded"
+  /** Completed, but part of the work failed (e.g. one account of several). */
+  | "partial"
+  | "failed"
+  | "cancelled"
+  /** Ran, nothing to do. Distinct from `succeeded` so history is honest. */
+  | "no_changes";
+
+export type AutomationRunTrigger = "schedule" | "manual" | "retry";
+
+/**
+ * Engine-derived, cross-type summary of a run — the only thing list views may
+ * read. Anything richer belongs in the type-owned `result` payload, rendered by
+ * the job type itself.
+ */
+export type AutomationRunRollup = {
+  outcome: "ok" | "partial" | "failed" | "no_changes";
+  /** Units of work the type processed (accounts, items, files); type-defined. */
+  itemCount: number;
+  /** One plain-language line for the run list. Never contains secrets. */
+  message?: string;
+  /**
+   * Whether a **partial** run should count against the failure streak that
+   * eventually auto-pauses the automation.
+   *
+   * This is the job type's call, not the engine's, because the same word means
+   * different things: for Budget File Sync a partial apply means writes failed
+   * and RD-058 rightly counted it as a failure; for a bank sync one unreachable
+   * account out of twelve is a normal Tuesday, and pausing the whole automation
+   * over it would be wrong. Defaults to false — reported honestly as partial,
+   * but not held against the automation's health.
+   */
+  countsAsFailure?: boolean;
+};
+
+export type AutomationFailurePolicy = {
+  /**
+   * How long to wait after a failure before the schedule may fire again. The
+   * delay doubles with each consecutive failure up to `backoffCeilingMinutes`,
+   * so a broken automation stops hammering a provider it cannot reach.
+   *
+   * There is deliberately no `maxAttempts`: the engine does not retry *within*
+   * one occurrence. A failed run ends, and the next scheduled occurrence — once
+   * the backoff has elapsed — is the retry. Anything else would need a
+   * mid-occurrence retry loop that does not exist, and a policy field that
+   * describes behaviour the code does not have is worse than no field.
+   */
+  backoffMinutes: number;
+  backoffCeilingMinutes: number;
+  /** Consecutive failed runs before the automation auto-pauses. */
+  pauseAfterConsecutiveFailures: number;
+};
+
+export type AutomationDefinition = {
+  id: string;
+  type: string;
+  name: string;
+  enabled: boolean;
+  executionMode: AutomationExecutionMode;
+  scheduleKind: AutomationScheduleKind;
+  intervalMinutes: number | null;
+  cronExpression: string | null;
+  /** IANA timezone name. */
+  timezone: string;
+  targetRef: JsonEnvelope;
+  /** Vault reference (RD-063 server fingerprint) — never a secret. */
+  credentialRef: string | null;
+  config: JsonEnvelope;
+  failurePolicy: AutomationFailurePolicy;
+  consecutiveFailures: number;
+  autoPausedAt: string | null;
+  autoPauseReason: string | null;
+  lastRunAt: string | null;
+  lastSuccessAt: string | null;
+  nextRunAt: string | null;
+  /** Set while a run holds the execution claim; null when free. */
+  runningSince: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type AutomationRun = {
+  id: string;
+  automationId: string | null;
+  type: string;
+  status: AutomationRunStatus;
+  startedAt: string;
+  finishedAt: string | null;
+  trigger: AutomationRunTrigger;
+  attempt: number;
+  executionMode: AutomationExecutionMode;
+  /** Type-owned payload. The engine stores and returns it without inspecting it. */
+  result: JsonEnvelope | null;
+  rollup: AutomationRunRollup | null;
+  error: JsonEnvelope | null;
+};

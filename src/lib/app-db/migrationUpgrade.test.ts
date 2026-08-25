@@ -13,6 +13,8 @@ import {
   createPayeeCleanupSuppression,
   listPayeeCleanupSuppressions,
 } from "./payeeCleanupSuppressionRepository";
+import { createAutomation, listAutomations } from "./automationRepository";
+import { createAutomationRun, listAutomationRuns } from "./automationRunRepository";
 
 /**
  * Upgrading a database that already holds real work.
@@ -250,6 +252,38 @@ describe("upgrading an existing database", () => {
       expect(created.budgetSyncId).toBe("budget-1");
 
       // The pre-existing session is still there.
+      expect(getReconciliationSession(db, "sess-old")).not.toBeNull();
+    } finally {
+      resetAppDbForTests();
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("adds the automation tables to an older database (v18)", () => {
+    // Additive too, and nothing is migrated onto the engine yet (PR-043c does
+    // that), so an upgraded install should gain empty automation storage while
+    // keeping every session it already had.
+    const { root, path } = olderDatabase();
+    try {
+      const db = getAppDb(path);
+
+      expect(listAutomations(db)).toHaveLength(0);
+      expect(listAutomationRuns(db)).toHaveLength(0);
+
+      const automation = createAutomation(db, {
+        type: "budget-file-sync",
+        name: "Nightly sync",
+        scheduleKind: "interval",
+        intervalMinutes: 30,
+        targetRef: { version: 1, data: { flowId: "flow-1" } },
+        config: { version: 1, data: {} },
+      });
+      createAutomationRun(db, { automationId: automation.id, type: "budget-file-sync" });
+
+      expect(listAutomations(db)).toHaveLength(1);
+      expect(listAutomationRuns(db, { automationId: automation.id })).toHaveLength(1);
+
+      // The pre-existing reconciliation work is untouched.
       expect(getReconciliationSession(db, "sess-old")).not.toBeNull();
     } finally {
       resetAppDbForTests();

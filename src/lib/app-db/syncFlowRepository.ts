@@ -1,6 +1,12 @@
 import { generateId } from "@/lib/uuid";
 import { AppDbValidationError } from "./errors";
-import type { JsonEnvelope, JsonObject, JsonValue, SqliteDatabase, SyncDomain, SyncFlow, SyncFlowLeg } from "./types";
+import {
+  EMPTY_ENVELOPE,
+  isRecord,
+  normalizeEnvelope as normalizeSharedEnvelope,
+  parseEnvelope as parseSharedEnvelope,
+} from "./jsonEnvelope";
+import type { JsonEnvelope, SqliteDatabase, SyncDomain, SyncFlow, SyncFlowLeg } from "./types";
 
 type SyncFlowRow = {
   id: string;
@@ -42,90 +48,14 @@ type NormalizedFlowInput = {
   legs?: NormalizedLegInput[];
 };
 
-const EMPTY_ENVELOPE: JsonEnvelope = { version: 1, data: {} };
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function isJsonValue(value: unknown): value is JsonValue {
-  if (value === null) return true;
-  if (typeof value === "string" || typeof value === "boolean") return true;
-  if (typeof value === "number") return Number.isFinite(value);
-  if (Array.isArray(value)) return value.every(isJsonValue);
-  if (!isRecord(value)) return false;
-  return Object.values(value).every(isJsonValue);
-}
-
-function normalizeKey(key: string): string {
-  return key.toLowerCase().replace(/[^a-z0-9]/g, "");
-}
-
-function isSecretLikeKey(key: string): boolean {
-  const normalized = normalizeKey(key);
-  return (
-    normalized === "apikey" ||
-    normalized.endsWith("apikey") ||
-    normalized.includes("password") ||
-    normalized.endsWith("token") ||
-    normalized.includes("credential")
-  );
-}
-
-function findSecretField(value: JsonValue, path: string): string | null {
-  if (Array.isArray(value)) {
-    for (let i = 0; i < value.length; i += 1) {
-      const found = findSecretField(value[i], `${path}[${i}]`);
-      if (found) return found;
-    }
-    return null;
-  }
-
-  if (!isRecord(value)) return null;
-
-  for (const [key, item] of Object.entries(value)) {
-    const nextPath = `${path}.${key}`;
-    if (isSecretLikeKey(key)) return nextPath;
-    const found = findSecretField(item as JsonValue, nextPath);
-    if (found) return found;
-  }
-
-  return null;
-}
-
-function normalizeJsonObject(value: unknown, label: string): JsonObject {
-  if (!isRecord(value) || !isJsonValue(value)) {
-    throw new AppDbValidationError(`${label} must be a JSON object`);
-  }
-  return value as JsonObject;
-}
-
+/** Flow metadata is user-supplied configuration, so credential-looking fields
+ * are rejected: a secret belongs in the vault, referenced by fingerprint. */
 function normalizeEnvelope(value: unknown, label: string): JsonEnvelope {
-  if (!isRecord(value)) {
-    throw new AppDbValidationError(`${label} must be a versioned JSON envelope`);
-  }
-
-  const version = value.version;
-  if (!Number.isInteger(version) || Number(version) < 1) {
-    throw new AppDbValidationError(`${label}.version must be a positive integer`);
-  }
-
-  const data = normalizeJsonObject(value.data, `${label}.data`);
-  const secretPath = findSecretField(data, `${label}.data`);
-  if (secretPath) {
-    throw new AppDbValidationError(`Metadata cannot store credential field ${secretPath}`);
-  }
-
-  return { version: Number(version), data };
+  return normalizeSharedEnvelope(value, label, { rejectSecrets: true });
 }
 
 function parseEnvelope(raw: string, label: string): JsonEnvelope {
-  try {
-    return normalizeEnvelope(JSON.parse(raw) as unknown, label);
-  } catch (error) {
-    if (error instanceof AppDbValidationError) throw error;
-    throw new AppDbValidationError(`${label} contains invalid JSON`);
-  }
+  return parseSharedEnvelope(raw, label, { rejectSecrets: true });
 }
 
 function stringifyEnvelope(envelope: JsonEnvelope): string {

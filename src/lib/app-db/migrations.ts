@@ -1,6 +1,9 @@
 import type { SqliteDatabase } from "./types";
 import {
   APP_META_TABLE_SQL,
+  AUTOMATION_DEFINITION_TABLE_SQL,
+  AUTOMATION_INDEX_SQL,
+  AUTOMATION_RUN_TABLE_SQL,
   BUDGET_ENCRYPTION_CREDENTIAL_TABLE_SQL,
   CONNECTION_CREDENTIAL_TABLE_SQL,
   RECONCILIATION_INDEX_SQL,
@@ -30,7 +33,7 @@ import {
 import { KDF_VERSION_META_KEY, SALT_META_KEY, VERIFIER_META_KEY } from "./vaultMetaKeys";
 import { AppDbUnavailableError } from "./errors";
 
-export const LATEST_SCHEMA_VERSION = 17;
+export const LATEST_SCHEMA_VERSION = 18;
 
 type Migration = {
   version: number;
@@ -215,6 +218,18 @@ const MIGRATIONS: readonly Migration[] = [
     statements: [
       PAYEE_CLEANUP_SUPPRESSION_TABLE_SQL,
       PAYEE_CLEANUP_SUPPRESSION_INDEX_SQL,
+    ],
+  },
+  {
+    version: 18,
+    // Automation engine storage (RD-079 / PR-043a). Purely additive: two new
+    // tables and their indexes. No data is moved — Budget File Sync keeps
+    // running on its own scheduler until PR-043c migrates it — so this upgrade
+    // is reversible by dropping the tables.
+    statements: [
+      AUTOMATION_DEFINITION_TABLE_SQL,
+      AUTOMATION_RUN_TABLE_SQL,
+      ...AUTOMATION_INDEX_SQL,
     ],
   },
 ];
