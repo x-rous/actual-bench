@@ -2,28 +2,54 @@ import { timingSafeEqual } from "node:crypto";
 import { NextResponse, type NextRequest } from "next/server";
 import { getAppDb } from "@/lib/app-db/connection";
 import { appDbErrorResponse } from "@/lib/app-db/routeResponses";
-import { getSchedulerState, runSchedulerTick } from "@/lib/sync/serverScheduler";
+import { ensureAutomationJobTypesRegistered } from "@/lib/automation/bootstrap";
+import { runEngineTick } from "@/lib/automation/engine";
+import { buildAutomationHealth } from "@/lib/automation/health";
 import { vaultEnabled } from "@/lib/sync/vault";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 /**
- * Manual/external trigger for the unattended scheduler (RD-058 / PR-024c).
- * POST runs one pass; GET returns scheduler status. POST is guarded by a shared
- * secret so an external cron can drive it without exposing an open trigger.
+ * External trigger for the scheduler. POST runs one pass; GET returns status.
+ * POST is guarded by a shared secret so an external cron can drive it without
+ * exposing an open trigger.
+ *
+ * Since PR-043c this drives the **automation engine**, not the sync-specific
+ * scheduler — Budget File Sync is one registered job type among others. The URL
+ * and response shape are kept as they were, because self-hosted installs have
+ * external crons pointing at them; breaking those to rename a path would be a
+ * gratuitous upgrade failure. `flowId` in the response is now the automation id.
  */
 
-// GET → scheduler status snapshot (non-secret metadata) for the health view.
 export function GET() {
   try {
-    return NextResponse.json(getSchedulerState(getAppDb()));
+    ensureAutomationJobTypesRegistered();
+    const report = buildAutomationHealth(getAppDb());
+
+    return NextResponse.json({
+      enabled: report.vaultEnabled,
+      lastTickAt: report.checkedAt,
+      inFlight: report.runningIds,
+      pausedByHealth: report.automations.filter((a) => a.autoPausedAt).map((a) => a.id),
+      lastResults: Object.fromEntries(
+        report.automations
+          .filter((automation) => automation.lastRunAt)
+          .map((automation) => [
+            automation.id,
+            {
+              status: automation.lastRunStatus ?? "unknown",
+              at: automation.lastRunAt as string,
+              message: automation.summary,
+            },
+          ])
+      ),
+    });
   } catch (error) {
     return appDbErrorResponse(error);
   }
 }
 
-// POST → run one scheduler pass. Requires SYNC_SCHEDULER_SECRET + matching header.
 export async function POST(request: NextRequest) {
   try {
     const secret = process.env.SYNC_SCHEDULER_SECRET;
@@ -41,8 +67,19 @@ export async function POST(request: NextRequest) {
     if (!vaultEnabled()) {
       return NextResponse.json({ error: "Credential vault is disabled (SYNC_VAULT_KEY unset)." }, { status: 400 });
     }
-    const summary = await runSchedulerTick(getAppDb());
-    return NextResponse.json(summary);
+
+    ensureAutomationJobTypesRegistered();
+    const summary = await runEngineTick(getAppDb());
+
+    return NextResponse.json({
+      at: summary.at,
+      due: summary.due,
+      ran: summary.ran.map((outcome) => ({
+        flowId: outcome.automationId,
+        status: outcome.status,
+        message: outcome.message,
+      })),
+    });
   } catch (error) {
     return appDbErrorResponse(error);
   }

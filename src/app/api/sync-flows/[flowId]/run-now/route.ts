@@ -2,8 +2,7 @@ import { NextResponse } from "next/server";
 import { getAppDb } from "@/lib/app-db/connection";
 import { appDbErrorResponse } from "@/lib/app-db/routeResponses";
 import { getSyncFlow } from "@/lib/app-db/syncFlowRepository";
-import { runServerSafeSync } from "@/lib/sync/serverSafeSync";
-import { serverResultMessage } from "@/lib/sync/serverScheduler";
+import { runServerSafeSync, serverResultMessage } from "@/lib/sync/serverSafeSync";
 import { vaultEnabled } from "@/lib/sync/vault";
 
 export const dynamic = "force-dynamic";

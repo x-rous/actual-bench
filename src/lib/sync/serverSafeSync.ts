@@ -101,3 +101,16 @@ export async function runServerSafeSync(
     }
   );
 }
+
+/**
+ * Human-readable reason for a non-success result, so operator surfaces (run
+ * history, App Health, "Run now") explain a failed or blocked run rather than
+ * showing a bare status. Lived in `serverScheduler.ts` until PR-043c replaced
+ * that module with the automation engine.
+ */
+export function serverResultMessage(result: ServerSafeSyncResult): string | undefined {
+  if (isServerSafeSyncBlocked(result)) return result.message;
+  if (result.status === "preview_failed") return result.error.message;
+  if (result.status === "failed" || result.status === "partial") return result.apply.error?.message;
+  return undefined;
+}
