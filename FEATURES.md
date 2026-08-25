@@ -55,7 +55,23 @@
 
 ## App Health
 
-A compact diagnostics page for Actual Bench's own server-side metadata database. It shows the configured SQLite path, writable state, schema version, migration status, and persistence reminder for the `/data` volume. The database stores app workflow metadata only and does not store Actual credentials.
+A compact diagnostics page for Actual Bench's own server-side metadata database. It shows the configured SQLite path, writable state, schema version, migration status, and persistence reminder for the `/data` volume. The database stores app workflow metadata only and does not store Actual credentials. It also carries an **Automations** roll-up: vault state, enrolled connections, what is running, and each automation's health.
+
+## Automations
+
+One place for everything Actual Bench runs on a schedule, on a shared engine rather than a timer per feature. Budget File Sync is the first registered job type; more follow.
+
+- **Plain-language schedules** — interval ("every 30 minutes") or a five-field **cron expression with an explicit time zone**, described in words on the page. Daylight saving is handled explicitly: a time that does not exist on a spring-forward day runs as the gap closes; a time that happens twice on a fall-back day runs **once**.
+- **Where it runs, on every row** — "runs on the server" (unattended, with Bench closed, HTTP API mode + enrolled vault credentials) versus "runs in your browser" (only while a tab is open). Bench never implies unattended behaviour a transport cannot deliver, and states that the engine is a single in-process instance.
+- **Run history** with per-run status, trigger (scheduled / run now / retry attempt), duration, a **redacted log**, and results rendered in each job type's own vocabulary — a sync run shows added/updated/deleted and links to the sync run it produced.
+- **Run now**, pause, resume, and delete. A run already in flight is refused rather than doubled or silently queued.
+- **Failure handling**: exponential backoff between attempts up to a ceiling, **auto-pause** after a configurable failure streak with the reason shown, and a manual Resume that clears both the pause and the streak. Editing a schedule never clears a pause. Failure state survives a server restart.
+- **Fail closed on credentials**: an automation that names a credential it cannot resolve (vault disabled, key rotated, credential withdrawn) does not run at all and pauses with that reason.
+- **Overdue is a warning**, not a silent success: an automation well past its next run is flagged even though nothing failed.
+- **Shared review queue**: work an automation left for a person, linking into the job type's own review screen. Job types that only trigger Actual's own work construct nothing reviewable and are absent from the queue rather than shown empty.
+- Not in scope: an external job runner, message queue, or multi-process workers; notification channels (email/webhook/push); coordinating automations across more than one Bench instance; and making Direct mode unattended.
+
+See `docs/AUTOMATIONS.md`.
 
 ## Budget File Sync
 

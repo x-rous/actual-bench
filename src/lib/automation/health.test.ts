@@ -1,0 +1,194 @@
+import { mkdtempSync, rmSync } from "node:fs";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
+import { getAppDb, resetAppDbForTests } from "@/lib/app-db/connection";
+import {
+  createAutomation,
+  pauseAutomationForHealth,
+  recordAutomationOutcome,
+  updateAutomation,
+} from "@/lib/app-db/automationRepository";
+import { createAutomationRun, finalizeAutomationRun } from "@/lib/app-db/automationRunRepository";
+import { buildAutomationHealth, isStale, overallAutomationStatus } from "./health";
+import { buildReviewQueue } from "./reviewQueue";
+import {
+  __resetAutomationRegistryForTests,
+  registerAutomationJobType,
+  type AutomationJobType,
+} from "./registry";
+import type { AutomationRunRollup, JsonEnvelope, SqliteDatabase } from "@/lib/app-db/types";
+
+function tempDb(): { root: string; db: SqliteDatabase } {
+  const root = mkdtempSync(join(tmpdir(), "actual-bench-health-"));
+  return { root, db: getAppDb(join(root, "metadata.sqlite")) };
+}
+
+function jobType(type: string, withClassification: boolean): AutomationJobType<unknown, unknown> {
+  return {
+    type,
+    label: type === "budget-file-sync" ? "Budget File Sync" : "Bank Sync",
+    validateConfig: () => ({}),
+    run: async () => ({}),
+    summarize: (): AutomationRunRollup => ({ outcome: "ok", itemCount: 0 }),
+    serializeResult: (): JsonEnvelope => ({ version: 1, data: {} }),
+    ...(withClassification
+      ? { classification: { reviewSubjects: ["transaction"], supportsAutoApply: true } }
+      : {}),
+  };
+}
+
+function automation(db: SqliteDatabase, extra: Record<string, unknown> = {}): string {
+  return createAutomation(db, {
+    type: "budget-file-sync",
+    name: "Nightly sync",
+    scheduleKind: "interval",
+    intervalMinutes: 30,
+    targetRef: { version: 1, data: {} },
+    config: { version: 1, data: { flowId: "flow-1" } },
+    ...extra,
+  }).id;
+}
+
+describe("automation health", () => {
+  afterEach(() => {
+    __resetAutomationRegistryForTests();
+    resetAppDbForTests();
+  });
+
+  it("treats an overdue automation as a warning, not a success", () => {
+    const { root, db } = tempDb();
+    try {
+      registerAutomationJobType(jobType("budget-file-sync", true));
+      const id = automation(db);
+
+      const nowMs = Date.parse("2026-08-25T12:00:00Z");
+      // It succeeded, but its next run was due three hours ago and never
+      // happened — most likely the server is not running.
+      recordAutomationOutcome(db, id, { success: true, at: "2026-08-25T06:00:00.000Z" });
+      updateAutomation(db, id, { nextRunAt: "2026-08-25T09:00:00.000Z" });
+
+      const report = buildAutomationHealth(db, { nowMs });
+      const [health] = report.automations;
+
+      expect(health.stale).toBe(true);
+      expect(health.status).toBe("warning");
+      expect(health.summary).toMatch(/Overdue/);
+      expect(overallAutomationStatus(report)).toBe("warning");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("gives a short overdue window some grace, so a deploy is not an alert", () => {
+    const nowMs = Date.parse("2026-08-25T12:00:00Z");
+    // Ten minutes late on a 15-minute schedule: not stale.
+    expect(
+      isStale({ enabled: true, autoPausedAt: null, nextRunAt: "2026-08-25T11:50:00.000Z" }, nowMs)
+    ).toBe(false);
+    // Two hours late: stale.
+    expect(
+      isStale({ enabled: true, autoPausedAt: null, nextRunAt: "2026-08-25T10:00:00.000Z" }, nowMs)
+    ).toBe(true);
+  });
+
+  it("never calls a paused or disabled automation overdue", () => {
+    const nowMs = Date.parse("2026-08-25T12:00:00Z");
+    expect(
+      isStale({ enabled: false, autoPausedAt: null, nextRunAt: "2026-08-20T00:00:00.000Z" }, nowMs)
+    ).toBe(false);
+    expect(
+      isStale(
+        { enabled: true, autoPausedAt: "2026-08-21T00:00:00.000Z", nextRunAt: "2026-08-20T00:00:00.000Z" },
+        nowMs
+      )
+    ).toBe(false);
+  });
+
+  it("reports a paused automation with the reason it was paused", () => {
+    const { root, db } = tempDb();
+    try {
+      registerAutomationJobType(jobType("budget-file-sync", true));
+      const id = automation(db);
+      pauseAutomationForHealth(db, id, "2026-08-25T09:00:00.000Z", "Vault key missing");
+
+      const [health] = buildAutomationHealth(db).automations;
+
+      expect(health.status).toBe("paused");
+      expect(health.summary).toBe("Vault key missing");
+      expect(health.typeLabel).toBe("Budget File Sync");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("says the engine is single-instance rather than leaving it implied", () => {
+    const { root, db } = tempDb();
+    try {
+      expect(buildAutomationHealth(db).singleInstance).toBe(true);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("shared review queue", () => {
+  afterEach(() => {
+    __resetAutomationRegistryForTests();
+    resetAppDbForTests();
+  });
+
+  function runWithBlocked(db: SqliteDatabase, automationId: string, type: string, blocked: number): void {
+    const run = createAutomationRun(db, { automationId, type });
+    finalizeAutomationRun(db, run.id, {
+      status: "succeeded",
+      result: { version: 1, data: { blocked } },
+      rollup: { outcome: "ok", itemCount: 1 },
+    });
+  }
+
+  it("lists work from a type that constructs writes", () => {
+    const { root, db } = tempDb();
+    try {
+      registerAutomationJobType(jobType("budget-file-sync", true));
+      const id = automation(db);
+      runWithBlocked(db, id, "budget-file-sync", 2);
+
+      const [entry] = buildReviewQueue(db);
+
+      expect(entry.pendingCount).toBe(2);
+      expect(entry.summary).toBe("2 items from the last run need a decision.");
+      // It points at the type's own review screen rather than a second copy.
+      expect(entry.href).toBe("/sync");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("omits a type that declares no classification, rather than showing it empty", () => {
+    const { root, db } = tempDb();
+    try {
+      registerAutomationJobType(jobType("bank-sync", false));
+      const id = automation(db, { type: "bank-sync", name: "Bank sync" });
+      runWithBlocked(db, id, "bank-sync", 5);
+
+      // Even with a "blocked" number in its result, a type that constructs
+      // nothing contributes nothing to the queue.
+      expect(buildReviewQueue(db)).toHaveLength(0);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("omits an automation with nothing waiting", () => {
+    const { root, db } = tempDb();
+    try {
+      registerAutomationJobType(jobType("budget-file-sync", true));
+      const id = automation(db);
+      runWithBlocked(db, id, "budget-file-sync", 0);
+
+      expect(buildReviewQueue(db)).toHaveLength(0);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
