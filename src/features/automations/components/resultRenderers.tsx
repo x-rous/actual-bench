@@ -106,8 +106,37 @@ const ACCOUNT_STATUS_LABEL: Record<string, string> = {
 };
 
 /** Bank sync: what happened per account, in this type's own terms. */
+/**
+ * Read one account row defensively.
+ *
+ * The payload is a job type's own JSON, which the engine stores without
+ * inspecting and which may have been written by an older version of this
+ * feature. A cast would put whatever it finds straight into React — and an
+ * object where a string was expected takes down the whole run-history panel,
+ * which is exactly how a non-string log line broke it once already.
+ */
+function readAccountRow(value: JsonValue): BankSyncAccountRow | null {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+  const row = value as Record<string, unknown>;
+  if (typeof row.accountId !== "string") return null;
+
+  return {
+    accountId: row.accountId,
+    accountName: typeof row.accountName === "string" ? row.accountName : null,
+    status: typeof row.status === "string" ? row.status : "unknown",
+    message: typeof row.message === "string" ? row.message : null,
+    observedNewTransactions:
+      typeof row.observedNewTransactions === "number" ? row.observedNewTransactions : null,
+  };
+}
+
 function BankSyncResult({ result }: AutomationResultRendererProps) {
-  const accounts = Array.isArray(result.accounts) ? (result.accounts as unknown as BankSyncAccountRow[]) : [];
+  const accounts = Array.isArray(result.accounts)
+    ? result.accounts.flatMap((entry) => {
+        const row = readAccountRow(entry);
+        return row ? [row] : [];
+      })
+    : [];
   const countsObserved = result.countsObserved === true;
 
   if (accounts.length === 0) {
