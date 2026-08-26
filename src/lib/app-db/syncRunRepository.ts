@@ -1,10 +1,15 @@
 import { generateId } from "@/lib/uuid";
 import { AppDbValidationError } from "./errors";
+import {
+  normalizeEnvelopeOrEmpty as normalizeEnvelope,
+  normalizeOptionalEnvelope,
+  parseEnvelope,
+  parseOptionalEnvelope,
+  stringifyEnvelope,
+} from "./jsonEnvelope";
 import { clampLimit } from "./pagination";
 import type {
   JsonEnvelope,
-  JsonObject,
-  JsonValue,
   SqliteDatabase,
   SyncApplyState,
   SyncDuplicateConfidence,
@@ -99,64 +104,6 @@ type CreateSyncFlowRunItemInput = {
   createdTargetTransactionId?: string | null;
   createdTargetMarker?: string | null;
 };
-
-const EMPTY_ENVELOPE: JsonEnvelope = { version: 1, data: {} };
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function isJsonValue(value: unknown): value is JsonValue {
-  if (value === null) return true;
-  if (typeof value === "string" || typeof value === "boolean") return true;
-  if (typeof value === "number") return Number.isFinite(value);
-  if (Array.isArray(value)) return value.every(isJsonValue);
-  if (!isRecord(value)) return false;
-  return Object.values(value).every(isJsonValue);
-}
-
-function normalizeJsonObject(value: unknown, label: string): JsonObject {
-  if (!isRecord(value) || !isJsonValue(value)) {
-    throw new AppDbValidationError(`${label} must be a JSON object`);
-  }
-  return value as JsonObject;
-}
-
-function normalizeEnvelope(value: JsonEnvelope | undefined, label: string): JsonEnvelope {
-  if (value === undefined) return EMPTY_ENVELOPE;
-  if (!isRecord(value)) throw new AppDbValidationError(`${label} must be a versioned JSON envelope`);
-
-  if (!Number.isInteger(value.version) || value.version < 1) {
-    throw new AppDbValidationError(`${label}.version must be a positive integer`);
-  }
-
-  return { version: value.version, data: normalizeJsonObject(value.data, `${label}.data`) };
-}
-
-function normalizeOptionalEnvelope(value: JsonEnvelope | null | undefined, label: string): JsonEnvelope | null {
-  if (value === undefined || value === null) return null;
-  return normalizeEnvelope(value, label);
-}
-
-function parseEnvelope(raw: string, label: string): JsonEnvelope {
-  let parsed: JsonEnvelope;
-  try {
-    parsed = JSON.parse(raw) as JsonEnvelope;
-  } catch {
-    throw new AppDbValidationError(`${label} contains invalid JSON`);
-  }
-  // Envelope-shape validation errors carry their own precise message; only the
-  // JSON.parse failure above should be reported as "invalid JSON".
-  return normalizeEnvelope(parsed, label);
-}
-
-function parseOptionalEnvelope(raw: string | null | undefined, label: string): JsonEnvelope | null {
-  return raw ? parseEnvelope(raw, label) : null;
-}
-
-function stringifyEnvelope(envelope: JsonEnvelope | null): string | null {
-  return envelope ? JSON.stringify(envelope) : null;
-}
 
 function normalizeId(value: string | undefined, fallback: string): string {
   if (value === undefined) return fallback;

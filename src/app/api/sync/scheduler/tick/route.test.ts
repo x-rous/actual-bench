@@ -1,9 +1,9 @@
-/**
- * @jest-environment node
- */
 jest.mock("next/server", () => ({
   NextResponse: {
-    json: (body: unknown, init?: { status?: number }) => ({ status: init?.status ?? 200, json: async () => body }),
+    json: (body: unknown, init?: { status?: number }) => ({
+      status: init?.status ?? 200,
+      json: async () => body,
+    }),
   },
 }));
 
@@ -11,52 +11,75 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { getAppDb, resetAppDbForTests } from "@/lib/app-db/connection";
-import { POST, GET } from "./route";
+import { createAutomation } from "@/lib/app-db/automationRepository";
+import { POST } from "./route";
+import type { NextRequest } from "next/server";
 
-function req(headers: Record<string, string> = {}): { headers: { get(k: string): string | null } } {
-  return { headers: { get: (k: string) => headers[k.toLowerCase()] ?? null } };
+/**
+ * The endpoint external crons already point at. Its URL and response shape are
+ * a contract, so the engine replacing the sync-specific scheduler underneath it
+ * must not change what a caller reads.
+ */
+
+const SECRET = "test-scheduler-secret";
+const VAULT_KEY = "0".repeat(64);
+
+function request(secret = SECRET): NextRequest {
+  return { headers: { get: () => secret } } as unknown as NextRequest;
 }
 
-describe("scheduler tick endpoint (RD-058 / PR-024c)", () => {
-  const originalSecret = process.env.SYNC_SCHEDULER_SECRET;
-  const originalKey = process.env.SYNC_VAULT_KEY;
-  const originalDbPath = process.env.ACTUAL_BENCH_DB_PATH;
+describe("POST /api/sync/scheduler/tick", () => {
   let root: string;
+
   beforeEach(() => {
-    // The GET snapshot reads scheduler state from the shared app DB, which the
-    // route resolves from ACTUAL_BENCH_DB_PATH.
     root = mkdtempSync(join(tmpdir(), "actual-bench-tick-route-"));
     process.env.ACTUAL_BENCH_DB_PATH = join(root, "metadata.sqlite");
-    getAppDb();
+    process.env.SYNC_SCHEDULER_SECRET = SECRET;
+    process.env.SYNC_VAULT_KEY = VAULT_KEY;
   });
+
   afterEach(() => {
     resetAppDbForTests();
-    rmSync(root, { recursive: true, force: true });
-    if (originalDbPath === undefined) delete process.env.ACTUAL_BENCH_DB_PATH;
-    else process.env.ACTUAL_BENCH_DB_PATH = originalDbPath;
-    for (const [k, v] of [["SYNC_SCHEDULER_SECRET", originalSecret], ["SYNC_VAULT_KEY", originalKey]] as const) {
-      if (v === undefined) delete process.env[k];
-      else process.env[k] = v;
-    }
-  });
-
-  it("rejects POST when no scheduler secret is configured", async () => {
+    delete process.env.ACTUAL_BENCH_DB_PATH;
     delete process.env.SYNC_SCHEDULER_SECRET;
-    const res = await POST(req() as never);
-    expect(res.status).toBe(403);
+    delete process.env.SYNC_VAULT_KEY;
+    rmSync(root, { recursive: true, force: true });
   });
 
-  it("rejects POST with a wrong secret", async () => {
-    process.env.SYNC_SCHEDULER_SECRET = "s3cret";
-    const res = await POST(req({ "x-scheduler-secret": "wrong" }) as never);
-    expect(res.status).toBe(403);
+  it("still reports the sync flow id, not the automation id, in `flowId`", async () => {
+    const db = getAppDb();
+    createAutomation(db, {
+      type: "budget-file-sync",
+      name: "Nightly sync",
+      scheduleKind: "interval",
+      intervalMinutes: 30,
+      targetRef: { version: 1, data: { flowId: "flow-abc" } },
+      config: { version: 1, data: { flowId: "flow-abc" } },
+    });
+
+    const response = await POST(request());
+    expect(response.status).toBe(200);
+
+    const body = (await response.json()) as {
+      ran: { flowId: string | null; automationId: string; type: string | null; status: string }[];
+    };
+
+    expect(body.ran).toHaveLength(1);
+    // The identifier an existing cron consumer parses is unchanged...
+    expect(body.ran[0].flowId).toBe("flow-abc");
+    // ...and the automation id is additional, not a substitute.
+    expect(body.ran[0].automationId).not.toBe("flow-abc");
+    expect(body.ran[0].type).toBe("budget-file-sync");
   });
 
-  it("GET returns a scheduler state snapshot", async () => {
-    const res = await GET();
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as { enabled: boolean; inFlight: string[] };
-    expect(typeof body.enabled).toBe("boolean");
-    expect(Array.isArray(body.inFlight)).toBe(true);
+  it("refuses a wrong secret", async () => {
+    const response = await POST(request("nope"));
+    expect(response.status).toBe(403);
+  });
+
+  it("is disabled when no secret is configured", async () => {
+    delete process.env.SYNC_SCHEDULER_SECRET;
+    const response = await POST(request());
+    expect(response.status).toBe(403);
   });
 });

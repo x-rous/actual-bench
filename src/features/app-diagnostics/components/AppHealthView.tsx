@@ -16,19 +16,30 @@ async function fetchAppDbHealth(): Promise<AppDbHealth> {
   return data;
 }
 
-type SchedulerState = {
-  enabled: boolean;
-  lastTickAt: string | null;
-  inFlight: string[];
-  pausedByHealth: string[];
-  lastResults: Record<string, { status: string; at: string; message?: string }>;
+type AutomationHealthSummary = {
+  checkedAt: string;
+  singleInstance: boolean;
+  vaultEnabled: boolean;
+  runningIds: string[];
+  overall: "ok" | "warning" | "failing" | "paused" | "idle";
+  automations: {
+    id: string;
+    name: string;
+    typeLabel: string;
+    status: "ok" | "warning" | "failing" | "paused" | "idle";
+    summary: string;
+    schedule: string;
+    executionMode: "browser" | "server";
+    nextRunAt: string | null;
+    stale: boolean;
+  }[];
 };
 type VaultStatus = { enabled: boolean; credentials: { connectionFingerprint: string; label: string; budgetSyncId: string }[] };
 
-async function fetchSchedulerState(): Promise<SchedulerState> {
-  const res = await fetch("/api/sync/scheduler/tick", { cache: "no-store" });
-  if (!res.ok) throw new Error(`Scheduler status request failed (${res.status})`);
-  return (await res.json()) as SchedulerState;
+async function fetchAutomationHealth(): Promise<AutomationHealthSummary> {
+  const res = await fetch("/api/automations/health", { cache: "no-store" });
+  if (!res.ok) throw new Error(`Automation health request failed (${res.status})`);
+  return (await res.json()) as AutomationHealthSummary;
 }
 async function fetchVaultStatus(): Promise<VaultStatus> {
   const res = await fetch("/api/sync-credentials", { cache: "no-store" });
@@ -111,47 +122,85 @@ function AppDatabaseCard({ health }: { health: AppDbHealth }) {
   );
 }
 
-function UnattendedSyncCard() {
-  const scheduler = useQuery({ queryKey: ["sync-scheduler-state"], queryFn: fetchSchedulerState });
+const AUTOMATION_STATUS_BADGE = {
+  ok: { variant: "status-active" as const, label: "Healthy" },
+  warning: { variant: "status-warning" as const, label: "Needs attention" },
+  failing: { variant: "destructive" as const, label: "Failing" },
+  paused: { variant: "status-warning" as const, label: "Paused" },
+  idle: { variant: "secondary" as const, label: "Idle" },
+};
+
+/**
+ * Automations, from the engine's own health accessor (RD-079 / PR-043e).
+ *
+ * Replaces the RD-058 "unattended sync scheduler" card, which read a single
+ * global snapshot blob and could only describe sync. There is one source of
+ * truth for automation health now, and this card and the Automations page both
+ * read it — two cards disagreeing about whether something ran is worse than one
+ * card with less detail.
+ */
+function AutomationsCard() {
+  const health = useQuery({ queryKey: ["automation-health"], queryFn: fetchAutomationHealth });
   const vault = useQuery({ queryKey: ["sync-vault-status"], queryFn: fetchVaultStatus });
-  const state = scheduler.data;
-  const enabled = state?.enabled ?? vault.data?.enabled ?? false;
-  const paused = state?.pausedByHealth ?? [];
-  const results = Object.entries(state?.lastResults ?? {});
+
+  const report = health.data;
+  const vaultEnabled = report?.vaultEnabled ?? vault.data?.enabled ?? false;
+  // An unknown status must not blank the card: the response is JSON from a
+  // server that may be a different version, so the lookup is defended.
+  const badge = health.isError
+    ? { variant: "status-warning" as const, label: "Unknown" }
+    : AUTOMATION_STATUS_BADGE[report?.overall ?? "idle"] ?? AUTOMATION_STATUS_BADGE.idle;
 
   return (
     <section className="rounded-md border border-border bg-background shadow-sm">
       <div className="flex items-center justify-between gap-2 px-4 py-3">
         <div className="flex items-center gap-2">
           <CalendarClock className="h-4 w-4 text-muted-foreground" />
-          <h2 className="text-sm font-semibold">Unattended sync scheduler</h2>
+          <h2 className="text-sm font-semibold">Automations</h2>
         </div>
-        <Badge variant={enabled ? "status-active" : "secondary"} className="text-[10px]">
-          {enabled ? "Enabled" : "Disabled"}
+        <Badge variant={badge.variant} className="text-[10px]">
+          {badge.label}
         </Badge>
       </div>
       <dl>
         <DetailRow
-          label="Vault"
-          value={enabled ? "Configured (SYNC_VAULT_KEY set)" : "Disabled - set SYNC_VAULT_KEY to enable unattended sync"}
+          label="Credential vault"
+          value={
+            vaultEnabled
+              ? "Configured (SYNC_VAULT_KEY set)"
+              : "Disabled - automations that need stored credentials will pause until SYNC_VAULT_KEY is set"
+          }
         />
         <DetailRow label="Enrolled connections" value={vault.data ? String(vault.data.credentials.length) : "-"} />
-        <DetailRow label="Last scheduler tick" value={formatDate(state?.lastTickAt ?? null)} />
+        <DetailRow label="Checked" value={formatDate(report?.checkedAt ?? null)} />
         <DetailRow
-          label="Paused by health"
-          value={paused.length === 0 ? "None" : paused.join(", ")}
+          label="Running now"
+          value={report && report.runningIds.length > 0 ? String(report.runningIds.length) : "Nothing running"}
         />
         <DetailRow
-          label="Recent runs"
+          label="Automations"
           value={
-            results.length === 0 ? (
-              "No unattended runs yet"
+            health.isError ? (
+              // Distinguish "nothing is configured" from "we could not ask".
+              // During an outage the first reads as reassurance and is wrong.
+              <span className="text-destructive">
+                Status unavailable — {(health.error as Error).message}
+              </span>
+            ) : !report || report.automations.length === 0 ? (
+              "None configured"
             ) : (
-              <ul className="flex flex-col gap-1">
-                {results.map(([flowId, r]) => (
-                  <li key={flowId} className="break-words">
-                    <span className="font-mono text-xs">{flowId.slice(0, 8)}</span>: {r.status}
-                    {r.message && <span className="text-muted-foreground"> — {r.message}</span>}
+              <ul className="flex flex-col gap-1.5">
+                {report.automations.map((automation) => (
+                  <li key={automation.id} className="break-words">
+                    <span className="font-medium">{automation.name}</span>{" "}
+                    <span className="text-muted-foreground">
+                      ({automation.typeLabel} · {automation.schedule} ·{" "}
+                      {automation.executionMode === "server" ? "server" : "browser only"})
+                    </span>
+                    <br />
+                    <span className={automation.status === "ok" ? "text-muted-foreground" : undefined}>
+                      {automation.summary}
+                    </span>
                   </li>
                 ))}
               </ul>
@@ -159,6 +208,13 @@ function UnattendedSyncCard() {
           }
         />
       </dl>
+      <div className="flex items-start gap-2 border-t border-border/60 px-4 py-3 text-xs text-muted-foreground">
+        <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+        <span>
+          Automations run inside this single Actual Bench process. Running more than one instance
+          against the same database would run them more than once.
+        </span>
+      </div>
     </section>
   );
 }
@@ -193,7 +249,7 @@ export function AppHealthView() {
     >
       <div className="mx-auto flex w-full max-w-4xl flex-col gap-4 p-4 lg:p-5">
         {query.data && <AppDatabaseCard health={query.data} />}
-        <UnattendedSyncCard />
+        <AutomationsCard />
       </div>
     </PageLayout>
   );

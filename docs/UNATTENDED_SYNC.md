@@ -14,7 +14,7 @@ This is opt-in, **off by default**, and available for **HTTP API Server mode** f
   items (duplicates, source-changed, blocked) always go to the review queue and are never
   auto-applied. Updates and deletes remain review-only.
 - Runs are recorded in history stamped `scheduled_unattended`, identical in structure to manual
-  and interval runs.
+  and interval runs, and appear on the Automations page as well with a link back to the sync run.
 
 ## Enabling it
 
@@ -24,18 +24,23 @@ This is opt-in, **off by default**, and available for **HTTP API Server mode** f
    SYNC_VAULT_KEY="a-long-random-operator-secret"
    ```
 
-   Without it, the whole feature is disabled: nothing is persisted and the scheduler never runs.
+   Without it, **unattended sync** is disabled: no credential can be stored or opened, so a flow
+   enrolled for it pauses with that reason. The automation engine itself still runs — it schedules
+   other work too — so this is a per-automation stop, not a silent global off switch.
 
-2. **Restart the server.** The in-process scheduler starts on boot when `SYNC_VAULT_KEY` is set
-   (it ticks about once a minute; single instance is sufficient).
+2. **Restart the server.** The in-process **automation engine** starts on boot and ticks about
+   once a minute (single instance is sufficient). Since the engine replaced the sync-specific
+   scheduler, it starts whether or not `SYNC_VAULT_KEY` is set — but a flow that needs stored
+   credentials will pause, with that reason shown, until the key is present.
 
 3. **Configure a flow.** In the flow editor, set the review policy to
    **"Auto-sync on a server schedule (unattended)"** (available only when both source and target
    are HTTP API connections), choose a frequency, then click **"Store credentials for unattended
    sync"** to enroll the budgets' API keys in the vault.
 
-4. **Check status** on the **App Health** page → *Unattended sync scheduler* (vault state, enrolled
-   count, last tick, health-paused flows, recent run statuses).
+4. **Check status** on the **Automations** page (Tools → Automations): schedule, last run, next
+   run, pause reasons and run history. The **App Health** page carries the same roll-up alongside
+   vault state and enrolled count. See [`AUTOMATIONS.md`](AUTOMATIONS.md).
 
 ### Optional: external cron
 
@@ -58,7 +63,10 @@ Without `SYNC_SCHEDULER_SECRET` set, that endpoint is disabled (403).
 - **Never exposed to the client.** Stored secrets are decrypted server-side only, during a
   scheduled run; the API and the UI only ever see non-secret metadata.
 - **Fail-safe.** A missing/locked vault (key unset or changed) or an auth failure **pauses the
-  flow and surfaces it** on App Health — it never guesses or silently retries forever.
+  automation and surfaces the reason** on Automations and App Health — it never guesses, never runs
+  partially against a credential it could not resolve, and never retries forever.
+- **Redacted output.** Credentials opened during a run are redacted from run logs and stored errors,
+  including when a provider echoes a key back in an error message.
 
 ## Disabling
 
@@ -71,4 +79,4 @@ Without `SYNC_SCHEDULER_SECRET` set, that endpoint is disabled (403).
 
 Changing `SYNC_VAULT_KEY` invalidates all existing ciphertext (by design — old secrets can no
 longer be decrypted). After rotating, **re-enroll** each unattended flow's credentials. Flows whose
-credentials can't be decrypted are paused and shown on App Health until re-enrolled.
+credentials can't be decrypted are paused and shown on Automations and App Health until re-enrolled.

@@ -432,3 +432,93 @@ export const RECONCILIATION_INDEX_SQL = [
   // One profile name per account keeps the "previous profile found" lookup unambiguous.
   "CREATE UNIQUE INDEX IF NOT EXISTS idx_reconciliation_profiles_account_name ON reconciliation_profiles(budget_sync_id, account_id, name)",
 ] as const;
+
+// ── Automation engine (RD-079 / PR-043a) ─────────────────────────────────────
+//
+// Job-type-agnostic scheduling. One definition per automation, one row per run.
+// Budget File Sync becomes the first registered job type in PR-043c; nothing
+// reads these tables until then.
+//
+// Two shape decisions are deliberate:
+//
+//   * `consecutive_failures` / `auto_paused_at` live on the definition row.
+//     RD-058's scheduler kept them in module-scope Maps that were lost on every
+//     restart, so a persistently broken flow re-armed itself after a deploy.
+//     Persisting them is what makes auto-pause mean something.
+//
+//   * `result_json` is a **type-owned** payload, with only a small engine-owned
+//     roll-up beside it. The engine must never require a job type to describe
+//     itself in another type's vocabulary (a bank sync reports per-account rows;
+//     a sync flow reports applied/review/blocked counts).
+//
+// `credential_ref` is a *reference* — the RD-063 server fingerprint — never a
+// secret. Config envelopes are additionally rejected if they carry
+// credential-looking fields (see jsonEnvelope's rejectSecrets).
+export const AUTOMATION_DEFINITION_TABLE_SQL = `
+CREATE TABLE IF NOT EXISTS automation_definitions (
+  id text PRIMARY KEY,
+  type text NOT NULL,
+  name text NOT NULL,
+  enabled integer NOT NULL DEFAULT 1,
+  -- 'browser' (runs only while Bench is open) | 'server' (unattended).
+  execution_mode text NOT NULL DEFAULT 'server',
+  -- 'interval' | 'cron'. Exactly one of the two fields below is meaningful.
+  schedule_kind text NOT NULL DEFAULT 'interval',
+  interval_minutes integer,
+  cron_expression text,
+  -- IANA zone; cron schedules are meaningless without one, and an interval
+  -- schedule still needs it to render "next run" honestly.
+  timezone text NOT NULL DEFAULT 'UTC',
+  -- What this automation acts on (connection/budget/account refs): JSON envelope.
+  target_ref_json text NOT NULL,
+  -- Vault key (RD-063 server fingerprint). Never a secret.
+  credential_ref text,
+  -- Type-owned configuration, validated by the job type's validateConfig.
+  config_json text NOT NULL,
+  -- Retry limit / backoff / pause threshold overrides.
+  failure_policy_json text,
+  consecutive_failures integer NOT NULL DEFAULT 0,
+  auto_paused_at text,
+  auto_pause_reason text,
+  last_run_at text,
+  last_success_at text,
+  next_run_at text,
+  -- Claimed-for-execution marker. The in-memory lock cannot be trusted alone:
+  -- Next evaluates route modules separately from the server boot context, so an
+  -- external cron POSTing the trigger endpoint runs against a *different* module
+  -- instance from the interval loop and would not see its in-flight set. The
+  -- claim is taken in the database, where both instances can see it.
+  running_since text,
+  created_at text NOT NULL,
+  updated_at text NOT NULL
+);
+`;
+
+export const AUTOMATION_RUN_TABLE_SQL = `
+CREATE TABLE IF NOT EXISTS automation_runs (
+  id text PRIMARY KEY,
+  automation_id text REFERENCES automation_definitions(id) ON DELETE CASCADE,
+  -- Denormalized so a run stays readable (and renderable by its type) after its
+  -- definition is deleted.
+  type text NOT NULL,
+  status text NOT NULL,
+  started_at text NOT NULL,
+  finished_at text,
+  -- 'schedule' | 'manual' | 'retry'.
+  trigger text NOT NULL DEFAULT 'schedule',
+  attempt integer NOT NULL DEFAULT 1,
+  execution_mode text NOT NULL DEFAULT 'server',
+  -- Type-owned result payload, rendered by the job type.
+  result_json text,
+  -- Engine-derived cross-type roll-up: outcome + item count.
+  rollup_json text,
+  error_json text
+);
+`;
+
+export const AUTOMATION_INDEX_SQL = [
+  "CREATE INDEX IF NOT EXISTS idx_automation_runs_automation_started ON automation_runs(automation_id, started_at)",
+  "CREATE INDEX IF NOT EXISTS idx_automation_definitions_type_updated ON automation_definitions(type, updated_at)",
+  // The scheduler's selection query: enabled automations ordered by when they are due.
+  "CREATE INDEX IF NOT EXISTS idx_automation_definitions_due ON automation_definitions(enabled, next_run_at)",
+] as const;
