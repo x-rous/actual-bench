@@ -365,7 +365,7 @@ export interface ActualBenchTransport {
    * Optional: a transport that cannot do this omits it, and the capability
    * report says so, rather than the operation silently doing nothing.
    */
-  runBankSync?(input?: { accountId?: string }): Promise<BankSyncOutcome>;
+  runBankSync?(input?: { accountId?: string; signal?: AbortSignal }): Promise<BankSyncOutcome>;
   /**
    * Whether this connection can actually run a bank sync right now.
    *

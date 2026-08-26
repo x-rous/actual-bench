@@ -129,23 +129,24 @@ export const bankSyncJobType: AutomationJobType<BankSyncConfig, BankSyncJobResul
         : "Syncing every account linked to a bank"
     );
 
-    // One call per selected account so a cancelled run stops between accounts
-    // rather than after every bank has been contacted.
+    // Cancellation is honoured between accounts on both paths: the transport
+    // checks the signal inside its own loop, which is the only place that knows
+    // where one account ends and the next begins.
     if (ctx.config.accountIds.length > 0) {
       const results: BankSyncAccountResult[] = [];
+      let countsObserved = false;
+
       for (const accountId of ctx.config.accountIds) {
         if (ctx.signal.aborted) break;
-        const outcome = await transport.runBankSync({ accountId });
+        const outcome = await transport.runBankSync({ accountId, signal: ctx.signal });
         results.push(...outcome.results);
+        countsObserved = countsObserved || outcome.countsObserved;
       }
-      return {
-        status: rollupStatus(results),
-        results,
-        countsObserved: false,
-      };
+
+      return { status: rollupStatus(results), results, countsObserved };
     }
 
-    return transport.runBankSync();
+    return transport.runBankSync({ signal: ctx.signal });
   },
 
   summarize(result: BankSyncJobResult): AutomationRunRollup {

@@ -239,4 +239,47 @@ describe("summarizing", () => {
     expect(outcome.countsObserved).toBe(false);
     expect(outcome.status).toBe("ok");
   });
+
+  it("stops between accounts when the run is cancelled", async () => {
+    const loadAccounts = withAccounts([
+      account({ id: "a" }),
+      account({ id: "b" }),
+      account({ id: "c" }),
+    ]);
+    const controller = new AbortController();
+    const triggered: string[] = [];
+
+    const outcome = await runBankSyncForAccounts({
+      loadAccounts,
+      synchronous: true,
+      signal: controller.signal,
+      trigger: async (id) => {
+        triggered.push(id);
+        // Someone presses stop while the first account is syncing.
+        if (id === "a") controller.abort();
+      },
+    });
+
+    // The remaining banks are not contacted, and the account that did sync is
+    // still reported rather than the whole run being discarded.
+    expect(triggered).toEqual(["a"]);
+    expect(outcome.results.map((result) => result.accountId)).toEqual(["a"]);
+  });
+
+  it("does not start at all when cancelled before the first account", async () => {
+    const loadAccounts = withAccounts([account({ id: "a" })]);
+    const controller = new AbortController();
+    controller.abort();
+
+    const outcome = await runBankSyncForAccounts({
+      loadAccounts,
+      synchronous: true,
+      signal: controller.signal,
+      trigger: async () => {
+        throw new Error("should not be called");
+      },
+    });
+
+    expect(outcome.results).toHaveLength(0);
+  });
 });

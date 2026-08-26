@@ -185,6 +185,7 @@ export function createHttpApiTransport(
       runBankSyncForAccounts({
         loadAccounts: () => listAccountsForBankSync(connection),
         accountId: input?.accountId,
+        signal: input?.signal,
         trigger: (accountId) => triggerAccountBankSync(connection, accountId),
         // The endpoint answers "Bank sync started". Until that is verified
         // against a live server, treat it as accepted rather than finished —
