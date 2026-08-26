@@ -69,6 +69,7 @@ One place for everything Actual Bench runs on a schedule, on a shared engine rat
 - **Fail closed on credentials**: an automation that names a credential it cannot resolve (vault disabled, key rotated, credential withdrawn) does not run at all and pauses with that reason.
 - **Overdue is a warning**, not a silent success: an automation well past its next run is flagged even though nothing failed.
 - **Shared review queue**: work an automation left for a person, linking into the job type's own review screen. Job types that only trigger Actual's own work construct nothing reviewable and are absent from the queue rather than shown empty.
+- **Scheduled bank sync**: ask Actual to pull from your connected banks (SimpleFIN / GoCardless) on a schedule with nothing open. Per-account results, one bank's failure never hiding the others, accounts with no bank link reported as such rather than counted as synced, and a transaction count only where Bench could measure one. A partly-failed run does not auto-pause the automation; a wholly failed one counts towards it.
 - Not in scope: an external job runner, message queue, or multi-process workers; notification channels (email/webhook/push); coordinating automations across more than one Bench instance; and making Direct mode unattended.
 
 See `docs/AUTOMATIONS.md`.
