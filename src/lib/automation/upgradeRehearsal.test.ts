@@ -119,6 +119,9 @@ describe("upgrading an installation that is already syncing unattended", () => {
       // And no automation run has been invented for something that already ran.
       expect(listAutomationRuns(db)).toHaveLength(0);
     } finally {
+      // Close the connection before deleting the file: an open SQLite handle
+      // blocks removal on Windows, whatever `force` says.
+      resetAppDbForTests();
       rmSync(root, { recursive: true, force: true });
     }
   });
@@ -137,6 +140,7 @@ describe("upgrading an installation that is already syncing unattended", () => {
 
       expect(listAutomations(reopened)).toHaveLength(1);
     } finally {
+      resetAppDbForTests();
       rmSync(root, { recursive: true, force: true });
     }
   });
