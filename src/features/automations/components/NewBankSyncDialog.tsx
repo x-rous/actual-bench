@@ -97,21 +97,30 @@ function AccountRow({ account }: { account: BankSyncAccountPreview }) {
 export function NewBankSyncDialog({ open, onOpenChange, onCreated }: NewBankSyncDialogProps) {
   const vault = useQuery({ queryKey: ["vault-connections"], queryFn: listVaultConnections, enabled: open });
 
-  const [connectionFingerprint, setConnectionFingerprint] = useState("");
+  const [chosenConnection, setChosenConnection] = useState("");
   const [cadence, setCadence] = useState<Cadence>("hours");
   const [hours, setHours] = useState("6");
   const [dailyTime, setDailyTime] = useState("06:00");
   const [cron, setCron] = useState("0 6 * * 1-5");
   const [timezone, setTimezone] = useState(() => browserTimezone());
 
-  const timezones = useMemo(() => timezoneOptions(), []);
-  const connections = vault.data?.credentials ?? [];
+  // A clock read during render is impure; snapshot it, and refresh it while the
+  // dialog is open so "first run in 3 minutes" does not quietly go stale.
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  useEffect(() => {
+    if (!open) return;
+    const timer = setInterval(() => setNowMs(Date.now()), 30_000);
+    return () => clearInterval(timer);
+  }, [open]);
+
+  const timezones = useMemo(() => timezoneOptions(new Date(nowMs)), [nowMs]);
+  const connections = useMemo(() => vault.data?.credentials ?? [], [vault.data]);
   const vaultEnabled = vault.data?.enabled ?? false;
 
-  useEffect(() => {
-    if (!open || connections.length === 0 || connectionFingerprint) return;
-    setConnectionFingerprint(connections[0].connectionFingerprint);
-  }, [open, connections, connectionFingerprint]);
+  // Derived rather than written from an effect: the first enrolled connection
+  // is the default until someone picks another, which needs no render pass to
+  // settle and cannot cascade.
+  const connectionFingerprint = chosenConnection || connections[0]?.connectionFingerprint || "";
 
   const accountsQuery = useQuery({
     queryKey: ["bank-sync-accounts", connectionFingerprint],
@@ -140,10 +149,10 @@ export function NewBankSyncDialog({ open, onOpenChange, onCreated }: NewBankSync
         failurePolicy: { backoffMinutes: 5, backoffCeilingMinutes: 60, pauseAfterConsecutiveFailures: 5 },
       },
       lastRunAtMs: null,
-      nowMs: Date.now(),
+      nowMs,
     });
     return ms === null ? null : new Date(ms).toISOString();
-  }, [cronInvalid, schedule.scheduleKind, schedule.intervalMinutes, schedule.cronExpression, timezone]);
+  }, [cronInvalid, schedule.scheduleKind, schedule.intervalMinutes, schedule.cronExpression, timezone, nowMs]);
 
   const create = useMutation({
     mutationFn: async () => {
@@ -201,7 +210,7 @@ export function NewBankSyncDialog({ open, onOpenChange, onCreated }: NewBankSync
                   <select
                     className={`${selectClass} w-full`}
                     value={connectionFingerprint}
-                    onChange={(event) => setConnectionFingerprint(event.target.value)}
+                    onChange={(event) => setChosenConnection(event.target.value)}
                   >
                     {connections.map((connection) => (
                       <option key={connection.connectionFingerprint} value={connection.connectionFingerprint}>
