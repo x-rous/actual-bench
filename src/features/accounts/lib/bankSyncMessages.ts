@@ -1,3 +1,4 @@
+import { BANK_SYNC_COUNT_WINDOW_DAYS } from "@/lib/actual/bankSync";
 import type { BankSyncOutcome } from "@/lib/actual/bankSync";
 
 /**
@@ -58,10 +59,12 @@ export function bankSyncMessage(outcome: BankSyncOutcome): BankSyncMessage {
     ? succeeded.reduce((total, result) => total + (result.observedNewTransactions ?? 0), 0)
     : null;
 
+  // The window is part of the claim, not a footnote: a first sync can import
+  // years of history, and a 90-day count would understate it badly.
   const succeededText = outcome.countsObserved
     ? observed === 0
-      ? `No new transactions in ${plural(succeeded.length, "account")}.`
-      : `${plural(observed ?? 0, "new transaction")} in ${plural(succeeded.length, "account")}.`
+      ? `No new transactions in the last ${BANK_SYNC_COUNT_WINDOW_DAYS} days in ${plural(succeeded.length, "account")}.`
+      : `${plural(observed ?? 0, "new transaction")} in the last ${BANK_SYNC_COUNT_WINDOW_DAYS} days in ${plural(succeeded.length, "account")}.`
     : `Bank sync started for ${plural(succeeded.length, "account")}. Actual imports in the background, so new transactions may take a moment to appear.`;
 
   if (failed.length > 0) {

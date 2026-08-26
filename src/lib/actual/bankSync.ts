@@ -32,8 +32,15 @@ export type BankSyncAccountResult = {
   /** Sanitized provider error, when the account failed. */
   message?: string;
   /**
-   * New transactions Bench *observed* by reading the account before and after.
-   * Null when the transport cannot tell — never a fabricated zero.
+   * New transactions Bench *observed* by reading the account before and after,
+   * **within a recent window** (see `BANK_SYNC_COUNT_WINDOW_DAYS`). Null when
+   * the transport cannot tell — never a fabricated zero.
+   *
+   * The window matters and must be stated wherever this number is shown: the
+   * first sync of a newly linked account can import years of history, and a
+   * count taken over the last 90 days would report a small number for a very
+   * large import. Bounded reads are the right trade, but only if the bound is
+   * disclosed rather than hidden behind a confident total.
    */
   observedNewTransactions?: number | null;
 };
@@ -92,3 +99,11 @@ export function sanitizeBankSyncError(error: unknown): string {
     .replace(/(\/\/[^\s/:@]+:)([^\s@]+)(@)/g, "$1[redacted]$3")
     .slice(0, 500);
 }
+
+/**
+ * How far back a count looks. Bank imports land recent transactions, and
+ * reading an account's whole history on every sync would cost far more than the
+ * number is worth — but see `observedNewTransactions`: the bound is disclosed,
+ * not hidden.
+ */
+export const BANK_SYNC_COUNT_WINDOW_DAYS = 90;

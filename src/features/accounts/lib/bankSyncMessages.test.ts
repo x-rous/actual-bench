@@ -15,7 +15,9 @@ describe("what a manual bank sync tells the user", () => {
     );
 
     expect(message.tone).toBe("success");
-    expect(message.text).toBe("4 new transactions in 1 account.");
+    // The window is stated: a first sync can import years of history, and a
+    // bare "4 new transactions" would understate it badly.
+    expect(message.text).toBe("4 new transactions in the last 90 days in 1 account.");
   });
 
   it("says the sync started, without a number, when the transport only accepted it", () => {
@@ -38,7 +40,7 @@ describe("what a manual bank sync tells the user", () => {
       outcome([{ accountId: "a", status: "synced", observedNewTransactions: 0 }])
     );
 
-    expect(message.text).toBe("No new transactions in 1 account.");
+    expect(message.text).toBe("No new transactions in the last 90 days in 1 account.");
   });
 
   it("names the accounts that failed, and keeps the ones that worked", () => {
@@ -53,7 +55,7 @@ describe("what a manual bank sync tells the user", () => {
     );
 
     expect(message.tone).toBe("warning");
-    expect(message.text).toMatch(/2 new transactions in 1 account/);
+    expect(message.text).toMatch(/2 new transactions in the last 90 days in 1 account/);
     expect(message.text).toMatch(/1 account failed/);
     expect(message.detail).toBe("Savings: consent expired");
   });

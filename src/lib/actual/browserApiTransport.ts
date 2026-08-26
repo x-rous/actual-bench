@@ -61,6 +61,7 @@ import {
 } from "./transport";
 import { listAccountsForBankSync } from "./bankSyncAccounts";
 import { runBankSyncForAccounts } from "./runBankSync";
+import { BANK_SYNC_COUNT_WINDOW_DAYS } from "./bankSync";
 import type { BankSyncOutcome } from "./bankSync";
 import { getBudgetFileSyncCapabilities } from "@/lib/sync/capabilities";
 import { normalizeName } from "@/lib/sync/normalize";
@@ -413,8 +414,11 @@ async function runBrowserBankSync(
     // A bounded window: bank imports land recent transactions, and reading the
     // whole account's history on every sync would cost far more than the count
     // is worth.
-    const to = new Date();
-    const from = new Date(to.getTime() - BANK_SYNC_COUNT_WINDOW_DAYS * 24 * 60 * 60_000);
+    const now = Date.now();
+    const from = new Date(now - BANK_SYNC_COUNT_WINDOW_DAYS * 24 * 60 * 60_000);
+    // A day of headroom: providers post future-dated and pending rows, and an
+    // end date of "today" would miss them and undercount the import.
+    const to = new Date(now + 24 * 60 * 60_000);
     const rows = await api.getTransactions(id, isoDate(from), isoDate(to));
     return rows.length;
   };
@@ -429,9 +433,6 @@ async function runBrowserBankSync(
     countTransactions,
   });
 }
-
-/** How far back to look when counting what a sync brought in. */
-const BANK_SYNC_COUNT_WINDOW_DAYS = 90;
 
 function isoDate(value: Date): string {
   return value.toISOString().slice(0, 10);

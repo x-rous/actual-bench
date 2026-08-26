@@ -183,4 +183,22 @@ describe("summarizing", () => {
     // One synced, one skipped: that is a clean run, not a partial one.
     expect(outcome.status).toBe("ok");
   });
+
+  it("does not fabricate a count when reading the account fails", async () => {
+    const loadAccounts = withAccounts([account({ id: "a" })]);
+
+    const outcome = await runBankSyncForAccounts({
+      loadAccounts,
+      synchronous: true,
+      trigger: async () => {},
+      countTransactions: async () => {
+        throw new Error("query failed");
+      },
+    });
+
+    // The sync itself worked; only the measurement did not.
+    expect(outcome.results[0].status).toBe("synced");
+    expect(outcome.results[0].observedNewTransactions).toBeNull();
+    expect(outcome.status).toBe("ok");
+  });
 });
