@@ -1,5 +1,7 @@
 # ── Dependencies ──────────────────────────────────────────────────────────────
-node_modules/
+# No trailing slash: a trailing slash matches directories only, so a *symlink*
+# named node_modules is not ignored — which is how one reached a commit.
+node_modules
 
 # ── Next.js build output ──────────────────────────────────────────────────────
 .next/
