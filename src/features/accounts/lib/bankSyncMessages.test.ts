@@ -92,4 +92,45 @@ describe("what a manual bank sync tells the user", () => {
     expect(message.tone).toBe("error");
     expect(message.text).toMatch(/does not expose a bank sync trigger/);
   });
+
+  it("does not turn a failed measurement into \"no new transactions\"", () => {
+    const message = bankSyncMessage(
+      outcome(
+        [{ accountId: "a", accountName: "Checking", status: "synced", observedNewTransactions: null }],
+        { countsObserved: false }
+      )
+    );
+
+    // The import finished; the counting did not. Saying "no new transactions"
+    // would report a measurement that never happened.
+    expect(message.text).toBe(
+      "Bank sync finished for 1 account, but Actual Bench could not count what arrived."
+    );
+    expect(message.text).not.toMatch(/No new transactions/);
+  });
+
+  it("keeps \"started\" wording for a transport that only accepted the request", () => {
+    const message = bankSyncMessage(
+      outcome(
+        [{ accountId: "a", status: "accepted", observedNewTransactions: null }],
+        { countsObserved: false }
+      )
+    );
+
+    // Distinct from the case above: here Bench does not know the import even
+    // finished, so it must not say that it did.
+    expect(message.text).toMatch(/Bank sync started for 1 account/);
+    expect(message.text).not.toMatch(/finished/);
+  });
+
+  it("sums only the accounts whose measurement resolved", () => {
+    const message = bankSyncMessage(
+      outcome([
+        { accountId: "a", status: "synced", observedNewTransactions: 3 },
+        { accountId: "b", status: "synced", observedNewTransactions: null },
+      ])
+    );
+
+    expect(message.text).toMatch(/^3 new transactions in the last 90 days/);
+  });
 });

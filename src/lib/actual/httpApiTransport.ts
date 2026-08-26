@@ -178,6 +178,9 @@ export function createHttpApiTransport(
     // Budget File Sync over HTTP API mode (RD-060): entity primitives above,
     // transaction primitives via actual-http-api below.
     getSyncCapabilities: () => getBudgetFileSyncCapabilities({ mode: "http-api" }),
+    // The endpoints are part of actual-http-api's contract, so there is no
+    // per-build question to ask the way there is for the Direct runtime.
+    canRunBankSync: async () => true,
     runBankSync: (input) =>
       runBankSyncForAccounts({
         loadAccounts: () => listAccountsForBankSync(connection),

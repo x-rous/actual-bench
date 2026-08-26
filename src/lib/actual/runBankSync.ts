@@ -94,5 +94,12 @@ export async function runBankSyncForAccounts(
     );
   }
 
-  return summarizeBankSync(results, options.synchronous && Boolean(options.countTransactions));
+  // Observed means *a count actually came back*, not "we intended to count".
+  // When every read fails, the intent is irrelevant: reporting the sum of nulls
+  // as zero would tell the user "no new transactions" about a run Bench never
+  // measured — the exact claim this feature must not make.
+  const anyCountResolved = results.some(
+    (result) => typeof result.observedNewTransactions === "number"
+  );
+  return summarizeBankSync(results, anyCountResolved);
 }

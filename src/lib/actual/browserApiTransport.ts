@@ -1250,6 +1250,12 @@ export function createBrowserApiTransport(
 
     getSyncCapabilities: () => getBudgetFileSyncCapabilities(connection),
     runBankSync: (input) => runBrowserBankSync(connection, input?.accountId),
+    canRunBankSync: async () => {
+      // The runtime is already open on any page that could offer this, so this
+      // resolves from cache rather than loading a budget to answer a question.
+      const api = await getBrowserApiRuntime(connection);
+      return typeof api.runBankSync === "function";
+    },
     listTransactionsForSync: (input) =>
       listBrowserTransactionsForSync(connection, input),
     createOrResolvePayee: (input) =>

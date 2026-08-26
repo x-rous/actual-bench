@@ -47,7 +47,10 @@ const CURRENT_DIRECT_CAPABILITIES: SyncCapabilitySet = {
   // RD-057: the browser API can update/delete an existing transaction by id.
   updateTransaction: true,
   deleteTransaction: true,
-  // RD-080: `runBankSync` is exported by the browser build and awaits the pull.
+  // RD-080: the Direct transport implements the operation, and `runBankSync` is
+  // exported by the browser build. Whether a *particular* loaded build exposes
+  // it is a runtime question this static report cannot answer — callers that
+  // need certainty use the transport's `canRunBankSync()`.
   runBankSync: true,
 };
 

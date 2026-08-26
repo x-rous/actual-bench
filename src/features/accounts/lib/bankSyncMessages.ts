@@ -54,18 +54,34 @@ export function bankSyncMessage(outcome: BankSyncOutcome): BankSyncMessage {
   }
 
   // Counts are only quoted when the transport actually finished importing and
-  // Bench measured the difference itself.
-  const observed = outcome.countsObserved
-    ? succeeded.reduce((total, result) => total + (result.observedNewTransactions ?? 0), 0)
-    : null;
+  // Bench measured the difference itself. Accounts whose measurement failed are
+  // excluded rather than counted as zero, and if none resolved there is no
+  // number to quote at all.
+  const measured = succeeded.filter(
+    (result): result is typeof result & { observedNewTransactions: number } =>
+      typeof result.observedNewTransactions === "number"
+  );
+  const observed =
+    outcome.countsObserved && measured.length > 0
+      ? measured.reduce((total, result) => total + result.observedNewTransactions, 0)
+      : null;
 
   // The window is part of the claim, not a footnote: a first sync can import
   // years of history, and a 90-day count would understate it badly.
-  const succeededText = outcome.countsObserved
-    ? observed === 0
-      ? `No new transactions in the last ${BANK_SYNC_COUNT_WINDOW_DAYS} days in ${plural(succeeded.length, "account")}.`
-      : `${plural(observed ?? 0, "new transaction")} in the last ${BANK_SYNC_COUNT_WINDOW_DAYS} days in ${plural(succeeded.length, "account")}.`
-    : `Bank sync started for ${plural(succeeded.length, "account")}. Actual imports in the background, so new transactions may take a moment to appear.`;
+  // Three distinct cases, and collapsing any two of them misleads:
+  //   * counted        — quote the number, with the window it was measured over
+  //   * finished, uncounted — the import completed but the measurement did not
+  //   * accepted       — the server took the request and has not said it finished
+  const onlyAccepted = succeeded.every((result) => result.status === "accepted");
+
+  const succeededText =
+    observed !== null
+      ? observed === 0
+        ? `No new transactions in the last ${BANK_SYNC_COUNT_WINDOW_DAYS} days in ${plural(succeeded.length, "account")}.`
+        : `${plural(observed, "new transaction")} in the last ${BANK_SYNC_COUNT_WINDOW_DAYS} days in ${plural(succeeded.length, "account")}.`
+      : onlyAccepted
+        ? `Bank sync started for ${plural(succeeded.length, "account")}. Actual imports in the background, so new transactions may take a moment to appear.`
+        : `Bank sync finished for ${plural(succeeded.length, "account")}, but Actual Bench could not count what arrived.`;
 
   if (failed.length > 0) {
     return {

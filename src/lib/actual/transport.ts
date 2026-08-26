@@ -366,6 +366,14 @@ export interface ActualBenchTransport {
    * report says so, rather than the operation silently doing nothing.
    */
   runBankSync?(input?: { accountId?: string }): Promise<BankSyncOutcome>;
+  /**
+   * Whether this connection can actually run a bank sync right now.
+   *
+   * The capability report is static per mode and cannot see the loaded Actual
+   * build, which is what decides it in Direct mode. Callers use this to avoid
+   * offering an action that could only fail.
+   */
+  canRunBankSync?(): Promise<boolean>;
   /** Read source transactions with split lines inline and names resolved. */
   listTransactionsForSync(
     input: ListTransactionsForSyncInput

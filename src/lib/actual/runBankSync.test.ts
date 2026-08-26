@@ -184,6 +184,43 @@ describe("summarizing", () => {
     expect(outcome.status).toBe("ok");
   });
 
+  it("does not claim counts were observed when every measurement failed", async () => {
+    const loadAccounts = withAccounts([account({ id: "a" }), account({ id: "b" })]);
+
+    const outcome = await runBankSyncForAccounts({
+      loadAccounts,
+      synchronous: true,
+      trigger: async () => {},
+      // Intending to count is not the same as having counted.
+      countTransactions: async () => {
+        throw new Error("query failed");
+      },
+    });
+
+    expect(outcome.countsObserved).toBe(false);
+    expect(outcome.results.every((result) => result.observedNewTransactions === null)).toBe(true);
+  });
+
+  it("still reports observed counts when only some measurements failed", async () => {
+    const loadAccounts = withAccounts([account({ id: "a" }), account({ id: "b" })]);
+    let calls = 0;
+
+    const outcome = await runBankSyncForAccounts({
+      loadAccounts,
+      synchronous: true,
+      trigger: async () => {},
+      countTransactions: async (id) => {
+        if (id === "b") throw new Error("query failed");
+        calls += 1;
+        return calls === 1 ? 5 : 8;
+      },
+    });
+
+    expect(outcome.countsObserved).toBe(true);
+    expect(outcome.results.find((result) => result.accountId === "a")?.observedNewTransactions).toBe(3);
+    expect(outcome.results.find((result) => result.accountId === "b")?.observedNewTransactions).toBeNull();
+  });
+
   it("does not fabricate a count when reading the account fails", async () => {
     const loadAccounts = withAccounts([account({ id: "a" })]);
 
@@ -199,6 +236,7 @@ describe("summarizing", () => {
     // The sync itself worked; only the measurement did not.
     expect(outcome.results[0].status).toBe("synced");
     expect(outcome.results[0].observedNewTransactions).toBeNull();
+    expect(outcome.countsObserved).toBe(false);
     expect(outcome.status).toBe("ok");
   });
 });
