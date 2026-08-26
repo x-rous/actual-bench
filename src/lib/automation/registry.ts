@@ -2,6 +2,7 @@ import type {
   AutomationDefinition,
   AutomationRunRollup,
   JsonEnvelope,
+  SqliteDatabase,
 } from "@/lib/app-db/types";
 
 /**
@@ -107,6 +108,21 @@ export type AutomationJobType<TConfig = unknown, TResult = unknown> = {
    * payload keeps its full detail while the roll-up stays small. */
   serializeResult(result: TResult): JsonEnvelope;
   classification?: AutomationClassificationSupport;
+  /**
+   * Bring this type's automations in line with the feature's own configuration.
+   *
+   * Called on every engine tick, before anything is selected to run. It exists
+   * because a feature's configuration lives outside the engine and changes
+   * while the server is up: Budget File Sync flows are created and switched to
+   * unattended from the Sync UI at any time, and running the reconciliation
+   * only at boot meant a flow enrolled after startup silently never ran until
+   * the next restart.
+   *
+   * Must be idempotent and cheap — it runs once a minute. Errors are logged and
+   * swallowed; a type that cannot reconcile must not stop other automations
+   * from running.
+   */
+  reconcile?(db: SqliteDatabase): void | Promise<void>;
 };
 
 const registry = new Map<string, AutomationJobType<never, never>>();

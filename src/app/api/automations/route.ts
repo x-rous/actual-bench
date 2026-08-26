@@ -5,7 +5,8 @@ import { createAutomation, listAutomations } from "@/lib/app-db/automationReposi
 import { ensureAutomationJobTypesRegistered } from "@/lib/automation/bootstrap";
 import { getAutomationJobType, listAutomationJobTypes } from "@/lib/automation/registry";
 import { describeSchedule } from "@/lib/automation/schedule";
-import { isAutomationRunning } from "@/lib/automation/engine";
+import { buildAutomationHealth } from "@/lib/automation/health";
+import { isAutomationRunning, reconcileJobTypes } from "@/lib/automation/engine";
 import { listAutomationRuns } from "@/lib/app-db/automationRunRepository";
 
 export const dynamic = "force-dynamic";
@@ -16,18 +17,33 @@ export const runtime = "nodejs";
  * an automation without a second request: its plain-language schedule, whether
  * it is running right now, and its most recent run.
  */
-export function GET() {
+export async function GET() {
   try {
     ensureAutomationJobTypesRegistered();
     const db = getAppDb();
+    // Pick up anything enrolled since the last tick, so the page cannot tell
+    // someone the flow they just created does not exist.
+    await reconcileJobTypes(db);
+
+    // Status comes from the health module rather than being re-derived in the
+    // UI: "is this healthy" is a judgement with rules (a stale run is a warning,
+    // a cancelled one is neither success nor failure), and two implementations
+    // of it would eventually disagree on the same screen.
+    const health = new Map(
+      buildAutomationHealth(db).automations.map((entry) => [entry.id, entry])
+    );
 
     const automations = listAutomations(db).map((automation) => {
       const [lastRun] = listAutomationRuns(db, { automationId: automation.id, limit: 1 });
+      const entry = health.get(automation.id);
       return {
         ...automation,
         scheduleLabel: describeSchedule(automation),
         running: isAutomationRunning(automation),
         lastRun: lastRun ?? null,
+        typeLabel: entry?.typeLabel ?? automation.type,
+        status: entry?.status ?? "idle",
+        statusSummary: entry?.summary ?? "",
       };
     });
 

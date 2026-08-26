@@ -124,3 +124,46 @@ export function triggerLabel(run: AutomationRun): string {
       return "Scheduled";
   }
 }
+
+/**
+ * The one line at the top of the page: how many automations, whether anything
+ * needs attention, and when the next one runs.
+ *
+ * "2 automations" alone answers a question nobody asked. What someone opening
+ * this page wants to know is whether they can close it again.
+ */
+export function describeAutomationsSummary(
+  automations: {
+    status: "ok" | "warning" | "failing" | "paused" | "idle";
+    enabled: boolean;
+    autoPausedAt: string | null;
+    nextRunAt: string | null;
+  }[],
+  nowMs = Date.now()
+): string | undefined {
+  if (automations.length === 0) return undefined;
+
+  const count = `${automations.length} automation${automations.length === 1 ? "" : "s"}`;
+  const failing = automations.filter((automation) => automation.status === "failing").length;
+  const paused = automations.filter((automation) => automation.status === "paused").length;
+  const warning = automations.filter((automation) => automation.status === "warning").length;
+
+  const trouble = [
+    failing > 0 ? `${failing} failing` : null,
+    paused > 0 ? `${paused} paused` : null,
+    warning > 0 ? `${warning} need attention` : null,
+  ].filter((part): part is string => part !== null);
+
+  const upcoming = automations
+    .filter((automation) => automation.enabled && !automation.autoPausedAt && automation.nextRunAt)
+    .map((automation) => Date.parse(automation.nextRunAt as string))
+    .filter((ms) => !Number.isNaN(ms))
+    .sort((a, b) => a - b)[0];
+
+  const next = upcoming === undefined ? null : `next run ${relativeTime(new Date(upcoming).toISOString(), nowMs)}`;
+
+  // Silence about trouble would read as reassurance, so it comes first.
+  const parts = [count, ...(trouble.length > 0 ? [trouble.join(", ")] : ["all healthy"])];
+  if (next) parts.push(next);
+  return parts.join(" · ");
+}

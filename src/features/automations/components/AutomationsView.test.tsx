@@ -44,6 +44,9 @@ function automation(overrides: Partial<AutomationListItem> = {}): AutomationList
     scheduleLabel: "Every 30 minutes",
     running: false,
     lastRun: run(),
+    typeLabel: "Budget File Sync",
+    status: "ok",
+    statusSummary: "Last run finished successfully.",
     ...overrides,
   };
 }
@@ -95,8 +98,10 @@ describe("AutomationsView", () => {
 
     expect(await screen.findByText("Household → Joint")).toBeInTheDocument();
     expect(screen.getByText(/Every 30 minutes/)).toBeInTheDocument();
-    expect(screen.getByText("Succeeded")).toBeInTheDocument();
-    expect(screen.getByText("3 added")).toBeInTheDocument();
+    // The job type is named rather than inferred: "Household → Joint" says
+    // nothing about what kind of automation it is once bank sync exists.
+    expect(screen.getByText("Budget File Sync")).toBeInTheDocument();
+    expect(screen.getByText(/3 added/)).toBeInTheDocument();
   });
 
   it("states on every row whether the automation runs with Bench closed", async () => {
@@ -110,15 +115,19 @@ describe("AutomationsView", () => {
 
     renderView();
 
-    expect(await screen.findByText(/even with Actual Bench closed/i)).toBeInTheDocument();
-    // The browser-mode row must say so on the row itself, not in docs somewhere.
-    expect(screen.getByText(/only runs while Actual Bench is open/i)).toBeInTheDocument();
+    // Stated once for the page...
+    expect(await screen.findByText(/run on a schedule even with Actual Bench closed/i)).toBeInTheDocument();
+    // ...and per row, where a browser-only automation cannot be mistaken for an
+    // unattended one. The full explanation is on the control itself.
+    const browserCell = screen.getByText("Browser only");
+    expect(browserCell).toHaveAttribute("title", expect.stringMatching(/only runs while Actual Bench is open/i));
+    expect(screen.getAllByText("Server").length).toBeGreaterThan(0);
   });
 
   it("runs an automation on demand", async () => {
     renderView();
 
-    fireEvent.click(await screen.findByRole("button", { name: /run now/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /run .* now/i }));
 
     // react-query passes its own context as a second argument; assert on the id.
     await waitFor(() => expect(mockedApi.runAutomationNow).toHaveBeenCalled());
@@ -144,7 +153,7 @@ describe("AutomationsView", () => {
     renderView();
     await screen.findByText("Second automation");
 
-    const buttons = screen.getAllByRole("button", { name: /run now/i });
+    const buttons = screen.getAllByRole("button", { name: /run .* now/i });
     fireEvent.click(buttons[0]);
 
     await waitFor(() => expect(buttons[0]).toBeDisabled());
@@ -161,8 +170,9 @@ describe("AutomationsView", () => {
 
     renderView();
 
+    // Status is readable as a word, not just a colour.
     expect(await screen.findByText("Running")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /run now/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /run .* now/i })).toBeDisabled();
   });
 
   it("surfaces the pause reason and offers Resume rather than a bare toggle", async () => {
@@ -173,6 +183,8 @@ describe("AutomationsView", () => {
           autoPausedAt: "2026-08-25T09:00:00.000Z",
           autoPauseReason: "Paused after 5 consecutive failures: provider unreachable",
           consecutiveFailures: 5,
+          status: "paused",
+          statusSummary: "Paused after 5 consecutive failures: provider unreachable",
         }),
       ],
       jobTypes: [],
@@ -180,8 +192,8 @@ describe("AutomationsView", () => {
 
     renderView();
 
-    expect(await screen.findByText("Auto-paused")).toBeInTheDocument();
-    expect(screen.getByText(/provider unreachable/)).toBeInTheDocument();
+    // A row in trouble earns the extra line that explains it.
+    expect(await screen.findByText(/provider unreachable/)).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /resume/i }));
     await waitFor(() => expect(mockedApi.patchAutomation).toHaveBeenCalledWith("auto-1", { resume: true }));
@@ -206,7 +218,11 @@ describe("AutomationsView", () => {
     renderView();
 
     expect(await screen.findByText(/No automations yet/i)).toBeInTheDocument();
-    expect(screen.getByText(/becomes an automation automatically/i)).toBeInTheDocument();
+    // The empty page must explain *why* it is empty: which flows qualify, and
+    // that a just-enrolled one is not missing, only not picked up yet.
+    expect(screen.getByText(/Auto-sync on a server schedule/i)).toBeInTheDocument();
+    expect(screen.getByText(/stays out of here on purpose/i)).toBeInTheDocument();
+    expect(screen.getByText(/appears as soon as you refresh this page/i)).toBeInTheDocument();
   });
 
   it("opens run history with the job type's own result rendering", async () => {
@@ -258,7 +274,7 @@ describe("AutomationsView", () => {
     });
 
     renderView();
-    fireEvent.click(await screen.findByRole("button", { name: /run now/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /run .* now/i }));
 
     // A run that happened answers 200 whatever it concluded, so the toast has
     // to read the outcome rather than the HTTP status.
@@ -274,11 +290,66 @@ describe("AutomationsView", () => {
     });
 
     renderView();
-    fireEvent.click(await screen.findByRole("button", { name: /run now/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /run .* now/i }));
 
     await waitFor(() =>
       expect(toast.warning).toHaveBeenCalledWith("A run is already in progress")
     );
     expect(toast.success).not.toHaveBeenCalled();
+  });
+
+  it("animates the refresh control only while a requested refresh is running", async () => {
+    let releaseRefresh: () => void = () => {};
+    mockedApi.listAutomations
+      .mockResolvedValueOnce({ automations: [automation()], jobTypes: [] })
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            releaseRefresh = () => resolve({ automations: [automation()], jobTypes: [] });
+          })
+      );
+
+    renderView();
+    await screen.findByText("Household → Joint");
+
+    const refresh = screen.getByRole("button", { name: /refresh automations/i });
+    const icon = refresh.querySelector("svg");
+
+    // At rest it must not spin: the page polls on its own, and an icon that is
+    // always moving tells the user nothing about their click.
+    expect(icon).not.toHaveClass("animate-spin");
+
+    fireEvent.click(refresh);
+
+    await waitFor(() => expect(refresh).toBeDisabled());
+    expect(refresh.querySelector("svg")).toHaveClass("animate-spin");
+
+    releaseRefresh();
+    await waitFor(() => expect(refresh).not.toBeDisabled());
+    expect(refresh.querySelector("svg")).not.toHaveClass("animate-spin");
+  });
+
+  it("states each status in words, not only in colour", async () => {
+    mockedApi.listAutomations.mockResolvedValue({
+      automations: [
+        automation({ id: "a", name: "Healthy one" }),
+        automation({
+          id: "b",
+          name: "Broken one",
+          status: "failing",
+          statusSummary: "Last 3 attempts failed: provider unreachable",
+          consecutiveFailures: 3,
+        }),
+      ],
+      jobTypes: [],
+    });
+
+    renderView();
+
+    // Anyone who cannot distinguish the hues — or who pastes a screenshot into
+    // a bug report — still learns which row is in trouble.
+    expect(await screen.findByText("Healthy")).toBeInTheDocument();
+    expect(screen.getByText("Failing")).toBeInTheDocument();
+    expect(screen.getByText(/provider unreachable/)).toBeInTheDocument();
   });
 });

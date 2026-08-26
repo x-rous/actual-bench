@@ -5,7 +5,13 @@ import { getAppDb, resetAppDbForTests } from "@/lib/app-db/connection";
 import { createSyncFlow, updateSyncFlow, getSyncFlow } from "@/lib/app-db/syncFlowRepository";
 import { listAutomations, updateAutomation } from "@/lib/app-db/automationRepository";
 import { createSyncFlowRun } from "@/lib/app-db/syncRunRepository";
-import { budgetFileSyncJobType } from "./budgetFileSync";
+import {
+  __resetBudgetFileSyncRegistrationForTests,
+  budgetFileSyncJobType,
+  registerBudgetFileSyncJobType,
+} from "./budgetFileSync";
+import { __resetEngineStateForTests, runEngineTick } from "../engine";
+import { __resetAutomationRegistryForTests } from "../registry";
 import { migrateSyncFlowsToAutomations } from "./budgetFileSyncMigration";
 import { MIN_INTERVAL_MINUTES } from "../schedule";
 import type { SqliteDatabase } from "@/lib/app-db/types";
@@ -329,6 +335,41 @@ describe("migrating sync flows onto the engine", () => {
       const effective = Math.max(automation.intervalMinutes ?? 0, MIN_INTERVAL_MINUTES);
       expect(effective).toBeGreaterThanOrEqual(MIN_INTERVAL_MINUTES);
     } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("enrols a flow created while the server is already running", async () => {
+    const { root, db } = tempDb();
+    try {
+      registerBudgetFileSyncJobType();
+
+      // Boot-time sweep: nothing to do yet.
+      await runEngineTick(db, { nowMs: Date.parse("2026-08-26T10:00:00Z") });
+      expect(listAutomations(db)).toHaveLength(0);
+
+      // The user creates an unattended flow in the Sync UI.
+      unattendedFlow(db, "Created after boot");
+
+      // The very next tick picks it up — no restart required. This was the bug:
+      // the sweep only ran at startup, so a flow enrolled afterwards silently
+      // never appeared and never ran.
+      await runEngineTick(db, { nowMs: Date.parse("2026-08-26T10:01:00Z") });
+
+      const [automation] = listAutomations(db);
+      expect(automation?.name).toBe("Created after boot");
+      expect(automation?.config.data.flowId).toBeDefined();
+
+      // With no vault configured in this environment the engine then fails
+      // closed on the very same tick — which is the point: the flow is now
+      // visible with a reason a person can act on, instead of being absent and
+      // silently never running.
+      expect(automation?.enabled).toBe(false);
+      expect(automation?.autoPauseReason).toMatch(/vault is disabled/);
+    } finally {
+      __resetEngineStateForTests();
+      __resetAutomationRegistryForTests();
+      __resetBudgetFileSyncRegistrationForTests();
       rmSync(root, { recursive: true, force: true });
     }
   });

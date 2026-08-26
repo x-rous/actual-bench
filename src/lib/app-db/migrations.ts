@@ -33,7 +33,7 @@ import {
 import { KDF_VERSION_META_KEY, SALT_META_KEY, VERIFIER_META_KEY } from "./vaultMetaKeys";
 import { AppDbUnavailableError } from "./errors";
 
-export const LATEST_SCHEMA_VERSION = 18;
+export const LATEST_SCHEMA_VERSION = 19;
 
 type Migration = {
   version: number;
@@ -232,7 +232,28 @@ const MIGRATIONS: readonly Migration[] = [
       ...AUTOMATION_INDEX_SQL,
     ],
   },
+  {
+    version: 19,
+    // Repair for a database that reached v18 from an *intermediate* build of the
+    // automation branch.
+    //
+    // `running_since` was added to the v18 table definition during review, while
+    // v18 was still unreleased — which is safe for anyone who had never run the
+    // branch, and wrong for anyone who had. A database migrated by the earlier
+    // build records schema_version 18, so the corrected v18 is skipped and the
+    // column never appears: every engine tick then fails with "no such column:
+    // running_since", and no automation runs at all.
+    //
+    // `CREATE TABLE IF NOT EXISTS` cannot fix this — the table already exists —
+    // so the column is added on its own, guarded, and is a no-op on a database
+    // that got the corrected v18.
+    apply: applyAutomationClaimColumn,
+  },
 ];
+
+function applyAutomationClaimColumn(db: SqliteDatabase): void {
+  addColumnIfMissing(db, "automation_definitions", "running_since", "text");
+}
 
 /**
  * RD-072: statement rows, saved profiles and apply configs move to the

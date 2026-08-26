@@ -2,6 +2,8 @@ import { getAppDb } from "@/lib/app-db/connection";
 import { classifySafeSyncOutcome } from "@/features/sync/lib/flowHealth";
 import { isServerSafeSyncBlocked, runServerSafeSync } from "@/lib/sync/serverSafeSync";
 import { registerAutomationJobType } from "../registry";
+import { migrateSyncFlowsToAutomations } from "./budgetFileSyncMigration";
+import { BUDGET_FILE_SYNC_JOB_TYPE } from "./budgetFileSyncType";
 import type { AutomationJobType, AutomationRunContext } from "../registry";
 import type { ServerSafeSyncResult } from "@/lib/sync/serverSafeSync";
 import type { AutomationRunRollup, JsonEnvelope } from "@/lib/app-db/types";
@@ -23,7 +25,8 @@ import type { AutomationRunRollup, JsonEnvelope } from "@/lib/app-db/types";
  * automation run can link straight to the sync run it produced.
  */
 
-export const BUDGET_FILE_SYNC_JOB_TYPE = "budget-file-sync";
+// Re-exported so existing callers keep one import site.
+export { BUDGET_FILE_SYNC_JOB_TYPE } from "./budgetFileSyncType";
 
 export type BudgetFileSyncConfig = {
   flowId: string;
@@ -171,6 +174,15 @@ export const budgetFileSyncJobType: AutomationJobType<BudgetFileSyncConfig, Budg
         message: result.message ?? null,
       },
     };
+  },
+
+  /**
+   * Flows are created and switched to unattended in the Sync UI at any time, so
+   * the enrolment sweep runs every tick rather than only at boot. It is
+   * idempotent and keyed on the flow id, so repeating it costs two reads.
+   */
+  reconcile(db) {
+    migrateSyncFlowsToAutomations(db);
   },
 
   // Budget File Sync constructs writes through Bench, so it does take part in

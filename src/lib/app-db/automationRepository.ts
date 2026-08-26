@@ -216,7 +216,12 @@ function rowToDefinition(row: AutomationDefinitionRow): AutomationDefinition {
     lastRunAt: row.last_run_at,
     lastSuccessAt: row.last_success_at,
     nextRunAt: row.next_run_at,
-    runningSince: row.running_since,
+    // `?? null` rather than a bare read: a database whose `running_since`
+    // column is missing yields `undefined`, and every downstream check for
+    // "is this running?" compares against null. Undefined would then read as
+    // *running*, which is how a broken schema showed up as an automation stuck
+    // on "Running" instead of as the error it was.
+    runningSince: row.running_since ?? null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
