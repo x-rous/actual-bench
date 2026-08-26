@@ -13,7 +13,12 @@ import {
   createPayeeCleanupSuppression,
   listPayeeCleanupSuppressions,
 } from "./payeeCleanupSuppressionRepository";
-import { createAutomation, listAutomations } from "./automationRepository";
+import {
+  claimAutomation,
+  createAutomation,
+  getAutomation,
+  listAutomations,
+} from "./automationRepository";
 import { createAutomationRun, listAutomationRuns } from "./automationRunRepository";
 
 /**
@@ -285,6 +290,86 @@ describe("upgrading an existing database", () => {
 
       // The pre-existing reconciliation work is untouched.
       expect(getReconciliationSession(db, "sess-old")).not.toBeNull();
+    } finally {
+      resetAppDbForTests();
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("repairs a database that reached v18 from an intermediate branch build", () => {
+    // The exact shape a dev server ended up in: v18 recorded, but the
+    // automation tables created before `running_since` was added to them. Every
+    // engine tick then failed with "no such column: running_since".
+    const root = mkdtempSync(join(tmpdir(), "actual-bench-upgrade-v18-partial-"));
+    const path = join(root, "metadata.sqlite");
+
+    const seed = new Database(path);
+    seed.exec(`
+      CREATE TABLE app_meta (key text PRIMARY KEY, value text NOT NULL, updated_at text NOT NULL);
+      CREATE TABLE automation_definitions (
+        id text PRIMARY KEY,
+        type text NOT NULL,
+        name text NOT NULL,
+        enabled integer NOT NULL DEFAULT 1,
+        execution_mode text NOT NULL DEFAULT 'server',
+        schedule_kind text NOT NULL DEFAULT 'interval',
+        interval_minutes integer,
+        cron_expression text,
+        timezone text NOT NULL DEFAULT 'UTC',
+        target_ref_json text NOT NULL,
+        credential_ref text,
+        config_json text NOT NULL,
+        failure_policy_json text,
+        consecutive_failures integer NOT NULL DEFAULT 0,
+        auto_paused_at text,
+        auto_pause_reason text,
+        last_run_at text,
+        last_success_at text,
+        next_run_at text,
+        created_at text NOT NULL,
+        updated_at text NOT NULL
+      );
+      CREATE TABLE automation_runs (
+        id text PRIMARY KEY,
+        automation_id text REFERENCES automation_definitions(id) ON DELETE CASCADE,
+        type text NOT NULL,
+        status text NOT NULL,
+        started_at text NOT NULL,
+        finished_at text,
+        trigger text NOT NULL DEFAULT 'schedule',
+        attempt integer NOT NULL DEFAULT 1,
+        execution_mode text NOT NULL DEFAULT 'server',
+        result_json text,
+        rollup_json text,
+        error_json text
+      );
+    `);
+    seed.prepare("INSERT INTO app_meta (key, value, updated_at) VALUES (?, ?, ?)").run(
+      "schema_version",
+      "18",
+      "2026-08-25T18:30:55.405Z"
+    );
+    seed
+      .prepare(
+        `INSERT INTO automation_definitions
+           (id, type, name, target_ref_json, config_json, created_at, updated_at)
+         VALUES ('auto-1', 'budget-file-sync', 'Test 2', '{"version":1,"data":{}}',
+                 '{"version":1,"data":{"flowId":"flow-1"}}', '2026-08-25T18:30:55.405Z',
+                 '2026-08-25T18:30:55.405Z')`
+      )
+      .run();
+    seed.close();
+
+    try {
+      const db = getAppDb(path);
+
+      // The automation survives the repair, and the claim now works instead of
+      // throwing on every tick.
+      const [automation] = listAutomations(db);
+      expect(automation.name).toBe("Test 2");
+      expect(automation.runningSince).toBeNull();
+      expect(claimAutomation(db, "auto-1", "2026-08-26T18:00:00.000Z")).toBe(true);
+      expect(getAutomation(db, "auto-1")?.runningSince).toBe("2026-08-26T18:00:00.000Z");
     } finally {
       resetAppDbForTests();
       rmSync(root, { recursive: true, force: true });

@@ -223,4 +223,20 @@ describe("automation repository", () => {
       rmSync(root, { recursive: true, force: true });
     }
   });
+
+  it("never reports a run in progress when the claim column is absent", () => {
+    const { root, db } = tempDb();
+    try {
+      const created = createAutomation(db, baseInput);
+      expect(created.runningSince).toBeNull();
+
+      // A row read from a database whose `running_since` column is missing
+      // yields `undefined`, and callers ask "is this running?" by comparing
+      // against null. Undefined must not answer yes: that is how a schema fault
+      // surfaced as an automation stuck on "Running" rather than as an error.
+      expect(created.runningSince !== null).toBe(false);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
 });
