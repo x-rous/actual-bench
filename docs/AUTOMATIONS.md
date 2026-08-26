@@ -79,7 +79,12 @@ the run history, or the UI.
 ## Budget File Sync as an automation
 
 A sync flow set to **"Auto-sync on a server schedule (unattended)"** appears here automatically —
-you do not create it twice. Its schedule and enabled state carry over from the flow.
+you do not create it twice. Its schedule and enabled state carry over from the flow, and a flow you
+enrol while the server is running appears as soon as you open or refresh this page, rather than at
+the next restart. (The engine also sweeps once a minute, so it is picked up even with no page open.)
+
+A flow set to manual review, or to sync while Bench is open, is deliberately **not** listed here:
+those are not unattended, and showing them would imply the server runs them.
 
 Full sync history stays in Budget File Sync, which is where the detail belongs (previews, items,
 the review queue). Each automation run links to the sync run it produced.
