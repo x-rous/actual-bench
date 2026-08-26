@@ -71,7 +71,8 @@ describe("scheduling a bank sync", () => {
 
   it("says when the first run will happen, not just how often", async () => {
     renderDialog();
-    await screen.findByText("Checking");
+    // Wait for the account list to have loaded, not for any one name in it.
+    await screen.findByText(/accounts will sync/);
 
     // Someone choosing a schedule should see the consequence of choosing it.
     expect(screen.getByText(/First run/)).toBeInTheDocument();
@@ -79,7 +80,8 @@ describe("scheduling a bank sync", () => {
 
   it("offers plain cadences, keeping cron out of the way", async () => {
     renderDialog();
-    await screen.findByText("Checking");
+    // Wait for the account list to have loaded, not for any one name in it.
+    await screen.findByText(/accounts will sync/);
 
     const cadence = screen.getByLabelText("How often");
     expect(screen.queryByLabelText("Cron expression")).not.toBeInTheDocument();
@@ -98,7 +100,8 @@ describe("scheduling a bank sync", () => {
 
   it("keeps cron available for the person who wants weekdays only", async () => {
     renderDialog();
-    await screen.findByText("Checking");
+    // Wait for the account list to have loaded, not for any one name in it.
+    await screen.findByText(/accounts will sync/);
 
     fireEvent.change(screen.getByLabelText("How often"), { target: { value: "cron" } });
     fireEvent.change(screen.getByLabelText("Cron expression"), { target: { value: "@daily" } });
@@ -114,7 +117,8 @@ describe("scheduling a bank sync", () => {
 
   it("never schedules runs closer together than the unattended floor", async () => {
     renderDialog();
-    await screen.findByText("Checking");
+    // Wait for the account list to have loaded, not for any one name in it.
+    await screen.findByText(/accounts will sync/);
 
     fireEvent.change(screen.getByLabelText("Hours between runs"), { target: { value: "0.1" } });
     fireEvent.click(screen.getByRole("button", { name: /schedule sync/i }));
@@ -125,7 +129,8 @@ describe("scheduling a bank sync", () => {
 
   it("does not ask which budget when there is only one", async () => {
     renderDialog();
-    await screen.findByText("Checking");
+    // Wait for the account list to have loaded, not for any one name in it.
+    await screen.findByText(/accounts will sync/);
 
     // A picker with one option is a question with one answer.
     expect(screen.queryByText("Budget")).not.toBeInTheDocument();
@@ -135,7 +140,8 @@ describe("scheduling a bank sync", () => {
 
   it("picks a time zone from a list, and only when the schedule has a clock", async () => {
     renderDialog();
-    await screen.findByText("Checking");
+    // Wait for the account list to have loaded, not for any one name in it.
+    await screen.findByText(/accounts will sync/);
 
     // "Every 6 hours" means the same thing everywhere, so asking would be
     // asking a question whose answer cannot matter.
@@ -160,7 +166,8 @@ describe("scheduling a bank sync", () => {
 
   it("does not schedule midnight when the time is cleared", async () => {
     renderDialog();
-    await screen.findByText("Checking");
+    // Wait for the account list to have loaded, not for any one name in it.
+    await screen.findByText(/accounts will sync/);
 
     fireEvent.change(screen.getByLabelText("How often"), { target: { value: "daily" } });
     fireEvent.change(screen.getByLabelText("Time of day"), { target: { value: "" } });
