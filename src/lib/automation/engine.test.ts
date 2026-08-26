@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { getAppDb, resetAppDbForTests } from "@/lib/app-db/connection";
-import { createAutomation, getAutomation } from "@/lib/app-db/automationRepository";
+import { createAutomation, getAutomation, listAutomations } from "@/lib/app-db/automationRepository";
 import { listAutomationRuns } from "@/lib/app-db/automationRunRepository";
 import { upsertSyncCredential } from "@/lib/app-db/syncCredentialRepository";
 import {
@@ -610,6 +610,64 @@ describe("automation engine", () => {
       const [run] = listAutomationRuns(db, { automationId: id });
       expect(JSON.stringify(run)).not.toContain("abcd1234efgh5678");
       expect(String(run.error?.data.message)).toContain("[redacted]");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("lets a job type pick up work enrolled since the last tick", async () => {
+    const { root, db } = tempDb();
+    try {
+      let created = false;
+      registerAutomationJobType(
+        testJobType({
+          reconcile: (database) => {
+            // Stands in for a sync flow switched to unattended while the server
+            // was already running: without a per-tick reconcile it would not
+            // exist as an automation until the next restart.
+            if (created) return;
+            createAutomation(database, {
+              type: "test-job",
+              name: "Enrolled after boot",
+              scheduleKind: "interval",
+              intervalMinutes: 30,
+              targetRef: { version: 1, data: {} },
+              config: { version: 1, data: { label: "late" } },
+            });
+            created = true;
+          },
+        })
+      );
+
+      const summary = await runEngineTick(db, { nowMs: Date.parse("2026-08-26T10:00:00Z") });
+
+      expect(listAutomations(db)).toHaveLength(1);
+      // And it is not merely registered: it ran on the very same tick.
+      expect(summary.ran).toHaveLength(1);
+      expect(summary.ran[0].status).toBe("succeeded");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps running automations when a job type's reconcile throws", async () => {
+    const { root, db } = tempDb();
+    try {
+      registerAutomationJobType(
+        testJobType({
+          reconcile: () => {
+            throw new Error("reconcile exploded");
+          },
+        })
+      );
+      const id = definition(db);
+
+      const summary = await runEngineTick(db, { nowMs: Date.parse("2026-08-26T10:00:00Z") });
+
+      // A reconciliation problem is not a reason to stop work that is already
+      // configured and due.
+      expect(summary.ran).toHaveLength(1);
+      expect(listAutomationRuns(db, { automationId: id })).toHaveLength(1);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

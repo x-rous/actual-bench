@@ -16,7 +16,7 @@ import {
 import { getSyncCredential, hasSyncCredential } from "@/lib/app-db/syncCredentialRepository";
 import { vaultEnabled } from "@/lib/sync/vault";
 import { logger } from "@/lib/logger";
-import { getAutomationJobType } from "./registry";
+import { getAutomationJobType, listAutomationJobTypes } from "./registry";
 import { createRunLogger, redactSecrets } from "./runLogger";
 import { effectiveNextRunAt, isDue } from "./schedule";
 import type { AutomationCredentials, AutomationJobType } from "./registry";
@@ -412,6 +412,13 @@ export async function runEngineTick(
 ): Promise<TickSummary> {
   const nowMs = options.nowMs ?? Date.now();
   const at = new Date(nowMs).toISOString();
+
+  // Let each job type reconcile its definitions with its own configuration
+  // first, so an automation enrolled since the last tick is picked up now
+  // rather than at the next server restart. The engine stays ignorant of what
+  // any of this means; it just gives every type the chance.
+  await reconcileJobTypes(db);
+
   const due = selectDueAutomations(db, nowMs);
   const ran: EngineRunOutcome[] = [];
 
@@ -428,6 +435,31 @@ export async function runEngineTick(
   }
 
   return { at, due: due.length, ran };
+}
+
+/**
+ * Give every registered job type a chance to reconcile.
+ *
+ * Called at the top of every tick, and again by the read paths that show
+ * automations to a person: polling for a change someone just made is how a page
+ * ends up telling them their new sync flow does not exist. It is idempotent and
+ * costs two queries, so doing it on read buys correctness cheaply.
+ *
+ * One failing type must not stop anything: the others still have work to do,
+ * and a reconciliation problem is not a reason to stop running automations that
+ * are already configured, nor to fail a read.
+ */
+export async function reconcileJobTypes(db: SqliteDatabase): Promise<void> {
+  for (const jobType of listAutomationJobTypes()) {
+    if (!jobType.reconcile) continue;
+    try {
+      await jobType.reconcile(db);
+    } catch (error) {
+      logger.warn(
+        `[automation] ${jobType.type} could not reconcile: ${error instanceof Error ? error.message : String(error)}`
+      );
+    }
+  }
 }
 
 /** Request cancellation of an in-flight run. */

@@ -4,7 +4,7 @@ import { createAutomation, listAutomations, updateAutomation } from "@/lib/app-d
 import { decodeFlowPlanConfig } from "@/lib/sync/flowConfig";
 import { logger } from "@/lib/logger";
 import { MIN_INTERVAL_MINUTES } from "../schedule";
-import { BUDGET_FILE_SYNC_JOB_TYPE } from "./budgetFileSync";
+import { BUDGET_FILE_SYNC_JOB_TYPE } from "./budgetFileSyncType";
 import type { AutomationDefinition, SqliteDatabase } from "@/lib/app-db/types";
 
 /**
