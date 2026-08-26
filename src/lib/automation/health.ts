@@ -101,13 +101,19 @@ function occurrenceMinutes(automation: ScheduleShape): number {
   }
   if (!automation.cronExpression) return FALLBACK_CRON_INTERVAL_MINUTES;
 
-  const from = automation.nextRunAt ? Date.parse(automation.nextRunAt) : Date.now();
-  const base = Number.isNaN(from) ? Date.now() : from;
+  const parsed = automation.nextRunAt ? Date.parse(automation.nextRunAt) : Date.now();
+  const base = Number.isNaN(parsed) ? Date.now() : parsed;
 
   try {
-    const following = nextCronRun(automation.cronExpression, automation.timezone, base);
-    if (following === null) return FALLBACK_CRON_INTERVAL_MINUTES;
-    return Math.max(Math.round((following - base) / 60_000), 1);
+    // Two *consecutive* occurrences. Measuring from `nextRunAt` to the following
+    // occurrence measures whatever is left of the current gap instead of the
+    // cadence: for `0 */12 * * *` anchored at 03:00 that is nine hours, not
+    // twelve, which would under-grace a schedule the whole point is to respect.
+    const first = nextCronRun(automation.cronExpression, automation.timezone, base);
+    if (first === null) return FALLBACK_CRON_INTERVAL_MINUTES;
+    const second = nextCronRun(automation.cronExpression, automation.timezone, first);
+    if (second === null) return FALLBACK_CRON_INTERVAL_MINUTES;
+    return Math.max(Math.round((second - first) / 60_000), 1);
   } catch {
     return FALLBACK_CRON_INTERVAL_MINUTES;
   }

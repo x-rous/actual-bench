@@ -147,8 +147,20 @@ describe("automation health", () => {
     expect(isStale(monthly, Date.parse("2026-08-04T12:00:00Z"))).toBe(false);
     // But the grace is capped: a month of silence is worth flagging even so.
     expect(isStale(monthly, Date.parse("2026-09-15T12:00:00Z"))).toBe(true);
-    // Cadence measured, not assumed — well beyond a day's worth of grace.
-    expect(staleGraceMs(monthly)).toBeGreaterThan(3 * 24 * 60 * 60_000);
+    // Cadence measured, not assumed. A twelve-hourly cron shows this without
+    // the cap getting in the way: three missed occurrences is 36 hours, which
+    // is neither the old flat hour nor the daily assumption's 72.
+    expect(
+      staleGraceMs({
+        scheduleKind: "cron",
+        intervalMinutes: null,
+        cronExpression: "0 */12 * * *",
+        timezone: "UTC",
+        // Deliberately not on an occurrence: the gap between two consecutive
+        // occurrences is the cadence, not whatever is left of the current one.
+        nextRunAt: "2026-08-01T03:00:00.000Z",
+      })
+    ).toBe(36 * 60 * 60_000);
   });
 
   it("never calls a paused or disabled automation overdue", () => {
