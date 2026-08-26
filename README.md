@@ -151,6 +151,11 @@ One place (Tools → Automations) for everything Actual Bench runs on a schedule
 
 > Not to be confused with Actual Budget's own experimental "Budget Automations" — these are Actual Bench's scheduled jobs.
 
+### Bank sync
+
+Ask Actual to pull new transactions from your connected banks (SimpleFIN / GoCardless) from the Accounts page, without opening Actual to press Sync. Bench triggers Actual's own import and reports what happened: accounts sync one at a time so one failing bank cannot hide the others, an account with no bank link is reported as unlinked rather than counted as synced, and a count of new transactions is quoted only where Bench could actually measure it.
+
+
 ### Bank Statement Reconciliation
 
 A workbench (Tools → Bank Reconciliation) for checking a bank statement against an account and settling the differences. Sessions are persistent, and nothing reaches your budget until an explicit Apply.
