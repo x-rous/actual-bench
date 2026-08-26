@@ -100,3 +100,60 @@ export async function listReviewQueue(): Promise<ReviewQueueEntry[]> {
   return ((await response.json()) as { entries: ReviewQueueEntry[] }).entries;
 }
 
+export type VaultConnection = {
+  connectionFingerprint: string;
+  label: string;
+  baseUrl: string;
+  budgetSyncId: string;
+};
+
+/**
+ * Connections with credentials stored for unattended use.
+ *
+ * The set an automation can actually be built on: a connection without an
+ * enrolled credential produces an automation that can only fail closed.
+ */
+export async function listVaultConnections(): Promise<{
+  enabled: boolean;
+  credentials: VaultConnection[];
+}> {
+  const response = await fetch("/api/sync-credentials", { cache: "no-store" });
+  if (!response.ok) return readError(response);
+  return (await response.json()) as { enabled: boolean; credentials: VaultConnection[] };
+}
+
+export async function createAutomation(input: Record<string, unknown>): Promise<AutomationDefinition> {
+  const response = await fetch("/api/automations", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  if (!response.ok) return readError(response);
+  return ((await response.json()) as { automation: AutomationDefinition }).automation;
+}
+
+export type BankSyncAccountPreview = {
+  id: string;
+  name: string;
+  linked: boolean;
+  syncSource: string | null;
+  lastSync: string | null;
+};
+
+/**
+ * What a scheduled bank sync would actually pull.
+ *
+ * Server-side, because the vault credential is not the browser's to hold and
+ * the budget in question is often not the one currently open.
+ */
+export async function listBankSyncAccounts(
+  connectionFingerprint: string
+): Promise<BankSyncAccountPreview[]> {
+  const response = await fetch(
+    `/api/automations/bank-sync-accounts?connection=${encodeURIComponent(connectionFingerprint)}`,
+    { cache: "no-store" }
+  );
+  if (!response.ok) return readError(response);
+  return ((await response.json()) as { accounts: BankSyncAccountPreview[] }).accounts;
+}
+

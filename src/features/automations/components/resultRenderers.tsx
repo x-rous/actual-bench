@@ -90,8 +90,72 @@ function GenericResult({ result }: AutomationResultRendererProps) {
   );
 }
 
+type BankSyncAccountRow = {
+  accountId: string;
+  accountName: string | null;
+  status: string;
+  message: string | null;
+  observedNewTransactions: number | null;
+};
+
+const ACCOUNT_STATUS_LABEL: Record<string, string> = {
+  synced: "Synced",
+  accepted: "Sync started",
+  failed: "Failed",
+  "not-linked": "No bank link",
+};
+
+/** Bank sync: what happened per account, in this type's own terms. */
+function BankSyncResult({ result }: AutomationResultRendererProps) {
+  const accounts = Array.isArray(result.accounts) ? (result.accounts as unknown as BankSyncAccountRow[]) : [];
+  const countsObserved = result.countsObserved === true;
+
+  if (accounts.length === 0) {
+    return <p className="text-xs text-muted-foreground">No accounts were synced.</p>;
+  }
+
+  return (
+    <div className="space-y-2">
+      <ul className="space-y-1 text-xs">
+        {accounts.map((account) => (
+          <li key={account.accountId} className="flex flex-wrap items-baseline gap-x-2">
+            <span className="font-medium">{account.accountName ?? account.accountId}</span>
+            <span
+              className={
+                account.status === "failed"
+                  ? "text-destructive"
+                  : account.status === "not-linked"
+                    ? "text-muted-foreground"
+                    : undefined
+              }
+            >
+              {ACCOUNT_STATUS_LABEL[account.status] ?? account.status}
+            </span>
+            {typeof account.observedNewTransactions === "number" && (
+              <span className="text-muted-foreground">
+                · {account.observedNewTransactions} new
+              </span>
+            )}
+            {account.message && <span className="text-muted-foreground">· {account.message}</span>}
+          </li>
+        ))}
+      </ul>
+
+      {!countsObserved && (
+        // The distinction the whole feature rests on: a server that answered
+        // "started" has not told us what arrived, and inventing a zero here
+        // would be the one thing this must never do.
+        <p className="text-[11px] text-muted-foreground">
+          Actual imports in the background, so Bench cannot say how many transactions arrived.
+        </p>
+      )}
+    </div>
+  );
+}
+
 const RENDERERS: Record<string, (props: AutomationResultRendererProps) => React.ReactElement> = {
   "budget-file-sync": BudgetFileSyncResult,
+  "bank-sync": BankSyncResult,
 };
 
 export function AutomationResult({ run }: { run: AutomationRun }) {
