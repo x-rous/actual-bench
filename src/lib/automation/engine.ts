@@ -438,10 +438,24 @@ export function cancelAutomation(automationId: string): boolean {
   return true;
 }
 
-export function isAutomationRunning(automationId: string): boolean {
-  return inFlight.has(automationId);
+/**
+ * Is a run in progress anywhere?
+ *
+ * The in-memory set only knows about runs started in *this* module instance —
+ * the same limitation that made an in-memory lock unsafe — so a definition's
+ * claim is what a route handler must actually read. Without this, the UI showed
+ * "not running" for a run the interval loop was executing, and offered a Run
+ * now button that would be refused.
+ */
+export function isAutomationRunning(automation: string | AutomationDefinition): boolean {
+  if (typeof automation !== "string") {
+    return automation.runningSince !== null || inFlight.has(automation.id);
+  }
+  return inFlight.has(automation);
 }
 
+/** Ids running in this process. Callers with definitions should prefer
+ * `isAutomationRunning`, which also sees runs claimed elsewhere. */
 export function runningAutomationIds(): string[] {
   return [...inFlight];
 }

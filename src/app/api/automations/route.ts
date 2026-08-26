@@ -26,7 +26,7 @@ export function GET() {
       return {
         ...automation,
         scheduleLabel: describeSchedule(automation),
-        running: isAutomationRunning(automation.id),
+        running: isAutomationRunning(automation),
         lastRun: lastRun ?? null,
       };
     });

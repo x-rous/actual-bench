@@ -24,7 +24,7 @@ export async function GET(_request: Request, context: RouteContext) {
       automation: {
         ...automation,
         scheduleLabel: describeSchedule(automation),
-        running: isAutomationRunning(automation.id),
+        running: isAutomationRunning(automation),
       },
     });
   } catch (error) {

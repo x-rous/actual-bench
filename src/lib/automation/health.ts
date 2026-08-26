@@ -215,7 +215,7 @@ export function buildAutomationHealth(
       enabled: automation.enabled,
       executionMode: automation.executionMode,
       schedule: describeSchedule(automation),
-      running: isAutomationRunning(automation.id),
+      running: isAutomationRunning(automation),
       lastRunAt: automation.lastRunAt,
       lastRunStatus: lastRun?.status ?? null,
       lastSuccessAt: automation.lastSuccessAt,

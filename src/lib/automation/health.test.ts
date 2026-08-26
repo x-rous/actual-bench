@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { getAppDb, resetAppDbForTests } from "@/lib/app-db/connection";
 import {
+  claimAutomation,
   createAutomation,
   pauseAutomationForHealth,
   recordAutomationOutcome,
@@ -199,6 +200,22 @@ describe("automation health", () => {
       expect(health.status).toBe("paused");
       expect(health.summary).toBe("Vault key missing");
       expect(health.typeLabel).toBe("Budget File Sync");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("reports a run claimed by another module instance as running", () => {
+    const { root, db } = tempDb();
+    try {
+      registerAutomationJobType(jobType("budget-file-sync", true));
+      const id = automation(db);
+
+      // The claim exists in the database but not in this instance's memory —
+      // exactly what a route handler sees while the interval loop is running.
+      claimAutomation(db, id, new Date().toISOString());
+
+      expect(buildAutomationHealth(db).automations[0].running).toBe(true);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
