@@ -55,7 +55,7 @@
 
 ## App Health
 
-A compact diagnostics page for Actual Bench's own server-side metadata database. It shows the configured SQLite path, writable state, schema version, migration status, and persistence reminder for the `/data` volume. The database stores app workflow metadata only and does not store Actual credentials. It also carries an **Automations** roll-up: vault state, enrolled connections, what is running, and each automation's health.
+A compact diagnostics page for Actual Bench's own server-side metadata database. It shows the configured SQLite path, writable state, schema version, migration status, and persistence reminder for the `/data` volume. The database stores app workflow metadata, plus — only where you opt in — **encrypted** credentials: remembered server logins and unattended-sync API keys. Those are sealed with a key that lives in the environment (`SYNC_VAULT_KEY`) or is derived from your passphrase, never in the database, so the file alone cannot be decrypted. It also carries an **Automations** roll-up: vault state, enrolled connections, what is running, and each automation's health.
 
 ## Automations
 

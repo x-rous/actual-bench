@@ -145,7 +145,11 @@ function AutomationsCard() {
 
   const report = health.data;
   const vaultEnabled = report?.vaultEnabled ?? vault.data?.enabled ?? false;
-  const badge = AUTOMATION_STATUS_BADGE[report?.overall ?? "idle"];
+  // An unknown status must not blank the card: the response is JSON from a
+  // server that may be a different version, so the lookup is defended.
+  const badge = health.isError
+    ? { variant: "status-warning" as const, label: "Unknown" }
+    : AUTOMATION_STATUS_BADGE[report?.overall ?? "idle"] ?? AUTOMATION_STATUS_BADGE.idle;
 
   return (
     <section className="rounded-md border border-border bg-background shadow-sm">
@@ -176,7 +180,13 @@ function AutomationsCard() {
         <DetailRow
           label="Automations"
           value={
-            !report || report.automations.length === 0 ? (
+            health.isError ? (
+              // Distinguish "nothing is configured" from "we could not ask".
+              // During an outage the first reads as reassurance and is wrong.
+              <span className="text-destructive">
+                Status unavailable — {(health.error as Error).message}
+              </span>
+            ) : !report || report.automations.length === 0 ? (
               "None configured"
             ) : (
               <ul className="flex flex-col gap-1.5">

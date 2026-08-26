@@ -3,7 +3,7 @@ import { listAutomationRuns } from "@/lib/app-db/automationRunRepository";
 import { vaultEnabled } from "@/lib/sync/vault";
 import { getAutomationJobType } from "./registry";
 import { isAutomationRunning, runningAutomationIds } from "./engine";
-import { describeSchedule } from "./schedule";
+import { MIN_INTERVAL_MINUTES, describeSchedule } from "./schedule";
 import type { AutomationDefinition, AutomationRun, SqliteDatabase } from "@/lib/app-db/types";
 
 /**
@@ -53,24 +53,40 @@ export type AutomationHealthReport = {
 };
 
 /**
- * How late a run may be before it is called stale. Three missed occurrences,
+ * How late a run may be before it is called stale: three missed occurrences,
  * floored at an hour so a 15-minute automation is not flagged the moment a
  * deploy restarts the process.
+ *
+ * The factor genuinely applies — a flat hour would call a daily backup overdue
+ * at 01:00 the same night, which is noise, and would never distinguish a weekly
+ * job that is an hour late from one that has not run in a month.
  */
 export const STALE_GRACE_FACTOR = 3;
 const MIN_STALE_GRACE_MS = 60 * 60_000;
+/** Cron cadence is not a single number; assume daily for the grace. */
+const ASSUMED_CRON_INTERVAL_MINUTES = 24 * 60;
 
-export function isStale(
-  automation: Pick<AutomationDefinition, "enabled" | "autoPausedAt" | "nextRunAt">,
-  nowMs: number
-): boolean {
+type StaleInput = Pick<
+  AutomationDefinition,
+  "enabled" | "autoPausedAt" | "nextRunAt" | "scheduleKind" | "intervalMinutes"
+>;
+
+export function staleGraceMs(automation: Pick<StaleInput, "scheduleKind" | "intervalMinutes">): number {
+  const minutes =
+    automation.scheduleKind === "cron"
+      ? ASSUMED_CRON_INTERVAL_MINUTES
+      : Math.max(automation.intervalMinutes ?? 0, MIN_INTERVAL_MINUTES);
+  return Math.max(minutes * STALE_GRACE_FACTOR * 60_000, MIN_STALE_GRACE_MS);
+}
+
+export function isStale(automation: StaleInput, nowMs: number): boolean {
   if (!automation.enabled || automation.autoPausedAt) return false;
   if (!automation.nextRunAt) return false;
 
   const due = Date.parse(automation.nextRunAt);
   if (Number.isNaN(due)) return false;
 
-  return nowMs - due > MIN_STALE_GRACE_MS;
+  return nowMs - due > staleGraceMs(automation);
 }
 
 function statusFor(

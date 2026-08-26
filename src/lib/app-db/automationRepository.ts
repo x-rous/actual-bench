@@ -462,13 +462,20 @@ export function releaseAutomationClaim(db: SqliteDatabase, id: string): void {
 }
 
 /**
- * Drop every claim. Called once at server start: the engine is single-instance,
- * so any claim surviving a boot belongs to a process that no longer exists.
+ * Release claims older than `olderThanMs`, and return how many were freed.
+ *
+ * Called at server start to recover from a process that died mid-run. It is
+ * deliberately age-scoped rather than "clear everything": if someone runs two
+ * Bench containers against one database, an unconditional clear at boot would
+ * cancel a run the other container is still executing.
  */
-export function clearAutomationClaims(db: SqliteDatabase): number {
+export function clearAutomationClaims(db: SqliteDatabase, olderThanMs = 0): number {
+  const cutoff = new Date(Date.now() - olderThanMs).toISOString();
   const result = db
-    .prepare("UPDATE automation_definitions SET running_since = NULL WHERE running_since IS NOT NULL")
-    .run();
+    .prepare(
+      "UPDATE automation_definitions SET running_since = NULL WHERE running_since IS NOT NULL AND running_since < ?"
+    )
+    .run(cutoff);
   return result.changes;
 }
 

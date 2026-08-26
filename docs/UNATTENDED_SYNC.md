@@ -24,7 +24,9 @@ This is opt-in, **off by default**, and available for **HTTP API Server mode** f
    SYNC_VAULT_KEY="a-long-random-operator-secret"
    ```
 
-   Without it, the whole feature is disabled: nothing is persisted and the scheduler never runs.
+   Without it, **unattended sync** is disabled: no credential can be stored or opened, so a flow
+   enrolled for it pauses with that reason. The automation engine itself still runs — it schedules
+   other work too — so this is a per-automation stop, not a silent global off switch.
 
 2. **Restart the server.** The in-process **automation engine** starts on boot and ticks about
    once a minute (single instance is sufficient). Since the engine replaced the sync-specific

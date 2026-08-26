@@ -8,7 +8,9 @@ import { upsertSyncCredential } from "@/lib/app-db/syncCredentialRepository";
 import {
   __resetEngineStateForTests,
   backoffDelayMinutes,
+  cancelAutomation,
   executeAutomation,
+  isAutomationRunning,
   runEngineTick,
   selectDueAutomations,
 } from "./engine";
@@ -535,6 +537,79 @@ describe("automation engine", () => {
       // The 15-minute schedule alone would make it due at 10:15.
       expect(selectDueAutomations(db, nowMs + 16 * 60_000).map((d) => d.id)).not.toContain(id);
       expect(selectDueAutomations(db, nowMs + 31 * 60_000).map((d) => d.id)).toContain(id);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("does not count a cancelled run against the failure streak", async () => {
+    const { root, db } = tempDb();
+    try {
+      registerAutomationJobType(
+        testJobType({
+          async run(ctx: AutomationRunContext<TestConfig>): Promise<{ ok: boolean }> {
+            cancelAutomation(ctx.definition.id);
+            return { ok: true };
+          },
+        })
+      );
+      const id = definition(db, { failurePolicy: { pauseAfterConsecutiveFailures: 2 } });
+
+      await executeAutomation(db, id, { trigger: "manual" });
+      await executeAutomation(db, id, { trigger: "manual" });
+
+      // Stopping a run is the user's decision, not a fault: it must not pause
+      // the automation with a message about consecutive failures.
+      const after = getAutomation(db, id);
+      expect(after?.consecutiveFailures).toBe(0);
+      expect(after?.enabled).toBe(true);
+      expect(after?.autoPausedAt).toBeNull();
+      expect(listAutomationRuns(db, { automationId: id })[0].status).toBe("cancelled");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("frees the claim and the lock when the run row cannot be opened", async () => {
+    const { root, db } = tempDb();
+    try {
+      registerAutomationJobType(testJobType());
+      const id = definition(db);
+
+      // An invalid attempt makes `createAutomationRun` throw — standing in for
+      // any write failure between taking the claim and entering the try block.
+      const failed = await executeAutomation(db, id, { attempt: 0 });
+      expect(failed.status).toBe("skipped");
+
+      // Neither lock may be left behind: the in-memory one would strand the
+      // automation as "already in progress" until the process restarted.
+      expect(getAutomation(db, id)?.runningSince).toBeNull();
+      expect(isAutomationRunning(id)).toBe(false);
+      expect((await executeAutomation(db, id)).status).toBe("succeeded");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("redacts a secret-shaped value the job never revealed", async () => {
+    const { root, db } = tempDb();
+    try {
+      registerAutomationJobType(
+        testJobType({
+          async run(): Promise<never> {
+            // No credential was revealed, so there is no known secret to match:
+            // only pattern redaction can catch this.
+            throw new Error("POST failed: apiKey=abcd1234efgh5678 rejected");
+          },
+        })
+      );
+      const id = definition(db);
+
+      await executeAutomation(db, id);
+
+      const [run] = listAutomationRuns(db, { automationId: id });
+      expect(JSON.stringify(run)).not.toContain("abcd1234efgh5678");
+      expect(String(run.error?.data.message)).toContain("[redacted]");
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

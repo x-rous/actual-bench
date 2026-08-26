@@ -40,9 +40,23 @@ export async function listAutomationRuns(automationId: string, limit = 25): Prom
   return ((await response.json()) as { runs: AutomationRun[] }).runs;
 }
 
-export async function runAutomationNow(automationId: string): Promise<void> {
+export type RunOutcome = {
+  automationId: string;
+  runId: string | null;
+  status: "succeeded" | "partial" | "failed" | "cancelled" | "no_changes" | "running" | "skipped";
+  message?: string;
+};
+
+/**
+ * A run that *happened* answers 200 whatever it concluded — failing is a
+ * result, not a transport error — so the outcome is returned rather than
+ * discarded. Reporting "Run finished" over a failed run is worse than saying
+ * nothing.
+ */
+export async function runAutomationNow(automationId: string): Promise<RunOutcome> {
   const response = await fetch(`/api/automations/${automationId}/run`, { method: "POST" });
   if (!response.ok) return readError(response);
+  return ((await response.json()) as { outcome: RunOutcome }).outcome;
 }
 
 export async function patchAutomation(

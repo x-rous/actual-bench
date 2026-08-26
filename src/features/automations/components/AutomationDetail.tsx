@@ -37,13 +37,28 @@ const TONE_VARIANT = {
 
 type LogEntry = { level: string; message: string; at: string };
 
+/**
+ * The log lives inside a job type's own result payload, which the engine stores
+ * without inspecting — so nothing guarantees an entry's `message` is a string.
+ * Checking only that the key exists let an object reach React as a child and
+ * take down the whole run-history section.
+ */
 function runLog(run: AutomationRun): LogEntry[] {
   const log = run.result?.data.log;
   if (!Array.isArray(log)) return [];
-  return log.filter(
-    (entry): entry is LogEntry =>
-      typeof entry === "object" && entry !== null && !Array.isArray(entry) && "message" in entry
-  ) as LogEntry[];
+
+  return log.flatMap((entry) => {
+    if (typeof entry !== "object" || entry === null || Array.isArray(entry)) return [];
+    const record = entry as Record<string, unknown>;
+    if (typeof record.message !== "string") return [];
+    return [
+      {
+        level: typeof record.level === "string" ? record.level : "info",
+        message: record.message,
+        at: typeof record.at === "string" ? record.at : "",
+      },
+    ];
+  });
 }
 
 function RunRow({ run }: { run: AutomationRun }) {

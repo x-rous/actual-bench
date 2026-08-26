@@ -17,7 +17,7 @@ import { getSyncCredential, hasSyncCredential } from "@/lib/app-db/syncCredentia
 import { vaultEnabled } from "@/lib/sync/vault";
 import { logger } from "@/lib/logger";
 import { getAutomationJobType } from "./registry";
-import { createRunLogger } from "./runLogger";
+import { createRunLogger, redactSecrets } from "./runLogger";
 import { effectiveNextRunAt, isDue } from "./schedule";
 import type { AutomationCredentials, AutomationJobType } from "./registry";
 import type {
@@ -113,14 +113,17 @@ function errorEnvelope(error: unknown, secrets: readonly string[]): JsonEnvelope
   return { version: 1, data: { message: redact(message, secrets) } };
 }
 
+/**
+ * The same redactor the run logger uses.
+ *
+ * A second, weaker implementation lived here and covered only *known* secrets —
+ * values a job had actually revealed. A provider error echoing a credential
+ * from a job that never called `reveal()` passed straight through into
+ * `error_json`, the roll-up message and the auto-pause reason, all of which are
+ * persisted and shown in the UI. One redactor, one behaviour.
+ */
 function redact(message: string, secrets: readonly string[]): string {
-  // The run logger owns the real redaction; this is the same treatment for the
-  // error stored on the run row, which never goes through the logger.
-  let output = message;
-  for (const secret of secrets) {
-    if (secret.length >= 8) output = output.split(secret).join("[redacted]");
-  }
-  return output;
+  return redactSecrets(message, secrets);
 }
 
 function statusFromRollup(rollup: AutomationRunRollup): AutomationRunStatus {
@@ -216,15 +219,31 @@ export async function executeAutomation(
 
   const attempt = options.attempt ?? 1;
   const startedAt = new Date(options.nowMs ?? Date.now()).toISOString();
-  const run = createAutomationRun(db, {
-    automationId,
-    type: definition.type,
-    status: "running",
-    startedAt,
-    trigger: options.trigger ?? "schedule",
-    attempt,
-    executionMode: definition.executionMode,
-  });
+
+  // Everything after the claim is inside a guarded region. Opening the run row
+  // can fail — a SQLite write error is enough — and if that happened before the
+  // `try`, the `finally` never ran: `running_since` would self-heal when the
+  // claim went stale, but the in-memory `inFlight` entry would not, leaving the
+  // automation permanently "already in progress" until the process restarted.
+  let run: AutomationRun;
+  try {
+    run = createAutomationRun(db, {
+      automationId,
+      type: definition.type,
+      status: "running",
+      startedAt,
+      trigger: options.trigger ?? "schedule",
+      attempt,
+      executionMode: definition.executionMode,
+    });
+  } catch (error) {
+    inFlight.delete(automationId);
+    cancellations.delete(automationId);
+    releaseAutomationClaim(db, automationId);
+    const message = error instanceof Error ? error.message : String(error);
+    logger.warn(`[automation] could not open a run for ${automationId}: ${message}`);
+    return { automationId, runId: null, status: "skipped", message };
+  }
 
   const runLogger = createRunLogger({ automationId, type: definition.type, runId: run.id });
   const secrets: string[] = [];
@@ -272,6 +291,15 @@ export async function executeAutomation(
     });
 
     const finishedAt = new Date().toISOString();
+
+    // A cancelled run is neither a success nor a failure: the user stopped it.
+    // Counting it as a failure meant stopping a run a few times auto-paused the
+    // automation, with a reason that read as consecutive failures.
+    if (status === "cancelled") {
+      scheduleNext(db, automationId, options.nowMs ?? Date.now());
+      return { automationId, runId: run.id, status, message: rollup.message };
+    }
+
     const success = isHealthySuccess(status, rollup);
     const updated = recordAutomationOutcome(db, automationId, { success, at: finishedAt });
     applyHealthPolicy(db, updated ?? definition, success, rollup.message);

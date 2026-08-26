@@ -3,10 +3,13 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { AutomationsView } from "./AutomationsView";
 import * as api from "../lib/automationsApi";
 import type { AutomationListItem } from "../lib/automationsApi";
+import { toast } from "sonner";
 import type { AutomationRun } from "@/lib/app-db/types";
 
 jest.mock("../lib/automationsApi");
-jest.mock("sonner", () => ({ toast: { success: jest.fn(), error: jest.fn() } }));
+jest.mock("sonner", () => ({
+  toast: { success: jest.fn(), error: jest.fn(), warning: jest.fn() },
+}));
 
 const mockedApi = api as jest.Mocked<typeof api>;
 
@@ -77,7 +80,12 @@ describe("AutomationsView", () => {
     jest.clearAllMocks();
     mockedApi.listAutomations.mockResolvedValue({ automations: [automation()], jobTypes: [] });
     mockedApi.listAutomationRuns.mockResolvedValue([run()]);
-    mockedApi.runAutomationNow.mockResolvedValue(undefined);
+    mockedApi.runAutomationNow.mockResolvedValue({
+      automationId: "auto-1",
+      runId: "run-2",
+      status: "succeeded",
+      message: "3 added",
+    });
     mockedApi.patchAutomation.mockResolvedValue(automation());
     mockedApi.listReviewQueue.mockResolvedValue([]);
   });
@@ -122,7 +130,11 @@ describe("AutomationsView", () => {
     // "Run now" everywhere and showed a spinner on every card.
     let resolveRun: () => void = () => {};
     mockedApi.runAutomationNow.mockImplementation(
-      () => new Promise<void>((resolve) => { resolveRun = resolve; })
+      () =>
+        new Promise((resolve) => {
+          resolveRun = () =>
+            resolve({ automationId: "auto-1", runId: "run-2", status: "succeeded" });
+        })
     );
     mockedApi.listAutomations.mockResolvedValue({
       automations: [automation(), automation({ id: "auto-2", name: "Second automation" })],
@@ -235,5 +247,21 @@ describe("AutomationsView", () => {
 
     await screen.findByText("Household → Joint");
     expect(screen.queryByText("Waiting for you to decide")).not.toBeInTheDocument();
+  });
+
+  it("says a run failed instead of reporting it finished", async () => {
+    mockedApi.runAutomationNow.mockResolvedValue({
+      automationId: "auto-1",
+      runId: "run-3",
+      status: "failed",
+      message: "provider unreachable",
+    });
+
+    renderView();
+    fireEvent.click(await screen.findByRole("button", { name: /run now/i }));
+
+    // A run that happened answers 200 whatever it concluded, so the toast has
+    // to read the outcome rather than the HTTP status.
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith("Run failed: provider unreachable"));
   });
 });

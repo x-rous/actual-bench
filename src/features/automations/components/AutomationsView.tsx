@@ -84,8 +84,19 @@ export function AutomationsView() {
 
   const runNow = useMutation({
     mutationFn: runAutomationNow,
-    onSuccess: () => {
-      toast.success("Run finished");
+    onSuccess: (outcome) => {
+      // Say what happened. A failed run comes back as a 200 with a failed
+      // outcome, and calling that "Run finished" hides exactly the thing the
+      // user pressed the button to find out.
+      if (outcome.status === "failed") {
+        toast.error(outcome.message ? `Run failed: ${outcome.message}` : "Run failed");
+      } else if (outcome.status === "partial") {
+        toast.warning(outcome.message ?? "Run finished with some items unfinished");
+      } else if (outcome.status === "no_changes") {
+        toast.success(outcome.message ?? "Nothing to do");
+      } else {
+        toast.success(outcome.message ?? "Run finished");
+      }
       invalidate();
     },
     onError: (error: Error) => toast.error(error.message),

@@ -9,7 +9,7 @@ import {
   updateAutomation,
 } from "@/lib/app-db/automationRepository";
 import { createAutomationRun, finalizeAutomationRun } from "@/lib/app-db/automationRunRepository";
-import { buildAutomationHealth, isStale, overallAutomationStatus } from "./health";
+import { buildAutomationHealth, isStale, overallAutomationStatus, staleGraceMs } from "./health";
 import { buildReviewQueue } from "./reviewQueue";
 import {
   __resetAutomationRegistryForTests,
@@ -81,24 +81,43 @@ describe("automation health", () => {
 
   it("gives a short overdue window some grace, so a deploy is not an alert", () => {
     const nowMs = Date.parse("2026-08-25T12:00:00Z");
+    const frequent = { enabled: true, autoPausedAt: null, scheduleKind: "interval" as const, intervalMinutes: 15 };
+
     // Ten minutes late on a 15-minute schedule: not stale.
-    expect(
-      isStale({ enabled: true, autoPausedAt: null, nextRunAt: "2026-08-25T11:50:00.000Z" }, nowMs)
-    ).toBe(false);
+    expect(isStale({ ...frequent, nextRunAt: "2026-08-25T11:50:00.000Z" }, nowMs)).toBe(false);
     // Two hours late: stale.
-    expect(
-      isStale({ enabled: true, autoPausedAt: null, nextRunAt: "2026-08-25T10:00:00.000Z" }, nowMs)
-    ).toBe(true);
+    expect(isStale({ ...frequent, nextRunAt: "2026-08-25T10:00:00.000Z" }, nowMs)).toBe(true);
+  });
+
+  it("scales the grace to the schedule instead of flagging everything after an hour", () => {
+    const nowMs = Date.parse("2026-08-25T12:00:00Z");
+
+    // A daily job two hours late is not news; three days late is.
+    const daily = { enabled: true, autoPausedAt: null, scheduleKind: "cron" as const, intervalMinutes: null };
+    expect(isStale({ ...daily, nextRunAt: "2026-08-25T10:00:00.000Z" }, nowMs)).toBe(false);
+    expect(isStale({ ...daily, nextRunAt: "2026-08-21T10:00:00.000Z" }, nowMs)).toBe(true);
+
+    // The declared factor is really applied: three missed 6-hour occurrences.
+    const sixHourly = { scheduleKind: "interval" as const, intervalMinutes: 360 };
+    expect(staleGraceMs(sixHourly)).toBe(3 * 360 * 60_000);
+    // ...but never less than the one-hour floor.
+    expect(staleGraceMs({ scheduleKind: "interval", intervalMinutes: 15 })).toBe(60 * 60_000);
   });
 
   it("never calls a paused or disabled automation overdue", () => {
     const nowMs = Date.parse("2026-08-25T12:00:00Z");
+    const schedule = { scheduleKind: "interval" as const, intervalMinutes: 30 };
     expect(
-      isStale({ enabled: false, autoPausedAt: null, nextRunAt: "2026-08-20T00:00:00.000Z" }, nowMs)
+      isStale({ ...schedule, enabled: false, autoPausedAt: null, nextRunAt: "2026-08-20T00:00:00.000Z" }, nowMs)
     ).toBe(false);
     expect(
       isStale(
-        { enabled: true, autoPausedAt: "2026-08-21T00:00:00.000Z", nextRunAt: "2026-08-20T00:00:00.000Z" },
+        {
+          ...schedule,
+          enabled: true,
+          autoPausedAt: "2026-08-21T00:00:00.000Z",
+          nextRunAt: "2026-08-20T00:00:00.000Z",
+        },
         nowMs
       )
     ).toBe(false);

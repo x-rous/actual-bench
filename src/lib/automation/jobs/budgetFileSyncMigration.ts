@@ -56,6 +56,12 @@ function seedNextRunAt(db: SqliteDatabase, flowId: string, intervalMinutes: numb
 }
 
 export function migrateSyncFlowsToAutomations(db: SqliteDatabase): MigrationSummary {
+  // One transaction for the whole batch, so an upgrade that fails partway
+  // leaves no half-migrated set of automations behind.
+  return db.transaction(() => migrateInTransaction(db))() as MigrationSummary;
+}
+
+function migrateInTransaction(db: SqliteDatabase): MigrationSummary {
   const summary: MigrationSummary = { created: [], updated: [], skipped: 0 };
 
   const existingByFlow = new Map<string, AutomationDefinition>();

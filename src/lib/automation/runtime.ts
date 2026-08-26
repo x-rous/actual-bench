@@ -18,6 +18,8 @@ import { runEngineTick } from "./engine";
  */
 
 const TICK_MS = 60_000;
+/** A claim younger than this may still belong to a run that is really going. */
+const BOOT_CLAIM_GRACE_MS = 15 * 60_000;
 const INITIAL_DELAY_MS = 5_000;
 let started = false;
 
@@ -25,12 +27,14 @@ export function startAutomationEngine(): void {
   if (started) return;
   started = true;
 
-  // Any execution claim surviving a boot belongs to a process that no longer
-  // exists — the engine is single-instance, so nothing else can be holding one.
-  // Without this a run killed mid-flight would block its automation until the
-  // claim went stale hours later.
+  // Recover claims left by a process that died mid-run, without assuming this
+  // is the only process alive. Clearing *every* claim at boot would, if someone
+  // runs two containers against one database, cancel a run the other container
+  // is still executing — so only claims older than the boot grace are released.
+  // A crashed run therefore recovers in minutes rather than when the claim goes
+  // fully stale hours later, and a live run is never stolen.
   try {
-    const released = clearAutomationClaims(getAppDb());
+    const released = clearAutomationClaims(getAppDb(), BOOT_CLAIM_GRACE_MS);
     if (released > 0) logger.info(`[automation] released ${released} claim(s) left by a previous process`);
   } catch (error) {
     logger.warn(
