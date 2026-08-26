@@ -180,6 +180,20 @@ function statusFor(
     };
   }
 
+  // A cancelled run is neither success nor failure — the engine deliberately
+  // keeps it out of the failure streak — so health must not fall through to
+  // "finished successfully" and report something that did not happen.
+  if (lastRun.status === "cancelled") {
+    return { status: "idle", summary: "Last run was cancelled." };
+  }
+
+  if (lastRun.status === "failed") {
+    return {
+      status: "failing",
+      summary: lastRun.rollup?.message ?? "Last run failed.",
+    };
+  }
+
   return {
     status: "ok",
     summary: lastRun.rollup?.message ?? "Last run finished successfully.",

@@ -188,6 +188,44 @@ describe("automation health", () => {
     ).toBe(false);
   });
 
+  it("does not call a cancelled run a success", () => {
+    const { root, db } = tempDb();
+    try {
+      registerAutomationJobType(jobType("budget-file-sync", true));
+      const id = automation(db);
+      const run = createAutomationRun(db, { automationId: id, type: "budget-file-sync" });
+      finalizeAutomationRun(db, run.id, { status: "cancelled" });
+
+      const [health] = buildAutomationHealth(db).automations;
+
+      // The user stopped it. Reporting "finished successfully" would describe
+      // something that did not happen.
+      expect(health.status).toBe("idle");
+      expect(health.summary).toBe("Last run was cancelled.");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("reports a failed last run as failing even before the streak is recorded", () => {
+    const { root, db } = tempDb();
+    try {
+      registerAutomationJobType(jobType("budget-file-sync", true));
+      const id = automation(db);
+      const run = createAutomationRun(db, { automationId: id, type: "budget-file-sync" });
+      finalizeAutomationRun(db, run.id, {
+        status: "failed",
+        rollup: { outcome: "failed", itemCount: 0, message: "provider unreachable" },
+      });
+
+      const [health] = buildAutomationHealth(db).automations;
+      expect(health.status).toBe("failing");
+      expect(health.summary).toBe("provider unreachable");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("reports a paused automation with the reason it was paused", () => {
     const { root, db } = tempDb();
     try {

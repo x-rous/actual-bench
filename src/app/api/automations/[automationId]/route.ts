@@ -41,15 +41,21 @@ export async function PATCH(request: Request, context: RouteContext) {
   try {
     const { automationId } = await context.params;
     const db = getAppDb();
-    const body = (await readJsonBody(request)) as Record<string, unknown>;
+    const body = await readJsonBody(request);
+    // `null` is valid JSON. Reading `resume` off it would throw before the
+    // repository could validate anything, turning a bad request into a 500.
+    if (typeof body !== "object" || body === null || Array.isArray(body)) {
+      return NextResponse.json({ error: "Automation payload must be an object" }, { status: 400 });
+    }
+    const payload = body as Record<string, unknown>;
 
-    if (body.resume === true) {
+    if (payload.resume === true) {
       const resumed = resumeAutomation(db, automationId);
       if (!resumed) return NextResponse.json({ error: "Automation not found" }, { status: 404 });
       return NextResponse.json({ automation: resumed });
     }
 
-    const automation = updateAutomation(db, automationId, body);
+    const automation = updateAutomation(db, automationId, payload);
     if (!automation) return NextResponse.json({ error: "Automation not found" }, { status: 404 });
     return NextResponse.json({ automation });
   } catch (error) {
