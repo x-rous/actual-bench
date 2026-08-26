@@ -16,6 +16,7 @@ import {
   getCategoryGroups,
   updateCategoryGroup,
 } from "../api/categoryGroups";
+import { triggerAccountBankSync } from "../api/bankSync";
 import { apiRequest, getServerVersion } from "../api/client";
 import {
   deleteAccountNote,
@@ -54,6 +55,8 @@ import {
   getTags,
   updateTag,
 } from "../api/tags";
+import { listAccountsForBankSync } from "./bankSyncAccounts";
+import { runBankSyncForAccounts } from "./runBankSync";
 import type { HttpApiConnection } from "@/store/connection";
 import { prepareRuleForTransport, prepareRulePatchForTransport } from "./ruleMutation";
 import {
@@ -175,6 +178,19 @@ export function createHttpApiTransport(
     // Budget File Sync over HTTP API mode (RD-060): entity primitives above,
     // transaction primitives via actual-http-api below.
     getSyncCapabilities: () => getBudgetFileSyncCapabilities({ mode: "http-api" }),
+    // The endpoints are part of actual-http-api's contract, so there is no
+    // per-build question to ask the way there is for the Direct runtime.
+    canRunBankSync: async () => true,
+    runBankSync: (input) =>
+      runBankSyncForAccounts({
+        loadAccounts: () => listAccountsForBankSync(connection),
+        accountId: input?.accountId,
+        trigger: (accountId) => triggerAccountBankSync(connection, accountId),
+        // The endpoint answers "Bank sync started". Until that is verified
+        // against a live server, treat it as accepted rather than finished —
+        // reporting a count read straight afterwards could be silently wrong.
+        synchronous: false,
+      }),
     listTransactionsForSync: (input) => listHttpTransactionsForSync(connection, input),
     createOrResolvePayee: (input) => createOrResolveHttpPayee(connection, input.name),
     createTransactionsForSync: (inputs) => createHttpTransactionsForSync(connection, inputs),

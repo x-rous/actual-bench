@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { Plus, Download, Upload, RefreshCw } from "lucide-react";
+import { Plus, Download, Upload, RefreshCw, Landmark } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { PageLayout } from "@/components/layout/PageLayout";
@@ -11,6 +11,7 @@ import { useStagedStore } from "@/store/staged";
 import { generateId } from "@/lib/uuid";
 import { useAccounts } from "../hooks/useAccounts";
 import { useAccountBalances } from "../hooks/useAccountBalances";
+import { useBankSync } from "../hooks/useBankSync";
 import { AccountsTable } from "./AccountsTable";
 import { AccountFormDrawer } from "./AccountFormDrawer";
 import type { AccountFormValues } from "../schemas/account.schema";
@@ -38,6 +39,7 @@ export function AccountsView() {
 
   const { isLoading, isError, error, refetch } = useAccounts();
   const { refetch: refetchBalances, isFetching: isRefreshingBalances } = useAccountBalances();
+  const { supported: bankSyncSupported, syncBanks, isSyncing } = useBankSync();
 
   const staged = useStagedStore((s) => s.accounts);
   const stageNew = useStagedStore((s) => s.stageNew);
@@ -146,6 +148,18 @@ export function AccountsView() {
             className="hidden"
             onChange={handleImportCsv}
           />
+          {bankSyncSupported && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => syncBanks(undefined)}
+              disabled={isSyncing}
+              title="Ask Actual to pull new transactions from your connected banks"
+            >
+              <Landmark className={cn(isSyncing && "animate-pulse")} />
+              {isSyncing ? "Syncing banks…" : "Sync banks"}
+            </Button>
+          )}
           <Button
             variant="outline"
             size="sm"

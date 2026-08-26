@@ -157,6 +157,14 @@ export type SyncCapabilitySet = {
   supportsMultiRuntimeBudgetAccess: boolean;
   updateTransaction: boolean;
   deleteTransaction: boolean;
+  /**
+   * Can ask Actual to pull from the connected banks (RD-080).
+   *
+   * True for both transports, with a difference the UI must respect: Direct
+   * awaits the import and can report what arrived, while the HTTP endpoint
+   * answers "started" and Bench does not claim to know.
+   */
+  runBankSync: boolean;
 };
 
 export type SyncCapabilityReport = {
