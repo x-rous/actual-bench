@@ -1,6 +1,16 @@
 "use client";
 
-import { AlertTriangle, CircleDot, Loader2, Pause, Play } from "lucide-react";
+import {
+  AlertTriangle,
+  CircleCheck,
+  CircleDot,
+  CirclePause,
+  CircleX,
+  Loader2,
+  Pause,
+  Play,
+} from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { executionModeCopy, formatDateTime, relativeTime } from "../lib/presentation";
@@ -28,27 +38,39 @@ import type { AutomationListItem } from "../lib/automationsApi";
  * sentence appearing N times.
  */
 
+/**
+ * Status is carried by a word, an icon shape and a colour — in that order of
+ * importance.
+ *
+ * Colour alone cannot say "failing": it is invisible to anyone who cannot
+ * distinguish the hues, and it disappears entirely in a screenshot pasted into
+ * a bug report. The shapes differ too, so the three signals degrade
+ * independently.
+ */
 const STATUS_STYLE: Record<
   AutomationListItem["status"],
-  { dot: string; label: string; row?: string }
+  { icon: LucideIcon; tone: string; label: string; row?: string }
 > = {
-  ok: { dot: "text-green-600 dark:text-green-500", label: "Healthy" },
+  ok: { icon: CircleCheck, tone: "text-green-600 dark:text-green-500", label: "Healthy" },
   warning: {
-    dot: "text-amber-600 dark:text-amber-500",
-    label: "Needs attention",
+    icon: AlertTriangle,
+    tone: "text-amber-600 dark:text-amber-500",
+    label: "Attention",
     row: "bg-amber-50/40 dark:bg-amber-950/10",
   },
   failing: {
-    dot: "text-destructive",
+    icon: CircleX,
+    tone: "text-destructive",
     label: "Failing",
     row: "bg-destructive/5",
   },
   paused: {
-    dot: "text-amber-600 dark:text-amber-500",
+    icon: CirclePause,
+    tone: "text-amber-600 dark:text-amber-500",
     label: "Paused",
     row: "bg-amber-50/40 dark:bg-amber-950/10",
   },
-  idle: { dot: "text-muted-foreground", label: "Idle" },
+  idle: { icon: CircleDot, tone: "text-muted-foreground", label: "Idle" },
 };
 
 type AutomationsTableProps = {
@@ -73,9 +95,7 @@ export function AutomationsTable({
       <table className="w-full text-xs">
         <thead className="sticky top-0 z-10 bg-muted text-left text-[11px] uppercase text-muted-foreground">
           <tr>
-            <th className="w-8 px-3 py-2">
-              <span className="sr-only">Status</span>
-            </th>
+            <th className="px-3 py-2">Status</th>
             <th className="px-3 py-2">Automation</th>
             <th className="px-3 py-2">Type</th>
             <th className="px-3 py-2">Schedule</th>
@@ -89,6 +109,7 @@ export function AutomationsTable({
         <tbody>
           {automations.map((automation) => {
             const style = STATUS_STYLE[automation.status];
+            const StatusIcon = style.icon;
             const mode = executionModeCopy(automation.executionMode);
             const paused = Boolean(automation.autoPausedAt);
             const busy = automation.running || runningId === automation.id;
@@ -106,11 +127,17 @@ export function AutomationsTable({
                 className={cn("border-t border-border/60 align-top", style.row)}
                 data-testid="automation-row"
               >
-                <td className="px-3 py-2">
+                <td className="px-3 py-2 whitespace-nowrap">
                   {busy ? (
-                    <Loader2 className="size-3.5 animate-spin text-muted-foreground" aria-label="Running" />
+                    <span className="flex items-center gap-1.5 text-muted-foreground">
+                      <Loader2 className="size-3.5 animate-spin" aria-hidden />
+                      Running
+                    </span>
                   ) : (
-                    <CircleDot className={cn("size-3.5", style.dot)} aria-label={style.label} />
+                    <span className={cn("flex items-center gap-1.5", style.tone)}>
+                      <StatusIcon className="size-3.5" aria-hidden />
+                      {style.label}
+                    </span>
                   )}
                 </td>
 

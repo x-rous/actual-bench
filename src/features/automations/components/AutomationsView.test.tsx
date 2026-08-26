@@ -170,7 +170,8 @@ describe("AutomationsView", () => {
 
     renderView();
 
-    expect(await screen.findByLabelText("Running")).toBeInTheDocument();
+    // Status is readable as a word, not just a colour.
+    expect(await screen.findByText("Running")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /run .* now/i })).toBeDisabled();
   });
 
@@ -326,5 +327,29 @@ describe("AutomationsView", () => {
     releaseRefresh();
     await waitFor(() => expect(refresh).not.toBeDisabled());
     expect(refresh.querySelector("svg")).not.toHaveClass("animate-spin");
+  });
+
+  it("states each status in words, not only in colour", async () => {
+    mockedApi.listAutomations.mockResolvedValue({
+      automations: [
+        automation({ id: "a", name: "Healthy one" }),
+        automation({
+          id: "b",
+          name: "Broken one",
+          status: "failing",
+          statusSummary: "Last 3 attempts failed: provider unreachable",
+          consecutiveFailures: 3,
+        }),
+      ],
+      jobTypes: [],
+    });
+
+    renderView();
+
+    // Anyone who cannot distinguish the hues — or who pastes a screenshot into
+    // a bug report — still learns which row is in trouble.
+    expect(await screen.findByText("Healthy")).toBeInTheDocument();
+    expect(screen.getByText("Failing")).toBeInTheDocument();
+    expect(screen.getByText(/provider unreachable/)).toBeInTheDocument();
   });
 });

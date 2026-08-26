@@ -227,14 +227,23 @@ describe("automation repository", () => {
   it("never reports a run in progress when the claim column is absent", () => {
     const { root, db } = tempDb();
     try {
-      const created = createAutomation(db, baseInput);
-      expect(created.runningSince).toBeNull();
+      createAutomation(db, baseInput);
 
-      // A row read from a database whose `running_since` column is missing
-      // yields `undefined`, and callers ask "is this running?" by comparing
-      // against null. Undefined must not answer yes: that is how a schema fault
-      // surfaced as an automation stuck on "Running" rather than as an error.
-      expect(created.runningSince !== null).toBe(false);
+      // Reproduce the real fault rather than asserting around it: a database
+      // that reached v18 from an intermediate build has no `running_since`, and
+      // its schema_version already reads 19-or-later on a later boot, so the
+      // repair does not re-run. Dropping the column reproduces exactly that row
+      // shape.
+      db.exec("ALTER TABLE automation_definitions DROP COLUMN running_since");
+
+      const [automation] = listAutomations(db);
+
+      // `row.running_since` is now `undefined`, and every caller asks "is this
+      // running?" by comparing against null. Undefined must not answer yes —
+      // that is how a schema fault disguised itself as an automation stuck on
+      // "Running" instead of surfacing as the error it was.
+      expect(automation.runningSince).toBeNull();
+      expect(automation.runningSince !== null).toBe(false);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
