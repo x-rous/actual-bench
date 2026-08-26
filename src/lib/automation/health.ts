@@ -3,7 +3,7 @@ import { listAutomationRuns } from "@/lib/app-db/automationRunRepository";
 import { vaultEnabled } from "@/lib/sync/vault";
 import { getAutomationJobType } from "./registry";
 import { isAutomationRunning, runningAutomationIds } from "./engine";
-import { MIN_INTERVAL_MINUTES, describeSchedule } from "./schedule";
+import { MIN_INTERVAL_MINUTES, describeSchedule, nextCronRun } from "./schedule";
 import type { AutomationDefinition, AutomationRun, SqliteDatabase } from "@/lib/app-db/types";
 
 /**
@@ -63,20 +63,59 @@ export type AutomationHealthReport = {
  */
 export const STALE_GRACE_FACTOR = 3;
 const MIN_STALE_GRACE_MS = 60 * 60_000;
-/** Cron cadence is not a single number; assume daily for the grace. */
-const ASSUMED_CRON_INTERVAL_MINUTES = 24 * 60;
+/**
+ * Upper bound on the grace. Three missed occurrences of a monthly schedule is a
+ * quarter of silence; past a week, "it has not run" is worth saying whatever the
+ * cadence, and a warning nobody sees for three months is not a warning.
+ */
+const MAX_STALE_GRACE_MS = 7 * 24 * 60 * 60_000;
+/** Only used when a cron expression cannot be read at all. */
+const FALLBACK_CRON_INTERVAL_MINUTES = 24 * 60;
 
 type StaleInput = Pick<
   AutomationDefinition,
-  "enabled" | "autoPausedAt" | "nextRunAt" | "scheduleKind" | "intervalMinutes"
+  | "enabled"
+  | "autoPausedAt"
+  | "nextRunAt"
+  | "scheduleKind"
+  | "intervalMinutes"
+  | "cronExpression"
+  | "timezone"
 >;
 
-export function staleGraceMs(automation: Pick<StaleInput, "scheduleKind" | "intervalMinutes">): number {
-  const minutes =
-    automation.scheduleKind === "cron"
-      ? ASSUMED_CRON_INTERVAL_MINUTES
-      : Math.max(automation.intervalMinutes ?? 0, MIN_INTERVAL_MINUTES);
-  return Math.max(minutes * STALE_GRACE_FACTOR * 60_000, MIN_STALE_GRACE_MS);
+type ScheduleShape = Pick<
+  StaleInput,
+  "scheduleKind" | "intervalMinutes" | "cronExpression" | "timezone" | "nextRunAt"
+>;
+
+/**
+ * The gap between two consecutive occurrences, in minutes.
+ *
+ * Measured from the schedule itself rather than assumed. Treating every cron as
+ * daily called a monthly job overdue after three days, when it had missed
+ * nothing at all.
+ */
+function occurrenceMinutes(automation: ScheduleShape): number {
+  if (automation.scheduleKind !== "cron") {
+    return Math.max(automation.intervalMinutes ?? 0, MIN_INTERVAL_MINUTES);
+  }
+  if (!automation.cronExpression) return FALLBACK_CRON_INTERVAL_MINUTES;
+
+  const from = automation.nextRunAt ? Date.parse(automation.nextRunAt) : Date.now();
+  const base = Number.isNaN(from) ? Date.now() : from;
+
+  try {
+    const following = nextCronRun(automation.cronExpression, automation.timezone, base);
+    if (following === null) return FALLBACK_CRON_INTERVAL_MINUTES;
+    return Math.max(Math.round((following - base) / 60_000), 1);
+  } catch {
+    return FALLBACK_CRON_INTERVAL_MINUTES;
+  }
+}
+
+export function staleGraceMs(automation: ScheduleShape): number {
+  const graceMs = occurrenceMinutes(automation) * STALE_GRACE_FACTOR * 60_000;
+  return Math.min(Math.max(graceMs, MIN_STALE_GRACE_MS), MAX_STALE_GRACE_MS);
 }
 
 export function isStale(automation: StaleInput, nowMs: number): boolean {

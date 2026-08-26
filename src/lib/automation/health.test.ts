@@ -81,7 +81,14 @@ describe("automation health", () => {
 
   it("gives a short overdue window some grace, so a deploy is not an alert", () => {
     const nowMs = Date.parse("2026-08-25T12:00:00Z");
-    const frequent = { enabled: true, autoPausedAt: null, scheduleKind: "interval" as const, intervalMinutes: 15 };
+    const frequent = {
+      enabled: true,
+      autoPausedAt: null,
+      scheduleKind: "interval" as const,
+      intervalMinutes: 15,
+      cronExpression: null,
+      timezone: "UTC",
+    };
 
     // Ten minutes late on a 15-minute schedule: not stale.
     expect(isStale({ ...frequent, nextRunAt: "2026-08-25T11:50:00.000Z" }, nowMs)).toBe(false);
@@ -92,21 +99,66 @@ describe("automation health", () => {
   it("scales the grace to the schedule instead of flagging everything after an hour", () => {
     const nowMs = Date.parse("2026-08-25T12:00:00Z");
 
-    // A daily job two hours late is not news; three days late is.
-    const daily = { enabled: true, autoPausedAt: null, scheduleKind: "cron" as const, intervalMinutes: null };
+    // A daily job two hours late is not news; four days late is.
+    const daily = {
+      enabled: true,
+      autoPausedAt: null,
+      scheduleKind: "cron" as const,
+      intervalMinutes: null,
+      cronExpression: "0 3 * * *",
+      timezone: "UTC",
+    };
     expect(isStale({ ...daily, nextRunAt: "2026-08-25T10:00:00.000Z" }, nowMs)).toBe(false);
     expect(isStale({ ...daily, nextRunAt: "2026-08-21T10:00:00.000Z" }, nowMs)).toBe(true);
 
     // The declared factor is really applied: three missed 6-hour occurrences.
-    const sixHourly = { scheduleKind: "interval" as const, intervalMinutes: 360 };
+    const sixHourly = {
+      scheduleKind: "interval" as const,
+      intervalMinutes: 360,
+      cronExpression: null,
+      timezone: "UTC",
+      nextRunAt: null,
+    };
     expect(staleGraceMs(sixHourly)).toBe(3 * 360 * 60_000);
     // ...but never less than the one-hour floor.
-    expect(staleGraceMs({ scheduleKind: "interval", intervalMinutes: 15 })).toBe(60 * 60_000);
+    expect(
+      staleGraceMs({
+        scheduleKind: "interval",
+        intervalMinutes: 15,
+        cronExpression: null,
+        timezone: "UTC",
+        nextRunAt: null,
+      })
+    ).toBe(60 * 60_000);
+  });
+
+  it("reads a cron schedule's real cadence rather than assuming daily", () => {
+    // Monthly: one missed occurrence is a month, so three days late is nothing.
+    const monthly = {
+      enabled: true,
+      autoPausedAt: null,
+      scheduleKind: "cron" as const,
+      intervalMinutes: null,
+      cronExpression: "0 3 1 * *",
+      timezone: "UTC",
+      nextRunAt: "2026-08-01T03:00:00.000Z",
+    };
+
+    expect(isStale(monthly, Date.parse("2026-08-04T12:00:00Z"))).toBe(false);
+    // But the grace is capped: a month of silence is worth flagging even so.
+    expect(isStale(monthly, Date.parse("2026-09-15T12:00:00Z"))).toBe(true);
+    // Cadence measured, not assumed — well beyond a day's worth of grace.
+    expect(staleGraceMs(monthly)).toBeGreaterThan(3 * 24 * 60 * 60_000);
   });
 
   it("never calls a paused or disabled automation overdue", () => {
     const nowMs = Date.parse("2026-08-25T12:00:00Z");
-    const schedule = { scheduleKind: "interval" as const, intervalMinutes: 30 };
+    const schedule = {
+      scheduleKind: "interval" as const,
+      intervalMinutes: 30,
+      cronExpression: null,
+      timezone: "UTC",
+    };
     expect(
       isStale({ ...schedule, enabled: false, autoPausedAt: null, nextRunAt: "2026-08-20T00:00:00.000Z" }, nowMs)
     ).toBe(false);

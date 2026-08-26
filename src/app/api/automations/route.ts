@@ -47,14 +47,21 @@ export function GET() {
 export async function POST(request: Request) {
   try {
     ensureAutomationJobTypesRegistered();
-    const body = (await readJsonBody(request)) as Record<string, unknown>;
+    const body = await readJsonBody(request);
+
+    // `null` is valid JSON, so reading `type` off it would throw a TypeError and
+    // surface as a 500 — an invalid payload is a 400.
+    if (typeof body !== "object" || body === null || Array.isArray(body)) {
+      return NextResponse.json({ error: "Automation payload must be an object" }, { status: 400 });
+    }
+    const payload = body as Record<string, unknown>;
 
     // Refuse a type nothing can run, rather than accepting it and pausing the
     // automation the first time the engine reaches it.
-    if (typeof body.type === "string" && !getAutomationJobType(body.type.trim())) {
+    if (typeof payload.type === "string" && !getAutomationJobType(payload.type.trim())) {
       return NextResponse.json(
         {
-          error: `No automation of type "${body.type}" exists. Known types: ${listAutomationJobTypes()
+          error: `No automation of type "${payload.type}" exists. Known types: ${listAutomationJobTypes()
             .map((jobType) => jobType.type)
             .join(", ")}.`,
         },
@@ -62,7 +69,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const automation = createAutomation(getAppDb(), body);
+    const automation = createAutomation(getAppDb(), payload);
     return NextResponse.json({ automation }, { status: 201 });
   } catch (error) {
     return appDbErrorResponse(error);

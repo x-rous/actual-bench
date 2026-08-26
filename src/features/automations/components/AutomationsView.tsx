@@ -90,6 +90,9 @@ export function AutomationsView() {
       // user pressed the button to find out.
       if (outcome.status === "failed") {
         toast.error(outcome.message ? `Run failed: ${outcome.message}` : "Run failed");
+      } else if (outcome.status === "skipped") {
+        // Nothing ran — the automation was locked, paused or unresolvable.
+        toast.warning(outcome.message ?? "The run did not start");
       } else if (outcome.status === "partial") {
         toast.warning(outcome.message ?? "Run finished with some items unfinished");
       } else if (outcome.status === "no_changes") {

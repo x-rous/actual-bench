@@ -264,4 +264,21 @@ describe("AutomationsView", () => {
     // to read the outcome rather than the HTTP status.
     await waitFor(() => expect(toast.error).toHaveBeenCalledWith("Run failed: provider unreachable"));
   });
+
+  it("warns rather than congratulates when a run did not start", async () => {
+    mockedApi.runAutomationNow.mockResolvedValue({
+      automationId: "auto-1",
+      runId: null,
+      status: "skipped",
+      message: "A run is already in progress",
+    });
+
+    renderView();
+    fireEvent.click(await screen.findByRole("button", { name: /run now/i }));
+
+    await waitFor(() =>
+      expect(toast.warning).toHaveBeenCalledWith("A run is already in progress")
+    );
+    expect(toast.success).not.toHaveBeenCalled();
+  });
 });

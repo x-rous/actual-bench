@@ -65,4 +65,13 @@ describe("/api/automations", () => {
     const list = (await GET().json()) as { automations: unknown[] };
     expect(list.automations).toHaveLength(0);
   });
+
+  it("answers 400, not 500, for a null body", async () => {
+    // `null` is valid JSON, so the handler must not read properties off it.
+    const response = await POST(request(null));
+
+    expect(response.status).toBe(400);
+    const body = (await response.json()) as { error: string };
+    expect(body.error).toMatch(/must be an object/);
+  });
 });
