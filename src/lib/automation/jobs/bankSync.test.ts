@@ -1,4 +1,6 @@
 import { bankSyncJobType } from "./bankSync";
+import type { AutomationRunContext } from "../registry";
+import type { BankSyncConfig } from "./bankSync";
 import { BANK_SYNC_JOB_TYPE } from "./bankSyncType";
 import type { BankSyncOutcome } from "@/lib/actual/bankSync";
 
@@ -139,5 +141,40 @@ describe("bank sync job type", () => {
 
     expect(rollup.outcome).toBe("failed");
     expect(rollup.message).toBe("not available");
+  });
+
+  it("refuses a config naming a different connection than the credential the engine checked", async () => {
+    // The engine fails closed on `definition.credentialRef`. Reading the vault
+    // by the fingerprint in this type's own config would use a credential that
+    // was never checked, so the two are required to agree.
+    const ctx = {
+      config: { connectionFingerprint: "srv-OTHER", accountIds: [] } as BankSyncConfig,
+      credentials: {
+        status: "resolved" as const,
+        serverFingerprint: "srv-1",
+        reveal: () => ({ apiKey: "should-not-be-used" }),
+      },
+      definition: {} as never,
+      attempt: 1,
+      signal: new AbortController().signal,
+      logger: { info: () => {}, warn: () => {}, error: () => {} },
+      reportProgress: () => {},
+    } as unknown as AutomationRunContext<BankSyncConfig>;
+
+    await expect(bankSyncJobType.run(ctx)).rejects.toThrow(/does not match the credential/);
+  });
+
+  it("refuses to run without a resolved credential", async () => {
+    const ctx = {
+      config: { connectionFingerprint: "srv-1", accountIds: [] } as BankSyncConfig,
+      credentials: { status: "unavailable" as const, reason: "vault disabled" },
+      definition: {} as never,
+      attempt: 1,
+      signal: new AbortController().signal,
+      logger: { info: () => {}, warn: () => {}, error: () => {} },
+      reportProgress: () => {},
+    } as unknown as AutomationRunContext<BankSyncConfig>;
+
+    await expect(bankSyncJobType.run(ctx)).rejects.toThrow(/no usable credential/);
   });
 });

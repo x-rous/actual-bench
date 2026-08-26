@@ -1,9 +1,9 @@
 import { createHttpApiTransport } from "@/lib/actual/httpApiTransport";
-import { getSyncCredential } from "@/lib/app-db/syncCredentialRepository";
+import { listSyncCredentialMeta } from "@/lib/app-db/syncCredentialRepository";
 import { getAppDb } from "@/lib/app-db/connection";
 import { registerAutomationJobType } from "../registry";
 import { BANK_SYNC_JOB_TYPE } from "./bankSyncType";
-import type { AutomationJobType, AutomationRunContext } from "../registry";
+import type { AutomationCredentials, AutomationJobType, AutomationRunContext } from "../registry";
 import type { BankSyncAccountResult, BankSyncOutcome } from "@/lib/actual/bankSync";
 import type { AutomationRunRollup, JsonEnvelope } from "@/lib/app-db/types";
 import type { HttpApiConnection } from "@/store/connection";
@@ -53,24 +53,52 @@ function readConfig(raw: JsonEnvelope): BankSyncConfig {
   return { connectionFingerprint: fingerprint.trim(), accountIds };
 }
 
-function connectionFromVault(fingerprint: string): HttpApiConnection {
-  const credential = getSyncCredential(getAppDb(), fingerprint);
-  if (!credential) {
-    // The engine fails closed before reaching here, so this is the narrow race
-    // where the credential was withdrawn mid-run.
+/**
+ * Build the connection from the credential the **engine** validated.
+ *
+ * Reading the vault directly by the fingerprint in this type's own config would
+ * sidestep the engine's fail-closed check: the engine guards
+ * `definition.credentialRef`, so a config naming a different connection would be
+ * used without ever having been checked. The two are required to agree, and the
+ * secret comes from `ctx.credentials.reveal()` — which is also what registers it
+ * for redaction, so a provider error echoing the key cannot reach a log, a
+ * stored error, or the pause reason.
+ *
+ * Only the non-secret metadata (URL, budget, label) is read from the vault here,
+ * through the accessor that never decrypts.
+ */
+function connectionFromCredentials(
+  credentials: AutomationCredentials,
+  configFingerprint: string
+): HttpApiConnection {
+  if (credentials.status !== "resolved") {
+    throw new Error("This automation has no usable credential. Re-enrol the connection to run it.");
+  }
+  if (configFingerprint && configFingerprint !== credentials.serverFingerprint) {
+    throw new Error(
+      "This automation's connection does not match the credential it was set up with. Recreate it to continue."
+    );
+  }
+
+  const meta = listSyncCredentialMeta(getAppDb()).find(
+    (entry) => entry.connectionFingerprint === credentials.serverFingerprint
+  );
+  if (!meta) {
+    // The narrow race where the credential was withdrawn after the engine
+    // checked it and before the run reached here.
     throw new Error("The stored credential for this connection is no longer available.");
   }
 
+  const secret = credentials.reveal();
+
   return {
-    id: credential.connectionFingerprint,
-    label: credential.label || credential.baseUrl,
+    id: meta.connectionFingerprint,
+    label: meta.label || meta.baseUrl,
     mode: "http-api",
-    baseUrl: credential.baseUrl,
-    apiKey: credential.secret.apiKey,
-    budgetSyncId: credential.budgetSyncId,
-    ...(credential.secret.encryptionPassword
-      ? { encryptionPassword: credential.secret.encryptionPassword }
-      : {}),
+    baseUrl: meta.baseUrl,
+    apiKey: secret.apiKey,
+    budgetSyncId: meta.budgetSyncId,
+    ...(secret.encryptionPassword ? { encryptionPassword: secret.encryptionPassword } : {}),
   };
 }
 
@@ -111,7 +139,7 @@ export const bankSyncJobType: AutomationJobType<BankSyncConfig, BankSyncJobResul
   validateConfig: readConfig,
 
   async run(ctx: AutomationRunContext<BankSyncConfig>): Promise<BankSyncJobResult> {
-    const connection = connectionFromVault(ctx.config.connectionFingerprint);
+    const connection = connectionFromCredentials(ctx.credentials, ctx.config.connectionFingerprint);
     const transport = createHttpApiTransport(connection);
 
     if (!transport.runBankSync) {

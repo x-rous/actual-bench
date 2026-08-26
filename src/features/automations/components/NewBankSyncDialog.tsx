@@ -66,8 +66,18 @@ function scheduleFor(
     return { scheduleKind: "interval", intervalMinutes: Math.max(minutes, 15) };
   }
   if (cadence === "daily") {
-    const [hour = "6", minute = "0"] = dailyTime.split(":");
-    return { scheduleKind: "cron", cronExpression: `${Number(minute)} ${Number(hour)} * * *` };
+    // A cleared time input is "" — and destructuring defaults only cover
+    // `undefined`, so this used to become `0 0 * * *` and quietly schedule
+    // midnight. An incomplete time is not a schedule; it fails validation
+    // instead.
+    const match = /^(\d{1,2}):(\d{2})$/.exec(dailyTime.trim());
+    if (!match) return { scheduleKind: "cron", cronExpression: "" };
+
+    const hour = Number(match[1]);
+    const minute = Number(match[2]);
+    if (hour > 23 || minute > 59) return { scheduleKind: "cron", cronExpression: "" };
+
+    return { scheduleKind: "cron", cronExpression: `${minute} ${hour} * * *` };
   }
   return { scheduleKind: "cron", cronExpression: cron.trim() };
 }
@@ -309,6 +319,10 @@ export function NewBankSyncDialog({ open, onOpenChange, onCreated }: NewBankSync
                     </label>
                   )}
                 </div>
+
+                {cadence === "daily" && cronInvalid && (
+                  <p className="mt-1 text-destructive">Enter a time of day, such as 06:00.</p>
+                )}
 
                 {cadence === "cron" && cronInvalid && (
                   <p className="mt-1 text-destructive">

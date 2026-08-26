@@ -157,4 +157,17 @@ describe("scheduling a bank sync", () => {
     await waitFor(() => expect(mockedApi.createAutomation).toHaveBeenCalled());
     expect(mockedApi.createAutomation.mock.calls[0][0].timezone).toBe("UTC");
   });
+
+  it("does not schedule midnight when the time is cleared", async () => {
+    renderDialog();
+    await screen.findByText("Checking");
+
+    fireEvent.change(screen.getByLabelText("How often"), { target: { value: "daily" } });
+    fireEvent.change(screen.getByLabelText("Time of day"), { target: { value: "" } });
+
+    // An empty time used to become `0 0 * * *` — a schedule nobody chose.
+    expect(screen.getByText(/Enter a time of day/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /schedule sync/i })).toBeDisabled();
+    expect(mockedApi.createAutomation).not.toHaveBeenCalled();
+  });
 });

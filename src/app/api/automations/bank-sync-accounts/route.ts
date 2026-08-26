@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { getAppDb } from "@/lib/app-db/connection";
 import { appDbErrorResponse } from "@/lib/app-db/routeResponses";
+import { AppDbUnavailableError, AppDbValidationError } from "@/lib/app-db/errors";
+import { sanitizeBankSyncError } from "@/lib/actual/bankSync";
 import { getSyncCredential } from "@/lib/app-db/syncCredentialRepository";
 import { listAccountsForBankSync, isBankLinked } from "@/lib/actual/bankSyncAccounts";
 import { vaultEnabled } from "@/lib/sync/vault";
@@ -65,6 +67,15 @@ export async function GET(request: Request) {
         })),
     });
   } catch (error) {
-    return appDbErrorResponse(error);
+    // Upstream error text is forwarded verbatim by the proxy and can carry the
+    // API key it was called with — a URL with credentials in it, or a server
+    // echoing the header back. This route talks to actual-http-api with a vault
+    // secret, so nothing from that side reaches the browser unsanitized.
+    return appDbErrorResponse(sanitizeUpstreamError(error));
   }
+}
+
+function sanitizeUpstreamError(error: unknown): unknown {
+  if (error instanceof AppDbValidationError || error instanceof AppDbUnavailableError) return error;
+  return new Error(sanitizeBankSyncError(error));
 }
