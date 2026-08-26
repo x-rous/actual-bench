@@ -37,7 +37,10 @@ export function useBankSync() {
     staleTime: 5 * 60_000,
   });
 
-  const supported = declared && availability.data !== false;
+  // Requires a confirmed `true`: while the check is in flight (or if it failed)
+  // `data` is undefined, and treating that as support would put the action in
+  // front of someone before Bench knows it can do it.
+  const supported = declared && availability.data === true;
 
   const mutation = useMutation({
     mutationFn: async (accountId?: string): Promise<BankSyncOutcome> => {
