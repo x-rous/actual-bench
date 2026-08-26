@@ -2,27 +2,22 @@
 
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, Info, Loader2, Pause, Play, RefreshCw } from "lucide-react";
+import { RefreshCw } from "lucide-react";
 import { toast } from "sonner";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { PageLayout } from "@/components/layout/PageLayout";
+import { cn } from "@/lib/utils";
 import Link from "next/link";
 import {
   listAutomations,
   listReviewQueue,
   patchAutomation,
   runAutomationNow,
-  type AutomationListItem,
 } from "../lib/automationsApi";
-import {
-  executionModeCopy,
-  formatDateTime,
-  relativeTime,
-  runStatusLabel,
-  runStatusTone,
-} from "../lib/presentation";
+
 import { AutomationDetail } from "./AutomationDetail";
+import { AutomationsTable } from "./AutomationsTable";
+import { describeAutomationsSummary } from "../lib/presentation";
 
 /**
  * The Automations workspace (RD-079 / PR-043d).
@@ -36,35 +31,6 @@ import { AutomationDetail } from "./AutomationDetail";
  * Budget's experimental Budget Automations (RD-047) are a different thing that
  * Bench does not drive; nothing here should read as that feature.
  */
-
-const TONE_VARIANT = {
-  ok: "status-active",
-  warn: "status-warning",
-  bad: "destructive",
-  muted: "secondary",
-} as const;
-
-function LastRunBadge({ automation }: { automation: AutomationListItem }) {
-  if (automation.running) {
-    return (
-      <Badge variant="secondary">
-        <Loader2 className="animate-spin" aria-hidden />
-        Running
-      </Badge>
-    );
-  }
-  if (!automation.lastRun) return <span className="text-muted-foreground">Never run</span>;
-
-  const status = automation.lastRun.status;
-  return (
-    <span className="flex items-center gap-2">
-      <Badge variant={TONE_VARIANT[runStatusTone(status)]}>{runStatusLabel(status)}</Badge>
-      <span className="text-muted-foreground" title={formatDateTime(automation.lastRunAt)}>
-        {relativeTime(automation.lastRunAt)}
-      </span>
-    </span>
-  );
-}
 
 export function AutomationsView() {
   const queryClient = useQueryClient();
@@ -126,6 +92,24 @@ export function AutomationsView() {
     refetchInterval: 30_000,
   });
 
+  /**
+   * Spins for a refresh someone asked for, and only that.
+   *
+   * Keying the animation off `isFetching` would spin every 15 seconds as the
+   * background poll runs, which reads as activity when nothing is happening —
+   * and would leave a user unable to tell whether their click did anything.
+   */
+  const [refreshing, setRefreshing] = useState(false);
+
+  async function handleRefresh() {
+    setRefreshing(true);
+    try {
+      await Promise.all([automationsQuery.refetch(), reviewQueueQuery.refetch()]);
+    } finally {
+      setRefreshing(false);
+    }
+  }
+
   const automations = automationsQuery.data?.automations ?? [];
   const reviewQueue = reviewQueueQuery.data ?? [];
   const selected = automations.find((automation) => automation.id === selectedId) ?? null;
@@ -133,7 +117,8 @@ export function AutomationsView() {
   return (
     <PageLayout
       title="Automations"
-      count={automations.length > 0 ? `${automations.length} automation${automations.length === 1 ? "" : "s"}` : undefined}
+      count={describeAutomationsSummary(automations)}
+      scrollManaged
       isLoading={automationsQuery.isLoading}
       isError={automationsQuery.isError}
       error={automationsQuery.error}
@@ -142,10 +127,11 @@ export function AutomationsView() {
         <Button
           variant="outline"
           size="sm"
-          onClick={() => void automationsQuery.refetch()}
+          onClick={() => void handleRefresh()}
+          disabled={refreshing}
           aria-label="Refresh automations"
         >
-          <RefreshCw aria-hidden />
+          <RefreshCw className={cn(refreshing && "animate-spin")} aria-hidden />
           Refresh
         </Button>
       }
@@ -154,17 +140,29 @@ export function AutomationsView() {
           <div className="mx-auto max-w-lg px-6 py-16 text-center">
             <h2 className="text-sm font-semibold">No automations yet</h2>
             <p className="mt-2 text-sm text-muted-foreground">
-              Scheduled work shows up here. A Budget File Sync flow set to run unattended becomes an
-              automation automatically, so you can see when it last ran and what it did.
+              A Budget File Sync flow becomes an automation when its review policy is{" "}
+              <strong className="font-medium">Auto-sync on a server schedule (unattended)</strong> — a
+              flow set to manual review, or to sync while Bench is open, stays out of here on purpose.
+            </p>
+            <p className="mt-2 text-sm text-muted-foreground">
+              A flow you just enrolled appears as soon as you refresh this page.
             </p>
           </div>
         ) : undefined
       }
     >
-      <div className="flex flex-col gap-3 p-4">
+      <div className="flex min-h-0 flex-1 flex-col">
+        {/* Stated once for the page instead of on every row: the rule is that
+            the user knows where automations run, not that the sentence repeats. */}
+        <p className="border-b border-border px-4 py-2 text-xs text-muted-foreground">
+          Automations marked <strong className="font-medium">Server</strong> run on a schedule even
+          with Actual Bench closed. One server instance runs them — Bench does not coordinate across
+          several.
+        </p>
+
         {reviewQueue.length > 0 && (
           <section
-            className="rounded-md border border-amber-400/30 bg-amber-50 p-4 dark:bg-amber-950/20"
+            className="border-b border-amber-400/30 bg-amber-50 px-4 py-3 dark:bg-amber-950/20"
             aria-labelledby="review-queue-heading"
           >
             <h2 id="review-queue-heading" className="text-sm font-semibold text-amber-900 dark:text-amber-200">
@@ -184,106 +182,16 @@ export function AutomationsView() {
           </section>
         )}
 
-        {automations.map((automation) => {
-          const mode = executionModeCopy(automation.executionMode);
-          const paused = Boolean(automation.autoPausedAt);
-          const isStarting = runNow.isPending && runNow.variables === automation.id;
-
-          return (
-            <div
-              key={automation.id}
-              className="rounded-md border border-border bg-card p-4 text-sm"
-              data-testid="automation-card"
-            >
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <button
-                      type="button"
-                      className="truncate font-medium hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                      onClick={() => setSelectedId(automation.id)}
-                    >
-                      {automation.name}
-                    </button>
-                    {paused && <Badge variant="status-warning">Auto-paused</Badge>}
-                    {!automation.enabled && !paused && <Badge variant="status-inactive">Off</Badge>}
-                  </div>
-
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    {automation.scheduleLabel} · {mode.label}
-                  </p>
-                </div>
-
-                <div className="flex shrink-0 items-center gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    // Scoped to *this* automation: `isPending` alone claimed
-                    // every row was running whenever any one of them was.
-                    disabled={automation.running || isStarting}
-                    onClick={() => runNow.mutate(automation.id)}
-                  >
-                    {automation.running || isStarting ? (
-                      <Loader2 className="animate-spin" aria-hidden />
-                    ) : (
-                      <Play aria-hidden />
-                    )}
-                    Run now
-                  </Button>
-
-                  {paused ? (
-                    <Button variant="outline" size="sm" onClick={() => resume.mutate(automation.id)}>
-                      Resume
-                    </Button>
-                  ) : (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setEnabled.mutate({ id: automation.id, enabled: !automation.enabled })}
-                      aria-label={automation.enabled ? "Pause automation" : "Enable automation"}
-                    >
-                      {automation.enabled ? <Pause aria-hidden /> : <Play aria-hidden />}
-                      {automation.enabled ? "Pause" : "Enable"}
-                    </Button>
-                  )}
-                </div>
-              </div>
-
-              <dl className="mt-3 grid grid-cols-2 gap-x-6 gap-y-1.5 text-xs sm:grid-cols-3">
-                <div>
-                  <dt className="text-muted-foreground">Last run</dt>
-                  <dd className="mt-0.5">
-                    <LastRunBadge automation={automation} />
-                  </dd>
-                </div>
-                <div>
-                  <dt className="text-muted-foreground">Next run</dt>
-                  <dd className="mt-0.5" title={formatDateTime(automation.nextRunAt)}>
-                    {automation.enabled && !paused ? relativeTime(automation.nextRunAt) : "Not scheduled"}
-                  </dd>
-                </div>
-                <div>
-                  <dt className="text-muted-foreground">Result</dt>
-                  <dd className="mt-0.5 truncate" title={automation.lastRun?.rollup?.message ?? undefined}>
-                    {automation.lastRun?.rollup?.message ?? "—"}
-                  </dd>
-                </div>
-              </dl>
-
-              {paused && automation.autoPauseReason && (
-                <p className="mt-3 flex items-start gap-2 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-950/20 dark:text-amber-300">
-                  <AlertTriangle className="mt-px size-3.5 shrink-0" aria-hidden />
-                  <span>{automation.autoPauseReason}</span>
-                </p>
-              )}
-
-              <p className="mt-3 flex items-start gap-2 text-xs text-muted-foreground">
-                <Info className="mt-px size-3.5 shrink-0" aria-hidden />
-                <span>{mode.detail}</span>
-              </p>
-            </div>
-          );
-        })}
+        <AutomationsTable
+          automations={automations}
+          runningId={runNow.isPending ? (runNow.variables ?? null) : null}
+          onOpen={setSelectedId}
+          onRunNow={(id) => runNow.mutate(id)}
+          onToggleEnabled={(automation) =>
+            setEnabled.mutate({ id: automation.id, enabled: !automation.enabled })
+          }
+          onResume={(id) => resume.mutate(id)}
+        />
       </div>
 
       {selected && <AutomationDetail automation={selected} onClose={() => setSelectedId(null)} />}

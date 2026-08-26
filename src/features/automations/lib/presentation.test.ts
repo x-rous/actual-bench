@@ -1,4 +1,12 @@
-import { executionModeCopy, relativeTime, runStatusLabel, runStatusTone, runDuration, triggerLabel } from "./presentation";
+import {
+  describeAutomationsSummary,
+  executionModeCopy,
+  relativeTime,
+  runDuration,
+  runStatusLabel,
+  runStatusTone,
+  triggerLabel,
+} from "./presentation";
 import type { AutomationRun } from "@/lib/app-db/types";
 
 function run(overrides: Partial<AutomationRun> = {}): AutomationRun {
@@ -70,5 +78,46 @@ describe("run detail formatting", () => {
     expect(relativeTime("2026-08-25T11:00:00Z", now)).toMatch(/hour ago/);
     expect(relativeTime("2026-08-25T12:30:00Z", now)).toMatch(/in 30 minutes/);
     expect(relativeTime(null, now)).toBe("—");
+  });
+});
+
+describe("the page summary line", () => {
+  const now = Date.parse("2026-08-26T12:00:00Z");
+  const base = { status: "ok" as const, enabled: true, autoPausedAt: null, nextRunAt: null };
+
+  it("answers whether the page can be closed again, not just how many rows it has", () => {
+    expect(
+      describeAutomationsSummary(
+        [
+          { ...base, nextRunAt: "2026-08-26T12:05:00.000Z" },
+          { ...base, nextRunAt: "2026-08-26T12:30:00.000Z" },
+        ],
+        now
+      )
+    ).toBe("2 automations · all healthy · next run in 5 minutes");
+  });
+
+  it("leads with trouble, because silence about it reads as reassurance", () => {
+    const summary = describeAutomationsSummary(
+      [
+        { ...base, status: "failing" },
+        { ...base, status: "paused", enabled: false, autoPausedAt: "2026-08-26T09:00:00.000Z" },
+        { ...base, nextRunAt: "2026-08-26T12:05:00.000Z" },
+      ],
+      now
+    );
+
+    expect(summary).toBe("3 automations · 1 failing, 1 paused · next run in 5 minutes");
+    expect(summary).not.toMatch(/all healthy/);
+  });
+
+  it("does not promise a next run when nothing is scheduled", () => {
+    expect(describeAutomationsSummary([{ ...base, enabled: false }], now)).toBe(
+      "1 automation · all healthy"
+    );
+  });
+
+  it("says nothing at all when there are no automations", () => {
+    expect(describeAutomationsSummary([], now)).toBeUndefined();
   });
 });
