@@ -15,6 +15,7 @@ const NO_SYNC_CAPABILITIES: SyncCapabilitySet = {
   supportsMultiRuntimeBudgetAccess: false,
   updateTransaction: false,
   deleteTransaction: false,
+  runBankSync: false,
 };
 
 /**
@@ -46,6 +47,8 @@ const CURRENT_DIRECT_CAPABILITIES: SyncCapabilitySet = {
   // RD-057: the browser API can update/delete an existing transaction by id.
   updateTransaction: true,
   deleteTransaction: true,
+  // RD-080: `runBankSync` is exported by the browser build and awaits the pull.
+  runBankSync: true,
 };
 
 /**
@@ -75,6 +78,10 @@ const HTTP_SYNC_CAPABILITIES: SyncCapabilitySet = {
   // RD-057: actual-http-api exposes updateTransaction / deleteTransaction.
   updateTransaction: true,
   deleteTransaction: true,
+  // RD-080: actual-http-api exposes per-account and all-account banksync
+  // endpoints. They answer "started" rather than reporting what was imported,
+  // which the outcome type reflects — the capability is the ability to trigger.
+  runBankSync: true,
 };
 
 export type SyncCapabilityKey = keyof SyncCapabilitySet;

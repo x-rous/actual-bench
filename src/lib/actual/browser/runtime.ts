@@ -160,6 +160,9 @@ export type ActualBrowserApi = {
     transactions: ApiImportTransaction[],
     opts?: Record<string, unknown>
   ): Promise<unknown>;
+  /** Trigger Actual's own bank import (RD-080). Optional: an older build may
+   * not export it, and the capability report says so rather than no-oping. */
+  runBankSync?(args?: { accountId?: string }): Promise<void>;
   getNote(id: string): Promise<NoteRow | null>;
   updateNote(id: string, note: string | null): Promise<void>;
   q?(table: string): ActualQueryBuilder;

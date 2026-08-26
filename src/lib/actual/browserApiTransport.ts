@@ -59,6 +59,9 @@ import {
   type UpdateTransactionForSyncInput,
   type TransportBudgetMonth,
 } from "./transport";
+import { listAccountsForBankSync } from "./bankSyncAccounts";
+import { runBankSyncForAccounts } from "./runBankSync";
+import type { BankSyncOutcome } from "./bankSync";
 import { getBudgetFileSyncCapabilities } from "@/lib/sync/capabilities";
 import { normalizeName } from "@/lib/sync/normalize";
 
@@ -382,6 +385,56 @@ async function runBrowserQuery<T>(
   } catch (err) {
     throw cleanBrowserQueryError(err);
   }
+}
+
+/**
+ * Direct-mode bank sync (RD-080 / PR-044).
+ *
+ * `api/bank-sync` awaits the pull, so by the time this resolves the import has
+ * happened and a read afterwards sees the rows — which is what makes the
+ * observed-new-transactions count meaningful here but not over HTTP.
+ */
+async function runBrowserBankSync(
+  connection: BrowserApiConnection,
+  accountId?: string
+): Promise<BankSyncOutcome> {
+  const api = await getBrowserApiRuntime(connection);
+  const trigger = api.runBankSync?.bind(api);
+  if (!trigger) {
+    return {
+      status: "unsupported",
+      results: [],
+      countsObserved: false,
+      message: "This Actual version does not expose a bank sync trigger.",
+    };
+  }
+
+  const countTransactions = async (id: string): Promise<number> => {
+    // A bounded window: bank imports land recent transactions, and reading the
+    // whole account's history on every sync would cost far more than the count
+    // is worth.
+    const to = new Date();
+    const from = new Date(to.getTime() - BANK_SYNC_COUNT_WINDOW_DAYS * 24 * 60 * 60_000);
+    const rows = await api.getTransactions(id, isoDate(from), isoDate(to));
+    return rows.length;
+  };
+
+  return runBankSyncForAccounts({
+    loadAccounts: () => listAccountsForBankSync(connection),
+    accountId,
+    trigger: async (id) => {
+      await trigger({ accountId: id });
+    },
+    synchronous: true,
+    countTransactions,
+  });
+}
+
+/** How far back to look when counting what a sync brought in. */
+const BANK_SYNC_COUNT_WINDOW_DAYS = 90;
+
+function isoDate(value: Date): string {
+  return value.toISOString().slice(0, 10);
 }
 
 function toBudgetAmount(amount: number): number {
@@ -1195,6 +1248,7 @@ export function createBrowserApiTransport(
     },
 
     getSyncCapabilities: () => getBudgetFileSyncCapabilities(connection),
+    runBankSync: (input) => runBrowserBankSync(connection, input?.accountId),
     listTransactionsForSync: (input) =>
       listBrowserTransactionsForSync(connection, input),
     createOrResolvePayee: (input) =>

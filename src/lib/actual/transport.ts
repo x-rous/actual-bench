@@ -1,6 +1,7 @@
 import type { CategoryGroupsResponse } from "../api/categoryGroups";
 import type { NotesIndex } from "../api/notes";
 import type { SyncCapabilityReport } from "@/lib/app-db/types";
+import type { BankSyncOutcome } from "./bankSync";
 import type { ConnectionMode } from "@/store/connection";
 import type {
   Account,
@@ -353,6 +354,18 @@ export interface ActualBenchTransport {
   // --- Budget File Sync (RD-053 / PR-019) ---------------------------------
   /** Report which Budget File Sync operations this transport can perform. */
   getSyncCapabilities(): SyncCapabilityReport;
+  /**
+   * Ask Actual to pull from the connected banks (RD-080).
+   *
+   * Bench triggers Actual's own import path and reports the outcome; it does
+   * not construct the transactions and does not second-guess Actual's
+   * de-duplication. Accounts are synced one at a time, because the all-accounts
+   * call cannot say which account failed.
+   *
+   * Optional: a transport that cannot do this omits it, and the capability
+   * report says so, rather than the operation silently doing nothing.
+   */
+  runBankSync?(input?: { accountId?: string }): Promise<BankSyncOutcome>;
   /** Read source transactions with split lines inline and names resolved. */
   listTransactionsForSync(
     input: ListTransactionsForSyncInput
