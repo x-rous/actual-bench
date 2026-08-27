@@ -39,7 +39,7 @@ import {
 import { KDF_VERSION_META_KEY, SALT_META_KEY, VERIFIER_META_KEY } from "./vaultMetaKeys";
 import { AppDbUnavailableError } from "./errors";
 
-export const LATEST_SCHEMA_VERSION = 21;
+export const LATEST_SCHEMA_VERSION = 22;
 
 type Migration = {
   version: number;
@@ -273,6 +273,19 @@ const MIGRATIONS: readonly Migration[] = [
     // Sealed credentials for backup destinations and backup encryption
     // (RD-077 / PR-047b). Additive.
     statements: [BACKUP_CREDENTIAL_TABLE_SQL],
+  },
+  {
+    version: 22,
+    // A backup rule owns its own schedule (RD-077 / PR-047d): people think
+    // "back up nightly at 2am" as part of the rule, not as a separate object.
+    // The automation engine mirrors these into automations. Additive.
+    apply(db) {
+      addColumnIfMissing(db, "backup_policies", "schedule_kind", "text NOT NULL DEFAULT 'cron'");
+      addColumnIfMissing(db, "backup_policies", "cron_expression", "text");
+      addColumnIfMissing(db, "backup_policies", "interval_minutes", "integer");
+      addColumnIfMissing(db, "backup_policies", "timezone", "text NOT NULL DEFAULT 'UTC'");
+      addColumnIfMissing(db, "backup_policies", "scrub_enabled", "integer NOT NULL DEFAULT 1");
+    },
   },
 ];
 

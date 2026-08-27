@@ -71,10 +71,22 @@ export const DEFAULT_RETENTION: BackupRetention = {
 export type BackupPolicyContents = "budget" | "app-db" | "both";
 export type BackupEncryptionMode = "none" | "passphrase";
 
+/** How often a backup rule runs. Mirrors the automation engine's vocabulary. */
+export type BackupScheduleKind = "cron" | "interval";
+
 export type BackupPolicy = {
   id: string;
   name: string;
   enabled: boolean;
+  scheduleKind: BackupScheduleKind;
+  /** Set when `scheduleKind` is `cron`; five-field expression. */
+  cronExpression: string | null;
+  /** Set when `scheduleKind` is `interval`. */
+  intervalMinutes: number | null;
+  /** IANA timezone the cron expression is read in. */
+  timezone: string;
+  /** Whether stored copies are re-verified on a schedule. */
+  scrubEnabled: boolean;
   contents: BackupPolicyContents;
   sourceRef: JsonEnvelope;
   destinationIds: string[];
@@ -328,6 +340,11 @@ type PolicyRow = {
   encryption: string;
   encryption_credential_ref: string | null;
   retention_json: string;
+  schedule_kind: string | null;
+  cron_expression: string | null;
+  interval_minutes: number | null;
+  timezone: string | null;
+  scrub_enabled: number | null;
   created_at: string;
   updated_at: string;
 };
@@ -389,6 +406,13 @@ function rowToPolicy(row: PolicyRow): BackupPolicy {
     encryption: row.encryption as BackupEncryptionMode,
     encryptionCredentialRef: row.encryption_credential_ref,
     retention: parseRetention(row.retention_json),
+    scheduleKind: row.schedule_kind === "interval" ? "interval" : "cron",
+    cronExpression: row.cron_expression,
+    intervalMinutes: row.interval_minutes,
+    timezone: row.timezone || "UTC",
+    // Defaults on, because a backup nobody re-checks is the failure mode this
+    // feature exists to close.
+    scrubEnabled: row.scrub_enabled === null ? true : row.scrub_enabled === 1,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -421,8 +445,9 @@ export function createBackupPolicy(db: SqliteDatabase, input: unknown): BackupPo
     `INSERT INTO backup_policies
        (id, name, enabled, contents, source_ref_json, destination_ids_json,
         verification_level, encryption, encryption_credential_ref, retention_json,
+        schedule_kind, cron_expression, interval_minutes, timezone, scrub_enabled,
         created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
     id,
     text(input.name, "name", 120),
@@ -436,6 +461,16 @@ export function createBackupPolicy(db: SqliteDatabase, input: unknown): BackupPo
     encryption,
     optionalText(input.encryptionCredentialRef, "encryptionCredentialRef", 200),
     JSON.stringify(normalizeRetention(input.retention)),
+    oneOf(input.scheduleKind, ["cron", "interval"] as const, "scheduleKind", "cron"),
+    // A nightly backup in the small hours is the right default: late enough
+    // that the day's transactions are in, early enough to be done before anyone
+    // looks at the budget.
+    optionalText(input.cronExpression, "cronExpression", 120) ?? "0 2 * * *",
+    input.intervalMinutes === undefined || input.intervalMinutes === null
+      ? null
+      : count(input.intervalMinutes, "intervalMinutes", 1440),
+    optionalText(input.timezone, "timezone", 64) ?? "UTC",
+    input.scrubEnabled === false ? 0 : 1,
     now,
     now
   );
@@ -484,6 +519,20 @@ export function updateBackupPolicy(db: SqliteDatabase, id: string, input: unknow
   if (input.retention !== undefined) {
     set("retention_json", JSON.stringify(normalizeRetention(input.retention)));
   }
+  if (input.scheduleKind !== undefined) {
+    set("schedule_kind", oneOf(input.scheduleKind, ["cron", "interval"] as const, "scheduleKind", "cron"));
+  }
+  if (input.cronExpression !== undefined) {
+    set("cron_expression", optionalText(input.cronExpression, "cronExpression", 120));
+  }
+  if (input.intervalMinutes !== undefined) {
+    set(
+      "interval_minutes",
+      input.intervalMinutes === null ? null : count(input.intervalMinutes, "intervalMinutes", 1440)
+    );
+  }
+  if (input.timezone !== undefined) set("timezone", optionalText(input.timezone, "timezone", 64) ?? "UTC");
+  if (input.scrubEnabled !== undefined) set("scrub_enabled", input.scrubEnabled === false ? 0 : 1);
   if (assignments.length === 0) return existing;
 
   set("updated_at", new Date().toISOString());
