@@ -90,6 +90,15 @@ export type RunBackupOptions = {
   protectedUntil?: string | null;
   notes?: string | null;
   now?: Date;
+  /**
+   * Narrow what this run copies, without changing the rule.
+   *
+   * Used by safety recovery points, which take the budget alone: they protect
+   * against a change about to be made to the budget, and copying Bench's own
+   * settings as well would double the wait for something the user did not ask
+   * for.
+   */
+  contentsOverride?: BackupPolicy["contents"];
 };
 
 function slug(value: string): string {
@@ -203,9 +212,9 @@ async function prepareArtifact(
   };
 }
 
-function kindsFor(policy: BackupPolicy): BackupArtifactKind[] {
-  if (policy.contents === "budget") return ["budget"];
-  if (policy.contents === "app-db") return ["app-db"];
+function kindsFor(contents: BackupPolicy["contents"]): BackupArtifactKind[] {
+  if (contents === "budget") return ["budget"];
+  if (contents === "app-db") return ["app-db"];
   return ["budget", "app-db"];
 }
 
@@ -241,7 +250,7 @@ export async function runBackup(
   const passphrase = policy.encryption === "passphrase" ? readPassphrase(db, policy) : null;
   const artifacts: ArtifactOutcome[] = [];
 
-  for (const kind of kindsFor(policy)) {
+  for (const kind of kindsFor(options.contentsOverride ?? policy.contents)) {
     let prepared: PreparedArtifact;
     try {
       prepared = await prepareArtifact(db, policy, kind);

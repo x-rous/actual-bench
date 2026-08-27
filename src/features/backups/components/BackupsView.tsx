@@ -35,6 +35,7 @@ import {
   relativeTime,
   sortArtifacts,
 } from "../lib/presentation";
+import { fetchSafetySettings, patchSafetySettings } from "../lib/safetyPoint";
 import { BackupDetail } from "./BackupDetail";
 import { BackupRuleDialog } from "./BackupRuleDialog";
 import { BackupsTable } from "./BackupsTable";
@@ -72,6 +73,24 @@ export function BackupsView() {
     null
   );
   const [refreshing, setRefreshing] = useState(false);
+
+  const settingsQuery = useQuery({
+    queryKey: ["backup-settings"],
+    queryFn: fetchSafetySettings,
+  });
+
+  const setSafetyPoints = useMutation({
+    mutationFn: (enabled: boolean) => patchSafetySettings({ enabled }),
+    onSuccess: (settings) => {
+      toast.success(
+        settings.enabled
+          ? "Bench will take a recovery point before risky changes"
+          : "Recovery points before risky changes are off"
+      );
+      void queryClient.invalidateQueries({ queryKey: ["backup-settings"] });
+    },
+    onError: (error: Error) => toast.error(error.message),
+  });
 
   const query = useQuery({
     queryKey: ["backups"],
@@ -389,6 +408,24 @@ export function BackupsView() {
               ))}
             </ul>
           )}
+          <label className="mt-2 flex items-start gap-2 border-t border-border pt-2 text-xs">
+            <input
+              type="checkbox"
+              className="mt-0.5"
+              checked={settingsQuery.data?.enabled ?? true}
+              disabled={setSafetyPoints.isPending || settingsQuery.isLoading}
+              onChange={(event) => setSafetyPoints.mutate(event.target.checked)}
+            />
+            <span>
+              <span className="font-medium">Take a recovery point before risky changes</span>
+              <span className="block text-muted-foreground">
+                Before Bench saves a batch of deletions or payee merges, it copies the budget first —
+                so there is something from five minutes ago, not just from last night. Several
+                changes in one session share a recovery point, and these expire on their own instead
+                of piling up.
+              </span>
+            </span>
+          </label>
         </section>
 
         {artifacts.length === 0 ? (

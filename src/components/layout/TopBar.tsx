@@ -44,6 +44,11 @@ import {
 import { useBudgetEditsStore } from "@/store/budgetEdits";
 import { useBudgetSavePipeline } from "./useBudgetSavePipeline";
 import { useBudgetSave } from "@/features/budget-management/hooks/useBudgetSave";
+import {
+  describeRiskyChange,
+  shouldTakeRecoveryPoint,
+  takeRecoveryPoint,
+} from "@/features/backups/lib/safetyPoint";
 import { BudgetSaveProgressDialog } from "@/features/budget-management/components/BudgetSaveProgressDialog";
 import { BudgetSaveReviewDialog } from "@/features/budget-management/components/BudgetSaveReviewDialog";
 import {
@@ -103,6 +108,10 @@ export function TopBar() {
   const queryClient = useQueryClient();
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
+  // Set when a recovery point could not be taken before a risky save, so the
+  // user can decide whether to go ahead without one.
+  const [recoveryPointWarning, setRecoveryPointWarning] = useState<string | null>(null);
+  const [takingRecoveryPoint, setTakingRecoveryPoint] = useState(false);
   const [budgetSaveReviewSkipped, setBudgetSaveReviewSkipped] = useState(
     () => readBudgetSaveReviewSkip()
   );
@@ -138,6 +147,21 @@ export function TopBar() {
   const stagedDiscardAll = useStagedStore((s) => s.discardAll);
   const clearHistory = useStagedStore((s) => s.clearHistory);
   const { saveAll, isSaving: isEntitySaving } = useBudgetSavePipeline();
+  // What is about to be written, so the risk rule has something to judge. A
+  // merge or a deletion is worth a recovery point whatever its count; a big
+  // batch is worth one on size alone.
+  const pendingPayeeMerges = useStagedStore((s) => s.pendingPayeeMerges);
+  const stagedCounts = useStagedStore((s) => {
+    let itemCount = 0;
+    let deleteCount = 0;
+    for (const slice of [s.accounts, s.payees, s.categoryGroups, s.categories, s.rules, s.schedules, s.tags]) {
+      for (const entry of Object.values(slice)) {
+        if (entry.isNew || entry.isUpdated || entry.isDeleted) itemCount += 1;
+        if (entry.isDeleted) deleteCount += 1;
+      }
+    }
+    return { itemCount, deleteCount };
+  });
 
   // Budget page store (always called — hooks cannot be conditional)
   const budgetHasChanges = useBudgetEditsStore(
@@ -239,25 +263,50 @@ export function TopBar() {
       setBudgetSaveReviewEdits(editSnapshot);
       setBudgetSaveReviewHolds(holdSnapshot);
     } else {
-      try {
-        const { totalSucceeded, totalFailed } = await saveAll();
-        clearHistory();
-        if (totalFailed === 0) {
-          toast.success(
-            `Saved ${totalSucceeded} item${totalSucceeded !== 1 ? "s" : ""} successfully.`
-          );
-        } else {
-          toast.error(`${totalSucceeded} saved, ${totalFailed} failed.`);
+      const change = {
+        itemCount: stagedCounts.itemCount,
+        deleteCount: stagedCounts.deleteCount,
+        mergeCount: pendingPayeeMerges.length,
+      };
+
+      // A recovery point before the change, not after it — the whole point is
+      // to have something from five minutes ago rather than from last night.
+      if (shouldTakeRecoveryPoint(change)) {
+        setTakingRecoveryPoint(true);
+        const outcome = await takeRecoveryPoint(describeRiskyChange(change)).finally(() =>
+          setTakingRecoveryPoint(false)
+        );
+        if (outcome.status === "taken") toast.success(outcome.message);
+        if (outcome.status === "failed") {
+          // Ask rather than decide. Proceeding silently would remove the safety
+          // net the user thinks they have; refusing outright would hold their
+          // work hostage to a backup problem they may already know about.
+          setRecoveryPointWarning(outcome.message);
+          return;
         }
-      } catch (err) {
-        const msg =
-          err instanceof Error
-            ? err.message
-            : typeof err === "object" && err !== null && "message" in err
+      }
+
+      await performSave();
+    }
+  }
+
+  async function performSave() {
+    try {
+      const { totalSucceeded, totalFailed } = await saveAll();
+      clearHistory();
+      if (totalFailed === 0) {
+        toast.success(`Saved ${totalSucceeded} item${totalSucceeded !== 1 ? "s" : ""} successfully.`);
+      } else {
+        toast.error(`${totalSucceeded} saved, ${totalFailed} failed.`);
+      }
+    } catch (err) {
+      const msg =
+        err instanceof Error
+          ? err.message
+          : typeof err === "object" && err !== null && "message" in err
             ? String((err as { message: unknown }).message)
             : "Save failed.";
-        toast.error(msg);
-      }
+      toast.error(msg);
     }
   }
 
@@ -472,7 +521,7 @@ export function TopBar() {
             title={isOffline ? "Cannot save - server is unreachable" : undefined}
           >
             <Save className="mr-1 h-3.5 w-3.5" />
-            {isSaving ? "Saving…" : "Save"}
+            {takingRecoveryPoint ? "Backing up…" : isSaving ? "Saving…" : "Save"}
           </Button>
         </div>
       </header>
@@ -508,6 +557,38 @@ export function TopBar() {
           }}
         />
       )}
+
+      {/* Asked, not assumed: the user decides whether to change their budget
+          without the recovery point they were expecting. */}
+      <Dialog
+        open={recoveryPointWarning !== null}
+        onOpenChange={(open) => {
+          if (!open) setRecoveryPointWarning(null);
+        }}
+      >
+        <DialogContent showCloseButton={false}>
+          <DialogHeader>
+            <DialogTitle>Bench could not take a recovery point</DialogTitle>
+            <DialogDescription>
+              {recoveryPointWarning} Your changes have not been saved yet. You can save anyway, or
+              fix the backup problem first and try again.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRecoveryPointWarning(null)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                setRecoveryPointWarning(null);
+                void performSave();
+              }}
+            >
+              Save anyway
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={pendingAction !== null} onOpenChange={(open) => { if (!open) setPendingAction(null); }}>
         <DialogContent showCloseButton={false}>
