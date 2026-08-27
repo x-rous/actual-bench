@@ -105,6 +105,21 @@ at an artifact instead of a live budget.
 Verification always runs **before** encryption. Verifying ciphertext proves only that bytes survived
 a round trip.
 
+### Plausibility, not just readability
+
+Every check above asks whether an artifact is *readable*. One more asks whether it is *plausible*: a
+truncated export, or a source that failed to open half its data, produces a perfectly valid archive
+containing the wrong amount of budget, and every integrity check passes on it.
+
+So each copy is compared with the last one of its kind under the same rule. A drop of more than 10%
+in transactions, any drop in account count, or a copy less than half the previous size fails
+verification with a finding naming both numbers. The thresholds are loose on purpose — people do
+delete things — and the wording states the change rather than accusing: *"If you deleted them, this
+is expected; if not, check the source budget before relying on this copy."*
+
+The copy is still stored and still restorable. It simply does not get to claim it was verified. The
+first backup of anything is never an anomaly.
+
 ### Scrub
 
 Weekly (`backup-scrub`, Sundays at 04:00 by default), Bench re-reads the newest three copies per

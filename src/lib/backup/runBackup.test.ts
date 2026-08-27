@@ -21,7 +21,7 @@ import { decryptArchive } from "./encryption";
 import { parseManifest } from "./manifest";
 import { backupObjectKey, runBackup } from "./runBackup";
 
-function budgetDbBytes(): Uint8Array {
+function budgetDbBytes(options: { transactions?: number } = {}): Uint8Array {
   const root = mkdtempSync(join(tmpdir(), "bench-run-fixture-"));
   const path = join(root, "db.sqlite");
   const db = new Database(path);
@@ -31,8 +31,11 @@ function budgetDbBytes(): Uint8Array {
     CREATE TABLE categories (id TEXT PRIMARY KEY, name TEXT);
     CREATE TABLE transactions (id TEXT PRIMARY KEY, acct TEXT, date INTEGER, amount INTEGER);
     INSERT INTO accounts VALUES ('a1', 'Current');
-    INSERT INTO transactions VALUES ('t1', 'a1', 20260101, -500);
   `);
+  const insert = db.prepare("INSERT INTO transactions VALUES (?, 'a1', ?, -500)");
+  for (let index = 0; index < (options.transactions ?? 1); index += 1) {
+    insert.run(`t${index}`, 20260101 + (index % 28));
+  }
   db.close();
   const bytes = readFileSync(path);
   rmSync(root, { recursive: true, force: true });
@@ -191,6 +194,34 @@ describe("running a backup", () => {
     expect(result.stored).toBe(true);
     expect(result.verified).toBe(false);
     expect(result.message).toMatch(/db\.sqlite/);
+    expect(listBackupArtifacts(db)[0].verificationStatus).toBe("failed");
+  });
+
+  it("refuses to call a suddenly-smaller copy verified", async () => {
+    // Readable is not the same as plausible: a truncated export produces a
+    // perfectly valid archive holding half the budget, and every integrity
+    // check passes on it.
+    const big = zipSync({
+      "db.sqlite": budgetDbBytes({ transactions: 100 }),
+      "metadata.json": Buffer.from(JSON.stringify({ budgetName: "Household", id: "budget-1" })),
+    });
+    mockExport(big);
+    const rule = policy();
+    expect((await runBackup(db, rule)).verified).toBe(true);
+
+    // The next night, the source hands back a fraction of the transactions.
+    mockExport(
+      zipSync({
+        "db.sqlite": budgetDbBytes({ transactions: 10 }),
+        "metadata.json": Buffer.from(JSON.stringify({ budgetName: "Household", id: "budget-1" })),
+      })
+    );
+    const second = await runBackup(db, rule);
+
+    // Stored — it might be legitimate — but not passed off as verified.
+    expect(second.stored).toBe(true);
+    expect(second.verified).toBe(false);
+    expect(second.message).toMatch(/fewer transactions/);
     expect(listBackupArtifacts(db)[0].verificationStatus).toBe("failed");
   });
 

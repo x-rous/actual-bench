@@ -82,6 +82,11 @@ Every copy is checked before it is trusted, at one of three depths:
 Verification runs on the plaintext, **before** encryption. Verifying afterwards would only prove
 bytes survived a round trip, which is the least interesting thing that can go wrong.
 
+Bench also compares each copy with the one before it. A copy with far fewer transactions, fewer
+accounts, or less than half the size does not pass verification, because a cut-short export is a
+perfectly valid file containing the wrong budget. If you deleted those transactions yourself, that is
+expected and the copy is still there — Bench just will not tell you it checked out.
+
 A copy that fails verification is still stored, and clearly marked. A backup Bench distrusts is more
 useful than no backup — as long as nobody is allowed to believe it is fine.
 
