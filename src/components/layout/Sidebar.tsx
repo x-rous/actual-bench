@@ -169,8 +169,12 @@ function SidebarNavLink({ item, collapsed, pathname, allHrefs }: SidebarNavLinkP
       data-active={active ? "true" : undefined}
       aria-current={ariaCurrent}
       className={cn(
-        "flex items-center rounded-md px-2 py-1.5 text-sm font-medium transition-colors",
-        collapsed ? "justify-center" : "gap-2.5 px-3",
+        // The Tools group keeps growing, so the density comes out of the
+        // vertical rhythm — tighter rows and tighter gaps between groups —
+        // rather than out of the type size or the horizontal padding, which
+        // are what make a nav comfortable to read.
+        "flex items-center rounded-md px-2 py-1 text-sm font-medium transition-colors",
+        collapsed ? "justify-center py-1.5" : "gap-2.5 px-3",
         active
           ? "bg-accent text-accent-foreground"
           : "text-muted-foreground hover:bg-accent/50 hover:text-accent-foreground"
@@ -247,9 +251,9 @@ export function Sidebar() {
         collapsed ? "w-12" : "w-52"
       )}
     >
-      <nav className="flex flex-1 flex-col overflow-y-auto p-2 pt-3">
+      <nav className="flex flex-1 flex-col overflow-y-auto p-2 pt-2">
         {SIDEBAR_SECTIONS.map((section, index) => {
-          const sectionSpacing = index === 0 ? "" : collapsed ? "mt-2.5" : "mt-3.5";
+          const sectionSpacing = index === 0 ? "" : collapsed ? "mt-2" : "mt-2.5";
 
           if (section.type === "item") {
             return (
@@ -269,7 +273,7 @@ export function Sidebar() {
           return (
             <div key={section.group.id} className={groupClassName}>
               {!collapsed && (
-                <div className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/80">
+                <div className="px-3 pb-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/70">
                   {section.group.label}
                 </div>
               )}
@@ -289,7 +293,7 @@ export function Sidebar() {
         })}
 
         {!collapsed && version && (
-          <div className="mt-auto px-3 pt-4 flex flex-col gap-1">
+          <div className="mt-auto flex flex-col gap-0.5 px-3 pt-3">
             <span className="text-xs text-muted-foreground/55">v{version}</span>
             {updateAvailable && latestVersion && (
               <a

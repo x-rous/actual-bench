@@ -74,8 +74,10 @@ describe("scheduling a bank sync", () => {
     // Wait for the account list to have loaded, not for any one name in it.
     await screen.findByText(/accounts will sync/);
 
-    // Someone choosing a schedule should see the consequence of choosing it.
-    expect(screen.getByText(/First run/)).toBeInTheDocument();
+    // Someone choosing a schedule should see the consequence of choosing it:
+    // what Bench understood, and when that actually lands.
+    expect(screen.getByText(/Every 6 hours/)).toBeInTheDocument();
+    expect(screen.getByText(/Next:/)).toBeInTheDocument();
   });
 
   it("offers plain cadences, keeping cron out of the way", async () => {

@@ -5,7 +5,6 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { AlertTriangle, Check, Loader2, Minus } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import {
   Dialog,
   DialogContent,
@@ -13,8 +12,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { isValidCronExpression } from "@/lib/automation/cron";
-import { nextRunAt } from "@/lib/automation/schedule";
+
 import {
   createAutomation,
   listBankSyncAccounts,
@@ -22,7 +20,8 @@ import {
   type BankSyncAccountPreview,
 } from "../lib/automationsApi";
 import { formatDateTime, relativeTime } from "../lib/presentation";
-import { browserTimezone, timezoneOptions } from "../lib/timezones";
+import { browserTimezone } from "../lib/timezones";
+import { SchedulePicker, type ScheduleValue } from "./SchedulePicker";
 
 /**
  * Scheduling a bank sync (RD-080 / PR-045).
@@ -41,46 +40,13 @@ import { browserTimezone, timezoneOptions } from "../lib/timezones";
  * personal-finance app should not ask anybody to write `0 6 * * *`.
  */
 
-const inputClass = "h-8 rounded-md px-2 text-xs md:text-xs";
 const selectClass = "h-8 rounded-md border border-input bg-background px-2 text-xs";
-
-type Cadence = "hours" | "daily" | "cron";
 
 type NewBankSyncDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onCreated: () => void;
 };
-
-function scheduleFor(
-  cadence: Cadence,
-  hours: string,
-  dailyTime: string,
-  cron: string
-): { scheduleKind: "interval" | "cron"; intervalMinutes?: number; cronExpression?: string } {
-  if (cadence === "hours") {
-    const parsed = Number(hours);
-    const minutes = Number.isFinite(parsed) ? Math.round(parsed * 60) : 360;
-    // The unattended floor: below it, each run spends its time reopening the
-    // budget rather than syncing.
-    return { scheduleKind: "interval", intervalMinutes: Math.max(minutes, 15) };
-  }
-  if (cadence === "daily") {
-    // A cleared time input is "" — and destructuring defaults only cover
-    // `undefined`, so this used to become `0 0 * * *` and quietly schedule
-    // midnight. An incomplete time is not a schedule; it fails validation
-    // instead.
-    const match = /^(\d{1,2}):(\d{2})$/.exec(dailyTime.trim());
-    if (!match) return { scheduleKind: "cron", cronExpression: "" };
-
-    const hour = Number(match[1]);
-    const minute = Number(match[2]);
-    if (hour > 23 || minute > 59) return { scheduleKind: "cron", cronExpression: "" };
-
-    return { scheduleKind: "cron", cronExpression: `${minute} ${hour} * * *` };
-  }
-  return { scheduleKind: "cron", cronExpression: cron.trim() };
-}
 
 function AccountRow({ account }: { account: BankSyncAccountPreview }) {
   return (
@@ -108,11 +74,13 @@ export function NewBankSyncDialog({ open, onOpenChange, onCreated }: NewBankSync
   const vault = useQuery({ queryKey: ["vault-connections"], queryFn: listVaultConnections, enabled: open });
 
   const [chosenConnection, setChosenConnection] = useState("");
-  const [cadence, setCadence] = useState<Cadence>("hours");
-  const [hours, setHours] = useState("6");
-  const [dailyTime, setDailyTime] = useState("06:00");
-  const [cron, setCron] = useState("0 6 * * 1-5");
-  const [timezone, setTimezone] = useState(() => browserTimezone());
+  const [schedule, setSchedule] = useState<ScheduleValue>(() => ({
+    scheduleKind: "interval",
+    cronExpression: null,
+    intervalMinutes: 360,
+    timezone: browserTimezone(),
+  }));
+  const [scheduleValid, setScheduleValid] = useState(true);
 
   // A clock read during render is impure; snapshot it, and refresh it while the
   // dialog is open so "first run in 3 minutes" does not quietly go stale.
@@ -123,7 +91,6 @@ export function NewBankSyncDialog({ open, onOpenChange, onCreated }: NewBankSync
     return () => clearInterval(timer);
   }, [open]);
 
-  const timezones = useMemo(() => timezoneOptions(new Date(nowMs)), [nowMs]);
   const connections = useMemo(() => vault.data?.credentials ?? [], [vault.data]);
   const vaultEnabled = vault.data?.enabled ?? false;
 
@@ -140,30 +107,6 @@ export function NewBankSyncDialog({ open, onOpenChange, onCreated }: NewBankSync
 
   const accounts = accountsQuery.data ?? [];
   const linked = accounts.filter((account) => account.linked);
-  const schedule = scheduleFor(cadence, hours, dailyTime, cron);
-  const cronInvalid = schedule.scheduleKind === "cron" && !isValidCronExpression(schedule.cronExpression ?? "");
-
-  // Show the consequence, not just the setting: someone choosing "once a day at
-  // 06:00" should see whether that means this morning or tomorrow.
-  const firstRun = useMemo(() => {
-    if (cronInvalid) return null;
-    const ms = nextRunAt({
-      definition: {
-        scheduleKind: schedule.scheduleKind,
-        intervalMinutes: schedule.intervalMinutes ?? null,
-        cronExpression: schedule.cronExpression ?? null,
-        timezone,
-        enabled: true,
-        autoPausedAt: null,
-        consecutiveFailures: 0,
-        failurePolicy: { backoffMinutes: 5, backoffCeilingMinutes: 60, pauseAfterConsecutiveFailures: 5 },
-      },
-      lastRunAtMs: null,
-      nowMs,
-    });
-    return ms === null ? null : new Date(ms).toISOString();
-  }, [cronInvalid, schedule.scheduleKind, schedule.intervalMinutes, schedule.cronExpression, timezone, nowMs]);
-
   const create = useMutation({
     mutationFn: async () => {
       const connection = connections.find((entry) => entry.connectionFingerprint === connectionFingerprint);
@@ -171,8 +114,10 @@ export function NewBankSyncDialog({ open, onOpenChange, onCreated }: NewBankSync
         type: "bank-sync",
         name: `Bank sync — ${connection?.label || "budget"}`,
         executionMode: "server",
-        ...schedule,
-        timezone,
+        scheduleKind: schedule.scheduleKind,
+        cronExpression: schedule.cronExpression,
+        intervalMinutes: schedule.intervalMinutes,
+        timezone: schedule.timezone,
         credentialRef: connectionFingerprint,
         targetRef: { version: 1, data: { connectionFingerprint } },
         config: { version: 1, data: { connectionFingerprint, accountIds: [] } },
@@ -187,7 +132,7 @@ export function NewBankSyncDialog({ open, onOpenChange, onCreated }: NewBankSync
   });
 
   const blocked = !vaultEnabled || connections.length === 0 || linked.length === 0;
-  const canSubmit = !blocked && !cronInvalid && !create.isPending;
+  const canSubmit = !blocked && scheduleValid && !create.isPending;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -267,99 +212,12 @@ export function NewBankSyncDialog({ open, onOpenChange, onCreated }: NewBankSync
 
               <section>
                 <h3 className="mb-1 font-medium">How often</h3>
-                <div className="flex flex-wrap items-center gap-2">
-                  <select
-                    className={selectClass}
-                    value={cadence}
-                    onChange={(event) => setCadence(event.target.value as Cadence)}
-                    aria-label="How often"
-                  >
-                    <option value="hours">Every few hours</option>
-                    <option value="daily">Once a day</option>
-                    <option value="cron">Custom…</option>
-                  </select>
-
-                  {cadence === "hours" && (
-                    <label className="flex items-center gap-1.5">
-                      <Input
-                        className={`${inputClass} w-16`}
-                        type="number"
-                        min={1}
-                        max={24}
-                        value={hours}
-                        onChange={(event) => setHours(event.target.value)}
-                        aria-label="Hours between runs"
-                      />
-                      <span className="text-muted-foreground">hours apart</span>
-                    </label>
-                  )}
-
-                  {cadence === "daily" && (
-                    <label className="flex items-center gap-1.5">
-                      <span className="text-muted-foreground">at</span>
-                      <Input
-                        className={`${inputClass} w-24`}
-                        type="time"
-                        value={dailyTime}
-                        onChange={(event) => setDailyTime(event.target.value)}
-                        aria-label="Time of day"
-                      />
-                    </label>
-                  )}
-
-                  {cadence === "cron" && (
-                    <label className="flex flex-1 items-center gap-1.5">
-                      <Input
-                        className={`${inputClass} flex-1`}
-                        value={cron}
-                        onChange={(event) => setCron(event.target.value)}
-                        aria-label="Cron expression"
-                        aria-invalid={cronInvalid}
-                      />
-                    </label>
-                  )}
-                </div>
-
-                {cadence === "daily" && cronInvalid && (
-                  <p className="mt-1 text-destructive">Enter a time of day, such as 06:00.</p>
-                )}
-
-                {cadence === "cron" && cronInvalid && (
-                  <p className="mt-1 text-destructive">
-                    Five fields, e.g. <code>0 6 * * 1-5</code> for weekdays at 06:00.
-                  </p>
-                )}
-
-                {/* A time zone only changes anything for a clock-based
-                    schedule. Asking for it beside "every 6 hours" would be
-                    asking a question whose answer cannot matter. */}
-                {cadence !== "hours" && (
-                  <label className="mt-2 flex flex-wrap items-center gap-1.5">
-                    <span className="text-muted-foreground">Time zone</span>
-                    <select
-                      className={selectClass}
-                      value={timezone}
-                      onChange={(event) => setTimezone(event.target.value)}
-                      aria-label="Time zone"
-                    >
-                      {timezones.map((zone) => (
-                        <option key={zone.value} value={zone.value}>
-                          {zone.label}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                )}
-
-                <p className="mt-1.5 text-muted-foreground">
-                  {firstRun ? (
-                    <>
-                      First run {relativeTime(firstRun)} — {formatDateTime(firstRun)}
-                    </>
-                  ) : (
-                    "That schedule never comes around."
-                  )}
-                </p>
+                <SchedulePicker
+                  value={schedule}
+                  onChange={setSchedule}
+                  onValidityChange={setScheduleValid}
+                  nowMs={nowMs}
+                />
               </section>
             </>
           )}
