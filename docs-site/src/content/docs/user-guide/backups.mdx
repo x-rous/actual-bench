@@ -1,0 +1,147 @@
+---
+title: Backups
+description: Keep verified copies of your budget on a schedule, in more than one place, and know exactly what you would get back if you needed it.
+sidebar:
+  order: 12
+---
+
+A ZIP you exported once is not a backup. You do not know whether it still opens, whether it is
+complete, or how old it is — and you find out on the day it matters.
+
+**Backups** in Actual Bench takes copies on a schedule, **opens each one to check it is readable**,
+stores it in as many places as you like, and keeps the inventory honest about what actually exists.
+Open it from **Tools → Backups**.
+
+## The line at the top
+
+Everything on the page is evidence for one sentence: *if this budget disappeared right now, what
+would I get back, and how old would it be?*
+
+It is deliberately pessimistic. A copy Bench has never opened, a destination that failed last night,
+or every copy sitting in one place all pull it down — and the reasons are listed underneath. A
+backup screen that reassures you is worse than no backup screen at all.
+
+## Destinations
+
+Two kinds, matching the two situations people are actually in:
+
+- **A folder on this server** — any absolute path the server can write to: a mounted volume, a NAS
+  share, a second disk. Bench creates it if it does not exist.
+- **An S3-compatible bucket** — AWS, but equally MinIO on a NAS, Backblaze B2, Cloudflare R2, Wasabi
+  or Garage. Access keys are encrypted with your server's `SYNC_VAULT_KEY` and never stored in
+  readable form.
+
+Bench checks a folder path while you are typing it rather than at 3am when the backup runs. It will
+tell you the directory does not exist and create it, that it cannot write there, that the volume is
+nearly full, or that the folder is on the same disk as Bench's own data — that last one is a warning,
+not a refusal, because `/data/backups` is a perfectly sensible arrangement that simply is not
+off-site.
+
+Adding or editing a destination always tests it by **using** it: Bench writes real bytes, reads them
+back, compares checksums and deletes the test file. A test that only checked credentials would pass
+on a read-only volume, which is exactly the configuration people get wrong.
+
+A bucket that accepts writes but refuses deletes is a warning rather than an error. Immutable buckets
+are a real choice; backups still work, and only retention is affected.
+
+## Backup rules
+
+A rule says what to copy, where to put it, how often, and how long to keep it.
+
+- **What** — the budget, Bench's own settings, or both. Bench's settings are your sync flows and
+  mappings, reconciliation sessions, automations, saved queries and payee-cleanup decisions:
+  everything you have taught Bench, which lives nowhere else.
+- **Which budget** — an **enrolled** connection. A scheduled backup runs with your browser closed, so
+  it needs credentials the server can use on its own. If nothing is enrolled, Bench says so instead
+  of quietly offering you an empty list.
+- **When** — every day at a time you pick, every few hours, or a cron expression with an explicit
+  time zone.
+- **Encryption** — off by default, because for most self-hosted setups the copy lands on a volume you
+  already control and encryption mainly adds a way to lose the data permanently. Turn it on when a
+  copy goes somewhere you do not control. **Bench cannot recover an encrypted backup without the
+  passphrase, and neither can anyone else.**
+
+Rules run on Bench's automation engine, so they appear on the **Automations** page with their run
+history, health and backoff like everything else scheduled.
+
+## Verified, not just stored
+
+Every copy is checked before it is trusted, at one of three depths:
+
+| Level | What it does |
+|---|---|
+| Quick | Confirms it is a real archive containing what an Actual export contains. |
+| Normal | Opens the database, runs SQLite's integrity check, and counts what is inside. **The default.** |
+| Thorough | The full Budget File Health check, including relationship checks. |
+
+Verification runs on the plaintext, **before** encryption. Verifying afterwards would only prove
+bytes survived a round trip, which is the least interesting thing that can go wrong.
+
+A copy that fails verification is still stored, and clearly marked. A backup Bench distrusts is more
+useful than no backup — as long as nobody is allowed to believe it is fine.
+
+### Weekly re-checking
+
+Storage rots quietly. A full volume truncates a file, a failing disk flips a bit, somebody tidies a
+bucket, and nothing announces any of it. Once a week Bench re-reads the newest few copies in every
+destination, re-computes their checksums, and opens the newest one properly — decrypting it first
+where it has the passphrase, so an encrypted backup is proved to be **decryptable** rather than
+merely present.
+
+**Verify now** does the same thing on demand.
+
+## Retention
+
+Retention keeps a sensible spread — so many daily, weekly, monthly and yearly copies — but it is
+written as a set of refusals first:
+
+1. A **pinned** copy is never deleted.
+2. A **protected** copy is never deleted while protected.
+3. Nothing **newer than the minimum age** is deleted, whatever the rules say.
+4. The **newest verified copy always survives**. If none has verified, the newest copy survives
+   instead.
+5. A backup you took **by hand** is never expired on your behalf.
+
+There is no combination of settings that empties a destination.
+
+**Retention** on a rule shows exactly what would be removed and why, before anything happens — and
+that preview is produced by the same code that does the pruning, so it is what will happen rather
+than an approximation of it.
+
+## Recovery points before risky changes
+
+Before Bench saves a batch of deletions or payee merges, it copies the budget first, so there is
+something from five minutes ago rather than only from last night. Several changes in one session
+share a recovery point, and these expire on their own instead of piling up forever.
+
+If a recovery point cannot be taken, Bench **asks** rather than deciding for you: your changes stay
+unsaved, the reason is shown, and you can save anyway.
+
+Turn it off from the checkbox under the rules if you would rather it did not.
+
+## Getting a backup back
+
+**Look inside** opens a copy and tells you what is in it — accounts, payees, transactions and the
+date range — without restoring anything. That is usually the real question: not "is this file
+intact" but "is *this* the one".
+
+**Download** hands you the file. Put it into Actual Budget with **Import file → Actual**: it creates
+a **new** budget from the copy, and the budget you are using is untouched.
+
+Bench does not import for you. Actual's HTTP API has no import endpoint, and a restore that
+half-worked would be worse than one you did deliberately.
+
+### If Bench itself is gone
+
+Every backup is written with a **manifest** beside it describing what it is, when it was taken, its
+checksum and whether it is encrypted. So:
+
+- **Find backups** rebuilds the inventory by reading those manifests. Restore Bench onto a fresh
+  machine, point it at the same bucket, and your backup history comes back.
+- **Recovery sheet** is a page of Markdown to print or keep with your passwords. It names the real
+  paths and object keys, gives commands that work with `unzip`, `sqlite3` and `node`, and documents
+  the encrypted file format byte by byte. It contains no secret, so it is safe to keep where you keep
+  such things.
+
+The downloaded ZIP is exactly what Actual's own export produces. It opens whether or not Bench still
+exists — which is the entire point.

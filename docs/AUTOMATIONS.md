@@ -1,7 +1,7 @@
 # Automations
 
-Actual Bench runs scheduled work — today that means Budget File Sync, with more job types to
-follow — through one **automation engine**. The Automations page (Tools → Automations) is where you
+Actual Bench runs scheduled work — Budget File Sync, scheduled bank sync, and backups — through one
+**automation engine**. The Automations page (Tools → Automations) is where you
 see what runs, when it last ran, what it did, and what needs your attention.
 
 > **This is not Actual Budget's "Budget Automations".** That is an experimental feature inside
@@ -130,3 +130,7 @@ crons keep working.
 ## Related
 
 - [`UNATTENDED_SYNC.md`](UNATTENDED_SYNC.md) — enrolling credentials and the vault.
+
+## Related
+
+- Backups and their `backup` / `backup-scrub` job types: `docs/BACKUPS.md`.
