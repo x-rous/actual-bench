@@ -647,3 +647,24 @@ export const BACKUP_INDEX_SQL = [
   // One row per copy: the same artifact cannot be recorded twice in one place.
   "CREATE UNIQUE INDEX IF NOT EXISTS idx_backup_locations_unique ON backup_artifact_locations(artifact_id, destination_id, object_key)",
 ] as const;
+
+// ── Backup credentials (RD-077 / PR-047b) ────────────────────────────────────
+//
+// Sealed secrets for backup destinations and backup encryption, kept apart from
+// the sync vault because they answer to a different question: "what does Bench
+// need to write this copy", not "what does Bench need to reach your budget".
+// Same sealing (AES-256-GCM under SYNC_VAULT_KEY); the key is never stored.
+export const BACKUP_CREDENTIAL_TABLE_SQL = `
+CREATE TABLE IF NOT EXISTS backup_credentials (
+  ref text PRIMARY KEY,
+  -- 's3' | 'passphrase'
+  kind text NOT NULL,
+  label text NOT NULL DEFAULT '',
+  ciphertext text NOT NULL,
+  iv text NOT NULL,
+  auth_tag text NOT NULL,
+  created_at text NOT NULL,
+  updated_at text NOT NULL
+);
+`;
+

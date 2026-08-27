@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import Database from "better-sqlite3";
 import { getAppDb, resetAppDbForTests } from "./connection";
+import { getBackupCredential, upsertBackupCredential } from "./backupCredentialRepository";
 import { LATEST_SCHEMA_VERSION } from "./migrations";
 import {
   getReconciliationSession,
@@ -414,6 +415,32 @@ describe("upgrading an existing database", () => {
     } finally {
       resetAppDbForTests();
       rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("adds sealed backup credentials to an older database (v21)", () => {
+    const { root, path } = olderDatabase();
+    const previousKey = process.env.SYNC_VAULT_KEY;
+    process.env.SYNC_VAULT_KEY = "test-vault-key";
+    try {
+      const db = getAppDb(path);
+
+      upsertBackupCredential(db, {
+        ref: "dest-1",
+        kind: "s3",
+        secret: { accessKeyId: "AKIA", secretAccessKey: "shh" },
+      });
+
+      expect(getBackupCredential(db, "dest-1")).toEqual({
+        accessKeyId: "AKIA",
+        secretAccessKey: "shh",
+      });
+      expect(getReconciliationSession(db, "sess-old")).not.toBeNull();
+    } finally {
+      resetAppDbForTests();
+      rmSync(root, { recursive: true, force: true });
+      if (previousKey === undefined) delete process.env.SYNC_VAULT_KEY;
+      else process.env.SYNC_VAULT_KEY = previousKey;
     }
   });
 

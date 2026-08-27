@@ -3,6 +3,7 @@ import {
   APP_META_TABLE_SQL,
   BACKUP_ARTIFACT_LOCATION_TABLE_SQL,
   BACKUP_ARTIFACT_TABLE_SQL,
+  BACKUP_CREDENTIAL_TABLE_SQL,
   BACKUP_DESTINATION_TABLE_SQL,
   BACKUP_INDEX_SQL,
   BACKUP_POLICY_TABLE_SQL,
@@ -38,7 +39,7 @@ import {
 import { KDF_VERSION_META_KEY, SALT_META_KEY, VERIFIER_META_KEY } from "./vaultMetaKeys";
 import { AppDbUnavailableError } from "./errors";
 
-export const LATEST_SCHEMA_VERSION = 20;
+export const LATEST_SCHEMA_VERSION = 21;
 
 type Migration = {
   version: number;
@@ -266,6 +267,12 @@ const MIGRATIONS: readonly Migration[] = [
       BACKUP_ARTIFACT_LOCATION_TABLE_SQL,
       ...BACKUP_INDEX_SQL,
     ],
+  },
+  {
+    version: 21,
+    // Sealed credentials for backup destinations and backup encryption
+    // (RD-077 / PR-047b). Additive.
+    statements: [BACKUP_CREDENTIAL_TABLE_SQL],
   },
 ];
 
