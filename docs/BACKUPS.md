@@ -168,6 +168,23 @@ To restore:
 **Look inside** (`POST /api/backups/artifacts/:id/inspect`) opens a copy server-side and reports its
 contents without restoring anything. An inspection counts as a verification.
 
+## Passphrases Bench holds
+
+A rule's passphrase is sealed under `SYNC_VAULT_KEY` and stored against the rule's id. Two rules
+about its lifetime matter more than they look:
+
+- **Deleting a rule does not delete its passphrase.** Doing so would quietly make every encrypted
+  backup that rule took unopenable — permanent data loss caused by tidying a setting. The Recovery
+  Center lists what Bench is still holding and what depends on it.
+- **It is collected automatically** once the last encrypted copy that needs it is gone (after a
+  prune, a delete, or a rule deletion that left nothing encrypted behind). It can also be forgotten
+  deliberately, which requires acknowledging how many backups that strands.
+
+Each encrypted artifact records **which** sealed passphrase opens it
+(`backup_artifacts.encryption_credential_ref`, schema v23). That cannot be derived from the rule:
+deleting a rule sets the artifact's policy reference to null by design, which is exactly the moment
+the link is needed.
+
 ## Encryption format
 
 Optional, per rule, off by default. AES-256-GCM with a scrypt-derived key (N=32768, r=8, p=1). The
@@ -208,6 +225,8 @@ with your passwords.
 | "Could not unseal credentials … SYNC_VAULT_KEY" | The vault key changed since the credential was stored. |
 | "not enrolled for unattended use" | The source connection has no vault credential; enrol it in Budget File Sync. |
 | Backup stored but "could not confirm it is readable" | Verification failed. Open the copy's detail for the findings — usually a truncated or non-Actual archive. |
+| A rule shows "paused after repeated failures" | The engine auto-paused its automation. Fix the cause, then Resume from the Automations page — editing the rule does not clear a pause. |
+| A rule shows "paused on the Automations page" | Someone paused the automation by hand. Re-enabling the rule does not undo that, on purpose. |
 | Scrub reports "Size changed" | The stored object is not the size it was written at: a truncated upload or a full volume. |
 | Scrub reports "bytes have changed" | Checksum mismatch — bit rot, or something rewrote the object. |
 | Destination test passes but backups fail | Check free space; the probe is 64 bytes and a real export is not. |

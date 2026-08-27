@@ -54,12 +54,17 @@ A rule says what to copy, where to put it, how often, and how long to keep it.
 - **Which budget** — an **enrolled** connection. A scheduled backup runs with your browser closed, so
   it needs credentials the server can use on its own. If nothing is enrolled, Bench says so instead
   of quietly offering you an empty list.
-- **When** — every day at a time you pick, every few hours, or a cron expression with an explicit
-  time zone.
+- **When** — every few hours, every day at a time you pick, on chosen days of the week, once a month,
+  or a cron expression for the people who want one. Whichever you choose, Bench says back what it
+  understood and when the next run actually lands.
 - **Encryption** — off by default, because for most self-hosted setups the copy lands on a volume you
   already control and encryption mainly adds a way to lose the data permanently. Turn it on when a
   copy goes somewhere you do not control. **Bench cannot recover an encrypted backup without the
   passphrase, and neither can anyone else.**
+
+Deleting a rule stops it running and keeps the backups it already took — including the passphrase
+that opens the encrypted ones. Bench forgets that passphrase on its own once the last copy needing it
+is gone, and lists it under **Passphrases Bench still holds** until then.
 
 Rules run on Bench's automation engine, so they appear on the **Automations** page with their run
 history, health and backoff like everything else scheduled.

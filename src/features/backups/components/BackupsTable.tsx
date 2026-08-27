@@ -65,9 +65,23 @@ export function BackupsTable({ artifacts, selectedId, onOpen }: Props) {
             return (
               <tr
                 key={artifact.id}
+                // Reachable by keyboard: everything a backup can do — look
+                // inside, download, pin, delete — lives behind opening this
+                // row, so a mouse-only row would put the whole feature out of
+                // reach for anyone not using one.
+                tabIndex={0}
+                role="button"
+                aria-label={`Open backup from ${formatDateTime(artifact.createdAt)}`}
                 onClick={() => onOpen(artifact.id)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    onOpen(artifact.id);
+                  }
+                }}
                 className={cn(
                   "cursor-pointer border-b border-border/60 align-top hover:bg-muted/50",
+                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60",
                   style.row,
                   selectedId === artifact.id && "bg-muted"
                 )}
