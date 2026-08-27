@@ -65,29 +65,29 @@ export function BackupsTable({ artifacts, selectedId, onOpen }: Props) {
             return (
               <tr
                 key={artifact.id}
-                // Reachable by keyboard: everything a backup can do — look
-                // inside, download, pin, delete — lives behind opening this
-                // row, so a mouse-only row would put the whole feature out of
-                // reach for anyone not using one.
-                tabIndex={0}
-                role="button"
-                aria-label={`Open backup from ${formatDateTime(artifact.createdAt)}`}
                 onClick={() => onOpen(artifact.id)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" || event.key === " ") {
-                    event.preventDefault();
-                    onOpen(artifact.id);
-                  }
-                }}
                 className={cn(
                   "cursor-pointer border-b border-border/60 align-top hover:bg-muted/50",
-                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60",
                   style.row,
                   selectedId === artifact.id && "bg-muted"
                 )}
               >
                 <td className="px-4 py-2 whitespace-nowrap">
-                  <div className="font-medium">{relativeTime(artifact.createdAt)}</div>
+                  {/* A real button, not a clickable row: everything a backup
+                      can do — look inside, download, pin, delete — lives behind
+                      opening it, so a mouse-only row would put the whole
+                      feature out of reach for anyone not using one. The row
+                      stays clickable as a convenience on top. */}
+                  <button
+                    type="button"
+                    className="font-medium hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onOpen(artifact.id);
+                    }}
+                  >
+                    {relativeTime(artifact.createdAt)}
+                  </button>
                   <div className="text-xs text-muted-foreground">
                     {formatDateTime(artifact.createdAt)}
                   </div>

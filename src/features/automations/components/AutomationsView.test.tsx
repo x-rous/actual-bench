@@ -243,6 +243,19 @@ describe("AutomationsView", () => {
     expect(screen.getByText("Budget file sync")).toBeInTheDocument();
   });
 
+  it("actually opens the bank sync dialog from the menu", async () => {
+    // Not redundant with the test above: a menu item can render perfectly and
+    // do nothing. This library's items take `onClick`, and a stray `onSelect`
+    // type-checks against the underlying div while never firing.
+    renderView();
+    await screen.findByText("Household → Joint");
+
+    fireEvent.click(screen.getByRole("button", { name: /new automation/i }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: /bank sync/i }));
+
+    expect(await screen.findByText("Schedule a bank sync")).toBeInTheDocument();
+  });
+
   it("opens run history with the job type's own result rendering", async () => {
     renderView();
 

@@ -307,9 +307,13 @@ describe("the Recovery Center", () => {
     ).toBeInTheDocument();
   });
 
-  it("asks before deleting a rule, and says what survives it", async () => {
+  it("keeps deleting a rule behind a menu, and asks before doing it", async () => {
+    // "Back up now" is what people come here for; the action that deletes
+    // things should not sit beside it at the same weight.
     renderView();
-    fireEvent.click(await screen.findByRole("button", { name: /delete/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /more actions for nightly/i }));
+
+    fireEvent.click(await screen.findByRole("menuitem", { name: /delete rule/i }));
 
     expect(await screen.findByText('Delete "Nightly"?')).toBeInTheDocument();
     expect(screen.getByText(/backups it already took are kept/)).toBeInTheDocument();
@@ -336,6 +340,27 @@ describe("the Recovery Center", () => {
 
     expect(await screen.findByText("Passphrases Bench still holds")).toBeInTheDocument();
     expect(screen.getByText(/4 encrypted backups still need it/)).toBeInTheDocument();
+  });
+
+  it("opens a backup from the keyboard, not only by clicking its row", async () => {
+    // Every action a backup has lives behind opening it, so a mouse-only row
+    // would put the whole feature out of reach for anyone not using one.
+    renderView();
+
+    const opener = await screen.findByRole("button", { name: /ago$/i });
+    fireEvent.click(opener);
+
+    expect(await screen.findByText("Restoring this")).toBeInTheDocument();
+  });
+
+  it("explains what Find backups will do before it does it", async () => {
+    renderView();
+    fireEvent.click(await screen.findByRole("button", { name: /find backups/i }));
+
+    expect(await screen.findByText(/Find backups in your destinations\?/)).toBeInTheDocument();
+    // The reassurance that matters: it cannot make things worse.
+    expect(screen.getByText(/only adds — nothing is changed, moved or deleted/)).toBeInTheDocument();
+    expect(mockedApi.discoverBackups).not.toHaveBeenCalled();
   });
 
   it("reports damage found by a manual verify as an error", async () => {

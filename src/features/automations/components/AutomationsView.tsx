@@ -153,7 +153,7 @@ export function AutomationsView() {
               New automation
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-72">
-              <DropdownMenuItem onSelect={() => setCreating(true)}>
+              <DropdownMenuItem onClick={() => setCreating(true)}>
                 <Landmark aria-hidden />
                 <span className="flex flex-col">
                   <span className="font-medium">Bank sync</span>

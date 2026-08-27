@@ -7,17 +7,23 @@ import {
   HardDrive,
   Key,
   Loader2,
+  MoreHorizontal,
   Play,
   Plus,
   RefreshCw,
   ScanSearch,
   ShieldCheck,
-  Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog, type ConfirmState } from "@/components/ui/confirm-dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { PageLayout } from "@/components/layout/PageLayout";
 import { cn } from "@/lib/utils";
 import {
@@ -316,7 +322,23 @@ export function BackupsView() {
                 variant="ghost"
                 size="sm"
                 className="h-6 text-xs"
-                onClick={() => discover.mutate()}
+                onClick={() =>
+                  // Named for what it is, and explained before it runs: this is
+                  // the action for the day Bench's own database is gone, and
+                  // someone meeting it for the first time cannot tell from two
+                  // words whether it is safe to press.
+                  setConfirm({
+                    title: "Find backups in your destinations?",
+                    message: `Bench reads the manifest written beside every backup in ${
+                      data?.destinations.length === 1
+                        ? `"${data.destinations[0]?.name}"`
+                        : `your ${data?.destinations.length ?? 0} destinations`
+                    } and adds anything it does not already know about. It only adds — nothing is changed, moved or deleted. Use it after restoring Bench onto a new server, or when a destination holds backups this Bench has never seen.`,
+                    destructive: false,
+                    destructiveLabel: "Scan destinations",
+                    onConfirm: () => discover.mutate(),
+                  })
+                }
                 disabled={discover.isPending || (data?.destinations.length ?? 0) === 0}
               >
                 {discover.isPending ? <Loader2 className="animate-spin" aria-hidden /> : <ScanSearch aria-hidden />}
@@ -371,35 +393,46 @@ export function BackupsView() {
                       </span>
                     )}
                     <span className="flex-1" />
-                    <button
-                      type="button"
-                      className="text-muted-foreground underline-offset-4 hover:underline"
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-6 text-xs"
                       onClick={() => test.mutate(destination.id)}
                     >
                       Test
-                    </button>
-                    <button
-                      type="button"
-                      className="text-muted-foreground underline-offset-4 hover:underline"
-                      onClick={() => setDestinationDialog({ open: true, existing: destination })}
-                    >
-                      Edit
-                    </button>
-                    <button
-                      type="button"
-                      className="text-muted-foreground underline-offset-4 hover:underline"
-                      onClick={() =>
-                        setConfirm({
-                          title: `Remove "${destination.name}"?`,
-                          message:
-                            "Bench stops writing here and loses track of the copies in it. The files themselves are left exactly where they are.",
-                          destructiveLabel: "Remove",
-                          onConfirm: () => removeDestination.mutate(destination.id),
-                        })
-                      }
-                    >
-                      Remove
-                    </button>
+                    </Button>
+                    {/* Editing and removing are rarer than testing, and one of
+                        them is destructive — so they sit behind a menu rather
+                        than beside it with the same visual weight. */}
+                    <DropdownMenu>
+                      <DropdownMenuTrigger
+                        className="rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+                        aria-label={`More actions for ${destination.name}`}
+                      >
+                        <MoreHorizontal className="size-3.5" aria-hidden />
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem
+                          onClick={() => setDestinationDialog({ open: true, existing: destination })}
+                        >
+                          Edit destination
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          variant="destructive"
+                          onClick={() =>
+                            setConfirm({
+                              title: `Remove "${destination.name}"?`,
+                              message:
+                                "Bench stops writing here and loses track of the copies in it. The files themselves are left exactly where they are.",
+                              destructiveLabel: "Remove",
+                              onConfirm: () => removeDestination.mutate(destination.id),
+                            })
+                          }
+                        >
+                          Remove destination
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </li>
                 );
               })}
@@ -419,92 +452,102 @@ export function BackupsView() {
           ) : (
             <ul className="mt-1 space-y-1">
               {data?.policies.map((policy) => (
-                <li key={policy.id} className="flex flex-wrap items-center gap-2 text-xs">
-                  <span className={cn("font-medium", !policy.enabled && "text-muted-foreground")}>
-                    {policy.name}
-                  </span>
-                  {/* The rule says what should happen; its automation says what
-                      does. When they disagree — a health auto-pause, or Pause
-                      pressed on the Automations page — the page must show the
-                      one that is true, not the comfortable one. */}
-                  {!policy.enabled ? (
-                    <span className="text-muted-foreground">(paused)</span>
-                  ) : policy.automation?.autoPausedAt ? (
-                    <span className="text-destructive">
-                      paused after repeated failures: {policy.automation.autoPauseReason}
-                    </span>
-                  ) : policy.automation && !policy.automation.enabled ? (
-                    <span className="text-amber-700 dark:text-amber-400">
-                      paused on the Automations page — not running
-                    </span>
-                  ) : policy.automation?.running ? (
-                    <span className="text-muted-foreground">running now…</span>
-                  ) : null}
-                  <span className="text-muted-foreground">{describeContents(policy)}</span>
-                  <span className="text-muted-foreground">· {describeSchedule(policy)}</span>
-                  <span className="text-muted-foreground">· {describeRetention(policy)}</span>
-                  {policy.encryption === "passphrase" && (
-                    <span className="text-muted-foreground">· encrypted</span>
-                  )}
-                  {policy.automation?.lastRunAt && (
-                    <span className="text-muted-foreground">
-                      · last run {relativeTime(policy.automation.lastRunAt)}
-                    </span>
-                  )}
-                  <span className="flex-1" />
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-6 text-xs"
-                    onClick={() => runNow.mutate(policy.id)}
-                    disabled={runNow.isPending}
-                  >
-                    {runNow.isPending && runNow.variables === policy.id ? (
-                      <Loader2 className="animate-spin" aria-hidden />
-                    ) : (
-                      <Play aria-hidden />
-                    )}
-                    Back up now
-                  </Button>
-                  <button
-                    type="button"
-                    className="text-muted-foreground underline-offset-4 hover:underline"
-                    onClick={() => preview.mutate(policy)}
-                  >
-                    Retention
-                  </button>
-                  {/* Every run is recorded on the automation engine, so the
-                      history already exists — it just needs a way in. */}
-                  <Link
-                    href="/automations"
-                    className="text-muted-foreground underline-offset-4 hover:underline"
-                  >
-                    History
-                  </Link>
-                  <button
-                    type="button"
-                    className="text-muted-foreground underline-offset-4 hover:underline"
-                    onClick={() => setRuleDialog({ open: true, existing: policy })}
-                  >
-                    Edit
-                  </button>
-                  <button
-                    type="button"
-                    className="text-muted-foreground underline-offset-4 hover:underline"
-                    onClick={() =>
-                      setConfirm({
-                        title: `Delete "${policy.name}"?`,
-                        message:
-                          policy.encryption === "passphrase"
-                            ? "It stops running. The backups it already took are kept, and so is the passphrase that opens them — Bench forgets that only once the last encrypted copy is gone."
-                            : "It stops running. The backups it already took are kept and stay restorable.",
-                        destructiveLabel: "Delete rule",
-                        onConfirm: () => removeRule.mutate(policy.id),
-                      })
-                    }
-                  >
-                    <Trash2 className="inline size-3" aria-hidden /> Delete
-                  </button>
+                // Two lines rather than one long one: identity and state on
+                // top, the settings underneath. A single row packed with seven
+                // facts and five actions reads fine at desk width and collapses
+                // into a block on anything narrower.
+                <li key={policy.id} className="flex items-start gap-2 py-0.5 text-xs">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className={cn("font-medium", !policy.enabled && "text-muted-foreground")}>
+                        {policy.name}
+                      </span>
+                      {/* The rule says what should happen; its automation says
+                          what does. When they disagree — a health auto-pause,
+                          or Pause pressed on the Automations page — the page
+                          shows the one that is true, not the comfortable one. */}
+                      {!policy.enabled ? (
+                        <span className="text-muted-foreground">paused</span>
+                      ) : policy.automation?.autoPausedAt ? (
+                        <span className="text-destructive">
+                          paused after repeated failures: {policy.automation.autoPauseReason}
+                        </span>
+                      ) : policy.automation && !policy.automation.enabled ? (
+                        <span className="text-amber-700 dark:text-amber-400">
+                          paused on the Automations page — not running
+                        </span>
+                      ) : policy.automation?.running ? (
+                        <span className="text-muted-foreground">running now…</span>
+                      ) : null}
+                    </div>
+                    <div className="flex flex-wrap gap-x-2 text-muted-foreground">
+                      <span>{describeContents(policy)}</span>
+                      <span>· {describeSchedule(policy)}</span>
+                      <span>· {describeRetention(policy)}</span>
+                      {policy.encryption === "passphrase" && <span>· encrypted</span>}
+                      {policy.automation?.lastRunAt && (
+                        <span>· last run {relativeTime(policy.automation.lastRunAt)}</span>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="flex shrink-0 items-center gap-1">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-6 text-xs"
+                      onClick={() => runNow.mutate(policy.id)}
+                      disabled={runNow.isPending}
+                    >
+                      {runNow.isPending && runNow.variables === policy.id ? (
+                        <Loader2 className="animate-spin" aria-hidden />
+                      ) : (
+                        <Play aria-hidden />
+                      )}
+                      Back up now
+                    </Button>
+
+                    {/* "Back up now" is the action people come here for. The
+                        rest — including the one that deletes things — belongs
+                        behind a menu, not beside it at equal weight. */}
+                    <DropdownMenu>
+                      <DropdownMenuTrigger
+                        className="rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+                        aria-label={`More actions for ${policy.name}`}
+                      >
+                        <MoreHorizontal className="size-3.5" aria-hidden />
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="w-56">
+                        <DropdownMenuItem onClick={() => preview.mutate(policy)}>
+                          Preview retention…
+                        </DropdownMenuItem>
+                        <DropdownMenuItem render={<Link href="/automations" />}>
+                          Run history
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={() => setRuleDialog({ open: true, existing: policy })}
+                        >
+                          Edit rule
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          variant="destructive"
+                          onClick={() =>
+                            setConfirm({
+                              title: `Delete "${policy.name}"?`,
+                              message:
+                                policy.encryption === "passphrase"
+                                  ? "It stops running. The backups it already took are kept, and so is the passphrase that opens them — Bench forgets that only once the last encrypted copy is gone."
+                                  : "It stops running. The backups it already took are kept and stay restorable.",
+                              destructiveLabel: "Delete rule",
+                              onConfirm: () => removeRule.mutate(policy.id),
+                            })
+                          }
+                        >
+                          Delete rule
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
                 </li>
               ))}
             </ul>
