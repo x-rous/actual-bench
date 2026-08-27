@@ -285,6 +285,10 @@ export async function runBackup(
       plaintextChecksumSha256: plaintextChecksum,
       encrypted: encrypted !== null,
       encryption: encrypted ? { version: 1, data: { ...encrypted.info } } : null,
+      // The artifact remembers which passphrase opens it. Deriving that from
+      // the rule breaks the moment the rule is deleted — which is exactly when
+      // an old encrypted copy needs to stay openable.
+      encryptionCredentialRef: encrypted ? policy.encryptionCredentialRef : null,
       tier,
       pinned: false,
       protectedUntil: options.protectedUntil ?? null,

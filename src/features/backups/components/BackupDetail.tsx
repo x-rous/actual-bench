@@ -6,6 +6,7 @@ import { Download, Loader2, Pin, PinOff, Search, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { ConfirmDialog, type ConfirmState } from "@/components/ui/confirm-dialog";
 import { Input } from "@/components/ui/input";
 import {
   Sheet,
@@ -49,6 +50,7 @@ export function BackupDetail({
   onChanged: () => void;
 }) {
   const [passphrase, setPassphrase] = useState("");
+  const [confirm, setConfirm] = useState<ConfirmState | null>(null);
   const [inspection, setInspection] = useState<InspectionResult | null>(null);
   const state = copyState(artifact);
 
@@ -83,6 +85,7 @@ export function BackupDetail({
     onError: (error: Error) => toast.error(error.message),
   });
 
+  const stored = artifact.locations.filter((location) => location.status === "stored");
   const findings = (artifact.verification?.data.findings ?? []) as string[];
   const contents = (artifact.verification?.data.content ?? {}) as Record<string, number | string>;
 
@@ -190,7 +193,17 @@ export function BackupDetail({
               size="sm"
               variant="outline"
               className="text-destructive"
-              onClick={() => remove.mutate()}
+              onClick={() =>
+                setConfirm({
+                  title: "Delete this backup?",
+                  message:
+                    stored.length > 1
+                      ? `It is removed from all ${stored.length} destinations holding it. This cannot be undone.`
+                      : "It is removed from the destination holding it. This cannot be undone.",
+                  destructiveLabel: "Delete backup",
+                  onConfirm: () => remove.mutate(),
+                })
+              }
               disabled={remove.isPending}
             >
               {remove.isPending ? <Loader2 className="animate-spin" aria-hidden /> : <Trash2 aria-hidden />}
@@ -218,6 +231,14 @@ export function BackupDetail({
           </section>
         </div>
       </SheetContent>
+
+      <ConfirmDialog
+        open={confirm !== null}
+        onOpenChange={(open) => {
+          if (!open) setConfirm(null);
+        }}
+        state={confirm}
+      />
     </Sheet>
   );
 }

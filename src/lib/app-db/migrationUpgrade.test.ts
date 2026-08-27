@@ -23,6 +23,7 @@ import {
 import { createAutomationRun, listAutomationRuns } from "./automationRunRepository";
 import {
   createBackupArtifact,
+  getBackupArtifact,
   createBackupDestination,
   listArtifactLocations,
   listBackupDestinations,
@@ -441,6 +442,29 @@ describe("upgrading an existing database", () => {
       rmSync(root, { recursive: true, force: true });
       if (previousKey === undefined) delete process.env.SYNC_VAULT_KEY;
       else process.env.SYNC_VAULT_KEY = previousKey;
+    }
+  });
+
+  it("gives encrypted backups their own key reference (v23)", () => {
+    // The reference cannot be derived from the rule, because deleting a rule
+    // nulls the artifact's policy link — which is exactly when an old encrypted
+    // copy needs to stay openable.
+    const { root, path } = olderDatabase();
+    try {
+      const db = getAppDb(path);
+      const artifact = createBackupArtifact(db, {
+        kind: "budget",
+        checksumSha256: "e".repeat(64),
+        sizeBytes: 2048,
+        encrypted: true,
+        encryptionCredentialRef: "pol-1",
+      });
+
+      expect(getBackupArtifact(db, artifact.id)?.encryptionCredentialRef).toBe("pol-1");
+      expect(getReconciliationSession(db, "sess-old")).not.toBeNull();
+    } finally {
+      resetAppDbForTests();
+      rmSync(root, { recursive: true, force: true });
     }
   });
 

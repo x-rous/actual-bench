@@ -12,6 +12,7 @@ import {
   createBackupArtifact,
   createBackupDestination,
   createBackupPolicy,
+  deleteBackupPolicy,
   getBackupArtifact,
   getBackupDestination,
   listArtifactLocations,
@@ -23,7 +24,16 @@ import { encryptArchive } from "./encryption";
 import { sha256 } from "./manifest";
 import { scrubDestination } from "./scrub";
 
+// Built once: each call spawns SQLite and zips a real database, and this suite
+// stores several copies per test.
+let cachedZip: Uint8Array | null = null;
 function budgetZip(): Uint8Array {
+  if (cachedZip) return cachedZip;
+  cachedZip = buildBudgetZip();
+  return cachedZip;
+}
+
+function buildBudgetZip(): Uint8Array {
   const root = mkdtempSync(join(tmpdir(), "bench-scrub-fixture-"));
   const path = join(root, "db.sqlite");
   const db = new Database(path);
@@ -151,8 +161,37 @@ describe("scrubbing a destination", () => {
       encryptionCredentialRef: "pol-secret",
     });
     const { bytes } = encryptArchive(budgetZip(), "shh");
-    store(bytes, { policyId: encryptedPolicy.id, encrypted: true });
+    store(bytes, {
+      policyId: encryptedPolicy.id,
+      encrypted: true,
+      encryptionCredentialRef: "pol-secret",
+    });
 
+    const result = await scrubDestination(db, destination);
+
+    expect(result.passed).toBe(1);
+    expect(result.artifacts[0].detail).toMatch(/Decrypted, opened and read/);
+  });
+
+  it("still decrypts a copy whose rule has been deleted", async () => {
+    // Deleting a rule must not strand its encrypted backups: the artifact
+    // remembers which passphrase opens it, and Bench keeps that passphrase for
+    // as long as something still needs it.
+    upsertBackupCredential(db, { ref: "pol-secret", kind: "passphrase", secret: { passphrase: "shh" } });
+    const encryptedPolicy = createBackupPolicy(db, {
+      name: "Off-site",
+      destinationIds: [destination.id],
+      encryption: "passphrase",
+      encryptionCredentialRef: "pol-secret",
+    });
+    const { bytes } = encryptArchive(budgetZip(), "shh");
+    store(bytes, {
+      policyId: encryptedPolicy.id,
+      encrypted: true,
+      encryptionCredentialRef: "pol-secret",
+    });
+
+    deleteBackupPolicy(db, encryptedPolicy.id);
     const result = await scrubDestination(db, destination);
 
     expect(result.passed).toBe(1);

@@ -5,6 +5,8 @@ import {
   listArtifactLocations,
   type BackupArtifact,
 } from "@/lib/app-db/backupRepository";
+import { nextCronRun } from "@/lib/automation/schedule";
+import type { BackupPolicy } from "@/lib/app-db/backupRepository";
 import type { SqliteDatabase } from "@/lib/app-db/types";
 
 /**
@@ -43,6 +45,49 @@ export type BackupReadiness = {
 
 function hoursSince(iso: string, now: Date): number {
   return (now.getTime() - new Date(iso).getTime()) / 3_600_000;
+}
+
+/**
+ * How often a rule is supposed to produce a copy, in hours.
+ *
+ * Measured from the rule's own schedule rather than assumed, because a fixed
+ * "older than two days is stale" rule marks a healthy weekly backup as at-risk
+ * forever — and a readiness statement that cries wolf is one people stop
+ * reading, which is the only way this page can truly fail.
+ */
+function periodHours(policy: BackupPolicy, now: Date): number | null {
+  if (policy.scheduleKind === "interval") {
+    return policy.intervalMinutes ? policy.intervalMinutes / 60 : null;
+  }
+  if (!policy.cronExpression) return null;
+  try {
+    const first = nextCronRun(policy.cronExpression, policy.timezone, now.getTime());
+    if (first === null) return null;
+    const second = nextCronRun(policy.cronExpression, policy.timezone, first);
+    if (second === null) return null;
+    return (second - first) / 3_600_000;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * When a backup counts as overdue: two periods, plus an hour of slack.
+ *
+ * Two rather than one because a single missed run is often a restart or a
+ * server that was briefly down, and reporting that as "at risk" the moment a
+ * schedule slips would be noise. Two missed runs is a pattern.
+ */
+export function stalenessThresholdHours(policies: BackupPolicy[], now: Date): number {
+  const periods = policies
+    .filter((policy) => policy.enabled)
+    .map((policy) => periodHours(policy, now))
+    .filter((hours): hours is number => hours !== null && hours > 0);
+
+  // With no usable schedule, fall back to a day and a half — long enough not to
+  // nag a daily backup that ran late, short enough to notice a dead one.
+  if (periods.length === 0) return 36;
+  return Math.min(...periods) * 2 + 1;
 }
 
 function describeAge(hours: number): string {
@@ -143,10 +188,12 @@ export function buildBackupReadiness(db: SqliteDatabase, now: Date = new Date())
   }
 
   const ageHours = hoursSince(newest.createdAt, now);
-  // Two days is the point at which a daily schedule has clearly missed one.
-  const stale = ageHours > 48;
+  const threshold = stalenessThresholdHours(policies, now);
+  const stale = ageHours > threshold;
   if (stale) {
-    issues.push(`The newest verified copy is ${describeAge(ageHours)}.`);
+    issues.push(
+      `The newest verified copy is ${describeAge(ageHours)}, which is more than this schedule should allow.`
+    );
   }
 
   const atRisk = stale || failedVerification.length > 0 || brokenDestinations.length > 0;

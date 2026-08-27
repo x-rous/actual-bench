@@ -18,6 +18,32 @@ export type ArtifactWithLocations = BackupArtifact & {
   locations: (BackupArtifactLocation & { destinationName: string | null })[];
 };
 
+/** The automation carrying out a rule's schedule, when there is one. */
+export type RuleAutomationState = {
+  id: string;
+  enabled: boolean;
+  running: boolean;
+  autoPausedAt: string | null;
+  autoPauseReason: string | null;
+  lastRunAt: string | null;
+  nextRunAt: string | null;
+  status: "ok" | "warning" | "failing" | "paused" | "idle";
+  statusSummary: string;
+  lastRunMessage: string | null;
+};
+
+export type PolicyWithAutomation = BackupPolicy & { automation: RuleAutomationState | null };
+
+/** A sealed passphrase Bench still holds, and what depends on it. */
+export type HeldPassphrase = {
+  ref: string;
+  label: string;
+  createdAt: string;
+  ruleExists: boolean;
+  artifactCount: number;
+  newestArtifactAt: string | null;
+};
+
 export type BackupSource = {
   connectionFingerprint: string;
   label: string;
@@ -28,9 +54,10 @@ export type BackupSource = {
 export type RecoveryCenterData = {
   readiness: BackupReadiness;
   destinations: BackupDestination[];
-  policies: BackupPolicy[];
+  policies: PolicyWithAutomation[];
   artifacts: ArtifactWithLocations[];
   sources: BackupSource[];
+  heldPassphrases: HeldPassphrase[];
   vaultEnabled: boolean;
 };
 
@@ -130,8 +157,23 @@ export async function patchPolicy(id: string, input: Record<string, unknown>): P
   return body.policy;
 }
 
-export async function deletePolicy(id: string): Promise<{ keptArtifacts: number }> {
+export async function deletePolicy(
+  id: string
+): Promise<{ keptArtifacts: number; encryptedArtifacts: number; keptPassphrase: boolean }> {
   return json(await fetch(`/api/backups/policies/${id}`, { method: "DELETE" }));
+}
+
+export async function forgetPassphrase(
+  ref: string,
+  strandBackups = false
+): Promise<{ forgotten: boolean; strandedBackups: number }> {
+  return json(
+    await fetch("/api/backups/passphrases", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ref, strandBackups }),
+    })
+  );
 }
 
 /** Runs are slow and their result is the point, so it is returned in full. */

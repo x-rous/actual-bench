@@ -110,6 +110,8 @@ export type BackupArtifact = {
   plaintextChecksumSha256: string | null;
   encrypted: boolean;
   encryption: JsonEnvelope | null;
+  /** Which sealed passphrase opens this copy. Never a secret. */
+  encryptionCredentialRef: string | null;
   tier: BackupRetentionTier;
   pinned: boolean;
   protectedUntil: string | null;
@@ -559,6 +561,7 @@ type ArtifactRow = {
   plaintext_checksum_sha256: string | null;
   encrypted: number;
   encryption_json: string | null;
+  encryption_credential_ref: string | null;
   tier: string;
   pinned: number;
   protected_until: string | null;
@@ -587,6 +590,7 @@ function rowToArtifact(row: ArtifactRow): BackupArtifact {
     // Encryption parameters are not user input and hold no secret, so they are
     // read plainly rather than through the credential guard.
     encryption: row.encryption_json ? (JSON.parse(row.encryption_json) as JsonEnvelope) : null,
+    encryptionCredentialRef: row.encryption_credential_ref,
     tier: row.tier as BackupRetentionTier,
     pinned: row.pinned === 1,
     protectedUntil: row.protected_until,
@@ -609,10 +613,11 @@ export function createBackupArtifact(db: SqliteDatabase, input: unknown): Backup
   db.prepare(
     `INSERT INTO backup_artifacts
        (id, policy_id, kind, created_at, source_budget_id, source_budget_name, size_bytes,
-        checksum_sha256, plaintext_checksum_sha256, encrypted, encryption_json, tier, pinned,
+        checksum_sha256, plaintext_checksum_sha256, encrypted, encryption_json,
+        encryption_credential_ref, tier, pinned,
         protected_until, taken_before, verification_level, verification_status, verified_at,
         verification_json, manifest_version, bench_version, notes)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
     id,
     optionalText(input.policyId, "policyId", 64),
@@ -627,6 +632,7 @@ export function createBackupArtifact(db: SqliteDatabase, input: unknown): Backup
     input.encryption === undefined || input.encryption === null
       ? null
       : JSON.stringify(input.encryption),
+    optionalText(input.encryptionCredentialRef, "encryptionCredentialRef", 200),
     oneOf(input.tier, TIERS, "tier", "manual"),
     input.pinned === true ? 1 : 0,
     optionalText(input.protectedUntil, "protectedUntil", 40),

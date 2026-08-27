@@ -96,11 +96,15 @@ function intactElsewhere(
 }
 
 function passphraseFor(db: SqliteDatabase, artifact: BackupArtifact): string | null {
-  if (!artifact.encrypted || !artifact.policyId) return null;
-  const policy = getBackupPolicy(db, artifact.policyId);
-  if (!policy?.encryptionCredentialRef) return null;
+  if (!artifact.encrypted) return null;
+  // The artifact's own reference first: a copy whose rule has been deleted must
+  // still be openable by the passphrase Bench kept for it.
+  const ref =
+    artifact.encryptionCredentialRef ??
+    (artifact.policyId ? getBackupPolicy(db, artifact.policyId)?.encryptionCredentialRef ?? null : null);
+  if (!ref) return null;
   try {
-    const secret = getBackupCredential(db, policy.encryptionCredentialRef);
+    const secret = getBackupCredential(db, ref);
     return secret && "passphrase" in secret ? secret.passphrase : null;
   } catch {
     return null;
