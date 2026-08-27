@@ -63,11 +63,11 @@ type QueueConnection = Pick<HttpProxyConnection, "baseUrl" | "budgetSyncId" | "a
  * response promise. On 5xx or rejection, attempts a best-effort budget close
  * before releasing the queue.
  */
-export function queueServerRequest(
+export function queueServerRequest<T extends { status: number } = NextResponse>(
   connection: QueueConnection,
   reqId: string,
-  operation: () => Promise<NextResponse>
-): Promise<NextResponse> {
+  operation: () => Promise<T>
+): Promise<T> {
   const serverKey = normalizeBaseUrl(connection.baseUrl);
   const prev = serverQueueTails.get(serverKey) ?? Promise.resolve();
 
