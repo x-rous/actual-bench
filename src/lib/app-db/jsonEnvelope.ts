@@ -31,14 +31,26 @@ function normalizeKey(key: string): string {
   return key.toLowerCase().replace(/[^a-z0-9]/g, "");
 }
 
+/**
+ * Names that mean "this is a secret", whatever the feature calls it.
+ *
+ * Widened when verified backups arrived with a vocabulary the original list did
+ * not cover — `secretAccessKey` and `passphrase` both walked straight through.
+ * The guard is only worth having if it knows the words people actually use, so
+ * it is kept deliberately broad: a false positive costs someone a rename, a
+ * false negative puts a live credential in a metadata column.
+ */
 function isSecretLikeKey(key: string): boolean {
   const normalized = normalizeKey(key);
   return (
-    normalized === "apikey" ||
-    normalized.endsWith("apikey") ||
     normalized.includes("password") ||
-    normalized.endsWith("token") ||
-    normalized.includes("credential")
+    normalized.includes("passphrase") ||
+    normalized.includes("credential") ||
+    normalized.includes("secret") ||
+    normalized.endsWith("apikey") ||
+    normalized.endsWith("accesskey") ||
+    normalized.endsWith("privatekey") ||
+    normalized.endsWith("token")
   );
 }
 

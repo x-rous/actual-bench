@@ -20,6 +20,13 @@ import {
   listAutomations,
 } from "./automationRepository";
 import { createAutomationRun, listAutomationRuns } from "./automationRunRepository";
+import {
+  createBackupArtifact,
+  createBackupDestination,
+  listArtifactLocations,
+  listBackupDestinations,
+  recordArtifactLocation,
+} from "./backupRepository";
 
 /**
  * Upgrading a database that already holds real work.
@@ -370,6 +377,40 @@ describe("upgrading an existing database", () => {
       expect(automation.runningSince).toBeNull();
       expect(claimAutomation(db, "auto-1", "2026-08-26T18:00:00.000Z")).toBe(true);
       expect(getAutomation(db, "auto-1")?.runningSince).toBe("2026-08-26T18:00:00.000Z");
+    } finally {
+      resetAppDbForTests();
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("adds backup storage to an older database (v20)", () => {
+    // Additive, and nothing reads these tables yet, so an install carrying real
+    // work should gain them without losing any of it.
+    const { root, path } = olderDatabase();
+    try {
+      const db = getAppDb(path);
+
+      const destination = createBackupDestination(db, {
+        name: "NAS volume",
+        kind: "local",
+        config: { version: 1, data: { path: "/mnt/backups" } },
+      });
+      const artifact = createBackupArtifact(db, {
+        kind: "budget",
+        checksumSha256: "c".repeat(64),
+        sizeBytes: 1024,
+      });
+      recordArtifactLocation(db, {
+        artifactId: artifact.id,
+        destinationId: destination.id,
+        objectKey: "/mnt/backups/a.zip",
+      });
+
+      expect(listBackupDestinations(db)).toHaveLength(1);
+      expect(listArtifactLocations(db, artifact.id)).toHaveLength(1);
+
+      // The pre-existing reconciliation work is untouched.
+      expect(getReconciliationSession(db, "sess-old")).not.toBeNull();
     } finally {
       resetAppDbForTests();
       rmSync(root, { recursive: true, force: true });
