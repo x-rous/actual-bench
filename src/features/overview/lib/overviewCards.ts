@@ -3,6 +3,7 @@ import {
   Calendar,
   ClipboardCheck,
   Database,
+  DatabaseBackup,
   FileSearch,
   Landmark,
   LayoutList,
@@ -143,10 +144,19 @@ export const TOOL_CARDS: OverviewActionCard[] = [
     id: "automations",
     label: "Automations",
     description:
-      "See what Actual Bench runs on a schedule, when it last ran and what it did, and whether it runs on the server or only while Bench is open.",
+      "Schedule bank syncs, backups and budget file syncs — then see what ran, when, what it did, and whether it runs on the server or only while Bench is open.",
     icon: Timer,
     tone: "tool",
     href: "/automations",
+  },
+  {
+    id: "backups",
+    label: "Backups",
+    description:
+      "Keep verified copies of your budget on a schedule, in more than one place, checked by opening them — and know what you would get back if you needed it.",
+    icon: DatabaseBackup,
+    tone: "tool",
+    href: "/backups",
   },
   {
     id: "query",

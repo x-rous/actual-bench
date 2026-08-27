@@ -120,6 +120,9 @@ export const SIDEBAR_SECTIONS: SidebarSection[] = [
           icon: ClipboardCheck,
         },
         { id: "sync", label: "Budget File Sync", href: "/sync", icon: ArrowLeftRight },
+        // Directly under Sync: exchange rates exist to serve cross-currency
+        // syncing, not as a feature anyone comes here for on its own.
+        { id: "fx-rates", label: "FX Rates", href: "/fx-rates", icon: Banknote },
         // "Automations" here means *Bench's* scheduled jobs. Actual Budget's own
         // experimental Budget Automations (RD-047) are a different feature Bench
         // does not drive, so the label must not read as that.
@@ -127,7 +130,6 @@ export const SIDEBAR_SECTIONS: SidebarSection[] = [
         // Sits with the tools rather than in the footer: a backup is about a
         // budget's data, not about the app's own configuration.
         { id: "backups", label: "Backups", href: "/backups", icon: DatabaseBackup },
-        { id: "fx-rates", label: "FX Rates", href: "/fx-rates", icon: Banknote },
         { id: "query", label: "ActualQL Queries", href: "/query", icon: Terminal },
         { id: "data-browser", label: "Data Browser", href: "/data-browser", icon: Database },
         {
