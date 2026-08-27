@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { RefreshCw } from "lucide-react";
+import { Plus, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { PageLayout } from "@/components/layout/PageLayout";
@@ -17,6 +17,7 @@ import {
 
 import { AutomationDetail } from "./AutomationDetail";
 import { AutomationsTable } from "./AutomationsTable";
+import { NewBankSyncDialog } from "./NewBankSyncDialog";
 import { describeAutomationsSummary } from "../lib/presentation";
 
 /**
@@ -35,6 +36,7 @@ import { describeAutomationsSummary } from "../lib/presentation";
 export function AutomationsView() {
   const queryClient = useQueryClient();
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
 
   const automationsQuery = useQuery({
     queryKey: ["automations"],
@@ -124,16 +126,22 @@ export function AutomationsView() {
       error={automationsQuery.error}
       onRetry={() => void automationsQuery.refetch()}
       actions={
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => void handleRefresh()}
-          disabled={refreshing}
-          aria-label="Refresh automations"
-        >
-          <RefreshCw className={cn(refreshing && "animate-spin")} aria-hidden />
-          Refresh
-        </Button>
+        <>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => void handleRefresh()}
+            disabled={refreshing}
+            aria-label="Refresh automations"
+          >
+            <RefreshCw className={cn(refreshing && "animate-spin")} aria-hidden />
+            Refresh
+          </Button>
+          <Button size="sm" onClick={() => setCreating(true)}>
+            <Plus aria-hidden />
+            Schedule bank sync
+          </Button>
+        </>
       }
       emptyState={
         automations.length === 0 ? (
@@ -193,6 +201,8 @@ export function AutomationsView() {
           onResume={(id) => resume.mutate(id)}
         />
       </div>
+
+      <NewBankSyncDialog open={creating} onOpenChange={setCreating} onCreated={invalidate} />
 
       {selected && <AutomationDetail automation={selected} onClose={() => setSelectedId(null)} />}
     </PageLayout>

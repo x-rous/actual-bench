@@ -15,6 +15,11 @@ import {
   selectDueAutomations,
 } from "./engine";
 import { claimAutomation, releaseAutomationClaim } from "@/lib/app-db/automationRepository";
+import { __resetBankSyncRegistrationForTests, registerBankSyncJobType } from "./jobs/bankSync";
+import {
+  __resetBudgetFileSyncRegistrationForTests,
+  registerBudgetFileSyncJobType,
+} from "./jobs/budgetFileSync";
 import {
   __resetAutomationRegistryForTests,
   registerAutomationJobType,
@@ -669,6 +674,43 @@ describe("automation engine", () => {
       expect(summary.ran).toHaveLength(1);
       expect(listAutomationRuns(db, { automationId: id })).toHaveLength(1);
     } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("registers a second real job type without the engine knowing anything about it", async () => {
+    const { root, db } = tempDb();
+    try {
+      // The claim the whole engine exists to support, tested with the real
+      // second type rather than a stand-in: registering it touches no engine
+      // file, and the engine runs it without understanding what a bank is.
+      registerBudgetFileSyncJobType();
+      registerBankSyncJobType();
+
+      const id = createAutomation(db, {
+        type: "bank-sync",
+        name: "Pull from banks",
+        scheduleKind: "cron",
+        cronExpression: "0 6 * * *",
+        timezone: "UTC",
+        targetRef: { version: 1, data: {} },
+        // The vault reference the engine checks, and the same fingerprint in
+        // the type's own config: the engine fails closed on `credentialRef`
+        // without knowing what the config means.
+        credentialRef: "srv-1",
+        config: { version: 1, data: { connectionFingerprint: "srv-1" } },
+      }).id;
+
+      // No vault credential exists, so the engine fails closed — which is
+      // itself the engine treating an unfamiliar type exactly like a familiar
+      // one, with no branch anywhere that names "bank-sync".
+      const outcome = await executeAutomation(db, id, { trigger: "manual" });
+
+      expect(outcome.status).toBe("skipped");
+      expect(getAutomation(db, id)?.autoPauseReason).toMatch(/vault is disabled|stored credential/);
+    } finally {
+      __resetBudgetFileSyncRegistrationForTests();
+      __resetBankSyncRegistrationForTests();
       rmSync(root, { recursive: true, force: true });
     }
   });

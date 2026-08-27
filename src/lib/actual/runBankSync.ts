@@ -34,6 +34,15 @@ export type RunBankSyncOptions = {
   /** Count transactions in an account, when the transport can. */
   countTransactions?: (accountId: string) => Promise<number>;
   accountId?: string;
+  /**
+   * Stops the run between accounts.
+   *
+   * Checked here rather than by callers because this is the only place that
+   * knows where one account ends and the next begins — a caller that syncs
+   * "every account" hands over a single call and could not otherwise interrupt
+   * it at all.
+   */
+  signal?: AbortSignal;
 };
 
 function accountResult(
@@ -58,6 +67,10 @@ export async function runBankSyncForAccounts(
   );
 
   for (const account of targets) {
+    // A cancelled run stops here, with the accounts already synced reported
+    // honestly rather than the whole run discarded.
+    if (options.signal?.aborted) break;
+
     // Counting is only meaningful when the trigger is synchronous *and* the
     // transport can read transactions; otherwise the number is reported as
     // unknown rather than as zero.

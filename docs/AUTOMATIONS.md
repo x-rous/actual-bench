@@ -94,6 +94,32 @@ page under **"Waiting for you to decide"**, linking into the sync workspace wher
 review them. Job types that only trigger Actual's own work — rather than constructing writes
 themselves — have nothing to review and do not appear there at all.
 
+## Bank sync
+
+**Schedule bank sync** on the Automations page asks Actual to pull from the banks you connected *in
+Actual* (SimpleFIN / GoCardless), on a schedule, with nothing open. Bench triggers Actual's own
+import — it does not create the transactions and does not change how Actual handles duplicates.
+
+It needs a connection whose credentials are enrolled in the vault, because that is what lets it run
+unattended; without one the dialog says so rather than creating an automation that could only pause.
+
+What a run reports, per account:
+
+- **Synced** or **Sync started**, depending on whether the connection tells Bench the import
+  finished. Over the HTTP API the server answers "started", so Bench says the sync began instead of
+  quoting a number it cannot verify.
+- **Failed**, with the provider's reason, for that account only. Accounts are synced one at a time,
+  so one bank with expired consent cannot hide the rest — and a run where some accounts worked is
+  reported as partly done rather than as a failure.
+- **No bank link**, for an account Actual would silently skip. It is never counted as synced.
+
+A partial run does **not** count towards the failure streak that auto-pauses an automation: one
+unreachable bank is an ordinary outcome, and pausing would stop the accounts that do work. A run
+where *every* account failed does count.
+
+Bank sync contributes nothing to the review queue. It constructs nothing for you to review — Actual's
+importer owns what arrives.
+
 ## External cron
 
 If you would rather drive the schedule yourself, `POST /api/sync/scheduler/tick` runs one pass.

@@ -397,7 +397,8 @@ async function runBrowserQuery<T>(
  */
 async function runBrowserBankSync(
   connection: BrowserApiConnection,
-  accountId?: string
+  accountId?: string,
+  signal?: AbortSignal
 ): Promise<BankSyncOutcome> {
   const api = await getBrowserApiRuntime(connection);
   const trigger = api.runBankSync?.bind(api);
@@ -426,6 +427,7 @@ async function runBrowserBankSync(
   return runBankSyncForAccounts({
     loadAccounts: () => listAccountsForBankSync(connection),
     accountId,
+    signal,
     trigger: async (id) => {
       await trigger({ accountId: id });
     },
@@ -1249,7 +1251,7 @@ export function createBrowserApiTransport(
     },
 
     getSyncCapabilities: () => getBudgetFileSyncCapabilities(connection),
-    runBankSync: (input) => runBrowserBankSync(connection, input?.accountId),
+    runBankSync: (input) => runBrowserBankSync(connection, input?.accountId, input?.signal),
     canRunBankSync: async () => {
       // The runtime is already open on any page that could offer this, so this
       // resolves from cache rather than loading a budget to answer a question.
