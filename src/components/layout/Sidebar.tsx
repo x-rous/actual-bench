@@ -37,6 +37,7 @@ import {
   ClipboardCheck,
   Sparkles,
   Timer,
+  DatabaseBackup,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useConnectionStore } from "@/store/connection";
@@ -123,6 +124,9 @@ export const SIDEBAR_SECTIONS: SidebarSection[] = [
         // experimental Budget Automations (RD-047) are a different feature Bench
         // does not drive, so the label must not read as that.
         { id: "automations", label: "Automations", href: "/automations", icon: Timer },
+        // Sits with the tools rather than in the footer: a backup is about a
+        // budget's data, not about the app's own configuration.
+        { id: "backups", label: "Backups", href: "/backups", icon: DatabaseBackup },
         { id: "fx-rates", label: "FX Rates", href: "/fx-rates", icon: Banknote },
         { id: "query", label: "ActualQL Queries", href: "/query", icon: Terminal },
         { id: "data-browser", label: "Data Browser", href: "/data-browser", icon: Database },
