@@ -69,7 +69,7 @@ export function BackupDetail({
   const pin = useMutation({
     mutationFn: () => setPinned(artifact.id, !artifact.pinned),
     onSuccess: () => {
-      toast.success(artifact.pinned ? "Unpinned" : "Pinned — retention will never delete this copy");
+      toast.success(artifact.pinned ? "Unpinned" : "Pinned - retention will never delete this copy");
       onChanged();
     },
     onError: (error: Error) => toast.error(error.message),

@@ -146,7 +146,7 @@ export function BackupsView() {
       const imported = results.reduce((total, entry) => total + entry.imported, 0);
       const notes = results.flatMap((entry) => entry.notes);
       if (imported > 0) toast.success(`Found ${imported} backup(s) not in the inventory`);
-      else toast.info(notes[0] ?? "Nothing new — the inventory already matches what is stored");
+      else toast.info(notes[0] ?? "Nothing new - the inventory already matches what is stored");
       invalidate();
     },
     onError: (error: Error) => toast.error(error.message),
@@ -168,7 +168,7 @@ export function BackupsView() {
     onSuccess: ({ orphanedCopies }) => {
       toast.success(
         orphanedCopies > 0
-          ? `Destination removed. ${orphanedCopies} stored copy(ies) are still there — Bench just no longer manages them.`
+          ? `Destination removed. ${orphanedCopies} stored copy(ies) are still there - Bench just no longer manages them.`
           : "Destination removed"
       );
       invalidate();
@@ -181,7 +181,7 @@ export function BackupsView() {
     onSuccess: ({ keptArtifacts }) => {
       toast.success(
         keptArtifacts > 0
-          ? `Rule deleted. Its ${keptArtifacts} backup(s) are kept — deleting a rule never deletes backups.`
+          ? `Rule deleted. Its ${keptArtifacts} backup(s) are kept - deleting a rule never deletes backups.`
           : "Rule deleted"
       );
       invalidate();
@@ -292,7 +292,7 @@ export function BackupsView() {
                 variant="outline"
                 size="sm"
                 onClick={() => window.open("/api/backups/recovery-sheet", "_blank")}
-                title="Download a printable page telling you how to restore these backups without Bench — paths, object keys, checksums and commands"
+                title="Download a printable page telling you how to restore these backups without Bench - paths, object keys, checksums and commands"
               >
                 <FileText aria-hidden />
                 Recovery sheet
@@ -307,8 +307,8 @@ export function BackupsView() {
         onValueChange={setTab}
         className="flex min-h-0 flex-1 flex-col overflow-hidden"
       >
-        {/* Styling comes from the shared tab component — the underline
-            indicator every other tabbed page in Bench uses — rather than a
+        {/* Styling comes from the shared tab component - the underline
+            indicator every other tabbed page in Bench uses - rather than a
             second look invented here. */}
         <TabsList className="px-2">
           <TabsTrigger value="setup">Setup</TabsTrigger>
@@ -351,7 +351,7 @@ export function BackupsView() {
                   title: `Delete "${policy.name}"?`,
                   message:
                     policy.encryption === "passphrase"
-                      ? "It stops running. The backups it already took are kept, and so is the passphrase that opens them — Bench forgets that only once the last encrypted copy is gone."
+                      ? "It stops running. The backups it already took are kept, and so is the passphrase that opens them - Bench forgets that only once the last encrypted copy is gone."
                       : "It stops running. The backups it already took are kept and stay restorable.",
                   destructiveLabel: "Delete rule",
                   onConfirm: () => removeRule.mutate(policy.id),

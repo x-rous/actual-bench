@@ -69,7 +69,7 @@ export function InventoryTab({
             <li className={cn("flex gap-2", !needsDestination && "text-foreground/60 line-through")}>
               <span aria-hidden>1.</span>
               <span>
-                Add a <strong className="font-medium">destination</strong> — a folder on this server,
+                Add a <strong className="font-medium">destination</strong> - a folder on this server,
                 or an S3-compatible bucket. Two of them, if you want to survive losing the machine.
               </span>
             </li>
@@ -100,7 +100,7 @@ export function InventoryTab({
           {!needsDestination && data.sources.length === 0 && (
             <p className="mt-4 rounded-md border border-amber-400/40 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-950/20 dark:text-amber-300">
               To back up a budget on a schedule, Bench needs a connection enrolled for unattended use
-              — a scheduled backup runs with no browser open.{" "}
+              - a scheduled backup runs with no browser open.{" "}
               <Link href="/sync" className="underline underline-offset-4">
                 Enrol one in Budget File Sync
               </Link>

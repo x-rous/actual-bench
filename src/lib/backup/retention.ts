@@ -149,7 +149,7 @@ export function planRetention(
       };
 
       if (artifact.pinned) {
-        decide("Pinned — kept until you unpin it.", true);
+        decide("Pinned - kept until you unpin it.", true);
         continue;
       }
       if (artifact.protectedUntil && new Date(artifact.protectedUntil) > now) {
@@ -159,8 +159,8 @@ export function planRetention(
       if (artifact.id === survivor?.id) {
         decide(
           artifact.verificationStatus === "passed"
-            ? "Newest verified copy — Bench never prunes the last good one."
-            : "Newest copy — nothing verified is available to keep instead.",
+            ? "Newest verified copy - Bench never prunes the last good one."
+            : "Newest copy - nothing verified is available to keep instead.",
           true
         );
         continue;
@@ -170,7 +170,7 @@ export function planRetention(
         continue;
       }
       if (artifact.tier === "manual") {
-        decide("Taken by hand — Bench does not expire manual backups.", true);
+        decide("Taken by hand - Bench does not expire manual backups.", true);
         continue;
       }
       if (artifact.tier === "auto") {

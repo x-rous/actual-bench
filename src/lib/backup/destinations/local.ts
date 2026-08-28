@@ -92,7 +92,7 @@ export async function inspectLocalPath(rawPath: string): Promise<{
       name: "Path",
       status: "fail",
       detail:
-        "This is the directory holding Bench's own database. Backups must not share it — use a subdirectory such as " +
+        "This is the directory holding Bench's own database. Backups must not share it - use a subdirectory such as " +
         `${join(appDbDir, "backups")}.`,
     });
     return { checks, facts };
@@ -166,7 +166,7 @@ export async function inspectLocalPath(rawPath: string): Promise<{
         name: "Separation",
         status: "warn",
         detail:
-          "This is the same device as Bench's own data. It protects you from mistakes, but not from losing the disk — add a second destination for that.",
+          "This is the same device as Bench's own data. It protects you from mistakes, but not from losing the disk - add a second destination for that.",
       });
     } else if (sameDevice === false) {
       checks.push({ name: "Separation", status: "pass", detail: "A different device from Bench's data." });

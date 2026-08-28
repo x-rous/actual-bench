@@ -170,7 +170,7 @@ export function BackupRuleDialog({
             </select>
             <span className="block text-muted-foreground">
               Bench&rsquo;s settings are your sync rules, mappings, reconciliation sessions and
-              automations — everything you have taught it, which lives nowhere else.
+              automations - everything you have taught it, which lives nowhere else.
             </span>
           </label>
 
@@ -180,7 +180,7 @@ export function BackupRuleDialog({
               {sources.length === 0 ? (
                 <span className="block rounded-md border border-amber-400/40 bg-amber-50 p-2 text-amber-800 dark:bg-amber-950/20 dark:text-amber-300">
                   No budget is enrolled for unattended use yet. A scheduled backup runs with the
-                  browser closed, so it needs credentials the server can use on its own — enrol a
+                  browser closed, so it needs credentials the server can use on its own - enrol a
                   connection in Budget File Sync first.
                 </span>
               ) : (
@@ -253,7 +253,7 @@ export function BackupRuleDialog({
               <span className="font-medium">Encrypt these backups</span>
               <span className="block text-muted-foreground">
                 {vaultEnabled
-                  ? "Worth it when a copy goes somewhere you do not control. Bench cannot recover an encrypted backup without the passphrase — nobody can."
+                  ? "Worth it when a copy goes somewhere you do not control. Bench cannot recover an encrypted backup without the passphrase - nobody can."
                   : "Set SYNC_VAULT_KEY on the server to enable encryption."}
               </span>
             </span>
@@ -296,9 +296,9 @@ export function BackupRuleDialog({
                     setVerificationLevel(event.target.value as BackupPolicy["verificationLevel"])
                   }
                 >
-                  <option value="archive">Quick — it is a valid archive</option>
-                  <option value="data">Normal — open the database and count what is inside</option>
-                  <option value="deep">Thorough — the full Budget File Health check</option>
+                  <option value="archive">Quick - it is a valid archive</option>
+                  <option value="data">Normal - open the database and count what is inside</option>
+                  <option value="deep">Thorough - the full Budget File Health check</option>
                 </select>
               </label>
 
@@ -325,7 +325,7 @@ export function BackupRuleDialog({
                 </div>
                 <p className="text-muted-foreground">
                   Bench never deletes a pinned copy, anything newer than{" "}
-                  {retention.minimumAgeHours}h, or the newest verified copy — whatever these numbers
+                  {retention.minimumAgeHours}h, or the newest verified copy - whatever these numbers
                   say.
                 </p>
               </fieldset>

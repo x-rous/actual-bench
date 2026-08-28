@@ -74,7 +74,7 @@ export function BackupsTable({ artifacts, selectedId, onOpen }: Props) {
               >
                 <td className="px-4 py-2 whitespace-nowrap">
                   {/* A real button, not a clickable row: everything a backup
-                      can do — look inside, download, pin, delete — lives behind
+                      can do - look inside, download, pin, delete - lives behind
                       opening it, so a mouse-only row would put the whole
                       feature out of reach for anyone not using one. The row
                       stays clickable as a convenience on top. */}

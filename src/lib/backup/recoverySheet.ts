@@ -31,7 +31,7 @@ export function buildRecoverySheet(db: SqliteDatabase, now: Date = new Date()): 
   const artifacts = listBackupArtifacts(db, { limit: 20 });
   const lines: string[] = [];
 
-  lines.push("# Actual Bench — Backup Recovery Sheet");
+  lines.push("# Actual Bench - Backup Recovery Sheet");
   lines.push("");
   lines.push(`Generated ${now.toISOString().replace("T", " ").slice(0, 16)} UTC.`);
   lines.push("");
@@ -48,14 +48,14 @@ export function buildRecoverySheet(db: SqliteDatabase, now: Date = new Date()): 
     for (const destination of destinations) {
       const config = destination.config.data as Record<string, unknown>;
       if (destination.kind === "local") {
-        lines.push(`- **${destination.name}** — folder on the Bench server: \`${String(config.path ?? "")}\``);
+        lines.push(`- **${destination.name}** - folder on the Bench server: \`${String(config.path ?? "")}\``);
         lines.push(
           "  - If the server is gone, this folder is gone too unless it was a mounted volume or a network share. Check where that volume actually lives."
         );
       } else {
         const endpoint = config.endpoint ? String(config.endpoint) : "https://s3.amazonaws.com";
         lines.push(
-          `- **${destination.name}** — S3-compatible bucket \`${String(config.bucket ?? "")}\`${
+          `- **${destination.name}** - S3-compatible bucket \`${String(config.bucket ?? "")}\`${
             config.prefix ? ` under \`${String(config.prefix)}\`` : ""
           }`
         );
@@ -71,7 +71,7 @@ export function buildRecoverySheet(db: SqliteDatabase, now: Date = new Date()): 
   lines.push("## What is in them");
   lines.push("");
   lines.push(
-    "Every backup is stored beside a `.manifest.json` file describing it: what it is, when it was taken, its SHA-256 checksum, and whether it is encrypted. If this sheet is out of date, the manifests are not — read those."
+    "Every backup is stored beside a `.manifest.json` file describing it: what it is, when it was taken, its SHA-256 checksum, and whether it is encrypted. If this sheet is out of date, the manifests are not - read those."
   );
   lines.push("");
   if (artifacts.length > 0) {
@@ -91,7 +91,7 @@ export function buildRecoverySheet(db: SqliteDatabase, now: Date = new Date()): 
           artifact.kind === "budget" ? artifact.sourceBudgetName ?? "Budget" : "Bench settings"
         } | ${formatBytes(artifact.sizeBytes)} | ${
           artifact.verificationStatus === "passed" ? "yes" : "no"
-        } | ${locations.join("<br>") || "—"} |`
+        } | ${locations.join("<br>") || "-"} |`
       );
     }
     lines.push("");
@@ -108,7 +108,7 @@ export function buildRecoverySheet(db: SqliteDatabase, now: Date = new Date()): 
     );
     lines.push("");
     lines.push(
-      "Without the passphrase these files cannot be recovered by anyone, including you. Bench cannot reset it. If you do not know where that passphrase is written down, stop and fix that now — it is the single point of failure in this entire arrangement."
+      "Without the passphrase these files cannot be recovered by anyone, including you. Bench cannot reset it. If you do not know where that passphrase is written down, stop and fix that now - it is the single point of failure in this entire arrangement."
     );
     lines.push("");
     lines.push("The file carries its own parameters, so it can be decrypted with nothing but itself:");
@@ -145,14 +145,14 @@ export function buildRecoverySheet(db: SqliteDatabase, now: Date = new Date()): 
   lines.push("");
   lines.push("1. Copy the `.zip` you want off the destination (decrypt it first if it ends in `.enc`).");
   lines.push(
-    "2. Check it is intact: `sha256sum yourfile.zip` should match `checksumSha256` in the manifest beside it — or `plaintextChecksumSha256` if it was encrypted."
+    "2. Check it is intact: `sha256sum yourfile.zip` should match `checksumSha256` in the manifest beside it - or `plaintextChecksumSha256` if it was encrypted."
   );
   lines.push(
     "3. In Actual Budget, choose **Import file → Actual**, and pick the ZIP. Actual creates a *new* budget file from it; your existing budgets are untouched."
   );
   lines.push("");
   lines.push(
-    "There is nothing Bench-specific about that ZIP — it is exactly what Actual's own export produces, so Actual can open it whether or not Bench still exists. That is the point."
+    "There is nothing Bench-specific about that ZIP - it is exactly what Actual's own export produces, so Actual can open it whether or not Bench still exists. That is the point."
   );
   lines.push("");
   lines.push("If you only want to look inside one without importing it:");

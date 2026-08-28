@@ -112,7 +112,7 @@ export async function takeSafetyRecoveryPoint(
     if (recent) {
       return {
         status: "reused",
-        message: `Using the recovery point taken at ${recent.createdAt.slice(11, 16)} — it is recent enough.`,
+        message: `Using the recovery point taken at ${recent.createdAt.slice(11, 16)} - it is recent enough.`,
         artifactId: recent.id,
         takenAt: recent.createdAt,
       };

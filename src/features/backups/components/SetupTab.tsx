@@ -125,7 +125,7 @@ export function SetupTab({
               className="h-7 text-xs"
               onClick={onScanDestinations}
               disabled={discovering || data.destinations.length === 0}
-              title="Read the manifest beside every backup in your destinations and add anything Bench does not already know about. It only adds — nothing is changed, moved or deleted."
+              title="Read the manifest beside every backup in your destinations and add anything Bench does not already know about. It only adds - nothing is changed, moved or deleted."
             >
               {discovering ? (
                 <Loader2 className="animate-spin" aria-hidden />
@@ -148,7 +148,7 @@ export function SetupTab({
       >
         {data.destinations.length === 0 ? (
           <p className="text-xs text-muted-foreground">
-            Nowhere to put a backup yet. Add a folder on this server, or an S3-compatible bucket —
+            Nowhere to put a backup yet. Add a folder on this server, or an S3-compatible bucket -
             two of them if you want to survive losing the machine.
           </p>
         ) : (
@@ -223,7 +223,7 @@ export function SetupTab({
                             Test
                           </Button>
                           {/* Editing and removing are rarer than testing, and
-                              one of them is destructive — so they sit behind a
+                              one of them is destructive - so they sit behind a
                               menu rather than beside it at equal weight. */}
                           <DropdownMenu>
                             <DropdownMenuTrigger
@@ -267,7 +267,7 @@ export function SetupTab({
             disabled={data.destinations.length === 0}
             title={
               data.destinations.length === 0
-                ? "Add a destination first — a rule needs somewhere to write"
+                ? "Add a destination first - a rule needs somewhere to write"
                 : "Choose what to copy, where to put it, how often, and how long to keep it"
             }
           >
@@ -279,7 +279,7 @@ export function SetupTab({
         {data.policies.length === 0 ? (
           <p className="text-xs text-muted-foreground">
             {data.destinations.length === 0
-              ? "Add a destination first — a rule needs somewhere to write."
+              ? "Add a destination first - a rule needs somewhere to write."
               : "No rule yet, so nothing is being copied on a schedule."}
           </p>
         ) : (
@@ -317,8 +317,8 @@ export function SetupTab({
                         {policy.name}
                       </span>
                       {/* The rule says what should happen; its automation says
-                          what does. When they disagree — a health auto-pause,
-                          or Pause pressed on the Automations page — this shows
+                          what does. When they disagree - a health auto-pause,
+                          or Pause pressed on the Automations page - this shows
                           the one that is true, not the comfortable one. */}
                       {!policy.enabled ? (
                         <span className="block text-muted-foreground">paused</span>
@@ -328,7 +328,7 @@ export function SetupTab({
                         </span>
                       ) : policy.automation && !policy.automation.enabled ? (
                         <span className="block text-amber-700 dark:text-amber-400">
-                          paused on the Automations page — not running
+                          paused on the Automations page - not running
                         </span>
                       ) : policy.automation?.running ? (
                         <span className="block text-muted-foreground">running now…</span>
@@ -376,7 +376,7 @@ export function SetupTab({
                           size="sm"
                           className="h-6 text-xs"
                           render={<Link href="/automations" />}
-                          title="Every run, with its result, duration, log and any retries — on the Automations page"
+                          title="Every run, with its result, duration, log and any retries - on the Automations page"
                         >
                           <History aria-hidden />
                           Run history
@@ -463,7 +463,7 @@ export function SetupTab({
           <span>
             <span className="font-medium">Take a recovery point before risky changes</span>
             <span className="block text-muted-foreground">
-              Before Bench saves a batch of deletions or payee merges, it copies the budget first — so
+              Before Bench saves a batch of deletions or payee merges, it copies the budget first - so
               there is something from five minutes ago, not just from last night. Several changes in
               one session share a recovery point, and these expire on their own instead of piling up.
               If one cannot be taken, Bench asks before continuing rather than quietly going ahead.

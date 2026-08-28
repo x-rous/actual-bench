@@ -407,7 +407,7 @@ describe("the Recovery Center", () => {
     const scan = await screen.findByRole("button", { name: /scan for backups/i });
     expect(scan).toHaveAttribute(
       "title",
-      expect.stringContaining("only adds — nothing is changed, moved or deleted")
+      expect.stringContaining("only adds - nothing is changed, moved or deleted")
     );
 
     fireEvent.click(scan);

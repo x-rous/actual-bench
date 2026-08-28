@@ -131,7 +131,7 @@ export function buildBackupReadiness(db: SqliteDatabase, now: Date = new Date())
       headline: "Nothing is being backed up.",
       detail:
         destinations.length === 0
-          ? "Add a destination — a folder on this server, or an S3-compatible bucket — and Bench can start keeping verified copies."
+          ? "Add a destination - a folder on this server, or an S3-compatible bucket - and Bench can start keeping verified copies."
           : "Add a backup rule to start taking copies on a schedule.",
       issues,
     };

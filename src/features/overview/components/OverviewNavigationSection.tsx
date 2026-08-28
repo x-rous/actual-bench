@@ -92,9 +92,13 @@ export function OverviewNavigationSection() {
       <section className="space-y-3 pt-1">
         <div className="space-y-1">
           <h2 className="text-lg font-semibold tracking-tight">{MANAGE_DATA_TITLE}</h2>
-          <p className="max-w-5xl text-[13px] leading-5 text-muted-foreground/80">{MANAGE_DATA_DESCRIPTION}</p>
+          <p className="max-w-4xl text-[13px] leading-5 text-muted-foreground/80">{MANAGE_DATA_DESCRIPTION}</p>
         </div>
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        {/* Four across at desk width, five on a large display: sixteen cards in
+            three columns pushed the second half of the page below the fold, and
+            a launcher you have to scroll to use is a slower version of the
+            sidebar it duplicates. */}
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
           {ENTITY_CARDS.map((card) => (
             <ActionCard key={card.id} card={card} />
           ))}
@@ -107,7 +111,7 @@ export function OverviewNavigationSection() {
           <p className="max-w-3xl text-[13px] leading-5 text-muted-foreground/80">{ADVANCED_TOOLS_DESCRIPTION}</p>
         </div>
 
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
           {TOOL_CARDS.map((card) => (
             <ActionCard key={card.id} card={card} />
           ))}
