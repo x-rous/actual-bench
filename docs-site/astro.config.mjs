@@ -70,6 +70,7 @@ export default defineConfig({
 						{ label: 'ActualQL', link: '/user-guide/actualql/' },
 						{ label: 'FX Rates', link: '/user-guide/fx-rates/' },
 						{ label: 'Bundle Export / Import', link: '/user-guide/bundle-export-import/' },
+						{ label: 'Backups', link: '/user-guide/backups/' },
 					],
 				},
 				{

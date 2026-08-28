@@ -74,6 +74,24 @@ One place for everything Actual Bench runs on a schedule, on a shared engine rat
 
 See `docs/AUTOMATIONS.md`.
 
+## Backups
+
+Verified copies of your budget and of Bench's own settings, taken on a schedule, kept in as many places as you like, and checked by **opening them** rather than by assuming. Open it from **Tools → Backups**.
+
+- **A readiness statement, deliberately pessimistic** — one sentence saying what you would get back and how old it is. A copy Bench has never opened, a destination that failed last night, or every copy sitting in one place all pull it down, with the reasons listed underneath.
+- **Destinations**: a folder on the server (any mounted volume or NAS share) and **S3-compatible** buckets — AWS, MinIO, Backblaze B2, Cloudflare R2, Wasabi, Garage. Paths are checked while you type them; every save tests the destination by writing real bytes, reading them back and comparing checksums. Keys are sealed with `SYNC_VAULT_KEY` and never stored in readable form.
+- **Verification, at three depths** — a valid archive; opened, integrity-checked and counted (the default); or the full Budget File Health suite. Always on the plaintext, **before** encryption. A copy that fails is still stored and clearly marked, because a backup Bench distrusts beats no backup as long as nobody believes it is fine.
+- **Weekly re-checking (scrub)** — storage rots quietly, so Bench re-reads the newest copies in each destination, re-computes checksums, and opens the newest one properly, decrypting first where it holds the passphrase so an encrypted backup is proved **decryptable** rather than merely present. Also available on demand.
+- **Retention written as refusals** — never a pin, never a protected copy, never anything under the minimum age, never a backup you took by hand, and **never the newest verified copy**. No combination of settings can empty a destination. The prune preview is produced by the code that does the pruning, not an approximation of it.
+- **Optional encryption**, off by default: AES-256-GCM with scrypt, parameters carried in the file itself so a copy can be decrypted with nothing but the passphrase. Bench cannot recover one without it, and neither can anyone else.
+- **Recovery points before risky changes** — a copy taken before a batch of deletions or payee merges, debounced across a session, protected rather than pinned so it expires on its own. If one cannot be taken, Bench asks before continuing instead of silently dropping the safety net.
+- **Look inside without restoring** — accounts, payees, transactions and date range, so you can tell whether this is the copy you want.
+- **Restore that does not depend on Bench** — download the ZIP and use Actual's own **Import file → Actual**, which creates a *new* budget and never touches the one you are using. Bench does not import for you: Actual's HTTP API has no import endpoint, and a half-worked restore is worse than a deliberate one.
+- **Survives losing Bench** — every copy is written with a manifest beside it, so **Find backups** rebuilds the whole inventory from a bare destination, and the **recovery sheet** (Markdown, no secrets in it) documents the paths, keys, commands and encrypted file format for restoring with `unzip`, `sqlite3` and `node` alone.
+- Not in scope: restoring into an existing budget in place, continuous or point-in-time backup, backing up an Actual server's own database or its other budgets, and notification channels.
+
+See `docs/BACKUPS.md`.
+
 ## Budget File Sync
 
 A workspace for syncing data between budget files as saved one-way flows. One unified engine covers every data type — **transactions, payees, and categories** — so preview, apply, run history, the review queue, and the whole safe-only automation layer work identically for each. It is **preview-first** and conservative by default (**create-only**), with opt-in advanced modes (update, delete, grouped splits, same-budget) that never write silently. Every data type - transactions, payees, and categories - syncs in **both Direct and HTTP API Server mode**, in any combination (Direct-to-HTTP, HTTP-to-Direct, and same-mode).

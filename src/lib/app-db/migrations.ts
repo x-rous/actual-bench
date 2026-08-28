@@ -1,6 +1,12 @@
 import type { SqliteDatabase } from "./types";
 import {
   APP_META_TABLE_SQL,
+  BACKUP_ARTIFACT_LOCATION_TABLE_SQL,
+  BACKUP_ARTIFACT_TABLE_SQL,
+  BACKUP_CREDENTIAL_TABLE_SQL,
+  BACKUP_DESTINATION_TABLE_SQL,
+  BACKUP_INDEX_SQL,
+  BACKUP_POLICY_TABLE_SQL,
   AUTOMATION_DEFINITION_TABLE_SQL,
   AUTOMATION_INDEX_SQL,
   AUTOMATION_RUN_TABLE_SQL,
@@ -33,7 +39,7 @@ import {
 import { KDF_VERSION_META_KEY, SALT_META_KEY, VERIFIER_META_KEY } from "./vaultMetaKeys";
 import { AppDbUnavailableError } from "./errors";
 
-export const LATEST_SCHEMA_VERSION = 19;
+export const LATEST_SCHEMA_VERSION = 22;
 
 type Migration = {
   version: number;
@@ -248,6 +254,38 @@ const MIGRATIONS: readonly Migration[] = [
     // so the column is added on its own, guarded, and is a no-op on a database
     // that got the corrected v18.
     apply: applyAutomationClaimColumn,
+  },
+  {
+    version: 20,
+    // Verified backup storage (RD-077 / PR-047a). Additive: four new tables and
+    // their indexes, read by nothing yet, so the upgrade is reversible by
+    // dropping them.
+    statements: [
+      BACKUP_DESTINATION_TABLE_SQL,
+      BACKUP_POLICY_TABLE_SQL,
+      BACKUP_ARTIFACT_TABLE_SQL,
+      BACKUP_ARTIFACT_LOCATION_TABLE_SQL,
+      ...BACKUP_INDEX_SQL,
+    ],
+  },
+  {
+    version: 21,
+    // Sealed credentials for backup destinations and backup encryption
+    // (RD-077 / PR-047b). Additive.
+    statements: [BACKUP_CREDENTIAL_TABLE_SQL],
+  },
+  {
+    version: 22,
+    // A backup rule owns its own schedule (RD-077 / PR-047d): people think
+    // "back up nightly at 2am" as part of the rule, not as a separate object.
+    // The automation engine mirrors these into automations. Additive.
+    apply(db) {
+      addColumnIfMissing(db, "backup_policies", "schedule_kind", "text NOT NULL DEFAULT 'cron'");
+      addColumnIfMissing(db, "backup_policies", "cron_expression", "text");
+      addColumnIfMissing(db, "backup_policies", "interval_minutes", "integer");
+      addColumnIfMissing(db, "backup_policies", "timezone", "text NOT NULL DEFAULT 'UTC'");
+      addColumnIfMissing(db, "backup_policies", "scrub_enabled", "integer NOT NULL DEFAULT 1");
+    },
   },
 ];
 

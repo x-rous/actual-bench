@@ -522,3 +522,149 @@ export const AUTOMATION_INDEX_SQL = [
   // The scheduler's selection query: enabled automations ordered by when they are due.
   "CREATE INDEX IF NOT EXISTS idx_automation_definitions_due ON automation_definitions(enabled, next_run_at)",
 ] as const;
+
+// ── Verified backup & recovery (RD-077 / PR-047a) ────────────────────────────
+//
+// Four tables, because the relationships are genuinely not one-to-one and
+// flattening them would lose the distinction the feature exists to make:
+//
+//   * a *destination* fails independently of any run that used it, so its
+//     health lives with it;
+//   * an *artifact* is one thing that was backed up — its identity, contents
+//     and verification belong to it, not to the place it landed;
+//   * a *location* is one copy of that artifact in one destination. An artifact
+//     in two destinations is one artifact in two places, and a failure in one
+//     of them must never read as a failure of both.
+//
+// No table holds a secret. S3 credentials and any backup passphrase are vault
+// references; the envelope guard rejects credential-shaped fields in config.
+export const BACKUP_DESTINATION_TABLE_SQL = `
+CREATE TABLE IF NOT EXISTS backup_destinations (
+  id text PRIMARY KEY,
+  name text NOT NULL,
+  -- 'local' | 's3'
+  kind text NOT NULL,
+  enabled integer NOT NULL DEFAULT 1,
+  -- Non-secret settings: an absolute path, or bucket/region/endpoint/prefix.
+  config_json text NOT NULL,
+  -- Vault fingerprint for the destination's credentials. Never a secret.
+  credential_ref text,
+  last_success_at text,
+  last_failure_at text,
+  last_failure_reason text,
+  created_at text NOT NULL,
+  updated_at text NOT NULL
+);
+`;
+
+export const BACKUP_POLICY_TABLE_SQL = `
+CREATE TABLE IF NOT EXISTS backup_policies (
+  id text PRIMARY KEY,
+  name text NOT NULL,
+  enabled integer NOT NULL DEFAULT 1,
+  -- 'budget' | 'app-db' | 'both'
+  contents text NOT NULL DEFAULT 'both',
+  -- Which connection/budget this policy backs up: JSON envelope.
+  source_ref_json text NOT NULL,
+  -- Ordered destination ids; a policy fans out to all of them.
+  destination_ids_json text NOT NULL DEFAULT '[]',
+  -- 'archive' | 'data' | 'deep'
+  verification_level text NOT NULL DEFAULT 'data',
+  -- 'none' | 'passphrase'
+  encryption text NOT NULL DEFAULT 'none',
+  -- Vault fingerprint for a remembered backup passphrase, so unattended scrub
+  -- can re-verify encrypted artifacts. Absent means scrub reports that it
+  -- cannot read them rather than pretending it did.
+  encryption_credential_ref text,
+  -- Tiers, minimum age, and the automatic-safety-point protection window.
+  retention_json text NOT NULL,
+  created_at text NOT NULL,
+  updated_at text NOT NULL
+);
+`;
+
+export const BACKUP_ARTIFACT_TABLE_SQL = `
+CREATE TABLE IF NOT EXISTS backup_artifacts (
+  id text PRIMARY KEY,
+  -- Null for an artifact discovered from a manifest whose policy is gone: the
+  -- file is still real and still restorable, which is the whole point.
+  policy_id text REFERENCES backup_policies(id) ON DELETE SET NULL,
+  -- 'budget' | 'app-db'
+  kind text NOT NULL,
+  created_at text NOT NULL,
+  source_budget_id text,
+  source_budget_name text,
+  size_bytes integer NOT NULL DEFAULT 0,
+  -- Of the bytes as stored. When encrypted, plaintext_checksum_sha256 is of
+  -- the archive before encryption, so a restore can be checked end to end.
+  checksum_sha256 text NOT NULL,
+  plaintext_checksum_sha256 text,
+  encrypted integer NOT NULL DEFAULT 0,
+  -- KDF, salt and IV. Never the key.
+  encryption_json text,
+  -- 'manual' | 'auto' | 'daily' | 'weekly' | 'monthly' | 'yearly'
+  tier text NOT NULL DEFAULT 'manual',
+  -- A user pin is permanent; protected_until is the automatic safety point's
+  -- window, after which it prunes like anything else.
+  pinned integer NOT NULL DEFAULT 0,
+  protected_until text,
+  -- "before payee cleanup apply" — what makes the inventory read as history.
+  taken_before text,
+  verification_level text,
+  -- 'unverified' | 'passed' | 'failed'
+  verification_status text NOT NULL DEFAULT 'unverified',
+  verified_at text,
+  -- Counts, date range, integrity result, anomaly findings.
+  verification_json text,
+  manifest_version integer NOT NULL DEFAULT 1,
+  bench_version text,
+  notes text
+);
+`;
+
+export const BACKUP_ARTIFACT_LOCATION_TABLE_SQL = `
+CREATE TABLE IF NOT EXISTS backup_artifact_locations (
+  id text PRIMARY KEY,
+  artifact_id text NOT NULL REFERENCES backup_artifacts(id) ON DELETE CASCADE,
+  destination_id text REFERENCES backup_destinations(id) ON DELETE SET NULL,
+  -- Absolute path, or object key within the destination's prefix.
+  object_key text NOT NULL,
+  -- 'stored' | 'failed' | 'missing' | 'deleted'
+  status text NOT NULL DEFAULT 'stored',
+  uploaded_at text,
+  last_verified_at text,
+  last_error text,
+  created_at text NOT NULL,
+  updated_at text NOT NULL
+);
+`;
+
+export const BACKUP_INDEX_SQL = [
+  "CREATE INDEX IF NOT EXISTS idx_backup_artifacts_policy_created ON backup_artifacts(policy_id, created_at)",
+  "CREATE INDEX IF NOT EXISTS idx_backup_artifacts_kind_created ON backup_artifacts(kind, created_at)",
+  "CREATE INDEX IF NOT EXISTS idx_backup_locations_artifact ON backup_artifact_locations(artifact_id)",
+  "CREATE INDEX IF NOT EXISTS idx_backup_locations_destination ON backup_artifact_locations(destination_id, status)",
+  // One row per copy: the same artifact cannot be recorded twice in one place.
+  "CREATE UNIQUE INDEX IF NOT EXISTS idx_backup_locations_unique ON backup_artifact_locations(artifact_id, destination_id, object_key)",
+] as const;
+
+// ── Backup credentials (RD-077 / PR-047b) ────────────────────────────────────
+//
+// Sealed secrets for backup destinations and backup encryption, kept apart from
+// the sync vault because they answer to a different question: "what does Bench
+// need to write this copy", not "what does Bench need to reach your budget".
+// Same sealing (AES-256-GCM under SYNC_VAULT_KEY); the key is never stored.
+export const BACKUP_CREDENTIAL_TABLE_SQL = `
+CREATE TABLE IF NOT EXISTS backup_credentials (
+  ref text PRIMARY KEY,
+  -- 's3' | 'passphrase'
+  kind text NOT NULL,
+  label text NOT NULL DEFAULT '',
+  ciphertext text NOT NULL,
+  iv text NOT NULL,
+  auth_tag text NOT NULL,
+  created_at text NOT NULL,
+  updated_at text NOT NULL
+);
+`;
+

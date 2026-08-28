@@ -10,7 +10,16 @@ const SRC_DIR = join(ROOT, "src");
 const SQLITE_IMPORTS = ["@sqlite.org/sqlite-wasm"] as const;
 const FFLATE_IMPORTS = ["fflate"] as const;
 const SQLITE_ALLOWED_PREFIXES = ["src/features/budget-diagnostics/"];
-const FFLATE_ALLOWED_PREFIXES = ["src/features/budget-diagnostics/", "src/features/bundle/"];
+// `src/lib/backup/` is server-only by construction — every module in it imports
+// node:crypto or better-sqlite3 — so its ZIP parsing runs in Node and never
+// reaches a client bundle. That is the property this guard exists to protect,
+// and the reason the backup verifier can reuse the diagnostics ZIP handling
+// rather than growing a second copy of it.
+const FFLATE_ALLOWED_PREFIXES = [
+  "src/features/budget-diagnostics/",
+  "src/features/bundle/",
+  "src/lib/backup/",
+];
 const ALLOWED_TYPE_DECLARATIONS = new Set(["src/types/sqlite-wasm.d.ts"]);
 
 function listSourceFiles(dir: string): string[] {

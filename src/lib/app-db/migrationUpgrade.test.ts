@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import Database from "better-sqlite3";
 import { getAppDb, resetAppDbForTests } from "./connection";
+import { getBackupCredential, upsertBackupCredential } from "./backupCredentialRepository";
 import { LATEST_SCHEMA_VERSION } from "./migrations";
 import {
   getReconciliationSession,
@@ -20,6 +21,13 @@ import {
   listAutomations,
 } from "./automationRepository";
 import { createAutomationRun, listAutomationRuns } from "./automationRunRepository";
+import {
+  createBackupArtifact,
+  createBackupDestination,
+  listArtifactLocations,
+  listBackupDestinations,
+  recordArtifactLocation,
+} from "./backupRepository";
 
 /**
  * Upgrading a database that already holds real work.
@@ -373,6 +381,66 @@ describe("upgrading an existing database", () => {
     } finally {
       resetAppDbForTests();
       rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("adds backup storage to an older database (v20)", () => {
+    // Additive, and nothing reads these tables yet, so an install carrying real
+    // work should gain them without losing any of it.
+    const { root, path } = olderDatabase();
+    try {
+      const db = getAppDb(path);
+
+      const destination = createBackupDestination(db, {
+        name: "NAS volume",
+        kind: "local",
+        config: { version: 1, data: { path: "/mnt/backups" } },
+      });
+      const artifact = createBackupArtifact(db, {
+        kind: "budget",
+        checksumSha256: "c".repeat(64),
+        sizeBytes: 1024,
+      });
+      recordArtifactLocation(db, {
+        artifactId: artifact.id,
+        destinationId: destination.id,
+        objectKey: "/mnt/backups/a.zip",
+      });
+
+      expect(listBackupDestinations(db)).toHaveLength(1);
+      expect(listArtifactLocations(db, artifact.id)).toHaveLength(1);
+
+      // The pre-existing reconciliation work is untouched.
+      expect(getReconciliationSession(db, "sess-old")).not.toBeNull();
+    } finally {
+      resetAppDbForTests();
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("adds sealed backup credentials to an older database (v21)", () => {
+    const { root, path } = olderDatabase();
+    const previousKey = process.env.SYNC_VAULT_KEY;
+    process.env.SYNC_VAULT_KEY = "test-vault-key";
+    try {
+      const db = getAppDb(path);
+
+      upsertBackupCredential(db, {
+        ref: "dest-1",
+        kind: "s3",
+        secret: { accessKeyId: "AKIA", secretAccessKey: "shh" },
+      });
+
+      expect(getBackupCredential(db, "dest-1")).toEqual({
+        accessKeyId: "AKIA",
+        secretAccessKey: "shh",
+      });
+      expect(getReconciliationSession(db, "sess-old")).not.toBeNull();
+    } finally {
+      resetAppDbForTests();
+      rmSync(root, { recursive: true, force: true });
+      if (previousKey === undefined) delete process.env.SYNC_VAULT_KEY;
+      else process.env.SYNC_VAULT_KEY = previousKey;
     }
   });
 

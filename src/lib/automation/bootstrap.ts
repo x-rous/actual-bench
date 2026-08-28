@@ -1,4 +1,6 @@
 import { registerBankSyncJobType } from "./jobs/bankSync";
+import { registerBackupJobType } from "./jobs/backup";
+import { registerBackupScrubJobType } from "./jobs/backupScrub";
 import { registerBudgetFileSyncJobType } from "./jobs/budgetFileSync";
 
 /**
@@ -13,4 +15,6 @@ import { registerBudgetFileSyncJobType } from "./jobs/budgetFileSync";
 export function ensureAutomationJobTypesRegistered(): void {
   registerBudgetFileSyncJobType();
   registerBankSyncJobType();
+  registerBackupJobType();
+  registerBackupScrubJobType();
 }
