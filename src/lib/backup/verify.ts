@@ -175,20 +175,26 @@ export function verifyBudgetArchive(
     };
   }
 
+  // Advisory findings are worth reporting and must not condemn the copy. A
+  // missing metadata.json costs you the budget's name, not its data: the
+  // archive still imports. Letting it fail verification would exclude a
+  // perfectly restorable copy from being the newest verified one, which is the
+  // copy retention refuses to delete.
+  const advisories: string[] = [];
   let metadata: MetadataJson | null = null;
   const metadataBytes = normalized.get("metadata.json");
   if (!metadataBytes) {
-    findings.push("The archive has no metadata.json, so its budget name and id are unknown.");
+    advisories.push("The archive has no metadata.json, so its budget name and id are unknown.");
   } else {
     try {
       metadata = JSON.parse(strFromU8(metadataBytes)) as MetadataJson;
     } catch {
-      findings.push("The archive's metadata.json is not valid JSON.");
+      advisories.push("The archive's metadata.json is not valid JSON.");
     }
   }
 
   if (level === "archive") {
-    return { level, status: "passed", findings, content: {}, checksumSha256 };
+    return { level, status: "passed", findings: advisories, content: {}, checksumSha256 };
   }
 
   // better-sqlite3 needs a file. A temp copy is cheap next to the confidence of
@@ -222,8 +228,9 @@ export function verifyBudgetArchive(
 
     return {
       level,
+      // Only a fatal finding fails a copy; advisories travel with it.
       status: findings.length === 0 ? "passed" : "failed",
-      findings,
+      findings: [...findings, ...advisories],
       content,
       checksumSha256,
     };
@@ -236,6 +243,7 @@ export function verifyBudgetArchive(
         `The archive's database could not be opened: ${
           error instanceof Error ? error.message : String(error)
         }`,
+        ...advisories,
       ],
       content: {},
       checksumSha256,

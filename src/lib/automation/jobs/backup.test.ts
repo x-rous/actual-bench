@@ -236,6 +236,7 @@ describe("how a scrub is reported", () => {
     passed: 3,
     failed: 0,
     missing: 0,
+    skipped: 0,
     artifacts: [],
     ...overrides,
   });

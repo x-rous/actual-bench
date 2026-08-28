@@ -136,6 +136,31 @@ describe("carrying out a retention plan", () => {
     ).toBe("deleted");
   });
 
+  it("never lets a copy that was never stored protect one that was", async () => {
+    // Verification happens before the upload, so an artifact whose upload
+    // failed is still "verified". Left in the plan it could satisfy the
+    // last-good-copy rule while the real stored copy it stood in for was
+    // pruned.
+    const stored = storedArtifact("2026-08-20T02:00:00.000Z");
+    const neverStored = createBackupArtifact(db, {
+      policyId,
+      kind: "budget",
+      createdAt: "2026-08-27T02:00:00.000Z",
+      checksumSha256: "b".repeat(64),
+      sizeBytes: 10,
+      tier: "daily",
+      verificationStatus: "passed",
+      verificationLevel: "data",
+    });
+
+    const result = await prune(db, { artifacts: [neverStored, stored], retention, now });
+
+    // The stored copy survives as the newest verified one; the phantom is not
+    // considered at all.
+    expect(result.pruned).toEqual([]);
+    expect(getBackupArtifact(db, stored.id)).not.toBeNull();
+  });
+
   it("does nothing when the plan keeps everything", async () => {
     const only = storedArtifact("2026-08-27T02:00:00.000Z");
     const result = await prune(db, { artifacts: [only], retention, now });

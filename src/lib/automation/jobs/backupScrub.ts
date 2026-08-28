@@ -78,6 +78,7 @@ export const backupScrubJobType: AutomationJobType<BackupScrubConfig, BackupScru
     const checked = result.destinations.reduce((total, entry) => total + entry.checked, 0);
     const failed = result.destinations.reduce((total, entry) => total + entry.failed, 0);
     const missing = result.destinations.reduce((total, entry) => total + entry.missing, 0);
+    const skipped = result.destinations.reduce((total, entry) => total + entry.skipped, 0);
     const unreachable = result.destinations.filter((entry) => entry.error);
 
     if (failed > 0 || missing > 0) {
@@ -100,6 +101,18 @@ export const backupScrubJobType: AutomationJobType<BackupScrubConfig, BackupScru
     if (checked === 0) {
       return { outcome: "no_changes", itemCount: 0, message: "There are no stored copies to verify yet." };
     }
+
+    // A copy Bench could not open is not a verified copy, and the run should
+    // not read as though everything was checked.
+    if (skipped > 0) {
+      return {
+        outcome: "partial",
+        itemCount: checked - skipped,
+        message: `${checked - skipped} copy(ies) verified; ${skipped} could not be opened (no stored passphrase).`,
+        countsAsFailure: false,
+      };
+    }
+
     return { outcome: "ok", itemCount: checked, message: `${checked} copy(ies) verified.` };
   },
 

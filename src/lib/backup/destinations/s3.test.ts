@@ -94,6 +94,17 @@ describe("S3 destination behaviour", () => {
     expect(await adapter.head("gone.zip")).toBeNull();
   });
 
+  it("refuses to call an object gone when the bucket only refused to answer", async () => {
+    // A 403 is "you may not look", not "it is not there". Reading it as absence
+    // would have scrub reporting copies missing that are sitting safely in the
+    // bucket, and a refused delete recorded as done.
+    mockFetch(() => new Response("<Error><Code>AccessDenied</Code></Error>", { status: 403 }));
+    const adapter = new S3DestinationAdapter(destination({ bucket: "bench" }), credentials);
+
+    await expect(adapter.head("private.zip")).rejects.toThrow(/AccessDenied/);
+    await expect(adapter.remove("private.zip")).rejects.toThrow(/AccessDenied/);
+  });
+
   it("surfaces the provider's own error text, which is the only useful diagnostic", async () => {
     mockFetch(
       () =>

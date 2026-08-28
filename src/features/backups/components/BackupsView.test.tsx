@@ -263,6 +263,7 @@ describe("the Recovery Center", () => {
         passed: 2,
         failed: 1,
         missing: 0,
+        skipped: 0,
         artifacts: [],
       },
     ]);

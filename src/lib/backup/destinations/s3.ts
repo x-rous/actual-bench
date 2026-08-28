@@ -159,7 +159,11 @@ export class S3DestinationAdapter implements DestinationAdapter {
     }
 
     if (response.ok) return response;
-    if (options.expectMissing && (response.status === 404 || response.status === 403)) return response;
+    // Only 404 counts as absent. A 403 means Bench was refused, and treating
+    // that as "gone" is the dangerous direction: scrub would report copies as
+    // missing that are sitting safely in the bucket, and a delete that was
+    // refused would be recorded as done.
+    if (options.expectMissing && response.status === 404) return response;
 
     const text = await response.text().catch(() => "");
     const code = tagValue(text, "Code");

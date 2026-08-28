@@ -3,6 +3,7 @@ import {
   getBackupArtifact,
   getBackupDestination,
   getBackupPolicy,
+  listArtifactLocations,
   listBackupArtifacts,
   listDestinationLocations,
   recordArtifactLocation,
@@ -44,7 +45,12 @@ import { verifyAppDbArchive, verifyBudgetArchive } from "./verify";
 export type ScrubArtifactResult = {
   artifactId: string;
   objectKey: string;
-  status: "passed" | "failed" | "missing";
+  /**
+   * `skipped` is not a lesser pass: it means Bench could not open the copy and
+   * therefore cannot say whether it is good. Reporting that as verified is how
+   * a lost passphrase stays invisible until the day it matters.
+   */
+  status: "passed" | "failed" | "missing" | "skipped";
   level: BackupVerificationLevel | "checksum";
   detail: string;
 };
@@ -56,6 +62,8 @@ export type ScrubResult = {
   passed: number;
   failed: number;
   missing: number;
+  /** Present and unchanged, but not opened - so not verified. */
+  skipped: number;
   artifacts: ScrubArtifactResult[];
   error?: string;
 };
@@ -67,6 +75,25 @@ export type ScrubOptions = {
   deepest?: number;
   now?: Date;
 };
+
+/**
+ * Is this artifact still good somewhere other than here?
+ *
+ * Verification status lives on the artifact, but a scrub only ever looks at one
+ * destination. Marking the artifact failed because this copy is damaged would
+ * contradict the rule the whole design rests on - destinations fail
+ * independently - and would strip the "newest verified copy" protection from an
+ * artifact that is sitting intact in another bucket.
+ */
+function intactElsewhere(
+  db: SqliteDatabase,
+  artifactId: string,
+  thisDestinationId: string
+): boolean {
+  return listArtifactLocations(db, artifactId).some(
+    (location) => location.destinationId !== thisDestinationId && location.status === "stored"
+  );
+}
 
 function passphraseFor(db: SqliteDatabase, artifact: BackupArtifact): string | null {
   if (!artifact.encrypted || !artifact.policyId) return null;
@@ -97,6 +124,7 @@ export async function scrubDestination(
     passed: 0,
     failed: 0,
     missing: 0,
+    skipped: 0,
     artifacts: [],
   };
 
@@ -141,7 +169,14 @@ export async function scrubDestination(
 
       if (head.sizeBytes !== artifact.sizeBytes) {
         result.failed += 1;
-        recordArtifactVerification(db, artifact.id, {
+        recordArtifactLocation(db, {
+          artifactId: artifact.id,
+          destinationId: destination.id,
+          objectKey: location.objectKey,
+          status: "failed",
+          lastError: `Stored size ${head.sizeBytes} does not match the recorded ${artifact.sizeBytes} bytes.`,
+        });
+        if (!intactElsewhere(db, artifact.id, destination.id)) recordArtifactVerification(db, artifact.id, {
           level: artifact.verificationLevel ?? "archive",
           status: "failed",
           at,
@@ -168,7 +203,14 @@ export async function scrubDestination(
       const checksum = sha256(bytes);
       if (checksum !== artifact.checksumSha256) {
         result.failed += 1;
-        recordArtifactVerification(db, artifact.id, {
+        recordArtifactLocation(db, {
+          artifactId: artifact.id,
+          destinationId: destination.id,
+          objectKey: location.objectKey,
+          status: "failed",
+          lastError: "The stored bytes no longer match the checksum recorded when written.",
+        });
+        if (!intactElsewhere(db, artifact.id, destination.id)) recordArtifactVerification(db, artifact.id, {
           level: artifact.verificationLevel ?? "archive",
           status: "failed",
           at,
@@ -212,23 +254,18 @@ export async function scrubDestination(
       if (artifact.encrypted) {
         const passphrase = passphraseFor(db, artifact);
         if (!passphrase) {
-          // Not a failure: Bench simply cannot open it unattended. Say so
-          // rather than implying the copy is bad or that it is proven good.
-          recordArtifactLocation(db, {
-            artifactId: artifact.id,
-            destinationId: destination.id,
-            objectKey: location.objectKey,
-            status: "stored",
-            lastVerifiedAt: at,
-          });
-          result.passed += 1;
+          // Not a failure, and emphatically not a pass: Bench cannot open it,
+          // so it cannot say whether it is good. Counting this as verified -
+          // and stamping lastVerifiedAt - would let a lost passphrase look like
+          // a healthy backup right up until someone needed it.
+          result.skipped += 1;
           result.artifacts.push({
             artifactId: artifact.id,
             objectKey: location.objectKey,
-            status: "passed",
+            status: "skipped",
             level: "checksum",
             detail:
-              "Present and unchanged. Bench has no stored passphrase for it, so its contents were not opened.",
+              "Present and unchanged, but Bench has no stored passphrase for it, so its contents were not checked.",
           });
           continue;
         }
@@ -240,12 +277,14 @@ export async function scrubDestination(
           ? verifyBudgetArchive(plaintext, "deep")
           : verifyAppDbArchive(plaintext, "data");
 
-      recordArtifactVerification(db, artifact.id, {
-        level: outcome.level,
-        status: outcome.status,
-        at,
-        findings: { version: 1, data: { findings: outcome.findings } },
-      });
+      if (outcome.status === "passed" || !intactElsewhere(db, artifact.id, destination.id)) {
+        recordArtifactVerification(db, artifact.id, {
+          level: outcome.level,
+          status: outcome.status,
+          at,
+          findings: { version: 1, data: { findings: outcome.findings } },
+        });
+      }
       recordArtifactLocation(db, {
         artifactId: artifact.id,
         destinationId: destination.id,

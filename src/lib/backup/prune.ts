@@ -46,6 +46,24 @@ export type PruneResult = {
   freedBytes: number;
 };
 
+/**
+ * The artifacts retention is allowed to reason about: the ones that exist.
+ *
+ * `listBackupArtifacts` includes rows whose upload failed, and those are
+ * verified - verification happens before the copy is written. Left in, such a
+ * row could become the newest verified copy and satisfy the rule that protects
+ * it, while the real stored copy it was standing in for got pruned. A backup
+ * that is not anywhere protects nothing.
+ */
+export function storedArtifacts(
+  db: SqliteDatabase,
+  artifacts: BackupArtifact[]
+): BackupArtifact[] {
+  return artifacts.filter((artifact) =>
+    listArtifactLocations(db, artifact.id).some((location) => location.status === "stored")
+  );
+}
+
 export type PrunePlanInput = {
   artifacts: BackupArtifact[];
   retention: BackupPolicy["retention"];
@@ -54,7 +72,7 @@ export type PrunePlanInput = {
 
 /** Preview what a prune would do, without touching a destination. */
 export function previewPrune(db: SqliteDatabase, input: PrunePlanInput): PruneResult {
-  const plan = planRetention(input.artifacts, input.retention, input.now);
+  const plan = planRetention(storedArtifacts(db, input.artifacts), input.retention, input.now);
   return {
     dryRun: true,
     kept: plan.keep.length,
@@ -97,7 +115,7 @@ export async function prune(
 ): Promise<PruneResult> {
   if (input.dryRun) return previewPrune(db, input);
 
-  const plan = planRetention(input.artifacts, input.retention, input.now);
+  const plan = planRetention(storedArtifacts(db, input.artifacts), input.retention, input.now);
   const entries: PruneEntry[] = [];
   let failed = 0;
   let freedBytes = 0;

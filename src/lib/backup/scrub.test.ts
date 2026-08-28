@@ -159,7 +159,7 @@ describe("scrubbing a destination", () => {
     expect(result.artifacts[0].detail).toMatch(/Decrypted, opened and read/);
   });
 
-  it("says so plainly when it has no passphrase to open a copy with", async () => {
+  it("does not call a copy verified when it could not open it", async () => {
     const encryptedPolicy = createBackupPolicy(db, {
       name: "Off-site",
       destinationIds: [destination.id],
@@ -170,9 +170,46 @@ describe("scrubbing a destination", () => {
 
     const result = await scrubDestination(db, destination);
 
-    // Not a failure, and not a claim that it is fine either.
-    expect(result.passed).toBe(1);
+    // Not a failure, and emphatically not a pass: a lost passphrase would
+    // otherwise look like a healthy backup right up until someone needed it.
+    expect(result).toMatchObject({ passed: 0, failed: 0, skipped: 1 });
+    expect(result.artifacts[0].status).toBe("skipped");
     expect(result.artifacts[0].detail).toMatch(/no stored passphrase/);
+    // And nothing claims it was checked.
+    expect(listArtifactLocations(db, result.artifacts[0].artifactId)[0].lastVerifiedAt).toBeNull();
+  });
+
+  it("blames the copy, not the backup, when another destination still has it", async () => {
+    // Destinations fail independently. Marking the artifact failed here would
+    // strip the newest-verified-copy protection from a backup sitting intact in
+    // another bucket.
+    const { artifact, key } = store(budgetZip());
+    const elsewhere = createBackupDestination(db, {
+      name: "Off-site",
+      kind: "local",
+      config: { version: 1, data: { path: join(root, "elsewhere") } },
+    });
+    recordArtifactLocation(db, {
+      artifactId: artifact.id,
+      destinationId: elsewhere.id,
+      objectKey: key,
+      status: "stored",
+      uploadedAt: new Date().toISOString(),
+    });
+
+    const bytes = Buffer.from(readFileSync(join(volume, key)));
+    bytes[Math.floor(bytes.length / 2)] ^= 0xff;
+    writeFileSync(join(volume, key), bytes);
+
+    const result = await scrubDestination(db, destination);
+
+    expect(result.failed).toBe(1);
+    // The damaged copy is marked; the backup itself is still verified.
+    expect(getBackupArtifact(db, artifact.id)?.verificationStatus).toBe("passed");
+    const damaged = listArtifactLocations(db, artifact.id).find(
+      (entry) => entry.destinationId === destination.id
+    );
+    expect(damaged?.status).toBe("failed");
   });
 
   it("checksums the older copies rather than opening every one", async () => {
