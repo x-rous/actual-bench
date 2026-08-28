@@ -224,6 +224,35 @@ describe("scrubbing a destination", () => {
     expect(result.artifacts.filter((entry) => entry.level === "deep")).toHaveLength(1);
   });
 
+  it("stops calling a copy verified when reading it threw", async () => {
+    // Decryption with the wrong stored passphrase throws rather than returning
+    // a verdict. Leaving the artifact verified would keep it counted as the
+    // newest verified copy - the one retention refuses to delete - while
+    // nobody can open it.
+    upsertBackupCredential(db, { ref: "pol-secret", kind: "passphrase", secret: { passphrase: "wrong" } });
+    const encryptedPolicy = createBackupPolicy(db, {
+      name: "Off-site",
+      destinationIds: [destination.id],
+      encryption: "passphrase",
+      encryptionCredentialRef: "pol-secret",
+    });
+    const { bytes } = encryptArchive(budgetZip(), "the actual passphrase");
+    const { artifact } = store(bytes, {
+      policyId: encryptedPolicy.id,
+      encrypted: true,
+      encryptionCredentialRef: "pol-secret",
+      verificationStatus: "passed",
+    });
+
+    const result = await scrubDestination(db, destination);
+
+    expect(result.failed).toBe(1);
+    expect(getBackupArtifact(db, artifact.id)?.verificationStatus).toBe("failed");
+    // The file is still there; it is the reading of it that failed.
+    expect(listArtifactLocations(db, artifact.id)[0].status).toBe("stored");
+    expect(listArtifactLocations(db, artifact.id)[0].lastError).toMatch(/passphrase|altered/i);
+  });
+
   it("records the destination's health, so a bad scrub is visible on it", async () => {
     const { key } = store(budgetZip());
     rmSync(join(volume, key));

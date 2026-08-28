@@ -127,6 +127,10 @@ export const backupScrubJobType: AutomationJobType<BackupScrubConfig, BackupScru
           passed: entry.passed,
           failed: entry.failed,
           missing: entry.missing,
+          // Kept in the stored result: a run that could not open two copies
+          // reads very differently from one that verified them all, and the
+          // history is where anyone looks afterwards.
+          skipped: entry.skipped,
           error: entry.error ?? null,
           artifacts: entry.artifacts.map((artifact) => ({
             artifactId: artifact.artifactId,

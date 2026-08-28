@@ -312,6 +312,28 @@ export async function scrubDestination(
     } catch (error) {
       result.failed += 1;
       const message = error instanceof Error ? error.message : String(error);
+
+      // A copy that threw on the way to being read is a copy Bench could not
+      // read. Leaving the artifact's verification alone would keep it counted
+      // as the newest verified copy - the one retention refuses to delete -
+      // while nobody can actually open it. The location stays `stored`: the
+      // file is still there, it is the reading of it that failed.
+      recordArtifactLocation(db, {
+        artifactId: artifact.id,
+        destinationId: destination.id,
+        objectKey: location.objectKey,
+        status: "stored",
+        lastError: message,
+      });
+      if (!intactElsewhere(db, artifact.id, destination.id)) {
+        recordArtifactVerification(db, artifact.id, {
+          level: artifact.verificationLevel ?? "archive",
+          status: "failed",
+          at,
+          findings: { version: 1, data: { findings: [message] } },
+        });
+      }
+
       result.artifacts.push({
         artifactId: artifact.id,
         objectKey: location.objectKey,
