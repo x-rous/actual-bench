@@ -1,14 +1,19 @@
 "use client";
 
 import Link from "next/link";
-import { HardDrive, History, Key, Loader2, MoreHorizontal, Play, Plus, ScanSearch } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+  HardDrive,
+  History,
+  Key,
+  ListChecks,
+  Loader2,
+  Pencil,
+  Play,
+  Plus,
+  ScanSearch,
+  Trash2,
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import {
   describeContents,
@@ -222,28 +227,26 @@ export function SetupTab({
                           >
                             Test
                           </Button>
-                          {/* Editing and removing are rarer than testing, and
-                              one of them is destructive - so they sit behind a
-                              menu rather than beside it at equal weight. */}
-                          <DropdownMenu>
-                            <DropdownMenuTrigger
-                              className="rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
-                              aria-label={`More actions for ${destination.name}`}
-                            >
-                              <MoreHorizontal className="size-3.5" aria-hidden />
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                              <DropdownMenuItem onClick={() => onEditDestination(destination)}>
-                                Edit destination
-                              </DropdownMenuItem>
-                              <DropdownMenuItem
-                                variant="destructive"
-                                onClick={() => onRemoveDestination(destination)}
-                              >
-                                Remove destination
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-6 text-xs"
+                            onClick={() => onEditDestination(destination)}
+                            title="Change this destination's path, bucket or credentials"
+                          >
+                            <Pencil aria-hidden />
+                            Edit
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-6 text-xs text-destructive"
+                            onClick={() => onRemoveDestination(destination)}
+                            title="Stop writing here. The copies already in it are left exactly where they are."
+                          >
+                            <Trash2 aria-hidden />
+                            Remove
+                          </Button>
                         </div>
                       </td>
                     </tr>
@@ -381,28 +384,36 @@ export function SetupTab({
                           <History aria-hidden />
                           Run history
                         </Button>
-                        <DropdownMenu>
-                          <DropdownMenuTrigger
-                            className="rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
-                            aria-label={`More actions for ${policy.name}`}
-                          >
-                            <MoreHorizontal className="size-3.5" aria-hidden />
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end" className="w-56">
-                            <DropdownMenuItem onClick={() => onPreviewRetention(policy)}>
-                              Preview retention…
-                            </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => onEditRule(policy)}>
-                              Edit rule
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              variant="destructive"
-                              onClick={() => onDeleteRule(policy)}
-                            >
-                              Delete rule
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-6 text-xs"
+                          onClick={() => onPreviewRetention(policy)}
+                          title="See exactly which copies this rule would remove, and why, before anything is deleted"
+                        >
+                          <ListChecks aria-hidden />
+                          Retention
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-6 text-xs"
+                          onClick={() => onEditRule(policy)}
+                          title="Change what this rule copies, where, when, and how long it keeps it"
+                        >
+                          <Pencil aria-hidden />
+                          Edit
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-6 text-xs text-destructive"
+                          onClick={() => onDeleteRule(policy)}
+                          title="Stop this rule running. The backups it already took are kept."
+                        >
+                          <Trash2 aria-hidden />
+                          Delete
+                        </Button>
                       </div>
                     </td>
                   </tr>

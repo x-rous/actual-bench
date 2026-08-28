@@ -60,14 +60,13 @@ export function BackupsTable({ artifacts, selectedId, onOpen }: Props) {
             const style = STATE_STYLE[state];
             const Icon = style.icon;
             const stored = artifact.locations.filter((location) => location.status === "stored");
-            const troubled = state === "damaged" || state === "gone";
 
             return (
               <tr
                 key={artifact.id}
                 onClick={() => onOpen(artifact.id)}
                 className={cn(
-                  "cursor-pointer border-b border-border/60 align-top hover:bg-muted/50",
+                  "cursor-pointer border-b border-border/60 align-middle hover:bg-muted/50",
                   style.row,
                   selectedId === artifact.id && "bg-muted"
                 )}
@@ -77,10 +76,15 @@ export function BackupsTable({ artifacts, selectedId, onOpen }: Props) {
                       can do - look inside, download, pin, delete - lives behind
                       opening it, so a mouse-only row would put the whole
                       feature out of reach for anyone not using one. The row
-                      stays clickable as a convenience on top. */}
+                      stays clickable as a convenience on top.
+
+                      One line, with the exact timestamp on hover: a second line
+                      here made every row taller than its neighbours and left
+                      the other columns floating against the top of the cell. */}
                   <button
                     type="button"
-                    className="font-medium hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    className="hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    title={formatDateTime(artifact.createdAt)}
                     onClick={(event) => {
                       event.stopPropagation();
                       onOpen(artifact.id);
@@ -88,9 +92,6 @@ export function BackupsTable({ artifacts, selectedId, onOpen }: Props) {
                   >
                     {relativeTime(artifact.createdAt)}
                   </button>
-                  <div className="text-xs text-muted-foreground">
-                    {formatDateTime(artifact.createdAt)}
-                  </div>
                 </td>
 
                 <td className="px-4 py-2">
@@ -106,24 +107,25 @@ export function BackupsTable({ artifacts, selectedId, onOpen }: Props) {
                     {artifact.encrypted && (
                       <Lock className="size-3.5 text-muted-foreground" aria-label="Encrypted" />
                     )}
+                    {artifact.takenBefore && (
+                      <span
+                        className="text-muted-foreground"
+                        title={`Taken before ${artifact.takenBefore}`}
+                      >
+                        · before {artifact.takenBefore}
+                      </span>
+                    )}
                   </div>
-                  {artifact.takenBefore && (
-                    <div className="text-xs text-muted-foreground">
-                      Taken before {artifact.takenBefore}
-                    </div>
-                  )}
                 </td>
 
                 <td className="px-4 py-2">
-                  <div className={cn("flex items-center gap-1.5 whitespace-nowrap", style.tone)}>
+                  <span
+                    className={cn("flex items-center gap-1.5 whitespace-nowrap", style.tone)}
+                    title={COPY_STATE_COPY[state].detail}
+                  >
                     <Icon className="size-4" aria-hidden />
-                    <span className="font-medium">{COPY_STATE_COPY[state].label}</span>
-                  </div>
-                  {troubled && (
-                    <div className="mt-0.5 text-xs text-muted-foreground">
-                      {COPY_STATE_COPY[state].detail}
-                    </div>
-                  )}
+                    {COPY_STATE_COPY[state].label}
+                  </span>
                 </td>
 
                 <td className="px-4 py-2 whitespace-nowrap text-muted-foreground">

@@ -349,18 +349,34 @@ describe("the Recovery Center", () => {
     ).toBeInTheDocument();
   });
 
-  it("keeps deleting a rule behind a menu, and asks before doing it", async () => {
-    // "Back up now" is what people come here for; the action that deletes
-    // things should not sit beside it at the same weight.
+  it("asks before deleting a rule, and says what survives it", async () => {
     renderView();
     await openSetup();
-    fireEvent.click(await screen.findByRole("button", { name: /more actions for nightly/i }));
 
-    fireEvent.click(await screen.findByRole("menuitem", { name: /delete rule/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /^delete$/i }));
 
     expect(await screen.findByText('Delete "Nightly"?')).toBeInTheDocument();
     expect(screen.getByText(/backups it already took are kept/)).toBeInTheDocument();
     expect(mockedApi.deletePolicy).not.toHaveBeenCalled();
+  });
+
+  it("puts every row action in reach instead of behind an overflow menu", async () => {
+    renderView();
+    await openSetup();
+
+    // Nothing a rule or a destination can do should need a second click to
+    // find, on a page people visit rarely enough to have forgotten where
+    // things were.
+    for (const name of [/back up now/i, /retention/i, /^delete$/i, /^test$/i, /^remove$/i]) {
+      expect(await screen.findByRole("button", { name })).toBeInTheDocument();
+    }
+    // One Edit per row, on both tables.
+    expect(await screen.findAllByRole("button", { name: /^edit$/i })).toHaveLength(2);
+    // Run history is a link, because it goes to another page.
+    expect(screen.getByRole("link", { name: /run history/i })).toHaveAttribute(
+      "href",
+      "/automations"
+    );
   });
 
   it("lists a passphrase it is still holding for backups whose rule is gone", async () => {
