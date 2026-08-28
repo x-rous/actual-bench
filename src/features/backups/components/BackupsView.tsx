@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { usePersistedFilters } from "@/hooks/usePersistedFilters";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { FileText, Loader2, Plus, RefreshCw, ShieldCheck } from "lucide-react";
+import { FileText, Loader2, RefreshCw, ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog, type ConfirmState } from "@/components/ui/confirm-dialog";
@@ -257,6 +257,9 @@ export function BackupsView() {
       error={query.error}
       onRetry={() => void query.refetch()}
       actions={
+        // Refresh belongs to the page. Verify and the recovery sheet act on the
+        // inventory, so they appear with it; Setup's own actions sit beside the
+        // sections they act on, where "Add" can say what it adds.
         <>
           <Button
             variant="outline"
@@ -264,39 +267,37 @@ export function BackupsView() {
             onClick={() => void handleRefresh()}
             disabled={refreshing}
             aria-label="Refresh backups"
+            title="Re-read destinations, rules and the inventory"
           >
             <RefreshCw className={cn(refreshing && "animate-spin")} aria-hidden />
             Refresh
           </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => verify.mutate()}
-            disabled={verify.isPending || artifacts.length === 0}
-          >
-            {verify.isPending ? <Loader2 className="animate-spin" aria-hidden /> : <ShieldCheck aria-hidden />}
-            Verify now
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => window.open("/api/backups/recovery-sheet", "_blank")}
-          >
-            <FileText aria-hidden />
-            Recovery sheet
-          </Button>
-          {(data?.destinations.length ?? 0) === 0 ? (
-            // The first thing anyone needs is somewhere to put a copy. Offering
-            // "New backup rule" first sends them into a dialog they cannot save.
-            <Button size="sm" onClick={() => setDestinationDialog({ open: true, existing: null })}>
-              <Plus aria-hidden />
-              Add a destination
-            </Button>
-          ) : (
-            <Button size="sm" onClick={() => setRuleDialog({ open: true, existing: null })}>
-              <Plus aria-hidden />
-              New backup rule
-            </Button>
+          {tab === "backups" && (
+            <>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => verify.mutate()}
+                disabled={verify.isPending || artifacts.length === 0}
+                title="Re-read the newest copies in every destination: are they present, the right size, and still readable?"
+              >
+                {verify.isPending ? (
+                  <Loader2 className="animate-spin" aria-hidden />
+                ) : (
+                  <ShieldCheck aria-hidden />
+                )}
+                Verify now
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => window.open("/api/backups/recovery-sheet", "_blank")}
+                title="Download a printable page telling you how to restore these backups without Bench — paths, object keys, checksums and commands"
+              >
+                <FileText aria-hidden />
+                Recovery sheet
+              </Button>
+            </>
           )}
         </>
       }
@@ -342,23 +343,7 @@ export function BackupsView() {
                 })
               }
               onTestDestination={(destinationId) => test.mutate(destinationId)}
-              onFindBackups={() =>
-                // Named for what it is, and explained before it runs: this is
-                // the action for the day Bench's own database is gone, and
-                // someone meeting it for the first time cannot tell from two
-                // words whether it is safe to press.
-                setConfirm({
-                  title: "Find backups in your destinations?",
-                  message: `Bench reads the manifest written beside every backup in ${
-                    data.destinations.length === 1
-                      ? `"${data.destinations[0]?.name}"`
-                      : `your ${data.destinations.length} destinations`
-                  } and adds anything it does not already know about. It only adds — nothing is changed, moved or deleted. Use it after restoring Bench onto a new server, or when a destination holds backups this Bench has never seen.`,
-                  destructive: false,
-                  destructiveLabel: "Scan destinations",
-                  onConfirm: () => discover.mutate(),
-                })
-              }
+              onScanDestinations={() => discover.mutate()}
               onNewRule={() => setRuleDialog({ open: true, existing: null })}
               onEditRule={(policy) => setRuleDialog({ open: true, existing: policy })}
               onDeleteRule={(policy) =>

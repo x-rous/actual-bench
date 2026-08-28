@@ -342,16 +342,27 @@ Do not hard-code the repository's current test count in documentation.
 
 ### During implementation
 
-Run the narrowest useful check first:
+Run the narrowest useful check, and **only** that:
 
 ```bash
 npm test -- <relevant-test-path-or-pattern>
 npm run lint -- <relevant-path>
 ```
 
-### Before code handoff or PR
+**Do not run the full suite after every change.** Local edits and local commits are
+verified by the tests covering the files or feature you touched. A full pass over
+several thousand tests costs minutes, and paying that per edit dominates the working
+loop for no added signal — the same tests run again at the gate below. Trimming and
+optimizing the suite is planned; until then the cost is paid deliberately.
 
-For application code, run:
+Run everything when the user asks for it, and at the gate below. If a narrow run
+surfaces something that could plausibly reach further than the files you touched,
+widen the run to that area — not to the whole repository.
+
+### Before code handoff, push, or PR
+
+For application code, run the whole thing — this is the gate the narrow runs above
+are allowed to skip:
 
 ```bash
 npm run lint

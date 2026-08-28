@@ -123,13 +123,15 @@ export const SIDEBAR_SECTIONS: SidebarSection[] = [
         // Directly under Sync: exchange rates exist to serve cross-currency
         // syncing, not as a feature anyone comes here for on its own.
         { id: "fx-rates", label: "FX Rates", href: "/fx-rates", icon: Banknote },
+        // Sits with the tools rather than in the footer: a backup is about a
+        // budget's data, not about the app's own configuration. Above
+        // Automations because it is a thing you set up, where Automations is
+        // where you watch what came of it.
+        { id: "backups", label: "Backups", href: "/backups", icon: DatabaseBackup },
         // "Automations" here means *Bench's* scheduled jobs. Actual Budget's own
         // experimental Budget Automations (RD-047) are a different feature Bench
         // does not drive, so the label must not read as that.
         { id: "automations", label: "Automations", href: "/automations", icon: Timer },
-        // Sits with the tools rather than in the footer: a backup is about a
-        // budget's data, not about the app's own configuration.
-        { id: "backups", label: "Backups", href: "/backups", icon: DatabaseBackup },
         { id: "query", label: "ActualQL Queries", href: "/query", icon: Terminal },
         { id: "data-browser", label: "Data Browser", href: "/data-browser", icon: Database },
         {
@@ -171,11 +173,10 @@ function SidebarNavLink({ item, collapsed, pathname, allHrefs }: SidebarNavLinkP
       data-active={active ? "true" : undefined}
       aria-current={ariaCurrent}
       className={cn(
-        // The Tools group keeps growing, so the density comes out of the
-        // vertical rhythm — tighter rows and tighter gaps between groups —
-        // rather than out of the type size or the horizontal padding, which
-        // are what make a nav comfortable to read.
-        "flex items-center rounded-md px-2 py-1 text-sm font-medium transition-colors",
+        // The Tools group keeps growing, but a nav that is shorter and harder
+        // to read is not a win: the type size and horizontal padding stay, and
+        // the rows keep enough vertical room to be distinguishable at a glance.
+        "flex items-center rounded-md px-2 py-1.5 text-sm font-medium transition-colors",
         collapsed ? "justify-center py-1.5" : "gap-2.5 px-3",
         active
           ? "bg-accent text-accent-foreground"
@@ -253,9 +254,9 @@ export function Sidebar() {
         collapsed ? "w-12" : "w-52"
       )}
     >
-      <nav className="flex flex-1 flex-col overflow-y-auto p-2 pt-2">
+      <nav className="flex flex-1 flex-col overflow-y-auto p-2 pt-3">
         {SIDEBAR_SECTIONS.map((section, index) => {
-          const sectionSpacing = index === 0 ? "" : collapsed ? "mt-2" : "mt-2.5";
+          const sectionSpacing = index === 0 ? "" : collapsed ? "mt-3" : "mt-4";
 
           if (section.type === "item") {
             return (
@@ -275,11 +276,11 @@ export function Sidebar() {
           return (
             <div key={section.group.id} className={groupClassName}>
               {!collapsed && (
-                <div className="px-3 pb-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/70">
+                <div className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/70">
                   {section.group.label}
                 </div>
               )}
-              <div className="flex flex-col gap-0.5">
+              <div className="flex flex-col gap-1">
                 {section.group.items.map((item) => (
                   <SidebarNavLink
                     key={item.id}

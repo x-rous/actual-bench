@@ -397,15 +397,34 @@ describe("the Recovery Center", () => {
     expect(await screen.findByText("Restoring this")).toBeInTheDocument();
   });
 
-  it("explains what Find backups will do before it does it", async () => {
+  it("says what scanning does in a tooltip, and then just does it", async () => {
+    // A dialog to explain a harmless, idempotent action is a dialog people
+    // learn to dismiss without reading.
+    mockedApi.discoverBackups.mockResolvedValue([]);
     renderView();
     await openSetup();
-    fireEvent.click(await screen.findByRole("button", { name: /find backups/i }));
 
-    expect(await screen.findByText(/Find backups in your destinations\?/)).toBeInTheDocument();
-    // The reassurance that matters: it cannot make things worse.
-    expect(screen.getByText(/only adds — nothing is changed, moved or deleted/)).toBeInTheDocument();
-    expect(mockedApi.discoverBackups).not.toHaveBeenCalled();
+    const scan = await screen.findByRole("button", { name: /scan for backups/i });
+    expect(scan).toHaveAttribute(
+      "title",
+      expect.stringContaining("only adds — nothing is changed, moved or deleted")
+    );
+
+    fireEvent.click(scan);
+    await waitFor(() => expect(mockedApi.discoverBackups).toHaveBeenCalled());
+  });
+
+  it("labels the operational buttons with what they actually do", async () => {
+    renderView();
+
+    expect(await screen.findByRole("button", { name: /verify now/i })).toHaveAttribute(
+      "title",
+      expect.stringContaining("still readable")
+    );
+    expect(screen.getByRole("button", { name: /recovery sheet/i })).toHaveAttribute(
+      "title",
+      expect.stringContaining("without Bench")
+    );
   });
 
   it("reports damage found by a manual verify as an error", async () => {
