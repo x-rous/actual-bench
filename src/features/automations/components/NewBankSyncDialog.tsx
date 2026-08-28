@@ -22,6 +22,8 @@ import {
 import { formatDateTime, relativeTime } from "../lib/presentation";
 import { browserTimezone } from "../lib/timezones";
 import { SchedulePicker, type ScheduleValue } from "./SchedulePicker";
+import { EnrolConnection } from "./EnrolConnection";
+import { selectActiveInstance, useConnectionStore } from "@/store/connection";
 
 /**
  * Scheduling a bank sync (RD-080 / PR-045).
@@ -72,6 +74,7 @@ function AccountRow({ account }: { account: BankSyncAccountPreview }) {
 
 export function NewBankSyncDialog({ open, onOpenChange, onCreated }: NewBankSyncDialogProps) {
   const vault = useQuery({ queryKey: ["vault-connections"], queryFn: listVaultConnections, enabled: open });
+  const active = useConnectionStore(selectActiveInstance);
 
   const [chosenConnection, setChosenConnection] = useState("");
   const [schedule, setSchedule] = useState<ScheduleValue>(() => ({
@@ -153,10 +156,15 @@ export function NewBankSyncDialog({ open, onOpenChange, onCreated }: NewBankSync
               restart to enable unattended automations.
             </p>
           ) : connections.length === 0 ? (
-            <p className="rounded-md bg-amber-50 px-3 py-2 text-amber-800 dark:bg-amber-950/20 dark:text-amber-300">
-              No budget has stored credentials yet. Enrol one from Budget File Sync first — without
-              it a scheduled sync could only pause.
-            </p>
+            // Enrolling happens here rather than somewhere else: being sent to
+            // another feature mid-task is the problem, not the solution.
+            <div className="space-y-2">
+              <p className="text-muted-foreground">
+                A scheduled bank sync runs with your browser closed, so Bench needs the
+                budget&rsquo;s API key stored on the server first.
+              </p>
+              <EnrolConnection connection={active ?? null} onEnrolled={() => void vault.refetch()} />
+            </div>
           ) : (
             <>
               {connections.length > 1 && (

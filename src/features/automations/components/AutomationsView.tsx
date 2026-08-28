@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeftRight, DatabaseBackup, History, Landmark, Plus, RefreshCw } from "lucide-react";
+import { ArrowLeftRight, DatabaseBackup, Landmark, Plus, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { Button, buttonVariants } from "@/components/ui/button";
 import {
@@ -22,6 +22,7 @@ import {
 } from "../lib/automationsApi";
 
 import { AutomationDetail } from "./AutomationDetail";
+import { AutomationsTabs } from "./AutomationsTabs";
 import { AutomationsTable } from "./AutomationsTable";
 import { NewBankSyncDialog } from "./NewBankSyncDialog";
 import { describeAutomationsSummary } from "../lib/presentation";
@@ -133,10 +134,6 @@ export function AutomationsView() {
       onRetry={() => void automationsQuery.refetch()}
       actions={
         <>
-          <Button variant="outline" size="sm" render={<Link href="/automations/runs" />}>
-            <History aria-hidden />
-            Run history
-          </Button>
           <Button
             variant="outline"
             size="sm"
@@ -238,6 +235,8 @@ export function AutomationsView() {
       }
     >
       <div className="flex min-h-0 flex-1 flex-col">
+        <AutomationsTabs />
+
         {/* Stated once for the page instead of on every row: the rule is that
             the user knows where automations run, not that the sentence repeats. */}
         <p className="border-b border-border px-4 py-2 text-xs text-muted-foreground">

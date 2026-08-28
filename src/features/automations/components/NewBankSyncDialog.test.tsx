@@ -52,6 +52,19 @@ describe("scheduling a bank sync", () => {
     expect(screen.getByText(/not connected to a bank — skipped/)).toBeInTheDocument();
   });
 
+  it("offers to enrol the budget instead of sending you to another feature", async () => {
+    // The old dialog dead-ended with a link to Budget File Sync, losing whatever
+    // had been filled in.
+    mockedApi.listVaultConnections.mockResolvedValue({ enabled: true, credentials: [] });
+
+    renderDialog();
+
+    expect(
+      await screen.findByText(/API key stored on the server first/)
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/Enrol one from Budget File Sync/)).not.toBeInTheDocument();
+  });
+
   it("refuses to schedule work that could never import anything", async () => {
     mockedApi.listBankSyncAccounts.mockResolvedValue([account({ linked: false, syncSource: null })]);
 

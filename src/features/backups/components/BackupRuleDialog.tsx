@@ -18,6 +18,9 @@ import {
   SchedulePicker,
   type ScheduleValue,
 } from "@/features/automations/components/SchedulePicker";
+import { EnrolConnection } from "@/features/automations/components/EnrolConnection";
+import { connectionFingerprint } from "@/lib/sync/connectionRef";
+import { isHttpApiConnection, useConnectionStore } from "@/store/connection";
 import { createPolicy, patchPolicy, type BackupSource } from "../lib/backupsApi";
 import type { BackupDestination, BackupPolicy } from "@/lib/app-db/backupRepository";
 
@@ -66,9 +69,30 @@ export function BackupRuleDialog({
 }: Props) {
   const editing = Boolean(existing);
   const [name, setName] = useState(existing?.name ?? "Nightly backup");
+  // Every saved HTTP connection, with whether the server can already act on it.
+  // Direct connections are left out because they can never run unattended.
+  const savedConnections = useConnectionStore((state) => state.instances);
+  const choices = savedConnections
+    .filter((connection) => isHttpApiConnection(connection))
+    .map((connection) => ({
+      fingerprint: connectionFingerprint(connection),
+      label: connection.label,
+      baseUrl: connection.baseUrl,
+      connection,
+      enrolled: sources.some(
+        (entry) => entry.connectionFingerprint === connectionFingerprint(connection)
+      ),
+    }));
+
   const [source, setSource] = useState(
-    String(existing?.sourceRef.data.connectionFingerprint ?? sources[0]?.connectionFingerprint ?? "")
+    String(
+      existing?.sourceRef.data.connectionFingerprint ??
+        choices.find((choice) => choice.enrolled)?.fingerprint ??
+        choices[0]?.fingerprint ??
+        ""
+    )
   );
+  const chosen = choices.find((choice) => choice.fingerprint === source) ?? null;
   const [contents, setContents] = useState<BackupPolicy["contents"]>(existing?.contents ?? "both");
   const [destinationIds, setDestinationIds] = useState<string[]>(
     existing?.destinationIds ?? destinations.map((destination) => destination.id)
@@ -140,7 +164,7 @@ export function BackupRuleDialog({
   const canSave =
     name.trim().length > 0 &&
     destinationIds.length > 0 &&
-    (!needsSource || source.length > 0) &&
+    (!needsSource || (source.length > 0 && (chosen?.enrolled ?? false))) &&
     (!encrypt || editing || passphrase.length >= 8) &&
     scheduleValid;
 
@@ -174,44 +198,48 @@ export function BackupRuleDialog({
             </span>
           </label>
 
+          {/* Only shown when there is a budget to name: a copy of Bench's own
+              settings is a local database export and needs no connection at
+              all, so asking for one would be asking a question with no bearing
+              on the answer. */}
           {needsSource && (
-            <label className="block space-y-1">
-              <span className="font-medium">Budget</span>
-              {sources.length === 0 ? (
-                <span className="block rounded-md border border-amber-400/40 bg-amber-50 p-2 text-amber-800 dark:bg-amber-950/20 dark:text-amber-300">
-                  No budget is enrolled for unattended use yet. A scheduled backup runs with the
-                  browser closed, so it needs credentials the server can use on its own - enrol a
-                  connection in Budget File Sync first.
-                </span>
-              ) : (
-                <>
-                  <select
-                    className={selectClass}
-                    value={source}
-                    onChange={(event) => setSource(event.target.value)}
-                  >
-                    {sources.map((entry) => (
-                      <option key={entry.connectionFingerprint} value={entry.connectionFingerprint}>
-                        {entry.label} - {entry.baseUrl}
-                      </option>
-                    ))}
-                  </select>
-                  {/* Said every time, not only when the list is empty: these are
-                      not the connections in the switcher, and someone whose
-                      current budget is missing needs to know why rather than
-                      concluding the list is wrong. */}
-                  <span className="block text-muted-foreground">
-                    Only budgets <strong className="font-medium">enrolled for unattended use</strong>{" "}
-                    appear here - a scheduled backup runs with no browser open, so it needs
-                    credentials the server can use on its own. Missing the one you are working in?{" "}
-                    <a href="/sync" className="underline underline-offset-4">
-                      Enrol it in Budget File Sync
-                    </a>
-                    .
-                  </span>
-                </>
+            <div className="space-y-1">
+              <label className="block space-y-1">
+                <span className="font-medium">Budget</span>
+                <select
+                  className={selectClass}
+                  value={source}
+                  onChange={(event) => setSource(event.target.value)}
+                >
+                  {choices.length === 0 && <option value="">No budget connections saved</option>}
+                  {choices.map((choice) => (
+                    <option key={choice.fingerprint} value={choice.fingerprint}>
+                      {choice.label} - {choice.baseUrl}
+                      {choice.enrolled ? "" : "  (not enrolled)"}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              {/* Every budget you have connected to is listed, not only the
+                  enrolled ones - the budget you are working in should appear in
+                  the list of budgets you can back up, with the reason it cannot
+                  be used yet and the button that fixes it. */}
+              {chosen && !chosen.enrolled && (
+                <EnrolConnection
+                  connection={chosen.connection}
+                  compact
+                  onEnrolled={onSaved}
+                />
               )}
-            </label>
+
+              {choices.length === 0 && (
+                <span className="block text-muted-foreground">
+                  Connect to a budget through an Actual HTTP API server first - a scheduled backup
+                  runs with no browser open, so it cannot use a Direct connection.
+                </span>
+              )}
+            </div>
           )}
 
           <fieldset className="space-y-1">

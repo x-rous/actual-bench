@@ -153,6 +153,26 @@ export async function listVaultConnections(): Promise<{
   return (await response.json()) as { enabled: boolean; credentials: VaultConnection[] };
 }
 
+export type EnrolledConnection = {
+  connectionFingerprint: string;
+  label: string;
+  baseUrl: string;
+  budgetSyncId: string;
+  mode: string;
+  enrolledAt: string;
+  usedBy: { id: string; name: string; type: string; typeLabel: string; enabled: boolean }[];
+};
+
+/** Which budgets Bench may act on unattended, and what depends on each. */
+export async function listEnrolledConnections(): Promise<{
+  vaultEnabled: boolean;
+  connections: EnrolledConnection[];
+}> {
+  const response = await fetch("/api/automations/connections", { cache: "no-store" });
+  if (!response.ok) return readError(response);
+  return (await response.json()) as { vaultEnabled: boolean; connections: EnrolledConnection[] };
+}
+
 export async function createAutomation(input: Record<string, unknown>): Promise<AutomationDefinition> {
   const response = await fetch("/api/automations", {
     method: "POST",

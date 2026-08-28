@@ -3,13 +3,13 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useSearchParams } from "next/navigation";
-import Link from "next/link";
-import { ArrowLeft, RefreshCw } from "lucide-react";
+import { RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { PageLayout } from "@/components/layout/PageLayout";
 import { cn } from "@/lib/utils";
 import { fetchRunHistory } from "../lib/automationsApi";
 import { runStatusLabel } from "../lib/presentation";
+import { AutomationsTabs } from "./AutomationsTabs";
 import { RunRow } from "./RunRow";
 import type { AutomationRunStatus } from "@/lib/app-db/types";
 
@@ -77,7 +77,7 @@ export function RunHistoryView() {
 
   return (
     <PageLayout
-      title="Run history"
+      title="Automations"
       count={query.data ? `${runs.length} ${runs.length === 1 ? "run" : "runs"}` : undefined}
       scrollManaged
       isLoading={query.isLoading}
@@ -86,10 +86,6 @@ export function RunHistoryView() {
       onRetry={() => void query.refetch()}
       actions={
         <>
-          <Button variant="outline" size="sm" render={<Link href="/automations" />}>
-            <ArrowLeft aria-hidden />
-            Automations
-          </Button>
           <Button
             variant="outline"
             size="sm"
@@ -105,6 +101,8 @@ export function RunHistoryView() {
       }
     >
       <div className="flex min-h-0 flex-1 flex-col">
+        <AutomationsTabs />
+
         <div className="flex flex-wrap items-center gap-2 border-b border-border px-4 py-2 text-xs">
           {/* Outcome first: "what failed" is the question this page exists for,
               and it should take one click to ask. */}

@@ -40,7 +40,7 @@ The day someone is browsing a destination by hand is the day Bench is not availa
 | Requirement | Why |
 |---|---|
 | **HTTP API mode** for the source budget | A scheduled backup runs with no browser. Direct mode's engine lives in the browser, so there is nothing on the server to export from. |
-| **An enrolled connection** | The backup uses the same vault credentials unattended sync uses. Enrolment is where the operator granted unattended access. |
+| **An enrolled connection** | A scheduled backup runs with no browser, so the server needs the budget's API key. Enrol from the backup rule dialog itself, or from Automations → Connections. |
 | **`SYNC_VAULT_KEY`** | Needed for enrolled credentials, for S3 access keys, and for a stored encryption passphrase. Without it Bench refuses to store any of them rather than writing them in the clear. |
 | A writable destination | A folder path on the server, or an S3-compatible bucket. |
 

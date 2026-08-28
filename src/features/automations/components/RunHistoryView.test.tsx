@@ -7,6 +7,7 @@ import type { RunHistory, RunHistoryEntry } from "../lib/automationsApi";
 jest.mock("../lib/automationsApi");
 jest.mock("next/navigation", () => ({
   useSearchParams: () => new URLSearchParams(),
+  usePathname: () => "/automations/runs",
 }));
 
 const mockedApi = api as jest.Mocked<typeof api>;
