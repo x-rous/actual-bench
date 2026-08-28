@@ -6,6 +6,9 @@ import {
   Timer,
   type LucideIcon,
 } from "lucide-react";
+import { compareValues, type SortDirection } from "@/components/ui/sortable-header";
+import type { AutomationSortKey } from "../components/AutomationsTable";
+import type { AutomationListItem } from "./automationsApi";
 import type { AutomationExecutionMode, AutomationRun, AutomationRunStatus } from "@/lib/app-db/types";
 
 /**
@@ -196,4 +199,41 @@ export function jobTypeIcon(type: string): LucideIcon {
     default:
       return Timer;
   }
+}
+
+/** Where a status sits when sorting: worst first, because that is why you sort. */
+const STATUS_ORDER: Record<AutomationListItem["status"], number> = {
+  failing: 0,
+  paused: 1,
+  warning: 2,
+  idle: 3,
+  ok: 4,
+};
+
+export function sortAutomations(
+  automations: AutomationListItem[],
+  sort: { key: AutomationSortKey; direction: SortDirection } | null
+): AutomationListItem[] {
+  if (!sort || !sort.direction) return automations;
+  const { key, direction } = sort;
+
+  const value = (automation: AutomationListItem): string | number | null => {
+    switch (key) {
+      case "status":
+        return STATUS_ORDER[automation.status];
+      case "name":
+        return automation.name;
+      case "type":
+        return automation.typeLabel;
+      case "schedule":
+        return automation.scheduleLabel;
+      case "lastRun":
+        return automation.lastRunAt;
+      case "nextRun":
+        // A paused automation has no next run, whatever the stored value says.
+        return automation.enabled && !automation.autoPausedAt ? automation.nextRunAt : null;
+    }
+  };
+
+  return [...automations].sort((a, b) => compareValues(value(a), value(b), direction));
 }

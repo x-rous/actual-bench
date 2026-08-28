@@ -9,9 +9,14 @@ import {
   Loader2,
   Pause,
   Play,
+  Trash2,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import {
+  SortableHeader,
+  type SortDirection,
+} from "@/components/ui/sortable-header";
 import { cn } from "@/lib/utils";
 import { executionModeCopy, formatDateTime, jobTypeIcon, relativeTime } from "../lib/presentation";
 import type { AutomationListItem } from "../lib/automationsApi";
@@ -73,34 +78,48 @@ const STATUS_STYLE: Record<
   idle: { icon: CircleDot, tone: "text-muted-foreground", label: "Idle" },
 };
 
+export type AutomationSortKey =
+  | "status"
+  | "name"
+  | "type"
+  | "schedule"
+  | "lastRun"
+  | "nextRun";
+
 type AutomationsTableProps = {
   automations: AutomationListItem[];
   runningId: string | null;
+  sort: { key: AutomationSortKey; direction: SortDirection } | null;
+  onSort: (key: AutomationSortKey, direction: SortDirection) => void;
   onOpen: (automationId: string) => void;
   onRunNow: (automationId: string) => void;
   onToggleEnabled: (automation: AutomationListItem) => void;
   onResume: (automationId: string) => void;
+  onDelete: (automation: AutomationListItem) => void;
 };
 
 export function AutomationsTable({
   automations,
   runningId,
+  sort,
+  onSort,
   onOpen,
   onRunNow,
   onToggleEnabled,
   onResume,
+  onDelete,
 }: AutomationsTableProps) {
   return (
     <div className="min-h-0 flex-1 overflow-auto">
       <table className="w-full text-xs">
         <thead className="sticky top-0 z-10 bg-muted text-left text-[11px] uppercase text-muted-foreground">
           <tr>
-            <th className="px-3 py-2">Status</th>
-            <th className="px-3 py-2">Automation</th>
-            <th className="px-3 py-2">Type</th>
-            <th className="px-3 py-2">Schedule</th>
-            <th className="px-3 py-2">Last run</th>
-            <th className="px-3 py-2">Next run</th>
+            <SortableHeader label="Status" sortKey="status" sort={sort} onSort={onSort} className="px-3 py-2" />
+            <SortableHeader label="Automation" sortKey="name" sort={sort} onSort={onSort} className="px-3 py-2" />
+            <SortableHeader label="Type" sortKey="type" sort={sort} onSort={onSort} className="px-3 py-2" />
+            <SortableHeader label="Schedule" sortKey="schedule" sort={sort} onSort={onSort} className="px-3 py-2" />
+            <SortableHeader label="Last run" sortKey="lastRun" sort={sort} onSort={onSort} className="px-3 py-2" />
+            <SortableHeader label="Next run" sortKey="nextRun" sort={sort} onSort={onSort} className="px-3 py-2" />
             <th className="w-px px-3 py-2 text-right">
               <span className="sr-only">Actions</span>
             </th>
@@ -236,6 +255,21 @@ export function AutomationsTable({
                         {automation.enabled ? <Pause aria-hidden /> : <Play aria-hidden />}
                       </Button>
                     )}
+
+                    {/* Deleting is how an automation actually goes away. Pause
+                        is not: a backup rule that has been deleted leaves its
+                        automation behind, paused with a reason, and without
+                        this there was no way to clear it. */}
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="text-destructive"
+                      onClick={() => onDelete(automation)}
+                      aria-label={`Delete ${automation.name}`}
+                      title="Delete this automation. Its run history goes with it."
+                    >
+                      <Trash2 aria-hidden />
+                    </Button>
                   </div>
                 </td>
               </tr>

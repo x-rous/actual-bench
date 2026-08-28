@@ -159,6 +159,15 @@ export function RunHistoryView() {
           )}
 
           <span className="flex-1" />
+          {runs.length >= 200 && (
+            <span
+              className="text-muted-foreground"
+              title="Older runs are still recorded; narrow the filters to reach them."
+            >
+              newest 200 shown
+            </span>
+          )}
+
           {failing > 0 && (
             <span className="text-destructive">
               {failing} of these {failing === 1 ? "run" : "runs"} did not finish cleanly

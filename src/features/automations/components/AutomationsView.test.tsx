@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { AutomationsView } from "./AutomationsView";
 import * as api from "../lib/automationsApi";
 import type { AutomationListItem } from "../lib/automationsApi";
@@ -85,6 +85,9 @@ function renderView() {
 describe("AutomationsView", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    // Filters and sort persist to sessionStorage, so one test's filter would
+    // otherwise decide what the next one can see.
+    sessionStorage.clear();
     mockedApi.listAutomations.mockResolvedValue({ automations: [automation()], jobTypes: [] });
     mockedApi.listAutomationRuns.mockResolvedValue([run()]);
     mockedApi.runAutomationNow.mockResolvedValue({
@@ -236,6 +239,89 @@ describe("AutomationsView", () => {
     // people get wrong about this page.
     expect(screen.getByText(/Auto-sync on a server schedule/i)).toBeInTheDocument();
     expect(screen.getByText(/stays out of here on purpose/i)).toBeInTheDocument();
+  });
+
+  it("keeps the filters reachable when a filter matches nothing", async () => {
+    // Keyed on the filtered list, an empty result replaced the whole page -
+    // filter bar included - with "nothing is scheduled yet": untrue, and no way
+    // back.
+    renderView();
+    await screen.findByText("Household → Joint");
+
+    fireEvent.change(screen.getByLabelText("Search automations"), {
+      target: { value: "nothing matches this" },
+    });
+
+    expect(await screen.findByText(/No automation matches those filters/)).toBeInTheDocument();
+    expect(screen.queryByText(/Nothing is scheduled yet/)).not.toBeInTheDocument();
+
+    // And the way back is right there.
+    fireEvent.click(screen.getByRole("button", { name: "Clear" }));
+    expect(await screen.findByText("Household → Joint")).toBeInTheDocument();
+  });
+
+  it("can delete an automation, and says what goes with it", async () => {
+    // Pause is not removal: a backup rule that has been deleted leaves its
+    // automation behind, paused with a reason, and there was no way to clear
+    // it.
+    renderView();
+    await screen.findByText("Household → Joint");
+
+    fireEvent.click(screen.getByRole("button", { name: /delete household/i }));
+
+    expect(await screen.findByText('Delete "Household → Joint"?')).toBeInTheDocument();
+    expect(screen.getByText(/run history goes with it/)).toBeInTheDocument();
+    expect(mockedApi.deleteAutomation).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    // React Query passes its own context as a second argument.
+    await waitFor(() =>
+      expect(mockedApi.deleteAutomation).toHaveBeenCalledWith("auto-1", expect.anything())
+    );
+  });
+
+  it("filters to what is broken in one click", async () => {
+    // The question people arrive with is "what is failing", so it is the filter
+    // worth a single click rather than a search term.
+    mockedApi.listAutomations.mockResolvedValue({
+      automations: [
+        automation({ id: "ok", name: "Working one" }),
+        automation({ id: "bad", name: "Broken one", status: "failing" }),
+      ],
+      jobTypes: [],
+    });
+
+    renderView();
+    await screen.findByText("Working one");
+
+    fireEvent.click(screen.getByRole("button", { name: "Failing" }));
+
+    await waitFor(() => expect(screen.queryByText("Working one")).not.toBeInTheDocument());
+    expect(screen.getByText("Broken one")).toBeInTheDocument();
+    expect(screen.getByText("1 of 2")).toBeInTheDocument();
+  });
+
+  it("sorts by a column, and back to its own order", async () => {
+    mockedApi.listAutomations.mockResolvedValue({
+      automations: [
+        automation({ id: "b", name: "Beta" }),
+        automation({ id: "a", name: "Alpha" }),
+      ],
+      jobTypes: [],
+    });
+
+    renderView();
+    const header = await screen.findByRole("button", { name: /sort by automation/i });
+
+    fireEvent.click(header);
+    expect(header.closest("th")).toHaveAttribute("aria-sort", "ascending");
+    expect(within(screen.getAllByRole("row")[1]).getByText("Alpha")).toBeInTheDocument();
+
+    fireEvent.click(header);
+    expect(within(screen.getAllByRole("row")[1]).getByText("Beta")).toBeInTheDocument();
+
+    fireEvent.click(header);
+    expect(header.closest("th")).toHaveAttribute("aria-sort", "none");
   });
 
   it("offers every kind of automation from one place", async () => {
@@ -391,9 +477,11 @@ describe("AutomationsView", () => {
     renderView();
 
     // Anyone who cannot distinguish the hues — or who pastes a screenshot into
-    // a bug report — still learns which row is in trouble.
-    expect(await screen.findByText("Healthy")).toBeInTheDocument();
-    expect(screen.getByText("Failing")).toBeInTheDocument();
+    // a bug report — still learns which row is in trouble. Scoped to the table:
+    // the filter pills carry the same words.
+    const table = await screen.findByRole("table");
+    expect(within(table).getByText("Healthy")).toBeInTheDocument();
+    expect(within(table).getByText("Failing")).toBeInTheDocument();
     expect(screen.getByText(/provider unreachable/)).toBeInTheDocument();
   });
 });
