@@ -1,0 +1,67 @@
+---
+title: Data Browser
+description: Browse the raw SQLite tables, views and schema inside an exported Actual Budget snapshot, follow relationships between rows, and export any table to CSV.
+sidebar:
+  order: 23
+---
+
+The **Data Browser** opens the raw SQLite objects inside an exported budget snapshot - the tables,
+views, indexes and triggers behind the screens Actual shows you.
+
+Open it from **Tools → Data Browser** (`/data-browser`).
+
+**Write model:** strictly read-only. The snapshot is inspected in your browser and never written back
+to Actual.
+
+It shares its snapshot with [Budget File Health](../budget-file-health/), which is where loading,
+caching and reloading are explained - once either tool has loaded the budget, the other opens
+instantly.
+
+:::tip[Start with the health check]
+If your question is "is something wrong with this file?", run
+[Budget File Health](../budget-file-health/) first. Come here when a finding needs table-level detail.
+:::
+
+## Browse tables, views, and schema
+
+- Lists **tables, views, indexes, and triggers** grouped by Actual Budget domain; `v_transactions` is
+  selected by default when present.
+- The row browser paginates through table and view rows with sticky headers, horizontal scrolling,
+  worker-side sorting, and URL state for the object, page, page size, and sort - so a view you are
+  looking at can be linked to.
+- The **Schema** tab shows object type, parent table, row count, inferred row key, columns, indexes,
+  and the raw `CREATE …` SQL.
+- Indexes and triggers are listed but marked as not row-browsable.
+
+## Inspect rows and follow relationships
+
+- **Row actions** copy a row's JSON to the clipboard (BLOBs serialized as base64) and open a stackable
+  row-details panel.
+- **Relationship-aware drill-in** turns known linked cells into navigable references, using the same
+  relationship map as diagnostics.
+- Cell rendering keeps raw money-like integers, formats dates and obvious budget months, marks BLOBs
+  as binary with a hex-preview tooltip, and preserves raw values in tooltips.
+
+## Export tables and views
+
+Full table and view **CSV export** streams rows through worker-owned cursors, preserves UTF-8 for
+Excel, neutralizes formula-like text values, keeps numeric negatives raw, and caps BLOB cells as
+base64 previews.
+
+## Safety and limitations
+
+- Strictly read-only; it never modifies your budget.
+- Very large snapshots depend on available browser memory.
+- An exported CSV can contain personal financial data - treat it as you would the budget itself.
+
+## Troubleshooting
+
+- **An object shows no rows** - indexes and triggers are not row-browsable.
+- **The snapshot looks stale** - reload it from [Budget File Health](../budget-file-health/).
+- **A CSV opens oddly in a spreadsheet** - exports are UTF-8 with formula-injection protection; open
+  them as UTF-8.
+
+## Related pages
+
+- [Budget File Health](../budget-file-health/) - structural checks over the same snapshot
+- [ActualQL Queries](../actualql/) - query live saved data instead of a snapshot

@@ -29,6 +29,27 @@ Actual Bench is not the official Actual Budget application or documentation. It 
 existing Actual Server and adds focused administration, planning, audit, and data tools.
 :::
 
+## Start from what you need to do
+
+| I want to… | Go to |
+|---|---|
+| Plan a full year, not six months | [Budget](/actual-bench/user-guide/budget-management/) |
+| Seed a budget from a spreadsheet, or clean one up in bulk | [Editing, review and save](/actual-bench/getting-started/editing-and-saving/) |
+| Fix the duplicate payees my bank imports keep creating | [Payee Cleanup](/actual-bench/user-guide/payee-cleanup/) |
+| Write better rules, and audit the ones I have | [Rules](/actual-bench/user-guide/rules/) · [Rule Diagnostics](/actual-bench/user-guide/rule-diagnostics/) |
+| Reconcile an account against a bank statement | [Bank Reconciliation](/actual-bench/user-guide/bank-reconciliation/) |
+| Copy data between two budget files, in two currencies | [Budget File Sync](/actual-bench/user-guide/budget-sync/) |
+| Pull in new transactions without opening anything | [Bank Sync](/actual-bench/user-guide/bank-sync/) |
+| Have work run on a timetable while the app is closed | [Automations](/actual-bench/user-guide/automations/) |
+| Keep backups I can prove still open | [Backups](/actual-bench/user-guide/backups/) |
+| Ask a question of my data that no screen answers | [ActualQL Queries](/actual-bench/user-guide/actualql/) |
+| Find out whether a budget file is sound | [Budget File Health](/actual-bench/user-guide/budget-file-health/) |
+| Move a whole budget structure somewhere else | [Bundle Export / Import](/actual-bench/getting-started/bundle-export-import/) |
+
+The sidebar is organised the way the app is: **Data Management** for the pages that hold your budget's
+records, **Tools** for the workspaces that act on them. If you can see it in Actual Bench's left
+navigation, it is under the same name here.
+
 ## Main functions
 
 <CardGrid>
@@ -38,7 +59,7 @@ existing Actual Server and adds focused administration, planning, audit, and dat
 	</Card>
 	<Card title="Data Management" icon="list-format">
 		Bulk-create, merge, reorganize, import, export, and audit accounts, payees, categories, schedules, tags, and rules—with staged review before Save.
-		[Manage budget data →](/actual-bench/user-guide/managing-your-data/)
+		[Manage budget data →](/actual-bench/getting-started/editing-and-saving/)
 	</Card>
 	<Card title="Rules and Rule Diagnostics" icon="approve-check">
 		Build advanced rules with readable references, then audit the entire rule set for broken references, overlaps, broad matches, and duplicates.
@@ -60,9 +81,9 @@ existing Actual Server and adds focused administration, planning, audit, and dat
 		Scheduled copies of your budget that Bench **opens and reads** to prove they work, kept in a folder or an S3-compatible bucket, on rules that never delete the last good one.
 		[Explore Backups →](/actual-bench/user-guide/backups/)
 	</Card>
-	<Card title="ActualQL and Budget File Tools" icon="magnifier">
+	<Card title="ActualQL and file inspection" icon="magnifier">
 		Query saved budget data, inspect an exported file, run structural health checks, or browse its SQLite tables without writing anything back.
-		[Explore analysis and diagnostics →](/actual-bench/user-guide/budget-file-tools/)
+		[Explore analysis and diagnostics →](/actual-bench/user-guide/budget-file-health/)
 	</Card>
 </CardGrid>
 

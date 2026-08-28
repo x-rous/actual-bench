@@ -5,7 +5,7 @@ sidebar:
   order: 13
 ---
 
-Use **FX Rates** only when a transaction [Budget Sync](../budget-sync/) flow moves money between budget
+Use **FX Rates** only when a transaction [Budget File Sync](../budget-sync/) flow moves money between budget
 files kept in different currencies. It is not a general currency feature and does not add
 multi-currency accounts to one Actual budget.
 
@@ -39,7 +39,7 @@ Rates come from a database-backed registry, filled automatically from the free
 - For a date with no published rate (weekends and holidays), Actual Bench falls back to the **latest
   prior rate**.
 - If the provider is briefly unavailable, a converting sync doesn't fail — affected rows go to review as
-  **FX pending** (see [Budget Sync](../budget-sync/#preview-a-flow)).
+  **FX pending** (see [Budget File Sync](../budget-sync/#preview-a-flow)).
 
 You can also override any date manually or import rates from a CSV.
 
@@ -73,7 +73,7 @@ Use **Set your rate** to enter a rate for a specific date manually.
 Setting a rate does not retroactively change already-synced transactions on its own. Past conversions
 keep their locked rate unless you explicitly update them through the previewed sync update path (the
 *Update synced transactions when the rate changes* flow option). See
-[Budget Sync](../budget-sync/#updates-and-deletion-opt-in).
+[Budget File Sync](../budget-sync/#updates-and-deletion-opt-in).
 :::
 
 ## Import rates from CSV
@@ -119,5 +119,5 @@ See [Known Limitations](../../help/known-limitations/) for the full list.
 
 ## Related pages
 
-- [Budget Sync](../budget-sync/)
+- [Budget File Sync](../budget-sync/)
 - [Connect to Actual Budget](../../getting-started/connecting/)

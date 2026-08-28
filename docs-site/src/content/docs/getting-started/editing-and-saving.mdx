@@ -1,25 +1,21 @@
 ---
-title: Managing your data
-description: The shared editing model behind Actual Bench's master-data pages — staged inline editing, bulk actions, filters, CSV import/export, Quick Create, Global Search, and the Usage Inspector.
+title: Editing, review and save
+description: The editing model every Actual Bench page shares - staged inline editing, bulk actions, CSV import and export, Quick Create, Global Search, the Usage Inspector, and the review before Save.
 sidebar:
-  order: 2
+  order: 5
 ---
 
-Use these pages when you are setting up a budget, cleaning up years of imported names, reorganizing
-its structure, or auditing what depends on an entity before you change it. Actual Budget is excellent
-for everyday maintenance; Actual Bench adds the bulk and review tools for a larger cleanup pass.
+Every page under **Data Management** - Budget, Rules, Accounts, Payees, Categories, Schedules and
+Tags - edits the same way, and most of the Tools pages stage their results into the same review. Read
+this once and the rest of the documentation only has to cover what is particular to each page.
 
-Accounts, Payees, Categories, and Tags share one editing model. This page is the shortest route to
-understanding it; the entity references cover only their special cases.
+Actual Budget is excellent for everyday maintenance, where you create and edit records one at a time
+and each change takes effect immediately. Actual Bench is built for the opposite job: setting up,
+cleaning up and auditing in bulk, with a review before anything is written.
 
 **Write model:** stage → review → **Save**. Notes are the immediate-save exception.
 
-## Why manage this data in Actual Bench?
-
-In Actual Budget you generally create and edit these records **one at a time**, from inside the
-budgeting UI, with each change taking effect immediately. Actual Bench is built for the opposite job —
-**setting up, cleaning up, and auditing this data in bulk** — and adds capabilities the native app
-doesn't offer:
+## What the bulk model adds
 
 - **Bulk everything** — select many rows and act on them at once (delete, close/reopen, merge,
   visibility), or paste rows straight from Excel / Google Sheets to create many records in one go.
@@ -43,17 +39,17 @@ For moving an entire structure in or out, use [Bundle Export / Import](../bundle
 instead of repeating that flow page by page.
 
 If the problem is payees created by bank imports — one shop appearing five times because the text
-carries a date or a card number — start at [Payee Cleanup](../payee-cleanup/) instead. It finds the
+carries a date or a card number — start at [Payee Cleanup](../../user-guide/payee-cleanup/) instead. It finds the
 groups for you, and finds the payees whose imports will stop resolving to them once you have tidied
 the names.
 
 ## The shared editing model
 
-All master-data pages behave the same way:
+Every master-data page behaves the same way:
 
 - **Inline editing** — double-click, `Enter`, or `F2` to edit a cell; `Escape` cancels.
 - **Staged rows** — new, edited, and deleted rows are visually marked and only written on **Save**.
-  See [Core Concepts](../../getting-started/core-concepts/) for the full staging model.
+  See [Work safely](../core-concepts/) for the full staging model.
 - **Bulk selection** — select rows with checkboxes and apply bulk actions. System-managed rows show a
   disabled checkbox with a tooltip explaining why.
 - **Filters and search** — filter and search each page; your filters persist per page and reset when
@@ -105,7 +101,7 @@ delete:
 
 :::note[Rule counts are clickable]
 Accounts, payees, categories, and tags show how many rules reference them. Click the count to jump to
-the [Rules](../rules/) page filtered to that entity.
+the [Rules](../../user-guide/rules/) page filtered to that entity.
 :::
 
 ## Review and Save
@@ -117,10 +113,10 @@ state.
 :::caution[Notes are the exception]
 Note edits on accounts, categories, and category groups **save immediately** — they are not part of
 the staged **Save** and are not reverted by **Discard**. See
-[Core Concepts](../../getting-started/core-concepts/#immediate-save-exceptions).
+[Work safely](../core-concepts/#immediate-save-exceptions).
 :::
 
 ## Related pages
 
-- [Accounts](../accounts/) · [Payees](../payees/) · [Payee Cleanup](../payee-cleanup/) · [Categories](../categories/) · [Tags](../tags/)
-- [Core Concepts](../../getting-started/core-concepts/)
+- [Accounts](../../user-guide/accounts/) · [Payees](../../user-guide/payees/) · [Payee Cleanup](../../user-guide/payee-cleanup/) · [Categories](../../user-guide/categories/) · [Tags](../../user-guide/tags/)
+- [Work safely](../core-concepts/)
