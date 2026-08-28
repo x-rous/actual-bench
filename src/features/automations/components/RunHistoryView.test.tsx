@@ -77,6 +77,17 @@ describe("run history", () => {
   });
 
   it("filters to one automation, for chasing a single thing", async () => {
+    // The picker appears only when there is more than one to choose between: a
+    // question with one answer is not a question.
+    mockedApi.fetchRunHistory.mockResolvedValue(
+      history({
+        automations: [
+          { id: "auto-1", name: "Nightly backup", type: "backup" },
+          { id: "auto-2", name: "Bank sync", type: "bank-sync" },
+        ],
+      })
+    );
+
     renderView();
     await screen.findByText("No copy could be stored.");
 
@@ -103,9 +114,12 @@ describe("run history", () => {
     expect(screen.getByText("No copy could be stored.")).toBeInTheDocument();
   });
 
-  it("says how many of the listed runs did not finish cleanly", async () => {
+  it("counts the runs it is showing, once", async () => {
+    // The outcome pills already answer "how many failed" in a click, and every
+    // row carries its own status - a tally beside them was a third telling of
+    // the same thing.
     renderView();
-    expect(await screen.findByText(/1 of these run did not finish cleanly/)).toBeInTheDocument();
+    expect(await screen.findByText("2 runs")).toBeInTheDocument();
   });
 
   it("tells an empty result apart from an empty history", async () => {

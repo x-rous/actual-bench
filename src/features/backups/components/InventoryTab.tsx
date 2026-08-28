@@ -238,8 +238,11 @@ export function InventoryTab({
               </select>
             )}
 
+            {/* One statement about how many, the cap included. Saying "200"
+                and then "newest 200 shown" beside it is the same fact twice. */}
             <span className="font-medium">
-              {filtering ? `${filtered.length} of ${artifacts.length}` : `${artifacts.length}`}
+              {filtering ? `${filtered.length} of ` : ""}
+              {artifacts.length >= 200 ? `newest ${artifacts.length}` : artifacts.length}
               <span className="font-normal text-muted-foreground">
                 {" "}
                 {artifacts.length === 1 ? "copy" : "copies"},{" "}
@@ -255,15 +258,6 @@ export function InventoryTab({
               >
                 Clear
               </button>
-            )}
-
-            {/* The list stops at 200. Saying so is the difference between
-                "these are your copies" and "these are the newest 200 of them",
-                and only one of those is true. */}
-            {artifacts.length >= 200 && (
-              <span className="text-muted-foreground" title="Older copies are still stored and still restorable; this view shows the newest 200.">
-                newest 200 shown
-              </span>
             )}
 
             <span className="flex-1" />
