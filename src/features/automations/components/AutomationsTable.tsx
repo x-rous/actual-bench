@@ -13,7 +13,7 @@ import {
 import type { LucideIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { executionModeCopy, formatDateTime, relativeTime } from "../lib/presentation";
+import { executionModeCopy, formatDateTime, jobTypeIcon, relativeTime } from "../lib/presentation";
 import type { AutomationListItem } from "../lib/automationsApi";
 
 /**
@@ -161,7 +161,13 @@ export function AutomationsTable({
                 </td>
 
                 <td className="px-3 py-2 whitespace-nowrap text-muted-foreground">
-                  {automation.typeLabel}
+                  <span className="flex items-center gap-1.5">
+                    {(() => {
+                      const TypeIcon = jobTypeIcon(automation.type);
+                      return <TypeIcon className="size-3.5 shrink-0" aria-hidden />;
+                    })()}
+                    {automation.typeLabel}
+                  </span>
                 </td>
 
                 <td className="px-3 py-2 whitespace-nowrap">

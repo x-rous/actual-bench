@@ -1,15 +1,16 @@
 "use client";
 
 import { useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { usePersistedFilters } from "@/hooks/usePersistedFilters";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { FileText, Loader2, RefreshCw, ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
-import { Button } from "@/components/ui/button";
 import { ConfirmDialog, type ConfirmState } from "@/components/ui/confirm-dialog";
+import { Plus, RefreshCw } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { PageLayout } from "@/components/layout/PageLayout";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   backUpNow,
   deleteDestination,
@@ -54,8 +55,16 @@ import type { PruneResult } from "@/lib/backup/prune";
  * to the other.
  */
 
+/** Matches the workbench tabs on Budget File Health, deliberately. */
+const TAB_CLASS =
+  "flex flex-1 items-center justify-center gap-1 rounded-none border-x-0 border-t-0 border-b-2 border-transparent bg-transparent px-2 py-2 text-[12px] font-medium text-muted-foreground transition-colors after:hidden hover:text-foreground focus-visible:ring-0 data-[active]:border-primary data-[active]:text-foreground lg:flex-none lg:px-6";
+
 export function BackupsView() {
   const queryClient = useQueryClient();
+  const params = useSearchParams();
+  // Arriving from "New automation -> Backup" is a create intent, not a browse:
+  // land on Setup with the dialog open rather than on a list of old copies.
+  const wantsNewRule = params.get("new") === "rule";
   const [selectedArtifactId, setSelectedArtifactId] = useState<string | null>(null);
   const [destinationDialog, setDestinationDialog] = useState<
     { open: boolean; existing: BackupDestination | null } | null
@@ -63,7 +72,7 @@ export function BackupsView() {
   const [ruleDialog, setRuleDialog] = useState<{
     open: boolean;
     existing: PolicyWithAutomation | null;
-  } | null>(null);
+  } | null>(wantsNewRule ? { open: true, existing: null } : null);
   const [prunePreview, setPrunePreview] = useState<{
     policy: PolicyWithAutomation;
     result: PruneResult;
@@ -73,15 +82,17 @@ export function BackupsView() {
   const [confirm, setConfirm] = useState<ConfirmState | null>(null);
   const [refreshing, setRefreshing] = useState(false);
 
-  // Same sessionStorage-backed pattern the entity pages use for their filters,
-  // so the tab and the filters survive navigating away and back within a tab.
-  // `tab: null` means "not chosen yet", which is what lets a fresh install open
-  // on Setup without overriding a choice someone has actually made.
+  // Filters persist, the way the entity pages persist theirs. The tab does not:
+  // it is where you are looking right now, not a preference. Arriving at the
+  // page should land on the copies when there are copies - having once opened
+  // Setup should not mean every later visit starts on the settings.
   const [view, setView] = usePersistedFilters<{
-    tab: "setup" | "backups" | null;
     stateFilter: StateFilter;
     kindFilter: KindFilter;
-  }>("filters:backups", { tab: null, stateFilter: "all", kindFilter: "all" });
+  }>("filters:backups", { stateFilter: "all", kindFilter: "all" });
+  const [chosenTab, setChosenTab] = useState<"setup" | "backups" | null>(
+    wantsNewRule ? "setup" : null
+  );
 
   const settingsQuery = useQuery({
     queryKey: ["backup-settings"],
@@ -240,87 +251,77 @@ export function BackupsView() {
     (entry) => !entry.ruleExists && entry.artifactCount > 0
   );
 
-  // A fresh install opens on Setup, because there is nothing else to look at
-  // and the tab someone needs first is the one they have not used. Once a
-  // choice has been made it wins — including the choice to sit on Setup.
-  const tab = view.tab ?? (needsDestination || needsRule ? "setup" : "backups");
-  const setTab = (next: string) => setView((current) => ({ ...current, tab: next as "setup" | "backups" }));
+  // Land on the copies when there are copies, and on Setup when there is
+  // nothing to look at yet. A choice made during this visit wins until you
+  // leave the page.
+  //
+  // Only decided once the data is in: the tab strip is part of the page header,
+  // so it renders while the query is still running, and reading "nothing here"
+  // from an empty loading state made the page open on Setup and jump a moment
+  // later.
+  const tab = chosenTab ?? (data && artifacts.length === 0 ? "setup" : "backups");
+  const setTab = (next: string) => setChosenTab(next as "setup" | "backups");
 
   return (
-    <PageLayout
-      title="Backups"
-      count={
-        data ? `${artifacts.length} ${artifacts.length === 1 ? "copy" : "copies"}` : undefined
-      }
-      scrollManaged
-      isLoading={query.isLoading}
-      isError={query.isError}
-      error={query.error}
-      onRetry={() => void query.refetch()}
-      actions={
-        // Refresh belongs to the page. Verify and the recovery sheet act on the
-        // inventory, so they appear with it; Setup's own actions sit beside the
-        // sections they act on, where "Add" can say what it adds.
-        <>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => void handleRefresh()}
-            disabled={refreshing}
-            aria-label="Refresh backups"
-            title="Re-read destinations, rules and the inventory"
-          >
-            <RefreshCw className={cn(refreshing && "animate-spin")} aria-hidden />
-            Refresh
-          </Button>
-          {tab === "backups" && (
-            <>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => verify.mutate()}
-                disabled={verify.isPending || artifacts.length === 0}
-                title="Re-read the newest copies in every destination: are they present, the right size, and still readable?"
-              >
-                {verify.isPending ? (
-                  <Loader2 className="animate-spin" aria-hidden />
-                ) : (
-                  <ShieldCheck aria-hidden />
-                )}
-                Verify now
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => window.open("/api/backups/recovery-sheet", "_blank")}
-                title="Download a printable page telling you how to restore these backups without Bench - paths, object keys, checksums and commands"
-              >
-                <FileText aria-hidden />
-                Recovery sheet
-              </Button>
-            </>
-          )}
-        </>
-      }
+    // The Tabs root wraps the layout so the tab strip can serve as the page's
+    // toolbar: a title bar above two tabs is a second header repeating the tab
+    // you are already on. Actions move into each tab, beside what they act on.
+    <Tabs
+      value={tab}
+      onValueChange={setTab}
+      className="flex min-h-0 flex-1 flex-col overflow-hidden"
     >
-      <Tabs
-        value={tab}
-        onValueChange={setTab}
-        className="flex min-h-0 flex-1 flex-col overflow-hidden"
+      <PageLayout
+        header={
+          // Refresh sits with the tabs because it refreshes both of them. Given
+          // a row of its own it read as a page element with nothing to be part
+          // of; inside a section it read as though it only refreshed that
+          // section.
+          <div className="flex items-center justify-between gap-2 border-b border-border pr-3">
+            {/* The border moves to this row: left on the list, the underline
+                ran out where the tabs did and stopped short of the button. */}
+            <TabsList className="flex-1 border-b-0">
+              <TabsTrigger value="setup" className={TAB_CLASS}>
+                Setup
+              </TabsTrigger>
+              <TabsTrigger value="backups" className={TAB_CLASS}>
+                Backups
+              </TabsTrigger>
+            </TabsList>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-6 shrink-0 text-xs"
+              onClick={() => void handleRefresh()}
+              disabled={refreshing}
+              aria-label="Refresh backups"
+              title="Re-read destinations, backup rules and the inventory"
+            >
+              <RefreshCw className={cn(refreshing && "animate-spin")} aria-hidden />
+              Refresh
+            </Button>
+            <Button
+              size="sm"
+              className="h-6 shrink-0 text-xs"
+              onClick={() => setRuleDialog({ open: true, existing: null })}
+              disabled={(data?.destinations.length ?? 0) === 0}
+              title={
+                (data?.destinations.length ?? 0) === 0
+                  ? "Add a destination first - a rule needs somewhere to write"
+                  : "Choose what to copy, where to put it, how often, and how long to keep it"
+              }
+            >
+              <Plus aria-hidden />
+              New backup rule
+            </Button>
+          </div>
+        }
+        scrollManaged
+        isLoading={query.isLoading}
+        isError={query.isError}
+        error={query.error}
+        onRetry={() => void query.refetch()}
       >
-        {/* Styling comes from the shared tab component - the underline
-            indicator every other tabbed page in Bench uses - rather than a
-            second look invented here. */}
-        <TabsList className="px-2">
-          <TabsTrigger value="setup">Setup</TabsTrigger>
-          <TabsTrigger value="backups">
-            Backups
-            {artifacts.length > 0 && (
-              <span className="ml-1.5 text-muted-foreground">{artifacts.length}</span>
-            )}
-          </TabsTrigger>
-        </TabsList>
-
         <TabsContent value="setup" className="flex min-h-0 flex-1 flex-col overflow-hidden">
           {data && (
             <SetupTab
@@ -345,7 +346,6 @@ export function BackupsView() {
               }
               onTestDestination={(destinationId) => test.mutate(destinationId)}
               onScanDestinations={() => discover.mutate()}
-              onNewRule={() => setRuleDialog({ open: true, existing: null })}
               onEditRule={(policy) => setRuleDialog({ open: true, existing: policy })}
               onDeleteRule={(policy) =>
                 setConfirm({
@@ -378,6 +378,8 @@ export function BackupsView() {
         <TabsContent value="backups" className="flex min-h-0 flex-1 flex-col overflow-hidden">
           {data && (
             <InventoryTab
+              onVerify={() => verify.mutate()}
+              verifying={verify.isPending}
               data={data}
               artifacts={artifacts}
               filtered={filtered}
@@ -393,7 +395,7 @@ export function BackupsView() {
             />
           )}
         </TabsContent>
-      </Tabs>
+      </PageLayout>
 
       {destinationDialog && (
         <DestinationDialog
@@ -443,6 +445,6 @@ export function BackupsView() {
           onChanged={invalidate}
         />
       )}
-    </PageLayout>
+    </Tabs>
   );
 }

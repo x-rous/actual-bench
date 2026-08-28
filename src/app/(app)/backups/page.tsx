@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
 import { BackupsView } from "@/features/backups/components/BackupsView";
 
 export const metadata: Metadata = {
@@ -6,5 +7,10 @@ export const metadata: Metadata = {
 };
 
 export default function BackupsPage() {
-  return <BackupsView />;
+  // `useSearchParams` needs a Suspense boundary to prerender.
+  return (
+    <Suspense fallback={null}>
+      <BackupsView />
+    </Suspense>
+  );
 }

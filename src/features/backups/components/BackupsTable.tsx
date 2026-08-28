@@ -4,8 +4,11 @@ import { CircleCheck, CircleHelp, CircleX, Lock, Pin, Server } from "lucide-reac
 import type { LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
+  artifactContents,
   COPY_STATE_COPY,
   copyState,
+  describeContentsSize,
+  describeCoverage,
   formatBytes,
   formatDateTime,
   relativeTime,
@@ -36,19 +39,29 @@ const STATE_STYLE: Record<CopyState, { icon: LucideIcon; tone: string; row?: str
 
 type Props = {
   artifacts: ArtifactWithLocations[];
+  /** Names for the rules that made these copies. */
+  policies: { id: string; name: string }[];
   selectedId: string | null;
   onOpen: (artifactId: string) => void;
 };
 
-export function BackupsTable({ artifacts, selectedId, onOpen }: Props) {
+export function BackupsTable({ artifacts, policies, selectedId, onOpen }: Props) {
+  const policyNames = new Map(policies.map((policy) => [policy.id, policy.name]));
+
   return (
     <div className="min-h-0 flex-1 overflow-auto">
-      <table className="w-full border-collapse text-sm">
+      <table className="w-full border-collapse text-xs">
         <thead className="sticky top-0 z-10 bg-background">
           <tr className="border-b border-border text-left text-xs text-muted-foreground">
             <th scope="col" className="px-4 py-2 font-medium">Taken</th>
             <th scope="col" className="px-4 py-2 font-medium">Contents</th>
+            {/* Two columns verification already knows the answer to, and
+                which decide "is this the copy I want": how much budget it
+                holds, and which period it covers. */}
+            <th scope="col" className="px-4 py-2 font-medium">Inside</th>
+            <th scope="col" className="px-4 py-2 font-medium">Covers</th>
             <th scope="col" className="px-4 py-2 font-medium">State</th>
+            <th scope="col" className="px-4 py-2 font-medium">Rule</th>
             <th scope="col" className="px-4 py-2 font-medium">Size</th>
             <th scope="col" className="px-4 py-2 font-medium">Stored in</th>
             <th scope="col" className="px-4 py-2 font-medium">Keep</th>
@@ -60,6 +73,7 @@ export function BackupsTable({ artifacts, selectedId, onOpen }: Props) {
             const style = STATE_STYLE[state];
             const Icon = style.icon;
             const stored = artifact.locations.filter((location) => location.status === "stored");
+            const contents = artifactContents(artifact);
 
             return (
               <tr
@@ -121,14 +135,47 @@ export function BackupsTable({ artifacts, selectedId, onOpen }: Props) {
                   </div>
                 </td>
 
+                <td className="px-4 py-2 whitespace-nowrap text-muted-foreground">
+                  {describeContentsSize(contents)}
+                </td>
+
+                <td className="px-4 py-2 whitespace-nowrap text-muted-foreground">
+                  {describeCoverage(contents)}
+                </td>
+
                 <td className="px-4 py-2">
                   <span
                     className={cn("flex items-center gap-1.5 whitespace-nowrap", style.tone)}
-                    title={COPY_STATE_COPY[state].detail}
+                    title={
+                      artifact.verifiedAt
+                        ? `${COPY_STATE_COPY[state].detail} Last checked ${relativeTime(artifact.verifiedAt)}.`
+                        : COPY_STATE_COPY[state].detail
+                    }
                   >
                     <Icon className="size-4" aria-hidden />
                     {COPY_STATE_COPY[state].label}
                   </span>
+                </td>
+
+                {/* Which rule made this copy - and, when none did, why: a
+                    deleted rule and a copy found in a destination are different
+                    stories, and both end up unowned. */}
+                <td className="px-4 py-2 whitespace-nowrap text-muted-foreground">
+                  {artifact.policyId && policyNames.has(artifact.policyId) ? (
+                    policyNames.get(artifact.policyId)
+                  ) : artifact.tier === "manual" && !artifact.policyId ? (
+                    <span title="Taken by hand, or by a rule that has since been deleted">
+                      by hand
+                    </span>
+                  ) : artifact.policyId ? (
+                    <span title="The rule that made this copy has been deleted. The copy is kept and stays restorable.">
+                      rule deleted
+                    </span>
+                  ) : (
+                    <span title="Found in a destination by Scan for backups, so Bench does not know which rule made it">
+                      discovered
+                    </span>
+                  )}
                 </td>
 
                 <td className="px-4 py-2 whitespace-nowrap text-muted-foreground">
@@ -143,7 +190,7 @@ export function BackupsTable({ artifacts, selectedId, onOpen }: Props) {
                       {stored.map((location) => (
                         <span
                           key={location.id}
-                          className="rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground"
+                          className="rounded bg-muted px-1.5 py-0.5 text-muted-foreground"
                         >
                           {location.destinationName ?? "removed destination"}
                         </span>
@@ -152,7 +199,7 @@ export function BackupsTable({ artifacts, selectedId, onOpen }: Props) {
                   )}
                 </td>
 
-                <td className="px-4 py-2 whitespace-nowrap text-xs text-muted-foreground">
+                <td className="px-4 py-2 whitespace-nowrap text-muted-foreground">
                   {artifact.pinned ? (
                     <span className="flex items-center gap-1 text-foreground">
                       <Pin className="size-3.5" aria-hidden /> Pinned

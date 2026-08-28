@@ -102,14 +102,17 @@ describe("backup rules become automations", () => {
     expect(after?.enabled).toBe(false);
   });
 
-  it("disables the automation of a rule that no longer exists rather than deleting its history", () => {
+  it("removes the automation of a rule that no longer exists", () => {
+    // A paused automation invites Resume, and resuming this one produces "this
+    // backup rule no longer exists" - a dead end dressed up as a control. Its
+    // runs survive; the run history names them as a deleted automation.
     const created = policy();
     reconcileBackupAutomations(db, [created]);
+    expect(listAutomations(db, { type: BACKUP_JOB_TYPE })).toHaveLength(1);
 
     reconcileBackupAutomations(db, []);
 
-    const [automation] = listAutomations(db, { type: BACKUP_JOB_TYPE });
-    expect(automation.enabled).toBe(false);
+    expect(listAutomations(db, { type: BACKUP_JOB_TYPE })).toHaveLength(0);
   });
 
   it("creates one scrub automation for the whole install, not one per rule", () => {

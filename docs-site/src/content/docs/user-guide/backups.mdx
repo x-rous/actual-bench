@@ -30,7 +30,7 @@ It is deliberately pessimistic. A copy Bench has never opened, a destination tha
 or every copy sitting in one place all pull it down — and the reasons are listed underneath. A
 backup screen that reassures you is worse than no backup screen at all.
 
-## Setup: destinations
+## Setup: Backup Destinations
 
 Two kinds, matching the two situations people are actually in:
 
@@ -53,7 +53,7 @@ on a read-only volume, which is exactly the configuration people get wrong.
 A bucket that accepts writes but refuses deletes is a warning rather than an error. Immutable buckets
 are a real choice; backups still work, and only retention is affected.
 
-## Setup: backup rules
+## Setup: Automatic Backup Rules
 
 A rule says what to copy, where to put it, how often, and how long to keep it.
 
@@ -129,7 +129,7 @@ There is no combination of settings that empties a destination.
 that preview is produced by the same code that does the pruning, so it is what will happen rather
 than an approximation of it.
 
-## Setup: recovery points
+## Setup: Recovery Points
 
 Before Bench saves a batch of deletions or payee merges, it copies the budget first, so there is
 something from five minutes ago rather than only from last night. Several changes in one session

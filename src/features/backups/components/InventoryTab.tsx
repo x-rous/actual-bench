@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { FileText, Loader2, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { BackupsTable } from "./BackupsTable";
@@ -25,6 +26,8 @@ export type KindFilter = "all" | "budget" | "app-db";
 
 type Props = {
   data: RecoveryCenterData;
+  verifying: boolean;
+  onVerify: () => void;
   artifacts: ArtifactWithLocations[];
   filtered: ArtifactWithLocations[];
   stateFilter: StateFilter;
@@ -40,6 +43,8 @@ type Props = {
 
 export function InventoryTab({
   data,
+  verifying,
+  onVerify,
   artifacts,
   filtered,
   stateFilter,
@@ -125,12 +130,17 @@ export function InventoryTab({
       ) : (
         <>
           <div className="flex flex-wrap items-center gap-2 border-b border-border px-4 py-1.5 text-xs">
-            <span className="text-muted-foreground">
+            {/* The count that used to sit in the page header, now beside the
+                filters that change it. */}
+            <span className="font-medium">
               {filtered.length === artifacts.length
                 ? `${artifacts.length} ${artifacts.length === 1 ? "copy" : "copies"}`
                 : `${filtered.length} of ${artifacts.length}`}
-              , {formatBytes(filtered.reduce((total, entry) => total + entry.sizeBytes, 0))}
+              <span className="font-normal text-muted-foreground">
+                , {formatBytes(filtered.reduce((total, entry) => total + entry.sizeBytes, 0))}
+              </span>
             </span>
+            <span className="text-muted-foreground">|</span>
 
             <select
               className="h-6 rounded-md border border-input bg-background px-1.5 text-xs"
@@ -155,15 +165,47 @@ export function InventoryTab({
               <option value="app-db">Bench settings</option>
             </select>
 
-            <span className="flex-1" />
-            <span className="text-muted-foreground">
-              Pinned copies and the newest verified one are never deleted. Backups you take by hand are
-              kept until you delete them.
+            <span
+              className="text-muted-foreground"
+              title="Retention never removes a pinned copy, anything under the minimum age, or the newest verified copy. Backups you take by hand are kept until you delete them."
+            >
+              Pinned and newest-verified copies are never deleted
             </span>
+
+            <span className="flex-1" />
+
+            {/* The actions that act on this inventory, beside it rather than in
+                a page header shared with Setup. */}
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-6 text-xs"
+              onClick={onVerify}
+              disabled={verifying || artifacts.length === 0}
+              title="Re-read the newest copies in every destination: are they present, the right size, and still readable?"
+            >
+              {verifying ? (
+                <Loader2 className="animate-spin" aria-hidden />
+              ) : (
+                <ShieldCheck aria-hidden />
+              )}
+              Verify now
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-6 text-xs"
+              onClick={() => window.open("/api/backups/recovery-sheet", "_blank")}
+              title="Download a printable page telling you how to restore these backups without Bench - paths, object keys, checksums and commands"
+            >
+              <FileText aria-hidden />
+              Recovery sheet
+            </Button>
           </div>
 
           <BackupsTable
             artifacts={filtered}
+            policies={data.policies}
             selectedId={selectedArtifactId}
             onOpen={onOpenArtifact}
           />

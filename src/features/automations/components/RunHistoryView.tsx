@@ -77,33 +77,20 @@ export function RunHistoryView() {
 
   return (
     <PageLayout
-      title="Automations"
-      count={query.data ? `${runs.length} ${runs.length === 1 ? "run" : "runs"}` : undefined}
+      header={<AutomationsTabs />}
       scrollManaged
       isLoading={query.isLoading}
       isError={query.isError}
       error={query.error}
       onRetry={() => void query.refetch()}
-      actions={
-        <>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => void handleRefresh()}
-            disabled={refreshing}
-            aria-label="Refresh run history"
-            title="Re-read the run history"
-          >
-            <RefreshCw className={cn(refreshing && "animate-spin")} aria-hidden />
-            Refresh
-          </Button>
-        </>
-      }
     >
       <div className="flex min-h-0 flex-1 flex-col">
-        <AutomationsTabs />
-
         <div className="flex flex-wrap items-center gap-2 border-b border-border px-4 py-2 text-xs">
+          <span className="font-medium">
+            {runs.length} {runs.length === 1 ? "run" : "runs"}
+          </span>
+          <span className="text-muted-foreground">|</span>
+
           {/* Outcome first: "what failed" is the question this page exists for,
               and it should take one click to ask. */}
           <span className="text-muted-foreground">Outcome</span>
@@ -177,6 +164,19 @@ export function RunHistoryView() {
               {failing} of these {failing === 1 ? "run" : "runs"} did not finish cleanly
             </span>
           )}
+
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-6 text-xs"
+            onClick={() => void handleRefresh()}
+            disabled={refreshing}
+            aria-label="Refresh run history"
+            title="Re-read the run history"
+          >
+            <RefreshCw className={cn(refreshing && "animate-spin")} aria-hidden />
+            Refresh
+          </Button>
         </div>
 
         {runs.length === 0 ? (

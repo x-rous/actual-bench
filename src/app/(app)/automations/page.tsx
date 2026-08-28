@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
 import { AutomationsView } from "@/features/automations/components/AutomationsView";
 
 export const metadata: Metadata = {
@@ -6,5 +7,10 @@ export const metadata: Metadata = {
 };
 
 export default function AutomationsPage() {
-  return <AutomationsView />;
+  // `useSearchParams` needs a Suspense boundary to prerender.
+  return (
+    <Suspense fallback={null}>
+      <AutomationsView />
+    </Suspense>
+  );
 }

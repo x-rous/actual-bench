@@ -7,6 +7,10 @@ import { toast } from "sonner";
 import type { AutomationRun } from "@/lib/app-db/types";
 
 jest.mock("../lib/automationsApi");
+jest.mock("next/navigation", () => ({
+  useSearchParams: () => new URLSearchParams(),
+  usePathname: () => "/automations",
+}));
 jest.mock("sonner", () => ({
   toast: { success: jest.fn(), error: jest.fn(), warning: jest.fn() },
 }));
@@ -221,7 +225,11 @@ describe("AutomationsView", () => {
     // back up their budget unless the page says so.
     expect(await screen.findByText(/Nothing is scheduled yet/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Bank sync" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Backups" })).toHaveAttribute("href", "/backups");
+    // A create intent, so it lands where a rule can be created.
+    expect(screen.getByRole("link", { name: "Backups" })).toHaveAttribute(
+      "href",
+      "/backups?new=rule"
+    );
     expect(screen.getByRole("link", { name: "Budget File Sync" })).toHaveAttribute("href", "/sync");
 
     // And it still explains which sync flows qualify, which is the one thing

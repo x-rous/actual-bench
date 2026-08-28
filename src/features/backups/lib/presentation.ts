@@ -133,3 +133,47 @@ export function describeContents(policy: BackupPolicy): string {
 export function sortArtifacts(artifacts: ArtifactWithLocations[]): ArtifactWithLocations[] {
   return [...artifacts].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 }
+
+/** What verification found inside a copy, read defensively off its envelope. */
+export type ArtifactContents = {
+  transactions: number | null;
+  accounts: number | null;
+  payees: number | null;
+  earliest: string | null;
+  latest: string | null;
+};
+
+export function artifactContents(artifact: ArtifactWithLocations): ArtifactContents {
+  const raw = artifact.verification?.data.content;
+  const content = raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
+  const num = (value: unknown) => (typeof value === "number" ? value : null);
+  const str = (value: unknown) => (typeof value === "string" && value ? value : null);
+
+  return {
+    transactions: num((content as Record<string, unknown>).transactions),
+    accounts: num((content as Record<string, unknown>).accounts),
+    payees: num((content as Record<string, unknown>).payees),
+    earliest: str((content as Record<string, unknown>).earliestTransaction),
+    latest: str((content as Record<string, unknown>).latestTransaction),
+  };
+}
+
+/**
+ * How much budget is in a copy.
+ *
+ * The number that catches the failure verification cannot: an export that is
+ * readable, passes every check, and holds half the transactions it did
+ * yesterday.
+ */
+export function describeContentsSize(contents: ArtifactContents): string {
+  if (contents.transactions === null) return "-";
+  const parts = [`${contents.transactions.toLocaleString()} txns`];
+  if (contents.accounts !== null) parts.push(`${contents.accounts} accts`);
+  return parts.join(" · ");
+}
+
+/** The span of budget a copy holds - "is this the one from before I broke it?" */
+export function describeCoverage(contents: ArtifactContents): string {
+  if (!contents.earliest || !contents.latest) return "-";
+  return `${contents.earliest} → ${contents.latest}`;
+}

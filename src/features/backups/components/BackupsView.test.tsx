@@ -6,6 +6,7 @@ import * as api from "../lib/backupsApi";
 import type { ArtifactWithLocations, RecoveryCenterData } from "../lib/backupsApi";
 
 jest.mock("../lib/backupsApi");
+jest.mock("next/navigation", () => ({ useSearchParams: () => new URLSearchParams() }));
 jest.mock("sonner", () => ({
   toast: { success: jest.fn(), error: jest.fn(), warning: jest.fn(), info: jest.fn() },
 }));
@@ -33,7 +34,18 @@ function artifact(overrides: Partial<ArtifactWithLocations> = {}): ArtifactWithL
     verificationLevel: "data",
     verificationStatus: "passed",
     verifiedAt: "2026-08-27T02:00:10.000Z",
-    verification: null,
+    verification: {
+      version: 1,
+      data: {
+        findings: [],
+        content: {
+          accounts: 13,
+          transactions: 2574,
+          earliestTransaction: "2024-10-15",
+          latestTransaction: "2026-08-12",
+        },
+      },
+    },
     manifestVersion: 1,
     benchVersion: null,
     notes: null,
@@ -135,11 +147,15 @@ function data(overrides: Partial<RecoveryCenterData> = {}): RecoveryCenterData {
 
 /** The tab someone lands on depends on whether anything is configured. */
 async function openSetup() {
-  fireEvent.click(await screen.findByRole("tab", { name: /^setup/i }));
+  const tab = await screen.findByRole("tab", { name: /^setup/i });
+  fireEvent.click(tab);
+  await waitFor(() => expect(tab).toHaveAttribute("aria-selected", "true"));
 }
 
 async function openBackups() {
-  fireEvent.click(await screen.findByRole("tab", { name: /^backups/i }));
+  const tab = await screen.findByRole("tab", { name: /^backups/i });
+  fireEvent.click(tab);
+  await waitFor(() => expect(tab).toHaveAttribute("aria-selected", "true"));
 }
 
 function renderView() {
@@ -165,6 +181,36 @@ describe("the Recovery Center", () => {
     expect(
       await screen.findByText("You could restore a verified backup from 3 hours ago.")
     ).toBeInTheDocument();
+  });
+
+  it("says how much budget a copy holds, and which period it covers", async () => {
+    // Verification already opened the archive and counted; a copy that is
+    // readable but holds half the transactions it did yesterday is the failure
+    // no status word catches.
+    renderView();
+
+    expect(await screen.findByText("2,574 txns · 13 accts")).toBeInTheDocument();
+    expect(screen.getByText("2024-10-15 → 2026-08-12")).toBeInTheDocument();
+  });
+
+  it("names the rule that made a copy, and says so when none did", async () => {
+    // "Where did this come from" is answerable, and the answers differ: a live
+    // rule, a rule since deleted, and a copy found by scanning a destination.
+    mockedApi.fetchRecoveryCenter.mockResolvedValue(
+      data({
+        artifacts: [
+          artifact(),
+          artifact({ id: "art-2", policyId: null, tier: "daily" }),
+          artifact({ id: "art-3", policyId: "pol-gone" }),
+        ],
+      })
+    );
+
+    renderView();
+
+    expect(await screen.findByText("Nightly")).toBeInTheDocument();
+    expect(screen.getByText("discovered")).toBeInTheDocument();
+    expect(screen.getByText("rule deleted")).toBeInTheDocument();
   });
 
   it("shows each copy's state in words, not only in colour", async () => {
@@ -253,17 +299,17 @@ describe("the Recovery Center", () => {
     );
   });
 
-  it("opens a fresh install on Setup, where the only useful action is", async () => {
+  it("opens on Setup when there is nothing to look at", async () => {
     mockedApi.fetchRecoveryCenter.mockResolvedValue(
       data({ artifacts: [], policies: [], destinations: [] })
     );
 
     renderView();
 
-    // Nothing configured: the tab someone needs is the one they have not used.
-    expect(await screen.findByRole("tab", { name: /^setup/i })).toHaveAttribute(
-      "aria-selected",
-      "true"
+    // Nothing stored yet: the tab someone needs is the one they have not used.
+    // Decided once the data is in, so this settles rather than flipping.
+    await waitFor(() =>
+      expect(screen.getByRole("tab", { name: /^setup/i })).toHaveAttribute("aria-selected", "true")
     );
     expect(screen.getByText(/Nowhere to put a backup yet/)).toBeInTheDocument();
     // A rule cannot be saved without somewhere to write it.
@@ -276,21 +322,29 @@ describe("the Recovery Center", () => {
     );
 
     renderView();
+    // Wait for the data before switching, or the guided steps are still
+    // deciding which step you are on.
+    await screen.findByRole("tab", { name: /^setup/i });
     await openBackups();
 
-    // One guided path, not four separate empty messages.
     expect(await screen.findByText("Start by choosing where copies go")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /go to setup/i })).toBeInTheDocument();
   });
 
-  it("opens a configured install on the copies, not on the settings", async () => {
+  it("opens on the copies whenever there are copies, whatever was opened last time", async () => {
+    // The tab is where you are looking now, not a preference: having once
+    // opened Setup should not mean every later visit starts on the settings.
+    sessionStorage.setItem("filters:backups", JSON.stringify({ tab: "setup" }));
+
     renderView();
 
-    expect(await screen.findByRole("tab", { name: /^backups/i })).toHaveAttribute(
-      "aria-selected",
-      "true"
+    await waitFor(() =>
+      expect(screen.getByRole("tab", { name: /^backups/i })).toHaveAttribute(
+        "aria-selected",
+        "true"
+      )
     );
-    expect(screen.getByText("Household")).toBeInTheDocument();
+    expect(await screen.findByText("Household")).toBeInTheDocument();
   });
 
   it("names the prerequisite a scheduled backup has, before it bites", async () => {
@@ -299,11 +353,10 @@ describe("the Recovery Center", () => {
     );
 
     renderView();
+    await screen.findByRole("tab", { name: /^setup/i });
     await openBackups();
 
-    expect(
-      await screen.findByText(/enrolled for unattended use/)
-    ).toBeInTheDocument();
+    expect(await screen.findByText(/enrolled for unattended use/)).toBeInTheDocument();
   });
 
   it("says a rule is not running when its automation is paused", async () => {

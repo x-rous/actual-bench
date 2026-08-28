@@ -1,4 +1,9 @@
-import { createAutomation, listAutomations, updateAutomation } from "@/lib/app-db/automationRepository";
+import {
+  createAutomation,
+  deleteAutomation,
+  listAutomations,
+  updateAutomation,
+} from "@/lib/app-db/automationRepository";
 import { logger } from "@/lib/logger";
 import type { BackupPolicy } from "@/lib/app-db/backupRepository";
 import type { AutomationDefinition, SqliteDatabase } from "@/lib/app-db/types";
@@ -25,6 +30,8 @@ import { BACKUP_JOB_TYPE, BACKUP_SCRUB_JOB_TYPE } from "./backupType";
 export type BackupReconcileSummary = {
   created: string[];
   updated: string[];
+  /** Automations whose rule is gone, and which therefore had nothing to run. */
+  removed: string[];
 };
 
 function policyIdOf(automation: AutomationDefinition): string | null {
@@ -67,7 +74,7 @@ export function reconcileBackupAutomations(
 }
 
 function reconcileInTransaction(db: SqliteDatabase, policies: BackupPolicy[]): BackupReconcileSummary {
-  const summary: BackupReconcileSummary = { created: [], updated: [] };
+  const summary: BackupReconcileSummary = { created: [], updated: [], removed: [] };
 
   const existingByPolicy = new Map<string, AutomationDefinition>();
   for (const automation of listAutomations(db, { type: BACKUP_JOB_TYPE })) {
@@ -111,14 +118,16 @@ function reconcileInTransaction(db: SqliteDatabase, policies: BackupPolicy[]): B
     }
   }
 
-  // A rule that has been deleted leaves its automation behind, which would run
-  // forever against nothing. Disable rather than delete, so its history stays
-  // readable and the user can see what happened to it.
+  // A rule that has been deleted leaves an automation with nothing to run.
+  // Delete it rather than disabling it: a paused automation invites Resume, and
+  // resuming this one produces "This backup rule no longer exists" - a dead end
+  // dressed up as a control. Its runs are kept and the run history names them
+  // as belonging to a deleted automation, so the record survives the row.
   const liveIds = new Set(policies.map((policy) => policy.id));
   for (const [policyId, automation] of existingByPolicy) {
-    if (!liveIds.has(policyId) && automation.enabled) {
-      updateAutomation(db, automation.id, { enabled: false });
-      summary.updated.push(automation.id);
+    if (!liveIds.has(policyId)) {
+      deleteAutomation(db, automation.id);
+      summary.removed.push(automation.id);
     }
   }
 

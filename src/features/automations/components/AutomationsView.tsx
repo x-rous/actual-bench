@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeftRight, DatabaseBackup, Landmark, Plus, RefreshCw } from "lucide-react";
+import { Plus, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { Button, buttonVariants } from "@/components/ui/button";
 import {
@@ -14,6 +14,7 @@ import {
 import { PageLayout } from "@/components/layout/PageLayout";
 import { cn } from "@/lib/utils";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import {
   listAutomations,
   listReviewQueue,
@@ -25,7 +26,7 @@ import { AutomationDetail } from "./AutomationDetail";
 import { AutomationsTabs } from "./AutomationsTabs";
 import { AutomationsTable } from "./AutomationsTable";
 import { NewBankSyncDialog } from "./NewBankSyncDialog";
-import { describeAutomationsSummary } from "../lib/presentation";
+import { describeAutomationsSummary, jobTypeIcon } from "../lib/presentation";
 
 /**
  * The Automations workspace (RD-079 / PR-043d).
@@ -42,7 +43,10 @@ import { describeAutomationsSummary } from "../lib/presentation";
 
 export function AutomationsView() {
   const queryClient = useQueryClient();
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const params = useSearchParams();
+  // Arriving from a link that names an automation opens it, rather than leaving
+  // someone to find the row themselves on a page they were sent to for it.
+  const [selectedId, setSelectedId] = useState<string | null>(params.get("open"));
   const [creating, setCreating] = useState(false);
 
   const automationsQuery = useQuery({
@@ -125,69 +129,14 @@ export function AutomationsView() {
 
   return (
     <PageLayout
-      title="Automations"
-      count={describeAutomationsSummary(automations)}
+      // The tabs are the toolbar: a title bar above three tabs is a second
+      // header saying what the first tab already says.
+      header={<AutomationsTabs />}
       scrollManaged
       isLoading={automationsQuery.isLoading}
       isError={automationsQuery.isError}
       error={automationsQuery.error}
       onRetry={() => void automationsQuery.refetch()}
-      actions={
-        <>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => void handleRefresh()}
-            disabled={refreshing}
-            aria-label="Refresh automations"
-          >
-            <RefreshCw className={cn(refreshing && "animate-spin")} aria-hidden />
-            Refresh
-          </Button>
-          {/* One entry point for everything schedulable, rather than a button
-              for whichever type happened to ship first. It also answers the
-              question a single button cannot: *what else can Bench run for
-              me* — and where each of those is set up. */}
-          <DropdownMenu>
-            <DropdownMenuTrigger className={cn(buttonVariants({ size: "sm" }))}>
-              <Plus aria-hidden />
-              New automation
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-72">
-              <DropdownMenuItem onClick={() => setCreating(true)}>
-                <Landmark aria-hidden />
-                <span className="flex flex-col">
-                  <span className="font-medium">Bank sync</span>
-                  <span className="text-xs text-muted-foreground">
-                    Pull new transactions from your connected banks.
-                  </span>
-                </span>
-              </DropdownMenuItem>
-              {/* Real links, not router pushes: they middle-click, they show a
-                  destination in the status bar, and they need no router in a
-                  test that only renders this view. */}
-              <DropdownMenuItem render={<Link href="/backups" />}>
-                <DatabaseBackup aria-hidden />
-                <span className="flex flex-col">
-                  <span className="font-medium">Backup</span>
-                  <span className="text-xs text-muted-foreground">
-                    Verified copies of your budget, set up in Backups.
-                  </span>
-                </span>
-              </DropdownMenuItem>
-              <DropdownMenuItem render={<Link href="/sync" />}>
-                <ArrowLeftRight aria-hidden />
-                <span className="flex flex-col">
-                  <span className="font-medium">Budget file sync</span>
-                  <span className="text-xs text-muted-foreground">
-                    Copy data between budget files, set up in Budget File Sync.
-                  </span>
-                </span>
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </>
-      }
       emptyState={
         automations.length === 0 ? (
           <div className="mx-auto max-w-xl px-6 py-14">
@@ -210,7 +159,10 @@ export function AutomationsView() {
                 </span>
               </li>
               <li>
-                <Link href="/backups" className="font-medium text-primary underline-offset-4 hover:underline">
+                <Link
+                  href="/backups?new=rule"
+                  className="font-medium text-primary underline-offset-4 hover:underline"
+                >
                   Backups
                 </Link>
                 <span className="text-muted-foreground">
@@ -235,15 +187,85 @@ export function AutomationsView() {
       }
     >
       <div className="flex min-h-0 flex-1 flex-col">
-        <AutomationsTabs />
+        {/* What this page is, and what you can do to it, on one line - rather
+            than a page header repeating the tab you are already on. The
+            execution-mode rule is stated once here instead of on every row. */}
+        <div className="flex flex-wrap items-center gap-3 border-b border-border px-4 py-2">
+          <p className="min-w-0 flex-1 text-xs text-muted-foreground">
+            <strong className="font-medium text-foreground">
+              {describeAutomationsSummary(automations)}
+            </strong>
+            {" · "}
+            Automations marked <strong className="font-medium">Server</strong> run on a schedule even
+            with Actual Bench closed. One server instance runs them - Bench does not coordinate
+            across several.
+          </p>
 
-        {/* Stated once for the page instead of on every row: the rule is that
-            the user knows where automations run, not that the sentence repeats. */}
-        <p className="border-b border-border px-4 py-2 text-xs text-muted-foreground">
-          Automations marked <strong className="font-medium">Server</strong> run on a schedule even
-          with Actual Bench closed. One server instance runs them — Bench does not coordinate across
-          several.
-        </p>
+          <div className="flex shrink-0 items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => void handleRefresh()}
+              disabled={refreshing}
+              aria-label="Refresh automations"
+              title="Re-read automations and their latest runs"
+            >
+              <RefreshCw className={cn(refreshing && "animate-spin")} aria-hidden />
+              Refresh
+            </Button>
+
+            {/* One entry point for everything schedulable, rather than a button
+                for whichever type happened to ship first. It also answers the
+                question a single button cannot: *what else can Bench run for
+                me* - and where each of those is set up. */}
+            <DropdownMenu>
+              <DropdownMenuTrigger className={cn(buttonVariants({ size: "sm" }))}>
+                <Plus aria-hidden />
+                New automation
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-96">
+                <DropdownMenuItem onClick={() => setCreating(true)}>
+                  {(() => {
+                    const Icon = jobTypeIcon("bank-sync");
+                    return <Icon aria-hidden />;
+                  })()}
+                  <span className="flex flex-col">
+                    <span className="font-medium">Bank sync</span>
+                    <span className="text-xs text-muted-foreground">
+                      Pull new transactions from your connected banks.
+                    </span>
+                  </span>
+                </DropdownMenuItem>
+                {/* ?new=rule rather than /backups: this is a create action,
+                    and Backups otherwise opens on the copies you already have. */}
+                <DropdownMenuItem nativeButton={false} render={<Link href="/backups?new=rule" />}>
+                  {(() => {
+                    const Icon = jobTypeIcon("backup");
+                    return <Icon aria-hidden />;
+                  })()}
+                  <span className="flex flex-col">
+                    <span className="font-medium">Backup</span>
+                    <span className="text-xs text-muted-foreground">
+                      Verified copies of your budget, set up in Backups.
+                    </span>
+                  </span>
+                </DropdownMenuItem>
+                <DropdownMenuItem nativeButton={false} render={<Link href="/sync" />}>
+                  {(() => {
+                    const Icon = jobTypeIcon("budget-file-sync");
+                    return <Icon aria-hidden />;
+                  })()}
+                  <span className="flex flex-col">
+                    <span className="font-medium">Budget file sync</span>
+                    <span className="text-xs text-muted-foreground">
+                      Copy data between budget files, set up in Budget File Sync.
+                    </span>
+                  </span>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        </div>
 
         {reviewQueue.length > 0 && (
           <section

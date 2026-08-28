@@ -77,44 +77,42 @@ export function ConnectionsView() {
 
   return (
     <PageLayout
-      title="Automations"
-      count={
-        query.data
-          ? `${connections.length} ${connections.length === 1 ? "budget" : "budgets"}`
-          : undefined
-      }
+      header={<AutomationsTabs />}
       scrollManaged
       isLoading={query.isLoading}
       isError={query.isError}
       error={query.error}
       onRetry={() => void query.refetch()}
-      actions={
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => void handleRefresh()}
-          disabled={refreshing}
-          aria-label="Refresh connections"
-          title="Re-read which budgets are enrolled"
-        >
-          <RefreshCw className={cn(refreshing && "animate-spin")} aria-hidden />
-          Refresh
-        </Button>
-      }
     >
       <div className="flex min-h-0 flex-1 flex-col">
-        <AutomationsTabs />
-
         <div className="min-h-0 flex-1 overflow-auto p-4">
           <div className="mb-2 flex flex-wrap items-start justify-between gap-2">
             <div className="min-w-0">
-              <h2 className="text-sm font-semibold">Unattended access</h2>
+              <h2 className="text-sm font-semibold">
+                Unattended access
+                <span className="ml-2 font-normal text-muted-foreground">
+                  {connections.length} {connections.length === 1 ? "budget" : "budgets"}
+                </span>
+              </h2>
               <p className="mt-0.5 max-w-3xl text-xs text-muted-foreground">
                 Bench can act on these budgets while your browser is closed - that is what a
                 scheduled sync, bank pull or backup needs. Each budget is enrolled separately, so
                 three budgets means three entries here.
               </p>
             </div>
+
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 shrink-0 text-xs"
+              onClick={() => void handleRefresh()}
+              disabled={refreshing}
+              aria-label="Refresh connections"
+              title="Re-read which budgets are enrolled"
+            >
+              <RefreshCw className={cn(refreshing && "animate-spin")} aria-hidden />
+              Refresh
+            </Button>
           </div>
 
           {/* Enrolling what you are connected to right now is the one thing
@@ -173,7 +171,7 @@ export function ConnectionsView() {
                             {connection.usedBy.map((automation) => (
                               <Link
                                 key={automation.id}
-                                href="/automations"
+                                href={`/automations?open=${automation.id}`}
                                 className="rounded bg-muted px-1.5 py-0.5 text-muted-foreground underline-offset-4 hover:underline"
                                 title={`${automation.typeLabel}${automation.enabled ? "" : " (paused)"}`}
                               >

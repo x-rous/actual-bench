@@ -13,7 +13,7 @@ import {
   ScanSearch,
   Trash2,
 } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import {
   describeContents,
@@ -59,7 +59,6 @@ type Props = {
   onRemoveDestination: (destination: BackupDestination) => void;
   onTestDestination: (destinationId: string) => void;
   onScanDestinations: () => void;
-  onNewRule: () => void;
   onEditRule: (policy: PolicyWithAutomation) => void;
   onDeleteRule: (policy: PolicyWithAutomation) => void;
   onRunNow: (policyId: string) => void;
@@ -108,7 +107,6 @@ export function SetupTab({
   onRemoveDestination,
   onTestDestination,
   onScanDestinations,
-  onNewRule,
   onEditRule,
   onDeleteRule,
   onRunNow,
@@ -123,7 +121,7 @@ export function SetupTab({
           whichever rule discovered it. */}
       <Section
         id="destinations-heading"
-        title="Destinations"
+        title="Backup Destinations"
         actions={
           <>
             <Button
@@ -265,26 +263,7 @@ export function SetupTab({
       </Section>
 
       {/* ── Backup rules ─────────────────────────────────────────────────── */}
-      <Section
-        id="rules-heading"
-        title="Backup rules"
-        actions={
-          <Button
-            size="sm"
-            className="h-7 text-xs"
-            onClick={onNewRule}
-            disabled={data.destinations.length === 0}
-            title={
-              data.destinations.length === 0
-                ? "Add a destination first - a rule needs somewhere to write"
-                : "Choose what to copy, where to put it, how often, and how long to keep it"
-            }
-          >
-            <Plus aria-hidden />
-            New backup rule
-          </Button>
-        }
-      >
+      <Section id="rules-heading" title="Automatic Backup Rules">
         {data.policies.length === 0 ? (
           <p className="text-xs text-muted-foreground">
             {data.destinations.length === 0
@@ -380,24 +359,25 @@ export function SetupTab({
                           )}
                           Back up now
                         </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="h-6 text-xs"
-                          render={
-                            <Link
-                              href={
-                                policy.automation
-                                  ? `/automations/runs?automation=${policy.automation.id}`
-                                  : "/automations/runs"
-                              }
-                            />
+                        {/* A real link, styled as a button. Rendering an anchor
+                            through Button keeps role="button" on it, which
+                            announces a navigation as a button and loses what a
+                            link offers - open in a new tab, copy the address. */}
+                        <Link
+                          href={
+                            policy.automation
+                              ? `/automations/runs?automation=${policy.automation.id}`
+                              : "/automations/runs"
                           }
+                          className={cn(
+                            buttonVariants({ variant: "outline", size: "sm" }),
+                            "h-6 text-xs"
+                          )}
                           title="Every run of this rule, with its result, duration and log"
                         >
                           <History aria-hidden />
                           Run history
-                        </Button>
+                        </Link>
                         <Button
                           variant="outline"
                           size="sm"
