@@ -15,6 +15,7 @@ import type { SkipReason } from "../csv/rulesCsvImport";
 import { RulesTable } from "./RulesTable";
 import { RuleDrawer } from "./RuleDrawer";
 import { MergeRulesDialog } from "./MergeRulesDialog";
+import { GeneraliseRuleDialog } from "./GeneraliseRuleDialog";
 import { RulesImportResultDialog } from "./RulesImportResultDialog";
 
 export function RulesView() {
@@ -44,8 +45,12 @@ export function RulesView() {
   const [mergeDefaultDeleteOriginals, setMergeDefaultDeleteOriginals] = useState(false);
   const [mergeReturnTo, setMergeReturnTo] = useState<string | null>(null);
   const [importResult, setImportResult]   = useState<{ imported: number; skipped: number; skipReasons: SkipReason[] } | null>(null);
+  const [generaliseRuleId, setGeneraliseRuleId] = useState<string | null>(null);
+  const [generaliseReturnTo, setGeneraliseReturnTo] = useState<string | null>(null);
   const mergeIntentHandledRef            = useRef(false);
   const mergeConfirmedRef                = useRef(false);
+  const generaliseIntentHandledRef       = useRef(false);
+  const generaliseConfirmedRef           = useRef(false);
 
   const ruleCount = Object.values(stagedRules).filter((s) => !s.isDeleted).length;
 
@@ -92,6 +97,47 @@ export function RulesView() {
     setMergeDefaultDeleteOriginals(from === "diagnostics");
     setMergeReturnTo(from === "diagnostics" ? "/rules/diagnostics" : null);
   }, [isLoading, searchParams, router]);
+
+  // Auto-open the generalise dialog when navigated here with
+  // ?generalise=id&from=... (from a Generalise button on a Rule Diagnostics
+  // finding). Same wait-for-the-store shape as the merge intent above.
+  useEffect(() => {
+    if (generaliseIntentHandledRef.current) return;
+    if (isLoading) return;
+    const id = searchParams.get("generalise");
+    if (!id) return;
+    generaliseIntentHandledRef.current = true;
+
+    const rulesMap = useStagedStore.getState().rules;
+    if (!rulesMap[id] || rulesMap[id].isDeleted) {
+      toast.error("That rule no longer exists in the current working set.");
+      router.replace("/rules");
+      return;
+    }
+    setGeneraliseRuleId(id);
+    setGeneraliseReturnTo(searchParams.get("from") === "diagnostics" ? "/rules/diagnostics" : null);
+  }, [isLoading, searchParams, router]);
+
+  function handleGeneraliseOpenChange(open: boolean) {
+    if (open) return;
+    setGeneraliseRuleId(null);
+    if (!generaliseConfirmedRef.current) {
+      if (generaliseReturnTo) {
+        router.push(generaliseReturnTo);
+      } else if (searchParams.get("generalise")) {
+        router.replace("/rules");
+      }
+    }
+    generaliseConfirmedRef.current = false;
+    setGeneraliseReturnTo(null);
+  }
+
+  function handleGeneraliseConfirmed(id: string) {
+    generaliseConfirmedRef.current = true;
+    // Back to the findings when that is where the intent came from, so the next
+    // one is one click away; otherwise show the rewritten rule.
+    router.push(generaliseReturnTo ?? `/rules?highlight=${id}`);
+  }
 
   function handleMergeOpenChange(open: boolean) {
     if (open) return;
@@ -271,6 +317,13 @@ export function RulesView() {
         ruleIds={mergeRuleIds}
         defaultDeleteOriginals={mergeDefaultDeleteOriginals}
         onConfirmed={handleMergeConfirmed}
+      />
+
+      <GeneraliseRuleDialog
+        open={generaliseRuleId !== null}
+        onOpenChange={handleGeneraliseOpenChange}
+        ruleId={generaliseRuleId}
+        onConfirmed={handleGeneraliseConfirmed}
       />
 
       <RulesImportResultDialog

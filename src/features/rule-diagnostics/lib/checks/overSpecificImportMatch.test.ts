@@ -1,4 +1,5 @@
-import type { Rule } from "@/types/entities";
+import type { Payee, Rule } from "@/types/entities";
+import type { StagedMap } from "@/types/staged";
 import type { CheckContext, WorkingSet } from "../../types";
 import { overSpecificImportMatch } from "./overSpecificImportMatch";
 
@@ -20,11 +21,22 @@ function rule(partial: Partial<Rule> & { id: string }): Rule {
   };
 }
 
+const stagedPayees: StagedMap<Payee> = {
+  "p-1": {
+    entity: { id: "p-1", name: "Market Boys" },
+    original: { id: "p-1", name: "Market Boys" },
+    isNew: false,
+    isUpdated: false,
+    isDeleted: false,
+    validationErrors: {},
+  },
+};
+
 function ws(rules: Rule[]): WorkingSet {
   return {
     rules,
     entityMaps: {
-      payees: { "p-1": { entity: { id: "p-1", name: "Market Boys" } } },
+      payees: stagedPayees,
       categories: {},
       accounts: {},
       categoryGroups: {},

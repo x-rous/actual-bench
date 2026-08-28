@@ -125,13 +125,19 @@ it("renders, filters, refreshes, and jump-to-rule without invoking ANY staged-st
       affected: [{ id: "rule-warn", summary: "rule warn summary" }],
     }),
     makeFinding({
+      code: "RULE_OVERSPECIFIC_IMPORT_MATCH",
+      severity: "warning",
+      title: "Warning two",
+      affected: [{ id: "rule-general", summary: "rule general summary" }],
+    }),
+    makeFinding({
       code: "RULE_NEAR_DUPLICATE_PAIR",
       severity: "info",
       title: "Info one",
       affected: [{ id: "rule-info", summary: "rule info summary" }],
     }),
   ];
-  const summary = { error: 1, warning: 1, info: 1, total: 3 };
+  const summary = { error: 1, warning: 2, info: 1, total: 4 };
 
   hookResult = {
     report: {
@@ -139,7 +145,7 @@ it("renders, filters, refreshes, and jump-to-rule without invoking ANY staged-st
       findings,
       summary,
       workingSetSignature: "sig-1",
-      ruleCount: 3,
+      ruleCount: 4,
     },
     running: false,
     error: null,
@@ -174,7 +180,11 @@ it("renders, filters, refreshes, and jump-to-rule without invoking ANY staged-st
   // 3. Click Refresh.
   fireEvent.click(screen.getByLabelText("Refresh rule diagnostics"));
 
-  // 3. Click each finding's rule summary link.
+  // 4. Click the Generalise button, which hands off to the Rules page rather
+  // than staging anything here.
+  fireEvent.click(screen.getByLabelText("Generalise this rule"));
+
+  // 5. Click each finding's rule summary link.
   for (const f of findings) {
     const link = screen.getByLabelText(`Open rule: ${f.affected[0].summary}`);
     fireEvent.click(link);
