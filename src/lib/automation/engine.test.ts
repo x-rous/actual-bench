@@ -11,10 +11,15 @@ import {
   cancelAutomation,
   executeAutomation,
   isAutomationRunning,
+  resumeAutomationsAwaitingTheirJobType,
   runEngineTick,
   selectDueAutomations,
 } from "./engine";
-import { claimAutomation, releaseAutomationClaim } from "@/lib/app-db/automationRepository";
+import {
+  claimAutomation,
+  pauseAutomationForHealth,
+  releaseAutomationClaim,
+} from "@/lib/app-db/automationRepository";
 import { __resetBankSyncRegistrationForTests, registerBankSyncJobType } from "./jobs/bankSync";
 import {
   __resetBudgetFileSyncRegistrationForTests,
@@ -75,6 +80,67 @@ function definition(db: SqliteDatabase, extra: Record<string, unknown> = {}): st
     ...extra,
   }).id;
 }
+
+describe("a pause that outlived its cause", () => {
+  it("gives back an automation once its job type is registered", async () => {
+    // The engine paused every backup and bank sync in one install because a
+    // startup hook registered one type. Clearing that by hand, one automation
+    // at a time, is work Bench created for a fault of its own.
+    const { root, db } = tempDb();
+    try {
+      const id = createAutomation(db, {
+        type: "arrives-later",
+        name: "Backup",
+        executionMode: "server",
+        scheduleKind: "interval",
+        intervalMinutes: 60,
+        config: { version: 1, data: {} },
+      }).id;
+
+      await executeAutomation(db, id);
+      expect(getAutomation(db, id)?.autoPauseReason).toMatch(/No job type registered/);
+
+      registerAutomationJobType({
+        type: "arrives-later",
+        label: "Arrives later",
+        validateConfig: () => ({}),
+        run: async () => ({}),
+        summarize: () => ({ outcome: "ok" as const, itemCount: 0 }),
+        serializeResult: () => ({ version: 1, data: {} }),
+      });
+
+      expect(resumeAutomationsAwaitingTheirJobType(db)).toEqual([id]);
+      expect(getAutomation(db, id)?.autoPausedAt).toBeNull();
+    } finally {
+      resetAppDbForTests();
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("leaves a pause that a person still needs to look at", async () => {
+    // Repeated genuine failures are not fixed by a restart, so that pause
+    // stays until someone deals with the cause.
+    const { root, db } = tempDb();
+    try {
+      const id = createAutomation(db, {
+        type: "arrives-later",
+        name: "Backup",
+        executionMode: "server",
+        scheduleKind: "interval",
+        intervalMinutes: 60,
+        config: { version: 1, data: {} },
+      }).id;
+
+      pauseAutomationForHealth(db, id, new Date().toISOString(), "Failed 5 times in a row");
+
+      expect(resumeAutomationsAwaitingTheirJobType(db)).toEqual([]);
+      expect(getAutomation(db, id)?.autoPausedAt).not.toBeNull();
+    } finally {
+      resetAppDbForTests();
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
 
 describe("automation engine", () => {
   afterEach(() => {

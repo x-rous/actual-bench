@@ -6,7 +6,7 @@ import {
 } from "@/lib/app-db/backupRepository";
 import { prune, type PruneResult } from "@/lib/backup/prune";
 import { runBackup, type BackupRunResult } from "@/lib/backup/runBackup";
-import { registerAutomationJobType } from "../registry";
+import { getAutomationJobType, registerAutomationJobType } from "../registry";
 import { BACKUP_JOB_TYPE } from "./backupType";
 import { reconcileBackupAutomations } from "./backupReconcile";
 import type { AutomationJobType, AutomationRunContext } from "../registry";
@@ -207,15 +207,18 @@ export const backupJobType: AutomationJobType<BackupJobConfig, BackupJobResult> 
   // budget and stores bytes. Nothing to review, so no classification.
 };
 
-let registered = false;
-
+/**
+ * Idempotent, and keyed on the registry rather than on a module-level flag.
+ *
+ * A boolean here and the registry map live in separate modules, and a dev
+ * server can replace one without the other - after which this function would
+ * try to register a type the registry already had, and throw. The registry is
+ * the thing being guarded, so it is the thing to ask.
+ */
 export function registerBackupJobType(): void {
-  if (registered) return;
+  if (getAutomationJobType(BACKUP_JOB_TYPE)) return;
   registerAutomationJobType(backupJobType);
-  registered = true;
 }
 
-/** Test-only: allow re-registration after the registry is reset. */
-export function __resetBackupRegistrationForTests(): void {
-  registered = false;
-}
+/** Test-only, retained for callers: the registry check above needs no reset. */
+export function __resetBackupRegistrationForTests(): void {}

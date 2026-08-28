@@ -1,7 +1,7 @@
 import { getAppDb } from "@/lib/app-db/connection";
 import { listBackupDestinations } from "@/lib/app-db/backupRepository";
 import { scrubAll, type ScrubResult } from "@/lib/backup/scrub";
-import { registerAutomationJobType } from "../registry";
+import { getAutomationJobType, registerAutomationJobType } from "../registry";
 import { BACKUP_SCRUB_JOB_TYPE } from "./backupType";
 import type { AutomationJobType, AutomationRunContext } from "../registry";
 import type { AutomationRunRollup, JsonEnvelope } from "@/lib/app-db/types";
@@ -148,15 +148,18 @@ export const backupScrubJobType: AutomationJobType<BackupScrubConfig, BackupScru
   // backup rules it protects, in `reconcileBackupAutomations`.
 };
 
-let registered = false;
-
+/**
+ * Idempotent, and keyed on the registry rather than on a module-level flag.
+ *
+ * A boolean here and the registry map live in separate modules, and a dev
+ * server can replace one without the other - after which this function would
+ * try to register a type the registry already had, and throw. The registry is
+ * the thing being guarded, so it is the thing to ask.
+ */
 export function registerBackupScrubJobType(): void {
-  if (registered) return;
+  if (getAutomationJobType(BACKUP_SCRUB_JOB_TYPE)) return;
   registerAutomationJobType(backupScrubJobType);
-  registered = true;
 }
 
-/** Test-only: allow re-registration after the registry is reset. */
-export function __resetBackupScrubRegistrationForTests(): void {
-  registered = false;
-}
+/** Test-only, retained for callers: the registry check above needs no reset. */
+export function __resetBackupScrubRegistrationForTests(): void {}
