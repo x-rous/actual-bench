@@ -133,6 +133,15 @@ function data(overrides: Partial<RecoveryCenterData> = {}): RecoveryCenterData {
   };
 }
 
+/** The tab someone lands on depends on whether anything is configured. */
+async function openSetup() {
+  fireEvent.click(await screen.findByRole("tab", { name: /^setup/i }));
+}
+
+async function openBackups() {
+  fireEvent.click(await screen.findByRole("tab", { name: /^backups/i }));
+}
+
 function renderView() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
@@ -144,6 +153,9 @@ function renderView() {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  // The chosen tab and filters persist to sessionStorage, so one test's choice
+  // would otherwise decide the next test's starting tab.
+  sessionStorage.clear();
   mockedApi.fetchRecoveryCenter.mockResolvedValue(data());
 });
 
@@ -200,6 +212,7 @@ describe("the Recovery Center", () => {
     });
 
     renderView();
+    await openSetup();
     fireEvent.click(await screen.findByRole("button", { name: /back up now/i }));
 
     await waitFor(() => expect(toast.error).toHaveBeenCalledWith("No enabled destination"));
@@ -218,6 +231,7 @@ describe("the Recovery Center", () => {
     });
 
     renderView();
+    await openSetup();
     fireEvent.click(await screen.findByRole("button", { name: /back up now/i }));
 
     await waitFor(() =>
@@ -241,11 +255,29 @@ describe("the Recovery Center", () => {
     );
 
     renderView();
+    await openSetup();
     // The reason sits inline with the destination name, so it spans nodes.
     await screen.findByText("NAS volume", { selector: "span.font-medium" });
     await waitFor(() =>
       expect(document.body.textContent).toContain("No space left on device")
     );
+  });
+
+  it("opens a fresh install on Setup, where the only useful action is", async () => {
+    mockedApi.fetchRecoveryCenter.mockResolvedValue(
+      data({ artifacts: [], policies: [], destinations: [] })
+    );
+
+    renderView();
+
+    // Nothing configured: the tab someone needs is the one they have not used.
+    expect(await screen.findByRole("tab", { name: /^setup/i })).toHaveAttribute(
+      "aria-selected",
+      "true"
+    );
+    expect(screen.getByText(/Nowhere to put a backup yet/)).toBeInTheDocument();
+    // A rule cannot be saved without somewhere to write it.
+    expect(screen.getByRole("button", { name: /new backup rule/i })).toBeDisabled();
   });
 
   it("walks a new user through the order things have to happen in", async () => {
@@ -254,13 +286,21 @@ describe("the Recovery Center", () => {
     );
 
     renderView();
+    await openBackups();
 
     // One guided path, not four separate empty messages.
     expect(await screen.findByText("Start by choosing where copies go")).toBeInTheDocument();
-    // And the primary action is the one that can actually be completed: a rule
-    // cannot be saved with no destination to save it to.
-    expect(screen.getByRole("button", { name: /add a destination/i })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /new backup rule/i })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /go to setup/i })).toBeInTheDocument();
+  });
+
+  it("opens a configured install on the copies, not on the settings", async () => {
+    renderView();
+
+    expect(await screen.findByRole("tab", { name: /^backups/i })).toHaveAttribute(
+      "aria-selected",
+      "true"
+    );
+    expect(screen.getByText("Household")).toBeInTheDocument();
   });
 
   it("names the prerequisite a scheduled backup has, before it bites", async () => {
@@ -269,6 +309,7 @@ describe("the Recovery Center", () => {
     );
 
     renderView();
+    await openBackups();
 
     expect(
       await screen.findByText(/enrolled for unattended use/)
@@ -302,6 +343,7 @@ describe("the Recovery Center", () => {
     );
 
     renderView();
+    await openSetup();
     expect(
       await screen.findByText(/paused after repeated failures: The destination could not be written to 5 times/)
     ).toBeInTheDocument();
@@ -311,6 +353,7 @@ describe("the Recovery Center", () => {
     // "Back up now" is what people come here for; the action that deletes
     // things should not sit beside it at the same weight.
     renderView();
+    await openSetup();
     fireEvent.click(await screen.findByRole("button", { name: /more actions for nightly/i }));
 
     fireEvent.click(await screen.findByRole("menuitem", { name: /delete rule/i }));
@@ -337,6 +380,7 @@ describe("the Recovery Center", () => {
     );
 
     renderView();
+    await openSetup();
 
     expect(await screen.findByText("Passphrases Bench still holds")).toBeInTheDocument();
     expect(screen.getByText(/4 encrypted backups still need it/)).toBeInTheDocument();
@@ -355,6 +399,7 @@ describe("the Recovery Center", () => {
 
   it("explains what Find backups will do before it does it", async () => {
     renderView();
+    await openSetup();
     fireEvent.click(await screen.findByRole("button", { name: /find backups/i }));
 
     expect(await screen.findByText(/Find backups in your destinations\?/)).toBeInTheDocument();

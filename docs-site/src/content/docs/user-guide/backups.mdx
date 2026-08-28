@@ -12,6 +12,15 @@ complete, or how old it is — and you find out on the day it matters.
 stores it in as many places as you like, and keeps the inventory honest about what actually exists.
 Open it from **Tools → Backups**.
 
+The page has two tabs:
+
+- **Setup** — where copies go, what gets copied and when, and whether Bench should take one before
+  you do something risky.
+- **Backups** — the copies that exist: how old they are, whether they have been opened and read, and
+  where they live.
+
+A fresh install opens on Setup, because there is nothing else to look at yet.
+
 ## The line at the top
 
 Everything on the page is evidence for one sentence: *if this budget disappeared right now, what
@@ -21,7 +30,7 @@ It is deliberately pessimistic. A copy Bench has never opened, a destination tha
 or every copy sitting in one place all pull it down — and the reasons are listed underneath. A
 backup screen that reassures you is worse than no backup screen at all.
 
-## Destinations
+## Setup: destinations
 
 Two kinds, matching the two situations people are actually in:
 
@@ -44,7 +53,7 @@ on a read-only volume, which is exactly the configuration people get wrong.
 A bucket that accepts writes but refuses deletes is a warning rather than an error. Immutable buckets
 are a real choice; backups still work, and only retention is affected.
 
-## Backup rules
+## Setup: backup rules
 
 A rule says what to copy, where to put it, how often, and how long to keep it.
 
@@ -66,8 +75,10 @@ Deleting a rule stops it running and keeps the backups it already took — inclu
 that opens the encrypted ones. Bench forgets that passphrase on its own once the last copy needing it
 is gone, and lists it under **Passphrases Bench still holds** until then.
 
-Rules run on Bench's automation engine, so they appear on the **Automations** page with their run
-history, health and backoff like everything else scheduled.
+Each rule shows just enough to answer "is this working?" — whether it is paused, when it last ran and
+when it runs next — and links to **Automations** for run history, retries, logs and failures. Rules
+run on Bench's automation engine, so that page is where their full history lives; Backups does not
+keep a second copy of it.
 
 ## Verified, not just stored
 
@@ -118,7 +129,7 @@ There is no combination of settings that empties a destination.
 that preview is produced by the same code that does the pruning, so it is what will happen rather
 than an approximation of it.
 
-## Recovery points before risky changes
+## Setup: recovery points
 
 Before Bench saves a batch of deletions or payee merges, it copies the budget first, so there is
 something from five minutes ago rather than only from last night. Several changes in one session

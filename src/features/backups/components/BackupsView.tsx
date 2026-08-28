@@ -1,30 +1,14 @@
 "use client";
 
 import { useState } from "react";
+import { usePersistedFilters } from "@/hooks/usePersistedFilters";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import {
-  FileText,
-  HardDrive,
-  Key,
-  Loader2,
-  MoreHorizontal,
-  Play,
-  Plus,
-  RefreshCw,
-  ScanSearch,
-  ShieldCheck,
-} from "lucide-react";
+import { FileText, Loader2, Plus, RefreshCw, ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
-import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog, type ConfirmState } from "@/components/ui/confirm-dialog";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { PageLayout } from "@/components/layout/PageLayout";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 import {
   backUpNow,
@@ -36,42 +20,38 @@ import {
   scrubNow,
   testDestination,
 } from "../lib/backupsApi";
-import {
-  copyState,
-  describeContents,
-  describeRetention,
-  describeSchedule,
-  formatBytes,
-  relativeTime,
-  sortArtifacts,
-} from "../lib/presentation";
+import { copyState, sortArtifacts } from "../lib/presentation";
 import { fetchSafetySettings, patchSafetySettings } from "../lib/safetyPoint";
 import { BackupDetail } from "./BackupDetail";
+import { InventoryTab, type KindFilter, type StateFilter } from "./InventoryTab";
+import { SetupTab } from "./SetupTab";
 import { BackupRuleDialog } from "./BackupRuleDialog";
-import { BackupsTable } from "./BackupsTable";
 import { DestinationDialog } from "./DestinationDialog";
-import { ReadinessBanner } from "./ReadinessBanner";
 import { RetentionPreviewDialog } from "./RetentionPreviewDialog";
 import { forgetPassphrase, type PolicyWithAutomation } from "../lib/backupsApi";
 import type { BackupDestination } from "@/lib/app-db/backupRepository";
 import type { PruneResult } from "@/lib/backup/prune";
 
-type StateFilter = "all" | "verified" | "unverified" | "problem";
-type KindFilter = "all" | "budget" | "app-db";
-
 /**
- * The Recovery Center (RD-077 / PR-047e).
+ * The Recovery Center (RD-077 / PR-047).
  *
- * Ordered by the questions people arrive with, most urgent first: *am I covered
- * right now* (the readiness statement), *where do copies go and are those
- * places working* (destinations), *what is scheduled* (rules), and *which copy
- * do I want* (the inventory).
+ * Two tabs, split by the two different jobs people come here to do. **Setup**
+ * decides what happens — where copies go, what is copied and when, and whether
+ * Bench takes one before you do something risky. **Backups** is what came of
+ * it: the copies that exist, how old they are, whether they have been opened
+ * and read, and where they live.
  *
- * The inventory gets the remaining height because it is the part you scan; the
- * two configuration strips above it are one line per item and stay out of the
- * way. A backup screen that spends its space on the rules rather than on the
- * backups has its priorities the wrong way round — the rules are read twice a
- * year, the copies are read on the worst day of it.
+ * The split is by task, not by object type: separate Destinations, Rules and
+ * Recovery tabs would make configuring one backup a tour of three screens, when
+ * the three decisions are made together, once, in that order.
+ *
+ * Configuration is read twice a year; the inventory is read on the worst day of
+ * it — so the inventory keeps the full height and Setup keeps its actions
+ * beside the sections they act on, where "Add" can say what it adds.
+ *
+ * This shell owns the data, the mutations and every dialog, because both tabs
+ * act on the same query and a confirmation raised in one must survive switching
+ * to the other.
  */
 
 export function BackupsView() {
@@ -92,8 +72,16 @@ export function BackupsView() {
   // Bench. Deleting a backup is not undoable and should not be one click away.
   const [confirm, setConfirm] = useState<ConfirmState | null>(null);
   const [refreshing, setRefreshing] = useState(false);
-  const [stateFilter, setStateFilter] = useState<StateFilter>("all");
-  const [kindFilter, setKindFilter] = useState<KindFilter>("all");
+
+  // Same sessionStorage-backed pattern the entity pages use for their filters,
+  // so the tab and the filters survive navigating away and back within a tab.
+  // `tab: null` means "not chosen yet", which is what lets a fresh install open
+  // on Setup without overriding a choice someone has actually made.
+  const [view, setView] = usePersistedFilters<{
+    tab: "setup" | "backups" | null;
+    stateFilter: StateFilter;
+    kindFilter: KindFilter;
+  }>("filters:backups", { tab: null, stateFilter: "all", kindFilter: "all" });
 
   const settingsQuery = useQuery({
     queryKey: ["backup-settings"],
@@ -235,11 +223,11 @@ export function BackupsView() {
   const selected = artifacts.find((artifact) => artifact.id === selectedArtifactId) ?? null;
 
   const filtered = artifacts.filter((artifact) => {
-    if (kindFilter !== "all" && artifact.kind !== kindFilter) return false;
-    if (stateFilter === "all") return true;
+    if (view.kindFilter !== "all" && artifact.kind !== view.kindFilter) return false;
+    if (view.stateFilter === "all") return true;
     const state = copyState(artifact);
-    if (stateFilter === "problem") return state === "damaged" || state === "gone";
-    return state === stateFilter;
+    if (view.stateFilter === "problem") return state === "damaged" || state === "gone";
+    return state === view.stateFilter;
   });
 
   // The two things that have to happen before anything can be backed up, in
@@ -250,6 +238,12 @@ export function BackupsView() {
   const orphanPassphrases = (data?.heldPassphrases ?? []).filter(
     (entry) => !entry.ruleExists && entry.artifactCount > 0
   );
+
+  // A fresh install opens on Setup, because there is nothing else to look at
+  // and the tab someone needs first is the one they have not used. Once a
+  // choice has been made it wins — including the choice to sit on Setup.
+  const tab = view.tab ?? (needsDestination || needsRule ? "setup" : "backups");
+  const setTab = (next: string) => setView((current) => ({ ...current, tab: next as "setup" | "backups" }));
 
   return (
     <PageLayout
@@ -307,414 +301,113 @@ export function BackupsView() {
         </>
       }
     >
-      <div className="flex min-h-0 flex-1 flex-col">
-        {data && <ReadinessBanner readiness={data.readiness} />}
-
-        {/* Destinations: one line each. Health lives here because a destination
-            fails independently of whichever rule discovered it. */}
-        <section className="border-b border-border px-4 py-2" aria-labelledby="destinations-heading">
-          <div className="flex items-center justify-between gap-2">
-            <h2 id="destinations-heading" className="text-xs font-semibold">
-              Destinations
-            </h2>
-            <div className="flex gap-1">
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-6 text-xs"
-                onClick={() =>
-                  // Named for what it is, and explained before it runs: this is
-                  // the action for the day Bench's own database is gone, and
-                  // someone meeting it for the first time cannot tell from two
-                  // words whether it is safe to press.
-                  setConfirm({
-                    title: "Find backups in your destinations?",
-                    message: `Bench reads the manifest written beside every backup in ${
-                      data?.destinations.length === 1
-                        ? `"${data.destinations[0]?.name}"`
-                        : `your ${data?.destinations.length ?? 0} destinations`
-                    } and adds anything it does not already know about. It only adds — nothing is changed, moved or deleted. Use it after restoring Bench onto a new server, or when a destination holds backups this Bench has never seen.`,
-                    destructive: false,
-                    destructiveLabel: "Scan destinations",
-                    onConfirm: () => discover.mutate(),
-                  })
-                }
-                disabled={discover.isPending || (data?.destinations.length ?? 0) === 0}
-              >
-                {discover.isPending ? <Loader2 className="animate-spin" aria-hidden /> : <ScanSearch aria-hidden />}
-                Find backups
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-6 text-xs"
-                onClick={() => setDestinationDialog({ open: true, existing: null })}
-              >
-                <Plus aria-hidden />
-                Add
-              </Button>
-            </div>
-          </div>
-
-          {(data?.destinations.length ?? 0) === 0 ? (
-            <p className="mt-1 text-xs text-muted-foreground">
-              Nowhere to put a backup yet. Add a folder on this server, or an S3-compatible bucket.
-            </p>
-          ) : (
-            <ul className="mt-1 space-y-1">
-              {data?.destinations.map((destination) => {
-                const broken =
-                  destination.lastFailureAt &&
-                  (!destination.lastSuccessAt || destination.lastFailureAt > destination.lastSuccessAt);
-                return (
-                  <li
-                    key={destination.id}
-                    className="flex flex-wrap items-center gap-2 text-xs"
-                  >
-                    <HardDrive
-                      className={cn("size-3.5", broken ? "text-destructive" : "text-muted-foreground")}
-                      aria-hidden
-                    />
-                    <span className="font-medium">{destination.name}</span>
-                    <span className="text-muted-foreground">
-                      {destination.kind === "local"
-                        ? String(destination.config.data.path ?? "")
-                        : `${String(destination.config.data.bucket ?? "")}${
-                            destination.config.data.prefix ? `/${String(destination.config.data.prefix)}` : ""
-                          }`}
-                    </span>
-                    {broken ? (
-                      <span className="text-destructive">
-                        failed {relativeTime(destination.lastFailureAt)}: {destination.lastFailureReason}
-                      </span>
-                    ) : (
-                      <span className="text-muted-foreground">
-                        last wrote {relativeTime(destination.lastSuccessAt)}
-                      </span>
-                    )}
-                    <span className="flex-1" />
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-6 text-xs"
-                      onClick={() => test.mutate(destination.id)}
-                    >
-                      Test
-                    </Button>
-                    {/* Editing and removing are rarer than testing, and one of
-                        them is destructive — so they sit behind a menu rather
-                        than beside it with the same visual weight. */}
-                    <DropdownMenu>
-                      <DropdownMenuTrigger
-                        className="rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
-                        aria-label={`More actions for ${destination.name}`}
-                      >
-                        <MoreHorizontal className="size-3.5" aria-hidden />
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem
-                          onClick={() => setDestinationDialog({ open: true, existing: destination })}
-                        >
-                          Edit destination
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          variant="destructive"
-                          onClick={() =>
-                            setConfirm({
-                              title: `Remove "${destination.name}"?`,
-                              message:
-                                "Bench stops writing here and loses track of the copies in it. The files themselves are left exactly where they are.",
-                              destructiveLabel: "Remove",
-                              onConfirm: () => removeDestination.mutate(destination.id),
-                            })
-                          }
-                        >
-                          Remove destination
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-        </section>
-
-        {/* Rules: also one line each, with the two actions that matter on them. */}
-        <section className="border-b border-border px-4 py-2" aria-labelledby="rules-heading">
-          <h2 id="rules-heading" className="text-xs font-semibold">
-            Backup rules
-          </h2>
-          {(data?.policies.length ?? 0) === 0 ? (
-            <p className="mt-1 text-xs text-muted-foreground">
-              No rule yet, so nothing is being copied on a schedule.
-            </p>
-          ) : (
-            <ul className="mt-1 space-y-1">
-              {data?.policies.map((policy) => (
-                // Two lines rather than one long one: identity and state on
-                // top, the settings underneath. A single row packed with seven
-                // facts and five actions reads fine at desk width and collapses
-                // into a block on anything narrower.
-                <li key={policy.id} className="flex items-start gap-2 py-0.5 text-xs">
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className={cn("font-medium", !policy.enabled && "text-muted-foreground")}>
-                        {policy.name}
-                      </span>
-                      {/* The rule says what should happen; its automation says
-                          what does. When they disagree — a health auto-pause,
-                          or Pause pressed on the Automations page — the page
-                          shows the one that is true, not the comfortable one. */}
-                      {!policy.enabled ? (
-                        <span className="text-muted-foreground">paused</span>
-                      ) : policy.automation?.autoPausedAt ? (
-                        <span className="text-destructive">
-                          paused after repeated failures: {policy.automation.autoPauseReason}
-                        </span>
-                      ) : policy.automation && !policy.automation.enabled ? (
-                        <span className="text-amber-700 dark:text-amber-400">
-                          paused on the Automations page — not running
-                        </span>
-                      ) : policy.automation?.running ? (
-                        <span className="text-muted-foreground">running now…</span>
-                      ) : null}
-                    </div>
-                    <div className="flex flex-wrap gap-x-2 text-muted-foreground">
-                      <span>{describeContents(policy)}</span>
-                      <span>· {describeSchedule(policy)}</span>
-                      <span>· {describeRetention(policy)}</span>
-                      {policy.encryption === "passphrase" && <span>· encrypted</span>}
-                      {policy.automation?.lastRunAt && (
-                        <span>· last run {relativeTime(policy.automation.lastRunAt)}</span>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="flex shrink-0 items-center gap-1">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-6 text-xs"
-                      onClick={() => runNow.mutate(policy.id)}
-                      disabled={runNow.isPending}
-                    >
-                      {runNow.isPending && runNow.variables === policy.id ? (
-                        <Loader2 className="animate-spin" aria-hidden />
-                      ) : (
-                        <Play aria-hidden />
-                      )}
-                      Back up now
-                    </Button>
-
-                    {/* "Back up now" is the action people come here for. The
-                        rest — including the one that deletes things — belongs
-                        behind a menu, not beside it at equal weight. */}
-                    <DropdownMenu>
-                      <DropdownMenuTrigger
-                        className="rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
-                        aria-label={`More actions for ${policy.name}`}
-                      >
-                        <MoreHorizontal className="size-3.5" aria-hidden />
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end" className="w-56">
-                        <DropdownMenuItem onClick={() => preview.mutate(policy)}>
-                          Preview retention…
-                        </DropdownMenuItem>
-                        <DropdownMenuItem render={<Link href="/automations" />}>
-                          Run history
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onClick={() => setRuleDialog({ open: true, existing: policy })}
-                        >
-                          Edit rule
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          variant="destructive"
-                          onClick={() =>
-                            setConfirm({
-                              title: `Delete "${policy.name}"?`,
-                              message:
-                                policy.encryption === "passphrase"
-                                  ? "It stops running. The backups it already took are kept, and so is the passphrase that opens them — Bench forgets that only once the last encrypted copy is gone."
-                                  : "It stops running. The backups it already took are kept and stay restorable.",
-                              destructiveLabel: "Delete rule",
-                              onConfirm: () => removeRule.mutate(policy.id),
-                            })
-                          }
-                        >
-                          Delete rule
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
-          <label className="mt-2 flex items-start gap-2 border-t border-border pt-2 text-xs">
-            <input
-              type="checkbox"
-              className="mt-0.5"
-              checked={settingsQuery.data?.enabled ?? true}
-              disabled={setSafetyPoints.isPending || settingsQuery.isLoading}
-              onChange={(event) => setSafetyPoints.mutate(event.target.checked)}
-            />
-            <span>
-              <span className="font-medium">Take a recovery point before risky changes</span>
-              <span className="block text-muted-foreground">
-                Before Bench saves a batch of deletions or payee merges, it copies the budget first —
-                so there is something from five minutes ago, not just from last night. Several
-                changes in one session share a recovery point, and these expire on their own instead
-                of piling up.
-              </span>
-            </span>
-          </label>
-        </section>
-
-        {/* Secrets Bench is holding on behalf of rules that no longer exist.
-            Kept because a backup you cannot open is worse than a secret you
-            meant to remove — and listed because keeping it silently would be
-            the wrong half of that trade. */}
-        {orphanPassphrases.length > 0 && (
-          <section className="border-b border-border px-4 py-2 text-xs">
-            <h2 className="font-semibold">Passphrases Bench still holds</h2>
-            <ul className="mt-1 space-y-1">
-              {orphanPassphrases.map((entry) => (
-                <li key={entry.ref} className="flex flex-wrap items-center gap-2">
-                  <Key className="size-3.5 text-muted-foreground" aria-hidden />
-                  <span className="font-medium">{entry.label}</span>
-                  <span className="text-muted-foreground">
-                    its rule is gone, but {entry.artifactCount} encrypted backup
-                    {entry.artifactCount === 1 ? "" : "s"} still need
-                    {entry.artifactCount === 1 ? "s" : ""} it
-                  </span>
-                  <span className="flex-1" />
-                  <button
-                    type="button"
-                    className="text-muted-foreground underline-offset-4 hover:underline"
-                    onClick={() =>
-                      setConfirm({
-                        title: "Forget this passphrase?",
-                        message: `${entry.artifactCount} encrypted backup${
-                          entry.artifactCount === 1 ? "" : "s"
-                        } can only be opened with it. Forget it and they are unrecoverable unless you have written it down somewhere else.`,
-                        destructiveLabel: "Forget it",
-                        onConfirm: () => forget.mutate({ ref: entry.ref, strand: true }),
-                      })
-                    }
-                  >
-                    Forget
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </section>
-        )}
-
-        {artifacts.length === 0 ? (
-          <div className="mx-auto max-w-xl px-6 py-12">
-            <h2 className="text-sm font-semibold">
-              {needsDestination
-                ? "Start by choosing where copies go"
-                : needsRule
-                  ? "Now say what to copy, and how often"
-                  : "No copies yet"}
-            </h2>
-            <ol className="mt-3 space-y-2 text-sm text-muted-foreground">
-              <li className={cn("flex gap-2", !needsDestination && "text-foreground/60 line-through")}>
-                <span aria-hidden>1.</span>
-                <span>
-                  Add a <strong className="font-medium">destination</strong> — a folder on this
-                  server, or an S3-compatible bucket. Two of them, if you want to survive losing the
-                  machine.
-                </span>
-              </li>
-              <li className={cn("flex gap-2", !needsRule && !needsDestination && "text-foreground/60 line-through")}>
-                <span aria-hidden>2.</span>
-                <span>
-                  Add a <strong className="font-medium">backup rule</strong>: what to copy, where,
-                  and when.
-                </span>
-              </li>
-              <li className="flex gap-2">
-                <span aria-hidden>3.</span>
-                <span>
-                  Bench takes the copy, opens it to check it is readable, and lists it here with what
-                  it found inside.
-                </span>
-              </li>
-            </ol>
-
-            {/* The prerequisite that is invisible until it bites: a scheduled
-                backup runs with the browser closed, so it needs credentials the
-                server can use on its own. */}
-            {!needsDestination && (data?.sources.length ?? 0) === 0 && (
-              <p className="mt-4 rounded-md border border-amber-400/40 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-950/20 dark:text-amber-300">
-                To back up a budget on a schedule, Bench needs a connection enrolled for unattended
-                use — a scheduled backup runs with no browser open.{" "}
-                <Link href="/sync" className="underline underline-offset-4">
-                  Enrol one in Budget File Sync
-                </Link>
-                . Without that you can still back up Bench&rsquo;s own settings.
-              </p>
+      <Tabs
+        value={tab}
+        onValueChange={setTab}
+        className="flex min-h-0 flex-1 flex-col overflow-hidden"
+      >
+        {/* Styling comes from the shared tab component — the underline
+            indicator every other tabbed page in Bench uses — rather than a
+            second look invented here. */}
+        <TabsList className="px-2">
+          <TabsTrigger value="setup">Setup</TabsTrigger>
+          <TabsTrigger value="backups">
+            Backups
+            {artifacts.length > 0 && (
+              <span className="ml-1.5 text-muted-foreground">{artifacts.length}</span>
             )}
+          </TabsTrigger>
+        </TabsList>
 
-            {!needsDestination && !needsRule && (
-              <p className="mt-4 text-xs text-muted-foreground">
-                Already have Bench backups in a destination? Use{" "}
-                <strong className="font-medium">Find backups</strong> to read them back into the
-                inventory.
-              </p>
-            )}
-          </div>
-        ) : (
-          <>
-            <div className="flex flex-wrap items-center gap-2 border-b border-border px-4 py-1.5 text-xs">
-              <span className="text-muted-foreground">
-                {filtered.length === artifacts.length
-                  ? `${artifacts.length} ${artifacts.length === 1 ? "copy" : "copies"}`
-                  : `${filtered.length} of ${artifacts.length}`}
-                , {formatBytes(filtered.reduce((total, entry) => total + entry.sizeBytes, 0))}
-              </span>
-
-              <select
-                className="h-6 rounded-md border border-input bg-background px-1.5 text-xs"
-                value={stateFilter}
-                onChange={(event) => setStateFilter(event.target.value as StateFilter)}
-                aria-label="Filter by state"
-              >
-                <option value="all">Any state</option>
-                <option value="verified">Verified</option>
-                <option value="unverified">Not checked</option>
-                <option value="problem">Damaged or missing</option>
-              </select>
-
-              <select
-                className="h-6 rounded-md border border-input bg-background px-1.5 text-xs"
-                value={kindFilter}
-                onChange={(event) => setKindFilter(event.target.value as KindFilter)}
-                aria-label="Filter by contents"
-              >
-                <option value="all">Anything</option>
-                <option value="budget">Budgets</option>
-                <option value="app-db">Bench settings</option>
-              </select>
-
-              <span className="flex-1" />
-              <span className="text-muted-foreground">
-                Pinned copies and the newest verified one are never deleted. Backups you take by hand
-                are kept until you delete them.
-              </span>
-            </div>
-            <BackupsTable
-              artifacts={filtered}
-              selectedId={selectedArtifactId}
-              onOpen={setSelectedArtifactId}
+        <TabsContent value="setup" className="flex min-h-0 flex-1 flex-col overflow-hidden">
+          {data && (
+            <SetupTab
+              data={data}
+              discovering={discover.isPending}
+              runningPolicyId={runNow.isPending ? (runNow.variables ?? null) : null}
+              safetyEnabled={settingsQuery.data?.enabled ?? true}
+              safetyPending={setSafetyPoints.isPending || settingsQuery.isLoading}
+              orphanPassphrases={orphanPassphrases}
+              onAddDestination={() => setDestinationDialog({ open: true, existing: null })}
+              onEditDestination={(destination) =>
+                setDestinationDialog({ open: true, existing: destination })
+              }
+              onRemoveDestination={(destination) =>
+                setConfirm({
+                  title: `Remove "${destination.name}"?`,
+                  message:
+                    "Bench stops writing here and loses track of the copies in it. The files themselves are left exactly where they are.",
+                  destructiveLabel: "Remove",
+                  onConfirm: () => removeDestination.mutate(destination.id),
+                })
+              }
+              onTestDestination={(destinationId) => test.mutate(destinationId)}
+              onFindBackups={() =>
+                // Named for what it is, and explained before it runs: this is
+                // the action for the day Bench's own database is gone, and
+                // someone meeting it for the first time cannot tell from two
+                // words whether it is safe to press.
+                setConfirm({
+                  title: "Find backups in your destinations?",
+                  message: `Bench reads the manifest written beside every backup in ${
+                    data.destinations.length === 1
+                      ? `"${data.destinations[0]?.name}"`
+                      : `your ${data.destinations.length} destinations`
+                  } and adds anything it does not already know about. It only adds — nothing is changed, moved or deleted. Use it after restoring Bench onto a new server, or when a destination holds backups this Bench has never seen.`,
+                  destructive: false,
+                  destructiveLabel: "Scan destinations",
+                  onConfirm: () => discover.mutate(),
+                })
+              }
+              onNewRule={() => setRuleDialog({ open: true, existing: null })}
+              onEditRule={(policy) => setRuleDialog({ open: true, existing: policy })}
+              onDeleteRule={(policy) =>
+                setConfirm({
+                  title: `Delete "${policy.name}"?`,
+                  message:
+                    policy.encryption === "passphrase"
+                      ? "It stops running. The backups it already took are kept, and so is the passphrase that opens them — Bench forgets that only once the last encrypted copy is gone."
+                      : "It stops running. The backups it already took are kept and stay restorable.",
+                  destructiveLabel: "Delete rule",
+                  onConfirm: () => removeRule.mutate(policy.id),
+                })
+              }
+              onRunNow={(policyId) => runNow.mutate(policyId)}
+              onPreviewRetention={(policy) => preview.mutate(policy)}
+              onForgetPassphrase={(entry) =>
+                setConfirm({
+                  title: "Forget this passphrase?",
+                  message: `${entry.artifactCount} encrypted backup${
+                    entry.artifactCount === 1 ? "" : "s"
+                  } can only be opened with it. Forget it and they are unrecoverable unless you have written it down somewhere else.`,
+                  destructiveLabel: "Forget it",
+                  onConfirm: () => forget.mutate({ ref: entry.ref, strand: true }),
+                })
+              }
+              onToggleSafetyPoints={(enabled) => setSafetyPoints.mutate(enabled)}
             />
-          </>
-        )}
-      </div>
+          )}
+        </TabsContent>
+
+        <TabsContent value="backups" className="flex min-h-0 flex-1 flex-col overflow-hidden">
+          {data && (
+            <InventoryTab
+              data={data}
+              artifacts={artifacts}
+              filtered={filtered}
+              stateFilter={view.stateFilter}
+              kindFilter={view.kindFilter}
+              selectedArtifactId={selectedArtifactId}
+              needsDestination={needsDestination}
+              needsRule={needsRule}
+              onStateFilter={(value) => setView((current) => ({ ...current, stateFilter: value }))}
+              onKindFilter={(value) => setView((current) => ({ ...current, kindFilter: value }))}
+              onOpenArtifact={setSelectedArtifactId}
+              onGoToSetup={() => setTab("setup")}
+            />
+          )}
+        </TabsContent>
+      </Tabs>
 
       {destinationDialog && (
         <DestinationDialog

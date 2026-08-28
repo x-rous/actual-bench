@@ -4,6 +4,10 @@ Actual Bench takes verified copies of your budget — and of its own metadata da
 schedule, stores them in one or more destinations, and re-checks them so you find out about a bad
 backup before you need it rather than after.
 
+The page is two tabs: **Setup** (destinations, backup rules, recovery points) and **Backups** (the
+artifacts that exist, with their readiness banner, filters and detail drawer). Runtime detail on a
+rule is deliberately thin and links to Automations rather than restating it.
+
 This document is the operator's view: how it behaves, what it refuses to do, and what to check when
 something looks wrong. The user-facing guide is at `docs-site/src/content/docs/user-guide/backups.mdx`.
 

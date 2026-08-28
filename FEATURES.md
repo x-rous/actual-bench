@@ -76,7 +76,7 @@ See `docs/AUTOMATIONS.md`.
 
 ## Backups
 
-Verified copies of your budget and of Bench's own settings, taken on a schedule, kept in as many places as you like, and checked by **opening them** rather than by assuming. Open it from **Tools → Backups**.
+Verified copies of your budget and of Bench's own settings, taken on a schedule, kept in as many places as you like, and checked by **opening them** rather than by assuming. Open it from **Tools → Backups**, which splits into **Setup** (destinations, rules, recovery points) and **Backups** (the copies that exist). A fresh install opens on Setup; a configured one opens on the copies.
 
 - **A readiness statement, deliberately pessimistic** — one sentence saying what you would get back and how old it is. A copy Bench has never opened, a destination that failed last night, or every copy sitting in one place all pull it down, with the reasons listed underneath.
 - **Destinations**: a folder on the server (any mounted volume or NAS share) and **S3-compatible** buckets — AWS, MinIO, Backblaze B2, Cloudflare R2, Wasabi, Garage. Paths are checked while you type them; every save tests the destination by writing real bytes, reading them back and comparing checksums. Keys are sealed with `SYNC_VAULT_KEY` and never stored in readable form.
