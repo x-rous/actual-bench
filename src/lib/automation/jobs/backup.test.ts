@@ -9,9 +9,12 @@ import { listAutomations } from "@/lib/app-db/automationRepository";
 import {
   createBackupDestination,
   createBackupPolicy,
+  deleteBackupPolicy,
+  listBackupPolicies,
   updateBackupPolicy,
   type BackupPolicy,
 } from "@/lib/app-db/backupRepository";
+import { createAutomationRun, listAutomationRuns } from "@/lib/app-db/automationRunRepository";
 import type { SqliteDatabase } from "@/lib/app-db/types";
 import { backupJobType } from "./backup";
 import { reconcileBackupAutomations } from "./backupReconcile";
@@ -102,17 +105,51 @@ describe("backup rules become automations", () => {
     expect(after?.enabled).toBe(false);
   });
 
-  it("removes the automation of a rule that no longer exists", () => {
-    // A paused automation invites Resume, and resuming this one produces "this
-    // backup rule no longer exists" - a dead end dressed up as a control. Its
-    // runs survive; the run history names them as a deleted automation.
+  it("removes the automation of a deleted rule when it never ran", () => {
+    // Nothing to lose, and a paused row that has never done anything is clutter.
     const created = policy();
     reconcileBackupAutomations(db, [created]);
     expect(listAutomations(db, { type: BACKUP_JOB_TYPE })).toHaveLength(1);
 
-    reconcileBackupAutomations(db, []);
+    deleteBackupPolicy(db, created.id);
+    reconcileBackupAutomations(db, listBackupPolicies(db));
 
     expect(listAutomations(db, { type: BACKUP_JOB_TYPE })).toHaveLength(0);
+  });
+
+  it("keeps a deleted rule's automation when it has history, and says why", () => {
+    // Deleting an automation cascades to its runs, and the copies it made are
+    // kept - so the record of how they got there should be too.
+    const created = policy();
+    reconcileBackupAutomations(db, [created]);
+    const [automation] = listAutomations(db, { type: BACKUP_JOB_TYPE });
+    createAutomationRun(db, {
+      automationId: automation.id,
+      type: BACKUP_JOB_TYPE,
+      startedAt: "2026-08-27T02:00:00.000Z",
+      trigger: "schedule",
+      attempt: 1,
+      executionMode: "server",
+    });
+
+    deleteBackupPolicy(db, created.id);
+    reconcileBackupAutomations(db, listBackupPolicies(db));
+
+    const [kept] = listAutomations(db, { type: BACKUP_JOB_TYPE });
+    expect(kept.enabled).toBe(false);
+    expect(kept.autoPauseReason).toMatch(/backup rule this ran was deleted/);
+    expect(listAutomationRuns(db, { automationId: automation.id })).toHaveLength(1);
+  });
+
+  it("never clears automations from a read that came back empty", () => {
+    // The reconcile is handed a list; if that read failed or raced, acting on
+    // it would delete every backup automation in the install.
+    const created = policy();
+    reconcileBackupAutomations(db, [created]);
+
+    reconcileBackupAutomations(db, []);
+
+    expect(listAutomations(db, { type: BACKUP_JOB_TYPE })).toHaveLength(1);
   });
 
   it("creates one scrub automation for the whole install, not one per rule", () => {

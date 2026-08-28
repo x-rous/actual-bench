@@ -2,9 +2,12 @@ import {
   createAutomation,
   deleteAutomation,
   listAutomations,
+  pauseAutomationForHealth,
   updateAutomation,
 } from "@/lib/app-db/automationRepository";
+import { listAutomationRuns } from "@/lib/app-db/automationRunRepository";
 import { logger } from "@/lib/logger";
+import { getBackupPolicy } from "@/lib/app-db/backupRepository";
 import type { BackupPolicy } from "@/lib/app-db/backupRepository";
 import type { AutomationDefinition, SqliteDatabase } from "@/lib/app-db/types";
 import { BACKUP_JOB_TYPE, BACKUP_SCRUB_JOB_TYPE } from "./backupType";
@@ -119,15 +122,35 @@ function reconcileInTransaction(db: SqliteDatabase, policies: BackupPolicy[]): B
   }
 
   // A rule that has been deleted leaves an automation with nothing to run.
-  // Delete it rather than disabling it: a paused automation invites Resume, and
-  // resuming this one produces "This backup rule no longer exists" - a dead end
-  // dressed up as a control. Its runs are kept and the run history names them
-  // as belonging to a deleted automation, so the record survives the row.
-  const liveIds = new Set(policies.map((policy) => policy.id));
+  //
+  // What happens to it depends on whether it has history. Deleting an
+  // automation cascades to its runs, so removing one that has run would erase
+  // the record of backups that actually happened - the copies are kept, and
+  // their explanation should be too. One that never ran has nothing to lose and
+  // is removed, because a paused row that has never done anything is clutter.
+  //
+  // Confirmed against the database rather than against the list passed in: a
+  // transiently empty read would otherwise delete every backup automation in
+  // the install.
   for (const [policyId, automation] of existingByPolicy) {
-    if (!liveIds.has(policyId)) {
+    if (getBackupPolicy(db, policyId)) continue;
+
+    const hasHistory = listAutomationRuns(db, { automationId: automation.id, limit: 1 }).length > 0;
+    if (!hasHistory) {
       deleteAutomation(db, automation.id);
       summary.removed.push(automation.id);
+      continue;
+    }
+
+    if (automation.enabled || !automation.autoPausedAt) {
+      updateAutomation(db, automation.id, { enabled: false });
+      pauseAutomationForHealth(
+        db,
+        automation.id,
+        new Date().toISOString(),
+        "The backup rule this ran was deleted. Its backups are kept; the rule is not."
+      );
+      summary.updated.push(automation.id);
     }
   }
 
