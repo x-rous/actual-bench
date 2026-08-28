@@ -7,8 +7,10 @@ import { toast } from "sonner";
 import type { AutomationRun } from "@/lib/app-db/types";
 
 jest.mock("../lib/automationsApi");
+// Mutable so one test can arrive by a link that names an automation.
+let searchParams = new URLSearchParams();
 jest.mock("next/navigation", () => ({
-  useSearchParams: () => new URLSearchParams(),
+  useSearchParams: () => searchParams,
   usePathname: () => "/automations",
 }));
 jest.mock("sonner", () => ({
@@ -88,6 +90,7 @@ describe("AutomationsView", () => {
     // Filters and sort persist to sessionStorage, so one test's filter would
     // otherwise decide what the next one can see.
     sessionStorage.clear();
+    searchParams = new URLSearchParams();
     mockedApi.listAutomations.mockResolvedValue({ automations: [automation()], jobTypes: [] });
     mockedApi.listAutomationRuns.mockResolvedValue([run()]);
     mockedApi.runAutomationNow.mockResolvedValue({
@@ -258,6 +261,22 @@ describe("AutomationsView", () => {
     // And the way back is right there.
     fireEvent.click(screen.getByRole("button", { name: "Clear" }));
     expect(await screen.findByText("Household → Joint")).toBeInTheDocument();
+  });
+
+  it("opens the automation a link names, whatever filter was left set", async () => {
+    // Connections links to /automations?open=<id>. Resolved from the filtered
+    // rows, a leftover filter made that link open nothing - and an open drawer
+    // closed when its row was filtered out from behind it.
+    sessionStorage.setItem(
+      "filters:automations",
+      JSON.stringify({ search: "matches nothing", status: "all", type: "" })
+    );
+    searchParams = new URLSearchParams("open=auto-1");
+
+    renderView();
+
+    expect(await screen.findByText(/No automation matches those filters/)).toBeInTheDocument();
+    expect(await screen.findByText("Every 30 minutes")).toBeInTheDocument();
   });
 
   it("can delete an automation, and says what goes with it", async () => {

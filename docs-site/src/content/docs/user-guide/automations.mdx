@@ -88,9 +88,6 @@ twice on a fall-back day runs **once**.
 in one click — then by automation and kind, and searchable by the line a run reported. Each run
 expands to its result, its duration, any retries, and a redacted log.
 
-Runs of a deleted automation are kept and labelled as such: the record of what happened is not undone
-by removing the thing that did it.
-
 An automation's own drawer keeps the newest ten runs, which is enough to answer "is this healthy".
 
 ## When something fails
@@ -112,8 +109,14 @@ streak: pausing it would stop the copies that were still working. A scrub that f
 
 ## Pausing and deleting
 
-**Pause** stops an automation running and keeps everything else. **Delete** removes it along with its
-run history; what it produced — backups, synced transactions — stays where it is.
+**Pause** stops an automation running and keeps everything else — its schedule, its history, its
+credentials.
 
-Deleting a backup rule removes its automation for you, unless that automation has history worth
-keeping, in which case it is paused with an explanation instead.
+**Delete** removes the automation *and its run history*. What the automation produced is untouched:
+backups stay in their destinations, synced transactions stay in the budget. Only the record of the
+runs goes.
+
+That is why deleting a **backup rule** does not always delete its automation. If the automation has
+never run, it is removed with the rule. If it has history, it is paused with an explanation instead,
+so the record of backups that actually happened survives the rule that made them. Delete it yourself
+from this page when you no longer want that record.

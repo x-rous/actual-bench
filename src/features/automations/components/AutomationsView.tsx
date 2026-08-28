@@ -170,7 +170,11 @@ export function AutomationsView() {
   });
   const automations = sortAutomations(filtered, sort);
   const reviewQueue = reviewQueueQuery.data ?? [];
-  const selected = automations.find((automation) => automation.id === selectedId) ?? null;
+  // Resolved from every automation, not the filtered rows: a link that names
+  // one - /automations?open=<id>, which Connections uses - has to open it
+  // whatever filter was left set, and an open drawer should not close because
+  // its row was filtered out from behind it.
+  const selected = allAutomations.find((automation) => automation.id === selectedId) ?? null;
 
   return (
     <PageLayout
