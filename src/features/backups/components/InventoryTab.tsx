@@ -1,12 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { FileText, Loader2, ShieldCheck } from "lucide-react";
+import { FileText, Loader2, Search, ShieldCheck, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { BackupsTable } from "./BackupsTable";
+import { BackupsTable, type BackupSortKey } from "./BackupsTable";
 import { ReadinessBanner } from "./ReadinessBanner";
-import { formatBytes } from "../lib/presentation";
+import { budgetsInArtifacts, formatBytes } from "../lib/presentation";
+import type { SortDirection } from "@/components/ui/sortable-header";
 import type { ArtifactWithLocations, RecoveryCenterData } from "../lib/backupsApi";
 
 /**
@@ -30,13 +31,22 @@ type Props = {
   onVerify: () => void;
   artifacts: ArtifactWithLocations[];
   filtered: ArtifactWithLocations[];
+  search: string;
   stateFilter: StateFilter;
   kindFilter: KindFilter;
+  budget: string;
+  policyId: string;
+  sort: { key: BackupSortKey; direction: SortDirection } | null;
   selectedArtifactId: string | null;
   needsDestination: boolean;
   needsRule: boolean;
+  onSearch: (value: string) => void;
   onStateFilter: (value: StateFilter) => void;
   onKindFilter: (value: KindFilter) => void;
+  onBudget: (value: string) => void;
+  onPolicy: (value: string) => void;
+  onSort: (key: BackupSortKey, direction: SortDirection) => void;
+  onClearFilters: () => void;
   onOpenArtifact: (artifactId: string) => void;
   onGoToSetup: () => void;
 };
@@ -47,16 +57,33 @@ export function InventoryTab({
   onVerify,
   artifacts,
   filtered,
+  search,
   stateFilter,
   kindFilter,
+  budget,
+  policyId,
+  sort,
   selectedArtifactId,
   needsDestination,
   needsRule,
+  onSearch,
   onStateFilter,
   onKindFilter,
+  onBudget,
+  onPolicy,
+  onSort,
+  onClearFilters,
   onOpenArtifact,
   onGoToSetup,
 }: Props) {
+  const budgets = budgetsInArtifacts(artifacts);
+  const filtering =
+    search.trim() !== "" ||
+    stateFilter !== "all" ||
+    kindFilter !== "all" ||
+    budget !== "" ||
+    policyId !== "";
+
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <ReadinessBanner readiness={data.readiness} />
@@ -130,17 +157,29 @@ export function InventoryTab({
       ) : (
         <>
           <div className="flex flex-wrap items-center gap-2 border-b border-border px-4 py-1.5 text-xs">
-            {/* The count that used to sit in the page header, now beside the
-                filters that change it. */}
-            <span className="font-medium">
-              {filtered.length === artifacts.length
-                ? `${artifacts.length} ${artifacts.length === 1 ? "copy" : "copies"}`
-                : `${filtered.length} of ${artifacts.length}`}
-              <span className="font-normal text-muted-foreground">
-                , {formatBytes(filtered.reduce((total, entry) => total + entry.sizeBytes, 0))}
-              </span>
-            </span>
-            <span className="text-muted-foreground">|</span>
+            {/* Search first, because with a few hundred copies the fastest way
+                to the one you mean is to type part of what you remember - a
+                budget name, a rule, or the destination it went to. */}
+            <div className="relative flex items-center">
+              <Search className="absolute left-1.5 size-3.5 text-muted-foreground" aria-hidden />
+              <input
+                value={search}
+                onChange={(event) => onSearch(event.target.value)}
+                placeholder="Search copies…"
+                aria-label="Search backups"
+                className="h-6 w-48 rounded border border-border bg-background pl-6 pr-6 outline-none focus:ring-1 focus:ring-ring"
+              />
+              {search && (
+                <button
+                  type="button"
+                  onClick={() => onSearch("")}
+                  aria-label="Clear search"
+                  className="absolute right-1.5 text-muted-foreground hover:text-foreground"
+                >
+                  <X className="size-3" aria-hidden />
+                </button>
+              )}
+            </div>
 
             <select
               className="h-6 rounded-md border border-input bg-background px-1.5 text-xs"
@@ -165,6 +204,63 @@ export function InventoryTab({
               <option value="app-db">Bench settings</option>
             </select>
 
+            {/* Only offered when there is more than one: a picker with one
+                option is a question with one answer. */}
+            {budgets.length > 1 && (
+              <select
+                className="h-6 rounded-md border border-input bg-background px-1.5 text-xs"
+                value={budget}
+                onChange={(event) => onBudget(event.target.value)}
+                aria-label="Filter by budget"
+              >
+                <option value="">Any budget</option>
+                {budgets.map((name) => (
+                  <option key={name} value={name}>
+                    {name}
+                  </option>
+                ))}
+              </select>
+            )}
+
+            {data.policies.length > 1 && (
+              <select
+                className="h-6 rounded-md border border-input bg-background px-1.5 text-xs"
+                value={policyId}
+                onChange={(event) => onPolicy(event.target.value)}
+                aria-label="Filter by rule"
+              >
+                <option value="">Any rule</option>
+                {data.policies.map((policy) => (
+                  <option key={policy.id} value={policy.id}>
+                    {policy.name}
+                  </option>
+                ))}
+              </select>
+            )}
+
+            {/* One statement about how many, the cap included. Saying "200"
+                and then "newest 200 shown" beside it is the same fact twice. */}
+            <span className="font-medium">
+              {filtering ? `${filtered.length} of ` : ""}
+              {artifacts.length >= 200 ? `newest ${artifacts.length}` : artifacts.length}
+              <span className="font-normal text-muted-foreground">
+                {" "}
+                {artifacts.length === 1 ? "copy" : "copies"},{" "}
+                {formatBytes(filtered.reduce((total, entry) => total + entry.sizeBytes, 0))}
+              </span>
+            </span>
+
+            {filtering && (
+              <button
+                type="button"
+                className="text-muted-foreground underline-offset-4 hover:underline"
+                onClick={onClearFilters}
+              >
+                Clear
+              </button>
+            )}
+
+            <span className="flex-1" />
             <span
               className="text-muted-foreground"
               title="Retention never removes a pinned copy, anything under the minimum age, or the newest verified copy. Backups you take by hand are kept until you delete them."
@@ -172,10 +268,6 @@ export function InventoryTab({
               Pinned and newest-verified copies are never deleted
             </span>
 
-            <span className="flex-1" />
-
-            {/* The actions that act on this inventory, beside it rather than in
-                a page header shared with Setup. */}
             <Button
               variant="outline"
               size="sm"
@@ -203,12 +295,20 @@ export function InventoryTab({
             </Button>
           </div>
 
+          {filtered.length === 0 ? (
+            <p className="px-4 py-10 text-center text-sm text-muted-foreground">
+              No copy matches those filters.
+            </p>
+          ) : (
           <BackupsTable
             artifacts={filtered}
             policies={data.policies}
             selectedId={selectedArtifactId}
+            sort={sort}
+            onSort={onSort}
             onOpen={onOpenArtifact}
           />
+          )}
         </>
       )}
     </div>

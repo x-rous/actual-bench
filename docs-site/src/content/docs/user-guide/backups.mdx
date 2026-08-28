@@ -140,6 +140,16 @@ unsaved, the reason is shown, and you can save anyway.
 
 Turn it off from the checkbox under the rules if you would rather it did not.
 
+## Backing up Bench itself
+
+A rule set to copy **Bench settings** snapshots Bench's own metadata database — your sync flows and
+mappings, reconciliation sessions, automations, saved queries and payee-cleanup decisions. It needs
+no budget connection at all, because it is a local database copy.
+
+Restoring it is an operator job rather than an in-app one: see
+[Upgrades & backups](../../administration/upgrading-and-backups/), which covers where the file goes
+and why the `SYNC_VAULT_KEY` has to travel with it.
+
 ## Getting a backup back
 
 **Look inside** opens a copy and tells you what is in it — accounts, payees, transactions and the

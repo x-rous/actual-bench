@@ -5,6 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plus, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { Button, buttonVariants } from "@/components/ui/button";
+import { ConfirmDialog, type ConfirmState } from "@/components/ui/confirm-dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -16,17 +17,25 @@ import { cn } from "@/lib/utils";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import {
+  deleteAutomation,
   listAutomations,
   listReviewQueue,
   patchAutomation,
   runAutomationNow,
 } from "../lib/automationsApi";
 
+import { usePersistedFilters } from "@/hooks/usePersistedFilters";
+import type { SortDirection } from "@/components/ui/sortable-header";
 import { AutomationDetail } from "./AutomationDetail";
+import {
+  AutomationsFilterBar,
+  filterAutomations,
+  type AutomationStatusFilter,
+} from "./AutomationsFilterBar";
 import { AutomationsTabs } from "./AutomationsTabs";
-import { AutomationsTable } from "./AutomationsTable";
+import { AutomationsTable, type AutomationSortKey } from "./AutomationsTable";
 import { NewBankSyncDialog } from "./NewBankSyncDialog";
-import { describeAutomationsSummary, jobTypeIcon } from "../lib/presentation";
+import { describeAutomationsSummary, jobTypeIcon, sortAutomations } from "../lib/presentation";
 
 /**
  * The Automations workspace (RD-079 / PR-043d).
@@ -48,6 +57,7 @@ export function AutomationsView() {
   // someone to find the row themselves on a page they were sent to for it.
   const [selectedId, setSelectedId] = useState<string | null>(params.get("open"));
   const [creating, setCreating] = useState(false);
+  const [confirm, setConfirm] = useState<ConfirmState | null>(null);
 
   const automationsQuery = useQuery({
     queryKey: ["automations"],
@@ -99,6 +109,15 @@ export function AutomationsView() {
     onError: (error: Error) => toast.error(error.message),
   });
 
+  const remove = useMutation({
+    mutationFn: deleteAutomation,
+    onSuccess: () => {
+      toast.success("Automation deleted");
+      invalidate();
+    },
+    onError: (error: Error) => toast.error(error.message),
+  });
+
   const reviewQueueQuery = useQuery({
     queryKey: ["automation-review-queue"],
     queryFn: listReviewQueue,
@@ -123,9 +142,39 @@ export function AutomationsView() {
     }
   }
 
-  const automations = automationsQuery.data?.automations ?? [];
+  const allAutomations = automationsQuery.data?.automations ?? [];
+
+  // Filters and sort persist the way the entity pages persist theirs, so
+  // switching to a run and back does not lose the view you set up.
+  const [view, setView] = usePersistedFilters<{
+    search: string;
+    status: AutomationStatusFilter;
+    type: string;
+    sortKey: AutomationSortKey | null;
+    sortDirection: SortDirection;
+  }>("filters:automations", {
+    search: "",
+    status: "all",
+    type: "",
+    sortKey: null,
+    sortDirection: null,
+  });
+
+  const sort =
+    view.sortKey && view.sortDirection ? { key: view.sortKey, direction: view.sortDirection } : null;
+
+  const filtered = filterAutomations(allAutomations, {
+    search: view.search,
+    status: view.status,
+    type: view.type,
+  });
+  const automations = sortAutomations(filtered, sort);
   const reviewQueue = reviewQueueQuery.data ?? [];
-  const selected = automations.find((automation) => automation.id === selectedId) ?? null;
+  // Resolved from every automation, not the filtered rows: a link that names
+  // one - /automations?open=<id>, which Connections uses - has to open it
+  // whatever filter was left set, and an open drawer should not close because
+  // its row was filtered out from behind it.
+  const selected = allAutomations.find((automation) => automation.id === selectedId) ?? null;
 
   return (
     <PageLayout
@@ -138,7 +187,11 @@ export function AutomationsView() {
       error={automationsQuery.error}
       onRetry={() => void automationsQuery.refetch()}
       emptyState={
-        automations.length === 0 ? (
+        // Keyed on the unfiltered list. Keyed on the filtered one, a filter
+        // matching nothing replaced the whole page - filter bar included - with
+        // "nothing is scheduled yet", stranding you in a view you could not
+        // undo and telling you something untrue on the way.
+        allAutomations.length === 0 ? (
           <div className="mx-auto max-w-xl px-6 py-14">
             <h2 className="text-sm font-semibold">Nothing is scheduled yet</h2>
             <p className="mt-2 text-sm text-muted-foreground">
@@ -289,19 +342,66 @@ export function AutomationsView() {
           </section>
         )}
 
+        <AutomationsFilterBar
+          search={view.search}
+          onSearchChange={(search) => setView((current) => ({ ...current, search }))}
+          status={view.status}
+          onStatusChange={(status) => setView((current) => ({ ...current, status }))}
+          type={view.type}
+          onTypeChange={(type) => setView((current) => ({ ...current, type }))}
+          jobTypes={automationsQuery.data?.jobTypes ?? []}
+          filteredCount={automations.length}
+          totalCount={allAutomations.length}
+        />
+
+        {automations.length === 0 && allAutomations.length > 0 ? (
+          <p className="px-4 py-10 text-center text-sm text-muted-foreground">
+            No automation matches those filters.
+          </p>
+        ) : (
         <AutomationsTable
           automations={automations}
           runningId={runNow.isPending ? (runNow.variables ?? null) : null}
+          sort={sort}
+          onSort={(sortKey, sortDirection) =>
+            setView((current) => ({
+              ...current,
+              sortKey: sortDirection ? sortKey : null,
+              sortDirection,
+            }))
+          }
           onOpen={setSelectedId}
           onRunNow={(id) => runNow.mutate(id)}
           onToggleEnabled={(automation) =>
             setEnabled.mutate({ id: automation.id, enabled: !automation.enabled })
           }
           onResume={(id) => resume.mutate(id)}
+          onDelete={(automation) =>
+            setConfirm({
+              title: `Delete "${automation.name}"?`,
+              message:
+                automation.type === "budget-file-sync"
+                  ? "It stops running and its run history goes with it. The sync flow itself is untouched - set its review policy back to unattended and the automation returns."
+                  : automation.type === "backup"
+                    ? "It stops running and its run history goes with it. The backups it took are kept."
+                    : "It stops running and its run history goes with it.",
+              destructiveLabel: "Delete",
+              onConfirm: () => remove.mutate(automation.id),
+            })
+          }
         />
+        )}
       </div>
 
       <NewBankSyncDialog open={creating} onOpenChange={setCreating} onCreated={invalidate} />
+
+      <ConfirmDialog
+        open={confirm !== null}
+        onOpenChange={(open) => {
+          if (!open) setConfirm(null);
+        }}
+        state={confirm}
+      />
 
       {selected && <AutomationDetail automation={selected} onClose={() => setSelectedId(null)} />}
     </PageLayout>

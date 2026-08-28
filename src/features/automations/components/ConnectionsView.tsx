@@ -94,7 +94,10 @@ export function ConnectionsView() {
                   {connections.length} {connections.length === 1 ? "budget" : "budgets"}
                 </span>
               </h2>
-              <p className="mt-0.5 max-w-3xl text-xs text-muted-foreground">
+              {/* No reading-column cap: the sentence is one thought and fits on
+                  one line at desk width. Capped at 3xl it wrapped for no
+                  reason, since nothing sits beside it but the Refresh button. */}
+              <p className="mt-0.5 text-xs text-muted-foreground">
                 Bench can act on these budgets while your browser is closed - that is what a
                 scheduled sync, bank pull or backup needs. Each budget is enrolled separately, so
                 three budgets means three entries here.
@@ -217,10 +220,6 @@ export function ConnectionsView() {
             </div>
           )}
 
-          <p className="mt-3 text-xs text-muted-foreground">
-            Budget File Sync also enrols connections from its own flow editor - it is the same list,
-            reached from where you happen to be.
-          </p>
         </div>
       </div>
 

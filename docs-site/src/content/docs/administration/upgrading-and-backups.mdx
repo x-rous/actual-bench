@@ -14,7 +14,7 @@ metadata database.
 
 | Data | Where | Back up? |
 |---|---|---|
-| Actual budget data | Your Actual Server | Yes — but backed up by **Actual Budget**, not Actual Bench |
+| Actual budget data | Your Actual Server | Yes — by Actual, or by Actual Bench's own [Backups](../../user-guide/backups/) |
 | Actual Bench metadata | `/data` volume (SQLite) | **Yes** |
 | Configuration | Your Compose file / environment | Yes |
 | `SYNC_VAULT_KEY` | Your secret manager | Yes — **store it separately and safely** |
@@ -89,13 +89,24 @@ container. Keep the same `/data` volume so your metadata carries over.
 
 ## Back up the metadata database
 
-Back up the `/data` volume (or at least the SQLite file at `ACTUAL_BENCH_DB_PATH`, default
-`/data/actual-bench.sqlite`).
+The easiest route is to let Bench do it: a [backup rule](../../user-guide/backups/) set to copy
+**Bench settings** takes a consistent snapshot of this database on a schedule, verifies it opens, and
+writes it wherever you point it. It uses SQLite's own `VACUUM INTO`, so the copy is safe to take
+while Bench is running and arrives with no `-wal` file to reunite.
+
+To do it by hand instead, back up the `/data` volume (or at least the SQLite file at
+`ACTUAL_BENCH_DB_PATH`, default `/data/actual-bench.sqlite`).
 
 :::caution[Back up SQLite safely]
 For a consistent copy, stop the container first, or use a SQLite-safe backup method. Copying a live
 database file mid-write can produce a corrupt backup. Include any SQLite sidecar files (for example
 `-wal` / `-shm`) if present.
+:::
+
+:::note[The vault key travels separately]
+Restoring this database onto a host with a different `SYNC_VAULT_KEY` gives you back every rule,
+flow and automation but none of the stored credentials — Bench will ask for them again. That is true
+however the copy was taken.
 :::
 
 Also back up your Compose/environment configuration, and store `SYNC_VAULT_KEY` **separately** in your

@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { toast } from "sonner";
 import { BackupsView } from "./BackupsView";
 import * as api from "../lib/backupsApi";
@@ -211,6 +211,71 @@ describe("the Recovery Center", () => {
     expect(await screen.findByText("Nightly")).toBeInTheDocument();
     expect(screen.getByText("discovered")).toBeInTheDocument();
     expect(screen.getByText("rule deleted")).toBeInTheDocument();
+  });
+
+  it("finds a copy by what you remember about it", async () => {
+    mockedApi.fetchRecoveryCenter.mockResolvedValue(
+      data({
+        artifacts: [
+          artifact({ sourceBudgetName: "Household" }),
+          artifact({ id: "art-2", sourceBudgetName: "Joint account" }),
+        ],
+      })
+    );
+
+    renderView();
+    const table = await screen.findByRole("table");
+    expect(within(table).getByText("Joint account")).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("Search backups"), { target: { value: "joint" } });
+
+    await waitFor(() => expect(within(table).queryByText("Household")).not.toBeInTheDocument());
+    expect(within(table).getByText("Joint account")).toBeInTheDocument();
+    expect(screen.getByText(/1 of 2/)).toBeInTheDocument();
+  });
+
+  it("keeps the filters reachable when nothing matches", async () => {
+    renderView();
+    await screen.findByText("Household");
+
+    fireEvent.change(screen.getByLabelText("Search backups"), {
+      target: { value: "nothing matches this" },
+    });
+
+    expect(await screen.findByText("No copy matches those filters.")).toBeInTheDocument();
+    // Not the guided "no copies yet" state, which would strand you.
+    expect(screen.queryByText("No copies yet")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Clear" }));
+    expect(await screen.findByText("Household")).toBeInTheDocument();
+  });
+
+  it("sorts by a column, and back to its own order", async () => {
+    mockedApi.fetchRecoveryCenter.mockResolvedValue(
+      data({
+        artifacts: [
+          artifact({ id: "big", sizeBytes: 9_000_000 }),
+          artifact({ id: "small", sizeBytes: 1_000 }),
+        ],
+      })
+    );
+
+    renderView();
+    const sizeHeader = await screen.findByRole("button", { name: /sort by size/i });
+
+    fireEvent.click(sizeHeader);
+    expect(sizeHeader.closest("th")).toHaveAttribute("aria-sort", "ascending");
+    let rows = screen.getAllByRole("row");
+    expect(within(rows[1]).getByText("1000 B")).toBeInTheDocument();
+
+    fireEvent.click(sizeHeader);
+    expect(sizeHeader.closest("th")).toHaveAttribute("aria-sort", "descending");
+    rows = screen.getAllByRole("row");
+    expect(within(rows[1]).getByText("8.6 MB")).toBeInTheDocument();
+
+    // A sort you cannot undo forces a reload to see the default again.
+    fireEvent.click(sizeHeader);
+    expect(sizeHeader.closest("th")).toHaveAttribute("aria-sort", "none");
   });
 
   it("shows each copy's state in words, not only in colour", async () => {

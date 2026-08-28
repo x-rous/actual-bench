@@ -1,4 +1,6 @@
+import { compareValues, type SortDirection } from "@/components/ui/sortable-header";
 import { describeCronExpression } from "@/lib/automation/cron";
+import type { BackupSortKey } from "../components/BackupsTable";
 import type { ArtifactWithLocations } from "./backupsApi";
 import type { BackupPolicy } from "@/lib/app-db/backupRepository";
 
@@ -129,8 +131,8 @@ export function describeContents(policy: BackupPolicy): string {
   return "Budget + Bench settings";
 }
 
-/** Which copies are worth showing first: trouble, then recency. */
-export function sortArtifacts(artifacts: ArtifactWithLocations[]): ArtifactWithLocations[] {
+/** Newest first - the default order, before anyone sorts a column. */
+export function byNewestFirst(artifacts: ArtifactWithLocations[]): ArtifactWithLocations[] {
   return [...artifacts].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 }
 
@@ -176,4 +178,92 @@ export function describeContentsSize(contents: ArtifactContents): string {
 export function describeCoverage(contents: ArtifactContents): string {
   if (!contents.earliest || !contents.latest) return "-";
   return `${contents.earliest} → ${contents.latest}`;
+}
+
+/** Where a copy's state sits when sorting: worst first, because that is why you sort. */
+const COPY_STATE_ORDER: Record<CopyState, number> = {
+  gone: 0,
+  damaged: 1,
+  unverified: 2,
+  verified: 3,
+};
+
+export function sortArtifacts(
+  artifacts: ArtifactWithLocations[],
+  policies: { id: string; name: string }[],
+  sort: { key: BackupSortKey; direction: SortDirection } | null
+): ArtifactWithLocations[] {
+  if (!sort || !sort.direction) return artifacts;
+  const { key, direction } = sort;
+  const policyNames = new Map(policies.map((policy) => [policy.id, policy.name]));
+
+  const value = (artifact: ArtifactWithLocations): string | number | null => {
+    switch (key) {
+      case "taken":
+        return artifact.createdAt;
+      case "contents":
+        return artifact.kind === "budget" ? artifact.sourceBudgetName ?? "Budget" : "Bench settings";
+      case "inside":
+        return artifactContents(artifact).transactions;
+      case "covers":
+        return artifactContents(artifact).latest;
+      case "state":
+        return COPY_STATE_ORDER[copyState(artifact)];
+      case "rule":
+        return (artifact.policyId && policyNames.get(artifact.policyId)) ?? null;
+      case "size":
+        return artifact.sizeBytes;
+    }
+  };
+
+  return [...artifacts].sort((a, b) => compareValues(value(a), value(b), direction));
+}
+
+/** Rows matching the current filters, in the order they were given. */
+export function filterArtifacts(
+  artifacts: ArtifactWithLocations[],
+  policies: { id: string; name: string }[],
+  filters: { search: string; state: string; kind: string; budget: string; policyId: string }
+): ArtifactWithLocations[] {
+  const needle = filters.search.trim().toLowerCase();
+  const policyNames = new Map(policies.map((policy) => [policy.id, policy.name]));
+
+  return artifacts.filter((artifact) => {
+    if (filters.kind !== "all" && artifact.kind !== filters.kind) return false;
+    if (filters.budget && artifact.sourceBudgetName !== filters.budget) return false;
+    if (filters.policyId && artifact.policyId !== filters.policyId) return false;
+
+    if (filters.state !== "all") {
+      const state = copyState(artifact);
+      const matches =
+        filters.state === "problem" ? state === "damaged" || state === "gone" : state === filters.state;
+      if (!matches) return false;
+    }
+
+    if (!needle) return true;
+
+    // Searched over what is on the row, plus where the copy lives - someone
+    // hunting for "the one on the NAS" is searching for the destination.
+    return [
+      artifact.sourceBudgetName,
+      artifact.kind === "app-db" ? "Bench settings" : "budget",
+      artifact.policyId ? policyNames.get(artifact.policyId) : null,
+      artifact.takenBefore,
+      ...artifact.locations.map((location) => location.destinationName),
+      ...artifact.locations.map((location) => location.objectKey),
+    ]
+      .filter((value): value is string => typeof value === "string" && value.length > 0)
+      .some((value) => value.toLowerCase().includes(needle));
+  });
+}
+
+/** The budgets these copies came from, for the filter that names them. */
+export function budgetsInArtifacts(artifacts: ArtifactWithLocations[]): string[] {
+  return [
+    ...new Set(
+      artifacts
+        .map((artifact) => artifact.sourceBudgetName)
+        .filter((name): name is string => typeof name === "string" && name.length > 0)
+    ),
+  ].sort((a, b) => a.localeCompare(b));
 }

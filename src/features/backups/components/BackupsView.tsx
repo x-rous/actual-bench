@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { PageLayout } from "@/components/layout/PageLayout";
 import { cn } from "@/lib/utils";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import type { SortDirection } from "@/components/ui/sortable-header";
 import {
   backUpNow,
   deleteDestination,
@@ -21,10 +22,15 @@ import {
   scrubNow,
   testDestination,
 } from "../lib/backupsApi";
-import { copyState, sortArtifacts } from "../lib/presentation";
+import {
+  byNewestFirst,
+  filterArtifacts,
+  sortArtifacts,
+} from "../lib/presentation";
 import { fetchSafetySettings, patchSafetySettings } from "../lib/safetyPoint";
 import { BackupDetail } from "./BackupDetail";
 import { InventoryTab, type KindFilter, type StateFilter } from "./InventoryTab";
+import type { BackupSortKey } from "./BackupsTable";
 import { SetupTab } from "./SetupTab";
 import { BackupRuleDialog } from "./BackupRuleDialog";
 import { DestinationDialog } from "./DestinationDialog";
@@ -87,9 +93,22 @@ export function BackupsView() {
   // page should land on the copies when there are copies - having once opened
   // Setup should not mean every later visit starts on the settings.
   const [view, setView] = usePersistedFilters<{
+    search: string;
     stateFilter: StateFilter;
     kindFilter: KindFilter;
-  }>("filters:backups", { stateFilter: "all", kindFilter: "all" });
+    budget: string;
+    policyId: string;
+    sortKey: BackupSortKey | null;
+    sortDirection: SortDirection;
+  }>("filters:backups", {
+    search: "",
+    stateFilter: "all",
+    kindFilter: "all",
+    budget: "",
+    policyId: "",
+    sortKey: null,
+    sortDirection: null,
+  });
   const [chosenTab, setChosenTab] = useState<"setup" | "backups" | null>(
     wantsNewRule ? "setup" : null
   );
@@ -231,16 +250,23 @@ export function BackupsView() {
   }
 
   const data = query.data;
-  const artifacts = sortArtifacts(data?.artifacts ?? []);
+  const artifacts = byNewestFirst(data?.artifacts ?? []);
   const selected = artifacts.find((artifact) => artifact.id === selectedArtifactId) ?? null;
 
-  const filtered = artifacts.filter((artifact) => {
-    if (view.kindFilter !== "all" && artifact.kind !== view.kindFilter) return false;
-    if (view.stateFilter === "all") return true;
-    const state = copyState(artifact);
-    if (view.stateFilter === "problem") return state === "damaged" || state === "gone";
-    return state === view.stateFilter;
-  });
+  const sort =
+    view.sortKey && view.sortDirection ? { key: view.sortKey, direction: view.sortDirection } : null;
+
+  const filtered = sortArtifacts(
+    filterArtifacts(artifacts, data?.policies ?? [], {
+      search: view.search,
+      state: view.stateFilter,
+      kind: view.kindFilter,
+      budget: view.budget,
+      policyId: view.policyId,
+    }),
+    data?.policies ?? [],
+    sort
+  );
 
   // The two things that have to happen before anything can be backed up, in
   // the order they have to happen in.
@@ -383,13 +409,37 @@ export function BackupsView() {
               data={data}
               artifacts={artifacts}
               filtered={filtered}
+              search={view.search}
               stateFilter={view.stateFilter}
               kindFilter={view.kindFilter}
+              budget={view.budget}
+              policyId={view.policyId}
+              sort={sort}
               selectedArtifactId={selectedArtifactId}
               needsDestination={needsDestination}
               needsRule={needsRule}
+              onSearch={(value) => setView((current) => ({ ...current, search: value }))}
               onStateFilter={(value) => setView((current) => ({ ...current, stateFilter: value }))}
               onKindFilter={(value) => setView((current) => ({ ...current, kindFilter: value }))}
+              onBudget={(value) => setView((current) => ({ ...current, budget: value }))}
+              onPolicy={(value) => setView((current) => ({ ...current, policyId: value }))}
+              onSort={(sortKey, sortDirection) =>
+                setView((current) => ({
+                  ...current,
+                  sortKey: sortDirection ? sortKey : null,
+                  sortDirection,
+                }))
+              }
+              onClearFilters={() =>
+                setView((current) => ({
+                  ...current,
+                  search: "",
+                  stateFilter: "all",
+                  kindFilter: "all",
+                  budget: "",
+                  policyId: "",
+                }))
+              }
               onOpenArtifact={setSelectedArtifactId}
               onGoToSetup={() => setTab("setup")}
             />

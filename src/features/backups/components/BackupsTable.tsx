@@ -2,6 +2,7 @@
 
 import { CircleCheck, CircleHelp, CircleX, Lock, Pin, Server } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
+import { SortableHeader, type SortDirection } from "@/components/ui/sortable-header";
 import { cn } from "@/lib/utils";
 import {
   artifactContents,
@@ -37,15 +38,26 @@ const STATE_STYLE: Record<CopyState, { icon: LucideIcon; tone: string; row?: str
   gone: { icon: CircleX, tone: "text-destructive", row: "bg-destructive/5" },
 };
 
+export type BackupSortKey =
+  | "taken"
+  | "contents"
+  | "inside"
+  | "covers"
+  | "state"
+  | "rule"
+  | "size";
+
 type Props = {
   artifacts: ArtifactWithLocations[];
   /** Names for the rules that made these copies. */
   policies: { id: string; name: string }[];
   selectedId: string | null;
+  sort: { key: BackupSortKey; direction: SortDirection } | null;
+  onSort: (key: BackupSortKey, direction: SortDirection) => void;
   onOpen: (artifactId: string) => void;
 };
 
-export function BackupsTable({ artifacts, policies, selectedId, onOpen }: Props) {
+export function BackupsTable({ artifacts, policies, selectedId, sort, onSort, onOpen }: Props) {
   const policyNames = new Map(policies.map((policy) => [policy.id, policy.name]));
 
   return (
@@ -53,16 +65,16 @@ export function BackupsTable({ artifacts, policies, selectedId, onOpen }: Props)
       <table className="w-full border-collapse text-xs">
         <thead className="sticky top-0 z-10 bg-background">
           <tr className="border-b border-border text-left text-xs text-muted-foreground">
-            <th scope="col" className="px-4 py-2 font-medium">Taken</th>
-            <th scope="col" className="px-4 py-2 font-medium">Contents</th>
+            <SortableHeader label="Taken" sortKey="taken" sort={sort} onSort={onSort} />
+            <SortableHeader label="Contents" sortKey="contents" sort={sort} onSort={onSort} />
             {/* Two columns verification already knows the answer to, and
                 which decide "is this the copy I want": how much budget it
                 holds, and which period it covers. */}
-            <th scope="col" className="px-4 py-2 font-medium">Inside</th>
-            <th scope="col" className="px-4 py-2 font-medium">Covers</th>
-            <th scope="col" className="px-4 py-2 font-medium">State</th>
-            <th scope="col" className="px-4 py-2 font-medium">Rule</th>
-            <th scope="col" className="px-4 py-2 font-medium">Size</th>
+            <SortableHeader label="Inside" sortKey="inside" sort={sort} onSort={onSort} />
+            <SortableHeader label="Covers" sortKey="covers" sort={sort} onSort={onSort} />
+            <SortableHeader label="State" sortKey="state" sort={sort} onSort={onSort} />
+            <SortableHeader label="Rule" sortKey="rule" sort={sort} onSort={onSort} />
+            <SortableHeader label="Size" sortKey="size" sort={sort} onSort={onSort} />
             <th scope="col" className="px-4 py-2 font-medium">Stored in</th>
             <th scope="col" className="px-4 py-2 font-medium">Keep</th>
           </tr>
