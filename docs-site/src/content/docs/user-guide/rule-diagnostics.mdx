@@ -70,8 +70,11 @@ Widening a rule can only make it match *more*, so every proposal is checked agai
 history first. The dialog tells you what each option would newly catch:
 
 - text already going to the payee this rule sets, and text belonging to nobody - both harmless;
-- text belonging to **another payee**, listed by name with examples. An option in that position is not
-  preselected, and confirming it needs an explicit acknowledgement.
+- text belonging to **another payee**, listed by name with examples. An option in that position is
+  never preselected, and confirming it needs an explicit acknowledgement. If *every* option would do
+  that, nothing is preselected at all - you have to choose one deliberately.
+
+Nothing can be staged until that check has finished running.
 
 If nothing can be proposed safely, the finding stays as information and no rewrite is offered.
 

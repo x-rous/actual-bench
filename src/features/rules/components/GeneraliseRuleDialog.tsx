@@ -113,8 +113,13 @@ export function GeneraliseRuleDialog({ open, onOpenChange, ruleId, onConfirmed }
 
   const keyOf = (impact: GeneralisationImpact) =>
     `${impact.candidate.op} ${impact.candidate.value}`;
+  // Only a clean option is ever chosen for someone. Where every option would
+  // take another payee's transactions there is no safe default to fall back on,
+  // so the choice stays empty and has to be made deliberately.
   const selected =
-    impacts.find((impact) => keyOf(impact) === selectedKey) ?? impacts[0];
+    impacts.find((impact) => keyOf(impact) === selectedKey) ??
+    impacts.find((impact) => impact.clean) ??
+    null;
   const selectedKeyOrBest = selected ? keyOf(selected) : null;
 
   function handleConfirm() {
@@ -151,7 +156,10 @@ export function GeneraliseRuleDialog({ open, onOpenChange, ruleId, onConfirmed }
     );
   }
 
-  const blocked = selected !== undefined && !selected.clean && !acknowledged;
+  // Nothing is staged before the backtest has run: with no history loaded every
+  // option scores clean, and "nothing belonging to another payee" would be a
+  // claim about a check that had not happened.
+  const blocked = isLoading || selected === null || (!selected.clean && !acknowledged);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -329,7 +337,7 @@ export function GeneraliseRuleDialog({ open, onOpenChange, ruleId, onConfirmed }
           <Button variant="outline" size="sm" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
-          <Button size="sm" onClick={handleConfirm} disabled={!selected || blocked}>
+          <Button size="sm" onClick={handleConfirm} disabled={blocked}>
             Stage this change
           </Button>
         </div>

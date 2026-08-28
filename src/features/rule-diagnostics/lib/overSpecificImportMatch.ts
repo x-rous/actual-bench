@@ -89,14 +89,20 @@ export function collectLiteralImportConditions(rule: Rule): LiteralImportConditi
     if (literals.length === 0) continue;
     if (literals.length > 1 && rule.conditionsOp !== "or") continue;
 
+    // Case-insensitively, because Actual lower-cases both sides of an `is`
+    // comparison — but *not* whitespace-insensitively, because it does not trim
+    // either (`fieldValue === this.value`). Trimming here merged two literals
+    // that Actual treats as different, and the same trim in the backtest then
+    // read a history row as already matched when the rule does not match it,
+    // which is how a conflicting rewrite could look clean.
     const seen = new Set<string>();
     const values: string[] = [];
     for (const part of literals) {
       for (const value of literalValues(part)) {
-        const key = value.trim().toUpperCase();
+        const key = value.toUpperCase();
         if (seen.has(key)) continue;
         seen.add(key);
-        values.push(value.trim());
+        values.push(value);
       }
     }
 

@@ -95,6 +95,26 @@ describe("assessGeneralisation", () => {
     expect(impact.conflictingExamples[0].payeeName).toBe("Market Boys Wholesale");
   });
 
+  it("does not treat a row differing only in whitespace as one the rule already matches", () => {
+    // The rule's `is` list does not match this row, so the rewrite would be
+    // taking it from another payee - the exact case the acknowledgement exists
+    // for, and one a trim on both sides made invisible.
+    const impact = assessGeneralisation(
+      CONTAINS,
+      input([
+        row({
+          text: `${CURRENT[0]} `,
+          payeeId: "p-other",
+          payeeName: "Market Boys Wholesale",
+        }),
+      ])
+    );
+
+    expect(impact.coveredToday).toBe(0);
+    expect(impact.newConflicting).toBe(1);
+    expect(impact.clean).toBe(false);
+  });
+
   it("attributes by name as well as by id", () => {
     // A grouped query can return either, and mis-attributing the rule's own
     // transactions makes a safe rewrite look dangerous.

@@ -89,6 +89,25 @@ describe("collectLiteralImportConditions", () => {
     expect(found).toBeNull();
   });
 
+  it("keeps two literals that differ only in whitespace", () => {
+    // Actual compares `is` with `===` on the lower-cased text and does not trim,
+    // so these are two different strings to the rule engine. Merging them made
+    // the backtest read a history row as already matched when the rule does not
+    // match it, which hides a conflict.
+    const found = collectLiteralImportConditions(
+      rule({
+        id: "r1",
+        conditionsOp: "or",
+        conditions: [
+          { field: "imported_payee", op: "is", value: "NIMBUS STORAGE 03" },
+          { field: "imported_payee", op: "is", value: "NIMBUS STORAGE 03 " },
+        ],
+      })
+    );
+
+    expect(found?.values).toEqual(["NIMBUS STORAGE 03", "NIMBUS STORAGE 03 "]);
+  });
+
   it("reads notes as well as imported_payee", () => {
     const found = collectLiteralImportConditions(
       rule({

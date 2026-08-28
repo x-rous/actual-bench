@@ -13,11 +13,12 @@ const CURRENT = [
 // The history is a whole-budget read owned by a TanStack query; this suite is
 // about what the dialog does with the answer.
 let rows: ImportedTextRow[] = [];
+let historyLoading = false;
 jest.mock("../../payee-cleanup/hooks/useImportedTextIndex", () => ({
   useImportedTextIndex: () => ({
     rows,
     truncated: false,
-    isLoading: false,
+    isLoading: historyLoading,
     isFetching: false,
     refetch: jest.fn(),
   }),
@@ -83,6 +84,7 @@ function open(props: Partial<React.ComponentProps<typeof GeneraliseRuleDialog>> 
 
 beforeEach(() => {
   jest.clearAllMocks();
+  historyLoading = false;
   rows = CURRENT.map((text) => row({ text, payeeId: "p-market" }));
   rule = {
     id: "r1",
@@ -180,12 +182,48 @@ describe("GeneraliseRuleDialog", () => {
     const confirm = screen.getByRole("button", { name: "Stage this change" });
     expect(confirm).toBeDisabled();
 
+    // Nothing conflicting is chosen for you, so the option has to be picked
+    // before there is anything to acknowledge.
+    fireEvent.click(screen.getAllByRole("radio")[0]);
     fireEvent.click(
       screen.getByLabelText("Accept a rewrite that also matches another payee's transactions")
     );
     expect(confirm).not.toBeDisabled();
     fireEvent.click(confirm);
     expect(stageUpdate).toHaveBeenCalled();
+  });
+
+  it("stages nothing until the history has been checked", () => {
+    // With no rows loaded every option scores clean, so "nothing belonging to
+    // another payee" would be a claim about a check that had not run.
+    historyLoading = true;
+    rows = [];
+    open();
+
+    expect(screen.getByText(/Checking each option against your import history/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Stage this change" })).toBeDisabled();
+  });
+
+  it("preselects nothing when every option would take another payee's transactions", () => {
+    rows = [
+      ...rows,
+      row({
+        text: "MARKET BOYS Brisbane",
+        payeeId: "p-wholesale",
+        payeeName: "Market Boys Wholesale",
+      }),
+      row({
+        text: "MARKET BOYS PTY LTD WHOLESALE Brisbane",
+        payeeId: "p-wholesale",
+        payeeName: "Market Boys Wholesale",
+      }),
+    ];
+    open();
+
+    expect(screen.getAllByRole("radio").every((radio) => !(radio as HTMLInputElement).checked)).toBe(
+      true
+    );
+    expect(screen.getByRole("button", { name: "Stage this change" })).toBeDisabled();
   });
 
   it("says so when the rule has nothing left to generalise", () => {

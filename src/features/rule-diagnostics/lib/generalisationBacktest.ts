@@ -68,7 +68,9 @@ export function assessGeneralisation(
   input: BacktestInput
 ): GeneralisationImpact {
   const matches = compileRuleMatcher(entry.candidate.op, entry.candidate.value);
-  const current = new Set(input.currentValues.map((value) => value.trim().toUpperCase()));
+  // Case only. Actual compares `is` with `===` on the lower-cased text and does
+  // not trim, so two values differing by a trailing space are two values.
+  const current = new Set(input.currentValues.map((value) => value.toUpperCase()));
 
   let coveredToday = 0;
   let newAgreeing = 0;
@@ -81,7 +83,7 @@ export function assessGeneralisation(
     if (row.field !== input.field) continue;
     if (!matches(row.text)) continue;
 
-    if (current.has(row.text.trim().toUpperCase())) {
+    if (current.has(row.text.toUpperCase())) {
       coveredToday += 1;
       continue;
     }
