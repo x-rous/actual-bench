@@ -11,16 +11,28 @@
 export async function register(): Promise<void> {
   if (process.env.NEXT_RUNTIME !== "nodejs") return;
 
-  const [{ startAutomationEngine }, { registerBudgetFileSyncJobType }, { migrateSyncFlowsToAutomations }, { getAppDb }, { logger }] =
-    await Promise.all([
-      import("@/lib/automation/runtime"),
-      import("@/lib/automation/jobs/budgetFileSync"),
-      import("@/lib/automation/jobs/budgetFileSyncMigration"),
-      import("@/lib/app-db/connection"),
-      import("@/lib/logger"),
-    ]);
+  const [
+    { startAutomationEngine },
+    { ensureAutomationJobTypesRegistered },
+    { migrateSyncFlowsToAutomations },
+    { getAppDb },
+    { logger },
+  ] = await Promise.all([
+    import("@/lib/automation/runtime"),
+    import("@/lib/automation/bootstrap"),
+    import("@/lib/automation/jobs/budgetFileSyncMigration"),
+    import("@/lib/app-db/connection"),
+    import("@/lib/logger"),
+  ]);
 
-  registerBudgetFileSyncJobType();
+  // Every job type, not just the first one. Registering only Budget File Sync
+  // here meant the engine's own tick knew nothing about bank sync or backups:
+  // it would find their automations due, fail to resolve a type, and auto-pause
+  // them with "No job type registered". Whether that happened at all depended
+  // on whether an API route had run in the same module instance first and
+  // populated the registry as a side effect - which is why it looked
+  // intermittent.
+  ensureAutomationJobTypesRegistered();
 
   try {
     migrateSyncFlowsToAutomations(getAppDb());
