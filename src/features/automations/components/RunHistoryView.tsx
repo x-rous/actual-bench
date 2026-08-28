@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useSearchParams } from "next/navigation";
-import { RefreshCw } from "lucide-react";
+import { RefreshCw, Search, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { PageLayout } from "@/components/layout/PageLayout";
 import { cn } from "@/lib/utils";
@@ -40,6 +40,7 @@ export function RunHistoryView() {
   const params = useSearchParams();
   const automationFromUrl = params.get("automation") ?? "";
 
+  const [search, setSearch] = useState("");
   const [statuses, setStatuses] = useState<AutomationRunStatus[]>([]);
   const [automationId, setAutomationId] = useState(automationFromUrl);
   const [type, setType] = useState("");
@@ -72,7 +73,18 @@ export function RunHistoryView() {
     );
   }
 
-  const runs = query.data?.runs ?? [];
+  // Searched client-side over what the row shows: the automation's name and the
+  // line it reported. "What failed" is often remembered as a phrase from the
+  // error, not as a status.
+  const needle = search.trim().toLowerCase();
+  const runs = (query.data?.runs ?? []).filter((run) =>
+    needle
+      ? [run.automationName, run.typeLabel, run.rollup?.message, run.error?.data.message]
+          .filter((value): value is string => typeof value === "string")
+          .some((value) => value.toLowerCase().includes(needle))
+      : true
+  );
+  const total = query.data?.runs.length ?? 0;
   const failing = runs.filter((run) => run.status === "failed" || run.status === "partial").length;
 
   return (
@@ -86,8 +98,30 @@ export function RunHistoryView() {
     >
       <div className="flex min-h-0 flex-1 flex-col">
         <div className="flex flex-wrap items-center gap-2 border-b border-border px-4 py-2 text-xs">
+          <div className="relative flex items-center">
+            <Search className="absolute left-1.5 size-3.5 text-muted-foreground" aria-hidden />
+            <input
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search runs…"
+              aria-label="Search runs"
+              className="h-6 w-44 rounded border border-border bg-background pl-6 pr-6 text-xs outline-none focus:ring-1 focus:ring-ring"
+            />
+            {search && (
+              <button
+                type="button"
+                onClick={() => setSearch("")}
+                aria-label="Clear search"
+                className="absolute right-1.5 text-muted-foreground hover:text-foreground"
+              >
+                <X className="size-3" aria-hidden />
+              </button>
+            )}
+          </div>
+
           <span className="font-medium">
-            {runs.length} {runs.length === 1 ? "run" : "runs"}
+            {needle ? `${runs.length} of ${total}` : `${runs.length}`}{" "}
+            {total === 1 ? "run" : "runs"}
           </span>
           <span className="text-muted-foreground">|</span>
 
@@ -144,7 +178,7 @@ export function RunHistoryView() {
             ))}
           </select>
 
-          {(statuses.length > 0 || automationId || type) && (
+          {(statuses.length > 0 || automationId || type || search) && (
             <button
               type="button"
               className="text-muted-foreground underline-offset-4 hover:underline"
@@ -152,6 +186,7 @@ export function RunHistoryView() {
                 setStatuses([]);
                 setAutomationId("");
                 setType("");
+                setSearch("");
               }}
             >
               Clear
@@ -191,12 +226,12 @@ export function RunHistoryView() {
         {runs.length === 0 ? (
           <div className="mx-auto max-w-lg px-6 py-16 text-center">
             <h2 className="text-sm font-semibold">
-              {statuses.length > 0 || automationId || type
+              {statuses.length > 0 || automationId || type || search
                 ? "Nothing matches those filters"
                 : "Nothing has run yet"}
             </h2>
             <p className="mt-2 text-sm text-muted-foreground">
-              {statuses.length > 0 || automationId || type
+              {statuses.length > 0 || automationId || type || search
                 ? "Clear a filter to widen the search."
                 : "Runs appear here as automations fire - scheduled or on demand."}
             </p>

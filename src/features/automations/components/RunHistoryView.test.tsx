@@ -91,6 +91,18 @@ describe("run history", () => {
     );
   });
 
+  it("finds a run by the line it reported", async () => {
+    // "What failed" is usually remembered as a phrase from the error rather
+    // than as a status.
+    renderView();
+    await screen.findByText("No copy could be stored.");
+
+    fireEvent.change(screen.getByLabelText("Search runs"), { target: { value: "no copy" } });
+
+    expect(await screen.findByText(/1 of 2/)).toBeInTheDocument();
+    expect(screen.getByText("No copy could be stored.")).toBeInTheDocument();
+  });
+
   it("says how many of the listed runs did not finish cleanly", async () => {
     renderView();
     expect(await screen.findByText(/1 of these run did not finish cleanly/)).toBeInTheDocument();
