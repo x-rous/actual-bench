@@ -36,15 +36,55 @@ each in plain language, and links you straight to the fix.
 - Impossibly contradictory conditions on `and`-rules.
 - Strictly shadowed rules within a stage.
 - Broad match criteria (very short `contains` / `matches` values).
+- Rules matching whole import strings rather than the merchant (see below).
 - Duplicate rule groups and near-duplicate pairs.
 - Unsupported field/operator combinations.
 
 Schedule-generated rules are excluded from editor-relevant checks but still surface missing-entity
 findings.
 
+## Rules that match whole import strings
+
+Actual writes some of your rules for you. When you rename a payee and accept its offer to
+"apply that rename in the future", it creates a rule matching the **exact bank text** of that
+transaction, and each later rename of the same merchant adds another string to the same list
+([Actual's documentation of automatic rules](https://actualbudget.org/docs/budgeting/rules/#automatic-rules)):
+
+```
+imported payee is one of
+  MARKET BOYS PTY LTD Melbourne VI AUS Card xx4534 Value Date: 12/03/2024
+  MARKET BOYS PTY LTD Melbourne VI AUS Card xx9166 Value Date: 24/12/2024
+  MARKET BOYS PTY LTD Sydney Value Date: 10/11/2025
+→ set payee to Market Boys
+```
+
+That rule is already broken for your next import. The card number and the value date change every
+time, so the next string is not on the list, the rule does not apply, and a duplicate payee arrives -
+which you rename again, adding a fourth string. The list grows; it never starts working.
+
+Bench reports these and offers **Generalise**, which opens a dialog on the Rules page proposing the
+one condition all of those strings agree on - `imported payee contains "MARKET BOYS PTY LTD"` - so
+next month's variant is caught too.
+
+Widening a rule can only make it match *more*, so every proposal is checked against your own import
+history first. The dialog tells you what each option would newly catch:
+
+- text already going to the payee this rule sets, and text belonging to nobody - both harmless;
+- text belonging to **another payee**, listed by name with examples. An option in that position is not
+  preselected, and confirming it needs an explicit acknowledgement.
+
+If nothing can be proposed safely, the finding stays as information and no rewrite is offered.
+
+Detection is by shape: Actual does not mark the rules it wrote, so a rule you wrote yourself in the
+same shape is reported too. That is deliberate - it fails on the next import for the same reason.
+Nothing is changed until you confirm, and the rewrite is staged like any other edit, so you can
+review or undo it before saving.
+
 ## Act on findings
 
 - Click a finding's rule summary to **jump to the rule** (`/rules?highlight=<id>`) and open it.
+- Over-specific import rules have a **Generalise** button that opens the rewrite dialog described
+  above; you're returned to the diagnostics report afterward.
 - Duplicate and near-duplicate findings have a one-click **Merge** button that opens the
   [merge dialog](../rules/#merge-rules) pre-filled; you're returned to the diagnostics report afterward.
 - A **stale-results** banner appears if the working set changes while the view is open; results stay
@@ -53,7 +93,8 @@ findings.
 ## Safety
 
 Diagnostics is advisory — it only reads. It never changes your rules; every fix is an explicit action
-you take (jump to a rule, or confirm a merge) that then follows the normal staged **Save** flow.
+you take (jump to a rule, confirm a merge, or confirm a generalisation) that then follows the normal
+staged **Save** flow.
 
 ## Troubleshooting
 
