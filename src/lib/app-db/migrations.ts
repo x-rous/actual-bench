@@ -39,7 +39,7 @@ import {
 import { KDF_VERSION_META_KEY, SALT_META_KEY, VERIFIER_META_KEY } from "./vaultMetaKeys";
 import { AppDbUnavailableError } from "./errors";
 
-export const LATEST_SCHEMA_VERSION = 22;
+export const LATEST_SCHEMA_VERSION = 23;
 
 type Migration = {
   version: number;
@@ -285,6 +285,26 @@ const MIGRATIONS: readonly Migration[] = [
       addColumnIfMissing(db, "backup_policies", "interval_minutes", "integer");
       addColumnIfMissing(db, "backup_policies", "timezone", "text NOT NULL DEFAULT 'UTC'");
       addColumnIfMissing(db, "backup_policies", "scrub_enabled", "integer NOT NULL DEFAULT 1");
+    },
+  },
+  {
+    version: 23,
+    // An encrypted artifact remembers which sealed passphrase opens it (RD-077
+    // / PR-047). It cannot be derived from the rule: deleting a rule nulls the
+    // artifact's policy reference by design, which is exactly the moment the
+    // link matters most. Additive.
+    apply(db) {
+      addColumnIfMissing(db, "backup_artifacts", "encryption_credential_ref", "text");
+      // Backfill from the rules that still exist, so copies taken before this
+      // migration stay openable.
+      db.exec(
+        `UPDATE backup_artifacts
+            SET encryption_credential_ref = (
+              SELECT encryption_credential_ref FROM backup_policies
+               WHERE backup_policies.id = backup_artifacts.policy_id
+            )
+          WHERE encrypted = 1 AND encryption_credential_ref IS NULL`
+      );
     },
   },
 ];

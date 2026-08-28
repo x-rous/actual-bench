@@ -24,7 +24,10 @@ function ActionCard({ card }: { card: OverviewActionCard }) {
   );
 
   const content = (
-    <div className="flex items-start gap-3">
+    // The arrow overlays the corner rather than taking a column of its own:
+    // as a flex sibling it stole a chunk of every card's width and wrapped the
+    // descriptions early, which read as a huge right-hand margin.
+    <div className="relative flex items-start gap-3">
       <div
         className={cn(
           "rounded-lg border p-2",
@@ -44,7 +47,7 @@ function ActionCard({ card }: { card: OverviewActionCard }) {
       </div>
 
       <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 pr-5">
           <div
             className={cn(
               "text-[15px] font-semibold tracking-tight text-foreground/95",
@@ -70,7 +73,7 @@ function ActionCard({ card }: { card: OverviewActionCard }) {
       </div>
 
       {!isDisabled && (
-        <ArrowRight className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
+        <ArrowRight className="absolute right-0 top-0.5 h-4 w-4 shrink-0 text-muted-foreground/70 transition-transform group-hover:translate-x-0.5" />
       )}
     </div>
   );
@@ -92,9 +95,13 @@ export function OverviewNavigationSection() {
       <section className="space-y-3 pt-1">
         <div className="space-y-1">
           <h2 className="text-lg font-semibold tracking-tight">{MANAGE_DATA_TITLE}</h2>
-          <p className="max-w-5xl text-[13px] leading-5 text-muted-foreground/80">{MANAGE_DATA_DESCRIPTION}</p>
+          <p className="text-[13px] leading-5 text-muted-foreground/80">{MANAGE_DATA_DESCRIPTION}</p>
         </div>
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        {/* Four across at desk width, five on a large display: sixteen cards in
+            three columns pushed the second half of the page below the fold, and
+            a launcher you have to scroll to use is a slower version of the
+            sidebar it duplicates. */}
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
           {ENTITY_CARDS.map((card) => (
             <ActionCard key={card.id} card={card} />
           ))}
@@ -104,10 +111,10 @@ export function OverviewNavigationSection() {
       <section className="space-y-3 pt-1">
         <div className="space-y-1">
           <h2 className="text-lg font-semibold tracking-tight">Advanced Tools</h2>
-          <p className="max-w-3xl text-[13px] leading-5 text-muted-foreground/80">{ADVANCED_TOOLS_DESCRIPTION}</p>
+          <p className="text-[13px] leading-5 text-muted-foreground/80">{ADVANCED_TOOLS_DESCRIPTION}</p>
         </div>
 
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
           {TOOL_CARDS.map((card) => (
             <ActionCard key={card.id} card={card} />
           ))}

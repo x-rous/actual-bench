@@ -2,6 +2,7 @@ import {
   claimAutomation,
   getAutomation,
   listAutomations,
+  resumeAutomation,
   pauseAutomationForHealth,
   recordAutomationOutcome,
   releaseAutomationClaim,
@@ -182,7 +183,9 @@ export async function executeAutomation(
   const jobType = getAutomationJobType(definition.type) as AutomationJobType<unknown, unknown> | undefined;
   if (!jobType) {
     // An unknown type is a deployment problem, not a job failure: pause it so
-    // it stops re-firing every minute, and say exactly what is missing.
+    // it stops re-firing every minute, and say exactly what is missing. The
+    // pause is undone automatically once the type turns up - see
+    // `resumeAutomationsAwaitingTheirJobType`.
     pauseAutomationForHealth(
       db,
       automationId,
@@ -406,12 +409,53 @@ function parseIso(value: string | null): number | null {
 }
 
 /** One scheduler pass. */
+/** The reason text `executeAutomation` records for an unregistered type. */
+const MISSING_JOB_TYPE_REASON = "No job type registered for";
+
+/**
+ * Undo pauses caused by a job type that was missing and no longer is.
+ *
+ * The engine pauses an automation whose type it cannot resolve, which is right
+ * - it stops a broken deployment re-firing every minute - but the pause outlives
+ * the problem. A registration bug paused every backup and bank sync in the
+ * install, and clearing that by hand, one automation at a time, is work created
+ * by Bench for a fault of Bench's own.
+ *
+ * Deliberately narrow: only pauses whose recorded reason is *this* one, and only
+ * when the type is now registered. A pause from repeated genuine failures still
+ * needs a person to look, because nothing about it has been fixed by a restart.
+ */
+export function resumeAutomationsAwaitingTheirJobType(db: SqliteDatabase): string[] {
+  const resumed: string[] = [];
+
+  for (const definition of listAutomations(db)) {
+    if (!definition.autoPausedAt) continue;
+    if (!definition.autoPauseReason?.startsWith(MISSING_JOB_TYPE_REASON)) continue;
+    if (!getAutomationJobType(definition.type)) continue;
+
+    resumeAutomation(db, definition.id);
+    resumed.push(definition.id);
+  }
+
+  if (resumed.length > 0) {
+    logger.info(
+      `[automation] resumed ${resumed.length} automation(s) paused for a job type that is now registered`
+    );
+  }
+
+  return resumed;
+}
+
 export async function runEngineTick(
   db: SqliteDatabase,
   options: { nowMs?: number } = {}
 ): Promise<TickSummary> {
   const nowMs = options.nowMs ?? Date.now();
   const at = new Date(nowMs).toISOString();
+
+  // Before anything is selected: give back the automations that were paused
+  // only because their type had not been registered yet.
+  resumeAutomationsAwaitingTheirJobType(db);
 
   // Let each job type reconcile its definitions with its own configuration
   // first, so an automation enrolled since the last tick is picked up now

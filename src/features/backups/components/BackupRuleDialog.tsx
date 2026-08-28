@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
@@ -13,8 +13,14 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { isValidCronExpression } from "@/lib/automation/cron";
-import { browserTimezone, timezoneOptions } from "@/features/automations/lib/timezones";
+import { browserTimezone } from "@/features/automations/lib/timezones";
+import {
+  SchedulePicker,
+  type ScheduleValue,
+} from "@/features/automations/components/SchedulePicker";
+import { EnrolConnection } from "@/features/automations/components/EnrolConnection";
+import { connectionFingerprint } from "@/lib/sync/connectionRef";
+import { isHttpApiConnection, useConnectionStore } from "@/store/connection";
 import { createPolicy, patchPolicy, type BackupSource } from "../lib/backupsApi";
 import type { BackupDestination, BackupPolicy } from "@/lib/app-db/backupRepository";
 
@@ -42,8 +48,6 @@ import type { BackupDestination, BackupPolicy } from "@/lib/app-db/backupReposit
 const inputClass = "h-8 rounded-md px-2 text-xs md:text-xs";
 const selectClass = "h-8 w-full rounded-md border border-input bg-background px-2 text-xs";
 
-type Cadence = "daily" | "hours" | "cron";
-
 type Props = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -53,12 +57,6 @@ type Props = {
   existing?: BackupPolicy | null;
   onSaved: () => void;
 };
-
-function initialCadence(policy: BackupPolicy | null | undefined): Cadence {
-  if (!policy) return "daily";
-  if (policy.scheduleKind === "interval") return "hours";
-  return /^0 \d{1,2} \* \* \*$/.test(policy.cronExpression ?? "") ? "daily" : "cron";
-}
 
 export function BackupRuleDialog({
   open,
@@ -71,24 +69,51 @@ export function BackupRuleDialog({
 }: Props) {
   const editing = Boolean(existing);
   const [name, setName] = useState(existing?.name ?? "Nightly backup");
+  // Every saved HTTP connection, with whether the server can already act on it.
+  // Direct connections are left out because they can never run unattended.
+  const savedConnections = useConnectionStore((state) => state.instances);
+  const choices = savedConnections
+    .filter((connection) => isHttpApiConnection(connection))
+    .map((connection) => ({
+      fingerprint: connectionFingerprint(connection),
+      label: connection.label,
+      baseUrl: connection.baseUrl,
+      connection,
+      enrolled: sources.some(
+        (entry) => entry.connectionFingerprint === connectionFingerprint(connection)
+      ),
+    }));
+
   const [source, setSource] = useState(
-    String(existing?.sourceRef.data.connectionFingerprint ?? sources[0]?.connectionFingerprint ?? "")
+    String(
+      existing?.sourceRef.data.connectionFingerprint ??
+        choices.find((choice) => choice.enrolled)?.fingerprint ??
+        choices[0]?.fingerprint ??
+        ""
+    )
   );
+  const chosen = choices.find((choice) => choice.fingerprint === source) ?? null;
   const [contents, setContents] = useState<BackupPolicy["contents"]>(existing?.contents ?? "both");
   const [destinationIds, setDestinationIds] = useState<string[]>(
     existing?.destinationIds ?? destinations.map((destination) => destination.id)
   );
 
-  const [cadence, setCadence] = useState<Cadence>(initialCadence(existing));
-  const [hour, setHour] = useState(() => {
-    const match = /^0 (\d{1,2}) \* \* \*$/.exec(existing?.cronExpression ?? "0 2 * * *");
-    return match ? Number(match[1]) : 2;
-  });
-  const [everyHours, setEveryHours] = useState(
-    existing?.intervalMinutes ? Math.max(1, Math.round(existing.intervalMinutes / 60)) : 6
-  );
-  const [cron, setCron] = useState(existing?.cronExpression ?? "0 2 * * *");
-  const [timezone, setTimezone] = useState(existing?.timezone ?? browserTimezone());
+  const [schedule, setSchedule] = useState<ScheduleValue>(() => ({
+    scheduleKind: existing?.scheduleKind ?? "cron",
+    cronExpression: existing?.cronExpression ?? "0 2 * * *",
+    intervalMinutes: existing?.intervalMinutes ?? null,
+    timezone: existing?.timezone ?? browserTimezone(),
+  }));
+  const [scheduleValid, setScheduleValid] = useState(true);
+
+  // A clock read during render is impure; snapshot it, and refresh while the
+  // dialog is open so "next run in 3 minutes" does not go stale as you read it.
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  useEffect(() => {
+    if (!open) return;
+    const timer = setInterval(() => setNowMs(Date.now()), 30_000);
+    return () => clearInterval(timer);
+  }, [open]);
 
   const [verificationLevel, setVerificationLevel] = useState(existing?.verificationLevel ?? "data");
   const [encrypt, setEncrypt] = useState(existing?.encryption === "passphrase");
@@ -108,17 +133,6 @@ export function BackupRuleDialog({
     }
   );
 
-  const schedule =
-    cadence === "hours"
-      ? { scheduleKind: "interval" as const, intervalMinutes: everyHours * 60, cronExpression: null }
-      : {
-          scheduleKind: "cron" as const,
-          cronExpression: cadence === "daily" ? `0 ${hour} * * *` : cron.trim(),
-          intervalMinutes: null,
-        };
-
-  const cronValid = cadence !== "cron" || isValidCronExpression(cron.trim());
-
   const save = useMutation({
     mutationFn: async () => {
       const payload = {
@@ -130,8 +144,10 @@ export function BackupRuleDialog({
         encryption: encrypt ? "passphrase" : "none",
         retention,
         scrubEnabled,
-        timezone,
-        ...schedule,
+        timezone: schedule.timezone,
+        scheduleKind: schedule.scheduleKind,
+        cronExpression: schedule.cronExpression,
+        intervalMinutes: schedule.intervalMinutes,
         ...(encrypt && passphrase ? { passphrase } : {}),
       };
       return existing ? patchPolicy(existing.id, payload) : createPolicy(payload);
@@ -148,9 +164,9 @@ export function BackupRuleDialog({
   const canSave =
     name.trim().length > 0 &&
     destinationIds.length > 0 &&
-    (!needsSource || source.length > 0) &&
+    (!needsSource || (source.length > 0 && (chosen?.enrolled ?? false))) &&
     (!encrypt || editing || passphrase.length >= 8) &&
-    cronValid;
+    scheduleValid;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -178,33 +194,52 @@ export function BackupRuleDialog({
             </select>
             <span className="block text-muted-foreground">
               Bench&rsquo;s settings are your sync rules, mappings, reconciliation sessions and
-              automations — everything you have taught it, which lives nowhere else.
+              automations - everything you have taught it, which lives nowhere else.
             </span>
           </label>
 
+          {/* Only shown when there is a budget to name: a copy of Bench's own
+              settings is a local database export and needs no connection at
+              all, so asking for one would be asking a question with no bearing
+              on the answer. */}
           {needsSource && (
-            <label className="block space-y-1">
-              <span className="font-medium">Budget</span>
-              {sources.length === 0 ? (
-                <span className="block rounded-md border border-amber-400/40 bg-amber-50 p-2 text-amber-800 dark:bg-amber-950/20 dark:text-amber-300">
-                  No budget is enrolled for unattended use yet. A scheduled backup runs with the
-                  browser closed, so it needs credentials the server can use on its own — enrol a
-                  connection in Budget File Sync first.
-                </span>
-              ) : (
+            <div className="space-y-1">
+              <label className="block space-y-1">
+                <span className="font-medium">Budget</span>
                 <select
                   className={selectClass}
                   value={source}
                   onChange={(event) => setSource(event.target.value)}
                 >
-                  {sources.map((entry) => (
-                    <option key={entry.connectionFingerprint} value={entry.connectionFingerprint}>
-                      {entry.label}
+                  {choices.length === 0 && <option value="">No budget connections saved</option>}
+                  {choices.map((choice) => (
+                    <option key={choice.fingerprint} value={choice.fingerprint}>
+                      {choice.label} - {choice.baseUrl}
+                      {choice.enrolled ? "" : "  (not enrolled)"}
                     </option>
                   ))}
                 </select>
+              </label>
+
+              {/* Every budget you have connected to is listed, not only the
+                  enrolled ones - the budget you are working in should appear in
+                  the list of budgets you can back up, with the reason it cannot
+                  be used yet and the button that fixes it. */}
+              {chosen && !chosen.enrolled && (
+                <EnrolConnection
+                  connection={chosen.connection}
+                  compact
+                  onEnrolled={onSaved}
+                />
               )}
-            </label>
+
+              {choices.length === 0 && (
+                <span className="block text-muted-foreground">
+                  Connect to a budget through an Actual HTTP API server first - a scheduled backup
+                  runs with no browser open, so it cannot use a Direct connection.
+                </span>
+              )}
+            </div>
           )}
 
           <fieldset className="space-y-1">
@@ -241,74 +276,12 @@ export function BackupRuleDialog({
 
           <div className="space-y-1">
             <span className="font-medium">When</span>
-            <div className="flex flex-wrap items-center gap-2">
-              <select
-                className={selectClass + " w-auto"}
-                value={cadence}
-                onChange={(event) => setCadence(event.target.value as Cadence)}
-              >
-                <option value="daily">Every day</option>
-                <option value="hours">Every few hours</option>
-                <option value="cron">Custom</option>
-              </select>
-
-              {cadence === "daily" && (
-                <>
-                  <span className="text-muted-foreground">at</span>
-                  <select
-                    className={selectClass + " w-auto"}
-                    value={hour}
-                    onChange={(event) => setHour(Number(event.target.value))}
-                  >
-                    {Array.from({ length: 24 }, (_, index) => (
-                      <option key={index} value={index}>
-                        {String(index).padStart(2, "0")}:00
-                      </option>
-                    ))}
-                  </select>
-                </>
-              )}
-
-              {cadence === "hours" && (
-                <>
-                  <span className="text-muted-foreground">every</span>
-                  <Input
-                    className={inputClass + " w-16"}
-                    type="number"
-                    min={1}
-                    max={24}
-                    value={everyHours}
-                    onChange={(event) => setEveryHours(Math.max(1, Number(event.target.value)))}
-                  />
-                  <span className="text-muted-foreground">hours</span>
-                </>
-              )}
-
-              {cadence === "cron" && (
-                <Input
-                  className={inputClass + " w-40 font-mono"}
-                  value={cron}
-                  onChange={(event) => setCron(event.target.value)}
-                  aria-invalid={!cronValid}
-                />
-              )}
-            </div>
-            {cadence === "cron" && !cronValid && (
-              <p className="text-destructive">That is not a valid five-field cron expression.</p>
-            )}
-            {cadence !== "hours" && (
-              <select
-                className={selectClass}
-                value={timezone}
-                onChange={(event) => setTimezone(event.target.value)}
-              >
-                {timezoneOptions().map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            )}
+            <SchedulePicker
+              value={schedule}
+              onChange={setSchedule}
+              onValidityChange={setScheduleValid}
+              nowMs={nowMs}
+            />
           </div>
 
           <label className="flex items-start gap-2">
@@ -323,7 +296,7 @@ export function BackupRuleDialog({
               <span className="font-medium">Encrypt these backups</span>
               <span className="block text-muted-foreground">
                 {vaultEnabled
-                  ? "Worth it when a copy goes somewhere you do not control. Bench cannot recover an encrypted backup without the passphrase — nobody can."
+                  ? "Worth it when a copy goes somewhere you do not control. Bench cannot recover an encrypted backup without the passphrase - nobody can."
                   : "Set SYNC_VAULT_KEY on the server to enable encryption."}
               </span>
             </span>
@@ -366,9 +339,9 @@ export function BackupRuleDialog({
                     setVerificationLevel(event.target.value as BackupPolicy["verificationLevel"])
                   }
                 >
-                  <option value="archive">Quick — it is a valid archive</option>
-                  <option value="data">Normal — open the database and count what is inside</option>
-                  <option value="deep">Thorough — the full Budget File Health check</option>
+                  <option value="archive">Quick - it is a valid archive</option>
+                  <option value="data">Normal - open the database and count what is inside</option>
+                  <option value="deep">Thorough - the full Budget File Health check</option>
                 </select>
               </label>
 
@@ -395,7 +368,7 @@ export function BackupRuleDialog({
                 </div>
                 <p className="text-muted-foreground">
                   Bench never deletes a pinned copy, anything newer than{" "}
-                  {retention.minimumAgeHours}h, or the newest verified copy — whatever these numbers
+                  {retention.minimumAgeHours}h, or the newest verified copy - whatever these numbers
                   say.
                 </p>
               </fieldset>

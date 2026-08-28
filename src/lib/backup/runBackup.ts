@@ -4,12 +4,14 @@ import { getBackupCredential } from "@/lib/app-db/backupCredentialRepository";
 import {
   createBackupArtifact,
   getBackupDestination,
+  listBackupArtifacts,
   recordArtifactLocation,
   recordDestinationOutcome,
   type BackupArtifact,
   type BackupPolicy,
 } from "@/lib/app-db/backupRepository";
 import type { SqliteDatabase, SyncCredential } from "@/lib/app-db/types";
+import { contentOf, detectBackupAnomalies } from "./anomaly";
 import { createDestinationAdapter, DestinationError } from "./destinations";
 import { encryptArchive } from "./encryption";
 import {
@@ -267,6 +269,23 @@ export async function runBackup(
       continue;
     }
 
+    // Readable is not the same as plausible. A truncated export, or a source
+    // that failed to open half its data, produces a perfectly valid archive
+    // holding the wrong amount of budget — so the new copy is compared with the
+    // last one before it is allowed to call itself verified.
+    const previous =
+      listBackupArtifacts(db, { policyId: policy.id, kind, limit: 1 })[0] ?? null;
+    const anomalies = detectBackupAnomalies({
+      content: prepared.verification.content,
+      sizeBytes: prepared.plaintext.byteLength,
+      previous,
+      previousContent: contentOf(previous),
+    });
+    if (anomalies.length > 0) {
+      prepared.verification.findings.push(...anomalies);
+      prepared.verification.status = "failed";
+    }
+
     const plaintextChecksum = prepared.verification.checksumSha256;
     const encrypted = passphrase ? encryptArchive(prepared.plaintext, passphrase) : null;
     const stored = encrypted ? encrypted.bytes : prepared.plaintext;
@@ -285,6 +304,10 @@ export async function runBackup(
       plaintextChecksumSha256: plaintextChecksum,
       encrypted: encrypted !== null,
       encryption: encrypted ? { version: 1, data: { ...encrypted.info } } : null,
+      // The artifact remembers which passphrase opens it. Deriving that from
+      // the rule breaks the moment the rule is deleted — which is exactly when
+      // an old encrypted copy needs to stay openable.
+      encryptionCredentialRef: encrypted ? policy.encryptionCredentialRef : null,
       tier,
       pinned: false,
       protectedUntil: options.protectedUntil ?? null,

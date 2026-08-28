@@ -4,8 +4,11 @@ import { CircleCheck, CircleHelp, CircleX, Lock, Pin, Server } from "lucide-reac
 import type { LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
+  artifactContents,
   COPY_STATE_COPY,
   copyState,
+  describeContentsSize,
+  describeCoverage,
   formatBytes,
   formatDateTime,
   relativeTime,
@@ -36,19 +39,29 @@ const STATE_STYLE: Record<CopyState, { icon: LucideIcon; tone: string; row?: str
 
 type Props = {
   artifacts: ArtifactWithLocations[];
+  /** Names for the rules that made these copies. */
+  policies: { id: string; name: string }[];
   selectedId: string | null;
   onOpen: (artifactId: string) => void;
 };
 
-export function BackupsTable({ artifacts, selectedId, onOpen }: Props) {
+export function BackupsTable({ artifacts, policies, selectedId, onOpen }: Props) {
+  const policyNames = new Map(policies.map((policy) => [policy.id, policy.name]));
+
   return (
     <div className="min-h-0 flex-1 overflow-auto">
-      <table className="w-full border-collapse text-sm">
+      <table className="w-full border-collapse text-xs">
         <thead className="sticky top-0 z-10 bg-background">
           <tr className="border-b border-border text-left text-xs text-muted-foreground">
             <th scope="col" className="px-4 py-2 font-medium">Taken</th>
             <th scope="col" className="px-4 py-2 font-medium">Contents</th>
+            {/* Two columns verification already knows the answer to, and
+                which decide "is this the copy I want": how much budget it
+                holds, and which period it covers. */}
+            <th scope="col" className="px-4 py-2 font-medium">Inside</th>
+            <th scope="col" className="px-4 py-2 font-medium">Covers</th>
             <th scope="col" className="px-4 py-2 font-medium">State</th>
+            <th scope="col" className="px-4 py-2 font-medium">Rule</th>
             <th scope="col" className="px-4 py-2 font-medium">Size</th>
             <th scope="col" className="px-4 py-2 font-medium">Stored in</th>
             <th scope="col" className="px-4 py-2 font-medium">Keep</th>
@@ -60,23 +73,42 @@ export function BackupsTable({ artifacts, selectedId, onOpen }: Props) {
             const style = STATE_STYLE[state];
             const Icon = style.icon;
             const stored = artifact.locations.filter((location) => location.status === "stored");
-            const troubled = state === "damaged" || state === "gone";
+            const contents = artifactContents(artifact);
 
             return (
               <tr
                 key={artifact.id}
                 onClick={() => onOpen(artifact.id)}
                 className={cn(
-                  "cursor-pointer border-b border-border/60 align-top hover:bg-muted/50",
+                  "cursor-pointer border-b border-border/60 align-middle hover:bg-muted/50",
                   style.row,
                   selectedId === artifact.id && "bg-muted"
                 )}
               >
                 <td className="px-4 py-2 whitespace-nowrap">
-                  <div className="font-medium">{relativeTime(artifact.createdAt)}</div>
-                  <div className="text-xs text-muted-foreground">
+                  {/* A real button, not a clickable row: everything a backup
+                      can do - look inside, download, pin, delete - lives behind
+                      opening it, so a mouse-only row would put the whole
+                      feature out of reach for anyone not using one. The row
+                      stays clickable as a convenience on top.
+
+                      Both readings on one line: the exact time answers "which
+                      copy is this", the relative one answers "how far back does
+                      that leave me", and stacking them made every row taller
+                      than its neighbours. */}
+                  <button
+                    type="button"
+                    className="hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onOpen(artifact.id);
+                    }}
+                  >
                     {formatDateTime(artifact.createdAt)}
-                  </div>
+                    <span className="ml-1.5 text-muted-foreground">
+                      ({relativeTime(artifact.createdAt)})
+                    </span>
+                  </button>
                 </td>
 
                 <td className="px-4 py-2">
@@ -92,23 +124,57 @@ export function BackupsTable({ artifacts, selectedId, onOpen }: Props) {
                     {artifact.encrypted && (
                       <Lock className="size-3.5 text-muted-foreground" aria-label="Encrypted" />
                     )}
+                    {artifact.takenBefore && (
+                      <span
+                        className="text-muted-foreground"
+                        title={`Taken before ${artifact.takenBefore}`}
+                      >
+                        · before {artifact.takenBefore}
+                      </span>
+                    )}
                   </div>
-                  {artifact.takenBefore && (
-                    <div className="text-xs text-muted-foreground">
-                      Taken before {artifact.takenBefore}
-                    </div>
-                  )}
+                </td>
+
+                <td className="px-4 py-2 whitespace-nowrap text-muted-foreground">
+                  {describeContentsSize(contents)}
+                </td>
+
+                <td className="px-4 py-2 whitespace-nowrap text-muted-foreground">
+                  {describeCoverage(contents)}
                 </td>
 
                 <td className="px-4 py-2">
-                  <div className={cn("flex items-center gap-1.5 whitespace-nowrap", style.tone)}>
+                  <span
+                    className={cn("flex items-center gap-1.5 whitespace-nowrap", style.tone)}
+                    title={
+                      artifact.verifiedAt
+                        ? `${COPY_STATE_COPY[state].detail} Last checked ${relativeTime(artifact.verifiedAt)}.`
+                        : COPY_STATE_COPY[state].detail
+                    }
+                  >
                     <Icon className="size-4" aria-hidden />
-                    <span className="font-medium">{COPY_STATE_COPY[state].label}</span>
-                  </div>
-                  {troubled && (
-                    <div className="mt-0.5 text-xs text-muted-foreground">
-                      {COPY_STATE_COPY[state].detail}
-                    </div>
+                    {COPY_STATE_COPY[state].label}
+                  </span>
+                </td>
+
+                {/* Which rule made this copy - and, when none did, why: a
+                    deleted rule and a copy found in a destination are different
+                    stories, and both end up unowned. */}
+                <td className="px-4 py-2 whitespace-nowrap text-muted-foreground">
+                  {artifact.policyId && policyNames.has(artifact.policyId) ? (
+                    policyNames.get(artifact.policyId)
+                  ) : artifact.tier === "manual" && !artifact.policyId ? (
+                    <span title="Taken by hand, or by a rule that has since been deleted">
+                      by hand
+                    </span>
+                  ) : artifact.policyId ? (
+                    <span title="The rule that made this copy has been deleted. The copy is kept and stays restorable.">
+                      rule deleted
+                    </span>
+                  ) : (
+                    <span title="Found in a destination by Scan for backups, so Bench does not know which rule made it">
+                      discovered
+                    </span>
                   )}
                 </td>
 
@@ -124,7 +190,7 @@ export function BackupsTable({ artifacts, selectedId, onOpen }: Props) {
                       {stored.map((location) => (
                         <span
                           key={location.id}
-                          className="rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground"
+                          className="rounded bg-muted px-1.5 py-0.5 text-muted-foreground"
                         >
                           {location.destinationName ?? "removed destination"}
                         </span>
@@ -133,7 +199,7 @@ export function BackupsTable({ artifacts, selectedId, onOpen }: Props) {
                   )}
                 </td>
 
-                <td className="px-4 py-2 whitespace-nowrap text-xs text-muted-foreground">
+                <td className="px-4 py-2 whitespace-nowrap text-muted-foreground">
                   {artifact.pinned ? (
                     <span className="flex items-center gap-1 text-foreground">
                       <Pin className="size-3.5" aria-hidden /> Pinned

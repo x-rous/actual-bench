@@ -100,7 +100,7 @@ export function DestinationDialog({ open, onOpenChange, existing, onSaved }: Pro
       setChecks(result.checks);
       if (result.ok) {
         toast.success(
-          editing ? "Destination updated and tested" : "Destination added — Bench wrote a test file and read it back"
+          editing ? "Destination updated and tested" : "Destination added - Bench wrote a test file and read it back"
         );
         onSaved();
         onOpenChange(false);
@@ -176,7 +176,7 @@ export function DestinationDialog({ open, onOpenChange, existing, onSaved }: Pro
                 </div>
               </Field>
               <p className="text-muted-foreground">
-                Any absolute path the server can write to — a mounted volume, a NAS share, a second
+                Any absolute path the server can write to - a mounted volume, a NAS share, a second
                 disk. Bench creates it if it does not exist.
               </p>
             </>

@@ -1,7 +1,7 @@
 import { getAppDb } from "@/lib/app-db/connection";
 import { classifySafeSyncOutcome } from "@/features/sync/lib/flowHealth";
 import { isServerSafeSyncBlocked, runServerSafeSync } from "@/lib/sync/serverSafeSync";
-import { registerAutomationJobType } from "../registry";
+import { getAutomationJobType, registerAutomationJobType } from "../registry";
 import { migrateSyncFlowsToAutomations } from "./budgetFileSyncMigration";
 import { BUDGET_FILE_SYNC_JOB_TYPE } from "./budgetFileSyncType";
 import type { AutomationJobType, AutomationRunContext } from "../registry";
@@ -211,16 +211,18 @@ function describeCounts(result: BudgetFileSyncResult): string {
   return parts.length > 0 ? parts.join(", ") : "No changes";
 }
 
-let registered = false;
-
-/** Idempotent: the boot path and tests can both call it. */
+/**
+ * Idempotent, and keyed on the registry rather than on a module-level flag.
+ *
+ * A boolean here and the registry map live in separate modules, and a dev
+ * server can replace one without the other - after which this function would
+ * try to register a type the registry already had, and throw. The registry is
+ * the thing being guarded, so it is the thing to ask.
+ */
 export function registerBudgetFileSyncJobType(): void {
-  if (registered) return;
+  if (getAutomationJobType(BUDGET_FILE_SYNC_JOB_TYPE)) return;
   registerAutomationJobType(budgetFileSyncJobType);
-  registered = true;
 }
 
-/** Test-only: allow re-registration after the registry is reset. */
-export function __resetBudgetFileSyncRegistrationForTests(): void {
-  registered = false;
-}
+/** Test-only, retained for callers: the registry check above needs no reset. */
+export function __resetBudgetFileSyncRegistrationForTests(): void {}

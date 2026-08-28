@@ -25,6 +25,13 @@ export type ConfirmState = {
   onConfirm: () => void;
   /** Label for the destructive action button. Defaults to "Delete". */
   destructiveLabel?: string;
+  /**
+   * Whether the action is destructive. Defaults to `true`, because that is what
+   * this dialog is usually for — but the same "explain, then confirm" shape is
+   * right for anything consequential enough to be worth reading first, and a
+   * red button on a harmless action teaches people to ignore red buttons.
+   */
+  destructive?: boolean;
 };
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -49,7 +56,7 @@ export function ConfirmDialog({ open, onOpenChange, state }: Props) {
             Cancel
           </Button>
           <Button
-            variant="destructive"
+            variant={state?.destructive === false ? "default" : "destructive"}
             onClick={() => {
               state?.onConfirm();
               onOpenChange(false);

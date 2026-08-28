@@ -11,6 +11,7 @@ import {
 } from "@/lib/app-db/backupRepository";
 import { createDestinationAdapter } from "@/lib/backup/destinations";
 import { manifestKeyFor } from "@/lib/backup/manifest";
+import { collectUnusedPassphrases } from "@/lib/backup/passphrases";
 
 type RouteContext = { params: Promise<{ artifactId: string }> };
 
@@ -82,6 +83,7 @@ export async function DELETE(_request: Request, context: RouteContext) {
     }
 
     deleteBackupArtifact(db, artifactId);
+    collectUnusedPassphrases(db);
     return NextResponse.json({ deleted: true });
   } catch (error) {
     return appDbErrorResponse(error);

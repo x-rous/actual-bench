@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { CheckCircle2, Loader2, PlayCircle, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -207,6 +208,17 @@ export function UnattendedEnrollment({
                 {running ? "Running…" : "Run now"}
               </Button>
               {!flowId && <span className="text-[11px] text-muted-foreground">Save the flow to enable Run now.</span>}
+              {/* A flow set to unattended becomes an automation, and every run
+                  it makes is recorded there - but nothing here said so, so the
+                  history was reachable only by knowing it existed. */}
+              {flowId && status.armed && (
+                <Link
+                  href="/automations/runs"
+                  className="text-[11px] text-primary underline-offset-4 hover:underline"
+                >
+                  Run history
+                </Link>
+              )}
               {runResult && (
                 <span className="text-[11px] text-muted-foreground">
                   Run finished: <strong>{runResult.status}</strong>

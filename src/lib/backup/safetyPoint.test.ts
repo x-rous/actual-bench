@@ -56,7 +56,10 @@ describe("recovery points before risky changes", () => {
     else process.env.SYNC_VAULT_KEY = previousKey;
   });
 
-  function setUpPolicy() {
+  function setUpPolicy(options: { safetyPoints?: boolean } = {}) {
+    // Off by default, so every test that expects a recovery point has to ask
+    // for one - which is the behaviour under test.
+    if (options.safetyPoints !== false) writeSafetySettings(db, { enabled: true });
     upsertSyncCredential(db, {
       connectionFingerprint: "conn-1",
       mode: "http-api",
@@ -121,9 +124,8 @@ describe("recovery points before risky changes", () => {
     expect(listBackupArtifacts(db)).toHaveLength(2);
   });
 
-  it("does nothing when the user has turned it off", async () => {
-    setUpPolicy();
-    writeSafetySettings(db, { enabled: false });
+  it("does nothing when it has not been turned on", async () => {
+    setUpPolicy({ safetyPoints: false });
 
     const outcome = await takeSafetyRecoveryPoint(db, { reason: "a change" });
 
@@ -132,6 +134,7 @@ describe("recovery points before risky changes", () => {
   });
 
   it("says plainly when there is no rule it can use", async () => {
+    writeSafetySettings(db, { enabled: true });
     const outcome = await takeSafetyRecoveryPoint(db, { reason: "a change" });
 
     expect(outcome.status).toBe("unavailable");
@@ -152,8 +155,14 @@ describe("recovery points before risky changes", () => {
     expect(outcome.message).toMatch(/connection refused/);
   });
 
-  it("is on by default", () => {
-    expect(readSafetySettings(db).enabled).toBe(true);
+  it("is off until someone turns it on", () => {
+    // An unexpected full budget export in front of a save is a surprise; not
+    // having one is something you discover while reading the setting that
+    // offers it.
+    expect(readSafetySettings(db).enabled).toBe(false);
     expect(readSafetySettings(db).debounceMinutes).toBe(30);
+
+    writeSafetySettings(db, { enabled: true });
+    expect(readSafetySettings(db).enabled).toBe(true);
   });
 });

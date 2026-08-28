@@ -12,6 +12,15 @@ complete, or how old it is — and you find out on the day it matters.
 stores it in as many places as you like, and keeps the inventory honest about what actually exists.
 Open it from **Tools → Backups**.
 
+The page has two tabs:
+
+- **Setup** — where copies go, what gets copied and when, and whether Bench should take one before
+  you do something risky.
+- **Backups** — the copies that exist: how old they are, whether they have been opened and read, and
+  where they live.
+
+A fresh install opens on Setup, because there is nothing else to look at yet.
+
 ## The line at the top
 
 Everything on the page is evidence for one sentence: *if this budget disappeared right now, what
@@ -21,7 +30,7 @@ It is deliberately pessimistic. A copy Bench has never opened, a destination tha
 or every copy sitting in one place all pull it down — and the reasons are listed underneath. A
 backup screen that reassures you is worse than no backup screen at all.
 
-## Destinations
+## Setup: Backup Destinations
 
 Two kinds, matching the two situations people are actually in:
 
@@ -44,7 +53,7 @@ on a read-only volume, which is exactly the configuration people get wrong.
 A bucket that accepts writes but refuses deletes is a warning rather than an error. Immutable buckets
 are a real choice; backups still work, and only retention is affected.
 
-## Backup rules
+## Setup: Automatic Backup Rules
 
 A rule says what to copy, where to put it, how often, and how long to keep it.
 
@@ -54,15 +63,22 @@ A rule says what to copy, where to put it, how often, and how long to keep it.
 - **Which budget** — an **enrolled** connection. A scheduled backup runs with your browser closed, so
   it needs credentials the server can use on its own. If nothing is enrolled, Bench says so instead
   of quietly offering you an empty list.
-- **When** — every day at a time you pick, every few hours, or a cron expression with an explicit
-  time zone.
+- **When** — every few hours, every day at a time you pick, on chosen days of the week, once a month,
+  or a cron expression for the people who want one. Whichever you choose, Bench says back what it
+  understood and when the next run actually lands.
 - **Encryption** — off by default, because for most self-hosted setups the copy lands on a volume you
   already control and encryption mainly adds a way to lose the data permanently. Turn it on when a
   copy goes somewhere you do not control. **Bench cannot recover an encrypted backup without the
   passphrase, and neither can anyone else.**
 
-Rules run on Bench's automation engine, so they appear on the **Automations** page with their run
-history, health and backoff like everything else scheduled.
+Deleting a rule stops it running and keeps the backups it already took — including the passphrase
+that opens the encrypted ones. Bench forgets that passphrase on its own once the last copy needing it
+is gone, and lists it under **Passphrases Bench still holds** until then.
+
+Each rule shows just enough to answer "is this working?" — whether it is paused, when it last ran and
+when it runs next — and links to **Automations** for run history, retries, logs and failures. Rules
+run on Bench's automation engine, so that page is where their full history lives; Backups does not
+keep a second copy of it.
 
 ## Verified, not just stored
 
@@ -76,6 +92,11 @@ Every copy is checked before it is trusted, at one of three depths:
 
 Verification runs on the plaintext, **before** encryption. Verifying afterwards would only prove
 bytes survived a round trip, which is the least interesting thing that can go wrong.
+
+Bench also compares each copy with the one before it. A copy with far fewer transactions, fewer
+accounts, or less than half the size does not pass verification, because a cut-short export is a
+perfectly valid file containing the wrong budget. If you deleted those transactions yourself, that is
+expected and the copy is still there — Bench just will not tell you it checked out.
 
 A copy that fails verification is still stored, and clearly marked. A backup Bench distrusts is more
 useful than no backup — as long as nobody is allowed to believe it is fine.
@@ -108,7 +129,7 @@ There is no combination of settings that empties a destination.
 that preview is produced by the same code that does the pruning, so it is what will happen rather
 than an approximation of it.
 
-## Recovery points before risky changes
+## Setup: Recovery Points
 
 Before Bench saves a batch of deletions or payee merges, it copies the budget first, so there is
 something from five minutes ago rather than only from last night. Several changes in one session

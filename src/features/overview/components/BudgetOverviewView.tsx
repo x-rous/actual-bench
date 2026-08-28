@@ -21,7 +21,11 @@ export function BudgetOverviewView() {
 
   return (
     <div className="min-h-0 flex-1 overflow-auto">
-      <div className="mx-auto flex w-full max-w-6xl flex-col gap-4 px-4 py-4 sm:px-6 sm:py-5">
+      {/* Wider than the usual reading column on purpose: this is a launcher,
+          not prose, and the cards are what the width is for. Capped rather than
+          full-bleed so the stats row does not stretch into a ticker tape on an
+          ultrawide display. */}
+      <div className="mx-auto flex w-full max-w-[96rem] flex-col gap-4 px-4 py-4 sm:px-6 sm:py-5">
         <div className="space-y-3">
           <OverviewHeader
             refreshButtonLabel={headerState.refreshButtonLabel}

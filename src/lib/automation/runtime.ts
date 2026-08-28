@@ -2,6 +2,7 @@ import { getAppDb } from "@/lib/app-db/connection";
 import { clearAutomationClaims } from "@/lib/app-db/automationRepository";
 import { logger } from "@/lib/logger";
 import { vaultEnabled } from "@/lib/sync/vault";
+import { ensureAutomationJobTypesRegistered } from "./bootstrap";
 import { runEngineTick } from "./engine";
 
 /**
@@ -48,6 +49,9 @@ export function startAutomationEngine(): void {
 
   const tick = async (): Promise<void> => {
     try {
+      // Idempotent, and cheap: it costs two map writes and removes any
+      // dependence on which module instance happened to run first.
+      ensureAutomationJobTypesRegistered();
       const summary = await runEngineTick(getAppDb());
       if (summary.ran.length > 0) {
         const detail = summary.ran

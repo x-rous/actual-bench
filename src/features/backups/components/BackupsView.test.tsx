@@ -6,6 +6,7 @@ import * as api from "../lib/backupsApi";
 import type { ArtifactWithLocations, RecoveryCenterData } from "../lib/backupsApi";
 
 jest.mock("../lib/backupsApi");
+jest.mock("next/navigation", () => ({ useSearchParams: () => new URLSearchParams() }));
 jest.mock("sonner", () => ({
   toast: { success: jest.fn(), error: jest.fn(), warning: jest.fn(), info: jest.fn() },
 }));
@@ -25,6 +26,7 @@ function artifact(overrides: Partial<ArtifactWithLocations> = {}): ArtifactWithL
     plaintextChecksumSha256: null,
     encrypted: false,
     encryption: null,
+    encryptionCredentialRef: null,
     tier: "daily",
     pinned: false,
     protectedUntil: null,
@@ -32,7 +34,18 @@ function artifact(overrides: Partial<ArtifactWithLocations> = {}): ArtifactWithL
     verificationLevel: "data",
     verificationStatus: "passed",
     verifiedAt: "2026-08-27T02:00:10.000Z",
-    verification: null,
+    verification: {
+      version: 1,
+      data: {
+        findings: [],
+        content: {
+          accounts: 13,
+          transactions: 2574,
+          earliestTransaction: "2024-10-15",
+          latestTransaction: "2026-08-12",
+        },
+      },
+    },
     manifestVersion: 1,
     benchVersion: null,
     notes: null,
@@ -89,6 +102,7 @@ function data(overrides: Partial<RecoveryCenterData> = {}): RecoveryCenterData {
     ],
     policies: [
       {
+        automation: null,
         id: "pol-1",
         name: "Nightly",
         enabled: true,
@@ -125,9 +139,23 @@ function data(overrides: Partial<RecoveryCenterData> = {}): RecoveryCenterData {
         budgetSyncId: "budget-1",
       },
     ],
+    heldPassphrases: [],
     vaultEnabled: true,
     ...overrides,
   };
+}
+
+/** The tab someone lands on depends on whether anything is configured. */
+async function openSetup() {
+  const tab = await screen.findByRole("tab", { name: /^setup/i });
+  fireEvent.click(tab);
+  await waitFor(() => expect(tab).toHaveAttribute("aria-selected", "true"));
+}
+
+async function openBackups() {
+  const tab = await screen.findByRole("tab", { name: /^backups/i });
+  fireEvent.click(tab);
+  await waitFor(() => expect(tab).toHaveAttribute("aria-selected", "true"));
 }
 
 function renderView() {
@@ -141,6 +169,9 @@ function renderView() {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  // The chosen tab and filters persist to sessionStorage, so one test's choice
+  // would otherwise decide the next test's starting tab.
+  sessionStorage.clear();
   mockedApi.fetchRecoveryCenter.mockResolvedValue(data());
 });
 
@@ -152,9 +183,40 @@ describe("the Recovery Center", () => {
     ).toBeInTheDocument();
   });
 
+  it("says how much budget a copy holds, and which period it covers", async () => {
+    // Verification already opened the archive and counted; a copy that is
+    // readable but holds half the transactions it did yesterday is the failure
+    // no status word catches.
+    renderView();
+
+    expect(await screen.findByText("2,574 txns · 13 accts")).toBeInTheDocument();
+    expect(screen.getByText("2024-10-15 → 2026-08-12")).toBeInTheDocument();
+  });
+
+  it("names the rule that made a copy, and says so when none did", async () => {
+    // "Where did this come from" is answerable, and the answers differ: a live
+    // rule, a rule since deleted, and a copy found by scanning a destination.
+    mockedApi.fetchRecoveryCenter.mockResolvedValue(
+      data({
+        artifacts: [
+          artifact(),
+          artifact({ id: "art-2", policyId: null, tier: "daily" }),
+          artifact({ id: "art-3", policyId: "pol-gone" }),
+        ],
+      })
+    );
+
+    renderView();
+
+    expect(await screen.findByText("Nightly")).toBeInTheDocument();
+    expect(screen.getByText("discovered")).toBeInTheDocument();
+    expect(screen.getByText("rule deleted")).toBeInTheDocument();
+  });
+
   it("shows each copy's state in words, not only in colour", async () => {
     renderView();
-    expect(await screen.findByText("Verified")).toBeInTheDocument();
+    // In the row, not merely as a filter option.
+    expect(await screen.findByText("Verified", { selector: "span" })).toBeInTheDocument();
     expect(screen.getByText("Household")).toBeInTheDocument();
     expect(screen.getByText("NAS volume", { selector: "span.rounded" })).toBeInTheDocument();
   });
@@ -180,22 +242,18 @@ describe("the Recovery Center", () => {
 
     renderView();
     expect(await screen.findByText("No copy")).toBeInTheDocument();
-    expect(screen.queryByText("Verified")).not.toBeInTheDocument();
+    expect(screen.queryByText("Verified", { selector: "span" })).not.toBeInTheDocument();
   });
 
   it("reports a failed manual backup as a failure rather than as finished", async () => {
     mockedApi.backUpNow.mockResolvedValue({
-      policyId: "pol-1",
-      trigger: "manual",
-      startedAt: "2026-08-27T09:00:00.000Z",
-      finishedAt: "2026-08-27T09:00:05.000Z",
-      artifacts: [],
       stored: false,
       verified: false,
       message: "No enabled destination",
     });
 
     renderView();
+    await openSetup();
     fireEvent.click(await screen.findByRole("button", { name: /back up now/i }));
 
     await waitFor(() => expect(toast.error).toHaveBeenCalledWith("No enabled destination"));
@@ -203,17 +261,13 @@ describe("the Recovery Center", () => {
 
   it("warns rather than congratulates when a copy stored but did not verify", async () => {
     mockedApi.backUpNow.mockResolvedValue({
-      policyId: "pol-1",
-      trigger: "manual",
-      startedAt: "2026-08-27T09:00:00.000Z",
-      finishedAt: "2026-08-27T09:00:05.000Z",
-      artifacts: [],
       stored: true,
       verified: false,
       message: "Stored, but Bench could not confirm the copy is readable.",
     });
 
     renderView();
+    await openSetup();
     fireEvent.click(await screen.findByRole("button", { name: /back up now/i }));
 
     await waitFor(() =>
@@ -237,6 +291,7 @@ describe("the Recovery Center", () => {
     );
 
     renderView();
+    await openSetup();
     // The reason sits inline with the destination name, so it spans nodes.
     await screen.findByText("NAS volume", { selector: "span.font-medium" });
     await waitFor(() =>
@@ -244,14 +299,223 @@ describe("the Recovery Center", () => {
     );
   });
 
-  it("explains the empty state instead of showing a blank page", async () => {
+  it("opens on Setup when there is nothing to look at", async () => {
     mockedApi.fetchRecoveryCenter.mockResolvedValue(
       data({ artifacts: [], policies: [], destinations: [] })
     );
 
     renderView();
-    expect(await screen.findByText("No copies yet")).toBeInTheDocument();
+
+    // Nothing stored yet: the tab someone needs is the one they have not used.
+    // Decided once the data is in, so this settles rather than flipping.
+    await waitFor(() =>
+      expect(screen.getByRole("tab", { name: /^setup/i })).toHaveAttribute("aria-selected", "true")
+    );
     expect(screen.getByText(/Nowhere to put a backup yet/)).toBeInTheDocument();
+    // A rule cannot be saved without somewhere to write it.
+    expect(screen.getByRole("button", { name: /new backup rule/i })).toBeDisabled();
+  });
+
+  it("walks a new user through the order things have to happen in", async () => {
+    mockedApi.fetchRecoveryCenter.mockResolvedValue(
+      data({ artifacts: [], policies: [], destinations: [] })
+    );
+
+    renderView();
+    // Wait for the data before switching, or the guided steps are still
+    // deciding which step you are on.
+    await screen.findByRole("tab", { name: /^setup/i });
+    await openBackups();
+
+    expect(await screen.findByText("Start by choosing where copies go")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /go to setup/i })).toBeInTheDocument();
+  });
+
+  it("opens on the copies whenever there are copies, whatever was opened last time", async () => {
+    // The tab is where you are looking now, not a preference: having once
+    // opened Setup should not mean every later visit starts on the settings.
+    sessionStorage.setItem("filters:backups", JSON.stringify({ tab: "setup" }));
+
+    renderView();
+
+    await waitFor(() =>
+      expect(screen.getByRole("tab", { name: /^backups/i })).toHaveAttribute(
+        "aria-selected",
+        "true"
+      )
+    );
+    expect(await screen.findByText("Household")).toBeInTheDocument();
+  });
+
+  it("names the prerequisite a scheduled backup has, before it bites", async () => {
+    mockedApi.fetchRecoveryCenter.mockResolvedValue(
+      data({ artifacts: [], policies: [], sources: [] })
+    );
+
+    renderView();
+    await screen.findByRole("tab", { name: /^setup/i });
+    await openBackups();
+
+    expect(await screen.findByText(/enrolled for unattended use/)).toBeInTheDocument();
+  });
+
+  it("says a rule is not running when its automation is paused", async () => {
+    // The rule says what should happen; the automation says what does. Showing
+    // the rule as enabled while nothing runs is the page telling a comfortable
+    // lie.
+    mockedApi.fetchRecoveryCenter.mockResolvedValue(
+      data({
+        policies: [
+          {
+            ...data().policies[0],
+            automation: {
+              id: "auto-1",
+              enabled: false,
+              running: false,
+              autoPausedAt: "2026-08-27T02:00:00.000Z",
+              autoPauseReason: "The destination could not be written to 5 times",
+              lastRunAt: "2026-08-27T02:00:00.000Z",
+              nextRunAt: null,
+              status: "paused",
+              statusSummary: "Paused",
+              lastRunMessage: null,
+            },
+          },
+        ],
+      })
+    );
+
+    renderView();
+    await openSetup();
+    expect(
+      await screen.findByText(/paused after repeated failures: The destination could not be written to 5 times/)
+    ).toBeInTheDocument();
+  });
+
+  it("asks before deleting a rule, and says what survives it", async () => {
+    renderView();
+    await openSetup();
+
+    fireEvent.click(await screen.findByRole("button", { name: /delete nightly/i }));
+
+    expect(await screen.findByText('Delete "Nightly"?')).toBeInTheDocument();
+    expect(screen.getByText(/backups it already took are kept/)).toBeInTheDocument();
+    expect(mockedApi.deletePolicy).not.toHaveBeenCalled();
+  });
+
+  it("puts every row action in reach instead of behind an overflow menu", async () => {
+    renderView();
+    await openSetup();
+
+    // Nothing a rule or a destination can do should need a second click to
+    // find, on a page people visit rarely enough to have forgotten where
+    // things were.
+    for (const name of [
+      /back up now/i,
+      /retention/i,
+      /^test$/i,
+      // Edit and delete are icon-only, so their labels are the accessible ones.
+      /edit nightly/i,
+      /delete nightly/i,
+      /edit nas volume/i,
+      /remove nas volume/i,
+    ]) {
+      expect(await screen.findByRole("button", { name })).toBeInTheDocument();
+    }
+    // Run history is a link, and it goes to this rule's runs rather than to a
+    // page listing everything that has ever run.
+    expect(screen.getByRole("link", { name: /run history/i })).toHaveAttribute(
+      "href",
+      "/automations/runs"
+    );
+  });
+
+  it("lists a passphrase it is still holding for backups whose rule is gone", async () => {
+    mockedApi.fetchRecoveryCenter.mockResolvedValue(
+      data({
+        heldPassphrases: [
+          {
+            ref: "pol-old",
+            label: "Off-site",
+            createdAt: "2026-01-01T00:00:00.000Z",
+            ruleExists: false,
+            artifactCount: 4,
+            newestArtifactAt: "2026-08-01T00:00:00.000Z",
+          },
+        ],
+      })
+    );
+
+    renderView();
+    await openSetup();
+
+    expect(await screen.findByText("Passphrases Bench still holds")).toBeInTheDocument();
+    expect(screen.getByText(/4 encrypted backups still need it/)).toBeInTheDocument();
+  });
+
+  it("opens a backup from the keyboard, not only by clicking its row", async () => {
+    // Every action a backup has lives behind opening it, so a mouse-only row
+    // would put the whole feature out of reach for anyone not using one.
+    renderView();
+
+    // The row's opener names the copy by when it was taken: exact time first,
+    // then how long ago.
+    const opener = await screen.findByRole("button", { name: /\(.*ago\)$/i });
+    fireEvent.click(opener);
+
+    expect(await screen.findByText("Restoring this")).toBeInTheDocument();
+    // A budget goes back into Actual...
+    expect(screen.getByText(/Import file/)).toBeInTheDocument();
+  });
+
+  it("tells you how to restore the thing you are actually looking at", async () => {
+    // ...and Bench's own database goes back onto the server, never into Actual.
+    // One set of instructions for both would be wrong for one of them every
+    // time.
+    mockedApi.fetchRecoveryCenter.mockResolvedValue(
+      data({
+        artifacts: [
+          artifact({ kind: "app-db", sourceBudgetName: null, sourceBudgetId: null }),
+        ],
+      })
+    );
+
+    renderView();
+    fireEvent.click(await screen.findByRole("button", { name: /\(.*ago\)$/i }));
+
+    expect(await screen.findByText(/ACTUAL_BENCH_DB_PATH/)).toBeInTheDocument();
+    expect(screen.getByText(/Actual cannot open it/)).toBeInTheDocument();
+    expect(screen.queryByText(/Import file/)).not.toBeInTheDocument();
+  });
+
+  it("says what scanning does in a tooltip, and then just does it", async () => {
+    // A dialog to explain a harmless, idempotent action is a dialog people
+    // learn to dismiss without reading.
+    mockedApi.discoverBackups.mockResolvedValue([]);
+    renderView();
+    await openSetup();
+
+    const scan = await screen.findByRole("button", { name: /scan for backups/i });
+    expect(scan).toHaveAttribute(
+      "title",
+      expect.stringContaining("only adds - nothing is changed, moved or deleted")
+    );
+
+    fireEvent.click(scan);
+    await waitFor(() => expect(mockedApi.discoverBackups).toHaveBeenCalled());
+  });
+
+  it("labels the operational buttons with what they actually do", async () => {
+    renderView();
+
+    expect(await screen.findByRole("button", { name: /verify now/i })).toHaveAttribute(
+      "title",
+      expect.stringContaining("still readable")
+    );
+    expect(screen.getByRole("button", { name: /recovery sheet/i })).toHaveAttribute(
+      "title",
+      expect.stringContaining("without Bench")
+    );
   });
 
   it("reports damage found by a manual verify as an error", async () => {
@@ -271,7 +535,7 @@ describe("the Recovery Center", () => {
     renderView();
     // Wait for the inventory: "Verify now" is disabled until there is something
     // to verify, and clicking a disabled button proves nothing.
-    await screen.findByText("Verified");
+    await screen.findByText("Verified", { selector: "span" });
     fireEvent.click(screen.getByRole("button", { name: /verify now/i }));
 
     await waitFor(() =>

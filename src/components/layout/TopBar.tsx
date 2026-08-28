@@ -45,6 +45,7 @@ import { useBudgetEditsStore } from "@/store/budgetEdits";
 import { useBudgetSavePipeline } from "./useBudgetSavePipeline";
 import { useBudgetSave } from "@/features/budget-management/hooks/useBudgetSave";
 import {
+  countStagedRisk,
   describeRiskyChange,
   shouldTakeRecoveryPoint,
   takeRecoveryPoint,
@@ -147,21 +148,6 @@ export function TopBar() {
   const stagedDiscardAll = useStagedStore((s) => s.discardAll);
   const clearHistory = useStagedStore((s) => s.clearHistory);
   const { saveAll, isSaving: isEntitySaving } = useBudgetSavePipeline();
-  // What is about to be written, so the risk rule has something to judge. A
-  // merge or a deletion is worth a recovery point whatever its count; a big
-  // batch is worth one on size alone.
-  const pendingPayeeMerges = useStagedStore((s) => s.pendingPayeeMerges);
-  const stagedCounts = useStagedStore((s) => {
-    let itemCount = 0;
-    let deleteCount = 0;
-    for (const slice of [s.accounts, s.payees, s.categoryGroups, s.categories, s.rules, s.schedules, s.tags]) {
-      for (const entry of Object.values(slice)) {
-        if (entry.isNew || entry.isUpdated || entry.isDeleted) itemCount += 1;
-        if (entry.isDeleted) deleteCount += 1;
-      }
-    }
-    return { itemCount, deleteCount };
-  });
 
   // Budget page store (always called — hooks cannot be conditional)
   const budgetHasChanges = useBudgetEditsStore(
@@ -245,6 +231,30 @@ export function TopBar() {
     if (action) await executeAction(action);
   }
 
+  /**
+   * What is about to be written, read at save time rather than subscribed to.
+   *
+   * `getState()` on purpose: a selector building this object would return a new
+   * one on every call, so the store's snapshot would never compare equal and
+   * React would re-render forever. Nothing on screen depends on these numbers —
+   * only the decision about whether to take a recovery point does.
+   */
+  function describeStagedRisk() {
+    const state = useStagedStore.getState();
+    return countStagedRisk({
+      slices: [
+        state.accounts,
+        state.payees,
+        state.categoryGroups,
+        state.categories,
+        state.rules,
+        state.schedules,
+        state.tags,
+      ],
+      pendingPayeeMerges: state.pendingPayeeMerges,
+    });
+  }
+
   // ── Handlers ──────────────────────────────────────────────────────────────────
 
   async function handleSave() {
@@ -263,11 +273,7 @@ export function TopBar() {
       setBudgetSaveReviewEdits(editSnapshot);
       setBudgetSaveReviewHolds(holdSnapshot);
     } else {
-      const change = {
-        itemCount: stagedCounts.itemCount,
-        deleteCount: stagedCounts.deleteCount,
-        mergeCount: pendingPayeeMerges.length,
-      };
+      const change = describeStagedRisk();
 
       // A recovery point before the change, not after it — the whole point is
       // to have something from five minutes ago rather than from last night.

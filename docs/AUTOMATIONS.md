@@ -127,6 +127,29 @@ It requires `SYNC_SCHEDULER_SECRET` in the server environment and a matching `x-
 header. The endpoint kept its URL when the engine replaced the sync-specific scheduler, so existing
 crons keep working.
 
+## Unattended access
+
+Anything that runs with Bench closed needs credentials the server can use, which means
+two things: `SYNC_VAULT_KEY` set on the server, and the budget itself **enrolled**.
+
+**Automations → Connections** lists the enrolled budgets, when each was enrolled, and
+which automations name it. Withdrawing a credential stops those automations - the engine
+fails closed and pauses each with the reason - so the confirmation names them first.
+
+Enrolment is **per budget, not per server**: three budgets on one server are three
+entries. It can be done from the Connections tab, from a bank sync or backup dialog, or
+from a Budget File Sync flow editor; all four write the same store.
+
+Bench can only enrol the budget you are currently connected to, because that is the only
+API key the browser holds. Direct connections can never be enrolled - Actual's engine
+runs in your browser there, so there is nothing on the server to run.
+
+## Run history
+
+**Automations → Run history** shows every run across every automation, filtered by
+outcome, automation and job type. The automation drawer keeps the newest ten for a quick
+health read; the page is where "what failed last night" gets answered.
+
 ## Related
 
 - [`UNATTENDED_SYNC.md`](UNATTENDED_SYNC.md) — enrolling credentials and the vault.

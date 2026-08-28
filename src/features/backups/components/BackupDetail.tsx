@@ -6,6 +6,7 @@ import { Download, Loader2, Pin, PinOff, Search, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { ConfirmDialog, type ConfirmState } from "@/components/ui/confirm-dialog";
 import { Input } from "@/components/ui/input";
 import {
   Sheet,
@@ -49,6 +50,7 @@ export function BackupDetail({
   onChanged: () => void;
 }) {
   const [passphrase, setPassphrase] = useState("");
+  const [confirm, setConfirm] = useState<ConfirmState | null>(null);
   const [inspection, setInspection] = useState<InspectionResult | null>(null);
   const state = copyState(artifact);
 
@@ -67,7 +69,7 @@ export function BackupDetail({
   const pin = useMutation({
     mutationFn: () => setPinned(artifact.id, !artifact.pinned),
     onSuccess: () => {
-      toast.success(artifact.pinned ? "Unpinned" : "Pinned — retention will never delete this copy");
+      toast.success(artifact.pinned ? "Unpinned" : "Pinned - retention will never delete this copy");
       onChanged();
     },
     onError: (error: Error) => toast.error(error.message),
@@ -83,12 +85,17 @@ export function BackupDetail({
     onError: (error: Error) => toast.error(error.message),
   });
 
+  const stored = artifact.locations.filter((location) => location.status === "stored");
   const findings = (artifact.verification?.data.findings ?? []) as string[];
   const contents = (artifact.verification?.data.content ?? {}) as Record<string, number | string>;
 
   return (
     <Sheet open onOpenChange={(open) => !open && onClose()}>
-      <SheetContent className="w-full overflow-y-auto sm:max-w-md">
+      {/* The width has to be set through the same variant the sheet's own base
+          class uses (`data-[side=right]:sm:max-w-sm`). A plain `sm:max-w-*`
+          loses to it on specificity and is dropped by tailwind-merge, so it
+          looks applied and does nothing. */}
+      <SheetContent className="w-full overflow-y-auto data-[side=right]:sm:max-w-[38rem]">
         <SheetHeader>
           <SheetTitle>
             {artifact.kind === "budget" ? artifact.sourceBudgetName ?? "Budget" : "Bench settings"}
@@ -96,7 +103,7 @@ export function BackupDetail({
           <SheetDescription>{formatDateTime(artifact.createdAt)}</SheetDescription>
         </SheetHeader>
 
-        <div className="space-y-4 px-4 pb-6 text-xs">
+        <div className="space-y-5 px-4 pb-6 text-xs">
           <div className="flex flex-wrap items-center gap-2">
             <Badge variant={state === "verified" ? "status-active" : state === "unverified" ? "secondary" : "destructive"}>
               {COPY_STATE_COPY[state].label}
@@ -106,10 +113,12 @@ export function BackupDetail({
             <span className="text-muted-foreground">{formatBytes(artifact.sizeBytes)}</span>
           </div>
 
-          <p className="text-muted-foreground">{COPY_STATE_COPY[state].detail}</p>
+          <p className="text-[13px] leading-relaxed text-muted-foreground">
+            {COPY_STATE_COPY[state].detail}
+          </p>
 
-          <section className="space-y-1">
-            <h3 className="font-medium">Where it is</h3>
+          <section className="space-y-1.5">
+            <h3 className="text-sm font-semibold">Where it is</h3>
             {artifact.locations.length === 0 ? (
               <p className="text-muted-foreground">Nowhere. Bench has no stored copy of this backup.</p>
             ) : (
@@ -130,7 +139,7 @@ export function BackupDetail({
 
           {(Object.keys(contents).length > 0 || inspection?.verification) && (
             <section className="space-y-1">
-              <h3 className="font-medium">What is inside</h3>
+              <h3 className="text-sm font-semibold">What is inside</h3>
               <dl className="grid grid-cols-2 gap-x-3 gap-y-1">
                 {Object.entries(inspection?.verification?.content ?? contents).map(([key, value]) =>
                   value === null || value === undefined ? null : (
@@ -148,7 +157,7 @@ export function BackupDetail({
 
           {findings.length > 0 && (
             <section className="space-y-1">
-              <h3 className="font-medium text-destructive">What Bench found</h3>
+              <h3 className="text-sm font-semibold text-destructive">What Bench found</h3>
               <ul className="space-y-1">
                 {findings.slice(0, 8).map((finding) => (
                   <li key={finding} className="text-destructive">
@@ -161,7 +170,7 @@ export function BackupDetail({
 
           {artifact.encrypted && (
             <label className="block space-y-1">
-              <span className="font-medium">Passphrase</span>
+              <span className="text-sm font-semibold">Passphrase</span>
               <Input
                 className="h-8 rounded-md px-2 text-xs md:text-xs"
                 type="password"
@@ -190,7 +199,17 @@ export function BackupDetail({
               size="sm"
               variant="outline"
               className="text-destructive"
-              onClick={() => remove.mutate()}
+              onClick={() =>
+                setConfirm({
+                  title: "Delete this backup?",
+                  message:
+                    stored.length > 1
+                      ? `It is removed from all ${stored.length} destinations holding it. This cannot be undone.`
+                      : "It is removed from the destination holding it. This cannot be undone.",
+                  destructiveLabel: "Delete backup",
+                  onConfirm: () => remove.mutate(),
+                })
+              }
               disabled={remove.isPending}
             >
               {remove.isPending ? <Loader2 className="animate-spin" aria-hidden /> : <Trash2 aria-hidden />}
@@ -198,26 +217,95 @@ export function BackupDetail({
             </Button>
           </div>
 
-          <section className="space-y-1 border-t border-border pt-3 text-muted-foreground">
-            <h3 className="font-medium text-foreground">Restoring this</h3>
-            <p>
-              Download the file and use <strong className="font-medium">Import file → Actual</strong>{" "}
-              in Actual Budget. It creates a <em>new</em> budget from the copy; the budget you are
-              using now is not touched.
-            </p>
-            <p>
-              Bench does not import for you: Actual&rsquo;s HTTP API has no import endpoint, and a
-              restore that half-worked would be worse than one you did deliberately.
-            </p>
-            {artifact.plaintextChecksumSha256 && (
-              <p className="break-all">
-                SHA-256 of the archive:{" "}
-                <code>{artifact.plaintextChecksumSha256 ?? artifact.checksumSha256}</code>
+          {/* Two different objects with two different recoveries. A budget goes
+              back into Actual; Bench's own database goes back onto the server
+              and never touches Actual at all. Saying the same thing for both
+              would be wrong for one of them every time. */}
+          <section className="space-y-2 border-t border-border pt-4">
+            <h3 className="text-sm font-semibold">Restoring this</h3>
+
+            {/* Instructions are the one thing on this page somebody reads under
+                pressure, so they get sentence spacing, a longer line height and
+                the body text colour rather than the muted grey used for
+                incidental detail. */}
+            <div className="space-y-2.5 text-[13px] leading-relaxed text-foreground/80">
+              {artifact.kind === "budget" ? (
+                <>
+                  <p>
+                    Download the file and use{" "}
+                    <strong className="font-medium text-foreground">Import file &rarr; Actual</strong>{" "}
+                    in Actual Budget. It creates a <em>new</em> budget from the copy; the budget you
+                    are using now is not touched.
+                  </p>
+                  <p>
+                    Bench does not import for you: Actual&rsquo;s HTTP API has no import endpoint,
+                    and a restore that half-worked would be worse than one you did deliberately.
+                  </p>
+                </>
+              ) : (
+                <>
+                  <p>
+                    This is Bench&rsquo;s own metadata database: your sync flows and mappings,
+                    reconciliation sessions, automations, saved queries and payee-cleanup decisions.
+                    It holds no budget data, and Actual cannot open it.
+                  </p>
+                  <p>
+                    To restore it, stop Bench, put this file where{" "}
+                    <code className="rounded bg-muted px-1 py-0.5 font-mono text-[12px]">
+                      ACTUAL_BENCH_DB_PATH
+                    </code>{" "}
+                    points (
+                    <code className="rounded bg-muted px-1 py-0.5 font-mono text-[12px]">
+                      /data/actual-bench.sqlite
+                    </code>{" "}
+                    by default), and start it again.
+                  </p>
+                  <p>
+                    Restore it onto a server with a different{" "}
+                    <code className="rounded bg-muted px-1 py-0.5 font-mono text-[12px]">
+                      SYNC_VAULT_KEY
+                    </code>{" "}
+                    and you get every rule back but none of the stored credentials - Bench will ask
+                    you to enter them again.
+                  </p>
+                </>
+              )}
+
+              {artifact.encrypted && (
+                <p>
+                  This copy is encrypted. Decrypt it before restoring - it carries its own salt, IV
+                  and tag, so the passphrase is all you need. The recovery sheet documents the
+                  format.
+                </p>
+              )}
+            </div>
+
+            {/* The checksum is for comparing against, so it gets a block of its
+                own rather than being run into a sentence: 64 hex characters
+                wrapped mid-paragraph are unreadable and unselectable. */}
+            <div className="space-y-1 pt-1">
+              <div className="text-xs text-muted-foreground">
+                SHA-256 of the {artifact.encrypted ? "archive inside" : "file"}
+              </div>
+              <code className="block rounded-md bg-muted px-2 py-1.5 font-mono text-[11px] leading-relaxed break-all text-foreground/80">
+                {artifact.plaintextChecksumSha256 ?? artifact.checksumSha256}
+              </code>
+              <p className="text-xs text-muted-foreground">
+                Compare it with <code className="font-mono">sha256sum</code> on the downloaded file
+                to prove nothing changed on the way here.
               </p>
-            )}
+            </div>
           </section>
         </div>
       </SheetContent>
+
+      <ConfirmDialog
+        open={confirm !== null}
+        onOpenChange={(open) => {
+          if (!open) setConfirm(null);
+        }}
+        state={confirm}
+      />
     </Sheet>
   );
 }

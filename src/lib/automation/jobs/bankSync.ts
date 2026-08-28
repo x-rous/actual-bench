@@ -1,7 +1,7 @@
 import { createHttpApiTransport } from "@/lib/actual/httpApiTransport";
 import { listSyncCredentialMeta } from "@/lib/app-db/syncCredentialRepository";
 import { getAppDb } from "@/lib/app-db/connection";
-import { registerAutomationJobType } from "../registry";
+import { getAutomationJobType, registerAutomationJobType } from "../registry";
 import { BANK_SYNC_JOB_TYPE } from "./bankSyncType";
 import type { AutomationCredentials, AutomationJobType, AutomationRunContext } from "../registry";
 import type { BankSyncAccountResult, BankSyncOutcome } from "@/lib/actual/bankSync";
@@ -228,16 +228,18 @@ function rollupStatus(results: BankSyncAccountResult[]): BankSyncOutcome["status
   return failed.length === attempted.length ? "failed" : "partial";
 }
 
-let registered = false;
-
-/** Idempotent: the boot path and tests can both call it. */
+/**
+ * Idempotent, and keyed on the registry rather than on a module-level flag.
+ *
+ * A boolean here and the registry map live in separate modules, and a dev
+ * server can replace one without the other - after which this function would
+ * try to register a type the registry already had, and throw. The registry is
+ * the thing being guarded, so it is the thing to ask.
+ */
 export function registerBankSyncJobType(): void {
-  if (registered) return;
+  if (getAutomationJobType(BANK_SYNC_JOB_TYPE)) return;
   registerAutomationJobType(bankSyncJobType);
-  registered = true;
 }
 
-/** Test-only: allow re-registration after the registry is reset. */
-export function __resetBankSyncRegistrationForTests(): void {
-  registered = false;
-}
+/** Test-only, retained for callers: the registry check above needs no reset. */
+export function __resetBankSyncRegistrationForTests(): void {}

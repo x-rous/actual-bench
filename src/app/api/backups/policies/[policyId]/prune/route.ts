@@ -3,6 +3,7 @@ import { getAppDb } from "@/lib/app-db/connection";
 import { appDbErrorResponse, readJsonBody } from "@/lib/app-db/routeResponses";
 import { getBackupPolicy, listBackupArtifacts } from "@/lib/app-db/backupRepository";
 import { prune } from "@/lib/backup/prune";
+import { collectUnusedPassphrases } from "@/lib/backup/passphrases";
 
 type RouteContext = { params: Promise<{ policyId: string }> };
 
@@ -30,6 +31,10 @@ export async function POST(request: Request, context: RouteContext) {
       retention: policy.retention,
       dryRun: body?.apply !== true,
     });
+
+    // A prune can remove the last encrypted copy a stored passphrase existed
+    // for, and an orphaned secret should be short-lived rather than permanent.
+    if (body?.apply === true) collectUnusedPassphrases(db);
 
     return NextResponse.json({ result });
   } catch (error) {

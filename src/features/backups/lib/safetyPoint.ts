@@ -35,6 +35,33 @@ export function describeRiskyChange(change: RiskyChange): string {
   return `saving ${parts.join(" and ")}`;
 }
 
+/** The shape of one staged entity, as far as the risk rule cares. */
+type StagedEntry = { isNew?: boolean; isUpdated?: boolean; isDeleted?: boolean };
+
+/**
+ * Count what a save is about to write.
+ *
+ * Takes a snapshot rather than being a store selector: a selector returning
+ * this object would produce a new one on every call, the store's snapshot would
+ * never compare equal, and React would re-render forever. Nothing renders these
+ * numbers — only the decision to take a recovery point uses them — so they are
+ * read once, at save time.
+ */
+export function countStagedRisk(snapshot: {
+  slices: Record<string, StagedEntry>[];
+  pendingPayeeMerges: unknown[];
+}): RiskyChange {
+  let itemCount = 0;
+  let deleteCount = 0;
+  for (const slice of snapshot.slices) {
+    for (const entry of Object.values(slice)) {
+      if (entry.isNew || entry.isUpdated || entry.isDeleted) itemCount += 1;
+      if (entry.isDeleted) deleteCount += 1;
+    }
+  }
+  return { itemCount, deleteCount, mergeCount: snapshot.pendingPayeeMerges.length };
+}
+
 export async function takeRecoveryPoint(reason: string): Promise<SafetyPointOutcome> {
   try {
     const response = await fetch("/api/backups/safety-point", {

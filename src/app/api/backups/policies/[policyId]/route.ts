@@ -8,7 +8,8 @@ import {
   listBackupPolicies,
   updateBackupPolicy,
 } from "@/lib/app-db/backupRepository";
-import { deleteBackupCredential, upsertBackupCredential } from "@/lib/app-db/backupCredentialRepository";
+import { upsertBackupCredential } from "@/lib/app-db/backupCredentialRepository";
+import { collectUnusedPassphrases } from "@/lib/backup/passphrases";
 import { reconcileBackupAutomations } from "@/lib/automation/jobs/backupReconcile";
 
 type RouteContext = { params: Promise<{ policyId: string }> };
@@ -28,6 +29,20 @@ export async function PATCH(request: Request, context: RouteContext) {
     delete payload.passphrase;
 
     const db = getAppDb();
+
+    // Turning encryption on without giving Bench a passphrase would save a rule
+    // that fails every night with "no stored passphrase". Caught here as well
+    // as in the dialog, because the rule is what the runs read.
+    if (payload.encryption === "passphrase" && !passphrase) {
+      const existing = getBackupPolicy(db, policyId);
+      if (!existing?.encryptionCredentialRef) {
+        return NextResponse.json(
+          { error: "Enter the passphrase Bench should use to encrypt these backups." },
+          { status: 400 }
+        );
+      }
+    }
+
     if (passphrase) {
       upsertBackupCredential(db, { ref: policyId, kind: "passphrase", secret: { passphrase } });
       payload.encryptionCredentialRef = policyId;
@@ -45,10 +60,15 @@ export async function PATCH(request: Request, context: RouteContext) {
 
 /**
  * Deleting a rule stops it running. It never deletes the copies it took: those
- * are backups, they are still restorable, and the reason to keep the artifact
- * rows is that a stored copy nobody has a record of is the worst of both worlds.
- * They stay in the inventory, unowned, and retention will not touch them
- * because they no longer belong to a rule with rules.
+ * are backups, they are still restorable, and a stored copy nobody has a record
+ * of is the worst of both worlds. They stay in the inventory, unowned, and
+ * retention will not touch them because they no longer belong to a rule.
+ *
+ * Its **passphrase is kept** for as long as an encrypted copy still needs it.
+ * Deleting the secret with the rule would quietly make every encrypted backup
+ * it took unopenable — permanent data loss caused by tidying a setting. Bench
+ * lists what it is still holding, and collects it automatically once the last
+ * copy that needs it is gone.
  */
 export async function DELETE(_request: Request, context: RouteContext) {
   try {
@@ -58,12 +78,20 @@ export async function DELETE(_request: Request, context: RouteContext) {
       return NextResponse.json({ error: "Backup rule not found" }, { status: 404 });
     }
 
-    const keptArtifacts = listBackupArtifacts(db, { policyId, limit: 500 }).length;
-    deleteBackupPolicy(db, policyId);
-    deleteBackupCredential(db, policyId);
-    reconcileBackupAutomations(db, listBackupPolicies(db));
+    const artifacts = listBackupArtifacts(db, { policyId, limit: 500 });
+    const encryptedArtifacts = artifacts.filter((artifact) => artifact.encrypted).length;
 
-    return NextResponse.json({ deleted: true, keptArtifacts });
+    deleteBackupPolicy(db, policyId);
+    reconcileBackupAutomations(db, listBackupPolicies(db));
+    // Nothing encrypted left behind means nothing needs the passphrase.
+    const forgottenPassphrases = collectUnusedPassphrases(db);
+
+    return NextResponse.json({
+      deleted: true,
+      keptArtifacts: artifacts.length,
+      encryptedArtifacts,
+      keptPassphrase: encryptedArtifacts > 0 && !forgottenPassphrases.includes(policyId),
+    });
   } catch (error) {
     return appDbErrorResponse(error);
   }

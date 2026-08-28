@@ -6,7 +6,6 @@ import type {
 } from "@/lib/app-db/backupRepository";
 import type { DestinationCheck, DestinationFacts } from "@/lib/backup/destinations/types";
 import type { BackupReadiness } from "@/lib/backup/readiness";
-import type { BackupRunResult } from "@/lib/backup/runBackup";
 import type { PruneResult } from "@/lib/backup/prune";
 import type { ScrubResult } from "@/lib/backup/scrub";
 import type { DiscoveryResult } from "@/lib/backup/discover";
@@ -16,6 +15,32 @@ import type { InspectionResult } from "@/lib/backup/inspect";
 
 export type ArtifactWithLocations = BackupArtifact & {
   locations: (BackupArtifactLocation & { destinationName: string | null })[];
+};
+
+/** The automation carrying out a rule's schedule, when there is one. */
+export type RuleAutomationState = {
+  id: string;
+  enabled: boolean;
+  running: boolean;
+  autoPausedAt: string | null;
+  autoPauseReason: string | null;
+  lastRunAt: string | null;
+  nextRunAt: string | null;
+  status: "ok" | "warning" | "failing" | "paused" | "idle";
+  statusSummary: string;
+  lastRunMessage: string | null;
+};
+
+export type PolicyWithAutomation = BackupPolicy & { automation: RuleAutomationState | null };
+
+/** A sealed passphrase Bench still holds, and what depends on it. */
+export type HeldPassphrase = {
+  ref: string;
+  label: string;
+  createdAt: string;
+  ruleExists: boolean;
+  artifactCount: number;
+  newestArtifactAt: string | null;
 };
 
 export type BackupSource = {
@@ -28,9 +53,10 @@ export type BackupSource = {
 export type RecoveryCenterData = {
   readiness: BackupReadiness;
   destinations: BackupDestination[];
-  policies: BackupPolicy[];
+  policies: PolicyWithAutomation[];
   artifacts: ArtifactWithLocations[];
   sources: BackupSource[];
+  heldPassphrases: HeldPassphrase[];
   vaultEnabled: boolean;
 };
 
@@ -130,20 +156,52 @@ export async function patchPolicy(id: string, input: Record<string, unknown>): P
   return body.policy;
 }
 
-export async function deletePolicy(id: string): Promise<{ keptArtifacts: number }> {
+export async function deletePolicy(
+  id: string
+): Promise<{ keptArtifacts: number; encryptedArtifacts: number; keptPassphrase: boolean }> {
   return json(await fetch(`/api/backups/policies/${id}`, { method: "DELETE" }));
 }
 
-/** Runs are slow and their result is the point, so it is returned in full. */
-export async function backUpNow(policyId: string): Promise<BackupRunResult> {
-  const body = await json<{ result: BackupRunResult }>(
-    await fetch(`/api/backups/policies/${policyId}/run`, {
-      method: "POST",
+export async function forgetPassphrase(
+  ref: string,
+  strandBackups = false
+): Promise<{ forgotten: boolean; strandedBackups: number }> {
+  return json(
+    await fetch("/api/backups/passphrases", {
+      method: "DELETE",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({}),
+      body: JSON.stringify({ ref, strandBackups }),
     })
   );
-  return body.result;
+}
+
+/** What a manual run concluded, in the three facts the page reports. */
+export type ManualBackupOutcome = {
+  stored: boolean;
+  verified: boolean;
+  message: string | null;
+};
+
+/**
+ * Runs are slow and their conclusion is the point, so it comes back in full.
+ *
+ * A refusal (409: already running) is an answer too, not a transport error, so
+ * it is returned rather than thrown.
+ */
+export async function backUpNow(policyId: string): Promise<ManualBackupOutcome> {
+  const response = await fetch(`/api/backups/policies/${policyId}/run`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({}),
+  });
+
+  if (response.status === 409) {
+    const body = (await response.json()) as { result: ManualBackupOutcome };
+    return body.result;
+  }
+  if (!response.ok) return readError(response);
+
+  return ((await response.json()) as { result: ManualBackupOutcome }).result;
 }
 
 export async function previewRetention(policyId: string, apply = false): Promise<PruneResult> {

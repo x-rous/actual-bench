@@ -7,6 +7,10 @@ import { toast } from "sonner";
 import type { AutomationRun } from "@/lib/app-db/types";
 
 jest.mock("../lib/automationsApi");
+jest.mock("next/navigation", () => ({
+  useSearchParams: () => new URLSearchParams(),
+  usePathname: () => "/automations",
+}));
 jest.mock("sonner", () => ({
   toast: { success: jest.fn(), error: jest.fn(), warning: jest.fn() },
 }));
@@ -212,17 +216,52 @@ describe("AutomationsView", () => {
     expect(await screen.findByText("Not scheduled")).toBeInTheDocument();
   });
 
-  it("explains the empty state instead of showing a bare table", async () => {
+  it("says what can be scheduled, rather than only why the page is empty", async () => {
     mockedApi.listAutomations.mockResolvedValue({ automations: [], jobTypes: [] });
 
     renderView();
 
-    expect(await screen.findByText(/No automations yet/i)).toBeInTheDocument();
-    // The empty page must explain *why* it is empty: which flows qualify, and
-    // that a just-enrolled one is not missing, only not picked up yet.
+    // Someone arriving here has no way of knowing Bench can sync their bank or
+    // back up their budget unless the page says so.
+    expect(await screen.findByText(/Nothing is scheduled yet/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Bank sync" })).toBeInTheDocument();
+    // A create intent, so it lands where a rule can be created.
+    expect(screen.getByRole("link", { name: "Backups" })).toHaveAttribute(
+      "href",
+      "/backups?new=rule"
+    );
+    expect(screen.getByRole("link", { name: "Budget File Sync" })).toHaveAttribute("href", "/sync");
+
+    // And it still explains which sync flows qualify, which is the one thing
+    // people get wrong about this page.
     expect(screen.getByText(/Auto-sync on a server schedule/i)).toBeInTheDocument();
     expect(screen.getByText(/stays out of here on purpose/i)).toBeInTheDocument();
-    expect(screen.getByText(/appears as soon as you refresh this page/i)).toBeInTheDocument();
+  });
+
+  it("offers every kind of automation from one place", async () => {
+    renderView();
+    await screen.findByText("Household → Joint");
+
+    fireEvent.click(screen.getByRole("button", { name: /new automation/i }));
+
+    // A single "Schedule bank sync" button could not answer "what else can
+    // Bench run for me", which is the question a new user actually has.
+    expect(await screen.findByText("Bank sync")).toBeInTheDocument();
+    expect(screen.getByText("Backup")).toBeInTheDocument();
+    expect(screen.getByText("Budget file sync")).toBeInTheDocument();
+  });
+
+  it("actually opens the bank sync dialog from the menu", async () => {
+    // Not redundant with the test above: a menu item can render perfectly and
+    // do nothing. This library's items take `onClick`, and a stray `onSelect`
+    // type-checks against the underlying div while never firing.
+    renderView();
+    await screen.findByText("Household → Joint");
+
+    fireEvent.click(screen.getByRole("button", { name: /new automation/i }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: /bank sync/i }));
+
+    expect(await screen.findByText("Schedule a bank sync")).toBeInTheDocument();
   });
 
   it("opens run history with the job type's own result rendering", async () => {
@@ -230,7 +269,12 @@ describe("AutomationsView", () => {
 
     fireEvent.click(await screen.findByRole("button", { name: "Household → Joint" }));
 
-    expect(await screen.findByText("Run history")).toBeInTheDocument();
+    expect(await screen.findByText("Recent runs")).toBeInTheDocument();
+    // The drawer shows the last few; the rest live on their own page.
+    expect(screen.getByRole("link", { name: /all runs/i })).toHaveAttribute(
+      "href",
+      "/automations/runs?automation=auto-1"
+    );
     // The sync renderer's vocabulary, not the engine's.
     expect(await screen.findByText("Added")).toBeInTheDocument();
     expect(screen.getByText(/Open Budget File Sync/)).toBeInTheDocument();

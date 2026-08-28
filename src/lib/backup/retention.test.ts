@@ -19,6 +19,7 @@ function artifact(overrides: Partial<BackupArtifact> = {}): BackupArtifact {
     plaintextChecksumSha256: null,
     encrypted: false,
     encryption: null,
+    encryptionCredentialRef: null,
     tier: "daily",
     pinned: false,
     protectedUntil: null,

@@ -1,3 +1,11 @@
+import {
+  ArrowLeftRight,
+  DatabaseBackup,
+  Landmark,
+  ShieldCheck,
+  Timer,
+  type LucideIcon,
+} from "lucide-react";
 import type { AutomationExecutionMode, AutomationRun, AutomationRunStatus } from "@/lib/app-db/types";
 
 /**
@@ -166,4 +174,26 @@ export function describeAutomationsSummary(
   const parts = [count, ...(trouble.length > 0 ? [trouble.join(", ")] : ["all healthy"])];
   if (next) parts.push(next);
   return parts.join(" · ");
+}
+
+/**
+ * The icon for a job type.
+ *
+ * Shared so the row you are reading and the menu you created it from show the
+ * same mark - an icon that means one thing in a menu and another in a table is
+ * worse than no icon.
+ */
+export function jobTypeIcon(type: string): LucideIcon {
+  switch (type) {
+    case "bank-sync":
+      return Landmark;
+    case "backup":
+      return DatabaseBackup;
+    case "backup-scrub":
+      return ShieldCheck;
+    case "budget-file-sync":
+      return ArrowLeftRight;
+    default:
+      return Timer;
+  }
 }

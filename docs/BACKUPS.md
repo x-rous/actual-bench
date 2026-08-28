@@ -4,6 +4,10 @@ Actual Bench takes verified copies of your budget — and of its own metadata da
 schedule, stores them in one or more destinations, and re-checks them so you find out about a bad
 backup before you need it rather than after.
 
+The page is two tabs: **Setup** (destinations, backup rules, recovery points) and **Backups** (the
+artifacts that exist, with their readiness banner, filters and detail drawer). Runtime detail on a
+rule is deliberately thin and links to Automations rather than restating it.
+
 This document is the operator's view: how it behaves, what it refuses to do, and what to check when
 something looks wrong. The user-facing guide is at `docs-site/src/content/docs/user-guide/backups.mdx`.
 
@@ -36,7 +40,7 @@ The day someone is browsing a destination by hand is the day Bench is not availa
 | Requirement | Why |
 |---|---|
 | **HTTP API mode** for the source budget | A scheduled backup runs with no browser. Direct mode's engine lives in the browser, so there is nothing on the server to export from. |
-| **An enrolled connection** | The backup uses the same vault credentials unattended sync uses. Enrolment is where the operator granted unattended access. |
+| **An enrolled connection** | A scheduled backup runs with no browser, so the server needs the budget's API key. Enrol from the backup rule dialog itself, or from Automations → Connections. |
 | **`SYNC_VAULT_KEY`** | Needed for enrolled credentials, for S3 access keys, and for a stored encryption passphrase. Without it Bench refuses to store any of them rather than writing them in the clear. |
 | A writable destination | A folder path on the server, or an S3-compatible bucket. |
 
@@ -105,6 +109,21 @@ at an artifact instead of a live budget.
 Verification always runs **before** encryption. Verifying ciphertext proves only that bytes survived
 a round trip.
 
+### Plausibility, not just readability
+
+Every check above asks whether an artifact is *readable*. One more asks whether it is *plausible*: a
+truncated export, or a source that failed to open half its data, produces a perfectly valid archive
+containing the wrong amount of budget, and every integrity check passes on it.
+
+So each copy is compared with the last one of its kind under the same rule. A drop of more than 10%
+in transactions, any drop in account count, or a copy less than half the previous size fails
+verification with a finding naming both numbers. The thresholds are loose on purpose — people do
+delete things — and the wording states the change rather than accusing: *"If you deleted them, this
+is expected; if not, check the source budget before relying on this copy."*
+
+The copy is still stored and still restorable. It simply does not get to claim it was verified. The
+first backup of anything is never an anomaly.
+
 ### Scrub
 
 Weekly (`backup-scrub`, Sundays at 04:00 by default), Bench re-reads the newest three copies per
@@ -168,6 +187,23 @@ To restore:
 **Look inside** (`POST /api/backups/artifacts/:id/inspect`) opens a copy server-side and reports its
 contents without restoring anything. An inspection counts as a verification.
 
+## Passphrases Bench holds
+
+A rule's passphrase is sealed under `SYNC_VAULT_KEY` and stored against the rule's id. Two rules
+about its lifetime matter more than they look:
+
+- **Deleting a rule does not delete its passphrase.** Doing so would quietly make every encrypted
+  backup that rule took unopenable — permanent data loss caused by tidying a setting. The Recovery
+  Center lists what Bench is still holding and what depends on it.
+- **It is collected automatically** once the last encrypted copy that needs it is gone (after a
+  prune, a delete, or a rule deletion that left nothing encrypted behind). It can also be forgotten
+  deliberately, which requires acknowledging how many backups that strands.
+
+Each encrypted artifact records **which** sealed passphrase opens it
+(`backup_artifacts.encryption_credential_ref`, schema v23). That cannot be derived from the rule:
+deleting a rule sets the artifact's policy reference to null by design, which is exactly the moment
+the link is needed.
+
 ## Encryption format
 
 Optional, per rule, off by default. AES-256-GCM with a scrypt-derived key (N=32768, r=8, p=1). The
@@ -208,6 +244,8 @@ with your passwords.
 | "Could not unseal credentials … SYNC_VAULT_KEY" | The vault key changed since the credential was stored. |
 | "not enrolled for unattended use" | The source connection has no vault credential; enrol it in Budget File Sync. |
 | Backup stored but "could not confirm it is readable" | Verification failed. Open the copy's detail for the findings — usually a truncated or non-Actual archive. |
+| A rule shows "paused after repeated failures" | The engine auto-paused its automation. Fix the cause, then Resume from the Automations page — editing the rule does not clear a pause. |
+| A rule shows "paused on the Automations page" | Someone paused the automation by hand. Re-enabling the rule does not undo that, on purpose. |
 | Scrub reports "Size changed" | The stored object is not the size it was written at: a truncated upload or a full volume. |
 | Scrub reports "bytes have changed" | Checksum mismatch — bit rot, or something rewrote the object. |
 | Destination test passes but backups fail | Check free space; the probe is 64 bytes and a real export is not. |
