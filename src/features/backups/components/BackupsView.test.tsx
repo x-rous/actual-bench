@@ -201,11 +201,6 @@ describe("the Recovery Center", () => {
 
   it("reports a failed manual backup as a failure rather than as finished", async () => {
     mockedApi.backUpNow.mockResolvedValue({
-      policyId: "pol-1",
-      trigger: "manual",
-      startedAt: "2026-08-27T09:00:00.000Z",
-      finishedAt: "2026-08-27T09:00:05.000Z",
-      artifacts: [],
       stored: false,
       verified: false,
       message: "No enabled destination",
@@ -220,11 +215,6 @@ describe("the Recovery Center", () => {
 
   it("warns rather than congratulates when a copy stored but did not verify", async () => {
     mockedApi.backUpNow.mockResolvedValue({
-      policyId: "pol-1",
-      trigger: "manual",
-      startedAt: "2026-08-27T09:00:00.000Z",
-      finishedAt: "2026-08-27T09:00:05.000Z",
-      artifacts: [],
       stored: true,
       verified: false,
       message: "Stored, but Bench could not confirm the copy is readable.",
@@ -353,7 +343,7 @@ describe("the Recovery Center", () => {
     renderView();
     await openSetup();
 
-    fireEvent.click(await screen.findByRole("button", { name: /^delete$/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /delete nightly/i }));
 
     expect(await screen.findByText('Delete "Nightly"?')).toBeInTheDocument();
     expect(screen.getByText(/backups it already took are kept/)).toBeInTheDocument();
@@ -367,15 +357,23 @@ describe("the Recovery Center", () => {
     // Nothing a rule or a destination can do should need a second click to
     // find, on a page people visit rarely enough to have forgotten where
     // things were.
-    for (const name of [/back up now/i, /retention/i, /^delete$/i, /^test$/i, /^remove$/i]) {
+    for (const name of [
+      /back up now/i,
+      /retention/i,
+      /^test$/i,
+      // Edit and delete are icon-only, so their labels are the accessible ones.
+      /edit nightly/i,
+      /delete nightly/i,
+      /edit nas volume/i,
+      /remove nas volume/i,
+    ]) {
       expect(await screen.findByRole("button", { name })).toBeInTheDocument();
     }
-    // One Edit per row, on both tables.
-    expect(await screen.findAllByRole("button", { name: /^edit$/i })).toHaveLength(2);
-    // Run history is a link, because it goes to another page.
+    // Run history is a link, and it goes to this rule's runs rather than to a
+    // page listing everything that has ever run.
     expect(screen.getByRole("link", { name: /run history/i })).toHaveAttribute(
       "href",
-      "/automations"
+      "/automations/runs"
     );
   });
 
@@ -407,10 +405,34 @@ describe("the Recovery Center", () => {
     // would put the whole feature out of reach for anyone not using one.
     renderView();
 
-    const opener = await screen.findByRole("button", { name: /ago$/i });
+    // The row's opener names the copy by when it was taken: exact time first,
+    // then how long ago.
+    const opener = await screen.findByRole("button", { name: /\(.*ago\)$/i });
     fireEvent.click(opener);
 
     expect(await screen.findByText("Restoring this")).toBeInTheDocument();
+    // A budget goes back into Actual...
+    expect(screen.getByText(/Import file/)).toBeInTheDocument();
+  });
+
+  it("tells you how to restore the thing you are actually looking at", async () => {
+    // ...and Bench's own database goes back onto the server, never into Actual.
+    // One set of instructions for both would be wrong for one of them every
+    // time.
+    mockedApi.fetchRecoveryCenter.mockResolvedValue(
+      data({
+        artifacts: [
+          artifact({ kind: "app-db", sourceBudgetName: null, sourceBudgetId: null }),
+        ],
+      })
+    );
+
+    renderView();
+    fireEvent.click(await screen.findByRole("button", { name: /\(.*ago\)$/i }));
+
+    expect(await screen.findByText(/ACTUAL_BENCH_DB_PATH/)).toBeInTheDocument();
+    expect(screen.getByText(/Actual cannot open it/)).toBeInTheDocument();
+    expect(screen.queryByText(/Import file/)).not.toBeInTheDocument();
   });
 
   it("says what scanning does in a tooltip, and then just does it", async () => {

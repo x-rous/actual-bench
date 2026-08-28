@@ -184,17 +184,32 @@ export function BackupRuleDialog({
                   connection in Budget File Sync first.
                 </span>
               ) : (
-                <select
-                  className={selectClass}
-                  value={source}
-                  onChange={(event) => setSource(event.target.value)}
-                >
-                  {sources.map((entry) => (
-                    <option key={entry.connectionFingerprint} value={entry.connectionFingerprint}>
-                      {entry.label}
-                    </option>
-                  ))}
-                </select>
+                <>
+                  <select
+                    className={selectClass}
+                    value={source}
+                    onChange={(event) => setSource(event.target.value)}
+                  >
+                    {sources.map((entry) => (
+                      <option key={entry.connectionFingerprint} value={entry.connectionFingerprint}>
+                        {entry.label} - {entry.baseUrl}
+                      </option>
+                    ))}
+                  </select>
+                  {/* Said every time, not only when the list is empty: these are
+                      not the connections in the switcher, and someone whose
+                      current budget is missing needs to know why rather than
+                      concluding the list is wrong. */}
+                  <span className="block text-muted-foreground">
+                    Only budgets <strong className="font-medium">enrolled for unattended use</strong>{" "}
+                    appear here - a scheduled backup runs with no browser open, so it needs
+                    credentials the server can use on its own. Missing the one you are working in?{" "}
+                    <a href="/sync" className="underline underline-offset-4">
+                      Enrol it in Budget File Sync
+                    </a>
+                    .
+                  </span>
+                </>
               )}
             </label>
           )}

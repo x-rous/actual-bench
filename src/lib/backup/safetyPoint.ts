@@ -26,8 +26,11 @@ import { runBackup } from "./runBackup";
  *     forever, which is the failure mode of every "safety snapshot" feature
  *     that never cleans up after itself.
  *
- * It is on by default and can be turned off, because the people who most want
- * it and the people who find it intrusive are both real.
+ * It is **off by default**, and turned on per install. The people who want it
+ * and the people who find it intrusive are both real, and the cost of guessing
+ * wrong is asymmetric: an unexpected full budget export in front of a save is a
+ * surprise, while the absence of one is a feature nobody notices until they go
+ * looking for it - and by then they have found the setting.
  */
 
 const ENABLED_KEY = "backup.safetyPoints.enabled";
@@ -39,7 +42,7 @@ export type SafetyPointSettings = {
 };
 
 export const DEFAULT_SAFETY_SETTINGS: SafetyPointSettings = {
-  enabled: true,
+  enabled: false,
   debounceMinutes: 30,
 };
 
@@ -47,7 +50,9 @@ export function readSafetySettings(db: SqliteDatabase): SafetyPointSettings {
   const enabled = getAppMeta(db, ENABLED_KEY);
   const debounce = Number(getAppMeta(db, DEBOUNCE_KEY));
   return {
-    enabled: enabled === null ? DEFAULT_SAFETY_SETTINGS.enabled : enabled !== "false",
+    // Explicit "true" only: an install that has never been asked has not opted
+    // in, and neither has one whose stored value is anything unexpected.
+    enabled: enabled === null ? DEFAULT_SAFETY_SETTINGS.enabled : enabled === "true",
     debounceMinutes: Number.isFinite(debounce) && debounce > 0 ? debounce : DEFAULT_SAFETY_SETTINGS.debounceMinutes,
   };
 }

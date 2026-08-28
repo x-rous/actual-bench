@@ -1,3 +1,4 @@
+import { describeCronExpression } from "@/lib/automation/cron";
 import type { ArtifactWithLocations } from "./backupsApi";
 import type { BackupPolicy } from "@/lib/app-db/backupRepository";
 
@@ -35,19 +36,32 @@ export function formatDateTime(iso: string | null): string {
   });
 }
 
+/**
+ * "3h ago" and "in 3h", from the same function.
+ *
+ * Both directions matter here: this page shows when a copy was taken *and* when
+ * the next one is due. Formatting only the past meant every future time came
+ * back as "just now" - a schedule set for 20:00 read as though it were running
+ * as you looked at it.
+ */
 export function relativeTime(iso: string | null, now: Date = new Date()): string {
   if (!iso) return "never";
   const then = new Date(iso).getTime();
   if (Number.isNaN(then)) return "never";
+
   const minutes = Math.round((now.getTime() - then) / 60_000);
-  if (minutes < 1) return "just now";
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.round(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
+  const future = minutes < 0;
+  const magnitude = Math.abs(minutes);
+  const scale = (value: number, unit: string) => (future ? `in ${value}${unit}` : `${value}${unit} ago`);
+
+  if (magnitude < 1) return "just now";
+  if (magnitude < 60) return scale(magnitude, "m");
+  const hours = Math.round(magnitude / 60);
+  if (hours < 24) return scale(hours, "h");
   const days = Math.round(hours / 24);
-  if (days < 30) return `${days}d ago`;
+  if (days < 30) return scale(days, "d");
   const months = Math.round(days / 30);
-  return months < 12 ? `${months}mo ago` : `${Math.round(months / 12)}y ago`;
+  return months < 12 ? scale(months, "mo") : scale(Math.round(months / 12), "y");
 }
 
 export type CopyState = "verified" | "unverified" | "damaged" | "gone";
@@ -101,15 +115,11 @@ export function describeSchedule(policy: BackupPolicy): string {
     if (minutes % 60 === 0) return `Every ${minutes / 60} hour(s)`;
     return `Every ${minutes} minutes`;
   }
+  // The engine's own describer, rather than a lookup table of five expressions
+  // that fell back to printing raw cron for everything else - including the
+  // times someone actually picks.
   const cron = policy.cronExpression ?? "0 2 * * *";
-  const known: Record<string, string> = {
-    "0 2 * * *": "Daily at 02:00",
-    "0 3 * * *": "Daily at 03:00",
-    "0 4 * * *": "Daily at 04:00",
-    "0 2 * * 0": "Weekly on Sunday at 02:00",
-    "0 2 1 * *": "Monthly on the 1st at 02:00",
-  };
-  const label = known[cron] ?? `Cron: ${cron}`;
+  const label = describeCronExpression(cron);
   return policy.timezone && policy.timezone !== "UTC" ? `${label} (${policy.timezone})` : label;
 }
 

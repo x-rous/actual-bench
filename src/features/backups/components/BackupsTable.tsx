@@ -78,19 +78,22 @@ export function BackupsTable({ artifacts, selectedId, onOpen }: Props) {
                       feature out of reach for anyone not using one. The row
                       stays clickable as a convenience on top.
 
-                      One line, with the exact timestamp on hover: a second line
-                      here made every row taller than its neighbours and left
-                      the other columns floating against the top of the cell. */}
+                      Both readings on one line: the exact time answers "which
+                      copy is this", the relative one answers "how far back does
+                      that leave me", and stacking them made every row taller
+                      than its neighbours. */}
                   <button
                     type="button"
                     className="hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                    title={formatDateTime(artifact.createdAt)}
                     onClick={(event) => {
                       event.stopPropagation();
                       onOpen(artifact.id);
                     }}
                   >
-                    {relativeTime(artifact.createdAt)}
+                    {formatDateTime(artifact.createdAt)}
+                    <span className="ml-1.5 text-muted-foreground">
+                      ({relativeTime(artifact.createdAt)})
+                    </span>
                   </button>
                 </td>
 

@@ -120,8 +120,9 @@ export function BackupsView() {
       // a failed result, and calling that "Backup finished" hides exactly what
       // the user pressed the button to find out.
       if (!result.stored) toast.error(result.message ?? "Nothing could be stored");
-      else if (!result.verified) toast.warning(result.message ?? "Stored, but Bench could not read it back");
-      else toast.success(result.message ?? "Backed up and verified");
+      else if (!result.verified) {
+        toast.warning(result.message ?? "Stored, but Bench could not read it back");
+      } else toast.success(result.message ?? "Backed up and verified");
       invalidate();
     },
     onError: (error: Error) => toast.error(error.message),
@@ -326,7 +327,7 @@ export function BackupsView() {
               data={data}
               discovering={discover.isPending}
               runningPolicyId={runNow.isPending ? (runNow.variables ?? null) : null}
-              safetyEnabled={settingsQuery.data?.enabled ?? true}
+              safetyEnabled={settingsQuery.data?.enabled ?? false}
               safetyPending={setSafetyPoints.isPending || settingsQuery.isLoading}
               orphanPassphrases={orphanPassphrases}
               onAddDestination={() => setDestinationDialog({ open: true, existing: null })}

@@ -144,7 +144,7 @@ export const TOOL_CARDS: OverviewActionCard[] = [
     id: "backups",
     label: "Backups",
     description:
-      "Keep verified copies of your budget on a schedule, in more than one place, checked by opening them - and know what you would get back if you needed it.",
+      "Keep verified copies of your budget on a schedule, in more than one place, and know what you would get back if you needed it.",
     icon: DatabaseBackup,
     tone: "tool",
     href: "/backups",

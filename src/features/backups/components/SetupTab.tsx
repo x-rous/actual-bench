@@ -82,7 +82,9 @@ function Section({
   children: React.ReactNode;
 }) {
   return (
-    <section className="border-b border-border px-4 py-3" aria-labelledby={id}>
+    // Equal space on all four sides: the tables sat hard against the section
+    // divider while having 16px either side of them.
+    <section className="border-b border-border p-4" aria-labelledby={id}>
       <div className="mb-1.5 flex items-center justify-between gap-2">
         <h2 id={id} className="text-sm font-semibold">
           {title}
@@ -227,25 +229,29 @@ export function SetupTab({
                           >
                             Test
                           </Button>
+                          {/* Icon-only for the two actions with settled icons,
+                              so the row does not spend half its width on words
+                              everybody already knows. Both keep a label for
+                              screen readers and a tooltip for everyone else,
+                              and the destructive one still confirms. */}
                           <Button
                             variant="outline"
-                            size="sm"
-                            className="h-6 text-xs"
+                            size="icon-xs"
                             onClick={() => onEditDestination(destination)}
+                            aria-label={`Edit ${destination.name}`}
                             title="Change this destination's path, bucket or credentials"
                           >
                             <Pencil aria-hidden />
-                            Edit
                           </Button>
                           <Button
                             variant="outline"
-                            size="sm"
-                            className="h-6 text-xs text-destructive"
+                            size="icon-xs"
+                            className="text-destructive"
                             onClick={() => onRemoveDestination(destination)}
+                            aria-label={`Remove ${destination.name}`}
                             title="Stop writing here. The copies already in it are left exactly where they are."
                           >
                             <Trash2 aria-hidden />
-                            Remove
                           </Button>
                         </div>
                       </td>
@@ -378,8 +384,16 @@ export function SetupTab({
                           variant="outline"
                           size="sm"
                           className="h-6 text-xs"
-                          render={<Link href="/automations" />}
-                          title="Every run, with its result, duration, log and any retries - on the Automations page"
+                          render={
+                            <Link
+                              href={
+                                policy.automation
+                                  ? `/automations/runs?automation=${policy.automation.id}`
+                                  : "/automations/runs"
+                              }
+                            />
+                          }
+                          title="Every run of this rule, with its result, duration and log"
                         >
                           <History aria-hidden />
                           Run history
@@ -396,23 +410,22 @@ export function SetupTab({
                         </Button>
                         <Button
                           variant="outline"
-                          size="sm"
-                          className="h-6 text-xs"
+                          size="icon-xs"
                           onClick={() => onEditRule(policy)}
+                          aria-label={`Edit ${policy.name}`}
                           title="Change what this rule copies, where, when, and how long it keeps it"
                         >
                           <Pencil aria-hidden />
-                          Edit
                         </Button>
                         <Button
                           variant="outline"
-                          size="sm"
-                          className="h-6 text-xs text-destructive"
+                          size="icon-xs"
+                          className="text-destructive"
                           onClick={() => onDeleteRule(policy)}
+                          aria-label={`Delete ${policy.name}`}
                           title="Stop this rule running. The backups it already took are kept."
                         >
                           <Trash2 aria-hidden />
-                          Delete
                         </Button>
                       </div>
                     </td>
@@ -459,7 +472,7 @@ export function SetupTab({
           A setting about when Bench takes a backup on your behalf, so it lives
           with the other decisions about what happens rather than beside the
           copies that resulted. */}
-      <section className="px-4 py-3" aria-labelledby="recovery-points-heading">
+      <section className="p-4" aria-labelledby="recovery-points-heading">
         <h2 id="recovery-points-heading" className="mb-1.5 text-sm font-semibold">
           Recovery points
         </h2>
@@ -474,7 +487,8 @@ export function SetupTab({
           <span>
             <span className="font-medium">Take a recovery point before risky changes</span>
             <span className="block text-muted-foreground">
-              Before Bench saves a batch of deletions or payee merges, it copies the budget first - so
+              Off by default. With it on, before Bench saves a batch of deletions or payee merges it
+              copies the budget first - so
               there is something from five minutes ago, not just from last night. Several changes in
               one session share a recovery point, and these expire on their own instead of piling up.
               If one cannot be taken, Bench asks before continuing rather than quietly going ahead.

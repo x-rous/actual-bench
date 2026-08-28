@@ -106,7 +106,10 @@ export function OverviewStatsSection({
       <div className="space-y-3">
         {/* No heading: a row of labelled counts does not need a word above it
             saying that it is a row of labelled counts. */}
-        <dl className="mx-auto grid w-full max-w-6xl grid-cols-2 gap-x-3 gap-y-2 sm:grid-cols-4 md:grid-cols-8 md:gap-x-1.5 lg:gap-x-2.5">
+        {/* The row spans the full width of a wider page now, so the columns get
+            room to breathe rather than staying packed as though they were still
+            fighting for space. */}
+        <dl className="mx-auto grid w-full grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-4 md:grid-cols-8 md:gap-x-5 lg:gap-x-8">
           {COUNT_STATS.map(({ key, label, icon }) => (
             <SnapshotCount
               key={key}
