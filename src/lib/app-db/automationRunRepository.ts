@@ -214,20 +214,37 @@ export function getAutomationRun(db: SqliteDatabase, runId: string): AutomationR
 
 export function listAutomationRuns(
   db: SqliteDatabase,
-  options: { automationId?: string; limit?: number } = {}
+  options: {
+    automationId?: string;
+    /** Filter to particular outcomes - the question is usually "what failed". */
+    statuses?: readonly AutomationRunStatus[];
+    /** Filter to one job type, so "which backup ran" is one query. */
+    type?: string;
+    limit?: number;
+  } = {}
 ): AutomationRun[] {
   const limit = clampLimit(options.limit, 50, 200);
 
+  const clauses: string[] = [];
+  const params: unknown[] = [];
+
   if (options.automationId) {
-    return db
-      .prepare("SELECT * FROM automation_runs WHERE automation_id = ? ORDER BY started_at DESC LIMIT ?")
-      .all<AutomationRunRow>(options.automationId, limit)
-      .map(rowToRun);
+    clauses.push("automation_id = ?");
+    params.push(options.automationId);
+  }
+  if (options.type) {
+    clauses.push("type = ?");
+    params.push(options.type);
+  }
+  if (options.statuses && options.statuses.length > 0) {
+    clauses.push(`status IN (${options.statuses.map(() => "?").join(", ")})`);
+    params.push(...options.statuses);
   }
 
+  const where = clauses.length > 0 ? `WHERE ${clauses.join(" AND ")}` : "";
   return db
-    .prepare("SELECT * FROM automation_runs ORDER BY started_at DESC LIMIT ?")
-    .all<AutomationRunRow>(limit)
+    .prepare(`SELECT * FROM automation_runs ${where} ORDER BY started_at DESC LIMIT ?`)
+    .all<AutomationRunRow>(...params, limit)
     .map(rowToRun);
 }
 

@@ -261,7 +261,12 @@ describe("AutomationsView", () => {
 
     fireEvent.click(await screen.findByRole("button", { name: "Household → Joint" }));
 
-    expect(await screen.findByText("Run history")).toBeInTheDocument();
+    expect(await screen.findByText("Recent runs")).toBeInTheDocument();
+    // The drawer shows the last few; the rest live on their own page.
+    expect(screen.getByRole("link", { name: /all runs/i })).toHaveAttribute(
+      "href",
+      "/automations/runs?automation=auto-1"
+    );
     // The sync renderer's vocabulary, not the engine's.
     expect(await screen.findByText("Added")).toBeInTheDocument();
     expect(screen.getByText(/Open Budget File Sync/)).toBeInTheDocument();

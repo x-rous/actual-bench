@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeftRight, DatabaseBackup, Landmark, Plus, RefreshCw } from "lucide-react";
+import { ArrowLeftRight, DatabaseBackup, History, Landmark, Plus, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { Button, buttonVariants } from "@/components/ui/button";
 import {
@@ -133,6 +133,10 @@ export function AutomationsView() {
       onRetry={() => void automationsQuery.refetch()}
       actions={
         <>
+          <Button variant="outline" size="sm" render={<Link href="/automations/runs" />}>
+            <History aria-hidden />
+            Run history
+          </Button>
           <Button
             variant="outline"
             size="sm"

@@ -39,6 +39,37 @@ export async function listAutomations(): Promise<{
   return (await response.json()) as { automations: AutomationListItem[]; jobTypes: AutomationJobTypeSummary[] };
 }
 
+export type RunHistoryEntry = AutomationRun & {
+  automationName: string;
+  typeLabel: string;
+};
+
+export type RunHistoryFilters = {
+  automationId?: string;
+  type?: string;
+  statuses?: string[];
+  limit?: number;
+};
+
+export type RunHistory = {
+  runs: RunHistoryEntry[];
+  automations: { id: string; name: string; type: string }[];
+  jobTypes: { type: string; label: string }[];
+};
+
+/** Every run across every automation, filtered - "what failed last night?" */
+export async function fetchRunHistory(filters: RunHistoryFilters = {}): Promise<RunHistory> {
+  const params = new URLSearchParams();
+  if (filters.automationId) params.set("automation", filters.automationId);
+  if (filters.type) params.set("type", filters.type);
+  for (const status of filters.statuses ?? []) params.append("status", status);
+  if (filters.limit) params.set("limit", String(filters.limit));
+
+  const response = await fetch(`/api/automations/runs?${params.toString()}`, { cache: "no-store" });
+  if (!response.ok) return readError(response);
+  return (await response.json()) as RunHistory;
+}
+
 export async function listAutomationRuns(automationId: string, limit = 25): Promise<AutomationRun[]> {
   const response = await fetch(`/api/automations/${automationId}/runs?limit=${limit}`, { cache: "no-store" });
   if (!response.ok) return readError(response);

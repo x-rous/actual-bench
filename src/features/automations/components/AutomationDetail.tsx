@@ -1,7 +1,7 @@
 "use client";
 
+import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
-import { Badge } from "@/components/ui/badge";
 import {
   Sheet,
   SheetContent,
@@ -10,16 +10,8 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { listAutomationRuns, type AutomationListItem } from "../lib/automationsApi";
-import {
-  executionModeCopy,
-  formatDateTime,
-  runDuration,
-  runStatusLabel,
-  runStatusTone,
-  triggerLabel,
-} from "../lib/presentation";
-import { AutomationResult } from "./resultRenderers";
-import type { AutomationRun } from "@/lib/app-db/types";
+import { executionModeCopy, formatDateTime } from "../lib/presentation";
+import { RunRow } from "./RunRow";
 
 /**
  * One automation's configuration and run history (RD-079 / PR-043d).
@@ -28,78 +20,6 @@ import type { AutomationRun } from "@/lib/app-db/types";
  * component knows nothing about what a sync or a bank pull actually did.
  */
 
-const TONE_VARIANT = {
-  ok: "status-active",
-  warn: "status-warning",
-  bad: "destructive",
-  muted: "secondary",
-} as const;
-
-type LogEntry = { level: string; message: string; at: string };
-
-/**
- * The log lives inside a job type's own result payload, which the engine stores
- * without inspecting — so nothing guarantees an entry's `message` is a string.
- * Checking only that the key exists let an object reach React as a child and
- * take down the whole run-history section.
- */
-function runLog(run: AutomationRun): LogEntry[] {
-  const log = run.result?.data.log;
-  if (!Array.isArray(log)) return [];
-
-  return log.flatMap((entry) => {
-    if (typeof entry !== "object" || entry === null || Array.isArray(entry)) return [];
-    const record = entry as Record<string, unknown>;
-    if (typeof record.message !== "string") return [];
-    return [
-      {
-        level: typeof record.level === "string" ? record.level : "info",
-        message: record.message,
-        at: typeof record.at === "string" ? record.at : "",
-      },
-    ];
-  });
-}
-
-function RunRow({ run }: { run: AutomationRun }) {
-  const log = runLog(run);
-
-  return (
-    <details className="rounded-md border border-border">
-      <summary className="flex cursor-pointer flex-wrap items-center gap-2 px-3 py-2 text-xs">
-        <Badge variant={TONE_VARIANT[runStatusTone(run.status)]}>{runStatusLabel(run.status)}</Badge>
-        <span className="text-muted-foreground">{formatDateTime(run.startedAt)}</span>
-        <span className="text-muted-foreground">· {triggerLabel(run)}</span>
-        <span className="text-muted-foreground">· {runDuration(run)}</span>
-        {run.rollup?.message && <span className="min-w-0 flex-1 truncate">{run.rollup.message}</span>}
-      </summary>
-
-      <div className="space-y-3 border-t border-border px-3 py-3">
-        <AutomationResult run={run} />
-
-        {run.error?.data.message !== undefined && (
-          <p className="rounded-md bg-destructive/10 px-3 py-2 text-xs text-destructive">
-            {String(run.error.data.message)}
-          </p>
-        )}
-
-        {log.length > 0 && (
-          <div>
-            <h4 className="text-xs font-medium">Log</h4>
-            <ul className="mt-1 space-y-0.5 font-mono text-[11px] text-muted-foreground">
-              {log.map((entry, index) => (
-                <li key={index} className={entry.level === "error" ? "text-destructive" : undefined}>
-                  {entry.message}
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-      </div>
-    </details>
-  );
-}
-
 export function AutomationDetail({
   automation,
   onClose,
@@ -107,9 +27,12 @@ export function AutomationDetail({
   automation: AutomationListItem;
   onClose: () => void;
 }) {
+  // The newest ten: a drawer is for "is this healthy", and the answer is in the
+  // last few runs. Anything more is a question for the history page, which can
+  // filter and has the room to show the answer.
   const runsQuery = useQuery({
     queryKey: ["automation-runs", automation.id],
-    queryFn: () => listAutomationRuns(automation.id),
+    queryFn: () => listAutomationRuns(automation.id, 10),
   });
 
   const mode = executionModeCopy(automation.executionMode);
@@ -162,7 +85,17 @@ export function AutomationDetail({
           </section>
 
           <section className="min-h-0">
-            <h3 className="text-xs font-semibold uppercase text-muted-foreground">Run history</h3>
+            <div className="flex items-center justify-between gap-2">
+              <h3 className="text-xs font-semibold uppercase text-muted-foreground">
+                Recent runs
+              </h3>
+              <Link
+                href={`/automations/runs?automation=${automation.id}`}
+                className="text-xs text-primary underline-offset-4 hover:underline"
+              >
+                All runs
+              </Link>
+            </div>
 
             {runsQuery.isLoading && <p className="mt-2 text-xs text-muted-foreground">Loading runs…</p>}
             {runsQuery.isError && (
