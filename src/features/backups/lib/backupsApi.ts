@@ -6,7 +6,6 @@ import type {
 } from "@/lib/app-db/backupRepository";
 import type { DestinationCheck, DestinationFacts } from "@/lib/backup/destinations/types";
 import type { BackupReadiness } from "@/lib/backup/readiness";
-import type { BackupRunResult } from "@/lib/backup/runBackup";
 import type { PruneResult } from "@/lib/backup/prune";
 import type { ScrubResult } from "@/lib/backup/scrub";
 import type { DiscoveryResult } from "@/lib/backup/discover";
@@ -176,16 +175,33 @@ export async function forgetPassphrase(
   );
 }
 
-/** Runs are slow and their result is the point, so it is returned in full. */
-export async function backUpNow(policyId: string): Promise<BackupRunResult> {
-  const body = await json<{ result: BackupRunResult }>(
-    await fetch(`/api/backups/policies/${policyId}/run`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({}),
-    })
-  );
-  return body.result;
+/** What a manual run concluded, in the three facts the page reports. */
+export type ManualBackupOutcome = {
+  stored: boolean;
+  verified: boolean;
+  message: string | null;
+};
+
+/**
+ * Runs are slow and their conclusion is the point, so it comes back in full.
+ *
+ * A refusal (409: already running) is an answer too, not a transport error, so
+ * it is returned rather than thrown.
+ */
+export async function backUpNow(policyId: string): Promise<ManualBackupOutcome> {
+  const response = await fetch(`/api/backups/policies/${policyId}/run`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({}),
+  });
+
+  if (response.status === 409) {
+    const body = (await response.json()) as { result: ManualBackupOutcome };
+    return body.result;
+  }
+  if (!response.ok) return readError(response);
+
+  return ((await response.json()) as { result: ManualBackupOutcome }).result;
 }
 
 export async function previewRetention(policyId: string, apply = false): Promise<PruneResult> {
