@@ -1,7 +1,7 @@
 import type { Rule, Payee } from "@/types/entities";
 import type { StagedMap } from "@/types/staged";
-import type { WorkingSet } from "../types";
-import { runDiagnostics } from "./runDiagnostics";
+import type { CheckFn, WorkingSet } from "../types";
+import { CHECKS, __resetChecks, registerCheck, runDiagnostics } from "./runDiagnostics";
 // Import the registration barrel so all checks are present.
 import "./checks/register";
 
@@ -113,5 +113,30 @@ describe("runDiagnostics", () => {
     const report = await runDiagnostics(makeWs([rule({ id: "r1" })]));
     expect(typeof report.workingSetSignature).toBe("string");
     expect(report.workingSetSignature.length).toBeGreaterThan(0);
+  });
+});
+
+describe("check registration", () => {
+  it("replaces a check registered again under the same name rather than running it twice", () => {
+    // Importing a check module runs its registerCheck() again on every hot
+    // reload, with a new function object each time. Appending meant the report
+    // carried each finding once per rebuild - one rule reported seven times.
+    const saved = [...CHECKS];
+    __resetChecks();
+
+    const first: CheckFn = function sameName() {
+      return [];
+    };
+    const second: CheckFn = function sameName() {
+      return [];
+    };
+    registerCheck(first);
+    registerCheck(second);
+
+    expect(CHECKS).toHaveLength(1);
+    expect(CHECKS[0]).toBe(second);
+
+    __resetChecks();
+    for (const check of saved) registerCheck(check);
   });
 });

@@ -14,12 +14,35 @@ import {
 
 // Registered checks, ordered cheapest → most expensive. The CHECKS array is
 // exposed so tests and other phases can replace it; production code mutates
-// it at import time via addCheck() in the check modules.
+// it at import time via registerCheck() in the check modules.
 const registered: CheckFn[] = [];
 
 export const CHECKS: readonly CheckFn[] = registered;
 
+/**
+ * Add a check to the registry, or replace the one already standing under that
+ * name.
+ *
+ * Registration happens as a side effect of importing a check module, and in
+ * development that import runs again on every hot reload — with a *new* function
+ * object each time, so identity cannot tell the two apart. Appending blindly
+ * meant the registry grew a fresh copy of every check per reload, and the report
+ * then carried each finding as many times as the page had been rebuilt: one rule
+ * reported seven times, which reads as seven problems.
+ *
+ * Keying on the function's name replaces the stale copy with the reloaded one,
+ * which is also what the developer editing it wants. An anonymous check has no
+ * key to replace and is simply appended.
+ */
 export function registerCheck(check: CheckFn): void {
+  const name = check.name;
+  if (name) {
+    const existing = registered.findIndex((entry) => entry.name === name);
+    if (existing !== -1) {
+      registered[existing] = check;
+      return;
+    }
+  }
   registered.push(check);
 }
 
