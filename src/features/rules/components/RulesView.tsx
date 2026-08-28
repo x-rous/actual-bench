@@ -15,6 +15,7 @@ import type { SkipReason } from "../csv/rulesCsvImport";
 import { RulesTable } from "./RulesTable";
 import { RuleDrawer } from "./RuleDrawer";
 import { MergeRulesDialog } from "./MergeRulesDialog";
+import { GeneraliseRuleDialog } from "./GeneraliseRuleDialog";
 import { RulesImportResultDialog } from "./RulesImportResultDialog";
 
 export function RulesView() {
@@ -46,6 +47,8 @@ export function RulesView() {
   const [importResult, setImportResult]   = useState<{ imported: number; skipped: number; skipReasons: SkipReason[] } | null>(null);
   const mergeIntentHandledRef            = useRef(false);
   const mergeConfirmedRef                = useRef(false);
+  const generaliseReportedRef            = useRef(false);
+  const generaliseConfirmedRef           = useRef(false);
 
   const ruleCount = Object.values(stagedRules).filter((s) => !s.isDeleted).length;
 
@@ -92,6 +95,54 @@ export function RulesView() {
     setMergeDefaultDeleteOriginals(from === "diagnostics");
     setMergeReturnTo(from === "diagnostics" ? "/rules/diagnostics" : null);
   }, [isLoading, searchParams, router]);
+
+  // The generalise dialog is opened by the URL rather than mirrored into state:
+  // `?generalise=<id>&from=...`, which is what the Generalise button on a Rule
+  // Diagnostics finding navigates to. Deriving it means the back button and a
+  // shared link behave the same as the click, and nothing has to be
+  // synchronised in an effect.
+  const generaliseParam = searchParams.get("generalise");
+  const generaliseRule = generaliseParam ? stagedRules[generaliseParam] : undefined;
+  const generaliseRuleId =
+    !isLoading && generaliseParam && generaliseRule && !generaliseRule.isDeleted
+      ? generaliseParam
+      : null;
+  const generaliseReturnTo =
+    searchParams.get("from") === "diagnostics" ? "/rules/diagnostics" : null;
+
+  // Only the complaint is a side effect: a link naming a rule that has since
+  // been deleted should say so rather than open an empty dialog. Waits for the
+  // store, so a cold load does not report a rule that is merely not there yet.
+  useEffect(() => {
+    if (generaliseReportedRef.current) return;
+    if (isLoading || !generaliseParam) return;
+    const entry = useStagedStore.getState().rules[generaliseParam];
+    if (entry && !entry.isDeleted) return;
+    generaliseReportedRef.current = true;
+    toast.error("That rule no longer exists in the current working set.");
+    router.replace("/rules");
+  }, [isLoading, generaliseParam, router]);
+
+  function handleGeneraliseOpenChange(open: boolean) {
+    if (open) return;
+    // Closing means leaving the URL that opened it. A confirmation has already
+    // navigated, so only the cancel path routes here.
+    if (!generaliseConfirmedRef.current) {
+      if (generaliseReturnTo) {
+        router.push(generaliseReturnTo);
+      } else {
+        router.replace("/rules");
+      }
+    }
+    generaliseConfirmedRef.current = false;
+  }
+
+  function handleGeneraliseConfirmed(id: string) {
+    generaliseConfirmedRef.current = true;
+    // Back to the findings when that is where the intent came from, so the next
+    // one is one click away; otherwise show the rewritten rule.
+    router.push(generaliseReturnTo ?? `/rules?highlight=${id}`);
+  }
 
   function handleMergeOpenChange(open: boolean) {
     if (open) return;
@@ -271,6 +322,13 @@ export function RulesView() {
         ruleIds={mergeRuleIds}
         defaultDeleteOriginals={mergeDefaultDeleteOriginals}
         onConfirmed={handleMergeConfirmed}
+      />
+
+      <GeneraliseRuleDialog
+        open={generaliseRuleId !== null}
+        onOpenChange={handleGeneraliseOpenChange}
+        ruleId={generaliseRuleId}
+        onConfirmed={handleGeneraliseConfirmed}
       />
 
       <RulesImportResultDialog

@@ -10,6 +10,7 @@ export const FINDING_SEVERITY: Record<FindingCode, Severity> = {
   RULE_NOOP_ACTIONS: "warning",
   RULE_SHADOWED: "warning",
   RULE_BROAD_MATCH: "warning",
+  RULE_OVERSPECIFIC_IMPORT_MATCH: "warning",
   RULE_DUPLICATE_GROUP: "warning",
   RULE_UNSUPPORTED_CONDITION_OP: "warning",
   RULE_UNSUPPORTED_CONDITION_FIELD: "warning",
@@ -146,6 +147,22 @@ function composeMessage(
       return {
         title: "Unsupported condition field",
         message: `The condition field \`${field}\` is not recognized by the current rule engine catalog.`,
+      };
+    }
+    case "RULE_OVERSPECIFIC_IMPORT_MATCH": {
+      const field = asString(args.field);
+      const stem = asString(args.stem);
+      const count = Number(args.count) || 0;
+      return {
+        title: "Rule matches whole import strings",
+        message:
+          `This rule matches ${count} exact \`${field}\` strings, all of which contain "${stem}". ` +
+          `Bank text usually carries a card number or a value date that changes every time, so the ` +
+          `next import from this merchant will be a string that is not on the list and the rule will ` +
+          `not apply. Actual writes rules in this shape when you accept its payee-rename prompt, and ` +
+          `adds to the list each time rather than widening it. A condition of ` +
+          `\`contains "${stem}"\` catches everything listed here and the ones still to come.`,
+        details: detailList(args, "values"),
       };
     }
     case "RULE_UNSUPPORTED_ACTION_OP": {

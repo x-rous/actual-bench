@@ -10,6 +10,7 @@ import "./emptyOrNoopActions";
 import "./unsupportedFieldOperator";
 import "./impossibleConditions";
 import "./broadMatchCriteria";
+import "./overSpecificImportMatch";
 import "./duplicateRules";
 import "./shadowedRules";
 import "./nearDuplicateRules";

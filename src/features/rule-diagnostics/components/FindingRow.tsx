@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { MouseEvent } from "react";
-import { Copy, Merge } from "lucide-react";
+import { Copy, Merge, Wand2 } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -128,6 +128,34 @@ function MergeButton({ finding }: { finding: Finding }) {
   );
 }
 
+function GeneraliseButton({ finding }: { finding: Finding }) {
+  const router = useRouter();
+  const ruleId = finding.affected[0]?.id;
+
+  function handleClick() {
+    if (!ruleId) return;
+    const rulesMap = useStagedStore.getState().rules;
+    if (!rulesMap[ruleId] || rulesMap[ruleId].isDeleted) {
+      toast.error("This rule no longer exists in the current working set.");
+      return;
+    }
+    router.push(`/rules?generalise=${ruleId}&from=diagnostics`);
+  }
+
+  return (
+    <Button
+      variant="outline"
+      size="xs"
+      onClick={handleClick}
+      aria-label="Generalise this rule"
+      title="Match the merchant rather than the exact strings"
+    >
+      <Wand2 className="h-3 w-3" />
+      Generalise
+    </Button>
+  );
+}
+
 export function FindingRow({ finding }: Props) {
   const prefix = COUNTERPART_PREFIX[finding.code];
   const showMergeButton = MERGEABLE_CODES.has(finding.code);
@@ -140,6 +168,7 @@ export function FindingRow({ finding }: Props) {
         </Badge>
         <span className="text-sm font-medium">{finding.title}</span>
         {showMergeButton && <MergeButton finding={finding} />}
+        {finding.code === "RULE_OVERSPECIFIC_IMPORT_MATCH" && <GeneraliseButton finding={finding} />}
         <span className="ml-auto font-mono text-[10px] uppercase text-muted-foreground/70" aria-hidden="true">
           {finding.code}
         </span>
