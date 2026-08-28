@@ -38,8 +38,18 @@ function fieldLabel(field: string): string {
   return field === "imported_payee" ? "imported payee" : field;
 }
 
+/**
+ * The condition as it will be stored, not as it reads best.
+ *
+ * `buildCandidates` describes its flexible regex as `contains "<stem>"` too,
+ * which put two different conditions on screen under one identical label. What
+ * the rule will say is the only thing worth showing.
+ */
 function conditionText(impact: GeneralisationImpact, field: string): string {
-  return `${fieldLabel(field)} ${impact.candidate.description}`;
+  const { op, value } = impact.candidate;
+  return op === "contains"
+    ? `${fieldLabel(field)} contains "${value}"`
+    : `${fieldLabel(field)} matches /${value}/`;
 }
 
 export function GeneraliseRuleDialog({ open, onOpenChange, ruleId, onConfirmed }: Props) {
@@ -208,7 +218,7 @@ export function GeneraliseRuleDialog({ open, onOpenChange, ruleId, onConfirmed }
                   </p>
                 ) : (
                   <ul className="mt-2 space-y-2">
-                    {impacts.map((impact) => {
+                    {impacts.map((impact, index) => {
                       const key = keyOf(impact);
                       const isSelected = key === selectedKeyOrBest;
                       return (
@@ -229,8 +239,15 @@ export function GeneraliseRuleDialog({ open, onOpenChange, ruleId, onConfirmed }
                               }}
                             />
                             <span className="min-w-0 flex-1">
-                              <span className="block break-words font-mono text-[12px]">
-                                {conditionText(impact, literal.field)}
+                              <span className="flex flex-wrap items-center gap-1.5">
+                                <span className="break-words font-mono text-[12px]">
+                                  {conditionText(impact, literal.field)}
+                                </span>
+                                {index === 0 ? (
+                                  <span className="rounded bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-emerald-700 dark:text-emerald-500">
+                                    Recommended
+                                  </span>
+                                ) : null}
                               </span>
                               <span className="mt-1 flex items-start gap-1.5 text-xs text-muted-foreground">
                                 {impact.clean ? (

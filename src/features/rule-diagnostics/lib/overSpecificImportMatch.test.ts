@@ -1,5 +1,6 @@
 import type { Rule } from "@/types/entities";
 import {
+  collectGeneralisations,
   collectLiteralImportConditions,
   deriveGeneralisation,
   detectOverSpecificImportMatch,
@@ -172,6 +173,42 @@ describe("deriveGeneralisation", () => {
     ];
     const derived = deriveGeneralisation(values, "imported_payee");
     expect(derived?.stem).toBe("PAPER MOON CAFE");
+  });
+});
+
+describe("collectGeneralisations", () => {
+  it("offers one form per stem, and no more than three stems", () => {
+    // Nine variations of one sentence is not a choice, it is a puzzle - and
+    // buildCandidates labels its flexible regex `contains "<stem>"` as well, so
+    // three of them read identically.
+    const options = collectGeneralisations(MARKET_BOYS, "imported_payee");
+
+    expect(options.length).toBeLessThanOrEqual(3);
+    expect(new Set(options.map((option) => option.stem)).size).toBe(options.length);
+    // Where a literal `contains` covers every value, the regexes catch the same
+    // text and only cost readability.
+    expect(options.every((option) => option.candidate.op === "contains")).toBe(true);
+  });
+
+  it("keeps the regex form when punctuation stops a literal match from covering the values", () => {
+    const options = collectGeneralisations(
+      ["GOOGLE*MICROSOFT APPS 03/24", "GOOGLE MICROSOFT APPS 04/24"],
+      "imported_payee"
+    );
+
+    expect(options.length).toBeGreaterThan(0);
+    expect(options[0].candidate.op).toBe("matches");
+  });
+
+  it("offers shorter stems as alternatives, longest first", () => {
+    const options = collectGeneralisations(MARKET_BOYS, "imported_payee");
+
+    expect(options[0].stem).toBe("MARKET BOYS PTY LTD");
+    expect(options.map((option) => option.stem)).toEqual([
+      "MARKET BOYS PTY LTD",
+      "MARKET BOYS PTY",
+      "MARKET BOYS",
+    ]);
   });
 });
 

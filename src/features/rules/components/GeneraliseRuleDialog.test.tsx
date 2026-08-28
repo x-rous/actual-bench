@@ -104,6 +104,19 @@ describe("GeneraliseRuleDialog", () => {
     ).toBeGreaterThan(0);
   });
 
+  it("offers a short list of distinct options, each labelled with the condition it stages", () => {
+    open();
+
+    const options = screen.getAllByRole("radio");
+    expect(options).toHaveLength(3);
+    const labels = options.map((option) => option.closest("label")?.textContent ?? "");
+    // Every option reads differently: the dialog once listed the same condition
+    // three times, twice under an identical label.
+    expect(new Set(labels).size).toBe(3);
+    expect(labels[0]).toContain('contains "MARKET BOYS PTY LTD"');
+    expect(labels[0]).toContain("Recommended");
+  });
+
   it("stages the rewrite in place of the exact strings, leaving the rest of the rule alone", () => {
     rule = {
       ...rule,
