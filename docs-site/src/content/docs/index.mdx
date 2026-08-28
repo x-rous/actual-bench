@@ -1,9 +1,9 @@
 ---
 title: Actual Bench documentation
-description: Explore the main tools Actual Bench adds for advanced budgeting, administration, reconciliation, synchronization, and analysis.
+description: Explore the main tools Actual Bench adds for advanced budgeting, administration, reconciliation, synchronization, scheduled work, verified backups, and analysis.
 template: splash
 hero:
-  tagline: Advanced tools for Actual Budget. See the full year clearly, manage budget data in bulk, audit rules, reconcile statements, sync budget files, and investigate the details.
+  tagline: Advanced tools for Actual Budget. See the full year clearly, manage budget data in bulk, audit rules, reconcile statements, sync budget files, keep verified backups, and run it all on a schedule.
   image:
     file: ../../assets/actual-bench-icon.png
     alt: Actual Bench
@@ -21,7 +21,8 @@ import { Card, CardGrid, LinkCard } from '@astrojs/starlight/components';
 
 Actual Budget remains the place for everyday budgeting and transaction entry. **Actual Bench** is the
 independent companion you open when a larger job becomes slow, repetitive, difficult to inspect, or
-risky to do one item at a time.
+risky to do one item at a time—and the one that keeps working when you close it, on a schedule you
+chose.
 
 :::note[Independent companion app]
 Actual Bench is not the official Actual Budget application or documentation. It connects to an
@@ -51,6 +52,14 @@ existing Actual Server and adds focused administration, planning, audit, and dat
 		Create saved, preview-first flows for transactions, payees, and categories, including controlled conversion between budgets kept in different currencies.
 		[Explore Budget File Sync →](/actual-bench/user-guide/budget-sync/)
 	</Card>
+	<Card title="Scheduled Work" icon="seti:clock">
+		Run bank syncs, backups and sync flows on a schedule with the app closed—one engine, with run history, health, backoff, and credentials the server can use on its own.
+		[Explore Automations →](/actual-bench/user-guide/automations/)
+	</Card>
+	<Card title="Verified Backups" icon="seti:shell">
+		Scheduled copies of your budget that Bench **opens and reads** to prove they work, kept in a folder or an S3-compatible bucket, on rules that never delete the last good one.
+		[Explore Backups →](/actual-bench/user-guide/backups/)
+	</Card>
 	<Card title="ActualQL and Budget File Tools" icon="magnifier">
 		Query saved budget data, inspect an exported file, run structural health checks, or browse its SQLite tables without writing anything back.
 		[Explore analysis and diagnostics →](/actual-bench/user-guide/budget-file-tools/)
@@ -64,12 +73,16 @@ existing Actual Server and adds focused administration, planning, audit, and dat
 | Budgeting | A compact working view with Budget, Spent, and Balance together for up to six months | A focused 12-month Budget, Actuals, or Balance view, annual context, and spreadsheet-style editing |
 | Budget structure | Everyday creation and maintenance inside the budgeting experience | Bulk actions, CSV, duplicate handling, dependency visibility, and staged review |
 | Rules | Executes automation as transactions arrive | Richer authoring plus a whole-rule-set diagnostics pass |
-| Reconciliation | Everyday importing, bank sync, and normal reconciliation | A persistent, statement-driven comparison and correction workflow |
+| Reconciliation | Everyday importing and normal reconciliation | A persistent, statement-driven comparison and correction workflow |
+| Bank connections | Owns the connection to your bank and performs the sync | Decides *when* it runs, on a schedule with nothing open, and shows what each account returned |
+| Unattended work | Runs while you have Actual open | A scheduling engine with run history, health, backoff, and credentials the server can use on its own |
+| Backups | Manual export of a budget file | Scheduled copies that are opened and read to prove they work, kept in more than one place, on rules that never delete the last good one |
 | Multiple budget files | Keeps each budget independent | Controlled one-way synchronization, mappings, history, review queues, and FX conversion |
 | Investigation | Reports and normal data views | ActualQL, exported-file diagnostics, and read-only SQLite inspection |
 
 Actual Bench remains a companion, not a replacement. Continue using Actual Budget for everyday
-transaction entry, normal budgeting, reports, bank sync, and mobile use.
+transaction entry, normal budgeting, reports, and mobile use. Bench does not connect to your bank -
+Actual does that - but it can decide when that sync runs and tell you what came back.
 
 ## How changes reach your budget
 
@@ -79,6 +92,8 @@ Actual Bench uses different safety models for different jobs:
 - **Preview → select → Apply** for Budget File Sync and Bank Reconciliation.
 - **Read-only** for ActualQL, Rule Diagnostics, Budget File Health, and the Data Browser.
 - **Immediate explicit actions** for notes and carryover toggles.
+- **Scheduled, with a record** for automations: they run unattended, and every run is kept with its
+  result, duration, and log. See [Automations](/actual-bench/user-guide/automations/).
 
 The relevant guide states its write model before its instructions. Read [Work safely](/actual-bench/getting-started/core-concepts/)
 for the complete model.
@@ -90,6 +105,7 @@ for the complete model.
 	<LinkCard title="Try the demo" href="https://actual-bench-demo.vercel.app" description="Explore realistic Envelope and Tracking household budgets without connecting your own data." />
 	<LinkCard title="Install Actual Bench" href="/actual-bench/getting-started/installation/" description="Run the container and keep its metadata persistent." />
 	<LinkCard title="Connect a budget" href="/actual-bench/getting-started/connecting/" description="Choose the connection mode your installation supports and open a budget." />
+	<LinkCard title="Protect a budget" href="/actual-bench/user-guide/backups/" description="Take verified backups on a schedule, and know what you would get back if you needed it." />
 </CardGrid>
 
 ## Project and support

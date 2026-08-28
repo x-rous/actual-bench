@@ -52,6 +52,12 @@ export default defineConfig({
 						{ label: 'Build & audit rules', link: '/user-guide/rules/' },
 						{ label: 'Reconcile a bank statement', link: '/user-guide/bank-reconciliation/' },
 						{ label: 'Sync budget files', link: '/user-guide/budget-sync/' },
+						// Work that happens when nobody is watching is neither a
+						// one-off task nor a reference entry, which is why it had
+						// no home before and went undocumented.
+						{ label: 'Run work on a schedule', link: '/user-guide/automations/' },
+						{ label: 'Pull transactions from your bank', link: '/user-guide/bank-sync/' },
+						{ label: 'Keep verified backups', link: '/user-guide/backups/' },
 						{ label: 'Explore & diagnose data', link: '/user-guide/budget-file-tools/' },
 					],
 				},
@@ -70,7 +76,6 @@ export default defineConfig({
 						{ label: 'ActualQL', link: '/user-guide/actualql/' },
 						{ label: 'FX Rates', link: '/user-guide/fx-rates/' },
 						{ label: 'Bundle Export / Import', link: '/user-guide/bundle-export-import/' },
-						{ label: 'Backups', link: '/user-guide/backups/' },
 					],
 				},
 				{
