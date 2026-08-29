@@ -16,6 +16,12 @@ two explicit encrypted credential opt-ins: remembered servers and unattended syn
 those credentials in plaintext. See [Work safely](../../getting-started/core-concepts/#where-data-lives).
 :::
 
+
+![App Health reporting on the metadata database, its storage and the scheduler.](../../../assets/screenshots/app-health.png)
+
+*This is Bench reporting on itself: whether its own database is reachable, whether the storage under
+it is durable, and whether scheduled work can run.*
+
 ## What it reports
 
 - **Database path** - the configured SQLite location (`ACTUAL_BENCH_DB_PATH`, default

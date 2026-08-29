@@ -182,6 +182,30 @@ const SHOTS = [
    * better described in a sentence than shown.
    */
   {
+    name: "connect",
+    preConnect: true,
+    budget: "Envelope",
+    instance: true,
+  },
+  {
+    name: "app-health",
+    nav: "App Health",
+    url: /\/app-health/,
+    budget: "Envelope",
+    instance: true,
+  },
+  {
+    name: "dialog-bundle-export",
+    nav: "Overview",
+    url: /\/overview/,
+    budget: "Envelope",
+    element: '[role="dialog"]',
+    prepare: async (page) => {
+      await page.getByRole("button", { name: /Export Bundle/ }).click();
+      await page.waitForTimeout(4000);
+    },
+  },
+  {
     name: "dialog-merge-rules",
     nav: "Rule Diagnostics",
     url: /\/rules\/diagnostics/,
@@ -497,6 +521,20 @@ async function run(registerInstance) {
 
   for (const shot of shots) {
     try {
+      if (shot.preConnect) {
+        // Before any budget is opened: this is what a first run looks like, and
+        // it cannot be photographed once a connection exists.
+        const fresh = await context.newPage();
+        await fresh.goto(`${appUrl}/connect`, { waitUntil: "domcontentloaded" });
+        await fresh.getByPlaceholder("https://budgetapi.example.com").waitFor({ timeout: 120000 });
+        await fresh.waitForTimeout(2500);
+        const scope = shot.element ? fresh.locator(shot.element).first() : fresh;
+        await scope.screenshot({ path: join(outDir, `${shot.name}.png`) });
+        await fresh.close();
+        console.log(`captured ${shot.name}`);
+        continue;
+      }
+
       if (!pages.has(shot.budget)) pages.set(shot.budget, await openBudget(context, demo, shot.budget));
       const page = pages.get(shot.budget);
 
