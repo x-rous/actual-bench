@@ -175,6 +175,95 @@ const SHOTS = [
   { name: "categories", nav: "Categories", url: /\/categories/, budget: "Envelope" },
   { name: "schedules", nav: "Schedules", url: /\/schedules/, budget: "Envelope" },
   { name: "tags", nav: "Tags", url: /\/tags/, budget: "Envelope" },
+
+  /*
+   * Dialogs. Each is photographed as itself rather than as a dimmed page, and
+   * only where the dialog *is* the feature - a form with two labelled fields is
+   * better described in a sentence than shown.
+   */
+  {
+    name: "dialog-merge-rules",
+    nav: "Rule Diagnostics",
+    url: /\/rules\/diagnostics/,
+    budget: "Envelope",
+    element: '[role="dialog"]',
+    prepare: async (page) => {
+      await page.getByRole("button", { name: /Merge 2 rules/ }).first().click();
+      await page.waitForURL(/\/rules/, { timeout: 30000 });
+      await page.waitForTimeout(6000);
+    },
+  },
+  {
+    name: "dialog-payee-merge",
+    nav: "Payees",
+    url: /\/payees$/,
+    budget: "Envelope",
+    element: '[role="dialog"]',
+    prepare: async (page) => {
+      await page.getByPlaceholder("Search…").fill("Amazon");
+      await page.waitForTimeout(2000);
+      const rows = page.getByRole("checkbox");
+      await rows.nth(1).check();
+      await rows.nth(2).check();
+      await page.waitForTimeout(1000);
+      await page.getByRole("button", { name: /Merge/ }).first().click();
+      await page.waitForTimeout(4000);
+    },
+  },
+  {
+    name: "dialog-backup-rule",
+    nav: "Backups",
+    url: /\/backups/,
+    budget: "Envelope",
+    instance: true,
+    element: '[role="dialog"]',
+    prepare: async (page) => {
+      const setup = page.getByRole("tab", { name: "Setup" });
+      if (await setup.count()) await setup.click();
+      await page.waitForTimeout(1500);
+      await page.getByRole("button", { name: "New backup rule" }).first().click();
+      await page.waitForTimeout(3000);
+    },
+  },
+  {
+    name: "dialog-flow-editor",
+    nav: "Budget File Sync",
+    url: /\/sync/,
+    budget: "Envelope",
+    alsoConnect: "Tracking",
+    instance: true,
+    element: '[role="dialog"]',
+    prepare: async (page) => {
+      await page.getByText("Household card → archive").click();
+      await page.waitForTimeout(3000);
+      await page.getByRole("button", { name: /Edit flow/ }).first().click();
+      await page.waitForTimeout(3000);
+    },
+  },
+  {
+    name: "dialog-new-bank-sync",
+    nav: "Automations",
+    url: /\/automations/,
+    budget: "Envelope",
+    instance: true,
+    element: '[role="dialog"]',
+    prepare: async (page) => {
+      await page.getByRole("button", { name: /New automation/ }).first().click();
+      await page.waitForTimeout(1500);
+      await page.getByRole("menuitem", { name: /Bank sync/ }).click();
+      await page.waitForTimeout(3000);
+    },
+  },
+  {
+    name: "payee-cleanup-needs-rule",
+    nav: "Payee Cleanup",
+    url: /\/payees\/cleanup/,
+    budget: "Envelope",
+    prepare: async (page) => {
+      await page.getByRole("button", { name: /Needs a rule/ }).click();
+      await page.waitForTimeout(4000);
+    },
+  },
 ];
 
 const args = process.argv.slice(2);
@@ -216,6 +305,15 @@ async function demoConnection() {
 }
 
 /** Connect the app to a demo budget through the form, as a reader would. */
+/** Leave the page as the next shot expects to find it. */
+async function closeAnyDialog(page) {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    if ((await page.locator('[role="dialog"]').count()) === 0) return;
+    await page.keyboard.press("Escape");
+    await page.waitForTimeout(800);
+  }
+}
+
 async function openBudget(context, demo, mode) {
   const budget = demo.budgets.find((b) => b.label.toLowerCase().includes(mode.toLowerCase()));
   if (!budget) throw new Error(`the demo has no ${mode} budget`);
@@ -256,16 +354,24 @@ async function openBudget(context, demo, mode) {
  * (without one the pages carry a banner about unattended access being
  * unconfigured, which is true of the instance and not of the product).
  */
+/**
+ * A port nothing is holding.
+ *
+ * Bindability, not "does it answer": a wedged server from an interrupted run
+ * holds its port while answering nothing, and an HTTP probe reads that as free.
+ * The new server then cannot bind, never becomes ready, and the run fails with
+ * a timeout that says nothing about why.
+ */
 async function freePort(from) {
+  const { createServer } = await import("node:net");
   for (let port = from; port < from + 12; port++) {
-    try {
-      await fetch(`http://localhost:${port}/`, { signal: AbortSignal.timeout(1500) });
-      // Something answered - including a half-dead server a previous run left
-      // behind, which is why "answers at all" disqualifies the port rather than
-      // "answers correctly".
-    } catch {
-      return port;
-    }
+    const available = await new Promise((resolve) => {
+      const probe = createServer();
+      probe.once("error", () => resolve(false));
+      probe.once("listening", () => probe.close(() => resolve(true)));
+      probe.listen(port, "127.0.0.1");
+    });
+    if (available) return port;
   }
   throw new Error(`no free port between ${from} and ${from + 11}`);
 }
@@ -397,6 +503,13 @@ async function run(registerInstance) {
       if (shot.alsoConnect && !connected.has(shot.alsoConnect)) {
         await connectSecondBudget(page, shot.alsoConnect);
         connected.add(shot.alsoConnect);
+        // Connecting the second budget makes it the active one, and every later
+        // shot would then be labelled with it in the top bar. Switch back, so
+        // the images agree with each other about which budget is open.
+        await page.getByRole("button", { name: new RegExp(`Live Demo - ${shot.alsoConnect}`) }).first().click();
+        await page.waitForTimeout(800);
+        await page.getByRole("menuitem", { name: new RegExp(`Live Demo - ${shot.budget}`) }).click();
+        await page.waitForTimeout(4000);
       }
 
       const link = page.getByRole("link", { name: shot.nav, exact: true }).first();
@@ -412,8 +525,16 @@ async function run(registerInstance) {
       // something.
       if (shot.prepare) await shot.prepare(page);
 
-      await page.screenshot({ path: join(outDir, `${shot.name}.png`) });
+      // A dialog photographed as a whole page is mostly dimmed background, so a
+      // shot can name the element it is actually about.
+      const target = shot.element ? page.locator(shot.element).first() : page;
+      await target.screenshot({ path: join(outDir, `${shot.name}.png`) });
       console.log(`captured ${shot.name}`);
+
+      // Shots share one page, so a dialog left open blocks the next one's
+      // sidebar click - which failed five shots in a row and reported it as a
+      // missing sidebar link.
+      await closeAnyDialog(page);
     } catch (error) {
       console.log(`FAILED   ${shot.name}: ${error?.message ?? error}`);
       failures.push(shot.name);

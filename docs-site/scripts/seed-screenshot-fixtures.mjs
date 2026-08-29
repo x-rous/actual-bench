@@ -55,7 +55,11 @@ export async function connectToDemo(page, mode = "Envelope") {
     await addServer.click();
     await page.waitForTimeout(800);
   }
-  await page.getByPlaceholder("https://budgetapi.example.com").fill(DEMO_API_URL);
+  // The first view of a freshly started instance compiles as it loads, which
+  // can take well past a default timeout.
+  const urlField = page.getByPlaceholder("https://budgetapi.example.com");
+  await urlField.waitFor({ timeout: 120000 });
+  await urlField.fill(DEMO_API_URL);
   await page.getByLabel("API Key").fill(DEMO_API_KEY);
   await page.getByRole("button", { name: "Load budgets" }).click();
 
