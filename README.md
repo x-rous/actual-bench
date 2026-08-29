@@ -45,35 +45,24 @@ It is not trying to replace Actual Budget's day-to-day transaction entry experie
 
 ## Screenshots
 
-| Connection  |
-|:---:|
-| ![Connection Form](public/screenshots/connection-form.png) |
+Generated from the public demo budgets - see [docs/screenshots.md](docs/screenshots.md) to regenerate
+them in one command.
 
-| Payees | Categories |
+| A full year on one screen | Rules audited as a set |
 |:---:|:---:|
-| ![Payees](public/screenshots/payees-page.png) | ![Categories](public/screenshots/categories-page.png) |
+| ![Budget](docs-site/src/assets/screenshots/budget-envelope.png) | ![Rule Diagnostics](docs-site/src/assets/screenshots/rule-diagnostics.png) |
 
-| Accounts Detail | Rules |
+| Duplicate payees, with the evidence | A statement reconciled row by row |
 |:---:|:---:|
-| ![Accounts Detail](public/screenshots/accounts-page.png) | ![Rules](public/screenshots/rules-page.png)  |
+| ![Payee Cleanup](docs-site/src/assets/screenshots/payee-cleanup.png) | ![Bank Reconciliation](docs-site/src/assets/screenshots/bank-reconciliation.png) |
 
-| Rule diagnostics | Rules Merge |
+| Backups that are opened and checked | Work that runs with the app closed |
 |:---:|:---:|
-| ![Rule diagnostics](public/screenshots/rules-diagnostics.png) | ![ActualQL queries](public/screenshots/rules-merge.png) |
+| ![Backups](docs-site/src/assets/screenshots/backups.png) | ![Automations](docs-site/src/assets/screenshots/automations.png) |
 
-| Envelope Budget | Tracking Budget |
+| Ask your data a question | Copy between budget files, preview first |
 |:---:|:---:|
-| ![Envelope Budget](public/screenshots/budget-envelope.png) | ![Tracking Budget](public/screenshots/budget-tracking.png) |
-
-| ActualQL Queries | Budget File Overview |
-|:---:|:---:|
-| ![Budget diagnostics](public/screenshots/ActualQL.png) | ![Data browser](public/screenshots/budget-file-overview.png) |
-
-| Budget File Health | Data Browser |
-|:---:|:---:|
-| ![Budget diagnostics](public/screenshots/budget-file-diagnostics.png) | ![Data browser](public/screenshots/budget-file-data-browsing.png) |
-
-
+| ![ActualQL Queries](docs-site/src/assets/screenshots/actualql.png) | ![Budget File Sync](docs-site/src/assets/screenshots/budget-file-sync.png) |
 
 ## Feature overview
 

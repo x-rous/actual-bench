@@ -58,8 +58,20 @@ contract - and because a seeder that breaks when a flow breaks is worth having.
   clicking the sidebar rather than loading each URL, which is also what a reader
   does; a first version produced eighteen identical pictures of a bot checkpoint.
 
-## Adding a page
+## Adding a shot
 
-Add an entry to `SHOTS` in the capture script - the name of the image, the
-sidebar entry to click, the URL it should land on, and which demo budget to open.
-Mark it `instance: true` if the page draws instance metadata.
+Add an entry to `SHOTS` in the capture script. Beyond the name, the sidebar entry
+to click and the URL it should land on:
+
+| Field | For |
+|---|---|
+| `instance: true` | The page draws the instance's own metadata, so it is skipped unless `--include-instance` |
+| `prepare(page)` | Drive the page into the state worth photographing - run the query, open the session, add the pair |
+| `element` | Photograph one element rather than the page, which is how the dialogs are shot |
+| `alsoConnect` | Connect a second budget for this shot, and switch back afterwards |
+| `preConnect: true` | Photograph before any budget is opened - the only way to catch a first run |
+
+A screenshot earns its place when the screen carries evidence or a judgement that
+prose cannot: the reasoning behind a merge, a backtest, a match confidence, what
+retention would delete. A form with two labelled fields is better described in a
+sentence, and a page with a dozen images is a slideshow nobody reads.
