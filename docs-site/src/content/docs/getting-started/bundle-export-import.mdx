@@ -59,9 +59,9 @@ column details.
 1. On the Budget Overview, select **Import** and choose a `.zip` produced by Bundle Export. Partial
    bundles (a subset of the CSVs) are valid.
 2. Review the **preview** - each detected entity type with its row count, before anything is staged.
-3. Confirm to stage. Import processes entity types in **dependency order** (categories first, rules
-   last) so name→ID resolution for Schedules and Rules picks up Accounts and Payees staged earlier in
-   the same operation.
+3. Confirm to stage. Import processes entity types in **dependency order** - categories, accounts,
+   payees, tags, schedules, rules - so that by the time Schedules and Rules are read, the Accounts and
+   Payees their names refer to have already been staged in the same operation.
 4. Review the **result summary** - staged count, skipped count, and any parse errors per entity type - 
    and use the quick-navigation links to jump to each entity page and review the staged rows.
 5. Click **Save** in the top bar to write everything. The entire bundle import is a **single undo

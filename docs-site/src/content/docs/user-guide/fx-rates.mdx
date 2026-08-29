@@ -108,8 +108,9 @@ See [Known Limitations](../../help/known-limitations/) for the full list.
 
 ## Troubleshooting
 
-- **"FX pending" in a preview** - no rate exists for that date/pair yet; **Fill range from Frankfurter**,
-  add an override, or import a CSV.
+- **"FX pending" in a preview** - no *usable* rate was found for that date and pair. Either none has
+  been recorded yet, in which case **Fill range from Frankfurter**, add an override, or import a CSV;
+  or the provider was briefly unavailable, in which case previewing again once it recovers is enough.
 - **A weekend or holiday date** - Actual Bench falls back to the latest prior rate; fill the range if you
   want explicit coverage.
 - **A future-dated transaction** - a future rate isn't available; it stays FX pending until a rate
