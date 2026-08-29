@@ -15,6 +15,10 @@ Open it from **Data Management → Rules** (`/rules`).
 **Write model:** stage → review → **Save**. [Rule Diagnostics](../rule-diagnostics/) is read-only until
 you explicitly open or merge a rule.
 
+![The Rules table showing conditions and actions with payees and categories named rather than shown as ids.](../../../assets/screenshots/rules.png)
+
+*The whole rule set, with every reference resolved to the payee, category or account it names.*
+
 ## Start with the job you have
 
 - **Create or edit automation:** use the rule builder below.
@@ -23,24 +27,27 @@ you explicitly open or merge a rule.
 
 ## Why use Actual Bench for rules?
 
-- **Resolved entity names everywhere** - payees, categories, and accounts show as readable chips, and
-  search matches them by name, so you never hunt through raw IDs.
-- **Handlebars templates and Excel-style formulas** with dedicated editor affordances.
-- **Bulk-merge duplicate and near-duplicate rules** into one.
-- **CSV import and export** of your entire rule set for bulk edits and backup.
-- **A read-only linter** - [Rule Diagnostics](../rule-diagnostics/) - that flags missing references,
-  shadowed rules, duplicates, and more.
+Actual runs your rules; it is a poor place to *read* them. Once a rule set is past a couple of dozen,
+the questions become "which rule is doing this?", "do these two overlap?" and "what breaks if I delete
+that category?" - and those are questions about the set, not about one rule.
 
-## What rules do
+- Payees, categories and accounts appear as **their names**, in the table and in search, so nothing has
+  to be decoded from an id.
+- **Handlebars templates** and **Excel-style formulas** for actions that compute a value rather than
+  set a constant.
+- **Merge duplicates and near-duplicates** into one rule, from here or from a diagnostics finding.
+- **CSV import and export** of the whole set, for a bulk edit in a spreadsheet or a backup before one.
+- [Rule Diagnostics](../rule-diagnostics/) audits the set as a whole: broken references, rules that
+  shadow each other, rules that cannot match the next import.
 
-A rule has **conditions** (when it applies) and **actions** (what it changes), and runs at a **stage**.
-Actual Budget applies rules when a transaction is created or imported.
+## How a rule works
 
-## Understand rule stages
+A rule has **conditions** - when it applies - and **actions** - what it changes. Actual applies rules
+as a transaction is created or imported, never retroactively to transactions already in the budget.
 
-Rules run in three stages, in order: **`pre`**, **`default`**, then **`post`**. Use stages to control
-which rules run before others (for example, normalize an imported payee in `pre`, then categorize in
-`default`).
+Each rule runs in one of three **stages**, in order: `pre`, `default`, then `post`. Stages are how you
+control order between rules rather than within one: normalize an imported payee in `pre`, categorize
+it in `default`, and let a `post` rule tidy up whatever is left.
 
 ## Create a basic rule
 

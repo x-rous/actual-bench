@@ -1,0 +1,275 @@
+#!/usr/bin/env node
+/**
+ * Capture the documentation screenshots from the public demo budgets.
+ *
+ * Screenshots go stale the moment a page changes, and a stale screenshot is
+ * worse than none: it teaches a reader a UI that is not there any more. So this
+ * is a script rather than a folder of images somebody once took - when a page
+ * changes, one command retakes it.
+ *
+ * **The demo data is the only data.** Those budgets are already public, so
+ * nothing here can put a real person's finances into the documentation, and a
+ * reader sees the same household in the docs that they see when they click
+ * "Try the live demo".
+ *
+ * **The demo UI is not the app it drives.** The demo deployment sits behind a
+ * bot checkpoint that challenges automated browsers - a first attempt produced
+ * eighteen identical pictures of "Failed to verify your browser". So the script
+ * points *any* Actual Bench instance at the demo's backend through the normal
+ * connect form, which is also a truer picture: what a reader sees is the app
+ * they will run, not the demo host. Connections live in `sessionStorage`, so a
+ * run leaves nothing behind on whichever instance was used.
+ *
+ * Light theme throughout, matching the docs site's default.
+ *
+ * Usage:
+ *   # the whole thing: start a private instance, seed it, capture, tear it down
+ *   node docs-site/scripts/capture-screenshots.mjs --serve --include-instance
+ *
+ *   node docs-site/scripts/capture-screenshots.mjs rules backups    # named shots
+ *   APP_URL=http://localhost:3000 node docs-site/scripts/capture-screenshots.mjs
+ *
+ * Requires Playwright's Chromium (`npx playwright install chromium`); on a
+ * machine without the usual desktop libraries, see docs/screenshots.md for
+ * running it without root.
+ */
+
+import { spawn } from "node:child_process";
+import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { chromium } from "playwright";
+
+const here = dirname(fileURLToPath(import.meta.url));
+const outDir = join(here, "..", "src", "assets", "screenshots");
+
+/** The Actual Bench instance to photograph. `--serve` starts a private one. */
+let appUrl = (process.env.APP_URL ?? "http://localhost:3999").replace(/\/+$/, "");
+/** Where the demo's connection details come from - no credentials live here. */
+const DEMO_UI = (process.env.DEMO_UI_URL ?? "https://actual-bench-demo.vercel.app").replace(/\/+$/, "");
+
+const VIEWPORT = { width: 1440, height: 900 };
+
+/**
+ * The shot list. `nav` is the sidebar entry to click, which is also how a
+ * reader gets there; `budget` picks which demo to open, and only the pages
+ * making a point about budgeting mode ask for Tracking.
+ *
+ * `instance: true` marks a page that renders the **instance's own metadata** -
+ * its automations, backup destinations, sync flows, exchange rates,
+ * reconciliation sessions - rather than the connected budget. Those show
+ * whatever the instance being photographed has configured, so running this
+ * against somebody's working install captures their backup destinations and
+ * their schedule; the first run of this script did exactly that and the images
+ * had to be destroyed. They are skipped unless `--include-instance` says
+ * otherwise, which is only ever correct against an instance stood up for the
+ * purpose with an empty metadata database.
+ */
+const SHOTS = [
+  { name: "overview", nav: "Overview", url: /\/overview/, budget: "Envelope" },
+  { name: "budget-envelope", nav: "Budget", url: /\/budget-management/, budget: "Envelope" },
+  { name: "budget-tracking", nav: "Budget", url: /\/budget-management/, budget: "Tracking" },
+  { name: "rules", nav: "Rules", url: /\/rules$/, budget: "Envelope" },
+  { name: "rule-diagnostics", nav: "Rule Diagnostics", url: /\/rules\/diagnostics/, budget: "Envelope" },
+  { name: "payee-cleanup", nav: "Payee Cleanup", url: /\/payees\/cleanup/, budget: "Envelope" },
+  { name: "bank-reconciliation", nav: "Bank Reconciliation", url: /\/reconciliation/, budget: "Envelope", instance: true },
+  { name: "backups", nav: "Backups", url: /\/backups/, budget: "Envelope", instance: true },
+  { name: "automations", nav: "Automations", url: /\/automations/, budget: "Envelope", instance: true },
+  { name: "budget-file-sync", nav: "Budget File Sync", url: /\/sync/, budget: "Envelope", instance: true },
+  { name: "fx-rates", nav: "FX Rates", url: /\/fx-rates/, budget: "Envelope", instance: true },
+  { name: "actualql", nav: "ActualQL Queries", url: /\/query/, budget: "Envelope" },
+  { name: "budget-file-health", nav: "Budget File Health", url: /\/budget-diagnostics/, budget: "Envelope" },
+  { name: "data-browser", nav: "Data Browser", url: /\/data-browser/, budget: "Envelope" },
+  { name: "accounts", nav: "Accounts", url: /\/accounts/, budget: "Envelope" },
+  { name: "payees", nav: "Payees", url: /\/payees$/, budget: "Envelope" },
+  { name: "categories", nav: "Categories", url: /\/categories/, budget: "Envelope" },
+  { name: "schedules", nav: "Schedules", url: /\/schedules/, budget: "Envelope" },
+  { name: "tags", nav: "Tags", url: /\/tags/, budget: "Envelope" },
+];
+
+const args = process.argv.slice(2);
+const includeInstance = args.includes("--include-instance");
+const serveOwn = args.includes("--serve");
+const wanted = args.filter((arg) => !arg.startsWith("--"));
+const shots = (wanted.length > 0 ? SHOTS.filter((s) => wanted.includes(s.name)) : SHOTS).filter(
+  (shot) => includeInstance || !shot.instance
+);
+
+/**
+ * Where to point the app, and with what key.
+ *
+ * By default it asks the demo UI, which publishes both to every visitor - so no
+ * credential is committed here. That endpoint sits behind the same bot
+ * checkpoint as the rest of the demo host, though, and the checkpoint does not
+ * always distinguish a script from a browser, so `DEMO_API_URL` and
+ * `DEMO_API_KEY` override it when it will not answer.
+ */
+async function demoConnection() {
+  if (process.env.DEMO_API_URL && process.env.DEMO_API_KEY) {
+    return {
+      baseUrl: process.env.DEMO_API_URL,
+      apiKey: process.env.DEMO_API_KEY,
+      budgets: [
+        { label: "Live Demo - Envelope" },
+        { label: "Live Demo - Tracking" },
+      ],
+    };
+  }
+  const response = await fetch(`${DEMO_UI}/api/demo`);
+  if (!response.ok) {
+    throw new Error(
+      `${DEMO_UI}/api/demo answered ${response.status}. Set DEMO_API_URL and ` +
+        "DEMO_API_KEY to the demo backend instead (both are public)."
+    );
+  }
+  return response.json();
+}
+
+/** Connect the app to a demo budget through the form, as a reader would. */
+async function openBudget(context, demo, mode) {
+  const budget = demo.budgets.find((b) => b.label.toLowerCase().includes(mode.toLowerCase()));
+  if (!budget) throw new Error(`the demo has no ${mode} budget`);
+
+  const page = await context.newPage();
+  await page.goto(`${appUrl}/connect`, { waitUntil: "domcontentloaded" });
+  await page.waitForTimeout(2500);
+
+  // An instance with saved servers shows them first; the form is behind this.
+  const addServer = page.getByRole("button", { name: "Add a server" });
+  if (await addServer.count()) {
+    await addServer.click();
+    await page.waitForTimeout(1000);
+  }
+
+  await page.getByPlaceholder("https://budgetapi.example.com").fill(demo.baseUrl);
+  await page.getByLabel("API Key").fill(demo.apiKey);
+  await page.getByRole("button", { name: "Load budgets" }).click();
+
+  // Two steps, not one: the budget row selects, and the panel's own Connect
+  // button opens it. `exact` matters - every saved connection row on an
+  // established instance also carries the word Connect.
+  const entry = page.getByRole("button", { name: new RegExp(budget.label) });
+  await entry.first().waitFor({ timeout: 60000 });
+  await entry.first().click();
+  await page.getByRole("button", { name: "Connect", exact: true }).click();
+  await page.waitForURL(/\/overview/, { timeout: 60000 });
+  // The first view downloads the budget; everything after it is warm.
+  await page.waitForTimeout(6000);
+  return page;
+}
+
+/**
+ * An instance of our own, and everything it needs to be worth photographing.
+ *
+ * Its own database (empty, thrown away afterwards), its own build directory (so
+ * it can run beside a development server that is already up), and a vault key
+ * (without one the pages carry a banner about unattended access being
+ * unconfigured, which is true of the instance and not of the product).
+ */
+async function startOwnInstance() {
+  const dataDir = await mkdtemp(join(tmpdir(), "bench-shots-"));
+  const port = Number(process.env.SHOT_PORT ?? 3999);
+  const server = spawn("npx", ["next", "dev", "-p", String(port)], {
+    cwd: join(here, "..", ".."),
+    env: {
+      ...process.env,
+      ACTUAL_BENCH_DIST_DIR: ".next-shots",
+      ACTUAL_BENCH_DB_PATH: join(dataDir, "actual-bench.sqlite"),
+      SYNC_VAULT_KEY: process.env.SYNC_VAULT_KEY ?? "documentation-screenshots-vault-key",
+    },
+    stdio: "ignore",
+  });
+
+  // `localhost`, never `127.0.0.1`: Next 16 refuses dev-server infrastructure
+  // from other origins, and the page then renders without ever hydrating - it
+  // looks fine and no button works.
+  const url = `http://localhost:${port}`;
+  const deadline = Date.now() + 120000;
+  while (Date.now() < deadline) {
+    try {
+      const response = await fetch(`${url}/connect`);
+      if (response.ok) return { url, stop: async () => { server.kill("SIGTERM"); await rm(dataDir, { recursive: true, force: true }); } };
+    } catch {
+      // not up yet
+    }
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+  }
+  server.kill("SIGKILL");
+  throw new Error(`the instance did not start on ${url}`);
+}
+
+function runSeeder(appUrl, demo) {
+  return new Promise((resolve, reject) => {
+    const seeder = spawn(process.execPath, [join(here, "seed-screenshot-fixtures.mjs")], {
+      env: { ...process.env, APP_URL: appUrl, DEMO_API_URL: demo.baseUrl, DEMO_API_KEY: demo.apiKey },
+      stdio: "inherit",
+    });
+    seeder.on("exit", (code) => (code === 0 ? resolve() : reject(new Error(`seeding failed (${code})`))));
+  });
+}
+
+async function main() {
+  await mkdir(outDir, { recursive: true });
+  const demo = await demoConnection();
+  // `--serve` is the whole pipeline: an instance of our own, seeded, captured,
+  // torn down. Without it the script photographs whatever APP_URL points at,
+  // which must not be somebody's working install if instance pages are wanted.
+  let own = null;
+  if (serveOwn) {
+    console.log("starting an instance of our own...");
+    own = await startOwnInstance();
+    appUrl = own.url;
+    await runSeeder(appUrl, demo);
+  }
+
+  const browser = await chromium.launch();
+  const context = await browser.newContext({
+    viewport: VIEWPORT,
+    deviceScaleFactor: 2,
+    colorScheme: "light",
+  });
+  // A development build paints its own overlay button over the sidebar, and it
+  // is not part of the product.
+  await context.addInitScript(() => {
+    const style = document.createElement("style");
+    style.textContent = "nextjs-portal, #__next-dev-overlay { display: none !important; }";
+    document.addEventListener("DOMContentLoaded", () => document.head.append(style));
+  });
+
+  const pages = new Map();
+  const failures = [];
+
+  for (const shot of shots) {
+    try {
+      if (!pages.has(shot.budget)) pages.set(shot.budget, await openBudget(context, demo, shot.budget));
+      const page = pages.get(shot.budget);
+
+      const link = page.getByRole("link", { name: shot.nav, exact: true }).first();
+      await link.waitFor({ timeout: 30000 });
+      await link.click();
+      await page.waitForURL(shot.url, { timeout: 30000 });
+      await page.waitForLoadState("networkidle", { timeout: 30000 }).catch(() => {});
+      // Tables and charts settle once their queries resolve. A fixed pause beats
+      // a selector per page, and a screenshot of a spinner is obvious enough to
+      // catch by eye.
+      await page.waitForTimeout(5000);
+
+      await page.screenshot({ path: join(outDir, `${shot.name}.png`) });
+      console.log(`captured ${shot.name}`);
+    } catch (error) {
+      console.log(`FAILED   ${shot.name}: ${error?.message ?? error}`);
+      failures.push(shot.name);
+    }
+  }
+
+  await browser.close();
+  if (own) await own.stop();
+  if (failures.length > 0) {
+    console.log(`\n${failures.length} shot(s) failed: ${failures.join(", ")}`);
+    process.exit(1);
+  }
+  console.log(`\n${shots.length} screenshots written to ${outDir}`);
+}
+
+await main();
