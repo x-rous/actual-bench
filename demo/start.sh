@@ -22,6 +22,17 @@ until wget -qO- http://127.0.0.1:5006/ >/dev/null 2>&1; do
 done
 echo "actual-server is up"
 
+# Open every budget once the REST wrapper is answering. Two reasons, and the
+# second is why it exists: it warms the API's budget cache so the first visitor
+# does not pay for the download, and it puts "can this budget actually be
+# opened?" in the boot log. A backend can list a budget it cannot serve - that is
+# precisely how the Tracking demo stayed broken from one deploy to the next while
+# the Envelope demo worked - and nothing said so until someone clicked it.
+#
+# Never blocks the boot: it runs in the background and --warm always exits 0, so
+# a budget that fails cannot stop the ones that work from being served.
+(node /check-budgets.mjs --warm || true) &
+
 # REST wrapper in the foreground, exposed on 7860.
 cd /usr/src/app
 exec ./entrypoint.sh

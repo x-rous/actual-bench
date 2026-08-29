@@ -1,5 +1,5 @@
 import React from "react";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { DemoButton } from "./DemoButton";
 import { useConnectionStore } from "@/store/connection";
 
@@ -37,15 +37,23 @@ describe("DemoButton", () => {
     jest.restoreAllMocks();
   });
 
-  it("registers both budgets and opens the Envelope demo", async () => {
+  it("offers a button per budget mode, named for the mode rather than the budget", async () => {
     render(<DemoButton />);
 
-    fireEvent.click(
-      await screen.findByRole("button", { name: "Try the live demo" })
-    );
+    // "Live Demo - Envelope" is the right name for a connection and the wrong
+    // one for a button.
+    expect(await screen.findByRole("button", { name: "Envelope demo" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Tracking demo" })).toBeInTheDocument();
+  });
+
+  it("opens the mode that was chosen, and registers both either way", async () => {
+    render(<DemoButton />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Tracking demo" }));
 
     await waitFor(() => {
       const { instances, activeInstanceId } = useConnectionStore.getState();
+      // Both are registered: the other mode stays one budget switch away.
       expect(instances).toHaveLength(2);
       expect(instances).toEqual(
         expect.arrayContaining([
@@ -60,10 +68,60 @@ describe("DemoButton", () => {
         ])
       );
       expect(instances.find((instance) => instance.id === activeInstanceId)).toMatchObject({
-        label: "Live Demo - Envelope",
-        budgetSyncId: "envelope-sync-id",
+        label: "Live Demo - Tracking",
+        budgetSyncId: "tracking-sync-id",
       });
     });
     expect(mockPush).toHaveBeenCalledWith("/overview");
+  });
+
+  it("opens the Envelope demo when that is the one chosen", async () => {
+    render(<DemoButton />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Envelope demo" }));
+
+    await waitFor(() => {
+      const { instances, activeInstanceId } = useConnectionStore.getState();
+      expect(instances.find((instance) => instance.id === activeInstanceId)).toMatchObject({
+        budgetSyncId: "envelope-sync-id",
+      });
+    });
+  });
+
+  it("keeps a budget's own name when it does not carry the demo prefix", async () => {
+    (global.fetch as jest.Mock).mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        baseUrl: "https://demo.example.com",
+        apiKey: "public-demo-key",
+        budgets: [
+          { label: "Household", budgetSyncId: "a" },
+          { label: "Live Demo - Tracking", budgetSyncId: "b" },
+        ],
+      }),
+    });
+
+    render(<DemoButton />);
+
+    expect(await screen.findByRole("button", { name: "Household demo" })).toBeInTheDocument();
+  });
+
+  it("renders nothing when the deployment is not a demo", async () => {
+    // The panel is empty before the answer arrives too, so asserting emptiness
+    // straight after render proves nothing. Hold the response open, wait until
+    // it has actually been asked, then settle it and assert.
+    let answer: (value: { ok: boolean }) => void = () => {};
+    (global.fetch as jest.Mock).mockImplementation(
+      () => new Promise((resolve) => { answer = resolve; })
+    );
+
+    const { container } = render(<DemoButton />);
+    await waitFor(() => expect(global.fetch).toHaveBeenCalledWith("/api/demo"));
+
+    await act(async () => {
+      answer({ ok: false });
+    });
+
+    expect(container).toBeEmptyDOMElement();
   });
 });

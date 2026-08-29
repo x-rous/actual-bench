@@ -32,16 +32,19 @@ visitor ─► Demo UI (Next.js, managed host)
 The UI never talks to the backend from the browser — calls go through the app’s
 own server-side proxy, exactly like a self-hosted deployment.
 
-## What happens when a visitor clicks “Try the live demo”
+## What happens when a visitor starts the demo
 
 1. The connect screen asks the server route **`/api/demo`** whether a demo is
    configured. It answers only when the deployment opts in via demo env vars;
-   otherwise it returns `404` and the button never appears.
-2. On click, the app registers both returned demo-budget connections and drops
-   the visitor into `Live Demo - Envelope`.
-3. The existing top-bar connection menu lists `Live Demo - Envelope` and
-   `Live Demo - Tracking`, so the visitor can switch between equivalent
-   datasets and compare the two budgeting models.
+   otherwise it returns `404` and the demo panel never appears.
+2. The panel offers **one button per budget mode** — `Envelope demo` and
+   `Tracking demo`, named from the labels the route returns. A visitor already
+   budgets one way or the other, and a single button opening Envelope started
+   Tracking users in the wrong model.
+3. Whichever is chosen, the app registers **both** demo-budget connections and
+   opens the chosen one. The top-bar connection menu lists both, so the other
+   mode is one budget switch away and the two equivalent datasets can still be
+   compared.
 4. From there each behaves like any other connection: the server-side proxy
    talks to the demo backend, which serves the selected sample budget.
 
@@ -69,6 +72,47 @@ the same screen.
   **self-resets to a clean state** — visitor edits never persist. This is the
   reset mechanism; there is no separate cleanup job.
 
+## When a budget lists but will not open
+
+The failure mode worth recognising: the backend answers `GET /v1/budgets` with
+both demo budgets, serves one of them perfectly, and returns
+`500 Unknown error while interacting with Actual Api` for **every** request
+against the other. In the UI that surfaces as *"Failed to load budget management
+data. Please check your connection and try again"* on one demo budget only.
+
+A listed budget is not an openable one. That listing merges the sync server's
+files (`state: "remote"`) with the API's own **local cache**, and when this
+happened the broken budget appeared in the cache with **neither a `cloudFileId`
+nor a `groupId`** - so nothing could resolve its Sync ID, and every request for
+it failed:
+
+```json
+{ "id": "…-Envelope-283b5a7", "cloudFileId": "0389217b…", "groupId": "7d243b3e…", "name": "Live Demo - Envelope" }
+{ "id": "…-Tracking-1272172", "name": "…-Tracking-1272172" }
+```
+
+**It was not a stale deploy.** The Space's Dockerfile, `start.sh` and seed were
+byte-identical to this repo, and the seed opens both budgets when tested against
+a local sync server. The cache is filled at *runtime*, by the first request for
+each budget, and a download that fails or is interrupted - two visitors opening
+the same budget at once is enough - leaves a half-written entry that shadows the
+real file for the life of the container. The Envelope budget, opened first and
+more often, never hit it.
+
+Two things follow, and both are now in place:
+
+- **Restarting fixes it.** `start.sh` wipes `/data` on every boot, and the budget
+  cache lives there, so a rebuild or restart of the Space clears the bad entry.
+- **The boot check keeps it from recurring silently.** `check-budgets.mjs` opens
+  every budget once the API is up and prints the result into the Space log. It
+  runs in the background - it has to, since it needs the API it is checking to be
+  serving - so it *narrows* the window in which a visitor triggers the first
+  download rather than closing it. What it reliably does is say so afterwards.
+
+If a budget still fails after a restart, the seed itself is suspect: regenerate
+it (`node demo/generate-seed.mjs`), which validates both budgets before writing
+them, and redeploy.
+
 ## Self-host safety
 
 The demo layer is inert anywhere it isn’t explicitly enabled:
@@ -91,7 +135,10 @@ self-host.
   `main`**. CI and the host build run independently/in parallel.
 - **Demo backend:** deployed **manually and separately** from its own
   `demo/` sources — editing `demo/` in a PR does **not** update the live backend
-  until a maintainer redeploys it.
+  until a maintainer redeploys it. **Verify every backend deploy** with
+  `node demo/check-budgets.mjs --url <space-url> --key <API_KEY>`: it opens each
+  budget and exits non-zero if any cannot be served. The same script runs at
+  container boot, so the Space log answers the question too.
 - **Self-hosted app:** unaffected by either; it ships via release tags.
 
 ## Where it lives in the repo
