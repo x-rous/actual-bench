@@ -69,6 +69,45 @@ the same screen.
   **self-resets to a clean state** — visitor edits never persist. This is the
   reset mechanism; there is no separate cleanup job.
 
+## When a budget lists but will not open
+
+The failure mode worth recognising: the backend answers `GET /v1/budgets` with
+both demo budgets, serves one of them perfectly, and returns
+`500 Unknown error while interacting with Actual Api` for **every** request
+against the other. In the UI that surfaces as *"Failed to load budget management
+data. Please check your connection and try again"* on one demo budget only.
+
+A listed budget is not an openable one. That listing merges the sync server's
+files (`state: "remote"`) with the API's own **local cache**, and when this
+happened the broken budget appeared in the cache with **neither a `cloudFileId`
+nor a `groupId`** - so nothing could resolve its Sync ID, and every request for
+it failed:
+
+```json
+{ "id": "…-Envelope-283b5a7", "cloudFileId": "0389217b…", "groupId": "7d243b3e…", "name": "Live Demo - Envelope" }
+{ "id": "…-Tracking-1272172", "name": "…-Tracking-1272172" }
+```
+
+**It was not a stale deploy.** The Space's Dockerfile, `start.sh` and seed were
+byte-identical to this repo, and the seed opens both budgets when tested against
+a local sync server. The cache is filled at *runtime*, by the first request for
+each budget, and a download that fails or is interrupted - two visitors opening
+the same budget at once is enough - leaves a half-written entry that shadows the
+real file for the life of the container. The Envelope budget, opened first and
+more often, never hit it.
+
+Two things follow, and both are now in place:
+
+- **Restarting fixes it.** `start.sh` wipes `/data` on every boot, and the budget
+  cache lives there, so a rebuild or restart of the Space clears the bad entry.
+- **The boot check keeps it from recurring silently.** `check-budgets.mjs` opens
+  every budget once the API is up, which fills the cache serially before any
+  visitor can race it, and prints the result into the Space log.
+
+If a budget still fails after a restart, the seed itself is suspect: regenerate
+it (`node demo/generate-seed.mjs`), which validates both budgets before writing
+them, and redeploy.
+
 ## Self-host safety
 
 The demo layer is inert anywhere it isn’t explicitly enabled:
@@ -91,7 +130,10 @@ self-host.
   `main`**. CI and the host build run independently/in parallel.
 - **Demo backend:** deployed **manually and separately** from its own
   `demo/` sources — editing `demo/` in a PR does **not** update the live backend
-  until a maintainer redeploys it.
+  until a maintainer redeploys it. **Verify every backend deploy** with
+  `node demo/check-budgets.mjs --url <space-url> --key <API_KEY>`: it opens each
+  budget and exits non-zero if any cannot be served. The same script runs at
+  container boot, so the Space log answers the question too.
 - **Self-hosted app:** unaffected by either; it ships via release tags.
 
 ## Where it lives in the repo

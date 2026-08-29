@@ -10,6 +10,7 @@ RUN apk add --no-cache python3 make g++ \
 COPY seed-data /seed-data
 
 COPY start.sh /start.sh
+COPY check-budgets.mjs /check-budgets.mjs
 RUN chmod +x /start.sh
 
 # REST wrapper listens on Hugging Face's port; it talks to the sync server on
