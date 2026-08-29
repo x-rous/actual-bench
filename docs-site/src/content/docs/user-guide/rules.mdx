@@ -1,18 +1,19 @@
 ---
 title: Rules
-description: Build, edit, merge, and import Actual Budget rules in Actual Bench — a full condition/action builder with resolved entity names, Handlebars templates, Excel-style formulas, duplicate merging, and CSV round-trip.
+description: Build, edit, merge, and import Actual Budget rules in Actual Bench - a full condition/action builder with resolved entity names, Handlebars templates, Excel-style formulas, duplicate merging, and CSV round-trip.
 sidebar:
   order: 8
 ---
 
-Use **Rules** when your automation has grown beyond a few simple categorization rules: you need
-readable entity references, advanced actions, bulk import/export, or a safe way to consolidate
-duplicates. Actual still executes the rules; Actual Bench makes the rule set easier to build and audit.
+**Rules** is the whole rule set in one place, with every reference shown as the payee, category or
+account it actually names rather than an id. Come here when automation has outgrown a few
+categorization rules: advanced actions, bulk import and export, and a safe way to consolidate
+duplicates. Actual still executes the rules; Bench makes the set easier to build and audit.
+
+Open it from **Data Management → Rules** (`/rules`).
 
 **Write model:** stage → review → **Save**. [Rule Diagnostics](../rule-diagnostics/) is read-only until
 you explicitly open or merge a rule.
-
-Open **Rules** from the **Data Management** sidebar section.
 
 ## Start with the job you have
 
@@ -22,12 +23,12 @@ Open **Rules** from the **Data Management** sidebar section.
 
 ## Why use Actual Bench for rules?
 
-- **Resolved entity names everywhere** — payees, categories, and accounts show as readable chips, and
+- **Resolved entity names everywhere** - payees, categories, and accounts show as readable chips, and
   search matches them by name, so you never hunt through raw IDs.
 - **Handlebars templates and Excel-style formulas** with dedicated editor affordances.
 - **Bulk-merge duplicate and near-duplicate rules** into one.
 - **CSV import and export** of your entire rule set for bulk edits and backup.
-- **A read-only linter** — [Rule Diagnostics](../rule-diagnostics/) — that flags missing references,
+- **A read-only linter** - [Rule Diagnostics](../rule-diagnostics/) - that flags missing references,
   shadowed rules, duplicates, and more.
 
 ## What rules do
@@ -61,7 +62,7 @@ prompts for confirmation.
 - Operators include `is`, `is not`, `contains`, `matches`, `lt`, `lte`, `gt`, `gte`, and `oneOf`, among
   others. The `matches` operator shows a regex syntax hint.
 - **Entity-reference values** (payee, category, account) show as blue chips; plain string values show as
-  green chips — so you can tell an ID reference from literal text at a glance.
+  green chips - so you can tell an ID reference from literal text at a glance.
 
 ## Add actions
 
@@ -83,7 +84,7 @@ start with `=`. Template and formula modes are mutually exclusive per action row
 
 - Duplicate a rule with one click.
 - Filter the list by stage, payee, or category.
-- **Search resolves entity names** — searching "Groceries" finds rules whose `oneOf` condition
+- **Search resolves entity names** - searching "Groceries" finds rules whose `oneOf` condition
   references that payee or category by ID. Resolved names are shown throughout (no raw IDs).
 - Links from the Payees and Categories pages filter the rules list to that entity automatically.
 
@@ -106,7 +107,7 @@ page.
 
 ## Import and export
 
-Rules import/export uses a long CSV format — one condition or action per row, grouped by a `rule_id`.
+Rules import/export uses a long CSV format - one condition or action per row, grouped by a `rule_id`.
 Key columns: `rule_id`, `stage`, `conditions_op`, `row_type` (`condition`/`action`), `field`, `op`, and
 `value` (use `|` to separate multi-value `oneOf` values). Formula values are exported with a leading
 `'` so spreadsheets don't evaluate them; the prefix is stripped on re-import.
@@ -115,11 +116,11 @@ Key columns: `rule_id`, `stage`, `conditions_op`, `row_type` (`condition`/`actio
 
 A few practical patterns (use your own payees and categories):
 
-- **Categorize by payee** — condition `Payee is "Fresh Market"`, action `set category "Groceries"`.
-- **Normalize imported text** — a `pre`-stage template action on `payee_name`:
+- **Categorize by payee** - condition `Payee is "Fresh Market"`, action `set category "Groceries"`.
+- **Normalize imported text** - a `pre`-stage template action on `payee_name`:
   `{{regex imported_payee 'SQ \*' ''}}`.
-- **Fall back to imported payee** — a formula on `notes`: `=IF(ISBLANK(notes), imported_payee, notes)`.
-- **Route by amount** — condition `amount gt 100000`, action `set category "Large Purchases"`.
+- **Fall back to imported payee** - a formula on `notes`: `=IF(ISBLANK(notes), imported_payee, notes)`.
+- **Route by amount** - condition `amount gt 100000`, action `set category "Large Purchases"`.
 
 ## Safety and limitations
 
@@ -128,15 +129,15 @@ A few practical patterns (use your own payees and categories):
 
 ## Troubleshooting
 
-- **A rule doesn't run** — check its stage and whether an earlier-stage rule already changed the field.
-- **AND/OR confusion** — verify `conditions_op`; AND requires all conditions, OR any.
-- **A regex isn't matching** — check the `matches` syntax hint.
-- **A template/formula won't save** — formulas must start with `=`; template and formula modes are
+- **A rule doesn't run** - check its stage and whether an earlier-stage rule already changed the field.
+- **AND/OR confusion** - verify `conditions_op`; AND requires all conditions, OR any.
+- **A regex isn't matching** - check the `matches` syntax hint.
+- **A template/formula won't save** - formulas must start with `=`; template and formula modes are
   mutually exclusive per row.
-- **A schedule-linked rule can't be edited** — manage it from the Schedules page.
+- **A schedule-linked rule can't be edited** - manage it from the Schedules page.
 
 ## Related pages
 
-- [Rule Diagnostics](../rule-diagnostics/) — lint your rule set for problems
+- [Rule Diagnostics](../rule-diagnostics/) - lint your rule set for problems
 - [Schedules](../schedules/)
 - [ActualQL Queries](../actualql/)

@@ -1,26 +1,29 @@
 ---
 title: Schedules
-description: Create and manage recurring and one-time schedules in Actual Bench — recurrence patterns, amount modes, weekend adjustment, end conditions, linked rules, CSV import/export, and impact-aware deletion.
+description: Create and manage recurring and one-time schedules in Actual Bench - recurrence patterns, amount modes, weekend adjustment, end conditions, linked rules, CSV import/export, and impact-aware deletion.
 sidebar:
   order: 6
 ---
 
-Use **Schedules** when you need to create or revise several recurring plans, move them through CSV, or
-understand the linked rule and transaction impact before deleting one. Actual Bench adds bulk setup,
-richer recurrence summaries, and staged review around Actual's schedule model.
+**Schedules** lists a budget's recurring plans - what recurs, when it next falls due, and what it is
+linked to. Come here to create or revise several at once, move them through CSV, or see a schedule's
+linked rule and transaction count before deleting it.
+
+Open it from **Data Management → Schedules** (`/schedules`).
 
 **Write model:** stage → review → **Save**.
 
-Open **Schedules** from the **Data Management** section of the sidebar.
+It shares the [editing model](../../getting-started/editing-and-saving/) every Data Management page
+uses.
 
 ## What you get beyond Actual Budget
 
 - **CSV import and export** of schedules for bulk setup and backup.
-- **Impact-aware deletion** — every delete shows the schedule's linked-rule status, auto-post flag, and
+- **Impact-aware deletion** - every delete shows the schedule's linked-rule status, auto-post flag, and
   transaction count first.
 - **A richer recurrence summary** that infers weekday/day anchors from the start date.
 - **An "Edit as Rule" bridge** to open a schedule's server-managed rule directly in the Rules editor.
-- **Staged review** — set up or adjust several schedules and review them before they touch your budget.
+- **Staged review** - set up or adjust several schedules and review them before they touch your budget.
 
 ## Create a schedule
 
@@ -38,7 +41,7 @@ Schedule amounts always use one of three modes:
 
 - **Exact** (`is`)
 - **Approximate** (`is approx.`)
-- **Range** (`is between`) — with a low and high amount
+- **Range** (`is between`) - with a low and high amount
 
 Missing or null server amounts are treated as an approximate zero.
 
@@ -52,18 +55,18 @@ Missing or null server amounts are treated as an approximate zero.
 
 ## Weekend adjustment and end conditions
 
-- **Weekend adjustment** — when a scheduled date lands on a weekend, move it to the nearest **Friday
+- **Weekend adjustment** - when a scheduled date lands on a weekend, move it to the nearest **Friday
   before** or **Monday after**.
-- **End conditions** — run forever, end after **N occurrences**, or end **on a date**.
+- **End conditions** - run forever, end after **N occurrences**, or end **on a date**.
 
 ## Auto-add and linked rules
 
-- **Auto-add** — when enabled, Actual Budget automatically posts a transaction when the schedule is due.
+- **Auto-add** - when enabled, Actual Budget automatically posts a transaction when the schedule is due.
 - Every schedule has an underlying **linked rule** managed by the server. Open it in the Rules editor
   via **Edit as Rule** in the drawer.
 
 :::note[Schedule-generated rules are managed here]
-Rules linked to schedules appear read-only on the [Rules](../rules/) page — the `link-schedule` action
+Rules linked to schedules appear read-only on the [Rules](../rules/) page - the `link-schedule` action
 shows the resolved schedule name and cannot be created or edited manually. Manage that behavior from
 the Schedules page instead.
 :::
@@ -87,13 +90,13 @@ UI, because it does not represent a reliable paid/completed state. Imported sche
 
 ## Common problems
 
-- **A schedule's rule looks read-only** — schedule-linked rules are managed here; use **Edit as Rule**
+- **A schedule's rule looks read-only** - schedule-linked rules are managed here; use **Edit as Rule**
   to open the editable parts.
-- **The recurrence summary looks wrong** — it is inferred from the start date; check the day/weekday
+- **The recurrence summary looks wrong** - it is inferred from the start date; check the day/weekday
   anchor and interval.
 
 ## Related pages
 
-- [Rules](../rules/) — schedule-linked rules
+- [Rules](../rules/) - schedule-linked rules
 - [Tags](../tags/)
 - [Core Concepts](../../getting-started/core-concepts/)

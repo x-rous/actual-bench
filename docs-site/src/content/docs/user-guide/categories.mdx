@@ -1,24 +1,26 @@
 ---
 title: Categories
-description: Manage Actual Budget category groups and categories in Actual Bench — import/export the whole hierarchy as CSV, bulk visibility, cascade-aware group deletion, rule linkage, and notes on groups.
+description: Manage Actual Budget category groups and categories in Actual Bench - import/export the whole hierarchy as CSV, bulk visibility, cascade-aware group deletion, rule linkage, and notes on groups.
 sidebar:
   order: 5
 ---
 
-Use **Categories** when you are designing a new category structure, importing one from a spreadsheet,
-changing visibility in bulk, or checking the cascade before deleting a group. Actual Bench makes the
-whole hierarchy visible and reviewable at once.
+**Categories** shows a budget's whole category hierarchy - groups and the categories inside them - and
+lets you edit all of it at once. Come here to design a structure, import one from a spreadsheet, change
+visibility in bulk, or see what a group deletion would cascade into before you do it.
+
+Open it from **Data Management → Categories** (`/categories`).
 
 **Write model:** stage → review → **Save**. Category and group notes save immediately.
 
-It shares the [shared editing model](../../getting-started/editing-and-saving/). Open **Categories** from **Data
-Management**.
+It shares the [editing model](../../getting-started/editing-and-saving/) every Data Management page
+uses.
 
 ## What you get beyond Actual Budget
 
-- **Import/export the entire group hierarchy as CSV** — seed a whole budget's category structure from
+- **Import/export the entire group hierarchy as CSV** - seed a whole budget's category structure from
   a spreadsheet in one pass, or export it for backup.
-- **Cascade-aware group deletion** — deleting a group shows the child-category count and aggregated
+- **Cascade-aware group deletion** - deleting a group shows the child-category count and aggregated
   transactions across all children, with a cascade warning, before anything is staged.
 - **See which rules reference a category** and jump straight to them.
 - **Notes on category groups**, not just categories.
@@ -48,7 +50,7 @@ Filter by name, type (income / expense / all), and visibility (visible / hidden 
 
 ## Notes
 
-Each category and group row has a note button. Read, add, edit, or clear notes inline — they **save
+Each category and group row has a note button. Read, add, edit, or clear notes inline - they **save
 immediately**, independent of staged category edits.
 
 ## Import and export
@@ -60,13 +62,13 @@ Export or import the full group hierarchy as CSV (staged before saving). CSV col
 
 ## Common problems
 
-- **"Can't move an income category"** — income categories are locked to the income group.
-- **A group delete warns loudly** — it cascades to child categories; read the aggregated impact first.
-- **Imported categories landed ungrouped** — check that each group row appears above its categories in
+- **"Can't move an income category"** - income categories are locked to the income group.
+- **A group delete warns loudly** - it cascades to child categories; read the aggregated impact first.
+- **Imported categories landed ungrouped** - check that each group row appears above its categories in
   the CSV.
 
 ## Related pages
 
 - [Editing, review and save](../../getting-started/editing-and-saving/) - the shared editing model
-- [Budget](../budget-management/) — budget the categories you create here
-- [Rules](../rules/) — how rules reference categories
+- [Budget](../budget-management/) - budget the categories you create here
+- [Rules](../rules/) - how rules reference categories

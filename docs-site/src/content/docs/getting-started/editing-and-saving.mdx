@@ -17,15 +17,15 @@ cleaning up and auditing in bulk, with a review before anything is written.
 
 ## What the bulk model adds
 
-- **Bulk everything** — select many rows and act on them at once (delete, close/reopen, merge,
+- **Bulk everything** - select many rows and act on them at once (delete, close/reopen, merge,
   visibility), or paste rows straight from Excel / Google Sheets to create many records in one go.
-- **CSV import and export** — seed a fresh budget from a spreadsheet, or export for backup and
+- **CSV import and export** - seed a fresh budget from a spreadsheet, or export for backup and
   offline editing.
-- **Usage & impact visibility** — see how many rules and transactions reference a record, and jump
+- **Usage & impact visibility** - see how many rules and transactions reference a record, and jump
   straight to them, *before* you change or delete anything.
-- **Staged review** — creates, edits, and deletes are collected as drafts and only written when you
+- **Staged review** - creates, edits, and deletes are collected as drafts and only written when you
   **Save**, so you can review a whole cleanup pass before it touches your budget.
-- **Duplicate detection** — name clashes are flagged as you work.
+- **Duplicate detection** - name clashes are flagged as you work.
 
 ## Start with one cleanup pass
 
@@ -38,8 +38,8 @@ cleaning up and auditing in bulk, with a review before anything is written.
 For moving an entire structure in or out, use [Bundle Export / Import](../bundle-export-import/)
 instead of repeating that flow page by page.
 
-If the problem is payees created by bank imports — one shop appearing five times because the text
-carries a date or a card number — start at [Payee Cleanup](../../user-guide/payee-cleanup/) instead. It finds the
+If the problem is payees created by bank imports - one shop appearing five times because the text
+carries a date or a card number - start at [Payee Cleanup](../../user-guide/payee-cleanup/) instead. It finds the
 groups for you, and finds the payees whose imports will stop resolving to them once you have tidied
 the names.
 
@@ -47,15 +47,15 @@ the names.
 
 Every master-data page behaves the same way:
 
-- **Inline editing** — double-click, `Enter`, or `F2` to edit a cell; `Escape` cancels.
-- **Staged rows** — new, edited, and deleted rows are visually marked and only written on **Save**.
+- **Inline editing** - double-click, `Enter`, or `F2` to edit a cell; `Escape` cancels.
+- **Staged rows** - new, edited, and deleted rows are visually marked and only written on **Save**.
   See [Work safely](../core-concepts/) for the full staging model.
-- **Bulk selection** — select rows with checkboxes and apply bulk actions. System-managed rows show a
+- **Bulk selection** - select rows with checkboxes and apply bulk actions. System-managed rows show a
   disabled checkbox with a tooltip explaining why.
-- **Filters and search** — filter and search each page; your filters persist per page and reset when
+- **Filters and search** - filter and search each page; your filters persist per page and reset when
   you switch connections.
-- **Duplicate warnings** — a visual warning appears when a name already exists.
-- **Impact-aware deletion** — destructive actions confirm first, showing transaction counts, rule
+- **Duplicate warnings** - a visual warning appears when a name already exists.
+- **Impact-aware deletion** - destructive actions confirm first, showing transaction counts, rule
   references, balances, or child counts where available.
 
 ## Quick Create
@@ -90,7 +90,7 @@ To move **all** master-data types at once (a whole-budget snapshot or seed), use
 
 ## The Usage Inspector
 
-The **Info** button on any row opens a drawer with a complete usage profile — *without* starting a
+The **Info** button on any row opens a drawer with a complete usage profile - *without* starting a
 delete:
 
 - A stats row: **Rules** (always), **Transactions** (except tags), **Balance** (accounts, amber when
@@ -111,7 +111,7 @@ Nothing is written to your Actual Server until you **Save**; **Discard** reverts
 state.
 
 :::caution[Notes are the exception]
-Note edits on accounts, categories, and category groups **save immediately** — they are not part of
+Note edits on accounts, categories, and category groups **save immediately** - they are not part of
 the staged **Save** and are not reverted by **Discard**. See
 [Work safely](../core-concepts/#immediate-save-exceptions).
 :::

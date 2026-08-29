@@ -1,23 +1,26 @@
 ---
 title: Bank Sync
-description: Schedule Actual's own bank sync from Actual Bench — pull new transactions with nothing open, per-account results, and honest reporting of what each bank returned.
+description: Schedule Actual's own bank sync from Actual Bench - pull new transactions with nothing open, per-account results, and honest reporting of what each bank returned.
 sidebar:
   order: 14
 ---
 
-Actual connects to your bank. **Actual Bench decides when that sync runs** — on a schedule, with
-nothing open — and tells you what each account came back with.
+Actual connects to your bank. **Actual Bench decides when that sync runs** - on a schedule, with
+nothing open - and tells you what each account came back with.
 
 That division matters, and it is the whole feature: Bench never talks to your bank, holds no bank
 credentials, and adds no provider. It asks Actual to do the thing Actual already does, at a time you
 chose, and then reports honestly.
 
-Set one up from **Automations → New automation → Bank sync** (`/automations`).
+Set one up from **Tools → Automations → New automation → Bank sync** (`/automations`).
+
+**Write model:** Actual writes the transactions, as it does for any sync. Bench writes only the record
+of the run and what each account returned.
 
 ## What you need
 
 - Accounts **linked to a bank in Actual** (SimpleFIN or GoCardless). Bench cannot create those links.
-- **HTTP API Server mode**, and the budget [enrolled for unattended access](../automations/#unattended-access) —
+- **HTTP API Server mode**, and the budget [enrolled for unattended access](../automations/#unattended-access) - 
   a scheduled sync runs with your browser closed, so the server needs credentials of its own.
 
 A Direct (browser) connection can pull on demand while Bench is open, but it can never run
@@ -29,10 +32,10 @@ run.
 The dialog shows **which accounts will actually sync** before you commit to anything:
 
 - Accounts linked to a bank are listed with when each last synced.
-- Accounts with no bank link are listed too, marked **not connected to a bank — skipped**.
+- Accounts with no bank link are listed too, marked **not connected to a bank - skipped**.
 
 That list is the point. Without it, scheduling can only assert "every linked account is synced" and
-hope — and someone whose accounts are all unlinked would create an automation that does nothing,
+hope - and someone whose accounts are all unlinked would create an automation that does nothing,
 forever, without a hint as to why. If none are linked, Bench refuses to schedule the run rather than
 letting you create it.
 
@@ -46,7 +49,7 @@ Each account is synced **separately**, so one bank being down does not stop the 
 | Result | Meaning |
 |---|---|
 | **Synced** | Actual accepted the pull for this account |
-| **Failed** | This account's provider or link failed — the reason is on the run |
+| **Failed** | This account's provider or link failed - the reason is on the run |
 | **Skipped** | The account is closed, or not linked to a bank |
 
 A run where some accounts failed is reported as **partial**. It does not count against the
@@ -56,7 +59,7 @@ whole automation over it would be wrong. A run where *every* account failed does
 :::note[Transaction counts]
 Bench reports a number of imported transactions only where it could measure one. In Direct mode the
 pull finishes before the call returns, so a count is real. Over the HTTP API, the server answers that
-the sync has *started* — so Bench records the run as accepted and does not invent a figure it cannot
+the sync has *started* - so Bench records the run as accepted and does not invent a figure it cannot
 observe.
 :::
 

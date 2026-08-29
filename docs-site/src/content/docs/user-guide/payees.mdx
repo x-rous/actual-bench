@@ -1,18 +1,20 @@
 ---
 title: Payees
-description: Manage and clean up Actual Budget payees in Actual Bench — bulk-merge duplicates, CSV import/export, rule linkage, transfer-payee handling, and impact-aware deletion.
+description: Manage and clean up Actual Budget payees in Actual Bench - bulk-merge duplicates, CSV import/export, rule linkage, transfer-payee handling, and impact-aware deletion.
 sidebar:
   order: 4
 ---
 
-Use **Payees** when imports have created duplicate names, you need to merge several payees safely, or
-you want to see transaction and rule impact before deleting one. Actual Bench turns that cleanup into
-one staged, reviewable pass instead of a sequence of immediate edits.
+**Payees** is the full list of who a budget pays and is paid by, editable in bulk. Come here to merge
+duplicates safely, rename a batch of imported names, or see how many transactions and rules depend on a
+payee before removing it - as one staged pass you review, rather than a sequence of immediate edits.
+
+Open it from **Data Management → Payees** (`/payees`).
 
 **Write model:** stage → review → **Save**.
 
-It shares the [shared editing model](../../getting-started/editing-and-saving/). Open **Payees** from **Data
-Management**.
+It shares the [editing model](../../getting-started/editing-and-saving/) every Data Management page
+uses.
 
 :::tip[Merging a lot of import duplicates?]
 [Payee Cleanup](../payee-cleanup/) finds the groups for you, shows what each merge would change, and
@@ -21,21 +23,21 @@ can add a rule so the duplicates stop coming back.
 
 ## What you get beyond Actual Budget
 
-- **Bulk-merge duplicate payees** — collapse several payees into one, staged and undoable, before it
+- **Bulk-merge duplicate payees** - collapse several payees into one, staged and undoable, before it
   touches your budget.
-- **[Payee Cleanup](../payee-cleanup/)** finds those duplicates for you, and — once a rename or merge
-  has moved a payee's name away from the text its bank sends — finds the payees whose imports will no
+- **[Payee Cleanup](../payee-cleanup/)** finds those duplicates for you, and - once a rename or merge
+  has moved a payee's name away from the text its bank sends - finds the payees whose imports will no
   longer resolve to them.
-- **Create and import in bulk** — inline creation plus CSV import/export.
+- **Create and import in bulk** - inline creation plus CSV import/export.
 - **See which rules reference a payee** and jump straight to them.
-- **Impact-aware deletion** — every delete shows the payee's transaction and rule-reference counts.
-- **Clear transfer-payee handling** — system-managed transfer payees are shown as a distinct type and
+- **Impact-aware deletion** - every delete shows the payee's transaction and rule-reference counts.
+- **Clear transfer-payee handling** - system-managed transfer payees are shown as a distinct type and
   protected from accidental edits.
 
 ## Regular and transfer payees
 
 Transfer payees are auto-generated for inter-account transfers. They appear as a separate, filterable
-type and cannot be edited or bulk-deleted like regular payees — their selection checkbox is disabled to
+type and cannot be edited or bulk-deleted like regular payees - their selection checkbox is disabled to
 make that explicit.
 
 ## Create, rename, and delete
@@ -65,11 +67,11 @@ Export payees to CSV or import them (staged before saving). CSV columns:
 
 ## Common problems
 
-- **"Can't select a transfer payee"** — transfer payees are system-managed and not bulk-editable.
-- **A merge picked the wrong survivor** — the target is the *first* payee you checked, not the
+- **"Can't select a transfer payee"** - transfer payees are system-managed and not bulk-editable.
+- **A merge picked the wrong survivor** - the target is the *first* payee you checked, not the
   top-sorted row; re-select in the intended order.
 
 ## Related pages
 
 - [Editing, review and save](../../getting-started/editing-and-saving/) - the shared editing model
-- [Rules](../rules/) — how rules reference payees
+- [Rules](../rules/) - how rules reference payees

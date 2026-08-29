@@ -1,13 +1,15 @@
 ---
 title: Overview
-description: The Budget Overview is Actual Bench's landing page after you connect — a live snapshot of your budget, the navigation hub to every workspace, and the entry point for whole-budget export/import.
+description: The Budget Overview is Actual Bench's landing page after you connect - a live snapshot of your budget, the navigation hub to every workspace, and the entry point for whole-budget export/import.
 sidebar:
   order: 6
 ---
 
-After you connect, **Budget Overview** is the quickest place to confirm that you opened the intended
-budget and choose your next job. It is useful for orientation, whole-structure export/import, and
-jumping to another workspace; it is not an editing surface.
+**Overview** is where Actual Bench lands after you connect: a live snapshot of the budget you opened,
+and the way through to everything else. Use it to confirm you are in the intended budget and choose
+your next job. It is not an editing surface.
+
+Open it from **Overview**, at the top of the sidebar (`/overview`).
 
 **Write model:** read-only, except for the explicit Bundle Import workflow it opens. Counts reflect
 saved server state, not unsaved drafts.
@@ -16,7 +18,7 @@ saved server state, not unsaved drafts.
 
 - **A live snapshot row** with saved-state counts for **transactions, accounts, payees, categories,
   schedules, and rules**.
-- **Derived context** — the **Budget Mode** (`Envelope`, `Tracking`, or `Unidentified`) and
+- **Derived context** - the **Budget Mode** (`Envelope`, `Tracking`, or `Unidentified`) and
   **Budgeting since**, inferred from your oldest transaction date.
 - **A manual Refresh** with a loading state and a last-refreshed indicator. Snapshot values switch to
   loading placeholders immediately when you switch budgets or refresh.
@@ -39,13 +41,13 @@ The Overview links out to the core workspaces so it can serve as your starting p
 ## Whole-budget export and import
 
 The Overview page header hosts the **Export** and **Import** buttons for
-[Bundle Export / Import](../bundle-export-import/) — a one-step way to move *all* of a
+[Bundle Export / Import](../bundle-export-import/) - a one-step way to move *all* of a
 budget's master data (accounts, payees, categories, tags, schedules, and rules) in or out as a single
 ZIP. Because the Overview intentionally skips preloading, the export dialog loads entity data on demand,
 so it always reflects current server state.
 
 ## Related pages
 
-- [Connect to Actual Budget](../connecting/) — how you get here
+- [Connect to Actual Budget](../connecting/) - how you get here
 - [Bundle Export / Import](../bundle-export-import/)
 - [Budget File Health](../../user-guide/budget-file-health/) · [Data Browser](../../user-guide/data-browser/)

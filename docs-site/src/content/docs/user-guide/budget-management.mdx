@@ -5,22 +5,20 @@ sidebar:
   order: 1
 ---
 
-Use **Budget Management** when you need to understand the year as a whole, not only work inside a
-compact month-to-month budget view. Actual Budget can display up to six months and shows Budget,
-Spent, and Balance together. That is useful for everyday budgeting, but it can be difficult to scan
-one measure across an entire year.
+**Budget** shows twelve consecutive months at once, with the whole grid focused on one measure at a
+time - **Budget**, **Actuals** or **Balance**. Come here to read or revise a year as a whole rather
+than work inside a compact month-to-month view.
 
-Actual Bench shows 12 consecutive months and lets the whole grid focus on **Budget**, **Actuals**, or
-**Balance**. The separation is especially valuable for Tracking budgets, where seeing the annual plan,
-actual activity, running balance, and model-specific variance in context matters more than envelope
-availability. Spreadsheet-style selection, paste, fill, and staged editing are available when you want
-to revise the plan—not just inspect it.
+Actual Budget shows up to six months with Budget, Spent and Balance together, which is right for
+everyday budgeting and hard to scan across a year. Separating the measures matters most for Tracking
+budgets, where the annual plan, actual activity, running balance and model-specific variance matter
+more than envelope availability. Spreadsheet-style selection, paste, fill and staged editing are there
+when you want to change the plan, not only inspect it.
+
+Open it from **Data Management → Budget** (`/budget-management`).
 
 **Write model:** budget amounts, holds, and transfers are staged until **Save**. Notes and carryover
 toggles are explicit immediate writes.
-
-Open it from the **Budget** item in the sidebar (under **Data Management**), or go to
-`/budget-management`.
 
 ## Get the full-year view
 
@@ -46,7 +44,7 @@ month in a 12-month window:
 - **Group rows** show per-month aggregate totals; collapsing a group hides its categories but keeps the
   group total.
 - A **Budget Details** panel on the right shows details for the current selection and your staged
-  changes, including a **progress meter** that visualizes where you stand — in envelope mode it fills
+  changes, including a **progress meter** that visualizes where you stand - in envelope mode it fills
   toward the available balance (`$X left`, or red when overspent); in tracking mode it fills spent-to-date
   against budget-to-date (`Under/Over budget by $X`), and for tracking **income** it shows received-to-date
   against planned income-to-date. It appears for expense (and tracking-income) selections in every scope
@@ -60,34 +58,34 @@ panel to whichever your budget uses (shown in the mode badge).
 - **Envelope** budgeting allocates the real money you have into category "envelopes". Money you haven't
   assigned yet is **To Budget**; over-assigning shows as **Overbudget**. Each category keeps a running
   **Balance** that rolls forward month to month, so unspent budget carries over and overspending is
-  carried against the next month. Income is counted as **received** — it is never budgeted, so income
+  carried against the next month. Income is counted as **received** - it is never budgeted, so income
   rows are Received-only and can't be edited in the grid.
 - **Tracking** budgeting compares a plan against what actually happened. Its headline is **Savings**
   (income minus expenses): a live **Projected Savings** for the current and future months, and **Saved**
-  or **Overspent** for closed months. Tracking keeps two numbers that envelope budgeting blends — the
+  or **Overspent** for closed months. Tracking keeps two numbers that envelope budgeting blends - the
   spreadsheet **Balance** (which can include prior carryover) and an independently calculated
   **Variance** (this period's budget minus its actual activity). Hidden categories are excluded from
   Tracking's plan totals; in envelope mode they stay financially active.
 
-The details panel leads with each model's own KPI — To Budget / Overbudget for envelope, Savings for
-tracking — and never mixes the two. Totals come from the budget's authoritative summary, so they don't
+The details panel leads with each model's own KPI - To Budget / Overbudget for envelope, Savings for
+tracking - and never mixes the two. Totals come from the budget's authoritative summary, so they don't
 change when you hide categories or collapse groups.
 
 ## Choose Budget, Actuals, or Balance
 
 Use the cell-view toggle in the toolbar (also the `V` key) to switch what every month cell displays:
 
-- **Budget** — the budgeted amount (expenses are shown signed-negative; envelope income has no budget).
-- **Actuals** — actual activity: **spent** for expenses, **received** for income.
-- **Balance** — the running balance.
+- **Budget** - the budgeted amount (expenses are shown signed-negative; envelope income has no budget).
+- **Actuals** - actual activity: **spent** for expenses, **received** for income.
+- **Balance** - the running balance.
 
 Labels follow the row's side and mode: an income row's activity reads *Received*, and an envelope income
 row is always Received-only regardless of the toggle.
 
 ### See spending at a glance
 
-In the **Budget** view, a thin **spending bar** under each editable expense cell — and under each
-group-total cell — shows how much of that month's envelope you've spent — filling green as you spend,
+In the **Budget** view, a thin **spending bar** under each editable expense cell - and under each
+group-total cell - shows how much of that month's envelope you've spent - filling green as you spend,
 amber as you approach the limit, and adding a red segment when you go over. A cell you spent from without
 funding shows a distinct red bar. The exact spent and balance numbers stay in the cell's hover tooltip and
 the details panel. Turn the bars off or on with the **Spending Bars** toggle in the toolbar (on by
@@ -102,7 +100,7 @@ default); income rows never show a bar.
 
 - The workspace opens on the current calendar year, scrolled to the **current month**, which is
   highlighted so it's easy to find. A small marker on that column shows how far through the month
-  today is (e.g. day 12 of 31), so a spending bar reads fairly — 80% spent on the 5th is not the same
+  today is (e.g. day 12 of 31), so a spending bar reads fairly - 80% spent on the 5th is not the same
   as on the 25th.
 - The focused cell's **month header and category label are softly highlighted** (a crosshair on the
   axes), making it easy to trace which category and month a cell belongs to without cluttering the grid.
@@ -119,7 +117,7 @@ default); income rows never show a bar.
 ## Edit one budget cell
 
 1. Select a cell and press `Enter`, `F2`, or start typing (a digit, `+`, `-`, `.`, or `(`).
-2. Type an amount **or an arithmetic expression** — `+`, `-`, `*`, `/`, and parentheses are supported
+2. Type an amount **or an arithmetic expression** - `+`, `-`, `*`, `/`, and parentheses are supported
    (for example `1200/12`).
 3. Press `Enter` to commit (and move down), `Tab` to commit sideways, or `Escape` to cancel.
 
@@ -147,11 +145,11 @@ In envelope mode, income categories are not editable in the grid.
 
 With a range selected:
 
-- `Ctrl/Cmd+Enter` — fill the whole selection with the anchor cell's value.
-- `Ctrl/Cmd+D` — fill down.
-- `Ctrl/Cmd+R` — fill right.
-- `Alt+L` — fill each row with its previous-month value.
-- `Alt+A` — fill each row with its 3-month average.
+- `Ctrl/Cmd+Enter` - fill the whole selection with the anchor cell's value.
+- `Ctrl/Cmd+D` - fill down.
+- `Ctrl/Cmd+R` - fill right.
+- `Alt+L` - fill each row with its previous-month value.
+- `Alt+A` - fill each row with its 3-month average.
 
 ## Right-click bulk actions
 
@@ -184,7 +182,7 @@ reports its result immediately.
 
 ## Use notes
 
-The details panel has an editable **Note** section for the current selection — a category, group,
+The details panel has an editable **Note** section for the current selection - a category, group,
 category × month cell, or a whole budget month (selected from its column header).
 
 :::caution[Notes save immediately]
@@ -194,9 +192,9 @@ button. See [Core Concepts](../../getting-started/core-concepts/#immediate-save-
 
 ## Envelope budget actions
 
-- **Hold for next month** — each *To Budget* cell shows the held amount; the toggle opens a dialog to
+- **Hold for next month** - each *To Budget* cell shows the held amount; the toggle opens a dialog to
   stage a hold (or clears an existing one). Holds are staged and saved with your other changes.
-- **Cover Overspending / Transfer to Another Category** — stage a category-to-category transfer; both
+- **Cover Overspending / Transfer to Another Category** - stage a category-to-category transfer; both
   legs stage together as one undo step and post atomically on save.
 
 Holds and transfers are envelope-mode only.
@@ -239,14 +237,14 @@ you're typing in a cell.
 
 ## Troubleshooting
 
-- **Paste didn't apply** — make sure a cell is selected first; paste fills from the top-left cell.
-- **A value isn't visible** — check the cell-view toggle (Budget / Actuals / Balance) and whether the
+- **Paste didn't apply** - make sure a cell is selected first; paste fills from the top-left cell.
+- **A value isn't visible** - check the cell-view toggle (Budget / Actuals / Balance) and whether the
   month is inside the current 12-month window.
-- **A category is missing** — it may be hidden; toggle hidden categories with `H`.
-- **Changes didn't save** — failed cells stay staged with a red indicator; use **Retry Failed**.
-- **A note "won't discard"** — notes save immediately and are not part of the staged Save.
+- **A category is missing** - it may be hidden; toggle hidden categories with `H`.
+- **Changes didn't save** - failed cells stay staged with a red indicator; use **Retry Failed**.
+- **A note "won't discard"** - notes save immediately and are not part of the staged Save.
 
 ## Related pages
 
 - [Core Concepts](../../getting-started/core-concepts/)
-- [Categories](../categories/) — budget the categories you manage there
+- [Categories](../categories/) - budget the categories you manage there

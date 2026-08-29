@@ -1,6 +1,6 @@
 ---
 title: Automations
-description: Run work on a schedule in Actual Bench — bank syncs, backups and budget file syncs that run with the app closed, with run history, health, and credentials the server can use unattended.
+description: Run work on a schedule in Actual Bench - bank syncs, backups and budget file syncs that run with the app closed, with run history, health, and credentials the server can use unattended.
 sidebar:
   order: 13
 ---
@@ -9,7 +9,10 @@ Some jobs are worth doing on a timetable rather than when you remember: pulling 
 transactions, taking a backup, moving data between budget files. **Automations** is the one place
 Actual Bench runs that work, and the one place you find out what happened.
 
-Open it from **Automations** under the **Tools** sidebar section (`/automations`).
+Open it from **Tools → Automations** (`/automations`).
+
+**Write model:** an automation writes whatever the job it runs writes - and every run is kept, with
+its result, duration and log.
 
 :::note[Not Actual's Budget Automations]
 Actual Budget has an experimental feature of its own called Budget Automations. This is a different
@@ -49,8 +52,8 @@ against one database would run your automations twice; Bench does not coordinate
 Anything that runs with the browser closed needs credentials the server can use, which means two
 things: `SYNC_VAULT_KEY` set on the server, and the budget itself **enrolled**.
 
-The **Connections** tab lists the budgets Bench may act on, when each was enrolled, and — the column
-worth the tab — **what depends on it**. Withdrawing a credential stops those automations, so the
+The **Connections** tab lists the budgets Bench may act on, when each was enrolled, and - the column
+worth the tab - **what depends on it**. Withdrawing a credential stops those automations, so the
 confirmation names them before it happens.
 
 Two things to expect:
@@ -60,7 +63,7 @@ Two things to expect:
   key your browser holds. Any other budget says so and asks you to switch to it first.
 
 You can enrol from Connections, from the bank sync or backup dialogs, or from a Budget File Sync
-flow — all four write the same list.
+flow - all four write the same list.
 
 :::caution[What gets stored]
 That budget's API key, and its encryption password if it has one, encrypted with the server's
@@ -70,8 +73,8 @@ and no other budget on the same server.
 
 ## Schedules
 
-Choose the shape that matches how you think about it — every few hours, every day at a time, on
-chosen days of the week, once a month — or write a cron expression if you want something the simple
+Choose the shape that matches how you think about it - every few hours, every day at a time, on
+chosen days of the week, once a month - or write a cron expression if you want something the simple
 modes cannot say, like weekday mornings only.
 
 Whatever you pick, the picker says back **what it understood** and **when the next runs land**. That
@@ -84,8 +87,8 @@ twice on a fall-back day runs **once**.
 
 ## Run history
 
-**Run history** shows every run across every automation, filtered by outcome first — *what failed?*
-in one click — then by automation and kind, and searchable by the line a run reported. Each run
+**Run history** shows every run across every automation, filtered by outcome first - *what failed?*
+in one click - then by automation and kind, and searchable by the line a run reported. Each run
 expands to its result, its duration, any retries, and a redacted log.
 
 An automation's own drawer keeps the newest ten runs, which is enough to answer "is this healthy".
@@ -99,17 +102,17 @@ Bench treats a failure as information, not an emergency:
 - **Auto-pause.** After a run of consecutive failures the automation pauses itself and says why.
   **Resume** clears both the pause and the streak. Editing a schedule does not clear a pause.
 - **Overdue is a warning.** An automation well past its next run is flagged even when nothing failed.
-- **Fail closed on credentials.** An automation that names a credential it cannot resolve — vault off,
-  key rotated, enrolment withdrawn — does not run at all, and pauses with that reason.
+- **Fail closed on credentials.** An automation that names a credential it cannot resolve - vault off,
+  key rotated, enrolment withdrawn - does not run at all, and pauses with that reason.
 
 What counts as a failure is the job's own judgement, and the two answers differ on purpose. A backup
 that reached one of two destinations is reported as partial but does **not** count against the
 streak: pausing it would stop the copies that were still working. A scrub that finds a damaged copy
-**does** count — repeating it will not improve matters, and someone should look.
+**does** count - repeating it will not improve matters, and someone should look.
 
 ## Pausing and deleting
 
-**Pause** stops an automation running and keeps everything else — its schedule, its history, its
+**Pause** stops an automation running and keeps everything else - its schedule, its history, its
 credentials.
 
 **Delete** removes the automation *and its run history*. What the automation produced is untouched:
