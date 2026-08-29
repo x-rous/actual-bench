@@ -78,7 +78,21 @@ const SHOTS = [
   { name: "automations", nav: "Automations", url: /\/automations/, budget: "Envelope", instance: true },
   { name: "budget-file-sync", nav: "Budget File Sync", url: /\/sync/, budget: "Envelope", instance: true },
   { name: "fx-rates", nav: "FX Rates", url: /\/fx-rates/, budget: "Envelope", instance: true },
-  { name: "actualql", nav: "ActualQL Queries", url: /\/query/, budget: "Envelope" },
+  {
+    name: "actualql",
+    nav: "ActualQL Queries",
+    url: /\/query/,
+    budget: "Envelope",
+    // A query nobody has run shows "Run a query to see results here", which is
+    // a picture of an empty pane rather than of the feature.
+    prepare: async (page) => {
+      await page.getByText("Latest 20 transactions", { exact: true }).click();
+      await page.waitForTimeout(1500);
+      await page.getByRole("button", { name: "Run", exact: true }).click();
+      await page.getByRole("table").first().waitFor({ timeout: 30000 });
+      await page.waitForTimeout(2500);
+    },
+  },
   { name: "budget-file-health", nav: "Budget File Health", url: /\/budget-diagnostics/, budget: "Envelope" },
   { name: "data-browser", nav: "Data Browser", url: /\/data-browser/, budget: "Envelope" },
   { name: "accounts", nav: "Accounts", url: /\/accounts/, budget: "Envelope" },
@@ -220,7 +234,9 @@ async function main() {
     console.log("starting an instance of our own...");
     own = await startOwnInstance();
     appUrl = own.url;
-    await runSeeder(appUrl, demo);
+    // Seeding exists for the instance pages; skip it when none were asked for,
+    // since it costs a couple of minutes and a real backup run.
+    if (shots.some((shot) => shot.instance)) await runSeeder(appUrl, demo);
   }
 
   const browser = await chromium.launch();
@@ -233,7 +249,11 @@ async function main() {
   // is not part of the product.
   await context.addInitScript(() => {
     const style = document.createElement("style");
-    style.textContent = "nextjs-portal, #__next-dev-overlay { display: none !important; }";
+    // The development overlay button is not part of the product, and a toast is
+    // a thing that was happening rather than a thing that is true - both belong
+    // out of a screenshot.
+    style.textContent =
+      "nextjs-portal, #__next-dev-overlay, [data-sonner-toaster] { display: none !important; }";
     document.addEventListener("DOMContentLoaded", () => document.head.append(style));
   });
 
@@ -254,6 +274,9 @@ async function main() {
       // a selector per page, and a screenshot of a spinner is obvious enough to
       // catch by eye.
       await page.waitForTimeout(5000);
+      // Some pages only show what they are for once they have been asked to do
+      // something.
+      if (shot.prepare) await shot.prepare(page);
 
       await page.screenshot({ path: join(outDir, `${shot.name}.png`) });
       console.log(`captured ${shot.name}`);
