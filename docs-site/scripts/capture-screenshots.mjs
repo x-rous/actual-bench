@@ -73,7 +73,23 @@ const SHOTS = [
   { name: "rules", nav: "Rules", url: /\/rules$/, budget: "Envelope" },
   { name: "rule-diagnostics", nav: "Rule Diagnostics", url: /\/rules\/diagnostics/, budget: "Envelope" },
   { name: "payee-cleanup", nav: "Payee Cleanup", url: /\/payees\/cleanup/, budget: "Envelope" },
-  { name: "bank-reconciliation", nav: "Bank Reconciliation", url: /\/reconciliation/, budget: "Envelope", instance: true },
+  {
+    name: "bank-reconciliation",
+    nav: "Bank Reconciliation",
+    url: /\/reconciliation/,
+    budget: "Envelope",
+    instance: true,
+    // The sidebar lands on the list of sessions; the workbench is inside one.
+    prepare: async (page) => {
+      const open = page
+        .getByRole("link", { name: /Open/ })
+        .or(page.getByRole("button", { name: /Open/ }))
+        .first();
+      await open.waitFor({ timeout: 15000 });
+      await open.click();
+      await page.waitForTimeout(8000);
+    },
+  },
   { name: "backups", nav: "Backups", url: /\/backups/, budget: "Envelope", instance: true },
   { name: "automations", nav: "Automations", url: /\/automations/, budget: "Envelope", instance: true },
   { name: "budget-file-sync", nav: "Budget File Sync", url: /\/sync/, budget: "Envelope", instance: true },
@@ -181,14 +197,34 @@ async function openBudget(context, demo, mode) {
  * (without one the pages carry a banner about unattended access being
  * unconfigured, which is true of the instance and not of the product).
  */
+async function freePort(from) {
+  for (let port = from; port < from + 12; port++) {
+    try {
+      await fetch(`http://localhost:${port}/`, { signal: AbortSignal.timeout(1500) });
+      // Something answered - including a half-dead server a previous run left
+      // behind, which is why "answers at all" disqualifies the port rather than
+      // "answers correctly".
+    } catch {
+      return port;
+    }
+  }
+  throw new Error(`no free port between ${from} and ${from + 11}`);
+}
+
 async function startOwnInstance() {
   const dataDir = await mkdtemp(join(tmpdir(), "bench-shots-"));
-  const port = Number(process.env.SHOT_PORT ?? 3999);
+  const port = process.env.SHOT_PORT ? Number(process.env.SHOT_PORT) : await freePort(3999);
+  // Its own process group, so stopping it stops the server rather than the
+  // wrapper that spawned it - a killed wrapper leaves the dev server running,
+  // holding both the port and the build directory, and the next run cannot
+  // start at all.
   const server = spawn("npx", ["next", "dev", "-p", String(port)], {
     cwd: join(here, "..", ".."),
+    detached: true,
     env: {
       ...process.env,
-      ACTUAL_BENCH_DIST_DIR: ".next-shots",
+      // Per port, for the same reason: two runs must never share one.
+      ACTUAL_BENCH_DIST_DIR: `.next-shots/${port}`,
       ACTUAL_BENCH_DB_PATH: join(dataDir, "actual-bench.sqlite"),
       SYNC_VAULT_KEY: process.env.SYNC_VAULT_KEY ?? "documentation-screenshots-vault-key",
     },
@@ -199,17 +235,35 @@ async function startOwnInstance() {
   // from other origins, and the page then renders without ever hydrating - it
   // looks fine and no button works.
   const url = `http://localhost:${port}`;
-  const deadline = Date.now() + 120000;
+  // Generous: the first compile after a clean checkout, with no build cache,
+  // takes minutes on a modest machine.
+  const deadline = Date.now() + 300000;
   while (Date.now() < deadline) {
     try {
       const response = await fetch(`${url}/connect`);
-      if (response.ok) return { url, stop: async () => { server.kill("SIGTERM"); await rm(dataDir, { recursive: true, force: true }); } };
+      if (response.ok) {
+        return {
+          url,
+          stop: async () => {
+            try {
+              process.kill(-server.pid, "SIGTERM");
+            } catch {
+              server.kill("SIGTERM");
+            }
+            await rm(dataDir, { recursive: true, force: true });
+          },
+        };
+      }
     } catch {
       // not up yet
     }
     await new Promise((resolve) => setTimeout(resolve, 2000));
   }
-  server.kill("SIGKILL");
+  try {
+    process.kill(-server.pid, "SIGKILL");
+  } catch {
+    server.kill("SIGKILL");
+  }
   throw new Error(`the instance did not start on ${url}`);
 }
 
