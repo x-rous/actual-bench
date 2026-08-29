@@ -32,16 +32,19 @@ visitor ─► Demo UI (Next.js, managed host)
 The UI never talks to the backend from the browser — calls go through the app’s
 own server-side proxy, exactly like a self-hosted deployment.
 
-## What happens when a visitor clicks “Try the live demo”
+## What happens when a visitor starts the demo
 
 1. The connect screen asks the server route **`/api/demo`** whether a demo is
    configured. It answers only when the deployment opts in via demo env vars;
-   otherwise it returns `404` and the button never appears.
-2. On click, the app registers both returned demo-budget connections and drops
-   the visitor into `Live Demo - Envelope`.
-3. The existing top-bar connection menu lists `Live Demo - Envelope` and
-   `Live Demo - Tracking`, so the visitor can switch between equivalent
-   datasets and compare the two budgeting models.
+   otherwise it returns `404` and the demo panel never appears.
+2. The panel offers **one button per budget mode** — `Envelope demo` and
+   `Tracking demo`, named from the labels the route returns. A visitor already
+   budgets one way or the other, and a single button opening Envelope started
+   Tracking users in the wrong model.
+3. Whichever is chosen, the app registers **both** demo-budget connections and
+   opens the chosen one. The top-bar connection menu lists both, so the other
+   mode is one budget switch away and the two equivalent datasets can still be
+   compared.
 4. From there each behaves like any other connection: the server-side proxy
    talks to the demo backend, which serves the selected sample budget.
 
