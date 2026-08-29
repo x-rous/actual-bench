@@ -93,7 +93,43 @@ const SHOTS = [
   { name: "backups", nav: "Backups", url: /\/backups/, budget: "Envelope", instance: true },
   { name: "automations", nav: "Automations", url: /\/automations/, budget: "Envelope", instance: true },
   { name: "budget-file-sync", nav: "Budget File Sync", url: /\/sync/, budget: "Envelope", instance: true },
-  { name: "fx-rates", nav: "FX Rates", url: /\/fx-rates/, budget: "Envelope", instance: true },
+  {
+    name: "fx-rates",
+    nav: "FX Rates",
+    url: /\/fx-rates/,
+    budget: "Envelope",
+    instance: true,
+    /*
+     * The pair is added here rather than by the seeder because a manually added
+     * pair does not survive a page load: the pairs that persist are derived
+     * from sync flows that convert currency, and one added by hand lives in the
+     * page's own state. So it is added, given a rate, and photographed without
+     * leaving.
+     */
+    prepare: async (page) => {
+      await page.getByRole("button", { name: /pair$/ }).click();
+      await page.getByLabel("New base currency").fill("EUR");
+      await page.getByLabel("New quote currency").fill("USD");
+      await page.getByRole("button", { name: "Add", exact: true }).click();
+      await page.waitForTimeout(2500);
+
+      // The provider first, so the override that follows sits alongside real
+      // rates rather than against them: a hand-typed rate a long way off the
+      // market puts a cliff in the chart and makes the page look wrong.
+      const fill = page.getByRole("button", { name: /Fill range from Frankfurter/ });
+      if (await fill.count()) {
+        await fill.click();
+        await page.waitForTimeout(15000);
+      }
+
+      // One rate of our own, so the source badges show both kinds.
+      const today = new Date().toISOString().slice(0, 10);
+      await page.getByLabel("Override date").fill(today);
+      await page.getByLabel("Override rate").fill("1.1700");
+      await page.getByRole("button", { name: "Save rate" }).click();
+      await page.waitForTimeout(5000);
+    },
+  },
   {
     name: "actualql",
     nav: "ActualQL Queries",
