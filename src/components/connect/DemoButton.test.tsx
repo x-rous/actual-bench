@@ -1,5 +1,5 @@
 import React from "react";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { DemoButton } from "./DemoButton";
 import { useConnectionStore } from "@/store/connection";
 
@@ -107,10 +107,21 @@ describe("DemoButton", () => {
   });
 
   it("renders nothing when the deployment is not a demo", async () => {
-    (global.fetch as jest.Mock).mockResolvedValue({ ok: false });
+    // The panel is empty before the answer arrives too, so asserting emptiness
+    // straight after render proves nothing. Hold the response open, wait until
+    // it has actually been asked, then settle it and assert.
+    let answer: (value: { ok: boolean }) => void = () => {};
+    (global.fetch as jest.Mock).mockImplementation(
+      () => new Promise((resolve) => { answer = resolve; })
+    );
 
     const { container } = render(<DemoButton />);
+    await waitFor(() => expect(global.fetch).toHaveBeenCalledWith("/api/demo"));
 
-    await waitFor(() => expect(container).toBeEmptyDOMElement());
+    await act(async () => {
+      answer({ ok: false });
+    });
+
+    expect(container).toBeEmptyDOMElement();
   });
 });

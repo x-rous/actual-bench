@@ -44,6 +44,30 @@ const baseUrl = (flag("url", process.env.DEMO_BASE_URL ?? "http://127.0.0.1:7860
 const apiKey = flag("key", process.env.API_KEY ?? process.env.DEMO_API_KEY ?? "");
 const timeoutMs = Number(flag("timeout", "60000"));
 
+/**
+ * Whether the API key may be sent to this address.
+ *
+ * Every request here carries `x-api-key`. Inside the container the target is
+ * loopback and plaintext is fine - the request never leaves the machine - but a
+ * typo'd `http://` in the post-deploy command would put the key on the wire in
+ * clear, and the demo key is the one thing this script has to protect.
+ */
+function keyMaySafelyGoTo(url) {
+  let parsed;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return { ok: false, reason: `not a URL: ${url}` };
+  }
+  if (parsed.protocol === "https:") return { ok: true };
+  const loopback = ["127.0.0.1", "::1", "localhost", "[::1]"];
+  if (parsed.protocol === "http:" && loopback.includes(parsed.hostname)) return { ok: true };
+  return {
+    ok: false,
+    reason: `refusing to send the API key to ${parsed.origin} in cleartext - use https, or loopback`,
+  };
+}
+
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function call(path) {
@@ -53,6 +77,9 @@ async function call(path) {
     const response = await fetch(`${baseUrl}/v1${path}`, {
       headers: { "x-api-key": apiKey },
       signal: controller.signal,
+      // A redirect is followed with the key attached, and to wherever it points.
+      // There is no legitimate redirect on these routes.
+      redirect: "error",
     });
     const text = await response.text();
     let body;
@@ -104,6 +131,12 @@ async function waitForApi() {
 async function main() {
   if (!apiKey) {
     console.log("demo check: no API key given (API_KEY or --key); skipping.");
+    process.exit(warmOnly ? 0 : 1);
+  }
+
+  const target = keyMaySafelyGoTo(baseUrl);
+  if (!target.ok) {
+    console.log(`demo check: FAILED - ${target.reason}`);
     process.exit(warmOnly ? 0 : 1);
   }
 

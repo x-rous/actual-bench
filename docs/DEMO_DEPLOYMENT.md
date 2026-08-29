@@ -104,8 +104,10 @@ Two things follow, and both are now in place:
 - **Restarting fixes it.** `start.sh` wipes `/data` on every boot, and the budget
   cache lives there, so a rebuild or restart of the Space clears the bad entry.
 - **The boot check keeps it from recurring silently.** `check-budgets.mjs` opens
-  every budget once the API is up, which fills the cache serially before any
-  visitor can race it, and prints the result into the Space log.
+  every budget once the API is up and prints the result into the Space log. It
+  runs in the background - it has to, since it needs the API it is checking to be
+  serving - so it *narrows* the window in which a visitor triggers the first
+  download rather than closing it. What it reliably does is say so afterwards.
 
 If a budget still fails after a restart, the seed itself is suspect: regenerate
 it (`node demo/generate-seed.mjs`), which validates both budgets before writing

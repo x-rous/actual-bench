@@ -80,9 +80,12 @@ is absent.
 the check - one budget can work while the other is unusable:
 
 ```bash
+# The key is the Space's API_KEY secret - the same value Vercel holds as
+# DEMO_API_KEY. The script also reads API_KEY or DEMO_API_KEY from the
+# environment, which is how it finds it inside the container.
 node demo/check-budgets.mjs \
   --url https://x-rous-actual-bench-demo.hf.space \
-  --key "$DEMO_API_KEY"
+  --key "<the API_KEY secret>"
 ```
 
 It opens every budget the backend advertises and exits non-zero if any of them
