@@ -70,18 +70,18 @@ export function DemoButton() {
   };
 
   return (
-    <div className="w-full max-w-xl rounded-xl border border-primary/30 bg-primary/5 p-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+    <div className="flex w-full max-w-2xl flex-col gap-3 rounded-xl border border-primary/30 bg-primary/5 p-5 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
       <div className="flex flex-col gap-1">
         <span className="font-semibold">New here? Try the live demo</span>
         <span className="text-sm text-muted-foreground">
-          Compare Envelope and Tracking budgets — no server setup required.
+          Compare Envelope and Tracking budgets - no server setup required.
         </span>
       </div>
       <button
         type="button"
         onClick={start}
         disabled={connecting}
-        className="inline-flex items-center justify-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-60"
+        className="inline-flex shrink-0 items-center justify-center gap-2 rounded-md bg-primary px-6 py-2.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-60 sm:min-w-[12rem]"
       >
         {connecting ? (
           <Loader2 className="h-4 w-4 animate-spin" />
