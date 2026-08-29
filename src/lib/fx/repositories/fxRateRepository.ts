@@ -147,6 +147,29 @@ export function findFxRatesForDateRange(
     .map(rowToRate);
 }
 
+/**
+ * Every pair the registry holds a rate for.
+ *
+ * The FX page derives its pairs from the flows that convert currency, which is
+ * right for the pairs a sync depends on and wrong for the ones somebody set up
+ * ahead of a flow: a pair added by hand lived in the page's own state, so a
+ * reload lost it, and the rates saved against it stayed in the database with no
+ * way back to them. A pair that has a rate exists, whether or not a flow uses
+ * it yet.
+ */
+export function listFxPairsWithRates(
+  db: SqliteDatabase
+): { base: string; quote: string }[] {
+  return db
+    .prepare(
+      `SELECT DISTINCT base_currency AS base, quote_currency AS quote
+       FROM fx_rates
+       WHERE status = 'active'
+       ORDER BY base_currency, quote_currency`
+    )
+    .all<{ base: string; quote: string }>();
+}
+
 /** Mark the active rate for a pair+date as superseded (part of a versioned edit). */
 export function supersedeActiveFxRate(
   db: SqliteDatabase,

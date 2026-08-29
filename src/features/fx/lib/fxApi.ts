@@ -12,6 +12,11 @@ async function jsonFetch<T>(input: string, init?: RequestInit): Promise<T> {
   return data;
 }
 
+/** Pairs the registry holds rates for, whether or not a flow converts through them. */
+export function listFxPairs(): Promise<{ pairs: { base: string; quote: string }[] }> {
+  return jsonFetch("/api/fx/pairs");
+}
+
 export function listFxRates(base: string, quote: string, from: string, to: string): Promise<{ rates: FxRateRecord[] }> {
   const q = new URLSearchParams({ base, quote, from, to }).toString();
   return jsonFetch(`/api/fx/rates?${q}`);

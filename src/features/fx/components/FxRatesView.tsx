@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Loader2, Plus, RefreshCw } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -10,7 +10,7 @@ import { PageLayout } from "@/components/layout/PageLayout";
 import { decodeFlowPlanConfig } from "@/lib/sync/flowConfig";
 import { invertRate } from "@/lib/fx/fxMath";
 import { listFlows } from "@/features/sync/lib/syncApi";
-import { addManualFxRate, fillFxRange, fxRecalcImpact, listFxRates } from "../lib/fxApi";
+import { addManualFxRate, fillFxRange, fxRecalcImpact, listFxPairs, listFxRates } from "../lib/fxApi";
 import { FxImportPanel } from "./FxImportPanel";
 import type { FxRateRecord } from "@/lib/fx/types";
 
@@ -64,13 +64,23 @@ export function FxRatesView() {
     },
   });
 
+  // Pairs that already hold rates, whether or not a flow converts through them.
+  // Without this a pair added here to prepare rates ahead of a flow survived
+  // only until the next page load, and the rates saved against it were left in
+  // the registry with nothing on screen to reach them by.
+  const storedPairsQuery = useQuery({
+    queryKey: ["fx-stored-pairs"],
+    queryFn: async () => (await listFxPairs()).pairs,
+  });
+
   const [extraPairs, setExtraPairs] = useState<Pair[]>([]);
   const pairs = useMemo(() => {
     const all = new Map<string, Pair>();
     for (const p of flowPairsQuery.data ?? []) all.set(pairKey(p), p);
+    for (const p of storedPairsQuery.data ?? []) all.set(pairKey(p), p);
     for (const p of extraPairs) all.set(pairKey(p), p);
     return [...all.values()];
-  }, [flowPairsQuery.data, extraPairs]);
+  }, [flowPairsQuery.data, storedPairsQuery.data, extraPairs]);
 
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const selected = pairs.find((p) => pairKey(p) === selectedKey) ?? pairs[0] ?? null;
@@ -157,10 +167,18 @@ function PairPanel({ pair }: { pair: Pair }) {
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  const queryClient = useQueryClient();
   const ratesQuery = useQuery({
     queryKey: ["fx-rates", pairKey(pair), from, to],
     queryFn: () => listFxRates(pair.base, pair.quote, from, to),
   });
+
+  // A pair becomes real the moment it has a rate, so the list of stored pairs
+  // is no longer accurate once one is written.
+  const refreshRatesAndPairs = () => {
+    ratesQuery.refetch();
+    queryClient.invalidateQueries({ queryKey: ["fx-stored-pairs"] });
+  };
   const rates = ratesQuery.data?.rates ?? [];
   const rateByDate = useMemo(() => new Map(rates.map((r) => [r.requestedDate, r])), [rates]);
   const days = useMemo(() => daysBetween(from, to), [from, to]);
@@ -170,7 +188,7 @@ function PairPanel({ pair }: { pair: Pair }) {
 
   const fillM = useMutation({
     mutationFn: () => fillFxRange(pair.base, pair.quote, from, to),
-    onSuccess: ({ result }) => { setNotice(`Filled ${result.inserted} day(s) from Frankfurter (${result.skipped} already set).`); setError(null); ratesQuery.refetch(); },
+    onSuccess: ({ result }) => { setNotice(`Filled ${result.inserted} day(s) from Frankfurter (${result.skipped} already set).`); setError(null); refreshRatesAndPairs(); },
     onError: (e) => setError(e instanceof Error ? e.message : "Could not fetch rates."),
   });
   const [impact, setImpact] = useState<Awaited<ReturnType<typeof fxRecalcImpact>> | null>(null);
@@ -194,7 +212,7 @@ function PairPanel({ pair }: { pair: Pair }) {
       setOverrideRate("");
       setOverrideDate("");
       setImpact(imp && imp.rows.length > 0 ? imp : null);
-      ratesQuery.refetch();
+      refreshRatesAndPairs();
     },
     onError: (e) => setError(e instanceof Error ? e.message : "Could not save the rate."),
   });
@@ -291,7 +309,7 @@ function PairPanel({ pair }: { pair: Pair }) {
         </table>
       </div>
 
-      <FxImportPanel onCommitted={() => ratesQuery.refetch()} />
+      <FxImportPanel onCommitted={refreshRatesAndPairs} />
     </div>
   );
 }

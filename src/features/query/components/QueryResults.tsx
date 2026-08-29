@@ -568,44 +568,51 @@ function ResultsActionBar({
   const showMeta = execTime !== null;
 
   return (
-    <div className="flex shrink-0 items-center justify-between border-b border-border">
+    // Wraps rather than overlaps. Four tabs, four measurements and up to four
+    // actions do not fit one line beside an open examples panel, and the row
+    // used to run the metrics over the last tab and clip the final button off
+    // the edge - at 1440px, which is an ordinary laptop.
+    <div className="flex shrink-0 flex-wrap items-center justify-between gap-y-1 border-b border-border">
       {/* Left: tabs (when present) */}
-      <div className="flex items-center">
+      <div className="flex shrink-0 items-center">
         {tabsList ?? <div className="h-9" />}
       </div>
 
       {/* Right: metadata + actions */}
-      <div className="flex items-center gap-1 pr-2">
+      <div className="flex min-w-0 flex-1 flex-wrap items-center justify-end gap-1 pr-2">
         {showMeta && (
           <>
-            {/* Status chip */}
-            {isError ? (
-              <span className="rounded px-1.5 py-0.5 text-[10px] font-medium bg-destructive/15 text-destructive">
-                Error
-              </span>
-            ) : (
-              <span className="rounded px-1.5 py-0.5 text-[10px] font-medium bg-green-500/15 text-green-700 dark:text-green-400">
-                OK
-              </span>
-            )}
-            {/* Execution time */}
-            <span className="text-[11px] text-muted-foreground">
-              {formatTime(execTime!)}
-            </span>
-            {/* Row count */}
-            {rowCount && (
+            {/* One measurement group: it reads as a sentence and wraps as a unit. */}
+            <div className="flex shrink-0 items-center gap-1 whitespace-nowrap">
+              {/* Status chip */}
+              {isError ? (
+                <span className="rounded px-1.5 py-0.5 text-[10px] font-medium bg-destructive/15 text-destructive">
+                  Error
+                </span>
+              ) : (
+                <span className="rounded px-1.5 py-0.5 text-[10px] font-medium bg-green-500/15 text-green-700 dark:text-green-400">
+                  OK
+                </span>
+              )}
+              {/* Execution time */}
               <span className="text-[11px] text-muted-foreground">
-                {rowCount}
+                {formatTime(execTime!)}
               </span>
-            )}
-            {/* Payload size */}
-            {payloadBytes !== null && (
-              <span className="text-[11px] text-muted-foreground">
-                {formatBytes(payloadBytes)}
-              </span>
-            )}
+              {/* Row count */}
+              {rowCount && (
+                <span className="text-[11px] text-muted-foreground">
+                  {rowCount}
+                </span>
+              )}
+              {/* Payload size */}
+              {payloadBytes !== null && (
+                <span className="text-[11px] text-muted-foreground">
+                  {formatBytes(payloadBytes)}
+                </span>
+              )}
+            </div>
             {/* Divider */}
-            <div className="mx-1 h-4 w-px bg-border" />
+            <div className="mx-1 h-4 w-px shrink-0 bg-border" />
           </>
         )}
 
