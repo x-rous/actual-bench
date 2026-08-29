@@ -578,8 +578,13 @@ function ResultsActionBar({
         {tabsList ?? <div className="h-9" />}
       </div>
 
-      {/* Right: metadata + actions */}
-      <div className="flex min-w-0 flex-1 flex-wrap items-center justify-end gap-1 pr-2">
+      {/* Right: metadata + actions.
+          `basis-auto` matters: with the default `flex-1` basis of zero this
+          group never looks too wide, so the row never wraps - it just squeezes
+          the group to nothing and lets its contents spill out, which is the
+          overlap this was meant to end. Sized by its content, it wraps as a
+          whole and then fills the second line. */}
+      <div className="flex min-w-0 flex-1 basis-auto flex-wrap items-center justify-end gap-1 pr-2">
         {showMeta && (
           <>
             {/* One measurement group: it reads as a sentence and wraps as a unit. */}

@@ -100,6 +100,10 @@ export function FxRatesView() {
             arriving - which is precisely the pair the reader came back for. */}
         {flowPairsQuery.isLoading || storedPairsQuery.isLoading ? (
           <div className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> Loading your currency pairs…</div>
+        ) : storedPairsQuery.isError && pairs.length === 0 ? (
+          // "Nothing here" and "we could not look" are different answers, and
+          // saying the first when the second is true hides rates that exist.
+          <PairsUnavailable onRetry={() => storedPairsQuery.refetch()} />
         ) : !selected ? (
           <EmptyState />
         ) : (
@@ -107,6 +111,21 @@ export function FxRatesView() {
         )}
       </div>
     </PageLayout>
+  );
+}
+
+function PairsUnavailable({ onRetry }: { onRetry: () => void }) {
+  return (
+    <div className="rounded-md border border-dashed border-border bg-muted/20 px-6 py-10 text-center">
+      <p className="text-sm font-medium">Could not load your currency pairs</p>
+      <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">
+        Any rates you have already saved are still here - this is the list of pairs that could not be
+        read, not an empty registry.
+      </p>
+      <Button size="sm" variant="outline" className="mt-3" onClick={onRetry}>
+        Try again
+      </Button>
+    </div>
   );
 }
 

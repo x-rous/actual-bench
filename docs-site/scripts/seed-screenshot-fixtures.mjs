@@ -32,9 +32,20 @@ const DEMO_API_KEY = process.env.DEMO_API_KEY;
 /** Where the local backup destination writes. Disposable by design. */
 const BACKUP_DIR = process.env.SHOT_BACKUP_DIR ?? "/tmp/actual-bench-doc-backups";
 
-if (!DEMO_API_URL || !DEMO_API_KEY) {
-  console.log("seed: DEMO_API_URL and DEMO_API_KEY are required.");
-  process.exit(1);
+/**
+ * Credentials for a demo request, from the caller or from the environment.
+ *
+ * Not checked at import: the capture script imports `connectSecondBudget` from
+ * here, and a guard at module scope ended that process before it had resolved
+ * the credentials it was about to pass in.
+ */
+function credentials(given) {
+  const baseUrl = given?.baseUrl ?? DEMO_API_URL;
+  const apiKey = given?.apiKey ?? DEMO_API_KEY;
+  if (!baseUrl || !apiKey) {
+    throw new Error("the demo's base URL and API key are required (DEMO_API_URL, DEMO_API_KEY)");
+  }
+  return { baseUrl, apiKey };
 }
 
 /** The demo's connection details, for the fixtures that need to read from it. */
@@ -66,7 +77,8 @@ async function demoJson(response, what) {
   }
 }
 
-export async function connectToDemo(page, mode = "Envelope") {
+export async function connectToDemo(page, mode = "Envelope", given) {
+  const { baseUrl, apiKey } = credentials(given);
   await page.goto(`${APP_URL}/connect`, { waitUntil: "domcontentloaded" });
   await page.waitForTimeout(2500);
   const addServer = page.getByRole("button", { name: "Add a server" });
@@ -78,8 +90,8 @@ export async function connectToDemo(page, mode = "Envelope") {
   // can take well past a default timeout.
   const urlField = page.getByPlaceholder("https://budgetapi.example.com");
   await urlField.waitFor({ timeout: 120000 });
-  await urlField.fill(DEMO_API_URL);
-  await page.getByLabel("API Key").fill(DEMO_API_KEY);
+  await urlField.fill(baseUrl);
+  await page.getByLabel("API Key").fill(apiKey);
   await page.getByRole("button", { name: "Load budgets" }).click();
 
   const entry = page.getByRole("button", { name: new RegExp(`Live Demo - ${mode}`) });
@@ -151,23 +163,22 @@ async function seedBackups(page) {
   await page.waitForTimeout(8000);
   console.log("seed: backup rule added");
 
-  // Run it once, so the Backups tab has a verified copy to show rather than an
-  // explanation of what one would look like.
+  // Run it once, so the Backups tab holds a verified copy rather than an
+  // explanation of what one would look like. Not optional: a missing button is
+  // a failure here, not something to skip past and photograph anyway.
   const runNow = page.getByRole("button", { name: "Back up now" }).first();
-  if (await runNow.count()) {
-    await runNow.click();
-    // Wait for the rule to report a run rather than for a fixed time: a copy
-    // that has not been taken yet leaves the page saying "never", which is the
-    // one thing this fixture exists to avoid.
-    await page
-      .getByRole("row", { name: /Nightly backup/ })
-      .filter({ hasNotText: "never" })
-      .first()
-      .waitFor({ timeout: 180000 })
-      .catch(() => console.log("seed: WARNING - the backup run did not report a result"));
-    await page.waitForTimeout(2000);
-    console.log("seed: backup run finished");
-  }
+  await runNow.waitFor({ timeout: 30000 });
+  await runNow.click();
+  // Wait for the rule to report a run rather than for a fixed time: a copy that
+  // has not been taken yet leaves the page saying "never", which is the one
+  // thing this fixture exists to avoid.
+  await page
+    .getByRole("row", { name: /Nightly backup/ })
+    .filter({ hasNotText: "never" })
+    .first()
+    .waitFor({ timeout: 180000 });
+  await page.waitForTimeout(2000);
+  console.log("seed: backup run finished");
 }
 
 /**
@@ -215,7 +226,7 @@ async function writeStatement(demo, budgetSyncId, accountId) {
     // Two the budget has never seen.
     .concat([
       { date: rows[0].date, description: "ATLAS PARKING GARAGE", amount: "-18.00" },
-      { date: rows[1].date, description: "COUNTY LIBRARY FINE", amount: "-4.50" },
+      { date: (rows[1] ?? rows[0]).date, description: "COUNTY LIBRARY FINE", amount: "-4.50" },
     ]);
 
   const csv = ["Date,Description,Amount"]
@@ -278,7 +289,8 @@ async function seedReconciliation(page, demo) {
  * Both live in the browser session, which is also how a real user ends up with
  * two: connect, work, connect the other.
  */
-export async function connectSecondBudget(page, mode = "Tracking") {
+export async function connectSecondBudget(page, mode = "Tracking", given) {
+  const { baseUrl, apiKey } = credentials(given);
   // Through the app, never `page.goto`: connections are held in memory only -
   // deliberately, so API keys are never written to browser storage - and a full
   // page load throws away the budget already connected. The top bar's
@@ -296,8 +308,8 @@ export async function connectSecondBudget(page, mode = "Tracking") {
   }
   const urlField = page.getByPlaceholder("https://budgetapi.example.com");
   if (await urlField.count()) {
-    await urlField.fill(DEMO_API_URL);
-    await page.getByLabel("API Key").fill(DEMO_API_KEY);
+    await urlField.fill(baseUrl);
+    await page.getByLabel("API Key").fill(apiKey);
     await page.getByRole("button", { name: "Load budgets" }).click();
   }
 
@@ -351,6 +363,7 @@ async function seedSyncFlow(page) {
 }
 
 async function main() {
+  credentials();
   const browser = await chromium.launch();
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, colorScheme: "light" });
   const page = await context.newPage();

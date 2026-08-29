@@ -572,7 +572,10 @@ async function run(registerInstance) {
       const page = pages.get(shot.budget);
 
       if (shot.alsoConnect && !connected.has(shot.alsoConnect)) {
-        await connectSecondBudget(page, shot.alsoConnect);
+        // Its credentials, not the environment's: the capture resolves them
+        // from the demo endpoint when they are not set, and the seeder module
+        // has no way to know that.
+        await connectSecondBudget(page, shot.alsoConnect, demo);
         connected.add(shot.alsoConnect);
         // Connecting the second budget makes it the active one, and every later
         // shot would then be labelled with it in the top bar. Switch back, so

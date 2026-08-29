@@ -33,7 +33,9 @@ instance stood up for the purpose.
 
 `docs-site/scripts/seed-screenshot-fixtures.mjs` gives that instance something
 to show: a destination, a backup rule, and one real backup run so the inventory
-holds verified copies. It works through the dialogs rather than by writing rows,
+holds a verified copy - the seeder fails rather than continuing if that run does
+not report a result, because a Backups tab with nothing in it is a screenshot of
+an explanation rather than of the feature. It works through the dialogs rather than by writing rows,
 because the payload shapes are internal and will drift while the dialogs are the
 contract - and because a seeder that breaks when a flow breaks is worth having.
 

@@ -56,6 +56,9 @@ describe("the results toolbar", () => {
     const bar = container.querySelector(".border-b");
     expect(bar?.className).toContain("flex-wrap");
     expect(bar?.firstElementChild?.className).toContain("shrink-0");
+    // Sized by its content, or it shrinks to nothing on one line instead of
+    // wrapping - and its contents spill out, which is the overlap itself.
+    expect(bar?.lastElementChild?.className).toContain("basis-auto");
   });
 
   it("shows no measurements before a query has run", () => {
