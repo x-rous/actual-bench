@@ -248,6 +248,85 @@ async function seedReconciliation(page, demo) {
   console.log("seed: reconciling -", (await page.locator("main").innerText()).replace(/\n+/g, " | ").slice(0, 260));
 }
 
+/**
+ * A second budget, connected alongside the first.
+ *
+ * A sync flow moves data between two budgets, so one connection is not enough.
+ * Both live in the browser session, which is also how a real user ends up with
+ * two: connect, work, connect the other.
+ */
+export async function connectSecondBudget(page, mode = "Tracking") {
+  // Through the app, never `page.goto`: connections are held in memory only -
+  // deliberately, so API keys are never written to browser storage - and a full
+  // page load throws away the budget already connected. The top bar's
+  // "Add connection…" routes there client-side and keeps it.
+  await page.getByRole("button", { name: /Live Demo/ }).first().click();
+  await page.waitForTimeout(800);
+  await page.getByRole("menuitem", { name: /Add connection/ }).click();
+  await page.waitForURL(/\/connect/, { timeout: 30000 });
+  await page.waitForTimeout(2500);
+
+  const addServer = page.getByRole("button", { name: "Add a server" });
+  if (await addServer.count()) {
+    await addServer.click();
+    await page.waitForTimeout(800);
+  }
+  const urlField = page.getByPlaceholder("https://budgetapi.example.com");
+  if (await urlField.count()) {
+    await urlField.fill(DEMO_API_URL);
+    await page.getByLabel("API Key").fill(DEMO_API_KEY);
+    await page.getByRole("button", { name: "Load budgets" }).click();
+  }
+
+  const entry = page.getByRole("button", { name: new RegExp(`Live Demo - ${mode}`) });
+  await entry.first().waitFor({ timeout: 60000 });
+  await entry.first().click();
+  await page.getByRole("button", { name: "Connect", exact: true }).click();
+  await page.waitForURL(/\/overview/, { timeout: 60000 });
+  await page.waitForTimeout(5000);
+  console.log(`seed: second budget connected (${mode})`);
+}
+
+/** A transactions flow between the two demo budgets, previewed but not applied. */
+async function seedSyncFlow(page) {
+  await openTool(page, "Budget File Sync", /\/sync/);
+  if (!(await page.getByText("No sync flows yet").count())) {
+    console.log("seed: a sync flow already exists, leaving it alone");
+    return;
+  }
+
+  await page.getByRole("button", { name: /New (sync )?flow/ }).first().click();
+  await page.waitForTimeout(2000);
+
+  const dialog = page.getByRole("dialog");
+  console.log(
+    "seed: flow dialog selects -",
+    await dialog.locator("select").evaluateAll((els) =>
+      els
+        .map((el) => `${el.getAttribute("aria-label")}=[${[...el.options].map((o) => o.label).join(", ")}]`)
+        .join(" | ")
+    )
+  );
+  await dialog.getByLabel("Flow name").fill("Household card → archive");
+  await dialog.getByLabel("Source connection").selectOption({ label: "Live Demo - Envelope" });
+  await page.waitForTimeout(2500);
+  await dialog.getByLabel("Source account").selectOption({ label: "Household Checking" });
+  await dialog.getByLabel("Target connection").selectOption({ label: "Live Demo - Tracking" });
+  await page.waitForTimeout(2500);
+  await dialog.getByLabel("Target account").selectOption({ label: "Household Checking" });
+  await dialog.getByRole("button", { name: /Save flow/ }).click();
+  await page.waitForTimeout(6000);
+  console.log("seed: sync flow created");
+
+  // Preview writes nothing - it classifies, which is the thing worth showing.
+  const preview = page.getByRole("button", { name: "Preview", exact: true }).first();
+  if (await preview.count()) {
+    await preview.click();
+    await page.waitForTimeout(30000);
+  }
+  console.log("seed: sync preview -", (await page.locator("main").innerText()).replace(/\n+/g, " | ").slice(0, 240));
+}
+
 async function main() {
   const browser = await chromium.launch();
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, colorScheme: "light" });
@@ -257,6 +336,8 @@ async function main() {
     await connectToDemo(page, "Envelope");
     await seedBackups(page);
     await seedReconciliation(page, demo);
+    await connectSecondBudget(page, "Tracking");
+    await seedSyncFlow(page);
     console.log("seed: done");
   } catch (error) {
     console.log(`seed: FAILED - ${error?.message ?? error}`);
@@ -268,4 +349,9 @@ async function main() {
   await browser.close();
 }
 
-await main();
+// Only when run directly. The capture script imports `connectSecondBudget`
+// from here, and an unguarded call would seed a second time - against whatever
+// APP_URL happened to be set - the moment the module loaded.
+if (process.argv[1] && process.argv[1].endsWith("seed-screenshot-fixtures.mjs")) {
+  await main();
+}

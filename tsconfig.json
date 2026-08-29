@@ -39,7 +39,9 @@
     ".next-shots/3999/types/**/*.ts",
     ".next-shots/3999/dev/types/**/*.ts",
     ".next-shots/4000/types/**/*.ts",
-    ".next-shots/4000/dev/types/**/*.ts"
+    ".next-shots/4000/dev/types/**/*.ts",
+    ".next-shots/4001/types/**/*.ts",
+    ".next-shots/4001/dev/types/**/*.ts"
   ],
   "exclude": [
     "node_modules",

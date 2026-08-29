@@ -40,6 +40,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
+import { connectSecondBudget } from "./seed-screenshot-fixtures.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const outDir = join(here, "..", "src", "assets", "screenshots");
@@ -92,7 +93,29 @@ const SHOTS = [
   },
   { name: "backups", nav: "Backups", url: /\/backups/, budget: "Envelope", instance: true },
   { name: "automations", nav: "Automations", url: /\/automations/, budget: "Envelope", instance: true },
-  { name: "budget-file-sync", nav: "Budget File Sync", url: /\/sync/, budget: "Envelope", instance: true },
+  {
+    name: "budget-file-sync",
+    nav: "Budget File Sync",
+    url: /\/sync/,
+    budget: "Envelope",
+    // A flow moves data between two budgets and cannot reach either without a
+    // live connection to both - and connections are per-session, held in
+    // memory. The flow itself is seeded; the connections have to be made again
+    // here or the flow reads "Needs connection".
+    alsoConnect: "Tracking",
+    instance: true,
+    prepare: async (page) => {
+      await page.getByText("Household card → archive").click();
+      await page.waitForTimeout(5000);
+      // "Sync preview", not "Preview": the button says what it previews.
+      const preview = page.getByRole("button", { name: /Sync preview/ }).first();
+      await preview.waitFor({ timeout: 20000 });
+      await preview.click();
+      // A preview reads both budgets and classifies every row; it writes
+      // nothing, which is why it is safe to leave the flow in this state.
+      await page.waitForTimeout(35000);
+    },
+  },
   {
     name: "fx-rates",
     nav: "FX Rates",
@@ -314,6 +337,20 @@ function runSeeder(appUrl, demo) {
 }
 
 async function main() {
+  let instance = null;
+  try {
+    await run((own) => {
+      instance = own;
+    });
+  } finally {
+    // Without this, a failure anywhere - seeding, a selector, a bad shot -
+    // leaves a development server running, holding its port and its build
+    // directory, and every later run has to work around it.
+    if (instance) await instance.stop();
+  }
+}
+
+async function run(registerInstance) {
   await mkdir(outDir, { recursive: true });
   const demo = await demoConnection();
   // `--serve` is the whole pipeline: an instance of our own, seeded, captured,
@@ -323,6 +360,7 @@ async function main() {
   if (serveOwn) {
     console.log("starting an instance of our own...");
     own = await startOwnInstance();
+    registerInstance(own);
     appUrl = own.url;
     // Seeding exists for the instance pages; skip it when none were asked for,
     // since it costs a couple of minutes and a real backup run.
@@ -348,12 +386,18 @@ async function main() {
   });
 
   const pages = new Map();
+  const connected = new Set();
   const failures = [];
 
   for (const shot of shots) {
     try {
       if (!pages.has(shot.budget)) pages.set(shot.budget, await openBudget(context, demo, shot.budget));
       const page = pages.get(shot.budget);
+
+      if (shot.alsoConnect && !connected.has(shot.alsoConnect)) {
+        await connectSecondBudget(page, shot.alsoConnect);
+        connected.add(shot.alsoConnect);
+      }
 
       const link = page.getByRole("link", { name: shot.nav, exact: true }).first();
       await link.waitFor({ timeout: 30000 });
@@ -377,7 +421,6 @@ async function main() {
   }
 
   await browser.close();
-  if (own) await own.stop();
   if (failures.length > 0) {
     console.log(`\n${failures.length} shot(s) failed: ${failures.join(", ")}`);
     process.exit(1);

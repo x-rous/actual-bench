@@ -18,6 +18,12 @@ Open it from **Tools → Budget File Sync** (`/sync`).
 **Write model:** Preview never writes. Only an explicit **Apply**, or an opted-in safe-only automation
 policy, writes classified safe items. Uncertain rows remain for review.
 
+![A previewed sync flow: the two endpoints, the flow's settings, and 244 rows classified before anything is written.](../../../assets/screenshots/budget-file-sync.png)
+
+*A preview classifies every row and writes nothing. Here the two demo budgets already hold the same
+household, so all 244 rows come back as duplicates and go to review rather than being copied again -
+which is the behaviour the preview exists to produce.*
+
 ## Get the first flow working
 
 1. Create a flow and choose Transactions, Payees, or Categories.
