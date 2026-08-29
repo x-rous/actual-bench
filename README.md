@@ -45,24 +45,26 @@ It is not trying to replace Actual Budget's day-to-day transaction entry experie
 
 ## Screenshots
 
-Generated from the public demo budgets - see [docs/screenshots.md](docs/screenshots.md) to regenerate
-them in one command.
+Generated from two sources: the budgets come from the public demo, and the pages that show Bench's own
+configuration - backups, automations, sync flows, rates - come from a disposable instance the capture
+starts and throws away, never from anyone's install. See [docs/screenshots.md](docs/screenshots.md) to
+regenerate them in one command.
 
 | A full year on one screen | Rules audited as a set |
 |:---:|:---:|
-| ![Budget](docs-site/src/assets/screenshots/budget-envelope.png) | ![Rule Diagnostics](docs-site/src/assets/screenshots/rule-diagnostics.png) |
+| ![Budget](docs-site/src/assets/screenshots/user-guide/budget-envelope.png) | ![Rule Diagnostics](docs-site/src/assets/screenshots/user-guide/rule-diagnostics.png) |
 
 | Duplicate payees, with the evidence | A statement reconciled row by row |
 |:---:|:---:|
-| ![Payee Cleanup](docs-site/src/assets/screenshots/payee-cleanup.png) | ![Bank Reconciliation](docs-site/src/assets/screenshots/bank-reconciliation.png) |
+| ![Payee Cleanup](docs-site/src/assets/screenshots/user-guide/payee-cleanup.png) | ![Bank Reconciliation](docs-site/src/assets/screenshots/user-guide/bank-reconciliation.png) |
 
 | Backups that are opened and checked | Work that runs with the app closed |
 |:---:|:---:|
-| ![Backups](docs-site/src/assets/screenshots/backups.png) | ![Automations](docs-site/src/assets/screenshots/automations.png) |
+| ![Backups](docs-site/src/assets/screenshots/user-guide/backups.png) | ![Automations](docs-site/src/assets/screenshots/user-guide/automations.png) |
 
 | Ask your data a question | Copy between budget files, preview first |
 |:---:|:---:|
-| ![ActualQL Queries](docs-site/src/assets/screenshots/actualql.png) | ![Budget File Sync](docs-site/src/assets/screenshots/budget-file-sync.png) |
+| ![ActualQL Queries](docs-site/src/assets/screenshots/user-guide/actualql.png) | ![Budget File Sync](docs-site/src/assets/screenshots/user-guide/budget-file-sync.png) |
 
 ## Feature overview
 

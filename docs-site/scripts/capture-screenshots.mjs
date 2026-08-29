@@ -68,7 +68,7 @@ const VIEWPORT = { width: 1440, height: 900 };
  * purpose with an empty metadata database.
  */
 const SHOTS = [
-  { name: "overview", nav: "Overview", url: /\/overview/, budget: "Envelope" },
+  { name: "overview", area: "getting-started", nav: "Overview", url: /\/overview/, budget: "Envelope" },
   { name: "budget-envelope", nav: "Budget", url: /\/budget-management/, budget: "Envelope" },
   { name: "budget-tracking", nav: "Budget", url: /\/budget-management/, budget: "Tracking" },
   { name: "rules", nav: "Rules", url: /\/rules$/, budget: "Envelope" },
@@ -183,12 +183,14 @@ const SHOTS = [
    */
   {
     name: "connect",
+    area: "getting-started",
     preConnect: true,
     budget: "Envelope",
     instance: true,
   },
   {
     name: "app-health",
+    area: "administration",
     nav: "App Health",
     url: /\/app-health/,
     budget: "Envelope",
@@ -196,6 +198,7 @@ const SHOTS = [
   },
   {
     name: "dialog-bundle-export",
+    area: "dialogs",
     nav: "Overview",
     url: /\/overview/,
     budget: "Envelope",
@@ -207,6 +210,7 @@ const SHOTS = [
   },
   {
     name: "dialog-merge-rules",
+    area: "dialogs",
     nav: "Rule Diagnostics",
     url: /\/rules\/diagnostics/,
     budget: "Envelope",
@@ -219,6 +223,7 @@ const SHOTS = [
   },
   {
     name: "dialog-payee-merge",
+    area: "dialogs",
     nav: "Payees",
     url: /\/payees$/,
     budget: "Envelope",
@@ -236,6 +241,7 @@ const SHOTS = [
   },
   {
     name: "dialog-backup-rule",
+    area: "dialogs",
     nav: "Backups",
     url: /\/backups/,
     budget: "Envelope",
@@ -251,6 +257,7 @@ const SHOTS = [
   },
   {
     name: "dialog-flow-editor",
+    area: "dialogs",
     nav: "Budget File Sync",
     url: /\/sync/,
     budget: "Envelope",
@@ -266,6 +273,7 @@ const SHOTS = [
   },
   {
     name: "dialog-new-bank-sync",
+    area: "dialogs",
     nav: "Automations",
     url: /\/automations/,
     budget: "Envelope",
@@ -329,6 +337,19 @@ async function demoConnection() {
 }
 
 /** Connect the app to a demo budget through the form, as a reader would. */
+/**
+ * Where an image lands: `screenshots/<area>/<name>.png`.
+ *
+ * The area mirrors the documentation tree - `docs-site/README.md` asks for it -
+ * so an image sits beside the pages that use it rather than in one flat pile of
+ * thirty.
+ */
+async function shotPath(shot) {
+  const dir = join(outDir, shot.area ?? "user-guide");
+  await mkdir(dir, { recursive: true });
+  return join(dir, `${shot.name}.png`);
+}
+
 /** Leave the page as the next shot expects to find it. */
 async function closeAnyDialog(page) {
   for (let attempt = 0; attempt < 3; attempt++) {
@@ -434,11 +455,20 @@ async function startOwnInstance() {
         return {
           url,
           stop: async () => {
-            try {
-              process.kill(-server.pid, "SIGTERM");
-            } catch {
-              server.kill("SIGTERM");
-            }
+            // The group, then the group again with prejudice: `next dev` spawns
+            // a `next-server` child that outlives a polite signal, and an
+            // orphan holds both its port and about a gigabyte of memory - which
+            // is enough to crash the browser of the next run.
+            const signal = (sig) => {
+              try {
+                process.kill(-server.pid, sig);
+              } catch {
+                server.kill(sig);
+              }
+            };
+            signal("SIGTERM");
+            await new Promise((resolve) => setTimeout(resolve, 2000));
+            signal("SIGKILL");
             await rm(dataDir, { recursive: true, force: true });
           },
         };
@@ -468,8 +498,9 @@ function runSeeder(appUrl, demo) {
 
 async function main() {
   let instance = null;
+  let succeeded = false;
   try {
-    await run((own) => {
+    succeeded = await run((own) => {
       instance = own;
     });
   } finally {
@@ -478,6 +509,8 @@ async function main() {
     // directory, and every later run has to work around it.
     if (instance) await instance.stop();
   }
+  // After the cleanup, never before it.
+  process.exitCode = succeeded ? 0 : 1;
 }
 
 async function run(registerInstance) {
@@ -529,7 +562,7 @@ async function run(registerInstance) {
         await fresh.getByPlaceholder("https://budgetapi.example.com").waitFor({ timeout: 120000 });
         await fresh.waitForTimeout(2500);
         const scope = shot.element ? fresh.locator(shot.element).first() : fresh;
-        await scope.screenshot({ path: join(outDir, `${shot.name}.png`) });
+        await scope.screenshot({ path: await shotPath(shot) });
         await fresh.close();
         console.log(`captured ${shot.name}`);
         continue;
@@ -566,7 +599,7 @@ async function run(registerInstance) {
       // A dialog photographed as a whole page is mostly dimmed background, so a
       // shot can name the element it is actually about.
       const target = shot.element ? page.locator(shot.element).first() : page;
-      await target.screenshot({ path: join(outDir, `${shot.name}.png`) });
+      await target.screenshot({ path: await shotPath(shot) });
       console.log(`captured ${shot.name}`);
 
       // Shots share one page, so a dialog left open blocks the next one's
@@ -582,9 +615,14 @@ async function run(registerInstance) {
   await browser.close();
   if (failures.length > 0) {
     console.log(`\n${failures.length} shot(s) failed: ${failures.join(", ")}`);
-    process.exit(1);
+    // Reported, not exited: `process.exit` here would end the process while
+    // main() is still awaiting this call, so its `finally` would never stop the
+    // instance - leaving a dev server holding the port and the build directory,
+    // which is exactly what a failed run used to do.
+    return false;
   }
   console.log(`\n${shots.length} screenshots written to ${outDir}`);
+  return true;
 }
 
 await main();

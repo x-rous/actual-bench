@@ -18,6 +18,8 @@ const eslintConfig = defineConfig([
   globalIgnores([
     ".next/**",
     ".next-build/**",
+    // Build output from the documentation screenshot instance.
+    ".next-shots/**",
     "out/**",
     "build/**",
     "dist/**",

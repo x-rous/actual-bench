@@ -19,13 +19,17 @@ demo backend through the normal connect form, so every page shows the same
 household a visitor sees when they click "Try the live demo" - and no real
 person's finances can reach the documentation.
 
-**The instance is disposable.** Backups, Automations, Budget File Sync and FX
-Rates draw the *instance's own* metadata rather than the connected budget.
-Pointing the script at a working install photographs that install's backup
-destinations, its sync flows and its schedule; an early run did exactly that and
-the images had to be destroyed. Those pages are marked `instance: true` in the
-shot list and skipped unless `--include-instance` is passed, which is only ever
-correct for an instance stood up for the purpose.
+**The instance is disposable.** Some pages draw the *instance's own* metadata
+rather than the connected budget - its backup destinations, automations, sync
+flows, exchange rates, reconciliation sessions, the health of its own database,
+and the dialogs that configure any of them. Pointing the script at a working
+install photographs that install's schedule and where its backups go; an early
+run did exactly that and the images had to be destroyed.
+
+Those shots carry `instance: true`, which is the list - reading it in
+`SHOTS` beats trusting an enumeration here to stay current - and they are
+skipped unless `--include-instance` is passed, which is only ever correct for an
+instance stood up for the purpose.
 
 `docs-site/scripts/seed-screenshot-fixtures.mjs` gives that instance something
 to show: a destination, a backup rule, and one real backup run so the inventory

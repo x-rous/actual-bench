@@ -53,6 +53,7 @@
     "node_modules",
     ".next",
     ".next-build",
+    ".next-shots",
     "coverage",
     "out",
     "dist",

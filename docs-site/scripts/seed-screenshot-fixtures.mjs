@@ -47,6 +47,25 @@ const demo = {
   ],
 };
 
+/**
+ * Read a demo API answer, or say why it cannot be read.
+ *
+ * Without the status check a rejected request fails later and elsewhere: an
+ * expired key or a rate limit leaves `data` undefined, so the next line throws
+ * about a property of undefined, and an HTML error page makes `json()` throw a
+ * syntax error. Neither names the request that actually failed.
+ */
+async function demoJson(response, what) {
+  if (!response.ok) {
+    throw new Error(`the demo backend answered ${response.status} for ${what}`);
+  }
+  try {
+    return await response.json();
+  } catch {
+    throw new Error(`the demo backend did not return JSON for ${what}`);
+  }
+}
+
 export async function connectToDemo(page, mode = "Envelope") {
   await page.goto(`${APP_URL}/connect`, { waitUntil: "domcontentloaded" });
   await page.waitForTimeout(2500);
@@ -180,7 +199,7 @@ async function writeStatement(demo, budgetSyncId, accountId) {
     `${demo.baseUrl}/v1/budgets/${budgetSyncId}/accounts/${accountId}/transactions?since_date=${since}`,
     { headers: { "x-api-key": demo.apiKey } }
   );
-  const rows = (await response.json()).data ?? [];
+  const rows = (await demoJson(response, "transactions")).data ?? [];
   if (rows.length === 0) throw new Error("the demo account returned no transactions");
 
   const statement = rows
@@ -220,7 +239,7 @@ async function seedReconciliation(page, demo) {
   const accounts = await fetch(
     `${demo.baseUrl}/v1/budgets/${budget.budgetSyncId ?? budget.syncId}/accounts`,
     { headers: { "x-api-key": demo.apiKey } }
-  ).then((r) => r.json());
+  ).then((r) => demoJson(r, "accounts"));
   const account = accounts.data.find((a) => a.name === "Household Checking") ?? accounts.data[0];
   const statementPath = await writeStatement(demo, budget.budgetSyncId ?? budget.syncId, account.id);
 

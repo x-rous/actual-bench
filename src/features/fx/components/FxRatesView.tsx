@@ -96,7 +96,9 @@ export function FxRatesView() {
 
         <PairSelector pairs={pairs} selected={selected} onSelect={(p) => setSelectedKey(pairKey(p))} onAdd={(p) => { setExtraPairs((x) => [...x, p]); setSelectedKey(pairKey(p)); }} />
 
-        {flowPairsQuery.isLoading ? (
+        {/* Both sources, or the empty state flashes while the second is still
+            arriving - which is precisely the pair the reader came back for. */}
+        {flowPairsQuery.isLoading || storedPairsQuery.isLoading ? (
           <div className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> Loading your currency pairs…</div>
         ) : !selected ? (
           <EmptyState />
