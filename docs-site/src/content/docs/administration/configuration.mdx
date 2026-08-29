@@ -1,6 +1,6 @@
 ---
 title: Configuration
-description: Environment variables and runtime settings for Actual Bench — metadata database, Direct mode, unattended sync vault, logging, and secret handling.
+description: Environment variables and runtime settings for Actual Bench - metadata database, Direct mode, unattended sync vault, logging, and secret handling.
 sidebar:
   order: 2
 ---
@@ -13,7 +13,7 @@ configure only the feature you intend to enable.
 
 Configuration is provided as environment variables to the container. Server-side variables are read by
 the Node server; variables prefixed with `NEXT_PUBLIC_` are build/public values exposed to the browser.
-The app **version** is injected automatically from the build — you do not set it.
+The app **version** is injected automatically from the build - you do not set it.
 
 :::caution[Restart to apply changes]
 Environment variables are read at server start. Change them and **restart** the container for the new
@@ -27,7 +27,7 @@ Only variables verified in the current codebase are listed.
 | Variable | Default | Purpose | Secret | Restart |
 |---|---|---|:---:|:---:|
 | `ACTUAL_BENCH_DB_PATH` | `/data/actual-bench.sqlite` | Path to the metadata SQLite database. | No | Yes |
-| `DIRECT_BROWSER_API` | enabled | Set to `0` / `false` / `off` to disable Direct Actual Server mode. The single, canonical switch — takes effect at runtime on the prebuilt image. | No | Yes |
+| `DIRECT_BROWSER_API` | enabled | Set to `0` / `false` / `off` to disable Direct Actual Server mode. The single, canonical switch - takes effect at runtime on the prebuilt image. | No | Yes |
 | `NEXT_PUBLIC_DIRECT_BROWSER_API` | *(deprecated)* | Deprecated alias for `DIRECT_BROWSER_API`, still honored (with a warning) for one release. Use `DIRECT_BROWSER_API` instead. | No | Yes |
 | `SYNC_VAULT_KEY` | *(unset)* | Enables unattended server-side sync; derives the encryption key for stored credentials. | **Yes** | Yes |
 | `SYNC_SCHEDULER_SECRET` | *(unset)* | Enables the external scheduler trigger endpoint; required in its request header. | **Yes** | Yes |
@@ -35,7 +35,7 @@ Only variables verified in the current codebase are listed.
 | `NEXT_DEV_ALLOWED_ORIGINS` | *(unset)* | Dev-only: allow the HMR WebSocket through a reverse proxy (comma-separated hostnames). | No | Yes |
 
 Demo/analytics variables (such as `NEXT_PUBLIC_ANALYTICS`) exist for the public demo build and are inert
-in self-hosted deployments — you do not need them.
+in self-hosted deployments - you do not need them.
 
 ## Minimum configuration
 
@@ -47,14 +47,14 @@ default.
 
 Direct Actual Server mode is enabled by default. To hide it (offer only HTTP API Server mode), set
 `DIRECT_BROWSER_API=0` and restart. This one server-side runtime variable is read consistently across
-the app — the middleware that emits the cross-origin-isolation headers, the connect screen, and the
-Actual-engine asset route — so it takes effect on the prebuilt image with no rebuild. See
+the app - the middleware that emits the cross-origin-isolation headers, the connect screen, and the
+Actual-engine asset route - so it takes effect on the prebuilt image with no rebuild. See
 [Deployment](../deployment/#direct-mode-network-requirements) for the browser reachability and
 cross-origin requirements Direct mode needs.
 
 :::note[`NEXT_PUBLIC_DIRECT_BROWSER_API` is deprecated]
 Earlier versions required a second, build-time `NEXT_PUBLIC_DIRECT_BROWSER_API` variable. It is now a
-deprecated alias — still honored (with a startup warning) for one release, but you should set only
+deprecated alias - still honored (with a startup warning) for one release, but you should set only
 `DIRECT_BROWSER_API`.
 :::
 
@@ -63,7 +63,7 @@ deprecated alias — still honored (with a startup warning) for one release, but
 - Default path: `/data/actual-bench.sqlite` (override with `ACTUAL_BENCH_DB_PATH`).
 - Requires a **writable** persistent volume.
 - Schema **migrations run on boot**; App Health shows the current and latest schema version.
-- Stores Actual Bench workflow metadata only — **not** Actual credentials or budget data, except two
+- Stores Actual Bench workflow metadata only - **not** Actual credentials or budget data, except two
   explicit, encrypted opt-ins: **remembered-connection** secrets and **unattended-sync** credentials
   (below).
 
@@ -71,11 +71,11 @@ deprecated alias — still honored (with a startup warning) for one release, but
 
 When a user opts in to [remembering a server](../../getting-started/connecting/#remember-a-server-optional),
 its secret is sealed **AES-256-GCM** in this database, encrypted with a key derived from a **passphrase
-the user sets** — no environment variable is involved. Credentials are server-scoped (one saved server
+the user sets** - no environment variable is involved. Credentials are server-scoped (one saved server
 opens any of its budgets); budget encryption passwords are sealed separately, per budget. The passphrase
 and derived key are never stored (only the ciphertext and a salt), so the server cannot decrypt on its
 own; the user unlocks once per session. This is **separate** from the `SYNC_VAULT_KEY` unattended-sync
-vault below—the two never share ciphertext or a key. Back up and persist `/data` to preserve remembered
+vault below - the two never share ciphertext or a key. Back up and persist `/data` to preserve remembered
 servers across container replacement; a writable path by itself does not prove durability. A lost
 passphrase means the user resets the vault and re-saves.
 
@@ -83,11 +83,11 @@ passphrase means the user resets the vault and re-saves.
 
 For server-side scheduled sync (HTTP API Server mode flows only):
 
-- **`SYNC_VAULT_KEY`** — a strong operator secret. When set, the in-process scheduler runs and enrolled
+- **`SYNC_VAULT_KEY`** - a strong operator secret. When set, the in-process scheduler runs and enrolled
   credentials can be stored/decrypted. When unset, the feature is fully disabled: nothing is persisted
   and the scheduler never runs. Enrolled credentials are stored **AES-256-GCM encrypted** in the
   metadata database; the key is derived from this variable and never stored in the database.
-- **`SYNC_SCHEDULER_SECRET`** *(optional)* — enables an external trigger endpoint at
+- **`SYNC_SCHEDULER_SECRET`** *(optional)* - enables an external trigger endpoint at
   `POST /api/sync/scheduler/tick`, which requires the header `x-scheduler-secret`. Without it, that
   endpoint returns `403`. Use this only if you want to drive the scheduler from an external cron instead
   of (or in addition to) the built-in one.
@@ -116,7 +116,7 @@ production if you want quieter logs, or raise it for debugging.
 
 - Never commit a `.env` file with real secrets to version control.
 - Use your container platform's secret management for `SYNC_VAULT_KEY` and `SYNC_SCHEDULER_SECRET`.
-- Do not expose server secrets as `NEXT_PUBLIC_*` variables — those are shipped to the browser.
+- Do not expose server secrets as `NEXT_PUBLIC_*` variables - those are shipped to the browser.
 - Redact secrets before sharing logs, and rotate any value you suspect is compromised.
 
 ## Configuration examples
@@ -143,7 +143,7 @@ environment:
   DIRECT_BROWSER_API: "0"
 ```
 
-Use placeholders and inject real secrets from your platform — never hard-code them.
+Use placeholders and inject real secrets from your platform - never hard-code them.
 
 ## Validation
 
@@ -155,4 +155,4 @@ vault state.
 
 - [Deployment](../deployment/)
 - [Upgrading and Backups](../upgrading-and-backups/)
-- [Budget Sync](../../user-guide/budget-sync/)
+- [Budget File Sync](../../user-guide/budget-sync/)

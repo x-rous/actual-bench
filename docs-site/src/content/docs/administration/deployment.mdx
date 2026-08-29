@@ -1,6 +1,6 @@
 ---
 title: Deployment
-description: Production self-hosting guidance for Actual Bench — architecture, image tags, Compose, networking for both connection modes, reverse proxy, HTTPS, and hardening.
+description: Production self-hosting guidance for Actual Bench - architecture, image tags, Compose, networking for both connection modes, reverse proxy, HTTPS, and hardening.
 sidebar:
   order: 1
 ---
@@ -16,9 +16,9 @@ one HTTPS endpoint, and a network path to the selected Actual connection mode.
 
 Actual Bench is a Next.js application. How requests flow depends on the connection mode:
 
-- **Direct Actual Server mode** — the browser talks to your Actual Server directly and runs Actual's
+- **Direct Actual Server mode** - the browser talks to your Actual Server directly and runs Actual's
   engine in a browser worker. Actual Bench serves the app; it does not proxy budget traffic.
-- **HTTP API Server mode** — the browser talks only to Actual Bench, which forwards requests
+- **HTTP API Server mode** - the browser talks only to Actual Bench, which forwards requests
   server-side to `actual-http-api` through its internal proxy. The browser never calls `actual-http-api`
   directly.
 
@@ -29,9 +29,9 @@ data.
 
 Multi-architecture images are published for `linux/amd64` and `linux/arm64`:
 
-- `xrous/actual-bench:latest` — stable, for normal production.
-- `xrous/actual-bench:<version>` (e.g. `:1.2.4`) — a pinned, unchanging version.
-- `xrous/actual-bench:edge` — unstable, rebuilt on every merge; for testing only.
+- `xrous/actual-bench:latest` - stable, for normal production.
+- `xrous/actual-bench:<version>` (e.g. `:1.2.4`) - a pinned, unchanging version.
+- `xrous/actual-bench:edge` - unstable, rebuilt on every merge; for testing only.
 
 Pin a specific `:<version>` in production if you want fully controlled upgrades.
 
@@ -66,7 +66,7 @@ Two different reachability requirements exist, and confusing them is the most co
 
 :::caution[`localhost` inside a container is the container itself]
 In HTTP API mode, if `actual-http-api` runs in another container, do not point Actual Bench at
-`localhost` — that resolves to the Actual Bench container. Use the API's Docker service name (on a
+`localhost` - that resolves to the Actual Bench container. Use the API's Docker service name (on a
 shared network) or a reachable host/URL.
 :::
 
@@ -86,7 +86,7 @@ If Direct mode can't be supported in your environment, disable it with `DIRECT_B
 ### HTTP API network requirements
 
 - The Actual Bench **container** must reach the `actual-http-api` base URL.
-- Requests are proxied server-side through Actual Bench, so only Actual Bench needs that path — the
+- Requests are proxied server-side through Actual Bench, so only Actual Bench needs that path - the
   browser does not.
 - If both run in Docker, attach them to a shared network and use the API's service name.
 
@@ -98,7 +98,7 @@ networking first.
 Run Actual Bench behind a reverse proxy that terminates HTTPS:
 
 - Forward the correct **host** and **protocol** headers.
-- Use HTTPS end-to-end where possible — Direct mode in particular depends on a secure, isolated origin.
+- Use HTTPS end-to-end where possible - Direct mode in particular depends on a secure, isolated origin.
 - Serving Actual Server same-origin through the proxy is one way to satisfy Direct-mode CORS/isolation
   without wide CORS rules.
 

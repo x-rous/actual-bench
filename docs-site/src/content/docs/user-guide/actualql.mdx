@@ -1,17 +1,18 @@
 ---
-title: ActualQL
-description: Run, explain, save, and export ActualQL queries against your budget in Actual Bench — editor, result views, saved queries, and mode differences.
+title: ActualQL Queries
+description: Run, explain, save, and export ActualQL queries against your budget in Actual Bench - editor, result views, saved queries, and mode differences.
 sidebar:
   order: 10
 ---
 
-Use **ActualQL** when you have a precise question that Actual's normal reports do not answer—for
-example, a targeted transaction subset, an aggregate by month, or a cleanup check. It is best suited to
-people comfortable editing structured JSON; start from the built-in examples rather than a blank page.
+**ActualQL Queries** runs Actual's own query language against your saved budget data and shows the
+result as a table, raw JSON, a single value or a tree. Come here with a precise question that no report
+answers - a targeted transaction subset, an aggregate by month, a cleanup check. It expects some
+comfort with structured JSON, so start from the built-in examples rather than a blank page.
+
+Open it from **Tools → ActualQL Queries** (`/query`). It works in both connection modes.
 
 **Write model:** read-only. Queries see saved server state, not unsaved drafts.
-
-Open **ActualQL Queries** under **Tools**. It works in both connection modes.
 
 ## Get an answer quickly
 
@@ -40,33 +41,33 @@ workspace is used for reading and analyzing data.
 2. Select **Run** (or press `Ctrl/Cmd+Enter`).
 3. Use **Format JSON** to tidy the query.
 
-Parse errors are shown inline before any request is made. **Lint warnings** flag risky shapes — for
+Parse errors are shown inline before any request is made. **Lint warnings** flag risky shapes - for
 example a broad `transactions` query with no `limit`, `groupBy`, or `calculate`; an empty `$oneof`; or a
 `groupBy` with no aggregate.
 
 ## Use built-in examples and reference
 
-- **ActualQL Reference** — a six-section quick reference (basics, filter operators, joined fields,
+- **ActualQL Reference** - a six-section quick reference (basics, filter operators, joined fields,
   aggregates, transactions options, and copyable snippets).
-- **Example packs** — one-click inserts grouped into Data inspection, Cleanup & validation, Aggregation,
+- **Example packs** - one-click inserts grouped into Data inspection, Cleanup & validation, Aggregation,
   and Targeted subset.
 
 ## Understand result views
 
 Select a result view via tabs:
 
-- **Table** — columns from the union of keys across rows; nested values are JSON-stringified; capped at
+- **Table** - columns from the union of keys across rows; nested values are JSON-stringified; capped at
   500 rows with a warning banner. Dates render human-readably; `amount`/`balance` integers show as
   decimals (cents ÷ 100), with the raw value on hover.
-- **Raw JSON** — the full syntax-highlighted payload.
-- **Scalar** — a large value card for `calculate` aggregate results.
-- **Tree** — a collapsible JSON tree, auto-selected for plain-object results.
+- **Raw JSON** - the full syntax-highlighted payload.
+- **Scalar** - a large value card for `calculate` aggregate results.
+- **Tree** - a collapsible JSON tree, auto-selected for plain-object results.
 
 An execution metadata bar shows an OK / Error chip, elapsed time, row count, and payload size.
 
 ## Explain a query
 
-Select **Explain** for a one-click plain-English summary of what the current query does — its target
+Select **Explain** for a one-click plain-English summary of what the current query does - its target
 table, filters, grouping, aggregation, ordering, and whether the result is tabular or scalar. Explaining
 does not run the query.
 
@@ -75,7 +76,7 @@ does not run the query.
 - **Save** a query with a name. Saved queries are stored in the Actual Bench database and shared
   across **every budget** in your instance, so they are available wherever you connect (not tied to
   one browser or budget). Load, rerun, duplicate, rename, delete, and **pin as favorite**. Queries
-  you saved in an earlier version — previously kept per-budget in your browser — are imported into
+  you saved in an earlier version - previously kept per-budget in your browser - are imported into
   the database automatically the first time you open the workspace.
 - **Query history** keeps the last 10 executed queries per budget for one-click reload; re-running a
   query bumps it to the top rather than duplicating it.
@@ -110,15 +111,15 @@ spending, budget status, and rules. They are the most reliable, current examples
 
 ## Troubleshooting
 
-- **Invalid JSON** — the inline parse error points at the problem; fix it before running.
-- **Unsupported query** — check the lint warnings and the ActualQL Reference.
-- **Empty result** — verify filters and date ranges.
-- **Result isn't table-friendly** — use the Tree or Raw JSON view.
-- **Results look stale** — they reflect saved state; save your staged edits first.
-- **cURL option missing** — you're in Direct mode; cURL is HTTP API Server-only.
+- **Invalid JSON** - the inline parse error points at the problem; fix it before running.
+- **Unsupported query** - check the lint warnings and the ActualQL Reference.
+- **Empty result** - verify filters and date ranges.
+- **Result isn't table-friendly** - use the Tree or Raw JSON view.
+- **Results look stale** - they reflect saved state; save your staged edits first.
+- **cURL option missing** - you're in Direct mode; cURL is HTTP API Server-only.
 
 ## Related pages
 
 - [Rules](../rules/)
-- [Budget File Tools](../budget-file-tools/)
+- [Budget File Health](../budget-file-health/) · [Data Browser](../data-browser/) - the same data from an exported snapshot
 - [Connect to Actual Budget](../../getting-started/connecting/)

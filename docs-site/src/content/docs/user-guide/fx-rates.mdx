@@ -1,21 +1,22 @@
 ---
 title: FX Rates
-description: Manage the exchange rates Actual Bench uses for multi-currency budget sync — automatic Frankfurter rates, overrides, CSV import, immutable snapshots, and rate locking.
+description: Manage the exchange rates Actual Bench uses for multi-currency budget sync - automatic Frankfurter rates, overrides, CSV import, immutable snapshots, and rate locking.
 sidebar:
   order: 13
 ---
 
-Use **FX Rates** only when a transaction [Budget Sync](../budget-sync/) flow moves money between budget
-files kept in different currencies. It is not a general currency feature and does not add
-multi-currency accounts to one Actual budget.
+**FX Rates** holds the exchange rates a [Budget File Sync](../budget-sync/) flow uses when it moves
+money between budget files kept in different currencies: date-specific rates, coverage for the dates
+that have none, manual overrides, and an immutable snapshot of what was used, so a later market move
+cannot silently rewrite past conversions.
 
-Actual Bench adds date-specific rates, missing-rate coverage, manual overrides, and immutable audit
-snapshots so a later market-rate change cannot silently rewrite past conversions.
+It exists only to serve those flows. It is not a general currency feature, and it does not add
+multi-currency accounts to a single Actual budget.
+
+Open it from **Tools → FX Rates** (`/fx-rates`), once a converting flow is configured.
 
 **Write model:** changing the rate registry writes Actual Bench metadata. Actual transactions change
 only through a separately previewed and applied sync update.
-
-Open **FX Rates** under **Tools** after you have configured a converting flow.
 
 ## Get a converting flow ready
 
@@ -27,7 +28,7 @@ Open **FX Rates** under **Tools** after you have configured a converting flow.
 ## When currency conversion is used
 
 A transaction flow can convert amounts when you enable its **Convert currency** option and set a source
-and target currency. Only transaction flows convert — payee and category flows never do.
+and target currency. Only transaction flows convert - payee and category flows never do.
 
 ## How rates are sourced
 
@@ -38,8 +39,8 @@ Rates come from a database-backed registry, filled automatically from the free
 - Rates are **date-specific**.
 - For a date with no published rate (weekends and holidays), Actual Bench falls back to the **latest
   prior rate**.
-- If the provider is briefly unavailable, a converting sync doesn't fail — affected rows go to review as
-  **FX pending** (see [Budget Sync](../budget-sync/#preview-a-flow)).
+- If the provider is briefly unavailable, a converting sync doesn't fail - affected rows go to review as
+  **FX pending** (see [Budget File Sync](../budget-sync/#preview-a-flow)).
 
 You can also override any date manually or import rates from a CSV.
 
@@ -73,7 +74,7 @@ Use **Set your rate** to enter a rate for a specific date manually.
 Setting a rate does not retroactively change already-synced transactions on its own. Past conversions
 keep their locked rate unless you explicitly update them through the previewed sync update path (the
 *Update synced transactions when the rate changes* flow option). See
-[Budget Sync](../budget-sync/#updates-and-deletion-opt-in).
+[Budget File Sync](../budget-sync/#updates-and-deletion-opt-in).
 :::
 
 ## Import rates from CSV
@@ -89,8 +90,8 @@ or future-dated rate is sent to the review queue as **FX pending** rather than f
 
 ## Immutable snapshots and rate locking
 
-- Every converted transaction stores an **immutable snapshot** — the exact rate, source/target amounts,
-  provider, and dates — plus a compact **audit note** on the target transaction.
+- Every converted transaction stores an **immutable snapshot** - the exact rate, source/target amounts,
+  provider, and dates - plus a compact **audit note** on the target transaction.
 - Rates **lock at first sync**, so a later rate change never silently rewrites past conversions.
 - To apply a corrected rate to already-synced transactions, use the opt-in *Update synced transactions
   when the rate changes* flow option, which goes through the normal previewed, safety-checked update
@@ -107,17 +108,18 @@ See [Known Limitations](../../help/known-limitations/) for the full list.
 
 ## Troubleshooting
 
-- **"FX pending" in a preview** — no rate exists for that date/pair yet; **Fill range from Frankfurter**,
-  add an override, or import a CSV.
-- **A weekend or holiday date** — Actual Bench falls back to the latest prior rate; fill the range if you
+- **"FX pending" in a preview** - no *usable* rate was found for that date and pair. Either none has
+  been recorded yet, in which case **Fill range from Frankfurter**, add an override, or import a CSV;
+  or the provider was briefly unavailable, in which case previewing again once it recovers is enough.
+- **A weekend or holiday date** - Actual Bench falls back to the latest prior rate; fill the range if you
   want explicit coverage.
-- **A future-dated transaction** — a future rate isn't available; it stays FX pending until a rate
+- **A future-dated transaction** - a future rate isn't available; it stays FX pending until a rate
   exists.
-- **CSV rejected** — check the columns and values against the in-app import guidance.
-- **Wrong pair direction** — confirm the source and target currencies on the flow.
-- **Converted amount differs slightly** — rounding is applied to the final converted amount.
+- **CSV rejected** - check the columns and values against the in-app import guidance.
+- **Wrong pair direction** - confirm the source and target currencies on the flow.
+- **Converted amount differs slightly** - rounding is applied to the final converted amount.
 
 ## Related pages
 
-- [Budget Sync](../budget-sync/)
+- [Budget File Sync](../budget-sync/)
 - [Connect to Actual Budget](../../getting-started/connecting/)

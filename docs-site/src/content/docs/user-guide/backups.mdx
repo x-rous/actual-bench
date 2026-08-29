@@ -6,17 +6,21 @@ sidebar:
 ---
 
 A ZIP you exported once is not a backup. You do not know whether it still opens, whether it is
-complete, or how old it is — and you find out on the day it matters.
+complete, or how old it is - and you find out on the day it matters.
 
-**Backups** in Actual Bench takes copies on a schedule, **opens each one to check it is readable**,
-stores it in as many places as you like, and keeps the inventory honest about what actually exists.
-Open it from **Tools → Backups**.
+**Backups** takes copies on a schedule, **opens each one to check it is readable**, stores it in as
+many places as you like, and keeps the inventory honest about what actually exists.
+
+Open it from **Tools → Backups** (`/backups`).
+
+**Write model:** it only reads your budget. What it writes are the copies, to the destinations you
+configure, plus its own record of them.
 
 The page has two tabs:
 
-- **Setup** — where copies go, what gets copied and when, and whether Bench should take one before
+- **Setup** - where copies go, what gets copied and when, and whether Bench should take one before
   you do something risky.
-- **Backups** — the copies that exist: how old they are, whether they have been opened and read, and
+- **Backups** - the copies that exist: how old they are, whether they have been opened and read, and
   where they live.
 
 A fresh install opens on Setup, because there is nothing else to look at yet.
@@ -27,22 +31,22 @@ Everything on the page is evidence for one sentence: *if this budget disappeared
 would I get back, and how old would it be?*
 
 It is deliberately pessimistic. A copy Bench has never opened, a destination that failed last night,
-or every copy sitting in one place all pull it down — and the reasons are listed underneath. A
+or every copy sitting in one place all pull it down - and the reasons are listed underneath. A
 backup screen that reassures you is worse than no backup screen at all.
 
 ## Setup: Backup Destinations
 
 Two kinds, matching the two situations people are actually in:
 
-- **A folder on this server** — any absolute path the server can write to: a mounted volume, a NAS
+- **A folder on this server** - any absolute path the server can write to: a mounted volume, a NAS
   share, a second disk. Bench creates it if it does not exist.
-- **An S3-compatible bucket** — AWS, but equally MinIO on a NAS, Backblaze B2, Cloudflare R2, Wasabi
+- **An S3-compatible bucket** - AWS, but equally MinIO on a NAS, Backblaze B2, Cloudflare R2, Wasabi
   or Garage. Access keys are encrypted with your server's `SYNC_VAULT_KEY` and never stored in
   readable form.
 
 Bench checks a folder path while you are typing it rather than at 3am when the backup runs. It will
 tell you the directory does not exist and create it, that it cannot write there, that the volume is
-nearly full, or that the folder is on the same disk as Bench's own data — that last one is a warning,
+nearly full, or that the folder is on the same disk as Bench's own data - that last one is a warning,
 not a refusal, because `/data/backups` is a perfectly sensible arrangement that simply is not
 off-site.
 
@@ -57,26 +61,26 @@ are a real choice; backups still work, and only retention is affected.
 
 A rule says what to copy, where to put it, how often, and how long to keep it.
 
-- **What** — the budget, Bench's own settings, or both. Bench's settings are your sync flows and
+- **What** - the budget, Bench's own settings, or both. Bench's settings are your sync flows and
   mappings, reconciliation sessions, automations, saved queries and payee-cleanup decisions:
   everything you have taught Bench, which lives nowhere else.
-- **Which budget** — an **enrolled** connection. A scheduled backup runs with your browser closed, so
+- **Which budget** - an **enrolled** connection. A scheduled backup runs with your browser closed, so
   it needs credentials the server can use on its own. If nothing is enrolled, Bench says so instead
   of quietly offering you an empty list.
-- **When** — every few hours, every day at a time you pick, on chosen days of the week, once a month,
+- **When** - every few hours, every day at a time you pick, on chosen days of the week, once a month,
   or a cron expression for the people who want one. Whichever you choose, Bench says back what it
   understood and when the next run actually lands.
-- **Encryption** — off by default, because for most self-hosted setups the copy lands on a volume you
+- **Encryption** - off by default, because for most self-hosted setups the copy lands on a volume you
   already control and encryption mainly adds a way to lose the data permanently. Turn it on when a
   copy goes somewhere you do not control. **Bench cannot recover an encrypted backup without the
   passphrase, and neither can anyone else.**
 
-Deleting a rule stops it running and keeps the backups it already took — including the passphrase
+Deleting a rule stops it running and keeps the backups it already took - including the passphrase
 that opens the encrypted ones. Bench forgets that passphrase on its own once the last copy needing it
 is gone, and lists it under **Passphrases Bench still holds** until then.
 
-Each rule shows just enough to answer "is this working?" — whether it is paused, when it last ran and
-when it runs next — and links to **Automations** for run history, retries, logs and failures. Rules
+Each rule shows just enough to answer "is this working?" - whether it is paused, when it last ran and
+when it runs next - and links to **Automations** for run history, retries, logs and failures. Rules
 run on Bench's automation engine, so that page is where their full history lives; Backups does not
 keep a second copy of it.
 
@@ -96,16 +100,16 @@ bytes survived a round trip, which is the least interesting thing that can go wr
 Bench also compares each copy with the one before it. A copy with far fewer transactions, fewer
 accounts, or less than half the size does not pass verification, because a cut-short export is a
 perfectly valid file containing the wrong budget. If you deleted those transactions yourself, that is
-expected and the copy is still there — Bench just will not tell you it checked out.
+expected and the copy is still there - Bench just will not tell you it checked out.
 
 A copy that fails verification is still stored, and clearly marked. A backup Bench distrusts is more
-useful than no backup — as long as nobody is allowed to believe it is fine.
+useful than no backup - as long as nobody is allowed to believe it is fine.
 
 ### Weekly re-checking
 
 Storage rots quietly. A full volume truncates a file, a failing disk flips a bit, somebody tidies a
 bucket, and nothing announces any of it. Once a week Bench re-reads the newest few copies in every
-destination, re-computes their checksums, and opens the newest one properly — decrypting it first
+destination, re-computes their checksums, and opens the newest one properly - decrypting it first
 where it has the passphrase, so an encrypted backup is proved to be **decryptable** rather than
 merely present.
 
@@ -113,7 +117,7 @@ merely present.
 
 ## Retention
 
-Retention keeps a sensible spread — so many daily, weekly, monthly and yearly copies — but it is
+Retention keeps a sensible spread - so many daily, weekly, monthly and yearly copies - but it is
 written as a set of refusals first:
 
 1. A **pinned** copy is never deleted.
@@ -125,7 +129,7 @@ written as a set of refusals first:
 
 There is no combination of settings that empties a destination.
 
-**Retention** on a rule shows exactly what would be removed and why, before anything happens — and
+**Retention** on a rule shows exactly what would be removed and why, before anything happens - and
 that preview is produced by the same code that does the pruning, so it is what will happen rather
 than an approximation of it.
 
@@ -142,7 +146,7 @@ Turn it off from the checkbox under the rules if you would rather it did not.
 
 ## Backing up Bench itself
 
-A rule set to copy **Bench settings** snapshots Bench's own metadata database — your sync flows and
+A rule set to copy **Bench settings** snapshots Bench's own metadata database - your sync flows and
 mappings, reconciliation sessions, automations, saved queries and payee-cleanup decisions. It needs
 no budget connection at all, because it is a local database copy.
 
@@ -152,8 +156,8 @@ and why the `SYNC_VAULT_KEY` has to travel with it.
 
 ## Getting a backup back
 
-**Look inside** opens a copy and tells you what is in it — accounts, payees, transactions and the
-date range — without restoring anything. That is usually the real question: not "is this file
+**Look inside** opens a copy and tells you what is in it - accounts, payees, transactions and the
+date range - without restoring anything. That is usually the real question: not "is this file
 intact" but "is *this* the one".
 
 **Download** hands you the file. Put it into Actual Budget with **Import file → Actual**: it creates
@@ -175,4 +179,4 @@ checksum and whether it is encrypted. So:
   such things.
 
 The downloaded ZIP is exactly what Actual's own export produces. It opens whether or not Bench still
-exists — which is the entire point.
+exists - which is the entire point.

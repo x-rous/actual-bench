@@ -1,6 +1,6 @@
 ---
 title: Upgrading and Backups
-description: Upgrade Actual Bench safely and protect its metadata — what to back up, upgrade procedures, database migrations, rollback, restore, and moving hosts.
+description: Upgrade Actual Bench safely and protect its metadata - what to back up, upgrade procedures, database migrations, rollback, restore, and moving hosts.
 sidebar:
   order: 3
 ---
@@ -14,11 +14,11 @@ metadata database.
 
 | Data | Where | Back up? |
 |---|---|---|
-| Actual budget data | Your Actual Server | Yes — by Actual, or by Actual Bench's own [Backups](../../user-guide/backups/) |
+| Actual budget data | Your Actual Server | Yes - by Actual, or by Actual Bench's own [Backups](../../user-guide/backups/) |
 | Actual Bench metadata | `/data` volume (SQLite) | **Yes** |
 | Configuration | Your Compose file / environment | Yes |
-| `SYNC_VAULT_KEY` | Your secret manager | Yes — **store it separately and safely** |
-| Remembered-server passphrase | Known by the user | Yes, separately—the database cannot recover it |
+| `SYNC_VAULT_KEY` | Your secret manager | Yes - **store it separately and safely** |
+| Remembered-server passphrase | Known by the user | Yes, separately - the database cannot recover it |
 | Browser session state | The browser | No (transient; unlock or reconnect after restart) |
 
 The metadata database does not contain your budget data or plaintext credentials. It can contain the
@@ -105,7 +105,7 @@ database file mid-write can produce a corrupt backup. Include any SQLite sidecar
 
 :::note[The vault key travels separately]
 Restoring this database onto a host with a different `SYNC_VAULT_KEY` gives you back every rule,
-flow and automation but none of the stored credentials — Bench will ask for them again. That is true
+flow and automation but none of the stored credentials - Bench will ask for them again. That is true
 however the copy was taken.
 :::
 
@@ -119,7 +119,7 @@ secret manager.
 3. Restore your environment configuration.
 4. Provide the **same `SYNC_VAULT_KEY`** as before.
 5. Start the container and verify **App Health**.
-6. If the vault key was lost or changed, unattended credentials can't be decrypted — **re-enroll** them
+6. If the vault key was lost or changed, unattended credentials can't be decrypted - **re-enroll** them
    per flow.
 
 ## Move to another host
@@ -132,12 +132,12 @@ secret manager.
 
 ## Troubleshooting
 
-- **App started with empty metadata** — the `/data` volume isn't mounted (or points somewhere new);
+- **App started with empty metadata** - the `/data` volume isn't mounted (or points somewhere new);
   check the mount and `ACTUAL_BENCH_DB_PATH`.
-- **Database not writable** — check volume permissions/ownership; App Health shows Writable = No.
-- **Migration failed** — restore the pre-upgrade backup and investigate.
-- **Old image can't read the new database** — roll forward again, or restore the matching backup.
-- **Unattended credentials fail after a move** — the `SYNC_VAULT_KEY` differs; re-enroll the flows.
+- **Database not writable** - check volume permissions/ownership; App Health shows Writable = No.
+- **Migration failed** - restore the pre-upgrade backup and investigate.
+- **Old image can't read the new database** - roll forward again, or restore the matching backup.
+- **Unattended credentials fail after a move** - the `SYNC_VAULT_KEY` differs; re-enroll the flows.
 
 ## Related pages
 

@@ -1,24 +1,26 @@
 ---
 title: Rule Diagnostics
-description: Lint your Actual Budget rule set in Actual Bench — a read-only, advisory workspace that flags missing references, shadowed rules, contradictions, broad matches, duplicates, and near-duplicates, with one-click jump-to-rule and merge.
+description: Lint your Actual Budget rule set in Actual Bench - a read-only, advisory workspace that flags missing references, shadowed rules, contradictions, broad matches, duplicates, and near-duplicates, with one-click jump-to-rule and merge.
 sidebar:
   order: 9
 ---
 
-Use **Rule Diagnostics** when a growing rule set has become hard to trust: references may point at
-deleted entities, broad rules may shadow specific ones, or duplicates may be doing the same work twice.
-Actual runs rules one transaction at a time; this workspace audits the set as a whole.
+**Rule Diagnostics** audits a whole rule set at once and reports what is wrong with it: references to
+deleted entities, broad rules shadowing specific ones, duplicates doing the same work twice, rules that
+cannot match the next import. Actual runs rules one transaction at a time and gives you no way to look
+at the set as a whole; this is that view.
+
+Open it from **Tools → Rule Diagnostics** (`/rules/diagnostics`), or the **Diagnostics** button on the
+Rules toolbar.
 
 **Write model:** read-only and advisory. It includes unsaved staged rules, but never modifies anything
-unless you follow a finding into the normal staged rule editor or confirm a merge.
-
-Open **Rule Diagnostics** from the **Tools** sidebar section, or the **Diagnostics** button on the
-Rules toolbar. The URL `/rules/diagnostics` is bookmarkable.
+unless you follow a finding into the normal staged rule editor, or confirm a merge or a
+generalisation.
 
 ## What Actual Bench adds
 
 Actual Budget runs rules but gives you no way to audit them in aggregate. As a rule set grows, problems
-accumulate silently — a rule pointing at a deleted category, two rules that quietly shadow each other,
+accumulate silently - a rule pointing at a deleted category, two rules that quietly shadow each other,
 near-duplicate rules that should be one. Rule Diagnostics surfaces all of these in one place, explains
 each in plain language, and links you straight to the fix.
 
@@ -95,19 +97,19 @@ review or undo it before saving.
 
 ## Safety
 
-Diagnostics is advisory — it only reads. It never changes your rules; every fix is an explicit action
+Diagnostics is advisory - it only reads. It never changes your rules; every fix is an explicit action
 you take (jump to a rule, confirm a merge, or confirm a generalisation) that then follows the normal
 staged **Save** flow.
 
 ## Troubleshooting
 
-- **A missing-entity finding** — the referenced payee/category/account was deleted or renamed; open the
+- **A missing-entity finding** - the referenced payee/category/account was deleted or renamed; open the
   rule and repoint it.
-- **Results look stale** — the working set changed; click **Refresh**.
-- **A large stage isn't fully analyzed** — very large rule partitions are analyzed up to a safety cap;
+- **Results look stale** - the working set changed; click **Refresh**.
+- **A large stage isn't fully analyzed** - very large rule partitions are analyzed up to a safety cap;
   a notice explains when a partition is skipped.
 
 ## Related pages
 
-- [Rules](../rules/) — build, edit, and merge rules
-- [Managing your data](../managing-your-data/)
+- [Rules](../rules/) - build, edit, and merge rules
+- [Editing, review and save](../../getting-started/editing-and-saving/)

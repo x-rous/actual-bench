@@ -21,7 +21,7 @@ import { Card, CardGrid, LinkCard } from '@astrojs/starlight/components';
 
 Actual Budget remains the place for everyday budgeting and transaction entry. **Actual Bench** is the
 independent companion you open when a larger job becomes slow, repetitive, difficult to inspect, or
-risky to do one item at a time—and the one that keeps working when you close it, on a schedule you
+risky to do one item at a time - and the one that keeps working when you close it, on a schedule you
 chose.
 
 :::note[Independent companion app]
@@ -29,40 +29,61 @@ Actual Bench is not the official Actual Budget application or documentation. It 
 existing Actual Server and adds focused administration, planning, audit, and data tools.
 :::
 
+## Start from what you need to do
+
+| I want to… | Go to |
+|---|---|
+| Plan a full year, not six months | [Budget](user-guide/budget-management/) |
+| Seed a budget from a spreadsheet, or clean one up in bulk | [Editing, review and save](getting-started/editing-and-saving/) |
+| Fix the duplicate payees my bank imports keep creating | [Payee Cleanup](user-guide/payee-cleanup/) |
+| Write better rules, and audit the ones I have | [Rules](user-guide/rules/) · [Rule Diagnostics](user-guide/rule-diagnostics/) |
+| Reconcile an account against a bank statement | [Bank Reconciliation](user-guide/bank-reconciliation/) |
+| Copy data between two budget files, in two currencies | [Budget File Sync](user-guide/budget-sync/) |
+| Pull in new transactions without opening anything | [Bank Sync](user-guide/bank-sync/) |
+| Have work run on a timetable while the app is closed | [Automations](user-guide/automations/) |
+| Keep backups I can prove still open | [Backups](user-guide/backups/) |
+| Ask a question of my data that no screen answers | [ActualQL Queries](user-guide/actualql/) |
+| Find out whether a budget file is sound | [Budget File Health](user-guide/budget-file-health/) |
+| Move a whole budget structure somewhere else | [Bundle Export / Import](getting-started/bundle-export-import/) |
+
+The sidebar is organised the way the app is: **Data Management** for the pages that hold your budget's
+records, **Tools** for the workspaces that act on them. If you can see it in Actual Bench's left
+navigation, it is under the same name here.
+
 ## Main functions
 
 <CardGrid>
 	<Card title="Full-year Budget Workspace" icon="setting">
 		See 12 consecutive months in a focused Budget, Actuals, or Balance view. This gives Envelope and especially Tracking users a clearer throughout-the-year perspective, plus spreadsheet-style editing when needed.
-		[Explore the Budget Workspace →](/actual-bench/user-guide/budget-management/)
+		[Explore the Budget Workspace →](user-guide/budget-management/)
 	</Card>
 	<Card title="Data Management" icon="list-format">
-		Bulk-create, merge, reorganize, import, export, and audit accounts, payees, categories, schedules, tags, and rules—with staged review before Save.
-		[Manage budget data →](/actual-bench/user-guide/managing-your-data/)
+		Bulk-create, merge, reorganize, import, export, and audit accounts, payees, categories, schedules, tags, and rules - with staged review before Save.
+		[Manage budget data →](getting-started/editing-and-saving/)
 	</Card>
 	<Card title="Rules and Rule Diagnostics" icon="approve-check">
 		Build advanced rules with readable references, then audit the entire rule set for broken references, overlaps, broad matches, and duplicates.
-		[Build and audit rules →](/actual-bench/user-guide/rules/)
+		[Build and audit rules →](user-guide/rules/)
 	</Card>
 	<Card title="Bank Reconciliation" icon="check-circle">
 		Import a complete statement, match it conservatively against one account, decide the differences, and apply only the changes you reviewed.
-		[Explore Bank Reconciliation →](/actual-bench/user-guide/bank-reconciliation/)
+		[Explore Bank Reconciliation →](user-guide/bank-reconciliation/)
 	</Card>
 	<Card title="Budget File Sync and FX Rates" icon="random">
 		Create saved, preview-first flows for transactions, payees, and categories, including controlled conversion between budgets kept in different currencies.
-		[Explore Budget File Sync →](/actual-bench/user-guide/budget-sync/)
+		[Explore Budget File Sync →](user-guide/budget-sync/)
 	</Card>
 	<Card title="Scheduled Work" icon="seti:clock">
-		Run bank syncs, backups and sync flows on a schedule with the app closed—one engine, with run history, health, backoff, and credentials the server can use on its own.
-		[Explore Automations →](/actual-bench/user-guide/automations/)
+		Run bank syncs, backups and sync flows on a schedule with the app closed - one engine, with run history, health, backoff, and credentials the server can use on its own.
+		[Explore Automations →](user-guide/automations/)
 	</Card>
 	<Card title="Verified Backups" icon="seti:shell">
 		Scheduled copies of your budget that Bench **opens and reads** to prove they work, kept in a folder or an S3-compatible bucket, on rules that never delete the last good one.
-		[Explore Backups →](/actual-bench/user-guide/backups/)
+		[Explore Backups →](user-guide/backups/)
 	</Card>
-	<Card title="ActualQL and Budget File Tools" icon="magnifier">
+	<Card title="ActualQL and file inspection" icon="magnifier">
 		Query saved budget data, inspect an exported file, run structural health checks, or browse its SQLite tables without writing anything back.
-		[Explore analysis and diagnostics →](/actual-bench/user-guide/budget-file-tools/)
+		[Explore analysis and diagnostics →](user-guide/budget-file-health/)
 	</Card>
 </CardGrid>
 
@@ -93,19 +114,19 @@ Actual Bench uses different safety models for different jobs:
 - **Read-only** for ActualQL, Rule Diagnostics, Budget File Health, and the Data Browser.
 - **Immediate explicit actions** for notes and carryover toggles.
 - **Scheduled, with a record** for automations: they run unattended, and every run is kept with its
-  result, duration, and log. See [Automations](/actual-bench/user-guide/automations/).
+  result, duration, and log. See [Automations](user-guide/automations/).
 
-The relevant guide states its write model before its instructions. Read [Work safely](/actual-bench/getting-started/core-concepts/)
+The relevant guide states its write model before its instructions. Read [Work safely](getting-started/core-concepts/)
 for the complete model.
 
 ## Start using it
 
 <CardGrid>
-	<LinkCard title="See whether it fits" href="/actual-bench/getting-started/introduction/" description="A short guide to who benefits, what Actual Bench complements, and where it adds value." />
+	<LinkCard title="See whether it fits" href="getting-started/introduction/" description="A short guide to who benefits, what Actual Bench complements, and where it adds value." />
 	<LinkCard title="Try the demo" href="https://actual-bench-demo.vercel.app" description="Explore realistic Envelope and Tracking household budgets without connecting your own data." />
-	<LinkCard title="Install Actual Bench" href="/actual-bench/getting-started/installation/" description="Run the container and keep its metadata persistent." />
-	<LinkCard title="Connect a budget" href="/actual-bench/getting-started/connecting/" description="Choose the connection mode your installation supports and open a budget." />
-	<LinkCard title="Protect a budget" href="/actual-bench/user-guide/backups/" description="Take verified backups on a schedule, and know what you would get back if you needed it." />
+	<LinkCard title="Install Actual Bench" href="getting-started/installation/" description="Run the container and keep its metadata persistent." />
+	<LinkCard title="Connect a budget" href="getting-started/connecting/" description="Choose the connection mode your installation supports and open a budget." />
+	<LinkCard title="Protect a budget" href="user-guide/backups/" description="Take verified backups on a schedule, and know what you would get back if you needed it." />
 </CardGrid>
 
 ## Project and support
