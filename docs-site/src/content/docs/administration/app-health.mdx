@@ -5,15 +5,22 @@ sidebar:
   order: 4
 ---
 
-Use **App Health** when you operate Actual Bench and need to verify its own metadata database or
-unattended scheduler. It diagnoses Actual Bench, not the connected budget; normal end users can ignore
-it unless an administrator asks for these details.
+**App Health** reports on Actual Bench itself - its metadata database, its scheduler, and whether the
+storage it depends on is writable and durable. It says nothing about your budget: that is
+[Budget File Health](../../user-guide/budget-file-health/). Come here when you run the server, or when
+someone who does asks you for these details.
 
 :::note[This is about Actual Bench, not your budget]
 The metadata database is not a copy of your Actual Budget. It holds workflow metadata and can hold the
 two explicit encrypted credential opt-ins: remembered servers and unattended sync. It never stores
 those credentials in plaintext. See [Work safely](../../getting-started/core-concepts/#where-data-lives).
 :::
+
+
+![App Health reporting on the metadata database, its storage and the scheduler.](../../../assets/screenshots/administration/app-health.png)
+
+*This is Bench reporting on itself: whether its own database is reachable, whether the storage under
+it is durable, and whether scheduled work can run.*
 
 ## What it reports
 

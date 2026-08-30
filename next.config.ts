@@ -30,7 +30,11 @@ const nextConfig: NextConfig = {
   // Exception: on Vercel, use the default ".next" - Vercel's Next.js builder
   // hard-expects ".next" and fails to locate a custom distDir, so the demo
   // deployment needs the standard path. CI/Docker keep ".next-build".
-  distDir: process.env.VERCEL ? ".next" : ".next-build",
+  // `ACTUAL_BENCH_DIST_DIR` overrides it so a second dev server can run beside
+  // a long-lived one - Next refuses two dev servers sharing an output
+  // directory, which is what the documentation screenshot capture needs when a
+  // development server is already up.
+  distDir: process.env.VERCEL ? ".next" : (process.env.ACTUAL_BENCH_DIST_DIR ?? ".next-build"),
   // Allow the reverse-proxy hostname to reach dev-server infrastructure
   // (HMR, dev overlay, etc.). Without this, Next.js 16 blocks cross-origin
   // requests from origins other than localhost, preventing React from fully

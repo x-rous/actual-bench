@@ -64,3 +64,7 @@ specs/
 .actual-bench-data/
 .agents/
 skills-lock.json
+
+# Build output for the documentation screenshot instance, which runs beside a
+# long-lived development server and must never be committed.
+.next-shots

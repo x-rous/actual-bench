@@ -17,6 +17,11 @@ Rules toolbar.
 unless you follow a finding into the normal staged rule editor, or confirm a merge or a
 generalisation.
 
+![Rule Diagnostics listing findings grouped by severity, each with the rule it concerns.](../../../assets/screenshots/user-guide/rule-diagnostics.png)
+
+*Every finding says what is wrong in a sentence, shows the rule it is about, and where a fix exists
+offers it - Merge for duplicates, Generalise for a rule matching whole import strings.*
+
 ## What Actual Bench adds
 
 Actual Budget runs rules but gives you no way to audit them in aggregate. As a rule set grows, problems
@@ -94,6 +99,11 @@ review or undo it before saving.
   [merge dialog](../rules/#merge-rules) pre-filled; you're returned to the diagnostics report afterward.
 - A **stale-results** banner appears if the working set changes while the view is open; results stay
   until you **Refresh**.
+
+![The merge dialog, pre-filled from a duplicate finding, with the merged rule and the delete-originals choice.](../../../assets/screenshots/dialogs/dialog-merge-rules.png)
+
+*The merge arrives filled in from the finding. Deleting the originals is opt-in, and the new rule is
+created before anything is removed - so a failure leaves you with what you started with.*
 
 ## Safety
 

@@ -23,6 +23,16 @@ Open it from **Tools → Payee Cleanup** (`/payees/cleanup`).
 renames, deletions and new rules to the normal staged-changes flow; nothing reaches your budget until
 you save on the Payees page.
 
+![Payee Cleanup proposing a merge, with the evidence behind it and the rule that would prevent a recurrence.](../../../assets/screenshots/user-guide/payee-cleanup.png)
+
+*A suggestion carries its own evidence: what changes, how many transactions move, why these were
+grouped, and the rule that stops the duplicates coming back.*
+
+![The "Needs a rule" tab: five payees whose imports are not automated, each with the rule that would fix it.](../../../assets/screenshots/user-guide/payee-cleanup-needs-rule.png)
+
+*These payees are not duplicates - they are correct, and unprotected. Each row carries the condition
+that would keep the next import resolving to it, and how many transactions it is based on.*
+
 ## How it finds duplicates
 
 Two layers, and the difference matters when you are deciding whether to trust a suggestion.
