@@ -1,17 +1,16 @@
 ---
 title: Budget File Health
-description: Check an exported Actual Budget snapshot for structural problems - schema, relationships, metadata and SQLite health - without writing anything back.
+description: "One question: is this budget file sound? Structural checks over an exported snapshot, run in your browser."
 sidebar:
   order: 22
 ---
 
-**Budget File Health** answers one question: is this budget file sound? It opens an exported snapshot
-locally in your browser, runs deterministic checks over it, and reports what it found.
+One question: is this budget file sound? It opens an exported snapshot in your browser, runs a fixed
+set of checks over it, and tells you what it found.
 
 Open it from **Tools → Budget File Health** (`/budget-diagnostics`).
 
-**Write model:** strictly read-only. The snapshot is inspected in your browser and never written back
-to Actual.
+**Write model:** read-only, strictly. Everything happens in your browser. Nothing goes back to Actual.
 
 ![Budget File Health's overview: counts for every object in the snapshot, its metadata, and the file it came from.](../../../assets/screenshots/user-guide/budget-file-health.png)
 
@@ -27,51 +26,47 @@ database - plus the sync ids and timestamps you need when reporting a problem.*
 | What rows and columns exist in a table? | [Data Browser](../data-browser/) |
 | I need a reusable query against live saved data | [ActualQL Queries](../actualql/) |
 
-Start here. Open the [Data Browser](../data-browser/) only when a finding needs table-level detail.
+Start here. Go to the [Data Browser](../data-browser/) when a finding needs the actual rows.
 
 :::caution[Snapshots contain your financial data]
-An exported snapshot can include personal financial information. Processing happens locally in your
-browser, but any ZIP or CSV you download becomes your responsibility - avoid sharing raw snapshots
-when reporting issues.
+A snapshot is your finances. The processing is local, but a ZIP or CSV you download is out of the
+browser and yours to look after. Do not attach one to a bug report.
 :::
 
 ## Load a budget snapshot
 
-The first time you open this page, Actual Bench downloads and opens the active budget's exported
-snapshot. It is then **cached** across navigation - with a "loaded X ago" label and a **Reload**
-button - and **shared** with the [Data Browser](../data-browser/), so once loaded, either tool opens
-instantly.
+The first time you open this page, Bench downloads and opens the active budget's snapshot. After that
+it is cached - you get a "loaded X ago" label and a **Reload** button - and shared with the
+[Data Browser](../data-browser/). Load it once, and both tools open instantly.
 
-Opening shows a staged progress rail with retry on failure, plus a reminder that the contents stay
-local but may include personal budget data.
+Loading shows its stages as it goes, and offers a retry if one fails.
 
 ## Review snapshot metadata
 
-The **Overview** tab summarizes export metadata, snapshot object counts, ZIP and SQLite sizes, and
-source details, with a button to download the exported ZIP.
+**Overview** lists the export metadata, how many of each object the snapshot holds, the ZIP and SQLite
+sizes, and where it came from. There is a button to download the ZIP.
 
 ## Run diagnostics
 
-The **Diagnostics** tab runs deterministic checks over the snapshot - schema, relationships, metadata,
-and SQLite health - and summarizes findings by severity. You can:
+**Diagnostics** checks the schema, the relationships between rows, the metadata and SQLite's own
+health, then groups what it finds by severity. From there you can:
 
-- Run a full **SQLite integrity check** (a longer-running operation).
+- Run a full **SQLite integrity check**. It takes a while.
 - **Export findings to CSV**.
 
-No diagnostics action writes anything back to your budget.
+Nothing here writes to your budget.
 
 ## Safety and limitations
 
-- Strictly read-only; it never modifies your budget.
-- Very large snapshots depend on available browser memory.
-- The full SQLite integrity check can take a while on large files.
+- Read-only. It cannot change your budget.
+- A very large snapshot is limited by your browser's memory.
+- The full integrity check is slow on large files. That is SQLite, not the page.
 
 ## Troubleshooting
 
-- **The snapshot won't open** - retry from the progress rail; check browser memory for large files.
-- **The snapshot looks stale** - use **Reload** to fetch a fresh export.
-- **A CSV opens oddly in a spreadsheet** - exports are UTF-8 with formula-injection protection; open
-  them as UTF-8.
+- **It will not open** - retry from the progress rail. On a large file, check browser memory.
+- **The snapshot is stale** - press **Reload** for a fresh export.
+- **A CSV looks wrong in a spreadsheet** - it is UTF-8, with formula protection. Open it as UTF-8.
 
 ## Related pages
 

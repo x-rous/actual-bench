@@ -1,14 +1,15 @@
 ---
 title: Upgrading and Backups
-description: Upgrade Actual Bench safely and protect its metadata - what to back up, upgrade procedures, database migrations, rollback, restore, and moving hosts.
+description: Replace a container or move host without losing Bench's own metadata - what to back up, and how to restore it.
 sidebar:
   order: 3
 ---
 
-This guide is for operators replacing an Actual Bench container or moving it to another host. The rule
-that matters most is: **reuse and back up the same `/data` storage**. Your budgets remain in Actual;
-Actual Bench's sessions, flows, saved queries, rates, and encrypted credential opt-ins live in its own
-metadata database.
+For operators replacing a container or moving to a new host. One rule matters more than the rest:
+**keep the volume holding `ACTUAL_BENCH_DB_PATH`, and back it up first**. That is `/data` unless you
+moved it. Your budgets are safe in Actual. Bench's sessions, flows, saved queries, exchange rates and
+encrypted credentials are not - they live in its own database, and that database lives on that
+volume.
 
 ## What needs to be backed up
 
@@ -21,8 +22,8 @@ metadata database.
 | Remembered-server passphrase | Known by the user | Yes, separately - the database cannot recover it |
 | Browser session state | The browser | No (transient; unlock or reconnect after restart) |
 
-The metadata database does not contain your budget data or plaintext credentials. It can contain the
-two explicit encrypted opt-ins: remembered-server secrets and unattended-sync credentials.
+That database holds no budget data and no plaintext credentials. It can hold the two encrypted
+opt-ins: remembered-server secrets, and unattended-sync credentials.
 
 ## Before upgrading
 
@@ -32,7 +33,7 @@ two explicit encrypted opt-ins: remembered-server secrets and unattended-sync cr
 4. Back up your Compose file and environment configuration.
 5. Ensure `SYNC_VAULT_KEY` is safely retained (needed to keep unattended credentials usable).
 6. If you use remembered servers, confirm the user still knows the vault passphrase.
-7. Prefer upgrading to a **pinned `:<version>`** rather than a moving tag, for a controlled change.
+7. Upgrade to a **pinned `:<version>`**, not a moving tag. Then you know what you got.
 
 ## Upgrade procedures
 
@@ -56,61 +57,59 @@ docker run -d \
   xrous/actual-bench:1.2.4
 ```
 
-Pin the exact `:<version>` you intend to run so the upgrade is deterministic.
+Name the exact version. `latest` today and `latest` tomorrow are not the same image.
 
 ### Moving from edge to stable
 
-If you were testing `edge`, switch the image tag to `latest` or a pinned `:<version>` and recreate the
-container. Keep the same `/data` volume so your metadata carries over.
+Change the tag to `latest` or a pinned version and recreate the container. Keep the same metadata
+volume and everything comes with you.
 
 ## Database migrations
 
-- Schema **migrations run automatically on boot** when a newer image starts against an existing
-  metadata database.
+- **Migrations run on boot**, automatically, when a newer image meets an existing database.
 - Check the result on **App Health**: the **Schema** row shows the current and latest version, and
   **Writable** should be `Yes`.
-- If a migration fails, do **not** keep writing. Restore the `/data` backup you took before upgrading and
-  investigate before retrying.
+- If a migration fails, stop. Do not keep writing to a half-migrated database. Restore the backup you
+  took and work out what happened before trying again.
 
 ## Verify after upgrade
 
 1. The app loads and shows the new version in the sidebar footer.
 2. App Health: **Writable = Yes**, **Schema** current, **Persistence** as expected.
 3. Your sync flows and run history are present.
-4. Remembered servers are still listed; the vault is expected to be locked until a user unlocks it.
+4. Remembered servers are still listed. The vault will be locked - that is correct, someone has to
+   unlock it.
 5. If you use unattended sync, its scheduler section on App Health looks healthy.
 
 ## Rollback
 
-- You can roll the **image** back to the previous `:<version>`.
-- Be aware that a newer version may have **migrated the schema**; an older image might not read a
-  newer database. If that happens, restore the pre-upgrade `/data` backup.
-- After a failed migration, prefer **restore from backup** over guessing.
+- Rolling the **image** back to the previous `:<version>` is easy.
+- Rolling the **database** back is not. A newer version may have migrated the schema, and the old image
+  may refuse to read it. That is what the pre-upgrade `/data` backup is for.
+- After a failed migration, restore. Do not guess.
 
 ## Back up the metadata database
 
-The easiest route is to let Bench do it: a [backup rule](../../user-guide/backups/) set to copy
-**Bench settings** takes a consistent snapshot of this database on a schedule, verifies it opens, and
-writes it wherever you point it. It uses SQLite's own `VACUUM INTO`, so the copy is safe to take
-while Bench is running and arrives with no `-wal` file to reunite.
+Let Bench do it. A [backup rule](../../user-guide/backups/) set to copy **Bench settings** snapshots
+this database on a schedule, opens the copy to check it reads, and puts it wherever you point it. It
+uses SQLite's `VACUUM INTO`, so the copy is safe to take while Bench is running and arrives as a
+single file with no `-wal` to reunite.
 
-To do it by hand instead, back up the `/data` volume (or at least the SQLite file at
-`ACTUAL_BENCH_DB_PATH`, default `/data/actual-bench.sqlite`).
+By hand: back up the `/data` volume, or at minimum the SQLite file at `ACTUAL_BENCH_DB_PATH`.
 
 :::caution[Back up SQLite safely]
-For a consistent copy, stop the container first, or use a SQLite-safe backup method. Copying a live
-database file mid-write can produce a corrupt backup. Include any SQLite sidecar files (for example
-`-wal` / `-shm`) if present.
+Stop the container first, or use a SQLite-aware method. `cp` on a live database mid-write gives you a
+corrupt file that looks fine until you need it. Take the `-wal` and `-shm` sidecars too if they exist.
 :::
 
 :::note[The vault key travels separately]
-Restoring this database onto a host with a different `SYNC_VAULT_KEY` gives you back every rule,
-flow and automation but none of the stored credentials - Bench will ask for them again. That is true
-however the copy was taken.
+Restore this database onto a host with a different `SYNC_VAULT_KEY` and you get every rule, flow and
+automation back - and none of the credentials. Bench will ask for them again. That holds however the
+copy was made.
 :::
 
-Also back up your Compose/environment configuration, and store `SYNC_VAULT_KEY` **separately** in your
-secret manager.
+Back up your Compose file and environment too. Keep `SYNC_VAULT_KEY` **somewhere else entirely**, in
+your secret manager.
 
 ## Restore the metadata database
 
@@ -119,8 +118,8 @@ secret manager.
 3. Restore your environment configuration.
 4. Provide the **same `SYNC_VAULT_KEY`** as before.
 5. Start the container and verify **App Health**.
-6. If the vault key was lost or changed, unattended credentials can't be decrypted - **re-enroll** them
-   per flow.
+6. Lost or changed the vault key? The unattended credentials cannot be decrypted. **Re-enrol** each
+   flow.
 
 ## Move to another host
 
@@ -132,12 +131,13 @@ secret manager.
 
 ## Troubleshooting
 
-- **App started with empty metadata** - the `/data` volume isn't mounted (or points somewhere new);
-  check the mount and `ACTUAL_BENCH_DB_PATH`.
-- **Database not writable** - check volume permissions/ownership; App Health shows Writable = No.
-- **Migration failed** - restore the pre-upgrade backup and investigate.
-- **Old image can't read the new database** - roll forward again, or restore the matching backup.
-- **Unattended credentials fail after a move** - the `SYNC_VAULT_KEY` differs; re-enroll the flows.
+- **Everything is empty** - `/data` is not mounted, or points somewhere new. Check the mount and
+  `ACTUAL_BENCH_DB_PATH`.
+- **Not writable** - volume ownership or permissions. App Health says so plainly.
+- **Migration failed** - restore, then investigate.
+- **The old image cannot read the new database** - go forward again, or restore the backup that
+  matches it.
+- **Unattended credentials fail after a move** - the vault key is different. Re-enrol the flows.
 
 ## Related pages
 

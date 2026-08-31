@@ -1,13 +1,13 @@
 ---
 title: Categories
-description: Manage Actual Budget category groups and categories in Actual Bench - import/export the whole hierarchy as CSV, bulk visibility, cascade-aware group deletion, rule linkage, and notes on groups.
+description: The whole category hierarchy, editable at once - including what deleting a group would take with it.
 sidebar:
   order: 5
 ---
 
-**Categories** shows a budget's whole category hierarchy - groups and the categories inside them - and
-lets you edit all of it at once. Come here to design a structure, import one from a spreadsheet, change
-visibility in bulk, or see what a group deletion would cascade into before you do it.
+The whole category hierarchy - groups, and the categories inside them - editable all at once. Design a
+structure. Import one from a spreadsheet. Hide twenty categories in one action. Or find out what
+deleting a group would take with it, before you delete it.
 
 Open it from **Data Management → Categories** (`/categories`).
 
@@ -23,10 +23,10 @@ uses.
 
 ## What you get beyond Actual Budget
 
-- **Import/export the entire group hierarchy as CSV** - seed a whole budget's category structure from
-  a spreadsheet in one pass, or export it for backup.
-- **Cascade-aware group deletion** - deleting a group shows the child-category count and aggregated
-  transactions across all children, with a cascade warning, before anything is staged.
+- **The whole hierarchy as one CSV** - seed a budget's structure from a spreadsheet in a single pass,
+  or take a copy.
+- **Group deletion counts the cascade** - how many child categories, how many transactions across all
+  of them, warned about before anything stages.
 - **See which rules reference a category** and jump straight to them.
 - **Notes on category groups**, not just categories.
 
@@ -34,20 +34,19 @@ uses.
 
 - Create category **groups** (income or expense type) and categories within them.
 - Rename groups and categories inline; collapse or expand group rows (or all groups at once).
-- Group reassignment opens an on-demand editor rather than rendering every dropdown up front, keeping
-  large tables responsive.
+- Moving a category between groups opens an editor when you ask for it. Rendering fifty dropdowns up
+  front would make a big table crawl.
 
 :::note[Income category constraints]
-Income categories stay locked to the single income parent group. Only expense categories can be moved
-between groups.
+Income categories belong to the one income group and stay there. Only expense categories move.
 :::
 
 ## Hide, show, and delete
 
 - Toggle visibility (hidden / visible) per category or per whole group.
 - Deleting a **category** confirms with its transaction count and rule references. Deleting a **group**
-  additionally shows the child category count and aggregated transactions across all children, with a
-  cascade warning. Bulk delete deduplicates implicit deletions and aggregates the totals.
+  adds the child count and every child's transactions, plus a cascade warning. Bulk delete works out
+  what is already implied and totals it once.
 
 ## Filter and sort
 

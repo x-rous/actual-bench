@@ -1,17 +1,16 @@
 ---
 title: Connect to a budget
-description: Choose the connection method your installation supports, load a server's budgets, and understand what is remembered.
+description: Pick a connection mode, open a budget, and decide what Bench is allowed to remember.
 sidebar:
   order: 3
 ---
 
-You need a connection only to open an existing Actual budget. Most users should choose **Direct Actual
-Server**, enter the same server URL and password they use for Actual, and then pick a budget. Use
-**HTTP API Server** when your installation already provides `actual-http-api`.
+A connection does one thing: it opens a budget you already have. Most people want **Direct Actual
+Server** - same URL, same password you use for Actual, then pick a budget. Choose **HTTP API Server**
+if your installation already runs `actual-http-api`.
 
 :::tip[If someone else runs Actual Bench]
-Ask the administrator which mode and URL to use. You do not need to understand the networking details
-to use the rest of Actual Bench.
+Ask them which mode and which URL. None of the networking below matters to you.
 :::
 
 
@@ -30,8 +29,8 @@ an `actual-http-api` server if your installation already has one.*
 | Network path | Your browser must reach Actual Server | Actual Bench must reach `actual-http-api` |
 | Unattended server sync | No | Yes, when configured |
 
-Both modes support encrypted budgets and the core workspaces. A feature guide calls out any meaningful
-mode difference.
+Both modes handle encrypted budgets and every workspace. Where a mode genuinely changes what a feature
+can do, that feature's guide says so.
 
 ## Connect
 
@@ -41,16 +40,16 @@ mode difference.
 4. Choose a budget. If it is end-to-end encrypted, enter its separate **Encryption password**.
 5. Select **Connect**.
 
-Actual Bench opens the [Budget Overview](../budget-overview/).
+Bench opens the [Budget Overview](../budget-overview/).
 
 ## Reconnect later
 
-Two kinds of convenience are available:
+There are two levels of convenience here, and they are not the same thing:
 
-- **Recent connection details** remember only non-secret labels and URLs for the current browser tab.
-  You re-enter credentials after the tab closes.
-- **Remember this server** is an optional encrypted vault. It keeps the server credential in the
-  Actual Bench metadata database and protects it with a passphrase you choose.
+- **Recent connection details** keep labels and URLs for the current tab. No secrets. Close the tab and
+  you type your credentials again.
+- **Remember this server** is an encrypted vault. The server credential goes into Bench's metadata
+  database, locked with a passphrase you choose.
 
 ### Remember a server
 
@@ -59,30 +58,30 @@ Two kinds of convenience are available:
 3. Connect. The server credential is encrypted and saved; an encrypted budget's password is saved
    separately for that budget.
 
-Saved servers appear in the **Connections** list. Unlock once after an Actual Bench restart, then open
-any remembered budget without re-entering its credentials. A server is remembered once even when it
-contains several budgets.
+Saved servers show up in the **Connections** list. Unlock once per restart and every remembered budget
+opens without further typing. One server is stored once, however many budgets live on it.
 
 :::caution[The passphrase cannot be recovered]
-The passphrase and derived key are not stored. If you forget it, **Reset vault** removes the encrypted
-saved servers so you can start again. It does not remove or change your Actual budgets.
+Neither the passphrase nor the key derived from it is stored anywhere. Forget it and there is no way
+back in: **Reset vault** deletes the encrypted saved servers so you can start over. Your Actual
+budgets are untouched.
 :::
 
-Remembered servers survive only when the administrator persists Actual Bench's `/data` storage. See
-[Upgrades and backups](../../administration/upgrading-and-backups/) if you run the installation.
+Remembered servers only survive if the volume holding Bench's metadata database is persisted - `/data`
+by default, or wherever `ACTUAL_BENCH_DB_PATH` points. If you run the installation, see
+[Upgrades and backups](../../administration/upgrading-and-backups/).
 
 ## Switch between open budgets
 
-Open budgets appear in the top-bar connection switcher. Each connection has its own staged edits and
-query cache. Switching never mixes drafts between budgets, but always confirm the active budget before
-you Save or Apply.
+Open budgets sit in the top-bar switcher. Each keeps its own draft and its own cache, and switching
+never mixes them. Even so: look at which budget is active before you Save or Apply.
 
 ## How credentials are handled
 
-- By default, server passwords, API keys, and encryption passwords stay in browser memory only.
+- By default, server passwords, API keys and encryption passwords never leave browser memory.
 - Recent connection details contain no secrets.
-- Remembered-server credentials are an explicit passphrase-encrypted opt-in.
-- Unattended-sync credentials are a separate operator-controlled encrypted opt-in.
+- Remembered-server credentials are opt-in, and encrypted with your passphrase.
+- Unattended-sync credentials are a different opt-in again, controlled by whoever runs the server.
 
 See [Work safely](../core-concepts/#where-data-lives) for the storage summary.
 
@@ -90,15 +89,15 @@ See [Work safely](../core-concepts/#where-data-lives) for the storage summary.
 
 ### Direct mode
 
-- Confirm the Actual Server URL works from the same browser.
+- Open the Actual Server URL in the same browser. If that fails, nothing else will work.
 - Use HTTPS outside localhost.
-- The administrator may need to configure CORS or a same-origin reverse proxy.
+- CORS or a same-origin reverse proxy may need configuring, which is the administrator's job.
 
 ### HTTP API mode
 
-- Confirm the API URL and `ACTUAL_API_KEY`.
-- If both applications run in containers, `localhost` points back to Actual Bench; use a shared-network
-  service name or another reachable address.
+- Check the API URL and `ACTUAL_API_KEY`.
+- With both apps in containers, `localhost` means Bench itself, not the API. Use a service name on a
+  shared network, or any address that actually resolves.
 
-If only HTTP API mode is visible, Direct mode was disabled by the administrator. See
-[Troubleshooting](../../help/troubleshooting/) for deeper deployment checks.
+Seeing only HTTP API mode means the administrator turned Direct mode off.
+[Troubleshooting](../../help/troubleshooting/) goes deeper.

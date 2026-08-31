@@ -1,28 +1,28 @@
 ---
 title: What Actual Bench adds
-description: Decide whether Actual Bench fits the work you do in Actual Budget and choose the first workflow worth trying.
+description: Whether Actual Bench is for the work you do, and which workflow to try first.
 sidebar:
   order: 1
 ---
 
-Actual Bench is for the jobs around an Actual Budget file that become tedious or difficult to verify
-in the everyday budgeting interface. It complements Actual; it does not ask you to move your normal
-budgeting or transaction entry somewhere new.
+Some jobs are miserable one row at a time. Others are easy to do and hard to check. Actual Bench is
+for those. Your normal budgeting stays where it is.
 
 ## Is it for you?
 
-Actual Bench is likely useful when at least one of these sounds familiar:
+Probably, if any of this sounds familiar:
 
-- You manage enough accounts, payees, categories, schedules, tags, or rules that one-at-a-time
-  maintenance is getting painful.
-- You plan several months at once or prepare numbers in Excel or Google Sheets.
-- You have accumulated rules and want to find broken references, duplicates, or surprising overlaps.
-- You reconcile from downloaded bank statements and want a persistent, review-first workflow.
-- You keep separate budget files for people, businesses, purposes, or currencies.
-- You need to inspect or query details that are not exposed in Actual's normal screens.
+- You have enough accounts, payees, categories, schedules, tags or rules that maintaining them one at
+  a time has stopped being reasonable.
+- You plan several months at once, or draft the numbers in a spreadsheet first.
+- Your rules have piled up and you no longer know which ones overlap, duplicate each other, or point
+  at something that no longer exists.
+- You reconcile from downloaded statements and want the comparison to survive closing the tab.
+- You keep more than one budget file - per person, per business, per currency.
+- You want to ask your data a question no screen answers.
 
-If you mainly enter transactions, check balances, and adjust the current month's budget, continue doing
-that in Actual Budget. Actual Bench is the occasional workbench for larger jobs.
+If you mostly enter transactions, check balances and nudge this month's budget, stay in Actual Budget.
+This is a workbench. You visit it for the big jobs.
 
 ## Choose the first workflow
 
@@ -42,28 +42,29 @@ that in Actual Budget. Actual Bench is the occasional workbench for larger jobs.
 
 ## What it does not replace
 
-Actual Bench is not intended to replace:
+It does not replace:
 
 - Everyday transaction entry and mobile budgeting in Actual.
 - Actual's normal budget views and reports.
-- Actual's bank connections themselves. Actual owns the link to your bank; Bench can schedule the
-  sync and report what each account returned, but the connection is Actual's.
-- Actual's day-to-day reconciliation experience. Actual Bench adds a separate, statement-driven
-  workbench for cases where you want to import and audit a complete statement.
+- Actual's bank connections. Actual owns the link to your bank. Bench decides when the sync runs and
+  reports what came back, but never touches the connection itself.
+- Actual's day-to-day reconciliation. Bench adds a separate workbench for the times you want to
+  import a whole statement and audit it line by line.
 - The official Actual Budget documentation.
 
 ## Why the workflows feel different
 
-The safest interaction depends on the job. Most maintenance work is staged until **Save**; sync and
-statement reconciliation use **Preview/Review → Apply**; diagnostic tools are read-only; notes and
-carryover toggles are explicit immediate writes. [Work safely](../core-concepts/) explains these
-patterns in a few minutes.
+Because the safe way to do a job depends on the job. Maintenance work stages until you press **Save**.
+Sync and statement reconciliation preview first, then apply what you picked. Diagnostics never write at
+all. Notes and carryover toggles save the instant you touch them - deliberately, and the pages say so.
+[Work safely](../core-concepts/) covers all four in a few minutes.
 
 ## What you need
 
-- An existing Actual Server and a modern browser.
-- An Actual Bench installation, or the [live demo](https://actual-bench-demo.vercel.app) for evaluation.
-- `actual-http-api` only when your installation uses HTTP API Server mode.
+- An Actual Server you already run, and a current browser.
+- Actual Bench itself - or the [live demo](https://actual-bench-demo.vercel.app), if you are still deciding.
+- For **Direct** mode: a browser that can reach the Actual Server URL, over HTTPS, with CORS allowed
+  or the server proxied same-origin.
+- For **HTTP API Server** mode: a running `actual-http-api`, its URL, and its `ACTUAL_API_KEY`.
 
-Ready to use your own budget? [Install Actual Bench](../installation/) and then
-[connect to a budget](../connecting/).
+Ready for your own data? [Install it](../installation/), then [connect a budget](../connecting/).

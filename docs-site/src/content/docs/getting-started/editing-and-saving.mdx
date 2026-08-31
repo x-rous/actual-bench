@@ -1,31 +1,30 @@
 ---
 title: Editing, review and save
-description: The editing model every Actual Bench page shares - staged inline editing, bulk actions, CSV import and export, Quick Create, Global Search, the Usage Inspector, and the review before Save.
+description: Every Data Management page edits the same way, so learn it once - staged edits, bulk actions, CSV, and a review before Save.
 sidebar:
   order: 5
 ---
 
-Every page under **Data Management** - Budget, Rules, Accounts, Payees, Categories, Schedules and
-Tags - edits the same way, and most of the Tools pages stage their results into the same review. Read
-this once and the rest of the documentation only has to cover what is particular to each page.
+Every page under **Data Management** edits the same way - Budget, Rules, Accounts, Payees, Categories,
+Schedules, Tags. Most of the Tools pages stage into the same review. Learn it once here. After that,
+each page's guide only has to tell you what is different about that page.
 
-Actual Budget is excellent for everyday maintenance, where you create and edit records one at a time
-and each change takes effect immediately. Actual Bench is built for the opposite job: setting up,
-cleaning up and auditing in bulk, with a review before anything is written.
+Actual Budget is good at the everyday version of this: one record, edited now, saved instantly. Bench
+does the opposite job. Fifty records, changed at once, and a look at the whole pile before any of it
+is written.
 
 **Write model:** stage → review → **Save**. Notes are the immediate-save exception.
 
 ## What the bulk model adds
 
-- **Bulk everything** - select many rows and act on them at once (delete, close/reopen, merge,
-  visibility), or paste rows straight from Excel / Google Sheets to create many records in one go.
-- **CSV import and export** - seed a fresh budget from a spreadsheet, or export for backup and
-  offline editing.
-- **Usage & impact visibility** - see how many rules and transactions reference a record, and jump
-  straight to them, *before* you change or delete anything.
-- **Staged review** - creates, edits, and deletes are collected as drafts and only written when you
-  **Save**, so you can review a whole cleanup pass before it touches your budget.
-- **Duplicate detection** - name clashes are flagged as you work.
+- **Bulk everything** - select rows and delete, close, reopen, merge or hide them together. Or paste
+  straight out of a spreadsheet to create dozens at once.
+- **CSV in and out** - seed a new budget from a spreadsheet, or take one away to edit offline.
+- **Usage before damage** - see how many rules and transactions point at a record, and jump to them,
+  *before* you change or delete it.
+- **Staged review** - creates, edits and deletes pile up as a draft and go nowhere until you **Save**.
+  A whole cleanup pass gets read once, as a unit.
+- **Duplicate detection** - name clashes are flagged while you type, not after.
 
 ## Start with one cleanup pass
 
@@ -35,44 +34,42 @@ cleaning up and auditing in bulk, with a review before anything is written.
 4. Stage the edits or bulk action.
 5. Review **Draft Changes**, then **Save**.
 
-For moving an entire structure in or out, use [Bundle Export / Import](../bundle-export-import/)
-instead of repeating that flow page by page.
+Moving an entire structure? Use [Bundle Export / Import](../bundle-export-import/) rather than
+repeating that loop on eight pages.
 
-If the problem is payees created by bank imports - one shop appearing five times because the text
-carries a date or a card number - start at [Payee Cleanup](../../user-guide/payee-cleanup/) instead. It finds the
-groups for you, and finds the payees whose imports will stop resolving to them once you have tidied
-the names.
+One shop appearing five times because the import text carries a date or a card number is a different
+problem. Start at [Payee Cleanup](../../user-guide/payee-cleanup/). It finds the groups for you - and
+the payees whose imports will stop matching once the names are tidy.
 
 ## The shared editing model
 
 Every master-data page behaves the same way:
 
 - **Inline editing** - double-click, `Enter`, or `F2` to edit a cell; `Escape` cancels.
-- **Staged rows** - new, edited, and deleted rows are visually marked and only written on **Save**.
-  See [Work safely](../core-concepts/) for the full staging model.
-- **Bulk selection** - select rows with checkboxes and apply bulk actions. System-managed rows show a
-  disabled checkbox with a tooltip explaining why.
-- **Filters and search** - filter and search each page; your filters persist per page and reset when
-  you switch connections.
+- **Staged rows** - new, edited and deleted rows are marked and written only on **Save**.
+  [Work safely](../core-concepts/) has the full model.
+- **Bulk selection** - checkboxes, then an action. Rows the system manages show a disabled checkbox
+  and a tooltip saying why.
+- **Filters and search** - per page, and they stick. Switching connection clears them.
 - **Duplicate warnings** - a visual warning appears when a name already exists.
-- **Impact-aware deletion** - destructive actions confirm first, showing transaction counts, rule
-  references, balances, or child counts where available.
+- **Impact-aware deletion** - destructive actions stop and show you the transaction counts, rule
+  references, balances and child counts they know about.
 
 ## Quick Create
 
-Stage a new entity from anywhere without leaving the current page:
+Create something from anywhere, without leaving the page you are on:
 
 - Press `N` (when no input or dialog is focused) or `Ctrl/Cmd+Shift+N` (from anywhere) to open the
   Quick Create dialog.
 - Choose **Payee**, **Category**, **Account**, or **Tag**.
 - Category requires a group; Account has an on-budget / off-budget toggle; Tag has an optional color.
-- On submit, the entity is staged (one undo step) and you stay on the current page.
+- Submitting stages it as a single undo step. You do not move.
 
 ## Global Search
 
-Press `Ctrl/Cmd+K` (or the top-bar **Search** button) to search across accounts, payees, categories,
-rules, schedules, and tags. Results are grouped by type; selecting one navigates to that entity with
-the row highlighted. Search runs against loaded in-memory data and never writes anything.
+`Ctrl/Cmd+K`, or the top-bar **Search** button. It covers accounts, payees, categories, rules,
+schedules and tags, groups the results by type, and takes you to the row with it highlighted. It reads
+what is already in memory and writes nothing.
 
 ## CSV import and export
 
@@ -82,16 +79,16 @@ Every master-data page supports CSV export and import:
 - **Imports** are staged with per-row validation (and a 5 MB limit), so you review everything before
   **Save**.
 
-The exact columns for each entity are documented on its own page. Sample files ship in the
-repository's `public/samples csv/` for testing against a fresh budget.
+Each entity's page lists its exact columns. Sample files live in the repository under
+`public/samples csv/` if you want something to test against a fresh budget.
 
-To move **all** master-data types at once (a whole-budget snapshot or seed), use
-[Bundle Export / Import](../bundle-export-import/) instead of the per-page CSVs.
+For **all** the types at once - a whole-budget snapshot, or a seed - use
+[Bundle Export / Import](../bundle-export-import/) rather than eight separate CSVs.
 
 ## The Usage Inspector
 
-The **Info** button on any row opens a drawer with a complete usage profile - *without* starting a
-delete:
+The **Info** button on any row opens a drawer showing everything that references it. It does not start
+a delete:
 
 - A stats row: **Rules** (always), **Transactions** (except tags), **Balance** (accounts, amber when
   non-zero), and **Categories** (groups only).
@@ -106,13 +103,13 @@ the [Rules](../../user-guide/rules/) page filtered to that entity.
 
 ## Review and Save
 
-Staged creates, edits, deletes, and merges appear in the **Draft Changes** panel and the top bar.
-Nothing is written to your Actual Server until you **Save**; **Discard** reverts to the last saved
-state.
+Creates, edits, deletes and merges collect in the **Draft Changes** panel and the top bar. Your Actual
+Server sees none of it until you **Save**. **Discard** throws the draft away and goes back to the last
+saved state.
 
 :::caution[Notes are the exception]
-Note edits on accounts, categories, and category groups **save immediately** - they are not part of
-the staged **Save** and are not reverted by **Discard**. See
+Notes on accounts, categories and category groups **save the moment you confirm them**. They are not
+part of the draft, and **Discard** will not take them back. See
 [Work safely](../core-concepts/#immediate-save-exceptions).
 :::
 

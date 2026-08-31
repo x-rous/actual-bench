@@ -1,13 +1,13 @@
 ---
 title: Tags
-description: Manage Actual Budget transaction tags in Actual Bench - colors and descriptions, filter by color, bulk delete, CSV import/export, and rule linkage.
+description: "The tag vocabulary itself: the labels, their colours, and what each one is for."
 sidebar:
   order: 7
 ---
 
-**Tags** is the tag vocabulary itself - the labels, their colors and descriptions - managed as a set
-rather than one transaction at a time. Come here to seed a vocabulary, tidy one that grew by accident,
-or find out which rules reference a tag before removing it.
+The tag vocabulary itself - the labels, their colours, what each one means - managed as a set instead
+of one transaction at a time. Seed a vocabulary. Tidy one that grew by accident. Find out what
+references a tag before you delete it.
 
 Open it from **Data Management → Tags** (`/tags`). Tags require Actual Budget v26.3.0 or later.
 
@@ -24,34 +24,34 @@ uses.
 ## What you get beyond Actual Budget
 
 - **CSV import and export** for bulk tag setup and backup.
-- **Colors and descriptions** managed inline, with a **filter by color presence**.
-- **Bulk delete** across selected tags, staged before it touches your budget.
+- **Colours and descriptions** edited inline, and a filter for tags that have no colour yet.
+- **Bulk delete**, staged like everything else.
 - **See which rules reference a tag** via the Usage Inspector.
 
 ## Create and edit a tag
 
 1. On the **Tags** page, create a tag and give it a **name**.
-2. Optionally assign a **color** - click the swatch to open a native color picker; hover the row for a
-   clear button.
+2. Give it a **colour** if you want - click the swatch. Hovering the row reveals a clear button.
 3. Optionally add a **description**.
 4. Edit any name or description inline (`Enter` confirms, `Escape` cancels).
 
 ## Filter, delete, and import/export
 
-- Filter by name or description, and by color presence (All / Has Color / No Color), with live counts.
-- Bulk-select and delete; duplicate names show a warning.
+- Filter by name, by description, or by whether a tag has a colour. Counts update as you type.
+- Select several and delete them together. Duplicate names get flagged.
 - Import and export tags as CSV. CSV columns:
   - `name` (required), `color` (optional hex, e.g. `#FF5733`), `description` (optional).
 
 :::note[Tag usage data]
-The Usage Inspector shows a tag's rule references, but transaction data is not available for tags, so
-the drawer notes that explicitly.
+The Usage Inspector shows which rules reference a tag. It cannot show transactions - Actual does not
+expose that for tags - and the drawer says so rather than showing a misleading zero.
 :::
 
 ## Common problems
 
-- **Tags are unavailable** - tags require Actual Budget v26.3.0 or later on the server.
-- **A color or description didn't stick** - confirm you saved; inline edits commit on `Enter`.
+- **No tags anywhere** - your server is older than Actual Budget v26.3.0.
+- **A colour or description did not stick** - inline edits commit on `Enter`, and the page still needs
+  a **Save**.
 
 ## Related pages
 

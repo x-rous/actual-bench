@@ -1,92 +1,89 @@
 ---
 title: Troubleshooting
-description: First-line troubleshooting for Actual Bench - connections, the metadata database, staged changes, feature areas, performance, and how to report a bug.
+description: First-line fixes across the whole app, and what to include when you report a bug.
 sidebar:
   order: 1
 ---
 
-This page collects practical first-line fixes across Actual Bench. For area-specific issues, each
-feature guide also has its own troubleshooting section.
+First-line fixes, across the whole app. Every feature guide has its own troubleshooting section for
+anything specific to it.
 
 :::caution[Don't start with destructive steps]
-Deleting the metadata database or clearing browser storage is a **last resort**, not a first step - 
-both can lose data. Understand what a step removes before you take it.
+Deleting the metadata database or clearing browser storage is where you end up, not where you start.
+Both lose data. Know what a step removes before you take it.
 :::
 
 ## Troubleshoot safely: collect basic information
 
-Before changing anything, note:
+Write these down before you change anything:
 
 1. The Actual Bench **version** (sidebar footer).
 2. The **connection mode** (Direct Actual Server or HTTP API Server).
 3. The **active budget/connection** (top bar).
 4. What **App Health** reports.
-5. The browser console - only if it helps.
+5. The browser console, if it says anything useful.
 6. Container logs.
-7. The smallest safe action that reproduces the issue.
+7. The smallest thing you can do that makes it happen again.
 
-Redact secrets before sharing any logs.
+Redact secrets before you share a log with anyone.
 
 ## Installation and container
 
-- **Container exits on start** - check logs; verify the image tag and that the `/data` volume is
-  mountable.
-- **Port conflict** - another process holds the published port; change the host port mapping.
-- **Wrong architecture** - the images are multi-arch (`amd64`/`arm64`); ensure your host pulls a matching
-  variant.
-- **Reverse proxy returns 502/504** - check that the proxy can reach the container and forwards
-  host/protocol headers. See [Deployment](../../administration/deployment/).
+- **The container exits immediately** - read the logs. Usually the image tag or a `/data` volume that
+  cannot be mounted.
+- **Port conflict** - something else has that port. Publish on a different one.
+- **Wrong architecture** - the images cover `amd64` and `arm64`. Make sure your host pulls its own.
+- **The proxy returns 502 or 504** - it cannot reach the container, or is not forwarding the host and
+  protocol headers. See [Deployment](../../administration/deployment/).
 
 ## Metadata database
 
-- **Database not writable** - App Health shows **Writable = No**; check `/data` volume permissions and
-  ownership.
-- **Unexpectedly empty history** - the `/data` volume isn't mounted or points to a new location; verify
+- **Not writable** - App Health says **Writable = No**. Check the `/data` permissions and ownership.
+- **The history is empty and should not be** - `/data` is unmounted, or points somewhere new. Check
   `ACTUAL_BENCH_DB_PATH`.
 - **Migration issue after upgrade** - see [Upgrading and Backups](../../administration/upgrading-and-backups/#database-migrations).
 
 ## Direct connection
 
-- **Browser can't reach Actual Server** - confirm the URL is reachable from the browser over HTTPS.
-- **CORS or cross-origin isolation errors** - allow CORS or serve Actual Server same-origin via a
-  reverse proxy; Actual Bench sets its own isolation headers.
+- **The browser cannot reach Actual Server** - open that URL in the same browser, over HTTPS, and see
+  what happens.
+- **CORS or cross-origin isolation errors** - allow CORS, or serve Actual Server same-origin through
+  your proxy. Bench sets its own isolation headers already.
 - **Only HTTP API Server mode is offered** - Direct mode is disabled via `DIRECT_BROWSER_API=0` /
   `NEXT_PUBLIC_DIRECT_BROWSER_API=0`.
-- **Encrypted budget won't open** - confirm the **Encryption password**.
+- **An encrypted budget will not open** - check the **Encryption password**. It is not the server
+  password.
 
 ## HTTP API connection
 
-- **`fetch failed` / `502 Bad Gateway`** - the Actual Bench container can't reach `actual-http-api`;
-  check container-to-container networking. Remember `localhost` is the Actual Bench container itself.
+- **`fetch failed` or `502 Bad Gateway`** - the Bench container cannot reach `actual-http-api`. Check
+  the network between them, and remember `localhost` means Bench itself.
 - **Wrong URL or API key** - verify the **HTTP API Server URL** and that the **API Key** matches
   `ACTUAL_API_KEY`.
 
 ## Browser state
 
-- **Recent connection but must re-enter secrets** - expected for non-secret recent connection details;
-  use the optional remembered-server vault if you want encrypted reconnect credentials.
-- **Remembered servers remain but the vault is locked** - expected after an Actual Bench restart;
-  unlock it with the vault passphrase.
-- **Remembered servers disappeared** - the metadata database or `/data` volume was replaced. Ask the
-  operator to verify the deployment and restore a backup if one exists.
-- **Refresh requires reconnecting** - expected for memory-only connections.
-- **Stale worker/cache in Direct mode** - as a last resort, clear this site's browser data. This removes
-  saved presets and cached worker state and requires reconnecting.
+- **A recent connection still asks for the password** - correct. Recent details hold no secrets. Use
+  the remembered-server vault if you want the credential kept.
+- **The vault is locked after a restart** - also correct. Unlock it with your passphrase.
+- **Remembered servers are gone** - the metadata database or the `/data` volume was replaced. Whoever
+  runs the server needs to check the deployment and restore a backup.
+- **A refresh loses the connection** - memory-only connections do that by design.
+- **A stale worker or cache in Direct mode** - clearing this site's browser data fixes it, and costs
+  you your saved presets and a reconnect. Last resort.
 
 ## Staged changes and Save
 
-- **Changes didn't persist** - you may not have clicked **Save**; failed items stay marked with an
-  error, with a retry option.
-- **A note "won't discard"** - notes save immediately and are not part of the staged Save. See
-  [Core Concepts](../../getting-started/core-concepts/#immediate-save-exceptions).
-- **A carryover toggle is not in Draft Changes** - carryover is an explicit immediate write, not a
-  staged budget-cell edit.
-- **Wrong budget affected** - confirm the active connection before saving; staged data is scoped per
-  connection.
+- **Changes did not persist** - either you did not press **Save**, or some items failed. Failures stay
+  marked, with a retry.
+- **A note will not discard** - notes saved the moment you wrote them. See
+  [Work safely](../../getting-started/core-concepts/#immediate-save-exceptions).
+- **A carryover toggle is not in the draft** - it never was. Carryover writes immediately.
+- **The wrong budget changed** - drafts are per connection. Check which one is active before you save.
 
 ## Feature areas
 
-Each guide has a focused troubleshooting section:
+Each guide troubleshoots its own page:
 
 - [Budget](../../user-guide/budget-management/#troubleshooting)
 - [Editing, review and save](../../getting-started/editing-and-saving/) - and the per-entity pages
@@ -104,22 +101,22 @@ Each guide has a focused troubleshooting section:
 
 ## Performance
 
-Large budgets and large snapshots are the usual causes of slowness:
+Slowness is nearly always size:
 
-- Entity pages load the full set; very large budgets feel slower on Accounts/Payees/Categories/Rules.
-- The full SQLite integrity check and large table exports take time.
-- Big sync previews and rule diagnostics over large rule sets are heavier.
-- Very large budget snapshots depend on available browser memory.
+- Entity pages load everything. A very large budget drags on Accounts, Payees, Categories and Rules.
+- The full SQLite integrity check is slow. So is exporting a huge table.
+- Big sync previews and diagnostics over a large rule set do real work.
+- A very large snapshot is limited by your browser's memory.
 
 ## Reporting a bug
 
-Open an issue on [GitHub Issues](https://github.com/x-rous/actual-bench/issues) with:
+Open an issue on [GitHub](https://github.com/x-rous/actual-bench/issues). Include:
 
 - Actual Bench **version**, **browser**, and **OS**.
 - **Connection mode** and deployment type.
-- Exact **steps to reproduce**, plus expected vs. actual behavior.
-- Screenshots and **sanitized** console/container logs.
-- Whether it reproduces in the [demo](https://actual-bench-demo.vercel.app) or another browser.
+- **Steps to reproduce**, and what you expected instead.
+- Screenshots, and **redacted** console or container logs.
+- Whether it happens in the [demo](https://actual-bench-demo.vercel.app), or in another browser.
 
 ## Related pages
 

@@ -1,19 +1,19 @@
 ---
 title: Known Limitations
-description: Current boundaries of Actual Bench that affect what you can expect - by area, with alternatives where they exist.
+description: What Actual Bench does not do, what each limitation costs you, and what to do instead.
 sidebar:
   order: 2
 ---
 
-This page lists current, confirmed limitations so you know what to expect. Each entry describes the
-impact and, where one exists, an alternative. Limitations are removed as they are resolved - this is not
-a roadmap and includes no delivery promises.
+Confirmed limitations, so nothing here surprises you later. Each says what it costs you and what to do
+instead, where there is something to do instead. Entries disappear when they are fixed. This is not a
+roadmap and promises nothing.
 
 ## Product scope
 
-- **Actual Bench does not replace everyday budgeting.** It supplements Actual Budget for administration,
-  cleanup, statement-driven reconciliation, diagnostics, queries, and cross-budget sync - not day-to-day
-  transaction entry, mobile budgeting, or Actual's normal bank-sync workflow.
+- **It does not replace everyday budgeting.** Administration, cleanup, statement reconciliation,
+  diagnostics, queries, cross-budget sync - yes. Entering transactions, budgeting on your phone,
+  Actual's normal bank-sync workflow - no.
 
 ## Connection modes
 
@@ -21,18 +21,18 @@ a roadmap and includes no delivery promises.
 
 **Applies to:** Budget Sync using Direct Actual Server mode.
 
-Direct mode runs the Actual engine in the browser, so scheduled sync can't continue after the browser
-is closed.
+Direct mode runs Actual's engine in your browser. Close the browser and there is nothing left running
+to do the sync.
 
-**Alternative:** Use the client-side schedule while Actual Bench is open, or configure both sides through
-HTTP API Server mode for unattended server-side sync.
+**Alternative:** use the client-side schedule while Bench is open, or put both sides on HTTP API Server
+mode and let the server do it.
 
 ### ActualQL cURL is HTTP API Server-only
 
 **Applies to:** the ActualQL workspace.
 
-cURL generation targets `actual-http-api`'s `/run-query` endpoint, so it is available only for HTTP API
-Server executions, not Direct mode.
+The generated cURL calls `actual-http-api`'s `/run-query`. In Direct mode there is no such endpoint to
+call.
 
 ## Remembered servers
 

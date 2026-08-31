@@ -1,14 +1,14 @@
 ---
 title: ActualQL Queries
-description: Run, explain, save, and export ActualQL queries against your budget in Actual Bench - editor, result views, saved queries, and mode differences.
+description: Run Actual's own query language against your budget and get the answer as a table, JSON, one value, or a tree.
 sidebar:
   order: 10
 ---
 
-**ActualQL Queries** runs Actual's own query language against your saved budget data and shows the
-result as a table, raw JSON, a single value or a tree. Come here with a precise question that no report
-answers - a targeted transaction subset, an aggregate by month, a cleanup check. It expects some
-comfort with structured JSON, so start from the built-in examples rather than a blank page.
+Actual's own query language, run against your budget, with the answer as a table, raw JSON, a single
+value or a tree. Bring a precise question no report answers - a specific slice of transactions, a
+monthly aggregate, a check on a cleanup you just did. You will be writing JSON, so start from an
+example rather than an empty editor.
 
 Open it from **Tools → ActualQL Queries** (`/query`). It works in both connection modes.
 
@@ -29,16 +29,14 @@ much came back, and a button for each way you might want to take it away.*
 
 ## What ActualQL is
 
-ActualQL is Actual Budget's query language, expressed as **JSON** (not SQL). In Actual Bench this
-workspace is used for reading and analyzing data.
+ActualQL is Actual Budget's query language. It is **JSON**, not SQL. Here it only ever reads.
 
 ## Open the workspace and understand the editor
 
-- A syntax-highlighted JSON editor with line numbers and a JetBrains Mono font; you edit raw JSON with
-  no auto-correction.
-- The editor accepts bare ActualQL query objects and the wrapped `{ "ActualQLquery": ... }` shape used
-  by `actual-http-api`.
-- The editor/results split is resizable, and the divider position persists across reloads.
+- A syntax-highlighted JSON editor with line numbers. It does not autocorrect anything you type.
+- Both shapes work: a bare query object, or the `{ "ActualQLquery": ... }` wrapper `actual-http-api`
+  uses.
+- Drag the divider between editor and results. It stays where you put it.
 
 ## Run and format a query
 
@@ -46,9 +44,9 @@ workspace is used for reading and analyzing data.
 2. Select **Run** (or press `Ctrl/Cmd+Enter`).
 3. Use **Format JSON** to tidy the query.
 
-Parse errors are shown inline before any request is made. **Lint warnings** flag risky shapes - for
-example a broad `transactions` query with no `limit`, `groupBy`, or `calculate`; an empty `$oneof`; or a
-`groupBy` with no aggregate.
+Parse errors appear inline, before anything is sent. **Lint warnings** catch the shapes that usually
+mean a mistake: a wide-open `transactions` query with no `limit`, `groupBy` or `calculate`; an empty
+`$oneof`; a `groupBy` with nothing to aggregate.
 
 ## Use built-in examples and reference
 
@@ -61,9 +59,9 @@ example a broad `transactions` query with no `limit`, `groupBy`, or `calculate`;
 
 Select a result view via tabs:
 
-- **Table** - columns from the union of keys across rows; nested values are JSON-stringified; capped at
-  500 rows with a warning banner. Dates render human-readably; `amount`/`balance` integers show as
-  decimals (cents ÷ 100), with the raw value on hover.
+- **Table** - one column per key found anywhere in the rows, nested values stringified, capped at 500
+  rows with a banner saying so. Dates read as dates. `amount` and `balance` show as decimals, with the
+  raw integer on hover.
 - **Raw JSON** - the full syntax-highlighted payload.
 - **Scalar** - a large value card for `calculate` aggregate results.
 - **Tree** - a collapsible JSON tree, auto-selected for plain-object results.
@@ -72,41 +70,38 @@ An execution metadata bar shows an OK / Error chip, elapsed time, row count, and
 
 ## Explain a query
 
-Select **Explain** for a one-click plain-English summary of what the current query does - its target
-table, filters, grouping, aggregation, ordering, and whether the result is tabular or scalar. Explaining
-does not run the query.
+**Explain** describes the query back to you in English - which table, which filters, the grouping, the
+aggregation, the order, and whether you will get a table or one number. It does not run anything.
 
 ## Save, pin, and reuse queries
 
-- **Save** a query with a name. Saved queries are stored in the Actual Bench database and shared
-  across **every budget** in your instance, so they are available wherever you connect (not tied to
-  one browser or budget). Load, rerun, duplicate, rename, delete, and **pin as favorite**. Queries
-  you saved in an earlier version - previously kept per-budget in your browser - are imported into
-  the database automatically the first time you open the workspace.
-- **Query history** keeps the last 10 executed queries per budget for one-click reload; re-running a
-  query bumps it to the top rather than duplicating it.
+- **Save** a query under a name. Saved queries live in the Bench database and follow you to **every
+  budget** on the instance - not one browser, not one budget. Load, rerun, duplicate, rename, delete,
+  pin. Queries from an older version, which lived per-budget in your browser, are imported the first
+  time you open the page.
+- **History** keeps the last 10 queries you ran, per budget. Run one again and it moves to the top
+  instead of appearing twice.
 
 ## Export and copy results
 
 - **Copy result JSON** and **Copy query JSON** are available in all modes.
-- For **HTTP API Server** executions only, you can also copy **sanitized cURL** (secrets replaced with
-  placeholders) or **full cURL** (opt-in, clearly marked as containing real credentials). cURL is
-  generated from the last HTTP API Server request, not the current editor state.
+- In **HTTP API Server** mode you can also copy **sanitised cURL**, with placeholders where the secrets
+  were, or **full cURL**, which is opt-in and labelled. Either is built from the last request you
+  actually sent, not from whatever is in the editor now.
 
 :::caution[Full cURL contains real credentials]
-The full-cURL option embeds your API key. Only copy it when you need it, and never paste it where others
-can see it.
+Full cURL contains your API key. Copy it when you need it, and do not paste it anywhere public.
 :::
 
 ## Staged changes and query results
 
-If you have unsaved staged changes, a banner reminds you that query results reflect **saved** server
-state, not your pending local edits. Results bypass the staged store entirely.
+With a draft open, a banner reminds you that results come from **saved** server state. Your pending
+edits are not in them.
 
 ## Practical examples
 
-Start from the built-in example packs, which cover transactions, accounts, payees, categories, monthly
-spending, budget status, and rules. They are the most reliable, current examples to build on.
+Use the example packs. They cover transactions, accounts, payees, categories, monthly spending, budget
+status and rules, and they are kept current with the app.
 
 ## Mode differences
 
@@ -116,12 +111,12 @@ spending, budget status, and rules. They are the most reliable, current examples
 
 ## Troubleshooting
 
-- **Invalid JSON** - the inline parse error points at the problem; fix it before running.
+- **Invalid JSON** - the inline error points at the character. Fix it and run.
 - **Unsupported query** - check the lint warnings and the ActualQL Reference.
-- **Empty result** - verify filters and date ranges.
-- **Result isn't table-friendly** - use the Tree or Raw JSON view.
-- **Results look stale** - they reflect saved state; save your staged edits first.
-- **cURL option missing** - you're in Direct mode; cURL is HTTP API Server-only.
+- **Empty result** - check your filters and your date range.
+- **The table view is useless** - try Tree or Raw JSON.
+- **Results look stale** - they show saved state. Save your draft first.
+- **No cURL button** - you are in Direct mode. cURL only exists for HTTP API Server.
 
 ## Related pages
 
