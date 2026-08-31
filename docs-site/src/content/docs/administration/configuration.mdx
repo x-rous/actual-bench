@@ -1,28 +1,27 @@
 ---
 title: Configuration
-description: Environment variables and runtime settings for Actual Bench - metadata database, Direct mode, unattended sync vault, logging, and secret handling.
+description: Every environment variable Actual Bench reads, what it does, and whether it is a secret.
 sidebar:
   order: 2
 ---
 
-This is operator reference. Someone who only uses Actual Bench does not need these settings. A basic
-self-hosted installation needs persistent `/data` storage and no mandatory environment variables;
-configure only the feature you intend to enable.
+Operator reference. If you only use Bench, you need none of this. A basic self-hosted install needs a
+persistent `/data` volume and no environment variables at all. Set something here only when you are
+turning a specific feature on.
 
 ## How configuration is loaded
 
-Configuration is provided as environment variables to the container. Server-side variables are read by
-the Node server; variables prefixed with `NEXT_PUBLIC_` are build/public values exposed to the browser.
-The app **version** is injected automatically from the build - you do not set it.
+Everything is an environment variable on the container. The Node server reads the plain ones. Anything
+prefixed `NEXT_PUBLIC_` is a build value and reaches the browser, so nothing secret belongs there. The
+**version** comes from the build; you do not set it.
 
 :::caution[Restart to apply changes]
-Environment variables are read at server start. Change them and **restart** the container for the new
-values to take effect.
+These are read once, at start. Change one and **restart** the container, or nothing happens.
 :::
 
 ## Environment variables
 
-Only variables verified in the current codebase are listed.
+Every variable below exists in the current code. Nothing aspirational.
 
 | Variable | Default | Purpose | Secret | Restart |
 |---|---|---|:---:|:---:|
@@ -34,14 +33,13 @@ Only variables verified in the current codebase are listed.
 | `LOG_LEVEL` | `info` | Server log verbosity. | No | Yes |
 | `NEXT_DEV_ALLOWED_ORIGINS` | *(unset)* | Dev-only: allow the HMR WebSocket through a reverse proxy (comma-separated hostnames). | No | Yes |
 
-Demo/analytics variables (such as `NEXT_PUBLIC_ANALYTICS`) exist for the public demo build and are inert
-in self-hosted deployments - you do not need them.
+The demo and analytics variables - `NEXT_PUBLIC_ANALYTICS` and friends - belong to the public demo
+build and do nothing in a self-hosted one.
 
 ## Minimum configuration
 
-A basic production deployment needs only a persistent `/data` volume; no variables are strictly
-required. Set `ACTUAL_BENCH_DB_PATH` only if you want the metadata database somewhere other than the
-default.
+A persistent `/data` volume. That is the whole requirement. Set `ACTUAL_BENCH_DB_PATH` only if you
+want the metadata database somewhere else.
 
 ## Direct-mode settings
 
@@ -109,15 +107,15 @@ the repository's `docs/UNATTENDED_SYNC.md` for the operator walkthrough.
 
 ## Logging
 
-Set `LOG_LEVEL` to control server log verbosity (default `info`). Lower it to `warn` or `error` in
-production if you want quieter logs, or raise it for debugging.
+`LOG_LEVEL` defaults to `info`. Drop it to `warn` or `error` for a quiet production log, raise it when
+you are chasing something.
 
 ## Secret handling
 
-- Never commit a `.env` file with real secrets to version control.
+- A `.env` with real secrets never goes into version control.
 - Use your container platform's secret management for `SYNC_VAULT_KEY` and `SYNC_SCHEDULER_SECRET`.
-- Do not expose server secrets as `NEXT_PUBLIC_*` variables - those are shipped to the browser.
-- Redact secrets before sharing logs, and rotate any value you suspect is compromised.
+- Nothing secret goes in a `NEXT_PUBLIC_*` variable. Those are shipped to every browser.
+- Redact logs before you share them. Rotate anything you even suspect leaked.
 
 ## Configuration examples
 
@@ -143,13 +141,12 @@ environment:
   DIRECT_BROWSER_API: "0"
 ```
 
-Use placeholders and inject real secrets from your platform - never hard-code them.
+Placeholders in the file, real secrets from your platform. Never the other way round.
 
 ## Validation
 
-After changing configuration and restarting, open **App Health** to confirm the metadata database is
-writable, the schema is current, and (if configured) the unattended scheduler reports the expected
-vault state.
+Restart, then open **App Health**. The database should be writable, the schema current, and - if you
+configured it - the scheduler should report the vault state you expect.
 
 ## Related pages
 

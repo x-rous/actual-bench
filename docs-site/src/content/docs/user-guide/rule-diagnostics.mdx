@@ -1,21 +1,21 @@
 ---
 title: Rule Diagnostics
-description: Lint your Actual Budget rule set in Actual Bench - a read-only, advisory workspace that flags missing references, shadowed rules, contradictions, broad matches, duplicates, and near-duplicates, with one-click jump-to-rule and merge.
+description: "Audit a whole rule set at once: references to deleted entities, rules that shadow each other, duplicates, and rules that cannot match your next import."
 sidebar:
   order: 9
 ---
 
-**Rule Diagnostics** audits a whole rule set at once and reports what is wrong with it: references to
-deleted entities, broad rules shadowing specific ones, duplicates doing the same work twice, rules that
-cannot match the next import. Actual runs rules one transaction at a time and gives you no way to look
-at the set as a whole; this is that view.
+One pass over the whole rule set, reporting what is broken. References to things you deleted. Broad
+rules quietly swallowing specific ones. Duplicates doing the same job twice. Rules that cannot
+possibly match your next import. Actual runs rules one transaction at a time and never shows you the
+set. This is that view.
 
 Open it from **Tools → Rule Diagnostics** (`/rules/diagnostics`), or the **Diagnostics** button on the
 Rules toolbar.
 
-**Write model:** read-only and advisory. It includes unsaved staged rules, but never modifies anything
-unless you follow a finding into the normal staged rule editor, or confirm a merge or a
-generalisation.
+**Write model:** read-only. It reads your staged rules too, but changes nothing on its own. Every fix
+is something you click - open the rule, confirm a merge, confirm a generalisation - and then goes
+through the normal staged **Save**.
 
 ![Rule Diagnostics listing findings grouped by severity, each with the rule it concerns.](../../../assets/screenshots/user-guide/rule-diagnostics.png)
 
@@ -24,17 +24,17 @@ offers it - Merge for duplicates, Generalise for a rule matching whole import st
 
 ## What Actual Bench adds
 
-Actual Budget runs rules but gives you no way to audit them in aggregate. As a rule set grows, problems
-accumulate silently - a rule pointing at a deleted category, two rules that quietly shadow each other,
-near-duplicate rules that should be one. Rule Diagnostics surfaces all of these in one place, explains
-each in plain language, and links you straight to the fix.
+Rule sets rot quietly. You delete a category and three rules start pointing at nothing. You write a
+broad rule and it swallows a specific one you wrote last year. You write the same rule twice because
+you forgot the first. None of that announces itself. This page finds all of it, says what is wrong in
+a sentence, and links to the fix.
 
 ## Run diagnostics and read findings
 
 1. Open **Rule Diagnostics** (Tools sidebar, or the **Diagnostics** button on the Rules toolbar).
-2. Findings are grouped by severity with summary cards for **error**, **warning**, and **info**, plus
-   severity- and code-based filters.
-3. Each finding has a plain-language explanation, the affected rule's summary, and a copy-UUID button.
+2. Findings arrive grouped by severity - **error**, **warning**, **info** - with filters by severity
+   and by check.
+3. Each one explains itself, shows the rule it concerns, and offers to copy that rule's UUID.
 
 ## What it checks
 
@@ -47,8 +47,8 @@ each in plain language, and links you straight to the fix.
 - Duplicate rule groups and near-duplicate pairs.
 - Unsupported field/operator combinations.
 
-Schedule-generated rules are excluded from editor-relevant checks but still surface missing-entity
-findings.
+Schedule-generated rules skip the checks you could not act on anyway, but still report missing
+entities.
 
 ## Rules that match whole import strings
 
@@ -65,40 +65,40 @@ imported payee is one of
 → set payee to Market Boys
 ```
 
-That rule is already broken for your next import. The card number and the value date change every
-time, so the next string is not on the list, the rule does not apply, and a duplicate payee arrives -
-which you rename again, adding a fourth string. The list grows; it never starts working.
+That rule is already broken. The card number and the value date change every time, so next month's
+string is not on the list, the rule does not fire, and a duplicate payee turns up. You rename it. The
+list grows to four. It will never start working.
 
-Bench reports these and offers **Generalise**, which opens a dialog on the Rules page proposing the
-one condition all of those strings agree on - `imported payee contains "MARKET BOYS PTY LTD"` - so
-next month's variant is caught too.
+Bench spots these and offers **Generalise**. It reads the strings, finds the part they all agree on,
+and proposes `imported payee contains "MARKET BOYS PTY LTD"` instead. Next month's variant is caught
+by the same rule.
 
-Widening a rule can only make it match *more*, so every proposal is checked against your own import
-history first. The dialog tells you what each option would newly catch:
+Widening a rule can only ever make it match more. So every proposal is backtested against your own
+import history before you see it, and the dialog says exactly what each option would newly catch:
 
-- text already going to the payee this rule sets, and text belonging to nobody - both harmless;
-- text belonging to **another payee**, listed by name with examples. An option in that position is
-  never preselected, and confirming it needs an explicit acknowledgement. If *every* option would do
-  that, nothing is preselected at all - you have to choose one deliberately.
+- text already going to this rule's payee, and text belonging to nobody - both harmless;
+- text belonging to **another payee**, named, with examples. Those are never preselected, and
+  confirming one takes an explicit acknowledgement. If every option would do it, nothing is
+  preselected and you have to choose on purpose.
 
-Nothing can be staged until that check has finished running.
+Nothing can be staged until the backtest finishes.
 
-If nothing can be proposed safely, the finding stays as information and no rewrite is offered.
+When nothing can be proposed safely, the finding stays as information. No rewrite is offered.
 
-Detection is by shape: Actual does not mark the rules it wrote, so a rule you wrote yourself in the
-same shape is reported too. That is deliberate - it fails on the next import for the same reason.
-Nothing is changed until you confirm, and the rewrite is staged like any other edit, so you can
-review or undo it before saving.
+Detection works on shape, because Actual does not mark the rules it writes. So a rule you wrote
+yourself in that shape gets reported too. That is intentional - it will fail on the next import for
+exactly the same reason. Nothing changes until you confirm, and the rewrite stages like any other
+edit.
 
 ## Act on findings
 
-- Click a finding's rule summary to **jump to the rule** (`/rules?highlight=<id>`) and open it.
-- Over-specific import rules have a **Generalise** button that opens the rewrite dialog described
-  above; you're returned to the diagnostics report afterward.
-- Duplicate and near-duplicate findings have a one-click **Merge** button that opens the
-  [merge dialog](../rules/#merge-rules) pre-filled; you're returned to the diagnostics report afterward.
-- A **stale-results** banner appears if the working set changes while the view is open; results stay
-  until you **Refresh**.
+- Click the rule summary on a finding to **open that rule** (`/rules?highlight=<id>`).
+- Over-specific import rules get a **Generalise** button, which opens the rewrite dialog above and
+  brings you back here afterwards.
+- Duplicates get **Merge**, which opens the [merge dialog](../rules/#merge-rules) already filled in,
+  and also brings you back.
+- Change your rules while this is open and a **stale results** banner appears. The old findings stay
+  put until you press **Refresh**.
 
 ![The merge dialog, pre-filled from a duplicate finding, with the merged rule and the delete-originals choice.](../../../assets/screenshots/dialogs/dialog-merge-rules.png)
 
@@ -107,17 +107,17 @@ created before anything is removed - so a failure leaves you with what you start
 
 ## Safety
 
-Diagnostics is advisory - it only reads. It never changes your rules; every fix is an explicit action
-you take (jump to a rule, confirm a merge, or confirm a generalisation) that then follows the normal
-staged **Save** flow.
+This page only reads. It never touches a rule. Every fix is something you do deliberately - open a
+rule, confirm a merge, confirm a generalisation - and every one of those goes through the normal
+staged **Save**.
 
 ## Troubleshooting
 
-- **A missing-entity finding** - the referenced payee/category/account was deleted or renamed; open the
-  rule and repoint it.
-- **Results look stale** - the working set changed; click **Refresh**.
-- **A large stage isn't fully analyzed** - very large rule partitions are analyzed up to a safety cap;
-  a notice explains when a partition is skipped.
+- **A missing-entity finding** - that payee, category or account was deleted or renamed. Open the rule
+  and point it somewhere real.
+- **Results look stale** - they are. Press **Refresh**.
+- **A large stage was not fully analysed** - there is a safety cap on how big a partition gets
+  compared. A notice tells you when one was skipped.
 
 ## Related pages
 

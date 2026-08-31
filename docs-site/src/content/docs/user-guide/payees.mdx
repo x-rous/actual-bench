@@ -1,13 +1,13 @@
 ---
 title: Payees
-description: Manage and clean up Actual Budget payees in Actual Bench - bulk-merge duplicates, CSV import/export, rule linkage, transfer-payee handling, and impact-aware deletion.
+description: Everyone the budget pays, editable in bulk - merge duplicates and see what depends on a payee before you delete it.
 sidebar:
   order: 4
 ---
 
-**Payees** is the full list of who a budget pays and is paid by, editable in bulk. Come here to merge
-duplicates safely, rename a batch of imported names, or see how many transactions and rules depend on a
-payee before removing it - as one staged pass you review, rather than a sequence of immediate edits.
+Everyone a budget pays, and everyone who pays it, editable in bulk. Merge duplicates. Rename a batch of
+imported names. See how much depends on a payee before you delete it. One staged pass, reviewed at the
+end, instead of forty immediate edits.
 
 Open it from **Data Management → Payees** (`/payees`).
 
@@ -33,35 +33,34 @@ can add a rule so the duplicates stop coming back.
 
 ## What you get beyond Actual Budget
 
-- **Bulk-merge duplicate payees** - collapse several payees into one, staged and undoable, before it
-  touches your budget.
+- **Merge duplicates in bulk** - several payees into one, staged and undoable.
 - **[Payee Cleanup](../payee-cleanup/)** finds those duplicates for you, and - once a rename or merge
   has moved a payee's name away from the text its bank sends - finds the payees whose imports will no
   longer resolve to them.
-- **Create and import in bulk** - inline creation plus CSV import/export.
+- **Create and import in bulk** - inline, or from CSV.
 - **See which rules reference a payee** and jump straight to them.
-- **Impact-aware deletion** - every delete shows the payee's transaction and rule-reference counts.
-- **Clear transfer-payee handling** - system-managed transfer payees are shown as a distinct type and
-  protected from accidental edits.
+- **Impact-aware deletion** - you see the transaction and rule counts before it goes.
+- **Transfer payees are marked and protected.** Actual manages them; you cannot break them here by
+  accident.
 
 ## Regular and transfer payees
 
-Transfer payees are auto-generated for inter-account transfers. They appear as a separate, filterable
-type and cannot be edited or bulk-deleted like regular payees - their selection checkbox is disabled to
-make that explicit.
+Actual generates a transfer payee for every inter-account transfer. They show as their own filterable
+type, and they do not edit or bulk-delete like ordinary payees. Their checkbox is disabled so you can
+see that rather than discover it.
 
 ## Create, rename, and delete
 
 - Create and rename payees inline.
-- Every delete (single or bulk) confirms, showing the payee's transaction count and rule reference
-  count. Transfer payees are excluded from bulk delete and counted separately in the dialog.
+- Every delete confirms, with the transaction and rule counts. Transfer payees sit out of bulk delete
+  and are counted separately in the dialog.
 
 ## Merge duplicate payees
 
 1. Select **two or more regular payees**.
 2. Choose **Merge**.
-3. The **first payee you check** becomes the surviving target (regardless of table sort); the rest are
-   absorbed.
+3. The **first payee you tick** survives. Not the top row - the first one you ticked. The rest fold
+   into it.
 4. The merge is staged and shown in the Draft Changes panel as "Merge Deleted" before you **Save**.
    `Ctrl+Z` undoes it.
 
@@ -77,9 +76,9 @@ Export payees to CSV or import them (staged before saving). CSV columns:
 
 ## Common problems
 
-- **"Can't select a transfer payee"** - transfer payees are system-managed and not bulk-editable.
-- **A merge picked the wrong survivor** - the target is the *first* payee you checked, not the
-  top-sorted row; re-select in the intended order.
+- **"Can't select a transfer payee"** - Actual manages those. Nothing here can edit them.
+- **The merge kept the wrong name** - the survivor is the *first* one you ticked, not the top row.
+  Clear the selection and tick them in the order you meant.
 
 ## Related pages
 

@@ -1,14 +1,13 @@
 ---
 title: Rules
-description: Build, edit, merge, and import Actual Budget rules in Actual Bench - a full condition/action builder with resolved entity names, Handlebars templates, Excel-style formulas, duplicate merging, and CSV round-trip.
+description: The whole rule set on one page, with every reference shown as the payee, category or account it names. Templates, formulas, merging and CSV round-trip.
 sidebar:
   order: 8
 ---
 
-**Rules** is the whole rule set in one place, with every reference shown as the payee, category or
-account it actually names rather than an id. Come here when automation has outgrown a few
-categorization rules: advanced actions, bulk import and export, and a safe way to consolidate
-duplicates. Actual still executes the rules; Bench makes the set easier to build and audit.
+The whole rule set on one page, with every reference showing the payee, category or account it names
+instead of an id. Come here once automation has outgrown a handful of categorisation rules. Actual
+still runs them. Bench makes them readable.
 
 Open it from **Data Management → Rules** (`/rules`).
 
@@ -27,27 +26,28 @@ you explicitly open or merge a rule.
 
 ## Why use Actual Bench for rules?
 
-Actual runs your rules; it is a poor place to *read* them. Once a rule set is past a couple of dozen,
-the questions become "which rule is doing this?", "do these two overlap?" and "what breaks if I delete
-that category?" - and those are questions about the set, not about one rule.
+Actual runs your rules well. It is a bad place to read them. Past two dozen rules the questions change
+shape: which rule did this? do these two overlap? what breaks if I delete that category? None of those
+are questions about a single rule.
 
-- Payees, categories and accounts appear as **their names**, in the table and in search, so nothing has
-  to be decoded from an id.
-- **Handlebars templates** and **Excel-style formulas** for actions that compute a value rather than
-  set a constant.
-- **Merge duplicates and near-duplicates** into one rule, from here or from a diagnostics finding.
-- **CSV import and export** of the whole set, for a bulk edit in a spreadsheet or a backup before one.
+- Payees, categories and accounts appear as **names** - in the table and in the search box. Nothing to
+  decode.
+- **Handlebars templates** and **Excel-style formulas**, for actions that work something out instead of
+  setting a constant.
+- **Merge duplicates** into one rule, from here or straight from a diagnostics finding.
+- **CSV in and out** for the whole set - edit fifty rules in a spreadsheet, or keep a copy before you
+  try.
 - [Rule Diagnostics](../rule-diagnostics/) audits the set as a whole: broken references, rules that
   shadow each other, rules that cannot match the next import.
 
 ## How a rule works
 
-A rule has **conditions** - when it applies - and **actions** - what it changes. Actual applies rules
-as a transaction is created or imported, never retroactively to transactions already in the budget.
+A rule has **conditions** - when it applies - and **actions** - what it does. Actual runs rules as a
+transaction arrives. It never goes back over transactions you already have.
 
-Each rule runs in one of three **stages**, in order: `pre`, `default`, then `post`. Stages are how you
-control order between rules rather than within one: normalize an imported payee in `pre`, categorize
-it in `default`, and let a `post` rule tidy up whatever is left.
+Every rule sits in one of three **stages**, run in order: `pre`, `default`, `post`. That is how you
+control which rule goes first. Clean up the imported payee text in `pre`, categorise it in `default`,
+let `post` handle what is left over.
 
 ## Create a basic rule
 
@@ -57,19 +57,19 @@ it in `default`, and let a `post` rule tidy up whatever is left.
 4. Add an action.
 5. Save to stage the rule.
 
-Validation stays neutral until you edit rows or attempt to save, then required fields are flagged, with
-inline warnings for risky catch-all or destructive combinations. Closing the drawer with unsaved edits
-prompts for confirmation.
+Nothing is flagged red while you are still typing. Validation waits until you edit a row or try to
+save, then marks what is missing and warns about catch-all or destructive combinations. Close the
+drawer with unsaved edits and it asks first.
 
 ## Add conditions
 
 - Conditions support fields such as **payee**, **imported payee**, **category**, **account**,
   **amount**, and **notes**.
 - Combine them with **AND** / **OR** logic (`conditions_op`).
-- Operators include `is`, `is not`, `contains`, `matches`, `lt`, `lte`, `gt`, `gte`, and `oneOf`, among
-  others. The `matches` operator shows a regex syntax hint.
-- **Entity-reference values** (payee, category, account) show as blue chips; plain string values show as
-  green chips - so you can tell an ID reference from literal text at a glance.
+- Operators include `is`, `is not`, `contains`, `matches`, `lt`, `lte`, `gt`, `gte` and `oneOf`.
+  `matches` shows a regex hint.
+- **References** to a payee, category or account are blue chips. Literal text is green. One glance
+  tells you which you are looking at.
 
 ## Add actions
 
@@ -78,22 +78,22 @@ and **link schedule**.
 
 ### Templates
 
-Toggle the `{}` button on an action to enter **template mode** (Handlebars), for example
-`{{regex imported_payee 'foo' 'bar'}}`. Templates render as an amber monospace chip in the rules table.
+The `{}` button on an action switches it to **Handlebars**, for example
+`{{regex imported_payee 'foo' 'bar'}}`. Templates show as amber monospace chips in the table.
 
 ### Formulas
 
-Toggle the `ƒ` button on a **notes** or **payee_name** action to enter an **Excel-style formula**
-evaluated by HyperFormula, for example `=IF(ISBLANK(notes), imported_payee, notes)`. Formulas must
-start with `=`. Template and formula modes are mutually exclusive per action row.
+The `ƒ` button on a **notes** or **payee_name** action switches it to an **Excel-style formula**, run
+by HyperFormula - `=IF(ISBLANK(notes), imported_payee, notes)`. It has to start with `=`. One row can
+be a template or a formula, never both.
 
 ## Edit, duplicate, filter, and search
 
 - Duplicate a rule with one click.
 - Filter the list by stage, payee, or category.
-- **Search resolves entity names** - searching "Groceries" finds rules whose `oneOf` condition
-  references that payee or category by ID. Resolved names are shown throughout (no raw IDs).
-- Links from the Payees and Categories pages filter the rules list to that entity automatically.
+- **Search knows the names.** Type "Groceries" and it finds the rules whose `oneOf` condition holds
+  that category's id. You never see a raw id.
+- Arriving from the Payees or Categories page filters the list to that entity for you.
 
 ## Merge rules
 
@@ -103,25 +103,24 @@ start with `=`. Template and formula modes are mutually exclusive per action row
    unticked for near-duplicates.
 4. Confirm to stage the merge.
 
-Merging from a [Rule Diagnostics](../rule-diagnostics/) finding returns you to the diagnostics report
-afterward so cleanup flows naturally.
+Merge from a [Rule Diagnostics](../rule-diagnostics/) finding and you land back in the report, ready
+for the next one.
 
 ## Schedule-generated rules
 
-Rules created by schedules (those with a `link-schedule` action) are shown **read-only** on the Rules
-page and are excluded from bulk selection and merge. Manage them from the [Schedules](../schedules/)
-page.
+A schedule writes its own rule, with a `link-schedule` action. Those are **read-only** here, and left
+out of bulk selection and merge. Change them from [Schedules](../schedules/).
 
 ## Import and export
 
-Rules import/export uses a long CSV format - one condition or action per row, grouped by a `rule_id`.
-Key columns: `rule_id`, `stage`, `conditions_op`, `row_type` (`condition`/`action`), `field`, `op`, and
-`value` (use `|` to separate multi-value `oneOf` values). Formula values are exported with a leading
-`'` so spreadsheets don't evaluate them; the prefix is stripped on re-import.
+The CSV is long-format: one condition or action per row, grouped by `rule_id`. The columns that matter
+are `rule_id`, `stage`, `conditions_op`, `row_type` (`condition` or `action`), `field`, `op` and
+`value` - separate multiple `oneOf` values with `|`. Formulas export with a leading `'` so your
+spreadsheet does not try to evaluate them. The prefix comes off again on import.
 
 ## Examples
 
-A few practical patterns (use your own payees and categories):
+Substitute your own payees and categories:
 
 - **Categorize by payee** - condition `Payee is "Fresh Market"`, action `set category "Groceries"`.
 - **Normalize imported text** - a `pre`-stage template action on `payee_name`:
@@ -131,17 +130,17 @@ A few practical patterns (use your own payees and categories):
 
 ## Safety and limitations
 
-- Because Actual Budget runs rules on transaction create, a saved rule can change a transaction
-  differently than you expect if other rules also apply. Use stages to order them.
+- Rules run when a transaction is created, and several can hit the same transaction. If the result
+  surprises you, the answer is almost always stage order.
 
 ## Troubleshooting
 
-- **A rule doesn't run** - check its stage and whether an earlier-stage rule already changed the field.
-- **AND/OR confusion** - verify `conditions_op`; AND requires all conditions, OR any.
-- **A regex isn't matching** - check the `matches` syntax hint.
-- **A template/formula won't save** - formulas must start with `=`; template and formula modes are
-  mutually exclusive per row.
-- **A schedule-linked rule can't be edited** - manage it from the Schedules page.
+- **A rule never fires** - check its stage, and whether an earlier stage already changed the field it
+  tests.
+- **AND/OR confusion** - check `conditions_op`. AND needs every condition; OR needs one.
+- **A regex will not match** - read the syntax hint on the `matches` operator.
+- **A template or formula will not save** - formulas start with `=`, and one row cannot be both.
+- **A schedule-linked rule will not edit** - that is deliberate. Go to Schedules.
 
 ## Related pages
 

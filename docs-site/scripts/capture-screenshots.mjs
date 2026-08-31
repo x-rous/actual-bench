@@ -87,11 +87,19 @@ const SHOTS = [
     name: "budget-details-month",
     nav: "Budget",
     url: /\/budget-management/,
-    budget: "Tracking",
+    budget: "Envelope",
     // Selecting a month header - and nothing else - is what puts the month
-    // summary in the panel: income and expenses against plan, the pace meter,
-    // and the month note. Tracking, because a variance against a planned figure
-    // is the thing that panel is for.
+    // summary in the panel: where To Budget comes from line by line, then the
+    // month's own activity.
+    prepare: async (page) => selectCurrentMonth(page),
+  },
+  {
+    name: "budget-details-month-tracking",
+    nav: "Budget",
+    url: /\/budget-management/,
+    budget: "Tracking",
+    // The same selection on a Tracking budget reads differently: income and
+    // expenses against plan, a variance for each, and the pace meter.
     prepare: async (page) => selectCurrentMonth(page),
   },
   {
@@ -260,6 +268,24 @@ const SHOTS = [
     url: /\/app-health/,
     budget: "Envelope",
     instance: true,
+  },
+  {
+    name: "dialog-month-transactions",
+    area: "dialogs",
+    nav: "Budget",
+    url: /\/budget-management/,
+    budget: "Envelope",
+    element: '[role="dialog"]',
+    // The month summary's Spent figure is a link into the transactions behind
+    // it - the answer to "spent on what", one click from the number that
+    // prompted the question.
+    prepare: async (page) => {
+      await selectCurrentMonth(page);
+      await page.getByLabel(/View expense transactions for/).click();
+      // The dialog queries the month's transactions and builds its analytics
+      // before it has anything to show.
+      await page.waitForTimeout(12000);
+    },
   },
   {
     name: "dialog-variance-drivers",

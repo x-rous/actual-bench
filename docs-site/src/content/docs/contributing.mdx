@@ -1,11 +1,11 @@
 ---
 title: Contributing
-description: How to contribute to Actual Bench - reporting bugs, suggesting features, improving docs, the branch and PR model, and validation.
+description: Report a bug, improve a page, or send code - the short version.
 ---
 
-Contributions are welcome - bug reports, feature requests, documentation improvements, and code alike.
-This is a concise entry point; the repository's [CONTRIBUTING.md](https://github.com/x-rous/actual-bench/blob/main/CONTRIBUTING.md)
-is the full reference.
+Bug reports, feature requests, documentation, code - all welcome. This page is the short version. The
+repository's [CONTRIBUTING.md](https://github.com/x-rous/actual-bench/blob/main/CONTRIBUTING.md) is
+the long one.
 
 ## Ways to contribute
 
@@ -18,10 +18,10 @@ is the full reference.
 
 ## Report a bug or suggest a feature
 
-Open an issue on [GitHub Issues](https://github.com/x-rous/actual-bench/issues) using the appropriate
-template. For bugs, include your version, browser/OS, connection mode, exact steps, and expected vs.
-actual behavior. Check existing issues first to avoid duplicates. See
-[Troubleshooting](../help/troubleshooting/#reporting-a-bug) for what to include.
+Open an issue on [GitHub](https://github.com/x-rous/actual-bench/issues) with the right template.
+Search first - someone may have got there already. For a bug: version, browser, OS, connection mode,
+the exact steps, and what you expected instead.
+[Troubleshooting](../help/troubleshooting/#reporting-a-bug) lists the rest.
 
 ## Set up the project
 
@@ -32,8 +32,8 @@ npm install
 npm run dev
 ```
 
-Node.js `22.23.1` is recommended. HTTP API Server mode integration testing needs a running
-`actual-http-api` instance (or use a test budget).
+Use Node.js `22.23.1`. Testing HTTP API Server mode properly needs a running `actual-http-api` - point
+it at a test budget, not your own.
 
 ## Branch and PR model
 
@@ -46,13 +46,13 @@ Work on short-lived branches that target `main`:
 | Refactor | `refactor/*` |
 | Docs | `docs/*` |
 
-All pull requests target `main`. Keep them focused, give them a clear user-facing title, and include
-screenshots for UI changes. Update `FEATURES.md` when a feature ships, and update this documentation
-when user-facing behavior changes.
+Every pull request targets `main`. Keep one focused on one thing. Title it the way a user would
+describe it, and attach screenshots for anything visual. Ships a feature? Update `FEATURES.md`.
+Changes what a user sees? Update these docs in the same PR.
 
 ## Documentation contributions
 
-The documentation site is a standalone Astro Starlight project under `docs-site/`:
+The docs are their own Astro Starlight project, under `docs-site/`:
 
 ```bash
 cd docs-site
@@ -63,14 +63,15 @@ npm run build
 
 When writing docs:
 
-- Treat the **current implementation and UI** as the source of truth; use exact in-app labels.
-- Lead feature pages with the user's situation, problem, value over Actual Budget, and write model.
-- Put the shortest useful workflow before exhaustive options and technical reference.
-- Keep pages task-oriented; smaller workflows are sections, not new pages.
+- The **running app** is the source of truth. Use its exact labels, not approximations of them.
+- Open a feature page with the situation someone is in, the problem, what this does that Actual Budget
+  does not, and the write model.
+- Shortest useful workflow first. Exhaustive options after.
+- One task, one page. A smaller workflow is a section, not a new page.
 - Put images under `docs-site/src/assets/screenshots/` and reference them relatively.
-- Never include real secrets, credentials, private hostnames, or personal budget data.
-- Use base-safe links. Prefer **relative** ones, which follow `DOCS_BASE` wherever the site is
-  served; a hard-coded `/actual-bench/` prefix only works at the default base.
+- No real secrets, credentials, private hostnames or personal budget data. Ever.
+- Keep links **relative**. They follow `DOCS_BASE` wherever the site is served; a hard-coded
+  `/actual-bench/` only works at the default base.
 
 Every page has an **Edit** link that takes you straight to its source file on GitHub.
 
@@ -85,13 +86,13 @@ npm test          # passes
 npm run build     # succeeds
 ```
 
-For documentation-only changes, also run the docs build (`npm --prefix docs-site run build`). The
-documentation site has its own CI check on pull requests.
+Documentation-only change? Run the docs build too: `npm --prefix docs-site run build`. CI checks it on
+every pull request.
 
 ## Security issues
 
-For a suspected security vulnerability, avoid posting exploit details in a public issue. Check the
-repository's security policy for the preferred private reporting channel before disclosing.
+Found a vulnerability? Do not put the exploit in a public issue. The repository's security policy has
+the private channel.
 
 ## Related pages
 

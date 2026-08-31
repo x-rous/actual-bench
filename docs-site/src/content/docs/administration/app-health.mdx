@@ -1,19 +1,19 @@
 ---
 title: App Health
-description: Check Actual Bench's own metadata database in the App Health page - SQLite path, writable state, schema version, migration status, and the persistence reminder for the /data volume.
+description: "Bench reporting on itself: whether its own database is writable, whether the storage will survive a restart, and whether scheduled work can run."
 sidebar:
   order: 4
 ---
 
-**App Health** reports on Actual Bench itself - its metadata database, its scheduler, and whether the
-storage it depends on is writable and durable. It says nothing about your budget: that is
-[Budget File Health](../../user-guide/budget-file-health/). Come here when you run the server, or when
-someone who does asks you for these details.
+This page is Bench reporting on itself: its own metadata database, its scheduler, and whether the
+storage underneath will still be there tomorrow. It says nothing about your budget - that is
+[Budget File Health](../../user-guide/budget-file-health/). Come here if you run the server, or if
+someone who does asks you for these numbers.
 
 :::note[This is about Actual Bench, not your budget]
-The metadata database is not a copy of your Actual Budget. It holds workflow metadata and can hold the
-two explicit encrypted credential opt-ins: remembered servers and unattended sync. It never stores
-those credentials in plaintext. See [Work safely](../../getting-started/core-concepts/#where-data-lives).
+This database is not a copy of your budget. It holds Bench's workflow data, and - if you turned them
+on - the two encrypted credential stores: remembered servers and unattended sync. Neither is ever
+written in plaintext. See [Work safely](../../getting-started/core-concepts/#where-data-lives).
 :::
 
 
@@ -26,11 +26,11 @@ it is durable, and whether scheduled work can run.*
 
 - **Database path** - the configured SQLite location (`ACTUAL_BENCH_DB_PATH`, default
   `/data/actual-bench.sqlite`).
-- **Writable** - whether Actual Bench can write to the database. Should be **Yes**.
-- **Schema** - the current schema version, or `Not initialized` if the database hasn't been set up.
+- **Writable** - whether Bench can write to it. This says **Yes** or something is wrong.
+- **Schema** - the current version, or `Not initialized` if the database was never created.
 - **Migration status** - whether migrations are up to date.
-- **Persistence** - a reminder that `/data` must be mounted externally. Writable storage alone does
-  not prove it will survive container replacement.
+- **Persistence** - a reminder that `/data` has to be mounted from outside. Writable is not the same as
+  durable; a container's own filesystem is both writable and temporary.
 
 ## Verify a healthy install
 
@@ -40,17 +40,17 @@ After installing or upgrading, open App Health and confirm:
 - **Schema** shows a version number (not `Not initialized`).
 - **Persistence** reads *Persistent when /data is mounted*.
 
-If **Writable** is `No` or persistence looks wrong, re-check the `/data` volume mount and its
-permissions - see [Installation](../../getting-started/installation/#verify-the-installation) and
+**Writable: No**, or persistence looking wrong, means the `/data` mount or its permissions need
+attention. See [Installation](../../getting-started/installation/#verify-the-installation) and
 [Upgrading and Backups](../upgrading-and-backups/).
 
 ## Common problems
 
-- **Writable: No** - the `/data` volume isn't writable by the container user; fix the mount permissions.
-- **Schema: Not initialized** - the database couldn't be created at the configured path; verify
-  `ACTUAL_BENCH_DB_PATH` points at the mounted, writable volume.
-- **Data disappears after recreating the container** - the `/data` volume isn't persisted; mount a
-  named volume or host path.
+- **Writable: No** - the container user cannot write to `/data`. Fix the mount permissions.
+- **Schema: Not initialized** - the database was never created. Check `ACTUAL_BENCH_DB_PATH` actually
+  points into the mounted volume.
+- **Everything vanishes when you recreate the container** - `/data` is not persisted. Mount a named
+  volume or a host path.
 
 ## Related pages
 

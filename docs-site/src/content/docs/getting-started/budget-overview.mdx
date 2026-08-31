@@ -1,18 +1,18 @@
 ---
 title: Overview
-description: The Budget Overview is Actual Bench's landing page after you connect - a live snapshot of your budget, the navigation hub to every workspace, and the entry point for whole-budget export/import.
+description: "Where you land after connecting: a live snapshot of the budget you opened, and the way through to every workspace."
 sidebar:
   order: 6
 ---
 
-**Overview** is where Actual Bench lands after you connect: a live snapshot of the budget you opened,
-and the way through to everything else. Use it to confirm you are in the intended budget and choose
-your next job. It is not an editing surface.
+You land here after connecting. It shows a live snapshot of the budget you just opened and links to
+everywhere else. Its real job is answering one question: is this the right budget? Nothing on this
+page edits anything.
 
 Open it from **Overview**, at the top of the sidebar (`/overview`).
 
-**Write model:** read-only, except for the explicit Bundle Import workflow it opens. Counts reflect
-saved server state, not unsaved drafts.
+**Write model:** read-only. The one exception is Bundle Import, which you start from here on purpose.
+The counts show what the server has saved, not what you have staged.
 
 ![The Overview page: a live snapshot of the budget, then cards for every workspace.](../../../assets/screenshots/getting-started/overview.png)
 
@@ -29,13 +29,13 @@ been budgeting - and everything below it is the way through to the rest.*
   loading placeholders immediately when you switch budgets or refresh.
 
 :::note[Overview reflects saved data]
-The snapshot reads current server state. Unsaved staged edits elsewhere in Actual Bench are not
-counted here until you Save.
+The snapshot reads the server. A draft you left staged on another page does not show up here until you
+Save it.
 :::
 
 ## The navigation hub
 
-The Overview links out to the core workspaces so it can serve as your starting point each session:
+Every workspace is one click away, so this can be where each session starts:
 
 - Direct links to the entity pages ([Accounts](../../user-guide/accounts/),
   [Payees](../../user-guide/payees/), [Categories](../../user-guide/categories/), and the rest) and to
@@ -45,11 +45,10 @@ The Overview links out to the core workspaces so it can serve as your starting p
 
 ## Whole-budget export and import
 
-The Overview page header hosts the **Export** and **Import** buttons for
-[Bundle Export / Import](../bundle-export-import/) - a one-step way to move *all* of a
-budget's master data (accounts, payees, categories, tags, schedules, and rules) in or out as a single
-ZIP. Because the Overview intentionally skips preloading, the export dialog loads entity data on demand,
-so it always reflects current server state.
+**Export** and **Import** in the page header run [Bundle Export / Import](../bundle-export-import/):
+all of a budget's master data - accounts, payees, categories, tags, schedules, rules - in or out as
+one ZIP. The Overview deliberately preloads nothing, so the export dialog fetches on demand and always
+reflects what the server holds right now.
 
 ## Related pages
 

@@ -1,13 +1,13 @@
 ---
 title: Schedules
-description: Create and manage recurring and one-time schedules in Actual Bench - recurrence patterns, amount modes, weekend adjustment, end conditions, linked rules, CSV import/export, and impact-aware deletion.
+description: "Every recurring plan in the budget: what repeats, when it next falls due, and what depends on it before you delete it."
 sidebar:
   order: 6
 ---
 
-**Schedules** lists a budget's recurring plans - what recurs, when it next falls due, and what it is
-linked to. Come here to create or revise several at once, move them through CSV, or see a schedule's
-linked rule and transaction count before deleting it.
+Every recurring plan in the budget: what repeats, when it next falls due, what it is attached to.
+Create or revise several at once, move them in and out through CSV, or check a schedule's linked rule
+and transaction count before deleting it.
 
 Open it from **Data Management → Schedules** (`/schedules`).
 
@@ -26,9 +26,9 @@ uses.
 - **CSV import and export** of schedules for bulk setup and backup.
 - **Impact-aware deletion** - every delete shows the schedule's linked-rule status, auto-post flag, and
   transaction count first.
-- **A richer recurrence summary** that infers weekday/day anchors from the start date.
-- **An "Edit as Rule" bridge** to open a schedule's server-managed rule directly in the Rules editor.
-- **Staged review** - set up or adjust several schedules and review them before they touch your budget.
+- **A recurrence summary that reads like English**, worked out from the start date.
+- **Edit as Rule** - open the schedule's server-managed rule directly in the Rules editor.
+- **Staged review** - set up a dozen schedules, read them once, then Save.
 
 ## Create a schedule
 
@@ -37,8 +37,8 @@ uses.
 3. Optionally assign a **payee** and **account**.
 4. Save to stage the schedule.
 
-Saving an unchanged schedule closes the drawer without staging a draft. Closing the drawer with unsaved
-edits prompts for confirmation.
+Save a schedule you did not change and the drawer just closes - no empty draft. Close it with unsaved
+edits and it asks first.
 
 ## Choose an amount mode
 
@@ -48,7 +48,7 @@ Schedule amounts always use one of three modes:
 - **Approximate** (`is approx.`)
 - **Range** (`is between`) - with a low and high amount
 
-Missing or null server amounts are treated as an approximate zero.
+A missing amount on the server is read as an approximate zero.
 
 ## Configure recurrence
 
@@ -60,28 +60,26 @@ Missing or null server amounts are treated as an approximate zero.
 
 ## Weekend adjustment and end conditions
 
-- **Weekend adjustment** - when a scheduled date lands on a weekend, move it to the nearest **Friday
-  before** or **Monday after**.
+- **Weekend adjustment** - a date landing on a Saturday or Sunday moves to the **Friday before** or the
+  **Monday after**, your choice.
 - **End conditions** - run forever, end after **N occurrences**, or end **on a date**.
 
 ## Auto-add and linked rules
 
-- **Auto-add** - when enabled, Actual Budget automatically posts a transaction when the schedule is due.
-- Every schedule has an underlying **linked rule** managed by the server. Open it in the Rules editor
-  via **Edit as Rule** in the drawer.
+- **Auto-add** - Actual posts the transaction itself when the schedule falls due.
+- Every schedule has a **linked rule** behind it, managed by the server. **Edit as Rule** in the drawer
+  opens it.
 
 :::note[Schedule-generated rules are managed here]
-Rules linked to schedules appear read-only on the [Rules](../rules/) page - the `link-schedule` action
-shows the resolved schedule name and cannot be created or edited manually. Manage that behavior from
-the Schedules page instead.
+Schedule-linked rules are read-only on the [Rules](../rules/) page. The `link-schedule` action shows
+the schedule's name and cannot be written by hand. Change the behaviour here instead.
 :::
 
 ## Edit, delete, and filter
 
-- Edit schedules in the drawer; successfully saved edits stay visible while the background refresh
-  reconciles server data.
-- Deleting a schedule (single or bulk) confirms with an impact dialog showing its linked-rule status,
-  auto-post flag, and transaction count.
+- Edit in the drawer. A saved edit stays on screen while the background refresh catches up with the
+  server.
+- Deleting confirms first, showing the linked rule, the auto-post flag and the transaction count.
 - Filter by name, payee, account, frequency, and auto-add state.
 
 ## Import and export
@@ -89,16 +87,16 @@ the Schedules page instead.
 Import and export schedules as CSV (staged before saving).
 
 :::note[No "completed" status column]
-The schedule `completed` flag is kept for round-tripping server data but is not shown as a status in the
-UI, because it does not represent a reliable paid/completed state. Imported schedules start active.
+The `completed` flag survives a CSV round-trip but is not shown as a status, because it does not
+reliably mean paid or finished. Imported schedules start active.
 :::
 
 ## Common problems
 
-- **A schedule's rule looks read-only** - schedule-linked rules are managed here; use **Edit as Rule**
-  to open the editable parts.
-- **The recurrence summary looks wrong** - it is inferred from the start date; check the day/weekday
-  anchor and interval.
+- **The rule is read-only** - it belongs to the schedule. **Edit as Rule** opens the parts you can
+  change.
+- **The recurrence summary looks wrong** - it is derived from the start date. Check the day or weekday
+  anchor and the interval.
 
 ## Related pages
 

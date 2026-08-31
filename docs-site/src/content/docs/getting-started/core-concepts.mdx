@@ -1,14 +1,14 @@
 ---
 title: Work safely
-description: Know when Actual Bench stages, applies, immediately saves, or only reads before you make changes.
+description: The four ways Actual Bench writes - staged, applied, immediate, or not at all - and how to tell which one you are in.
 sidebar:
   order: 4
 ---
 
-Nothing in Actual Bench writes to your budget without you saying so - but "saying so" does not look
-the same everywhere. Bulk editing, reconciliation, diagnostics and small one-off actions each need a
-different kind of safety, so each has a different write model, and knowing which one you are in is
-the difference between confidence and guessing.
+Nothing here writes to your budget unless you say so. But "saying so" looks different depending on
+what you are doing. Bulk editing, reconciliation, diagnostics and one-off toggles each need a
+different kind of care, so each works differently. Knowing which one you are in is the whole
+difference between working confidently and hoping.
 
 ## The four models
 
@@ -19,30 +19,32 @@ the difference between confidence and guessing.
 | **Immediate explicit write** | The named action writes at once and is not part of the main staged Save | Notes and carryover toggles |
 | **Read-only** | The tool inspects data and never writes to the budget | ActualQL, Rule Diagnostics, Budget File Health, and Data Browser |
 
-Each feature guide repeats the relevant model near the top so you do not need to remember the table.
+You do not have to memorise this. Every feature guide says which model it uses, near the top.
 
 ## Staged work
 
-New, edited, and deleted rows are visually marked. The **Draft Changes** panel and top bar summarize
-what is pending. **Save** writes the draft; **Discard** returns to saved server state. Undo and redo
-apply only to staged work and cannot reverse something already saved.
+New, edited and deleted rows are marked as you go. The **Draft Changes** panel and the top bar count
+what is waiting. **Save** writes the draft. **Discard** throws it away and re-reads the server. Undo
+and redo work on the draft only - once something is saved, undo cannot reach it.
 
-Staged work is scoped to the connected budget. When several budgets are open, confirm the active
-connection before saving.
+A draft belongs to one budget. With several open, check which one is active before you save.
 
 ## Immediate-save exceptions
 
-- **Notes** save as soon as you confirm the note editor. Discarding other staged work does not undo them.
-- **Carryover** is toggled through an explicit Budget Management action and writes directly. It is not
-  part of the budget-cell draft.
+- **Notes** save the moment you confirm the editor. Discarding the rest of your draft will not take
+  them back.
+- **Carryover** writes directly, through its own action in Budget Management. It was never part of
+  the cell draft.
 
-These exceptions should feel like individual actions, not background saves.
+Both should feel like pressing a button, not like something happening quietly in the background.
 
 ## Apply workflows
 
-Budget File Sync previews and classifies potential items before Apply. Bank Reconciliation keeps your
-statement decisions in a persistent session, shows the planned result, and re-reads affected Actual
-transactions immediately before Apply. Both preserve item-level failures for review or retry.
+Budget File Sync reads both budgets, sorts every candidate row into a bucket, and shows you the
+buckets. Bank Reconciliation keeps your decisions in a session that survives a closed tab, and
+re-reads the affected transactions from Actual immediately before it writes - so a change made
+elsewhere in the meantime cannot be silently overwritten. When an individual item fails, both keep it
+and let you retry.
 
 ## Where data lives
 
@@ -56,12 +58,12 @@ transactions immediately before Apply. Both preserve item-level failures for rev
 | Unattended-sync credentials, when enabled | Metadata database, encrypted with `SYNC_VAULT_KEY` | Until withdrawn or the database is removed |
 | Exported budget snapshot | Browser memory; downloadable by you | Current session or your downloaded file |
 
-Remembering credentials is optional. By default, credentials are held in memory only. The two
-encrypted opt-ins are separate and use different keys.
+Remembering credentials is opt-in. By default they live in memory and die with the tab. The two
+encrypted options are separate features with separate keys.
 
 ## Two habits prevent most mistakes
 
-1. Check the active budget before **Save** or **Apply**.
-2. Read the review or impact screen instead of treating it as a confirmation to click through.
+1. Check which budget is active before you **Save** or **Apply**.
+2. Actually read the review screen. It is not a confirmation dialog.
 
-You can now go straight to the workflow that brought you here.
+That is the whole model. Go to the workflow that brought you here.

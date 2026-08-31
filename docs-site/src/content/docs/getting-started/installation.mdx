@@ -1,30 +1,30 @@
 ---
 title: Installation
-description: Run Actual Bench with Docker or Docker Compose, open the app, and verify the installation.
+description: Run the container, mount a persistent volume, and check the install is sound.
 sidebar:
   order: 2
 ---
 
-This page is for the person running Actual Bench. If someone else already hosts it, skip to
-[Connect to a budget](../connecting/). The supported installation is a Docker container; Compose is
-the shortest path for a persistent self-hosted instance.
+This page is for whoever runs the server. If someone else hosts it for you, skip ahead to
+[Connect to a budget](../connecting/). Installation means a Docker container - that is the only
+supported route. Compose is the shortest one.
 
 :::note[You still need Actual Budget]
-Actual Bench connects to an existing [Actual Budget](https://github.com/actualbudget/actual) server - 
-it does not include one. Have your Actual Server (and, for HTTP API Server mode,
-[actual-http-api](https://github.com/jhonderson/actual-http-api)) running first.
+Bench connects to an [Actual Budget](https://github.com/actualbudget/actual) server. It does not ship
+one. Get your Actual Server running first - plus
+[actual-http-api](https://github.com/jhonderson/actual-http-api) if you plan to use HTTP API Server
+mode.
 :::
 
 ## Before you start
 
 - **Docker** (and optionally Docker Compose) installed on the host.
-- A free host **port** to publish the app on. The container listens on port **3000**.
-- A location for a **persistent volume** so Actual Bench keeps its metadata across restarts.
-- **Browser access** to wherever you publish Actual Bench.
-- For **Direct Actual Server mode**: your browser must be able to reach your Actual Server, which has
-  CORS and cross-origin isolation requirements. See [Connect to Actual Budget](../connecting/).
-- For **HTTP API Server mode**: the Actual Bench container must be able to reach your `actual-http-api`
-  server.
+- A spare **port** on the host. The container listens on **3000**.
+- Somewhere to put a **persistent volume**, or Bench forgets its own metadata every restart.
+- **Browser access** to wherever you publish it.
+- For **Direct Actual Server mode**: your *browser* has to reach the Actual Server, which brings CORS
+  and cross-origin isolation requirements with it. See [Connect to a budget](../connecting/).
+- For **HTTP API Server mode**: the *container* has to reach `actual-http-api`.
 
 ## Choose a release channel
 
@@ -73,10 +73,9 @@ Start it:
 docker compose up -d
 ```
 
-No environment variables are required for a basic setup - `ACTUAL_BENCH_DB_PATH` is shown here only to
-make the metadata location explicit; it already defaults to `/data/actual-bench.sqlite`. The commented
-lines are optional settings you *can* provide; see [Configuration](../../administration/configuration/)
-for what each one does.
+A basic setup needs no environment variables at all. `ACTUAL_BENCH_DB_PATH` appears above only to make
+the metadata location obvious - it already defaults to that path. Everything commented out is
+optional; [Configuration](../../administration/configuration/) says what each one does.
 
 ## Install with the Docker CLI
 
@@ -98,13 +97,12 @@ Open the app in your browser:
 - Local host: `http://localhost:3000`
 - Remote host: `http://<your-server>:3000`, or your reverse-proxy URL
 
-You should land on the connection screen. Setting up the connection is covered in
-[Connect to Actual Budget](../connecting/).
+You should land on the connection screen. [Connect to a budget](../connecting/) takes it from there.
 
 :::tip[Use HTTPS when it isn't just localhost]
-As soon as Actual Bench is reachable beyond your own machine, put it behind HTTPS (for example via a
-reverse proxy). Direct Actual Server mode in particular depends on secure, cross-origin-isolated
-context. See the [Deployment](../../administration/deployment/) guide.
+The moment Bench is reachable from anywhere but your own machine, put HTTPS in front of it - a reverse
+proxy is fine. Direct Actual Server mode needs a secure, cross-origin-isolated context and will not
+work without one. See [Deployment](../../administration/deployment/).
 :::
 
 ## Verify the installation
@@ -116,18 +114,18 @@ context. See the [Deployment](../../administration/deployment/) guide.
    - **Schema** shows a version number (not `Not initialized`).
    - **Persistence** reads *Persistent when /data is mounted*.
 
-If **Writable** is `No` or persistence looks wrong, re-check the `/data` volume mount and its
-permissions before connecting.
+**Writable** saying `No`, or persistence looking wrong, means the `/data` mount or its permissions are
+wrong. Fix that before you connect anything.
 
 ## Persistent metadata storage
 
-Actual Bench stores its own workflow metadata in a SQLite database at `/data/actual-bench.sqlite` (set
-`ACTUAL_BENCH_DB_PATH` to change the path). Persist and back up the `/data` volume to keep this data
-across container recreation.
+Bench keeps its own workflow metadata in a SQLite database at `/data/actual-bench.sqlite`; set
+`ACTUAL_BENCH_DB_PATH` to move it. Persist the `/data` volume and back it up. Recreate the container
+without it and that metadata is gone.
 
 :::note[What `/data` is - and isn't]
-The metadata database is not a copy of your Actual Budget. It holds Actual Bench workflow data and,
-only when explicitly enabled, encrypted remembered-server or unattended-sync credentials.
+This database is not a copy of your budget. It holds Bench's own workflow data - and, only if you turn
+those features on, encrypted remembered-server or unattended-sync credentials.
 :::
 
 ## Update the container
@@ -139,8 +137,8 @@ docker compose pull
 docker compose up -d
 ```
 
-For a safe upgrade - including backups, version pinning, and database migration notes - follow the
-[Upgrading and Backups](../../administration/upgrading-and-backups/) guide.
+Before a real upgrade, read [Upgrading and Backups](../../administration/upgrading-and-backups/). It
+covers backups, pinning a version, and what happens to the database.
 
 ## Next step
 
