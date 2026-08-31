@@ -6,9 +6,10 @@ sidebar:
 ---
 
 For operators replacing a container or moving to a new host. One rule matters more than the rest:
-**keep the same `/data`, and back it up first**. Your budgets are safe in Actual. Bench's sessions,
-flows, saved queries, exchange rates and encrypted credentials are not - they live in its own
-database, and that database lives in `/data`.
+**keep the volume holding `ACTUAL_BENCH_DB_PATH`, and back it up first**. That is `/data` unless you
+moved it. Your budgets are safe in Actual. Bench's sessions, flows, saved queries, exchange rates and
+encrypted credentials are not - they live in its own database, and that database lives on that
+volume.
 
 ## What needs to be backed up
 
@@ -60,8 +61,8 @@ Name the exact version. `latest` today and `latest` tomorrow are not the same im
 
 ### Moving from edge to stable
 
-Change the tag to `latest` or a pinned version and recreate the container. Keep the same `/data`
-volume and your metadata comes with you.
+Change the tag to `latest` or a pinned version and recreate the container. Keep the same metadata
+volume and everything comes with you.
 
 ## Database migrations
 

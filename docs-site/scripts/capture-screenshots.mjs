@@ -283,8 +283,14 @@ const SHOTS = [
       await selectCurrentMonth(page);
       await page.getByLabel(/View expense transactions for/).click();
       // The dialog queries the month's transactions and builds its analytics
-      // before it has anything to show.
-      await page.waitForTimeout(12000);
+      // before it has anything to show; until then it renders "Loading
+      // transactions" and a photograph of that is worth nothing. Wait for the
+      // loading state to go and the table to arrive, rather than guessing a
+      // duration that a slow query would outlast.
+      const dialog = page.locator('[role="dialog"]');
+      await dialog.getByText(/Loading transactions/).waitFor({ state: "hidden", timeout: 60000 });
+      await dialog.getByRole("table").first().waitFor({ timeout: 60000 });
+      await page.waitForTimeout(2500);
     },
   },
   {

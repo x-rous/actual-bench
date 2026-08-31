@@ -1,6 +1,6 @@
 ---
 title: Work safely
-description: The four ways Actual Bench writes - staged, applied, immediate, or not at all - and how to tell which one you are in.
+description: Actual Bench writes in four ways - staged, applied, immediate, or not at all - and you should know which one you are in.
 sidebar:
   order: 4
 ---
@@ -42,9 +42,10 @@ Both should feel like pressing a button, not like something happening quietly in
 
 Budget File Sync reads both budgets, sorts every candidate row into a bucket, and shows you the
 buckets. Bank Reconciliation keeps your decisions in a session that survives a closed tab, and
-re-reads the affected transactions from Actual immediately before it writes - so a change made
-elsewhere in the meantime cannot be silently overwritten. When an individual item fails, both keep it
-and let you retry.
+re-reads the affected transactions from Actual immediately before it writes, which is what catches a
+change somebody made in the meantime. It narrows that window rather than closing it: the write itself
+carries no version check, so an edit landing between the re-read and the write can still be
+overwritten. When an individual item fails, both keep it and let you retry.
 
 ## Where data lives
 

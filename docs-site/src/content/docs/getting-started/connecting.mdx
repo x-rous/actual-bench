@@ -67,7 +67,8 @@ back in: **Reset vault** deletes the encrypted saved servers so you can start ov
 budgets are untouched.
 :::
 
-Remembered servers only survive if `/data` is persisted. If you run the installation, see
+Remembered servers only survive if the volume holding Bench's metadata database is persisted - `/data`
+by default, or wherever `ACTUAL_BENCH_DB_PATH` points. If you run the installation, see
 [Upgrades and backups](../../administration/upgrading-and-backups/).
 
 ## Switch between open budgets

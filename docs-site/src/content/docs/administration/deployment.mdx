@@ -76,7 +76,9 @@ Direct mode runs Actual's engine in the browser. That has consequences:
 - The response has to satisfy **CORS**, or come through your proxy as same-origin.
 - Actual Bench sets the cross-origin isolation headers it needs on its own assets
   (`Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy: require-corp`).
-- Serve Actual Bench (and ideally Actual Server) over **HTTPS**.
+- Serve Actual Bench over **HTTPS**, and the Actual Server URL too. Direct mode sends authenticated
+  requests to that URL straight from the browser, so `http://` there puts the server password on the
+  wire. Plain HTTP is only acceptable on an internal hop behind a same-origin HTTPS proxy.
 
 If your environment cannot support Direct mode, turn it off with `DIRECT_BROWSER_API=0` and offer only
 HTTP API Server mode. Better than letting people find out by failing.

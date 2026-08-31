@@ -20,7 +20,8 @@ mode.
 
 - **Docker** (and optionally Docker Compose) installed on the host.
 - A spare **port** on the host. The container listens on **3000**.
-- Somewhere to put a **persistent volume**, or Bench forgets its own metadata every restart.
+- Somewhere to put a **persistent volume** for the metadata database, or Bench forgets itself every
+  restart.
 - **Browser access** to wherever you publish it.
 - For **Direct Actual Server mode**: your *browser* has to reach the Actual Server, which brings CORS
   and cross-origin isolation requirements with it. See [Connect to a budget](../connecting/).
@@ -114,14 +115,15 @@ work without one. See [Deployment](../../administration/deployment/).
    - **Schema** shows a version number (not `Not initialized`).
    - **Persistence** reads *Persistent when /data is mounted*.
 
-**Writable** saying `No`, or persistence looking wrong, means the `/data` mount or its permissions are
-wrong. Fix that before you connect anything.
+**Writable** saying `No`, or persistence looking wrong, means the mount holding the database - or its
+permissions - is wrong. Fix that before you connect anything.
 
 ## Persistent metadata storage
 
 Bench keeps its own workflow metadata in a SQLite database at `/data/actual-bench.sqlite`; set
-`ACTUAL_BENCH_DB_PATH` to move it. Persist the `/data` volume and back it up. Recreate the container
-without it and that metadata is gone.
+`ACTUAL_BENCH_DB_PATH` to move it. Persist and back up the volume that database sits on - `/data`
+unless you moved it, in which case persist the directory `ACTUAL_BENCH_DB_PATH` names instead.
+Recreate the container without it and that metadata is gone.
 
 :::note[What `/data` is - and isn't]
 This database is not a copy of your budget. It holds Bench's own workflow data - and, only if you turn
