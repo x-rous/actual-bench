@@ -53,6 +53,18 @@ const DEMO_UI = (process.env.DEMO_UI_URL ?? "https://actual-bench-demo.vercel.ap
 const VIEWPORT = { width: 1440, height: 900 };
 
 /**
+ * Select the current month's column header, which is what opens the month
+ * summary in the details panel. The header carries "(current month)" in its
+ * label, so it can be found without knowing today's date.
+ */
+async function selectCurrentMonth(page) {
+  const header = page.locator('[aria-label^="Month: "][aria-label*="current month"]').first();
+  await header.waitFor({ timeout: 30000 });
+  await header.click();
+  await page.waitForTimeout(6000);
+}
+
+/**
  * The shot list. `nav` is the sidebar entry to click, which is also how a
  * reader gets there; `budget` picks which demo to open, and only the pages
  * making a point about budgeting mode ask for Tracking.
@@ -71,6 +83,59 @@ const SHOTS = [
   { name: "overview", area: "getting-started", nav: "Overview", url: /\/overview/, budget: "Envelope" },
   { name: "budget-envelope", nav: "Budget", url: /\/budget-management/, budget: "Envelope" },
   { name: "budget-tracking", nav: "Budget", url: /\/budget-management/, budget: "Tracking" },
+  {
+    name: "budget-details-month",
+    nav: "Budget",
+    url: /\/budget-management/,
+    budget: "Tracking",
+    // Selecting a month header - and nothing else - is what puts the month
+    // summary in the panel: income and expenses against plan, the pace meter,
+    // and the month note. Tracking, because a variance against a planned figure
+    // is the thing that panel is for.
+    prepare: async (page) => selectCurrentMonth(page),
+  },
+  {
+    name: "budget-details-category",
+    nav: "Budget",
+    url: /\/budget-management/,
+    budget: "Envelope",
+    // Groups arrive collapsed, so the category rows have to be revealed before
+    // one can be selected. Groceries: twelve months of real activity behind it,
+    // so the panel has averages and a trend to show rather than dashes.
+    prepare: async (page) => {
+      await page.getByRole("button", { name: "Expand all groups" }).click();
+      await page.waitForTimeout(2500);
+      await page.locator('[aria-label="Category: Groceries"]').first().click();
+      await page.waitForTimeout(6000);
+    },
+  },
+  {
+    name: "budget-details-group",
+    nav: "Budget",
+    url: /\/budget-management/,
+    budget: "Envelope",
+    prepare: async (page) => {
+      await page.locator('[aria-label="Category group: Food & Dining"]').first().click();
+      await page.waitForTimeout(6000);
+    },
+  },
+  {
+    name: "budget-actuals",
+    nav: "Budget",
+    url: /\/budget-management/,
+    budget: "Envelope",
+    // What was actually spent, month by month, rather than what was planned -
+    // the same grid answering the other question. A category is selected too,
+    // so the panel puts one category's spending history beside the totals.
+    prepare: async (page) => {
+      await page.getByRole("button", { name: "Actuals", exact: true }).click();
+      await page.waitForTimeout(3000);
+      await page.getByRole("button", { name: "Expand all groups" }).click();
+      await page.waitForTimeout(2500);
+      await page.locator('[aria-label="Category: Restaurants"]').first().click();
+      await page.waitForTimeout(6000);
+    },
+  },
   { name: "rules", nav: "Rules", url: /\/rules$/, budget: "Envelope" },
   { name: "rule-diagnostics", nav: "Rule Diagnostics", url: /\/rules\/diagnostics/, budget: "Envelope" },
   { name: "payee-cleanup", nav: "Payee Cleanup", url: /\/payees\/cleanup/, budget: "Envelope" },
@@ -195,6 +260,27 @@ const SHOTS = [
     url: /\/app-health/,
     budget: "Envelope",
     instance: true,
+  },
+  {
+    name: "dialog-variance-drivers",
+    area: "dialogs",
+    nav: "Budget",
+    url: /\/budget-management/,
+    budget: "Tracking",
+    element: '[role="dialog"]',
+    // The month summary answers "how far off plan is this month"; this dialog
+    // answers "because of what", which is the question a reader actually has.
+    // The expense side, because that is where a month usually goes wrong.
+    prepare: async (page) => {
+      await selectCurrentMonth(page);
+      await page.getByLabel("View variance drivers").last().click();
+      await page.waitForTimeout(5000);
+      // Expanded, because the groups alone say which part of the month drifted
+      // and the categories underneath say what actually did it - and because
+      // nine collapsed rows leave two thirds of the dialog empty.
+      await page.getByRole("button", { name: /Expand all/ }).click();
+      await page.waitForTimeout(3000);
+    },
   },
   {
     name: "dialog-bundle-export",

@@ -22,8 +22,14 @@ toggles are explicit immediate writes.
 
 ![The Budget workspace showing twelve months of an Envelope budget, with the details panel open beside it.](../../../assets/screenshots/user-guide/budget-envelope.png)
 
-*Twelve months at once, focused on one measure. The panel on the right explains where the current
-month's To Budget figure comes from, line by line.*
+*An Envelope budget: twelve months at once, focused on one measure. The panel on the right explains
+where the current month's To Budget figure comes from, line by line.*
+
+![The same workspace connected to a Tracking budget, showing income, expenses and savings per month.](../../../assets/screenshots/user-guide/budget-tracking.png)
+
+*The same workspace on a Tracking budget. The two models answer different questions, so the grid asks
+different ones: envelope budgeting leads with what is left to assign, tracking with how the month is
+running against plan.*
 
 ## Get the full-year view
 
@@ -54,6 +60,23 @@ month in a 12-month window:
   against budget-to-date (`Under/Over budget by $X`), and for tracking **income** it shows received-to-date
   against planned income-to-date. It appears for expense (and tracking-income) selections in every scope
   and is omitted where it wouldn't be meaningful (envelope income, plan-only future months).
+
+The panel follows what you select, and each selection answers a different question.
+
+![The details panel showing a month summary: income, expenses, variance and the pace meter for the current month.](../../../assets/screenshots/user-guide/budget-details-month.png)
+
+*Select a **month column header** for the month as a whole - income and expenses against plan, how far
+through the month you are, and the month note.*
+
+![The details panel showing one category group's balance, activity and trend.](../../../assets/screenshots/user-guide/budget-details-group.png)
+
+*Select a **group label** for that group across the visible window: what it was assigned, what it has
+spent, and how its balance has moved.*
+
+![The details panel showing one category's balance, assigned and spent totals, and balance trend.](../../../assets/screenshots/user-guide/budget-details-category.png)
+
+*Select a **category label** for the same read on a single category, including whether its balance
+rolls over.*
 
 ## Two budgeting models
 
@@ -86,6 +109,11 @@ Use the cell-view toggle in the toolbar (also the `V` key) to switch what every 
 
 Labels follow the row's side and mode: an income row's activity reads *Received*, and an envelope income
 row is always Received-only regardless of the toggle.
+
+![The grid in the Actuals view, showing what each category actually spent in each month.](../../../assets/screenshots/user-guide/budget-actuals.png)
+
+*The **Actuals** view: what was actually spent, month by month, with one category selected so the panel
+carries its history alongside.*
 
 ### See spending at a glance
 
@@ -205,6 +233,18 @@ button. See [Core Concepts](../../getting-started/core-concepts/#immediate-save-
 Holds and transfers are envelope-mode only.
 
 ## Tracking budget behavior
+
+### See what moved a month off plan
+
+A month summary tells you how far off plan a month is. Select the **income variance** or **expense
+variance** figure in that panel to open **Variance Drivers**, which says what did it: every category
+group ranked by how much of the gap it accounts for, expandable to the categories underneath, and
+filterable to just the over- or just the under-budget side.
+
+![The Variance Drivers dialog ranking category groups and categories by their share of the month's budget variance.](../../../assets/screenshots/dialogs/dialog-variance-drivers.png)
+
+*Groups ranked by their share of the variance, expanded to the categories that produced it. Export
+takes the same breakdown to CSV.*
 
 In tracking mode the workspace uses planning language rather than envelope balances. Past months show
 actual performance, the current month is marked partial, and future months show budgeted context
