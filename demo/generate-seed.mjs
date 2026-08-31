@@ -793,9 +793,6 @@ async function createBudgetDataset(api, apiRuntime, demoBudget, months) {
       }
     }
   });
-  if (demoBudget.mode === "envelope") {
-    await api.holdBudgetForNextMonth(current.key, 50000);
-  }
 
   await api.updateNote(
     `account-${account.checking}`,
@@ -938,7 +935,66 @@ async function createBudgetDataset(api, apiRuntime, demoBudget, months) {
     },
     logicalSignature: JSON.stringify(logicalTransactions),
     budgetSignature: JSON.stringify(budgetSignature),
+    sinkingFundCategoryIds: {
+      emergencyFund: category.emergencyFund,
+      vacationFund: category.vacationFund,
+      homeImprovement: category.homeImprovement,
+      annualBills: category.annualBills,
+    },
   };
+}
+
+/**
+ * Assign the surplus the household has accumulated, so the envelope demo shows
+ * a budget that has actually been budgeted. To Budget is the headline number of
+ * an envelope budget, and a demo sitting on a few thousand unassigned reads as
+ * a job half done - the opposite of what the page is for.
+ *
+ * Only the current month is swept. Sweeping every month zeroes the surplus each
+ * one carries forward, and the months that deliberately spend more than they
+ * earn then land in the red with nothing to draw on - a seed that looks broken
+ * rather than one that tells a story. Clearing the current month leaves the
+ * carryover chain intact and puts the headline figure where it belongs.
+ *
+ * The surplus is split across the sinking funds rather than dropped into one,
+ * which is both what a household does with a year of savings and what reads
+ * naturally in a screenshot of the category list.
+ *
+ * This runs after `runImport` rather than inside it: during an import the
+ * budget spreadsheet is never evaluated - it is recomputed once the import
+ * finishes - so every month reports a To Budget of zero while the dataset is
+ * being written, and the sweep would find nothing to do.
+ *
+ * Nothing here touches the expense plan the two budgets share.
+ */
+async function assignSurplusToSinkingFunds(api, current, categoryIds) {
+  // The hold comes first: it takes its $500 out of the current month's To
+  // Budget, and the sweep then clears whatever is still sitting there. The
+  // other way round, the hold would push the month back into the red.
+  await api.holdBudgetForNextMonth(current.key, 50000);
+
+  const surplus = (await api.getBudgetMonth(current.key))?.toBudget ?? 0;
+  if (surplus <= 0) return;
+
+  const plan = budgetPlanForMonth(current);
+  // Whole dollars, so the category rows read as decisions rather than as the
+  // output of a division. The emergency fund absorbs the remainder.
+  const shares = [
+    ["vacationFund", 0.2],
+    ["homeImprovement", 0.2],
+    ["annualBills", 0.15],
+  ];
+  let assigned = 0;
+  for (const [key, share] of shares) {
+    const amount = Math.round((surplus * share) / 100) * 100;
+    assigned += amount;
+    await api.setBudgetAmount(current.key, categoryIds[key], (plan[key] ?? 0) + amount);
+  }
+  await api.setBudgetAmount(
+    current.key,
+    categoryIds.emergencyFund,
+    (plan.emergencyFund ?? 0) + (surplus - assigned)
+  );
 }
 
 async function stabilizeGeneratedSyncIds(generatedBudgets) {
@@ -1027,6 +1083,15 @@ async function main() {
       });
       if (!result) throw new Error(`dataset counts were not captured for ${demoBudget.name}`);
       console.log("• dataset:", JSON.stringify(result.counts));
+      if (demoBudget.mode === "envelope") {
+        const currentMonth = months.at(-1);
+        await assignSurplusToSinkingFunds(api, currentMonth, result.sinkingFundCategoryIds);
+        const remaining = (await api.getBudgetMonth(currentMonth.key))?.toBudget ?? 0;
+        if (remaining !== 0) {
+          throw new Error(`${currentMonth.key} still has ${remaining} unassigned`);
+        }
+        console.log(`• ${currentMonth.key} is fully assigned (To Budget is zero)`);
+      }
       console.log(`• syncing ${demoBudget.name} to server...`);
       await api.sync();
       results.push(result);
