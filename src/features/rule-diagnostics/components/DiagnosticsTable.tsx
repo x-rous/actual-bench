@@ -1,47 +1,43 @@
-import type { Finding, Severity } from "../types";
-import { FindingRow } from "./FindingRow";
+import type { Rule } from "@/types/entities";
+import type { Finding } from "../types";
+import { FindingCard } from "./FindingCard";
 
-type Props = { findings: Finding[]; onDismiss?: (finding: Finding) => void };
-
-const SEVERITY_ORDER: Severity[] = ["error", "warning", "info"];
-const SEVERITY_HEADING: Record<Severity, string> = {
-  error: "Errors",
-  warning: "Warnings",
-  info: "Info",
+type Props = {
+  findings: Finding[];
+  rulesById: Map<string, Rule>;
+  onDismiss?: (finding: Finding) => void;
+  onRestore?: (finding: Finding) => void;
 };
 
-export function DiagnosticsTable({ findings, onDismiss }: Props) {
-  const bySeverity: Record<Severity, Finding[]> = { error: [], warning: [], info: [] };
-  for (const f of findings) {
-    bySeverity[f.severity].push(f);
-  }
-
+/**
+ * A flat list, in rank order.
+ *
+ * It grouped by severity, and briefly offered grouping by rule as well. Both
+ * are gone. Severity headings repeated the badge already on every card and the
+ * filter already above it; grouping by rule produced one heading per finding,
+ * because almost no rule carries more than one — and where a rule does carry
+ * several, the ranking already puts them together, since "findings on the same
+ * rule" is one of the signals it sorts on.
+ *
+ * What is left is the order the ranking chose: what is broken first, then what
+ * fixing it is worth.
+ */
+export function DiagnosticsTable({ findings, rulesById, onDismiss, onRestore }: Props) {
   if (findings.length === 0) {
     return null;
   }
 
   return (
     <div className="flex flex-col">
-      {SEVERITY_ORDER.map((sev) => {
-        const group = bySeverity[sev];
-        if (group.length === 0) return null;
-        return (
-          <section key={sev} aria-label={`${SEVERITY_HEADING[sev]} findings`}>
-            <h2 className="sticky top-0 z-10 border-b border-border bg-background px-4 py-1.5 text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">
-              {SEVERITY_HEADING[sev]} ({group.length})
-            </h2>
-            <div>
-              {group.map((f, i) => (
-                <FindingRow
-                  key={`${f.code}-${f.affected[0]?.id ?? "none"}-${i}`}
-                  finding={f}
-                  onDismiss={onDismiss}
-                />
-              ))}
-            </div>
-          </section>
-        );
-      })}
+      {findings.map((f, i) => (
+        <FindingCard
+          key={`${f.code}-${f.affected[0]?.id ?? "none"}-${i}`}
+          finding={f}
+          rulesById={rulesById}
+          onDismiss={onDismiss}
+          onRestore={onRestore}
+        />
+      ))}
     </div>
   );
 }

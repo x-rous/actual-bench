@@ -146,7 +146,7 @@ describe("RuleDiagnosticsView", () => {
     expect(screen.getByText("No issues found")).toBeInTheDocument();
   });
 
-  it("renders summary counts and findings in severity order", () => {
+  it("renders counts on the filter, and findings in rank order", () => {
     const error = makeFinding({
       code: "RULE_MISSING_PAYEE",
       severity: "error",
@@ -162,9 +162,10 @@ describe("RuleDiagnosticsView", () => {
     hookResult = { ...hookResult, report: makeReport([error, warning]) };
     render(<RuleDiagnosticsView />);
 
-    // "Errors" appears in both the filter pill and the summary card; use unique aria-labels.
-    expect(screen.getByLabelText("1 errors")).toBeInTheDocument();
-    expect(screen.getByLabelText("1 warnings")).toBeInTheDocument();
+    // One filter group carries every count — no summary cards, no tab strip.
+    expect(screen.getByText("All 2")).toBeInTheDocument();
+    expect(screen.getByText("Errors 1")).toBeInTheDocument();
+    expect(screen.getByText("Warnings 1")).toBeInTheDocument();
     expect(screen.getByText("Error finding")).toBeInTheDocument();
     expect(screen.getByText("Warning finding")).toBeInTheDocument();
 
@@ -245,11 +246,7 @@ describe("RuleDiagnosticsView", () => {
       hookResult = { ...hookResult, report: makeReport([errF, warnF, infoF]) };
       render(<RuleDiagnosticsView />);
 
-      // Click the "Errors" pill in the severity PillGroup.
-      const errorsPill = screen.getAllByText("Errors").find(
-        (el) => el.tagName === "BUTTON"
-      ) as HTMLButtonElement;
-      fireEvent.click(errorsPill);
+      fireEvent.click(screen.getByText("Errors 1"));
       expect(screen.getByText("Error finding")).toBeInTheDocument();
       expect(screen.queryByText("Warning finding")).not.toBeInTheDocument();
       expect(screen.queryByText("Info finding")).not.toBeInTheDocument();
@@ -260,10 +257,7 @@ describe("RuleDiagnosticsView", () => {
       hookResult = { ...hookResult, report: makeReport([errF, warnF, infoF]) };
       render(<RuleDiagnosticsView />);
 
-      const errorsPill = screen.getAllByText("Errors").find(
-        (el) => el.tagName === "BUTTON"
-      ) as HTMLButtonElement;
-      fireEvent.click(errorsPill);
+      fireEvent.click(screen.getByText("Errors 1"));
       expect(screen.queryByText("Warning finding")).not.toBeInTheDocument();
 
       fireEvent.click(screen.getByLabelText("Clear all filters"));
@@ -272,20 +266,21 @@ describe("RuleDiagnosticsView", () => {
       expect(screen.getByText("Info finding")).toBeInTheDocument();
     });
 
-    it("summary cards reflect filtered counts, and the toolbar count shows X of Y", () => {
+    it("shows every severity in one list, and narrows to a scope on demand", () => {
       const { errF, warnF, infoF } = buildReportFor();
       hookResult = { ...hookResult, report: makeReport([errF, warnF, infoF]) };
       render(<RuleDiagnosticsView />);
 
-      // Initial: total = 3.
+      // All three are visible at once — info reads as "Suggestions" in the
+      // filter, but it is not hidden behind a tab.
       expect(screen.getByText("3 findings")).toBeInTheDocument();
+      expect(screen.getByText("Error finding")).toBeInTheDocument();
+      expect(screen.getByText("Info finding")).toBeInTheDocument();
 
-      // Click "Errors" → 1 of 3 visible.
-      const errorsPill = screen.getAllByText("Errors").find(
-        (el) => el.tagName === "BUTTON"
-      ) as HTMLButtonElement;
-      fireEvent.click(errorsPill);
-      expect(screen.getByText("1 of 3 findings")).toBeInTheDocument();
+      fireEvent.click(screen.getByText("Suggestions 1"));
+
+      expect(screen.getByText("Info finding")).toBeInTheDocument();
+      expect(screen.queryByText("Error finding")).not.toBeInTheDocument();
     });
 
     it("typing in the search box filters findings by rule summary", () => {
@@ -300,10 +295,10 @@ describe("RuleDiagnosticsView", () => {
       expect(screen.queryByText("Info finding")).not.toBeInTheDocument();
     });
 
-    it("renders a Back to Rules button that navigates to /rules", () => {
+    it("renders a Go to Rules button that navigates to /rules", () => {
       hookResult = { ...hookResult, report: makeReport([]) };
       render(<RuleDiagnosticsView />);
-      const backButton = screen.getByLabelText("Back to rules");
+      const backButton = screen.getByLabelText("Go to rules");
       fireEvent.click(backButton);
       expect(routerPushMock).toHaveBeenCalledWith("/rules");
     });
@@ -323,6 +318,8 @@ describe("RuleDiagnosticsView", () => {
       stagedRulesState["rule-a"] = { isDeleted: false };
       stagedRulesState["rule-b"] = { isDeleted: false };
       render(<RuleDiagnosticsView />);
+      // A family is a suggestion, not something wrong.
+      fireEvent.click(screen.getByText("Suggestions 1"));
       expect(screen.getByLabelText("Merge 2 rules")).toBeInTheDocument();
     });
 
@@ -387,6 +384,7 @@ describe("RuleDiagnosticsView", () => {
       stagedRulesState["r-x"] = { isDeleted: false };
       stagedRulesState["r-y"] = { isDeleted: false };
       render(<RuleDiagnosticsView />);
+      fireEvent.click(screen.getByText("Suggestions 1"));
       fireEvent.click(screen.getByLabelText("Merge 2 rules"));
       expect(routerPushMock.mock.calls[0][0]).toBe(
         "/rules?merge=r-x,r-y&from=diagnostics&intent=near-duplicate"
@@ -449,15 +447,15 @@ describe("RuleDiagnosticsView", () => {
     // Gone from the list, and the page reads clean rather than pretending the
     // finding was never there.
     expect(screen.queryByLabelText("Dismiss: Suspiciously broad match criteria")).toBeNull();
-    expect(screen.getByText(/1 finding you dismissed is hidden/i)).toBeInTheDocument();
+    expect(screen.getByText("No issues found")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: /show 1 dismissed finding/i }));
+    fireEvent.click(screen.getByRole("button", { name: /review 1 dismissed finding/i }));
     fireEvent.click(screen.getByLabelText("Restore: Suspiciously broad match criteria"));
 
     expect(restoreMock).toHaveBeenCalledWith("dismissal-1");
   });
 
-  it("counts only what is visible once something is dismissed", () => {
+  it("takes a dismissed finding out of the counts and into its own scope", () => {
     const kept = makeFinding({
       code: "RULE_EMPTY_ACTIONS",
       title: "Rule has no actions",
@@ -481,7 +479,11 @@ describe("RuleDiagnosticsView", () => {
     ];
     render(<RuleDiagnosticsView />);
 
-    expect(screen.getByText("1 finding")).toBeInTheDocument();
+    // The filter carries the split: one finding is still live, one is put away.
+    expect(screen.getByText("All 1")).toBeInTheDocument();
+    expect(screen.getByText("Dismissed 1")).toBeInTheDocument();
+    expect(screen.getByText("Rule has no actions")).toBeInTheDocument();
+    expect(screen.queryByText("Suspiciously broad match criteria")).not.toBeInTheDocument();
   });
   it("will not dismiss while the report is stale", () => {
     // The finding describes the rules as they were when the report ran; the
