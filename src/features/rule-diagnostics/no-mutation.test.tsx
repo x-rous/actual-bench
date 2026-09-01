@@ -38,16 +38,32 @@ let hookResult: {
   error: string | null;
   stale: boolean;
   refresh: () => void;
+  rules: unknown[];
 } = {
   report: null,
   running: false,
   error: null,
   stale: false,
   refresh: refreshMock,
+  rules: [],
 };
 
 jest.mock("./hooks/useRuleDiagnostics", () => ({
   useRuleDiagnostics: () => hookResult,
+}));
+
+// Dismissing writes to the app database, never to the budget — which is the
+// whole point of this suite, so the spy is asserted on below rather than merely
+// stubbed out.
+const dismissMock = jest.fn();
+jest.mock("./hooks/useRuleDiagnosticsDismissals", () => ({
+  useRuleDiagnosticsDismissals: () => ({
+    dismissals: [],
+    dismiss: dismissMock,
+    restore: jest.fn(),
+    collectGarbage: jest.fn(),
+    isSaving: false,
+  }),
 }));
 
 // Build a comprehensive set of mutator spies. If any of these is called, the test fails.
@@ -131,7 +147,7 @@ it("renders, filters, refreshes, and jump-to-rule without invoking ANY staged-st
       affected: [{ id: "rule-general", summary: "rule general summary" }],
     }),
     makeFinding({
-      code: "RULE_NEAR_DUPLICATE_PAIR",
+      code: "RULE_NEAR_DUPLICATE_FAMILY",
       severity: "info",
       title: "Info one",
       affected: [{ id: "rule-info", summary: "rule info summary" }],
@@ -151,6 +167,7 @@ it("renders, filters, refreshes, and jump-to-rule without invoking ANY staged-st
     error: null,
     stale: false,
     refresh: refreshMock,
+    rules: [],
   };
 
   // Pretend every referenced rule still exists so jump-to-rule navigates rather than toasts.
@@ -189,6 +206,13 @@ it("renders, filters, refreshes, and jump-to-rule without invoking ANY staged-st
     const link = screen.getByLabelText(`Open rule: ${f.affected[0].summary}`);
     fireEvent.click(link);
   }
+
+  // 6. Dismiss every finding. This writes — but to the app database, through
+  // its own hook, never to the staged store the budget is saved from.
+  for (const f of findings) {
+    fireEvent.click(screen.getByLabelText(`Dismiss: ${f.title}`));
+  }
+  expect(dismissMock).toHaveBeenCalledTimes(findings.length);
 
   // Verify zero mutators were called.
   for (const [name, spy] of Object.entries(mutatorSpies)) {

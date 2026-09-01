@@ -3,7 +3,6 @@ import type {
   CheckFn,
   DiagnosticReport,
   Finding,
-  Severity,
   WorkingSet,
 } from "../types";
 import {
@@ -11,6 +10,7 @@ import {
   ruleSignature,
   workingSetSignature,
 } from "./ruleSignature";
+import { rankFindings } from "./ranking";
 
 // Registered checks, ordered cheapest → most expensive. The CHECKS array is
 // exposed so tests and other phases can replace it; production code mutates
@@ -93,22 +93,6 @@ function buildContext(ws: WorkingSet): CheckContext {
   };
 }
 
-const SEVERITY_RANK: Record<Severity, number> = {
-  error: 0,
-  warning: 1,
-  info: 2,
-};
-
-function compareFindings(a: Finding, b: Finding): number {
-  const severityDelta = SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity];
-  if (severityDelta !== 0) return severityDelta;
-  if (a.code !== b.code) return a.code < b.code ? -1 : 1;
-  const aId = a.affected[0]?.id ?? "";
-  const bId = b.affected[0]?.id ?? "";
-  if (aId === bId) return 0;
-  return aId < bId ? -1 : 1;
-}
-
 function yieldToEventLoop(): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, 0));
 }
@@ -127,7 +111,10 @@ export async function runDiagnostics(ws: WorkingSet): Promise<DiagnosticReport> 
     for (const f of findings) all.push(f);
   }
 
-  const sorted = all.sort(compareFindings);
+  // Severity first, then what acting on each finding is worth — see
+  // `ranking.ts`. Deterministic: identical input still gives byte-identical
+  // output, which is what staleness detection depends on.
+  const sorted = rankFindings(all, ws.rules);
 
   const summary = { error: 0, warning: 0, info: 0, total: sorted.length };
   for (const f of sorted) {

@@ -56,6 +56,8 @@ export type UseRuleDiagnosticsResult = {
   error: string | null;
   stale: boolean;
   refresh: () => void;
+  /** The working set the report was built from, for callers that key on it. */
+  rules: Rule[];
 };
 
 function selectEntityMaps(state: {
@@ -222,5 +224,7 @@ export function useRuleDiagnostics(): UseRuleDiagnosticsResult {
     setRunToken((t) => t + 1);
   }, []);
 
-  return { report, running, error, stale, refresh };
+  // The working set is returned as well as consumed: dismissals key on rule
+  // signatures, which only the caller holding the same rules can compute.
+  return { report, running, error, stale, refresh, rules: currentRules };
 }

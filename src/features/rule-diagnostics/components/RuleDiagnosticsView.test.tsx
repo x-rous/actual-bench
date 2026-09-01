@@ -1,5 +1,6 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import type { AnchorHTMLAttributes } from "react";
+import type { Rule } from "@/types/entities";
 import type { DiagnosticReport, Finding } from "../types";
 import { RuleDiagnosticsView } from "./RuleDiagnosticsView";
 
@@ -33,6 +34,7 @@ type HookResult = {
   error: string | null;
   stale: boolean;
   refresh: () => void;
+  rules: Rule[];
 };
 let hookResult: HookResult = {
   report: null,
@@ -40,10 +42,28 @@ let hookResult: HookResult = {
   error: null,
   stale: false,
   refresh: refreshMock,
+  rules: [],
 };
 
 jest.mock("../hooks/useRuleDiagnostics", () => ({
   useRuleDiagnostics: () => hookResult,
+}));
+
+// Dismissal persistence owns a TanStack query; it is exercised in its own
+// suites (the repository, and `lib/dismissals`). This one is about what the
+// view renders, so it supplies the loaded shape rather than standing up a
+// QueryClientProvider.
+const dismissMock = jest.fn();
+const restoreMock = jest.fn();
+let dismissalRecords: unknown[] = [];
+jest.mock("../hooks/useRuleDiagnosticsDismissals", () => ({
+  useRuleDiagnosticsDismissals: () => ({
+    dismissals: dismissalRecords,
+    dismiss: dismissMock,
+    restore: restoreMock,
+    collectGarbage: jest.fn(),
+    isSaving: false,
+  }),
 }));
 
 const stagedRulesState: Record<string, { isDeleted: boolean }> = {};
@@ -92,12 +112,16 @@ beforeEach(() => {
   toastErrorMock.mockReset();
   routerPushMock.mockReset();
   for (const key of Object.keys(stagedRulesState)) delete stagedRulesState[key];
+  dismissMock.mockReset();
+  restoreMock.mockReset();
+  dismissalRecords = [];
   hookResult = {
     report: null,
     running: false,
     error: null,
     stale: false,
     refresh: refreshMock,
+    rules: [],
   };
 });
 
@@ -208,7 +232,7 @@ describe("RuleDiagnosticsView", () => {
           affected: [{ id: "r-warn", summary: "warn summary" }],
         }),
         infoF: makeFinding({
-          code: "RULE_NEAR_DUPLICATE_PAIR",
+          code: "RULE_NEAR_DUPLICATE_FAMILY",
           severity: "info",
           title: "Info finding",
           affected: [{ id: "r-info", summary: "info summary" }],
@@ -288,7 +312,7 @@ describe("RuleDiagnosticsView", () => {
   describe("merge button", () => {
     it("renders a Merge button on a near-duplicate finding with a 2-rule label", () => {
       const finding = makeFinding({
-        code: "RULE_NEAR_DUPLICATE_PAIR",
+        code: "RULE_NEAR_DUPLICATE_FAMILY",
         severity: "info",
         affected: [
           { id: "rule-a", summary: "rule A" },
@@ -352,7 +376,7 @@ describe("RuleDiagnosticsView", () => {
 
     it("clicking Merge on a near-duplicate uses intent=near-duplicate", () => {
       const finding = makeFinding({
-        code: "RULE_NEAR_DUPLICATE_PAIR",
+        code: "RULE_NEAR_DUPLICATE_FAMILY",
         severity: "info",
         affected: [
           { id: "r-x", summary: "rule x" },
@@ -387,5 +411,76 @@ describe("RuleDiagnosticsView", () => {
       expect(toastErrorMock).toHaveBeenCalledTimes(1);
       expect(toastErrorMock.mock.calls[0][0]).toMatch(/no longer exists/i);
     });
+  });
+  it("dismisses a finding with the rules it is about", () => {
+    const finding = makeFinding({
+      code: "RULE_BROAD_MATCH",
+      title: "Suspiciously broad match criteria",
+      affected: [{ id: "rule-1", summary: "rule one" }],
+    });
+    hookResult = { ...hookResult, report: makeReport([finding]) };
+    render(<RuleDiagnosticsView />);
+
+    fireEvent.click(screen.getByLabelText("Dismiss: Suspiciously broad match criteria"));
+
+    expect(dismissMock).toHaveBeenCalledTimes(1);
+    expect(dismissMock.mock.calls[0][0]).toBe(finding);
+  });
+
+  it("hides a dismissed finding and offers it back", () => {
+    const finding = makeFinding({
+      code: "RULE_BROAD_MATCH",
+      title: "Suspiciously broad match criteria",
+      affected: [{ id: "rule-1", summary: "rule one" }],
+    });
+    hookResult = { ...hookResult, report: makeReport([finding]) };
+    dismissalRecords = [
+      {
+        id: "dismissal-1",
+        budgetSyncId: "budget-1",
+        code: "RULE_BROAD_MATCH",
+        ruleIds: ["rule-1"],
+        signatures: [],
+        createdAt: "2026-09-01T00:00:00.000Z",
+      },
+    ];
+    render(<RuleDiagnosticsView />);
+
+    // Gone from the list, and the page reads clean rather than pretending the
+    // finding was never there.
+    expect(screen.queryByLabelText("Dismiss: Suspiciously broad match criteria")).toBeNull();
+    expect(screen.getByText(/1 finding you dismissed is hidden/i)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /show 1 dismissed finding/i }));
+    fireEvent.click(screen.getByLabelText("Restore: Suspiciously broad match criteria"));
+
+    expect(restoreMock).toHaveBeenCalledWith("dismissal-1");
+  });
+
+  it("counts only what is visible once something is dismissed", () => {
+    const kept = makeFinding({
+      code: "RULE_EMPTY_ACTIONS",
+      title: "Rule has no actions",
+      affected: [{ id: "rule-2", summary: "rule two" }],
+    });
+    const hidden = makeFinding({
+      code: "RULE_BROAD_MATCH",
+      title: "Suspiciously broad match criteria",
+      affected: [{ id: "rule-1", summary: "rule one" }],
+    });
+    hookResult = { ...hookResult, report: makeReport([kept, hidden]) };
+    dismissalRecords = [
+      {
+        id: "dismissal-1",
+        budgetSyncId: "budget-1",
+        code: "RULE_BROAD_MATCH",
+        ruleIds: ["rule-1"],
+        signatures: [],
+        createdAt: "2026-09-01T00:00:00.000Z",
+      },
+    ];
+    render(<RuleDiagnosticsView />);
+
+    expect(screen.getByText("1 finding")).toBeInTheDocument();
   });
 });

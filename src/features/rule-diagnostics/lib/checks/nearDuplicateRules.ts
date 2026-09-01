@@ -1,4 +1,4 @@
-import type { CheckFn, Finding } from "../../types";
+import type { CheckFn, Finding, Rule } from "../../types";
 import { registerCheck } from "../runDiagnostics";
 import { buildFinding } from "../findingMessages";
 import { findingRuleSummary } from "../../utils/findingRuleSummary";
@@ -55,6 +55,64 @@ function sortedUniqueSignatures(sigs: readonly string[]): string[] {
   return out;
 }
 
+/**
+ * Union-find over rule ids, so near-duplicate *pairs* become near-duplicate
+ * *families*.
+ *
+ * Connected components, not cliques. Cliques would be the stricter reading —
+ * every member similar to every other — but finding them is exponential, and
+ * the chained case is one users recognise: `A~B` and `B~C` with `A` and `C` two
+ * parts apart is still one family of grocery rules. What it must not do is
+ * *claim* every pair is similar, which is why the finding says these rules form
+ * a family and lists them, rather than asserting a relationship between any two.
+ */
+class DisjointSet {
+  private parent = new Map<string, string>();
+
+  find(id: string): string {
+    const seen = this.parent.get(id);
+    if (seen === undefined) {
+      this.parent.set(id, id);
+      return id;
+    }
+    if (seen === id) return id;
+    const root = this.find(seen);
+    this.parent.set(id, root);
+    return root;
+  }
+
+  union(a: string, b: string): void {
+    const rootA = this.find(a);
+    const rootB = this.find(b);
+    if (rootA === rootB) return;
+    // Lexicographic, so the component's representative does not depend on the
+    // order the pairs happened to be discovered in. The report has to be
+    // byte-identical across runs.
+    if (rootA < rootB) this.parent.set(rootB, rootA);
+    else this.parent.set(rootA, rootB);
+  }
+}
+
+/**
+ * The part signatures that are not shared by every member — what actually
+ * varies across the family. Reported as a count rather than as the raw
+ * signatures, which are JSON and unreadable; the members themselves carry the
+ * detail, and the merge dialog shows all of it.
+ */
+function describeVariation(members: Rule[], sigs: Map<string, string[]>): number {
+  const lists = members.map((m) => sigs.get(m.id) ?? []);
+  const shared = new Set(lists[0]);
+  for (const list of lists.slice(1)) {
+    const present = new Set(list);
+    for (const value of [...shared]) {
+      if (!present.has(value)) shared.delete(value);
+    }
+  }
+  const union = new Set<string>();
+  for (const list of lists) for (const value of list) union.add(value);
+  return union.size - shared.size;
+}
+
 export const nearDuplicateRules: CheckFn = (ws, ctx) => {
   const findings: Finding[] = [];
 
@@ -89,6 +147,13 @@ export const nearDuplicateRules: CheckFn = (ws, ctx) => {
       sigs.set(r.id, sortedUniqueSignatures(ctx.partSignatures.get(r.id) ?? []));
     }
 
+    // Pairwise still, because the comparison is cheap and exact — but the pairs
+    // are edges, not findings. A family of k similar rules has k(k-1)/2 pairs,
+    // and emitting one finding each buried the report: seventeen of the demo's
+    // twenty-three findings were pairs drawn from a handful of rules, every one
+    // of them saying almost the same thing.
+    const family = new DisjointSet();
+    let edges = 0;
     for (let i = 0; i < eligible.length; i++) {
       for (let j = i + 1; j < eligible.length; j++) {
         const a = eligible[i];
@@ -97,21 +162,36 @@ export const nearDuplicateRules: CheckFn = (ws, ctx) => {
         const sigB = sigs.get(b.id) ?? [];
         const diff = symmetricDiffCountCapped(sigA, sigB);
         if (diff !== 1 && diff !== 2) continue;
-
-        const lowerId = a.id < b.id ? a : b;
-        const higherId = a.id < b.id ? b : a;
-
-        findings.push(
-          buildFinding(
-            "RULE_NEAR_DUPLICATE_PAIR",
-            [
-              { id: lowerId.id, summary: findingRuleSummary(lowerId, ws.entityMaps) },
-              { id: higherId.id, summary: findingRuleSummary(higherId, ws.entityMaps) },
-            ],
-            { diffCount: diff }
-          )
-        );
+        family.union(a.id, b.id);
+        edges++;
       }
+    }
+    if (edges === 0) continue;
+
+    const byRoot = new Map<string, Rule[]>();
+    for (const rule of eligible) {
+      const root = family.find(rule.id);
+      const bucket = byRoot.get(root);
+      if (bucket) bucket.push(rule);
+      else byRoot.set(root, [rule]);
+    }
+
+    for (const members of byRoot.values()) {
+      if (members.length < 2) continue;
+      members.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+      findings.push(
+        buildFinding(
+          "RULE_NEAR_DUPLICATE_FAMILY",
+          members.map((rule) => ({
+            id: rule.id,
+            summary: findingRuleSummary(rule, ws.entityMaps),
+          })),
+          {
+            stage: members[0].stage,
+            varying: describeVariation(members, sigs),
+          }
+        )
+      );
     }
   }
 

@@ -3,14 +3,14 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { MouseEvent } from "react";
-import { Copy, Merge, Wand2 } from "lucide-react";
+import { CircleSlash, Copy, Merge, Wand2 } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useStagedStore } from "@/store/staged";
 import type { Finding, FindingCode, RuleRef, Severity } from "../types";
 
-type Props = { finding: Finding };
+type Props = { finding: Finding; onDismiss?: (finding: Finding) => void };
 
 const SEVERITY_VARIANT: Record<Severity, "destructive" | "status-warning" | "status-inactive"> = {
   error: "destructive",
@@ -24,19 +24,22 @@ const SEVERITY_LABEL: Record<Severity, string> = {
   info: "Info",
 };
 
+// Codes whose finding names a *second* rule alongside the affected one. Only
+// codes that actually pass a counterpart belong here — a prefix without one
+// never renders, which is how the near-duplicate label sat dead in this map
+// while its message named one of its own rules as "the other".
 const COUNTERPART_PREFIX: Record<string, string> = {
   RULE_SHADOWED: "shadowed by",
-  RULE_NEAR_DUPLICATE_PAIR: "near-duplicate of",
 };
 
 const MERGEABLE_CODES = new Set<FindingCode>([
-  "RULE_NEAR_DUPLICATE_PAIR",
+  "RULE_NEAR_DUPLICATE_FAMILY",
   "RULE_DUPLICATE_GROUP",
 ]);
 
 const MERGE_INTENT: Partial<Record<FindingCode, "duplicate" | "near-duplicate">> = {
   RULE_DUPLICATE_GROUP: "duplicate",
-  RULE_NEAR_DUPLICATE_PAIR: "near-duplicate",
+  RULE_NEAR_DUPLICATE_FAMILY: "near-duplicate",
 };
 
 function handleRuleLinkClick(e: MouseEvent<HTMLAnchorElement>, ruleId: string): void {
@@ -156,7 +159,7 @@ function GeneraliseButton({ finding }: { finding: Finding }) {
   );
 }
 
-export function FindingRow({ finding }: Props) {
+export function FindingRow({ finding, onDismiss }: Props) {
   const prefix = COUNTERPART_PREFIX[finding.code];
   const showMergeButton = MERGEABLE_CODES.has(finding.code);
 
@@ -169,6 +172,18 @@ export function FindingRow({ finding }: Props) {
         <span className="text-sm font-medium">{finding.title}</span>
         {showMergeButton && <MergeButton finding={finding} />}
         {finding.code === "RULE_OVERSPECIFIC_IMPORT_MATCH" && <GeneraliseButton finding={finding} />}
+        {onDismiss && (
+          <Button
+            variant="ghost"
+            size="xs"
+            onClick={() => onDismiss(finding)}
+            aria-label={`Dismiss: ${finding.title}`}
+            title="Stop reporting this — remembered for this budget, and reversible"
+          >
+            <CircleSlash className="h-3 w-3" />
+            Not a problem
+          </Button>
+        )}
         <span className="ml-auto font-mono text-[10px] uppercase text-muted-foreground/70" aria-hidden="true">
           {finding.code}
         </span>

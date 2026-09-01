@@ -1,7 +1,7 @@
 import type { Finding, Severity } from "../types";
 import { FindingRow } from "./FindingRow";
 
-type Props = { findings: Finding[] };
+type Props = { findings: Finding[]; onDismiss?: (finding: Finding) => void };
 
 const SEVERITY_ORDER: Severity[] = ["error", "warning", "info"];
 const SEVERITY_HEADING: Record<Severity, string> = {
@@ -10,7 +10,7 @@ const SEVERITY_HEADING: Record<Severity, string> = {
   info: "Info",
 };
 
-export function DiagnosticsTable({ findings }: Props) {
+export function DiagnosticsTable({ findings, onDismiss }: Props) {
   const bySeverity: Record<Severity, Finding[]> = { error: [], warning: [], info: [] };
   for (const f of findings) {
     bySeverity[f.severity].push(f);
@@ -32,7 +32,11 @@ export function DiagnosticsTable({ findings }: Props) {
             </h2>
             <div>
               {group.map((f, i) => (
-                <FindingRow key={`${f.code}-${f.affected[0]?.id ?? "none"}-${i}`} finding={f} />
+                <FindingRow
+                  key={`${f.code}-${f.affected[0]?.id ?? "none"}-${i}`}
+                  finding={f}
+                  onDismiss={onDismiss}
+                />
               ))}
             </div>
           </section>

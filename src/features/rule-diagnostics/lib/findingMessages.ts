@@ -1,4 +1,5 @@
 import type { Finding, FindingCode, RuleRef, Severity } from "../types";
+import { discriminatorFor } from "./dismissals";
 
 export const FINDING_SEVERITY: Record<FindingCode, Severity> = {
   RULE_MISSING_PAYEE: "error",
@@ -17,7 +18,7 @@ export const FINDING_SEVERITY: Record<FindingCode, Severity> = {
   RULE_UNSUPPORTED_ACTION_OP: "warning",
   RULE_UNSUPPORTED_ACTION_FIELD: "warning",
   RULE_TEMPLATE_ON_UNSUPPORTED_FIELD: "warning",
-  RULE_NEAR_DUPLICATE_PAIR: "info",
+  RULE_NEAR_DUPLICATE_FAMILY: "info",
   RULE_ANALYZER_SKIPPED: "info",
 };
 
@@ -36,12 +37,17 @@ export function buildFinding(
 ): Finding {
   const severity = FINDING_SEVERITY[code];
   const { title, message, details } = composeMessage(code, args, affected, counterpart);
+  // Computed here rather than at dismissal time so the key is derived from the
+  // same args that produced the message — one place to change when a check
+  // starts reporting something new.
+  const discriminator = discriminatorFor(code, args);
   return {
     code,
     severity,
     title,
     message,
     ...(details && details.length > 0 ? { details } : {}),
+    ...(discriminator ? { discriminator } : {}),
     affected,
     ...(counterpart ? { counterpart } : {}),
   };
@@ -53,7 +59,6 @@ function composeMessage(
   affected: RuleRef[],
   counterpart?: RuleRef
 ): { title: string; message: string; details?: string[] } {
-  const first = affected[0]?.summary ?? "(no rule)";
   switch (code) {
     case "RULE_MISSING_PAYEE":
       return {
@@ -120,17 +125,23 @@ function composeMessage(
         details: [detail],
       };
     }
-    case "RULE_NEAR_DUPLICATE_PAIR": {
-      const other = counterpart?.summary ?? first;
-      const diff = typeof args.diffCount === "number" ? args.diffCount : undefined;
-      const diffPhrase = diff === 1 ? "one part" : diff === 2 ? "two parts" : "one or two parts";
+    case "RULE_NEAR_DUPLICATE_FAMILY": {
+      const count = affected.length;
+      const stage = asString(args.stage);
+      const varying = typeof args.varying === "number" ? args.varying : undefined;
       const details: string[] = [];
-      if (diff !== undefined) {
-        details.push(`Differs by ${diffPhrase} (out of conditions and actions combined).`);
+      if (varying !== undefined) {
+        details.push(
+          varying === 1
+            ? "One condition or action varies across the family; everything else is shared."
+            : `${varying} conditions or actions vary across the family; everything else is shared.`
+        );
       }
       return {
-        title: "Near-duplicate rules - consider merging",
-        message: `This rule differs from another rule in the same stage by only ${diffPhrase}. Use the Merge button to combine them, or confirm the difference is intentional. Other rule: ${other}.`,
+        title: `${count} near-identical rules`,
+        message:
+          `These ${count} rules in the \`${stage}\` stage differ from one another by only one or two ` +
+          `parts. They are listed below; merging them is usually one rule with a wider condition.`,
         details: details.length > 0 ? details : undefined,
       };
     }
