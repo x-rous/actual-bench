@@ -483,4 +483,23 @@ describe("RuleDiagnosticsView", () => {
 
     expect(screen.getByText("1 finding")).toBeInTheDocument();
   });
+  it("will not dismiss while the report is stale", () => {
+    // The finding describes the rules as they were when the report ran; the
+    // signatures a dismissal stores come from the rules as they are now. Taking
+    // a decision across that gap records evidence the user never saw.
+    const finding = makeFinding({
+      code: "RULE_BROAD_MATCH",
+      title: "Suspiciously broad match criteria",
+      affected: [{ id: "rule-1", summary: "rule one" }],
+    });
+    hookResult = { ...hookResult, stale: true, report: makeReport([finding]) };
+    render(<RuleDiagnosticsView />);
+
+    expect(screen.getByText(/Results are out of date/i)).toBeInTheDocument();
+    expect(
+      screen.queryByLabelText("Dismiss: Suspiciously broad match criteria")
+    ).not.toBeInTheDocument();
+    // The finding itself is still readable — only the decision is withheld.
+    expect(screen.getByText("Suspiciously broad match criteria")).toBeInTheDocument();
+  });
 });

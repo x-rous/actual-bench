@@ -287,7 +287,12 @@ export function RuleDiagnosticsView() {
               <div className="min-h-0 flex-1 overflow-auto">
                 <DiagnosticsTable
                   findings={visibleFindings}
-                  onDismiss={(finding) => dismiss(finding, rulesById)}
+                  // Not while the report is stale. The finding describes the
+                  // rules as they were when it ran, but the signatures would be
+                  // taken from the rules as they are now — storing a decision
+                  // about evidence the user never saw. The banner above already
+                  // asks for a refresh; this makes it a precondition.
+                  onDismiss={stale ? undefined : (finding) => dismiss(finding, rulesById)}
                 />
                 <DismissedPanel
                   dismissed={split.dismissed}
