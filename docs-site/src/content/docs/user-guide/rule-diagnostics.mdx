@@ -13,9 +13,10 @@ set. This is that view.
 Open it from **Tools → Rule Diagnostics** (`/rules/diagnostics`), or the **Diagnostics** button on the
 Rules toolbar.
 
-**Write model:** read-only. It reads your staged rules too, but changes nothing on its own. Every fix
-is something you click - open the rule, confirm a merge, confirm a generalisation - and then goes
-through the normal staged **Save**.
+**Write model:** read-only where your budget is concerned. It reads your staged rules too, and changes
+none of them on its own. Every fix is something you click - open the rule, confirm a merge, confirm a
+generalisation - and then goes through the normal staged **Save**. Dismissing a finding does write, but
+to Actual Bench's own database, never to your budget.
 
 ![Rule Diagnostics listing findings grouped by severity, each with the rule it concerns.](../../../assets/screenshots/user-guide/rule-diagnostics.png)
 
@@ -44,7 +45,7 @@ a sentence, and links to the fix.
 - Strictly shadowed rules within a stage.
 - Broad match criteria (very short `contains` / `matches` values).
 - Rules matching whole import strings rather than the merchant (see below).
-- Duplicate rule groups and near-duplicate pairs.
+- Duplicate rule groups, and families of near-identical rules.
 - Unsupported field/operator combinations.
 
 Schedule-generated rules skip the checks you could not act on anyway, but still report missing
@@ -95,8 +96,10 @@ edit.
 - Click the rule summary on a finding to **open that rule** (`/rules?highlight=<id>`).
 - Over-specific import rules get a **Generalise** button, which opens the rewrite dialog above and
   brings you back here afterwards.
-- Duplicates get **Merge**, which opens the [merge dialog](../rules/#merge-rules) already filled in,
-  and also brings you back.
+- Duplicates and near-identical families get **Merge**, which opens the
+  [merge dialog](../rules/#merge-rules) already filled in with every member, and also brings you back.
+- Anything you have judged fine gets **Not a problem**. The decision is remembered for that budget,
+  and reversible - dismissed findings sit below the list with a **Restore** beside each one.
 - Change your rules while this is open and a **stale results** banner appears. The old findings stay
   put until you press **Refresh**.
 
@@ -107,9 +110,13 @@ created before anything is removed - so a failure leaves you with what you start
 
 ## Safety
 
-This page only reads. It never touches a rule. Every fix is something you do deliberately - open a
-rule, confirm a merge, confirm a generalisation - and every one of those goes through the normal
-staged **Save**.
+This page never touches a rule. Every fix is something you do deliberately - open a rule, confirm a
+merge, confirm a generalisation - and every one of those goes through the normal staged **Save**.
+
+Dismissing is the one thing here that writes immediately, and it writes to Actual Bench's own
+database rather than to your budget: which finding, which rules, and what they looked like at the
+time. It is per budget, so a decision about a household file cannot silence a business one, and it is
+reversible from the dismissed list.
 
 ## Troubleshooting
 
