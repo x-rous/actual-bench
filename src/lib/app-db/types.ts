@@ -409,6 +409,35 @@ export type PayeeCleanupSuppressionRecord = {
   createdAt: string;
 };
 
+/**
+ * A "not a problem" decision about a Rule Diagnostics finding (F-103 / PR-049).
+ *
+ * Two identity keys, matched on either, because neither survives alone. Rule
+ * ids die the moment rules are merged — which mints a new id and deletes the
+ * originals, and is this page's own primary fix — while a content signature
+ * survives that and survives a save reassigning a staged rule's id. A
+ * signature, in turn, changes whenever the rule is edited at all, which an id
+ * rides out.
+ */
+export type RuleDiagnosticsDismissalRecord = {
+  id: string;
+  budgetSyncId: string;
+  /** The finding code the decision was made about. */
+  code: string;
+  /** Precise, but gone once the rules are merged or deleted. */
+  ruleIds: string[];
+  /** `ruleSignature()` per participant at the time of the decision. */
+  signatures: string[];
+  /**
+   * The evidence the decision was about, for codes where the evidence is the
+   * point — the matched value, the missing entity, the derived stem. Absent for
+   * codes describing a rule's structural state.
+   */
+  discriminator?: string;
+  note?: string;
+  createdAt: string;
+};
+
 export type SavedQueryRecord = {
   id: string;
   name: string;

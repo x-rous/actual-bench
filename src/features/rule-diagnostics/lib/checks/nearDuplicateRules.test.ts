@@ -70,7 +70,7 @@ describe("nearDuplicateRules", () => {
     });
     const findings = nearDuplicateRules(ws([a, b]), makeCtx([a, b]));
     expect(findings).toHaveLength(1);
-    expect(findings[0].code).toBe("RULE_NEAR_DUPLICATE_PAIR");
+    expect(findings[0].code).toBe("RULE_NEAR_DUPLICATE_FAMILY");
     expect(findings[0].affected.map((r) => r.id).sort()).toEqual(["r1", "r2"]);
   });
 
@@ -162,7 +162,7 @@ describe("nearDuplicateRules", () => {
     });
     const findings = nearDuplicateRules(ws([a, b]), makeCtx([a, b]));
     expect(findings).toHaveLength(1);
-    expect(findings[0].code).toBe("RULE_NEAR_DUPLICATE_PAIR");
+    expect(findings[0].code).toBe("RULE_NEAR_DUPLICATE_FAMILY");
     expect(findings[0].affected.map((r) => r.id).sort()).toEqual(["r1", "r2"]);
   });
 
@@ -194,8 +194,8 @@ describe("nearDuplicateRules", () => {
 
     const findings = nearDuplicateRules(ws(rules), makeCtx(rules));
     expect(findings.some((f) => f.code === "RULE_ANALYZER_SKIPPED")).toBe(false);
-    const pair = findings.find((f) => f.code === "RULE_NEAR_DUPLICATE_PAIR");
-    expect(pair?.affected.map((r) => r.id).sort()).toEqual(["r-dup", "r0"]);
+    const family = findings.find((f) => f.code === "RULE_NEAR_DUPLICATE_FAMILY");
+    expect(family?.affected.map((r) => r.id).sort()).toEqual(["r-dup", "r0"]);
   });
 
   it("does not flag schedule-linked rules", () => {
@@ -210,5 +210,100 @@ describe("nearDuplicateRules", () => {
     });
     const findings = nearDuplicateRules(ws([a, b]), makeCtx([a, b], { scheduleLinked: ["r-sched"] }));
     expect(findings).toHaveLength(0);
+  });
+});
+
+describe("nearDuplicateRules — families", () => {
+  function payeeRule(id: string, payee: string, stage: Rule["stage"] = "default"): Rule {
+    return rule({
+      id,
+      stage,
+      conditions: [{ field: "payee", op: "is", value: payee }],
+      actions: [{ field: "category", op: "set", value: "c-groceries" }],
+    });
+  }
+
+  it("collapses a family of six into one finding rather than fifteen pairs", () => {
+    const rules = ["aldi", "lidl", "coles", "woolies", "iga", "spar"].map((name, i) =>
+      payeeRule(`r${i}`, name)
+    );
+    const findings = nearDuplicateRules(ws(rules), makeCtx(rules));
+
+    expect(findings).toHaveLength(1);
+    expect(findings[0].code).toBe("RULE_NEAR_DUPLICATE_FAMILY");
+    expect(findings[0].affected).toHaveLength(6);
+    expect(findings[0].title).toBe("6 near-identical rules");
+  });
+
+  it("chains transitively: A~B and B~C are one family of three", () => {
+    // Two parts apart at the ends, one apart in the middle — still one family.
+    const a = rule({
+      id: "r1",
+      conditions: [{ field: "payee", op: "is", value: "p1" }],
+      actions: [{ field: "category", op: "set", value: "c1" }],
+    });
+    const b = rule({
+      id: "r2",
+      conditions: [{ field: "payee", op: "is", value: "p2" }],
+      actions: [{ field: "category", op: "set", value: "c1" }],
+    });
+    const c = rule({
+      id: "r3",
+      conditions: [{ field: "payee", op: "is", value: "p2" }],
+      actions: [{ field: "category", op: "set", value: "c2" }],
+    });
+    const findings = nearDuplicateRules(ws([a, b, c]), makeCtx([a, b, c]));
+
+    expect(findings).toHaveLength(1);
+    expect(findings[0].affected.map((r) => r.id)).toEqual(["r1", "r2", "r3"]);
+  });
+
+  it("keeps two disjoint families in the same stage apart", () => {
+    const groceries = ["aldi", "lidl"].map((n, i) => payeeRule(`g${i}`, n));
+    const fuel = ["shell", "bp"].map((n, i) =>
+      rule({
+        id: `f${i}`,
+        conditions: [{ field: "payee", op: "is", value: n }],
+        actions: [{ field: "category", op: "set", value: "c-fuel" }],
+      })
+    );
+    const all = [...groceries, ...fuel];
+    const findings = nearDuplicateRules(ws(all), makeCtx(all));
+
+    expect(findings).toHaveLength(2);
+    for (const finding of findings) expect(finding.affected).toHaveLength(2);
+  });
+
+  it("does not group across stages", () => {
+    const a = payeeRule("r1", "aldi", "pre");
+    const b = payeeRule("r2", "lidl", "post");
+    expect(nearDuplicateRules(ws([a, b]), makeCtx([a, b]))).toHaveLength(0);
+  });
+
+  it("never carries a counterpart, so no message can name one of its own rules", () => {
+    const rules = ["aldi", "lidl"].map((n, i) => payeeRule(`r${i}`, n));
+    const [finding] = nearDuplicateRules(ws(rules), makeCtx(rules));
+
+    expect(finding.counterpart).toBeUndefined();
+    for (const member of finding.affected) {
+      expect(finding.message).not.toContain(member.summary);
+    }
+  });
+
+  it("is deterministic regardless of the order rules arrive in", () => {
+    const rules = ["aldi", "lidl", "coles"].map((n, i) => payeeRule(`r${i}`, n));
+    const forward = nearDuplicateRules(ws(rules), makeCtx(rules));
+    const reversed = [...rules].reverse();
+    const backward = nearDuplicateRules(ws(reversed), makeCtx(reversed));
+
+    expect(JSON.stringify(backward)).toBe(JSON.stringify(forward));
+  });
+
+  it("reports how many parts vary across the family", () => {
+    const rules = ["aldi", "lidl"].map((n, i) => payeeRule(`r${i}`, n));
+    const [finding] = nearDuplicateRules(ws(rules), makeCtx(rules));
+
+    // Two distinct payee conditions, one shared action.
+    expect(finding.details?.[0]).toContain("2 conditions or actions vary");
   });
 });

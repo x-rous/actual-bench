@@ -238,6 +238,34 @@ CREATE INDEX IF NOT EXISTS idx_payee_cleanup_suppressions_budget
   ON payee_cleanup_suppressions (budget_sync_id);
 `;
 
+// ── Rule Diagnostics dismissals (F-103 / PR-049) ─────────────────────────────
+// The user's "not a problem" decisions about their own rules. No credentials,
+// no budget data — rule ids, content signatures, and the evidence the decision
+// was made about.
+//
+// Two identity columns on purpose. `rule_ids` breaks the moment a rule is
+// merged, because merging mints a new id and deletes the originals — which is
+// this page's own primary fix. `signatures` survives that, and survives a save
+// reassigning a staged rule's id. Matching on either keeps a decision alive
+// without letting it silence something the user has never seen.
+export const RULE_DIAGNOSTICS_DISMISSAL_TABLE_SQL = `
+CREATE TABLE IF NOT EXISTS rule_diagnostics_dismissals (
+  id text PRIMARY KEY,
+  budget_sync_id text NOT NULL,
+  code text NOT NULL,
+  rule_ids text NOT NULL,
+  signatures text NOT NULL,
+  discriminator text,
+  note text,
+  created_at text NOT NULL
+);
+`;
+
+export const RULE_DIAGNOSTICS_DISMISSAL_INDEX_SQL = `
+CREATE INDEX IF NOT EXISTS idx_rule_diagnostics_dismissals_budget
+  ON rule_diagnostics_dismissals (budget_sync_id);
+`;
+
 // ── FX / multi-currency consolidation (RD-056 / PR-025a) ─────────────────────
 // The database is the authoritative FX registry; Frankfurter only populates it.
 export const FX_RATE_IMPORT_BATCH_TABLE_SQL = `

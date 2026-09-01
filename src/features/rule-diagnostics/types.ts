@@ -24,7 +24,7 @@ export type FindingCode =
   | "RULE_BROAD_MATCH"
   | "RULE_OVERSPECIFIC_IMPORT_MATCH"
   | "RULE_DUPLICATE_GROUP"
-  | "RULE_NEAR_DUPLICATE_PAIR"
+  | "RULE_NEAR_DUPLICATE_FAMILY"
   | "RULE_UNSUPPORTED_CONDITION_OP"
   | "RULE_UNSUPPORTED_CONDITION_FIELD"
   | "RULE_UNSUPPORTED_ACTION_OP"
@@ -47,6 +47,13 @@ export type Finding = {
   title: string;
   message: string;
   details?: string[];
+  /**
+   * The evidence a dismissal is keyed on, for the codes where the evidence is
+   * the point — the matched value, the missing entity, the derived stem.
+   * `undefined` for codes that describe a rule's structural state, since fixing
+   * the rule removes the finding anyway. See `lib/dismissals.ts`.
+   */
+  discriminator?: string;
   /** Always ≥ 1 except for partition-cap RULE_ANALYZER_SKIPPED findings. */
   affected: RuleRef[];
   counterpart?: RuleRef;

@@ -1,11 +1,13 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, ArrowLeft, RefreshCw } from "lucide-react";
+import { AlertTriangle, ArrowLeft, RefreshCw, Undo2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { PageLayout } from "@/components/layout/PageLayout";
 import { useRuleDiagnostics } from "../hooks/useRuleDiagnostics";
+import { useRuleDiagnosticsDismissals } from "../hooks/useRuleDiagnosticsDismissals";
+import { applyDismissals, collectGarbage, type DismissalSplit } from "../lib/dismissals";
 import type { Finding, FindingCode } from "../types";
 import { DiagnosticSummaryCards } from "./DiagnosticSummaryCards";
 import {
@@ -59,15 +61,103 @@ function uniqueCodes(findings: Finding[]): FindingCode[] {
   return [...seen].sort();
 }
 
+/**
+ * The findings the user has judged, and the way back.
+ *
+ * Rendered in both the populated and the empty state: dismissing the last
+ * finding is exactly when someone is most likely to want one back, and hiding
+ * the list there would make dismissal a one-way door.
+ *
+ * Deliberately plain — PR-050 replaces it with a proper Dismissed tab.
+ */
+function DismissedPanel({
+  dismissed,
+  expanded,
+  onToggle,
+  onRestore,
+}: {
+  dismissed: DismissalSplit["dismissed"];
+  expanded: boolean;
+  onToggle: () => void;
+  onRestore: (id: string) => void;
+}) {
+  if (dismissed.length === 0) return null;
+  const count = dismissed.length;
+  return (
+    <div className="border-t border-border/50">
+      <button
+        type="button"
+        onClick={onToggle}
+        className="flex w-full items-center gap-2 px-4 py-2 text-left text-xs text-muted-foreground hover:bg-muted/40"
+        aria-expanded={expanded}
+      >
+        {expanded ? "Hide" : "Show"} {count} dismissed finding{count !== 1 ? "s" : ""}
+      </button>
+      {expanded && (
+        <ul className="flex flex-col">
+          {dismissed.map(({ finding, record }) => (
+            <li
+              key={record.id}
+              className="flex flex-wrap items-center gap-2 border-t border-border/40 px-4 py-2 text-xs"
+            >
+              <span className="text-muted-foreground">{finding.title}</span>
+              <span className="truncate text-muted-foreground/70">
+                {finding.affected.map((r) => r.summary).join(" · ")}
+              </span>
+              <Button
+                variant="ghost"
+                size="xs"
+                className="ml-auto"
+                onClick={() => onRestore(record.id)}
+                aria-label={`Restore: ${finding.title}`}
+              >
+                <Undo2 className="h-3 w-3" />
+                Restore
+              </Button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 export function RuleDiagnosticsView() {
   const router = useRouter();
-  const { report, running, error, stale, refresh } = useRuleDiagnostics();
+  const { report, running, error, stale, refresh, rules } = useRuleDiagnostics();
+  const {
+    dismissals,
+    dismiss,
+    restore,
+    collectGarbage: collect,
+  } = useRuleDiagnosticsDismissals({ enabled: report !== null });
 
   const [search, setSearch] = useState("");
+  const [showDismissed, setShowDismissed] = useState(false);
   const [severityFilter, setSeverityFilter] = useState<SeverityFilterValue>("all");
   const [codeFilter, setCodeFilter] = useState<Set<FindingCode>>(new Set());
 
-  const allFindings = useMemo(() => report?.findings ?? [], [report]);
+  const rulesById = useMemo(() => new Map(rules.map((r) => [r.id, r])), [rules]);
+
+  const split = useMemo(
+    () => applyDismissals(report?.findings ?? [], dismissals, rulesById),
+    [report, dismissals, rulesById]
+  );
+
+  // Drop the records that can never match again — every participant gone by
+  // both id and signature, which is what merging a family away leaves behind.
+  // Guarded by the report so it never runs against an unloaded rule set, and
+  // once per report so a failed request does not retry in a loop.
+  const collectedFor = useRef<string | null>(null);
+  useEffect(() => {
+    if (!report || dismissals.length === 0) return;
+    if (collectedFor.current === report.runAt) return;
+    collectedFor.current = report.runAt;
+    const stale = collectGarbage(dismissals, rules);
+    if (stale.length > 0) collect(stale);
+  }, [report, dismissals, rules, collect]);
+
+  const allFindings = split.visible;
   const visibleFindings = useMemo(
     () => applyFilters(allFindings, search, severityFilter, codeFilter),
     [allFindings, search, severityFilter, codeFilter]
@@ -75,7 +165,7 @@ export function RuleDiagnosticsView() {
   const visibleSummary = useMemo(() => summarize(visibleFindings), [visibleFindings]);
   const availableCodes = useMemo(() => uniqueCodes(allFindings), [allFindings]);
 
-  const totalReportFindings = report?.summary.total ?? 0;
+  const totalReportFindings = allFindings.length;
   const isFiltered =
     search.trim().length > 0 || severityFilter !== "all" || codeFilter.size > 0;
   const count = report
@@ -84,6 +174,7 @@ export function RuleDiagnosticsView() {
       : `${visibleSummary.total} of ${totalReportFindings} finding${totalReportFindings !== 1 ? "s" : ""}`
     : undefined;
   const isEmptyReport = report !== null && !running && !error && totalReportFindings === 0;
+  const dismissedCount = split.dismissed.length;
 
   const toggleCode = (code: FindingCode) => {
     setCodeFilter((prev) => {
@@ -161,7 +252,21 @@ export function RuleDiagnosticsView() {
         {isEmptyReport ? (
           <div className="flex flex-1 flex-col items-center justify-center gap-2 py-16 text-sm text-muted-foreground">
             <span className="text-base font-medium text-foreground">No issues found</span>
-            <span>Your rule set looks clean.</span>
+            <span>
+              {dismissedCount > 0
+                ? `Your rule set looks clean. ${dismissedCount} finding${dismissedCount !== 1 ? "s" : ""} you dismissed ${dismissedCount !== 1 ? "are" : "is"} hidden.`
+                : "Your rule set looks clean."}
+            </span>
+            {dismissedCount > 0 && (
+              <div className="w-full max-w-2xl">
+                <DismissedPanel
+                  dismissed={split.dismissed}
+                  expanded={showDismissed}
+                  onToggle={() => setShowDismissed((v) => !v)}
+                  onRestore={restore}
+                />
+              </div>
+            )}
           </div>
         ) : (
           report && (
@@ -180,7 +285,21 @@ export function RuleDiagnosticsView() {
                 <DiagnosticSummaryCards summary={visibleSummary} />
               </div>
               <div className="min-h-0 flex-1 overflow-auto">
-                <DiagnosticsTable findings={visibleFindings} />
+                <DiagnosticsTable
+                  findings={visibleFindings}
+                  // Not while the report is stale. The finding describes the
+                  // rules as they were when it ran, but the signatures would be
+                  // taken from the rules as they are now — storing a decision
+                  // about evidence the user never saw. The banner above already
+                  // asks for a refresh; this makes it a precondition.
+                  onDismiss={stale ? undefined : (finding) => dismiss(finding, rulesById)}
+                />
+                <DismissedPanel
+                  dismissed={split.dismissed}
+                  expanded={showDismissed}
+                  onToggle={() => setShowDismissed((v) => !v)}
+                  onRestore={restore}
+                />
               </div>
             </>
           )

@@ -20,6 +20,8 @@ import {
   REMEMBERED_BUDGET_TABLE_SQL,
   PAYEE_CLEANUP_SUPPRESSION_INDEX_SQL,
   PAYEE_CLEANUP_SUPPRESSION_TABLE_SQL,
+  RULE_DIAGNOSTICS_DISMISSAL_INDEX_SQL,
+  RULE_DIAGNOSTICS_DISMISSAL_TABLE_SQL,
   SAVED_QUERY_TABLE_SQL,
   SERVER_CREDENTIAL_TABLE_SQL,
   FX_INDEX_SQL,
@@ -39,7 +41,7 @@ import {
 import { KDF_VERSION_META_KEY, SALT_META_KEY, VERIFIER_META_KEY } from "./vaultMetaKeys";
 import { AppDbUnavailableError } from "./errors";
 
-export const LATEST_SCHEMA_VERSION = 23;
+export const LATEST_SCHEMA_VERSION = 24;
 
 type Migration = {
   version: number;
@@ -306,6 +308,16 @@ const MIGRATIONS: readonly Migration[] = [
           WHERE encrypted = 1 AND encryption_credential_ref IS NULL`
       );
     },
+  },
+  {
+    version: 24,
+    // Rule Diagnostics dismissals (F-103 / PR-049). Additive: one table and its
+    // index, read by nothing before this release, so the upgrade is reversible
+    // by dropping them.
+    statements: [
+      RULE_DIAGNOSTICS_DISMISSAL_TABLE_SQL,
+      RULE_DIAGNOSTICS_DISMISSAL_INDEX_SQL,
+    ],
   },
 ];
 
