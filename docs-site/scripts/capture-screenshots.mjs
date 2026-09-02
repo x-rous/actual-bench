@@ -1040,7 +1040,11 @@ async function run(registerInstance) {
         try {
           await shot.cleanup(pages.get(shot.budget));
         } catch (error) {
+          // A failed cleanup is a failed run, not a note in the log. The page is
+          // shared, so whatever this shot staged is still there for every shot
+          // after it — reporting success would hand over contaminated images.
           console.log(`CLEANUP  ${shot.name}: ${error?.message ?? error}`);
+          if (!failures.includes(shot.name)) failures.push(shot.name);
         }
       }
     }
