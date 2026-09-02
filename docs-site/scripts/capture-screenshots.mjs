@@ -182,6 +182,112 @@ const SHOTS = [
   },
   { name: "rules", nav: "Rules", url: /\/rules$/, budget: "Envelope" },
   { name: "rule-diagnostics", nav: "Rule Diagnostics", url: /\/rules\/diagnostics/, budget: "Envelope" },
+  {
+    name: "diagnostics-card",
+    area: "user-guide",
+    nav: "Rule Diagnostics",
+    url: /\/rules\/diagnostics/,
+    budget: "Envelope",
+    // One finding at full size: what a card is made of, without the rest of the
+    // report around it.
+    element: "article",
+  },
+  {
+    name: "diagnostics-dismissed",
+    area: "user-guide",
+    nav: "Rule Diagnostics",
+    url: /\/rules\/diagnostics/,
+    budget: "Envelope",
+    instance: true,
+    element: "main",
+    trimTo: "article",
+    // A decision, and the way back from it. Dismissals live in the instance's
+    // own database, which is why this one is instance-scoped.
+    prepare: async (page) => {
+      const dismiss = page.getByRole("button", { name: /^Dismiss: / }).first();
+      await dismiss.waitFor({ timeout: 30000 });
+      await dismiss.click();
+      await page.waitForTimeout(3000);
+      await page.getByText(/^Dismissed \d+$/).click();
+      await page.waitForTimeout(2500);
+    },
+  },
+  {
+    name: "dialog-generalise",
+    area: "dialogs",
+    nav: "Rules",
+    url: /\/rules$/,
+    budget: "Envelope",
+    element: '[role="dialog"]',
+    /*
+     * The rewrite dialog for a rule that matches whole bank strings.
+     *
+     * The demo has no such rule, and it must not gain one: the demo budget is
+     * public and shared. So the rule is *staged* — imported as CSV, which
+     * stages without saving — and diagnostics reads the staged set. Nothing
+     * reaches the budget, and discarding the draft removes it.
+     */
+    prepare: async (page) => {
+      const { writeFile, mkdtemp } = await import("node:fs/promises");
+      const { tmpdir } = await import("node:os");
+      const { join } = await import("node:path");
+
+      const values = [
+        "MARKET BOYS PTY LTD Melbourne VI AUS Card xx4534 Value Date: 12/03/2026",
+        "MARKET BOYS PTY LTD Melbourne VI AUS Card xx9166 Value Date: 24/12/2026",
+        "MARKET BOYS PTY LTD Sydney Value Date: 10/11/2026",
+      ].join("|");
+      const csv = [
+        "rule_id,stage,conditions_op,row_type,field,op,value",
+        `demo-generalise,pre,and,condition,imported_payee,oneOf,"${values}"`,
+        "demo-generalise,pre,and,action,payee_name,set,Market Boys",
+      ].join("\n");
+
+      const dir = await mkdtemp(join(tmpdir(), "ab-rules-"));
+      const path = join(dir, "generalise-example.csv");
+      await writeFile(path, csv, "utf8");
+
+      await page.locator('input[type="file"]').first().setInputFiles(path);
+      await page.waitForTimeout(4000);
+      // An import that skipped a row reports it in a dialog, which would sit
+      // over the navigation that follows.
+      await closeAnyDialog(page);
+
+      // Diagnostics reads the staged store, so the finding is there now.
+      // Navigated by clicking, never by `goto`: connections live in memory, and
+      // a full page load would drop both the connection and the staged rule.
+      await page.getByRole("link", { name: "Rule Diagnostics", exact: true }).first().click();
+      await page.waitForTimeout(12000);
+
+      const generalise = page.getByRole("button", { name: "Generalise this rule" }).first();
+      await generalise.waitFor({ timeout: 30000 });
+      await generalise.click();
+      await page.waitForURL(/\/rules/, { timeout: 30000 });
+      // The dialog backtests every candidate against the imported-text index
+      // before it will let anything be staged.
+      await page.waitForTimeout(20000);
+    },
+    // The staged rule exists only for this shot. Left behind it would raise the
+    // rule count and add a finding to every later Envelope screenshot.
+    cleanup: async (page) => {
+      await closeAnyDialog(page);
+      // The top bar's Discard drops the whole draft at once, with no
+      // confirmation of its own — it is the button the user would press.
+      const discard = page.getByRole("button", { name: "Discard", exact: true }).first();
+      if ((await discard.count()) === 0) return;
+      await discard.click();
+      await page.waitForTimeout(3000);
+
+      // Discarding changes the working set, which only marks the report stale —
+      // the findings on screen still count the rule that no longer exists. Rerun
+      // so the page a later shot inherits agrees with the budget.
+      const refresh = page.getByLabel("Refresh rule diagnostics");
+      if (await refresh.count()) {
+        await refresh.first().click();
+        await page.waitForTimeout(6000);
+      }
+    },
+  },
   { name: "payee-cleanup", nav: "Payee Cleanup", url: /\/payees\/cleanup/, budget: "Envelope" },
   {
     name: "bank-reconciliation",
@@ -926,6 +1032,21 @@ async function run(registerInstance) {
     } catch (error) {
       console.log(`FAILED   ${shot.name}: ${error?.message ?? error}`);
       failures.push(shot.name);
+    } finally {
+      // A shot that stages something has to put the page back, and has to do it
+      // whether or not it succeeded: the page is shared, so a leftover draft
+      // would otherwise show up in every later shot's rule counts and findings.
+      if (shot.cleanup && pages.has(shot.budget)) {
+        try {
+          await shot.cleanup(pages.get(shot.budget));
+        } catch (error) {
+          // A failed cleanup is a failed run, not a note in the log. The page is
+          // shared, so whatever this shot staged is still there for every shot
+          // after it — reporting success would hand over contaminated images.
+          console.log(`CLEANUP  ${shot.name}: ${error?.message ?? error}`);
+          if (!failures.includes(shot.name)) failures.push(shot.name);
+        }
+      }
     }
   }
 
