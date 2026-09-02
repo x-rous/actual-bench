@@ -267,6 +267,26 @@ const SHOTS = [
       // before it will let anything be staged.
       await page.waitForTimeout(20000);
     },
+    // The staged rule exists only for this shot. Left behind it would raise the
+    // rule count and add a finding to every later Envelope screenshot.
+    cleanup: async (page) => {
+      await closeAnyDialog(page);
+      // The top bar's Discard drops the whole draft at once, with no
+      // confirmation of its own — it is the button the user would press.
+      const discard = page.getByRole("button", { name: "Discard", exact: true }).first();
+      if ((await discard.count()) === 0) return;
+      await discard.click();
+      await page.waitForTimeout(3000);
+
+      // Discarding changes the working set, which only marks the report stale —
+      // the findings on screen still count the rule that no longer exists. Rerun
+      // so the page a later shot inherits agrees with the budget.
+      const refresh = page.getByLabel("Refresh rule diagnostics");
+      if (await refresh.count()) {
+        await refresh.first().click();
+        await page.waitForTimeout(6000);
+      }
+    },
   },
   { name: "payee-cleanup", nav: "Payee Cleanup", url: /\/payees\/cleanup/, budget: "Envelope" },
   {
@@ -1012,6 +1032,17 @@ async function run(registerInstance) {
     } catch (error) {
       console.log(`FAILED   ${shot.name}: ${error?.message ?? error}`);
       failures.push(shot.name);
+    } finally {
+      // A shot that stages something has to put the page back, and has to do it
+      // whether or not it succeeded: the page is shared, so a leftover draft
+      // would otherwise show up in every later shot's rule counts and findings.
+      if (shot.cleanup && pages.has(shot.budget)) {
+        try {
+          await shot.cleanup(pages.get(shot.budget));
+        } catch (error) {
+          console.log(`CLEANUP  ${shot.name}: ${error?.message ?? error}`);
+        }
+      }
     }
   }
 
