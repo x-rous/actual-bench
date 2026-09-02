@@ -23,7 +23,7 @@ to Actual Bench's own database, never to your budget.
 *Every finding says what is wrong in a sentence, shows the rule it is about, and where a fix exists
 offers it - Merge for duplicates, Generalise for a rule matching whole import strings.*
 
-## What Actual Bench adds
+## Why a rule set needs auditing
 
 Rule sets rot quietly. You delete a category and three rules start pointing at nothing. You write a
 broad rule and it swallows a specific one you wrote last year. You write the same rule twice because
@@ -41,6 +41,14 @@ a sentence, and links to the fix.
    long report can be scanned without reading.
 4. A rule's own text is a link to it. Rules are never truncated; a long one clamps with **Show the
    full rule** beside it, because you cannot judge a rule you cannot read.
+
+### What a finding tells you
+
+![One finding: an Error badge, the title "Conditions contradict each other", the rule on the left and the evidence on the right.](../../../assets/screenshots/user-guide/diagnostics-card.png)
+
+*The title is the problem. The left column is the rule it concerns; the right is how the check knows.
+Whatever can be done about it sits in the header, and the stage badge appears only when the rule runs
+somewhere other than `default`.*
 
 ## What it checks
 
@@ -79,6 +87,12 @@ Bench spots these and offers **Generalise**. It reads the strings, finds the par
 and proposes `imported payee contains "MARKET BOYS PTY LTD"` instead. Next month's variant is caught
 by the same rule.
 
+![The Generalise dialog: the three exact strings the rule matches now, and three wider conditions to match instead, each confirmed to catch all of them and nothing belonging to another payee.](../../../assets/screenshots/dialogs/dialog-generalise.png)
+
+*What it matches now, and what it could match instead. Each option carries the result of testing it
+against your own import history, and the recommended one is the narrowest that still catches
+everything.*
+
 Widening a rule can only ever make it match more. So every proposal is backtested against your own
 import history before you see it, and the dialog says exactly what each option would newly catch:
 
@@ -103,10 +117,24 @@ edit.
   brings you back here afterwards.
 - Duplicates and near-identical families get **Merge**, which opens the
   [merge dialog](../rules/#merge-rules) already filled in with every member, and also brings you back.
-- Anything you have judged fine gets **Not a problem**. It moves out of the list to **Dismissed**,
-  where **Restore** brings it back. The decision is remembered for that budget.
 - Change your rules while this is open and a **stale results** banner appears. The old findings stay
-  put until you press **Refresh**.
+  put until you press **Refresh**. Dismissing is withheld while results are stale, because a decision
+  taken then would be about evidence that has already moved.
+
+### Dismissing what is not a problem
+
+Not every finding is a fault. Two rules can be deliberately near-identical, and a broad match can be
+exactly what you meant. **Not a problem** takes such a finding off the list for good.
+
+![The Dismissed scope: one dismissed finding with a Restore action, and the filter showing All 11, Dismissed 1.](../../../assets/screenshots/user-guide/diagnostics-dismissed.png)
+
+*A dismissal moves the finding into the **Dismissed** scope rather than deleting it, and **Restore**
+puts it back. The counts beside it stay honest about what is left.*
+
+The decision is remembered per budget, so a judgement about a household file cannot silence a genuine
+finding in a business one. It survives editing the rules involved — and survives merging them, which
+gives the rules new ids — because it is recorded against both the rules and what they looked like at
+the time.
 
 ![The merge dialog, pre-filled from a duplicate finding, with the merged rule and the delete-originals choice.](../../../assets/screenshots/dialogs/dialog-merge-rules.png)
 
