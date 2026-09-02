@@ -204,7 +204,7 @@ async function seedBackups(page) {
  * from the statement. A reconciliation where everything matches is a picture of
  * a table; the differences are the feature.
  */
-async function writeStatement(demo, budgetSyncId, accountId) {
+export async function writeStatement(demo, budgetSyncId, accountId) {
   const since = new Date(Date.now() - 75 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
   const response = await fetch(
     `${demo.baseUrl}/v1/budgets/${budgetSyncId}/accounts/${accountId}/transactions?since_date=${since}`,

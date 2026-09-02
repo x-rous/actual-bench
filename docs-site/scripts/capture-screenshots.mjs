@@ -40,7 +40,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
-import { connectSecondBudget } from "./seed-screenshot-fixtures.mjs";
+import { connectSecondBudget, writeStatement } from "./seed-screenshot-fixtures.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const outDir = join(here, "..", "src", "assets", "screenshots");
@@ -65,6 +65,39 @@ async function selectCurrentMonth(page) {
 }
 
 /**
+ * Back to the reconciliation session list.
+ *
+ * The page remembers which session you had open, so arriving from the sidebar
+ * lands inside it rather than on the list — which is right for a user and wrong
+ * for a shot that wants the list.
+ */
+async function exitSession(page) {
+  const exit = page.getByRole("button", { name: "All reconciliations" });
+  if (await exit.count()) {
+    await exit.first().click();
+    await page.waitForTimeout(3000);
+  }
+}
+
+/**
+ * Open the seeded reconciliation session.
+ *
+ * Every screen worth photographing is inside a session, so most reconciliation
+ * shots start here. Tolerant of already being inside one, since the previous
+ * shot may have left it open.
+ */
+async function openSession(page) {
+  const open = page
+    .getByRole("link", { name: /Open/ })
+    .or(page.getByRole("button", { name: /Open/ }))
+    .first();
+  if ((await open.count()) === 0) return; // already inside a session
+  await open.waitFor({ timeout: 15000 });
+  await open.click();
+  await page.waitForTimeout(8000);
+}
+
+/**
  * The shot list. `nav` is the sidebar entry to click, which is also how a
  * reader gets there; `budget` picks which demo to open, and only the pages
  * making a point about budgeting mode ask for Tracking.
@@ -78,6 +111,9 @@ async function selectCurrentMonth(page) {
  * had to be destroyed. They are skipped unless `--include-instance` says
  * otherwise, which is only ever correct against an instance stood up for the
  * purpose with an empty metadata database.
+ *
+ * `element` narrows the shot to one part of the page; `trimTo` crops it further,
+ * to where the content actually ends.
  */
 const SHOTS = [
   { name: "overview", area: "getting-started", nav: "Overview", url: /\/overview/, budget: "Envelope" },
@@ -154,14 +190,141 @@ const SHOTS = [
     budget: "Envelope",
     instance: true,
     // The sidebar lands on the list of sessions; the workbench is inside one.
+    prepare: async (page) => openSession(page),
+  },
+  {
+    name: "recon-sessions",
+    area: "user-guide",
+    nav: "Bank Reconciliation",
+    url: /\/reconciliation/,
+    budget: "Envelope",
+    instance: true,
+    // The landing screen: what you see on arriving, and what a reconciliation
+    // leaves behind once it is done.
+    element: "main",
+    // Cropped to the last session row: the pane is full-height and a two-row
+    // table in it is mostly blank.
+    trimTo: "tbody tr",
+    prepare: async (page) => exitSession(page),
+  },
+  {
+    name: "dialog-recon-new-session",
+    area: "dialogs",
+    nav: "Bank Reconciliation",
+    url: /\/reconciliation/,
+    budget: "Envelope",
+    instance: true,
+    element: '[role="dialog"]',
+    // Two fields and a consequence: the account is what the statement is
+    // compared against, and it cannot be changed later.
     prepare: async (page) => {
-      const open = page
-        .getByRole("link", { name: /Open/ })
-        .or(page.getByRole("button", { name: /Open/ }))
-        .first();
-      await open.waitFor({ timeout: 15000 });
-      await open.click();
+      await exitSession(page);
+      await page
+        .getByRole("button", { name: /New reconciliation|Start reconciliation/ })
+        .first()
+        .click();
+      await page.waitForTimeout(2000);
+      const dialog = page.getByRole("dialog");
+      await dialog.getByRole("button", { name: /Select an account/ }).click();
+      await page.waitForTimeout(700);
+      // Scoped: the session list behind the dialog has a search box of its own.
+      await dialog.getByPlaceholder("Search…").fill("Household Checking");
+      await page.waitForTimeout(1200);
+      await page.getByRole("option", { name: /Household Checking/ }).first().click();
+      await dialog.getByPlaceholder("July close").fill("September close");
+      await page.waitForTimeout(800);
+    },
+  },
+  {
+    name: "recon-inspector",
+    area: "user-guide",
+    nav: "Bank Reconciliation",
+    url: /\/reconciliation/,
+    budget: "Envelope",
+    instance: true,
+    // Why a match was proposed, rather than only that it was. Cropped to the
+    // panel: the workbench around it already has its own shot.
+    element: '[aria-label="Match details"]',
+    prepare: async (page) => {
+      await openSession(page);
+      const row = page.locator("tbody tr").first();
+      await row.waitFor({ timeout: 45000 });
+      await row.click();
+      await page.waitForTimeout(5000);
+    },
+  },
+  {
+    name: "recon-review",
+    area: "user-guide",
+    nav: "Bank Reconciliation",
+    url: /\/reconciliation/,
+    budget: "Envelope",
+    instance: true,
+    // The last screen before anything is written: every planned change, the
+    // balance effect, and the choices that govern the write.
+    prepare: async (page) => {
+      await openSession(page);
+      const review = page.getByRole("button", { name: /^Review/ });
+      await review.first().waitFor({ timeout: 45000 });
+      await review.first().click();
       await page.waitForTimeout(8000);
+    },
+  },
+  {
+    name: "recon-import",
+    area: "user-guide",
+    nav: "Bank Reconciliation",
+    url: /\/reconciliation/,
+    budget: "Envelope",
+    instance: true,
+    element: "main",
+    /*
+     * The import screen, which is where a bank's column layout is confirmed and
+     * where a reconciliation most often goes wrong. Reached by starting a second
+     * session and stopping after the upload — the seeded one has already moved
+     * past this phase, and sending it back would throw away its decisions.
+     */
+    prepare: async (page, demo) => {
+      await exitSession(page);
+      await page
+        .getByRole("button", { name: /New reconciliation|Start reconciliation/ })
+        .first()
+        .click();
+      await page.waitForTimeout(2000);
+
+      const dialog = page.getByRole("dialog");
+      await dialog.getByRole("button", { name: /Select an account/ }).click();
+      await page.waitForTimeout(700);
+      await dialog.getByPlaceholder("Search…").fill("Household Checking");
+      await page.waitForTimeout(1200);
+      await page.getByRole("option", { name: /Household Checking/ }).first().click();
+      await dialog.getByPlaceholder("July close").fill("September close");
+      await dialog.getByRole("button", { name: "Start" }).click();
+      await page.waitForTimeout(4000);
+
+      // The demo endpoint publishes sync ids; the env-var path does not, so
+      // fall back to the same default the seeder uses.
+      const budget = demo.budgets?.find((b) => /envelope/i.test(b.label)) ?? {};
+      const budgetId =
+        budget.budgetSyncId ??
+        budget.syncId ??
+        process.env.DEMO_ENVELOPE_SYNC_ID ??
+        "7d243b3e-d2dc-4863-be75-b1fd85b77c2b";
+      const accounts = await fetch(`${demo.baseUrl}/v1/budgets/${budgetId}/accounts`, {
+        headers: { "x-api-key": demo.apiKey },
+      }).then((r) => r.json());
+      const account =
+        accounts.data.find((a) => a.name === "Household Checking") ?? accounts.data[0];
+      const statementPath = await writeStatement(demo, budgetId, account.id);
+
+      await page.locator('input[type="file"]').setInputFiles(statementPath);
+      // Parsing shows the whole statement with its detected layout; the button
+      // that leaves this phase only appears once it has finished.
+      await page
+        .getByRole("button", { name: /Match against Actual/ })
+        .first()
+        .waitFor({ timeout: 45000 });
+      await page.waitForTimeout(2500);
     },
   },
   { name: "backups", nav: "Backups", url: /\/backups/, budget: "Envelope", instance: true },
@@ -415,6 +578,37 @@ const SHOTS = [
     },
   },
 ];
+
+/**
+ * Screenshot an element, cropped to where its content actually stops.
+ *
+ * A table with three rows in a full-height pane is 80% empty space, and a
+ * screenshot of it teaches nothing about the three rows. `trimTo` names the
+ * element whose bottom edge is the real end of the content — usually the last
+ * row — and the shot is clipped there.
+ *
+ * Falls back to the plain element screenshot whenever the measurement is not
+ * available, because a slightly loose crop beats no image.
+ */
+async function captureShot(page, shot, path) {
+  const target = shot.element ? page.locator(shot.element).first() : page;
+
+  if (shot.element && shot.trimTo) {
+    const outer = await page.locator(shot.element).first().boundingBox();
+    const inner = await page.locator(shot.trimTo).last().boundingBox();
+    if (outer && inner) {
+      const bottom = inner.y + inner.height + (shot.trimPad ?? 12);
+      const height = Math.min(outer.height, Math.max(bottom - outer.y, 80));
+      await page.screenshot({
+        path,
+        clip: { x: outer.x, y: outer.y, width: outer.width, height },
+      });
+      return;
+    }
+  }
+
+  await target.screenshot({ path });
+}
 
 const args = process.argv.slice(2);
 const includeInstance = args.includes("--include-instance");
@@ -715,12 +909,14 @@ async function run(registerInstance) {
       await page.waitForTimeout(5000);
       // Some pages only show what they are for once they have been asked to do
       // something.
-      if (shot.prepare) await shot.prepare(page);
+      // `demo` is passed for the shots that have to build their own fixture —
+      // a second reconciliation session needs the statement and the account it
+      // belongs to.
+      if (shot.prepare) await shot.prepare(page, demo);
 
       // A dialog photographed as a whole page is mostly dimmed background, so a
       // shot can name the element it is actually about.
-      const target = shot.element ? page.locator(shot.element).first() : page;
-      await target.screenshot({ path: await shotPath(shot) });
+      await captureShot(page, shot, await shotPath(shot));
       console.log(`captured ${shot.name}`);
 
       // Shots share one page, so a dialog left open blocks the next one's
