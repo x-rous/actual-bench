@@ -74,9 +74,6 @@ A source and target on the same budget is allowed for transaction flows (between
 accounts); entity flows require two different budgets. A true self-sync (same account on both sides) is
 blocked.
 
-<details>
-<summary>Transaction filters, transforms, and entity-flow behavior</summary>
-
 ## Transaction flow settings
 
 ### Filters
@@ -105,8 +102,6 @@ blocked.
   review** unless you enable **create missing groups**. Income and expense categories stay distinct.
 - **No renames, deletes, or hides** - create-only. Mappings let reruns skip already-synced entities.
 
-</details>
-
 ## Preview a flow
 
 Select **Preview** to produce a dry-run. Each row is classified. The exact labels you'll see:
@@ -132,9 +127,6 @@ Select the safe **New** rows and **Apply**:
 - Only the selected safe items are written; each create is stamped with a durable target-side marker
   (`imported_id`), and an app-owned **mapping** is recorded immediately after each success.
 - Partial failures are reported and never lose earlier successes.
-
-<details>
-<summary>Mappings, updates, deletion review, retries, and flow portability</summary>
 
 ### Mappings and idempotency
 
@@ -176,11 +168,6 @@ retry, and act on changes.
   connections on import.
 - **Export a run's audit** to CSV.
 
-</details>
-
-<details>
-<summary>Automation, flow health, and target-rule behavior</summary>
-
 ## Automation (opt-in)
 
 Each flow has a **review policy**:
@@ -219,8 +206,6 @@ notice.
 Because Actual Budget rules run when a transaction is created, an applied target transaction may differ
 from the preview (payee, category, notes, or cleared state). Actual Bench surfaces this as a **warning**,
 not an error.
-
-</details>
 
 ## Limitations
 

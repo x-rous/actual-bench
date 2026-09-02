@@ -102,7 +102,6 @@ export default defineConfig({
 				},
 				{
 					label: 'For Self-hosters',
-					collapsed: true,
 					items: [
 						{ label: 'Deployment', link: '/administration/deployment/' },
 						{ label: 'Configuration', link: '/administration/configuration/' },
@@ -112,7 +111,6 @@ export default defineConfig({
 				},
 				{
 					label: 'Help',
-					collapsed: true,
 					items: [
 						{ label: 'Troubleshooting', link: '/help/troubleshooting/' },
 						{ label: 'Known limitations', link: '/help/known-limitations/' },
