@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState, type MouseEvent } from "react";
+import { useEffect, useRef, useState, type MouseEvent } from "react";
 import { CircleSlash, Copy, Merge, Undo2, Wand2 } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
@@ -253,13 +253,33 @@ export function FindingCard({
   const primaryStage = noteworthyStage(stageOf(finding.affected[0]?.id ?? ""));
 
   // Rule text is no longer truncated at 160 characters — the reader needs all
-  // of it to decide. Long ones are clamped instead, and can be opened. The
-  // threshold is a guess at "more than six lines of this column", deliberately
-  // generous: offering to expand something already fully visible is a smaller
-  // sin than hiding the end of a rule.
+  // of it to decide. Long ones are clamped instead, and can be opened.
+  //
+  // Whether one *is* clamped is measured, not guessed. A character count cannot
+  // know how the text wrapped: the same rule fits on a wide card and overflows
+  // on a narrow one, and a guess that says "short enough" hides the end of a
+  // rule with no way to reveal it.
   const [expanded, setExpanded] = useState(false);
-  const totalLength = finding.affected.reduce((sum, r) => sum + r.summary.length, 0);
-  const mayNeedExpanding = totalLength > 420 || finding.affected.length > 6;
+  const [overflowing, setOverflowing] = useState(false);
+  const listRef = useRef<HTMLUListElement>(null);
+
+  useEffect(() => {
+    const el = listRef.current;
+    // While expanded there is nothing to measure — the clamp is off, so
+    // scrollHeight always equals clientHeight and the control would vanish
+    // mid-read.
+    if (!el || expanded) return;
+
+    const measure = () => setOverflowing(el.scrollHeight > el.clientHeight + 1);
+    measure();
+
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [expanded, finding]);
+
+  const canExpand = expanded || overflowing;
 
   return (
     <article
@@ -335,7 +355,7 @@ export function FindingCard({
           <h4 className={LABEL_CLASS}>
             {finding.affected.length > 1 ? `${finding.affected.length} rules` : "Rule"}
           </h4>
-          <ul className={expanded ? "mt-0.5" : "mt-0.5 line-clamp-6"}>
+          <ul ref={listRef} className={expanded ? "mt-0.5" : "mt-0.5 line-clamp-6"}>
             {finding.affected.map((r, i) => (
               <RuleLine
                 key={r.id}
@@ -346,7 +366,7 @@ export function FindingCard({
               />
             ))}
           </ul>
-          {mayNeedExpanding && (
+          {canExpand && (
             <button
               type="button"
               onClick={() => setExpanded((v) => !v)}

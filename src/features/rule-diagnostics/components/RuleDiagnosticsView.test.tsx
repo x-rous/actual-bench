@@ -280,7 +280,10 @@ describe("RuleDiagnosticsView", () => {
       fireEvent.click(screen.getByText("Suggestions 1"));
 
       expect(screen.getByText("Info finding")).toBeInTheDocument();
+      // Both of the other severities, not just the error: a regression that
+      // left warnings in the suggestions scope would otherwise pass.
       expect(screen.queryByText("Error finding")).not.toBeInTheDocument();
+      expect(screen.queryByText("Warning finding")).not.toBeInTheDocument();
     });
 
     it("typing in the search box filters findings by rule summary", () => {
