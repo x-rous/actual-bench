@@ -5,39 +5,37 @@ sidebar:
   order: 15
 ---
 
-**Bank Reconciliation** compares a downloaded statement against one Actual account, row by row, and
-proves whether the two agree. Come here when bank sync is unavailable, a period needs auditing, or you
-suspect missing, duplicated or incorrect transactions.
+Your bank says one thing and your budget says another. **Bank Reconciliation** puts the two side by
+side, row by row, and proves whether they agree — then writes only the differences you approved.
 
-The session persists, matching is conservative and amount-first, every difference is your decision, and
-the exact writes are shown before anything happens - with a final drift check in case the account moved
-while you worked. It complements Actual's everyday import and reconciliation; it does not replace
-routine transaction entry.
+Come here when bank sync is unavailable, when a period needs auditing before you close it, or when
+you suspect transactions are missing, duplicated, or wrong. It complements Actual's everyday import;
+it does not replace routine transaction entry.
 
 Open it from **Tools → Bank Reconciliation** (`/reconciliation`).
 
 **Write model:** decide → review → **Apply**. Nothing is written before Apply. Categories are never
 read or written by this workflow.
 
-![The reconciliation workbench: coverage in both directions, rows bucketed by outcome, and each match shown with its confidence and reasoning.](../../../assets/screenshots/user-guide/bank-reconciliation.png)
+## What you need
 
-*Coverage is reported in both directions - what the statement found in Actual, and what Actual has
-that the statement does not - and every automatic match shows how confident it is and why. The
-decisions counter tracks what is left: 36 matched on their own, 8 for you.*
+- A **statement file** from your bank: CSV/TSV, OFX/QFX, or QIF. The format is recognised from the
+  file's own content, not its name, so a `.txt` holding an OFX export still reads as OFX.
+- One **account** in Actual to compare it against. A session covers one account.
+- Nothing else. No bank connection, no credentials, no setup.
 
 ## The workflow in five steps
 
 1. **Start** a session for one account and optionally give it a memorable tag.
-2. **Import** a CSV/TSV, OFX/QFX, or QIF statement and verify the parsed dates, amounts, payee text,
-   and notes.
+2. **Import** the statement and confirm how its columns were read.
 3. **Reconcile** each row: accept a match, choose another candidate, create a missing transaction,
    correct an amount, delete a duplicate, or leave it undecided.
-4. **Review** the account-balance effect, clearing choice, bank-text writes, and every planned change.
+4. **Review** the exact writes, the balance effect, and the two choices that govern them.
 5. **Apply**. Actual Bench re-reads affected transactions first, writes what is still safe, and keeps
    failures available for retry.
 
-Sessions survive browser sessions, so you can stop between steps. Once applied, the session becomes an
-audit record and does not offer the same writes again.
+Sessions survive closing the tab, so you can stop between any two steps. Once applied, a session
+becomes an audit record and will not offer the same writes again.
 
 :::note[Reconciliation does not touch categories]
 It never reads, stages, or writes a transaction's category. Categorisation belongs in Actual, where
@@ -45,61 +43,54 @@ your rules and your own judgement live. A reconciliation that quietly blanked ca
 work this tool has no business undoing.
 :::
 
-Everything below follows those five steps in order, and every section is on the page — use the
-contents list to jump to the one you need.
+## Your reconciliations
+
+The sidebar lands here: every session you have started, grouped by account, with its statement,
+period, row count and status.
+
+![The reconciliation session list: one session for Household Checking, tagged "August close", 42 rows, in progress.](../../../assets/screenshots/user-guide/recon-sessions.png)
+
+*An account heading counts its sessions and how many still need attention. **Open** resumes a session
+exactly where you left it.*
+
+Accounts with work outstanding are expanded; an account whose sessions are all applied is collapsed.
+Search, and the account, status, tag, year and month filters, narrow the same table — filtering
+reveals matching groups automatically, so an applied result never hides inside a collapsed account.
+
+## Start a session
+
+**New reconciliation** asks for two things: the account, and an optional tag.
+
+![The New reconciliation dialog: an account picker and an optional tag field, with Cancel and Start.](../../../assets/screenshots/dialogs/dialog-recon-new-session.png)
+
+*The account is what the statement gets compared against, and it cannot be changed afterwards. The
+dialog says plainly that nothing is written until you review and apply.*
+
+The **tag** is worth using — `July close`, `after the refund`, `Q3 audit`. With several sessions
+against one account, reruns and corrections are otherwise told apart only by timestamp. Tags are
+suggested from ones you have used before, can be edited in place from the list, and can be filtered
+on. They are free text and deliberately separate from your budget's own tags: disposable notes about
+the reconciliation, not data about your transactions.
 
 ## Where a session is up to
 
-Every screen carries the same header: which account and statement period you are working on, its
-tag, and a progress trail - **Import › Reconcile › Review › Applied**. Steps already reached are
-ticked, the one you are looking at is highlighted, and you can click back to any step the session
-has actually been through.
+Every screen carries the same header: the account and statement period, the tag, and a progress trail
+— **Import › Reconcile › Review › Applied**. Steps already reached are ticked, and you can click back
+to any step the session has actually been through.
 
 The trail reflects the **session's own status**, not the screen you happen to be on, so opening the
-workbench of a finished reconciliation still says Applied. A run that partly failed says
-*Applied with problems* rather than pretending otherwise.
+workbench of a finished reconciliation still says Applied. A run that partly failed says *Applied
+with problems* rather than pretending otherwise.
 
-Once a session has been applied, the work it wrote is excluded from any new plan. It stops offering
-to apply itself a second time, and a partial run goes on offering exactly what failed - nothing
-more.
-
-The Review page remains readable as an audit, but its **Mark as cleared** and **Record the bank's
-merchant text** choices are disabled. They show the values used by Apply rather than controls that
-could rewrite history after the fact.
+Once applied, the work a session wrote is excluded from any new plan. It will not offer to apply
+itself twice, and a partial run goes on offering exactly what failed — nothing more. The Review page
+stays readable as an audit, but its two write choices are disabled: they show what Apply used, not
+controls that could rewrite history after the fact.
 
 **Re-running the match is refused on an applied session.** Matching rebuilds the rows from scratch,
-and the record of what was already written is tied to them - re-running would lose that and offer to
-update the same transactions again. To check the account after applying, start a new reconciliation:
-it reads Actual as it stands *now*, which is what you actually want to compare against.
-
-## Starting a reconciliation
-
-**New reconciliation** asks for the account - searchable, because a budget's account list is rarely
-short - and an optional tag.
-
-### Tagging a session
-
-Give a session an optional **tag** when you create it - `July close`, `after the refund`, `Q3 audit`.
-With several sessions per account, reruns and corrections are otherwise told apart only by
-timestamp. Tags are suggested from ones you have already used, can be changed in place from the
-list, and can be filtered and searched on.
-
-They are free text and deliberately separate from your budget's own tags: these labels are
-disposable notes about the reconciliation, not data about your transactions.
-
-### Finding sessions as history grows
-
-The sessions list remains one sortable table with one shared set of columns, grouped one level by
-**Account**. On the normal **All** view, an account with Draft, In progress, Ready to apply, or other
-work needing attention is expanded; an account whose visible sessions are all **Applied** is
-collapsed. Each account heading shows the visible session count and how many need attention, and can
-always be expanded or collapsed manually. Use **Expand All** or **Collapse All** to change every
-visible account group together.
-
-Use **Search**, **Account**, **Status**, **Tag**, **Year**, and **Month** to narrow the same table.
-Filtering exposes matching account groups automatically, so an applied result is not hidden inside a
-collapsed account. Year and Month describe the statement period; Month stays a filter rather than a
-group because a card statement commonly spans two calendar months.
+and the record of what was written is tied to them — re-running would lose it and offer the same
+transactions again. To check the account after applying, start a new reconciliation: it reads Actual
+as it stands *now*, which is what you actually want to compare against.
 
 ## 1. Import a statement
 
@@ -108,6 +99,11 @@ from the file's own content rather than only its name, so a `.txt` holding an OF
 read as OFX - and, as in Actual itself, `.qfx` goes through the OFX path.
 
 ### The import workbench
+
+![The import screen: statement source, date and amount conventions and matching options on the left, the whole parsed statement on the right with its column mapping.](../../../assets/screenshots/user-guide/recon-import.png)
+
+*Everything about how the file is read is on the left; the result of reading it is on the right. The
+banner is the duplicate-statement warning described below.*
 
 On desktop, configuration stays in a compact left pane and the **complete parsed statement** fills
 the right. The statement rows have their own scroller and sticky header; totals stay visible outside
@@ -202,8 +198,8 @@ retrying a partly-applied reconciliation safe.
 
 ### Importing the same statement twice
 
-If the rows you are importing have been imported before, Actual Bench says so - naming the earlier
-session and when it was created. It matches on the **rows themselves**, so a statement pasted one
+If the rows you are importing have been imported before, Actual Bench says so — naming the earlier
+session and when it was created. That is the amber banner in the screenshot above. It matches on the **rows themselves**, so a statement pasted one
 month and uploaded the next is still recognised, and re-sorting it in your banking app does not
 disguise it.
 
@@ -267,6 +263,11 @@ exactly that reason.
 
 ## 3. Decide each row
 
+![The reconciliation workbench: coverage in both directions, rows bucketed by outcome, and each match shown with its confidence and reasoning.](../../../assets/screenshots/user-guide/bank-reconciliation.png)
+
+*Coverage is reported in both directions, every automatic match shows how confident it is and why,
+and the decisions counter tracks what is left for you.*
+
 Coverage names both questions it answers: **Statement → Actual** shows how much of the statement has
 a counterpart, while **Actual → Statement** shows how much of the loaded account window the statement
 explains. Decision progress and **Next undecided** stay in the table toolbar. **Matching** opens its
@@ -283,9 +284,14 @@ For every row you can:
 - **Leave it for later.** Rows with no decision are untouched by Apply.
 
 Selecting a row opens a details panel. Date and amount are shown **once, with both readings side by
-side**, and any difference is marked and quantified - "2 days later", "−12.50" - rather than left
+side**, and any difference is marked and quantified — "2 days later", "−12.50" — rather than left
 for you to work out from two separate lists. Foreign-currency rows also show the original amount the
 bank printed.
+
+![The Match details panel: the transaction as it stands in Actual, the decide actions, and a note explaining that the row is protected.](../../../assets/screenshots/user-guide/recon-inspector.png)
+
+*The panel says what a decision would do, and when it will not do it. Here the row is both reconciled
+in Actual and one leg of a transfer, so deleting it is refused and the reason is given.*
 
 Staged changes show what the value was and where the new one came from. A bulk transformation never
 overwrites a value you edited by hand unless you say so. Transfers, split parents, and rows already
@@ -304,6 +310,11 @@ A transformation can be applied to many rows at once and previewed before it is 
   you are told why, rather than guessed at.
 
 ## 4. Review
+
+![The review screen: counts for create, update and delete, the net balance change, the two write settings, and each row shown as it will look afterwards.](../../../assets/screenshots/user-guide/recon-review.png)
+
+*The last screen before anything is written. Here nothing is created, updated or deleted — 34 rows
+need no change, four get the bank's merchant text recorded, and the balance moves by 0.00.*
 
 The review screen shows, statement row by statement row, what each will look like in your budget
 afterwards. Changed values are marked and carry their previous value. The Action column distinguishes
