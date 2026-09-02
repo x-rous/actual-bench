@@ -45,11 +45,8 @@ your rules and your own judgement live. A reconciliation that quietly blanked ca
 work this tool has no business undoing.
 :::
 
-The rest of this page is detailed reference. For a first reconciliation, follow the five steps above
-and use the relevant section only when a choice needs explanation.
-
-<details>
-<summary>Sessions and detailed statement-import behavior</summary>
+Everything below follows those five steps in order, and every section is on the page — use the
+contents list to jump to the one you need.
 
 ## Where a session is up to
 
@@ -220,11 +217,6 @@ Save how a statement is read - column mapping, date and amount conventions, paye
 the matching options for an account as a **profile**, and apply it next month in one click.
 Statements from the same bank rarely change shape.
 
-</details>
-
-<details>
-<summary>Matching evidence, safeguards, decisions, and note transformations</summary>
-
 ## 2. Matching
 
 Matching is deliberately conservative, and the reason is worth stating: **an exact signed amount is
@@ -311,8 +303,6 @@ A transformation can be applied to many rows at once and previewed before it is 
   `| dinner with Ahmad` both survive. Where no such run can be identified, the note is left alone and
   you are told why, rather than guessed at.
 
-</details>
-
 ## 4. Review
 
 The review screen shows, statement row by statement row, what each will look like in your budget
@@ -335,9 +325,6 @@ It also states:
   during Import are stated here rather than changed after transformations have already used them.
 - **Whether matched transactions gain the bank's merchant text** - **On new and matched rows** or
   **On new rows only** - see below.
-
-<details>
-<summary>Exact field behavior for imported payee, payee, and notes</summary>
 
 ### What actually gets written
 
@@ -385,16 +372,11 @@ Once Apply starts, **Record the bank's merchant text** and **Mark as cleared** a
 reopened applied or partially applied reconciliation, they show what was executed and cannot be
 changed.
 
-</details>
-
 ## 5. Apply
 
 Apply first re-reads every affected transaction. Safe rows are written, changed or conflicting rows
 are held back, partial successes are recorded honestly, and **Retry what failed** attempts only the
 unfinished work.
-
-<details>
-<summary>Drift handling, idempotent writes, rules, and post-write verification</summary>
 
 ### The drift check
 
@@ -441,8 +423,6 @@ Once the writes are done, the account is read back and compared against what you
 transactions are present and present *once*, updated fields hold the approved values, deleted rows are
 gone, split parents still add up, and nothing reconciled in Actual moved. A transport can report
 success for a field it quietly dropped, so this is confirmed rather than assumed.
-
-</details>
 
 ## What is stored, and where
 
