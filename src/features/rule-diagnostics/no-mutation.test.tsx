@@ -179,15 +179,9 @@ it("renders, filters, refreshes, and jump-to-rule without invoking ANY staged-st
 
   render(<RuleDiagnosticsView />);
 
-  // 1. Click the Errors severity pill, then click All to reset.
-  const errorsPill = screen.getAllByText("Errors").find(
-    (el) => el.tagName === "BUTTON"
-  ) as HTMLButtonElement;
-  fireEvent.click(errorsPill);
-  const allPill = screen.getAllByText("All").find(
-    (el) => el.tagName === "BUTTON"
-  ) as HTMLButtonElement;
-  fireEvent.click(allPill);
+  // 1. Narrow to Errors, then back to All.
+  fireEvent.click(screen.getByText(/^Errors \d+$/));
+  fireEvent.click(screen.getByText(/^All \d+$/));
 
   // 2. Type into the search box, then clear it.
   const searchInput = screen.getByLabelText("Search findings by rule");
@@ -201,15 +195,11 @@ it("renders, filters, refreshes, and jump-to-rule without invoking ANY staged-st
   // than staging anything here.
   fireEvent.click(screen.getByLabelText("Generalise this rule"));
 
-  // 5. Click each finding's rule summary link.
+  // 5. Click every rule link and dismiss every finding. Dismissing does write —
+  // but to the app database, through its own hook, never to the staged store
+  // the budget is saved from.
   for (const f of findings) {
-    const link = screen.getByLabelText(`Open rule: ${f.affected[0].summary}`);
-    fireEvent.click(link);
-  }
-
-  // 6. Dismiss every finding. This writes — but to the app database, through
-  // its own hook, never to the staged store the budget is saved from.
-  for (const f of findings) {
+    fireEvent.click(screen.getByLabelText(`Open rule: ${f.affected[0].summary}`));
     fireEvent.click(screen.getByLabelText(`Dismiss: ${f.title}`));
   }
   expect(dismissMock).toHaveBeenCalledTimes(findings.length);

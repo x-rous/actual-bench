@@ -22,6 +22,34 @@ export const FINDING_SEVERITY: Record<FindingCode, Severity> = {
   RULE_ANALYZER_SKIPPED: "info",
 };
 
+/**
+ * What each check is called, for people.
+ *
+ * The codes are the machine's names for these and belong in a bug report, not
+ * on a filter menu — a reader scanning for "the shadowing one" should not have
+ * to translate `RULE_SHADOWED` first.
+ */
+export const FINDING_CODE_LABELS: Record<FindingCode, string> = {
+  RULE_MISSING_PAYEE: "Deleted payee",
+  RULE_MISSING_CATEGORY: "Deleted category",
+  RULE_MISSING_ACCOUNT: "Deleted account",
+  RULE_MISSING_CATEGORY_GROUP: "Deleted category group",
+  RULE_EMPTY_ACTIONS: "No actions",
+  RULE_NOOP_ACTIONS: "Actions that do nothing",
+  RULE_IMPOSSIBLE_CONDITIONS: "Contradictory conditions",
+  RULE_SHADOWED: "Never fires",
+  RULE_BROAD_MATCH: "Very broad match",
+  RULE_OVERSPECIFIC_IMPORT_MATCH: "Matches whole import strings",
+  RULE_DUPLICATE_GROUP: "Identical rules",
+  RULE_NEAR_DUPLICATE_FAMILY: "Near-identical rules",
+  RULE_UNSUPPORTED_CONDITION_OP: "Unsupported condition operator",
+  RULE_UNSUPPORTED_CONDITION_FIELD: "Unsupported condition field",
+  RULE_UNSUPPORTED_ACTION_OP: "Unsupported action operator",
+  RULE_UNSUPPORTED_ACTION_FIELD: "Unsupported action field",
+  RULE_TEMPLATE_ON_UNSUPPORTED_FIELD: "Template on an unsupported field",
+  RULE_ANALYZER_SKIPPED: "Analyzer skipped",
+};
+
 type FindingArgs = Record<string, unknown>;
 
 function asString(v: unknown): string {
@@ -36,7 +64,7 @@ export function buildFinding(
   counterpart?: RuleRef
 ): Finding {
   const severity = FINDING_SEVERITY[code];
-  const { title, message, details } = composeMessage(code, args, affected, counterpart);
+  const { title, message, details } = composeMessage(code, args, affected);
   // Computed here rather than at dismissal time so the key is derived from the
   // same args that produced the message — one place to change when a check
   // starts reporting something new.
@@ -56,8 +84,7 @@ export function buildFinding(
 function composeMessage(
   code: FindingCode,
   args: FindingArgs,
-  affected: RuleRef[],
-  counterpart?: RuleRef
+  affected: RuleRef[]
 ): { title: string; message: string; details?: string[] } {
   switch (code) {
     case "RULE_MISSING_PAYEE":
@@ -86,43 +113,49 @@ function composeMessage(
       };
     case "RULE_EMPTY_ACTIONS":
       return {
-        title: "Rule has no actions",
-        message: `This rule matches transactions but performs no actions, so it never changes anything.`,
+        title: "This rule does nothing",
+        message: `It matches transactions and has no actions, so nothing happens to them.`,
       };
     case "RULE_NOOP_ACTIONS":
       return {
-        title: "Rule has only no-op actions",
-        message: `Every action on this rule is a no-op: a \`set\` with no target field, or a notes append/prepend with an empty value.`,
+        title: "Every action on this rule is a no-op",
+        message: `A \`set\` with no target field, or a notes append with an empty value.`,
         details: detailList(args, "noopActions"),
       };
     case "RULE_IMPOSSIBLE_CONDITIONS":
       return {
-        title: "Conditions can never all match",
-        message: `This \`and\`-combined rule has conditions that contradict each other, so no transaction can ever satisfy every condition at once.`,
+        title: "Conditions contradict each other",
+        message: `Combined with \`and\`, so no transaction can satisfy all of them at once.`,
         details: detailList(args, "conflicts"),
       };
     case "RULE_SHADOWED": {
-      const shadower = counterpart?.summary ?? "an earlier rule";
       return {
-        title: "Rule is shadowed by an earlier rule",
-        message: `This rule never fires because an earlier rule in the same stage already matches every transaction this one would match and writes over the same fields. Shadowing rule: ${shadower}.`,
+        title: "This rule never fires",
+        // The shadowing rule is the counterpart, rendered as its own row. Naming
+        // it here as well put the same text on screen twice.
+        message: `An earlier rule in the same stage matches everything this one would, and writes the same fields.`,
       };
     }
     case "RULE_BROAD_MATCH": {
       const field = asString(args.field) || "a text field";
       const value = asString(args.value);
       return {
-        title: "Suspiciously broad match criteria",
-        message: `This rule uses a very short match value on ${field} (${JSON.stringify(value)}), which is likely to match far more transactions than intended.`,
+        title: "This match is very broad",
+        message: `Likely to catch far more transactions than intended.`,
+        details: [`Matches on ${field} against ${JSON.stringify(value)}.`],
       };
     }
     case "RULE_DUPLICATE_GROUP": {
       const count = affected.length;
-      const detail = `${count} rules in this group are structurally identical - same stage, condition operator, conditions, and actions.`;
       return {
-        title: `${count} duplicate rules - consider merging`,
-        message: `Use the Merge button to collapse them into one rule.`,
-        details: [detail],
+        title: `${count} identical rules`,
+        // No instruction to press the button beside it, and no repeat of the
+        // count from the title. The detail below is the whole story: what
+        // "identical" was measured on.
+        message: "",
+        details: [
+          "Same stage, same condition operator, same conditions, same actions.",
+        ],
       };
     }
     case "RULE_NEAR_DUPLICATE_FAMILY": {

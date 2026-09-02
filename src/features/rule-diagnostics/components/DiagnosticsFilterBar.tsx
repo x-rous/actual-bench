@@ -1,55 +1,60 @@
 "use client";
 
-import { ChevronDown, Search, X } from "lucide-react";
+import { Search, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuCheckboxItem,
-  DropdownMenuContent,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+import { MultiSearchableCombobox } from "@/components/ui/combobox";
 import { PillGroup } from "@/components/ui/pill-group";
-import { cn } from "@/lib/utils";
+import { FINDING_CODE_LABELS } from "../lib/findingMessages";
 import type { FindingCode, Severity } from "../types";
 
-export type SeverityFilterValue = Severity | "all";
-
-const SEVERITY_OPTIONS: { value: SeverityFilterValue; label: string }[] = [
-  { value: "all", label: "All" },
-  { value: "error", label: "Errors" },
-  { value: "warning", label: "Warnings" },
-  { value: "info", label: "Info" },
-];
+/**
+ * What the list is showing.
+ *
+ * Severity and state in one control, because they were two controls doing one
+ * job: a tab strip splitting "needs attention" from "suggestions" sat directly
+ * above pills splitting errors from warnings from info. The same choice, asked
+ * twice, in two rows — which is what forced the toolbar onto a second line.
+ *
+ * `info` reads as **Suggestions** here. "Info" names the severity constant; it
+ * tells a reader nothing about what to do with the finding.
+ */
+export type ScopeFilter = Severity | "all" | "dismissed";
 
 type Props = {
+  scope: ScopeFilter;
+  onScopeChange: (scope: ScopeFilter) => void;
+  counts: { all: number; error: number; warning: number; info: number; dismissed: number };
+  ruleCount: number;
   search: string;
-  severityFilter: SeverityFilterValue;
   codeFilter: Set<FindingCode>;
   availableCodes: FindingCode[];
   onSearchChange: (value: string) => void;
-  onSeverityChange: (severity: SeverityFilterValue) => void;
-  onCodeToggle: (code: FindingCode) => void;
+  onCodeChange: (codes: FindingCode[]) => void;
   onClear: () => void;
 };
 
 export function DiagnosticsFilterBar({
+  scope,
+  onScopeChange,
+  counts,
+  ruleCount,
   search,
-  severityFilter,
   codeFilter,
   availableCodes,
   onSearchChange,
-  onSeverityChange,
-  onCodeToggle,
+  onCodeChange,
   onClear,
 }: Props) {
-  const anyActive =
-    search.trim().length > 0 || severityFilter !== "all" || codeFilter.size > 0;
-  const codeButtonLabel =
-    codeFilter.size === 0
-      ? "All codes"
-      : codeFilter.size === 1
-        ? [...codeFilter][0]
-        : `${codeFilter.size} codes`;
+  const anyActive = search.trim().length > 0 || scope !== "all" || codeFilter.size > 0;
+
+  // Human labels, not constants. `RULE_IMPOSSIBLE_CONDITIONS` is what the code
+  // calls it; "Contradictory conditions" is what a reader is looking for. The
+  // combobox is also the app's own filter control — this bar used the only
+  // hand-rolled dropdown filter in the product.
+  const codeOptions = availableCodes.map((code) => ({
+    id: code,
+    name: FINDING_CODE_LABELS[code] ?? code,
+  }));
 
   return (
     <div className="flex flex-wrap items-center gap-2 border-b border-border/40 bg-muted/10 px-4 py-2">
@@ -61,7 +66,7 @@ export function DiagnosticsFilterBar({
           onChange={(e) => onSearchChange(e.target.value)}
           placeholder="Search rules…"
           aria-label="Search findings by rule"
-          className="h-7 w-56 rounded border border-border bg-background pl-6 pr-6 text-xs outline-none focus:ring-1 focus:ring-ring"
+          className="h-7 w-52 rounded border border-border bg-background pl-6 pr-6 text-xs outline-none focus:ring-1 focus:ring-ring"
         />
         {search && (
           <button
@@ -75,62 +80,42 @@ export function DiagnosticsFilterBar({
         )}
       </div>
 
-      <span className="text-[11px] uppercase tracking-wider text-muted-foreground">Severity</span>
       <PillGroup
-        options={SEVERITY_OPTIONS}
-        value={severityFilter}
-        onChange={onSeverityChange}
+        options={[
+          { value: "all" as const, label: `All ${counts.all}` },
+          { value: "error" as const, label: `Errors ${counts.error}` },
+          { value: "warning" as const, label: `Warnings ${counts.warning}` },
+          { value: "info" as const, label: `Suggestions ${counts.info}` },
+          { value: "dismissed" as const, label: `Dismissed ${counts.dismissed}` },
+        ]}
+        value={scope}
+        onChange={onScopeChange}
       />
 
-      <span className="text-[11px] uppercase tracking-wider text-muted-foreground">Code</span>
-      <DropdownMenu>
-        <DropdownMenuTrigger
-          className="inline-flex h-7 min-w-[18rem] items-center justify-between gap-1 rounded-[12px] border border-border bg-background px-2.5 text-[0.8rem] hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
-          aria-label="Filter by finding code"
-        >
-          <span className="truncate font-mono text-[11px]">{codeButtonLabel}</span>
-          <ChevronDown className="h-3.5 w-3.5 shrink-0" />
-        </DropdownMenuTrigger>
-        <DropdownMenuContent
-          align="start"
-          className="max-h-72 min-w-[18rem] max-w-[28rem] overflow-y-auto p-1"
-        >
-          {availableCodes.length === 0 ? (
-            <div className="px-2 py-1 text-xs text-muted-foreground">No codes available</div>
-          ) : (
-            availableCodes.map((code) => {
-              const isActive = codeFilter.has(code);
-              return (
-                <DropdownMenuCheckboxItem
-                  key={code}
-                  checked={isActive}
-                  onCheckedChange={() => onCodeToggle(code)}
-                  onSelect={(e) => e.preventDefault()}
-                  className={cn(
-                    "gap-2 px-2 py-1 text-xs",
-                    isActive && "font-medium"
-                  )}
-                >
-                  <span className="font-mono text-[11px]">{code}</span>
-                </DropdownMenuCheckboxItem>
-              );
-            })
-          )}
-        </DropdownMenuContent>
-      </DropdownMenu>
+      {/* Fixed width, because the combobox's own root is `flex-1` and would
+          otherwise eat whatever the pills leave behind. Height matched to the
+          filter pills beside it — the shared control is built for a form row,
+          which is taller than a toolbar wants. */}
+      <div className="flex w-72 shrink-0">
+        <MultiSearchableCombobox
+          options={codeOptions}
+          values={[...codeFilter]}
+          onChange={(values) => onCodeChange(values as FindingCode[])}
+          placeholder="All checks"
+          triggerClassName="min-h-0 h-6 flex-nowrap overflow-hidden rounded py-0 text-xs"
+        />
+      </div>
 
       {anyActive && (
-        <Button
-          variant="ghost"
-          size="xs"
-          onClick={onClear}
-          aria-label="Clear all filters"
-          className="ml-auto"
-        >
+        <Button variant="ghost" size="xs" onClick={onClear} aria-label="Clear all filters">
           <X className="h-3 w-3" />
           Clear filters
         </Button>
       )}
+
+      <span className="ml-auto text-xs text-muted-foreground">
+        {ruleCount} rule{ruleCount !== 1 ? "s" : ""} analysed
+      </span>
     </div>
   );
 }

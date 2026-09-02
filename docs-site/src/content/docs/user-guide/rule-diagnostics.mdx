@@ -33,9 +33,14 @@ a sentence, and links to the fix.
 ## Run diagnostics and read findings
 
 1. Open **Rule Diagnostics** (Tools sidebar, or the **Diagnostics** button on the Rules toolbar).
-2. Findings arrive grouped by severity - **error**, **warning**, **info** - with filters by severity
-   and by check.
-3. Each one explains itself, shows the rule it concerns, and offers to copy that rule's UUID.
+2. One list, ordered by what fixing each finding is worth: what is broken first, then how much one
+   fix buys. The filter above it carries every count - **All**, **Errors**, **Warnings**,
+   **Suggestions** (nothing broken, still worth doing) and **Dismissed**.
+3. Each finding is a card: the rule or rules on the left, the evidence on the right, the actions in
+   the header - Merge, Generalise, Not a problem. A colour bar down the edge marks the severity, so a
+   long report can be scanned without reading.
+4. A rule's own text is a link to it. Rules are never truncated; a long one clamps with **Show the
+   full rule** beside it, because you cannot judge a rule you cannot read.
 
 ## What it checks
 
@@ -98,8 +103,8 @@ edit.
   brings you back here afterwards.
 - Duplicates and near-identical families get **Merge**, which opens the
   [merge dialog](../rules/#merge-rules) already filled in with every member, and also brings you back.
-- Anything you have judged fine gets **Not a problem**. The decision is remembered for that budget,
-  and reversible - dismissed findings sit below the list with a **Restore** beside each one.
+- Anything you have judged fine gets **Not a problem**. It moves out of the list to **Dismissed**,
+  where **Restore** brings it back. The decision is remembered for that budget.
 - Change your rules while this is open and a **stale results** banner appears. The old findings stay
   put until you press **Refresh**.
 
