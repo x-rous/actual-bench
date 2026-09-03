@@ -352,13 +352,23 @@ const SHOTS = [
       await accept.click();
       await page.waitForTimeout(3000);
     },
-    // Accepting is local state on a shared page; undo it so later shots and the
-    // budget are untouched.
+    /*
+     * Undo the acceptance.
+     *
+     * Not by clicking "Accepted" again: that button calls the same handler in
+     * both states, and the handler sets the decision to accepted rather than
+     * toggling it, so pressing it a second time re-accepts. "Undo my changes"
+     * is the card's own reset, and the only control that actually clears the
+     * correction.
+     */
     cleanup: async (page) => {
-      const accepted = page.getByRole("button", { name: "Accepted", exact: true }).first();
-      if (await accepted.count()) {
-        await accepted.click();
-        await page.waitForTimeout(1500);
+      const undo = page.getByRole("button", { name: /Undo my changes/ }).first();
+      if ((await undo.count()) === 0) return;
+      await undo.click();
+      await page.waitForTimeout(2000);
+      // Prove it: the button only exists while a correction does.
+      if (await page.getByRole("button", { name: /Undo my changes/ }).count()) {
+        throw new Error("the accepted suggestion was not reset");
       }
     },
   },
