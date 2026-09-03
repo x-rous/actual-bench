@@ -28,11 +28,6 @@ you save on the Payees page.
 *A suggestion carries its own evidence: what changes, how many transactions move, why these were
 grouped, and the rule that stops the duplicates coming back.*
 
-![The "Needs a rule" tab: five payees whose imports are not automated, each with the rule that would fix it.](../../../assets/screenshots/user-guide/payee-cleanup-needs-rule.png)
-
-*These payees are not duplicates - they are correct, and unprotected. Each row carries the condition
-that would keep the next import resolving to it, and how many transactions it is based on.*
-
 ## How it finds duplicates
 
 Two layers, and the difference matters when you are deciding whether to trust a suggestion.
@@ -52,10 +47,16 @@ in **Needs review**, because repetition proves a fragment is shared - not that r
 
 ## Working through the suggestions
 
-A toolbar across the top carries the search box, the **Suggestions / Unused / Dismissed** tabs, the
-confidence filters, **Re-scan** and **Stage cleanup**. Under it, three boxes count what the scan
-found and a fourth - **Pending changes** - counts what you are about to do, and reminds you that none
-of it is written until you save.
+A toolbar across the top carries the search box, the **Suggestions / Unused / Needs a rule /
+Dismissed** tabs, the confidence filters, **Scan again** and **Stage cleanup**. Under it, three boxes
+count what the scan found and a fourth — **Pending changes** — counts what you are about to do, and
+reminds you that none of it is written until you save.
+
+![Payee Cleanup after accepting a suggestion: Pending changes reads "1 merge", and the Stage cleanup button is now live.](../../../assets/screenshots/user-guide/payee-cleanup-staged.png)
+
+*Accepting changes nothing on its own. It fills **Pending changes**, and **Stage cleanup** hands the
+merges, renames and new rules to the normal staged-changes flow — where **Save** on the Payees page
+is what finally writes.*
 
 **Accept _n_ safe** accepts, in one click, only the suggestions that need no judgement. It is
 deliberately stricter than "everything above 90%": the match must be structural rather than inferred,
@@ -75,6 +76,12 @@ result, its confidence, and how many payees collapse into one. Below it, three c
   rules and completed schedule-linked ones (a schedule reaches its payee *through* its rule, so
   counting them separately would report the same relationship twice); and whether the payees disagree
   on Favorite or Category learning. **Reasoning** expands the detector's own account of the grouping.
+
+![A suggestion card with its reasoning open: the confidence figure, why the names matched, why this payee was chosen to keep, and the pattern behind it.](../../../assets/screenshots/user-guide/payee-cleanup-reasoning.png)
+
+*With **Reasoning** open, the card stops asserting and starts explaining: what the score is made of,
+which shared text was detected, why this payee is the one to keep, and the pattern it matched on.
+Worth opening on anything in **Needs review**.*
 - **Future imports** - the optional rule, described below.
 
 Confidence bands: **High** and **Likely** are structural matches. **Needs review** means an
@@ -121,6 +128,12 @@ duplicate again.
 
 The **Needs a rule** tab lists the payees in that position, and proposes the rule that fixes it.
 Nothing on this tab changes a payee; it only adds automation.
+
+![The "Needs a rule" tab: five payees whose imports are not automated, each with the rule that would fix it.](../../../assets/screenshots/user-guide/payee-cleanup-needs-rule.png)
+
+*These payees are not duplicates - they are correct, and unprotected. Each row carries the condition
+that would keep the next import resolving to it, and how many transactions it is based on.*
+
 
 A payee appears only when all of these are true, which is why the list is short:
 
@@ -189,8 +202,15 @@ Reachable from **Tools → Payee Cleanup**, or the **Needs a rule** button on th
 ## Unused payees
 
 The **Unused** tab lists payees with no transactions and no rules pointing at them, ready to stage for
-deletion. Actual Bench applies its own check here and is slightly more cautious than Actual's: it
-also counts rules that *set* a payee, so a payee some rule writes to is never offered for deletion.
+deletion.
+
+![The Unused tab: nine payees with no transactions and no rules, each labelled "no transactions, no rules".](../../../assets/screenshots/user-guide/payee-cleanup-unused.png)
+
+*A different job from merging — nothing here is a duplicate, it is simply dead weight left behind by
+an import or a payee you created once and never used.*
+
+Actual Bench applies its own check here and is slightly more cautious than Actual's: it also counts
+rules that *set* a payee, so a payee some rule writes to is never offered for deletion.
 
 ## What merging actually does
 

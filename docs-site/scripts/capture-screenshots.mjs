@@ -65,6 +65,20 @@ async function selectCurrentMonth(page) {
 }
 
 /**
+ * Select a Payee Cleanup tab and wait for its content.
+ *
+ * Shots share a page, so whichever tab the previous shot left open is the one
+ * this shot starts on — and the scan itself takes a while, because it reads the
+ * whole payee set and its transaction counts before it can propose anything.
+ */
+async function openCleanupTab(page, label) {
+  const tab = page.getByText(label);
+  await tab.waitFor({ timeout: 90000 });
+  await tab.click();
+  await page.waitForTimeout(4000);
+}
+
+/**
  * Back to the reconciliation session list.
  *
  * The page remembers which session you had open, so arriving from the sidebar
@@ -289,6 +303,65 @@ const SHOTS = [
     },
   },
   { name: "payee-cleanup", nav: "Payee Cleanup", url: /\/payees\/cleanup/, budget: "Envelope" },
+  {
+    name: "payee-cleanup-reasoning",
+    area: "user-guide",
+    nav: "Payee Cleanup",
+    url: /\/payees\/cleanup/,
+    budget: "Envelope",
+    // The detector's own account of why these payees were grouped. It is behind
+    // a toggle in the app, so a reader never sees it unless the page shows it.
+    element: "article",
+    prepare: async (page) => {
+      await openCleanupTab(page, /^Suggestions \d+$/);
+      const reasoning = page.getByRole("button", { name: /Reasoning/ }).first();
+      await reasoning.waitFor({ timeout: 60000 });
+      await reasoning.click();
+      await page.waitForTimeout(2500);
+    },
+  },
+  {
+    name: "payee-cleanup-unused",
+    area: "user-guide",
+    nav: "Payee Cleanup",
+    url: /\/payees\/cleanup/,
+    budget: "Envelope",
+    element: "main",
+    trimTo: "tbody tr, li",
+    // Payees nothing points at any more - a different job from merging, and the
+    // page never pictured it.
+    prepare: async (page) => openCleanupTab(page, /^Unused \d+$/),
+  },
+  {
+    name: "payee-cleanup-staged",
+    area: "user-guide",
+    nav: "Payee Cleanup",
+    url: /\/payees\/cleanup/,
+    budget: "Envelope",
+    element: "main",
+    trimTo: "article",
+    /*
+     * Accepting a suggestion does not change anything yet - it fills the staging
+     * bar, and Save on the Payees page is what writes. That is the whole safety
+     * model of the feature and it had no picture.
+     */
+    prepare: async (page) => {
+      await openCleanupTab(page, /^Suggestions \d+$/);
+      const accept = page.getByRole("button", { name: "Accept", exact: true }).first();
+      await accept.waitFor({ timeout: 60000 });
+      await accept.click();
+      await page.waitForTimeout(3000);
+    },
+    // Accepting is local state on a shared page; undo it so later shots and the
+    // budget are untouched.
+    cleanup: async (page) => {
+      const accepted = page.getByRole("button", { name: "Accepted", exact: true }).first();
+      if (await accepted.count()) {
+        await accepted.click();
+        await page.waitForTimeout(1500);
+      }
+    },
+  },
   {
     name: "bank-reconciliation",
     nav: "Bank Reconciliation",
