@@ -246,8 +246,10 @@ export const DEFAULT_ACTION_FIELD = "category";
 
 /** Action fields available inside a split child. */
 export function getSplitActionFields(): Record<string, FieldDef> {
-  return Object.fromEntries(
-    Object.entries(ACTION_FIELDS).filter(([key]) => !PARENT_ONLY_ACTION_FIELDS.has(key))
+  return table(
+    Object.fromEntries(
+      Object.entries(ACTION_FIELDS).filter(([key]) => !PARENT_ONLY_ACTION_FIELDS.has(key))
+    )
   );
 }
 
@@ -304,7 +306,10 @@ export function getConditionOps(field: string): Record<string, OpDef> {
   const realField = def?.pseudoFor?.field ?? field;
   const type = fieldType(realField);
   const ops = getValidOps(realField);
-  const out: Record<string, OpDef> = {};
+  // Null prototype for the same reason the static tables have one: callers look an operator up
+  // by name (`getConditionOps(field)[part.op]`), and on a plain object `["toString"]` is truthy,
+  // which would let a condition with `op: "toString"` pass validation.
+  const out: Record<string, OpDef> = table({});
   for (const op of ops) {
     out[op] = { label: friendlyOp(op, type), hasValue: !VALUELESS_OPS.has(op) };
   }

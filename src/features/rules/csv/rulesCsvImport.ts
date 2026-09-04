@@ -120,11 +120,12 @@ function resolveValue(
 // ─── Formula guard ────────────────────────────────────────────────────────────
 
 /**
- * Inverse of the exporter's `guardCsvText`. Only strips the leading `'` when it actually guards a
- * formula-leading character, so a value the user genuinely began with an apostrophe survives.
+ * Inverse of the exporter's `guardCsvText`. Strips exactly one leading `'`, and only when what
+ * follows is itself guarded — a formula lead, or another apostrophe. So `'=1+1` round-trips as
+ * `''=1+1` and comes back whole, while a plain `tis` is never touched.
  */
 function unguardCsvText(value: string): string {
-  return /^'[=+\-@\t\r]/.test(value) ? value.slice(1) : value;
+  return /^'['=+\-@\t\r]/.test(value) ? value.slice(1) : value;
 }
 
 // ─── Options ──────────────────────────────────────────────────────────────────

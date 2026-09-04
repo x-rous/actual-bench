@@ -60,7 +60,8 @@ let `post` handle what is left over.
 5. Save to stage the rule.
 
 Nothing is flagged red while you are still typing. Validation waits until you edit a row or try to
-save, then marks what is missing and warns about catch-all or destructive combinations. Close the
+save, then marks what is missing and warns about destructive combinations and about a rule with no
+conditions, which never matches. Close the
 drawer with unsaved edits and it asks first.
 
 ## Add conditions
@@ -101,8 +102,9 @@ The `ƒ` button switches an action to an **Excel-style formula**, run by HyperFo
 `=IF(ISBLANK(notes), imported_payee, notes)`. It has to start with `=`. One row can be a template or
 a formula, never both.
 
-Both modes are available on every action except **payee**, **category** and **account** - those hold
-ids rather than text, so computing one would not help.
+Both modes are available on every **set** action except **payee**, **category** and **account** -
+those hold ids rather than text, so computing one would not help. Prepend/append notes, delete
+transaction, link schedule and the split **Allocate** row have their own inputs and no mode toggle.
 
 ## Split a transaction across categories
 

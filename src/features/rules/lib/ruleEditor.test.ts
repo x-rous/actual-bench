@@ -461,3 +461,25 @@ describe("validateRuleDraft — non-dense split indices", () => {
     expect(result.formErrors).toEqual([]);
   });
 });
+
+describe("validateRuleDraft — an inherited name is not an operator", () => {
+  it.each(["toString", "constructor", "valueOf"])("rejects op %p", (op) => {
+    const result = validateRuleDraft({
+      stage: "default",
+      conditionsOp: "and",
+      conditions: createEditorParts([{ field: "amount", op, value: "x" }]),
+      actions: createEditorParts([{ op: "set", field: "notes", value: "y", type: "string" }]),
+    });
+    expect(result.conditionErrors.flat().join(" ")).toContain("select a valid operator");
+  });
+
+  it.each(["toString", "constructor"])("rejects action op %p", (op) => {
+    const result = validateRuleDraft({
+      stage: "default",
+      conditionsOp: "and",
+      conditions: createEditorParts([{ field: "payee", op: "is", value: "p1", type: "id" }]),
+      actions: createEditorParts([{ op, field: "notes", value: "y", type: "string" }]),
+    });
+    expect(result.actionErrors.flat().join(" ")).toContain("select a valid action");
+  });
+});

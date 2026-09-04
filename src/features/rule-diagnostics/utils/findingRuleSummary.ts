@@ -16,7 +16,9 @@ import { rulePreview, type EntityMaps } from "@/features/rules/utils/rulePreview
  */
 export function findingRuleSummary(rule: Rule, maps: EntityMaps): string {
   if (rule.conditions.length === 0 && rule.actions.length === 0) {
-    return "(catch-all rule with no actions)";
+    // No conditions means `evalConditions` returns false, so this rule never fires — calling it
+    // a catch-all said the opposite of what the engine does.
+    return "(empty rule: no conditions, no actions)";
   }
   return rulePreview(rule, maps);
 }

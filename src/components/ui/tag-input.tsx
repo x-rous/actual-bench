@@ -9,11 +9,14 @@ export function TagInput({
   onChange,
   placeholder = "Type and press Enter…",
   compact = false,
+  ariaLabel,
 }: {
   values: string[];
   onChange: (v: string[]) => void;
   placeholder?: string;
   compact?: boolean;
+  /** Accessible name for the entry field. The chips carry their own remove labels. */
+  ariaLabel?: string;
 }) {
   const [input, setInput] = useState("");
 
@@ -63,6 +66,7 @@ export function TagInput({
         }}
         onBlur={addTag}
         placeholder={values.length === 0 ? placeholder : "add more…"}
+        aria-label={ariaLabel}
         className="min-w-20 flex-1 bg-transparent text-xs text-foreground placeholder:text-muted-foreground focus:outline-none"
       />
     </div>

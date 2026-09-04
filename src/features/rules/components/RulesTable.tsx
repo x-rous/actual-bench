@@ -371,7 +371,9 @@ export function RulesTable({ onEdit, onMerge, payeeId, categoryId, accountId }: 
                       {rule.conditions.length === 0 ? (
                         <span className="flex items-center gap-1.5">
                           <span className="text-[11px] italic text-muted-foreground">No conditions</span>
-                          <Badge variant="status-warning" className="text-[10px] font-normal">catch-all</Badge>
+                          {/* An empty condition list makes `evalConditions` return false, so the
+                              rule never fires — the opposite of a catch-all. */}
+                          <Badge variant="status-warning" className="text-[10px] font-normal">never matches</Badge>
                         </span>
                       ) : (
                         <div className="flex flex-col gap-1">

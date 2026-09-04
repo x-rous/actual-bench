@@ -40,10 +40,13 @@ function exportDisplayValue(
  * is unaffected. Applied to text only — a numeric cell like `-50` is a number, not a formula, and
  * guarding it would make the file harder to read for no gain.
  */
-const FORMULA_LEAD = /^[=+\-@\t\r]/;
+// A leading apostrophe is part of the encoding, so a value that already starts with one has to
+// be escaped too — otherwise `'=1+1` exports unchanged and the importer strips the user's own
+// apostrophe, silently rewriting the rule.
+const NEEDS_GUARD = /^['=+\-@\t\r]/;
 
 export function guardCsvText(value: string): string {
-  return FORMULA_LEAD.test(value) ? `'${value}` : value;
+  return NEEDS_GUARD.test(value) ? `'${value}` : value;
 }
 
 /**

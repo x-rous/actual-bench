@@ -401,15 +401,34 @@ describe("CSV formula injection", () => {
     expect(csv).not.toContain("'-50");
   });
 
-  it("keeps a value the user genuinely began with an apostrophe", () => {
-    const rule = makeRule("r1", {
-      conditions: [{ field: "notes", op: "contains", value: "'tis", type: "string" }],
-      actions: [{ field: "notes", op: "set", value: "x", type: "string" }],
-    });
-    const result = importRulesFromCsv(exportRulesToCsv(staged(rule), maps), maps);
+  // The apostrophe is part of the encoding, so a value that already starts with one has to be
+  // escaped as well — otherwise the importer eats the user's own character.
+  it.each(["'tis", "'=1+1", "''double", "'@x"])(
+    "round-trips %p without eating the leading apostrophe",
+    (value) => {
+      const rule = makeRule("r1", {
+        conditions: [{ field: "notes", op: "contains", value, type: "string" }],
+        actions: [{ field: "notes", op: "set", value: "x", type: "string" }],
+      });
+      const result = importRulesFromCsv(exportRulesToCsv(staged(rule), maps), maps);
+      expect("rules" in result).toBe(true);
+      if (!("rules" in result)) return;
+      expect(result.rules[0].conditions[0].value).toBe(value);
+    }
+  );
+
+  it("still imports a formula guarded by the pre-existing single-quote convention", () => {
+    // Files exported before this PR wrote `'=…` for formulas. The new un-guard has to keep
+    // reading them, since the guard character and the pattern are the same.
+    const legacy = [
+      "rule_id,stage,conditions_op,row_type,field,op,value",
+      "r1,default,and,condition,notes,contains,grocery",
+      "r1,,,action,notes,set-formula,'=UPPER(notes)",
+    ].join("\n");
+    const result = importRulesFromCsv(legacy, maps);
     expect("rules" in result).toBe(true);
     if (!("rules" in result)) return;
-    expect(result.rules[0].conditions[0].value).toBe("'tis");
+    expect(result.rules[0].actions[0].options?.formula).toBe("=UPPER(notes)");
   });
 
   it("rejects an options cell setting both inflow and outflow", () => {

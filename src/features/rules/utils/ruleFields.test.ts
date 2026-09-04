@@ -320,10 +320,20 @@ describe("prototype keys are not fields", () => {
     expect(isValidOp(key, "is")).toBe(false);
   });
 
+  // `toEqual({})` compares own enumerable properties and ignores the prototype, so it passes for
+  // a plain object too. Assert the *lookup* — that is what callers do, and it is what was broken:
+  // `getConditionOps(field)[part.op]` returned `Object.prototype.toString` and a condition with
+  // `op: "toString"` validated clean.
   it.each(inherited)("%p is not a condition field or an action field", (key) => {
     expect(CONDITION_FIELDS[key]).toBeUndefined();
     expect(ACTION_FIELDS[key]).toBeUndefined();
-    expect(getConditionOps(key)).toEqual({});
+    expect(getSplitActionFields()[key]).toBeUndefined();
+  });
+
+  it.each(inherited)("%p does not resolve as an operator on a real field", (key) => {
+    expect(getConditionOps("amount")[key]).toBeUndefined();
+    expect(getConditionOps("notes")[key]).toBeUndefined();
+    expect(getConditionOps(key)[key]).toBeUndefined();
   });
 
   it.each(inherited)("%p is not an allocation method", (key) => {

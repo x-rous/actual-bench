@@ -76,6 +76,9 @@ function ConditionValueInput({
   const ops = getConditionOps(displayField);
   const opDef = ops[condition.op];
   const kind = conditionValueKind(displayField, condition.op);
+  // Every value control needs an accessible name — the field select above it is a separate
+  // control, so a screen reader reaches these inputs with nothing identifying them.
+  const valueLabel = `${fieldDef?.label ?? displayField} value`;
 
   if (!opDef || kind === "none") return null;
 
@@ -92,6 +95,7 @@ function ConditionValueInput({
           type="number"
           className={cn(inputCls, compact && "h-7")}
           value={range.num1}
+          aria-label={`${valueLabel} from`}
           onChange={(e) =>
             onChange({ ...condition, value: { ...range, num1: Number(e.target.value) } })
           }
@@ -102,6 +106,7 @@ function ConditionValueInput({
           type="number"
           className={cn(inputCls, compact && "h-7")}
           value={range.num2}
+          aria-label={`${valueLabel} to`}
           onChange={(e) =>
             onChange({ ...condition, value: { ...range, num2: Number(e.target.value) } })
           }
@@ -139,6 +144,7 @@ function ConditionValueInput({
         values={arr}
         onChange={(v) => onChange({ ...condition, value: v })}
         placeholder="Type and press Enter…"
+        ariaLabel={valueLabel}
         compact={compact}
       />
     );
@@ -153,6 +159,7 @@ function ConditionValueInput({
           values={parseTagValue(condition.value)}
           onChange={(v) => onChange({ ...condition, value: formatTagValue(v) })}
           placeholder="Type a tag and press Enter…"
+          ariaLabel={valueLabel}
           compact={compact}
         />
         <span className="text-[10px] text-muted-foreground">
@@ -173,7 +180,7 @@ function ConditionValueInput({
           checked={checked}
           onChange={(e) => onChange({ ...condition, value: e.target.checked })}
           className="h-4 w-4 cursor-pointer rounded accent-primary"
-          aria-label={`${fieldDef?.label ?? displayField} is`}
+          aria-label={valueLabel}
         />
         <span className="text-xs text-muted-foreground">{checked ? "Yes" : "No"}</span>
       </div>
@@ -186,6 +193,7 @@ function ConditionValueInput({
         type="date"
         className={cn(inputCls, compact && "h-7")}
         value={valueToString(condition.value)}
+        aria-label={valueLabel}
         onChange={(e) => onChange({ ...condition, value: e.target.value })}
       />
     );
@@ -215,6 +223,7 @@ function ConditionValueInput({
         type="number"
         className={cn(inputCls, compact && "h-7")}
         value={valueToString(condition.value)}
+        aria-label={valueLabel}
         onChange={(e) =>
           onChange({
             ...condition,
@@ -233,6 +242,7 @@ function ConditionValueInput({
       <input
         className={cn(inputCls, compact && "h-7")}
         value={valueToString(condition.value)}
+        aria-label={valueLabel}
         onChange={(e) => onChange({ ...condition, value: e.target.value })}
         placeholder="regex pattern…"
       />
@@ -244,6 +254,7 @@ function ConditionValueInput({
     <input
       className={cn(inputCls, compact && "h-7")}
       value={valueToString(condition.value)}
+      aria-label={valueLabel}
       onChange={(e) => onChange({ ...condition, value: e.target.value })}
       placeholder="value…"
     />

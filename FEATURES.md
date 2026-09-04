@@ -238,7 +238,7 @@ A standalone page (own navigation item) for browsing the active budget's exporte
 ## Rules
 
 - Create, edit, and delete rules with a full condition/action builder
-- Rule editor starts new rules with a guided default condition (`Payee is`) and a default action row, but keeps validation neutral (no immediate error banners); required fields validate when rows are edited or save is attempted, with inline warnings for risky catch-all and destructive rule combinations
+- Rule editor starts new rules with a guided default condition (`Payee is`) and a default action row, but keeps validation neutral (no immediate error banners); required fields validate when rows are edited or save is attempted, with inline warnings for destructive combinations and for a rule with no conditions, which never matches and so never runs
 - Closing the rule drawer with unsaved edits prompts for confirmation instead of silently discarding the draft
 - Deleting a rule from the drawer now uses the same confirmation flow as deleting from the rules table
 - Three execution stages: `pre`, `default`, `post`
