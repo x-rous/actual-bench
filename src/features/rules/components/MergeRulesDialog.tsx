@@ -13,7 +13,8 @@ import {
 import { useStagedStore } from "@/store/staged";
 import { generateId } from "@/lib/uuid";
 import { RuleEditorFields } from "./RuleEditorFields";
-import { CONDITION_FIELDS, ACTION_FIELDS } from "../utils/ruleFields";
+import { isSplitRule } from "../lib/splitActions";
+import { DEFAULT_ACTION_FIELD, DEFAULT_CONDITION_FIELD } from "../utils/ruleFields";
 import { useEntityOptionsMap } from "../hooks/useEntityOptions";
 import {
   createEditorPart,
@@ -48,8 +49,6 @@ type Props = {
   onConfirmed?: (newRuleId: string) => void;
 };
 
-const DEFAULT_CONDITION_FIELD = Object.keys(CONDITION_FIELDS)[0] ?? "payee";
-const DEFAULT_ACTION_FIELD = Object.keys(ACTION_FIELDS)[0] ?? "category";
 
 export function MergeRulesDialog({
   open,
@@ -94,6 +93,19 @@ export function MergeRulesDialog({
     );
     if (hasScheduleGeneratedRule) {
       toast.error("Schedule-generated rules cannot be merged. Manage them from the Schedules page.");
+      onOpenChange(false);
+      return;
+    }
+
+    // Merging flattens every rule's actions into one list. Two split rules would contribute two
+    // allocations to the same split index, which is not a rule anyone meant to write — and the
+    // right resolution depends on intent, so ask rather than guess.
+    const hasSplitRule = ruleIds.some((id) => {
+      const actions = stagedRules[id]?.entity.actions;
+      return actions !== undefined && isSplitRule(actions);
+    });
+    if (hasSplitRule) {
+      toast.error("Split rules cannot be merged. Edit them individually instead.");
       onOpenChange(false);
       return;
     }

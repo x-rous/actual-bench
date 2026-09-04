@@ -1,12 +1,13 @@
 "use client";
 
 import { type ReactNode } from "react";
-import { ChevronDown, Plus } from "lucide-react";
+import { ChevronDown, Plus, Split, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { ConditionRow } from "./ConditionRow";
 import { ActionRow } from "./ActionRow";
 import { STAGE_OPTIONS } from "../utils/ruleFields";
+import { groupBySplitIndex } from "../lib/splitActions";
 import type { EditorPart, RuleDraftValidation, RuleEntityOptionsMap } from "../lib/ruleEditor";
 import type { ConditionOrAction, ConditionsOp, RuleStage } from "@/types/entities";
 
@@ -24,7 +25,10 @@ type Props = {
   onStageChange: (stage: RuleStage) => void;
   onConditionsOpChange: (conditionsOp: ConditionsOp) => void;
   onAddCondition: () => void;
-  onAddAction: () => void;
+  onAddAction: (splitIndex?: number) => void;
+  /** Omitted where splits cannot be created, e.g. the merge dialog. */
+  onAddSplit?: () => void;
+  onRemoveSplit?: (splitIndex: number) => void;
   onConditionChange: (clientId: string, condition: ConditionOrAction) => void;
   onConditionDelete: (clientId: string) => void;
   onConditionTouched: (clientId: string) => void;
@@ -50,6 +54,8 @@ export function RuleEditorFields({
   onConditionsOpChange,
   onAddCondition,
   onAddAction,
+  onAddSplit,
+  onRemoveSplit,
   onConditionChange,
   onConditionDelete,
   onConditionTouched,
@@ -60,6 +66,8 @@ export function RuleEditorFields({
   compact = false,
 }: Props) {
   const visibleFormErrors = showValidation ? validation.formErrors : [];
+  // Group 0 is the parent transaction and is always present; 1..n are the split children.
+  const actionGroups = groupBySplitIndex(actions, (entry) => entry.part);
 
   return (
     <div className="flex-1 space-y-6 overflow-y-auto px-4 py-4">
@@ -158,7 +166,7 @@ export function RuleEditorFields({
 
         {conditions.length === 0 ? (
           <p className="text-xs italic text-muted-foreground">
-            No conditions yet. This rule will apply to every transaction.
+            No conditions yet. A rule with no conditions never matches, so it will never run.
           </p>
         ) : (
           <div className="space-y-2">
@@ -188,42 +196,119 @@ export function RuleEditorFields({
         )}
       </div>
 
-      {/* Actions section */}
+      {/* Actions section — grouped by split, as Actual groups them */}
       <div className="space-y-2">
         <div className="flex items-center justify-between">
           <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             Actions
           </p>
-          <Button variant="ghost" size="sm" className="h-6 text-xs" onClick={onAddAction}>
-            <Plus className="mr-1 h-3 w-3" />
-            Add action
-          </Button>
+          {onAddSplit && !scheduleLinked && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-6 text-xs"
+              onClick={onAddSplit}
+              aria-label="Add a split to this rule"
+            >
+              <Split className="mr-1 h-3 w-3" aria-hidden="true" />
+              Add split
+            </Button>
+          )}
         </div>
 
         {actions.length === 0 ? (
-          <p className="text-xs italic text-muted-foreground">
-            No actions yet. Add at least one before saving.
-          </p>
-        ) : (
           <div className="space-y-2">
-            {actions.map((entry, index) => {
-              const rowErrors =
-                showValidation || touchedActionIds.has(entry.clientId)
-                  ? validation.actionErrors[index] ?? []
-                  : [];
+            <p className="text-xs italic text-muted-foreground">
+              No actions yet. Add at least one before saving.
+            </p>
+            <Button variant="ghost" size="sm" className="h-6 text-xs" onClick={() => onAddAction(0)}>
+              <Plus className="mr-1 h-3 w-3" aria-hidden="true" />
+              Add action
+            </Button>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {actionGroups.map((group) => {
+              const isSplit = group.index > 0;
+              const headingId = `rule-action-group-${group.index}`;
               return (
-                <ActionRow
-                  key={entry.clientId}
-                  action={entry.part}
-                  entityOptions={entityOptions}
-                  error={rowErrors[0]}
-                  compact={compact}
-                  onChange={(updated) => {
-                    onActionTouched(entry.clientId);
-                    onActionChange(entry.clientId, updated);
-                  }}
-                  onDelete={() => onActionDelete(entry.clientId)}
-                />
+                <section
+                  key={group.index}
+                  aria-labelledby={headingId}
+                  className={cn(
+                    "space-y-2",
+                    isSplit && "rounded-md border border-border bg-muted/20 px-2 py-2"
+                  )}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <p
+                      id={headingId}
+                      className={cn(
+                        "text-[11px] font-semibold uppercase tracking-wide",
+                        isSplit ? "text-primary" : "text-muted-foreground"
+                      )}
+                    >
+                      {isSplit ? `Split ${group.index}` : "Apply to the whole transaction"}
+                    </p>
+                    <div className="flex items-center gap-1">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-6 text-xs"
+                        onClick={() => onAddAction(group.index)}
+                        aria-label={
+                          isSplit ? `Add an action to split ${group.index}` : "Add an action"
+                        }
+                      >
+                        <Plus className="mr-1 h-3 w-3" aria-hidden="true" />
+                        Add action
+                      </Button>
+                      {isSplit && onRemoveSplit && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-6 w-6 text-muted-foreground hover:text-destructive"
+                          onClick={() => onRemoveSplit(group.index)}
+                          aria-label={`Remove split ${group.index}`}
+                        >
+                          <X className="h-3.5 w-3.5" aria-hidden="true" />
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+
+                  {group.items.length === 0 ? (
+                    <p className="text-xs italic text-muted-foreground">
+                      {isSplit
+                        ? "This split has no actions. Add one, or remove the split."
+                        : "Nothing is applied to the whole transaction."}
+                    </p>
+                  ) : (
+                    <div className="space-y-2">
+                      {group.items.map((entry) => {
+                        const index = actions.indexOf(entry);
+                        const rowErrors =
+                          showValidation || touchedActionIds.has(entry.clientId)
+                            ? validation.actionErrors[index] ?? []
+                            : [];
+                        return (
+                          <ActionRow
+                            key={entry.clientId}
+                            action={entry.part}
+                            entityOptions={entityOptions}
+                            error={rowErrors[0]}
+                            compact={compact}
+                            onChange={(updated) => {
+                              onActionTouched(entry.clientId);
+                              onActionChange(entry.clientId, updated);
+                            }}
+                            onDelete={() => onActionDelete(entry.clientId)}
+                          />
+                        );
+                      })}
+                    </div>
+                  )}
+                </section>
               );
             })}
           </div>

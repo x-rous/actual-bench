@@ -41,3 +41,91 @@ describe("ruleSchema options mutual exclusivity", () => {
     expect(result.success).toBe(false);
   });
 });
+
+describe("ruleSchema split and amount options", () => {
+  it("round-trips a split rule without dropping splitIndex or method (F-118, F-119)", () => {
+    const rule = {
+      ...baseRule,
+      actions: [
+        { op: "set", field: "payee", value: "p1", type: "id" },
+        {
+          op: "set-split-amount",
+          value: null,
+          options: { method: "fixed-percent" as const, splitIndex: 1 },
+        },
+        {
+          op: "set",
+          field: "category",
+          value: "c1",
+          type: "id",
+          options: { splitIndex: 1 },
+        },
+      ],
+    };
+    const result = ruleSchema.safeParse(rule);
+    expect(result.success).toBe(true);
+    expect(result.success && result.data.actions[1].options).toEqual({
+      method: "fixed-percent",
+      splitIndex: 1,
+    });
+    expect(result.success && result.data.actions[2].options).toEqual({ splitIndex: 1 });
+  });
+
+  it("rejects a negative or fractional splitIndex", () => {
+    for (const splitIndex of [-1, 1.5]) {
+      const result = ruleSchema.safeParse({
+        ...baseRule,
+        actions: [{ op: "set", field: "notes", value: "x", options: { splitIndex } }],
+      });
+      expect(result.success).toBe(false);
+    }
+  });
+
+  it("rejects a method on anything but set-split-amount", () => {
+    const result = ruleSchema.safeParse({
+      ...baseRule,
+      actions: [
+        { op: "set", field: "notes", value: "x", options: { method: "remainder" as const } },
+      ],
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects a set-split-amount missing its method or index", () => {
+    for (const options of [{ splitIndex: 1 }, { method: "remainder" as const }]) {
+      const result = ruleSchema.safeParse({
+        ...baseRule,
+        actions: [{ op: "set-split-amount", value: null, options }],
+      });
+      expect(result.success).toBe(false);
+    }
+  });
+
+  it("accepts inflow or outflow on an amount condition", () => {
+    for (const options of [{ inflow: true }, { outflow: true }]) {
+      const result = ruleSchema.safeParse({
+        ...baseRule,
+        conditions: [{ field: "amount", op: "gt", value: 10, type: "number", options }],
+      });
+      expect(result.success).toBe(true);
+    }
+  });
+
+  it("rejects inflow and outflow together, and either on a non-amount field", () => {
+    expect(
+      ruleSchema.safeParse({
+        ...baseRule,
+        conditions: [
+          { field: "amount", op: "gt", value: 10, options: { inflow: true, outflow: true } },
+        ],
+      }).success
+    ).toBe(false);
+
+    expect(
+      ruleSchema.safeParse({
+        ...baseRule,
+        conditions: [{ field: "notes", op: "contains", value: "x", options: { inflow: true } }],
+      }).success
+    ).toBe(false);
+  });
+});

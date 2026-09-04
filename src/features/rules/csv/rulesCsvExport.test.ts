@@ -32,7 +32,7 @@ function makeRule(id: string, overrides: Partial<Rule> = {}): Rule {
 describe("exportRulesToCsv", () => {
   it("outputs a header row even for an empty staged map", () => {
     const result = exportRulesToCsv({}, emptyMaps);
-    expect(result).toBe("rule_id,stage,conditions_op,row_type,field,op,value");
+    expect(result).toBe("rule_id,stage,conditions_op,row_type,field,op,value,split_index,options");
   });
 
   it("skips deleted rules", () => {
@@ -212,5 +212,123 @@ describe("exportRulesToCsv", () => {
     expect(action.op).toBe("set");
     expect(action.value).toBe("");
     expect(action.options).toEqual({ template: "{{regex imported_payee 'foo' 'bar'}}" });
+  });
+});
+
+// ─── Lossless round-trip (F-123) ──────────────────────────────────────────────
+
+describe("CSV round-trip", () => {
+  const maps = {
+    payees: { p1: { entity: { id: "p1", name: "Costco" }, isDeleted: false } },
+    categories: {
+      c1: { entity: { id: "c1", name: "Groceries" }, isDeleted: false },
+      c2: { entity: { id: "c2", name: "Household" }, isDeleted: false },
+      c3: { entity: { id: "c3", name: "Fuel" }, isDeleted: false },
+    },
+    accounts: {},
+    categoryGroups: {},
+  };
+
+  // Every shape the exporter has to encode: an inflow condition, a template, a formula, and a
+  // three-way split using three different allocation methods.
+  const rule = makeRule("r1", {
+    stage: "pre",
+    conditions: [
+      { field: "payee", op: "is", value: "p1", type: "id" },
+      { field: "amount", op: "gt", value: 10, type: "number", options: { inflow: true } },
+      { field: "notes", op: "hasTags", value: "#bulk", type: "string" },
+    ],
+    actions: [
+      { field: "notes", op: "set", value: "", type: "string", options: { template: "{{payee}}" } },
+      { field: "payee_name", op: "set", value: "", type: "string", options: { formula: "=UPPER(notes)" } },
+      { op: "set-split-amount", value: 12.5, type: "number", options: { method: "fixed-amount", splitIndex: 1 } },
+      { field: "category", op: "set", value: "c1", type: "id", options: { splitIndex: 1 } },
+      { op: "set-split-amount", value: 25, type: "number", options: { method: "fixed-percent", splitIndex: 2 } },
+      { field: "category", op: "set", value: "c2", type: "id", options: { splitIndex: 2 } },
+      { op: "set-split-amount", value: null, type: "number", options: { method: "remainder", splitIndex: 3 } },
+      { field: "category", op: "set", value: "c3", type: "id", options: { splitIndex: 3 } },
+    ],
+  });
+
+  it("survives export → import with its splits and options intact", () => {
+    const csv = exportRulesToCsv(staged(rule), maps);
+    const result = importRulesFromCsv(csv, maps);
+    expect("rules" in result).toBe(true);
+    if (!("rules" in result)) return;
+
+    expect(result.skipped).toBe(0);
+    const imported = result.rules[0];
+    expect(imported.stage).toBe("pre");
+
+    // Conditions, including the inflow marker and the tag value.
+    expect(imported.conditions).toEqual([
+      { field: "payee", op: "is", value: "p1", type: "id" },
+      { field: "amount", op: "gt", value: "10", type: "number", options: { inflow: true } },
+      { field: "notes", op: "hasTags", value: "#bulk", type: "string" },
+    ]);
+
+    // Every split kept its index, its method and its value.
+    expect(imported.actions.map((a) => [a.op, a.value, a.options])).toEqual([
+      ["set", "", { template: "{{payee}}" }],
+      ["set", "", { formula: "=UPPER(notes)" }],
+      ["set-split-amount", 12.5, { method: "fixed-amount", splitIndex: 1 }],
+      ["set", "c1", { splitIndex: 1 }],
+      ["set-split-amount", 25, { method: "fixed-percent", splitIndex: 2 }],
+      ["set", "c2", { splitIndex: 2 }],
+      ["set-split-amount", null, { method: "remainder", splitIndex: 3 }],
+      ["set", "c3", { splitIndex: 3 }],
+    ]);
+  });
+
+  it("round-trips a split whose amount comes from a formula", () => {
+    const formulaSplit = makeRule("r2", {
+      conditions: [{ field: "payee", op: "is", value: "p1", type: "id" }],
+      actions: [
+        {
+          op: "set-split-amount",
+          value: null,
+          type: "number",
+          options: { method: "formula", formula: "=amount * 0.2", splitIndex: 1 },
+        },
+        { field: "category", op: "set", value: "c1", type: "id", options: { splitIndex: 1 } },
+      ],
+    });
+    const result = importRulesFromCsv(exportRulesToCsv(staged(formulaSplit), maps), maps);
+    expect("rules" in result).toBe(true);
+    if (!("rules" in result)) return;
+    expect(result.rules[0].actions[0].options).toEqual({
+      method: "formula",
+      formula: "=amount * 0.2",
+      splitIndex: 1,
+    });
+  });
+
+  it("still imports a file exported before the split_index and options columns existed", () => {
+    const legacy = [
+      "rule_id,stage,conditions_op,row_type,field,op,value",
+      "r1,default,and,condition,notes,contains,grocery",
+      "r1,,,action,category,set,Groceries",
+    ].join("\n");
+    const result = importRulesFromCsv(legacy, maps);
+    expect("rules" in result).toBe(true);
+    if (!("rules" in result)) return;
+    expect(result.skipped).toBe(0);
+    expect(result.rules[0].conditions[0]).toMatchObject({ field: "notes", op: "contains" });
+    expect(result.rules[0].actions[0]).toMatchObject({ field: "category", op: "set", value: "c1" });
+    expect(result.rules[0].actions[0].options).toBeUndefined();
+  });
+
+  it("skips a rule with an action op it does not understand, rather than rewriting it as a set", () => {
+    const bogus = [
+      "rule_id,stage,conditions_op,row_type,field,op,value,split_index,options",
+      "r1,default,and,condition,notes,contains,grocery,,",
+      "r1,,,action,category,frobnicate,Groceries,,",
+    ].join("\n");
+    const result = importRulesFromCsv(bogus, maps);
+    expect("rules" in result).toBe(true);
+    if (!("rules" in result)) return;
+    expect(result.rules).toHaveLength(0);
+    expect(result.skipped).toBe(1);
+    expect(result.skipReasons[0].reason).toContain('unsupported action "frobnicate"');
   });
 });

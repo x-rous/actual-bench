@@ -45,10 +45,19 @@ function amountToInternal(value: ConditionOrAction["value"]): ConditionOrAction[
   return value;
 }
 
+/**
+ * A `set-split-amount` action has no field, so the field-type lookup below cannot classify it.
+ * Only the `fixed-amount` method carries money; `fixed-percent` is a plain percentage that must
+ * survive untouched, and `formula`/`remainder` carry no value.
+ */
+function isFixedSplitAmount(part: ConditionOrAction): boolean {
+  return part.op === "set-split-amount" && part.options?.method === "fixed-amount";
+}
+
 function prepareRuleParts(parts: ConditionOrAction[]): ConditionOrAction[] {
   return parts.map((part) => {
     const definition = CONDITION_FIELDS[part.field ?? ""] ?? ACTION_FIELDS[part.field ?? ""];
-    if (definition?.type !== "number") return part;
+    if (definition?.type !== "number" && !isFixedSplitAmount(part)) return part;
 
     let value: ConditionOrAction["value"] = part.value;
     if (typeof value === "string" && value !== "") value = Number(value);

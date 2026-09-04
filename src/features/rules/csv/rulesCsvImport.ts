@@ -1,7 +1,7 @@
 import { parseCsvLine, CSV_MAX_BYTES } from "@/lib/csv";
 import { generateId } from "@/lib/uuid";
-import { CONDITION_FIELDS, ACTION_FIELDS } from "../utils/ruleFields";
-import type { Rule, Payee, RuleStage, ConditionsOp, ConditionOrAction } from "@/types/entities";
+import { ACTION_FIELDS, ACTION_OPS, CONDITION_FIELDS, isAllocationMethod } from "../utils/ruleFields";
+import type { Rule, Payee, RuleStage, ConditionsOp, ConditionOrAction, RuleOptions } from "@/types/entities";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -117,6 +117,40 @@ function resolveValue(
   return resolveScalarValue(field, rawValue, maps, fieldDefs, createdPayees, newPayees, badRefs);
 }
 
+// ─── Options ──────────────────────────────────────────────────────────────────
+
+/**
+ * Inverse of the exporter's `encodeOptions`: a `k=v;k=v` cell plus the dedicated `split_index`
+ * column. Unrecognised keys are ignored rather than carried through — the CSV is a user-editable
+ * surface, and a typo should not become an option the engine will reject.
+ */
+function decodeOptions(raw: string, splitIndexRaw: string): RuleOptions | undefined {
+  const options: RuleOptions = {};
+
+  for (const pair of raw.split(";")) {
+    const [key, value] = pair.split("=").map((p) => p.trim());
+    if (!key) continue;
+    if (key === "method" && isAllocationMethod(value)) options.method = value;
+    else if (key === "inflow" && value === "true") options.inflow = true;
+    else if (key === "outflow" && value === "true") options.outflow = true;
+  }
+
+  const splitIndex = Number(splitIndexRaw);
+  if (splitIndexRaw !== "" && Number.isInteger(splitIndex) && splitIndex > 0) {
+    options.splitIndex = splitIndex;
+  }
+
+  return Object.keys(options).length > 0 ? options : undefined;
+}
+
+/** Ops the importer understands in the `op` column of an action row. */
+const IMPORTABLE_ACTION_OPS = new Set([
+  ...Object.keys(ACTION_OPS).filter((op) => op !== "link-schedule"),
+  "set-template",
+  "set-formula",
+  "",
+]);
+
 // ─── Main import function ─────────────────────────────────────────────────────
 
 /**
@@ -148,6 +182,8 @@ export function importRulesFromCsv(
   const fieldIdx   = col("field");
   const opIdx      = col("op");
   const valueIdx   = col("value");
+  const splitIdx   = col("split_index");
+  const optionsIdx = col("options");
 
   if (ruleIdIdx === -1 || rowTypeIdx === -1 || fieldIdx === -1) {
     return {
@@ -165,7 +201,13 @@ export function importRulesFromCsv(
     stage: string;
     conditionsOp: string;
     isScheduleRule: boolean;
-    rows: { rowType: string; field: string; op: string; rawValue: string }[];
+    rows: {
+      rowType: string;
+      field: string;
+      op: string;
+      rawValue: string;
+      options?: RuleOptions;
+    }[];
   };
 
   const groups = new Map<string, RuleGroup>();
@@ -190,13 +232,22 @@ export function importRulesFromCsv(
     if (conditionsOp && !group.conditionsOp) group.conditionsOp = conditionsOp;
     if (rowType === "action" && op === "link-schedule") group.isScheduleRule = true;
 
-    // Accept: conditions with a field, or actions with a field or delete-transaction op
+    // Accept: conditions with a field, or actions with a field. `delete-transaction` and
+    // `set-split-amount` legitimately have no field — before this, a `set-split-amount` row was
+    // dropped here without a word, which is how a CSV round-trip lost a rule's splits.
+    const isFieldlessAction = op === "delete-transaction" || op === "set-split-amount";
     const isValidRow =
       (rowType === "condition" && !!field) ||
-      (rowType === "action" && (!!field || op === "delete-transaction"));
+      (rowType === "action" && (!!field || isFieldlessAction));
 
     if (isValidRow) {
-      group.rows.push({ rowType, field, op, rawValue });
+      group.rows.push({
+        rowType,
+        field,
+        op,
+        rawValue,
+        options: decodeOptions(cellAt(row, optionsIdx), cellAt(row, splitIdx)),
+      });
     }
   }
 
@@ -219,26 +270,66 @@ export function importRulesFromCsv(
     const conditions: ConditionOrAction[] = [];
     const actions:    ConditionOrAction[] = [];
 
-    for (const { rowType, field, op, rawValue } of group.rows) {
+    /** Attach the row's decoded options, if it had any, without inventing an empty bag. */
+    const withRowOptions = (
+      part: ConditionOrAction,
+      options: RuleOptions | undefined
+    ): ConditionOrAction => {
+      const merged = { ...(part.options ?? {}), ...(options ?? {}) };
+      return Object.keys(merged).length > 0 ? { ...part, options: merged } : part;
+    };
+
+    for (const { rowType, field, op, rawValue, options } of group.rows) {
       if (rowType === "condition") {
         const r = resolveValue(field, op, rawValue, CONDITION_FIELDS, maps, createdPayees, newPayees, badRefs);
-        conditions.push({ field, op: op || "is", value: r.value, type: r.type });
+        conditions.push(
+          withRowOptions({ field, op: op || "is", value: r.value, type: r.type }, options)
+        );
+        continue;
+      }
+
+      // An op the importer does not know would previously have been silently rewritten as a
+      // `set`, quietly turning it into a different rule. Skip the group and say why instead.
+      if (!IMPORTABLE_ACTION_OPS.has(op)) {
+        badRefs.push(`unsupported action "${op}"`);
+        continue;
+      }
+
+      if (op === "set-template") {
+        actions.push(
+          withRowOptions({ field, op: "set", value: "", type: "string", options: { template: rawValue } }, options)
+        );
+      } else if (op === "set-formula") {
+        // Strip the leading "'" that the exporter adds to prevent spreadsheet apps
+        // from evaluating "=…" values as formulas.
+        const formula = rawValue.startsWith("'=") ? rawValue.slice(1) : rawValue;
+        actions.push(
+          withRowOptions({ field, op: "set", value: "", type: "string", options: { formula } }, options)
+        );
+      } else if (op === "delete-transaction") {
+        actions.push(withRowOptions({ op: "delete-transaction", value: "" }, options));
+      } else if (op === "set-split-amount") {
+        // `fixed-percent` carries a percentage and `fixed-amount` a money value; both are plain
+        // numbers in the cell. `remainder` and `formula` carry no numeric value.
+        const formula = rawValue.startsWith("'=") ? rawValue.slice(1) : rawValue;
+        const isFormulaMethod = options?.method === "formula";
+        const numeric = Number(rawValue);
+        actions.push(
+          withRowOptions(
+            {
+              op: "set-split-amount",
+              value: isFormulaMethod || rawValue === "" || Number.isNaN(numeric) ? null : numeric,
+              type: "number",
+              ...(isFormulaMethod && formula ? { options: { formula } } : {}),
+            },
+            options
+          )
+        );
+      } else if (op === "prepend-notes" || op === "append-notes") {
+        actions.push(withRowOptions({ field: field || "notes", op, value: rawValue, type: "string" }, options));
       } else {
-        if (op === "set-template") {
-          actions.push({ field, op: "set", value: "", type: "string", options: { template: rawValue } });
-        } else if (op === "set-formula") {
-          // Strip the leading "'" that the exporter adds to prevent spreadsheet apps
-          // from evaluating "=…" values as formulas.
-          const formula = rawValue.startsWith("'=") ? rawValue.slice(1) : rawValue;
-          actions.push({ field, op: "set", value: "", type: "string", options: { formula } });
-        } else if (op === "delete-transaction") {
-          actions.push({ op: "delete-transaction", value: "" });
-        } else if (op === "prepend-notes" || op === "append-notes") {
-          actions.push({ field: field || "notes", op, value: rawValue, type: "string" });
-        } else {
-          const r = resolveValue(field, "set", rawValue, ACTION_FIELDS, maps, createdPayees, newPayees, badRefs);
-          actions.push({ field, op: "set", value: r.value, type: r.type });
-        }
+        const r = resolveValue(field, "set", rawValue, ACTION_FIELDS, maps, createdPayees, newPayees, badRefs);
+        actions.push(withRowOptions({ field, op: "set", value: r.value, type: r.type }, options));
       }
     }
 
@@ -248,7 +339,13 @@ export function importRulesFromCsv(
       createdPayees.clear();
       for (const [k, v] of createdPayeesSnapshot) createdPayees.set(k, v);
       skipped++;
-      skipReasons.push({ ruleGroupId, reason: `unmatched ${[...new Set(badRefs)].join(", ")}` });
+      const unsupported = badRefs.filter((ref) => ref.startsWith("unsupported "));
+      const unmatched = badRefs.filter((ref) => !ref.startsWith("unsupported "));
+      const parts = [
+        unmatched.length > 0 ? `unmatched ${[...new Set(unmatched)].join(", ")}` : "",
+        ...new Set(unsupported),
+      ].filter(Boolean);
+      skipReasons.push({ ruleGroupId, reason: parts.join("; ") });
       continue;
     }
 

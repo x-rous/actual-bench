@@ -20,6 +20,12 @@ import {
   validateRuleDraft,
   type EditorPart,
 } from "../lib/ruleEditor";
+import {
+  makeSplitAmountAction,
+  nextSplitIndex,
+  splitIndexOf,
+  withSplitIndex,
+} from "../lib/splitActions";
 import type { ConditionOrAction, RuleStage, ConditionsOp } from "@/types/entities";
 
 export type RuleSeed = {
@@ -260,8 +266,39 @@ export function RuleDrawer({ open, onOpenChange, ruleId, seed }: Props) {
     setConditions((prev) => [...prev, createEditorPart(DEFAULT_CONDITION)]);
   }
 
-  function addAction() {
-    setActions((prev) => [...prev, createEditorPart(DEFAULT_ACTION)]);
+  function addAction(splitIndex = 0) {
+    // Inside a split, `amount`/`cleared`/`account`/`date` are not offered, so the seeded field
+    // has to be one that is.
+    const seed: ConditionOrAction =
+      splitIndex > 0
+        ? withSplitIndex(DEFAULT_ACTION, splitIndex)
+        : DEFAULT_ACTION;
+    setActions((prev) => [...prev, createEditorPart(seed)]);
+  }
+
+  /** Add a split child, seeded with a remainder allocation exactly as Actual seeds one. */
+  function addSplit() {
+    setActions((prev) => {
+      const index = nextSplitIndex(stripEditorParts(prev));
+      return [
+        ...prev,
+        createEditorPart(makeSplitAmountAction(index)),
+        createEditorPart(withSplitIndex(DEFAULT_ACTION, index)),
+      ];
+    });
+  }
+
+  /** Remove a split child and renumber the ones above it, keeping the indices dense. */
+  function removeSplit(splitIndex: number) {
+    setActions((prev) => {
+      const kept = prev.filter((entry) => splitIndexOf(entry.part) !== splitIndex);
+      return kept.map((entry) => {
+        const index = splitIndexOf(entry.part);
+        return index > splitIndex
+          ? { ...entry, part: withSplitIndex(entry.part, index - 1) }
+          : entry;
+      });
+    });
   }
 
   function updateCondition(clientId: string, condition: ConditionOrAction) {
@@ -438,6 +475,8 @@ export function RuleDrawer({ open, onOpenChange, ruleId, seed }: Props) {
           onConditionsOpChange={setConditionsOp}
           onAddCondition={addCondition}
           onAddAction={addAction}
+          onAddSplit={addSplit}
+          onRemoveSplit={removeSplit}
           onConditionChange={updateCondition}
           onConditionDelete={removeCondition}
           onConditionTouched={markConditionTouched}

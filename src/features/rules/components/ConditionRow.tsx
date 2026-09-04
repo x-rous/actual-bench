@@ -7,7 +7,13 @@ import { TagInput } from "@/components/ui/tag-input";
 import { cn } from "@/lib/utils";
 import { EntityCombobox, MultiEntityCombobox } from "./EntityCombobox";
 import { valueToString, isRecurConfig } from "../utils/rulePreview";
-import { CONDITION_FIELDS, getConditionOps } from "../utils/ruleFields";
+import {
+  CONDITION_FIELDS,
+  DEFAULT_CONDITION_FIELD,
+  conditionDisplayField,
+  conditionValueKind,
+  getConditionOps,
+} from "../utils/ruleFields";
 import { recurSummary } from "@/features/schedules/lib/recurSummary";
 import { useQuickCreateStore } from "@/features/quick-create/store/useQuickCreateStore";
 import type { QuickCreateEntityType } from "@/features/quick-create/store/useQuickCreateStore";
@@ -28,6 +34,28 @@ export const fieldSelectCls =
 export const inputCls =
   "h-8 w-full rounded-md border border-input bg-background px-2 text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-ring/50";
 
+// ─── Tag values ───────────────────────────────────────────────────────────────
+//
+// `hasTags` / `hasAnyTag` store one string, which the engine splits on `#`/whitespace. The
+// editor shows it as chips, and writes it back "#"-prefixed so the stored value is unambiguous.
+
+export function parseTagValue(value: ConditionOrAction["value"]): string[] {
+  if (Array.isArray(value)) return value.map(String).filter(Boolean);
+  if (typeof value !== "string") return [];
+  return value
+    .split(/[\s#]+/)
+    .map((tag) => tag.trim())
+    .filter(Boolean);
+}
+
+export function formatTagValue(tags: string[]): string {
+  return tags
+    .map((tag) => tag.replace(/^#+/, "").trim())
+    .filter(Boolean)
+    .map((tag) => `#${tag}`)
+    .join(" ");
+}
+
 // ─── ConditionValueInput ──────────────────────────────────────────────────────
 
 function ConditionValueInput({
@@ -43,15 +71,15 @@ function ConditionValueInput({
   onQuickCreate: (entity: QuickCreateEntityType, name: string) => void;
   compact?: boolean;
 }) {
-  const fieldDef = CONDITION_FIELDS[condition.field ?? ""];
-  const ops = getConditionOps(condition.field ?? "");
+  const displayField = conditionDisplayField(condition.field, condition.options);
+  const fieldDef = CONDITION_FIELDS[displayField];
+  const ops = getConditionOps(displayField);
   const opDef = ops[condition.op];
+  const kind = conditionValueKind(displayField, condition.op);
 
-  if (!opDef || !opDef.hasValue) return null;
+  if (!opDef || kind === "none") return null;
 
-  const isMulti = condition.op === "oneOf" || condition.op === "notOneOf";
-
-  if (condition.op === "isbetween") {
+  if (kind === "range") {
     const range: AmountRange =
       typeof condition.value === "object" &&
       !Array.isArray(condition.value) &&
@@ -83,7 +111,7 @@ function ConditionValueInput({
     );
   }
 
-  if (isMulti && fieldDef?.entity) {
+  if (kind === "multi-entity" && fieldDef?.entity) {
     const arr = Array.isArray(condition.value)
       ? (condition.value as string[])
       : condition.value
@@ -100,7 +128,7 @@ function ConditionValueInput({
     );
   }
 
-  if (isMulti) {
+  if (kind === "multi-text") {
     const arr = Array.isArray(condition.value)
       ? (condition.value as string[])
       : condition.value
@@ -116,7 +144,54 @@ function ConditionValueInput({
     );
   }
 
-  if (fieldDef?.entity) {
+  // Tags are stored as one string ("#food #travel"), not an array — Actual parses them back out
+  // with a `#tag` regex. The chip input is a nicer way to type that than a bare text field.
+  if (kind === "tags") {
+    return (
+      <div className="flex flex-1 flex-col gap-0.5">
+        <TagInput
+          values={parseTagValue(condition.value)}
+          onChange={(v) => onChange({ ...condition, value: formatTagValue(v) })}
+          placeholder="Type a tag and press Enter…"
+          compact={compact}
+        />
+        <span className="text-[10px] text-muted-foreground">
+          {condition.op === "hasTags"
+            ? "Matches only when the notes carry every tag listed."
+            : "Matches when the notes carry at least one of these tags."}
+        </span>
+      </div>
+    );
+  }
+
+  if (kind === "boolean") {
+    const checked = condition.value === true || condition.value === "true";
+    return (
+      <div className={cn("flex h-8 flex-1 items-center gap-2", compact && "h-7")}>
+        <input
+          type="checkbox"
+          checked={checked}
+          onChange={(e) => onChange({ ...condition, value: e.target.checked })}
+          className="h-4 w-4 cursor-pointer rounded accent-primary"
+          aria-label={`${fieldDef?.label ?? displayField} is`}
+        />
+        <span className="text-xs text-muted-foreground">{checked ? "Yes" : "No"}</span>
+      </div>
+    );
+  }
+
+  if (kind === "date") {
+    return (
+      <input
+        type="date"
+        className={cn(inputCls, compact && "h-7")}
+        value={valueToString(condition.value)}
+        onChange={(e) => onChange({ ...condition, value: e.target.value })}
+      />
+    );
+  }
+
+  if (kind === "entity" && fieldDef?.entity) {
     const scalar = valueToString(condition.value);
     const QUICK_CREATE_ENTITIES: QuickCreateEntityType[] = ["payee", "category", "account", "tag"];
     const quickCreateEntity = QUICK_CREATE_ENTITIES.includes(fieldDef.entity as QuickCreateEntityType)
@@ -134,7 +209,7 @@ function ConditionValueInput({
     );
   }
 
-  if (fieldDef?.type === "number") {
+  if (kind === "number") {
     return (
       <input
         type="number"
@@ -196,31 +271,42 @@ export function ConditionRow({
 }) {
   const openQuickCreate = useQuickCreateStore((s) => s.open);
   const field = condition.field ?? "";
-  const ops = getConditionOps(field);
+  // `amount` carrying inflow/outflow options is shown as its own entry in the field select,
+  // mirroring Actual's `amount-inflow` / `amount-outflow` pseudo-fields.
+  const displayField = conditionDisplayField(field, condition.options);
+  const ops = getConditionOps(displayField);
   const isScheduleDate = field === "date" && isRecurConfig(condition.value);
   const isScheduleLinkedEntity =
     scheduleLinked && (field === "payee" || field === "account") && condition.op === "is";
 
   const setField = useCallback(
     (newField: string) => {
-      const newDef = CONDITION_FIELDS[newField];
+      const newDef = CONDITION_FIELDS[newField] ?? CONDITION_FIELDS[DEFAULT_CONDITION_FIELD];
       const firstOp = Object.keys(getConditionOps(newField))[0] ?? "is";
-      onChange({ field: newField, op: firstOp, value: "", type: newDef?.type ?? "string" });
+      // A pseudo-field is stored as the field it stands for, plus its options.
+      const pseudo = newDef?.pseudoFor;
+      onChange({
+        field: pseudo?.field ?? newField,
+        op: firstOp,
+        value: newDef?.type === "boolean" ? false : "",
+        type: newDef?.type ?? "string",
+        ...(pseudo ? { options: pseudo.options } : {}),
+      });
     },
     [onChange]
   );
 
   function handleOpChange(newOp: string) {
-    const wasMulti = condition.op === "oneOf" || condition.op === "notOneOf";
-    const isMulti = newOp === "oneOf" || newOp === "notOneOf";
-    const isBetween = newOp === "isbetween";
-    const hasValue = ops[newOp]?.hasValue !== false;
+    const wasKind = conditionValueKind(displayField, condition.op);
+    const nextKind = conditionValueKind(displayField, newOp);
+    const wasMulti = wasKind === "multi-text" || wasKind === "multi-entity";
+    const isMulti = nextKind === "multi-text" || nextKind === "multi-entity";
 
     let newValue: ConditionOrAction["value"];
 
-    if (!hasValue) {
+    if (nextKind === "none") {
       newValue = "";
-    } else if (isBetween) {
+    } else if (nextKind === "range") {
       newValue =
         typeof condition.value === "object" && !Array.isArray(condition.value)
           ? condition.value
@@ -230,10 +316,16 @@ export function ConditionRow({
       newValue = scalar ? [scalar] : [];
     } else if (!isMulti && wasMulti) {
       newValue = Array.isArray(condition.value) ? (condition.value[0] ?? "") : "";
+    } else if (nextKind === "tags" && wasKind !== "tags") {
+      newValue = formatTagValue(parseTagValue(condition.value));
+    } else if (wasKind === "range") {
+      // An amount range cannot be reinterpreted as a scalar; start clean.
+      newValue = "";
     } else {
       newValue = condition.value;
     }
 
+    // `options` carries inflow/outflow, which survive an operator change.
     onChange({ ...condition, op: newOp, value: newValue });
   }
 
@@ -300,7 +392,8 @@ export function ConditionRow({
       <div className="flex items-start gap-1.5">
         <select
           className={cn(conditionFieldSelectCls, compact && "h-7", "w-32 shrink-0")}
-          value={field ?? ""}
+          value={displayField}
+          aria-label="Condition field"
           onChange={(e) => setField(e.target.value)}
         >
           {Object.entries(CONDITION_FIELDS).map(([k, def]) => (
@@ -313,6 +406,7 @@ export function ConditionRow({
         <select
           className={cn(selectCls, compact && "h-7", "w-32 shrink-0")}
           value={condition.op ?? ""}
+          aria-label="Condition operator"
           onChange={(e) => handleOpChange(e.target.value)}
         >
           {Object.entries(ops).map(([k, def]) => (
