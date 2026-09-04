@@ -362,11 +362,16 @@ const SHOTS = [
      * correction.
      */
     cleanup: async (page) => {
+      // The control only renders while a correction exists. Absent means either
+      // the acceptance never happened or something else moved the page — and
+      // either way this cleanup has proved nothing, so it must not report
+      // success and let a later shot inherit an unverified state.
       const undo = page.getByRole("button", { name: /Undo my changes/ }).first();
-      if ((await undo.count()) === 0) return;
+      if ((await undo.count()) === 0) {
+        throw new Error("no correction to reset - the page is not in the state this shot left");
+      }
       await undo.click();
       await page.waitForTimeout(2000);
-      // Prove it: the button only exists while a correction does.
       if (await page.getByRole("button", { name: /Undo my changes/ }).count()) {
         throw new Error("the accepted suggestion was not reset");
       }
