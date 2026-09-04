@@ -242,21 +242,25 @@ A standalone page (own navigation item) for browsing the active budget's exporte
 - Closing the rule drawer with unsaved edits prompts for confirmation instead of silently discarding the draft
 - Deleting a rule from the drawer now uses the same confirmation flow as deleting from the rules table
 - Three execution stages: `pre`, `default`, `post`
-- Conditions support AND / OR logic across fields: payee, imported payee, category, account, amount, notes, and more
-- Operators include `is`, `is not`, `contains`, `matches`, `lt`, `lte`, `gt`, `gte`, `oneOf`, and others; the `matches` operator shows a regex syntax hint
-- Actions include set payee, set category, set account, set amount, set notes, link schedule, and more
+- **The field and operator model mirrors Actual's own derivation** (`TYPE_INFO` operators minus each field's `disallowedOps`), so every rule the builder can produce is a rule Actual's engine accepts, and every rule Actual accepts is understood here. A table-driven parity test encodes the contract
+- Conditions support AND / OR logic across: imported payee, account, category, category group, date, payee, notes, amount, **amount (inflow)**, **amount (outflow)**, and **cleared**
+- Operators are offered per field, as Actual offers them: text fields get `is`, `is not`, `contains`, `does not contain`, `is one of`, `is not one of`, `matches` (with a regex syntax hint) and — on fields that allow them — **`has all tags`** / **`has any tag`**; ID fields add `contains`, `does not contain` and `matches`; dates get `is`, `is approx.`, **`is after`**, **`is after or equals`**, **`is before`**, **`is before or equals`**; amounts get `is`, `is approx.`, `is between` and the four comparisons; `account` alone gets `is on budget` / `is off budget`
+- **Amount inflow/outflow**: match only money in or only money out, stored the way Actual stores it (`amount` plus `options.inflow`/`options.outflow`); outflows compare as positive magnitudes
+- Actions include set payee, set category, set account, set amount, set notes, set cleared, set date, prepend/append notes, delete transaction, and link schedule
+- **Split-transaction rules**: divide one transaction across several categories. Each split carries an **Allocate** row choosing a fixed amount, a fixed percent of the remainder, a formula, or an equal portion of the remainder — the four methods Actual's engine applies, in its order. Splits render as their own groups in the editor and as `Split N` badges in the table; amount, cleared, account and date stay on the parent, as they do in Actual; removing a split renumbers the rest so the indices stay dense
 - Action template mode: toggle the `{}` button on any action to enter a Handlebars expression (e.g. `{{regex imported_payee 'foo' 'bar'}}`); templates are displayed in an amber monospace chip in the rules table
-- Action formula mode: toggle the `ƒ` button on `notes` or `payee_name` actions to enter an Excel-style formula evaluated by HyperFormula (e.g. `=IF(ISBLANK(notes), imported_payee, notes)`); formulas must start with `=` and are displayed in an amber monospace chip in the rules table; template and formula modes are mutually exclusive per action row
-- Merge multiple selected rules into one via a dedicated merge dialog
+- Action formula mode: toggle the `ƒ` button to enter an Excel-style formula evaluated by HyperFormula (e.g. `=IF(ISBLANK(notes), imported_payee, notes)`); formulas must start with `=` and are displayed in an amber monospace chip in the rules table; template and formula modes are mutually exclusive per action row. Both are available on every `set` action except `payee`, `category` and `account`, whose values are IDs
+- The editor never drops part of a rule it did not author: an action's `options` are merged rather than replaced on edit, so a split index survives retyping a value elsewhere in the row
+- Merge multiple selected rules into one via a dedicated merge dialog; split rules are excluded, since flattening two of them would produce a rule nobody wrote
 - Merge dialog now shares the same editor sections, row identity model, and validation behavior as the main rule drawer, avoiding combobox state jumps when rows are added or removed
 - Duplicate a rule with one click
-- Filter the rules list by stage, payee, or category
+- Filter the rules list by stage, payee, category, or **Splits**
 - Search resolves entity names in condition values — searching "Groceries" finds rules where a `oneOf` condition references that payee or category by ID
 - Links from Payees and Categories pages filter the rules list to that entity automatically
 - Resolved entity names displayed throughout (no raw IDs shown)
 - Entity-reference chips (payee, category, account) are visually distinct from plain string value chips — blue for entity references, green for string values
 - Category dropdowns group categories under their parent group, preserving server order; hidden categories and groups remain visible so rules referencing them can still be edited; search matches group names (shows all children) or category names
-- CSV import and export
+- CSV import and export, round-tripping splits and options losslessly via `split_index` and `options` columns (`key=value;key=value` for the allocation `method` and an amount condition's `inflow`/`outflow`); files exported before those columns still import, and an action operator the importer does not recognise skips its rule with a stated reason instead of being silently rewritten as a `set`
 
 ## Rule Diagnostics
 
@@ -264,7 +268,7 @@ A standalone page (own navigation item) for browsing the active budget's exporte
 - Read-only and advisory: never modifies, stages, creates, or deletes any rule, entity, or configuration as a side effect of running diagnostics or interacting with a finding
 - Runs against the user's current working set (server snapshot + unsaved staged edits) — lints the rules you are about to save
 - Severity-grouped findings list with summary cards for `error`, `warning`, and `info` counts; severity- and code-based filtering with a "clear filters" affordance
-- v1 checks: missing payee / category / account / category-group references, empty or no-op actions, impossibly contradictory conditions on `and`-rules, strictly shadowed rules within a stage, broad match criteria (very short `contains`/`matches`/`doesNotContain` values), duplicate rule groups, near-duplicate pairs (combined symmetric diff of 1–2 parts), and unsupported field/operator combinations
+- v1 checks: missing payee / category / account / category-group references, empty or no-op actions, impossibly contradictory conditions on `and`-rules, strictly shadowed rules within a stage, broad match criteria (very short `contains`/`matches`/`doesNotContain` values), duplicate rule groups, near-duplicate pairs (combined symmetric diff of 1–2 parts), and unsupported field/operator combinations — the last of these validates against Actual's engine rules rather than a local list, so valid splits, tag conditions, date comparisons and ID-field text operators are not flagged, while an operator the engine would reject is
 - Schedule-generated rules (those with a `link-schedule` action) are excluded from editor-relevant checks but still surface missing-entity findings
 - Each finding includes a plain-language explanation, the affected rule's generated summary (stage + first condition + first action), and a copy-UUID button; clicking the rule summary jumps to `/rules?highlight=<id>` and the existing rule editor
 - One-click Merge button on duplicate-group and near-duplicate findings opens the existing rule merge dialog pre-filled with the relevant rules; the "Delete originals" checkbox is pre-ticked for full duplicates and left unchecked for near-duplicates; on successful merge the user is returned to the diagnostics report so cleanup flows naturally; cancelling the merge leaves the user on the rules page

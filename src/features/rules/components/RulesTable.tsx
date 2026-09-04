@@ -17,6 +17,7 @@ import { buildRuleDeleteWarning, buildRuleBulkDeleteWarning } from "@/lib/usageW
 import { rulePreview } from "../utils/rulePreview";
 import type { EntityMaps } from "../utils/rulePreview";
 import { STAGE_LABELS } from "../utils/ruleFields";
+import { isSplitRule } from "../lib/splitActions";
 import { FilterBar } from "./FilterBar";
 import type { StageFilter, ActionTypeFilter } from "./FilterBar";
 import { ConditionChip, ActionChip } from "./RuleChips";
@@ -105,7 +106,9 @@ export function RulesTable({ onEdit, onMerge, payeeId, categoryId, accountId }: 
     return Object.values(stagedRules).filter((s) => {
       if (s.isDeleted) return false;
       if (stageFilter !== "all" && normalizeStage(s.entity.stage) !== stageFilter) return false;
-      if (actionTypeFilter !== "all") {
+      if (actionTypeFilter === "split") {
+        if (!isSplitRule(s.entity.actions)) return false;
+      } else if (actionTypeFilter !== "all") {
         const hasAction = s.entity.actions.some((a) => a.field === actionTypeFilter);
         if (!hasAction) return false;
       }

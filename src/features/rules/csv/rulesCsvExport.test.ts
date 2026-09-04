@@ -2,6 +2,7 @@ import { exportRulesToCsv } from "./rulesCsvExport";
 import { importRulesFromCsv } from "./rulesCsvImport";
 import type { Rule } from "@/types/entities";
 import type { StagedMap } from "@/types/staged";
+import type { EntityMaps } from "../utils/rulePreview";
 
 function staged(rule: Rule, overrides: { isDeleted?: boolean } = {}): StagedMap<Rule> {
   return {
@@ -218,16 +219,27 @@ describe("exportRulesToCsv", () => {
 // ─── Lossless round-trip (F-123) ──────────────────────────────────────────────
 
 describe("CSV round-trip", () => {
+  // Both sides of the round-trip only ever read `id`/`name` off these, so a minimal staged
+  // entity is enough; the cast keeps the fixture readable.
+  function named(entities: { id: string; name: string }[]): EntityMaps["payees"] {
+    return Object.fromEntries(
+      entities.map((entity) => [
+        entity.id,
+        { entity, original: null, isNew: false, isUpdated: false, isDeleted: false, validationErrors: {} },
+      ])
+    ) as EntityMaps["payees"];
+  }
+
   const maps = {
-    payees: { p1: { entity: { id: "p1", name: "Costco" }, isDeleted: false } },
-    categories: {
-      c1: { entity: { id: "c1", name: "Groceries" }, isDeleted: false },
-      c2: { entity: { id: "c2", name: "Household" }, isDeleted: false },
-      c3: { entity: { id: "c3", name: "Fuel" }, isDeleted: false },
-    },
-    accounts: {},
-    categoryGroups: {},
-  };
+    payees: named([{ id: "p1", name: "Costco" }]),
+    categories: named([
+      { id: "c1", name: "Groceries" },
+      { id: "c2", name: "Household" },
+      { id: "c3", name: "Fuel" },
+    ]),
+    accounts: named([]),
+    categoryGroups: named([]),
+  } as unknown as EntityMaps;
 
   // Every shape the exporter has to encode: an inflow condition, a template, a formula, and a
   // three-way split using three different allocation methods.
