@@ -58,6 +58,18 @@ function withOptions(
 /** Keys this row owns and may clear; anything else on `options` is carried through untouched. */
 const MODE_KEYS = { template: undefined, formula: undefined } as const;
 
+/**
+ * Rebuild an action's identity (op/field/value/type) while keeping its `options` bag, minus the
+ * keys this row owns. Changing the operator or field must not be an implicit reset of everything
+ * the row does not render — that is what dropped split indices.
+ */
+function reshapeAction(
+  current: ConditionOrAction,
+  next: Omit<ConditionOrAction, "options">
+): ConditionOrAction {
+  return withOptions({ ...next, options: current.options }, MODE_KEYS);
+}
+
 // ─── ActionRow ────────────────────────────────────────────────────────────────
 
 export function ActionRow({
@@ -92,17 +104,14 @@ export function ActionRow({
   const handleOpChange = useCallback(
     (newOp: string) => {
       if (newOp === "delete-transaction") {
-        onChange(withOptions({ op: "delete-transaction", value: "" }, {}));
+        onChange(reshapeAction(action, { op: "delete-transaction", value: "" }));
         return;
       }
       if (newOp === "prepend-notes" || newOp === "append-notes") {
         // Force field to "notes", preserve existing string value if any
         const currentVal = typeof action.value === "string" ? action.value : "";
         onChange(
-          withOptions({ field: "notes", op: newOp, value: currentVal, type: "string" }, {
-            ...MODE_KEYS,
-            splitIndex: action.options?.splitIndex,
-          })
+          reshapeAction(action, { field: "notes", op: newOp, value: currentVal, type: "string" })
         );
         return;
       }
@@ -111,13 +120,15 @@ export function ActionRow({
       const newDef = ACTION_FIELDS[newField];
       const defaultVal = newDef?.type === "boolean" ? false : newDef?.type === "number" ? 0 : "";
       onChange(
-        withOptions(
-          { field: newField, op: "set", value: defaultVal, type: newDef?.type ?? "string" },
-          { ...MODE_KEYS, splitIndex: action.options?.splitIndex }
-        )
+        reshapeAction(action, {
+          field: newField,
+          op: "set",
+          value: defaultVal,
+          type: newDef?.type ?? "string",
+        })
       );
     },
-    [action.value, action.options?.splitIndex, availableFields, field, onChange]
+    [action, availableFields, field, onChange]
   );
 
   const handleFieldChange = useCallback(
@@ -125,13 +136,15 @@ export function ActionRow({
       const newDef = ACTION_FIELDS[newField];
       const defaultVal = newDef?.type === "boolean" ? false : newDef?.type === "number" ? 0 : "";
       onChange(
-        withOptions(
-          { field: newField, op: "set", value: defaultVal, type: newDef?.type ?? "string" },
-          { ...MODE_KEYS, splitIndex: action.options?.splitIndex }
-        )
+        reshapeAction(action, {
+          field: newField,
+          op: "set",
+          value: defaultVal,
+          type: newDef?.type ?? "string",
+        })
       );
     },
-    [action.options?.splitIndex, onChange]
+    [action, onChange]
   );
 
   function toggleTemplateMode() {

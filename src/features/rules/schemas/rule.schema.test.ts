@@ -129,3 +129,39 @@ describe("ruleSchema split and amount options", () => {
     ).toBe(false);
   });
 });
+
+describe("ruleSchema direction flags", () => {
+  it("rejects inflow/outflow on an action, even when its field is amount", () => {
+    const result = ruleSchema.safeParse({
+      ...baseRule,
+      actions: [
+        { op: "set", field: "amount", value: 10, type: "number", options: { inflow: true } },
+      ],
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("still accepts them on an amount condition", () => {
+    const result = ruleSchema.safeParse({
+      ...baseRule,
+      conditions: [
+        { field: "amount", op: "gt", value: 10, type: "number", options: { outflow: true } },
+      ],
+      actions: [{ op: "set", field: "notes", value: "x", type: "string" }],
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("accepts a remainder allocation that still carries a stale value", () => {
+    // Actual's own editor sets `options.method` without clearing `value`, so switching a
+    // fixed-amount split to remainder leaves the old figure behind. The engine ignores it.
+    // Rejecting it here would refuse rules Actual itself writes.
+    const result = ruleSchema.safeParse({
+      ...baseRule,
+      actions: [
+        { op: "set-split-amount", value: 1250, options: { method: "remainder", splitIndex: 1 } },
+      ],
+    });
+    expect(result.success).toBe(true);
+  });
+});

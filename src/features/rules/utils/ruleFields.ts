@@ -46,15 +46,25 @@ export type OpDef = {
   hasValue: boolean;
 };
 
+/**
+ * Every lookup table below is keyed by a field or operator name that can arrive from stored data
+ * or an imported CSV, so `FIELD_INFO["constructor"]` and `"toString" in ALLOCATION_METHODS` are
+ * both reachable. Giving the tables a null prototype makes every such lookup miss, which is what
+ * the surrounding code already expects an unknown key to do.
+ */
+function table<T extends object>(entries: T): T {
+  return Object.assign(Object.create(null) as T, entries);
+}
+
 // ─── Actual's TYPE_INFO ───────────────────────────────────────────────────────
 
-const TYPE_OPS: Record<FieldType, readonly string[]> = {
+const TYPE_OPS: Record<FieldType, readonly string[]> = table({
   date:    ["is", "isapprox", "gt", "gte", "lt", "lte"],
   id:      ["is", "contains", "matches", "oneOf", "isNot", "doesNotContain", "notOneOf", "onBudget", "offBudget"],
   string:  ["is", "contains", "matches", "oneOf", "isNot", "doesNotContain", "notOneOf", "hasTags", "hasAnyTag"],
   number:  ["is", "isapprox", "isbetween", "gt", "gte", "lt", "lte"],
   boolean: ["is"],
-};
+});
 
 // ─── Actual's FIELD_INFO ──────────────────────────────────────────────────────
 //
@@ -62,7 +72,7 @@ const TYPE_OPS: Record<FieldType, readonly string[]> = {
 // conditions (`payee_name`, `reconciled`, `transfer`, `parent`). They are modelled so that
 // validation and diagnostics recognise them, and listed separately for the dropdowns.
 
-const FIELD_INFO: Record<string, { type: FieldType; disallowedOps?: readonly string[] }> = {
+const FIELD_INFO: Record<string, { type: FieldType; disallowedOps?: readonly string[] }> = table({
   imported_payee: { type: "string", disallowedOps: ["hasTags", "hasAnyTag"] },
   payee:          { type: "id",     disallowedOps: ["onBudget", "offBudget"] },
   payee_name:     { type: "string" },
@@ -76,13 +86,13 @@ const FIELD_INFO: Record<string, { type: FieldType; disallowedOps?: readonly str
   reconciled:     { type: "boolean" },
   transfer:       { type: "boolean" },
   parent:         { type: "boolean" },
-};
+});
 
 /** Ops the engine accepts but never offers in a picker (Actual's `internalOps`). */
-const INTERNAL_OPS: Record<string, readonly string[]> = {
+const INTERNAL_OPS: Record<string, readonly string[]> = table({
   category: ["and"],
   category_group: ["and"],
-};
+});
 
 /**
  * Valid operators for a field, in Actual's own order.
@@ -90,17 +100,19 @@ const INTERNAL_OPS: Record<string, readonly string[]> = {
  */
 export function getValidOps(field: string): string[] {
   const info = FIELD_INFO[field];
-  if (!info) return [];
+  const ops = info && TYPE_OPS[info.type];
+  if (!ops) return [];
   const disallowed = new Set(info.disallowedOps ?? []);
-  return TYPE_OPS[info.type].filter((op) => !disallowed.has(op));
+  return ops.filter((op) => !disallowed.has(op));
 }
 
 /** True when the engine would accept this operator on this field, including internal ops. */
 export function isValidOp(field: string, op: string): boolean {
   const info = FIELD_INFO[field];
-  if (!info) return false;
+  const ops = info && TYPE_OPS[info.type];
+  if (!ops) return false;
   if (info.disallowedOps?.includes(op)) return false;
-  return TYPE_OPS[info.type].includes(op) || (INTERNAL_OPS[field]?.includes(op) ?? false);
+  return ops.includes(op) || (INTERNAL_OPS[field]?.includes(op) ?? false);
 }
 
 export function fieldType(field: string): FieldType | undefined {
@@ -112,7 +124,7 @@ export function fieldType(field: string): FieldType | undefined {
 // `gt`/`gte`/`lt`/`lte` read differently on dates than on numbers — "is after" is a *label*
 // for `gt`, not an operator. Storing "isAfter" is what F-111 was.
 
-const OP_LABELS: Record<string, string> = {
+const OP_LABELS: Record<string, string> = table({
   is:             "is",
   isNot:          "is not",
   isapprox:       "is approx.",
@@ -130,14 +142,14 @@ const OP_LABELS: Record<string, string> = {
   lte:            "is less than or equals",
   onBudget:       "is on budget",
   offBudget:      "is off budget",
-};
+});
 
-const DATE_OP_LABELS: Record<string, string> = {
+const DATE_OP_LABELS: Record<string, string> = table({
   gt:  "is after",
   gte: "is after or equals",
   lt:  "is before",
   lte: "is before or equals",
-};
+});
 
 const VALUELESS_OPS = new Set(["onBudget", "offBudget"]);
 
@@ -153,7 +165,7 @@ export function friendlyOp(op: string, type?: FieldType): string {
 // `amount-inflow` / `amount-outflow` are pseudo-fields: they never reach the wire, where they
 // are `amount` carrying `options.inflow` / `options.outflow`.
 
-export const CONDITION_FIELDS: Record<string, FieldDef> = {
+export const CONDITION_FIELDS: Record<string, FieldDef> = table({
   imported_payee:  { label: "Imported Payee", type: "string" },
   account:         { label: "Account",        type: "id",     entity: "account" },
   category:        { label: "Category",       type: "id",     entity: "category" },
@@ -173,7 +185,7 @@ export const CONDITION_FIELDS: Record<string, FieldDef> = {
     pseudoFor: { field: "amount", options: { outflow: true } },
   },
   cleared:         { label: "Cleared",        type: "boolean" },
-};
+});
 
 /** Default field for a newly added condition. Not derived from key order. */
 export const DEFAULT_CONDITION_FIELD = "payee";
@@ -218,7 +230,7 @@ function actionField(
   };
 }
 
-export const ACTION_FIELDS: Record<string, FieldDef> = {
+export const ACTION_FIELDS: Record<string, FieldDef> = table({
   category:   actionField("category",   "Category",   "id", "category"),
   payee:      actionField("payee",      "Payee",      "id", "payee"),
   payee_name: actionField("payee_name", "Payee Name", "string"),
@@ -227,7 +239,7 @@ export const ACTION_FIELDS: Record<string, FieldDef> = {
   account:    actionField("account",    "Account",    "id", "account"),
   date:       actionField("date",       "Date",       "date"),
   amount:     actionField("amount",     "Amount",     "number"),
-};
+});
 
 /** Default field for a newly added action. Not derived from key order. */
 export const DEFAULT_ACTION_FIELD = "category";
@@ -246,14 +258,14 @@ export function getSplitActionFields(): Record<string, FieldDef> {
  * this; the editor's op dropdown reads `ACTION_OP_OPTIONS` instead, because `set-split-amount`
  * is created by the split UI and `link-schedule` is owned by the Schedules page.
  */
-export const ACTION_OPS: Record<string, OpDef> = {
+export const ACTION_OPS: Record<string, OpDef> = table({
   set:                  { label: "Set",                hasValue: true },
   "set-split-amount":   { label: "Allocate",           hasValue: true },
   "link-schedule":      { label: "Link Schedule",      hasValue: true },
   "prepend-notes":      { label: "Prepend to Notes",   hasValue: true },
   "append-notes":       { label: "Append to Notes",    hasValue: true },
   "delete-transaction": { label: "Delete transaction", hasValue: false },
-};
+});
 
 /** The ops the action row's dropdown offers, matching Actual's `OpSelect`. */
 export const ACTION_OP_OPTIONS = [
@@ -268,12 +280,12 @@ export const ACTION_OP_OPTIONS = [
 export type AllocationMethod = "fixed-amount" | "fixed-percent" | "formula" | "remainder";
 
 /** Labels match Actual's `getAllocationMethods`. */
-export const ALLOCATION_METHODS: Record<AllocationMethod, string> = {
+export const ALLOCATION_METHODS: Record<AllocationMethod, string> = table({
   "fixed-amount":  "a fixed amount",
   "fixed-percent": "a fixed percent of the remainder",
   formula:         "based on a formula",
   remainder:       "an equal portion of the remainder",
-};
+});
 
 export const ALLOCATION_METHOD_OPTIONS = Object.keys(ALLOCATION_METHODS) as AllocationMethod[];
 
@@ -346,11 +358,11 @@ export function conditionValueKind(field: string, op: string): ValueKind {
 
 // ─── Stage ────────────────────────────────────────────────────────────────────
 
-export const STAGE_LABELS: Record<string, string> = {
+export const STAGE_LABELS: Record<string, string> = table({
   pre:     "Pre",
   default: "Default",
   post:    "Post",
-};
+});
 
 export const STAGE_OPTIONS = ["pre", "default", "post"] as const;
 export const CONDITIONS_OP_OPTIONS = ["and", "or"] as const;

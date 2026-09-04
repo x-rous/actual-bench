@@ -344,3 +344,97 @@ describe("CSV round-trip", () => {
     expect(result.skipReasons[0].reason).toContain('unsupported action "frobnicate"');
   });
 });
+
+// ─── Spreadsheet formula neutralisation (CWE-1236) ────────────────────────────
+
+describe("CSV formula injection", () => {
+  const maps = {
+    payees: {},
+    categories: {},
+    accounts: {},
+    categoryGroups: {},
+  } as unknown as EntityMaps;
+
+  it.each(["=", "+", "-", "@"])("guards a template beginning with %p", (lead) => {
+    const template = `${lead}HYPERLINK("http://evil","click")`;
+    const rule = makeRule("r1", {
+      conditions: [{ field: "notes", op: "contains", value: "x", type: "string" }],
+      actions: [{ field: "notes", op: "set", value: "", type: "string", options: { template } }],
+    });
+
+    const csv = exportRulesToCsv(staged(rule), maps);
+    // The cell must not begin with a character a spreadsheet reads as a formula.
+    const templateRow = csv.split("\n").find((l) => l.includes("set-template"));
+    expect(templateRow).toBeDefined();
+    expect(templateRow).toContain(`'${lead}`);
+
+    // …and the guard comes off again, so the round-trip is unaffected.
+    const result = importRulesFromCsv(csv, maps);
+    expect("rules" in result).toBe(true);
+    if (!("rules" in result)) return;
+    expect(result.rules[0].actions[0].options?.template).toBe(template);
+  });
+
+  it("guards a free-text value and restores it", () => {
+    const rule = makeRule("r1", {
+      conditions: [{ field: "notes", op: "contains", value: "=1+1", type: "string" }],
+      actions: [{ field: "notes", op: "set", value: "@SUM(A1)", type: "string" }],
+    });
+    const csv = exportRulesToCsv(staged(rule), maps);
+    expect(csv).toContain("'=1+1");
+    expect(csv).toContain("'@SUM(A1)");
+
+    const result = importRulesFromCsv(csv, maps);
+    expect("rules" in result).toBe(true);
+    if (!("rules" in result)) return;
+    expect(result.rules[0].conditions[0].value).toBe("=1+1");
+    expect(result.rules[0].actions[0].value).toBe("@SUM(A1)");
+  });
+
+  it("leaves a negative amount as a plain number", () => {
+    const rule = makeRule("r1", {
+      conditions: [{ field: "amount", op: "lt", value: -50, type: "number" }],
+      actions: [{ field: "notes", op: "set", value: "x", type: "string" }],
+    });
+    const csv = exportRulesToCsv(staged(rule), maps);
+    expect(csv).toContain(",-50,");
+    expect(csv).not.toContain("'-50");
+  });
+
+  it("keeps a value the user genuinely began with an apostrophe", () => {
+    const rule = makeRule("r1", {
+      conditions: [{ field: "notes", op: "contains", value: "'tis", type: "string" }],
+      actions: [{ field: "notes", op: "set", value: "x", type: "string" }],
+    });
+    const result = importRulesFromCsv(exportRulesToCsv(staged(rule), maps), maps);
+    expect("rules" in result).toBe(true);
+    if (!("rules" in result)) return;
+    expect(result.rules[0].conditions[0].value).toBe("'tis");
+  });
+
+  it("rejects an options cell setting both inflow and outflow", () => {
+    const csv = [
+      "rule_id,stage,conditions_op,row_type,field,op,value,split_index,options",
+      "r1,default,and,condition,amount,gt,10,,inflow=true;outflow=true",
+      "r1,,,action,notes,set,x,,",
+    ].join("\n");
+    const result = importRulesFromCsv(csv, maps);
+    expect("rules" in result).toBe(true);
+    if (!("rules" in result)) return;
+    expect(result.rules).toHaveLength(0);
+    expect(result.skipped).toBe(1);
+    expect(result.skipReasons[0].reason).toContain("both inflow and outflow");
+  });
+
+  it("still accepts either direction on its own", () => {
+    const csv = [
+      "rule_id,stage,conditions_op,row_type,field,op,value,split_index,options",
+      "r1,default,and,condition,amount,gt,10,,outflow=true",
+      "r1,,,action,notes,set,x,,",
+    ].join("\n");
+    const result = importRulesFromCsv(csv, maps);
+    expect("rules" in result).toBe(true);
+    if (!("rules" in result)) return;
+    expect(result.rules[0].conditions[0].options).toEqual({ outflow: true });
+  });
+});

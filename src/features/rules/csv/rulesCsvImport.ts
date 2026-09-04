@@ -117,6 +117,16 @@ function resolveValue(
   return resolveScalarValue(field, rawValue, maps, fieldDefs, createdPayees, newPayees, badRefs);
 }
 
+// ─── Formula guard ────────────────────────────────────────────────────────────
+
+/**
+ * Inverse of the exporter's `guardCsvText`. Only strips the leading `'` when it actually guards a
+ * formula-leading character, so a value the user genuinely began with an apostrophe survives.
+ */
+function unguardCsvText(value: string): string {
+  return /^'[=+\-@\t\r]/.test(value) ? value.slice(1) : value;
+}
+
 // ─── Options ──────────────────────────────────────────────────────────────────
 
 /**
@@ -124,7 +134,10 @@ function resolveValue(
  * column. Unrecognised keys are ignored rather than carried through — the CSV is a user-editable
  * surface, and a typo should not become an option the engine will reject.
  */
-function decodeOptions(raw: string, splitIndexRaw: string): RuleOptions | undefined {
+function decodeOptions(
+  raw: string,
+  splitIndexRaw: string
+): { options?: RuleOptions; error?: string } {
   const options: RuleOptions = {};
 
   for (const pair of raw.split(";")) {
@@ -135,12 +148,18 @@ function decodeOptions(raw: string, splitIndexRaw: string): RuleOptions | undefi
     else if (key === "outflow" && value === "true") options.outflow = true;
   }
 
+  // The cell is hand-editable, so both flags can arrive together. They contradict each other —
+  // the engine would match nothing — so this is a malformed rule, not one to guess at.
+  if (options.inflow && options.outflow) {
+    return { error: "options cannot set both inflow and outflow" };
+  }
+
   const splitIndex = Number(splitIndexRaw);
   if (splitIndexRaw !== "" && Number.isInteger(splitIndex) && splitIndex > 0) {
     options.splitIndex = splitIndex;
   }
 
-  return Object.keys(options).length > 0 ? options : undefined;
+  return { options: Object.keys(options).length > 0 ? options : undefined };
 }
 
 /** Ops the importer understands in the `op` column of an action row. */
@@ -207,6 +226,7 @@ export function importRulesFromCsv(
       op: string;
       rawValue: string;
       options?: RuleOptions;
+      optionsError?: string;
     }[];
   };
 
@@ -241,12 +261,14 @@ export function importRulesFromCsv(
       (rowType === "action" && (!!field || isFieldlessAction));
 
     if (isValidRow) {
+      const decoded = decodeOptions(cellAt(row, optionsIdx), cellAt(row, splitIdx));
       group.rows.push({
         rowType,
         field,
         op,
-        rawValue,
-        options: decodeOptions(cellAt(row, optionsIdx), cellAt(row, splitIdx)),
+        rawValue: unguardCsvText(rawValue),
+        options: decoded.options,
+        optionsError: decoded.error,
       });
     }
   }
@@ -279,7 +301,12 @@ export function importRulesFromCsv(
       return Object.keys(merged).length > 0 ? { ...part, options: merged } : part;
     };
 
-    for (const { rowType, field, op, rawValue, options } of group.rows) {
+    for (const { rowType, field, op, rawValue, options, optionsError } of group.rows) {
+      if (optionsError) {
+        badRefs.push(`unsupported ${optionsError}`);
+        continue;
+      }
+
       if (rowType === "condition") {
         const r = resolveValue(field, op, rawValue, CONDITION_FIELDS, maps, createdPayees, newPayees, badRefs);
         conditions.push(
@@ -300,18 +327,15 @@ export function importRulesFromCsv(
           withRowOptions({ field, op: "set", value: "", type: "string", options: { template: rawValue } }, options)
         );
       } else if (op === "set-formula") {
-        // Strip the leading "'" that the exporter adds to prevent spreadsheet apps
-        // from evaluating "=…" values as formulas.
-        const formula = rawValue.startsWith("'=") ? rawValue.slice(1) : rawValue;
+        // The exporter's formula guard was already removed by `unguardCsvText`.
         actions.push(
-          withRowOptions({ field, op: "set", value: "", type: "string", options: { formula } }, options)
+          withRowOptions({ field, op: "set", value: "", type: "string", options: { formula: rawValue } }, options)
         );
       } else if (op === "delete-transaction") {
         actions.push(withRowOptions({ op: "delete-transaction", value: "" }, options));
       } else if (op === "set-split-amount") {
         // `fixed-percent` carries a percentage and `fixed-amount` a money value; both are plain
         // numbers in the cell. `remainder` and `formula` carry no numeric value.
-        const formula = rawValue.startsWith("'=") ? rawValue.slice(1) : rawValue;
         const isFormulaMethod = options?.method === "formula";
         const numeric = Number(rawValue);
         actions.push(
@@ -320,7 +344,7 @@ export function importRulesFromCsv(
               op: "set-split-amount",
               value: isFormulaMethod || rawValue === "" || Number.isNaN(numeric) ? null : numeric,
               type: "number",
-              ...(isFormulaMethod && formula ? { options: { formula } } : {}),
+              ...(isFormulaMethod && rawValue ? { options: { formula: rawValue } } : {}),
             },
             options
           )

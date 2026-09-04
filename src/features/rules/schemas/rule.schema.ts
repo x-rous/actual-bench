@@ -38,7 +38,7 @@ const optionsSchema = z
     message: "inflow and outflow are mutually exclusive",
   });
 
-const conditionOrActionSchema = z
+const basePartSchema = z
   .object({
     field: z.string().min(1).optional(),
     op: z.string().min(1),
@@ -60,15 +60,6 @@ const conditionOrActionSchema = z
   })
   .refine(
     (part) =>
-      (part.options?.inflow === undefined && part.options?.outflow === undefined) ||
-      part.field === "amount",
-    {
-      message: "options.inflow/outflow are only valid on an amount condition",
-      path: ["options"],
-    }
-  )
-  .refine(
-    (part) =>
       part.op !== "set-split-amount" ||
       (part.options?.method !== undefined && part.options.splitIndex !== undefined),
     {
@@ -77,12 +68,33 @@ const conditionOrActionSchema = z
     }
   );
 
+const hasDirectionFlag = (part: z.infer<typeof basePartSchema>): boolean =>
+  part.options?.inflow !== undefined || part.options?.outflow !== undefined;
+
+/**
+ * `inflow`/`outflow` narrow which side of a transaction an *amount condition* matches. There is
+ * no such thing on an action — `set amount` writes a value, it does not match one — so the check
+ * has to know which array the part came from, not just what its field is.
+ */
+const conditionSchema = basePartSchema.refine(
+  (part) => !hasDirectionFlag(part) || part.field === "amount",
+  {
+    message: "options.inflow/outflow are only valid on an amount condition",
+    path: ["options"],
+  }
+);
+
+const actionSchema = basePartSchema.refine((part) => !hasDirectionFlag(part), {
+  message: "options.inflow/outflow are not valid on an action",
+  path: ["options"],
+});
+
 export const ruleSchema = z.object({
   id: z.string().min(1),
   stage: z.enum(["pre", "default", "post"]),
   conditionsOp: z.enum(["and", "or"]),
-  conditions: z.array(conditionOrActionSchema),
-  actions: z.array(conditionOrActionSchema),
+  conditions: z.array(conditionSchema),
+  actions: z.array(actionSchema),
 });
 
 export type RuleFormValues = z.infer<typeof ruleSchema>;

@@ -22,6 +22,7 @@ import {
   getConditionOps,
   getSplitActionFields,
   getValidOps,
+  isAllocationMethod,
   isValidOp,
 } from "./ruleFields";
 
@@ -298,5 +299,38 @@ describe("ALLOCATION_METHODS", () => {
       "formula",
       "remainder",
     ]);
+  });
+});
+
+// ─── Untrusted keys ───────────────────────────────────────────────────────────
+//
+// Field and operator names reach these tables from stored rules and imported CSV, so an
+// inherited key like "constructor" is reachable. Before the tables were given a null prototype,
+// `getValidOps("constructor")` found `Object.prototype.constructor`, read `.type` off it as
+// undefined, and threw on `TYPE_OPS[undefined].filter`.
+
+describe("prototype keys are not fields", () => {
+  const inherited = ["constructor", "toString", "hasOwnProperty", "__proto__", "valueOf"];
+
+  it.each(inherited)("getValidOps(%p) returns nothing instead of throwing", (key) => {
+    expect(getValidOps(key)).toEqual([]);
+  });
+
+  it.each(inherited)("isValidOp(%p) is false instead of throwing", (key) => {
+    expect(isValidOp(key, "is")).toBe(false);
+  });
+
+  it.each(inherited)("%p is not a condition field or an action field", (key) => {
+    expect(CONDITION_FIELDS[key]).toBeUndefined();
+    expect(ACTION_FIELDS[key]).toBeUndefined();
+    expect(getConditionOps(key)).toEqual({});
+  });
+
+  it.each(inherited)("%p is not an allocation method", (key) => {
+    expect(isAllocationMethod(key)).toBe(false);
+  });
+
+  it.each(inherited)("%p is not an action op", (key) => {
+    expect(ACTION_OPS[key]).toBeUndefined();
   });
 });

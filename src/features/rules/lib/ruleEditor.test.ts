@@ -429,3 +429,35 @@ describe("an existing split rule survives the editor untouched", () => {
     expect(validation.actionErrors.flat()).toEqual([]);
   });
 });
+
+describe("validateRuleDraft — non-dense split indices", () => {
+  it("names the gap rather than silently accepting it", () => {
+    const result = validateRuleDraft({
+      stage: "default",
+      conditionsOp: "and",
+      conditions: createEditorParts([{ field: "payee", op: "is", value: "p1", type: "id" }]),
+      actions: createEditorParts([
+        { op: "set-split-amount", value: null, options: { method: "remainder", splitIndex: 1 } },
+        { op: "set", field: "category", value: "c1", type: "id", options: { splitIndex: 1 } },
+        { op: "set-split-amount", value: null, options: { method: "remainder", splitIndex: 5 } },
+        { op: "set", field: "category", value: "c2", type: "id", options: { splitIndex: 5 } },
+      ]),
+    });
+    expect(result.formErrors.join(" ")).toContain("numbered 1, 2, 3");
+  });
+
+  it("stays quiet on a well-formed split rule", () => {
+    const result = validateRuleDraft({
+      stage: "default",
+      conditionsOp: "and",
+      conditions: createEditorParts([{ field: "payee", op: "is", value: "p1", type: "id" }]),
+      actions: createEditorParts([
+        { op: "set-split-amount", value: null, options: { method: "remainder", splitIndex: 1 } },
+        { op: "set", field: "category", value: "c1", type: "id", options: { splitIndex: 1 } },
+        { op: "set-split-amount", value: null, options: { method: "remainder", splitIndex: 2 } },
+        { op: "set", field: "category", value: "c2", type: "id", options: { splitIndex: 2 } },
+      ]),
+    });
+    expect(result.formErrors).toEqual([]);
+  });
+});

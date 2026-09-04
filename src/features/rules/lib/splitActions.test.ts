@@ -2,6 +2,7 @@ import type { ConditionOrAction } from "@/types/entities";
 import {
   groupActionsBySplitIndex,
   groupBySplitIndex,
+  hasDenseSplitIndices,
   isSplitAmountAction,
   isSplitRule,
   makeSplitAmountAction,
@@ -72,9 +73,31 @@ describe("groupActionsBySplitIndex", () => {
     expect(groupActionsBySplitIndex([])).toEqual([{ index: 0, items: [] }]);
   });
 
-  it("fills a gap in stored indices with an empty group rather than a hole", () => {
-    const groups = groupActionsBySplitIndex([setPayee, child(3, "notes", "x")]);
-    expect(groups.map((g) => g.items.length)).toEqual([1, 0, 0, 1]);
+  it("fills a plausible gap with an empty group rather than a hole", () => {
+    // Three actions, highest index 3 — within the bound, so the gaps are rendered.
+    const groups = groupActionsBySplitIndex([setPayee, child(3, "notes", "x"), child(3, "payee", "p1")]);
+    expect(groups.map((g) => [g.index, g.items.length])).toEqual([
+      [0, 1],
+      [1, 0],
+      [2, 0],
+      [3, 2],
+    ]);
+  });
+
+  it("groups sparsely rather than allocating from an index it cannot trust", () => {
+    // A well-formed rule has at least one action per split, so an index beyond the action count
+    // means the data is malformed. Filling to it would allocate an array of that size.
+    const groups = groupActionsBySplitIndex([setPayee, child(9, "notes", "x")]);
+    expect(groups.map((g) => g.index)).toEqual([0, 9]);
+  });
+
+  it("survives an oversized stored index instead of throwing RangeError", () => {
+    // `RulesTable` previews every visible rule, so one bad row used to take out the whole page.
+    const groups = groupActionsBySplitIndex([child(4294967295, "notes", "x")]);
+    expect(groups.map((g) => [g.index, g.items.length])).toEqual([
+      [0, 0],
+      [4294967295, 1],
+    ]);
   });
 
   it("groups editor parts through the accessor, preserving their client ids", () => {
@@ -152,6 +175,18 @@ describe("removeSplitGroup", () => {
     const result = removeSplitGroup(oneWay, 1);
     expect(result).toEqual([setPayee]);
     expect(isSplitRule(result)).toBe(false);
+  });
+});
+
+describe("hasDenseSplitIndices", () => {
+  it("accepts 1..n and a rule with no splits at all", () => {
+    expect(hasDenseSplitIndices(twoWaySplit)).toBe(true);
+    expect(hasDenseSplitIndices([setPayee])).toBe(true);
+  });
+
+  it("rejects a gap and a run that does not start at 1", () => {
+    expect(hasDenseSplitIndices([setPayee, child(1, "notes", "a"), child(3, "notes", "b")])).toBe(false);
+    expect(hasDenseSplitIndices([setPayee, child(2, "notes", "a")])).toBe(false);
   });
 });
 

@@ -49,23 +49,50 @@ export function splitCount(actions: readonly ConditionOrAction[]): number {
 }
 
 /**
- * Group items by the split they belong to, densely: group 0 is always present, and a gap in the
- * stored indices becomes an empty group rather than a hole, so callers can render and validate
- * without special-casing malformed data.
+ * True when the split indices are `1..n` with no gaps — the shape Actual writes and the one
+ * `removeSplitGroup` maintains. Stored or imported data can violate it.
+ */
+export function hasDenseSplitIndices(actions: readonly ConditionOrAction[]): boolean {
+  const present = [...new Set(actions.map(splitIndexOf))].filter((i) => i > 0).sort((a, b) => a - b);
+  return present.every((value, i) => value === i + 1);
+}
+
+/**
+ * Group items by the split they belong to. Group 0 is always present.
+ *
+ * A well-formed rule has at least one action per split — the allocation row — so its highest
+ * index can never exceed the number of actions. That gives a bound with no arbitrary constant:
+ * within it, gaps are filled with empty groups so callers can render and validate contiguously;
+ * beyond it the stored data is malformed, and the groups are emitted sparsely rather than
+ * allocating an array sized by an untrusted index. `splitIndex: 4294967295` reaching
+ * `Array.from({ length })` throws `RangeError`, and `RulesTable` previews every visible rule —
+ * so one bad row would take out the whole page.
+ *
+ * `validateRuleDraft` reports the non-dense indices; `normalizeSplitIndices` closes them.
  */
 export function groupBySplitIndex<T>(
   items: readonly T[],
   getAction: (item: T) => ConditionOrAction
 ): SplitGroup<T>[] {
-  const max = items.reduce((acc, item) => Math.max(acc, splitIndexOf(getAction(item))), 0);
-  const groups: SplitGroup<T>[] = Array.from({ length: max + 1 }, (_, index) => ({
-    index,
-    items: [],
-  }));
+  const byIndex = new Map<number, T[]>([[0, []]]);
+  let max = 0;
   for (const item of items) {
-    groups[splitIndexOf(getAction(item))].items.push(item);
+    const index = splitIndexOf(getAction(item));
+    max = Math.max(max, index);
+    const bucket = byIndex.get(index);
+    if (bucket) bucket.push(item);
+    else byIndex.set(index, [item]);
   }
-  return groups;
+
+  if (max <= items.length) {
+    for (let index = 0; index <= max; index++) {
+      if (!byIndex.has(index)) byIndex.set(index, []);
+    }
+  }
+
+  return [...byIndex.entries()]
+    .sort(([a], [b]) => a - b)
+    .map(([index, groupItems]) => ({ index, items: groupItems }));
 }
 
 export function groupActionsBySplitIndex(

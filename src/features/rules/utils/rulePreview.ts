@@ -14,6 +14,7 @@ import {
   CONDITION_FIELDS,
   conditionDisplayField,
   friendlyOp,
+  getConditionOps,
   isAllocationMethod,
 } from "./ruleFields";
 import { groupActionsBySplitIndex, isSplitRule } from "../lib/splitActions";
@@ -107,6 +108,12 @@ function summariseCondition(c: ConditionOrAction, maps: EntityMaps): string {
   const fieldDef = CONDITION_FIELDS[displayField];
   const fieldLabel = fieldDef?.label ?? field;
   const opLabel = friendlyOp(c.op, fieldDef?.type);
+
+  // `onBudget`/`offBudget` take no value; appending one renders `Account is on budget ""`.
+  if (getConditionOps(displayField)[c.op]?.hasValue === false) {
+    return `${fieldLabel} ${opLabel}`;
+  }
+
   const valueLabel = resolveValue(field, c.value, maps, CONDITION_FIELDS);
   // Array values (e.g. oneOf) are already joined — no surrounding quotes needed.
   const wrapped = Array.isArray(c.value) ? valueLabel : `"${valueLabel}"`;

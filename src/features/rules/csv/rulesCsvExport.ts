@@ -32,6 +32,21 @@ function exportDisplayValue(
 }
 
 /**
+ * Characters that make a spreadsheet treat a cell as a formula rather than as text. A rule's
+ * notes, template or payee name are free text a user controls, so an exported file could carry
+ * `=HYPERLINK(...)` into whatever opens it next (CWE-1236).
+ *
+ * Prefixing with `'` is the standard neutralisation and is reversed on import, so the round-trip
+ * is unaffected. Applied to text only — a numeric cell like `-50` is a number, not a formula, and
+ * guarding it would make the file harder to read for no gain.
+ */
+const FORMULA_LEAD = /^[=+\-@\t\r]/;
+
+export function guardCsvText(value: string): string {
+  return FORMULA_LEAD.test(value) ? `'${value}` : value;
+}
+
+/**
  * Encode the `options` keys that have no column of their own.
  *
  * `splitIndex` gets its own column because it is structural and worth reading at a glance;
@@ -46,6 +61,18 @@ export function encodeOptions(options: ConditionOrAction["options"]): string {
   if (options.inflow === true) parts.push("inflow=true");
   if (options.outflow === true) parts.push("outflow=true");
   return parts.join(";");
+}
+
+/**
+ * The display value with the formula guard applied, unless the part holds a plain number — an
+ * amount is a number in the spreadsheet and should stay one.
+ */
+function exportTextValue(
+  coa: { value: ConditionOrAction["value"]; type?: string },
+  maps: EntityMaps
+): string {
+  const rendered = exportDisplayValue(coa, maps);
+  return typeof coa.value === "number" ? rendered : guardCsvText(rendered);
 }
 
 /**
@@ -75,7 +102,7 @@ export function exportRulesToCsv(stagedRules: StagedMap<Rule>, maps: EntityMaps)
         "condition",
         csvField(cond.field ?? ""),
         csvField(cond.op),
-        csvField(exportDisplayValue(cond, maps)),
+        csvField(exportTextValue(cond, maps)),
         "",
         csvField(encodeOptions(cond.options)),
       ].join(","));
@@ -92,21 +119,16 @@ export function exportRulesToCsv(stagedRules: StagedMap<Rule>, maps: EntityMaps)
       const isDeleteTxn = act.op === "delete-transaction";
       const isSplitFormula = act.op === "set-split-amount" && act.options?.method === "formula";
 
-      // Prefix formulas starting with "=" with a single quote so spreadsheet apps
-      // treat the cell as text rather than evaluating it as a formula.
-      const rawFormula = act.options?.formula ?? "";
-      const formulaExportValue = rawFormula.startsWith("=") ? "'" + rawFormula : rawFormula;
-
       const splitIndex = splitIndexOf(act);
 
       const opCell = isTemplate ? "set-template" : isFormula ? "set-formula" : csvField(act.op);
       const valueCell = isTemplate
-        ? csvField(act.options?.template ?? "")
+        ? csvField(guardCsvText(act.options?.template ?? ""))
         : isFormula || isSplitFormula
-        ? csvField(formulaExportValue)
+        ? csvField(guardCsvText(act.options?.formula ?? ""))
         : isDeleteTxn
         ? ""
-        : csvField(exportDisplayValue(act, maps));
+        : csvField(exportTextValue(act, maps));
 
       lines.push([
         csvField(rule.id),

@@ -13,6 +13,7 @@ import {
 } from "../utils/ruleFields";
 import {
   groupActionsBySplitIndex,
+  hasDenseSplitIndices,
   isSplitAmountAction,
   isSplitRule,
   splitIndexOf,
@@ -283,6 +284,12 @@ function validateSplitStructure(actions: ConditionOrAction[]): string[] {
 
   const errors: string[] = [];
   const groups = groupActionsBySplitIndex(actions);
+
+  // Grouping only fills gaps while the indices are plausible; beyond that it groups sparsely, so
+  // the density check has to be explicit rather than inferred from the group list.
+  if (!hasDenseSplitIndices(actions)) {
+    errors.push("Splits must be numbered 1, 2, 3… with no gaps. Remove the empty ones and try again.");
+  }
 
   for (const group of groups) {
     if (group.index === 0) continue;

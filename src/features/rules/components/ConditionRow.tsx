@@ -283,17 +283,23 @@ export function ConditionRow({
     (newField: string) => {
       const newDef = CONDITION_FIELDS[newField] ?? CONDITION_FIELDS[DEFAULT_CONDITION_FIELD];
       const firstOp = Object.keys(getConditionOps(newField))[0] ?? "is";
-      // A pseudo-field is stored as the field it stands for, plus its options.
+      // A pseudo-field is stored as the field it stands for, plus its options. `inflow`/`outflow`
+      // belong to the field being replaced, so they are cleared; anything else on the bag is not
+      // this row's to discard.
       const pseudo = newDef?.pseudoFor;
+      const carried = { ...(condition.options ?? {}) };
+      delete carried.inflow;
+      delete carried.outflow;
+      const options = { ...carried, ...(pseudo?.options ?? {}) };
       onChange({
         field: pseudo?.field ?? newField,
         op: firstOp,
         value: newDef?.type === "boolean" ? false : "",
         type: newDef?.type ?? "string",
-        ...(pseudo ? { options: pseudo.options } : {}),
+        ...(Object.keys(options).length > 0 ? { options } : {}),
       });
     },
-    [onChange]
+    [condition.options, onChange]
   );
 
   function handleOpChange(newOp: string) {
