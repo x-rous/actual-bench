@@ -1,5 +1,11 @@
-import { createEditorParts, validateRuleDraft, type RuleDraft } from "./ruleEditor";
-import type { ConditionOrAction } from "@/types/entities";
+import {
+  createEditorParts,
+  serializeRule,
+  serializeRuleDraft,
+  validateRuleDraft,
+  type RuleDraft,
+} from "./ruleEditor";
+import type { ConditionOrAction, Rule } from "@/types/entities";
 
 function buildDraft(overrides?: Partial<RuleDraft>): RuleDraft {
   return {
@@ -367,5 +373,59 @@ describe("validateRuleDraft — amount inflow/outflow", () => {
       conditionDraft({ field: "amount-inflow", op: "gt", value: 10, type: "number" })
     );
     expect(result.conditionErrors.flat().join(" ")).toContain("select a valid field");
+  });
+});
+
+// ─── Opening and saving an existing split rule (F-119) ────────────────────────
+//
+// The acute bug: `validateActionPart` rejected `set-split-amount`, and the drawer blocks Save on
+// any action error — so a split rule could be opened and never saved back, even untouched. The
+// drawer's own path is createEditorParts → (edit) → stripEditorParts → serializeRule, so pinning
+// that round-trip here covers it without mounting the component.
+
+describe("an existing split rule survives the editor untouched", () => {
+  const stored: Rule = {
+    id: "r1",
+    stage: "pre",
+    conditionsOp: "and",
+    conditions: [
+      { field: "payee", op: "is", value: "p1", type: "id" },
+      { field: "amount", op: "gt", value: 10, type: "number", options: { outflow: true } },
+    ],
+    actions: [
+      { op: "set", field: "notes", value: "warehouse", type: "string" },
+      {
+        op: "set-split-amount",
+        value: 60,
+        type: "number",
+        options: { method: "fixed-percent", splitIndex: 1 },
+      },
+      { op: "set", field: "category", value: "c1", type: "id", options: { splitIndex: 1 } },
+      {
+        op: "set-split-amount",
+        value: null,
+        type: "number",
+        options: { method: "remainder", splitIndex: 2 },
+      },
+      { op: "set", field: "category", value: "c2", type: "id", options: { splitIndex: 2 } },
+    ],
+  };
+
+  const draft: RuleDraft = {
+    stage: stored.stage,
+    conditionsOp: stored.conditionsOp,
+    conditions: createEditorParts(stored.conditions),
+    actions: createEditorParts(stored.actions),
+  };
+
+  it("saves back byte-for-byte identical", () => {
+    expect(serializeRuleDraft(draft)).toBe(serializeRule(stored));
+  });
+
+  it("raises nothing that would block Save", () => {
+    const validation = validateRuleDraft(draft);
+    expect(validation.formErrors).toEqual([]);
+    expect(validation.conditionErrors.flat()).toEqual([]);
+    expect(validation.actionErrors.flat()).toEqual([]);
   });
 });
