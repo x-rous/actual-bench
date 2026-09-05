@@ -123,7 +123,8 @@ original contents without expanding the whole page.
 Before matching, **When a row isn't in Actual** chooses the starting values for a transaction that
 will need to be created:
 
-- **Payee** - resolve the statement's payee into a payee, or leave it unset for Actual's rules.
+- **Payee** - **The statement's payee**, resolved to a payee and created if it is new, or
+  **Actual's rules**, which writes no payee and lets your rules set it on the way in.
 - **Notes** - two independent switches: use the statement's memo, and also include the statement's
   payee. Tick both to keep them both, separated by an em dash; untick both to leave notes empty.
 

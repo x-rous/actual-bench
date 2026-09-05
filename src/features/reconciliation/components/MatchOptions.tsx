@@ -159,15 +159,14 @@ export function MatchOptions({
             />
           </div>
           <p className="text-[11px] leading-snug text-muted-foreground">
-            A bank&apos;s posting date often differs from the date you recorded it. This is the
-            match window; Actual uses 7 days.
+            A bank&apos;s posting date often differs from the date you recorded it.
           </p>
         </div>
 
         <div className="flex flex-col gap-1">
           <div className={SETTING_ROW}>
             <Label htmlFor="match-padding" className="min-w-0 text-xs">
-              Report transactions outside the period (days)
+              Look beyond the statement period (days)
             </Label>
             <input
               id="match-padding"
@@ -183,9 +182,8 @@ export function MatchOptions({
             />
           </div>
           <p className="text-[11px] leading-snug text-muted-foreground">
-            Transactions this far outside the statement period are listed as extra rather than
-            ignored. It does not affect matching &mdash; the matcher always gets its full window,
-            whatever this is set to.
+            Loads transactions this many days before and after the statement period. Extra
+            transactions are shown separately and aren&rsquo;t counted as missing.
           </p>
         </div>
 

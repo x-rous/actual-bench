@@ -154,18 +154,16 @@ describe("import preview", () => {
     expect(screen.getByLabelText("Decimal")).toBeInTheDocument();
     expect(screen.getByLabelText("Compare statement text against")).toBeInTheDocument();
     expect(screen.getByLabelText("Match transactions within (days)")).toBeInTheDocument();
-    expect(
-      screen.getByLabelText("Report transactions outside the period (days)")
-    ).toBeInTheDocument();
+    expect(screen.getByLabelText("Look beyond the statement period (days)")).toBeInTheDocument();
 
     // Moved here from the review screen: the notes source feeds the transform
     // engine, so it has to be settled before any transformation runs.
     expect(screen.getByRole("radio", { name: "The statement's payee" })).toBeInTheDocument();
-    expect(screen.getByRole("radio", { name: "Leave it to your rules" })).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: "Actual's rules" })).toBeInTheDocument();
     // This fixture is a CSV, where the Notes column mapping is the notes
     // decision — so there is no second control here to contradict it (F-128).
     expect(screen.queryByRole("checkbox", { name: /Use the statement's memo/ })).toBeNull();
-    expect(screen.getByText(/column you mapped above the preview/i)).toBeInTheDocument();
+    expect(screen.getByText(/column mapping/i)).toBeInTheDocument();
 
     expect(screen.getByLabelText("Profile name")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /save profile/i })).toBeInTheDocument();
@@ -261,9 +259,9 @@ describe("import preview", () => {
   it("says the bank's text is kept as the imported payee whichever payee you choose", () => {
     renderWith(statement(3));
 
-    // The gap this closes: "Leave it to your rules" read as though the bank's
-    // text would be discarded, when it is recorded either way.
-    for (const option of ["The statement's payee", "Leave it to your rules"]) {
+    // The gap this closes: choosing rules read as though the statement's text
+    // would be discarded, when it is recorded as the imported payee either way.
+    for (const option of ["The statement's payee", "Actual's rules"]) {
       const radio = screen.getByRole("radio", { name: option });
       fireEvent.click(radio);
       expect(screen.getByText(/recorded as the imported payee either way|still recorded as the imported payee/i)).toBeInTheDocument();
@@ -334,7 +332,7 @@ describe("import preview — what the rows will become", () => {
       screen.getByRole("columnheader", { name: /^Imported payee → payee & imported payee/ })
     ).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("radio", { name: "Leave it to your rules" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Actual's rules" }));
 
     expect(
       screen.getByRole("columnheader", { name: /^Imported payee → imported payee/ })
@@ -342,7 +340,7 @@ describe("import preview — what the rows will become", () => {
   });
 });
 
-// ─── The consumed memo, counted (F-131) ───────────────────────────────────────
+// ─── A memo spent as the payee (F-131) ───────────────────────────────────────
 
 describe("import preview — a memo spent as the payee", () => {
   // Two rows with no payee, one with. Under the fallback the first two give up
@@ -354,34 +352,32 @@ describe("import preview — a memo spent as the payee", () => {
     "D03/08/2026", "T-9.99", "PAMAZON AE", "MOnline purchase", "^",
   ].join("\n");
 
-  it("says how many rows lost their memo, and what those rows get instead", () => {
+  it("shows the affected rows as having no notes, rather than announcing a count", () => {
+    // The preview is where this is legible: those rows read "empty" while the
+    // third keeps its memo. A separate banner restating it is noise.
     renderLive(QIF);
 
-    const notice = screen.getByRole("status", { name: "" });
-    expect(notice).toHaveTextContent(/2 rows have no memo left/);
-    expect(notice).toHaveTextContent(/empty notes/);
+    const cells = previewRows().map((r) => r.querySelectorAll("td")[2]);
+    expect(cells[0]).toHaveTextContent("empty");
+    expect(cells[1]).toHaveTextContent("empty");
+    expect(cells[2]).toHaveTextContent("Online purchase");
   });
 
-  it("changes what it promises once the payee is included", () => {
+  it("gives those rows the payee once it is included", () => {
     renderLive(QIF);
     fireEvent.click(screen.getByRole("checkbox", { name: /Also include the statement's payee/ }));
 
-    expect(screen.getByText(/2 rows have no memo left/)).toBeInTheDocument();
-    expect(screen.getByText(/the payee only/)).toBeInTheDocument();
+    const cells = previewRows().map((r) => r.querySelectorAll("td")[2]);
+    expect(cells[0]).toHaveTextContent("DIRECT DEBIT BRITISH GAS");
+    expect(cells[2]).toHaveTextContent("Online purchase — AMAZON AE");
   });
 
-  it("disappears when the fallback that caused it is turned off", () => {
+  it("restores their memo when the fallback that consumed it is turned off", () => {
     renderLive(QIF);
-    fireEvent.click(
-      screen.getByLabelText(/Use the memo as a fallback for empty payees/)
-    );
+    fireEvent.click(screen.getByLabelText(/Use the memo as a fallback for empty payees/));
 
-    expect(screen.queryByText(/no memo left/)).toBeNull();
-  });
-
-  it("never appears for a CSV, which has no fallback", () => {
-    renderLive(statement(3));
-    expect(screen.queryByText(/no memo left/)).toBeNull();
+    const cells = previewRows().map((r) => r.querySelectorAll("td")[2]);
+    expect(cells[0]).toHaveTextContent("DIRECT DEBIT BRITISH GAS");
   });
 });
 

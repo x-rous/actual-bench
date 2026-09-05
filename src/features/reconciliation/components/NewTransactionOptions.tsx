@@ -76,8 +76,11 @@ export function NewTransactionOptions({
           },
           {
             value: "leave-unset",
-            label: "Leave it to your rules",
-            hint: "No payee is set, so Actual's rules decide it as the transaction is created. The statement's payee is still recorded as the imported payee, so nothing about the statement is lost.",
+            // "Leave it to your rules" was idiomatic and never said *which*
+            // rules. The legend asks where the payee comes from, so both
+            // options now read as sources: the statement, or Actual's rules.
+            label: "Actual's rules",
+            hint: "No payee is written, so Actual's rules set it as the transaction is created — exactly as they would for a bank-synced transaction. The statement's payee is still recorded as the imported payee, so nothing about the statement is lost.",
           },
         ]}
       />
@@ -90,15 +93,16 @@ export function NewTransactionOptions({
           <div className="flex items-center gap-1.5">
             <span className="text-xs font-semibold text-muted-foreground">Notes</span>
             <InfoHint label="notes">
-              Tick both to keep the memo and the payee, separated by an em dash. Notes you have
-              already edited or transformed keep what you set.
+              {notesFromMapping
+                ? "Change which column feeds the notes above the preview. Leave it unmapped for empty notes."
+                : "Tick both to keep the memo and the payee, separated by an em dash."}{" "}
+              Notes you have already edited or transformed keep what you set.
             </InfoHint>
           </div>
 
           {notesFromMapping ? (
             <p className="text-[11px] leading-snug text-muted-foreground">
-              From the <span className="font-medium">Notes</span> column you mapped above the
-              preview. Leave that column unmapped for empty notes.
+              From the <span className="font-medium">Notes</span> column mapping.
             </p>
           ) : (
             <>

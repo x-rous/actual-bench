@@ -411,16 +411,6 @@ export function ImportPanel({
     [applyConfig, effectiveConfig?.format]
   );
 
-  /*
-   * Rows whose memo was spent as the payee under the fallback, so they have no
-   * memo left to put in the notes. Actual behaves the same way; only the
-   * silence about it was the defect (F-131).
-   */
-  const consumedMemoCount = useMemo(() => {
-    if (!parsed || isDelimited || !effectiveConfig?.fallbackPayeeToMemo) return 0;
-    return parsed.rows.filter((row) => row.importedPayee && row.bankNotes == null).length;
-  }, [parsed, isDelimited, effectiveConfig?.fallbackPayeeToMemo]);
-
   const notesDestination = notesDestinationLabel(applyConfig, effectiveConfig?.format ?? null);
 
   /*
@@ -678,7 +668,8 @@ export function ImportPanel({
               Use the memo as a fallback for empty payees
               <InfoHint label="using the memo as a fallback">
                 Some banks leave the payee blank. Where that happens the memo becomes the payee, and
-                is then no longer available as a note for that row.
+                is then no longer available as a note — those rows show an empty Notes cell in the
+                preview.
               </InfoHint>
             </span>
           </label>
@@ -844,27 +835,6 @@ export function ImportPanel({
                 statementFormat={effectiveConfig.format}
                 disabled={writeSettingsLocked}
               />
-              {/*
-                The fallback above spends a row's memo as its payee, so those
-                rows have no memo left to put in the notes. Actual behaves the
-                same way and says nothing either; the silence is what made an
-                empty note look like a parsing failure (F-131).
-              */}
-              {consumedMemoCount > 0 && (
-                <p
-                  role="status"
-                  className="rounded-md border border-amber-500/40 bg-amber-500/5 px-2.5 py-1.5 text-[11px] leading-snug"
-                >
-                  <span className="font-medium">
-                    {consumedMemoCount} {consumedMemoCount === 1 ? "row has" : "rows have"} no memo
-                    left.
-                  </span>{" "}
-                  <span className="text-muted-foreground">
-                    Their memo became the payee under the fallback above, so those rows get
-                    {applyConfig.notesIncludePayee ? " the payee only." : " empty notes."}
-                  </span>
-                </p>
-              )}
             </Section>
             {profileSection}
           </div>
