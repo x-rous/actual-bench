@@ -165,3 +165,43 @@ describe("ruleSchema direction flags", () => {
     expect(result.success).toBe(true);
   });
 });
+
+describe("ruleSchema allocation placement", () => {
+  it("rejects an allocation in the conditions array", () => {
+    const result = ruleSchema.safeParse({
+      ...baseRule,
+      conditions: [
+        { op: "set-split-amount", value: null, options: { method: "remainder", splitIndex: 1 } },
+      ],
+      actions: [{ op: "set", field: "notes", value: "x", type: "string" }],
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects an allocation aimed at the parent transaction", () => {
+    for (const splitIndex of [0, undefined]) {
+      const result = ruleSchema.safeParse({
+        ...baseRule,
+        actions: [
+          {
+            op: "set-split-amount",
+            value: null,
+            options: { method: "remainder", ...(splitIndex === undefined ? {} : { splitIndex }) },
+          },
+        ],
+      });
+      expect(result.success).toBe(false);
+    }
+  });
+
+  it("accepts an allocation aimed at a child", () => {
+    const result = ruleSchema.safeParse({
+      ...baseRule,
+      actions: [
+        { op: "set-split-amount", value: null, options: { method: "remainder", splitIndex: 1 } },
+        { op: "set", field: "category", value: "c1", type: "id", options: { splitIndex: 1 } },
+      ],
+    });
+    expect(result.success).toBe(true);
+  });
+});

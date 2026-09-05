@@ -4,7 +4,7 @@
  * reader reaching the value control otherwise finds an unlabelled text box.
  */
 
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { ConditionRow, formatTagValue, parseTagValue } from "./ConditionRow";
 import type { ConditionOrAction } from "@/types/entities";
 import type { RuleEntityOptionsMap } from "../lib/ruleEditor";
@@ -83,5 +83,59 @@ describe("tag values", () => {
     const stored = formatTagValue(["food travel", "home"]);
     expect(parseTagValue(stored)).toEqual(["food", "travel", "home"]);
     expect(formatTagValue(parseTagValue(stored))).toBe(stored);
+  });
+});
+
+describe("changing the operator preserves the value", () => {
+  function renderWithChange(condition: ConditionOrAction) {
+    const onChange = jest.fn();
+    render(
+      <ConditionRow
+        condition={condition}
+        entityOptions={entityOptions}
+        onChange={onChange}
+        onDelete={() => {}}
+      />
+    );
+    return onChange;
+  }
+
+  it.each(["hasTags", "hasAnyTag"])(
+    "carries every value across when switching oneOf to %s",
+    (op) => {
+      // The multi-to-scalar case would otherwise take value[0] and drop the rest.
+      const onChange = renderWithChange({
+        field: "payee_name",
+        op: "oneOf",
+        value: ["food", "travel"],
+        type: "string",
+      });
+      fireEvent.change(screen.getByLabelText("Condition operator"), { target: { value: op } });
+      expect(onChange.mock.calls[0][0].value).toBe("#food #travel");
+    }
+  );
+
+  it("keeps the stored string when switching between the two tag operators", () => {
+    const onChange = renderWithChange({
+      field: "notes",
+      op: "hasTags",
+      value: "#food #travel",
+      type: "string",
+    });
+    fireEvent.change(screen.getByLabelText("Condition operator"), {
+      target: { value: "hasAnyTag" },
+    });
+    expect(onChange.mock.calls[0][0].value).toBe("#food #travel");
+  });
+
+  it("still collapses a list to a scalar for a non-tag operator", () => {
+    const onChange = renderWithChange({
+      field: "payee_name",
+      op: "oneOf",
+      value: ["food", "travel"],
+      type: "string",
+    });
+    fireEvent.change(screen.getByLabelText("Condition operator"), { target: { value: "contains" } });
+    expect(onChange.mock.calls[0][0].value).toBe("food");
   });
 });

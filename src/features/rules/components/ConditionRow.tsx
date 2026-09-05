@@ -337,13 +337,15 @@ export function ConditionRow({
         typeof condition.value === "object" && !Array.isArray(condition.value)
           ? condition.value
           : { num1: 0, num2: 0 };
+    } else if (nextKind === "tags") {
+      // Ahead of the multi-to-scalar case below: tags are stored as one string, so a list can be
+      // carried across whole. Taking `value[0]` would silently drop every tag but the first.
+      newValue = wasKind === "tags" ? condition.value : formatTagValue(parseTagValue(condition.value));
     } else if (isMulti && !wasMulti) {
       const scalar = typeof condition.value === "string" ? condition.value : "";
       newValue = scalar ? [scalar] : [];
     } else if (!isMulti && wasMulti) {
       newValue = Array.isArray(condition.value) ? (condition.value[0] ?? "") : "";
-    } else if (nextKind === "tags" && wasKind !== "tags") {
-      newValue = formatTagValue(parseTagValue(condition.value));
     } else if (wasKind === "range") {
       // An amount range cannot be reinterpreted as a scalar; start clean.
       newValue = "";

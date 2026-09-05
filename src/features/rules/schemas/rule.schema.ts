@@ -57,16 +57,7 @@ const basePartSchema = z
   .refine((part) => part.options?.method === undefined || part.op === "set-split-amount", {
     message: "options.method is only valid on a set-split-amount action",
     path: ["options", "method"],
-  })
-  .refine(
-    (part) =>
-      part.op !== "set-split-amount" ||
-      (part.options?.method !== undefined && part.options.splitIndex !== undefined),
-    {
-      message: "a set-split-amount action needs both options.method and options.splitIndex",
-      path: ["options"],
-    }
-  );
+  });
 
 const hasDirectionFlag = (part: z.infer<typeof basePartSchema>): boolean =>
   part.options?.inflow !== undefined || part.options?.outflow !== undefined;
@@ -76,18 +67,37 @@ const hasDirectionFlag = (part: z.infer<typeof basePartSchema>): boolean =>
  * no such thing on an action — `set amount` writes a value, it does not match one — so the check
  * has to know which array the part came from, not just what its field is.
  */
-const conditionSchema = basePartSchema.refine(
-  (part) => !hasDirectionFlag(part) || part.field === "amount",
-  {
+const conditionSchema = basePartSchema
+  .refine((part) => !hasDirectionFlag(part) || part.field === "amount", {
     message: "options.inflow/outflow are only valid on an amount condition",
     path: ["options"],
-  }
-);
+  })
+  // An allocation says how much of a transaction a split child takes. There is no such thing to
+  // *match* on, so it is an action and only an action.
+  .refine((part) => part.op !== "set-split-amount", {
+    message: "set-split-amount is an action, not a condition",
+    path: ["op"],
+  });
 
-const actionSchema = basePartSchema.refine((part) => !hasDirectionFlag(part), {
-  message: "options.inflow/outflow are not valid on an action",
-  path: ["options"],
-});
+const actionSchema = basePartSchema
+  .refine((part) => !hasDirectionFlag(part), {
+    message: "options.inflow/outflow are not valid on an action",
+    path: ["options"],
+  })
+  // `splitIndex` must name a child: 0 (or absent) is the parent transaction, which has no
+  // allocation of its own. `validateSplitStructure` reports the same thing as an orphan.
+  .refine(
+    (part) =>
+      part.op !== "set-split-amount" ||
+      (part.options?.method !== undefined &&
+        part.options.splitIndex !== undefined &&
+        part.options.splitIndex > 0),
+    {
+      message:
+        "a set-split-amount action needs options.method and an options.splitIndex above 0",
+      path: ["options"],
+    }
+  );
 
 export const ruleSchema = z.object({
   id: z.string().min(1),

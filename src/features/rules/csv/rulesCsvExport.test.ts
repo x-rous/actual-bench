@@ -520,7 +520,7 @@ describe("CSV import rejects an allocation with no split target", () => {
     );
   }
 
-  it.each([["blank", ""], ["nonnumeric", "abc"], ["zero", "0"]])(
+  it.each([["blank", ""], ["zero", "0"]])(
     "skips the rule when split_index is %s",
     (_label, splitIndex) => {
       // hasDenseSplitIndices filters index 0 before checking, so a lone index-0 allocation
@@ -536,6 +536,18 @@ describe("CSV import rejects an allocation with no split target", () => {
       expect(result.skipReasons[0].reason).toContain("allocation without a split_index");
     }
   );
+
+  it("reports a non-numeric split_index as such, before the allocation check", () => {
+    const result = importRows([
+      "r1,default,and,condition,notes,contains,x,,",
+      "r1,,,action,,set-split-amount,,abc,method=remainder",
+      "r1,,,action,notes,set,y,,",
+    ]);
+    expect("rules" in result).toBe(true);
+    if (!("rules" in result)) return;
+    expect(result.rules).toHaveLength(0);
+    expect(result.skipReasons[0].reason).toContain('split_index "abc" must be a whole number');
+  });
 
   it("still accepts an allocation that names its split", () => {
     const result = importRows([
@@ -616,5 +628,45 @@ describe("CSV import rejects invalid allocation payloads", () => {
       formula: "=amount * 0.2",
       splitIndex: 1,
     });
+  });
+});
+
+describe("CSV import rejects a malformed split_index on an ordinary action", () => {
+  const maps = { payees: {}, categories: {}, accounts: {}, categoryGroups: {} } as unknown as EntityMaps;
+
+  function importRows(rows: string[]) {
+    return importRulesFromCsv(
+      ["rule_id,stage,conditions_op,row_type,field,op,value,split_index,options", ...rows].join("\n"),
+      maps
+    );
+  }
+
+  it.each(["abc", "-1", "1.5"])(
+    "skips the rule rather than silently retargeting the action to the parent (%p)",
+    (splitIndex) => {
+      // With a valid allocation at 1 alongside it, hasDenseSplitIndices sees a clean [1] and
+      // would have accepted the rule with this action on the wrong transaction.
+      const result = importRows([
+        "r1,default,and,condition,notes,contains,x,,",
+        "r1,,,action,,set-split-amount,,1,method=remainder",
+        "r1,,,action,notes,set,a,1,",
+        `r1,,,action,notes,set,b,${splitIndex},`,
+      ]);
+      expect("rules" in result).toBe(true);
+      if (!("rules" in result)) return;
+      expect(result.rules).toHaveLength(0);
+      expect(result.skipReasons[0].reason).toContain("must be a whole number of 0 or more");
+    }
+  );
+
+  it('still treats "0" as the parent transaction', () => {
+    const result = importRows([
+      "r1,default,and,condition,notes,contains,x,,",
+      "r1,,,action,notes,set,y,0,",
+    ]);
+    expect("rules" in result).toBe(true);
+    if (!("rules" in result)) return;
+    expect(result.rules).toHaveLength(1);
+    expect(result.rules[0].actions[0].options).toBeUndefined();
   });
 });

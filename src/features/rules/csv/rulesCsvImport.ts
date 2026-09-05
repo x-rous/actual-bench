@@ -156,9 +156,16 @@ function decodeOptions(
     return { error: "options cannot set both inflow and outflow" };
   }
 
-  const splitIndex = Number(splitIndexRaw);
-  if (splitIndexRaw !== "" && Number.isInteger(splitIndex) && splitIndex > 0) {
-    options.splitIndex = splitIndex;
+  // A malformed index used to be dropped silently, which retargeted the action to the parent
+  // transaction — and if the rule also had a valid allocation, the density check saw a clean
+  // `[1]` and staged the rule with the action on the wrong transaction. Every other malformed
+  // input here is rejected with a reason; this one is too. `"0"` still means the parent.
+  if (splitIndexRaw !== "") {
+    const splitIndex = Number(splitIndexRaw);
+    if (!Number.isInteger(splitIndex) || splitIndex < 0) {
+      return { error: `split_index "${splitIndexRaw}" must be a whole number of 0 or more` };
+    }
+    if (splitIndex > 0) options.splitIndex = splitIndex;
   }
 
   return { options: Object.keys(options).length > 0 ? options : undefined };
