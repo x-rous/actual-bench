@@ -44,6 +44,7 @@ import { loadCandidateWindow } from "../lib/loadCandidates";
 import {
   DEFAULT_APPLY_CONFIG,
   buildApplyPlan,
+  normalizeApplyConfig,
   type ApplyConfig,
 } from "@/lib/reconciliation/session/plan";
 import { prospectiveTransaction } from "@/lib/reconciliation/session/prospective";
@@ -295,7 +296,9 @@ export function ReconciliationView() {
     }
     setStatementName(data.session.statementName);
     if (data.session.matchConfig) setMatchConfig(data.session.matchConfig as MatchConfig);
-    if (data.session.applyConfig) setApplyConfig(data.session.applyConfig as ApplyConfig);
+    // Read through the normaliser: a session saved before the notes model
+    // changed still carries the old three-way `notesStrategy`.
+    if (data.session.applyConfig) setApplyConfig(normalizeApplyConfig(data.session.applyConfig));
     setLoadedSessionId(data.session.id);
   }, [sessionQuery.data, hydratedSessionId, screen, loadedSessionId]);
 
@@ -381,6 +384,7 @@ export function ReconciliationView() {
         statementRows: statementRowsById,
         transactions: transactionsById,
         applyConfig,
+        statementFormat: sessionQuery.data?.session.statementFormat ?? null,
       }),
     [
       sessionId,
@@ -403,6 +407,7 @@ export function ReconciliationView() {
         statementRows: statementRowsById,
         transactions: transactionsById,
         applyConfig,
+        statementFormat: sessionQuery.data?.session.statementFormat ?? null,
         appliedOperationIds,
       }),
     [
@@ -888,7 +893,13 @@ export function ReconciliationView() {
         item: entry,
         statementRow,
         transaction,
-        pending: prospectiveTransaction({ item: entry, statementRow, transaction, applyConfig }),
+        pending: prospectiveTransaction({
+          item: entry,
+          statementRow,
+          transaction,
+          applyConfig,
+          statementFormat: sessionQuery.data?.session.statementFormat ?? null,
+        }),
         categoryName: (id: string | null) =>
           categoryOptions.find((option) => option.id === id)?.name ?? null,
         payeeName: (id: string | null) =>
@@ -1402,6 +1413,7 @@ export function ReconciliationView() {
               categories={categoryOptions}
               drift={driftReport}
               applyConfig={applyConfig}
+              statementFormat={sessionQuery.data?.session.statementFormat ?? null}
               onApplyConfigChange={handleApplyConfigChange}
               writeSettingsLocked={writeSettingsLocked}
             />
@@ -1414,6 +1426,7 @@ export function ReconciliationView() {
                 transactions={transactionsById}
                 payees={payeeOptions}
                 applyConfig={applyConfig}
+                statementFormat={sessionQuery.data?.session.statementFormat ?? null}
                 result={applyResult}
                 verification={verification}
                 isVerifying={isVerifying}

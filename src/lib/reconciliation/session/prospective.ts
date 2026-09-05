@@ -13,6 +13,7 @@
 
 import { effectiveValue } from "./staging";
 import type { ApplyConfig } from "./plan";
+import type { StatementFormat } from "../statement/normalize";
 import type {
   ActualTransactionSnapshot,
   MinorUnitAmount,
@@ -58,11 +59,59 @@ export type ProspectiveTransaction = {
  * made them a single either/or choice could not express a statement that
  * supplied both.
  */
+/**
+ * The notes a created transaction will carry.
+ *
+ * Exported because the import preview shows this before anything is written,
+ * and a second implementation there would eventually disagree with this one —
+ * which is the whole defect the preview exists to remove.
+ *
+ * Additive: each half is included when its switch is on and it has something to
+ * contribute. A row with no memo and `notesFromMemo` on simply contributes
+ * nothing, rather than falling through to the payee.
+ */
+export const NOTES_SEPARATOR = " — ";
+
+/**
+ * The effective notes switches for a statement of this format.
+ *
+ * A delimited statement has no notes control: its Notes column mapping is the
+ * decision, so the memo is used and nothing is added to it. The stored values
+ * are overridden here rather than rewritten, because a session re-imported from
+ * a CSV would otherwise lose the choice its user made for an OFX statement.
+ */
+export function resolveNotesSwitches(
+  config: Pick<ApplyConfig, "notesFromMemo" | "notesIncludePayee">,
+  statementFormat: StatementFormat | null
+): { notesFromMemo: boolean; notesIncludePayee: boolean } {
+  if (statementFormat === "delimited") {
+    return { notesFromMemo: true, notesIncludePayee: false };
+  }
+  return {
+    notesFromMemo: config.notesFromMemo,
+    notesIncludePayee: config.notesIncludePayee,
+  };
+}
+
+export function composeNotes(
+  config: Pick<ApplyConfig, "notesFromMemo" | "notesIncludePayee">,
+  statement: { bankNotes: string | null; importedPayee: string | null },
+  statementFormat: StatementFormat | null = null
+): string | null {
+  const switches = resolveNotesSwitches(config, statementFormat);
+  const parts: string[] = [];
+  if (switches.notesFromMemo && statement.bankNotes) parts.push(statement.bankNotes);
+  if (switches.notesIncludePayee && statement.importedPayee) parts.push(statement.importedPayee);
+  return parts.length > 0 ? parts.join(NOTES_SEPARATOR) : null;
+}
+
 export function prospectiveTransaction(input: {
   item: ReconciliationItem;
   statementRow: StatementRow | undefined;
   transaction: ActualTransactionSnapshot | undefined;
   applyConfig: ApplyConfig;
+  /** Null on a session recorded before the format was stored. */
+  statementFormat?: StatementFormat | null;
 }): ProspectiveTransaction {
   const { item, statementRow, transaction, applyConfig } = input;
   const patch = item.stagedChanges;
@@ -74,17 +123,11 @@ export function prospectiveTransaction(input: {
   const baselineNotes = isNew ? notesBaseline() : transaction?.notes ?? null;
 
   function notesBaseline(): string | null {
-    switch (applyConfig.notesStrategy) {
-      case "bank-notes":
-        return statementBankNotes;
-      // A deliberate duplicate for people whose rules read the notes. The bank
-      // memo still wins when there is one — it is the more specific answer to
-      // "what does this note say".
-      case "imported-payee":
-        return statementBankNotes ?? statementImportedPayee;
-      case "leave-unset":
-        return null;
-    }
+    return composeNotes(
+      applyConfig,
+      { bankNotes: statementBankNotes, importedPayee: statementImportedPayee },
+      input.statementFormat ?? null
+    );
   }
 
   return {

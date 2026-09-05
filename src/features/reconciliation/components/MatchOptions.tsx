@@ -60,7 +60,7 @@ const PRESETS: { id: TextTargetPreset; label: string; hint: string }[] = [
   {
     id: "imported-payee",
     label: "Imported payee",
-    hint: "For transactions brought in by bank sync, which keep the raw merchant text.",
+    hint: "For transactions brought in by bank sync, which keep the bank's raw text.",
   },
 ];
 
@@ -159,14 +159,15 @@ export function MatchOptions({
             />
           </div>
           <p className="text-[11px] leading-snug text-muted-foreground">
-            A bank&apos;s posting date often differs from the date you recorded it.
+            A bank&apos;s posting date often differs from the date you recorded it. This is the
+            match window; Actual uses 7 days.
           </p>
         </div>
 
         <div className="flex flex-col gap-1">
           <div className={SETTING_ROW}>
             <Label htmlFor="match-padding" className="min-w-0 text-xs">
-              Look beyond the statement period (days)
+              Report transactions outside the period (days)
             </Label>
             <input
               id="match-padding"
@@ -182,9 +183,9 @@ export function MatchOptions({
             />
           </div>
           <p className="text-[11px] leading-snug text-muted-foreground">
-            Loads transactions this many days before and after the statement period for matching.
-            Extra transactions are shown separately and aren&rsquo;t counted as missing. Increase it
-            for a wider match window.
+            Transactions this far outside the statement period are listed as extra rather than
+            ignored. It does not affect matching &mdash; the matcher always gets its full window,
+            whatever this is set to.
           </p>
         </div>
 

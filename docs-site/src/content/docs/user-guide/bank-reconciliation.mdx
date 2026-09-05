@@ -123,16 +123,19 @@ original contents without expanding the whole page.
 Before matching, **When a row isn't in Actual** chooses the starting values for a transaction that
 will need to be created:
 
-- **Payee** - resolve the bank's merchant text into a payee, or leave the payee unset for Actual's
-  rules.
-- **Notes** - use the bank's memo, also fall back to merchant text where there is no memo, or leave
-  notes empty.
+- **Payee** - resolve the statement's payee into a payee, or leave it unset for Actual's rules.
+- **Notes** - two independent switches: use the statement's memo, and also include the statement's
+  payee. Tick both to keep them both, separated by an em dash; untick both to leave notes empty.
+
+On a **CSV** there is no notes control at all - the Notes column you mapped over the preview is the
+decision, exactly as in Actual. Leave that column unmapped for empty notes, or map the same source
+column to both Imported payee and Notes to carry the payee text into the notes as well.
 
 These choices happen before matching because the notes source is an input to transformations. After
 matching, the same choices remain available from **New rows** on the Reconcile toolbar. If you have
 already edited or transformed a row's notes, that row keeps what you set when the source changes.
 
-The bank's merchant text is still recorded as the imported payee in every option.
+The statement's payee is still recorded as the imported payee in every option.
 
 ### The two text channels
 
@@ -178,10 +181,11 @@ check the preview. Nothing in the data can settle that, and guessing wrong mis-d
 For **OFX/QFX and QIF**, the file states the split itself, and two repairs are offered for banks that
 get it wrong:
 
-- **Swap payee and memo** - some banks put the real merchant in the memo field.
-- **Use the memo when the payee field is empty** - the memo becomes the merchant text, and is *not*
-  repeated in the notes. Duplicating the same text into both fields merely because the bank left
-  `NAME` blank is noise, not provenance.
+- **Use the memo as a fallback for empty payees** - the memo becomes the payee, and is then *not*
+  available as a note for that row. Duplicating the same text into both fields merely because the
+  bank left `NAME` blank is noise, not provenance. The import screen says how many rows this
+  affected, so an empty note is never a surprise.
+- **Swap the payee and memo** - some banks put the real merchant in the memo field.
 
 Foreign-currency rows keep the **original amount and currency** the bank printed, alongside the
 converted amount that actually posted - read from whichever text channel the bank printed it in.
@@ -221,7 +225,7 @@ has already produced. That is what makes every result explainable.
 
 ### Choose what the text is compared against
 
-The statement's merchant text is what gets compared - its memo is used only when the bank left the
+The statement's payee is what gets compared - its memo is used only when the bank left the
 merchant field empty. Where that text lives in Actual differs from person to person, so you choose
 what it is compared against:
 
@@ -314,7 +318,7 @@ A transformation can be applied to many rows at once and previewed before it is 
 ![The review screen: counts for create, update and delete, the net balance change, the two write settings, and each row shown as it will look afterwards.](../../../assets/screenshots/user-guide/recon-review.png)
 
 *The last screen before anything is written. Here nothing is created, updated or deleted — 34 rows
-need no change, four get the bank's merchant text recorded, and the balance moves by 0.00.*
+need no change, four get the statement's payee recorded, and the balance moves by 0.00.*
 
 The review screen shows, statement row by statement row, what each will look like in your budget
 afterwards. Changed values are marked and carry their previous value. The Action column distinguishes
@@ -334,7 +338,7 @@ It also states:
   honestly.
 - **What the statement fills in** on a transaction being created. The Payee and Notes choices made
   during Import are stated here rather than changed after transformations have already used them.
-- **Whether matched transactions gain the bank's merchant text** - **On new and matched rows** or
+- **Whether matched transactions gain the statement's payee** - **On new and matched rows** or
   **On new rows only** - see below.
 
 ### What actually gets written
@@ -343,19 +347,19 @@ Actual keeps three separate facts about a transaction, and so does this feature:
 
 | Field | What it holds |
 | --- | --- |
-| **Imported payee** | The bank's own merchant text. Provenance: what your bank called this transaction. |
+| **Imported payee** | The statement's own payee text. Provenance: what your bank called this transaction. |
 | **Payee** | The payee *you* keep - an Actual payee entity, curated, renameable, and the thing your reports group by. |
 | **Notes** | The bank's memo, your own words, workflow tags. |
 
 They are not alternatives to one another, so you are not asked to choose between them:
 
-- **A created transaction always records the bank's merchant text as its imported payee** - whichever
+- **A created transaction always records the statement's payee as its imported payee** - whichever
   payee you end up with, whether a rule changes it, and whether or not you also copy the text into
   the notes. There is no setting for this, because there is no sensible reason to throw the bank's
   own text away.
-- **Payee on a new transaction**: resolve the merchant text into a payee (creating one if it is new),
+- **Payee on a new transaction**: resolve the statement's payee into a payee (creating one if it is new),
   or leave it unset for your rules to decide. A payee you set on a row yourself always wins.
-- **Notes on a new transaction**: the bank's memo, the merchant text as well when there is no memo
+- **Notes on a new transaction**: the statement's memo, its payee, both, or neither
   (a deliberate duplicate, for rules that read the notes), or nothing.
 
 The Payee and Notes sources are chosen during Import, before matching and transformations, and are
@@ -365,21 +369,21 @@ on the Reconcile toolbar; notes already staged on a row remain untouched.
 ### Matched transactions keep what you curated
 
 When a statement row matches a transaction you already have, its **payee, notes and category are left
-exactly as they are**. What can be added is the bank's merchant text as the imported payee - the same
+exactly as they are**. What can be added is the statement's payee as the imported payee - the same
 thing Actual's own bank import does on a match, and the reason the field exists.
 
 That is still a write, so it is reported as one. But it is counted and named separately: Review and
 Apply can say, for example, **3 changes · 126 bank details**, and **Fields that will be written**
-names the imported payees as values set from the statement's merchant text. The Applied result keeps
+names the imported payees as values set from the statement's payee. The Applied result keeps
 the same distinction.
 
 Rows already reconciled in Actual are skipped, and a row whose imported payee already matches is not
-written to at all. **Record the bank's merchant text** defaults to **On new and matched rows**. Choose
+written to at all. **Record the statement's payee** defaults to **On new and matched rows**. Choose
 **On new rows only** when this Review should leave matched transactions' existing imported payees
 alone. If you return to Reconcile, the choice resets to the default; **Mark as cleared** and the
 new-row Payee/Notes choices are left alone.
 
-Once Apply starts, **Record the bank's merchant text** and **Mark as cleared** are disabled. On a
+Once Apply starts, **Record the statement's payee** and **Mark as cleared** are disabled. On a
 reopened applied or partially applied reconciliation, they show what was executed and cannot be
 changed.
 

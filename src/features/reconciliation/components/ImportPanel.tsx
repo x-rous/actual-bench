@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { InfoHint } from "@/components/ui/info-hint";
 import { AlertTriangle, FileText, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -567,32 +568,38 @@ export function ImportPanel({
       */}
       {!isDelimited && (
         <div className="flex flex-col gap-1.5">
-          <label className="flex items-start gap-2 text-xs">
+          {/*
+            Fallback first, then swap — Actual's order, and the logical one: the
+            fallback decides whether a memo survives to be a note at all, so it
+            reads before the swap that decides which text is which.
+          */}
+          <label className="flex items-center gap-2 text-xs">
             <input
               type="checkbox"
-              className="mt-0.5"
-              checked={effectiveConfig.swapPayeeAndMemo}
-              onChange={(event) => update({ swapPayeeAndMemo: event.target.checked })}
-            />
-            <span>
-              Swap the payee and memo fields
-              <span className="block text-[11px] text-muted-foreground">
-                For banks that fill them the wrong way round.
-              </span>
-            </span>
-          </label>
-          <label className="flex items-start gap-2 text-xs">
-            <input
-              type="checkbox"
-              className="mt-0.5"
+              className="size-3.5 accent-foreground"
               checked={effectiveConfig.fallbackPayeeToMemo}
               onChange={(event) => update({ fallbackPayeeToMemo: event.target.checked })}
             />
-            <span>
-              Use the memo when the payee is empty
-              <span className="block text-[11px] text-muted-foreground">
-                The memo becomes the merchant text and is not repeated in the notes.
-              </span>
+            <span className="flex items-center gap-1.5">
+              Use the memo as a fallback for empty payees
+              <InfoHint label="using the memo as a fallback">
+                Some banks leave the payee blank. Where that happens the memo becomes the payee, and
+                is then no longer available as a note for that row.
+              </InfoHint>
+            </span>
+          </label>
+          <label className="flex items-center gap-2 text-xs">
+            <input
+              type="checkbox"
+              className="size-3.5 accent-foreground"
+              checked={effectiveConfig.swapPayeeAndMemo}
+              onChange={(event) => update({ swapPayeeAndMemo: event.target.checked })}
+            />
+            <span className="flex items-center gap-1.5">
+              Swap the payee and memo
+              <InfoHint label="swapping the payee and memo">
+                For banks that fill the two fields the wrong way round.
+              </InfoHint>
             </span>
           </label>
         </div>

@@ -39,7 +39,7 @@ import type { Option } from "./StagedFields";
 
 const FIELDS: { id: ConditionField; label: string }[] = [
   { id: "notes", label: "Notes" },
-  { id: "statementImportedPayee", label: "Statement merchant text" },
+  { id: "statementImportedPayee", label: "Statement payee" },
   { id: "statementBankNotes", label: "Statement memo" },
   { id: "payee", label: "Payee" },
   { id: "category", label: "Category" },
@@ -123,7 +123,7 @@ const ACTIONS: { id: ActionKind; label: string }[] = [
   { id: "removeTag", label: "Remove tag" },
   { id: "appendNote", label: "Append to notes" },
   { id: "prependNote", label: "Put at the start of notes" },
-  { id: "useStatementImportedPayee", label: "Use the statement's full merchant text" },
+  { id: "useStatementImportedPayee", label: "Use the statement's full payee" },
   { id: "setPayee", label: "Set payee" },
 ];
 

@@ -116,14 +116,18 @@ describe("import preview", () => {
     expect(screen.getByLabelText("Decimal")).toBeInTheDocument();
     expect(screen.getByLabelText("Compare statement text against")).toBeInTheDocument();
     expect(screen.getByLabelText("Match transactions within (days)")).toBeInTheDocument();
-    expect(screen.getByLabelText("Look beyond the statement period (days)")).toBeInTheDocument();
+    expect(
+      screen.getByLabelText("Report transactions outside the period (days)")
+    ).toBeInTheDocument();
 
     // Moved here from the review screen: the notes source feeds the transform
     // engine, so it has to be settled before any transformation runs.
-    expect(screen.getByRole("radio", { name: "The bank's merchant text" })).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: "The statement's payee" })).toBeInTheDocument();
     expect(screen.getByRole("radio", { name: "Leave it to your rules" })).toBeInTheDocument();
-    expect(screen.getByRole("radio", { name: "The bank's memo" })).toBeInTheDocument();
-    expect(screen.getByRole("radio", { name: "Leave empty" })).toBeInTheDocument();
+    // This fixture is a CSV, where the Notes column mapping is the notes
+    // decision — so there is no second control here to contradict it (F-128).
+    expect(screen.queryByRole("checkbox", { name: /Use the statement's memo/ })).toBeNull();
+    expect(screen.getByText(/column you mapped above the preview/i)).toBeInTheDocument();
 
     expect(screen.getByLabelText("Profile name")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /save profile/i })).toBeInTheDocument();
@@ -171,7 +175,16 @@ describe("import preview", () => {
     expect(screen.queryByLabelText("Source column for the imported payee")).toBeNull();
     // ...but the format's own interpretation controls are there.
     expect(screen.getByLabelText(/Swap the payee and memo/)).toBeInTheDocument();
-    expect(screen.getByLabelText(/Use the memo when the payee is empty/)).toBeInTheDocument();
+    expect(screen.getByLabelText(/Use the memo as a fallback for empty payees/)).toBeInTheDocument();
+
+    // And, having no mapping to defer to, it is the format that carries the
+    // two notes switches (F-127, F-128).
+    expect(
+      screen.getByRole("checkbox", { name: /Use the statement's memo/ })
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("checkbox", { name: /Also include the statement's payee/ })
+    ).toBeInTheDocument();
   });
 
   it("gives a debit/credit file a column each, under its own selector", () => {
@@ -212,7 +225,7 @@ describe("import preview", () => {
 
     // The gap this closes: "Leave it to your rules" read as though the bank's
     // text would be discarded, when it is recorded either way.
-    for (const option of ["The bank's merchant text", "Leave it to your rules"]) {
+    for (const option of ["The statement's payee", "Leave it to your rules"]) {
       const radio = screen.getByRole("radio", { name: option });
       fireEvent.click(radio);
       expect(screen.getByText(/recorded as the imported payee either way|still recorded as the imported payee/i)).toBeInTheDocument();
@@ -222,10 +235,8 @@ describe("import preview", () => {
   it("locks write choices after Apply starts and keeps their focus target visible", () => {
     renderWith(statement(3), true);
 
-    const payeeChoice = screen.getByRole("radio", { name: "The bank's merchant text" });
-    const notesChoice = screen.getByRole("radio", { name: "The bank's memo" });
+    const payeeChoice = screen.getByRole("radio", { name: "The statement's payee" });
     expect(payeeChoice).toBeDisabled();
-    expect(notesChoice).toBeDisabled();
     expect(payeeChoice.closest("label")).toHaveClass(
       "has-[input:focus-visible]:ring-2"
     );
