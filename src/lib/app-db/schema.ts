@@ -372,6 +372,10 @@ CREATE TABLE IF NOT EXISTS reconciliation_sessions (
   candidate_end text,
   -- Fingerprint of the imported source, for duplicate-statement detection.
   statement_fingerprint text,
+  -- Which kind of file the statement came from: 'delimited' | 'ofx' | 'qif'.
+  -- Nullable, because a session created before this column has no answer and
+  -- guessing one from the filename would present an inference as a fact.
+  statement_format text,
   -- Session-level overrides of the profile's match config, when set.
   match_config_json text,
   totals_json text,

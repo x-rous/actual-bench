@@ -174,6 +174,70 @@ describe("reconciliation sessions", () => {
   });
 });
 
+describe("statement format on a session (F-136)", () => {
+  afterEach(() => {
+    resetAppDbForTests();
+  });
+
+  it("is null on a new session, because nothing has been parsed yet", () => {
+    const db = tempDb();
+    expect(newSession(db).statementFormat).toBeNull();
+  });
+
+  it.each(["delimited", "ofx", "qif"] as const)("stores and reads back %s", (format) => {
+    const db = tempDb();
+    const session = newSession(db);
+
+    const updated = updateReconciliationSession(db, session.id, { statementFormat: format });
+
+    expect(updated?.statementFormat).toBe(format);
+    expect(getReconciliationSession(db, session.id)?.statementFormat).toBe(format);
+  });
+
+  it("can be cleared back to null", () => {
+    const db = tempDb();
+    const session = newSession(db);
+    updateReconciliationSession(db, session.id, { statementFormat: "ofx" });
+
+    const cleared = updateReconciliationSession(db, session.id, { statementFormat: null });
+
+    expect(cleared?.statementFormat).toBeNull();
+  });
+
+  it("updates when a different file is imported into the same session", () => {
+    const db = tempDb();
+    const session = newSession(db);
+    updateReconciliationSession(db, session.id, { statementFormat: "delimited" });
+
+    const reimported = updateReconciliationSession(db, session.id, { statementFormat: "ofx" });
+
+    expect(reimported?.statementFormat).toBe("ofx");
+  });
+
+  it("rejects a value the parser could never produce", () => {
+    const db = tempDb();
+    const session = newSession(db);
+
+    expect(() =>
+      updateReconciliationSession(db, session.id, {
+        // Deliberately outside the union: a bad value belongs in an error, not
+        // in the column, where every later read would have to second-guess it.
+        statementFormat: "camt" as never,
+      })
+    ).toThrow(AppDbValidationError);
+  });
+
+  it("leaves the format alone when the patch does not mention it", () => {
+    const db = tempDb();
+    const session = newSession(db);
+    updateReconciliationSession(db, session.id, { statementFormat: "qif" });
+
+    const updated = updateReconciliationSession(db, session.id, { status: "parsed" });
+
+    expect(updated?.statementFormat).toBe("qif");
+  });
+});
+
 describe("statement rows", () => {
   afterEach(() => {
     resetAppDbForTests();

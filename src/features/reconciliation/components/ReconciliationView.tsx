@@ -20,6 +20,7 @@ import {
 import {
   fingerprintStatement,
   type NormalizedStatement,
+  type StatementFormat,
 } from "@/lib/reconciliation/statement/normalize";
 import type {
   ActualTransactionSnapshot,
@@ -181,6 +182,7 @@ export function ReconciliationView() {
   const [pendingStatement, setPendingStatement] = useState<{
     result: NormalizedStatement;
     fileName: string | null;
+    format: StatementFormat | null;
   } | null>(null);
 
   /**
@@ -191,8 +193,12 @@ export function ReconciliationView() {
    * something to leave resting on that.
    */
   const handleStatementReady = useCallback(
-    (result: NormalizedStatement | null, fileName: string | null) => {
-      setPendingStatement(result ? { result, fileName } : null);
+    (
+      result: NormalizedStatement | null,
+      fileName: string | null,
+      format: StatementFormat | null
+    ) => {
+      setPendingStatement(result ? { result, fileName, format } : null);
     },
     []
   );
@@ -653,6 +659,8 @@ export function ReconciliationView() {
       statementPeriod: { start: string; end: string };
       totals?: unknown;
       statementName?: string | null;
+      /** Recorded on the session so surfaces without a parse config can branch. */
+      statementFormat?: StatementFormat | null;
       config: MatchConfig;
     }) {
       if (!connection) return;
@@ -731,6 +739,9 @@ export function ReconciliationView() {
             statementFingerprint: fingerprintStatement(input.statementRows),
             matchConfig: input.config,
             ...(input.statementName !== undefined ? { statementName: input.statementName } : {}),
+            ...(input.statementFormat !== undefined
+              ? { statementFormat: input.statementFormat }
+              : {}),
             ...(input.totals !== undefined ? { totals: input.totals } : {}),
           },
         });
@@ -1162,7 +1173,11 @@ export function ReconciliationView() {
       }
     }
 
-    async function handleParsed(result: NormalizedStatement, fileName: string | null) {
+    async function handleParsed(
+      result: NormalizedStatement,
+      fileName: string | null,
+      format: StatementFormat | null
+    ) {
       if (screen.name !== "import" || !result.period) return;
       await runMatch({
         sessionId: screen.sessionId,
@@ -1171,6 +1186,7 @@ export function ReconciliationView() {
         statementPeriod: result.period,
         totals: result.totals,
         statementName: fileName,
+        statementFormat: format,
         config: matchConfig,
       });
     }
@@ -1213,7 +1229,11 @@ export function ReconciliationView() {
                     progress: matchStage,
                     onClick: () => {
                       if (pendingStatement) {
-                        void handleParsed(pendingStatement.result, pendingStatement.fileName);
+                        void handleParsed(
+                          pendingStatement.result,
+                          pendingStatement.fileName,
+                          pendingStatement.format
+                        );
                       }
                     },
                     disabled: !pendingStatement,
@@ -1488,6 +1508,7 @@ export function ReconciliationView() {
             transformContextFor={transformContextFor}
             applyConfig={applyConfig}
             onApplyConfigChange={handleApplyConfigChange}
+            statementFormat={sessionQuery.data?.session.statementFormat ?? null}
             onTransform={handleTransform}
             onViewResult={
               applyResult

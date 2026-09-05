@@ -9,6 +9,7 @@ import {
   getReconciliationSession,
   listReconciliationProfiles,
   listStatementRows,
+  updateReconciliationSession,
 } from "./reconciliationRepository";
 import {
   createPayeeCleanupSuppression,
@@ -462,6 +463,25 @@ describe("upgrading an existing database", () => {
 
       expect(getBackupArtifact(db, artifact.id)?.encryptionCredentialRef).toBe("pol-1");
       expect(getReconciliationSession(db, "sess-old")).not.toBeNull();
+    } finally {
+      resetAppDbForTests();
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("adds the statement format to an older database (v24)", () => {
+    // Additive and nullable: a session imported before the column existed has
+    // no answer, and deriving one from its filename would record a guess.
+    const { root, path } = olderDatabase();
+    try {
+      const db = getAppDb(path);
+
+      const existing = getReconciliationSession(db, "sess-old");
+      expect(existing).not.toBeNull();
+      expect(existing?.statementFormat).toBeNull();
+
+      const updated = updateReconciliationSession(db, "sess-old", { statementFormat: "ofx" });
+      expect(updated?.statementFormat).toBe("ofx");
     } finally {
       resetAppDbForTests();
       rmSync(root, { recursive: true, force: true });

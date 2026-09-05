@@ -21,6 +21,7 @@ function session(
     candidateStart: null,
     candidateEnd: null,
     statementFingerprint: null,
+    statementFormat: null,
     matchConfig: null,
     totals: { rowCount: 42 },
     applyResults: null,

@@ -1,6 +1,7 @@
 "use client";
 
 import type { ApplyConfig } from "@/lib/reconciliation/session/plan";
+import type { StatementFormat } from "@/lib/reconciliation/statement/normalize";
 import { WriteSetting } from "./WriteSetting";
 
 /**
@@ -33,6 +34,15 @@ export function NewTransactionOptions({
 }: {
   config: ApplyConfig;
   onChange: (config: ApplyConfig) => void;
+  /**
+   * Which kind of file the statement came from, or null on a session recorded
+   * before the format was stored.
+   *
+   * Declared but not destructured: PR-052 exists to make the format reachable
+   * from both render sites — the import panel and the workbench popover — so
+   * that PR-053 can branch on it without also doing the plumbing.
+   */
+  statementFormat?: StatementFormat | null;
   stagedNotesCount?: number;
   /** Keep the choices visible as an audit record once Apply has started. */
   disabled?: boolean;

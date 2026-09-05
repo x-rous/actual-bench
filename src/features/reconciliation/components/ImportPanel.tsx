@@ -19,6 +19,7 @@ import {
   type NormalizedStatement,
   type SignConvention,
   type StatementDateFormat,
+  type StatementFormat,
   type StatementParseConfig,
 } from "@/lib/reconciliation/statement/normalize";
 import {
@@ -200,7 +201,16 @@ export type ImportPanelProps = {
    * live in the page toolbar with the other navigation rather than at the foot
    * of this panel where it reads as one more control among many.
    */
-  onReadyChange: (result: NormalizedStatement | null, statementName: string | null) => void;
+  /**
+   * The parsed statement, its name, and which kind of file it came from. The
+   * format travels with the result because the session records it (F-136) and
+   * only this panel knows it while a file is being read.
+   */
+  onReadyChange: (
+    result: NormalizedStatement | null,
+    statementName: string | null,
+    format: StatementFormat | null
+  ) => void;
   /**
    * Statements already imported, by fingerprint. Held here rather than resolved
    * by the caller because only this panel knows what has been parsed yet.
@@ -341,8 +351,12 @@ export function ImportPanel({
   // Reported rather than acted on here: the panel owns parsing, the page owns
   // moving to the next phase.
   useEffect(() => {
-    onReadyChange(canContinue && parsed ? parsed : null, fileName);
-  }, [canContinue, parsed, fileName, onReadyChange]);
+    onReadyChange(
+      canContinue && parsed ? parsed : null,
+      fileName,
+      effectiveConfig?.format ?? null
+    );
+  }, [canContinue, parsed, fileName, effectiveConfig?.format, onReadyChange]);
 
   // Recognised by the rows themselves, so a statement pasted last month and
   // uploaded this month is still the same statement.
@@ -717,6 +731,9 @@ export function ImportPanel({
               <NewTransactionOptions
                 config={applyConfig}
                 onChange={onApplyConfigChange}
+                // The live config, not the stored one: during import the file
+                // can be swapped, and what is on screen is the truth.
+                statementFormat={effectiveConfig.format}
                 disabled={writeSettingsLocked}
               />
             </Section>
