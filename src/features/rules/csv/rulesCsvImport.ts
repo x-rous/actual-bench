@@ -345,15 +345,35 @@ export function importRulesFromCsv(
         }
         // `fixed-percent` carries a percentage and `fixed-amount` a money value; both are plain
         // numbers in the cell. `remainder` and `formula` carry no numeric value.
-        const isFormulaMethod = options?.method === "formula";
+        // The importer stages directly, so an allocation has to meet the same bar the editor
+        // enforces — otherwise a CSV can put a rule into the store that the drawer would refuse
+        // to save.
+        const method = options?.method;
         const numeric = Number(rawValue);
+        const isFormulaMethod = method === "formula";
+
+        if (method === "fixed-amount" || method === "fixed-percent") {
+          if (rawValue === "" || !Number.isFinite(numeric)) {
+            badRefs.push(`unsupported ${method} allocation needs a number`);
+            continue;
+          }
+          if (method === "fixed-percent" && (numeric < 0 || numeric > 100)) {
+            badRefs.push("unsupported fixed-percent allocation must be between 0 and 100");
+            continue;
+          }
+        } else if (isFormulaMethod && !rawValue.startsWith("=")) {
+          badRefs.push("unsupported formula allocation must start with =");
+          continue;
+        }
+
         actions.push(
           withRowOptions(
             {
               op: "set-split-amount",
-              value: isFormulaMethod || rawValue === "" || Number.isNaN(numeric) ? null : numeric,
+              value:
+                method === "fixed-amount" || method === "fixed-percent" ? numeric : null,
               type: "number",
-              ...(isFormulaMethod && rawValue ? { options: { formula: rawValue } } : {}),
+              ...(isFormulaMethod ? { options: { formula: rawValue } } : {}),
             },
             options
           )

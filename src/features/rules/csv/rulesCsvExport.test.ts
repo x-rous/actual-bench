@@ -549,3 +549,72 @@ describe("CSV import rejects an allocation with no split target", () => {
     expect(result.rules[0].actions[0].options).toEqual({ method: "remainder", splitIndex: 1 });
   });
 });
+
+describe("CSV import rejects invalid allocation payloads", () => {
+  const maps = { payees: {}, categories: {}, accounts: {}, categoryGroups: {} } as unknown as EntityMaps;
+
+  function importRows(rows: string[]) {
+    return importRulesFromCsv(
+      ["rule_id,stage,conditions_op,row_type,field,op,value,split_index,options", ...rows].join("\n"),
+      maps
+    );
+  }
+
+  function withAllocation(value: string, method: string) {
+    return importRows([
+      "r1,default,and,condition,notes,contains,x,,",
+      `r1,,,action,,set-split-amount,${value},1,method=${method}`,
+      "r1,,,action,notes,set,y,1,",
+    ]);
+  }
+
+  it.each([
+    ["fixed-amount", "", "needs a number"],
+    ["fixed-amount", "abc", "needs a number"],
+    ["fixed-amount", "Infinity", "needs a number"],
+    ["fixed-percent", "", "needs a number"],
+    ["fixed-percent", "abc", "needs a number"],
+    ["fixed-percent", "150", "between 0 and 100"],
+    ["fixed-percent", "-5", "between 0 and 100"],
+    ["formula", "amount * 0.2", "must start with ="],
+    ["formula", "", "must start with ="],
+  ])("skips a %s allocation whose value is %p", (method, value, reason) => {
+    const result = withAllocation(value, method);
+    expect("rules" in result).toBe(true);
+    if (!("rules" in result)) return;
+    expect(result.rules).toHaveLength(0);
+    expect(result.skipReasons[0].reason).toContain(reason);
+  });
+
+  it.each([
+    ["fixed-amount", "12.5", 12.5],
+    ["fixed-percent", "25", 25],
+    ["fixed-percent", "0", 0],
+    ["fixed-percent", "100", 100],
+  ])("accepts a valid %s allocation of %p", (method, value, expected) => {
+    const result = withAllocation(value, method);
+    expect("rules" in result).toBe(true);
+    if (!("rules" in result)) return;
+    expect(result.rules).toHaveLength(1);
+    expect(result.rules[0].actions[0].value).toBe(expected);
+  });
+
+  it("accepts a remainder allocation, which carries no value", () => {
+    const result = withAllocation("", "remainder");
+    expect("rules" in result).toBe(true);
+    if (!("rules" in result)) return;
+    expect(result.rules).toHaveLength(1);
+    expect(result.rules[0].actions[0].value).toBeNull();
+  });
+
+  it("accepts a formula allocation and keeps the expression", () => {
+    const result = withAllocation("'=amount * 0.2", "formula");
+    expect("rules" in result).toBe(true);
+    if (!("rules" in result)) return;
+    expect(result.rules[0].actions[0].options).toEqual({
+      method: "formula",
+      formula: "=amount * 0.2",
+      splitIndex: 1,
+    });
+  });
+});

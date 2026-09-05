@@ -95,7 +95,9 @@ function isEmptyArrayValue(value: string[]): boolean {
 
 function isInvalidNumber(value: ConditionOrAction["value"]): boolean {
   if (value === "") return true;
-  return typeof value !== "number" || Number.isNaN(value);
+  // `Number.isFinite`, not `Number.isNaN`: `Number("Infinity")` is a number and not NaN, so an
+  // imported `Infinity` used to validate clean as a split amount or an amount condition.
+  return typeof value !== "number" || !Number.isFinite(value);
 }
 
 function isValidBooleanValue(value: ConditionOrAction["value"]): boolean {

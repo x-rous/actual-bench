@@ -570,3 +570,34 @@ describe("validateRuleDraft — schedule-managed actions", () => {
     expect(result.actionErrors.flat()).toEqual([]);
   });
 });
+
+describe("validateRuleDraft — non-finite numbers", () => {
+  it("rejects Infinity as a fixed split amount", () => {
+    const result = validateRuleDraft({
+      stage: "default",
+      conditionsOp: "and",
+      conditions: createEditorParts([{ field: "payee", op: "is", value: "p1", type: "id" }]),
+      actions: createEditorParts([
+        {
+          op: "set-split-amount",
+          value: Number.POSITIVE_INFINITY,
+          options: { method: "fixed-amount", splitIndex: 1 },
+        },
+        { op: "set", field: "notes", value: "x", type: "string", options: { splitIndex: 1 } },
+      ]),
+    });
+    expect(result.actionErrors.flat().join(" ")).toContain("enter an amount");
+  });
+
+  it("rejects Infinity as an amount condition", () => {
+    const result = validateRuleDraft({
+      stage: "default",
+      conditionsOp: "and",
+      conditions: createEditorParts([
+        { field: "amount", op: "gt", value: Number.NEGATIVE_INFINITY, type: "number" },
+      ]),
+      actions: createEditorParts([{ op: "set", field: "notes", value: "x", type: "string" }]),
+    });
+    expect(result.conditionErrors.flat().join(" ")).toContain("enter a valid value");
+  });
+});
