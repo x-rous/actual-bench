@@ -1304,6 +1304,10 @@ export function ReconciliationView() {
                 accountName: entry.accountName,
                 tag: entry.tag,
                 createdAt: entry.createdAt,
+                // Carried so the warning can say what became of that session
+                // rather than assuming it was applied (F-126).
+                status: entry.status,
+                appliedAt: entry.appliedAt,
               }))}
             onReadyChange={handleStatementReady}
           />
