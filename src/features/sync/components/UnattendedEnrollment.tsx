@@ -193,7 +193,7 @@ export function UnattendedEnrollment({
                 className={`h-2 w-2 shrink-0 rounded-full ${status.armed ? "bg-green-500" : "bg-amber-500"}`}
                 aria-hidden
               />
-              <span className="font-medium">{status.armed ? "Armed — runs unattended" : "Not armed"}</span>
+              <span className="font-medium">{status.armed ? "Armed - runs unattended" : "Not armed"}</span>
             </div>
             <span className="text-muted-foreground">{nextRunPhrase(status, Date.now())}</span>
             <div className="flex flex-wrap items-center gap-2 pt-0.5">
@@ -222,7 +222,7 @@ export function UnattendedEnrollment({
               {runResult && (
                 <span className="text-[11px] text-muted-foreground">
                   Run finished: <strong>{runResult.status}</strong>
-                  {runResult.message ? ` — ${runResult.message}` : ""}
+                  {runResult.message ? ` - ${runResult.message}` : ""}
                 </span>
               )}
             </div>

@@ -46,7 +46,7 @@ export function computeUnattendedStatus(i: UnattendedStatusInput): UnattendedSta
   }
   const paused = i.autoPaused || !i.flowEnabled;
   let reason: string | null = null;
-  if (paused) reason = "Paused — re-enable the flow to resume";
+  if (paused) reason = "Paused - re-enable the flow to resume";
   else if (!i.vaultEnabled) reason = "Server vault not configured (set SYNC_VAULT_KEY)";
   else if (!i.bothHttp) reason = "Both source and target must be HTTP API connections";
   else if (!i.bothEnrolled) reason = "Store credentials to arm unattended sync";

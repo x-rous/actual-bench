@@ -19,6 +19,7 @@ import type {
   ReconciliationItem,
   StatementRow,
 } from "../types";
+import type { StatementFormat } from "../statement/normalize";
 import { prospectiveTransaction } from "./prospective";
 import { canStageDelete, canStageField, hasStagedChanges, stagedFields } from "./staging";
 
@@ -43,14 +44,20 @@ export type ApplyConfig = {
    */
   payeeStrategy: "imported-payee" | "leave-unset";
   /**
-   * Where a created transaction's Notes come from.
+   * What a created transaction's notes are built from.
    *
-   * `bank-notes` uses the statement's own memo field when it has one — the
-   * closest thing to what notes are for. `imported-payee` copies the merchant
-   * text in as well, which some people's rules read; it is a deliberate
-   * duplicate of the imported payee, not the only place that text survives.
+   * Two independent switches rather than one three-way choice, because they
+   * answer different questions and the combinations are all meaningful: memo
+   * alone, payee alone, both, or neither. The predecessor could express only
+   * the first and the last — and its middle option was labelled as additive
+   * while behaving as a fallback (`memo ?? payee`), so on a row carrying both
+   * it silently did nothing (F-127).
+   *
+   * Additive is not a capability loss: on a row with no memo, both-on already
+   * yields the payee alone, which is what the old fallback produced.
    */
-  notesStrategy: "bank-notes" | "imported-payee" | "leave-unset";
+  notesFromMemo: boolean;
+  notesIncludePayee: boolean;
   /**
    * Which transactions to mark cleared.
    *
@@ -75,7 +82,8 @@ export type ApplyConfig = {
 
 export const DEFAULT_APPLY_CONFIG: ApplyConfig = {
   payeeStrategy: "imported-payee",
-  notesStrategy: "bank-notes",
+  notesFromMemo: true,
+  notesIncludePayee: false,
   clearedTarget: "none",
   enrichImportedPayee: true,
 };
@@ -88,6 +96,8 @@ export type PlanInput = {
   statementRows: Map<string, StatementRow>;
   transactions: Map<string, ActualTransactionSnapshot>;
   applyConfig?: ApplyConfig;
+  /** Null on a session recorded before the format was stored. */
+  statementFormat?: StatementFormat | null;
   /**
    * Operation ids an earlier run already wrote, from the session's own record.
    *
@@ -106,6 +116,62 @@ export type PlanInput = {
  * how many times Apply is retried. Deliberately *not* derived from anything
  * random, local, or display-shaped — the same rule Budget File Sync follows.
  */
+/**
+ * Read a stored `applyConfig` into the current shape.
+ *
+ * The notes source used to be one three-way `notesStrategy`; it is now two
+ * independent switches (F-127). Sessions and profiles saved before that carry
+ * the old field, so the translation lives here rather than in a data migration:
+ * both storage sites read through this, and a config that predates either shape
+ * simply gets the defaults.
+ *
+ * `imported-payee` becomes both switches on, which **changes what it produces**
+ * on a row carrying a memo and a payee: previously the memo alone, now both.
+ * That is the bug the new model fixes rather than an accident of migration, and
+ * it was an accepted breaking change.
+ */
+export function normalizeApplyConfig(stored: unknown): ApplyConfig {
+  if (typeof stored !== "object" || stored === null) return DEFAULT_APPLY_CONFIG;
+  const raw = stored as Record<string, unknown>;
+
+  const legacy = raw.notesStrategy;
+  const notes =
+    legacy === "bank-notes"
+      ? { notesFromMemo: true, notesIncludePayee: false }
+      : legacy === "imported-payee"
+        ? { notesFromMemo: true, notesIncludePayee: true }
+        : legacy === "leave-unset"
+          ? { notesFromMemo: false, notesIncludePayee: false }
+          : {
+              notesFromMemo:
+                typeof raw.notesFromMemo === "boolean"
+                  ? raw.notesFromMemo
+                  : DEFAULT_APPLY_CONFIG.notesFromMemo,
+              notesIncludePayee:
+                typeof raw.notesIncludePayee === "boolean"
+                  ? raw.notesIncludePayee
+                  : DEFAULT_APPLY_CONFIG.notesIncludePayee,
+            };
+
+  return {
+    payeeStrategy:
+      raw.payeeStrategy === "leave-unset" || raw.payeeStrategy === "imported-payee"
+        ? raw.payeeStrategy
+        : DEFAULT_APPLY_CONFIG.payeeStrategy,
+    ...notes,
+    clearedTarget:
+      raw.clearedTarget === "none" ||
+      raw.clearedTarget === "created" ||
+      raw.clearedTarget === "reconciled"
+        ? raw.clearedTarget
+        : DEFAULT_APPLY_CONFIG.clearedTarget,
+    enrichImportedPayee:
+      typeof raw.enrichImportedPayee === "boolean"
+        ? raw.enrichImportedPayee
+        : DEFAULT_APPLY_CONFIG.enrichImportedPayee,
+  };
+}
+
 export function createMarker(input: {
   budgetSyncId: string;
   accountId: string;
@@ -250,6 +316,7 @@ function createOperationFor(
 ): CreateOperation {
   const patch = item.stagedChanges;
   const config = input.applyConfig ?? DEFAULT_APPLY_CONFIG;
+  const statementFormat = input.statementFormat ?? null;
   const importedPayee = row.importedPayee.trim() || null;
   return {
     id: operationId("create", item.id),
@@ -282,6 +349,7 @@ function createOperationFor(
       statementRow: row,
       transaction: undefined,
       applyConfig: config,
+      statementFormat,
     }).notes,
     cleared: config.clearedTarget !== "none",
     marker: createMarker({

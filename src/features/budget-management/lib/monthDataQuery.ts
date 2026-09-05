@@ -104,7 +104,7 @@ function reportInvalidMonthFields(d: TransportBudgetMonth): void {
     hasReportedInvalidMonthField = true;
     console.warn(
       `[budget] Month ${d.month ?? "?"} payload has non-numeric summary fields: ` +
-        `${bad.join(", ")}. Treating them as 0 — the transport contract may have drifted.`
+        `${bad.join(", ")}. Treating them as 0 - the transport contract may have drifted.`
     );
   }
 }

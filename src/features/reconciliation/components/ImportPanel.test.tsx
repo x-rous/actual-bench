@@ -1,6 +1,9 @@
+import { useState } from "react";
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { DEFAULT_MATCH_CONFIG, DEFAULT_TEXT_PRESET } from "@/lib/reconciliation/match/config";
 import { DEFAULT_APPLY_CONFIG } from "@/lib/reconciliation/session/plan";
+import { fingerprintStatement } from "@/lib/reconciliation/statement/normalize";
+import type { ReconciliationSessionStatus } from "@/lib/app-db/reconciliationRepository";
 import { ImportPanel } from "./ImportPanel";
 
 /**
@@ -48,6 +51,35 @@ function renderWith(text: string, writeSettingsLocked = false) {
   fireEvent.change(screen.getByLabelText("Or paste statement rows"), { target: { value: text } });
 }
 
+/**
+ * The panel with a real `applyConfig`, so the write settings can be changed and
+ * their effect observed. `renderWith` holds the config fixed, which is right
+ * for layout assertions and useless for behaviour.
+ */
+function LiveImportPanel() {
+  const [applyConfig, setApplyConfig] = useState(DEFAULT_APPLY_CONFIG);
+  return (
+    <ImportPanel
+      accountName="Global Money Credit Card"
+      matchConfig={DEFAULT_MATCH_CONFIG}
+      matchPreset={DEFAULT_TEXT_PRESET}
+      applyConfig={applyConfig}
+      writeSettingsLocked={false}
+      onApplyConfigChange={setApplyConfig}
+      profiles={[]}
+      onMatchConfigChange={() => {}}
+      onApplyProfile={() => {}}
+      onSaveProfile={() => {}}
+      onReadyChange={() => {}}
+    />
+  );
+}
+
+function renderLive(text: string) {
+  render(<LiveImportPanel />);
+  fireEvent.change(screen.getByLabelText("Or paste statement rows"), { target: { value: text } });
+}
+
 function previewRows(): HTMLElement[] {
   const table = screen.getByRole("table", { name: /every row parsed/i });
   return [...table.querySelectorAll("tbody tr")] as HTMLElement[];
@@ -72,9 +104,15 @@ describe("import preview", () => {
     renderWith(statement(3));
 
     const table = screen.getByRole("table", { name: /every row parsed/i });
-    for (const heading of ["Date", "Imported payee", "Notes", "Reference", "Amount"]) {
+    for (const heading of ["Date", "Reference", "Amount"]) {
       expect(within(table).getByRole("columnheader", { name: heading })).toBeInTheDocument();
     }
+    // The two text columns now carry a destination tag in their header, so
+    // their accessible name is the column name plus where it is going.
+    expect(
+      within(table).getByRole("columnheader", { name: /^Imported payee →/ })
+    ).toBeInTheDocument();
+    expect(within(table).getByRole("columnheader", { name: /^Notes →/ })).toBeInTheDocument();
 
     const first = previewRows()[0];
     expect(within(first).getByText("MERCHANT A")).toBeInTheDocument();
@@ -120,10 +158,12 @@ describe("import preview", () => {
 
     // Moved here from the review screen: the notes source feeds the transform
     // engine, so it has to be settled before any transformation runs.
-    expect(screen.getByRole("radio", { name: "The bank's merchant text" })).toBeInTheDocument();
-    expect(screen.getByRole("radio", { name: "Leave it to your rules" })).toBeInTheDocument();
-    expect(screen.getByRole("radio", { name: "The bank's memo" })).toBeInTheDocument();
-    expect(screen.getByRole("radio", { name: "Leave empty" })).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: "Use the statement's payee" })).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: "Don't set the payee - Leave it to your rules" })).toBeInTheDocument();
+    // This fixture is a CSV, where the Notes column mapping is the notes
+    // decision — so there is no second control here to contradict it (F-128).
+    expect(screen.queryByRole("checkbox", { name: /Use the statement's memo/ })).toBeNull();
+    expect(screen.getByText(/column dropdown above the preview/i)).toBeInTheDocument();
 
     expect(screen.getByLabelText("Profile name")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /save profile/i })).toBeInTheDocument();
@@ -171,7 +211,16 @@ describe("import preview", () => {
     expect(screen.queryByLabelText("Source column for the imported payee")).toBeNull();
     // ...but the format's own interpretation controls are there.
     expect(screen.getByLabelText(/Swap the payee and memo/)).toBeInTheDocument();
-    expect(screen.getByLabelText(/Use the memo when the payee is empty/)).toBeInTheDocument();
+    expect(screen.getByLabelText(/Use the memo as a fallback for empty payees/)).toBeInTheDocument();
+
+    // And, having no mapping to defer to, it is the format that carries the
+    // two notes switches (F-127, F-128).
+    expect(
+      screen.getByRole("checkbox", { name: /Use the statement's memo/ })
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("checkbox", { name: /Also include the statement's payee/ })
+    ).toBeInTheDocument();
   });
 
   it("gives a debit/credit file a column each, under its own selector", () => {
@@ -210,9 +259,12 @@ describe("import preview", () => {
   it("says the bank's text is kept as the imported payee whichever payee you choose", () => {
     renderWith(statement(3));
 
-    // The gap this closes: "Leave it to your rules" read as though the bank's
-    // text would be discarded, when it is recorded either way.
-    for (const option of ["The bank's merchant text", "Leave it to your rules"]) {
+    // The gap this closes: choosing rules read as though the statement's text
+    // would be discarded, when it is recorded as the imported payee either way.
+    for (const option of [
+      "Use the statement's payee",
+      "Don't set the payee - Leave it to your rules",
+    ]) {
       const radio = screen.getByRole("radio", { name: option });
       fireEvent.click(radio);
       expect(screen.getByText(/recorded as the imported payee either way|still recorded as the imported payee/i)).toBeInTheDocument();
@@ -222,12 +274,209 @@ describe("import preview", () => {
   it("locks write choices after Apply starts and keeps their focus target visible", () => {
     renderWith(statement(3), true);
 
-    const payeeChoice = screen.getByRole("radio", { name: "The bank's merchant text" });
-    const notesChoice = screen.getByRole("radio", { name: "The bank's memo" });
+    const payeeChoice = screen.getByRole("radio", { name: "Use the statement's payee" });
     expect(payeeChoice).toBeDisabled();
-    expect(notesChoice).toBeDisabled();
     expect(payeeChoice.closest("label")).toHaveClass(
       "has-[input:focus-visible]:ring-2"
     );
+  });
+});
+
+// ─── The preview answers the write settings (F-132) ───────────────────────────
+
+describe("import preview — what the rows will become", () => {
+  const QIF = ["!Type:Bank", "D01/08/2026", "T-125.50", "PAMAZON AE", "MOnline purchase", "^"].join(
+    "\n"
+  );
+
+  function notesCell() {
+    return previewRows()[0].querySelectorAll("td")[2];
+  }
+
+  it("shows the memo alone by default, and says where it goes", () => {
+    renderLive(QIF);
+
+    expect(screen.getByRole("columnheader", { name: /^Notes → memo/ })).toBeInTheDocument();
+    expect(notesCell()).toHaveTextContent("Online purchase");
+  });
+
+  it("adds the payee, joined, when both switches are on", () => {
+    renderLive(QIF);
+
+    fireEvent.click(screen.getByRole("checkbox", { name: /Also include the statement's payee/ }));
+
+    expect(
+      screen.getByRole("columnheader", { name: /^Notes → memo \+ payee/ })
+    ).toBeInTheDocument();
+    expect(notesCell()).toHaveTextContent("Online purchase - AMAZON AE");
+  });
+
+  it("says the column is not written when both switches are off", () => {
+    renderLive(QIF);
+
+    fireEvent.click(screen.getByRole("checkbox", { name: /Use the statement's memo/ }));
+
+    expect(screen.getByRole("columnheader", { name: /^Notes not written/ })).toBeInTheDocument();
+    // Rendered as a decision, not as a parse failure.
+    expect(notesCell()).toHaveTextContent("empty");
+  });
+
+  it("follows the mapping on a CSV, where there is no control to follow instead", () => {
+    renderLive(statement(3));
+
+    expect(screen.getByRole("columnheader", { name: /^Notes → notes/ })).toBeInTheDocument();
+    expect(notesCell()).toHaveTextContent("Online purchase");
+  });
+
+  it("names where the imported payee is headed, and follows the payee choice", () => {
+    renderLive(QIF);
+
+    expect(
+      screen.getByRole("columnheader", { name: /^Imported payee → payee & imported payee/ })
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("radio", { name: "Don't set the payee - Leave it to your rules" }));
+
+    expect(
+      screen.getByRole("columnheader", { name: /^Imported payee → imported payee/ })
+    ).toBeInTheDocument();
+  });
+});
+
+// ─── A memo spent as the payee (F-131) ───────────────────────────────────────
+
+describe("import preview — a memo spent as the payee", () => {
+  // Two rows with no payee, one with. Under the fallback the first two give up
+  // their memo to become the payee, and have nothing left for the notes.
+  const QIF = [
+    "!Type:Bank",
+    "D01/08/2026", "T-125.50", "P", "MDIRECT DEBIT BRITISH GAS", "^",
+    "D02/08/2026", "T-14.00", "P", "MSTANDING ORDER GYM", "^",
+    "D03/08/2026", "T-9.99", "PAMAZON AE", "MOnline purchase", "^",
+  ].join("\n");
+
+  it("shows the affected rows as having no notes, rather than announcing a count", () => {
+    // The preview is where this is legible: those rows read "empty" while the
+    // third keeps its memo. A separate banner restating it is noise.
+    renderLive(QIF);
+
+    const cells = previewRows().map((r) => r.querySelectorAll("td")[2]);
+    expect(cells[0]).toHaveTextContent("empty");
+    expect(cells[1]).toHaveTextContent("empty");
+    expect(cells[2]).toHaveTextContent("Online purchase");
+  });
+
+  it("gives those rows the payee once it is included", () => {
+    renderLive(QIF);
+    fireEvent.click(screen.getByRole("checkbox", { name: /Also include the statement's payee/ }));
+
+    const cells = previewRows().map((r) => r.querySelectorAll("td")[2]);
+    expect(cells[0]).toHaveTextContent("DIRECT DEBIT BRITISH GAS");
+    expect(cells[2]).toHaveTextContent("Online purchase - AMAZON AE");
+  });
+
+  it("restores their memo when the fallback that consumed it is turned off", () => {
+    renderLive(QIF);
+    fireEvent.click(screen.getByLabelText(/Use the memo as a fallback for empty payees/));
+
+    const cells = previewRows().map((r) => r.querySelectorAll("td")[2]);
+    expect(cells[0]).toHaveTextContent("DIRECT DEBIT BRITISH GAS");
+  });
+});
+
+// ─── The duplicate-statement warning (F-126) ──────────────────────────────────
+
+describe("importing a statement that has been seen before", () => {
+  const CSV = statement(3);
+
+  /**
+   * The statement's fingerprint, taken from the panel's own parse rather than
+   * recomputed here — a second parse in the test could agree with the code and
+   * still both be wrong.
+   */
+  function fingerprintOf(text: string): string {
+    let fingerprint = "";
+    const { unmount } = render(
+      <ImportPanel
+        accountName="Global Money Credit Card"
+        matchConfig={DEFAULT_MATCH_CONFIG}
+        matchPreset={DEFAULT_TEXT_PRESET}
+        applyConfig={DEFAULT_APPLY_CONFIG}
+        writeSettingsLocked={false}
+        onApplyConfigChange={() => {}}
+        profiles={[]}
+        onMatchConfigChange={() => {}}
+        onApplyProfile={() => {}}
+        onSaveProfile={() => {}}
+        onReadyChange={(result) => {
+          // Null for an empty statement, which this fixture never is.
+          if (result) fingerprint = fingerprintStatement(result.rows) ?? "";
+        }}
+      />
+    );
+    fireEvent.change(screen.getByLabelText("Or paste statement rows"), { target: { value: text } });
+    unmount();
+    return fingerprint;
+  }
+
+  function renderKnown(known: {
+    status: ReconciliationSessionStatus;
+    appliedAt: string | null;
+  }) {
+    render(
+      <ImportPanel
+        accountName="Global Money Credit Card"
+        matchConfig={DEFAULT_MATCH_CONFIG}
+        matchPreset={DEFAULT_TEXT_PRESET}
+        applyConfig={DEFAULT_APPLY_CONFIG}
+        writeSettingsLocked={false}
+        onApplyConfigChange={() => {}}
+        profiles={[]}
+        knownStatements={[
+          {
+            fingerprint: fingerprintOf(CSV),
+            accountName: "Global Money Credit Card",
+            tag: "August 2026",
+            createdAt: "2026-09-05T09:00:00.000Z",
+            ...known,
+          },
+        ]}
+        onMatchConfigChange={() => {}}
+        onApplyProfile={() => {}}
+        onSaveProfile={() => {}}
+        onReadyChange={() => {}}
+      />
+    );
+    fireEvent.change(screen.getByLabelText("Or paste statement rows"), { target: { value: CSV } });
+  }
+
+  it("says it was applied, and that anything created is skipped", () => {
+    renderKnown({ status: "completed", appliedAt: "2026-09-05T10:00:00.000Z" });
+
+    expect(screen.getByText(/already been applied/)).toBeInTheDocument();
+    expect(screen.getByText(/recognised and skipped/)).toBeInTheDocument();
+  });
+
+  it("says it was started and not applied, and claims nothing about skipping", () => {
+    // The single old message asserted "anything already applied is recognised
+    // and skipped" for a session where nothing was applied.
+    renderKnown({ status: "needs_review", appliedAt: null });
+
+    expect(screen.getByText(/didn't apply it/)).toBeInTheDocument();
+    expect(screen.queryByText(/recognised and skipped/)).toBeNull();
+  });
+
+  it("names a failure as a failure", () => {
+    renderKnown({ status: "failed", appliedAt: null });
+
+    expect(screen.getByText(/failed/)).toBeInTheDocument();
+  });
+
+  it("can be dismissed", () => {
+    renderKnown({ status: "needs_review", appliedAt: null });
+
+    fireEvent.click(screen.getByRole("button", { name: /Dismiss the duplicate-statement notice/ }));
+
+    expect(screen.queryByText(/didn't apply it/)).toBeNull();
   });
 });

@@ -374,7 +374,7 @@ export function SchedulePicker({ value, onChange, nowMs, onValidityChange }: Pro
               {mode !== "hours" && value.timezone ? ` · ${value.timezone}` : ""}
             </p>
             <p className="text-muted-foreground">
-              Next: {relativeTime(new Date(upcoming[0]).toISOString(), nowMs)} — {formatDateTime(new Date(upcoming[0]).toISOString())}
+              Next: {relativeTime(new Date(upcoming[0]).toISOString(), nowMs)} - {formatDateTime(new Date(upcoming[0]).toISOString())}
               {upcoming[1] ? `, then ${formatDateTime(new Date(upcoming[1]).toISOString())}` : ""}
             </p>
           </>

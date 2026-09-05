@@ -11,6 +11,7 @@ import {
 } from "@/lib/reconciliation/apply/operations";
 import { stagedFields } from "@/lib/reconciliation/session/staging";
 import type { ApplyConfig } from "@/lib/reconciliation/session/plan";
+import type { StatementFormat } from "@/lib/reconciliation/statement/normalize";
 import type {
   ActualTransactionSnapshot,
   ReconciliationItem,
@@ -73,10 +74,29 @@ export type ReviewPanelProps = {
   /** What moved in Actual since the session loaded, once checked. */
   drift: DriftReport | null;
   applyConfig: ApplyConfig;
+  /** Null on a session recorded before the format was stored. */
+  statementFormat?: StatementFormat | null;
   onApplyConfigChange: (config: ApplyConfig) => void;
   /** The choices are an audit record once Apply has started. */
   writeSettingsLocked?: boolean;
 };
+
+/** The notes source in words, for the read-only summary on the review screen. */
+function describeNotesSource(
+  config: ApplyConfig,
+  statementFormat: StatementFormat | null
+): string {
+  // A delimited statement takes its notes from the mapped column, whatever the
+  // stored switches say - `resolveNotesSwitches` forces it, so reporting the
+  // switches here described something the import would not do.
+  if (statementFormat === "delimited") return "the mapped Notes column";
+  if (config.notesFromMemo && config.notesIncludePayee) {
+    return "the statement's memo and its payee";
+  }
+  if (config.notesFromMemo) return "the statement's memo";
+  if (config.notesIncludePayee) return "the statement's payee";
+  return "nothing";
+}
 
 export function ReviewPanel({
   plan,
@@ -87,6 +107,7 @@ export function ReviewPanel({
   categories,
   drift,
   applyConfig,
+  statementFormat = null,
   onApplyConfigChange,
   writeSettingsLocked = false,
 }: ReviewPanelProps) {
@@ -243,7 +264,7 @@ export function ReviewPanel({
             {
               value: "on",
               label: "On new and matched rows",
-              hint: "A matched transaction keeps its payee, notes and category exactly as they are - only the bank's merchant text is attached. Rows already reconciled in Actual are skipped.",
+              hint: "A matched transaction keeps its payee, notes and category exactly as they are - only the statement's payee is attached as the imported payee. Rows already reconciled in Actual are skipped.",
             },
             {
               value: "off",
@@ -266,19 +287,13 @@ export function ReviewPanel({
           New transactions take their payee from{" "}
           <span className="font-medium">
             {applyConfig.payeeStrategy === "imported-payee"
-              ? "the bank's merchant text"
+              ? "the statement's payee"
               : "your rules"}
           </span>{" "}
           and their notes from{" "}
-          <span className="font-medium">
-            {applyConfig.notesStrategy === "bank-notes"
-              ? "the bank's memo"
-              : applyConfig.notesStrategy === "imported-payee"
-                ? "the bank's memo, or its merchant text where there is none"
-                : "nothing"}
-          </span>
-          . The bank&apos;s merchant text is recorded as the imported payee either way. Change this
-          on the import screen.
+          <span className="font-medium">{describeNotesSource(applyConfig, statementFormat)}</span>
+          . The statement&apos;s payee is recorded as the imported payee either way. Change this on
+          the import screen.
         </p>
       )}
 
@@ -305,7 +320,7 @@ export function ReviewPanel({
                 {pluralFieldLabel(field, count)}
                 {field === "importedPayee" && (
                   <span className="text-muted-foreground">
-                    {" "}— set from the bank statement&apos;s merchant text
+                    {" "}- set from the statement&apos;s payee
                   </span>
                 )}
               </span>
@@ -322,6 +337,7 @@ export function ReviewPanel({
         payees={payees}
         categories={categories}
         applyConfig={applyConfig}
+        statementFormat={statementFormat}
         unresolved={plan.unresolved}
       />
 

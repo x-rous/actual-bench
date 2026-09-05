@@ -375,7 +375,7 @@ export function MiniTrend({
       </div>
       {points.some((point) => point.planOnly) && (
         <p className="text-[10.5px] text-muted-foreground">
-          Future months are muted — planned, not yet actual.
+          Future months are muted - planned, not yet actual.
         </p>
       )}
     </DetailsSection>

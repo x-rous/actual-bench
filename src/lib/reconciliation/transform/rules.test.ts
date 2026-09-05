@@ -313,7 +313,8 @@ describe("preview (feature spec §31)", () => {
             transaction: undefined,
             applyConfig: {
               payeeStrategy: "leave-unset",
-              notesStrategy: "imported-payee",
+              notesFromMemo: true,
+        notesIncludePayee: true,
               clearedTarget: "none",
               enrichImportedPayee: true,
             },
@@ -349,7 +350,8 @@ describe("preview (feature spec §31)", () => {
             transaction: undefined,
             applyConfig: {
               payeeStrategy: "imported-payee",
-              notesStrategy: "bank-notes",
+              notesFromMemo: true,
+        notesIncludePayee: false,
               clearedTarget: "none",
               enrichImportedPayee: true,
             },

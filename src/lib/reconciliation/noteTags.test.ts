@@ -222,7 +222,7 @@ describe("appendNoteText (feature spec §26)", () => {
   });
 
   it("accepts a different separator", () => {
-    expect(appendNoteText("Dinner", "Checked", " — ")).toBe("Dinner — Checked");
+    expect(appendNoteText("Dinner", "Checked", " - ")).toBe("Dinner - Checked");
   });
 });
 

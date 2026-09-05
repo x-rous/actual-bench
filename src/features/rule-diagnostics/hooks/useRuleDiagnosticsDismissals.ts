@@ -59,7 +59,7 @@ export function useRuleDiagnosticsDismissals(options: { enabled: boolean }) {
     // either way, so a silent failure would look like a saved decision until
     // the next scan brought it back with no explanation.
     onError: (error: Error) =>
-      toast.error(`${error.message} — it will reappear on the next scan.`),
+      toast.error(`${error.message} - it will reappear on the next scan.`),
   });
 
   const remove = useMutation({

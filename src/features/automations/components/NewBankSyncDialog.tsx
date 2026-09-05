@@ -66,7 +66,7 @@ function AccountRow({ account }: { account: BankSyncAccountPreview }) {
           </span>
         )
       ) : (
-        <span className="text-muted-foreground">not connected to a bank — skipped</span>
+        <span className="text-muted-foreground">not connected to a bank - skipped</span>
       )}
     </li>
   );
@@ -115,7 +115,7 @@ export function NewBankSyncDialog({ open, onOpenChange, onCreated }: NewBankSync
       const connection = connections.find((entry) => entry.connectionFingerprint === connectionFingerprint);
       return createAutomation({
         type: "bank-sync",
-        name: `Bank sync — ${connection?.label || "budget"}`,
+        name: `Bank sync - ${connection?.label || "budget"}`,
         executionMode: "server",
         scheduleKind: schedule.scheduleKind,
         cronExpression: schedule.cronExpression,

@@ -92,10 +92,18 @@ export const TEXT_TARGET_PRESETS: Record<TextTargetPreset, TextMatchConfig> = {
 export const DEFAULT_TEXT_PRESET: TextTargetPreset = "all-best-match";
 
 export const DEFAULT_MATCH_CONFIG: MatchConfig = {
-  // Actual's own fuzzy matcher uses ±7 days; matching a narrower window while
-  // claiming parity would be misleading (V2 §9).
+  // Actual's own fuzzy matcher uses ±7 days — `subDays(trans.date, 7)` /
+  // `addDays` in `reconcileTransactions`, hardcoded and paired with exact
+  // amount equality. Matching a narrower window while claiming parity would be
+  // misleading (V2 §9), and a missed match costs more than a wrong one: a wrong
+  // match is caught in review, a missed one becomes a duplicate transaction.
   dateToleranceDays: 7,
-  candidatePaddingDays: 7,
+  // Not a match setting. `loadCandidateWindow` takes `Math.max(padding,
+  // tolerance)`, so the matcher always gets its full window whatever this is;
+  // this governs only how far outside the statement period a transaction is
+  // still *reported* as extra rather than ignored. Actual has no equivalent —
+  // it matches per transaction on import and has no statement period at all.
+  candidatePaddingDays: 3,
   autoMatchFloor: 60,
   ambiguityDelta: 8,
   textSeparationMargin: 0.15,

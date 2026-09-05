@@ -71,7 +71,7 @@ export function computeConfidence(
     score = Math.round(45 + similarity * 20);
     reasons.push({
       delta: 0,
-      reason: "Similar spelling only — no structural evidence",
+      reason: "Similar spelling only - no structural evidence",
     });
   } else {
     const structural = cluster.evidence.filter((e) => e.kind === "structural");
@@ -143,7 +143,7 @@ export function computeConfidence(
       score -= 6;
       reasons.push({
         delta: -6,
-        reason: "These match only after an interpreted change — worth a look",
+        reason: "These match only after an interpreted change - worth a look",
       });
     }
   }

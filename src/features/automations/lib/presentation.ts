@@ -33,13 +33,13 @@ export function executionModeCopy(mode: AutomationExecutionMode): ExecutionModeC
     return {
       label: "Runs on the server",
       detail:
-        "This runs on a schedule even with Actual Bench closed, using the credentials you enrolled. One server instance runs it — Bench does not coordinate across several.",
+        "This runs on a schedule even with Actual Bench closed, using the credentials you enrolled. One server instance runs it - Bench does not coordinate across several.",
     };
   }
   return {
     label: "Runs in your browser",
     detail:
-      "This only runs while Actual Bench is open in a browser tab. Close the tab and it stops until you come back — it is a convenience, not unattended automation.",
+      "This only runs while Actual Bench is open in a browser tab. Close the tab and it stops until you come back - it is a convenience, not unattended automation.",
   };
 }
 
@@ -80,9 +80,9 @@ export function runStatusTone(status: AutomationRunStatus): StatusTone {
 /** "in 25 minutes" / "3 hours ago" — relative time, with the absolute value in
  * a title attribute at the call site so precision is never lost. */
 export function relativeTime(iso: string | null, nowMs = Date.now()): string {
-  if (!iso) return "—";
+  if (!iso) return "-";
   const ms = Date.parse(iso);
-  if (Number.isNaN(ms)) return "—";
+  if (Number.isNaN(ms)) return "-";
 
   const deltaSeconds = Math.round((ms - nowMs) / 1000);
   const absolute = Math.abs(deltaSeconds);
@@ -110,16 +110,16 @@ export function relativeTime(iso: string | null, nowMs = Date.now()): string {
 }
 
 export function formatDateTime(iso: string | null): string {
-  if (!iso) return "—";
+  if (!iso) return "-";
   const ms = Date.parse(iso);
   if (Number.isNaN(ms)) return iso;
   return new Date(ms).toLocaleString();
 }
 
 export function runDuration(run: AutomationRun): string {
-  if (!run.finishedAt) return "—";
+  if (!run.finishedAt) return "-";
   const ms = Date.parse(run.finishedAt) - Date.parse(run.startedAt);
-  if (Number.isNaN(ms) || ms < 0) return "—";
+  if (Number.isNaN(ms) || ms < 0) return "-";
   if (ms < 1000) return `${ms} ms`;
   if (ms < 60_000) return `${(ms / 1000).toFixed(1)} s`;
   return `${Math.round(ms / 60_000)} min`;

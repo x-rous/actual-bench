@@ -132,7 +132,7 @@ export function explainMissingCapability(
     case "readPayeeLocations":
       return "Saved payee locations cannot be read through Actual's API, so cleanup does not report them. Merging does not move a payee's saved locations to the payee you keep.";
     case "nativeOrphanHandler":
-      return "Actual's built-in unused-payee check is not available over the HTTP API, so Actual Bench applies the same rules itself — and checks a payee's rule actions as well as its conditions, which is slightly stricter.";
+      return "Actual's built-in unused-payee check is not available over the HTTP API, so Actual Bench applies the same rules itself - and checks a payee's rule actions as well as its conditions, which is slightly stricter.";
     default:
       return null;
   }

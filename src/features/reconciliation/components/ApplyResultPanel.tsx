@@ -3,6 +3,7 @@
 import { AlertTriangle, CheckCircle2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { ApplyConfig } from "@/lib/reconciliation/session/plan";
+import type { StatementFormat } from "@/lib/reconciliation/statement/normalize";
 import { prospectiveTransaction } from "@/lib/reconciliation/session/prospective";
 import { formatMinorUnits, formatShortDate } from "../lib/format";
 import type { Option } from "./StagedFields";
@@ -41,6 +42,8 @@ export type ApplyResultPanelProps = {
   payees: Option[];
   /** The same write settings the run used, so the record matches what happened. */
   applyConfig: ApplyConfig;
+  /** Null on a session recorded before the format was stored. */
+  statementFormat?: StatementFormat | null;
   result: ApplyRunResult;
   /** The read-back check, once it has run. `null` while it is still running. */
   verification: VerificationReport | null;
@@ -54,6 +57,7 @@ export function ApplyResultPanel({
   transactions,
   payees,
   applyConfig,
+  statementFormat = null,
   result,
   verification,
   isVerifying,
@@ -279,7 +283,7 @@ export function ApplyResultPanel({
                   const deleted = kind === "delete";
                   const pending =
                     item && !deleted
-                      ? prospectiveTransaction({ item, statementRow, transaction, applyConfig })
+                      ? prospectiveTransaction({ item, statementRow, transaction, applyConfig, statementFormat })
                       : null;
 
                   return (

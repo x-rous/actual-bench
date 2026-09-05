@@ -41,7 +41,7 @@ import {
 import { KDF_VERSION_META_KEY, SALT_META_KEY, VERIFIER_META_KEY } from "./vaultMetaKeys";
 import { AppDbUnavailableError } from "./errors";
 
-export const LATEST_SCHEMA_VERSION = 24;
+export const LATEST_SCHEMA_VERSION = 25;
 
 type Migration = {
   version: number;
@@ -319,7 +319,27 @@ const MIGRATIONS: readonly Migration[] = [
       RULE_DIAGNOSTICS_DISMISSAL_INDEX_SQL,
     ],
   },
+  {
+    version: 25,
+    // The statement's format on the session (F-136 / PR-052). Additive and
+    // nullable: a session created before this has no answer, and deriving one
+    // from the filename would record a guess as if it were read from the file.
+    //
+    // `CREATE TABLE IF NOT EXISTS` cannot add a column to a table that already
+    // exists, so this goes through the guarded ALTER rather than the table SQL.
+    apply: applyReconciliationStatementFormatColumn,
+  },
 ];
+
+function applyReconciliationStatementFormatColumn(db: SqliteDatabase): void {
+  // Guarded on the table, not just the column: a database stamped at a version
+  // it never fully reached — the v18 branch-build case repaired above — can
+  // arrive here without `reconciliation_sessions` at all, and an unguarded
+  // ALTER would fail the whole upgrade. Where the table is missing, the base
+  // schema creates it with this column already in place.
+  if (!tableExists(db, "reconciliation_sessions")) return;
+  addColumnIfMissing(db, "reconciliation_sessions", "statement_format", "text");
+}
 
 function applyAutomationClaimColumn(db: SqliteDatabase): void {
   addColumnIfMissing(db, "automation_definitions", "running_since", "text");

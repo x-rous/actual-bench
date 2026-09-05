@@ -208,7 +208,7 @@ export function AutomationsView() {
                 </button>
                 <span className="text-muted-foreground">
                   {" "}
-                  — ask Actual to pull new transactions from the banks you connected to it.
+                  - ask Actual to pull new transactions from the banks you connected to it.
                 </span>
               </li>
               <li>
@@ -220,7 +220,7 @@ export function AutomationsView() {
                 </Link>
                 <span className="text-muted-foreground">
                   {" "}
-                  — verified copies of your budget, kept to rules that never delete the last good one.
+                  - verified copies of your budget, kept to rules that never delete the last good one.
                 </span>
               </li>
               <li>
@@ -229,7 +229,7 @@ export function AutomationsView() {
                 </Link>
                 <span className="text-muted-foreground">
                   {" "}
-                  — a flow appears here once its review policy is{" "}
+                  - a flow appears here once its review policy is{" "}
                   <strong className="font-medium">Auto-sync on a server schedule (unattended)</strong>.
                   A flow set to manual review stays out of here on purpose.
                 </span>

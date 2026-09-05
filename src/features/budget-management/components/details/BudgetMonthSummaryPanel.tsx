@@ -278,14 +278,14 @@ function EnvelopeMonthBody({
               label="Balance"
               value={formatSigned(view.balance)}
               tone={toneFromValue(view.balance)}
-              tooltip="Money still assigned to envelopes (carryover-inclusive) — not a plan variance."
+              tooltip="Money still assigned to envelopes (carryover-inclusive) - not a plan variance."
             />
             {view.thisMonthOverspent != null && (
               <MetricLine
                 label={phase === "current" ? "Overspent this month so far" : "Overspent this month"}
                 value={formatSigned(view.thisMonthOverspent)}
                 tone="negative"
-                tooltip="Overspending not carried over — it reduces next month's available funds as “Overspent last month”."
+                tooltip="Overspending not carried over - it reduces next month's available funds as “Overspent last month”."
               />
             )}
           </DetailsSection>
@@ -441,7 +441,7 @@ function TrackingMonthBody({
               label="Balance"
               value={formatSigned(view.balance.value)}
               tone={toneFromValue(view.balance.value)}
-              tooltip="Spreadsheet leftover — includes prior carryover, so it can differ from this month's budget variance."
+              tooltip="Spreadsheet leftover - includes prior carryover, so it can differ from this month's budget variance."
             />
           </div>
         )}

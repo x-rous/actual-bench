@@ -314,7 +314,7 @@ export function validatePlan(
     } else if (!isCleanupEligible(target.metadata)) {
       // Actual would return early and change nothing, reporting success.
       block(
-        `"${target.name}" cannot be kept — Actual manages it and will not merge into it.`,
+        `"${target.name}" cannot be kept - Actual manages it and will not merge into it.`,
         [target.id]
       );
     }
@@ -339,7 +339,7 @@ export function validatePlan(
       }
       if (!isCleanupEligible(source.metadata)) {
         block(
-          `"${source.name}" cannot be merged — Actual manages it.`,
+          `"${source.name}" cannot be merged - Actual manages it.`,
           [source.id]
         );
       }
@@ -442,7 +442,7 @@ export function validatePlan(
   for (const [key, payeeIds] of finalNames) {
     if (payeeIds.length > 1) {
       block(
-        `${payeeIds.length} groups would all end up named "${displayNames.get(key) ?? key}" — that leaves ${payeeIds.length} payees with the same name. Give them different names, or put them in one group.`,
+        `${payeeIds.length} groups would all end up named "${displayNames.get(key) ?? key}" - that leaves ${payeeIds.length} payees with the same name. Give them different names, or put them in one group.`,
         payeeIds
       );
       continue;
@@ -453,7 +453,7 @@ export function validatePlan(
       if (survivingIds.has(id) || disappearingOrDeleted.has(id)) continue;
       if (nameKey(payee.name) !== key) continue;
       block(
-        `"${payee.name}" already exists and is not part of this cleanup — renaming to it would create a second payee with that name.`,
+        `"${payee.name}" already exists and is not part of this cleanup - renaming to it would create a second payee with that name.`,
         [payeeIds[0], id]
       );
     }
@@ -533,7 +533,7 @@ export function validatePlan(
       continue;
     }
     if (!isCleanupEligible(payee.metadata)) {
-      block(`"${payee.name}" cannot be deleted — Actual manages it.`, [payee.id]);
+      block(`"${payee.name}" cannot be deleted - Actual manages it.`, [payee.id]);
     }
     if (targets.has(deletion.payeeId)) {
       block(

@@ -125,9 +125,9 @@ const PERIOD_TOOLTIP = {
   expensesBudgetedToDate:
     "Visible signed expense budgets across closed months; hidden categories and groups are excluded.",
   expenseVariance:
-    "Expense variance — visible expenses only: signed expense actuals minus signed expense budgets, over closed months. Positive means spending came in under budget.",
+    "Expense variance - visible expenses only: signed expense actuals minus signed expense budgets, over closed months. Positive means spending came in under budget.",
   incomeVariance:
-    "Income variance — visible income received minus visible income budgeted, over closed months. Positive means income came in above budget.",
+    "Income variance - visible income received minus visible income budgeted, over closed months. Positive means income came in above budget.",
   netPlanVariance:
     "Result vs plan: inclusive actual result minus the visible planned result, over closed months. Positive means ahead of plan.",
   fullIncomeBudget: "Visible income budgeted across the visible 12 months.",
@@ -279,7 +279,7 @@ export function TrackingDetailsPanel({
               tooltip={
                 metrics.isIncome
                   ? "Received income minus budgeted income this month."
-                  : "Budgeted minus spent this month — current-period, independent of any prior carryover."
+                  : "Budgeted minus spent this month - current-period, independent of any prior carryover."
               }
             />
           )}
@@ -381,7 +381,7 @@ export function TrackingDetailsPanel({
               label="Ending balance"
               value={formatSigned(closed.endingBalance)}
               tone={toneFromValue(closed.endingBalance)}
-              tooltip="Spreadsheet leftover at the last closed month — a snapshot, not a sum of monthly balances."
+              tooltip="Spreadsheet leftover at the last closed month - a snapshot, not a sum of monthly balances."
             />
           </div>
         </DetailsSection>
@@ -437,7 +437,7 @@ export function TrackingDetailsPanel({
                 label="Ending balance"
                 value={formatSigned(metrics.selectionToDate.endingBalance)}
                 tone={toneFromValue(metrics.selectionToDate.endingBalance)}
-                tooltip="This entity's balance at the last closed month — a snapshot, not a sum of monthly balances."
+                tooltip="This entity's balance at the last closed month - a snapshot, not a sum of monthly balances."
               />
             </div>
           )}

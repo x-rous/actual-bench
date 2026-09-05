@@ -27,6 +27,18 @@ import type { SqliteDatabase } from "./types";
  * succeeded must remain resumable and retryable without recreating the
  * successful writes.
  */
+/**
+ * Which kind of file a session's statement came from.
+ *
+ * Mirrors `StatementParseConfig["format"]`. Held on the session because it is a
+ * property of the session, not of the screen that happened to parse the file:
+ * the workbench renders the same write-settings control as the import panel and
+ * has no parse config of its own.
+ */
+export type ReconciliationStatementFormat = "delimited" | "ofx" | "qif";
+
+const STATEMENT_FORMATS: readonly ReconciliationStatementFormat[] = ["delimited", "ofx", "qif"];
+
 export type ReconciliationSessionStatus =
   | "draft"
   | "parsed"
@@ -70,6 +82,8 @@ export type ReconciliationSessionRecord = {
   accountName: string | null;
   profileId: string | null;
   status: ReconciliationSessionStatus;
+  /** Null on a session created before the format was recorded. */
+  statementFormat: ReconciliationStatementFormat | null;
   statementName: string | null;
   statementStart: string | null;
   statementEnd: string | null;
@@ -155,6 +169,7 @@ type SessionRow = {
   candidate_start: string | null;
   candidate_end: string | null;
   statement_fingerprint: string | null;
+  statement_format: string | null;
   match_config_json: string | null;
   totals_json: string | null;
   apply_results_json: string | null;
@@ -243,6 +258,16 @@ function requireStatus(value: unknown): ReconciliationSessionStatus {
   return value as ReconciliationSessionStatus;
 }
 
+function requireStatementFormat(value: unknown): ReconciliationStatementFormat {
+  if (
+    typeof value !== "string" ||
+    !STATEMENT_FORMATS.includes(value as ReconciliationStatementFormat)
+  ) {
+    throw new AppDbValidationError(`Unknown reconciliation statement format: ${String(value)}`);
+  }
+  return value as ReconciliationStatementFormat;
+}
+
 function profileToRecord(row: ProfileRow): ReconciliationProfileRecord {
   return {
     id: row.id,
@@ -270,6 +295,7 @@ function sessionToRecord(row: SessionRow): ReconciliationSessionRecord {
     candidateStart: row.candidate_start,
     candidateEnd: row.candidate_end,
     statementFingerprint: row.statement_fingerprint,
+    statementFormat: row.statement_format as ReconciliationStatementFormat | null,
     matchConfig: parseJson(row.match_config_json),
     totals: parseJson(row.totals_json),
     applyResults: parseJson(row.apply_results_json),
@@ -483,6 +509,7 @@ export function listReconciliationSessions(
 
 export type UpdateSessionInput = {
   status?: ReconciliationSessionStatus;
+  statementFormat?: ReconciliationStatementFormat | null;
   accountName?: string | null;
   profileId?: string | null;
   statementName?: string | null;
@@ -518,6 +545,12 @@ export function updateReconciliationSession(
   };
 
   if (input.status !== undefined) set("status", requireStatus(input.status));
+  if (input.statementFormat !== undefined) {
+    set(
+      "statement_format",
+      input.statementFormat === null ? null : requireStatementFormat(input.statementFormat)
+    );
+  }
   if (input.accountName !== undefined) set("account_name", optionalText(input.accountName, "account name"));
   if (input.profileId !== undefined) set("profile_id", input.profileId);
   if (input.statementName !== undefined) set("statement_name", optionalText(input.statementName, "statement name"));

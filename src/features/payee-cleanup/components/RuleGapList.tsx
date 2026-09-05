@@ -60,7 +60,7 @@ export function RuleGapList({
       {/* A tab that changes no payees, inside a page called Cleanup, is
           otherwise a surprise. */}
       <p className="text-xs text-muted-foreground">
-        These payees are fine — their imports just aren&apos;t automated. Actual
+        These payees are fine - their imports just aren&apos;t automated. Actual
         matches an imported payee <em>by name only</em>, so the next import of the
         original bank text would create a duplicate. Nothing here changes a payee.
       </p>

@@ -111,7 +111,7 @@ export function FlowHeader({
             role="switch"
             aria-checked={form.enabled}
             aria-label="Enabled"
-            title={form.enabled ? "Enabled — click to disable" : "Disabled — click to enable"}
+            title={form.enabled ? "Enabled - click to disable" : "Disabled - click to enable"}
             onClick={onToggleEnabled}
             className={cn(
               "relative h-[17px] w-[30px] shrink-0 rounded-full transition-colors",

@@ -11,6 +11,7 @@ import type {
   ReconciliationProfileRecord,
   ReconciliationSessionRecord,
   ReconciliationSessionStatus,
+  ReconciliationStatementFormat,
   ReconciliationStatementRowRecord,
 } from "@/lib/app-db/reconciliationRepository";
 
@@ -67,6 +68,7 @@ export function updateSession(
     candidateStart: string | null;
     candidateEnd: string | null;
     statementFingerprint: string | null;
+    statementFormat: ReconciliationStatementFormat | null;
     profileId: string | null;
     matchConfig: unknown;
     totals: unknown;

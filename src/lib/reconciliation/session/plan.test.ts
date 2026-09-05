@@ -5,7 +5,14 @@ import type {
   StagedPatch,
   StatementRow,
 } from "../types";
-import { buildApplyPlan, createMarker, type ApplyConfig } from "./plan";
+import {
+  DEFAULT_APPLY_CONFIG,
+  buildApplyPlan,
+  createMarker,
+  normalizeApplyConfig,
+  type ApplyConfig,
+} from "./plan";
+import type { StatementFormat } from "../statement/normalize";
 
 function row(overrides: Partial<StatementRow> & Pick<StatementRow, "id">): StatementRow {
   return {
@@ -60,11 +67,13 @@ function plan(
   rows: StatementRow[] = [],
   transactions: ActualTransactionSnapshot[] = [],
   applyConfig?: ApplyConfig,
-  appliedOperationIds?: Set<string>
+  appliedOperationIds?: Set<string>,
+  statementFormat?: StatementFormat | null
 ) {
   return buildApplyPlan({
     applyConfig,
     appliedOperationIds,
+    statementFormat,
     sessionId: "sess-1",
     budgetSyncId: "budget-1",
     accountId: "acct-1",
@@ -175,7 +184,8 @@ describe("create operations", () => {
       [],
       {
         payeeStrategy: "leave-unset",
-        notesStrategy: "imported-payee",
+        notesFromMemo: true,
+      notesIncludePayee: true,
         clearedTarget: "none",
         enrichImportedPayee: true,
       }
@@ -202,7 +212,8 @@ describe("create operations", () => {
       [],
       {
         payeeStrategy: "leave-unset",
-        notesStrategy: "imported-payee",
+        notesFromMemo: true,
+      notesIncludePayee: true,
         clearedTarget: "none",
         enrichImportedPayee: true,
       }
@@ -261,7 +272,8 @@ describe("imported payee, payee and notes are three fields (RD-072)", () => {
     for (const payeeStrategy of ["imported-payee", "leave-unset"] as const) {
       const result = plan([createItem()], [withMemo("s1")], [], {
         payeeStrategy,
-        notesStrategy: "bank-notes",
+        notesFromMemo: true,
+      notesIncludePayee: false,
         clearedTarget: "none",
         enrichImportedPayee: true,
       });
@@ -309,23 +321,59 @@ describe("imported payee, payee and notes are three fields (RD-072)", () => {
     expect(operation.importedPayee).toBe("DUBAI TAXI CORPORATION");
   });
 
-  it("still prefers a real memo when the notes fall back to the merchant text", () => {
+  it("keeps both the memo and the payee when both are asked for", () => {
+    // The predecessor to this setting was a fallback — it used the memo and
+    // reached for the payee only when there was none, so on a row carrying both
+    // it did nothing at all despite being labelled "also". Additive is what the
+    // label always claimed (F-127).
     const result = plan([createItem()], [withMemo("s1")], [], {
       payeeStrategy: "imported-payee",
-      notesStrategy: "imported-payee",
+      notesFromMemo: true,
+      notesIncludePayee: true,
       clearedTarget: "none",
       enrichImportedPayee: true,
     });
 
     const operation = result.operations[0];
     if (operation.kind !== "create") throw new Error("expected a create");
-    expect(operation.notes).toBe("ONLINE CARD PURCHASE");
+    expect(operation.notes).toBe("ONLINE CARD PURCHASE - AMZN Mktp AE*23981");
+  });
+
+  it("falls to the payee alone when the row has no memo to add it to", () => {
+    // The one case where additive and the old fallback agree, and the reason
+    // the change loses nothing.
+    const result = plan([createItem()], [row({ id: "s1" })], [], {
+      payeeStrategy: "imported-payee",
+      notesFromMemo: true,
+      notesIncludePayee: true,
+      clearedTarget: "none",
+      enrichImportedPayee: true,
+    });
+
+    const operation = result.operations[0];
+    if (operation.kind !== "create") throw new Error("expected a create");
+    expect(operation.notes).toBe("DUBAI TAXI CORPORATION");
+  });
+
+  it("writes the payee alone when the memo is switched off", () => {
+    const result = plan([createItem()], [withMemo("s1")], [], {
+      payeeStrategy: "imported-payee",
+      notesFromMemo: false,
+      notesIncludePayee: true,
+      clearedTarget: "none",
+      enrichImportedPayee: true,
+    });
+
+    const operation = result.operations[0];
+    if (operation.kind !== "create") throw new Error("expected a create");
+    expect(operation.notes).toBe("AMZN Mktp AE*23981");
   });
 
   it("writes nothing into the notes when asked to leave them alone", () => {
     const result = plan([createItem()], [withMemo("s1")], [], {
       payeeStrategy: "imported-payee",
-      notesStrategy: "leave-unset",
+      notesFromMemo: false,
+      notesIncludePayee: false,
       clearedTarget: "none",
       enrichImportedPayee: true,
     });
@@ -357,6 +405,44 @@ describe("imported payee, payee and notes are three fields (RD-072)", () => {
     const operation = result.operations[0];
     if (operation.kind !== "create") throw new Error("expected a create");
     expect(operation.importedPayee).toBeNull();
+  });
+
+  // ─── The CSV override (F-128) ───────────────────────────────────────────────
+
+  describe("notes on a delimited statement", () => {
+    const bothOff = {
+      payeeStrategy: "imported-payee" as const,
+      notesFromMemo: false,
+      notesIncludePayee: false,
+      clearedTarget: "none" as const,
+      enrichImportedPayee: true,
+    };
+
+    it("uses the mapped memo whatever the stored switches say", () => {
+      // A CSV has no notes control, so a value saved while the session held an
+      // OFX must not act invisibly.
+      const result = plan([createItem()], [withMemo("s1")], [], bothOff, undefined, "delimited");
+
+      const operation = result.operations[0];
+      if (operation.kind !== "create") throw new Error("expected a create");
+      expect(operation.notes).toBe("ONLINE CARD PURCHASE");
+    });
+
+    it("still honours the switches on a structured statement", () => {
+      const result = plan([createItem()], [withMemo("s1")], [], bothOff, undefined, "ofx");
+
+      const operation = result.operations[0];
+      if (operation.kind !== "create") throw new Error("expected a create");
+      expect(operation.notes).toBeNull();
+    });
+
+    it("leaves the stored config alone — the override is at resolution", () => {
+      // Rewriting it would lose the user's OFX choice the moment the same session
+      // was re-imported from a CSV.
+      const config = { ...bothOff };
+      plan([createItem()], [withMemo("s1")], [], config, undefined, "delimited");
+      expect(config).toEqual(bothOff);
+    });
   });
 });
 
@@ -425,7 +511,8 @@ describe("provenance on matched transactions (RD-072 §2.4)", () => {
       [txn({ id: "t1" })],
       {
         payeeStrategy: "imported-payee",
-        notesStrategy: "bank-notes",
+        notesFromMemo: true,
+      notesIncludePayee: false,
         clearedTarget: "none",
         enrichImportedPayee: false,
       }
@@ -627,7 +714,8 @@ describe("marking transactions cleared", () => {
   // do nothing.
   const cleared = (target: ApplyConfig["clearedTarget"]): ApplyConfig => ({
     payeeStrategy: "imported-payee",
-    notesStrategy: "bank-notes",
+    notesFromMemo: true,
+        notesIncludePayee: false,
     clearedTarget: target,
     // Isolated from provenance enrichment, which would otherwise turn every
     // no-write match in these fixtures into a write of its own.
@@ -845,5 +933,65 @@ describe("the plan as a whole", () => {
     const items = [item({ id: "i1", disposition: "create", statementRowIds: ["s1"] })];
     const rows = [row({ id: "s1" })];
     expect(plan(items, rows).operations[0].id).toBe(plan(items, rows).operations[0].id);
+  });
+});
+
+// ─── Reading a stored config (F-127) ──────────────────────────────────────────
+
+describe("normalizeApplyConfig", () => {
+  it("maps the old three-way notes strategy onto the two switches", () => {
+    expect(normalizeApplyConfig({ notesStrategy: "bank-notes" })).toMatchObject({
+      notesFromMemo: true,
+      notesIncludePayee: false,
+    });
+    expect(normalizeApplyConfig({ notesStrategy: "leave-unset" })).toMatchObject({
+      notesFromMemo: false,
+      notesIncludePayee: false,
+    });
+  });
+
+  it("turns the old fallback into both switches, which changes what it writes", () => {
+    // Accepted breaking change: `imported-payee` meant "the memo, or the payee
+    // when there is none". It now means both. On a row carrying only one of
+    // them the result is identical; on a row carrying both it is the fix.
+    expect(normalizeApplyConfig({ notesStrategy: "imported-payee" })).toMatchObject({
+      notesFromMemo: true,
+      notesIncludePayee: true,
+    });
+  });
+
+  it("passes the new shape through unchanged", () => {
+    expect(
+      normalizeApplyConfig({ notesFromMemo: false, notesIncludePayee: true })
+    ).toMatchObject({ notesFromMemo: false, notesIncludePayee: true });
+  });
+
+  it("falls back to the defaults for anything it cannot read", () => {
+    for (const stored of [null, undefined, "nonsense", 42, {}]) {
+      expect(normalizeApplyConfig(stored)).toEqual(DEFAULT_APPLY_CONFIG);
+    }
+  });
+
+  it("keeps the other settings it recognises, and defaults the rest", () => {
+    expect(
+      normalizeApplyConfig({
+        payeeStrategy: "leave-unset",
+        clearedTarget: "reconciled",
+        enrichImportedPayee: false,
+        notesStrategy: "bank-notes",
+      })
+    ).toEqual({
+      payeeStrategy: "leave-unset",
+      notesFromMemo: true,
+      notesIncludePayee: false,
+      clearedTarget: "reconciled",
+      enrichImportedPayee: false,
+    });
+  });
+
+  it("rejects a payee strategy it does not know rather than storing it", () => {
+    expect(normalizeApplyConfig({ payeeStrategy: "whatever" }).payeeStrategy).toBe(
+      DEFAULT_APPLY_CONFIG.payeeStrategy
+    );
   });
 });

@@ -1,7 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, FileText, Upload } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { InfoHint } from "@/components/ui/info-hint";
+import { cn } from "@/lib/utils";
+import { AlertTriangle, FileText, Upload, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -19,6 +21,7 @@ import {
   type NormalizedStatement,
   type SignConvention,
   type StatementDateFormat,
+  type StatementFormat,
   type StatementParseConfig,
 } from "@/lib/reconciliation/statement/normalize";
 import {
@@ -29,9 +32,11 @@ import {
   parseStatement,
 } from "@/lib/reconciliation/statement/source";
 import type { ApplyConfig } from "@/lib/reconciliation/session/plan";
-import type { MatchConfig } from "@/lib/reconciliation/types";
+import { composeNotes } from "@/lib/reconciliation/session/prospective";
+import type { MatchConfig, StatementRow } from "@/lib/reconciliation/types";
 import type { TextTargetPreset } from "@/lib/reconciliation/match/config";
 import type { ReconciliationProfileRecord } from "../lib/reconciliationApi";
+import type { ReconciliationSessionStatus } from "@/lib/app-db/reconciliationRepository";
 import { MatchOptions } from "./MatchOptions";
 import { NewTransactionOptions } from "./NewTransactionOptions";
 import { formatMinorUnits } from "../lib/format";
@@ -68,6 +73,26 @@ const SIGN_CONVENTIONS: { value: SignConvention; label: string }[] = [
 
 /** What the file picker offers, and what the paste box can also be. */
 const ACCEPTED_EXTENSIONS = ".csv,.tsv,.txt,.ofx,.qfx,.qif";
+
+/**
+ * Where the Notes column is headed, in three words.
+ *
+ * Shown under the column header so a setting two panels away has a visible
+ * consequence on the thing it affects.
+ */
+function notesDestinationLabel(
+  config: ApplyConfig,
+  format: StatementFormat | null
+): { text: string; muted: boolean } {
+  // A delimited statement has no notes control: the mapping is the decision.
+  if (format === "delimited") return { text: "→ notes", muted: false };
+  if (config.notesFromMemo && config.notesIncludePayee) {
+    return { text: "→ memo + payee", muted: false };
+  }
+  if (config.notesFromMemo) return { text: "→ memo", muted: false };
+  if (config.notesIncludePayee) return { text: "→ payee", muted: false };
+  return { text: "not written", muted: true };
+}
 
 /** One selectable source column, named by its header and a real value from it. */
 type SourceColumn = { index: number; label: string };
@@ -200,7 +225,16 @@ export type ImportPanelProps = {
    * live in the page toolbar with the other navigation rather than at the foot
    * of this panel where it reads as one more control among many.
    */
-  onReadyChange: (result: NormalizedStatement | null, statementName: string | null) => void;
+  /**
+   * The parsed statement, its name, and which kind of file it came from. The
+   * format travels with the result because the session records it (F-136) and
+   * only this panel knows it while a file is being read.
+   */
+  onReadyChange: (
+    result: NormalizedStatement | null,
+    statementName: string | null,
+    format: StatementFormat | null
+  ) => void;
   /**
    * Statements already imported, by fingerprint. Held here rather than resolved
    * by the caller because only this panel knows what has been parsed yet.
@@ -210,6 +244,9 @@ export type ImportPanelProps = {
     accountName: string | null;
     tag: string | null;
     createdAt: string;
+    /** What became of that reconciliation, so the warning can say. */
+    status: ReconciliationSessionStatus;
+    appliedAt: string | null;
   }[];
 };
 
@@ -341,8 +378,12 @@ export function ImportPanel({
   // Reported rather than acted on here: the panel owns parsing, the page owns
   // moving to the next phase.
   useEffect(() => {
-    onReadyChange(canContinue && parsed ? parsed : null, fileName);
-  }, [canContinue, parsed, fileName, onReadyChange]);
+    onReadyChange(
+      canContinue && parsed ? parsed : null,
+      fileName,
+      effectiveConfig?.format ?? null
+    );
+  }, [canContinue, parsed, fileName, effectiveConfig?.format, onReadyChange]);
 
   // Recognised by the rows themselves, so a statement pasted last month and
   // uploaded this month is still the same statement.
@@ -352,6 +393,64 @@ export function ImportPanel({
     if (!fingerprint) return null;
     return knownStatements.find((entry) => entry.fingerprint === fingerprint) ?? null;
   }, [parsed, knownStatements]);
+
+  /*
+   * What each row's notes will actually say, from the same function that writes
+   * them (`composeNotes`). The preview used to show the raw parse and never
+   * moved when these settings changed — on a CSV it actively contradicted them
+   * (F-132). A second implementation here would drift, which is the defect this
+   * exists to remove, so the rule is imported rather than repeated.
+   */
+  const notesFor = useCallback(
+    (row: StatementRow) =>
+      composeNotes(
+        applyConfig,
+        { bankNotes: row.bankNotes ?? null, importedPayee: row.importedPayee || null },
+        effectiveConfig?.format ?? null
+      ),
+    [applyConfig, effectiveConfig?.format]
+  );
+
+  const notesDestination = notesDestinationLabel(applyConfig, effectiveConfig?.format ?? null);
+
+  /*
+   * Per fingerprint, and only for this visit: the next import of the same
+   * statement is a new occasion to be told.
+   */
+  const [dismissedDuplicate, setDismissedDuplicate] = useState<string | null>(null);
+
+  /**
+   * What to say about a statement that has been imported before.
+   *
+   * Three messages, because the single one asserted "anything already applied
+   * is recognised and skipped" even for a session where nothing was applied —
+   * reassurance about work that never happened (F-126).
+   */
+  const duplicateMessage = useMemo(() => {
+    const where = `${duplicateOf?.accountName ?? "this account"}${
+      duplicateOf?.tag ? ` (${duplicateOf.tag})` : ""
+    }`;
+    const when = duplicateOf ? new Date(duplicateOf.createdAt).toLocaleDateString() : "";
+
+    if (duplicateOf?.appliedAt) {
+      return {
+        headline: "This statement has already been applied.",
+        detail: `Applied to ${where} on ${new Date(
+          duplicateOf.appliedAt
+        ).toLocaleDateString()}. Matching reads what is in Actual now, so anything already created from it is recognised and skipped.`,
+      };
+    }
+    if (duplicateOf?.status === "failed") {
+      return {
+        headline: "An earlier reconciliation with this statement failed.",
+        detail: `Started for ${where} on ${when}. Open that one to see what happened, or carry on here to start again.`,
+      };
+    }
+    return {
+      headline: "You started a reconciliation with this statement and didn't apply it.",
+      detail: `${where}, ${when}. Open that one to carry on, or keep going here to start again.`,
+    };
+  }, [duplicateOf]);
 
   const statementLabel = fileName ?? (text.trim() ? "Pasted statement" : null);
 
@@ -553,32 +652,39 @@ export function ImportPanel({
       */}
       {!isDelimited && (
         <div className="flex flex-col gap-1.5">
-          <label className="flex items-start gap-2 text-xs">
+          {/*
+            Fallback first, then swap — Actual's order, and the logical one: the
+            fallback decides whether a memo survives to be a note at all, so it
+            reads before the swap that decides which text is which.
+          */}
+          <label className="flex items-center gap-2 text-xs">
             <input
               type="checkbox"
-              className="mt-0.5"
-              checked={effectiveConfig.swapPayeeAndMemo}
-              onChange={(event) => update({ swapPayeeAndMemo: event.target.checked })}
-            />
-            <span>
-              Swap the payee and memo fields
-              <span className="block text-[11px] text-muted-foreground">
-                For banks that fill them the wrong way round.
-              </span>
-            </span>
-          </label>
-          <label className="flex items-start gap-2 text-xs">
-            <input
-              type="checkbox"
-              className="mt-0.5"
+              className="size-3.5 accent-foreground"
               checked={effectiveConfig.fallbackPayeeToMemo}
               onChange={(event) => update({ fallbackPayeeToMemo: event.target.checked })}
             />
-            <span>
-              Use the memo when the payee is empty
-              <span className="block text-[11px] text-muted-foreground">
-                The memo becomes the merchant text and is not repeated in the notes.
-              </span>
+            <span className="flex items-center gap-1.5">
+              Use the memo as a fallback for empty payees
+              <InfoHint label="using the memo as a fallback">
+                Some banks leave the payee blank. Where that happens the memo becomes the payee, and
+                is then no longer available as a note - those rows show an empty Notes cell in the
+                preview.
+              </InfoHint>
+            </span>
+          </label>
+          <label className="flex items-center gap-2 text-xs">
+            <input
+              type="checkbox"
+              className="size-3.5 accent-foreground"
+              checked={effectiveConfig.swapPayeeAndMemo}
+              onChange={(event) => update({ swapPayeeAndMemo: event.target.checked })}
+            />
+            <span className="flex items-center gap-1.5">
+              Swap the payee and memo
+              <InfoHint label="swapping the payee and memo">
+                For banks that fill the two fields the wrong way round.
+              </InfoHint>
             </span>
           </label>
         </div>
@@ -662,7 +768,7 @@ export function ImportPanel({
         with a corrected mapping — but it is a fact about the file in front of
         you, so it belongs with the file's identity.
       */}
-      {duplicateOf && canContinue && (
+      {duplicateOf && canContinue && dismissedDuplicate !== duplicateOf.fingerprint && (
         <div
           role="status"
           className="flex items-start gap-2 rounded-md border border-amber-500/50 bg-amber-500/5 px-3 py-2 text-xs"
@@ -672,15 +778,22 @@ export function ImportPanel({
             aria-hidden="true"
           />
           <p>
-            <span className="font-medium">This statement has been imported before.</span>{" "}
-            <span className="text-muted-foreground">
-              The same rows were imported for {duplicateOf.accountName ?? "this account"}
-              {duplicateOf.tag ? ` (${duplicateOf.tag})` : ""} on{" "}
-              {new Date(duplicateOf.createdAt).toLocaleDateString()}. Carrying on is fine - matching
-              reads what is in Actual now, and anything already applied is recognised and skipped -
-              but if you meant to resume that reconciliation, go back and open it instead.
-            </span>
+            <span className="font-medium">{duplicateMessage.headline}</span>{" "}
+            <span className="text-muted-foreground">{duplicateMessage.detail}</span>
           </p>
+          {/*
+            Dismissible because this is a fact about the file, not a condition:
+            once read, keeping it above the primary task for the rest of the
+            session is just lost height.
+          */}
+          <button
+            type="button"
+            aria-label="Dismiss the duplicate-statement notice"
+            className="ml-auto shrink-0 rounded p-0.5 text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            onClick={() => setDismissedDuplicate(duplicateOf.fingerprint)}
+          >
+            <X className="h-3.5 w-3.5" aria-hidden="true" />
+          </button>
         </div>
       )}
 
@@ -717,6 +830,9 @@ export function ImportPanel({
               <NewTransactionOptions
                 config={applyConfig}
                 onChange={onApplyConfigChange}
+                // The live config, not the stored one: during import the file
+                // can be swapped, and what is on screen is the truth.
+                statementFormat={effectiveConfig.format}
                 disabled={writeSettingsLocked}
               />
             </Section>
@@ -796,9 +912,26 @@ export function ImportPanel({
                     </th>
                     <th scope="col" className="bg-muted px-3 pt-1.5 text-left font-medium">
                       Imported payee
+                      <span className="ml-1.5 rounded bg-sky-50 px-1 py-0.5 align-middle font-mono text-[9.5px] font-medium text-sky-700 dark:bg-sky-950/40 dark:text-sky-400">
+                        {applyConfig.payeeStrategy === "imported-payee"
+                          ? "→ payee & imported payee"
+                          : "→ imported payee"}
+                      </span>
                     </th>
                     <th scope="col" className="bg-muted px-3 pt-1.5 text-left font-medium">
                       Notes
+                      {/* Where this column is headed, so a setting in the left
+                          pane has a visible consequence on what it affects. */}
+                      <span
+                        className={cn(
+                          "ml-1.5 rounded px-1 py-0.5 align-middle font-mono text-[9.5px] font-medium",
+                          notesDestination.muted
+                            ? "bg-muted-foreground/10 text-muted-foreground"
+                            : "bg-sky-50 text-sky-700 dark:bg-sky-950/40 dark:text-sky-400"
+                        )}
+                      >
+                        {notesDestination.text}
+                      </span>
                     </th>
                     <th scope="col" className="bg-muted px-3 pt-1.5 text-left font-medium">
                       Reference
@@ -908,12 +1041,19 @@ export function ImportPanel({
                       <td className="truncate px-3 py-1.5" title={row.importedPayee}>
                         {row.importedPayee || "-"}
                       </td>
-                      <td
-                        className="truncate px-3 py-1.5 text-muted-foreground"
-                        title={row.bankNotes ?? undefined}
-                      >
-                        {row.bankNotes ?? "-"}
-                      </td>
+                      {/* The resolved note, not the raw memo: what this row
+                          will actually carry once it is created. */}
+                      {(() => {
+                        const note = notesFor(row);
+                        return (
+                          <td
+                            className="truncate px-3 py-1.5 text-muted-foreground"
+                            title={note ?? undefined}
+                          >
+                            {note ?? <span className="italic opacity-60">empty</span>}
+                          </td>
+                        );
+                      })()}
                       <td
                         className="truncate px-3 py-1.5 text-muted-foreground"
                         title={row.bankReference ?? row.externalId ?? undefined}

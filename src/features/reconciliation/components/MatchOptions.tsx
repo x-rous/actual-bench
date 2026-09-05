@@ -1,5 +1,6 @@
 "use client";
 
+import { InfoHint } from "@/components/ui/info-hint";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 import {
@@ -60,7 +61,7 @@ const PRESETS: { id: TextTargetPreset; label: string; hint: string }[] = [
   {
     id: "imported-payee",
     label: "Imported payee",
-    hint: "For transactions brought in by bank sync, which keep the raw merchant text.",
+    hint: "For transactions brought in by bank sync, which keep the bank's raw text.",
   },
 ];
 
@@ -142,9 +143,14 @@ export function MatchOptions({
 
         <div className="flex flex-col gap-1">
           <div className={SETTING_ROW}>
-            <Label htmlFor="match-tolerance" className="min-w-0 text-xs">
-              Match transactions within (days)
-            </Label>
+            <span className="flex min-w-0 items-center gap-1.5">
+              <Label htmlFor="match-tolerance" className="min-w-0 text-xs">
+                Match transactions within (days)
+              </Label>
+              <InfoHint label="the match window">
+                A bank&apos;s posting date often differs from the date you recorded it.
+              </InfoHint>
+            </span>
             <input
               id="match-tolerance"
               type="number"
@@ -158,16 +164,19 @@ export function MatchOptions({
               className={NUMBER_FIELD}
             />
           </div>
-          <p className="text-[11px] leading-snug text-muted-foreground">
-            A bank&apos;s posting date often differs from the date you recorded it.
-          </p>
         </div>
 
         <div className="flex flex-col gap-1">
           <div className={SETTING_ROW}>
-            <Label htmlFor="match-padding" className="min-w-0 text-xs">
-              Look beyond the statement period (days)
-            </Label>
+            <span className="flex min-w-0 items-center gap-1.5">
+              <Label htmlFor="match-padding" className="min-w-0 text-xs">
+                Look beyond the statement period (days)
+              </Label>
+              <InfoHint label="looking beyond the statement period">
+                Loads transactions this many days before and after the statement period. Extra
+                transactions are shown separately and aren&rsquo;t counted as missing.
+              </InfoHint>
+            </span>
             <input
               id="match-padding"
               type="number"
@@ -181,11 +190,6 @@ export function MatchOptions({
               className={NUMBER_FIELD}
             />
           </div>
-          <p className="text-[11px] leading-snug text-muted-foreground">
-            Loads transactions this many days before and after the statement period for matching.
-            Extra transactions are shown separately and aren&rsquo;t counted as missing. Increase it
-            for a wider match window.
-          </p>
         </div>
 
         {/*

@@ -73,7 +73,7 @@ export function MonthColumnHeader({
   // receive hover): surfaces "today, day X of Y" for the current month, plus the
   // select hint when selectable.
   const headerTitle = isCurrentMonth
-    ? `Today${elapsedText}${selectable ? ` — select ${label}` : ""}`
+    ? `Today${elapsedText}${selectable ? ` - select ${label}` : ""}`
     : selectable
     ? `Select ${label}`
     : undefined;

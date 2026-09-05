@@ -31,7 +31,7 @@ function Field({ label, value }: { label: string; value: React.ReactNode }) {
 }
 
 function renderScalar(value: JsonValue): string {
-  if (value === null) return "—";
+  if (value === null) return "-";
   if (typeof value === "object") return JSON.stringify(value);
   return String(value);
 }
@@ -64,7 +64,7 @@ function BudgetFileSyncResult({ result }: AutomationResultRendererProps) {
           {syncRunId && (
             <span className="text-muted-foreground">
               {" "}
-              — this run is recorded there in full{" "}
+              - this run is recorded there in full{" "}
               <span className="font-mono text-[11px]">({syncRunId.slice(0, 8)})</span>
             </span>
           )}

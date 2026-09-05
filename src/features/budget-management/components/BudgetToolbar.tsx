@@ -97,7 +97,7 @@ export function BudgetToolbar({
       ? "Hidden categories stay out of the plan totals whether shown or not."
       : budgetMode === "envelope"
         ? "Hidden categories still hold their assigned money whether shown or not."
-        : "Totals are unaffected — this only changes what's shown.";
+        : "Totals are unaffected - this only changes what's shown.";
   const hiddenToggleTitle = showHidden
     ? `Hide hidden categories. ${hiddenCalcNote}`
     : `Show hidden categories. ${hiddenCalcNote}`;

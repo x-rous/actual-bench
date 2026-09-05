@@ -48,7 +48,7 @@ export default function AppError({
         </h1>
         <p className="max-w-md text-sm text-muted-foreground">
           This page hit an unexpected error. Your unsaved changes may still be
-          intact — try again, and if it keeps happening, reconnect from the
+          intact - try again, and if it keeps happening, reconnect from the
           start.
         </p>
         {error.digest ? (

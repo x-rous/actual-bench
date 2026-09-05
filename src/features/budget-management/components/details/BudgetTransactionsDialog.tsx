@@ -752,7 +752,7 @@ export function BudgetTransactionsDialog({ target, browserOptions, statesByMonth
           <div className="shrink-0 border-b border-amber-500/30 bg-amber-500/10 px-4 py-1.5 text-[11px] text-amber-700 dark:text-amber-300">
             {summary != null
               ? `Showing the first ${rows.length.toLocaleString()} of ${summary.count.toLocaleString()} transactions. ${flowVerb}, Variance, and the count above cover all ${summary.count.toLocaleString()}; the breakdowns and table below reflect only the first ${rows.length.toLocaleString()}.`
-              : `Showing the first ${rows.length.toLocaleString()} transactions — there may be more, so the figures below can be incomplete.`}
+              : `Showing the first ${rows.length.toLocaleString()} transactions - there may be more, so the figures below can be incomplete.`}
           </div>
         )}
 

@@ -69,8 +69,8 @@ export function BudgetMeter({
       aria-valuemin={0}
       aria-valuemax={valueMax}
       aria-valuenow={valueNow}
-      aria-valuetext={`${captionLeft} — ${remainingText}`}
-      aria-label={`${captionLeft} — ${remainingText}`}
+      aria-valuetext={`${captionLeft} - ${remainingText}`}
+      aria-label={`${captionLeft} - ${remainingText}`}
     >
       <div
         className="relative h-2.5 w-full overflow-hidden rounded-full bg-foreground/[0.06]"

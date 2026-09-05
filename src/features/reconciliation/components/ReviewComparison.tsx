@@ -9,6 +9,7 @@ import {
   type UpdateOperation,
 } from "@/lib/reconciliation/apply/operations";
 import type { ApplyConfig } from "@/lib/reconciliation/session/plan";
+import type { StatementFormat } from "@/lib/reconciliation/statement/normalize";
 import { prospectiveTransaction } from "@/lib/reconciliation/session/prospective";
 import { stagedFields } from "@/lib/reconciliation/session/staging";
 import { statementText } from "@/lib/reconciliation/statement/text";
@@ -105,6 +106,8 @@ export type ReviewComparisonProps = {
   payees: Option[];
   categories: Option[];
   applyConfig: ApplyConfig;
+  /** Null on a session recorded before the format was stored. */
+  statementFormat?: StatementFormat | null;
   /** Rows with no decision, reported under the table they are absent from. */
   unresolved?: number;
 };
@@ -117,6 +120,7 @@ export function ReviewComparison({
   payees,
   categories,
   applyConfig,
+  statementFormat = null,
   unresolved = 0,
 }: ReviewComparisonProps) {
   const [showUnchanged, setShowUnchanged] = useState(false);
@@ -172,7 +176,7 @@ export function ReviewComparison({
         transaction,
         action,
         provenance,
-        pending: prospectiveTransaction({ item, statementRow, transaction, applyConfig }),
+        pending: prospectiveTransaction({ item, statementRow, transaction, applyConfig, statementFormat }),
         changedFields,
       };
     });
@@ -185,7 +189,7 @@ export function ReviewComparison({
       if (left !== right) return left < right ? -1 : 1;
       return (a.statementRow?.sourceRowNumber ?? 0) - (b.statementRow?.sourceRowNumber ?? 0);
     });
-  }, [plan, items, statementRows, transactions, applyConfig]);
+  }, [plan, items, statementRows, transactions, applyConfig, statementFormat]);
 
   const changing = rows.filter((row) => row.action !== "unchanged" && row.action !== "later");
   const quiet = rows.filter((row) => row.action === "unchanged" || row.action === "later");

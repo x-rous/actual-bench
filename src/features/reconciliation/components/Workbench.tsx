@@ -21,6 +21,7 @@ import type { StageableField } from "@/lib/reconciliation/session/staging";
 import type { ReconciliationDisposition } from "@/lib/reconciliation/types";
 import type { Option } from "./StagedFields";
 import type { ApplyConfig } from "@/lib/reconciliation/session/plan";
+import type { StatementFormat } from "@/lib/reconciliation/statement/normalize";
 import type { TransformContext } from "@/lib/reconciliation/transform/rules";
 import type { StagedPatch } from "@/lib/reconciliation/types";
 import { useTableSelection } from "@/hooks/useTableSelection";
@@ -325,6 +326,8 @@ export type WorkbenchProps = {
    */
   applyConfig: ApplyConfig;
   onApplyConfigChange: (config: ApplyConfig) => void;
+  /** From the session; null on one recorded before the format was stored. */
+  statementFormat?: StatementFormat | null;
   onTransform: (changes: { itemId: string; patch: StagedPatch | undefined }[]) => void;
 };
 
@@ -388,6 +391,7 @@ export function Workbench({
   transformContextFor,
   applyConfig,
   onApplyConfigChange,
+  statementFormat = null,
   onTransform,
 }: WorkbenchProps) {
   const [filter, setFilter] = useState<FilterId>("all");
@@ -824,6 +828,7 @@ export function Workbench({
                 <NewTransactionOptions
                   config={applyConfig}
                   onChange={onApplyConfigChange}
+                  statementFormat={statementFormat}
                   stagedNotesCount={stagedNotesCount}
                   disabled={writeSettingsLocked}
                 />

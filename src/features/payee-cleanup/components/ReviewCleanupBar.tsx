@@ -38,7 +38,7 @@ export function ReviewCleanupBar({ stagedCount, outcome }: Props) {
         // list, and close the tab believing they were done.
         <p className="rounded border border-emerald-600/40 bg-emerald-500/5 p-2 text-xs font-medium text-emerald-700 dark:text-emerald-400">
           {stagedCount} {stagedCount === 1 ? "change is" : "changes are"} staged and
-          waiting — open the Payees page and save to apply them.
+          waiting - open the Payees page and save to apply them.
         </p>
       ) : null}
 
