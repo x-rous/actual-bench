@@ -2,6 +2,7 @@ import { exportRulesToCsv } from "./rulesCsvExport";
 import { importRulesFromCsv } from "./rulesCsvImport";
 import type { Rule } from "@/types/entities";
 import type { StagedMap } from "@/types/staged";
+import type { EntityMaps } from "../utils/rulePreview";
 
 function staged(rule: Rule, overrides: { isDeleted?: boolean } = {}): StagedMap<Rule> {
   return {
@@ -32,7 +33,7 @@ function makeRule(id: string, overrides: Partial<Rule> = {}): Rule {
 describe("exportRulesToCsv", () => {
   it("outputs a header row even for an empty staged map", () => {
     const result = exportRulesToCsv({}, emptyMaps);
-    expect(result).toBe("rule_id,stage,conditions_op,row_type,field,op,value");
+    expect(result).toBe("rule_id,stage,conditions_op,row_type,field,op,value,split_index,options");
   });
 
   it("skips deleted rules", () => {
@@ -213,4 +214,487 @@ describe("exportRulesToCsv", () => {
     expect(action.value).toBe("");
     expect(action.options).toEqual({ template: "{{regex imported_payee 'foo' 'bar'}}" });
   });
+});
+
+// ─── Lossless round-trip (F-123) ──────────────────────────────────────────────
+
+describe("CSV round-trip", () => {
+  // Both sides of the round-trip only ever read `id`/`name` off these, so a minimal staged
+  // entity is enough; the cast keeps the fixture readable.
+  function named(entities: { id: string; name: string }[]): EntityMaps["payees"] {
+    return Object.fromEntries(
+      entities.map((entity) => [
+        entity.id,
+        { entity, original: null, isNew: false, isUpdated: false, isDeleted: false, validationErrors: {} },
+      ])
+    ) as EntityMaps["payees"];
+  }
+
+  const maps = {
+    payees: named([{ id: "p1", name: "Costco" }]),
+    categories: named([
+      { id: "c1", name: "Groceries" },
+      { id: "c2", name: "Household" },
+      { id: "c3", name: "Fuel" },
+    ]),
+    accounts: named([]),
+    categoryGroups: named([]),
+  } as unknown as EntityMaps;
+
+  // Every shape the exporter has to encode: an inflow condition, a template, a formula, and a
+  // three-way split using three different allocation methods.
+  const rule = makeRule("r1", {
+    stage: "pre",
+    conditions: [
+      { field: "payee", op: "is", value: "p1", type: "id" },
+      { field: "amount", op: "gt", value: 10, type: "number", options: { inflow: true } },
+      { field: "notes", op: "hasTags", value: "#bulk", type: "string" },
+    ],
+    actions: [
+      { field: "notes", op: "set", value: "", type: "string", options: { template: "{{payee}}" } },
+      { field: "payee_name", op: "set", value: "", type: "string", options: { formula: "=UPPER(notes)" } },
+      { op: "set-split-amount", value: 12.5, type: "number", options: { method: "fixed-amount", splitIndex: 1 } },
+      { field: "category", op: "set", value: "c1", type: "id", options: { splitIndex: 1 } },
+      { op: "set-split-amount", value: 25, type: "number", options: { method: "fixed-percent", splitIndex: 2 } },
+      { field: "category", op: "set", value: "c2", type: "id", options: { splitIndex: 2 } },
+      { op: "set-split-amount", value: null, type: "number", options: { method: "remainder", splitIndex: 3 } },
+      { field: "category", op: "set", value: "c3", type: "id", options: { splitIndex: 3 } },
+    ],
+  });
+
+  it("survives export → import with its splits and options intact", () => {
+    const csv = exportRulesToCsv(staged(rule), maps);
+    const result = importRulesFromCsv(csv, maps);
+    expect("rules" in result).toBe(true);
+    if (!("rules" in result)) return;
+
+    expect(result.skipped).toBe(0);
+    const imported = result.rules[0];
+    expect(imported.stage).toBe("pre");
+
+    // Conditions, including the inflow marker and the tag value.
+    expect(imported.conditions).toEqual([
+      { field: "payee", op: "is", value: "p1", type: "id" },
+      { field: "amount", op: "gt", value: "10", type: "number", options: { inflow: true } },
+      { field: "notes", op: "hasTags", value: "#bulk", type: "string" },
+    ]);
+
+    // Every split kept its index, its method and its value.
+    expect(imported.actions.map((a) => [a.op, a.value, a.options])).toEqual([
+      ["set", "", { template: "{{payee}}" }],
+      ["set", "", { formula: "=UPPER(notes)" }],
+      ["set-split-amount", 12.5, { method: "fixed-amount", splitIndex: 1 }],
+      ["set", "c1", { splitIndex: 1 }],
+      ["set-split-amount", 25, { method: "fixed-percent", splitIndex: 2 }],
+      ["set", "c2", { splitIndex: 2 }],
+      ["set-split-amount", null, { method: "remainder", splitIndex: 3 }],
+      ["set", "c3", { splitIndex: 3 }],
+    ]);
+  });
+
+  it("round-trips a split whose amount comes from a formula", () => {
+    const formulaSplit = makeRule("r2", {
+      conditions: [{ field: "payee", op: "is", value: "p1", type: "id" }],
+      actions: [
+        {
+          op: "set-split-amount",
+          value: null,
+          type: "number",
+          options: { method: "formula", formula: "=amount * 0.2", splitIndex: 1 },
+        },
+        { field: "category", op: "set", value: "c1", type: "id", options: { splitIndex: 1 } },
+      ],
+    });
+    const result = importRulesFromCsv(exportRulesToCsv(staged(formulaSplit), maps), maps);
+    expect("rules" in result).toBe(true);
+    if (!("rules" in result)) return;
+    expect(result.rules[0].actions[0].options).toEqual({
+      method: "formula",
+      formula: "=amount * 0.2",
+      splitIndex: 1,
+    });
+  });
+
+  it("still imports a file exported before the split_index and options columns existed", () => {
+    const legacy = [
+      "rule_id,stage,conditions_op,row_type,field,op,value",
+      "r1,default,and,condition,notes,contains,grocery",
+      "r1,,,action,category,set,Groceries",
+    ].join("\n");
+    const result = importRulesFromCsv(legacy, maps);
+    expect("rules" in result).toBe(true);
+    if (!("rules" in result)) return;
+    expect(result.skipped).toBe(0);
+    expect(result.rules[0].conditions[0]).toMatchObject({ field: "notes", op: "contains" });
+    expect(result.rules[0].actions[0]).toMatchObject({ field: "category", op: "set", value: "c1" });
+    expect(result.rules[0].actions[0].options).toBeUndefined();
+  });
+
+  it("skips a rule with an action op it does not understand, rather than rewriting it as a set", () => {
+    const bogus = [
+      "rule_id,stage,conditions_op,row_type,field,op,value,split_index,options",
+      "r1,default,and,condition,notes,contains,grocery,,",
+      "r1,,,action,category,frobnicate,Groceries,,",
+    ].join("\n");
+    const result = importRulesFromCsv(bogus, maps);
+    expect("rules" in result).toBe(true);
+    if (!("rules" in result)) return;
+    expect(result.rules).toHaveLength(0);
+    expect(result.skipped).toBe(1);
+    expect(result.skipReasons[0].reason).toContain('unsupported action "frobnicate"');
+  });
+});
+
+// ─── Spreadsheet formula neutralisation (CWE-1236) ────────────────────────────
+
+describe("CSV formula injection", () => {
+  const maps = {
+    payees: {},
+    categories: {},
+    accounts: {},
+    categoryGroups: {},
+  } as unknown as EntityMaps;
+
+  it.each(["=", "+", "-", "@"])("guards a template beginning with %p", (lead) => {
+    const template = `${lead}HYPERLINK("http://evil","click")`;
+    const rule = makeRule("r1", {
+      conditions: [{ field: "notes", op: "contains", value: "x", type: "string" }],
+      actions: [{ field: "notes", op: "set", value: "", type: "string", options: { template } }],
+    });
+
+    const csv = exportRulesToCsv(staged(rule), maps);
+    // The cell must not begin with a character a spreadsheet reads as a formula.
+    const templateRow = csv.split("\n").find((l) => l.includes("set-template"));
+    expect(templateRow).toBeDefined();
+    expect(templateRow).toContain(`'${lead}`);
+
+    // …and the guard comes off again, so the round-trip is unaffected.
+    const result = importRulesFromCsv(csv, maps);
+    expect("rules" in result).toBe(true);
+    if (!("rules" in result)) return;
+    expect(result.rules[0].actions[0].options?.template).toBe(template);
+  });
+
+  it("guards a free-text value and restores it", () => {
+    const rule = makeRule("r1", {
+      conditions: [{ field: "notes", op: "contains", value: "=1+1", type: "string" }],
+      actions: [{ field: "notes", op: "set", value: "@SUM(A1)", type: "string" }],
+    });
+    const csv = exportRulesToCsv(staged(rule), maps);
+    expect(csv).toContain("'=1+1");
+    expect(csv).toContain("'@SUM(A1)");
+
+    const result = importRulesFromCsv(csv, maps);
+    expect("rules" in result).toBe(true);
+    if (!("rules" in result)) return;
+    expect(result.rules[0].conditions[0].value).toBe("=1+1");
+    expect(result.rules[0].actions[0].value).toBe("@SUM(A1)");
+  });
+
+  it("leaves a negative amount as a plain number", () => {
+    const rule = makeRule("r1", {
+      conditions: [{ field: "amount", op: "lt", value: -50, type: "number" }],
+      actions: [{ field: "notes", op: "set", value: "x", type: "string" }],
+    });
+    const csv = exportRulesToCsv(staged(rule), maps);
+    expect(csv).toContain(",-50,");
+    expect(csv).not.toContain("'-50");
+  });
+
+  // The apostrophe is part of the encoding, so a value that already starts with one has to be
+  // escaped as well — otherwise the importer eats the user's own character.
+  it.each(["'tis", "'=1+1", "''double", "'@x"])(
+    "round-trips %p without eating the leading apostrophe",
+    (value) => {
+      const rule = makeRule("r1", {
+        conditions: [{ field: "notes", op: "contains", value, type: "string" }],
+        actions: [{ field: "notes", op: "set", value: "x", type: "string" }],
+      });
+      const result = importRulesFromCsv(exportRulesToCsv(staged(rule), maps), maps);
+      expect("rules" in result).toBe(true);
+      if (!("rules" in result)) return;
+      expect(result.rules[0].conditions[0].value).toBe(value);
+    }
+  );
+
+  it("still imports a formula guarded by the pre-existing single-quote convention", () => {
+    // Files exported before this PR wrote `'=…` for formulas. The new un-guard has to keep
+    // reading them, since the guard character and the pattern are the same.
+    const legacy = [
+      "rule_id,stage,conditions_op,row_type,field,op,value",
+      "r1,default,and,condition,notes,contains,grocery",
+      "r1,,,action,notes,set-formula,'=UPPER(notes)",
+    ].join("\n");
+    const result = importRulesFromCsv(legacy, maps);
+    expect("rules" in result).toBe(true);
+    if (!("rules" in result)) return;
+    expect(result.rules[0].actions[0].options?.formula).toBe("=UPPER(notes)");
+  });
+
+  it("rejects an options cell setting both inflow and outflow", () => {
+    const csv = [
+      "rule_id,stage,conditions_op,row_type,field,op,value,split_index,options",
+      "r1,default,and,condition,amount,gt,10,,inflow=true;outflow=true",
+      "r1,,,action,notes,set,x,,",
+    ].join("\n");
+    const result = importRulesFromCsv(csv, maps);
+    expect("rules" in result).toBe(true);
+    if (!("rules" in result)) return;
+    expect(result.rules).toHaveLength(0);
+    expect(result.skipped).toBe(1);
+    expect(result.skipReasons[0].reason).toContain("both inflow and outflow");
+  });
+
+  it("still accepts either direction on its own", () => {
+    const csv = [
+      "rule_id,stage,conditions_op,row_type,field,op,value,split_index,options",
+      "r1,default,and,condition,amount,gt,10,,outflow=true",
+      "r1,,,action,notes,set,x,,",
+    ].join("\n");
+    const result = importRulesFromCsv(csv, maps);
+    expect("rules" in result).toBe(true);
+    if (!("rules" in result)) return;
+    expect(result.rules[0].conditions[0].options).toEqual({ outflow: true });
+  });
+});
+
+describe("CSV import rejects malformed splits", () => {
+  const maps = { payees: {}, categories: {}, accounts: {}, categoryGroups: {} } as unknown as EntityMaps;
+
+  function importRows(rows: string[]) {
+    return importRulesFromCsv(
+      ["rule_id,stage,conditions_op,row_type,field,op,value,split_index,options", ...rows].join("\n"),
+      maps
+    );
+  }
+
+  it("skips a rule whose splits start at 2", () => {
+    // The importer stages directly, so the drawer's dense-index check would never see this.
+    const result = importRows([
+      "r1,default,and,condition,notes,contains,x,,",
+      "r1,,,action,,set-split-amount,,2,method=remainder",
+      "r1,,,action,notes,set,y,2,",
+    ]);
+    expect("rules" in result).toBe(true);
+    if (!("rules" in result)) return;
+    expect(result.rules).toHaveLength(0);
+    expect(result.skipReasons[0].reason).toContain("1, 2, 3");
+  });
+
+  it("skips a rule with a gap between splits", () => {
+    const result = importRows([
+      "r1,default,and,condition,notes,contains,x,,",
+      "r1,,,action,,set-split-amount,,1,method=remainder",
+      "r1,,,action,notes,set,a,1,",
+      "r1,,,action,,set-split-amount,,3,method=remainder",
+      "r1,,,action,notes,set,b,3,",
+    ]);
+    expect("rules" in result).toBe(true);
+    if (!("rules" in result)) return;
+    expect(result.rules).toHaveLength(0);
+    expect(result.skipReasons[0].reason).toContain("1, 2, 3");
+  });
+
+  it("accepts a well-formed two-way split", () => {
+    const result = importRows([
+      "r1,default,and,condition,notes,contains,x,,",
+      "r1,,,action,,set-split-amount,,1,method=remainder",
+      "r1,,,action,notes,set,a,1,",
+      "r1,,,action,,set-split-amount,,2,method=remainder",
+      "r1,,,action,notes,set,b,2,",
+    ]);
+    expect("rules" in result).toBe(true);
+    if (!("rules" in result)) return;
+    expect(result.rules).toHaveLength(1);
+    expect(result.skipped).toBe(0);
+  });
+});
+
+describe("CSV import rejects an allocation with no split target", () => {
+  const maps = { payees: {}, categories: {}, accounts: {}, categoryGroups: {} } as unknown as EntityMaps;
+
+  function importRows(rows: string[]) {
+    return importRulesFromCsv(
+      ["rule_id,stage,conditions_op,row_type,field,op,value,split_index,options", ...rows].join("\n"),
+      maps
+    );
+  }
+
+  it.each([["blank", ""], ["zero", "0"]])(
+    "skips the rule when split_index is %s",
+    (_label, splitIndex) => {
+      // hasDenseSplitIndices filters index 0 before checking, so a lone index-0 allocation
+      // looks dense — the group has to be rejected here instead.
+      const result = importRows([
+        "r1,default,and,condition,notes,contains,x,,",
+        `r1,,,action,,set-split-amount,,${splitIndex},method=remainder`,
+        "r1,,,action,notes,set,y,,",
+      ]);
+      expect("rules" in result).toBe(true);
+      if (!("rules" in result)) return;
+      expect(result.rules).toHaveLength(0);
+      expect(result.skipReasons[0].reason).toContain("allocation without a split_index");
+    }
+  );
+
+  it("reports a non-numeric split_index as such, before the allocation check", () => {
+    const result = importRows([
+      "r1,default,and,condition,notes,contains,x,,",
+      "r1,,,action,,set-split-amount,,abc,method=remainder",
+      "r1,,,action,notes,set,y,,",
+    ]);
+    expect("rules" in result).toBe(true);
+    if (!("rules" in result)) return;
+    expect(result.rules).toHaveLength(0);
+    expect(result.skipReasons[0].reason).toContain('split_index "abc" must be a whole number');
+  });
+
+  it("still accepts an allocation that names its split", () => {
+    const result = importRows([
+      "r1,default,and,condition,notes,contains,x,,",
+      "r1,,,action,,set-split-amount,,1,method=remainder",
+      "r1,,,action,notes,set,y,1,",
+    ]);
+    expect("rules" in result).toBe(true);
+    if (!("rules" in result)) return;
+    expect(result.rules).toHaveLength(1);
+    expect(result.rules[0].actions[0].options).toEqual({ method: "remainder", splitIndex: 1 });
+  });
+});
+
+describe("CSV import rejects invalid allocation payloads", () => {
+  const maps = { payees: {}, categories: {}, accounts: {}, categoryGroups: {} } as unknown as EntityMaps;
+
+  function importRows(rows: string[]) {
+    return importRulesFromCsv(
+      ["rule_id,stage,conditions_op,row_type,field,op,value,split_index,options", ...rows].join("\n"),
+      maps
+    );
+  }
+
+  function withAllocation(value: string, method: string) {
+    return importRows([
+      "r1,default,and,condition,notes,contains,x,,",
+      `r1,,,action,,set-split-amount,${value},1,method=${method}`,
+      "r1,,,action,notes,set,y,1,",
+    ]);
+  }
+
+  it.each([
+    ["fixed-amount", "", "needs a number"],
+    ["fixed-amount", "abc", "needs a number"],
+    ["fixed-amount", "Infinity", "needs a number"],
+    ["fixed-percent", "", "needs a number"],
+    ["fixed-percent", "abc", "needs a number"],
+    ["fixed-percent", "150", "between 0 and 100"],
+    ["fixed-percent", "-5", "between 0 and 100"],
+    ["formula", "amount * 0.2", "must start with ="],
+    ["formula", "", "must start with ="],
+  ])("skips a %s allocation whose value is %p", (method, value, reason) => {
+    const result = withAllocation(value, method);
+    expect("rules" in result).toBe(true);
+    if (!("rules" in result)) return;
+    expect(result.rules).toHaveLength(0);
+    expect(result.skipReasons[0].reason).toContain(reason);
+  });
+
+  it.each([
+    ["fixed-amount", "12.5", 12.5],
+    ["fixed-percent", "25", 25],
+    ["fixed-percent", "0", 0],
+    ["fixed-percent", "100", 100],
+  ])("accepts a valid %s allocation of %p", (method, value, expected) => {
+    const result = withAllocation(value, method);
+    expect("rules" in result).toBe(true);
+    if (!("rules" in result)) return;
+    expect(result.rules).toHaveLength(1);
+    expect(result.rules[0].actions[0].value).toBe(expected);
+  });
+
+  it("accepts a remainder allocation, which carries no value", () => {
+    const result = withAllocation("", "remainder");
+    expect("rules" in result).toBe(true);
+    if (!("rules" in result)) return;
+    expect(result.rules).toHaveLength(1);
+    expect(result.rules[0].actions[0].value).toBeNull();
+  });
+
+  it("accepts a formula allocation and keeps the expression", () => {
+    const result = withAllocation("'=amount * 0.2", "formula");
+    expect("rules" in result).toBe(true);
+    if (!("rules" in result)) return;
+    expect(result.rules[0].actions[0].options).toEqual({
+      method: "formula",
+      formula: "=amount * 0.2",
+      splitIndex: 1,
+    });
+  });
+});
+
+describe("CSV import rejects a malformed split_index on an ordinary action", () => {
+  const maps = { payees: {}, categories: {}, accounts: {}, categoryGroups: {} } as unknown as EntityMaps;
+
+  function importRows(rows: string[]) {
+    return importRulesFromCsv(
+      ["rule_id,stage,conditions_op,row_type,field,op,value,split_index,options", ...rows].join("\n"),
+      maps
+    );
+  }
+
+  it.each(["abc", "-1", "1.5"])(
+    "skips the rule rather than silently retargeting the action to the parent (%p)",
+    (splitIndex) => {
+      // With a valid allocation at 1 alongside it, hasDenseSplitIndices sees a clean [1] and
+      // would have accepted the rule with this action on the wrong transaction.
+      const result = importRows([
+        "r1,default,and,condition,notes,contains,x,,",
+        "r1,,,action,,set-split-amount,,1,method=remainder",
+        "r1,,,action,notes,set,a,1,",
+        `r1,,,action,notes,set,b,${splitIndex},`,
+      ]);
+      expect("rules" in result).toBe(true);
+      if (!("rules" in result)) return;
+      expect(result.rules).toHaveLength(0);
+      expect(result.skipReasons[0].reason).toContain("must be a whole number of 0 or more");
+    }
+  );
+
+  it('still treats "0" as the parent transaction', () => {
+    const result = importRows([
+      "r1,default,and,condition,notes,contains,x,,",
+      "r1,,,action,notes,set,y,0,",
+    ]);
+    expect("rules" in result).toBe(true);
+    if (!("rules" in result)) return;
+    expect(result.rules).toHaveLength(1);
+    expect(result.rules[0].actions[0].options).toBeUndefined();
+  });
+});
+
+describe("CSV import requires an allocation method", () => {
+  const maps = { payees: {}, categories: {}, accounts: {}, categoryGroups: {} } as unknown as EntityMaps;
+
+  function importRows(rows: string[]) {
+    return importRulesFromCsv(
+      ["rule_id,stage,conditions_op,row_type,field,op,value,split_index,options", ...rows].join("\n"),
+      maps
+    );
+  }
+
+  it.each([["blank", ""], ["unrecognised", "method=sometimes"]])(
+    "skips an allocation whose options cell is %s",
+    (_label, options) => {
+      // decodeOptions drops an unknown method silently, and the payload checks are all keyed on
+      // it — so without this the row imported as an allocation of nothing.
+      const result = importRows([
+        "r1,default,and,condition,notes,contains,x,,",
+        `r1,,,action,,set-split-amount,,1,${options}`,
+        "r1,,,action,notes,set,y,1,",
+      ]);
+      expect("rules" in result).toBe(true);
+      if (!("rules" in result)) return;
+      expect(result.rules).toHaveLength(0);
+      expect(result.skipReasons[0].reason).toContain("allocation without a valid method");
+    }
+  );
 });

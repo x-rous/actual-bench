@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
 import { STAGE_LABELS } from "../utils/ruleFields";
 
 export type StageFilter = "all" | "pre" | "default" | "post";
-export type ActionTypeFilter = "all" | "category" | "payee" | "account" | "cleared" | "notes";
+export type ActionTypeFilter = "all" | "category" | "payee" | "account" | "cleared" | "notes" | "split";
 
 export const ACTION_TYPE_OPTIONS: { value: ActionTypeFilter; label: string }[] = [
   { value: "all",      label: "All" },
@@ -16,6 +16,7 @@ export const ACTION_TYPE_OPTIONS: { value: ActionTypeFilter; label: string }[] =
   { value: "account",  label: "Sets Account" },
   { value: "cleared",  label: "Sets Cleared" },
   { value: "notes",    label: "Sets Notes" },
+  { value: "split",    label: "Splits" },
 ];
 
 export function FilterBar({

@@ -1,7 +1,8 @@
 import { parseCsvLine, CSV_MAX_BYTES } from "@/lib/csv";
 import { generateId } from "@/lib/uuid";
-import { CONDITION_FIELDS, ACTION_FIELDS } from "../utils/ruleFields";
-import type { Rule, Payee, RuleStage, ConditionsOp, ConditionOrAction } from "@/types/entities";
+import { ACTION_FIELDS, ACTION_OPS, CONDITION_FIELDS, isAllocationMethod } from "../utils/ruleFields";
+import { hasDenseSplitIndices, isSplitRule } from "../lib/splitActions";
+import type { Rule, Payee, RuleStage, ConditionsOp, ConditionOrAction, RuleOptions } from "@/types/entities";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -117,6 +118,67 @@ function resolveValue(
   return resolveScalarValue(field, rawValue, maps, fieldDefs, createdPayees, newPayees, badRefs);
 }
 
+// ─── Formula guard ────────────────────────────────────────────────────────────
+
+/**
+ * Inverse of the exporter's `guardCsvText`. Strips exactly one leading `'`, and only when what
+ * follows is itself guarded — a formula lead, or another apostrophe. So `'=1+1` round-trips as
+ * `''=1+1` and comes back whole, while a plain `tis` is never touched.
+ */
+function unguardCsvText(value: string): string {
+  return /^'['=+\-@\t\r]/.test(value) ? value.slice(1) : value;
+}
+
+// ─── Options ──────────────────────────────────────────────────────────────────
+
+/**
+ * Inverse of the exporter's `encodeOptions`: a `k=v;k=v` cell plus the dedicated `split_index`
+ * column. Unrecognised keys are ignored rather than carried through — the CSV is a user-editable
+ * surface, and a typo should not become an option the engine will reject.
+ */
+function decodeOptions(
+  raw: string,
+  splitIndexRaw: string
+): { options?: RuleOptions; error?: string } {
+  const options: RuleOptions = {};
+
+  for (const pair of raw.split(";")) {
+    const [key, value] = pair.split("=").map((p) => p.trim());
+    if (!key) continue;
+    if (key === "method" && isAllocationMethod(value)) options.method = value;
+    else if (key === "inflow" && value === "true") options.inflow = true;
+    else if (key === "outflow" && value === "true") options.outflow = true;
+  }
+
+  // The cell is hand-editable, so both flags can arrive together. They contradict each other —
+  // the engine would match nothing — so this is a malformed rule, not one to guess at.
+  if (options.inflow && options.outflow) {
+    return { error: "options cannot set both inflow and outflow" };
+  }
+
+  // A malformed index used to be dropped silently, which retargeted the action to the parent
+  // transaction — and if the rule also had a valid allocation, the density check saw a clean
+  // `[1]` and staged the rule with the action on the wrong transaction. Every other malformed
+  // input here is rejected with a reason; this one is too. `"0"` still means the parent.
+  if (splitIndexRaw !== "") {
+    const splitIndex = Number(splitIndexRaw);
+    if (!Number.isInteger(splitIndex) || splitIndex < 0) {
+      return { error: `split_index "${splitIndexRaw}" must be a whole number of 0 or more` };
+    }
+    if (splitIndex > 0) options.splitIndex = splitIndex;
+  }
+
+  return { options: Object.keys(options).length > 0 ? options : undefined };
+}
+
+/** Ops the importer understands in the `op` column of an action row. */
+const IMPORTABLE_ACTION_OPS = new Set([
+  ...Object.keys(ACTION_OPS).filter((op) => op !== "link-schedule"),
+  "set-template",
+  "set-formula",
+  "",
+]);
+
 // ─── Main import function ─────────────────────────────────────────────────────
 
 /**
@@ -148,6 +210,8 @@ export function importRulesFromCsv(
   const fieldIdx   = col("field");
   const opIdx      = col("op");
   const valueIdx   = col("value");
+  const splitIdx   = col("split_index");
+  const optionsIdx = col("options");
 
   if (ruleIdIdx === -1 || rowTypeIdx === -1 || fieldIdx === -1) {
     return {
@@ -165,7 +229,14 @@ export function importRulesFromCsv(
     stage: string;
     conditionsOp: string;
     isScheduleRule: boolean;
-    rows: { rowType: string; field: string; op: string; rawValue: string }[];
+    rows: {
+      rowType: string;
+      field: string;
+      op: string;
+      rawValue: string;
+      options?: RuleOptions;
+      optionsError?: string;
+    }[];
   };
 
   const groups = new Map<string, RuleGroup>();
@@ -190,13 +261,24 @@ export function importRulesFromCsv(
     if (conditionsOp && !group.conditionsOp) group.conditionsOp = conditionsOp;
     if (rowType === "action" && op === "link-schedule") group.isScheduleRule = true;
 
-    // Accept: conditions with a field, or actions with a field or delete-transaction op
+    // Accept: conditions with a field, or actions with a field. `delete-transaction` and
+    // `set-split-amount` legitimately have no field — before this, a `set-split-amount` row was
+    // dropped here without a word, which is how a CSV round-trip lost a rule's splits.
+    const isFieldlessAction = op === "delete-transaction" || op === "set-split-amount";
     const isValidRow =
       (rowType === "condition" && !!field) ||
-      (rowType === "action" && (!!field || op === "delete-transaction"));
+      (rowType === "action" && (!!field || isFieldlessAction));
 
     if (isValidRow) {
-      group.rows.push({ rowType, field, op, rawValue });
+      const decoded = decodeOptions(cellAt(row, optionsIdx), cellAt(row, splitIdx));
+      group.rows.push({
+        rowType,
+        field,
+        op,
+        rawValue: unguardCsvText(rawValue),
+        options: decoded.options,
+        optionsError: decoded.error,
+      });
     }
   }
 
@@ -219,26 +301,102 @@ export function importRulesFromCsv(
     const conditions: ConditionOrAction[] = [];
     const actions:    ConditionOrAction[] = [];
 
-    for (const { rowType, field, op, rawValue } of group.rows) {
+    /** Attach the row's decoded options, if it had any, without inventing an empty bag. */
+    const withRowOptions = (
+      part: ConditionOrAction,
+      options: RuleOptions | undefined
+    ): ConditionOrAction => {
+      const merged = { ...(part.options ?? {}), ...(options ?? {}) };
+      return Object.keys(merged).length > 0 ? { ...part, options: merged } : part;
+    };
+
+    for (const { rowType, field, op, rawValue, options, optionsError } of group.rows) {
+      if (optionsError) {
+        badRefs.push(`unsupported ${optionsError}`);
+        continue;
+      }
+
       if (rowType === "condition") {
         const r = resolveValue(field, op, rawValue, CONDITION_FIELDS, maps, createdPayees, newPayees, badRefs);
-        conditions.push({ field, op: op || "is", value: r.value, type: r.type });
-      } else {
-        if (op === "set-template") {
-          actions.push({ field, op: "set", value: "", type: "string", options: { template: rawValue } });
-        } else if (op === "set-formula") {
-          // Strip the leading "'" that the exporter adds to prevent spreadsheet apps
-          // from evaluating "=…" values as formulas.
-          const formula = rawValue.startsWith("'=") ? rawValue.slice(1) : rawValue;
-          actions.push({ field, op: "set", value: "", type: "string", options: { formula } });
-        } else if (op === "delete-transaction") {
-          actions.push({ op: "delete-transaction", value: "" });
-        } else if (op === "prepend-notes" || op === "append-notes") {
-          actions.push({ field: field || "notes", op, value: rawValue, type: "string" });
-        } else {
-          const r = resolveValue(field, "set", rawValue, ACTION_FIELDS, maps, createdPayees, newPayees, badRefs);
-          actions.push({ field, op: "set", value: r.value, type: r.type });
+        conditions.push(
+          withRowOptions({ field, op: op || "is", value: r.value, type: r.type }, options)
+        );
+        continue;
+      }
+
+      // An op the importer does not know would previously have been silently rewritten as a
+      // `set`, quietly turning it into a different rule. Skip the group and say why instead.
+      if (!IMPORTABLE_ACTION_OPS.has(op)) {
+        badRefs.push(`unsupported action "${op}"`);
+        continue;
+      }
+
+      if (op === "set-template") {
+        actions.push(
+          withRowOptions({ field, op: "set", value: "", type: "string", options: { template: rawValue } }, options)
+        );
+      } else if (op === "set-formula") {
+        // The exporter's formula guard was already removed by `unguardCsvText`.
+        actions.push(
+          withRowOptions({ field, op: "set", value: "", type: "string", options: { formula: rawValue } }, options)
+        );
+      } else if (op === "delete-transaction") {
+        actions.push(withRowOptions({ op: "delete-transaction", value: "" }, options));
+      } else if (op === "set-split-amount") {
+        // An allocation says how much of the transaction *a particular split* takes, so without
+        // a positive index it has no target. `hasDenseSplitIndices` cannot catch this: it filters
+        // index 0 out before checking, so a lone index-0 allocation looks dense.
+        if (options?.splitIndex === undefined) {
+          badRefs.push("unsupported allocation without a split_index");
+          continue;
         }
+        // An allocation with no method never says how much it takes. A blank or unrecognised
+        // options cell leaves `method` undefined, and the payload checks below are all keyed on
+        // it — so without this the row imports as an allocation of nothing.
+        if (!isAllocationMethod(options.method)) {
+          badRefs.push("unsupported allocation without a valid method");
+          continue;
+        }
+        // `fixed-percent` carries a percentage and `fixed-amount` a money value; both are plain
+        // numbers in the cell. `remainder` and `formula` carry no numeric value.
+        // The importer stages directly, so an allocation has to meet the same bar the editor
+        // enforces — otherwise a CSV can put a rule into the store that the drawer would refuse
+        // to save.
+        const method = options?.method;
+        const numeric = Number(rawValue);
+        const isFormulaMethod = method === "formula";
+
+        if (method === "fixed-amount" || method === "fixed-percent") {
+          if (rawValue === "" || !Number.isFinite(numeric)) {
+            badRefs.push(`unsupported ${method} allocation needs a number`);
+            continue;
+          }
+          if (method === "fixed-percent" && (numeric < 0 || numeric > 100)) {
+            badRefs.push("unsupported fixed-percent allocation must be between 0 and 100");
+            continue;
+          }
+        } else if (isFormulaMethod && !rawValue.startsWith("=")) {
+          badRefs.push("unsupported formula allocation must start with =");
+          continue;
+        }
+
+        actions.push(
+          withRowOptions(
+            {
+              op: "set-split-amount",
+              value:
+                method === "fixed-amount" || method === "fixed-percent" ? numeric : null,
+              type: "number",
+              ...(isFormulaMethod ? { options: { formula: rawValue } } : {}),
+            },
+            options
+          )
+        );
+      } else if (op === "prepend-notes" || op === "append-notes") {
+        actions.push(withRowOptions({ field: field || "notes", op, value: rawValue, type: "string" }, options));
+      } else {
+        const r = resolveValue(field, "set", rawValue, ACTION_FIELDS, maps, createdPayees, newPayees, badRefs);
+        actions.push(withRowOptions({ field, op: "set", value: r.value, type: r.type }, options));
       }
     }
 
@@ -248,11 +406,31 @@ export function importRulesFromCsv(
       createdPayees.clear();
       for (const [k, v] of createdPayeesSnapshot) createdPayees.set(k, v);
       skipped++;
-      skipReasons.push({ ruleGroupId, reason: `unmatched ${[...new Set(badRefs)].join(", ")}` });
+      const unsupported = badRefs.filter((ref) => ref.startsWith("unsupported "));
+      const unmatched = badRefs.filter((ref) => !ref.startsWith("unsupported "));
+      const parts = [
+        unmatched.length > 0 ? `unmatched ${[...new Set(unmatched)].join(", ")}` : "",
+        ...new Set(unsupported),
+      ].filter(Boolean);
+      skipReasons.push({ ruleGroupId, reason: parts.join("; ") });
       continue;
     }
 
     if (conditions.length === 0 && actions.length === 0) { skipped++; continue; }
+
+    // The importer stages rules directly, without the editor ever opening them, so a malformed
+    // split has to be caught here — the drawer's own dense-index check would never run.
+    if (isSplitRule(actions) && !hasDenseSplitIndices(actions)) {
+      newPayees.length = newPayeesStart;
+      createdPayees.clear();
+      for (const [k, v] of createdPayeesSnapshot) createdPayees.set(k, v);
+      skipped++;
+      skipReasons.push({
+        ruleGroupId,
+        reason: "split_index values must run 1, 2, 3… with no gaps",
+      });
+      continue;
+    }
 
     rules.push({
       id: generateId(),

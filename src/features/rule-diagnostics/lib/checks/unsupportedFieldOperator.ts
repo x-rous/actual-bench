@@ -2,8 +2,11 @@ import {
   ACTION_FIELDS,
   ACTION_OPS,
   CONDITION_FIELDS,
-  getConditionOps,
+  PARENT_ONLY_ACTION_FIELDS,
+  conditionDisplayField,
+  isValidOp,
 } from "@/features/rules/utils/ruleFields";
+import { splitIndexOf } from "@/features/rules/lib/splitActions";
 import type { CheckFn, Finding, FindingCode, RuleRef } from "../../types";
 import { registerCheck } from "../runDiagnostics";
 import { buildFinding } from "../findingMessages";
@@ -21,15 +24,18 @@ export const unsupportedFieldOperator: CheckFn = (ws, ctx) => {
 
     for (const part of rule.conditions) {
       const field = part.field ?? "";
-      const fieldDef = CONDITION_FIELDS[field];
+      // Validate against the field as stored. An `amount` condition carrying inflow/outflow
+      // options is a real, valid condition — only the picker calls it `amount-inflow`.
+      const fieldDef = CONDITION_FIELDS[conditionDisplayField(field, part.options)];
       if (!fieldDef) {
         findings.push(
           emit("RULE_UNSUPPORTED_CONDITION_FIELD", ruleRef, { field })
         );
         continue;
       }
-      const ops = getConditionOps(field);
-      if (!ops[part.op]) {
+      // `isValidOp`, not the picker's list: the engine also accepts internal operators such as
+      // `and` on category, which Actual writes but never offers.
+      if (!isValidOp(field, part.op)) {
         findings.push(
           emit("RULE_UNSUPPORTED_CONDITION_OP", ruleRef, { field, op: part.op })
         );
@@ -47,8 +53,9 @@ export const unsupportedFieldOperator: CheckFn = (ws, ctx) => {
         continue;
       }
 
-      // delete-transaction has no field.
+      // delete-transaction and set-split-amount have no field.
       if (part.op === "delete-transaction") continue;
+      if (part.op === "set-split-amount") continue;
 
       // notes-mutation ops have an implicit field.
       if (part.op === "prepend-notes" || part.op === "append-notes") {
@@ -63,6 +70,15 @@ export const unsupportedFieldOperator: CheckFn = (ws, ctx) => {
       const field = part.field ?? "";
       const fieldDef = ACTION_FIELDS[field];
       if (part.op === "set" && !fieldDef) {
+        findings.push(
+          emit("RULE_UNSUPPORTED_ACTION_FIELD", ruleRef, { field })
+        );
+        continue;
+      }
+
+      // Amount, cleared, account and date belong to the whole transaction; the engine has no
+      // way to apply them to a split child.
+      if (part.op === "set" && splitIndexOf(part) > 0 && PARENT_ONLY_ACTION_FIELDS.has(field)) {
         findings.push(
           emit("RULE_UNSUPPORTED_ACTION_FIELD", ruleRef, { field })
         );

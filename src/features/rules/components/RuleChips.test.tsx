@@ -113,3 +113,98 @@ describe("ActionChip — missing entity references", () => {
     expect(screen.queryByText("Rent")).not.toBeInTheDocument();
   });
 });
+
+// ─── Splits, inflow/outflow and friendly operators (PR-051) ───────────────────
+
+describe("ActionChip — allocations", () => {
+  it("shows the method and percentage for a fixed-percent split", () => {
+    const action: ConditionOrAction = {
+      op: "set-split-amount",
+      value: 25,
+      type: "number",
+      options: { method: "fixed-percent", splitIndex: 1 },
+    };
+    render(<ActionChip action={action} maps={fullMaps} />);
+    expect(screen.getByText("Split 1")).toBeInTheDocument();
+    expect(screen.getByText("allocate")).toBeInTheDocument();
+    expect(screen.getByText("a fixed percent of the remainder")).toBeInTheDocument();
+    expect(screen.getByText("25%")).toBeInTheDocument();
+  });
+
+  it("shows a fixed amount to two decimal places", () => {
+    const action: ConditionOrAction = {
+      op: "set-split-amount",
+      value: 12.5,
+      type: "number",
+      options: { method: "fixed-amount", splitIndex: 2 },
+    };
+    render(<ActionChip action={action} maps={fullMaps} />);
+    expect(screen.getByText("12.50")).toBeInTheDocument();
+  });
+
+  it("shows no value for a remainder split", () => {
+    const action: ConditionOrAction = {
+      op: "set-split-amount",
+      value: null,
+      type: "number",
+      options: { method: "remainder", splitIndex: 1 },
+    };
+    render(<ActionChip action={action} maps={fullMaps} />);
+    expect(screen.getByText("an equal portion of the remainder")).toBeInTheDocument();
+  });
+
+  it("flags an allocation with no method rather than rendering it as valid", () => {
+    const action: ConditionOrAction = {
+      op: "set-split-amount",
+      value: null,
+      options: { splitIndex: 1 },
+    };
+    render(<ActionChip action={action} maps={fullMaps} />);
+    expect(screen.getByText("no method set")).toBeInTheDocument();
+  });
+
+  it("marks an ordinary action that belongs to a split", () => {
+    const action: ConditionOrAction = {
+      op: "set",
+      field: "category",
+      value: "c1",
+      type: "id",
+      options: { splitIndex: 2 },
+    };
+    render(<ActionChip action={action} maps={fullMaps} />);
+    expect(screen.getByText("Split 2")).toBeInTheDocument();
+    expect(screen.getByText("Food")).toBeInTheDocument();
+  });
+
+  it("leaves a parent action unmarked", () => {
+    const action: ConditionOrAction = { op: "set", field: "category", value: "c1", type: "id" };
+    render(<ActionChip action={action} maps={fullMaps} />);
+    expect(screen.queryByText(/^Split /)).not.toBeInTheDocument();
+  });
+});
+
+describe("ConditionChip — inflow/outflow and operator labels", () => {
+  it("names an amount condition with inflow options as its own field", () => {
+    const condition: ConditionOrAction = {
+      field: "amount",
+      op: "gt",
+      value: 10,
+      type: "number",
+      options: { inflow: true },
+    };
+    render(<ConditionChip condition={condition} maps={fullMaps} />);
+    expect(screen.getByText("Amount (inflow)")).toBeInTheDocument();
+    expect(screen.getByText("is greater than")).toBeInTheDocument();
+  });
+
+  it("reads a date comparison as before/after, the way Actual labels it", () => {
+    const condition: ConditionOrAction = {
+      field: "date",
+      op: "gt",
+      value: "2026-01-01",
+      type: "date",
+    };
+    render(<ConditionChip condition={condition} maps={fullMaps} />);
+    expect(screen.getByText("is after")).toBeInTheDocument();
+  });
+});

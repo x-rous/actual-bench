@@ -7,12 +7,68 @@ import { cn } from "@/lib/utils";
 import { EntityCombobox } from "./EntityCombobox";
 import { selectCls, fieldSelectCls, inputCls } from "./ConditionRow";
 import { valueToString } from "../utils/rulePreview";
-import { ACTION_FIELDS, ACTION_OPS } from "../utils/ruleFields";
+import {
+  ACTION_FIELDS,
+  ACTION_OPS,
+  ACTION_OP_OPTIONS,
+  ALLOCATION_METHODS,
+  ALLOCATION_METHOD_OPTIONS,
+  DEFAULT_ACTION_FIELD,
+  getSplitActionFields,
+  isAllocationMethod,
+} from "../utils/ruleFields";
+import { splitIndexOf } from "../lib/splitActions";
 import { useStagedStore } from "@/store/staged";
 import { useQuickCreateStore } from "@/features/quick-create/store/useQuickCreateStore";
 import type { QuickCreateEntityType } from "@/features/quick-create/store/useQuickCreateStore";
-import type { ConditionOrAction } from "@/types/entities";
+import type { ConditionOrAction, RuleOptions } from "@/types/entities";
 import type { RuleEntityOptionsMap } from "../lib/ruleEditor";
+
+// ─── Options merging ──────────────────────────────────────────────────────────
+//
+// Every write to `options` merges rather than replaces. Replacing it is how a `splitIndex` used
+// to vanish the moment the user retyped a value (F-118) — the row only knows about the keys it
+// renders, and the rest of the bag belongs to the rule, not to this row.
+
+function mergeOptions(
+  current: RuleOptions | undefined,
+  patch: Partial<Record<keyof RuleOptions, unknown>>
+): RuleOptions | undefined {
+  const next: Record<string, unknown> = { ...(current ?? {}) };
+  for (const [key, value] of Object.entries(patch)) {
+    if (value === undefined) delete next[key];
+    else next[key] = value;
+  }
+  return Object.keys(next).length > 0 ? (next as RuleOptions) : undefined;
+}
+
+function withOptions(
+  action: ConditionOrAction,
+  patch: Partial<Record<keyof RuleOptions, unknown>>
+): ConditionOrAction {
+  const options = mergeOptions(action.options, patch);
+  if (options === undefined) {
+    const withoutOptions = { ...action };
+    delete withoutOptions.options;
+    return withoutOptions;
+  }
+  return { ...action, options };
+}
+
+/** Keys this row owns and may clear; anything else on `options` is carried through untouched. */
+const MODE_KEYS = { template: undefined, formula: undefined } as const;
+
+/**
+ * Rebuild an action's identity (op/field/value/type) while keeping its `options` bag, minus the
+ * keys this row owns. Changing the operator or field must not be an implicit reset of everything
+ * the row does not render — that is what dropped split indices.
+ */
+function reshapeAction(
+  current: ConditionOrAction,
+  next: Omit<ConditionOrAction, "options">
+): ConditionOrAction {
+  return withOptions({ ...next, options: current.options }, MODE_KEYS);
+}
 
 // ─── ActionRow ────────────────────────────────────────────────────────────────
 
@@ -38,57 +94,83 @@ export function ActionRow({
   const isFormula = op === "set" && action.options?.formula !== undefined;
   const supportsTemplate = op === "set" && fieldDef?.supportsTemplate === true;
   const supportsFormula = op === "set" && fieldDef?.supportsFormula === true;
+  const inSplit = splitIndexOf(action) > 0;
+  // Amount, cleared, account and date belong to the whole transaction; Actual does not let a
+  // split child set them.
+  const availableFields = inSplit ? getSplitActionFields() : ACTION_FIELDS;
   const stagedSchedules = useStagedStore((s) => s.schedules);
   const openQuickCreate = useQuickCreateStore((s) => s.open);
 
   const handleOpChange = useCallback(
     (newOp: string) => {
       if (newOp === "delete-transaction") {
-        onChange({ op: "delete-transaction", value: "" });
+        onChange(reshapeAction(action, { op: "delete-transaction", value: "" }));
         return;
       }
       if (newOp === "prepend-notes" || newOp === "append-notes") {
         // Force field to "notes", preserve existing string value if any
         const currentVal = typeof action.value === "string" ? action.value : "";
-        onChange({ field: "notes", op: newOp, value: currentVal, type: "string" });
+        onChange(
+          reshapeAction(action, { field: "notes", op: newOp, value: currentVal, type: "string" })
+        );
         return;
       }
-      // Switching to "set": keep the current field unless coming from delete-transaction
-      const newField = op === "delete-transaction" ? Object.keys(ACTION_FIELDS)[0] : field;
+      // Switching to "set": keep the current field unless coming from an op that has none.
+      const newField = availableFields[field] ? field : DEFAULT_ACTION_FIELD;
       const newDef = ACTION_FIELDS[newField];
       const defaultVal = newDef?.type === "boolean" ? false : newDef?.type === "number" ? 0 : "";
-      onChange({ field: newField, op: "set", value: defaultVal, type: newDef?.type ?? "string", options: undefined });
+      onChange(
+        reshapeAction(action, {
+          field: newField,
+          op: "set",
+          value: defaultVal,
+          type: newDef?.type ?? "string",
+        })
+      );
     },
-    [op, field, action.value, onChange]
+    [action, availableFields, field, onChange]
   );
 
   const handleFieldChange = useCallback(
     (newField: string) => {
       const newDef = ACTION_FIELDS[newField];
       const defaultVal = newDef?.type === "boolean" ? false : newDef?.type === "number" ? 0 : "";
-      onChange({ field: newField, op: "set", value: defaultVal, type: newDef?.type ?? "string", options: undefined });
+      onChange(
+        reshapeAction(action, {
+          field: newField,
+          op: "set",
+          value: defaultVal,
+          type: newDef?.type ?? "string",
+        })
+      );
     },
-    [onChange]
+    [action, onChange]
   );
 
   function toggleTemplateMode() {
     if (isTemplate) {
       const restoredValue = action.options?.template ?? valueToString(action.value);
-      onChange({ ...action, value: restoredValue, options: undefined });
+      onChange({ ...withOptions(action, MODE_KEYS), value: restoredValue });
     } else {
       // Enter template mode (exits formula mode if active)
       const zeroValue = fieldDef?.type === "number" || fieldDef?.type === "boolean" ? null : "";
-      onChange({ ...action, value: zeroValue, options: { template: valueToString(action.value) } });
+      onChange({
+        ...withOptions(action, { formula: undefined, template: valueToString(action.value) }),
+        value: zeroValue,
+      });
     }
   }
 
   function toggleFormulaMode() {
     if (isFormula) {
       const restoredValue = action.options?.formula ?? valueToString(action.value);
-      onChange({ ...action, value: restoredValue, options: undefined });
+      onChange({ ...withOptions(action, MODE_KEYS), value: restoredValue });
     } else {
       // Enter formula mode (exits template mode if active)
-      onChange({ ...action, value: "", options: { formula: valueToString(action.value) } });
+      onChange({
+        ...withOptions(action, { template: undefined, formula: valueToString(action.value) }),
+        value: "",
+      });
     }
   }
 
@@ -112,6 +194,96 @@ export function ActionRow({
     );
   }
 
+  // ── Allocate (set-split-amount) — how much of the transaction this split takes ──
+
+  if (op === "set-split-amount") {
+    const method = isAllocationMethod(action.options?.method) ? action.options.method : undefined;
+    return (
+      <div className="space-y-1">
+        <div className="flex items-start gap-1.5">
+          <div
+            className={cn(
+              selectCls,
+              compact && "h-7",
+              "flex w-32 shrink-0 items-center bg-muted/30 font-medium text-muted-foreground"
+            )}
+          >
+            Allocate
+          </div>
+
+          <select
+            className={cn(selectCls, compact && "h-7", "w-56 shrink-0")}
+            value={method ?? ""}
+            aria-label="Allocation method"
+            onChange={(e) =>
+              onChange({
+                ...withOptions(action, { method: e.target.value, formula: undefined }),
+                value: null,
+              })
+            }
+          >
+            {method === undefined && <option value="">Choose a method…</option>}
+            {ALLOCATION_METHOD_OPTIONS.map((m) => (
+              <option key={m} value={m}>
+                {ALLOCATION_METHODS[m]}
+              </option>
+            ))}
+          </select>
+
+          {method === "formula" ? (
+            <div className="flex flex-1 flex-col gap-0.5">
+              <input
+                className={cn(inputCls, compact && "h-7")}
+                value={action.options?.formula ?? ""}
+                aria-label="Split amount formula"
+                onChange={(e) => onChange(withOptions(action, { formula: e.target.value }))}
+                placeholder="=amount * 0.2"
+              />
+              <span className="text-[10px] text-muted-foreground">
+                Excel formula - e.g. <code>{"=amount * 0.2"}</code>
+              </span>
+            </div>
+          ) : method === "fixed-amount" || method === "fixed-percent" ? (
+            <div className="flex flex-1 items-center gap-1">
+              <input
+                type="number"
+                className={cn(inputCls, compact && "h-7")}
+                value={typeof action.value === "number" ? action.value : ""}
+                aria-label={method === "fixed-percent" ? "Split percentage" : "Split amount"}
+                onChange={(e) =>
+                  onChange({
+                    ...action,
+                    value: e.target.value === "" ? null : Number(e.target.value),
+                  })
+                }
+                placeholder={method === "fixed-percent" ? "25" : "0.00"}
+                step={method === "fixed-percent" ? "1" : "0.01"}
+                min={method === "fixed-percent" ? 0 : undefined}
+                max={method === "fixed-percent" ? 100 : undefined}
+              />
+              {method === "fixed-percent" && (
+                <span className="shrink-0 text-xs text-muted-foreground">%</span>
+              )}
+            </div>
+          ) : (
+            <div className="flex-1" />
+          )}
+
+          <Button
+            variant="ghost"
+            size="icon"
+            className="mt-0.5 h-7 w-7 shrink-0 text-muted-foreground hover:text-destructive"
+            onClick={onDelete}
+            aria-label="Delete allocation"
+          >
+            <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+          </Button>
+        </div>
+        {error && <p className="text-xs text-destructive">{error}</p>}
+      </div>
+    );
+  }
+
   // ── Delete transaction ────────────────────────────────────────────────────
 
   if (op === "delete-transaction") {
@@ -121,10 +293,11 @@ export function ActionRow({
           <select
             className={cn(selectCls, compact && "h-7", "w-48 shrink-0")}
             value={op}
+            aria-label="Action type"
             onChange={(e) => handleOpChange(e.target.value)}
           >
-            {Object.entries(ACTION_OPS).map(([k, def]) => (
-              <option key={k} value={k}>{def.label}</option>
+            {ACTION_OP_OPTIONS.map((k) => (
+              <option key={k} value={k}>{ACTION_OPS[k].label}</option>
             ))}
           </select>
           <div className="flex-1" />
@@ -133,8 +306,9 @@ export function ActionRow({
             size="icon"
             className="mt-0.5 h-7 w-7 shrink-0 text-muted-foreground hover:text-destructive"
             onClick={onDelete}
+            aria-label="Delete action"
           >
-            <Trash2 className="h-3.5 w-3.5" />
+            <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
           </Button>
         </div>
         {error && <p className="text-xs text-destructive">{error}</p>}
@@ -151,15 +325,17 @@ export function ActionRow({
           <select
             className={cn(selectCls, compact && "h-7", "w-48 shrink-0")}
             value={op}
+            aria-label="Action type"
             onChange={(e) => handleOpChange(e.target.value)}
           >
-            {Object.entries(ACTION_OPS).map(([k, def]) => (
-              <option key={k} value={k}>{def.label}</option>
+            {ACTION_OP_OPTIONS.map((k) => (
+              <option key={k} value={k}>{ACTION_OPS[k].label}</option>
             ))}
           </select>
           <input
             className={cn(inputCls, compact && "h-7")}
             value={valueToString(action.value)}
+            aria-label="Notes text"
             onChange={(e) => onChange({ ...action, value: e.target.value })}
             placeholder="text to prepend/append…"
           />
@@ -168,8 +344,9 @@ export function ActionRow({
             size="icon"
             className="mt-0.5 h-7 w-7 shrink-0 text-muted-foreground hover:text-destructive"
             onClick={onDelete}
+            aria-label="Delete action"
           >
-            <Trash2 className="h-3.5 w-3.5" />
+            <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
           </Button>
         </div>
         {error && <p className="text-xs text-destructive">{error}</p>}
@@ -185,23 +362,23 @@ export function ActionRow({
         <select
           className={cn(selectCls, compact && "h-7", "w-32 shrink-0")}
           value={op}
+          aria-label="Action type"
           onChange={(e) => handleOpChange(e.target.value)}
         >
-          {Object.entries(ACTION_OPS).map(([k, def]) => (
-            <option key={k} value={k}>{def.label}</option>
+          {ACTION_OP_OPTIONS.map((k) => (
+            <option key={k} value={k}>{ACTION_OPS[k].label}</option>
           ))}
         </select>
 
         <select
           className={cn(fieldSelectCls, compact && "h-7", "w-32 shrink-0")}
           value={field}
+          aria-label="Action field"
           onChange={(e) => handleFieldChange(e.target.value)}
         >
-          {Object.entries(ACTION_FIELDS)
-            .filter(([k]) => k !== "link-schedule")
-            .map(([k, def]) => (
-              <option key={k} value={k}>{def.label}</option>
-            ))}
+          {Object.entries(availableFields).map(([k, def]) => (
+            <option key={k} value={k}>{def.label}</option>
+          ))}
         </select>
 
         {isFormula ? (
@@ -209,7 +386,8 @@ export function ActionRow({
             <input
               className={cn(inputCls, compact && "h-7")}
               value={action.options?.formula ?? ""}
-              onChange={(e) => onChange({ ...action, options: { formula: e.target.value } })}
+              aria-label="Formula"
+              onChange={(e) => onChange(withOptions(action, { formula: e.target.value }))}
               placeholder="=IF(ISBLANK(notes), …)"
             />
             <span className="text-[10px] text-muted-foreground">
@@ -221,7 +399,8 @@ export function ActionRow({
             <input
               className={cn(inputCls, compact && "h-7")}
               value={action.options?.template ?? ""}
-              onChange={(e) => onChange({ ...action, options: { template: e.target.value } })}
+              aria-label="Template"
+              onChange={(e) => onChange(withOptions(action, { template: e.target.value }))}
               placeholder="{{handlebars expression…}}"
             />
             <span className="text-[10px] text-muted-foreground">
@@ -233,6 +412,7 @@ export function ActionRow({
             <input
               type="checkbox"
               checked={action.value === true || action.value === "true"}
+              aria-label={`Set ${fieldDef.label}`}
               onChange={(e) => onChange({ ...action, value: e.target.checked })}
               className="h-4 w-4 cursor-pointer rounded accent-primary"
             />
@@ -245,6 +425,7 @@ export function ActionRow({
             type="number"
             className={cn(inputCls, compact && "h-7")}
             value={typeof action.value === "number" ? action.value : typeof action.value === "string" ? action.value : ""}
+            aria-label={`Set ${fieldDef.label}`}
             onChange={(e) => onChange({ ...action, value: e.target.value === "" ? "" : Number(e.target.value) })}
             placeholder="0.00"
             step="0.01"
@@ -254,6 +435,7 @@ export function ActionRow({
             type="date"
             className={cn(inputCls, compact && "h-7")}
             value={valueToString(action.value)}
+            aria-label={`Set ${fieldDef.label}`}
             onChange={(e) => onChange({ ...action, value: e.target.value })}
           />
         ) : fieldDef?.entity ? (
@@ -269,6 +451,7 @@ export function ActionRow({
           <input
             className={cn(inputCls, compact && "h-7")}
             value={valueToString(action.value)}
+            aria-label="Action value"
             onChange={(e) => onChange({ ...action, value: e.target.value })}
             placeholder="value…"
           />
@@ -308,7 +491,7 @@ export function ActionRow({
             )}
             onClick={toggleTemplateMode}
           >
-            <Braces className="h-3.5 w-3.5" />
+            <Braces className="h-3.5 w-3.5" aria-hidden="true" />
           </Button>
         )}
 
@@ -317,8 +500,9 @@ export function ActionRow({
           size="icon"
           className="mt-0.5 h-7 w-7 shrink-0 text-muted-foreground hover:text-destructive"
           onClick={onDelete}
+          aria-label="Delete action"
         >
-          <Trash2 className="h-3.5 w-3.5" />
+          <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
         </Button>
       </div>
       {error && <p className="text-xs text-destructive">{error}</p>}

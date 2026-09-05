@@ -23,9 +23,18 @@ function amountFromInternal(value: ConditionOrAction["value"]): ConditionOrActio
   return value;
 }
 
+// A `set-split-amount` action has no field, so the `field === "amount"` test above misses it.
+// Only the `fixed-amount` method carries money: `fixed-percent` is a plain percentage and must
+// never be scaled, and `formula`/`remainder` carry no value at all.
+function isFixedSplitAmount(part: ConditionOrAction): boolean {
+  return part.op === "set-split-amount" && part.options?.method === "fixed-amount";
+}
+
 function normalizeAmountParts(parts: ConditionOrAction[]): ConditionOrAction[] {
   return parts.map((p) =>
-    p.field === "amount" ? { ...p, value: amountFromInternal(p.value) } : p
+    p.field === "amount" || isFixedSplitAmount(p)
+      ? { ...p, value: amountFromInternal(p.value) }
+      : p
   );
 }
 

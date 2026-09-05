@@ -1,6 +1,15 @@
 "use client";
 
-import { CONDITION_FIELDS, ACTION_FIELDS, ACTION_OPS } from "../utils/ruleFields";
+import {
+  ACTION_FIELDS,
+  ACTION_OPS,
+  ALLOCATION_METHODS,
+  CONDITION_FIELDS,
+  conditionDisplayField,
+  friendlyOp,
+  isAllocationMethod,
+} from "../utils/ruleFields";
+import { splitIndexOf } from "../lib/splitActions";
 import { valueToString, isRecurConfig } from "../utils/rulePreview";
 import type { EntityMaps } from "../utils/rulePreview";
 import type { ConditionOrAction } from "@/types/entities";
@@ -86,7 +95,11 @@ export function ConditionChip({
   maps: EntityMaps;
 }) {
   const field = condition.field ?? "";
-  const fieldLabel = CONDITION_FIELDS[field]?.label ?? field;
+  // An amount condition carrying inflow/outflow options reads as its own field, as in Actual.
+  const displayField = conditionDisplayField(field, condition.options);
+  const fieldDef = CONDITION_FIELDS[displayField];
+  const fieldLabel = fieldDef?.label ?? field;
+  const opLabel = friendlyOp(condition.op, fieldDef?.type);
   const resolvedValues = resolveValues(field, condition.value, maps, CONDITION_FIELDS);
   const isEntity = isEntityField(field, CONDITION_FIELDS);
 
@@ -97,7 +110,7 @@ export function ConditionChip({
         {fieldLabel}
       </span>
       {/* Op - muted */}
-      <span className="text-[11px] text-muted-foreground">{condition.op}</span>
+      <span className="text-[11px] text-muted-foreground">{opLabel}</span>
       {/* Values - amber for missing refs, sky for entity references, emerald for plain strings */}
       {resolvedValues.map(({ label, missing }, i) => (
         <span key={i} className={cn(
@@ -120,6 +133,16 @@ export function ConditionChip({
 
 // ─── ActionChip ───────────────────────────────────────────────────────────────
 
+/** "Split 2" marker shown on any action that targets a split child rather than the parent. */
+function SplitBadge({ index }: { index: number }) {
+  if (index <= 0) return null;
+  return (
+    <span className="rounded px-1 py-0.5 text-[11px] font-semibold bg-primary/10 text-primary">
+      Split {index}
+    </span>
+  );
+}
+
 export function ActionChip({
   action,
   maps,
@@ -129,6 +152,44 @@ export function ActionChip({
 }) {
   const op = action.op ?? "set";
   const opLabel = ACTION_OPS[op]?.label ?? op;
+  const splitIndex = splitIndexOf(action);
+
+  // Allocate — how much of the transaction this split takes
+  if (op === "set-split-amount") {
+    const method = action.options?.method;
+    const methodLabel = isAllocationMethod(method) ? ALLOCATION_METHODS[method] : "no method set";
+    const amountLabel =
+      method === "fixed-amount" && typeof action.value === "number"
+        ? action.value.toFixed(2)
+        : method === "fixed-percent" && typeof action.value === "number"
+        ? `${action.value}%`
+        : method === "formula"
+        ? action.options?.formula ?? ""
+        : "";
+    return (
+      <div className="flex items-center gap-1 flex-wrap">
+        <SplitBadge index={splitIndex} />
+        <span className="rounded px-1 py-0.5 text-[11px] font-medium bg-muted text-muted-foreground">
+          allocate
+        </span>
+        <span
+          className={cn(
+            "rounded px-1 py-0.5 text-[11px] font-medium",
+            isAllocationMethod(method)
+              ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-400"
+              : "bg-destructive/10 text-destructive dark:bg-destructive/20"
+          )}
+        >
+          {methodLabel}
+        </span>
+        {amountLabel && (
+          <span className="rounded px-1 py-0.5 text-[11px] font-medium bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-400">
+            {amountLabel}
+          </span>
+        )}
+      </div>
+    );
+  }
 
   // Delete transaction — op badge only
   if (op === "delete-transaction") {
@@ -146,6 +207,7 @@ export function ActionChip({
     const displayValue = valueToString(action.value);
     return (
       <div className="flex items-center gap-1 flex-wrap">
+        <SplitBadge index={splitIndex} />
         <span className="rounded px-1 py-0.5 text-[11px] font-medium bg-muted text-muted-foreground">
           {opLabel}
         </span>
@@ -191,6 +253,7 @@ export function ActionChip({
   if (template !== undefined) {
     return (
       <div className="flex items-center gap-1 flex-wrap">
+        <SplitBadge index={splitIndex} />
         <span className="rounded px-1 py-0.5 text-[11px] font-medium bg-muted text-muted-foreground">
           set
         </span>
@@ -209,6 +272,7 @@ export function ActionChip({
   if (formula !== undefined) {
     return (
       <div className="flex items-center gap-1 flex-wrap">
+        <SplitBadge index={splitIndex} />
         <span className="rounded px-1 py-0.5 text-[11px] font-medium bg-muted text-muted-foreground">
           set
         </span>
@@ -235,6 +299,7 @@ export function ActionChip({
 
   return (
     <div className="flex items-center gap-1 flex-wrap">
+      <SplitBadge index={splitIndex} />
       <span className="rounded px-1 py-0.5 text-[11px] font-medium bg-muted text-muted-foreground">
         set
       </span>

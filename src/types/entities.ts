@@ -59,14 +59,46 @@ export type ConditionsOp = "and" | "or";
 
 export type AmountRange = { num1: number; num2: number };
 
+/**
+ * Allocation method for a `set-split-amount` action, mirroring Actual's `getAllocationMethods`.
+ *
+ * Unit note: `fixed-amount` carries a money value (integer minor units on the wire, decimal in
+ * the UI — converted at the API/transport boundary like any other amount). `fixed-percent`
+ * carries a plain percentage and is **never** scaled. `formula` and `remainder` carry no value.
+ */
+export type RuleAllocationMethod = "fixed-amount" | "fixed-percent" | "formula" | "remainder";
+
+/**
+ * The `options` bag on a rule condition or action.
+ *
+ * Actual stores several distinct concerns here, and the editor must round-trip all of them —
+ * dropping an unrecognised key silently rewrites the user's rule (F-118).
+ */
+export type RuleOptions = {
+  /** Actions in Handlebars template mode. Mutually exclusive with `formula`. */
+  template?: string;
+  /** Actions in Excel formula mode; must start with "=". Mutually exclusive with `template`. */
+  formula?: string;
+  /**
+   * Which transaction this action targets: absent or 0 = the parent, 1..n = split child n.
+   * Indices must stay dense — removing a split renumbers the ones above it.
+   */
+  splitIndex?: number;
+  /** `set-split-amount` only: how this child's amount is derived. */
+  method?: RuleAllocationMethod;
+  /** `amount` conditions only: match inflows only. Mutually exclusive with `outflow`. */
+  inflow?: boolean;
+  /** `amount` conditions only: match outflows only, compared as positive magnitudes. */
+  outflow?: boolean;
+};
+
 export type ConditionOrAction = {
-  /** Absent for `delete-transaction` actions. */
+  /** Absent for `delete-transaction`, `set-split-amount` and `link-schedule` actions. */
   field?: string;
   op: string;
   value: string | number | boolean | null | string[] | AmountRange | RecurConfig;
   type?: string;
-  /** Present on actions when the user has enabled template (Handlebars) or formula (Excel) mode. */
-  options?: { template?: string; formula?: string };
+  options?: RuleOptions;
 };
 
 export type Rule = BaseEntity & {

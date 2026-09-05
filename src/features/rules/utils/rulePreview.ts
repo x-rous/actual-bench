@@ -7,7 +7,17 @@ import type { Rule, ConditionOrAction, AmountRange, Schedule, RecurConfig } from
 import type { StagedMap } from "@/types/staged";
 import type { Payee, Category, Account, CategoryGroup } from "@/types/entities";
 import { recurSummary } from "@/features/schedules/lib/recurSummary";
-import { CONDITION_FIELDS, ACTION_FIELDS, ACTION_OPS } from "./ruleFields";
+import {
+  ACTION_FIELDS,
+  ACTION_OPS,
+  ALLOCATION_METHODS,
+  CONDITION_FIELDS,
+  conditionDisplayField,
+  friendlyOp,
+  getConditionOps,
+  isAllocationMethod,
+} from "./ruleFields";
+import { groupActionsBySplitIndex, isSplitRule } from "../lib/splitActions";
 
 /** True when value is a RecurConfig (schedule-linked date condition). */
 export function isRecurConfig(value: unknown): value is RecurConfig {
@@ -94,15 +104,42 @@ function resolveValue(
 
 function summariseCondition(c: ConditionOrAction, maps: EntityMaps): string {
   const field = c.field ?? "";
-  const fieldLabel = CONDITION_FIELDS[field]?.label ?? field;
+  const displayField = conditionDisplayField(field, c.options);
+  const fieldDef = CONDITION_FIELDS[displayField];
+  const fieldLabel = fieldDef?.label ?? field;
+  const opLabel = friendlyOp(c.op, fieldDef?.type);
+
+  // `onBudget`/`offBudget` take no value; appending one renders `Account is on budget ""`.
+  if (getConditionOps(displayField)[c.op]?.hasValue === false) {
+    return `${fieldLabel} ${opLabel}`;
+  }
+
   const valueLabel = resolveValue(field, c.value, maps, CONDITION_FIELDS);
   // Array values (e.g. oneOf) are already joined — no surrounding quotes needed.
   const wrapped = Array.isArray(c.value) ? valueLabel : `"${valueLabel}"`;
-  return `${fieldLabel} ${c.op} ${wrapped}`;
+  return `${fieldLabel} ${opLabel} ${wrapped}`;
+}
+
+/** "allocate a fixed percent of the remainder (25%)" */
+function summariseAllocation(a: ConditionOrAction): string {
+  const method = a.options?.method;
+  if (!isAllocationMethod(method)) return "allocate (no method set)";
+  const label = ALLOCATION_METHODS[method];
+  if (method === "fixed-amount" && typeof a.value === "number") {
+    return `allocate ${label} (${a.value.toFixed(2)})`;
+  }
+  if (method === "fixed-percent" && typeof a.value === "number") {
+    return `allocate ${label} (${a.value}%)`;
+  }
+  if (method === "formula") {
+    return `allocate ${label}: ${a.options?.formula ?? ""}`;
+  }
+  return `allocate ${label}`;
 }
 
 function summariseAction(a: ConditionOrAction, maps: EntityMaps): string {
   if (a.op === "delete-transaction") return "delete transaction";
+  if (a.op === "set-split-amount") return summariseAllocation(a);
 
   if (a.op === "prepend-notes" || a.op === "append-notes") {
     const opLabel = ACTION_OPS[a.op]?.label ?? a.op;
@@ -132,13 +169,35 @@ function summariseAction(a: ConditionOrAction, maps: EntityMaps): string {
   return `set ${fieldLabel} → ${wrapped}`;
 }
 
+/**
+ * Actions for a split rule read as "…, split into 2: [1] 25%, category "Groceries"; [2] …" so the
+ * split structure is visible in one line rather than flattened into an undifferentiated list.
+ */
+function summariseActions(rule: Rule, maps: EntityMaps): string {
+  if (rule.actions.length === 0) return "(no actions)";
+  if (!isSplitRule(rule.actions)) {
+    return rule.actions.map((a) => summariseAction(a, maps)).join(", ");
+  }
+
+  const groups = groupActionsBySplitIndex(rule.actions);
+  const parentText = groups[0].items.map((a) => summariseAction(a, maps)).join(", ");
+  const splitTexts = groups
+    .filter((group) => group.index > 0)
+    .map(
+      (group) =>
+        `[${group.index}] ${group.items.map((a) => summariseAction(a, maps)).join(", ") || "empty"}`
+    );
+
+  const splitCount = groups.length - 1;
+  const splitText = `split into ${splitCount}: ${splitTexts.join("; ")}`;
+  return parentText ? `${parentText}, ${splitText}` : splitText;
+}
+
 export function rulePreview(rule: Rule, maps: EntityMaps): string {
   const condParts = rule.conditions.map((c) => summariseCondition(c, maps));
-  const actParts = rule.actions.map((a) => summariseAction(a, maps));
 
   const condText =
     condParts.length === 0 ? "(no conditions)" : condParts.join(` ${rule.conditionsOp} `);
-  const actText = actParts.length === 0 ? "(no actions)" : actParts.join(", ");
 
-  return `If ${condText} → ${actText}`;
+  return `If ${condText} → ${summariseActions(rule, maps)}`;
 }

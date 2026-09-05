@@ -105,6 +105,8 @@ function getRuleLabel(rule: Rule, maps: EntityMaps): LabelResult {
   const actPart = act
     ? act.op === "delete-transaction"
       ? "delete transaction"
+      : act.op === "set-split-amount"
+        ? "splits the transaction"
       : act.op === "link-schedule"
         ? `linked to schedule: ${
             maps.schedules?.[typeof act.value === "string" ? act.value : ""]?.entity.name ??

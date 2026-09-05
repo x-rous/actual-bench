@@ -8,6 +8,9 @@ function isNoopAction(action: ConditionOrAction): boolean {
   if (action.op === "set") {
     return !action.field || action.field.length === 0;
   }
+  // An allocation has no field by design — it says how much of the transaction a split takes,
+  // which is the opposite of doing nothing.
+  if (action.op === "set-split-amount") return false;
   if (action.op === "prepend-notes" || action.op === "append-notes") {
     if (typeof action.value !== "string") return action.value == null;
     return action.value.trim().length === 0;

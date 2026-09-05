@@ -6,12 +6,38 @@
 
 // ─── Shared ───────────────────────────────────────────────────────────────────
 
+/**
+ * Wire shape of a rule condition/action `options` bag. Structurally identical to `RuleOptions`
+ * in `types/entities.ts`; duplicated rather than imported so this file stays a standalone
+ * transcription of the API schema. Keep the two in step.
+ */
+export type ApiRuleOptions = {
+  template?: string;
+  formula?: string;
+  splitIndex?: number;
+  method?: "fixed-amount" | "fixed-percent" | "formula" | "remainder";
+  inflow?: boolean;
+  outflow?: boolean;
+};
+
 export type ApiConditionOrAction = {
-  field: string;
+  /** Absent for `delete-transaction`, `set-split-amount` and `link-schedule` actions. */
+  field?: string;
   op: string;
-  value: string | string[];
+  /**
+   * Amounts arrive as integer minor units; converted at the boundary in `lib/api/rules.ts`.
+   * A schedule-generated rule's date condition carries a recurrence config rather than a scalar.
+   */
+  value:
+    | string
+    | number
+    | boolean
+    | null
+    | string[]
+    | { num1: number; num2: number }
+    | ApiRecurConfig;
   type?: string;
-  options?: { template?: string };
+  options?: ApiRuleOptions;
 };
 
 // ─── Account ─────────────────────────────────────────────────────────────────

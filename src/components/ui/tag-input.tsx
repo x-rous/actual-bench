@@ -9,11 +9,14 @@ export function TagInput({
   onChange,
   placeholder = "Type and press Enter…",
   compact = false,
+  ariaLabel,
 }: {
   values: string[];
   onChange: (v: string[]) => void;
   placeholder?: string;
   compact?: boolean;
+  /** Accessible name for the entry field. The chips carry their own remove labels. */
+  ariaLabel?: string;
 }) {
   const [input, setInput] = useState("");
 
@@ -45,9 +48,10 @@ export function TagInput({
           <button
             type="button"
             onClick={() => removeTag(i)}
+            aria-label={`Remove ${v}`}
             className="ml-0.5 text-muted-foreground hover:text-foreground"
           >
-            <X className="h-2.5 w-2.5" />
+            <X className="h-2.5 w-2.5" aria-hidden="true" />
           </button>
         </span>
       ))}
@@ -63,6 +67,7 @@ export function TagInput({
         }}
         onBlur={addTag}
         placeholder={values.length === 0 ? placeholder : "add more…"}
+        aria-label={ariaLabel}
         className="min-w-20 flex-1 bg-transparent text-xs text-foreground placeholder:text-muted-foreground focus:outline-none"
       />
     </div>

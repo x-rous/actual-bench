@@ -129,3 +129,18 @@ describe("rulePreview", () => {
     expect(result).toMatch(/^If .+ → .+/);
   });
 });
+
+describe("rulePreview — valueless operators", () => {
+  it("omits the empty value for on/off budget conditions", () => {
+    const rule: Rule = {
+      id: "r1",
+      stage: "default",
+      conditionsOp: "and",
+      conditions: [{ field: "account", op: "onBudget", value: "" }],
+      actions: [{ field: "category", op: "set", value: "c1", type: "id" }],
+    };
+    const preview = rulePreview(rule, emptyMaps);
+    expect(preview).toContain("Account is on budget");
+    expect(preview).not.toContain('is on budget ""');
+  });
+});
