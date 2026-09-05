@@ -457,3 +457,55 @@ describe("CSV formula injection", () => {
     expect(result.rules[0].conditions[0].options).toEqual({ outflow: true });
   });
 });
+
+describe("CSV import rejects malformed splits", () => {
+  const maps = { payees: {}, categories: {}, accounts: {}, categoryGroups: {} } as unknown as EntityMaps;
+
+  function importRows(rows: string[]) {
+    return importRulesFromCsv(
+      ["rule_id,stage,conditions_op,row_type,field,op,value,split_index,options", ...rows].join("\n"),
+      maps
+    );
+  }
+
+  it("skips a rule whose splits start at 2", () => {
+    // The importer stages directly, so the drawer's dense-index check would never see this.
+    const result = importRows([
+      "r1,default,and,condition,notes,contains,x,,",
+      "r1,,,action,,set-split-amount,,2,method=remainder",
+      "r1,,,action,notes,set,y,2,",
+    ]);
+    expect("rules" in result).toBe(true);
+    if (!("rules" in result)) return;
+    expect(result.rules).toHaveLength(0);
+    expect(result.skipReasons[0].reason).toContain("1, 2, 3");
+  });
+
+  it("skips a rule with a gap between splits", () => {
+    const result = importRows([
+      "r1,default,and,condition,notes,contains,x,,",
+      "r1,,,action,,set-split-amount,,1,method=remainder",
+      "r1,,,action,notes,set,a,1,",
+      "r1,,,action,,set-split-amount,,3,method=remainder",
+      "r1,,,action,notes,set,b,3,",
+    ]);
+    expect("rules" in result).toBe(true);
+    if (!("rules" in result)) return;
+    expect(result.rules).toHaveLength(0);
+    expect(result.skipReasons[0].reason).toContain("1, 2, 3");
+  });
+
+  it("accepts a well-formed two-way split", () => {
+    const result = importRows([
+      "r1,default,and,condition,notes,contains,x,,",
+      "r1,,,action,,set-split-amount,,1,method=remainder",
+      "r1,,,action,notes,set,a,1,",
+      "r1,,,action,,set-split-amount,,2,method=remainder",
+      "r1,,,action,notes,set,b,2,",
+    ]);
+    expect("rules" in result).toBe(true);
+    if (!("rules" in result)) return;
+    expect(result.rules).toHaveLength(1);
+    expect(result.skipped).toBe(0);
+  });
+});

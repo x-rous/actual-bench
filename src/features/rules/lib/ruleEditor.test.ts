@@ -483,3 +483,29 @@ describe("validateRuleDraft — an inherited name is not an operator", () => {
     expect(result.actionErrors.flat().join(" ")).toContain("select a valid action");
   });
 });
+
+describe("validateRuleDraft — malformed split index", () => {
+  it.each([-1, 1.5])("flags splitIndex %p rather than saving it", (splitIndex) => {
+    const result = validateRuleDraft({
+      stage: "default",
+      conditionsOp: "and",
+      conditions: createEditorParts([{ field: "payee", op: "is", value: "p1", type: "id" }]),
+      actions: createEditorParts([
+        { op: "set", field: "notes", value: "x", type: "string", options: { splitIndex } },
+      ]),
+    });
+    expect(result.actionErrors.flat().join(" ")).toContain("split index must be a whole number");
+  });
+
+  it("flags it on an allocation action too", () => {
+    const result = validateRuleDraft({
+      stage: "default",
+      conditionsOp: "and",
+      conditions: createEditorParts([{ field: "payee", op: "is", value: "p1", type: "id" }]),
+      actions: createEditorParts([
+        { op: "set-split-amount", value: null, options: { method: "remainder", splitIndex: -1 } },
+      ]),
+    });
+    expect(result.actionErrors.flat().join(" ")).toContain("split index must be a whole number");
+  });
+});

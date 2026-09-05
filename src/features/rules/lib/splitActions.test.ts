@@ -3,6 +3,7 @@ import {
   groupActionsBySplitIndex,
   groupBySplitIndex,
   hasDenseSplitIndices,
+  hasValidSplitIndex,
   isSplitAmountAction,
   isSplitRule,
   makeSplitAmountAction,
@@ -199,5 +200,21 @@ describe("normalizeSplitIndices", () => {
 
   it("is a no-op when the indices are already dense", () => {
     expect(normalizeSplitIndices(twoWaySplit)).toEqual(twoWaySplit);
+  });
+});
+
+describe("hasValidSplitIndex", () => {
+  it("accepts an absent index and any whole number from 0 up", () => {
+    expect(hasValidSplitIndex(setPayee)).toBe(true);
+    for (const splitIndex of [0, 1, 7]) {
+      expect(hasValidSplitIndex({ ...setPayee, options: { splitIndex } })).toBe(true);
+    }
+  });
+
+  it.each([-1, 1.5, Number.NaN])("rejects %p", (splitIndex) => {
+    // `splitIndexOf` reads these as the parent, but the raw option survives into the saved rule,
+    // and Actual's `execActions` branches on a *truthy* splitIndex — so -1 indexes the parent as
+    // if it were a child, and 1.5 indexes a transaction that does not exist.
+    expect(hasValidSplitIndex({ ...setPayee, options: { splitIndex } })).toBe(false);
   });
 });

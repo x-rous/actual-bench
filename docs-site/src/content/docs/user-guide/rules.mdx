@@ -122,8 +122,10 @@ fixed service charge on its own line.
 3. Add the actions for that split - typically **set category**, and optionally payee or notes.
 4. **Add split** again for as many children as you need.
 
-Actual works them out in that order: fixed amounts first, then percentages of what remains, then the
-equal shares, with any rounding difference going to the last one.
+Actual works them out in three passes: **fixed amounts and formulas** first, then **percentages** of
+whatever remains after those, then the **equal shares** of what is still left, with any rounding
+difference going to the last one. So a percentage is a percentage of the remainder *after* both the
+fixed amounts and the formulas have taken theirs.
 
 Amount, cleared, account and date belong to the transaction as a whole, so they are only offered in
 the **Apply to the whole transaction** group at the top, never inside a split. Splits are numbered

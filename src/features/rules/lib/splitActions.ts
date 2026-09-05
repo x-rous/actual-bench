@@ -38,6 +38,19 @@ export function splitIndexOf(action: ConditionOrAction): number {
   return typeof index === "number" && Number.isInteger(index) && index > 0 ? index : 0;
 }
 
+/**
+ * True when a stored `splitIndex` is a value the engine can act on. `splitIndexOf` reads `-1` and
+ * `1.5` as "the parent", but the raw option survives into the saved rule, and Actual's
+ * `execActions` splits on a *truthy* `splitIndex` — so `-1` is treated as a child and indexes
+ * `newTransactions[0]`, and `1.5` indexes `newTransactions[2.5]`, which is undefined. Bench should
+ * not save one, so this is reported rather than quietly rewritten.
+ */
+export function hasValidSplitIndex(action: ConditionOrAction): boolean {
+  const index = action.options?.splitIndex;
+  if (index === undefined) return true;
+  return typeof index === "number" && Number.isInteger(index) && index >= 0;
+}
+
 /** True when the rule splits the transaction at all. */
 export function isSplitRule(actions: readonly ConditionOrAction[]): boolean {
   return actions.some((a) => isSplitAmountAction(a) || splitIndexOf(a) > 0);

@@ -1,6 +1,7 @@
 import { parseCsvLine, CSV_MAX_BYTES } from "@/lib/csv";
 import { generateId } from "@/lib/uuid";
 import { ACTION_FIELDS, ACTION_OPS, CONDITION_FIELDS, isAllocationMethod } from "../utils/ruleFields";
+import { hasDenseSplitIndices, isSplitRule } from "../lib/splitActions";
 import type { Rule, Payee, RuleStage, ConditionsOp, ConditionOrAction, RuleOptions } from "@/types/entities";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -375,6 +376,20 @@ export function importRulesFromCsv(
     }
 
     if (conditions.length === 0 && actions.length === 0) { skipped++; continue; }
+
+    // The importer stages rules directly, without the editor ever opening them, so a malformed
+    // split has to be caught here — the drawer's own dense-index check would never run.
+    if (isSplitRule(actions) && !hasDenseSplitIndices(actions)) {
+      newPayees.length = newPayeesStart;
+      createdPayees.clear();
+      for (const [k, v] of createdPayeesSnapshot) createdPayees.set(k, v);
+      skipped++;
+      skipReasons.push({
+        ruleGroupId,
+        reason: "split_index values must run 1, 2, 3… with no gaps",
+      });
+      continue;
+    }
 
     rules.push({
       id: generateId(),

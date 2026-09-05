@@ -14,6 +14,7 @@ import {
 import {
   groupActionsBySplitIndex,
   hasDenseSplitIndices,
+  hasValidSplitIndex,
   isSplitAmountAction,
   isSplitRule,
   splitIndexOf,
@@ -243,8 +244,12 @@ function validateActionPart(part: ConditionOrAction, index: number): string[] {
     return errors;
   }
 
+  if (!hasValidSplitIndex(part)) {
+    errors.push(`Action ${index + 1}: split index must be a whole number of 0 or more.`);
+  }
+
   if (part.op === "delete-transaction") return errors;
-  if (part.op === "set-split-amount") return validateSplitAmountAction(part, index);
+  if (part.op === "set-split-amount") return [...errors, ...validateSplitAmountAction(part, index)];
 
   if (splitIndexOf(part) > 0 && PARENT_ONLY_ACTION_FIELDS.has(part.field ?? "")) {
     errors.push(
