@@ -5,7 +5,7 @@
  */
 
 import { render, screen } from "@testing-library/react";
-import { ConditionRow } from "./ConditionRow";
+import { ConditionRow, formatTagValue, parseTagValue } from "./ConditionRow";
 import type { ConditionOrAction } from "@/types/entities";
 import type { RuleEntityOptionsMap } from "../lib/ruleEditor";
 
@@ -62,5 +62,26 @@ describe("ConditionRow accessible names", () => {
     const select = screen.getByLabelText("Condition field") as HTMLSelectElement;
     expect(select.value).toBe("amount-inflow");
     expect(screen.getByLabelText("Amount (inflow) value")).toBeInTheDocument();
+  });
+});
+
+describe("tag values", () => {
+  it("tokenizes whitespace so the chips and the stored value agree", () => {
+    // Actual splits the stored string on whitespace regardless (`/#*([^#\s]+)/g`), so a chip
+    // holding "food travel" would silently become two tags.
+    expect(formatTagValue(["food travel"])).toBe("#food #travel");
+    expect(formatTagValue(["#food", "travel"])).toBe("#food #travel");
+    expect(formatTagValue(["  spaced  out  "])).toBe("#spaced #out");
+  });
+
+  it("drops duplicates and empties", () => {
+    expect(formatTagValue(["food", "food", "", "  "])).toBe("#food");
+    expect(formatTagValue([])).toBe("");
+  });
+
+  it("round-trips through parseTagValue", () => {
+    const stored = formatTagValue(["food travel", "home"]);
+    expect(parseTagValue(stored)).toEqual(["food", "travel", "home"]);
+    expect(formatTagValue(parseTagValue(stored))).toBe(stored);
   });
 });

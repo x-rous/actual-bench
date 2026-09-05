@@ -336,6 +336,13 @@ export function importRulesFromCsv(
       } else if (op === "delete-transaction") {
         actions.push(withRowOptions({ op: "delete-transaction", value: "" }, options));
       } else if (op === "set-split-amount") {
+        // An allocation says how much of the transaction *a particular split* takes, so without
+        // a positive index it has no target. `hasDenseSplitIndices` cannot catch this: it filters
+        // index 0 out before checking, so a lone index-0 allocation looks dense.
+        if (options?.splitIndex === undefined) {
+          badRefs.push("unsupported allocation without a split_index");
+          continue;
+        }
         // `fixed-percent` carries a percentage and `fixed-amount` a money value; both are plain
         // numbers in the cell. `remainder` and `formula` carry no numeric value.
         const isFormulaMethod = options?.method === "formula";

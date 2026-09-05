@@ -49,11 +49,20 @@ export function parseTagValue(value: ConditionOrAction["value"]): string[] {
 }
 
 export function formatTagValue(tags: string[]): string {
-  return tags
-    .map((tag) => tag.replace(/^#+/, "").trim())
-    .filter(Boolean)
-    .map((tag) => `#${tag}`)
-    .join(" ");
+  // A chip can hold whitespace — typed with a space, or pasted. The engine splits the stored
+  // string on whitespace regardless (`/#*([^#\s]+)/g`), so "food travel" would silently become
+  // two tags. Tokenize here so what is shown and what is matched agree.
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const raw of tags) {
+    for (const token of raw.split(/[\s#]+/)) {
+      const tag = token.trim();
+      if (!tag || seen.has(tag)) continue;
+      seen.add(tag);
+      out.push(`#${tag}`);
+    }
+  }
+  return out.join(" ");
 }
 
 // ─── ConditionValueInput ──────────────────────────────────────────────────────

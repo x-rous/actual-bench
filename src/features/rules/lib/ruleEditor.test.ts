@@ -509,3 +509,64 @@ describe("validateRuleDraft — malformed split index", () => {
     expect(result.actionErrors.flat().join(" ")).toContain("split index must be a whole number");
   });
 });
+
+describe("validateRuleDraft — template and formula together", () => {
+  it("rejects an action carrying both", () => {
+    // Not reachable from the editor's toggles, which clear one when setting the other — but a
+    // stored or imported rule can carry both, and the engine silently prefers the formula.
+    const result = validateRuleDraft({
+      stage: "default",
+      conditionsOp: "and",
+      conditions: createEditorParts([{ field: "payee", op: "is", value: "p1", type: "id" }]),
+      actions: createEditorParts([
+        {
+          op: "set",
+          field: "notes",
+          value: "",
+          type: "string",
+          options: { template: "{{payee}}", formula: "=UPPER(notes)" },
+        },
+      ]),
+    });
+    expect(result.actionErrors.flat().join(" ")).toContain("not both");
+  });
+
+  it("accepts either on its own", () => {
+    for (const options of [{ template: "{{payee}}" }, { formula: "=UPPER(notes)" }]) {
+      const result = validateRuleDraft({
+        stage: "default",
+        conditionsOp: "and",
+        conditions: createEditorParts([{ field: "payee", op: "is", value: "p1", type: "id" }]),
+        actions: createEditorParts([
+          { op: "set", field: "notes", value: "", type: "string", options },
+        ]),
+      });
+      expect(result.actionErrors.flat()).toEqual([]);
+    }
+  });
+});
+
+describe("validateRuleDraft — schedule-managed actions", () => {
+  it("still flags a malformed split index on a link-schedule action", () => {
+    // `validateActionPart` returns early for link-schedule, so the check has to come first.
+    const result = validateRuleDraft({
+      stage: "default",
+      conditionsOp: "and",
+      conditions: createEditorParts([{ field: "payee", op: "is", value: "p1", type: "id" }]),
+      actions: createEditorParts([
+        { op: "link-schedule", value: "s1", options: { splitIndex: -1 } },
+      ]),
+    });
+    expect(result.actionErrors.flat().join(" ")).toContain("split index must be a whole number");
+  });
+
+  it("leaves a well-formed link-schedule action alone", () => {
+    const result = validateRuleDraft({
+      stage: "default",
+      conditionsOp: "and",
+      conditions: createEditorParts([{ field: "payee", op: "is", value: "p1", type: "id" }]),
+      actions: createEditorParts([{ op: "link-schedule", value: "s1" }]),
+    });
+    expect(result.actionErrors.flat()).toEqual([]);
+  });
+});

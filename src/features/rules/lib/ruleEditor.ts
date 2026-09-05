@@ -236,16 +236,27 @@ function validateSplitAmountAction(part: ConditionOrAction, index: number): stri
 function validateActionPart(part: ConditionOrAction, index: number): string[] {
   const errors: string[] = [];
 
+  // Checked before the schedule-managed early return: a stored or imported `link-schedule` can
+  // carry a malformed index too, and returning first meant it saved unchallenged.
+  if (!hasValidSplitIndex(part)) {
+    errors.push(`Action ${index + 1}: split index must be a whole number of 0 or more.`);
+  }
+
+  // The editor's mode toggles clear one when setting the other, so this is only reachable from
+  // stored or imported data — but the engine silently prefers the formula, and a rule that
+  // carries both says two different things.
+  if (part.options?.template !== undefined && part.options?.formula !== undefined) {
+    errors.push(
+      `Action ${index + 1}: an action can use a template or a formula, not both.`
+    );
+  }
+
   if (part.op === "link-schedule") return errors;
 
   const opDef = ACTION_OPS[part.op];
   if (!opDef) {
     errors.push(`Action ${index + 1}: select a valid action.`);
     return errors;
-  }
-
-  if (!hasValidSplitIndex(part)) {
-    errors.push(`Action ${index + 1}: split index must be a whole number of 0 or more.`);
   }
 
   if (part.op === "delete-transaction") return errors;
