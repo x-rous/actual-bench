@@ -71,16 +71,16 @@ export function NewTransactionOptions({
         options={[
           {
             value: "imported-payee",
-            label: "The statement's payee",
+            label: "Use the statement's payee",
             hint: "Resolved to a payee, creating one if it is new. A payee you set on a row yourself is always kept, and the statement's payee is recorded as the imported payee either way.",
           },
           {
             value: "leave-unset",
-            // "Leave it to your rules" was idiomatic and never said *which*
-            // rules. The legend asks where the payee comes from, so both
-            // options now read as sources: the statement, or Actual's rules.
-            label: "Actual's rules",
-            hint: "No payee is written, so Actual's rules set it as the transaction is created — exactly as they would for a bank-synced transaction. The statement's payee is still recorded as the imported payee, so nothing about the statement is lost.",
+            // Says what happens first — no payee is written — and only then who
+            // fills it. "Leave it to your rules" alone read as though the rules
+            // were choosing *which* payee rather than supplying the only one.
+            label: "Don't set the payee - Leave it to your rules",
+            hint: "No payee is written; Actual's rules set it on the way in, as they do for bank-synced transactions. The statement's payee is still kept as the imported payee.",
           },
         ]}
       />

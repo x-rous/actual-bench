@@ -158,8 +158,8 @@ describe("import preview", () => {
 
     // Moved here from the review screen: the notes source feeds the transform
     // engine, so it has to be settled before any transformation runs.
-    expect(screen.getByRole("radio", { name: "The statement's payee" })).toBeInTheDocument();
-    expect(screen.getByRole("radio", { name: "Actual's rules" })).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: "Use the statement's payee" })).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: "Don't set the payee - Leave it to your rules" })).toBeInTheDocument();
     // This fixture is a CSV, where the Notes column mapping is the notes
     // decision — so there is no second control here to contradict it (F-128).
     expect(screen.queryByRole("checkbox", { name: /Use the statement's memo/ })).toBeNull();
@@ -261,7 +261,10 @@ describe("import preview", () => {
 
     // The gap this closes: choosing rules read as though the statement's text
     // would be discarded, when it is recorded as the imported payee either way.
-    for (const option of ["The statement's payee", "Actual's rules"]) {
+    for (const option of [
+      "Use the statement's payee",
+      "Don't set the payee - Leave it to your rules",
+    ]) {
       const radio = screen.getByRole("radio", { name: option });
       fireEvent.click(radio);
       expect(screen.getByText(/recorded as the imported payee either way|still recorded as the imported payee/i)).toBeInTheDocument();
@@ -271,7 +274,7 @@ describe("import preview", () => {
   it("locks write choices after Apply starts and keeps their focus target visible", () => {
     renderWith(statement(3), true);
 
-    const payeeChoice = screen.getByRole("radio", { name: "The statement's payee" });
+    const payeeChoice = screen.getByRole("radio", { name: "Use the statement's payee" });
     expect(payeeChoice).toBeDisabled();
     expect(payeeChoice.closest("label")).toHaveClass(
       "has-[input:focus-visible]:ring-2"
@@ -332,7 +335,7 @@ describe("import preview — what the rows will become", () => {
       screen.getByRole("columnheader", { name: /^Imported payee → payee & imported payee/ })
     ).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("radio", { name: "Actual's rules" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Don't set the payee - Leave it to your rules" }));
 
     expect(
       screen.getByRole("columnheader", { name: /^Imported payee → imported payee/ })
