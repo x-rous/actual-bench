@@ -95,14 +95,15 @@ export function NewTransactionOptions({
             <InfoHint label="notes">
               {notesFromMapping
                 ? "Change which column feeds the notes above the preview. Leave it unmapped for empty notes."
-                : "Tick both to keep the memo and the payee, separated by an em dash."}{" "}
+                : "Tick both to keep the memo and the payee, separated by a dash."}{" "}
               Notes you have already edited or transformed keep what you set.
             </InfoHint>
           </div>
 
           {notesFromMapping ? (
             <p className="text-[11px] leading-snug text-muted-foreground">
-              From the <span className="font-medium">Notes</span> column mapping.
+              Mapped from the <span className="font-medium">Notes</span> column dropdown above the
+              preview.
             </p>
           ) : (
             <>

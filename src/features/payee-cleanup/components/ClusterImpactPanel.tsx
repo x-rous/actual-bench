@@ -65,7 +65,7 @@ export function ClusterImpactPanel({ impact, targetName }: Props) {
             {rules.completedSchedule > 0 ? (
               <li>
                 {formatCount(rules.completedSchedule)} completed schedule
-                {rules.completedSchedule === 1 ? "" : "s"} — not counted as active
+                {rules.completedSchedule === 1 ? "" : "s"} - not counted as active
               </li>
             ) : null}
           </ul>
@@ -93,7 +93,7 @@ export function ClusterImpactPanel({ impact, targetName }: Props) {
             ]
               .filter(Boolean)
               .join(" and ")}
-            . The payee you keep decides the outcome — Actual&apos;s API does not
+            . The payee you keep decides the outcome - Actual&apos;s API does not
             let Actual Bench change either setting.
           </p>
         ) : (

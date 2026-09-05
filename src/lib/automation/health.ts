@@ -164,8 +164,8 @@ function statusFor(
     return {
       status: "warning",
       summary: automation.nextRunAt
-        ? `Overdue — it was due to run at ${automation.nextRunAt} and has not. Check that the server is running.`
-        : "Overdue — no run has happened when one was expected.",
+        ? `Overdue - it was due to run at ${automation.nextRunAt} and has not. Check that the server is running.`
+        : "Overdue - no run has happened when one was expected.",
     };
   }
 

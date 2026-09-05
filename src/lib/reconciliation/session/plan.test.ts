@@ -336,7 +336,7 @@ describe("imported payee, payee and notes are three fields (RD-072)", () => {
 
     const operation = result.operations[0];
     if (operation.kind !== "create") throw new Error("expected a create");
-    expect(operation.notes).toBe("ONLINE CARD PURCHASE — AMZN Mktp AE*23981");
+    expect(operation.notes).toBe("ONLINE CARD PURCHASE - AMZN Mktp AE*23981");
   });
 
   it("falls to the payee alone when the row has no memo to add it to", () => {

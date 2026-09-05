@@ -70,7 +70,7 @@ export type ProspectiveTransaction = {
  * contribute. A row with no memo and `notesFromMemo` on simply contributes
  * nothing, rather than falling through to the payee.
  */
-export const NOTES_SEPARATOR = " — ";
+export const NOTES_SEPARATOR = " - ";
 
 /**
  * The effective notes switches for a statement of this format.

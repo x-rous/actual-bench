@@ -49,7 +49,7 @@ describe("scheduling a bank sync", () => {
     expect(screen.getByText("Savings")).toBeInTheDocument();
     expect(screen.getByText(/2 of 3 accounts will sync/)).toBeInTheDocument();
     // And what it will not do, so an unlinked account is never a silent skip.
-    expect(screen.getByText(/not connected to a bank — skipped/)).toBeInTheDocument();
+    expect(screen.getByText(/not connected to a bank - skipped/)).toBeInTheDocument();
   });
 
   it("offers to enrol the budget instead of sending you to another feature", async () => {

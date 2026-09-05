@@ -126,7 +126,7 @@ describe("reconciliation review field summary", () => {
     expect(summary).not.toBeNull();
     expect(summary).toHaveTextContent("1 note");
     expect(summary).toHaveTextContent(
-      "2 imported payees — set from the bank statement's merchant text"
+      "2 imported payees - set from the statement's payee"
     );
   });
 

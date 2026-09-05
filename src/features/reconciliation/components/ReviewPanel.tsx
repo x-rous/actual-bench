@@ -313,7 +313,7 @@ export function ReviewPanel({
                 {pluralFieldLabel(field, count)}
                 {field === "importedPayee" && (
                   <span className="text-muted-foreground">
-                    {" "}— set from the bank statement&apos;s merchant text
+                    {" "}- set from the statement&apos;s payee
                   </span>
                 )}
               </span>

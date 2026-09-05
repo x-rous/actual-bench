@@ -163,7 +163,7 @@ describe("import preview", () => {
     // This fixture is a CSV, where the Notes column mapping is the notes
     // decision — so there is no second control here to contradict it (F-128).
     expect(screen.queryByRole("checkbox", { name: /Use the statement's memo/ })).toBeNull();
-    expect(screen.getByText(/column mapping/i)).toBeInTheDocument();
+    expect(screen.getByText(/column dropdown above the preview/i)).toBeInTheDocument();
 
     expect(screen.getByLabelText("Profile name")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /save profile/i })).toBeInTheDocument();
@@ -308,7 +308,7 @@ describe("import preview — what the rows will become", () => {
     expect(
       screen.getByRole("columnheader", { name: /^Notes → memo \+ payee/ })
     ).toBeInTheDocument();
-    expect(notesCell()).toHaveTextContent("Online purchase — AMAZON AE");
+    expect(notesCell()).toHaveTextContent("Online purchase - AMAZON AE");
   });
 
   it("says the column is not written when both switches are off", () => {
@@ -372,7 +372,7 @@ describe("import preview — a memo spent as the payee", () => {
 
     const cells = previewRows().map((r) => r.querySelectorAll("td")[2]);
     expect(cells[0]).toHaveTextContent("DIRECT DEBIT BRITISH GAS");
-    expect(cells[2]).toHaveTextContent("Online purchase — AMAZON AE");
+    expect(cells[2]).toHaveTextContent("Online purchase - AMAZON AE");
   });
 
   it("restores their memo when the fallback that consumed it is turned off", () => {

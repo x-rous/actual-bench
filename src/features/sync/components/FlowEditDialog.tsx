@@ -433,7 +433,7 @@ export function FlowEditDialog({
                         <Input aria-label="Source currency" className={cn(compactInputClass, "w-16 uppercase")} maxLength={3} placeholder="AED" value={form.transform.fxSourceCurrency} onChange={(e) => setTransform({ fxSourceCurrency: e.target.value.toUpperCase() })} />
                         <span className="text-muted-foreground">→</span>
                         <Input aria-label="Target currency" className={cn(compactInputClass, "w-16 uppercase")} maxLength={3} placeholder="AUD" value={form.transform.fxTargetCurrency} onChange={(e) => setTransform({ fxTargetCurrency: e.target.value.toUpperCase() })} />
-                        <span className="text-[11px] text-muted-foreground">ISO 4217 codes — target is your master currency</span>
+                        <span className="text-[11px] text-muted-foreground">ISO 4217 codes - target is your master currency</span>
                       </div>
                       <label className="flex items-center gap-2 text-xs text-muted-foreground">
                         <input type="checkbox" aria-label="Fetch missing rates" checked={form.transform.fxAllowProvider} onChange={(e) => setTransform({ fxAllowProvider: e.target.checked })} />

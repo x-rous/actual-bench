@@ -158,7 +158,7 @@ export function getTrackingSpendingCell(
           ? "warning"
           : "muted"
         : toneFromSignedValue(variance, status),
-    tooltip: `${status === "current-partial" ? "Current partial month. " : ""}Budgeted expenses minus expenses spent this month — current-period, independent of any prior carryover.`,
+    tooltip: `${status === "current-partial" ? "Current partial month. " : ""}Budgeted expenses minus expenses spent this month - current-period, independent of any prior carryover.`,
   };
 }
 

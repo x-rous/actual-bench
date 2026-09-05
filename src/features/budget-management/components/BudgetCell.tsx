@@ -360,7 +360,7 @@ export function BudgetCell({
     isReadOnlyMonth && !hasMonthData
       ? "No budget exists for this past month; budget cells are read-only."
       : envelopeIncome
-      ? "Received income — envelope budgeting assigns no budget or balance to income."
+      ? "Received income - envelope budgeting assigns no budget or balance to income."
       : cellView === "budgeted"
       ? `Spent: ${formatMinor(effectiveCategory.actuals)} | Balance: ${formatMinor(effectiveCategory.balance)}${overNote}`
       : undefined;

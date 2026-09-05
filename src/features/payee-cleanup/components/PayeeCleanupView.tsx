@@ -238,7 +238,7 @@ export function PayeeCleanupView() {
         toast.success(
           `${outcome.operations} ${
             outcome.operations === 1 ? "change" : "changes"
-          } staged — save on the Payees page to apply.`
+          } staged - save on the Payees page to apply.`
         );
 
         // Clear only what was staged. Wiping every correction threw away
@@ -349,7 +349,7 @@ export function PayeeCleanupView() {
             <Button
               variant="outline"
               size="sm"
-              title="Structural matches with no rule, settings or future-rule conflicts. Still staged — nothing is written until you save."
+              title="Structural matches with no rule, settings or future-rule conflicts. Still staged - nothing is written until you save."
               onClick={() =>
                 setCorrections((c) => {
                   let next = c;

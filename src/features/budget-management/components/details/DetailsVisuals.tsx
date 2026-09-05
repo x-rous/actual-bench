@@ -319,7 +319,7 @@ export function TrajectorySection({
       {trajectory.breakdown && (
         <div className="flex justify-between items-baseline gap-2 pt-0.5 text-[11px] text-muted-foreground tabular-nums">
           <InfoTooltip
-            content="Not-yet-closed months (this month + upcoming), projected at their budget — the part of the projection that isn't banked yet."
+            content="Not-yet-closed months (this month + upcoming), projected at their budget - the part of the projection that isn't banked yet."
             className="text-[11px] text-muted-foreground"
           >
             Upcoming plan

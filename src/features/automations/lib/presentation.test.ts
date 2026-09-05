@@ -64,7 +64,7 @@ describe("run detail formatting", () => {
     expect(runDuration(run())).toBe("30.0 s");
     expect(runDuration(run({ finishedAt: "2026-08-25T10:05:00.000Z" }))).toBe("5 min");
     // An unfinished run has no duration to claim.
-    expect(runDuration(run({ finishedAt: null }))).toBe("—");
+    expect(runDuration(run({ finishedAt: null }))).toBe("-");
   });
 
   it("names the trigger, including which retry attempt a run was", () => {
@@ -77,7 +77,7 @@ describe("run detail formatting", () => {
     const now = Date.parse("2026-08-25T12:00:00Z");
     expect(relativeTime("2026-08-25T11:00:00Z", now)).toMatch(/hour ago/);
     expect(relativeTime("2026-08-25T12:30:00Z", now)).toMatch(/in 30 minutes/);
-    expect(relativeTime(null, now)).toBe("—");
+    expect(relativeTime(null, now)).toBe("-");
   });
 });
 

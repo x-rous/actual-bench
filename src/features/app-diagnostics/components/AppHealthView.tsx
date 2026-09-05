@@ -184,7 +184,7 @@ function AutomationsCard() {
               // Distinguish "nothing is configured" from "we could not ask".
               // During an outage the first reads as reassurance and is wrong.
               <span className="text-destructive">
-                Status unavailable — {(health.error as Error).message}
+                Status unavailable - {(health.error as Error).message}
               </span>
             ) : !report || report.automations.length === 0 ? (
               "None configured"

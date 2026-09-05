@@ -63,7 +63,7 @@ export function triageBadges(suggestion: CleanupSuggestion): TriageBadge[] {
         ? {
             id: "settings",
             tone: "warning",
-            label: "Payee settings differ — the one you keep decides",
+            label: "Payee settings differ - the one you keep decides",
           }
         : { id: "settings", tone: "positive", label: "Settings match" }
     );

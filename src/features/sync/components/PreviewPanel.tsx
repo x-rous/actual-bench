@@ -358,7 +358,7 @@ function Amount({ minor, currency, fx }: { minor: number | null; currency?: stri
 
 /** A payee/category cell that always shows the source name and annotates its target fate. */
 function EntityCell({ display, kind }: { display: ReturnType<typeof targetEntityDisplay>; kind: "payee" | "category" }) {
-  if (display.state === "none") return <span className="text-muted-foreground">—</span>;
+  if (display.state === "none") return <span className="text-muted-foreground">-</span>;
   return (
     <span className="flex items-center gap-1">
       <Truncate text={display.name} width="8.5rem" />

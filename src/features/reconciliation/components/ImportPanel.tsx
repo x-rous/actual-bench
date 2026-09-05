@@ -668,7 +668,7 @@ export function ImportPanel({
               Use the memo as a fallback for empty payees
               <InfoHint label="using the memo as a fallback">
                 Some banks leave the payee blank. Where that happens the memo becomes the payee, and
-                is then no longer available as a note — those rows show an empty Notes cell in the
+                is then no longer available as a note - those rows show an empty Notes cell in the
                 preview.
               </InfoHint>
             </span>

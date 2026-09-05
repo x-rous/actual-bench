@@ -168,7 +168,7 @@ export function EnvelopeDetailsPanel({
             <MetricLine
               label="Planned across window"
               value={formatSigned(metrics.periodValues.assignedFullPeriod)}
-              tooltip="Total assigned across every visible month, including future months budgeted ahead — a plan total, not yet spendable."
+              tooltip="Total assigned across every visible month, including future months budgeted ahead - a plan total, not yet spendable."
             />
           )}
           <MetricLine
@@ -180,7 +180,7 @@ export function EnvelopeDetailsPanel({
               label="Balance"
               value={formatSigned(periodView.focusBalance)}
               tone={toneFromValue(periodView.focusBalance)}
-              tooltip="Money still assigned to envelopes as of the focus month — a snapshot, not a sum of monthly balances."
+              tooltip="Money still assigned to envelopes as of the focus month - a snapshot, not a sum of monthly balances."
             />
           )}
           <MetricLine

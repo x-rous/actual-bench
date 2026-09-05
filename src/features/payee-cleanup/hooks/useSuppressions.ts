@@ -65,7 +65,7 @@ export function useSuppressions(options: { enabled: boolean }) {
     // so a silent failure would look like a saved decision until the next scan
     // brought the group back with no explanation.
     onError: (error: Error) =>
-      toast.error(`${error.message} — it will reappear on the next scan.`),
+      toast.error(`${error.message} - it will reappear on the next scan.`),
   });
 
   const remove = useMutation({

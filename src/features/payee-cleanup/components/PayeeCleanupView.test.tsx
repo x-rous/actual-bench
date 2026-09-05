@@ -428,7 +428,7 @@ describe("PayeeCleanupView", () => {
     // than parking a panel on the page.
     return Promise.resolve().then(() => {
       expect(toastSuccess).toHaveBeenCalledWith(
-        expect.stringMatching(/staged — save on the Payees page/)
+        expect.stringMatching(/staged - save on the Payees page/)
       );
       expect(screen.queryByText(/1 change staged\./)).not.toBeInTheDocument();
     });
@@ -590,9 +590,9 @@ describe("PayeeCleanupView", () => {
 
     // The score lives here, next to the reasoning that produced it — not on the
     // card, where a heuristic reads as a calibrated probability.
-    expect(screen.queryByText(/^\d+% —/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/^\d+% -/)).not.toBeInTheDocument();
     openReasoning();
-    expect(screen.getByText(/^\d+% —/)).toBeInTheDocument();
+    expect(screen.getByText(/^\d+% -/)).toBeInTheDocument();
     // No modal: the card stays in the accessibility tree.
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(screen.getByRole("article")).toBeInTheDocument();

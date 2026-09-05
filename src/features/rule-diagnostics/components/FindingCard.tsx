@@ -312,7 +312,7 @@ export function FindingCard({
               size="xs"
               onClick={() => onDismiss(finding)}
               aria-label={`Dismiss: ${finding.title}`}
-              title="Stop reporting this — remembered for this budget, and reversible"
+              title="Stop reporting this - remembered for this budget, and reversible"
             >
               <CircleSlash className="h-3 w-3" />
               Not a problem

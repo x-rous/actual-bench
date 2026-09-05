@@ -1089,7 +1089,7 @@ function buildTrackingMonthMetrics(
       ? {
           label: "Budgeted",
           value: values.budgeted,
-          helper: "Upcoming month — planned, not yet spent.",
+          helper: "Upcoming month - planned, not yet spent.",
           tone: "neutral",
         }
       : target.isIncome
@@ -1556,7 +1556,7 @@ export function buildTrackingDetailsMetrics(
         ? {
             label: "No closed months yet",
             value: null,
-            helper: "This month is still in progress — see below.",
+            helper: "This month is still in progress - see below.",
             tone: "neutral",
           }
         : {
@@ -1713,7 +1713,7 @@ export function buildTrackingDetailsMetrics(
       ? {
           label: "No closed months yet",
           value: null,
-          helper: "This month is still in progress — see below.",
+          helper: "This month is still in progress - see below.",
           tone: "neutral",
         }
       : {
@@ -1838,7 +1838,7 @@ function buildEnvelopeMonthMetrics(
           label: entry.status === "future" ? "Expected income" : "Received income",
           value: values.actuals,
           helper:
-            "Envelope budgeting tracks income as received — no budget or balance is assigned to it.",
+            "Envelope budgeting tracks income as received - no budget or balance is assigned to it.",
           tone: "neutral",
         }
       : {

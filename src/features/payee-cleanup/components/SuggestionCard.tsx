@@ -46,13 +46,13 @@ const SKIP_COPY: Record<
   string
 > = {
   "already-resolved-by-name":
-    "No rule needed — after cleanup Actual will match these imports by name.",
+    "No rule needed - after cleanup Actual will match these imports by name.",
   "existing-rule-covers-it":
-    "No rule needed — an existing rule already sets the payee for this text.",
+    "No rule needed - an existing rule already sets the payee for this text.",
   "no-safe-pattern":
-    "No rule offered — no pattern catches this payee without catching others.",
+    "No rule offered - no pattern catches this payee without catching others.",
   "no-matching-pattern":
-    "No rule offered — nothing in the imported text on record matches this pattern.",
+    "No rule offered - nothing in the imported text on record matches this pattern.",
 };
 
 const BAND_CLASS: Record<ConfidenceBand, string> = {
@@ -175,7 +175,7 @@ export function SuggestionCard({
     <article
       tabIndex={0}
       onKeyDown={onKeyDown}
-      aria-label={`${canonicalName} — ${BAND_LABEL[confidence.band]}`}
+      aria-label={`${canonicalName} - ${BAND_LABEL[confidence.band]}`}
       className={cn(
         "rounded-md border p-3 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50",
         accepted ? "border-emerald-600/50 bg-emerald-500/5" : "border-border/70"
@@ -281,7 +281,7 @@ export function SuggestionCard({
                   {/* Real budgets hold payees with identical names — the count
                       is what tells them apart. */}
                   <span className="shrink-0 tabular-nums text-muted-foreground">
-                    {countFor(member.id) ?? "—"} tx
+                    {countFor(member.id) ?? "-"} tx
                   </span>
                   {isTarget ? null : (
                     <button
@@ -338,12 +338,12 @@ export function SuggestionCard({
             <li>
               {activeRules === 0
                 ? "No rules reference these payees"
-                : `${activeRules} ${activeRules === 1 ? "rule references" : "rules reference"} these payees — merging does not rewrite them`}
+                : `${activeRules} ${activeRules === 1 ? "rule references" : "rules reference"} these payees - merging does not rewrite them`}
             </li>
             {impact && impact.rules.completedSchedule > 0 ? (
               <li>
                 {impact.rules.completedSchedule} completed schedule
-                {impact.rules.completedSchedule === 1 ? "" : "s"} — not counted as active
+                {impact.rules.completedSchedule === 1 ? "" : "s"} - not counted as active
               </li>
             ) : null}
             <li
@@ -354,7 +354,7 @@ export function SuggestionCard({
               {settingsDiffer ? (
                 <>
                   <AlertTriangle className="mr-1 inline size-3" aria-hidden="true" />
-                  Favorite / Category learning differ — the payee you keep decides
+                  Favorite / Category learning differ - the payee you keep decides
                 </>
               ) : (
                 "Favorite and Category learning match"
@@ -380,11 +380,11 @@ export function SuggestionCard({
 
           {showReasoning ? (
             <div className="mt-1 space-y-1 text-muted-foreground">
-              <p>{confidence.score}% — {confidence.reasons.map((r) => r.reason).join(" · ")}</p>
+              <p>{confidence.score}% - {confidence.reasons.map((r) => r.reason).join(" · ")}</p>
               <p>
                 {target.reasons.length > 0
                   ? `Keeping this payee: ${target.reasons.join(" · ")}`
-                  : "No clear signal favours any member — a stable default was chosen."}
+                  : "No clear signal favours any member - a stable default was chosen."}
               </p>
               {pattern ? (
                 <code className="inline-block rounded bg-muted px-1 py-0.5 font-mono text-[11px] break-all">
@@ -396,7 +396,7 @@ export function SuggestionCard({
                   {future.relatedRules.length} existing rule
                   {future.relatedRules.length === 1 ? "" : "s"} touch these payees
                   {future.relatedRules.some((r) => r.interaction === "potential-conflict")
-                    ? " — at least one could conflict"
+                    ? " - at least one could conflict"
                     : ""}
                 </p>
               ) : null}

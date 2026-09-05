@@ -41,7 +41,7 @@ function inverse(rate: string): string {
   try {
     return invertRate(rate, 6);
   } catch {
-    return "—";
+    return "-";
   }
 }
 
@@ -91,7 +91,7 @@ export function FxRatesView() {
         <p className="text-sm text-muted-foreground">
           Exchange rates used when a Budget File Sync flow converts amounts between budgets in different currencies
           (the flow&apos;s <span className="font-medium">Convert currency</span> option). They fill in automatically as
-          you sync — review, override a date, or import your own.
+          you sync - review, override a date, or import your own.
         </p>
 
         <PairSelector pairs={pairs} selected={selected} onSelect={(p) => setSelectedKey(pairKey(p))} onAdd={(p) => { setExtraPairs((x) => [...x, p]); setSelectedKey(pairKey(p)); }} />
@@ -135,7 +135,7 @@ function EmptyState() {
       <p className="text-sm font-medium">No currency conversion set up yet</p>
       <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">
         Turn on <span className="font-medium">Convert currency</span> on a Budget File Sync flow to consolidate a
-        local-currency budget into a master currency. Its pair will appear here — or add one above to manage rates
+        local-currency budget into a master currency. Its pair will appear here - or add one above to manage rates
         ahead of time.
       </p>
     </div>
@@ -245,7 +245,7 @@ function PairPanel({ pair }: { pair: Pair }) {
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
             <div className="text-2xl font-semibold tabular-nums">
-              1 {pair.base} = {latest ? latest.rate : "—"} {pair.quote}
+              1 {pair.base} = {latest ? latest.rate : "-"} {pair.quote}
             </div>
             {latest && (
               <div className="text-sm text-muted-foreground tabular-nums">
@@ -259,7 +259,7 @@ function PairPanel({ pair }: { pair: Pair }) {
                   <Badge variant="secondary" className="text-[10px]">{SOURCE_LABEL[latest.source] ?? latest.source}</Badge>
                 </>
               ) : (
-                <span>No rate yet in this range — Fill or add one below.</span>
+                <span>No rate yet in this range - Fill or add one below.</span>
               )}
               <span>· {covered} of {days.length} days covered</span>
             </div>
@@ -276,8 +276,8 @@ function PairPanel({ pair }: { pair: Pair }) {
           {fillM.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />} Fill range from Frankfurter
         </Button>
       </div>
-      {from > to && <p className="text-xs text-destructive">From is after To — pick a valid range.</p>}
-      {days.length >= 400 && <p className="text-xs text-amber-600 dark:text-amber-400">Showing the first 400 days — narrow the range to see the rest.</p>}
+      {from > to && <p className="text-xs text-destructive">From is after To - pick a valid range.</p>}
+      {days.length >= 400 && <p className="text-xs text-amber-600 dark:text-amber-400">Showing the first 400 days - narrow the range to see the rest.</p>}
       {notice && <p className="text-xs text-green-600 dark:text-green-400">{notice}</p>}
       {error && <p className="text-xs text-destructive">{error}</p>}
 
@@ -312,8 +312,8 @@ function PairPanel({ pair }: { pair: Pair }) {
                   title="Click to set your own rate for this date"
                 >
                   <td className="px-3 py-1.5 tabular-nums">{day}</td>
-                  <td className="px-3 py-1.5 text-right tabular-nums font-medium">{r ? r.rate : "—"}</td>
-                  <td className="px-3 py-1.5 text-right tabular-nums text-muted-foreground">{r ? inverse(r.rate) : "—"}</td>
+                  <td className="px-3 py-1.5 text-right tabular-nums font-medium">{r ? r.rate : "-"}</td>
+                  <td className="px-3 py-1.5 text-right tabular-nums text-muted-foreground">{r ? inverse(r.rate) : "-"}</td>
                   <td className="px-3 py-1.5">
                     {r ? (
                       <Badge variant={r.source === "manual" ? "status-warning" : r.source === "user-upload" ? "status-active" : "secondary"} className="text-[10px]">
@@ -355,7 +355,7 @@ function ImpactPanel({ pair, impact, onDismiss }: { pair: Pair; impact: { active
       </div>
       <p className="mt-1 text-xs text-muted-foreground">
         Their amounts in your budget are unchanged (rates lock at first sync). This shows what they would become at the
-        new rate — actually rewriting the transactions is a separate step.
+        new rate - actually rewriting the transactions is a separate step.
       </p>
       <div className="mt-2 overflow-x-auto rounded border border-amber-400/30">
         <table className="w-full text-xs">
