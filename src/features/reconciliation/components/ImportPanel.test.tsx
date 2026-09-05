@@ -56,7 +56,7 @@ function renderWith(text: string, writeSettingsLocked = false) {
  * their effect observed. `renderWith` holds the config fixed, which is right
  * for layout assertions and useless for behaviour.
  */
-function LiveImportPanel({ text }: { text: string }) {
+function LiveImportPanel() {
   const [applyConfig, setApplyConfig] = useState(DEFAULT_APPLY_CONFIG);
   return (
     <ImportPanel
@@ -76,7 +76,7 @@ function LiveImportPanel({ text }: { text: string }) {
 }
 
 function renderLive(text: string) {
-  render(<LiveImportPanel text={text} />);
+  render(<LiveImportPanel />);
   fireEvent.change(screen.getByLabelText("Or paste statement rows"), { target: { value: text } });
 }
 

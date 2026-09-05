@@ -82,7 +82,14 @@ export type ReviewPanelProps = {
 };
 
 /** The notes source in words, for the read-only summary on the review screen. */
-function describeNotesSource(config: ApplyConfig): string {
+function describeNotesSource(
+  config: ApplyConfig,
+  statementFormat: StatementFormat | null
+): string {
+  // A delimited statement takes its notes from the mapped column, whatever the
+  // stored switches say - `resolveNotesSwitches` forces it, so reporting the
+  // switches here described something the import would not do.
+  if (statementFormat === "delimited") return "the mapped Notes column";
   if (config.notesFromMemo && config.notesIncludePayee) {
     return "the statement's memo and its payee";
   }
@@ -284,7 +291,7 @@ export function ReviewPanel({
               : "your rules"}
           </span>{" "}
           and their notes from{" "}
-          <span className="font-medium">{describeNotesSource(applyConfig)}</span>
+          <span className="font-medium">{describeNotesSource(applyConfig, statementFormat)}</span>
           . The statement&apos;s payee is recorded as the imported payee either way. Change this on
           the import screen.
         </p>

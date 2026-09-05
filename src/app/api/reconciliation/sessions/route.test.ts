@@ -246,6 +246,20 @@ describe("/api/reconciliation/sessions", () => {
     expect(body.session.accountName).toBe("Global Money Credit Card");
   });
 
+  it("persists the statement format, so a re-import can change it", async () => {
+    // The repository stored it and the client type advertised it, but the route
+    // dropped it: a session re-imported from OFX kept the CSV format, and the
+    // format is what decides whether the notes switches are offered at all.
+    const session = await createSession();
+    const response = await PATCH(
+      jsonRequest({ statementFormat: "ofx" }),
+      context(session.id)
+    );
+    const body = (await response.json()) as { session: ReconciliationSessionRecord };
+
+    expect(body.session.statementFormat).toBe("ofx");
+  });
+
   it("rejects an unknown status", async () => {
     const session = await createSession();
     const response = await PATCH(jsonRequest({ status: "nonsense" }), context(session.id));

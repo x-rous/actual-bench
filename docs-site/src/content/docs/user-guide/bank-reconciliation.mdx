@@ -126,21 +126,21 @@ will need to be created:
 - **Payee** - **The statement's payee**, resolved to a payee and created if it is new, or
   **Actual's rules**, which writes no payee and lets your rules set it on the way in.
 - **Notes** - two independent switches: use the statement's memo, and also include the statement's
-  payee. Tick both to keep them both, separated by an em dash; untick both to leave notes empty.
+  payee. Tick both to keep them both, separated by a dash; untick both to leave notes empty.
 
 On a **CSV** there is no notes control at all - the Notes column you mapped over the preview is the
 decision, exactly as in Actual. Leave that column unmapped for empty notes, or map the same source
 column to both Imported payee and Notes to carry the payee text into the notes as well.
 
 The **Notes** column in the preview shows what each row will actually carry, and its header says
-where the column is headed - `→ memo + payee`, `→ memo`, `→ payee`, or `not written`. Change a
+where the column is headed - `→ memo + payee`, `→ memo`, `→ payee`, `not written`, or `→ notes` on a CSV. Change a
 switch and the table answers, so the setting is never a guess.
 
 These choices happen before matching because the notes source is an input to transformations. After
 matching, the same choices remain available from **New rows** on the Reconcile toolbar. If you have
 already edited or transformed a row's notes, that row keeps what you set when the source changes.
 
-The statement's payee is still recorded as the imported payee in every option.
+Where the statement has a payee, it is still recorded as the imported payee in every option.
 
 ### The two text channels
 
@@ -358,14 +358,15 @@ Actual keeps three separate facts about a transaction, and so does this feature:
 
 They are not alternatives to one another, so you are not asked to choose between them:
 
-- **A created transaction always records the statement's payee as its imported payee** - whichever
+- **A created transaction records the statement's payee as its imported payee** - wherever the
+  statement has one, whichever
   payee you end up with, whether a rule changes it, and whether or not you also copy the text into
   the notes. There is no setting for this, because there is no sensible reason to throw the bank's
   own text away.
 - **Payee on a new transaction**: resolve the statement's payee into a payee (creating one if it is new),
   or leave it unset for your rules to decide. A payee you set on a row yourself always wins.
-- **Notes on a new transaction**: the statement's memo, its payee, both, or neither
-  (a deliberate duplicate, for rules that read the notes), or nothing.
+- **Notes on a new transaction**: the statement's memo, its payee, both (a deliberate
+  duplicate, for rules that read the notes), or neither.
 
 The Payee and Notes sources are chosen during Import, before matching and transformations, and are
 summarized read-only on Review. To change them after matching, go back to Import or use **New rows**

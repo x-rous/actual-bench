@@ -9,6 +9,7 @@ import {
   listStatementRows,
   updateReconciliationSession,
   type ReconciliationSessionStatus,
+  type ReconciliationStatementFormat,
   type UpdateSessionInput,
 } from "@/lib/app-db/reconciliationRepository";
 
@@ -78,6 +79,9 @@ export async function PATCH(request: Request, context: RouteContext) {
     if ("candidateEnd" in body) patch.candidateEnd = body.candidateEnd as string | null;
     if ("statementFingerprint" in body) {
       patch.statementFingerprint = body.statementFingerprint as string | null;
+    }
+    if ("statementFormat" in body) {
+      patch.statementFormat = body.statementFormat as ReconciliationStatementFormat | null;
     }
     if ("matchConfig" in body) patch.matchConfig = body.matchConfig;
     if ("totals" in body) patch.totals = body.totals;

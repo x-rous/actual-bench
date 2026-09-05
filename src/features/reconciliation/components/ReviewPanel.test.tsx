@@ -130,6 +130,50 @@ describe("reconciliation review field summary", () => {
     );
   });
 
+  it("reports a delimited statement's notes as the mapped column, not the switches", () => {
+    // On a CSV the mapped Notes column decides, and `resolveNotesSwitches`
+    // forces it. Reading the stored switches here described a write that would
+    // not happen - the review screen contradicted the import screen beside it.
+    render(
+      <ReviewPanel
+        plan={{
+          // The summary names the notes source only where a row is created.
+          operations: [
+            {
+              id: "create-1",
+              kind: "create",
+              itemId: "1",
+              statementRowId: "r-1",
+              accountId: "acct-1",
+              date: "2026-07-04",
+              amount: -1250,
+              payeeId: null,
+              importedPayee: "AMAZON AE",
+              payeeName: null,
+              notes: "Order 402",
+              cleared: true,
+            },
+          ] as ApplyPlan["operations"],
+          alreadyApplied: 0,
+          noWriteMatches: 0,
+          unresolved: 0,
+          blocked: [],
+        }}
+        items={[]}
+        statementRows={new Map()}
+        transactions={new Map()}
+        payees={[]}
+        categories={[]}
+        drift={null}
+        applyConfig={{ ...DEFAULT_APPLY_CONFIG, notesFromMemo: false, notesIncludePayee: true }}
+        statementFormat="delimited"
+        onApplyConfigChange={() => {}}
+      />
+    );
+
+    expect(screen.getByText(/the mapped Notes column/i)).toBeInTheDocument();
+  });
+
   it("shows the executed write settings as disabled for an applied reconciliation", () => {
     const config = {
       ...DEFAULT_APPLY_CONFIG,
