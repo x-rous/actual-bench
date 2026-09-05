@@ -670,3 +670,31 @@ describe("CSV import rejects a malformed split_index on an ordinary action", () 
     expect(result.rules[0].actions[0].options).toBeUndefined();
   });
 });
+
+describe("CSV import requires an allocation method", () => {
+  const maps = { payees: {}, categories: {}, accounts: {}, categoryGroups: {} } as unknown as EntityMaps;
+
+  function importRows(rows: string[]) {
+    return importRulesFromCsv(
+      ["rule_id,stage,conditions_op,row_type,field,op,value,split_index,options", ...rows].join("\n"),
+      maps
+    );
+  }
+
+  it.each([["blank", ""], ["unrecognised", "method=sometimes"]])(
+    "skips an allocation whose options cell is %s",
+    (_label, options) => {
+      // decodeOptions drops an unknown method silently, and the payload checks are all keyed on
+      // it — so without this the row imported as an allocation of nothing.
+      const result = importRows([
+        "r1,default,and,condition,notes,contains,x,,",
+        `r1,,,action,,set-split-amount,,1,${options}`,
+        "r1,,,action,notes,set,y,1,",
+      ]);
+      expect("rules" in result).toBe(true);
+      if (!("rules" in result)) return;
+      expect(result.rules).toHaveLength(0);
+      expect(result.skipReasons[0].reason).toContain("allocation without a valid method");
+    }
+  );
+});

@@ -350,6 +350,13 @@ export function importRulesFromCsv(
           badRefs.push("unsupported allocation without a split_index");
           continue;
         }
+        // An allocation with no method never says how much it takes. A blank or unrecognised
+        // options cell leaves `method` undefined, and the payload checks below are all keyed on
+        // it — so without this the row imports as an allocation of nothing.
+        if (!isAllocationMethod(options.method)) {
+          badRefs.push("unsupported allocation without a valid method");
+          continue;
+        }
         // `fixed-percent` carries a percentage and `fixed-amount` a money value; both are plain
         // numbers in the cell. `remainder` and `formula` carry no numeric value.
         // The importer stages directly, so an allocation has to meet the same bar the editor

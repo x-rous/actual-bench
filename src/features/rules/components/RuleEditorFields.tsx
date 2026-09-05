@@ -208,7 +208,7 @@ export function RuleEditorFields({
               size="sm"
               className="h-6 text-xs"
               onClick={onAddSplit}
-              aria-label="Add a split to this rule"
+              aria-label="Add split to this rule"
             >
               <Split className="mr-1 h-3 w-3" aria-hidden="true" />
               Add split
@@ -257,7 +257,7 @@ export function RuleEditorFields({
                         className="h-6 text-xs"
                         onClick={() => onAddAction(group.index)}
                         aria-label={
-                          isSplit ? `Add an action to split ${group.index}` : "Add an action"
+                          isSplit ? `Add action to split ${group.index}` : "Add action"
                         }
                       >
                         <Plus className="mr-1 h-3 w-3" aria-hidden="true" />
