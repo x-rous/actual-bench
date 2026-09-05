@@ -1,4 +1,4 @@
-import { backtestProposal } from "./patternBacktest";
+import { backtestProposal, BACKTEST_ROW_LIMIT } from "./patternBacktest";
 import { runQuery } from "@/lib/api/query";
 import type { ConnectionInstance } from "@/store/connection";
 import type { RuleGapProposal } from "./ruleGaps";
@@ -122,6 +122,29 @@ describe("checking a proposal against the whole budget", () => {
     expect(result.unassigned).toEqual(
       expect.objectContaining({ transactionCount: 3, texts: ["ADNOC QALA"] })
     );
+  });
+
+  it("admits when the check itself was capped", async () => {
+    // This check exists to replace a hedge with an exact answer. At the row
+    // limit there are groups the query never returned, so "no other payee's
+    // transactions" would be the same unearned claim the capped scan avoids.
+    rows(
+      Array.from({ length: BACKTEST_ROW_LIMIT }, (_, i) => ({
+        imported_payee: `ADNOC ${i}`,
+        payee: "p1",
+        transactionCount: 1,
+      }))
+    );
+
+    const result = await backtestProposal(connection, contains, "p1", "ADNOC Fuel Station");
+    expect(result.truncated).toBe(true);
+  });
+
+  it("reports a complete read as complete", async () => {
+    rows([{ imported_payee: "ADNOC AL", payee: "p1", transactionCount: 4 }]);
+
+    const result = await backtestProposal(connection, contains, "p1", "ADNOC Fuel Station");
+    expect(result.truncated).toBe(false);
   });
 
   it("groups a payee's matches and lists its commonest text first", async () => {

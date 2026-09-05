@@ -74,6 +74,7 @@ let backtest: {
           transactionCount: number;
           texts: string[];
         } | null;
+        truncated: boolean;
       }
     | undefined;
   isFetching: boolean;
@@ -1054,6 +1055,7 @@ describe("PayeeCleanupView", () => {
           transactionCount: 8,
           texts: ["FILMBOX.COM 9910"],
         },
+        truncated: false,
       },
       isFetching: false,
       error: null,

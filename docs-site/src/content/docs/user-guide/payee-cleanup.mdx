@@ -210,13 +210,18 @@ among the text that was read.
 
 Rather than reading more of the budget on every visit, **Check the whole budget** - inside a row's
 details - runs the proposed condition as a query. The cost is the size of the answer rather than the
-size of the budget, and it is exact. It reports three things:
+size of the budget. It reports three things:
 
 - how many of this payee's transactions the rule catches;
 - **which other payees** it would take transactions from, named rather than counted, with the import
   text behind each one;
 - how many transactions with **no payee at all** it would newly resolve. That is not a collision -
   nothing is taken from anyone - so it is reported separately from the warning above.
+
+The check reads a bounded number of matching groups of its own. A condition broad enough to exceed
+that says so, and reports what it found as a sample: it will not tell you a rule catches nobody else
+on the strength of a partial read, which is the hedge it exists to remove. Narrowing the condition
+makes the answer complete.
 
 Each import listed under **Imports on record** says which field it came from, `imported payee` or
 `notes`, with the proposed rule's own field first: a rule reading `imported payee contains …` cannot

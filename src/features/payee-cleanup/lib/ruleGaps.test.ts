@@ -709,6 +709,21 @@ describe("a rule that already sets this payee", () => {
 
     // 5 of 9 together, which does.
     expect(findRuleGaps(rbInputs([halfA, halfB]))).toEqual([]);
+
+    // And a union is not a sum. These two rules both catch the same 3 of 9, so
+    // adding their totals clears the bar while the transactions they actually
+    // cover do not. The payee still needs a rule.
+    const sameRowsA = rule({
+      id: "rb-overlap-a",
+      conditions: [{ field: "notes", op: "contains", value: "#2026-08" }],
+      actions: [{ field: "payee", op: "set", value: "p1" }],
+    });
+    const sameRowsB = rule({
+      id: "rb-overlap-b",
+      conditions: [{ field: "notes", op: "contains", value: "-08 K AND M" }],
+      actions: [{ field: "payee", op: "set", value: "p1" }],
+    });
+    expect(findRuleGaps(rbInputs([sameRowsA, sameRowsB]))).toHaveLength(1);
   });
 
   it("does not ask for a rule the payee already has", () => {

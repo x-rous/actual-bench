@@ -174,13 +174,32 @@ function ProposalFullCheck({ gap }: { gap: RuleGap }) {
       <div className="text-[11px] uppercase tracking-wider text-muted-foreground">
         Checked against every transaction
       </div>
-      <p className={data.others.length === 0 ? "text-emerald-700 dark:text-emerald-400" : ""}>
+      {/* "and no other payee's" is a claim about everything the query did not
+          return, so it is only made on a complete read. At the limit this check
+          would otherwise become the same unearned promise the capped scan was
+          careful not to make. */}
+      <p
+        className={
+          data.others.length === 0 && !data.truncated
+            ? "text-emerald-700 dark:text-emerald-400"
+            : ""
+        }
+      >
         {`Matches ${data.expected.toLocaleString("en-US")} of this payee's ${
           data.expected === 1 ? "transaction" : "transactions"
         }${
-          data.others.length === 0 ? ", and no other payee's transactions." : "."
+          data.others.length === 0 && !data.truncated
+            ? ", and no other payee's transactions."
+            : "."
         }`}
       </p>
+      {data.truncated ? (
+        <p className="text-amber-700 dark:text-amber-400">
+          This condition matches more distinct import texts than the check reads
+          at once, so what follows is a sample rather than the whole picture.
+          Narrowing the condition will make it exact.
+        </p>
+      ) : null}
 
       {data.others.length > 0 ? (
         <>
@@ -240,9 +259,10 @@ type SortKey = "history" | "name";
 /**
  * A column header that also sorts.
  *
- * `aria-sort` rather than a visual arrow alone, so the ordering is available to
- * a screen reader; the list is a `ul` rather than a table, so the attribute sits
- * on the button that controls it.
+ * The list is a `ul` rather than a table, so there is no header cell to carry
+ * `aria-sort`. The button reports its own state with `aria-pressed`, which tells
+ * a screen reader which ordering is active rather than leaving it to an arrow
+ * only sighted users can see.
  */
 function SortHeader({
   label,

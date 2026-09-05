@@ -350,8 +350,11 @@ consolidate them safely. Nothing is written until you save.
   are never listed; where those rules cover only part of it, the payee stays listed with each rule shown
   in the Rules page's own colours and editable in place. The initial scan reads a capped slice of the
   budget, so where that cap is reached **Check the whole budget** re-runs the proposed condition as a
-  query and answers exactly: how much of this payee it catches, which other payees it would take
-  transactions from, and how many payee-less transactions it would newly resolve.
+  query rather than reading more history: how much of this payee it catches, which other payees it
+  would take transactions from, and how many payee-less transactions it would newly resolve - the last
+  reported separately, since setting a payee where there is none is what the rule is for rather than a
+  collision. The check carries its own read limit and says so when it reaches it, instead of turning a
+  sample into a clean bill of health.
 - **Optional rule to stop it recurring.** Where cleanup alone will not fix future imports, cleanup
   proposes a rule that catches the merchant, backtested against your own history so you can see what
   it would and would not have matched. The matched text and the field it matches on are editable.

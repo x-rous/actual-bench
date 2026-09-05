@@ -58,6 +58,15 @@ export type BacktestResult = {
    * them together made a benefit read as a warning.
    */
   unassigned: BacktestMatch | null;
+  /**
+   * True when the check itself hit `BACKTEST_ROW_LIMIT`.
+   *
+   * The whole point of this check is to replace a hedge with an exact answer, so
+   * it must not quietly become a hedge of its own: at the limit there are groups
+   * the query never returned, and "no other payee's transactions" would be the
+   * same unearned claim the capped scan was careful not to make.
+   */
+  truncated: boolean;
 };
 
 type QueryRow = Record<string, unknown> & { transactionCount?: number };
@@ -119,13 +128,19 @@ export async function backtestProposal(
     },
   });
 
+  const returned = response.data ?? [];
+  // Recorded before filtering, as the scan's own read does: a limit-sized
+  // response containing an unusable row would otherwise come back under the
+  // limit and be reported as a complete read.
+  const truncated = returned.length >= BACKTEST_ROW_LIMIT;
+
   let expected = 0;
   const target = payeeName.trim().toUpperCase();
   // Distinct strings with their counts, so the few shown are the common ones
   // rather than whichever the query happened to return first.
   const byPayee = new Map<string, BacktestMatch & { weighted: [string, number][] }>();
 
-  for (const row of response.data ?? []) {
+  for (const row of returned) {
     const count = typeof row.transactionCount === "number" ? row.transactionCount : 0;
     const rowPayee = toText(row.payee);
     const text = toText(row[field]);
@@ -164,5 +179,6 @@ export async function backtestProposal(
       .filter((match) => match.payeeId !== null)
       .sort((a, b) => b.transactionCount - a.transactionCount),
     unassigned: grouped.find((match) => match.payeeId === null) ?? null,
+    truncated,
   };
 }
