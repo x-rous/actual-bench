@@ -138,9 +138,10 @@ A payee appears only when all of these are true, which is why the list is short:
 
 - its imports **don't already equal its name** - those resolve on their own, and most payees fall out
   here;
-- **no existing rule** already sets it - judged by running your rules against this payee's own import
-  text, not by comparing names, so a rule reading `notes contains "K AND M"` is recognised as covering
-  a payee called `K&M Fashion`;
+- **its existing rules don't already cover it** - judged by running your rules against this payee's own
+  import text, not by comparing names, so a rule reading `notes contains "K AND M"` is recognised as
+  covering a payee called `K&M Fashion`. The rules are counted **together**: two rules catching just
+  under half the history each are between them catching nearly all of it, and the payee is not listed;
 - it has import text on record and more than one transaction;
 - **an honest rule exists.** If the text neither repeats nor shares a recognisable core, or if no
   core can be found that catches this payee and nobody else, there is nothing to offer and the payee
@@ -189,12 +190,37 @@ nothing, will not compile, or reaches another payee. Your edits survive a re-sca
 Where the payee already has a rule of this kind, cleanup **adds the missing text to it** rather than
 creating a second rule - so tidying ten payees does not mean ten new rules.
 
-Where a rule covers only *part* of a payee's history - or tests something this page cannot check, like
-an amount - the payee stays listed and the rule is shown with how much it catches, and a link to open
-it on the Rules page.
+Where the rules cover only *part* of a payee's history - or test something this page cannot check, like
+an amount - the payee stays listed and each rule is shown with how much it catches, drawn in the same
+colours as the Rules page and editable in place: opening one brings up the rule editor over this tab
+rather than sending you elsewhere, because the payee's import text is the evidence for the edit.
 
-**Create _n_ safe rules** takes only the ones with nothing to judge. Everything else is opted into one
-at a time, and **Not needed** dismisses a payee for good, reversibly, from the Dismissed tab.
+**Accept _n_ safe rules** takes only the ones with nothing to judge, and **Clear _n_ accepted** takes it
+back. Everything else is ticked one at a time. **Not needed** dismisses a payee for good, with an
+**Undo** offered on the spot and the decision reversible later from the Dismissed tab.
+
+The list is ordered by history, most transactions first, since that is where a rule is worth most;
+the **Payee** heading orders it by name instead.
+
+### Checking against every transaction
+
+The initial scan reads a bounded slice of your import history so the tab answers on arrival. On a large
+budget that slice is not the whole story, and a pattern can only be promised to catch nothing unexpected
+among the text that was read.
+
+Rather than reading more of the budget on every visit, **Check the whole budget** - inside a row's
+details - runs the proposed condition as a query. The cost is the size of the answer rather than the
+size of the budget, and it is exact. It reports three things:
+
+- how many of this payee's transactions the rule catches;
+- **which other payees** it would take transactions from, named rather than counted, with the import
+  text behind each one;
+- how many transactions with **no payee at all** it would newly resolve. That is not a collision -
+  nothing is taken from anyone - so it is reported separately from the warning above.
+
+Each import listed under **Imports on record** says which field it came from, `imported payee` or
+`notes`, with the proposed rule's own field first: a rule reading `imported payee contains …` cannot
+match text that arrived in the notes, however similar the two look.
 
 Reachable from **Tools → Payee Cleanup**, or the **Needs a rule** button on the Rules page.
 

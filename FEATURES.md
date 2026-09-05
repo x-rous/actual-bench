@@ -346,8 +346,12 @@ consolidate them safely. Nothing is written until you save.
   every time, a backtested pattern built from the words every import shares where it varies — adding to the payee's own
   rename rule where it has one, rather than creating a second rule beside it. The condition is editable per row
   (field, `matches`/`contains`, and the pattern itself) with the backtest re-run as you type. Payees
-  that already resolve by name, or whose existing rules already catch most of their history, are never
-  listed; where a rule covers only part of it, the payee stays listed with that rule shown and linked.
+  that already resolve by name, or whose existing rules **together** already catch most of their history,
+  are never listed; where those rules cover only part of it, the payee stays listed with each rule shown
+  in the Rules page's own colours and editable in place. The initial scan reads a capped slice of the
+  budget, so where that cap is reached **Check the whole budget** re-runs the proposed condition as a
+  query and answers exactly: how much of this payee it catches, which other payees it would take
+  transactions from, and how many payee-less transactions it would newly resolve.
 - **Optional rule to stop it recurring.** Where cleanup alone will not fix future imports, cleanup
   proposes a rule that catches the merchant, backtested against your own history so you can see what
   it would and would not have matched. The matched text and the field it matches on are editable.
