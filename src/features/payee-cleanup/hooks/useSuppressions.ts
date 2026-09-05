@@ -52,13 +52,20 @@ export function useSuppressions(options: { enabled: boolean }) {
   }, [queryClient, queryKey]);
 
   const create = useMutation({
-    mutationFn: async (payload: object) => {
+    // Returns the created record's id so a caller can offer an immediate undo.
+    // Without it the only way back was the decisions list, which means finding
+    // a row you dismissed a second ago somewhere else on the page.
+    mutationFn: async (payload: object): Promise<string | null> => {
       const response = await fetch("/api/payee-cleanup-suppressions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
       if (!response.ok) throw new Error("Could not save that decision");
+      const body = (await response.json()) as {
+        suppression?: PayeeCleanupSuppressionRecord;
+      };
+      return body.suppression?.id ?? null;
     },
     onSuccess: invalidate,
     // Reported rather than swallowed: the card disappears locally either way,
@@ -101,10 +108,20 @@ export function useSuppressions(options: { enabled: boolean }) {
       if (!budgetSyncId) return;
       create.mutate(buildClusterSuppression(budgetSyncId, cluster));
     },
-    /** Records that a payee is fine without a rule. */
-    rejectRuleGap: (payee: { id: string; name: string }) => {
-      if (!budgetSyncId) return;
-      create.mutate(buildRuleGapSuppression(budgetSyncId, payee));
+    /**
+     * Records that a payee is fine without a rule.
+     *
+     * Resolves to the decision's id, so the caller can offer to take it back.
+     * Null when there was no budget to record against, or the write failed.
+     */
+    rejectRuleGap: async (payee: { id: string; name: string }): Promise<string | null> => {
+      if (!budgetSyncId) return null;
+      try {
+        return await create.mutateAsync(buildRuleGapSuppression(budgetSyncId, payee));
+      } catch {
+        // Already surfaced by the mutation's own error toast.
+        return null;
+      }
     },
     /** Stops a learned fragment being treated as boilerplate anywhere. */
     rejectAffix: (affix: CorpusAffix) => {

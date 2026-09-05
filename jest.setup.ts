@@ -14,3 +14,16 @@ configure({ asyncUtilTimeout: 5000 });
 if (typeof globalThis.structuredClone === 'undefined') {
   globalThis.structuredClone = <T>(val: T): T => JSON.parse(JSON.stringify(val));
 }
+
+// jsdom does not implement PointerEvent. Base UI's Checkbox reads it inside its
+// own click handler, so `fireEvent.click` on a checkbox throws before the change
+// is applied and the control silently never toggles in tests. Aliasing it to
+// MouseEvent is enough: the handler only needs the constructor to exist.
+// Guarded on MouseEvent too: suites running in the node environment have
+// neither, and referencing it there fails the whole file before a test runs.
+if (
+  typeof globalThis.PointerEvent === 'undefined' &&
+  typeof globalThis.MouseEvent !== 'undefined'
+) {
+  globalThis.PointerEvent = globalThis.MouseEvent as unknown as typeof PointerEvent;
+}
