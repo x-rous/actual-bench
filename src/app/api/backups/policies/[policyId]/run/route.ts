@@ -1,6 +1,12 @@
 import { NextResponse } from "next/server";
 import { getAppDb } from "@/lib/app-db/connection";
 import { AppDbValidationError } from "@/lib/app-db/errors";
+import {
+  BodyTooLargeError,
+  MissingBodyError,
+  declaredLengthExceeds,
+  readBoundedBody,
+} from "@/lib/http/boundedBody";
 import { appDbErrorResponse } from "@/lib/app-db/routeResponses";
 import { getBackupPolicy } from "@/lib/app-db/backupRepository";
 import { listAutomations } from "@/lib/app-db/automationRepository";
@@ -76,21 +82,33 @@ async function readUploadedArchive(request: Request): Promise<{
   }
 
   /*
-   * Checked before the body is parsed, not only after.
+   * Bounded before the body is parsed, not only after.
    *
    * `formData()` buffers the whole request first, so a size check that runs
-   * after it has already cost the memory it was meant to protect. The header is
-   * the client's claim rather than a fact, which is why the parsed part is
-   * checked again below - this only stops an obviously oversized upload cheaply.
+   * after it has already cost the memory it was meant to protect. A declared
+   * Content-Length is only the client's claim and may be absent altogether on a
+   * chunked request, so it is used as a cheap early refusal and the body is then
+   * read through a counter that stops at the same limit either way.
    */
-  const declared = Number(request.headers.get("content-length") ?? "");
-  if (Number.isFinite(declared) && declared > MAX_UPLOAD_BYTES) {
-    throw new AppDbValidationError(
-      `The exported budget is larger than the ${Math.round(MAX_UPLOAD_BYTES / 1024 / 1024)}MB this endpoint accepts.`
-    );
+  if (declaredLengthExceeds(request, MAX_UPLOAD_BYTES)) {
+    throw new AppDbValidationError(new BodyTooLargeError(MAX_UPLOAD_BYTES).message);
   }
 
-  const form = await request.formData();
+  let body: ArrayBuffer;
+  try {
+    body = await readBoundedBody(request, MAX_UPLOAD_BYTES);
+  } catch (error) {
+    if (error instanceof BodyTooLargeError || error instanceof MissingBodyError) {
+      throw new AppDbValidationError(error.message);
+    }
+    throw error;
+  }
+
+  const form = await new Request(request.url, {
+    method: "POST",
+    headers: request.headers,
+    body,
+  }).formData();
   const file = form.get("archive");
   if (!(file instanceof File)) {
     throw new AppDbValidationError("The upload carried no budget archive.");

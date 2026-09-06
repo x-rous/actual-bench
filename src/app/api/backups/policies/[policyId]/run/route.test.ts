@@ -147,7 +147,7 @@ describe("POST /api/backups/policies/[policyId]/run", () => {
     expect(readdirSync(volume)).toHaveLength(0);
   });
 
-  it("rejects an oversized upload before parsing the body", async () => {
+  it("rejects an oversized upload on its declared size, before parsing", async () => {
     // `formData()` buffers the whole request, so a size check that only runs
     // afterwards has already cost the memory it was meant to protect.
     const policy = manualPolicy();
@@ -161,7 +161,13 @@ describe("POST /api/backups/policies/[policyId]/run", () => {
     });
 
     const response = await POST(request, context(policy.id));
+    const body = (await response.json()) as { error: string };
+
     expect(response.status).toBe(400);
+    // Asserted on the reason, not just the status: this body is also a valid
+    // empty multipart, so a "no archive" 400 would pass a status-only check
+    // even with the size guard removed.
+    expect(body.error).toMatch(/larger than/i);
   });
 
   it("reports malformed JSON rather than treating it as an empty body", async () => {
