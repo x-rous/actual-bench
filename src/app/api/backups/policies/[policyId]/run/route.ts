@@ -15,6 +15,7 @@ import { ensureAutomationJobTypesRegistered } from "@/lib/automation/bootstrap";
 import { executeAutomation } from "@/lib/automation/engine";
 import { BACKUP_JOB_TYPE } from "@/lib/automation/jobs/backupType";
 import { runBackup } from "@/lib/backup/runBackup";
+import { ARCHIVE_LIMITS } from "@/lib/backup/verify";
 
 type RouteContext = { params: Promise<{ policyId: string }> };
 
@@ -44,16 +45,29 @@ type ManualRunOptions = { takenBefore?: string; notes?: string };
 /**
  * How big an uploaded budget archive may be.
  *
- * Actual's own `MAX_ZIP_SIZE`, which its zip guard calls "also a memory-safety
- * cap". Matching it means Bench accepts every budget Actual would open and
- * refuses the same archives - a smaller cap here would reject a budget the user
- * can perfectly well use, and a larger one would accept bytes verification is
- * going to refuse anyway.
- *
- * Enforced against the bytes actually read rather than a Content-Length the
- * client controls - see `readBoundedBody`.
+ * Actual's own limit, taken from the verifier rather than restated, so the two
+ * cannot drift: an archive this endpoint accepts is one verification will open,
+ * and one Actual itself would.
  */
-const MAX_UPLOAD_BYTES = 500 * 1024 * 1024;
+const MAX_ARCHIVE_BYTES = ARCHIVE_LIMITS.maxArchiveBytes;
+
+/**
+ * What multipart framing adds on top of the archive.
+ *
+ * A multipart body is not just the file: each part carries a boundary line and
+ * its own headers, and the request ends with a closing boundary. Holding the
+ * whole request to the archive limit therefore refused an archive of exactly
+ * the maximum size - a budget Actual would open, rejected at the door for the
+ * few hundred bytes of envelope around it.
+ *
+ * Generous by orders of magnitude: the parts here amount to well under a
+ * kilobyte of framing. It is deliberately an allowance for the envelope and not
+ * a second archive limit, which is why the archive is checked separately below.
+ */
+const MULTIPART_FRAMING_BYTES = 64 * 1024;
+
+/** The transport bound, which is the archive plus the envelope carrying it. */
+const MAX_REQUEST_BYTES = MAX_ARCHIVE_BYTES + MULTIPART_FRAMING_BYTES;
 
 /**
  * The request body, refused past the limit, as a validation error either way.
@@ -63,7 +77,7 @@ const MAX_UPLOAD_BYTES = 500 * 1024 * 1024;
  */
 async function boundedBody(request: Request): Promise<ArrayBuffer> {
   try {
-    return await readBoundedBody(request, MAX_UPLOAD_BYTES);
+    return await readBoundedBody(request, MAX_REQUEST_BYTES);
   } catch (error) {
     if (error instanceof BodyTooLargeError || error instanceof MissingBodyError) {
       throw new AppDbValidationError(error.message);
@@ -113,8 +127,8 @@ async function readUploadedArchive(request: Request): Promise<{
    * chunked request, so it is used as a cheap early refusal and the body is then
    * read through a counter that stops at the same limit either way.
    */
-  if (declaredLengthExceeds(request, MAX_UPLOAD_BYTES)) {
-    throw new AppDbValidationError(new BodyTooLargeError(MAX_UPLOAD_BYTES).message);
+  if (declaredLengthExceeds(request, MAX_REQUEST_BYTES)) {
+    throw new AppDbValidationError(new BodyTooLargeError(MAX_REQUEST_BYTES).message);
   }
 
   const form = await new Request(request.url, {
@@ -126,9 +140,10 @@ async function readUploadedArchive(request: Request): Promise<{
   if (!(file instanceof File)) {
     throw new AppDbValidationError("The upload carried no budget archive.");
   }
-  if (file.size > MAX_UPLOAD_BYTES) {
+  // The archive itself, against the archive's limit rather than the transport's.
+  if (file.size > MAX_ARCHIVE_BYTES) {
     throw new AppDbValidationError(
-      `The exported budget is larger than the ${Math.round(MAX_UPLOAD_BYTES / 1024 / 1024)}MB this endpoint accepts.`
+      `The exported budget is larger than the ${Math.round(MAX_ARCHIVE_BYTES / 1024 / 1024)}MB this endpoint accepts.`
     );
   }
   if (file.size === 0) {

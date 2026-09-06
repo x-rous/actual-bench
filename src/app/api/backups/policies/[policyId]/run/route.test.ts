@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { getAppDb, resetAppDbForTests } from "@/lib/app-db/connection";
 import { createBackupDestination, createBackupPolicy } from "@/lib/app-db/backupRepository";
 import { buildBudgetArchive } from "@/lib/backup/testFixtures";
+import { ARCHIVE_LIMITS } from "@/lib/backup/verify";
 import type { SqliteDatabase } from "@/lib/app-db/types";
 import { POST } from "./route";
 
@@ -167,6 +168,50 @@ describe("POST /api/backups/policies/[policyId]/run", () => {
     // Asserted on the reason, not just the status: this body is also a valid
     // empty multipart, so a "no archive" 400 would pass a status-only check
     // even with the size guard removed.
+    expect(body.error).toMatch(/larger than/i);
+  });
+
+  it("lets a maximum-size archive through the framing around it", async () => {
+    // A multipart body is the archive plus boundaries and part headers. Holding
+    // the whole request to the archive limit refused an archive of exactly the
+    // maximum size - a budget Actual would open, rejected for its envelope.
+    //
+    // Driven through the declared length rather than by building half a
+    // gigabyte: that is where the refusal happened.
+    const policy = manualPolicy();
+    const request = new Request("http://localhost/run", {
+      method: "POST",
+      headers: {
+        "content-type": "multipart/form-data; boundary=x",
+        "content-length": String(ARCHIVE_LIMITS.maxArchiveBytes + 1024),
+      },
+      body: "--x--",
+    });
+
+    const response = await POST(request, context(policy.id));
+    const body = (await response.json()) as { error: string };
+
+    // It gets past the size gate and fails for the reason it should: this body
+    // carries no archive. A size refusal here would be the bug.
+    expect(body.error).not.toMatch(/larger than/i);
+    expect(body.error).toMatch(/no budget archive/i);
+  });
+
+  it("still refuses a request beyond the archive limit and its framing", async () => {
+    const policy = manualPolicy();
+    const request = new Request("http://localhost/run", {
+      method: "POST",
+      headers: {
+        "content-type": "multipart/form-data; boundary=x",
+        "content-length": String(ARCHIVE_LIMITS.maxArchiveBytes + 1024 * 1024),
+      },
+      body: "--x--",
+    });
+
+    const response = await POST(request, context(policy.id));
+    const body = (await response.json()) as { error: string };
+
+    expect(response.status).toBe(400);
     expect(body.error).toMatch(/larger than/i);
   });
 
