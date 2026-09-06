@@ -320,7 +320,10 @@ describe("AutomationsView", () => {
     expect(screen.getByText("1 of 2")).toBeInTheDocument();
   });
 
-  it("sorts by a column, and back to its own order", async () => {
+  it("reorders its rows by the sorted column", async () => {
+    // The tri-state cycle and the aria-sort announcement belong to
+    // SortableHeader and are tested there. What is this view's own is that its
+    // rows actually follow the header.
     mockedApi.listAutomations.mockResolvedValue({
       automations: [
         automation({ id: "b", name: "Beta" }),
@@ -333,14 +336,10 @@ describe("AutomationsView", () => {
     const header = await screen.findByRole("button", { name: /sort by automation/i });
 
     fireEvent.click(header);
-    expect(header.closest("th")).toHaveAttribute("aria-sort", "ascending");
     expect(within(screen.getAllByRole("row")[1]).getByText("Alpha")).toBeInTheDocument();
 
     fireEvent.click(header);
     expect(within(screen.getAllByRole("row")[1]).getByText("Beta")).toBeInTheDocument();
-
-    fireEvent.click(header);
-    expect(header.closest("th")).toHaveAttribute("aria-sort", "none");
   });
 
   it("offers every kind of automation from one place", async () => {

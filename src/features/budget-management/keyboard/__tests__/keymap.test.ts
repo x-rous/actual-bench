@@ -1,308 +1,286 @@
 import { matchAction, DEFAULT_KEYMAP, type KeymapBinding } from "../keymap";
 import { ACTION_META } from "../actions";
 
-function ev(over: Partial<{ key: string; ctrlKey: boolean; metaKey: boolean; shiftKey: boolean; altKey: boolean }>) {
+/**
+ * The keymap is data, so it is tested as data.
+ *
+ * This used to be forty-odd one-line tests, each restating one row of
+ * DEFAULT_KEYMAP in prose. That is a second copy of the table maintained by
+ * hand, and when a binding moved it failed one assertion at a time. The tables
+ * below are asserted whole, so a scope or modifier change reports every chord it
+ * affected in one diff instead of the first one alphabetically.
+ *
+ * The tests that are NOT tables are the ones that catch real bugs: the
+ * integrity checks over DEFAULT_KEYMAP, and the collision guards where two
+ * bindings could plausibly claim the same chord.
+ */
+
+type Scope = "cell" | "group-cell" | "row-label" | "workspace" | "cell-edit";
+type Action = string | null;
+/** [chord, scope, expected action] — null means "deliberately unbound here". */
+type Row = [string, Scope, Action];
+
+const ALL_GRID_SCOPES: Scope[] = ["cell", "group-cell", "row-label"];
+
+/**
+ * "Ctrl+Shift+ArrowLeft" → the event shape matchAction reads.
+ *
+ * The separator is also a bindable key, so a spec ending in "+" means the plus
+ * key itself ("+" and "Ctrl++" both work).
+ */
+function chord(spec: string) {
+  const endsWithPlus = spec.endsWith("+");
+  const cut = endsWithPlus ? spec.length - 1 : spec.lastIndexOf("+") + 1;
+  const key = endsWithPlus ? "+" : spec.slice(cut);
+  const mods = spec.slice(0, Math.max(0, cut - 1)).split("+");
+  const has = (m: string) => mods.includes(m);
   return {
-    key: "",
-    ctrlKey: false,
-    metaKey: false,
-    shiftKey: false,
-    altKey: false,
-    ...over,
+    key: key === "Space" ? " " : key,
+    ctrlKey: has("Ctrl"),
+    metaKey: has("Cmd"),
+    shiftKey: has("Shift"),
+    altKey: has("Alt"),
   };
 }
 
-describe("matchAction", () => {
-  it("returns null when no binding matches the scope", () => {
-    // Ctrl+Z is workspace-scoped — does not match in cell scope.
-    expect(matchAction(ev({ key: "z", ctrlKey: true }), "cell")).toBeNull();
-  });
+/**
+ * Assert a whole table at once. Comparing arrays rather than looping with a
+ * bare expect() means the failure output is the table with the wrong rows in
+ * it, not "expected null, received cell.move-up" with no chord attached.
+ */
+function expectBindings(rows: Row[]) {
+  const actual = rows.map(([spec, scope]) => [spec, scope, matchAction(chord(spec) as never, scope)]);
+  expect(actual).toEqual(rows.map((r) => [...r]));
+}
 
-  it("returns the action when the chord + scope match", () => {
-    expect(matchAction(ev({ key: "z", ctrlKey: true }), "workspace")).toBe("history.undo");
-    expect(matchAction(ev({ key: "Enter" }), "cell")).toBe("cell.start-edit");
-    expect(matchAction(ev({ key: "Enter" }), "cell-edit")).toBe("edit.commit-down");
-  });
+/** The same chord expected to resolve identically in several scopes. */
+function inScopes(scopes: Scope[], entries: [string, Action][]): Row[] {
+  return scopes.flatMap((scope) => entries.map(([spec, action]): Row => [spec, scope, action]));
+}
 
-  it("differentiates Tab vs Shift+Tab — first-match wins is order-sensitive", () => {
-    // Plain Tab.
-    expect(matchAction(ev({ key: "Tab" }), "cell")).toBe("cell.tab-forward");
-    // Shift+Tab.
-    expect(matchAction(ev({ key: "Tab", shiftKey: true }), "cell")).toBe("cell.tab-backward");
-  });
-
-  it("differentiates Ctrl+Z (undo) from Ctrl+Shift+Z (redo)", () => {
-    expect(matchAction(ev({ key: "z", ctrlKey: true }), "workspace")).toBe("history.undo");
-    expect(matchAction(ev({ key: "z", ctrlKey: true, shiftKey: true }), "workspace")).toBe("history.redo");
-    expect(matchAction(ev({ key: "y", ctrlKey: true }), "workspace")).toBe("history.redo");
-  });
-
-  it("scopes navigation across cell, group-cell, and row-label", () => {
-    for (const scope of ["cell", "group-cell", "row-label"] as const) {
-      expect(matchAction(ev({ key: "ArrowUp" }), scope)).toBe("cell.move-up");
-      expect(matchAction(ev({ key: "Tab" }), scope)).toBe("cell.tab-forward");
-    }
-  });
-
-  it("only enables Shift+Arrow range extension in cell scope", () => {
-    expect(matchAction(ev({ key: "ArrowUp", shiftKey: true }), "cell")).toBe("cell.extend-up");
-    expect(matchAction(ev({ key: "ArrowUp", shiftKey: true }), "group-cell")).toBeNull();
-    expect(matchAction(ev({ key: "ArrowUp", shiftKey: true }), "row-label")).toBeNull();
-  });
-
-  it("matches digits and operators to start-edit-with-char in cell scope only", () => {
-    for (const k of ["0", "5", ".", "+", "-", "("]) {
-      expect(matchAction(ev({ key: k }), "cell")).toBe("cell.start-edit-with-char");
-    }
-    expect(matchAction(ev({ key: "5" }), "cell-edit")).toBeNull();
-    expect(matchAction(ev({ key: "5" }), "workspace")).toBeNull();
-  });
-
-  it("matches Space to group.toggle-collapse only in group-cell and row-label", () => {
-    expect(matchAction(ev({ key: " " }), "group-cell")).toBe("group.toggle-collapse");
-    expect(matchAction(ev({ key: " " }), "row-label")).toBe("group.toggle-collapse");
-    expect(matchAction(ev({ key: " " }), "cell")).toBeNull();
-    expect(matchAction(ev({ key: " " }), "workspace")).toBeNull();
-  });
-
+describe("matchAction — argument handling", () => {
   it("accepts a React-event-shaped argument with nativeEvent", () => {
-    const reactish = { nativeEvent: ev({ key: "Enter" }) } as unknown as KeyboardEvent;
+    const reactish = { nativeEvent: chord("Enter") } as unknown as KeyboardEvent;
     expect(matchAction(reactish, "cell")).toBe("cell.start-edit");
   });
 
-  it("accepts a custom keymap override", () => {
+  it("accepts a custom keymap override, ignoring the default bindings", () => {
     const custom: KeymapBinding[] = [
       { action: "cell.start-edit", chord: { key: "i" }, scopes: ["cell"] },
     ];
-    expect(matchAction(ev({ key: "i" }), "cell", custom)).toBe("cell.start-edit");
-    expect(matchAction(ev({ key: "Enter" }), "cell", custom)).toBeNull();
+    expect(matchAction(chord("i") as never, "cell", custom)).toBe("cell.start-edit");
+    expect(matchAction(chord("Enter") as never, "cell", custom)).toBeNull();
   });
 });
 
 describe("DEFAULT_KEYMAP integrity", () => {
   it("every binding's action exists in ACTION_META", () => {
-    for (const b of DEFAULT_KEYMAP) {
-      expect(ACTION_META[b.action]).toBeDefined();
-    }
+    const orphans = DEFAULT_KEYMAP.filter((b) => !ACTION_META[b.action]).map((b) => b.action);
+    expect(orphans).toEqual([]);
   });
 
   it("every action in ACTION_META has at least one binding", () => {
     const bound = new Set(DEFAULT_KEYMAP.map((b) => b.action));
-    for (const id of Object.keys(ACTION_META)) {
-      expect(bound.has(id as keyof typeof ACTION_META)).toBe(true);
-    }
+    const unbound = Object.keys(ACTION_META).filter((id) => !bound.has(id as keyof typeof ACTION_META));
+    expect(unbound).toEqual([]);
   });
 
-  it("more-specific shift bindings are listed before their plain counterparts", () => {
-    // Ensures first-match semantics work: Shift+Tab must come before Tab.
-    const tabIdx = DEFAULT_KEYMAP.findIndex(
-      (b) => b.action === "cell.tab-forward" && b.chord.key === "Tab"
+  it("binds both halves of the order-sensitive Tab pair", () => {
+    // First-match semantics: the modifier match is exclusive so either order is
+    // fine, but both bindings must exist or Shift+Tab silently becomes Tab.
+    const tabBindings = DEFAULT_KEYMAP.filter((b) => b.chord.key === "Tab").map((b) => b.action);
+    expect(tabBindings).toEqual(expect.arrayContaining(["cell.tab-forward", "cell.tab-backward"]));
+  });
+});
+
+describe("grid navigation", () => {
+  it("moves and tabs identically in every grid scope", () => {
+    expectBindings(
+      inScopes(ALL_GRID_SCOPES, [
+        ["ArrowUp", "cell.move-up"],
+        ["Tab", "cell.tab-forward"],
+        ["Shift+Tab", "cell.tab-backward"],
+        ["PageUp", "cell.move-page-up"],
+        ["PageDown", "cell.move-page-down"],
+        ["Ctrl+Home", "cell.move-grid-start"],
+        ["Ctrl+End", "cell.move-grid-end"],
+        ["Ctrl+ArrowUp", "cell.move-section-up"],
+        ["Ctrl+ArrowDown", "cell.move-section-down"],
+      ])
     );
-    const shiftTabIdx = DEFAULT_KEYMAP.findIndex(
-      (b) => b.action === "cell.tab-backward" && b.chord.key === "Tab"
+  });
+
+  it("restricts row-edge moves to the scopes that have row edges", () => {
+    expectBindings([
+      ["Home", "cell", "cell.move-row-start"],
+      ["End", "cell", "cell.move-row-end"],
+      ["Home", "group-cell", "cell.move-row-start"],
+      ["End", "group-cell", "cell.move-row-end"],
+      // A row label has no row edges of its own.
+      ["Home", "row-label", null],
+      ["End", "row-label", null],
+    ]);
+  });
+
+  it("treats Ctrl+Arrow as an alias for Home/End without shadowing single steps", () => {
+    expectBindings([
+      ["Ctrl+ArrowLeft", "cell", "cell.move-row-start"],
+      ["Ctrl+ArrowRight", "cell", "cell.move-row-end"],
+      ["ArrowLeft", "cell", "cell.move-left"],
+      ["ArrowRight", "cell", "cell.move-right"],
+    ]);
+  });
+
+  it("accepts Cmd wherever it accepts Ctrl, for macOS", () => {
+    expectBindings([
+      ["Cmd+Home", "cell", "cell.move-grid-start"],
+      ["Cmd+End", "cell", "cell.move-grid-end"],
+      ["Cmd+Enter", "workspace", "selection.fill-from-active"],
+      ["Cmd+d", "workspace", "selection.fill-down"],
+      ["Cmd+r", "workspace", "selection.fill-right"],
+      ["Cmd+/", "workspace", "help.open-shortcuts"],
+    ]);
+  });
+});
+
+describe("range extension is cell-scoped only", () => {
+  it("extends in cell scope and nowhere else", () => {
+    // Extending a selection from a group row or a row label has no meaning, and
+    // a stray binding there would move the grid instead of extending.
+    expectBindings([
+      ["Shift+ArrowUp", "cell", "cell.extend-up"],
+      ["Shift+PageUp", "cell", "cell.extend-page-up"],
+      ["Shift+Home", "cell", "cell.extend-row-start"],
+      ["Shift+End", "cell", "cell.extend-row-end"],
+      ["Ctrl+Shift+ArrowLeft", "cell", "cell.extend-row-start"],
+      ["Ctrl+Shift+ArrowRight", "cell", "cell.extend-row-end"],
+      ["Ctrl+Shift+Home", "cell", "cell.extend-grid-start"],
+      ["Ctrl+Shift+End", "cell", "cell.extend-grid-end"],
+
+      ["Shift+ArrowUp", "group-cell", null],
+      ["Shift+ArrowUp", "row-label", null],
+      ["Shift+PageUp", "group-cell", null],
+      ["Ctrl+Shift+Home", "group-cell", null],
+    ]);
+  });
+});
+
+describe("editing entry points", () => {
+  it("starts and commits an edit in the right scope", () => {
+    expectBindings([
+      ["Enter", "cell", "cell.start-edit"],
+      ["Enter", "cell-edit", "edit.commit-down"],
+      ["Enter", "workspace", null],
+    ]);
+  });
+
+  it("starts an edit from any character that could begin an amount", () => {
+    expectBindings([
+      ...(["0", "5", ".", "+", "-", "("].map((k): Row => [k, "cell", "cell.start-edit-with-char"])),
+      // "+" is both this table's separator and a real binding; the chord parser
+      // above resolves that, and this row is what proves it.
+      // Not while already editing, and not from the workspace.
+      ["5", "cell-edit", null],
+      ["5", "workspace", null],
+    ]);
+  });
+
+  it("toggles a group from the label or the group cell, but not from a value cell", () => {
+    expectBindings([
+      ["Space", "group-cell", "group.toggle-collapse"],
+      ["Space", "row-label", "group.toggle-collapse"],
+      ["Space", "cell", null],
+      ["Space", "workspace", null],
+    ]);
+  });
+});
+
+describe("workspace commands", () => {
+  it("binds the fill, view and selection commands to the workspace", () => {
+    expectBindings([
+      ["Ctrl+Enter", "workspace", "selection.fill-from-active"],
+      ["Ctrl+d", "workspace", "selection.fill-down"],
+      ["Ctrl+r", "workspace", "selection.fill-right"],
+      ["Alt+l", "workspace", "selection.fill-prev-month"],
+      ["Alt+a", "workspace", "selection.fill-avg-3"],
+      ["Alt+c", "workspace", "selection.toggle-carryover"],
+      ["Ctrl+c", "workspace", "selection.copy"],
+      ["Ctrl+z", "workspace", "history.undo"],
+      ["Ctrl+Shift+z", "workspace", "history.redo"],
+      ["Ctrl+y", "workspace", "history.redo"],
+      ["v", "workspace", "view.cycle-cell-view"],
+      ["h", "workspace", "view.toggle-show-hidden"],
+      ["e", "workspace", "view.expand-all"],
+      // Shift+e delivers e.key === "E".
+      ["Shift+E", "workspace", "view.collapse-all"],
+      ["[", "workspace", "view.pan-months-prev"],
+      ["]", "workspace", "view.pan-months-next"],
+      ["f", "workspace", "view.open-category-search"],
+      ["d", "workspace", "view.open-spending-details"],
+      ["Shift+?", "workspace", "help.open-shortcuts"],
+      ["F1", "workspace", "help.open-shortcuts"],
+      ["Ctrl+/", "workspace", "help.open-shortcuts"],
+    ]);
+  });
+
+  it("keeps workspace commands out of the cell scopes", () => {
+    expectBindings([
+      ["Ctrl+z", "cell", null],
+      ["Ctrl+d", "cell", null],
+      ["Alt+c", "cell", null],
+      ["v", "cell", null],
+      ["f", "cell", null],
+    ]);
+  });
+});
+
+describe("collision guards", () => {
+  it("never fires a workspace command while the user is typing in a cell", () => {
+    // The whole point of cell-edit scope: typing "d" into an amount must not
+    // fill the column down, and Ctrl+D must not either.
+    const typed: Row[] = ["v", "h", "e", "f", "[", "]", "5", "d", "r", "l", "a", "c"].map(
+      (k): Row => [k, "cell-edit", null]
     );
-    // Either order is fine because the modifier match is exclusive — but
-    // we still assert both bindings exist.
-    expect(tabIdx).toBeGreaterThan(-1);
-    expect(shiftTabIdx).toBeGreaterThan(-1);
-  });
-});
-
-describe("Tier 1 viewport / section navigation bindings", () => {
-  describe("Page", () => {
-    it("PageUp / PageDown match in cell, group-cell, and row-label", () => {
-      for (const scope of ["cell", "group-cell", "row-label"] as const) {
-        expect(matchAction(ev({ key: "PageUp" }), scope)).toBe("cell.move-page-up");
-        expect(matchAction(ev({ key: "PageDown" }), scope)).toBe("cell.move-page-down");
-      }
-    });
-
-    it("Shift+PageUp/Down only extends in cell scope", () => {
-      expect(matchAction(ev({ key: "PageUp", shiftKey: true }), "cell")).toBe("cell.extend-page-up");
-      expect(matchAction(ev({ key: "PageUp", shiftKey: true }), "group-cell")).toBeNull();
-    });
+    expectBindings([
+      ...typed,
+      ["Shift+E", "cell-edit", null],
+      ["Ctrl+d", "cell-edit", null],
+      ["Ctrl+r", "cell-edit", null],
+      ["Alt+l", "cell-edit", null],
+      ["Alt+c", "cell-edit", null],
+      ["Shift+?", "cell-edit", null],
+      ["F1", "cell-edit", null],
+    ]);
   });
 
-  describe("Home / End — row edges", () => {
-    it("Home / End match cell.move-row-start/end in cell + group-cell", () => {
-      expect(matchAction(ev({ key: "Home" }), "cell")).toBe("cell.move-row-start");
-      expect(matchAction(ev({ key: "End" }), "cell")).toBe("cell.move-row-end");
-      expect(matchAction(ev({ key: "Home" }), "group-cell")).toBe("cell.move-row-start");
-    });
-
-    it("Shift+Home/End extends in cell scope only", () => {
-      expect(matchAction(ev({ key: "Home", shiftKey: true }), "cell")).toBe("cell.extend-row-start");
-      expect(matchAction(ev({ key: "End", shiftKey: true }), "cell")).toBe("cell.extend-row-end");
-    });
-
-    it("Ctrl+ArrowLeft/Right are aliases for Home/End", () => {
-      expect(matchAction(ev({ key: "ArrowLeft", ctrlKey: true }), "cell")).toBe("cell.move-row-start");
-      expect(matchAction(ev({ key: "ArrowRight", ctrlKey: true }), "cell")).toBe("cell.move-row-end");
-      // Plain ArrowLeft is still the single-step move.
-      expect(matchAction(ev({ key: "ArrowLeft" }), "cell")).toBe("cell.move-left");
-    });
-
-    it("Ctrl+Shift+ArrowLeft/Right extends to row edges", () => {
-      expect(matchAction(ev({ key: "ArrowLeft", ctrlKey: true, shiftKey: true }), "cell")).toBe("cell.extend-row-start");
-      expect(matchAction(ev({ key: "ArrowRight", ctrlKey: true, shiftKey: true }), "cell")).toBe("cell.extend-row-end");
-    });
+  it("requires bare-letter commands to have no modifier at all", () => {
+    // Ctrl+V is the browser's paste; if it also cycled the cell view the user
+    // would get both.
+    expectBindings([
+      ["Ctrl+v", "workspace", null],
+      ["Alt+h", "workspace", null],
+      // No bare binding at all: these letters exist only as Alt chords.
+      ["l", "workspace", null],
+      ["c", "workspace", null],
+      ["a", "workspace", null],
+    ]);
   });
 
-  describe("Ctrl+Home / Ctrl+End — grid corners", () => {
-    it("matches in cell, group-cell, and row-label", () => {
-      for (const scope of ["cell", "group-cell", "row-label"] as const) {
-        expect(matchAction(ev({ key: "Home", ctrlKey: true }), scope)).toBe("cell.move-grid-start");
-        expect(matchAction(ev({ key: "End",  ctrlKey: true }), scope)).toBe("cell.move-grid-end");
-      }
-    });
-
-    it("plain Home/End in row-label has no binding (label has no row edges)", () => {
-      expect(matchAction(ev({ key: "Home" }), "row-label")).toBeNull();
-      expect(matchAction(ev({ key: "End" }),  "row-label")).toBeNull();
-    });
-
-    it("Ctrl+Shift+Home/End extends in cell scope only", () => {
-      expect(matchAction(ev({ key: "Home", ctrlKey: true, shiftKey: true }), "cell")).toBe("cell.extend-grid-start");
-      expect(matchAction(ev({ key: "End",  ctrlKey: true, shiftKey: true }), "cell")).toBe("cell.extend-grid-end");
-      expect(matchAction(ev({ key: "Home", ctrlKey: true, shiftKey: true }), "group-cell")).toBeNull();
-    });
-
-    it("works with Cmd on macOS as well as Ctrl", () => {
-      expect(matchAction(ev({ key: "Home", metaKey: true }), "cell")).toBe("cell.move-grid-start");
-    });
-  });
-
-  describe("Ctrl+ArrowUp/Down — section jump", () => {
-    it("matches cell.move-section-up/down in cell, group-cell, row-label", () => {
-      for (const scope of ["cell", "group-cell", "row-label"] as const) {
-        expect(matchAction(ev({ key: "ArrowUp",   ctrlKey: true }), scope)).toBe("cell.move-section-up");
-        expect(matchAction(ev({ key: "ArrowDown", ctrlKey: true }), scope)).toBe("cell.move-section-down");
-      }
-    });
-
-    it("does not collide with single-step ArrowUp/Down (no modifier)", () => {
-      expect(matchAction(ev({ key: "ArrowUp" }), "cell")).toBe("cell.move-up");
-    });
-
-    it("does not collide with shift-extend (shift-only, no ctrl)", () => {
-      expect(matchAction(ev({ key: "ArrowUp", shiftKey: true }), "cell")).toBe("cell.extend-up");
-    });
-  });
-});
-
-describe("Tier 2 range-edit bindings", () => {
-  it("Ctrl+Enter triggers fill-from-active in workspace scope", () => {
-    expect(matchAction(ev({ key: "Enter", ctrlKey: true }), "workspace")).toBe("selection.fill-from-active");
-    // Plain Enter is cell-scoped start-edit — not fill.
-    expect(matchAction(ev({ key: "Enter" }), "workspace")).toBeNull();
-  });
-
-  it("Ctrl+D triggers fill-down (workspace only)", () => {
-    expect(matchAction(ev({ key: "d", ctrlKey: true }), "workspace")).toBe("selection.fill-down");
-    expect(matchAction(ev({ key: "d", ctrlKey: true }), "cell")).toBeNull();
-    expect(matchAction(ev({ key: "d", ctrlKey: true }), "cell-edit")).toBeNull();
-  });
-
-  it("Ctrl+R triggers fill-right (workspace only)", () => {
-    expect(matchAction(ev({ key: "r", ctrlKey: true }), "workspace")).toBe("selection.fill-right");
-  });
-
-  it("Alt+L triggers fill-prev-month (workspace only)", () => {
-    expect(matchAction(ev({ key: "l", altKey: true }), "workspace")).toBe("selection.fill-prev-month");
-    // Bare 'l' should not match.
-    expect(matchAction(ev({ key: "l" }), "workspace")).toBeNull();
-  });
-
-  it("Alt+A triggers fill-avg-3 (workspace only)", () => {
-    expect(matchAction(ev({ key: "a", altKey: true }), "workspace")).toBe("selection.fill-avg-3");
-  });
-
-  it("Cmd variants on macOS work for fill-down/right/from-active", () => {
-    expect(matchAction(ev({ key: "Enter", metaKey: true }), "workspace")).toBe("selection.fill-from-active");
-    expect(matchAction(ev({ key: "d", metaKey: true }),     "workspace")).toBe("selection.fill-down");
-    expect(matchAction(ev({ key: "r", metaKey: true }),     "workspace")).toBe("selection.fill-right");
-  });
-
-  it("Tier-2 bindings do not match in cell-edit scope (so typing 'd'/'r'/'l'/'a' works)", () => {
-    expect(matchAction(ev({ key: "d", ctrlKey: true }), "cell-edit")).toBeNull();
-    expect(matchAction(ev({ key: "l", altKey: true }),   "cell-edit")).toBeNull();
-  });
-});
-
-describe("Tier 3 view & visibility bindings", () => {
-  it("V cycles cell view (workspace only)", () => {
-    expect(matchAction(ev({ key: "v" }), "workspace")).toBe("view.cycle-cell-view");
-    expect(matchAction(ev({ key: "v" }), "cell")).toBeNull();
-    expect(matchAction(ev({ key: "v" }), "cell-edit")).toBeNull();
-  });
-
-  it("H toggles show-hidden (workspace only)", () => {
-    expect(matchAction(ev({ key: "h" }), "workspace")).toBe("view.toggle-show-hidden");
-    expect(matchAction(ev({ key: "h" }), "cell-edit")).toBeNull();
-  });
-
-  it("E expands all groups; Shift+E collapses all", () => {
-    expect(matchAction(ev({ key: "e" }), "workspace")).toBe("view.expand-all");
-    // Shift+e delivers e.key === "E" (uppercase).
-    expect(matchAction(ev({ key: "E", shiftKey: true }), "workspace")).toBe("view.collapse-all");
-  });
-
-  it("[ / ] pan visible months", () => {
-    expect(matchAction(ev({ key: "[" }), "workspace")).toBe("view.pan-months-prev");
-    expect(matchAction(ev({ key: "]" }), "workspace")).toBe("view.pan-months-next");
-  });
-
-  it("F opens category search in workspace scope only", () => {
-    expect(matchAction(ev({ key: "f" }), "workspace")).toBe("view.open-category-search");
-    expect(matchAction(ev({ key: "f" }), "cell")).toBeNull();
-    expect(matchAction(ev({ key: "f" }), "cell-edit")).toBeNull();
-  });
-
-  it("Tier-3 bare-alpha bindings never fire while typing in a cell input", () => {
-    for (const k of ["v", "h", "e", "f", "[", "]"]) {
-      expect(matchAction(ev({ key: k }), "cell-edit")).toBeNull();
-    }
-    expect(matchAction(ev({ key: "E", shiftKey: true }), "cell-edit")).toBeNull();
-  });
-
-  it("Tier-3 bindings require modifiers to be absent", () => {
-    // Ctrl+V must not collide with cycle-cell-view (browser paste).
-    expect(matchAction(ev({ key: "v", ctrlKey: true }), "workspace")).toBeNull();
-    expect(matchAction(ev({ key: "h", altKey: true }),  "workspace")).toBeNull();
-  });
-});
-
-describe("Tier 4 selection action bindings", () => {
-  it("Alt+C toggles carryover (workspace only)", () => {
-    expect(matchAction(ev({ key: "c", altKey: true }), "workspace")).toBe("selection.toggle-carryover");
-    expect(matchAction(ev({ key: "c", altKey: true }), "cell")).toBeNull();
-    expect(matchAction(ev({ key: "c", altKey: true }), "cell-edit")).toBeNull();
-  });
-
-  it("does not collide with Ctrl+C (copy) or bare 'c'", () => {
-    // Ctrl+C is selection.copy, no alt.
-    expect(matchAction(ev({ key: "c", ctrlKey: true }), "workspace")).toBe("selection.copy");
-    // Bare 'c' has no binding — falls through.
-    expect(matchAction(ev({ key: "c" }), "workspace")).toBeNull();
-  });
-});
-
-describe("help.open-shortcuts bindings", () => {
-  it("Shift+? opens the cheatsheet", () => {
-    expect(matchAction(ev({ key: "?", shiftKey: true }), "workspace")).toBe("help.open-shortcuts");
-  });
-
-  it("F1 opens the cheatsheet", () => {
-    expect(matchAction(ev({ key: "F1" }), "workspace")).toBe("help.open-shortcuts");
-  });
-
-  it("Ctrl/Cmd+/ opens the cheatsheet", () => {
-    expect(matchAction(ev({ key: "/", ctrlKey: true }), "workspace")).toBe("help.open-shortcuts");
-    expect(matchAction(ev({ key: "/", metaKey: true }), "workspace")).toBe("help.open-shortcuts");
-  });
-
-  it("does not fire in cell-edit scope", () => {
-    expect(matchAction(ev({ key: "?", shiftKey: true }), "cell-edit")).toBeNull();
-    expect(matchAction(ev({ key: "F1" }),                "cell-edit")).toBeNull();
+  it("distinguishes the chords that differ only by a modifier", () => {
+    expectBindings([
+      ["Ctrl+z", "workspace", "history.undo"],
+      ["Ctrl+Shift+z", "workspace", "history.redo"],
+      ["Ctrl+c", "workspace", "selection.copy"],
+      ["Alt+c", "workspace", "selection.toggle-carryover"],
+      ["ArrowUp", "cell", "cell.move-up"],
+      ["Shift+ArrowUp", "cell", "cell.extend-up"],
+      ["Ctrl+ArrowUp", "cell", "cell.move-section-up"],
+      ["Tab", "cell", "cell.tab-forward"],
+      ["Shift+Tab", "cell", "cell.tab-backward"],
+      // Bare "d" opens spending details; Ctrl+D fills the column down. One
+      // modifier apart, and nothing in the old suite checked the bare half.
+      ["d", "workspace", "view.open-spending-details"],
+      ["Ctrl+d", "workspace", "selection.fill-down"],
+    ]);
   });
 });

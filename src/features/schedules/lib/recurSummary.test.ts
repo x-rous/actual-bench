@@ -78,36 +78,22 @@ describe("recurSummary", () => {
     expect(recurSummary(cfg)).toBe("Monthly on the last day");
   });
 
-  it("formats monthly with 1st ordinal", () => {
+  it.each([
+    [1, "1st"],
+    [2, "2nd"],
+    [3, "3rd"],
+    [11, "11th"],
+    [21, "21st"],
+    [12, "12th"],
+    [13, "13th"],
+  ])("suffixes day %i as %s", (day, expected) => {
+    // 11-13 are the cases a naive `n % 10` ordinal gets wrong, and 21 is the
+    // case an over-correction for them gets wrong.
     const cfg: RecurConfig = {
       frequency: "monthly", interval: 1, start: "2025-01-01", endMode: "never",
-      patterns: [{ value: 1, type: "day" }],
+      patterns: [{ value: day, type: "day" }],
     };
-    expect(recurSummary(cfg)).toContain("1st");
-  });
-
-  it("formats monthly with 2nd ordinal", () => {
-    const cfg: RecurConfig = {
-      frequency: "monthly", interval: 1, start: "2025-01-01", endMode: "never",
-      patterns: [{ value: 2, type: "day" }],
-    };
-    expect(recurSummary(cfg)).toContain("2nd");
-  });
-
-  it("formats monthly with 3rd ordinal", () => {
-    const cfg: RecurConfig = {
-      frequency: "monthly", interval: 1, start: "2025-01-01", endMode: "never",
-      patterns: [{ value: 3, type: "day" }],
-    };
-    expect(recurSummary(cfg)).toContain("3rd");
-  });
-
-  it("formats monthly with 11th (th suffix, not st)", () => {
-    const cfg: RecurConfig = {
-      frequency: "monthly", interval: 1, start: "2025-01-01", endMode: "never",
-      patterns: [{ value: 11, type: "day" }],
-    };
-    expect(recurSummary(cfg)).toContain("11th");
+    expect(recurSummary(cfg)).toContain(expected);
   });
 
   // ── Monthly — day-of-week pattern ─────────────────────────────────────────
@@ -173,31 +159,19 @@ describe("recurSummary", () => {
 // ─── frequencyLabel ────────────────────────────────────────────────────────────
 
 describe("frequencyLabel", () => {
-  it("returns 'Once' for undefined", () => {
-    expect(frequencyLabel(undefined)).toBe("Once");
+  it.each([
+    ["undefined (no recurrence at all)", undefined, "Once"],
+    ["a plain ISO date", "2025-01-01", "Once"],
+  ])("labels %s as %s", (_what, input, expected) => {
+    expect(frequencyLabel(input as undefined | string)).toBe(expected);
   });
 
-  it("returns 'Once' for an ISO date string", () => {
-    expect(frequencyLabel("2025-01-01")).toBe("Once");
-  });
-
-  it("returns 'Daily' for daily frequency", () => {
-    const cfg: RecurConfig = { frequency: "daily", interval: 1, start: "2025-01-01", endMode: "never" };
-    expect(frequencyLabel(cfg)).toBe("Daily");
-  });
-
-  it("returns 'Weekly' for weekly frequency", () => {
-    const cfg: RecurConfig = { frequency: "weekly", interval: 1, start: "2025-01-01", endMode: "never" };
-    expect(frequencyLabel(cfg)).toBe("Weekly"); // frequencyLabel capitalizes the raw frequency string
-  });
-
-  it("returns 'Monthly' for monthly frequency", () => {
-    const cfg: RecurConfig = { frequency: "monthly", interval: 1, start: "2025-01-01", endMode: "never" };
-    expect(frequencyLabel(cfg)).toBe("Monthly");
-  });
-
-  it("returns 'Yearly' for yearly frequency", () => {
-    const cfg: RecurConfig = { frequency: "yearly", interval: 1, start: "2025-01-01", endMode: "never" };
-    expect(frequencyLabel(cfg)).toBe("Yearly");
-  });
+  it.each(["daily", "weekly", "monthly", "yearly"] as const)(
+    "capitalises the %s frequency",
+    (frequency) => {
+      const cfg: RecurConfig = { frequency, interval: 1, start: "2025-01-01", endMode: "never" };
+      const expected = frequency[0].toUpperCase() + frequency.slice(1);
+      expect(frequencyLabel(cfg)).toBe(expected);
+    }
+  );
 });

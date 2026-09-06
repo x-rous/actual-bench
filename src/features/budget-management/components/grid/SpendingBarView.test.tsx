@@ -1,38 +1,21 @@
 import { render } from "@testing-library/react";
 import { SpendingBarView } from "./SpendingBarView";
 
+/**
+ * The bar's arithmetic — tier, fill, overflow, zero budgets, non-finite input —
+ * belongs to `computeSpendingBar` and is covered in lib/spendingBar.test.ts.
+ * What matters here is the one thing that file cannot assert: the bar is purely
+ * decorative, so it must stay out of the accessibility tree. The spoken status
+ * lives on the cell, and a screen reader that also announced the bar would read
+ * the same figure twice.
+ */
 describe("SpendingBarView", () => {
-  it("renders a neutral track (no coloured fill) for an empty cell", () => {
-    const { container } = render(
-      <SpendingBarView bar={{ tier: "empty", fill: 0, overflow: 0 }} />,
-    );
-    const track = container.firstChild as HTMLElement;
-    expect(track).not.toBeNull();
-    // The track paints, but the fill is zero-width so no colour shows.
-    const fill = track.firstChild as HTMLElement;
-    expect(fill.style.width).toBe("0%");
-  });
-
-  it("renders a decorative track with the fill width", () => {
-    const { container } = render(
-      <SpendingBarView bar={{ tier: "under", fill: 0.5, overflow: 0 }} />,
-    );
-    const track = container.firstChild as HTMLElement;
-    expect(track).not.toBeNull();
-    expect(track).toHaveAttribute("aria-hidden", "true");
-    const fill = track.firstChild as HTMLElement;
-    expect(fill.style.width).toBe("50%");
-  });
-
-  it("adds a red overflow segment when over budget", () => {
+  it("is decorative: hidden from assistive tech, with no text of its own", () => {
     const { container } = render(
       <SpendingBarView bar={{ tier: "over", fill: 1, overflow: 0.25 }} />,
     );
     const track = container.firstChild as HTMLElement;
-    // Base fill + overflow segment.
-    expect(track.childElementCount).toBe(2);
-    const overflow = track.children[1] as HTMLElement;
-    expect(overflow.style.width).toBe("25%");
-    expect(overflow.className).toMatch(/bg-destructive/);
+    expect(track).toHaveAttribute("aria-hidden", "true");
+    expect(track).toHaveTextContent("");
   });
 });

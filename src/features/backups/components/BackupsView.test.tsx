@@ -261,7 +261,7 @@ describe("the Recovery Center", () => {
     expect(await screen.findByText("Household")).toBeInTheDocument();
   });
 
-  it("sorts by a column, and back to its own order", async () => {
+  it("sorts sizes by their byte count, not by the formatted label", async () => {
     mockedApi.fetchRecoveryCenter.mockResolvedValue(
       data({
         artifacts: [
@@ -274,19 +274,16 @@ describe("the Recovery Center", () => {
     renderView();
     const sizeHeader = await screen.findByRole("button", { name: /sort by size/i });
 
+    // Sorted on the byte count, not on the rendered label: "1000 B" sorts after
+    // "8.6 MB" as text, which is the bug this guards. The tri-state cycle and
+    // the aria-sort announcement are SortableHeader's, and tested there.
     fireEvent.click(sizeHeader);
-    expect(sizeHeader.closest("th")).toHaveAttribute("aria-sort", "ascending");
     let rows = screen.getAllByRole("row");
     expect(within(rows[1]).getByText("1000 B")).toBeInTheDocument();
 
     fireEvent.click(sizeHeader);
-    expect(sizeHeader.closest("th")).toHaveAttribute("aria-sort", "descending");
     rows = screen.getAllByRole("row");
     expect(within(rows[1]).getByText("8.6 MB")).toBeInTheDocument();
-
-    // A sort you cannot undo forces a reload to see the default again.
-    fireEvent.click(sizeHeader);
-    expect(sizeHeader.closest("th")).toHaveAttribute("aria-sort", "none");
   });
 
   it("shows each copy's state in words, not only in colour", async () => {
@@ -479,13 +476,14 @@ describe("the Recovery Center", () => {
     expect(mockedApi.deletePolicy).not.toHaveBeenCalled();
   });
 
-  it("puts every row action in reach instead of behind an overflow menu", async () => {
+  it("offers every action a rule and a destination have, each with its own label", async () => {
+    // Not about where the controls sit — about their existing and being
+    // nameable. Editing a rule, and editing, testing or removing a destination,
+    // are otherwise asserted nowhere: their absence would be invisible until
+    // someone needed one on a page they visit rarely.
     renderView();
     await openSetup();
 
-    // Nothing a rule or a destination can do should need a second click to
-    // find, on a page people visit rarely enough to have forgotten where
-    // things were.
     for (const name of [
       /back up now/i,
       /retention/i,
@@ -498,8 +496,6 @@ describe("the Recovery Center", () => {
     ]) {
       expect(await screen.findByRole("button", { name })).toBeInTheDocument();
     }
-    // A scheduled rule has no history link here, because this fixture's rule has
-    // no automation - see the two cases below, which cover both halves.
   });
 
   it("links a scheduled rule to its own runs, not to every run there has been", async () => {

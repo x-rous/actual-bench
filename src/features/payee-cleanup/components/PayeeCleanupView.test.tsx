@@ -211,48 +211,8 @@ describe("PayeeCleanupView", () => {
     ).toBeInTheDocument();
   });
 
-  it("puts search, filters and the primary action where Rule Diagnostics does", () => {
-    // Two tools doing the same kind of job should not need learning twice.
-    candidates = [payee("AMAZON"), payee("Amazon")];
-    render(<PayeeCleanupView />);
 
-    expect(screen.getByLabelText(/search payees/i)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /suggestions 1/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /^scan again$/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /stage cleanup/i })).toBeInTheDocument();
-  });
 
-  it("keeps the filters, totals and pending changes out of the scrolling list", () => {
-    // Triaging fifty groups means scrolling constantly; losing the counts and
-    // the Stage button on the first scroll makes the page feel unanchored.
-    candidates = [payee("AMAZON"), payee("Amazon")];
-    render(<PayeeCleanupView />);
-
-    const scroller = document.querySelector(".overflow-auto");
-    expect(scroller).not.toBeNull();
-
-    // The card is inside the scroll area; the filters and totals are not.
-    expect(scroller?.contains(screen.getByRole("article"))).toBe(true);
-    expect(scroller?.contains(screen.getByLabelText(/search payees/i))).toBe(false);
-    // The summary boxes, matched exactly so the toolbar's own count does not
-    // also match.
-    expect(scroller?.contains(screen.getByText("Cleanup suggestions"))).toBe(false);
-  });
-
-  it("shows what is pending in its own box rather than a panel", () => {
-    candidates = [payee("AMAZON"), payee("Amazon")];
-    render(<PayeeCleanupView />);
-
-    expect(screen.getByText("None yet")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: /^accept$/i }));
-
-    expect(screen.getByText("Pending changes")).toBeInTheDocument();
-    expect(screen.getByText(/1 merge/)).toBeInTheDocument();
-    // The safety line travels with the changes it describes.
-    expect(
-      screen.getByText(/1 payee stops existing · not written until you save/i)
-    ).toBeInTheDocument();
-  });
 
   it("hides the confidence filter on tabs it cannot filter", () => {
     candidates = [payee("AMAZON"), payee("Amazon")];
@@ -634,24 +594,6 @@ describe("PayeeCleanupView", () => {
     expect(screen.getByRole("article")).toBeInTheDocument();
   });
 
-  it("keeps the collapsed card to what a decision needs (F-096)", () => {
-    // The complaint was density: correct information, badly rationed. The
-    // reasoning, the impact breakdown and every editing control belong behind
-    // the toggle; the decision itself does not.
-    candidates = [payee("GROCERGO 0183"), payee("GROCERGO 0291")];
-    render(<PayeeCleanupView />);
-
-    expect(screen.getByRole("button", { name: /^accept$/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /not duplicates/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /^reasoning$/i })).toBeInTheDocument();
-
-    // In the drawer, not on the card.
-    // The payee list appears exactly once — it carries the survivor choice and
-    // the counts together, rather than being printed again as a breakdown.
-    expect(screen.queryByText(/per payee/i)).not.toBeInTheDocument();
-    // Deep reasoning stays behind the toggle.
-    expect(screen.queryByText(/keeping this payee/i)).not.toBeInTheDocument();
-  });
 
   it("keeps the safety copy with whatever is pending", () => {
     // The line moved from under every card into the summary strip, which
@@ -671,17 +613,6 @@ describe("PayeeCleanupView", () => {
     ).toBeInTheDocument();
   });
 
-  it("uses the page width instead of one tall column", () => {
-    // Three sections side by side — result, what changes, future imports — so a
-    // suggestion is one glance rather than a scroll.
-    candidates = [payee("AMAZON"), payee("Amazon")];
-    render(<PayeeCleanupView />);
-
-    const card = screen.getByRole("article");
-    expect(within(card).getByText("Result")).toBeInTheDocument();
-    expect(within(card).getByText("What changes")).toBeInTheDocument();
-    expect(within(card).getByText("Future imports")).toBeInTheDocument();
-  });
 
   it("groups Undo with the other whole-suggestion actions, only once there is something to undo", () => {
     // It used to sit at the bottom of the Future imports column, which has

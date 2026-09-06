@@ -75,17 +75,27 @@ describe("TrajectorySection", () => {
     expect(screen.getByText("Full-period plan")).toBeInTheDocument();
     expect(screen.getByText("70 below")).toBeInTheDocument();
     expect(screen.getByText("vs plan")).toBeInTheDocument();
-    // Upcoming-plan line shows only the open-months contribution (no "Closed so far").
-    expect(screen.getByText("Upcoming plan · 2 mo")).toBeInTheDocument();
-    expect(screen.queryByText("Closed so far")).not.toBeInTheDocument();
-    // The sparkline carries a data-rich accessible name (not just "a chart"),
-    // and a screen-reader list of the per-month values.
+  });
+
+  it("gives the sparkline a data-rich accessible name and a spoken per-month list", () => {
+    // A chart labelled "a chart" tells a screen reader nothing; the figures
+    // have to be reachable without seeing the line.
+    render(<TrajectorySection trajectory={trajectory} />);
     expect(
       screen.getByLabelText(/Projected result 4,630, full-period plan 4,700/),
     ).toBeInTheDocument();
     expect(screen.getByText(/plan 2,000, actual 2,400/)).toBeInTheDocument();
+    expect(screen.getByText("Now")).toBeInTheDocument();
+  });
+
+  it("shows only the open-months contribution, and calls it a projection", () => {
+    // "Forecast" overclaims — this is the plan extended, not a prediction — and
+    // adding the closed months back in double-counts what the headline already
+    // includes.
+    render(<TrajectorySection trajectory={trajectory} />);
+    expect(screen.getByText("Upcoming plan · 2 mo")).toBeInTheDocument();
+    expect(screen.queryByText("Closed so far")).not.toBeInTheDocument();
     expect(screen.getByText("Projection")).toBeInTheDocument();
     expect(screen.queryByText("Forecast")).not.toBeInTheDocument();
-    expect(screen.getByText("Now")).toBeInTheDocument();
   });
 });
