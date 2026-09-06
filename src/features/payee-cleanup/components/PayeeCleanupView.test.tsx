@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { PayeeCleanupView } from "./PayeeCleanupView";
 import { partitionByEligibility } from "../lib/eligibility";
 import { getPayeeCleanupCapabilities } from "../lib/capabilities";
@@ -58,8 +58,43 @@ jest.mock("../hooks/useImportedTextIndex", () => ({
   }),
 }));
 
+let backtest: {
+  data:
+    | {
+        expected: number;
+        others: {
+          payeeId: string | null;
+          payeeName: string | null;
+          transactionCount: number;
+          texts: string[];
+        }[];
+        unassigned: {
+          payeeId: null;
+          payeeName: null;
+          transactionCount: number;
+          texts: string[];
+        } | null;
+        truncated: boolean;
+      }
+    | undefined;
+  isFetching: boolean;
+  error: unknown;
+} = { data: undefined, isFetching: false, error: null };
+jest.mock("../hooks/useProposalBacktest", () => ({
+  useProposalBacktest: (
+    _payee: { id: string; name: string },
+    _proposal: unknown,
+    options: { enabled: boolean }
+  ) =>
+    options.enabled
+      ? { ...backtest, retry: () => {} }
+      : { data: undefined, isFetching: false, error: null, retry: () => {} },
+}));
+
 const toastSuccess = jest.fn();
-jest.mock("sonner", () => ({ toast: { success: (m: string) => toastSuccess(m) } }));
+jest.mock("sonner", () => ({
+  toast: { success: (m: string, options?: unknown) => toastSuccess(m, options) },
+}));
 
 let searchParams = new URLSearchParams();
 jest.mock("next/navigation", () => ({
@@ -67,7 +102,7 @@ jest.mock("next/navigation", () => ({
 }));
 
 const rejectCluster = jest.fn();
-const rejectRuleGap = jest.fn();
+const rejectRuleGap = jest.fn(() => Promise.resolve("sup-1"));
 const stageMock = jest.fn();
 jest.mock("../hooks/usePayeeCleanupPlan", () => ({
   usePayeeCleanupPlan: () => ({ stage: stageMock, isStaging: false }),
@@ -428,7 +463,8 @@ describe("PayeeCleanupView", () => {
     // than parking a panel on the page.
     return Promise.resolve().then(() => {
       expect(toastSuccess).toHaveBeenCalledWith(
-        expect.stringMatching(/staged - save on the Payees page/)
+        expect.stringMatching(/staged - save on the Payees page/),
+        undefined
       );
       expect(screen.queryByText(/1 change staged\./)).not.toBeInTheDocument();
     });
@@ -860,7 +896,7 @@ describe("PayeeCleanupView", () => {
     expect(screen.getByText(/nothing here changes a payee/i)).toBeInTheDocument();
   });
 
-  it("keeps a rule gap on one line, with the actions in a fixed place", () => {
+  it("keeps a rule gap compact, with the actions in a fixed place", () => {
     // The list is long and every row is a yes or no, so density matters more
     // here than on the suggestions tab. The condition carries no "when …, set
     // the payee" wrapper: every row does that, and repeating it cost more width
@@ -889,6 +925,10 @@ describe("PayeeCleanupView", () => {
       "Details",
       "Not needed",
     ]);
+
+    // The safety verdict rides on the row. It is the whole decision for a safe
+    // payee, and it used to be reachable only by opening the expander.
+    expect(within(row).getByText(/matches 9 of this payee's transactions/i)).toBeInTheDocument();
   });
 
   it("shows when a proposal extends the payee's existing rule", () => {
@@ -932,7 +972,7 @@ describe("PayeeCleanupView", () => {
     expect(screen.getByText(/extends existing/i)).toBeInTheDocument();
   });
 
-  it("offers to create the safe rules in bulk", () => {
+  it("accepts the safe rules in bulk", () => {
     candidates = [payee("Filmbox")];
     importedText = [
       {
@@ -947,12 +987,209 @@ describe("PayeeCleanupView", () => {
     render(<PayeeCleanupView />);
     fireEvent.click(screen.getByRole("button", { name: /needs a rule/i }));
 
-    const bulk = screen.getByRole("button", { name: /create 1 safe rule/i });
+    // "Create" named something it does not do: nothing is written until save.
+    const bulk = screen.getByRole("button", { name: /accept 1 safe rule/i });
     fireEvent.click(bulk);
 
+    expect(screen.getByRole("checkbox", { name: /accept a rule for Filmbox/i })).toBeChecked();
+    expect(screen.getByText("Accepted")).toBeInTheDocument();
+  });
+
+  it("badges an accepted rule gap, so a tick reads as a decision", () => {
+    // The tick sits by the payee name, where the decision is made. On its own it
+    // reads as a filter, so the badge says what the tick meant.
+    candidates = [payee("Filmbox")];
+    importedText = [
+      {
+        field: "imported_payee",
+        text: "FILMBOX.COM 4821",
+        payeeId: "p-Filmbox",
+        transactionCount: 9,
+      },
+    ];
+    transactionCounts = new Map([["p-Filmbox", 9]]);
+
+    render(<PayeeCleanupView />);
+    fireEvent.click(screen.getByRole("button", { name: /needs a rule/i }));
+
+    const tick = screen.getByRole("checkbox", { name: /accept a rule for Filmbox/i });
+    expect(screen.queryByText("Accepted")).not.toBeInTheDocument();
+
+    fireEvent.click(tick);
+    expect(tick).toBeChecked();
+    expect(screen.getByText("Accepted")).toBeInTheDocument();
+
+    fireEvent.click(tick);
+    expect(tick).not.toBeChecked();
+    expect(screen.queryByText("Accepted")).not.toBeInTheDocument();
+  });
+
+  it("answers the history cap on request, instead of hedging forever", () => {
+    // The scan reads a capped slice of the budget, so beyond the cap it can only
+    // say a pattern "may catch more than is shown". The check asks the budget to
+    // evaluate the condition itself, which is exact and costs one query.
+    candidates = [payee("Filmbox")];
+    importedText = [
+      {
+        field: "imported_payee",
+        text: "FILMBOX.COM 4821",
+        payeeId: "p-Filmbox",
+        transactionCount: 9,
+      },
+    ];
+    transactionCounts = new Map([["p-Filmbox", 9]]);
+    backtest = {
+      data: {
+        expected: 340,
+        others: [
+          {
+            payeeId: "p-Other",
+            payeeName: "Filmbox Rentals",
+            transactionCount: 12,
+            texts: ["FILMBOX RENTALS 22", "FILMBOX RENTALS 31"],
+          },
+        ],
+        unassigned: {
+          payeeId: null,
+          payeeName: null,
+          transactionCount: 8,
+          texts: ["FILMBOX.COM 9910"],
+        },
+        truncated: false,
+      },
+      isFetching: false,
+      error: null,
+    };
+
+    render(<PayeeCleanupView />);
+    fireEvent.click(screen.getByRole("button", { name: /needs a rule/i }));
+    fireEvent.click(screen.getByRole("button", { name: /details for Filmbox/i }));
+
+    // Not run on arrival: one query per proposed rule across hundreds of payees
+    // is the shape the capped scan exists to avoid.
+    expect(screen.queryByText(/Filmbox Rentals/)).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /check the whole budget/i }));
+
+    expect(screen.getByText(/matches 340 of this payee's transactions/i)).toBeInTheDocument();
+    // Named, not just counted - the user can judge a collision they can see.
+    expect(screen.getByText("Filmbox Rentals")).toBeInTheDocument();
+    // A payee-less match is not a collision: nothing is taken from anyone, and
+    // setting a payee on it is what the rule is for. Reported separately, and
+    // named by its import text.
     expect(
-      screen.getByRole("checkbox", { name: /create a rule for Filmbox/i })
-    ).toBeChecked();
+      screen.getByText(/would also set this payee on 8 transactions that have no payee yet/i)
+    ).toBeInTheDocument();
+    expect(screen.getByText("FILMBOX.COM 9910")).toBeInTheDocument();
+
+    // Distinct imports, one per line - joined together they read as one string.
+    expect(screen.getByText("FILMBOX RENTALS 22")).toBeInTheDocument();
+    expect(screen.getByText("FILMBOX RENTALS 31")).toBeInTheDocument();
+  });
+
+  it("orders rule gaps by history, and by name on request", () => {
+    // Most-used first by default: a rule on a payee with 300 transactions is
+    // worth more than one on a payee with 3, and the list is long.
+    candidates = [payee("Alpha"), payee("Zulu")];
+    importedText = [
+      { field: "imported_payee", text: "ALPHA CO 1", payeeId: "p-Alpha", transactionCount: 4 },
+      { field: "imported_payee", text: "ZULU CO 1", payeeId: "p-Zulu", transactionCount: 90 },
+    ];
+    transactionCounts = new Map([
+      ["p-Alpha", 4],
+      ["p-Zulu", 90],
+    ]);
+
+    render(<PayeeCleanupView />);
+    fireEvent.click(screen.getByRole("button", { name: /needs a rule/i }));
+
+    const names = () =>
+      screen.getAllByRole("listitem").map((row) => row.textContent?.slice(0, 4));
+    expect(names()).toEqual(["Zulu", "Alph"]);
+
+    fireEvent.click(screen.getByRole("button", { name: /payee/i }));
+    expect(names()).toEqual(["Alph", "Zulu"]);
+  });
+
+  it("offers to take back a bulk accept", () => {
+    // Accepting every safe row was one click and undoing it was one per row.
+    candidates = [payee("Filmbox")];
+    importedText = [
+      {
+        field: "imported_payee",
+        text: "FILMBOX.COM 4821",
+        payeeId: "p-Filmbox",
+        transactionCount: 9,
+      },
+    ];
+    transactionCounts = new Map([["p-Filmbox", 9]]);
+
+    render(<PayeeCleanupView />);
+    fireEvent.click(screen.getByRole("button", { name: /needs a rule/i }));
+    fireEvent.click(screen.getByRole("button", { name: /accept 1 safe rule/i }));
+
+    fireEvent.click(screen.getByRole("button", { name: /clear 1 accepted/i }));
+    expect(
+      screen.getByRole("checkbox", { name: /accept a rule for Filmbox/i })
+    ).not.toBeChecked();
+  });
+
+  it("offers an undo when a payee is dismissed, since the row leaves the list", async () => {
+    candidates = [payee("Filmbox")];
+    importedText = [
+      {
+        field: "imported_payee",
+        text: "FILMBOX.COM 4821",
+        payeeId: "p-Filmbox",
+        transactionCount: 9,
+      },
+    ];
+    transactionCounts = new Map([["p-Filmbox", 9]]);
+
+    render(<PayeeCleanupView />);
+    fireEvent.click(screen.getByRole("button", { name: /needs a rule/i }));
+    fireEvent.click(screen.getByRole("button", { name: /not needed/i }));
+
+    await waitFor(() =>
+      expect(toastSuccess).toHaveBeenCalledWith(
+        expect.stringMatching(/Filmbox does not need a rule/),
+        expect.objectContaining({ action: expect.objectContaining({ label: "Undo" }) })
+      )
+    );
+  });
+
+  it("says which field each import came from, and leads with the rule's own", () => {
+    // The list holds both fields and used to label neither, directly under a
+    // condition naming one of them. A payee whose history is in its notes showed
+    // a screen of text that plainly contained the pattern, under a rule that
+    // matched two of them.
+    candidates = [payee("Filmbox")];
+    importedText = [
+      {
+        field: "notes",
+        text: "#2026-07 TRANSFER FILMBOX RENTALS",
+        payeeId: "p-Filmbox",
+        transactionCount: 3,
+      },
+      {
+        field: "imported_payee",
+        text: "FILMBOX.COM 4821",
+        payeeId: "p-Filmbox",
+        transactionCount: 9,
+      },
+    ];
+    transactionCounts = new Map([["p-Filmbox", 12]]);
+
+    render(<PayeeCleanupView />);
+    fireEvent.click(screen.getByRole("button", { name: /needs a rule/i }));
+    fireEvent.click(screen.getByRole("button", { name: /details for Filmbox/i }));
+
+    const rows = screen.getAllByRole("listitem");
+    const evidence = rows.find((r) => r.textContent?.includes("FILMBOX.COM 4821"));
+    expect(evidence?.textContent).toContain("imported payee");
+
+    const notesRow = rows.find((r) => r.textContent?.includes("TRANSFER FILMBOX RENTALS"));
+    expect(notesRow?.textContent).toContain("notes");
   });
 
   it("records that a payee does not need a rule", () => {

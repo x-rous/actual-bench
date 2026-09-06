@@ -53,6 +53,28 @@ import {
   type TokenSpread,
 } from "./core";
 
+/**
+ * Which field actually carries this payee's import history.
+ *
+ * Weighed by transactions, not by whether a field has any rows at all. Choosing
+ * on presence let a single stray `imported_payee` row outrank a hundred notes
+ * rows, which both discarded the real history when proposing a rule and, at the
+ * exclusion below, hid the payee outright.
+ *
+ * Ties go to `imported_payee`: it is where a bank's own text belongs, and it is
+ * the field Actual itself resolves a payee from.
+ */
+export function dominantTextField(texts: ImportedTextRow[]): SourceField | null {
+  let imported = 0;
+  let notes = 0;
+  for (const row of texts) {
+    if (row.field === "imported_payee") imported += row.transactionCount;
+    else if (row.field === "notes") notes += row.transactionCount;
+  }
+  if (imported === 0 && notes === 0) return null;
+  return imported >= notes ? "imported_payee" : "notes";
+}
+
 /** The share of a payee's transactions an existing rule must catch to settle it. */
 const COVERED_SHARE = 0.5;
 
@@ -317,6 +339,23 @@ export function rulesSettingPayee(
   return found.sort((a, b) => b.covered - a.covered);
 }
 
+/**
+ * Transactions matched by at least one of these rules.
+ *
+ * A union rather than a sum: adding the per-rule totals double-counts every
+ * transaction two rules both match, which can put a payee over the bar on the
+ * strength of one rule counted twice.
+ */
+function unionCovered(rules: ExistingPayeeRule[], texts: ImportedTextRow[]): number {
+  let covered = 0;
+  for (const row of texts) {
+    if (rules.some((r) => ruleMatchesText(r.rule, row.field, row.text).matches)) {
+      covered += row.transactionCount;
+    }
+  }
+  return covered;
+}
+
 /** The texts an existing rename rule already covers, for the comparison form. */
 function textsAlreadyCovered(rule: Rule | null): Set<string> {
   if (!rule) return new Set();
@@ -409,12 +448,21 @@ export function findRuleGaps(inputs: RuleGapInputs): RuleGap[] {
     // 4 — Actual already resolves these by name, so a rule would be noise. This
     // is the exclusion that does the heavy lifting on a curated budget.
     //
-    // Only meaningful when there *are* imported-payee rows: a payee whose text
-    // arrives in `notes` has nothing for name matching to compare against, and
-    // reading "0 of 0 covered" as full coverage hid it entirely.
+    // Two guards, both about not letting a thin slice of `imported_payee` speak
+    // for the whole payee. There must *be* imported-payee rows, or "0 of 0
+    // covered" reads as full coverage and hides a payee whose text is all in its
+    // notes; and `imported_payee` must be the field actually carrying the payee,
+    // or a couple of correctly named imports hide a hundred notes imports that
+    // nothing resolves.
     const importedRows = texts.filter((t) => t.field === "imported_payee");
     const exact = exactNameCoverage(payee.name, texts);
-    if (importedRows.length > 0 && exact.covered === importedRows.length) continue;
+    if (
+      importedRows.length > 0 &&
+      exact.covered === importedRows.length &&
+      dominantTextField(texts) === "imported_payee"
+    ) {
+      continue;
+    }
 
     // 5 — is this payee already handled?
     //
@@ -429,13 +477,29 @@ export function findRuleGaps(inputs: RuleGapInputs): RuleGap[] {
     const renameRule = findRenameRuleFor(inputs.rules, payee.id);
     const ownRules = rulesSettingPayee(inputs.rules, payee.id, texts);
     const totalTextTransactions = texts.reduce((sum, r) => sum + r.transactionCount, 0);
-    const alreadyHandled = ownRules.some(
-      (r) =>
-        r.fullyChecked &&
-        r.rule.id !== renameRule?.id &&
-        totalTextTransactions > 0 &&
-        r.covered / totalTextTransactions >= COVERED_SHARE
-    );
+    /*
+     * Together, not one at a time.
+     *
+     * This asked whether any *single* rule cleared the bar, so a payee with two
+     * rules catching 49% and 48% of its history - between them nearly all of it -
+     * was reported as needing a third. The question is whether the next import
+     * will re-resolve the payee, and any of its rules doing so is enough, so the
+     * union is what matters.
+     *
+     * Counted over texts rather than by adding the per-rule totals, which would
+     * double-count every transaction two rules both match.
+     */
+    const settling = ownRules.filter((r) => r.fullyChecked && r.rule.id !== renameRule?.id);
+    const bar = totalTextTransactions * COVERED_SHARE;
+    const alreadyHandled =
+      totalTextTransactions > 0 &&
+      // One rule clearing the bar alone needs no union, and is the common case.
+      (settling.some((r) => r.covered >= bar) ||
+        // The union can never exceed the sum, so a sum below the bar rules the
+        // union out without walking the texts a second time. Only a payee whose
+        // rules *might* combine to clear it pays for the extra pass.
+        (settling.reduce((sum, r) => sum + r.covered, 0) >= bar &&
+          unionCovered(settling, texts) >= bar));
     if (alreadyHandled) continue;
 
     // The payee's own rename rule is deliberately not disqualifying: it resolves
@@ -506,11 +570,13 @@ function proposeRule(
 ): RuleGapProposal | null {
   const imported = texts.filter((t) => t.field === "imported_payee");
   const notes = texts.filter((t) => t.field === "notes");
-  // `imported_payee` is where a bank's own text lands; `notes` is the fallback
-  // for the institutions that put it there instead.
-  const source = imported.length > 0 ? imported : notes;
+
+  // Whichever field actually carries this payee's history - see
+  // `dominantTextField`, which the exclusion above uses too.
+  const field = dominantTextField(texts);
+  if (field === null) return null;
+  const source = field === "imported_payee" ? imported : notes;
   if (source.length === 0) return null;
-  const field: SourceField = imported.length > 0 ? "imported_payee" : "notes";
 
   // A rename rule matches on `imported_payee`, so it cannot extend a notes proposal.
   const extendsRule = field === "imported_payee" ? renameRule : null;
@@ -748,8 +814,11 @@ function collectCautions(
 
   const partial = ownRules.find((r) => r.covered > 0);
   if (partial) {
+    // "of these N" read as though N were the payee's total. It is the number of
+    // its transactions whose import text was read, which is a different and
+    // usually smaller number - the row's own count is the total.
     cautions.push(
-      `A rule you already have catches ${partial.covered} of these ${partial.total} transactions${
+      `A rule you already have catches ${partial.covered} of the ${partial.total} transactions whose import text was read${
         partial.fullyChecked ? "" : ", and also tests something this page cannot check"
       }.`
     );

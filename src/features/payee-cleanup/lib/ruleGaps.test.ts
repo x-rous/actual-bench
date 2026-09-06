@@ -585,6 +585,86 @@ describe("a condition the user typed", () => {
   });
 });
 
+describe("choosing which field carries the history", () => {
+  it("weighs the fields by transactions, not by whether one has any rows", () => {
+    // A real budget: a payee whose bank text lands in the notes, with two stray
+    // transactions that also carry an imported payee. Choosing the field on
+    // presence handed this payee a rule built from those two rows and threw the
+    // other 118 away - a rule covering 1.6% of its history, presented as the fix.
+    const gaps = findRuleGaps(
+      inputs({
+        candidates: [payee("p1", "IBM Middle East")],
+        rows: [
+          row("IBM MIDDLE EAST FZ-LLC PAYROLL", "p1", 2, "imported_payee"),
+          ...Array.from({ length: 8 }, (_, i) =>
+            row(`#2026-0${i + 1} TRANSFER IBM MIDDLE EAST FZ-LLC REF${i}`, "p1", 15, "notes")
+          ),
+        ],
+        rules: [],
+        transactionCounts: new Map([["p1", 122]]),
+      })
+    );
+
+    expect(gaps).toHaveLength(1);
+    expect(gaps[0].proposal.field).toBe("notes");
+  });
+
+  it("does not let a couple of correctly named imports hide a notes history", () => {
+    // Actual resolves an imported payee by exact name, so a payee whose imports
+    // all read as its own name needs no rule. That exclusion counted distinct
+    // strings: two correctly named imports beside a hundred notes imports read
+    // as "fully covered", and the payee vanished from the tab entirely.
+    const gaps = findRuleGaps(
+      inputs({
+        candidates: [payee("p1", "ADNOC Fuel Station")],
+        rows: [
+          row("ADNOC FUEL STATION", "p1", 2, "imported_payee"),
+          ...Array.from({ length: 8 }, (_, i) =>
+            row(`#2026-0${i + 1} ADNOC AL CORNICHE 933 REF${i}`, "p1", 15, "notes")
+          ),
+        ],
+        rules: [],
+        transactionCounts: new Map([["p1", 122]]),
+      })
+    );
+
+    expect(gaps).toHaveLength(1);
+    expect(gaps[0].proposal.field).toBe("notes");
+  });
+
+  it("still excludes a payee whose imports really are all its own name", () => {
+    expect(
+      findRuleGaps(
+        inputs({
+          candidates: [payee("p1", "ADNOC Fuel Station")],
+          rows: [row("ADNOC FUEL STATION", "p1", 40, "imported_payee")],
+          rules: [],
+          transactionCounts: new Map([["p1", 40]]),
+        })
+      )
+    ).toEqual([]);
+  });
+
+  it("still prefers the imported payee when it carries the history", () => {
+    const gaps = findRuleGaps(
+      inputs({
+        candidates: [payee("p1", "IBM Middle East")],
+        rows: [
+          ...Array.from({ length: 8 }, (_, i) =>
+            row(`IBM MIDDLE EAST FZ-LLC ${i}`, "p1", 15, "imported_payee")
+          ),
+          row("#2026-01 TRANSFER IBM MIDDLE EAST FZ-LLC", "p1", 2, "notes"),
+        ],
+        rules: [],
+        transactionCounts: new Map([["p1", 122]]),
+      })
+    );
+
+    expect(gaps).toHaveLength(1);
+    expect(gaps[0].proposal.field).toBe("imported_payee");
+  });
+});
+
 describe("a rule that already sets this payee", () => {
   const rbTexts: [string, number][] = [
     ["#2026-08 K AND M ASHDOWN 784", 3],
@@ -606,6 +686,44 @@ describe("a rule that already sets this payee", () => {
     id: "rb-rule",
     conditions: [{ field: "notes", op: "contains", value: "K AND M" }],
     actions: [{ field: "payee", op: "set", value: "p1" }],
+  });
+
+  it("counts existing rules together, not one at a time", () => {
+    // Two rules, each catching just under half the history, between them
+    // catching nearly all of it. Asking whether any *single* rule cleared the
+    // bar reported this payee as needing a third rule.
+    const halfA = rule({
+      id: "rb-half-a",
+      conditions: [{ field: "notes", op: "contains", value: "#2026-08" }],
+      actions: [{ field: "payee", op: "set", value: "p1" }],
+    });
+    const halfB = rule({
+      id: "rb-half-b",
+      conditions: [{ field: "notes", op: "contains", value: "#2026-02" }],
+      actions: [{ field: "payee", op: "set", value: "p1" }],
+    });
+
+    // 3 of 9 and 2 of 9: neither clears half on its own.
+    const single = findRuleGaps(rbInputs([halfA]));
+    expect(single).toHaveLength(1);
+
+    // 5 of 9 together, which does.
+    expect(findRuleGaps(rbInputs([halfA, halfB]))).toEqual([]);
+
+    // And a union is not a sum. These two rules both catch the same 3 of 9, so
+    // adding their totals clears the bar while the transactions they actually
+    // cover do not. The payee still needs a rule.
+    const sameRowsA = rule({
+      id: "rb-overlap-a",
+      conditions: [{ field: "notes", op: "contains", value: "#2026-08" }],
+      actions: [{ field: "payee", op: "set", value: "p1" }],
+    });
+    const sameRowsB = rule({
+      id: "rb-overlap-b",
+      conditions: [{ field: "notes", op: "contains", value: "-08 K AND M" }],
+      actions: [{ field: "payee", op: "set", value: "p1" }],
+    });
+    expect(findRuleGaps(rbInputs([sameRowsA, sameRowsB]))).toHaveLength(1);
   });
 
   it("does not ask for a rule the payee already has", () => {
@@ -646,7 +764,7 @@ describe("a rule that already sets this payee", () => {
 
     expect(gaps[0].existingRules.map((r) => r.rule.id)).toEqual(["rb-partial"]);
     expect(gaps[0].existingRules[0].covered).toBe(1);
-    expect(gaps[0].cautions.join(" ")).toMatch(/catches 1 of these 9/i);
+    expect(gaps[0].cautions.join(" ")).toMatch(/catches 1 of the 9 transactions whose import text was read/i);
   });
 
   it("will not be ruled out by a rule it cannot fully check", () => {

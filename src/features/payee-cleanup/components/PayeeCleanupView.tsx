@@ -36,7 +36,8 @@ import {
   type CleanupTab,
 } from "./CleanupFilterBar";
 import { UnusedPayeeList } from "./UnusedPayeeList";
-import { CreateSafeRulesButton, RuleGapList } from "./RuleGapList";
+import { AcceptSafeRulesButton, ClearAcceptedRulesButton, RuleGapList } from "./RuleGapList";
+import { RuleDrawer } from "@/features/rules/components/RuleDrawer";
 import type { RuleGapOverride } from "../lib/ruleGaps";
 import { SuppressionList } from "./SuppressionList";
 import { ReviewCleanupBar } from "./ReviewCleanupBar";
@@ -134,6 +135,9 @@ export function PayeeCleanupView() {
   const [search, setSearch] = useState("");
 
   const [corrections, setCorrections] = useState<CorrectionMap>({});
+  // Editing an existing rule happens here rather than on the Rules page: the
+  // payee's import text is the evidence for the edit, and navigating away loses it.
+  const [editingRuleId, setEditingRuleId] = useState<string | null>(null);
   // Keyed by payee id so an edit survives a re-scan, the same way a cluster
   // correction does.
   const [ruleGapOverrides, setRuleGapOverrides] = useState<
@@ -334,16 +338,24 @@ export function PayeeCleanupView() {
       actions={
         <div className="flex items-center gap-2">
           {tab === "rule-gaps" ? (
-            <CreateSafeRulesButton
-              safeCount={safeRuleGaps.length}
-              onCreate={() =>
-                setSelectedRuleGaps((current) => {
-                  const next = new Set(current);
-                  for (const gap of safeRuleGaps) next.add(gap.payee.id);
-                  return next;
-                })
-              }
-            />
+            <>
+              <AcceptSafeRulesButton
+                safeCount={safeRuleGaps.length}
+                onAccept={() =>
+                  setSelectedRuleGaps((current) => {
+                    const next = new Set(current);
+                    for (const gap of safeRuleGaps) next.add(gap.payee.id);
+                    return next;
+                  })
+                }
+              />
+              {/* Accepting in bulk was one click and undoing it was one per row.
+                  The pair belongs together. */}
+              <ClearAcceptedRulesButton
+                acceptedCount={selectedRuleGaps.size}
+                onClear={() => setSelectedRuleGaps(new Set())}
+              />
+            </>
           ) : null}
           {tab === "suggestions" && safeToAccept.length > 0 ? (
             <Button
@@ -485,22 +497,30 @@ export function PayeeCleanupView() {
             loading={importedTextFetching && importedText.length === 0}
             filtered={visibleRuleGaps.length === 0 && result.ruleGaps.length > 0}
             gaps={visibleRuleGaps}
-            selected={selectedRuleGaps}
-            onToggle={(payeeId, enabled) =>
+            accepted={selectedRuleGaps}
+            onAccept={(payeeId, next) =>
               setSelectedRuleGaps((current) => {
-                const next = new Set(current);
-                if (enabled) next.add(payeeId);
-                else next.delete(payeeId);
-                return next;
+                const updated = new Set(current);
+                if (next) updated.add(payeeId);
+                else updated.delete(payeeId);
+                return updated;
               })
             }
+            onOpenRule={setEditingRuleId}
             onDismiss={(gap) => {
               setSelectedRuleGaps((current) => {
                 const next = new Set(current);
                 next.delete(gap.payee.id);
                 return next;
               });
-              rejectRuleGap(gap.payee);
+              // The row leaves the list on dismiss, so the undo cannot live on
+              // it. Offered here instead, where the decision was just made.
+              void rejectRuleGap(gap.payee).then((id) => {
+                if (!id) return;
+                toast.success(`${gap.payee.name} does not need a rule.`, {
+                  action: { label: "Undo", onClick: () => undo(id) },
+                });
+              });
             }}
             onOverride={(payeeId, override) =>
               setRuleGapOverrides((current) => {
@@ -581,6 +601,23 @@ export function PayeeCleanupView() {
       </div>
 
       </div>
+
+      {/* The Rules page's own editor, opened in place. Edits stage through the
+          same store, so a rule changed here and a rule changed there are the
+          same pending change.
+
+          Mounted only while open: the editor reads the whole entity graph to
+          build its comboboxes, which is work this page has no reason to do for
+          a drawer nobody has asked for. */}
+      {editingRuleId !== null ? (
+        <RuleDrawer
+          open
+          onOpenChange={(open) => {
+            if (!open) setEditingRuleId(null);
+          }}
+          ruleId={editingRuleId}
+        />
+      ) : null}
     </PageLayout>
   );
 }
