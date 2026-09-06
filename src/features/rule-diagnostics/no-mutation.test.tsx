@@ -195,11 +195,13 @@ it("renders, filters, refreshes, and jump-to-rule without invoking ANY staged-st
   // than staging anything here.
   fireEvent.click(screen.getByLabelText("Generalise this rule"));
 
-  // 5. Click every rule link and dismiss every finding. Dismissing does write —
-  // but to the app database, through its own hook, never to the staged store
-  // the budget is saved from.
+  // 5. Open every rule in the editor and dismiss every finding. Opening the
+  // editor is the point here: it now happens on this page rather than by
+  // navigating away, so it is newly capable of staging and must be shown not to.
+  // Dismissing does write — but to the app database, through its own hook, never
+  // to the staged store the budget is saved from.
   for (const f of findings) {
-    fireEvent.click(screen.getByLabelText(`Open rule: ${f.affected[0].summary}`));
+    fireEvent.click(screen.getByLabelText(`Edit rule: ${f.affected[0].summary}`));
     fireEvent.click(screen.getByLabelText(`Dismiss: ${f.title}`));
   }
   expect(dismissMock).toHaveBeenCalledTimes(findings.length);

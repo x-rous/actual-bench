@@ -1,13 +1,15 @@
 "use client";
 
-import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState, type MouseEvent } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { CircleSlash, Copy, Merge, Undo2, Wand2 } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import { useStagedStore } from "@/store/staged";
+import { ActionChip, ConditionChip } from "@/features/rules/components/RuleChips";
+import type { EntityMaps } from "@/features/rules/utils/rulePreview";
 import type { Rule } from "@/types/entities";
 import type { Finding, FindingCode, RuleRef, Severity } from "../types";
 
@@ -24,6 +26,8 @@ type Props = {
    * lists them, because the list is the evidence.
    */
   showRules?: boolean;
+  /** Opens the rule editor over this page. Absent renders the rule as plain text. */
+  onOpenRule?: (ruleId: string) => void;
 };
 
 const SEVERITY_VARIANT: Record<Severity, "destructive" | "status-warning" | "status-inactive"> = {
@@ -72,21 +76,38 @@ const MERGE_INTENT: Partial<Record<FindingCode, "duplicate" | "near-duplicate">>
   RULE_NEAR_DUPLICATE_FAMILY: "near-duplicate",
 };
 
-export function handleRuleLinkClick(e: MouseEvent<HTMLAnchorElement>, ruleId: string): void {
-  const rules = useStagedStore.getState().rules;
-  const entry = rules[ruleId];
+/**
+ * The entity graph the rule chips resolve ids against.
+ *
+ * The same selectors the Rules page uses, so a rule cannot read differently in
+ * the two places.
+ */
+function useEntityMaps(): EntityMaps {
+  const payees = useStagedStore((s) => s.payees);
+  const categories = useStagedStore((s) => s.categories);
+  const accounts = useStagedStore((s) => s.accounts);
+  const categoryGroups = useStagedStore((s) => s.categoryGroups);
+  const schedules = useStagedStore((s) => s.schedules);
+  return useMemo(
+    () => ({ payees, categories, accounts, categoryGroups, schedules }),
+    [payees, categories, accounts, categoryGroups, schedules]
+  );
+}
+
+/**
+ * Whether a rule can still be opened.
+ *
+ * Kept as a guard rather than trusting the finding: a report is computed from a
+ * snapshot, and the rule it names may have been deleted in the working set
+ * since. Opening the editor on a deleted rule would show an empty form.
+ */
+export function canOpenRule(ruleId: string): boolean {
+  const entry = useStagedStore.getState().rules[ruleId];
   if (!entry || entry.isDeleted) {
-    e.preventDefault();
     toast.error("This rule no longer exists in the current working set.");
-    return;
+    return false;
   }
-  // Clear persisted Rules-page filters so the target rule is always visible
-  // after the jump — any active search/stage/action-type filter could hide it.
-  try {
-    sessionStorage.removeItem("filters:rules");
-  } catch {
-    // ignore — storage may be unavailable in some environments
-  }
+  return true;
 }
 
 /**
@@ -105,26 +126,91 @@ function noteworthyStage(stage: string | undefined): string | null {
   return stage && stage !== "default" ? stage : null;
 }
 
-/** The rule's own text, as a link to it. */
+/**
+ * The rule itself, opening the editor in place.
+ *
+ * Two changes from the link this replaces. It is drawn with the Rules page's own
+ * chips rather than as a flat sentence: a diagnostics finding is a claim *about*
+ * a rule's conditions and actions, and reading it in one colourless line meant
+ * re-parsing the rule to see the part the finding is talking about. And it opens
+ * the editor over this page instead of navigating to Rules and highlighting a
+ * row - the finding is the reason for the edit, and leaving the page to make it
+ * loses that, then costs a trip back for the next one.
+ *
+ * `entity` is absent when the rule has gone from the working set since the
+ * report was computed. The stored summary is the fallback, because a finding
+ * that names a rule must still say which rule it named.
+ */
 export function RuleSummaryLink({
   rule,
+  entity,
+  maps,
+  onOpen,
   className,
 }: {
   rule: RuleRef;
+  entity?: Rule;
+  maps?: EntityMaps;
+  onOpen?: (ruleId: string) => void;
   className?: string;
 }) {
+  const content =
+    entity && maps ? (
+      <RuleChipLine rule={entity} maps={maps} />
+    ) : (
+      <span className="break-words">{rule.summary}</span>
+    );
+
+  if (!onOpen) return <span className={className ?? BASE_RULE_LINE}>{content}</span>;
+
   return (
-    <Link
-      href={`/rules?highlight=${rule.id}`}
-      onClick={(e) => handleRuleLinkClick(e, rule.id)}
-      aria-label={`Open rule: ${rule.summary}`}
-      className={
-        className ??
-        "block break-words rounded text-xs text-foreground underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-      }
+    <button
+      type="button"
+      onClick={() => {
+        if (canOpenRule(rule.id)) onOpen(rule.id);
+      }}
+      aria-label={`Edit rule: ${rule.summary}`}
+      className={cn(
+        className ?? BASE_RULE_LINE,
+        "text-left hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+      )}
     >
-      {rule.summary}
-    </Link>
+      {content}
+    </button>
+  );
+}
+
+const BASE_RULE_LINE = "block w-full rounded px-1 py-0.5 text-xs text-foreground";
+
+/**
+ * A rule's conditions and actions, in the Rules page's encoding.
+ *
+ * The components themselves, not a copy of them: they already resolve entity ids
+ * to names and format every value type, which is exactly what a hand-rolled
+ * version gets wrong.
+ */
+function RuleChipLine({ rule, maps }: { rule: Rule; maps: EntityMaps }) {
+  return (
+    <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+      <span className="flex flex-wrap items-center gap-1">
+        {rule.conditions.map((condition, index) => (
+          <span key={`c-${index}`} className="flex items-center gap-1">
+            {index > 0 ? (
+              <span className="text-[11px] text-muted-foreground">
+                {rule.conditionsOp === "or" ? "or" : "and"}
+              </span>
+            ) : null}
+            <ConditionChip condition={condition} maps={maps} />
+          </span>
+        ))}
+      </span>
+      <span className="text-[11px] text-muted-foreground">then</span>
+      <span className="flex flex-wrap items-center gap-1">
+        {rule.actions.map((action, index) => (
+          <ActionChip key={`a-${index}`} action={action} maps={maps} />
+        ))}
+      </span>
+    </span>
   );
 }
 
@@ -136,13 +222,32 @@ export function RuleSummaryLink({
  * visually identical chips side by side. Given the width, the same text reads
  * as the finding's evidence.
  */
-function RuleLine({ rule, index }: { rule: RuleRef; index?: number }) {
+function RuleLine({
+  rule,
+  index,
+  rulesById,
+  maps,
+  onOpenRule,
+}: {
+  rule: RuleRef;
+  index?: number;
+  rulesById: Map<string, Rule>;
+  maps: EntityMaps;
+  onOpenRule?: (ruleId: string) => void;
+}) {
   return (
     <li className="flex gap-1.5 py-0.5">
       {index !== undefined && (
-        <span className="shrink-0 text-xs tabular-nums text-muted-foreground/70">{index}.</span>
+        <span className="shrink-0 pt-0.5 text-xs tabular-nums text-muted-foreground/70">
+          {index}.
+        </span>
       )}
-      <RuleSummaryLink rule={rule} />
+      <RuleSummaryLink
+        rule={rule}
+        entity={rulesById.get(rule.id)}
+        maps={maps}
+        onOpen={onOpenRule}
+      />
     </li>
   );
 }
@@ -247,8 +352,10 @@ export function FindingCard({
   onDismiss,
   onRestore,
   showRules = true,
+  onOpenRule,
 }: Props) {
   const counterpartLabel = COUNTERPART_LABEL[finding.code];
+  const maps = useEntityMaps();
   const stageOf = (id: string) => rulesById.get(id)?.stage;
   const primaryStage = noteworthyStage(stageOf(finding.affected[0]?.id ?? ""));
 
@@ -363,6 +470,9 @@ export function FindingCard({
                 // Numbered only when there are several, because two identical
                 // duplicates otherwise read as one line rendered twice.
                 index={finding.affected.length > 1 ? i + 1 : undefined}
+                rulesById={rulesById}
+                maps={maps}
+                onOpenRule={onOpenRule}
               />
             ))}
           </ul>
@@ -399,7 +509,12 @@ export function FindingCard({
               <div className="mt-1.5">
                 <span className={LABEL_CLASS}>{counterpartLabel}</span>
                 <ul>
-                  <RuleLine rule={finding.counterpart} />
+                  <RuleLine
+                    rule={finding.counterpart}
+                    rulesById={rulesById}
+                    maps={maps}
+                    onOpenRule={onOpenRule}
+                  />
                 </ul>
               </div>
             )}
