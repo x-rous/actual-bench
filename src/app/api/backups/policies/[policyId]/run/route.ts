@@ -44,12 +44,16 @@ type ManualRunOptions = { takenBefore?: string; notes?: string };
 /**
  * How big an uploaded budget archive may be.
  *
- * A budget zip is normally a few megabytes; a long history with many
- * attachments is larger. The cap exists so a request cannot exhaust the
- * process's memory, and it is checked against the part's own size rather than
- * trusting a Content-Length the client controls.
+ * Actual's own `MAX_ZIP_SIZE`, which its zip guard calls "also a memory-safety
+ * cap". Matching it means Bench accepts every budget Actual would open and
+ * refuses the same archives - a smaller cap here would reject a budget the user
+ * can perfectly well use, and a larger one would accept bytes verification is
+ * going to refuse anyway.
+ *
+ * Enforced against the bytes actually read rather than a Content-Length the
+ * client controls - see `readBoundedBody`.
  */
-const MAX_UPLOAD_BYTES = 512 * 1024 * 1024;
+const MAX_UPLOAD_BYTES = 500 * 1024 * 1024;
 
 /**
  * Reads the request either way.
