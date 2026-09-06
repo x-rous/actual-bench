@@ -74,9 +74,15 @@ A rule says what to copy, where to put it, how often, and how long to keep it.
 - **What** - the budget, Bench's own settings, or both. Bench's settings are your sync flows and
   mappings, reconciliation sessions, automations, saved queries and payee-cleanup decisions:
   everything you have taught Bench, which lives nowhere else.
-- **Which budget** - an **enrolled** connection. A scheduled backup runs with your browser closed, so
-  it needs credentials the server can use on its own. If nothing is enrolled, Bench says so instead
-  of quietly offering you an empty list.
+- **Which budget** - any budget you have connected to. A *scheduled* backup runs with your browser
+  closed, so it needs an **enrolled** connection whose credentials the server can use on its own; the
+  rule offers to enrol one on the spot rather than sending you elsewhere.
+
+  A **Direct** connection cannot be enrolled, because its budget lives in this browser and there is
+  nothing for a server to use while you are away. It is still offered, as a **manual rule**: there is
+  no schedule, and **Back up now** exports the budget here and hands it to Bench, which stores and
+  verifies it exactly like any other copy - same destinations, same retention, same inventory. It is
+  a copy you have to ask for, not a lesser one.
 - **When** - every few hours, every day at a time you pick, on chosen days of the week, once a month,
   or a cron expression for the people who want one. Whichever you choose, Bench says back what it
   understood and when the next run actually lands.
