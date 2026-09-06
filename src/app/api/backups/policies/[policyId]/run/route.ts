@@ -56,6 +56,23 @@ type ManualRunOptions = { takenBefore?: string; notes?: string };
 const MAX_UPLOAD_BYTES = 500 * 1024 * 1024;
 
 /**
+ * The request body, refused past the limit, as a validation error either way.
+ *
+ * A missing or oversized body is something the caller got wrong, so it answers
+ * 400 with the reason rather than surfacing as an unhandled failure.
+ */
+async function boundedBody(request: Request): Promise<ArrayBuffer> {
+  try {
+    return await readBoundedBody(request, MAX_UPLOAD_BYTES);
+  } catch (error) {
+    if (error instanceof BodyTooLargeError || error instanceof MissingBodyError) {
+      throw new AppDbValidationError(error.message);
+    }
+    throw error;
+  }
+}
+
+/**
  * Reads the request either way.
  *
  * `multipart/form-data` carries the archive a browser exported for a direct
@@ -74,7 +91,9 @@ async function readUploadedArchive(request: Request): Promise<{
      * the button sends. Malformed JSON is a different thing and is reported:
      * swallowing it answered 200 for a request the caller got wrong.
      */
-    const raw = await request.text();
+    // Bounded too: a chunked JSON body has no declared length either, and
+    // `text()` would read all of it before anything could object.
+    const raw = new TextDecoder().decode(await boundedBody(request));
     if (!raw.trim()) return { archive: null, options: {} };
     let parsed: unknown;
     try {
@@ -98,20 +117,10 @@ async function readUploadedArchive(request: Request): Promise<{
     throw new AppDbValidationError(new BodyTooLargeError(MAX_UPLOAD_BYTES).message);
   }
 
-  let body: ArrayBuffer;
-  try {
-    body = await readBoundedBody(request, MAX_UPLOAD_BYTES);
-  } catch (error) {
-    if (error instanceof BodyTooLargeError || error instanceof MissingBodyError) {
-      throw new AppDbValidationError(error.message);
-    }
-    throw error;
-  }
-
   const form = await new Request(request.url, {
     method: "POST",
     headers: request.headers,
-    body,
+    body: await boundedBody(request),
   }).formData();
   const file = form.get("archive");
   if (!(file instanceof File)) {

@@ -70,6 +70,14 @@ describe("expanding an archive under limits", () => {
     expect(() => unzipBounded(archive, small)).toThrow(/duplicate entry/i);
   });
 
+  it("treats names that differ only by a leading ./ as the same entry", () => {
+    // These passed the duplicate check as two distinct names and then collided
+    // in the lookup, so which one was verified depended on the order they
+    // happened to be read in - exactly what the duplicate check prevents.
+    const archive = zipSync({ "db.sqlite": bytes(4), "./db.sqlite": bytes(4) });
+    expect(() => unzipBounded(archive, small)).toThrow(/duplicate entry/i);
+  });
+
   it("matches the size Actual itself will open", () => {
     // A smaller cap would refuse a budget the user can use; a larger one would
     // accept bytes Actual's own guard rejects.

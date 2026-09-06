@@ -170,6 +170,19 @@ export const ARCHIVE_LIMITS: ArchiveLimits = {
   maxEntries: 1024,
 };
 
+/**
+ * The name two entries are the same file under.
+ *
+ * Duplicate detection and the lookup below have to agree on this. They did not:
+ * duplicates were compared case-insensitively on the raw name while the lookup
+ * stripped a leading `./`, so `db.sqlite` and `./db.sqlite` passed as two
+ * distinct entries and then collided in the map - the very "whichever is read
+ * second wins" the duplicate check exists to prevent.
+ */
+function entryKey(name: string): string {
+  return name.replace(/^\.?\//, "").toLowerCase();
+}
+
 /** An archive refused before it was expanded, rather than one that failed to. */
 export class UnsafeArchiveError extends Error {
   constructor(message: string) {
@@ -253,7 +266,7 @@ export function unzipBounded(
 
       // Two entries resolving to one file means the second silently wins, and
       // which one that is depends on the order they happen to be read in.
-      const normalized = file.name.toLowerCase();
+      const normalized = entryKey(file.name);
       if (seen.has(normalized)) {
         throw new UnsafeArchiveError(`The archive contains a duplicate entry: ${file.name}`);
       }
@@ -304,7 +317,9 @@ export function verifyBudgetArchive(
   }
 
   const normalized = new Map(
-    Object.entries(files).map(([path, content]) => [path.replace(/^\.?\//, ""), content])
+    // Same key the duplicate check uses, so an entry that survived it cannot
+    // still collide here.
+    Object.entries(files).map(([path, content]) => [entryKey(path), content])
   );
   const dbBytes = normalized.get("db.sqlite");
   if (!dbBytes) {

@@ -85,15 +85,19 @@ A rule says what to copy, where to put it, how often, and how long to keep it.
   A **Direct** connection cannot be enrolled, because its budget lives in this browser and there is
   nothing for a server to use while you are away. It is still offered, as a **manual rule**: there is
   no schedule, and **Back up now** exports the budget here and hands it to Bench, which stores and
-  verifies it exactly like any other copy - same destinations, same retention, same inventory. It is
-  a copy you have to ask for, not a lesser one.
+  verifies it exactly like any other copy - same destinations, same checks, same list of copies. It
+  is a copy you have to ask for, not a lesser one.
+
+  Backups taken by hand are **kept until you delete them**. Bench does not expire them, so a rule you
+  run often will accumulate copies rather than rotating them the way a scheduled rule does.
 
   One difference worth knowing: a manual rule has no automation behind it, so it does not appear on
   the Automations page and keeps no run history. You get the result of each backup when you press the
   button; the copies themselves are listed under **Backups** like all the others.
-- **When** - every few hours, every day at a time you pick, on chosen days of the week, once a month,
-  or a cron expression for the people who want one. Whichever you choose, Bench says back what it
-  understood and when the next run actually lands.
+- **When** - for a scheduled rule: every few hours, every day at a time you pick, on chosen days of
+  the week, once a month, or a cron expression for the people who want one. Whichever you choose,
+  Bench says back what it understood and when the next run actually lands. A manual rule has no
+  schedule and nothing to say here.
 - **Encryption** - off by default, because for most self-hosted setups the copy lands on a volume you
   already control and encryption mainly adds a way to lose the data permanently. Turn it on when a
   copy goes somewhere you do not control. **Bench cannot recover an encrypted backup without the

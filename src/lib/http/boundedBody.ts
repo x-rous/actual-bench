@@ -49,6 +49,18 @@ export async function readBoundedBody(
   const reader = request.body?.getReader();
   if (!reader) throw new MissingBodyError();
 
+  /*
+   * One buffer where the sender declares a length it is entitled to.
+   *
+   * Collecting chunks and joining them at the end holds the body twice at the
+   * moment of the join. A declared length cannot be trusted as a *limit* - that
+   * is what the counting below is for - but it is a perfectly good hint for how
+   * much to allocate, and the write below never exceeds what was allocated.
+   */
+  const declared = Number(request.headers.get("content-length"));
+  const preallocate = Number.isInteger(declared) && declared >= 0 && declared <= limitBytes;
+
+  let buffer = preallocate ? new Uint8Array(declared) : null;
   const chunks: Uint8Array[] = [];
   let total = 0;
 
@@ -61,11 +73,21 @@ export async function readBoundedBody(
       await reader.cancel();
       throw new BodyTooLargeError(limitBytes);
     }
-    chunks.push(value);
+    if (buffer && total <= buffer.byteLength) {
+      buffer.set(value, total - value.byteLength);
+    } else {
+      // The declared length was short of the truth. Fall back to collecting,
+      // keeping whatever has been written so far.
+      if (buffer) {
+        chunks.push(buffer.subarray(0, total - value.byteLength));
+        buffer = null;
+      }
+      chunks.push(value);
+    }
   }
 
-  // A fresh buffer rather than a view over the chunks: `Request` accepts one
-  // directly, and its size is bounded by the check above.
+  if (buffer) return buffer.buffer.slice(0, total) as ArrayBuffer;
+
   const body = new ArrayBuffer(total);
   const view = new Uint8Array(body);
   let offset = 0;
