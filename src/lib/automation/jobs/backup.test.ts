@@ -67,6 +67,32 @@ describe("backup rules become automations", () => {
     expect(automation.config.data.policyId).toBe(created.id);
   });
 
+  it("gives a manual rule no automation, since nothing can schedule it", () => {
+    // A direct connection's budget lives in the operator's browser, so there is
+    // no moment Bench could pick to run it on their behalf. A disabled row on
+    // the Automations page that can never fire reads as something broken.
+    const created = policy({ scheduleKind: "manual" });
+
+    reconcileBackupAutomations(db, [created]);
+
+    expect(listAutomations(db, { type: BACKUP_JOB_TYPE })).toHaveLength(0);
+  });
+
+  it("disables, rather than deletes, an automation whose rule became manual", () => {
+    // Deleting an automation cascades to its runs, which would erase the record
+    // of backups that actually happened. The copies are kept; so is why.
+    const created = policy({ cronExpression: "0 3 * * *" });
+    reconcileBackupAutomations(db, [created]);
+    const [before] = listAutomations(db, { type: BACKUP_JOB_TYPE });
+    expect(before.enabled).toBe(true);
+
+    reconcileBackupAutomations(db, [{ ...created, scheduleKind: "manual" }]);
+
+    const [after] = listAutomations(db, { type: BACKUP_JOB_TYPE });
+    expect(after.id).toBe(before.id);
+    expect(after.enabled).toBe(false);
+  });
+
   it("is idempotent, because it runs every tick", () => {
     const created = policy();
     reconcileBackupAutomations(db, [created]);

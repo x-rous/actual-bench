@@ -131,6 +131,54 @@ describe("running a backup", () => {
     expect(manifest?.source?.budgetName).toBe("Household");
   });
 
+  it("stores an archive the caller exported, without reaching for a credential", async () => {
+    // A direct connection's budget lives in the operator's browser. The browser
+    // exports it with the same official call this pipeline would have made over
+    // HTTP and hands the bytes over; everything after that is unchanged, so the
+    // copy lands in the same inventory rather than being a lesser thing.
+    mockExport(new Uint8Array(), 500); // The server path must not be used at all.
+
+    const result = await runBackup(db, policy({ scheduleKind: "manual" }), {
+      trigger: "manual",
+      tier: "manual",
+      budgetArchive: {
+        bytes: Buffer.from(BUDGET_ZIP),
+        budgetId: "budget-1",
+        budgetName: "Household",
+      },
+    });
+
+    expect(result.stored).toBe(true);
+    // Verified like any other copy: bytes that arrived over a request deserve
+    // the check more than bytes this process fetched itself, not less.
+    expect(result.verified).toBe(true);
+
+    const [artifact] = listBackupArtifacts(db);
+    expect(artifact.kind).toBe("budget");
+    expect(artifact.verificationStatus).toBe("passed");
+    expect(artifact.sourceBudgetName).toBe("Household");
+    expect(artifact.tier).toBe("manual");
+  });
+
+  it("does not need an enrolled credential for a supplied archive", async () => {
+    // The whole reason a direct connection was locked out: `readSourceCredential`
+    // throws when the vault has nothing for it.
+    const noCredential = policy({
+      scheduleKind: "manual",
+      sourceRef: { version: 1, data: { connectionFingerprint: "not-enrolled" } },
+    });
+
+    const result = await runBackup(db, noCredential, {
+      budgetArchive: {
+        bytes: Buffer.from(BUDGET_ZIP),
+        budgetId: "budget-1",
+        budgetName: "Household",
+      },
+    });
+
+    expect(result.stored).toBe(true);
+  });
+
   it("keeps the copy that succeeded when another destination fails", async () => {
     // The reason locations are their own table: one bad destination must not
     // lose the copy that did land, or make the healthy one look broken.

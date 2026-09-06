@@ -34,11 +34,13 @@ import type { BackupDestination, BackupPolicy } from "@/lib/app-db/backupReposit
  *
  * Two decisions show up directly in this form:
  *
- *   * **The source is an enrolled connection**, not a URL. A scheduled backup
- *     has no browser to borrow, so it needs credentials the server can use
- *     unattended, and enrolment is where the operator already granted that. A
- *     budget that has not been enrolled is offered as an explanation rather
- *     than silently missing from the list.
+ *   * **The source is a connection, not a URL.** A *scheduled* backup has no
+ *     browser to borrow, so it needs credentials the server can use unattended,
+ *     and enrolment is where the operator already granted that; a budget that
+ *     has not been enrolled is offered with an explanation rather than silently
+ *     missing. A direct connection cannot be enrolled at all - its budget lives
+ *     in this browser - so it is offered as a manual rule instead of being left
+ *     out, which is what left those users unable to back anything up.
  *   * **Encryption is off by default.** For most self-hosters the copy lands on
  *     a volume they already control, and encryption mainly adds a way to lose
  *     the data permanently. It matters the moment a copy goes somewhere they do
@@ -69,20 +71,33 @@ export function BackupRuleDialog({
 }: Props) {
   const editing = Boolean(existing);
   const [name, setName] = useState(existing?.name ?? "Nightly backup");
-  // Every saved HTTP connection, with whether the server can already act on it.
-  // Direct connections are left out because they can never run unattended.
+  /*
+   * Every saved budget connection, and what each one can do.
+   *
+   * A Direct connection was left out entirely, which meant a Direct user opened
+   * this form, found an empty dropdown and had no way to back anything up at
+   * all. What it cannot do is run *unattended*: its budget lives in this browser
+   * and there are no credentials a server can use while the operator is away.
+   * It can be backed up perfectly well when they ask, so it is offered as a
+   * manual rule rather than hidden.
+   */
   const savedConnections = useConnectionStore((state) => state.instances);
-  const choices = savedConnections
-    .filter((connection) => isHttpApiConnection(connection))
-    .map((connection) => ({
+  const choices = savedConnections.map((connection) => {
+    const httpApi = isHttpApiConnection(connection);
+    return {
       fingerprint: connectionFingerprint(connection),
       label: connection.label,
-      baseUrl: connection.baseUrl,
+      baseUrl: httpApi ? connection.baseUrl : null,
       connection,
-      enrolled: sources.some(
-        (entry) => entry.connectionFingerprint === connectionFingerprint(connection)
-      ),
-    }));
+      /** Direct connections can only ever run on request. */
+      manualOnly: !httpApi,
+      enrolled:
+        !httpApi ||
+        sources.some(
+          (entry) => entry.connectionFingerprint === connectionFingerprint(connection)
+        ),
+    };
+  });
 
   const [source, setSource] = useState(
     String(
@@ -99,7 +114,10 @@ export function BackupRuleDialog({
   );
 
   const [schedule, setSchedule] = useState<ScheduleValue>(() => ({
-    scheduleKind: existing?.scheduleKind ?? "cron",
+    // The picker only speaks cron and interval; a manual rule has no schedule to
+    // show, so it keeps a sensible default here in case the source is changed
+    // back to one that can run unattended.
+    scheduleKind: existing?.scheduleKind === "interval" ? "interval" : "cron",
     cronExpression: existing?.cronExpression ?? "0 2 * * *",
     intervalMinutes: existing?.intervalMinutes ?? null,
     timezone: existing?.timezone ?? browserTimezone(),
@@ -138,16 +156,25 @@ export function BackupRuleDialog({
       const payload = {
         name: name.trim(),
         contents,
-        sourceRef: { version: 1, data: { connectionFingerprint: source } },
+        sourceRef: {
+          version: 1,
+          data: {
+            connectionFingerprint: source,
+            // Recorded so the run knows where the bytes come from. A direct
+            // source is exported by the browser and uploaded; there is no
+            // credential for the server to use.
+            sourceKind: manualOnly ? "direct" : "http-api",
+          },
+        },
         destinationIds,
         verificationLevel,
         encryption: encrypt ? "passphrase" : "none",
         retention,
         scrubEnabled,
         timezone: schedule.timezone,
-        scheduleKind: schedule.scheduleKind,
-        cronExpression: schedule.cronExpression,
-        intervalMinutes: schedule.intervalMinutes,
+        scheduleKind: manualOnly ? "manual" : schedule.scheduleKind,
+        cronExpression: manualOnly ? null : schedule.cronExpression,
+        intervalMinutes: manualOnly ? null : schedule.intervalMinutes,
         ...(encrypt && passphrase ? { passphrase } : {}),
       };
       return existing ? patchPolicy(existing.id, payload) : createPolicy(payload);
@@ -160,13 +187,16 @@ export function BackupRuleDialog({
     onError: (error: Error) => toast.error(error.message),
   });
 
+  // A direct source can only be backed up from the browser holding it, so the
+  // rule has no schedule and no automation - "Back up now" is the whole of it.
+  const manualOnly = chosen?.manualOnly ?? false;
   const needsSource = contents !== "app-db";
   const canSave =
     name.trim().length > 0 &&
     destinationIds.length > 0 &&
     (!needsSource || (source.length > 0 && (chosen?.enrolled ?? false))) &&
     (!encrypt || editing || passphrase.length >= 8) &&
-    scheduleValid;
+    (manualOnly || scheduleValid);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -214,8 +244,9 @@ export function BackupRuleDialog({
                   {choices.length === 0 && <option value="">No budget connections saved</option>}
                   {choices.map((choice) => (
                     <option key={choice.fingerprint} value={choice.fingerprint}>
-                      {choice.label} - {choice.baseUrl}
-                      {choice.enrolled ? "" : "  (not enrolled)"}
+                      {choice.label}
+                      {choice.baseUrl ? ` - ${choice.baseUrl}` : " - Direct (this browser)"}
+                      {choice.manualOnly ? "  (manual only)" : choice.enrolled ? "" : "  (not enrolled)"}
                     </option>
                   ))}
                 </select>
@@ -225,7 +256,7 @@ export function BackupRuleDialog({
                   enrolled ones - the budget you are working in should appear in
                   the list of budgets you can back up, with the reason it cannot
                   be used yet and the button that fixes it. */}
-              {chosen && !chosen.enrolled && (
+              {chosen && !chosen.enrolled && !chosen.manualOnly && (
                 <EnrolConnection
                   connection={chosen.connection}
                   compact
@@ -233,10 +264,20 @@ export function BackupRuleDialog({
                 />
               )}
 
+              {/* Said once, where the consequence is: this rule will not run on
+                  its own. Not an apology - the copy is the same copy, stored and
+                  verified the same way. */}
+              {manualOnly && (
+                <span className="block text-muted-foreground">
+                  This budget is open in your browser, so Bench cannot reach it while you are away.
+                  The rule has no schedule: use <span className="font-medium">Back up now</span> and
+                  the copy is exported here, then stored and verified like any other.
+                </span>
+              )}
+
               {choices.length === 0 && (
                 <span className="block text-muted-foreground">
-                  Connect to a budget through an Actual HTTP API server first - a scheduled backup
-                  runs with no browser open, so it cannot use a Direct connection.
+                  Connect to a budget first - there is nothing to copy yet.
                 </span>
               )}
             </div>
@@ -274,15 +315,19 @@ export function BackupRuleDialog({
             )}
           </fieldset>
 
-          <div className="space-y-1">
-            <span className="font-medium">When</span>
-            <SchedulePicker
-              value={schedule}
-              onChange={setSchedule}
-              onValidityChange={setScheduleValid}
-              nowMs={nowMs}
-            />
-          </div>
+          {/* Hidden rather than disabled: a schedule this rule can never keep is
+              not a setting the reader should have to evaluate and dismiss. */}
+          {!manualOnly && (
+            <div className="space-y-1">
+              <span className="font-medium">When</span>
+              <SchedulePicker
+                value={schedule}
+                onChange={setSchedule}
+                onValidityChange={setScheduleValid}
+                nowMs={nowMs}
+              />
+            </div>
+          )}
 
           <label className="flex items-start gap-2">
             <input

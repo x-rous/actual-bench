@@ -1,6 +1,13 @@
 import { NextResponse } from "next/server";
 import { getAppDb } from "@/lib/app-db/connection";
-import { appDbErrorResponse, readJsonBody } from "@/lib/app-db/routeResponses";
+import { AppDbValidationError } from "@/lib/app-db/errors";
+import {
+  BodyTooLargeError,
+  MissingBodyError,
+  declaredLengthExceeds,
+  readBoundedBody,
+} from "@/lib/http/boundedBody";
+import { appDbErrorResponse } from "@/lib/app-db/routeResponses";
 import { getBackupPolicy } from "@/lib/app-db/backupRepository";
 import { listAutomations } from "@/lib/app-db/automationRepository";
 import { listAutomationRuns } from "@/lib/app-db/automationRunRepository";
@@ -8,6 +15,7 @@ import { ensureAutomationJobTypesRegistered } from "@/lib/automation/bootstrap";
 import { executeAutomation } from "@/lib/automation/engine";
 import { BACKUP_JOB_TYPE } from "@/lib/automation/jobs/backupType";
 import { runBackup } from "@/lib/backup/runBackup";
+import { ARCHIVE_LIMITS } from "@/lib/backup/verify";
 
 type RouteContext = { params: Promise<{ policyId: string }> };
 
@@ -32,22 +40,198 @@ export const maxDuration = 300;
  * is a result, not a transport error, and the caller needs the detail to say
  * which destination refused it.
  */
+type ManualRunOptions = { takenBefore?: string; notes?: string };
+
+/**
+ * How big an uploaded budget archive may be.
+ *
+ * Actual's own limit, taken from the verifier rather than restated, so the two
+ * cannot drift: an archive this endpoint accepts is one verification will open,
+ * and one Actual itself would.
+ */
+const MAX_ARCHIVE_BYTES = ARCHIVE_LIMITS.maxArchiveBytes;
+
+/**
+ * What multipart framing adds on top of the archive.
+ *
+ * A multipart body is not just the file: each part carries a boundary line and
+ * its own headers, and the request ends with a closing boundary. Holding the
+ * whole request to the archive limit therefore refused an archive of exactly
+ * the maximum size - a budget Actual would open, rejected at the door for the
+ * few hundred bytes of envelope around it.
+ *
+ * Generous by orders of magnitude: the parts here amount to well under a
+ * kilobyte of framing. It is deliberately an allowance for the envelope and not
+ * a second archive limit, which is why the archive is checked separately below.
+ */
+const MULTIPART_FRAMING_BYTES = 64 * 1024;
+
+/** The transport bound, which is the archive plus the envelope carrying it. */
+const MAX_REQUEST_BYTES = MAX_ARCHIVE_BYTES + MULTIPART_FRAMING_BYTES;
+
+/**
+ * The request body, refused past the limit, as a validation error either way.
+ *
+ * A missing or oversized body is something the caller got wrong, so it answers
+ * 400 with the reason rather than surfacing as an unhandled failure.
+ */
+async function boundedBody(request: Request): Promise<ArrayBuffer> {
+  try {
+    return await readBoundedBody(request, MAX_REQUEST_BYTES);
+  } catch (error) {
+    if (error instanceof BodyTooLargeError || error instanceof MissingBodyError) {
+      throw new AppDbValidationError(error.message);
+    }
+    throw error;
+  }
+}
+
+/**
+ * Reads the request either way.
+ *
+ * `multipart/form-data` carries the archive a browser exported for a direct
+ * connection; anything else is the plain JSON body a server-sourced run sends.
+ * Returning both shapes from one function keeps a single "Back up now" endpoint,
+ * so the caller does not have to know which kind of rule it is pressing.
+ */
+async function readUploadedArchive(request: Request): Promise<{
+  archive: { bytes: Buffer; budgetId: string | null; budgetName: string | null } | null;
+  options: ManualRunOptions;
+}> {
+  const contentType = request.headers.get("content-type") ?? "";
+  if (!contentType.toLowerCase().includes("multipart/form-data")) {
+    /*
+     * An absent body still means "back up now with no options", which is what
+     * the button sends. Malformed JSON is a different thing and is reported:
+     * swallowing it answered 200 for a request the caller got wrong.
+     */
+    // Bounded too: a chunked JSON body has no declared length either, and
+    // `text()` would read all of it before anything could object.
+    const raw = new TextDecoder().decode(await boundedBody(request));
+    if (!raw.trim()) return { archive: null, options: {} };
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      throw new AppDbValidationError("Invalid JSON body");
+    }
+    return { archive: null, options: (parsed ?? {}) as ManualRunOptions };
+  }
+
+  /*
+   * Bounded before the body is parsed, not only after.
+   *
+   * `formData()` buffers the whole request first, so a size check that runs
+   * after it has already cost the memory it was meant to protect. A declared
+   * Content-Length is only the client's claim and may be absent altogether on a
+   * chunked request, so it is used as a cheap early refusal and the body is then
+   * read through a counter that stops at the same limit either way.
+   */
+  if (declaredLengthExceeds(request, MAX_REQUEST_BYTES)) {
+    throw new AppDbValidationError(new BodyTooLargeError(MAX_REQUEST_BYTES).message);
+  }
+
+  const form = await new Request(request.url, {
+    method: "POST",
+    headers: request.headers,
+    body: await boundedBody(request),
+  }).formData();
+  const file = form.get("archive");
+  if (!(file instanceof File)) {
+    throw new AppDbValidationError("The upload carried no budget archive.");
+  }
+  // The archive itself, against the archive's limit rather than the transport's.
+  if (file.size > MAX_ARCHIVE_BYTES) {
+    throw new AppDbValidationError(
+      `The exported budget is larger than the ${Math.round(MAX_ARCHIVE_BYTES / 1024 / 1024)}MB this endpoint accepts.`
+    );
+  }
+  if (file.size === 0) {
+    throw new AppDbValidationError("The exported budget was empty, so there is nothing to store.");
+  }
+
+  const text = (key: string): string | null => {
+    const value = form.get(key);
+    return typeof value === "string" && value.trim() ? value.trim() : null;
+  };
+
+  return {
+    archive: {
+      bytes: Buffer.from(await file.arrayBuffer()),
+      budgetId: text("budgetId"),
+      budgetName: text("budgetName"),
+    },
+    options: {
+      takenBefore: text("takenBefore") ?? undefined,
+      notes: text("notes") ?? undefined,
+    },
+  };
+}
+
 export async function POST(request: Request, context: RouteContext) {
   try {
     ensureAutomationJobTypesRegistered();
     const { policyId } = await context.params;
-    const body = await readJsonBody(request).catch(() => ({}));
-    const options = (body ?? {}) as { takenBefore?: string; notes?: string };
+
+    /*
+     * The budget may arrive with the request.
+     *
+     * A direct connection's budget lives in the operator's browser, so nothing
+     * on this server can fetch it. The browser exports it - the same official
+     * `exportBudget` the HTTP path uses, one process closer to the data - and
+     * posts the archive here as multipart, alongside the same options the JSON
+     * form carries.
+     */
+    const upload = await readUploadedArchive(request);
+    const options = upload.options;
 
     const db = getAppDb();
     const policy = getBackupPolicy(db, policyId);
     if (!policy) return NextResponse.json({ error: "Backup rule not found" }, { status: 404 });
 
+    if (upload.archive) {
+      /*
+       * Only a manual rule takes its budget from the request.
+       *
+       * A scheduled rule runs through the automation engine, which holds the
+       * single-run lock, records the run and updates health. Letting an upload
+       * drive one would skip all three - and hand it a budget from whoever sent
+       * the request rather than the enrolled source the rule names.
+       */
+      if (policy.scheduleKind !== "manual") {
+        return NextResponse.json(
+          {
+            error:
+              "This rule takes its budget from its own source connection, so it cannot be run from an uploaded copy.",
+          },
+          { status: 400 }
+        );
+      }
+
+      const result = await runBackup(db, policy, {
+        trigger: "manual",
+        tier: "manual",
+        takenBefore: options.takenBefore ?? null,
+        notes: options.notes ?? null,
+        budgetArchive: upload.archive,
+      });
+      return NextResponse.json({
+        result: {
+          stored: result.stored,
+          verified: result.verified,
+          message: result.message ?? null,
+        },
+        automationId: null,
+      });
+    }
+
     const automation = listAutomations(db, { type: BACKUP_JOB_TYPE }).find(
       (entry) => entry.config.data.policyId === policyId
     );
 
-    if (automation) {
+    // A manual rule has no automation, and one left over from a rule whose
+    // source changed is disabled - running through it would refuse.
+    if (automation && policy.scheduleKind !== "manual") {
       const outcome = await executeAutomation(db, automation.id, { trigger: "manual" });
 
       if (outcome.status === "skipped") {

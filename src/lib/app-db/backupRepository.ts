@@ -72,7 +72,16 @@ export type BackupPolicyContents = "budget" | "app-db" | "both";
 export type BackupEncryptionMode = "none" | "passphrase";
 
 /** How often a backup rule runs. Mirrors the automation engine's vocabulary. */
-export type BackupScheduleKind = "cron" | "interval";
+/**
+ * `manual` is a rule with no schedule at all.
+ *
+ * It exists for a Direct connection, whose budget lives in the operator's
+ * browser: there are no credentials a server can use while they are away, so
+ * the rule can only run when they ask for it. Modelling it as a schedule kind
+ * rather than a flag keeps one policy shape, and `reconcileBackupAutomations`
+ * reads it to know not to create an automation.
+ */
+export type BackupScheduleKind = "cron" | "interval" | "manual";
 
 export type BackupPolicy = {
   id: string;
@@ -408,7 +417,12 @@ function rowToPolicy(row: PolicyRow): BackupPolicy {
     encryption: row.encryption as BackupEncryptionMode,
     encryptionCredentialRef: row.encryption_credential_ref,
     retention: parseRetention(row.retention_json),
-    scheduleKind: row.schedule_kind === "interval" ? "interval" : "cron",
+    scheduleKind:
+      row.schedule_kind === "interval"
+        ? "interval"
+        : row.schedule_kind === "manual"
+          ? "manual"
+          : "cron",
     cronExpression: row.cron_expression,
     intervalMinutes: row.interval_minutes,
     timezone: row.timezone || "UTC",
@@ -463,7 +477,7 @@ export function createBackupPolicy(db: SqliteDatabase, input: unknown): BackupPo
     encryption,
     optionalText(input.encryptionCredentialRef, "encryptionCredentialRef", 200),
     JSON.stringify(normalizeRetention(input.retention)),
-    oneOf(input.scheduleKind, ["cron", "interval"] as const, "scheduleKind", "cron"),
+    oneOf(input.scheduleKind, ["cron", "interval", "manual"] as const, "scheduleKind", "cron"),
     // A nightly backup in the small hours is the right default: late enough
     // that the day's transactions are in, early enough to be done before anyone
     // looks at the budget.
@@ -522,7 +536,7 @@ export function updateBackupPolicy(db: SqliteDatabase, id: string, input: unknow
     set("retention_json", JSON.stringify(normalizeRetention(input.retention)));
   }
   if (input.scheduleKind !== undefined) {
-    set("schedule_kind", oneOf(input.scheduleKind, ["cron", "interval"] as const, "scheduleKind", "cron"));
+    set("schedule_kind", oneOf(input.scheduleKind, ["cron", "interval", "manual"] as const, "scheduleKind", "cron"));
   }
   if (input.cronExpression !== undefined) {
     set("cron_expression", optionalText(input.cronExpression, "cronExpression", 120));

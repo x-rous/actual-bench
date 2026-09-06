@@ -31,6 +31,12 @@ import type { DestinationCheck } from "@/lib/backup/destinations/types";
  * volume is nearly full, or that this folder is on the same disk as Bench's own
  * data — which is a warning rather than a refusal, because `/data/backups` is a
  * legitimate and common arrangement that simply is not off-site.
+ *
+ * **A folder that fails those checks is not saved at all.** Typing the path is
+ * where that check is offered, but pressing Save runs it again and refuses:
+ * saving first and reporting the failure afterwards left a destination that
+ * looked configured, counted towards "your copies are in two places", and did
+ * nothing until the night it was needed.
  */
 
 const inputClass = "h-8 rounded-md px-2 text-xs md:text-xs";
@@ -67,6 +73,26 @@ export function DestinationDialog({ open, onOpenChange, existing, onSaved }: Pro
 
   const save = useMutation({
     mutationFn: async () => {
+      /*
+       * A folder has to prove itself before it is written to the database.
+       *
+       * The order used to be create-then-test, so a path Bench cannot write to
+       * - a volume that is not mounted, a directory owned by another user - was
+       * saved anyway and the failure came back as a warning. That leaves a
+       * destination that looks configured, counts towards "your copies are in
+       * two places", and fails at 2am.
+       *
+       * `inspectLocalPath` is the same check the Check button runs, and it
+       * creates the directory when it is merely missing, so this refuses only
+       * what is genuinely unusable.
+       */
+      if (kind === "local") {
+        const preflight = await inspectPath(path.trim());
+        if (preflight.checks.some((entry) => entry.status === "fail")) {
+          return { blocked: true as const, checks: preflight.checks };
+        }
+      }
+
       const payload =
         kind === "local"
           ? { name, kind, config: { version: 1, data: { path: path.trim() } } }
@@ -94,9 +120,18 @@ export function DestinationDialog({ open, onOpenChange, existing, onSaved }: Pro
       // Test on save, always. A destination that has never been written to is a
       // guess, and the moment to find that out is now rather than at 2am.
       const result = await testDestination(destination.id);
-      return { destination, result };
+      return { blocked: false as const, destination, result };
     },
-    onSuccess: ({ result }) => {
+    onSuccess: (outcome) => {
+      if (outcome.blocked) {
+        // Nothing was created, so the dialog stays open on the reason rather
+        // than closing over a destination that does not work.
+        setChecks(outcome.checks);
+        toast.error("Bench cannot use this folder, so nothing was saved. See the checks below.");
+        return;
+      }
+
+      const { result } = outcome;
       setChecks(result.checks);
       if (result.ok) {
         toast.success(

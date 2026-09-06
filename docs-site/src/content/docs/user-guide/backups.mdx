@@ -55,31 +55,49 @@ nearly full, or that the folder is on the same disk as Bench's own data - that l
 not a refusal, because `/data/backups` is a perfectly sensible arrangement that simply is not
 off-site.
 
-Adding or editing a destination always tests it by **using** it: Bench writes real bytes, reads them
-back, compares checksums and deletes the test file. A test that only checked credentials would pass
-on a read-only volume, which is exactly the configuration people get wrong.
+Those checks run again when you press Save, and a folder that fails them is **not saved**. That
+matters more than it sounds: a destination stored despite failing looks configured, counts towards
+having your copies in two places, and does nothing until the night you need it.
+
+Once a destination is saved, Bench tests it by **using** it: it writes real bytes, reads them back,
+compares checksums and deletes the test file. A test that only checked credentials would pass on a
+read-only volume, which is exactly the configuration people get wrong.
 
 A bucket that accepts writes but refuses deletes is a warning rather than an error. Immutable buckets
 are a real choice; backups still work, and only retention is affected.
 
 ![The backup rule dialog: what to copy, which budget, where to put it, and when.](../../../assets/screenshots/dialogs/dialog-backup-rule.png)
 
-*One rule answers four questions - what to copy, from which budget, to which destinations, and on
-what schedule - and says plainly when the budget is not enrolled for unattended work.*
+*One rule answers four questions - what to copy, from which budget, to which destinations, and when -
+and says plainly when a budget can only be copied on request.*
 
-## Setup: Automatic Backup Rules
+## Setup: Backup Rules
 
 A rule says what to copy, where to put it, how often, and how long to keep it.
 
 - **What** - the budget, Bench's own settings, or both. Bench's settings are your sync flows and
   mappings, reconciliation sessions, automations, saved queries and payee-cleanup decisions:
   everything you have taught Bench, which lives nowhere else.
-- **Which budget** - an **enrolled** connection. A scheduled backup runs with your browser closed, so
-  it needs credentials the server can use on its own. If nothing is enrolled, Bench says so instead
-  of quietly offering you an empty list.
-- **When** - every few hours, every day at a time you pick, on chosen days of the week, once a month,
-  or a cron expression for the people who want one. Whichever you choose, Bench says back what it
-  understood and when the next run actually lands.
+- **Which budget** - any budget you have connected to. A *scheduled* backup runs with your browser
+  closed, so it needs an **enrolled** connection whose credentials the server can use on its own; the
+  rule offers to enrol one on the spot rather than sending you elsewhere.
+
+  A **Direct** connection cannot be enrolled, because its budget lives in this browser and there is
+  nothing for a server to use while you are away. It is still offered, as a **manual rule**: there is
+  no schedule, and **Back up now** exports the budget here and hands it to Bench, which stores and
+  verifies it exactly like any other copy - same destinations, same checks, same list of copies. It
+  is a copy you have to ask for, not a lesser one.
+
+  Backups taken by hand are **kept until you delete them**. Bench does not expire them, so a rule you
+  run often will accumulate copies rather than rotating them the way a scheduled rule does.
+
+  One difference worth knowing: a manual rule has no automation behind it, so it does not appear on
+  the Automations page and keeps no run history. You get the result of each backup when you press the
+  button; the copies themselves are listed under **Backups** like all the others.
+- **When** - for a scheduled rule: every few hours, every day at a time you pick, on chosen days of
+  the week, once a month, or a cron expression for the people who want one. Whichever you choose,
+  Bench says back what it understood and when the next run actually lands. A manual rule has no
+  schedule and nothing to say here.
 - **Encryption** - off by default, because for most self-hosted setups the copy lands on a volume you
   already control and encryption mainly adds a way to lose the data permanently. Turn it on when a
   copy goes somewhere you do not control. **Bench cannot recover an encrypted backup without the
@@ -90,9 +108,10 @@ that opens the encrypted ones. Bench forgets that passphrase on its own once the
 is gone, and lists it under **Passphrases Bench still holds** until then.
 
 Each rule shows just enough to answer "is this working?" - whether it is paused, when it last ran and
-when it runs next - and links to **Automations** for run history, retries, logs and failures. Rules
-run on Bench's automation engine, so that page is where their full history lives; Backups does not
-keep a second copy of it.
+when it runs next - and links to **Automations** for run history, retries, logs and failures.
+Scheduled rules run on Bench's automation engine, so that page is where their full history lives;
+Backups does not keep a second copy of it. A manual rule has no automation and so no run history -
+its result is reported when you press **Back up now**.
 
 ## Verified, not just stored
 

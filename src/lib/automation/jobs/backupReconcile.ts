@@ -88,6 +88,27 @@ function reconcileInTransaction(db: SqliteDatabase, policies: BackupPolicy[]): B
   for (const policy of policies) {
     const existing = existingByPolicy.get(policy.id);
 
+    /*
+     * A manual rule has nothing for the engine to schedule.
+     *
+     * Its budget lives in the operator's browser, so there is no moment Bench
+     * could pick to run it on their behalf. Creating a disabled automation for
+     * it would put a row on the Automations page that can never fire, which
+     * reads as something broken rather than something deliberate.
+     *
+     * An existing automation is left alone rather than deleted: a rule whose
+     * source was switched from an enrolled connection to a direct one still has
+     * a history of real backups, and deleting the automation cascades to its
+     * runs. The pass below already disables an automation whose rule is off.
+     */
+    if (policy.scheduleKind === "manual") {
+      if (existing && existing.enabled) {
+        updateAutomation(db, existing.id, { enabled: false });
+        summary.updated.push(existing.id);
+      }
+      continue;
+    }
+
     if (!existing) {
       const created = createAutomation(db, {
         type: BACKUP_JOB_TYPE,

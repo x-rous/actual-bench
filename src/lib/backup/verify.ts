@@ -136,6 +136,154 @@ function formatActualDate(value: number | null): string | null {
 }
 
 /**
+ * Actual's own zip guard, mirrored.
+ *
+ * Not an invention: `@actual-app/core/src/server/util/zip.ts` does exactly this,
+ * with the comment "fflate does no validation itself: guard against zip-slip,
+ * decompression bombs, and duplicate entries". Its `safeUnzip` cannot be
+ * imported here - the package exports it as raw TypeScript, which would mean
+ * transpiling `node_modules` in both Next and Jest - so it is reproduced, and
+ * should be re-checked against that file when the API is upgraded.
+ *
+ * The limit is Actual's `MAX_ZIP_SIZE`, which its comment calls "also a
+ * memory-safety cap". Matching it means Bench refuses exactly the archives
+ * Actual refuses, and accepts every budget Actual would open.
+ */
+export type ArchiveLimits = {
+  maxArchiveBytes: number;
+  maxEntryBytes: number;
+  maxTotalBytes: number;
+  maxEntries: number;
+};
+
+export const ARCHIVE_LIMITS: ArchiveLimits = {
+  maxArchiveBytes: 500 * 1024 * 1024,
+  maxEntryBytes: 500 * 1024 * 1024,
+  maxTotalBytes: 500 * 1024 * 1024,
+  /**
+   * Ours, not Actual's.
+   *
+   * The size caps bound how much an archive can expand, but not how many
+   * objects it can ask for: a million empty entries passes every one of them.
+   * A real export has two.
+   */
+  maxEntries: 1024,
+};
+
+/**
+ * The name two entries are the same file under.
+ *
+ * Duplicate detection and the lookup below have to agree on this. They did not:
+ * duplicates were compared case-insensitively on the raw name while the lookup
+ * stripped a leading `./`, so `db.sqlite` and `./db.sqlite` passed as two
+ * distinct entries and then collided in the map - the very "whichever is read
+ * second wins" the duplicate check exists to prevent.
+ */
+function entryKey(name: string): string {
+  return name.replace(/^\.?\//, "").toLowerCase();
+}
+
+/** An archive refused before it was expanded, rather than one that failed to. */
+export class UnsafeArchiveError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "UnsafeArchiveError";
+  }
+}
+
+/**
+ * Rejects an entry name that would escape the directory it is extracted into.
+ *
+ * Bench writes the entries it wants by name rather than looping over the
+ * archive, so zip-slip is not reachable today. It is checked anyway: that is a
+ * property of the *current* extraction code, not of the archive, and the next
+ * person to loop over these entries should not have to discover the difference.
+ */
+function assertSafeEntryName(name: string): void {
+  const traverses = name.split("/").some((segment) => segment === "..");
+  if (
+    name.includes("\0") ||
+    name.includes("\\") ||
+    /^[a-zA-Z]:/.test(name) ||
+    name.startsWith("/") ||
+    traverses
+  ) {
+    throw new UnsafeArchiveError(`The archive contains an unsafe entry name: ${name}`);
+  }
+}
+
+/**
+ * Unzips an archive, refusing one that is not safe to expand.
+ *
+ * `unzipSync` allocates each entry's output buffer straight from the size
+ * declared in that entry's header - `inflateSync(data, { out: new u8(size) })`.
+ * That size is a field in the file, so an archive claiming a ten-gigabyte entry
+ * causes a ten-gigabyte allocation before a single byte is decompressed, and a
+ * few megabytes of upload can exhaust the process.
+ *
+ * The filter is consulted per entry *before* anything is inflated, which makes
+ * it the place to stop that. An entry understating its size is not a way past:
+ * fflate's output buffer is fixed at the declared length, so the inflate fails
+ * rather than growing.
+ */
+export function unzipBounded(
+  bytes: Uint8Array,
+  limits: ArchiveLimits = ARCHIVE_LIMITS
+): Record<string, Uint8Array> {
+  if (bytes.length > limits.maxArchiveBytes) {
+    throw new UnsafeArchiveError(
+      `The archive is ${formatSize(bytes.length)}, beyond the ${formatSize(limits.maxArchiveBytes)} Bench will expand.`
+    );
+  }
+
+  const seen = new Set<string>();
+  let entries = 0;
+  let totalBytes = 0;
+
+  return unzipSync(bytes, {
+    filter(file) {
+      assertSafeEntryName(file.name);
+
+      entries += 1;
+      if (entries > limits.maxEntries) {
+        throw new UnsafeArchiveError(
+          `The archive holds more than ${limits.maxEntries} entries, so it is not an Actual export.`
+        );
+      }
+
+      if (file.originalSize > limits.maxEntryBytes) {
+        throw new UnsafeArchiveError(
+          `The archive declares an entry of ${formatSize(file.originalSize)}, beyond the ${formatSize(limits.maxEntryBytes)} Bench will expand.`
+        );
+      }
+
+      totalBytes += file.originalSize;
+      if (totalBytes > limits.maxTotalBytes) {
+        throw new UnsafeArchiveError(
+          `The archive declares ${formatSize(totalBytes)} of content, beyond the ${formatSize(limits.maxTotalBytes)} Bench will expand.`
+        );
+      }
+
+      // Two entries resolving to one file means the second silently wins, and
+      // which one that is depends on the order they happen to be read in.
+      const normalized = entryKey(file.name);
+      if (seen.has(normalized)) {
+        throw new UnsafeArchiveError(`The archive contains a duplicate entry: ${file.name}`);
+      }
+      seen.add(normalized);
+
+      return true;
+    },
+  });
+}
+
+function formatSize(bytes: number): string {
+  if (bytes >= 1024 ** 3) return `${(bytes / 1024 ** 3).toFixed(1)}GB`;
+  if (bytes >= 1024 ** 2) return `${Math.round(bytes / 1024 ** 2)}MB`;
+  return `${bytes} bytes`;
+}
+
+/**
  * Verify a plaintext budget export.
  *
  * Never throws for a bad artifact: an unreadable backup is a *result*, not an
@@ -150,19 +298,28 @@ export function verifyBudgetArchive(
 
   let files: Record<string, Uint8Array>;
   try {
-    files = unzipSync(bytes);
+    files = unzipBounded(bytes);
   } catch (error) {
+    // A refusal reads as itself rather than as "not a readable ZIP": the
+    // archive parsed fine, and saying otherwise sends the reader looking for
+    // corruption that is not there.
     return {
       level,
       status: "failed",
-      findings: [`Not a readable ZIP archive: ${error instanceof Error ? error.message : String(error)}`],
+      findings: [
+        error instanceof UnsafeArchiveError
+          ? error.message
+          : `Not a readable ZIP archive: ${error instanceof Error ? error.message : String(error)}`,
+      ],
       content: {},
       checksumSha256,
     };
   }
 
   const normalized = new Map(
-    Object.entries(files).map(([path, content]) => [path.replace(/^\.?\//, ""), content])
+    // Same key the duplicate check uses, so an entry that survived it cannot
+    // still collide here.
+    Object.entries(files).map(([path, content]) => [entryKey(path), content])
   );
   const dbBytes = normalized.get("db.sqlite");
   if (!dbBytes) {

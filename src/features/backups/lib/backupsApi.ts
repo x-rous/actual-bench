@@ -188,11 +188,32 @@ export type ManualBackupOutcome = {
  * A refusal (409: already running) is an answer too, not a transport error, so
  * it is returned rather than thrown.
  */
-export async function backUpNow(policyId: string): Promise<ManualBackupOutcome> {
+export async function backUpNow(
+  policyId: string,
+  /**
+   * The archive, when this browser is the only thing that can produce it.
+   *
+   * Present for a direct rule and absent otherwise, which is what decides
+   * whether the request is multipart or JSON. The endpoint is the same either
+   * way: pressing "Back up now" should not depend on knowing which kind of rule
+   * you are pressing.
+   */
+  archive?: { bytes: ArrayBuffer; budgetId: string | null; budgetName: string | null }
+): Promise<ManualBackupOutcome> {
+  const body = archive
+    ? (() => {
+        const form = new FormData();
+        form.append("archive", new Blob([archive.bytes], { type: "application/zip" }), "budget.zip");
+        if (archive.budgetId) form.append("budgetId", archive.budgetId);
+        if (archive.budgetName) form.append("budgetName", archive.budgetName);
+        return form;
+      })()
+    : null;
+
   const response = await fetch(`/api/backups/policies/${policyId}/run`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({}),
+    // Left to the browser for multipart, which has to set its own boundary.
+    ...(body ? { body } : { headers: { "Content-Type": "application/json" }, body: "{}" }),
   });
 
   if (response.status === 409) {

@@ -38,6 +38,9 @@ import { RetentionPreviewDialog } from "./RetentionPreviewDialog";
 import { forgetPassphrase, type PolicyWithAutomation } from "../lib/backupsApi";
 import type { BackupDestination } from "@/lib/app-db/backupRepository";
 import type { PruneResult } from "@/lib/backup/prune";
+import { exportBrowserApiBudgetZip } from "@/lib/actual/browser/runtime";
+import { isBrowserApiConnection, useConnectionStore } from "@/store/connection";
+import { connectionFingerprint } from "@/lib/sync/connectionRef";
 
 /**
  * The Recovery Center (RD-077 / PR-047).
@@ -139,12 +142,42 @@ export function BackupsView() {
     refetchInterval: 30_000,
   });
 
+  const connections = useConnectionStore((state) => state.instances);
+
   const invalidate = () => {
     void queryClient.invalidateQueries({ queryKey: ["backups"] });
   };
 
+  /*
+   * A manual rule is backed up from here, not from the server.
+   *
+   * Its budget lives in this browser, so the export has to happen in this
+   * browser: `exportBrowserApiBudgetZip` syncs first and then asks Actual for
+   * the same archive the server would have fetched over HTTP. The bytes go up
+   * with the request and the server does the rest, so a direct copy lands in the
+   * same inventory, under the same retention, verified the same way.
+   */
   const runNow = useMutation({
-    mutationFn: backUpNow,
+    mutationFn: async (policyId: string) => {
+      const policy = data?.policies.find((entry) => entry.id === policyId) ?? null;
+      if (!policy || policy.scheduleKind !== "manual") return backUpNow(policyId);
+
+      const fingerprint = policy.sourceRef.data.connectionFingerprint;
+      const connection = connections.find(
+        (entry) => connectionFingerprint(entry) === fingerprint
+      );
+      if (!connection || !isBrowserApiConnection(connection)) {
+        throw new Error(
+          "This rule's budget is not open in this browser. Connect to it, then back up."
+        );
+      }
+
+      return backUpNow(policyId, {
+        bytes: await exportBrowserApiBudgetZip(connection),
+        budgetId: connection.budgetSyncId,
+        budgetName: connection.label,
+      });
+    },
     onSuccess: (result) => {
       // Say what happened. A backup that stored nothing comes back as a 200 with
       // a failed result, and calling that "Backup finished" hides exactly what

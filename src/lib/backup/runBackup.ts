@@ -101,6 +101,18 @@ export type RunBackupOptions = {
    * for.
    */
   contentsOverride?: BackupPolicy["contents"];
+  /**
+   * The budget archive, already exported by the caller.
+   *
+   * Supplied for a direct connection, whose budget lives in the operator's
+   * browser: the server has no way to fetch it, so the browser exports it with
+   * the same official `exportBudget` call this pipeline would have made over
+   * HTTP and hands the bytes over. Everything after this point - verification,
+   * encryption, the manifest, every destination, retention - is unchanged and
+   * unaware of where the bytes came from, which is the point: a direct copy is
+   * the same artifact, not a lesser one.
+   */
+  budgetArchive?: { bytes: Buffer; budgetId: string | null; budgetName: string | null } | null;
 };
 
 function slug(value: string): string {
@@ -186,7 +198,8 @@ function readPassphrase(db: SqliteDatabase, policy: BackupPolicy): string {
 async function prepareArtifact(
   db: SqliteDatabase,
   policy: BackupPolicy,
-  kind: BackupArtifactKind
+  kind: BackupArtifactKind,
+  supplied: RunBackupOptions["budgetArchive"] = null
 ): Promise<PreparedArtifact> {
   if (kind === "app-db") {
     const bytes = exportAppDbSnapshot(db);
@@ -197,6 +210,21 @@ async function prepareArtifact(
       verification: verifyAppDbArchive(bytes, policy.verificationLevel),
       sourceBudgetId: null,
       sourceBudgetName: null,
+      serverUrl: null,
+    };
+  }
+
+  // Already exported by the browser, for a source the server cannot reach.
+  // Verified here all the same: bytes that arrived over a request deserve the
+  // check more than bytes this process fetched itself, not less.
+  if (supplied) {
+    return {
+      kind,
+      label: supplied.budgetName || supplied.budgetId || "budget",
+      plaintext: supplied.bytes,
+      verification: verifyBudgetArchive(supplied.bytes, policy.verificationLevel),
+      sourceBudgetId: supplied.budgetId,
+      sourceBudgetName: supplied.budgetName,
       serverUrl: null,
     };
   }
@@ -255,7 +283,7 @@ export async function runBackup(
   for (const kind of kindsFor(options.contentsOverride ?? policy.contents)) {
     let prepared: PreparedArtifact;
     try {
-      prepared = await prepareArtifact(db, policy, kind);
+      prepared = await prepareArtifact(db, policy, kind, options.budgetArchive ?? null);
     } catch (error) {
       artifacts.push({
         kind,
