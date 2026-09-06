@@ -17,7 +17,7 @@ import { buildRuleDeleteWarning, buildRuleBulkDeleteWarning } from "@/lib/usageW
 import { rulePreview } from "../utils/rulePreview";
 import type { EntityMaps } from "../utils/rulePreview";
 import { STAGE_LABELS } from "../utils/ruleFields";
-import { isSplitRule } from "../lib/splitActions";
+import { isScheduleLinkedRule, matchesActionTypeFilter } from "../lib/ruleFilters";
 import { FilterBar } from "./FilterBar";
 import type { StageFilter, ActionTypeFilter } from "./FilterBar";
 import { ConditionChip, ActionChip } from "./RuleChips";
@@ -38,7 +38,9 @@ function stageBadgeVariant(stage: string) {
 }
 
 function isScheduleGeneratedRule(rule: Rule | null | undefined): boolean {
-  return !!rule?.actions.some((action) => action.op === "link-schedule");
+  // Shared with the action-type filter so the badge on a row and the filter that
+  // selects it cannot disagree.
+  return !!rule && isScheduleLinkedRule(rule.actions);
 }
 
 // ─── RulesTable ───────────────────────────────────────────────────────────────
@@ -106,12 +108,7 @@ export function RulesTable({ onEdit, onMerge, payeeId, categoryId, accountId }: 
     return Object.values(stagedRules).filter((s) => {
       if (s.isDeleted) return false;
       if (stageFilter !== "all" && normalizeStage(s.entity.stage) !== stageFilter) return false;
-      if (actionTypeFilter === "split") {
-        if (!isSplitRule(s.entity.actions)) return false;
-      } else if (actionTypeFilter !== "all") {
-        const hasAction = s.entity.actions.some((a) => a.field === actionTypeFilter);
-        if (!hasAction) return false;
-      }
+      if (!matchesActionTypeFilter(s.entity, actionTypeFilter)) return false;
       if (payeeId) {
         const parts = [...s.entity.conditions, ...s.entity.actions];
         const hasPayee = parts.some((part) => {

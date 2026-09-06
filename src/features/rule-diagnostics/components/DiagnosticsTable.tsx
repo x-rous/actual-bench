@@ -5,6 +5,8 @@ import { FindingCard } from "./FindingCard";
 type Props = {
   findings: Finding[];
   rulesById: Map<string, Rule>;
+  /** Opens the rule editor over the page, rather than navigating to Rules. */
+  onOpenRule?: (ruleId: string) => void;
   onDismiss?: (finding: Finding) => void;
   onRestore?: (finding: Finding) => void;
 };
@@ -22,7 +24,13 @@ type Props = {
  * What is left is the order the ranking chose: what is broken first, then what
  * fixing it is worth.
  */
-export function DiagnosticsTable({ findings, rulesById, onDismiss, onRestore }: Props) {
+export function DiagnosticsTable({
+  findings,
+  rulesById,
+  onDismiss,
+  onRestore,
+  onOpenRule,
+}: Props) {
   if (findings.length === 0) {
     return null;
   }
@@ -34,6 +42,7 @@ export function DiagnosticsTable({ findings, rulesById, onDismiss, onRestore }: 
           key={`${f.code}-${f.affected[0]?.id ?? "none"}-${i}`}
           finding={f}
           rulesById={rulesById}
+          onOpenRule={onOpenRule}
           onDismiss={onDismiss}
           onRestore={onRestore}
         />

@@ -11,6 +11,7 @@ import { applyDismissals, collectGarbage } from "../lib/dismissals";
 import type { Finding, FindingCode } from "../types";
 import { DiagnosticsFilterBar, type ScopeFilter } from "./DiagnosticsFilterBar";
 import { DiagnosticsTable } from "./DiagnosticsTable";
+import { RuleDrawer } from "@/features/rules/components/RuleDrawer";
 
 function findingMatchesSearch(finding: Finding, query: string): boolean {
   if (query.length === 0) return true;
@@ -60,6 +61,9 @@ export function RuleDiagnosticsView() {
   const [codeFilter, setCodeFilter] = useState<Set<FindingCode>>(new Set());
 
   const rulesById = useMemo(() => new Map(rules.map((r) => [r.id, r])), [rules]);
+  // Editing happens here rather than on the Rules page: the finding is the
+  // reason for the edit, and leaving the page to make it loses that.
+  const [editingRuleId, setEditingRuleId] = useState<string | null>(null);
 
   const split = useMemo(
     () => applyDismissals(report?.findings ?? [], dismissals, rulesById),
@@ -250,12 +254,30 @@ export function RuleDiagnosticsView() {
                         }
                       : undefined
                   }
+                  onOpenRule={setEditingRuleId}
                 />
               </div>
             </>
           )
         )}
       </div>
+
+      {/* The Rules page's own editor, opened over the finding that prompted it.
+          Navigating to Rules and highlighting a row lost the finding, and cost a
+          trip back for the next one.
+
+          Mounted only while open: the editor reads the whole entity graph to
+          build its comboboxes, which this page has no reason to do for a drawer
+          nobody has asked for. */}
+      {editingRuleId !== null ? (
+        <RuleDrawer
+          open
+          onOpenChange={(open) => {
+            if (!open) setEditingRuleId(null);
+          }}
+          ruleId={editingRuleId}
+        />
+      ) : null}
     </PageLayout>
   );
 }

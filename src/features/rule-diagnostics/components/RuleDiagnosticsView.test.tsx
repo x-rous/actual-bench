@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import type { AnchorHTMLAttributes } from "react";
 import type { Rule } from "@/types/entities";
 import type { DiagnosticReport, Finding } from "../types";
@@ -45,6 +45,16 @@ let hookResult: HookResult = {
   rules: [],
 };
 
+// The real editor pulls the whole entity graph in to build its comboboxes,
+// which is not what these tests are about; the id it opened on is.
+// Relative: the `@/` alias does not resolve inside `jest.mock`, which is
+// hoisted above the module mapper.
+jest.mock("../../rules/components/RuleDrawer", () => ({
+  RuleDrawer: ({ ruleId }: { ruleId: string | null }) => (
+    <div data-testid="rule-drawer">{ruleId}</div>
+  ),
+}));
+
 jest.mock("../hooks/useRuleDiagnostics", () => ({
   useRuleDiagnostics: () => hookResult,
 }));
@@ -67,10 +77,20 @@ jest.mock("../hooks/useRuleDiagnosticsDismissals", () => ({
 }));
 
 const stagedRulesState: Record<string, { isDeleted: boolean }> = {};
+const stagedEntities = {
+  rules: stagedRulesState,
+  payees: {},
+  categories: {},
+  accounts: {},
+  categoryGroups: {},
+  schedules: {},
+};
 jest.mock("../../../store/staged", () => ({
-  useStagedStore: Object.assign(() => ({}), {
-    getState: () => ({ rules: stagedRulesState }),
-  }),
+  useStagedStore: Object.assign(
+    (selector?: (s: typeof stagedEntities) => unknown) =>
+      selector ? selector(stagedEntities) : stagedEntities,
+    { getState: () => stagedEntities }
+  ),
 }));
 
 const toastErrorMock = jest.fn();
@@ -189,7 +209,7 @@ describe("RuleDiagnosticsView", () => {
     expect(refreshMock).toHaveBeenCalledTimes(1);
   });
 
-  it("renders rule summary as a Link to /rules?highlight=<id> with aria-label", () => {
+  it("opens the rule editor in place rather than navigating to the Rules page", () => {
     const finding = makeFinding({
       code: "RULE_MISSING_PAYEE",
       severity: "error",
@@ -198,11 +218,52 @@ describe("RuleDiagnosticsView", () => {
     hookResult = { ...hookResult, report: makeReport([finding]) };
     stagedRulesState["rule-xyz"] = { isDeleted: false };
     render(<RuleDiagnosticsView />);
-    const link = screen.getByLabelText("Open rule: rule one") as HTMLAnchorElement;
-    expect(link.getAttribute("href")).toBe("/rules?highlight=rule-xyz");
+    // The finding is the reason for the edit, so the editor comes to it. A link
+    // to /rules?highlight= lost the finding and cost a trip back for the next.
+    const control = screen.getByLabelText("Edit rule: rule one");
+    expect(control.tagName).toBe("BUTTON");
+    expect(control).not.toHaveAttribute("href");
+
+    fireEvent.click(control);
+    expect(screen.getByTestId("rule-drawer")).toHaveTextContent("rule-xyz");
   });
 
-  it("toasts and prevents navigation when clicking a rule that no longer exists", () => {
+  it("draws a rule in the Rules page's colours rather than as flat text", () => {
+    // A finding is a claim *about* a rule's conditions and actions. Rendered as
+    // one colourless sentence, the reader had to re-parse the rule to find the
+    // part the finding was talking about.
+    const finding = makeFinding({
+      code: "RULE_MISSING_PAYEE",
+      severity: "error",
+      affected: [{ id: "rule-chip", summary: "when notes contains COFFEE then set category" }],
+    });
+    hookResult = {
+      ...hookResult,
+      report: makeReport([finding]),
+      rules: [
+        {
+          id: "rule-chip",
+          stage: "default",
+          conditionsOp: "and",
+          conditions: [{ field: "notes", op: "contains", value: "COFFEE" }],
+          actions: [{ field: "cleared", op: "set", value: true }],
+        } as unknown as Rule,
+      ],
+    };
+    stagedRulesState["rule-chip"] = { isDeleted: false };
+    render(<RuleDiagnosticsView />);
+
+    const control = screen.getByLabelText(
+      "Edit rule: when notes contains COFFEE then set category"
+    );
+    // The field, its value and the action are separate elements now, which is
+    // what lets them be coloured independently.
+    expect(within(control).getByText("Notes")).toBeInTheDocument();
+    expect(within(control).getByText("COFFEE")).toBeInTheDocument();
+    expect(within(control).getByText("then")).toBeInTheDocument();
+  });
+
+  it("toasts rather than opening the editor for a rule that no longer exists", () => {
     const finding = makeFinding({
       code: "RULE_MISSING_PAYEE",
       severity: "error",
@@ -211,10 +272,12 @@ describe("RuleDiagnosticsView", () => {
     hookResult = { ...hookResult, report: makeReport([finding]) };
     // Note: stagedRulesState is empty, so missing-rule isn't there.
     render(<RuleDiagnosticsView />);
-    const link = screen.getByLabelText("Open rule: missing one");
-    fireEvent.click(link);
+    // A report is computed from a snapshot: the rule it names may have been
+    // deleted since, and the editor would open on an empty form.
+    fireEvent.click(screen.getByLabelText("Edit rule: missing one"));
     expect(toastErrorMock).toHaveBeenCalledTimes(1);
     expect(toastErrorMock.mock.calls[0][0]).toMatch(/no longer exists/i);
+    expect(screen.queryByTestId("rule-drawer")).not.toBeInTheDocument();
   });
 
   describe("filters", () => {
