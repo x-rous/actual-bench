@@ -4,6 +4,7 @@
 import { zipSync, unzipSync, strToU8 } from "fflate";
 import { exportBundle, ALL_BUNDLE_ENTITY_KEYS, type BundleEntityKey } from "./bundleExport";
 import { readBundleZip } from "./bundleImport";
+import { importAccountsFromCsv } from "@/features/accounts/csv/accountsCsvImport";
 
 /**
  * The bundle is the one importer in the repository that ingests an *archive*
@@ -208,12 +209,12 @@ describe("exportBundle", () => {
     expect(result.files.map((f) => f.key).sort()).toEqual([...ALL_BUNDLE_ENTITY_KEYS].sort());
   });
 
-  it("round-trips real rows through the archive without losing them", async () => {
+  it("round-trips real rows through the archive without losing a field", async () => {
     const input = {
       ...emptyInput,
       accounts: staged([
         { id: "a1", name: "Checking", offBudget: false, closed: false },
-        { id: "a2", name: "Smith, John", offBudget: true, closed: false },
+        { id: "a2", name: "Smith, John", offBudget: true, closed: true },
       ]),
     } as unknown as ExportInput;
 
@@ -224,7 +225,19 @@ describe("exportBundle", () => {
     if (!result.ok) return;
     const accounts = result.files.find((f) => f.key === "accounts")!;
     expect(accounts.rowCount).toBe(2);
-    // A name containing the delimiter has to survive quoting in both directions.
+
+    // Read the member back through the importer that actually consumes it,
+    // rather than asserting the CSV text: the contract is that what the bundle
+    // writes can be imported again, and comparing whole entities means a
+    // dropped or transposed boolean fails here instead of silently surviving.
+    const imported = importAccountsFromCsv(accounts.csvText);
+    expect("error" in imported).toBe(false);
+    if ("error" in imported) return;
+    expect(imported.accounts).toEqual([
+      { name: "Checking", offBudget: false, closed: false },
+      { name: "Smith, John", offBudget: true, closed: true },
+    ]);
+    // A name containing the delimiter survives quoting in both directions.
     expect(accounts.csvText).toContain('"Smith, John"');
   });
 
