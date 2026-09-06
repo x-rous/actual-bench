@@ -1,5 +1,8 @@
 import {
+  CONNECTION_KDF_PARAMS,
+  CURRENT_KDF_VERSION,
   deriveKeyFromPassphrase,
+  resolveKdfParams,
   openSecret,
   openWithKey,
   sealSecret,
@@ -79,5 +82,61 @@ describe("explicit-key vault primitives (RD-061 / PR-026a)", () => {
     const sealed = sealWithKey("api-key-xyz", key);
     expect(openWithKey(sealed, key)).toBe("api-key-xyz");
     expect(() => openWithKey(sealed, deriveKeyFromPassphrase("wrong-pass", salt))).toThrow();
+  });
+});
+
+/**
+ * The rest of the suite runs with a lowered `N` (jest.env.cjs) so the vault
+ * suites test vault logic rather than scrypt. This block is the counterweight:
+ * it pins the parameters that actually ship and pays their real cost once, so
+ * the override can never quietly become the product's KDF.
+ */
+describe("shipped KDF parameters", () => {
+  it("meets the OWASP scrypt floor, with maxmem covering 128 * N * r", () => {
+    const params = CONNECTION_KDF_PARAMS[CURRENT_KDF_VERSION];
+    expect(params).toEqual({ N: 131072, r: 8, p: 1, maxmem: 192 * 1024 * 1024 });
+    // Node's default 32 MiB cap would reject this N; the table must carry room
+    // for the 128 * N * r bytes scrypt actually needs (~134 MiB here).
+    expect(params.maxmem).toBeGreaterThan(128 * params.N * params.r);
+  });
+
+  it("derives at the shipped cost when the parameters are passed explicitly", () => {
+    const salt = randomBytes(16);
+    const params = CONNECTION_KDF_PARAMS[CURRENT_KDF_VERSION];
+    const key = deriveKeyFromPassphrase("shipped-cost-pass", salt, params);
+    expect(key.length).toBe(32);
+    // Same passphrase and salt at the *test* cost must not produce the shipped
+    // key — proof the override changes the derivation rather than being ignored.
+    expect(key.equals(deriveKeyFromPassphrase("shipped-cost-pass", salt))).toBe(false);
+  });
+
+  it("only ever lowers the cost, and only under NODE_ENV=test", () => {
+    const shipped = CONNECTION_KDF_PARAMS[CURRENT_KDF_VERSION];
+    expect(resolveKdfParams().N).toBeLessThanOrEqual(shipped.N);
+    // r, p and maxmem are never touched by the override.
+    expect(resolveKdfParams()).toMatchObject({ r: shipped.r, p: shipped.p, maxmem: shipped.maxmem });
+
+    const originalEnv = process.env.NODE_ENV;
+    try {
+      // A non-test runtime ignores the variable entirely, whatever it holds.
+      (process.env as Record<string, string>).NODE_ENV = "production";
+      expect(resolveKdfParams()).toEqual(shipped);
+    } finally {
+      (process.env as Record<string, string>).NODE_ENV = originalEnv as string;
+    }
+  });
+
+  it("refuses an override that is not a power of two, or is above the shipped cost", () => {
+    const shipped = CONNECTION_KDF_PARAMS[CURRENT_KDF_VERSION];
+    const original = process.env.ACTUAL_BENCH_TEST_KDF_N;
+    try {
+      for (const bad of ["100000", "0", "-16384", "notanumber", String(shipped.N * 2)]) {
+        process.env.ACTUAL_BENCH_TEST_KDF_N = bad;
+        expect(resolveKdfParams()).toEqual(shipped);
+      }
+    } finally {
+      if (original === undefined) delete process.env.ACTUAL_BENCH_TEST_KDF_N;
+      else process.env.ACTUAL_BENCH_TEST_KDF_N = original;
+    }
   });
 });

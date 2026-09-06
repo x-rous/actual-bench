@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { CONNECTION_KDF_PARAMS, CURRENT_KDF_VERSION, deriveKeyFromPassphrase } from "@/lib/sync/vault";
+import { CURRENT_KDF_VERSION, deriveKeyFromPassphrase, resolveKdfParams } from "@/lib/sync/vault";
 import { getAppMeta, setAppMeta } from "./appMetaRepository";
 import { getAppDbHealth } from "./connection";
 import { KDF_VERSION_META_KEY, SALT_META_KEY } from "./vaultMetaKeys";
@@ -47,7 +47,7 @@ export function getOrCreateConnectionVaultSalt(db: SqliteDatabase): Buffer {
 /** KDF params for this install's stored version (defaults to current if unset). */
 function connectionKdfParams(db: SqliteDatabase) {
   const version = Number(getAppMeta(db, KDF_VERSION_META_KEY) ?? CURRENT_KDF_VERSION);
-  return CONNECTION_KDF_PARAMS[version] ?? CONNECTION_KDF_PARAMS[CURRENT_KDF_VERSION];
+  return resolveKdfParams(version);
 }
 
 /** True once a passphrase (and therefore a salt) has been established. */
