@@ -7,7 +7,15 @@ import { cn } from "@/lib/utils";
 import { STAGE_LABELS } from "../utils/ruleFields";
 
 export type StageFilter = "all" | "pre" | "default" | "post";
-export type ActionTypeFilter = "all" | "category" | "payee" | "account" | "cleared" | "notes" | "split";
+export type ActionTypeFilter =
+  | "all"
+  | "category"
+  | "payee"
+  | "account"
+  | "cleared"
+  | "notes"
+  | "split"
+  | "schedule";
 
 export const ACTION_TYPE_OPTIONS: { value: ActionTypeFilter; label: string }[] = [
   { value: "all",      label: "All" },
@@ -17,6 +25,10 @@ export const ACTION_TYPE_OPTIONS: { value: ActionTypeFilter; label: string }[] =
   { value: "cleared",  label: "Sets Cleared" },
   { value: "notes",    label: "Sets Notes" },
   { value: "split",    label: "Splits" },
+  // Not an action *field* like the rest: `link-schedule` is an op, and the rule
+  // it marks is owned by the Schedules page rather than editable here. Worth
+  // filtering for exactly because those rules behave differently.
+  { value: "schedule", label: "Linked to Schedule" },
 ];
 
 export function FilterBar({
