@@ -55,9 +55,13 @@ nearly full, or that the folder is on the same disk as Bench's own data - that l
 not a refusal, because `/data/backups` is a perfectly sensible arrangement that simply is not
 off-site.
 
-Adding or editing a destination always tests it by **using** it: Bench writes real bytes, reads them
-back, compares checksums and deletes the test file. A test that only checked credentials would pass
-on a read-only volume, which is exactly the configuration people get wrong.
+Those checks run again when you press Save, and a folder that fails them is **not saved**. That
+matters more than it sounds: a destination stored despite failing looks configured, counts towards
+having your copies in two places, and does nothing until the night you need it.
+
+Once a destination is saved, Bench tests it by **using** it: it writes real bytes, reads them back,
+compares checksums and deletes the test file. A test that only checked credentials would pass on a
+read-only volume, which is exactly the configuration people get wrong.
 
 A bucket that accepts writes but refuses deletes is a warning rather than an error. Immutable buckets
 are a real choice; backups still work, and only retention is affected.
