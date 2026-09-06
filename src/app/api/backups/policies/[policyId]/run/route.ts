@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getAppDb } from "@/lib/app-db/connection";
 import { AppDbValidationError } from "@/lib/app-db/errors";
-import { appDbErrorResponse, readJsonBody } from "@/lib/app-db/routeResponses";
+import { appDbErrorResponse } from "@/lib/app-db/routeResponses";
 import { getBackupPolicy } from "@/lib/app-db/backupRepository";
 import { listAutomations } from "@/lib/app-db/automationRepository";
 import { listAutomationRuns } from "@/lib/app-db/automationRunRepository";
@@ -59,8 +59,35 @@ async function readUploadedArchive(request: Request): Promise<{
 }> {
   const contentType = request.headers.get("content-type") ?? "";
   if (!contentType.toLowerCase().includes("multipart/form-data")) {
-    const body = await readJsonBody(request).catch(() => ({}));
-    return { archive: null, options: (body ?? {}) as ManualRunOptions };
+    /*
+     * An absent body still means "back up now with no options", which is what
+     * the button sends. Malformed JSON is a different thing and is reported:
+     * swallowing it answered 200 for a request the caller got wrong.
+     */
+    const raw = await request.text();
+    if (!raw.trim()) return { archive: null, options: {} };
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      throw new AppDbValidationError("Invalid JSON body");
+    }
+    return { archive: null, options: (parsed ?? {}) as ManualRunOptions };
+  }
+
+  /*
+   * Checked before the body is parsed, not only after.
+   *
+   * `formData()` buffers the whole request first, so a size check that runs
+   * after it has already cost the memory it was meant to protect. The header is
+   * the client's claim rather than a fact, which is why the parsed part is
+   * checked again below - this only stops an obviously oversized upload cheaply.
+   */
+  const declared = Number(request.headers.get("content-length") ?? "");
+  if (Number.isFinite(declared) && declared > MAX_UPLOAD_BYTES) {
+    throw new AppDbValidationError(
+      `The exported budget is larger than the ${Math.round(MAX_UPLOAD_BYTES / 1024 / 1024)}MB this endpoint accepts.`
+    );
   }
 
   const form = await request.formData();
@@ -117,6 +144,24 @@ export async function POST(request: Request, context: RouteContext) {
     if (!policy) return NextResponse.json({ error: "Backup rule not found" }, { status: 404 });
 
     if (upload.archive) {
+      /*
+       * Only a manual rule takes its budget from the request.
+       *
+       * A scheduled rule runs through the automation engine, which holds the
+       * single-run lock, records the run and updates health. Letting an upload
+       * drive one would skip all three - and hand it a budget from whoever sent
+       * the request rather than the enrolled source the rule names.
+       */
+      if (policy.scheduleKind !== "manual") {
+        return NextResponse.json(
+          {
+            error:
+              "This rule takes its budget from its own source connection, so it cannot be run from an uploaded copy.",
+          },
+          { status: 400 }
+        );
+      }
+
       const result = await runBackup(db, policy, {
         trigger: "manual",
         tier: "manual",

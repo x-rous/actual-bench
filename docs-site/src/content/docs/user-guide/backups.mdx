@@ -83,6 +83,10 @@ A rule says what to copy, where to put it, how often, and how long to keep it.
   no schedule, and **Back up now** exports the budget here and hands it to Bench, which stores and
   verifies it exactly like any other copy - same destinations, same retention, same inventory. It is
   a copy you have to ask for, not a lesser one.
+
+  One difference worth knowing: a manual rule has no automation behind it, so it does not appear on
+  the Automations page and keeps no run history. You get the result of each backup when you press the
+  button; the copies themselves are listed under **Backups** like all the others.
 - **When** - every few hours, every day at a time you pick, on chosen days of the week, once a month,
   or a cron expression for the people who want one. Whichever you choose, Bench says back what it
   understood and when the next run actually lands.
@@ -96,9 +100,10 @@ that opens the encrypted ones. Bench forgets that passphrase on its own once the
 is gone, and lists it under **Passphrases Bench still holds** until then.
 
 Each rule shows just enough to answer "is this working?" - whether it is paused, when it last ran and
-when it runs next - and links to **Automations** for run history, retries, logs and failures. Rules
-run on Bench's automation engine, so that page is where their full history lives; Backups does not
-keep a second copy of it.
+when it runs next - and links to **Automations** for run history, retries, logs and failures.
+Scheduled rules run on Bench's automation engine, so that page is where their full history lives;
+Backups does not keep a second copy of it. A manual rule has no automation and so no run history -
+its result is reported when you press **Back up now**.
 
 ## Verified, not just stored
 

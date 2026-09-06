@@ -42,6 +42,23 @@ describe("POST /api/backups/policies/[policyId]/run", () => {
     else process.env.ACTUAL_BENCH_DB_PATH = previousDbPath;
   });
 
+  function scheduledPolicy() {
+    const destination = createBackupDestination(db, {
+      name: "Volume",
+      kind: "local",
+      config: { version: 1, data: { path: volume } },
+    });
+    return createBackupPolicy(db, {
+      name: "Nightly",
+      contents: "budget",
+      scheduleKind: "cron",
+      cronExpression: "0 2 * * *",
+      sourceRef: { version: 1, data: { connectionFingerprint: "conn-1" } },
+      destinationIds: [destination.id],
+      verificationLevel: "data",
+    });
+  }
+
   function manualPolicy() {
     const destination = createBackupDestination(db, {
       name: "Volume",
@@ -111,6 +128,51 @@ describe("POST /api/backups/policies/[policyId]/run", () => {
     form.append("archive", zipBlob(new Uint8Array()), "b.zip");
 
     const response = await POST(upload(form), context(policy.id));
+    expect(response.status).toBe(400);
+  });
+
+  it("refuses to run a scheduled rule from an uploaded copy", async () => {
+    // A scheduled rule goes through the automation engine, which holds the
+    // single-run lock, records the run and updates health. An upload would skip
+    // all three, and hand it a budget from whoever sent the request rather than
+    // the enrolled source the rule names.
+    const policy = scheduledPolicy();
+    const form = new FormData();
+    form.append("archive", zipBlob(buildBudgetArchive()), "b.zip");
+
+    const response = await POST(upload(form), context(policy.id));
+    expect(response.status).toBe(400);
+
+    // Nothing was written.
+    expect(readdirSync(volume)).toHaveLength(0);
+  });
+
+  it("rejects an oversized upload before parsing the body", async () => {
+    // `formData()` buffers the whole request, so a size check that only runs
+    // afterwards has already cost the memory it was meant to protect.
+    const policy = manualPolicy();
+    const request = new Request("http://localhost/run", {
+      method: "POST",
+      headers: {
+        "content-type": "multipart/form-data; boundary=x",
+        "content-length": String(1024 * 1024 * 1024),
+      },
+      body: "--x--",
+    });
+
+    const response = await POST(request, context(policy.id));
+    expect(response.status).toBe(400);
+  });
+
+  it("reports malformed JSON rather than treating it as an empty body", async () => {
+    const policy = manualPolicy();
+    const request = new Request("http://localhost/run", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "{not json",
+    });
+
+    const response = await POST(request, context(policy.id));
     expect(response.status).toBe(400);
   });
 
