@@ -95,6 +95,22 @@ function Section({
   );
 }
 
+/**
+ * When this rule last produced a copy.
+ *
+ * The artifacts are the record a manual rule leaves: it has no automation, so
+ * `automation.lastRunAt` is null for it no matter how many backups have been
+ * taken by hand.
+ */
+function newestCopyAt(artifacts: RecoveryCenterData["artifacts"], policyId: string): string | null {
+  let newest: string | null = null;
+  for (const artifact of artifacts) {
+    if (artifact.policyId !== policyId) continue;
+    if (newest === null || artifact.createdAt > newest) newest = artifact.createdAt;
+  }
+  return newest;
+}
+
 export function SetupTab({
   data,
   discovering,
@@ -114,6 +130,7 @@ export function SetupTab({
   onForgetPassphrase,
   onToggleSafetyPoints,
 }: Props) {
+  const lastCopyAt = (policyId: string) => newestCopyAt(data.artifacts, policyId);
   return (
     <div className="min-h-0 flex-1 overflow-auto">
       {/* ── Destinations ─────────────────────────────────────────────────────
@@ -263,12 +280,12 @@ export function SetupTab({
       </Section>
 
       {/* ── Backup rules ─────────────────────────────────────────────────── */}
-      <Section id="rules-heading" title="Automatic Backup Rules">
+      <Section id="rules-heading" title="Backup Rules">
         {data.policies.length === 0 ? (
           <p className="text-xs text-muted-foreground">
             {data.destinations.length === 0
               ? "Add a destination first - a rule needs somewhere to write."
-              : "No rule yet, so nothing is being copied on a schedule."}
+              : "No rule yet, so nothing is being copied."}
           </p>
         ) : (
           <div className="overflow-x-auto rounded-md border border-border">
@@ -340,7 +357,11 @@ export function SetupTab({
                       {describeRetention(policy)}
                     </td>
                     <td className="px-3 py-1.5 text-muted-foreground">
-                      {relativeTime(policy.automation?.lastRunAt ?? null)}
+                      {/* From the copies for a manual rule, which has no
+                          automation to have a last run. Reading the automation
+                          alone left the column empty however many backups the
+                          user had just taken by hand. */}
+                      {relativeTime(policy.automation?.lastRunAt ?? lastCopyAt(policy.id))}
                     </td>
                     <td className="px-3 py-1.5">
                       <div className="flex items-center justify-end gap-1">
@@ -350,7 +371,11 @@ export function SetupTab({
                           className="h-6 text-xs"
                           onClick={() => onRunNow(policy.id)}
                           disabled={runningPolicyId !== null}
-                          title="Take a copy now, outside the schedule. Backups taken by hand are kept until you delete them."
+                          title={
+                            policy.scheduleKind === "manual"
+                              ? "Take a copy now. Backups taken by hand are kept until you delete them."
+                              : "Take a copy now, outside the schedule. Backups taken by hand are kept until you delete them."
+                          }
                         >
                           {runningPolicyId === policy.id ? (
                             <Loader2 className="animate-spin" aria-hidden />
@@ -359,16 +384,16 @@ export function SetupTab({
                           )}
                           Back up now
                         </Button>
-                        {/* A real link, styled as a button. Rendering an anchor
-                            through Button keeps role="button" on it, which
-                            announces a navigation as a button and loses what a
-                            link offers - open in a new tab, copy the address. */}
+                        {/* Only where there is history to open. A manual rule
+                            has no automation, so this led to a page listing
+                            everyone else's runs and none of its own. */}
+                        {policy.automation && (
+                        /* A real link, styled as a button. Rendering an anchor
+                           through Button keeps role="button" on it, which
+                           announces a navigation as a button and loses what a
+                           link offers - open in a new tab, copy the address. */
                         <Link
-                          href={
-                            policy.automation
-                              ? `/automations/runs?automation=${policy.automation.id}`
-                              : "/automations/runs"
-                          }
+                          href={`/automations/runs?automation=${policy.automation.id}`}
                           className={cn(
                             buttonVariants({ variant: "outline", size: "sm" }),
                             "h-6 text-xs"
@@ -378,6 +403,7 @@ export function SetupTab({
                           <History aria-hidden />
                           Run history
                         </Link>
+                        )}
                         <Button
                           variant="outline"
                           size="sm"

@@ -102,7 +102,18 @@ function data(overrides: Partial<RecoveryCenterData> = {}): RecoveryCenterData {
     ],
     policies: [
       {
-        automation: null,
+        automation: {
+          id: "auto-1",
+          enabled: true,
+          running: false,
+          autoPausedAt: null,
+          autoPauseReason: null,
+          lastRunAt: "2026-08-27T02:00:00.000Z",
+          nextRunAt: "2026-08-28T02:00:00.000Z",
+          status: "ok",
+          statusSummary: "Active",
+          lastRunMessage: null,
+        },
         id: "pol-1",
         name: "Nightly",
         enabled: true,
@@ -487,12 +498,35 @@ describe("the Recovery Center", () => {
     ]) {
       expect(await screen.findByRole("button", { name })).toBeInTheDocument();
     }
-    // Run history is a link, and it goes to this rule's runs rather than to a
-    // page listing everything that has ever run.
+    // A scheduled rule has no history link here, because this fixture's rule has
+    // no automation - see the two cases below, which cover both halves.
+  });
+
+  it("links a scheduled rule to its own runs, not to every run there has been", async () => {
+    renderView();
+    await openSetup();
+
     expect(screen.getByRole("link", { name: /run history/i })).toHaveAttribute(
       "href",
-      "/automations/runs"
+      "/automations/runs?automation=auto-1"
     );
+  });
+
+  it("offers no run history for a manual rule, which has none", async () => {
+    // A manual rule has no automation behind it. The link used to fall back to
+    // the runs page, which lists everyone else's history and none of its own.
+    mockedApi.fetchRecoveryCenter.mockResolvedValue(
+      data({
+        policies: [{ ...data().policies[0], scheduleKind: "manual", automation: null }],
+      })
+    );
+    renderView();
+    await openSetup();
+
+    expect(await screen.findByRole("button", { name: /back up now/i })).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /run history/i })).not.toBeInTheDocument();
+    // And it says so where the schedule would be, rather than inventing one.
+    expect(screen.getByText("Manual only")).toBeInTheDocument();
   });
 
   it("lists a passphrase it is still holding for backups whose rule is gone", async () => {

@@ -111,6 +111,11 @@ export function describeRetention(policy: BackupPolicy): string {
 }
 
 export function describeSchedule(policy: BackupPolicy): string {
+  // Said plainly, because the alternative is worse than saying nothing: with no
+  // branch here a manual rule fell through to the cron path, where a null
+  // expression defaults to `0 2 * * *` - so the table advertised "Daily at
+  // 02:00" for a rule that will never run on its own.
+  if (policy.scheduleKind === "manual") return "Manual only";
   if (policy.scheduleKind === "interval") {
     const minutes = policy.intervalMinutes ?? 1440;
     if (minutes % 1440 === 0) return `Every ${minutes / 1440} day(s)`;

@@ -34,11 +34,13 @@ import type { BackupDestination, BackupPolicy } from "@/lib/app-db/backupReposit
  *
  * Two decisions show up directly in this form:
  *
- *   * **The source is an enrolled connection**, not a URL. A scheduled backup
- *     has no browser to borrow, so it needs credentials the server can use
- *     unattended, and enrolment is where the operator already granted that. A
- *     budget that has not been enrolled is offered as an explanation rather
- *     than silently missing from the list.
+ *   * **The source is a connection, not a URL.** A *scheduled* backup has no
+ *     browser to borrow, so it needs credentials the server can use unattended,
+ *     and enrolment is where the operator already granted that; a budget that
+ *     has not been enrolled is offered with an explanation rather than silently
+ *     missing. A direct connection cannot be enrolled at all - its budget lives
+ *     in this browser - so it is offered as a manual rule instead of being left
+ *     out, which is what left those users unable to back anything up.
  *   * **Encryption is off by default.** For most self-hosters the copy lands on
  *     a volume they already control, and encryption mainly adds a way to lose
  *     the data permanently. It matters the moment a copy goes somewhere they do
