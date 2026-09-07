@@ -16,6 +16,7 @@
     "start": "node scripts/start.mjs",
     "lint": "eslint",
     "test": "NODE_OPTIONS=--max-old-space-size=1024 jest",
+    "test:coverage": "NODE_OPTIONS=--max-old-space-size=2048 jest --coverage",
     "clean": "rm -rf .next .next-build tsconfig.tsbuildinfo"
   },
   "dependencies": {

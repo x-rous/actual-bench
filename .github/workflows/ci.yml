@@ -17,20 +17,81 @@ concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# The three checks used to run in series inside one job, so the suite waited on
+# a lint pass that takes longer than it does. They are independent, so they run
+# side by side now and the job below aggregates them.
+#
+# `lint-and-test` is a required status check on the main ruleset. Its NAME must
+# not change: the aggregate job at the bottom keeps reporting it, whatever the
+# jobs above are called.
 jobs:
-  test:
-    name: lint-and-test
+  lint:
+    name: lint
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
-
       - uses: actions/setup-node@v7
         with:
           node-version: 22.23.1
           cache: "npm"
+      - name: Install dependencies
+        run: npm ci --prefer-offline --no-audit --no-fund
+      - name: Lint
+        run: npm run lint
 
+  test:
+    name: typecheck-and-test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22.23.1
+          cache: "npm"
+      - name: Install dependencies
+        run: npm ci --prefer-offline --no-audit --no-fund
+
+      - name: Type check
+        run: npx tsc --noEmit
+
+      - name: Run tests with coverage
+        run: npm run test:coverage
+
+      # Reported, not gated: there are no coverage thresholds yet, and a
+      # number nobody can see does not get defended. Surfacing the movement on
+      # the run is the step before choosing per-path floors worth enforcing.
+      - name: Coverage summary
+        if: always()
+        run: |
+          if [ -f coverage/coverage-summary.json ]; then
+            node -e '
+              const s = require("./coverage/coverage-summary.json").total;
+              const row = (k) => `| ${k} | ${s[k].pct}% | ${s[k].covered}/${s[k].total} |`;
+              const out = [
+                "### Coverage", "",
+                "| Metric | % | Covered |", "|---|---:|---:|",
+                row("statements"), row("branches"), row("functions"), row("lines"),
+              ].join("\n");
+              console.log(out);
+              require("node:fs").appendFileSync(process.env.GITHUB_STEP_SUMMARY, out + "\n");
+            '
+          fi
+
+  build:
+    name: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22.23.1
+          cache: "npm"
       - name: Install dependencies
         run: npm ci --prefer-offline --no-audit --no-fund
 
@@ -42,16 +103,27 @@ jobs:
           restore-keys: |
             nextjs-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-
 
-      - name: Lint
-        run: npm run lint
-
-      - name: Type check
-        run: npx tsc --noEmit
-
-      - name: Run tests
-        run: npm test
-
       - name: Build
         run: npm run build
         env:
           NEXT_TELEMETRY_DISABLED: 1
+
+  # The required status check. Keep this job's `name` exactly as it is, or every
+  # open PR blocks on a check that no longer reports.
+  lint-and-test:
+    name: lint-and-test
+    if: always()
+    needs: [lint, test, build]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Report aggregate result
+        run: |
+          echo "lint:  ${{ needs.lint.result }}"
+          echo "test:  ${{ needs.test.result }}"
+          echo "build: ${{ needs.build.result }}"
+          if [ "${{ needs.lint.result }}" != "success" ] \
+            || [ "${{ needs.test.result }}" != "success" ] \
+            || [ "${{ needs.build.result }}" != "success" ]; then
+            echo "::error::One or more CI jobs failed."
+            exit 1
+          fi

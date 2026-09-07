@@ -82,6 +82,41 @@ export const CONNECTION_KDF_PARAMS: Record<number, ScryptParams> = {
 export const CURRENT_KDF_VERSION = 1;
 
 /**
+ * Test-only cost reduction.
+ *
+ * A single derive at the shipped floor takes roughly a second — deliberately,
+ * that is the whole point of the parameters. Six suites unlock a vault several
+ * times each, which made them by far the slowest in the repository and put a
+ * 13s file on the critical path of every CI run. Under `NODE_ENV=test` only, an
+ * explicit `ACTUAL_BENCH_TEST_KDF_N` lowers `N` so those suites exercise the
+ * *logic* — sealing, verifiers, re-sealing on passphrase change, throttling —
+ * at a cost that is not a cryptographic one.
+ *
+ * The shipped parameters stay verified: `CONNECTION_KDF_PARAMS` is untouched
+ * here, and `vault.test.ts` asserts its values and derives with them explicitly,
+ * paying the real cost once.
+ */
+function testKdfOverride(params: ScryptParams): ScryptParams {
+  if (process.env.NODE_ENV !== "test") return params;
+  const n = Number(process.env.ACTUAL_BENCH_TEST_KDF_N);
+  // Power of two, and never above the shipped cost — an override may only make
+  // tests cheaper, never quietly claim a stronger KDF than the one that ships.
+  if (!Number.isInteger(n) || n < 2 || (n & (n - 1)) !== 0 || n > params.N) return params;
+  return { ...params, N: n };
+}
+
+/**
+ * The KDF parameters to use for a stored version, with the test override
+ * applied. Callers that persist or verify the shipped cost should read
+ * `CONNECTION_KDF_PARAMS` directly instead.
+ */
+export function resolveKdfParams(version: number = CURRENT_KDF_VERSION): ScryptParams {
+  return testKdfOverride(
+    CONNECTION_KDF_PARAMS[version] ?? CONNECTION_KDF_PARAMS[CURRENT_KDF_VERSION]
+  );
+}
+
+/**
  * Derive a 32-byte key from a user passphrase and a per-install salt (scrypt).
  * The passphrase and derived key must never be persisted. Used by the
  * remembered-connection vault (RD-061); unrelated to `SYNC_VAULT_KEY`.
@@ -89,7 +124,7 @@ export const CURRENT_KDF_VERSION = 1;
 export function deriveKeyFromPassphrase(
   passphrase: string,
   salt: Buffer,
-  params: ScryptParams = CONNECTION_KDF_PARAMS[CURRENT_KDF_VERSION]
+  params: ScryptParams = resolveKdfParams()
 ): Buffer {
   return scryptSync(passphrase, salt, DERIVED_KEY_BYTES, {
     N: params.N,

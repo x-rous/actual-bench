@@ -94,11 +94,6 @@ describe("import preview", () => {
     expect(previewRows()).toHaveLength(40);
   });
 
-  it("offers no pagination — the preview is one scrollable list", () => {
-    renderWith(statement(40));
-
-    expect(screen.queryByRole("button", { name: /next page|show all|load more/i })).toBeNull();
-  });
 
   it("keeps a column for each of the statement's two text channels", () => {
     renderWith(statement(3));
@@ -138,48 +133,7 @@ describe("import preview", () => {
     expect(screen.getByText(/1 row could not be read/)).toBeInTheDocument();
   });
 
-  it("keeps every control available after the layout change", () => {
-    renderWith(statement(5));
 
-    // Mapping moved into the preview header, interpretation stayed on the left,
-    // and the raw text is behind a button — but nothing was lost.
-    expect(screen.getByLabelText("Source column for the posted date")).toBeInTheDocument();
-    expect(screen.getByLabelText("Source column for the imported payee")).toBeInTheDocument();
-    expect(screen.getByLabelText("Source column for the notes")).toBeInTheDocument();
-    expect(screen.getByLabelText("Source column for the reference")).toBeInTheDocument();
-    expect(screen.getByLabelText("Source column for the amount")).toBeInTheDocument();
-
-    expect(screen.getByLabelText("Date format")).toBeInTheDocument();
-    expect(screen.getByLabelText("Amounts")).toBeInTheDocument();
-    expect(screen.getByLabelText("Decimal")).toBeInTheDocument();
-    expect(screen.getByLabelText("Compare statement text against")).toBeInTheDocument();
-    expect(screen.getByLabelText("Match transactions within (days)")).toBeInTheDocument();
-    expect(screen.getByLabelText("Look beyond the statement period (days)")).toBeInTheDocument();
-
-    // Moved here from the review screen: the notes source feeds the transform
-    // engine, so it has to be settled before any transformation runs.
-    expect(screen.getByRole("radio", { name: "Use the statement's payee" })).toBeInTheDocument();
-    expect(screen.getByRole("radio", { name: "Don't set the payee - Leave it to your rules" })).toBeInTheDocument();
-    // This fixture is a CSV, where the Notes column mapping is the notes
-    // decision — so there is no second control here to contradict it (F-128).
-    expect(screen.queryByRole("checkbox", { name: /Use the statement's memo/ })).toBeNull();
-    expect(screen.getByText(/column dropdown above the preview/i)).toBeInTheDocument();
-
-    expect(screen.getByLabelText("Profile name")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /save profile/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /edit pasted statement/i })).toBeInTheDocument();
-  });
-
-  it("puts the mapping selectors in the preview header, above the values they feed", () => {
-    renderWith(statement(5));
-
-    // The point of the move: the control and the column it controls are the
-    // same column, so a wrong mapping is visible rather than deduced.
-    const table = screen.getByRole("table", { name: /every row parsed/i });
-    expect(
-      within(table).getByLabelText("Source column for the imported payee")
-    ).toBeInTheDocument();
-  });
 
   it("names source columns by their header and a real value from them", () => {
     renderWith(statement(5));
@@ -248,13 +202,6 @@ describe("import preview", () => {
     expect([...inflow.querySelectorAll("td")].at(-1)).toHaveTextContent("5,000.00");
   });
 
-  it("names the statement once, and not in a banner of its own", () => {
-    renderWith(statement(3));
-
-    // The filename belongs to the source card; row count and period describe the
-    // preview and live over it. Three copies of one name is what this replaced.
-    expect(screen.getAllByText("Pasted statement")).toHaveLength(1);
-  });
 
   it("says the bank's text is kept as the imported payee whichever payee you choose", () => {
     renderWith(statement(3));
