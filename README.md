@@ -82,10 +82,8 @@ No setup, no account. A year of household Envelope and Tracking budgets to poke 
 
 ## Quick start
 
-You need a running [Actual Budget](https://github.com/actualbudget/actual) server, and if you connect
-through HTTP API Server mode, a reachable
-[actual-http-api](https://github.com/jhonderson/actual-http-api) as well. Nothing else is required -
-every environment variable is optional.
+You need a running [Actual Budget](https://github.com/actualbudget/actual) server. Nothing else is
+required - every environment variable is optional.
 
 ```yaml
 # docker-compose.yml
