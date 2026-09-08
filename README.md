@@ -1,310 +1,98 @@
-<p align="center">
-  <img src="public/logo.png" alt="Actual Bench" height="72" />
-</p>
+<div align="center">
 
-<h1 align="center">Actual Bench</h1>
+<img src="public/logo.png" alt="Actual Bench" height="72" />
 
-<p align="center">
-  <strong>The advanced admin, budgeting, diagnostics, and ActualQL workbench for Actual Budget.</strong>
-</p>
+# Actual Bench
 
-<p align="center">
-  Bulk-edit your budget data, clean up rules, inspect budget file snapshots, run ActualQL, and manage yearly budgets, safely, with every change staged locally until you click <strong>Save</strong>.
-</p>
+**The workbench beside Actual Budget.**
 
-<p align="center">
-  <a href="https://actual-bench-demo.vercel.app"><img src="https://img.shields.io/badge/%E2%96%B6_live_demo-online-brightgreen" alt="Live demo" /></a>
-  <a href="https://github.com/x-rous/actual-bench/actions/workflows/ci.yml"><img src="https://github.com/x-rous/actual-bench/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
-  <a href="https://github.com/x-rous/actual-bench/releases"><img src="https://img.shields.io/github/v/tag/x-rous/actual-bench?label=version" alt="Latest version" /></a>
-  <a href="https://hub.docker.com/r/xrous/actual-bench"><img src="https://img.shields.io/docker/pulls/xrous/actual-bench?label=docker%20pulls" alt="Docker pulls" /></a>
-  <a href="https://github.com/x-rous/actual-bench/blob/main/LICENSE"><img src="https://img.shields.io/github/license/x-rous/actual-bench" alt="License" /></a>
-</p>
+A full year on one screen, bulk cleanup you review before it lands, rules you can audit,
+statements you can reconcile - and backups that prove they still open.
 
-<p align="center">
-  <a href="https://actual-bench-demo.vercel.app"><strong>🚀 Try the live demo →</strong></a><br />
-  <sub>Compare year-long household Envelope and Tracking budgets — no setup required. (Shared sandbox; resets periodically.)</sub>
-</p>
+[![Latest version](https://img.shields.io/github/v/tag/x-rous/actual-bench?label=version&style=flat-square)](https://github.com/x-rous/actual-bench/releases)
+[![CI](https://img.shields.io/github/actions/workflow/status/x-rous/actual-bench/ci.yml?branch=main&style=flat-square&label=CI)](https://github.com/x-rous/actual-bench/actions/workflows/ci.yml)
+[![Docker pulls](https://img.shields.io/docker/pulls/xrous/actual-bench?style=flat-square&label=docker%20pulls&logo=docker&logoColor=white)](https://hub.docker.com/r/xrous/actual-bench)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue?style=flat-square)](LICENSE)
+
+[![Documentation](https://img.shields.io/badge/Docs-actual--bench-4169E1?style=flat-square&logo=readthedocs&logoColor=white)](https://x-rous.github.io/actual-bench/)
+[![Live demo](https://img.shields.io/badge/Demo-live-40a829?style=flat-square&logo=rocket&logoColor=white)](https://actual-bench-demo.vercel.app)
+[![Changelog](https://img.shields.io/badge/Changelog-releases-orange?style=flat-square)](CHANGELOG.md)
+
+![A full year of an envelope budget on one screen](docs-site/src/assets/screenshots/user-guide/budget-envelope.png)
+
+</div>
 
 ---
 
-**Actual Bench** is a companion app for [Actual Budget](https://github.com/actualbudget/actual). Its target architecture is Direct Actual Server access through Actual's browser API transport, while HTTP API Server mode through [actual-http-api](https://github.com/jhonderson/actual-http-api) remains fully supported for existing deployments and integrations. It gives power users a focused interface for the work that is cumbersome in the native Actual Budget UI: bulk setup, master-data cleanup, advanced rule maintenance, full-year view budget editing, diagnostics, and ad-hoc ActualQL analysis.
+## What is Actual Bench?
 
-It is not trying to replace Actual Budget's day-to-day transaction entry experience. It is the workbench you open when you need to inspect, repair, seed, audit, or reshape your budget data with confidence.
+Keep doing your everyday budgeting in [Actual Budget](https://github.com/actualbudget/actual).
+**Actual Bench** is for the other jobs: the ones that are slow one row at a time, the ones you want
+to look at before they land, and the ones that should happen whether or not anything is open.
 
-## Why Actual Bench?
+It is the app you open to plan a year, merge two hundred duplicate payees, work out why a rule never
+fires, reconcile a bank statement, or check that last night's backup still opens. Every change is
+staged locally and written only when you press **Save** - so you can be wrong about something and
+find out before your budget is.
 
-- **Staged by default** - creates, edits, deletes, merges, imports, and budget-cell changes stay local until you explicitly save.
-- **Spreadsheet-grade budget editing** - edit a 12-month budget window with keyboard navigation, range selection, copy/paste, fill actions, right-click bulk actions, undo/redo, and a draft review panel.
-- **Powerful rules management** - create, edit, duplicate, merge, filter, lint, and clean up Actual Budget rules with resolved entity names instead of raw IDs.
-- **Bulk data management** - manage accounts, payees, categories, schedules, tags, and rules with inline editing, filters, CSV import/export, bulk actions, and impact-aware confirmations.
-- **Diagnostics without mutation** - inspect exported budget snapshots locally in the browser, run deterministic health checks, browse SQLite tables/views, and export findings or data.
-- **ActualQL workspace** - run, format, explain, save, replay, and export ActualQL queries with table, raw JSON, scalar, and tree result views.
-- **Bank statement reconciliation** - import a statement (CSV/TSV, OFX/QFX or QIF), match it against an account, settle the differences row by row, and apply once — with a drift check that will not overwrite an edit you made in Actual meanwhile.
-- **Multi-budget friendly** - save multiple connections, switch between budgets, and keep staged data and query cache scoped per connection.
+It does not replace Actual Budget, and it is not trying to. Day-to-day transaction entry belongs
+there.
 
+**[Try the live demo →](https://actual-bench-demo.vercel.app)**
+No setup, no account. A year of household Envelope and Tracking budgets to poke at.
+*(Shared sandbox; resets periodically.)*
+
+## What it does
+
+**Plan and edit**
+
+- **[Budget Management](https://x-rous.github.io/actual-bench/user-guide/budget-management/)** - twelve months on one screen, with range selection, copy/paste from a spreadsheet, fill actions, undo/redo, and a draft panel that shows every pending change before you save.
+- **[Rules](https://x-rous.github.io/actual-bench/user-guide/rules/)** - the whole rule set on one page, with every reference shown as the payee, category or account it names instead of an id. Split rules across categories, use templates and formulas, merge duplicates, and round-trip the lot through CSV.
+- **[Entity admin](https://x-rous.github.io/actual-bench/user-guide/accounts/)** - accounts, payees, categories, schedules and tags, with inline editing, filters, bulk actions, CSV import/export, and delete dialogs that tell you what a deletion would take with it.
+- **[Bundle export / import](https://x-rous.github.io/actual-bench/getting-started/bundle-export-import/)** - a budget's whole structure in one ZIP. Build a reusable template, seed a new budget from an old one, or take a snapshot before a cleanup you might regret.
+
+**Clean up and audit**
+
+- **[Payee Cleanup](https://x-rous.github.io/actual-bench/user-guide/payee-cleanup/)** - finds duplicate payees, shows the evidence for each grouping, and proposes the import rules that stop them coming back.
+- **[Rule Diagnostics](https://x-rous.github.io/actual-bench/user-guide/rule-diagnostics/)** - reads your rules as a set: what shadows what, what can never fire, what duplicates what. Read-only; it never edits your budget.
+- **[Budget File Health](https://x-rous.github.io/actual-bench/user-guide/budget-file-health/)** and **[Data Browser](https://x-rous.github.io/actual-bench/user-guide/data-browser/)** - open a budget snapshot in your browser, run health checks, and browse its tables directly.
+- **[ActualQL](https://x-rous.github.io/actual-bench/user-guide/actualql/)** - a query console with saved queries, plain-English explain, and table, JSON, scalar and tree result views.
+
+**Money in and out**
+
+- **[Bank Reconciliation](https://x-rous.github.io/actual-bench/user-guide/bank-reconciliation/)** - import a statement (CSV/TSV, OFX/QFX, QIF), settle it row by row, and apply once. Re-reads every row before writing, so it will not overwrite an edit you made in Actual meanwhile.
+- **[Bank sync](https://x-rous.github.io/actual-bench/user-guide/bank-sync/)** - trigger Actual's own SimpleFIN/GoCardless import and get a per-account answer, instead of one number for everything.
+- **[Budget File Sync](https://x-rous.github.io/actual-bench/user-guide/budget-sync/)** - copy transactions, payees or categories between budget files. Preview first, apply only what you picked, never create a duplicate twice. Converts currency where budgets differ, using [locked FX rates](https://x-rous.github.io/actual-bench/user-guide/fx-rates/).
+- **[Backups](https://x-rous.github.io/actual-bench/user-guide/backups/)** - scheduled or on demand, to a destination you choose, and every copy is opened and verified rather than assumed.
+- **[Automations](https://x-rous.github.io/actual-bench/user-guide/automations/)** - one place for everything that runs on a schedule, which always says whether it runs on the server or only while a tab is open.
 
 ## Screenshots
 
-Generated from two sources: the budgets come from the public demo, and the pages that show Bench's own
-configuration - backups, automations, sync flows, rates - come from a disposable instance the capture
-starts and throws away, never from anyone's install. See [docs/screenshots.md](docs/screenshots.md) to
-regenerate them in one command.
-
-| A full year on one screen | Rules audited as a set |
+| Rules audited as a set | Duplicate payees, with the evidence |
 |:---:|:---:|
-| ![Budget](docs-site/src/assets/screenshots/user-guide/budget-envelope.png) | ![Rule Diagnostics](docs-site/src/assets/screenshots/user-guide/rule-diagnostics.png) |
+| ![Rule Diagnostics](docs-site/src/assets/screenshots/user-guide/rule-diagnostics.png) | ![Payee Cleanup](docs-site/src/assets/screenshots/user-guide/payee-cleanup.png) |
 
-| Duplicate payees, with the evidence | A statement reconciled row by row |
+| A statement reconciled row by row | Backups that are opened and checked |
 |:---:|:---:|
-| ![Payee Cleanup](docs-site/src/assets/screenshots/user-guide/payee-cleanup.png) | ![Bank Reconciliation](docs-site/src/assets/screenshots/user-guide/bank-reconciliation.png) |
+| ![Bank Reconciliation](docs-site/src/assets/screenshots/user-guide/bank-reconciliation.png) | ![Backups](docs-site/src/assets/screenshots/user-guide/backups.png) |
 
-| Backups that are opened and checked | Work that runs with the app closed |
+| Ask your data a question | Work that runs with the app closed |
 |:---:|:---:|
-| ![Backups](docs-site/src/assets/screenshots/user-guide/backups.png) | ![Automations](docs-site/src/assets/screenshots/user-guide/automations.png) |
-
-| Ask your data a question | Copy between budget files, preview first |
-|:---:|:---:|
-| ![ActualQL Queries](docs-site/src/assets/screenshots/user-guide/actualql.png) | ![Budget File Sync](docs-site/src/assets/screenshots/user-guide/budget-file-sync.png) |
-
-## Feature overview
-
-### Budget Management Workspace
-
-A full-width 12-month budget editor for envelope and tracking budgets.
-
-- Budget / Actuals / Balance view toggle
-- Expand/collapse category groups and show/hide hidden categories
-- Inline cell editing with arithmetic expression support
-- Multi-cell selection, copy/paste from Excel or Google Sheets, fill down/right, previous-month fill, and average-based fill
-- Right-click bulk actions such as copy previous month, set to zero, set fixed amount, apply percentage change, and average calculations
-- Draft panel with selected-cell details, group totals, year summary, staged deltas, and save errors
-- Editable notes in the details panel for the selected cell, category, group, or whole month (selected from its column header) — read, add, edit, and clear inline with immediate save
-- Envelope-mode staged hold for next month (with undo support) and staged category transfer
-- Keyboard shortcut cheatsheet
-
-### Advanced Data Management
-
-Manage the core Actual Budget entities from dedicated admin pages with support for bulk actions.
-
-| Area | What you can do |
-|---|---|
-| **Accounts** | Create, rename, close, reopen, delete, inspect balances, view rule references, notes, import/export CSV |
-| **Payees** | Create, rename, merge, delete, separate regular and transfer payees, view rule references, import/export CSV |
-| **Categories** | Manage income/expense groups, categories, visibility, hierarchy, notes, and import/export CSV |
-| **Schedules** | Create one-time or recurring schedules with amount modes, recurrence controls, weekend adjustment, auto-add, linked rules, and CSV import/export |
-| **Tags** | Create, rename, color-code, describe, filter, bulk-delete, and import/export tags |
-| **Rules** | Build rules with conditions/actions, stages, AND/OR logic, templates, HyperFormula formulas, entity chips, filtering, search, duplication, merge, and CSV import/export |
-
-### Rule Diagnostics
-
-A read-only linting workspace for rules to help you identify potential issues and duplicates.
-
-- Detects missing entity references, empty/no-op actions, shadowed rules, broad match criteria, duplicates, and near-duplicates rules.
-- Groups findings by severity with filters for error, warning, info, and code
-- Lets you jump directly to the affected rule
-- Opens the merge dialog from duplicate and near-duplicate findings
-- Runs in the browser against already-loaded data; no new backend endpoint is required
-- Runs against the current working set, including unsaved staged edits
-
-### Budget File Health & Data Browser
-
-A read-only local diagnostics workspace for the exported budget snapshots.
-
-- Opens the active budget SQLite database file locally in the browser
-- Shows snapshot metadata, object counts, ZIP size, SQLite size, sync details, and source details
-- Runs deterministic schema, relationship, metadata, and SQLite health checks and exports findings to CSV
-- Supports a full SQLite integrity check
-- Includes a Data Browser for tables, views, indexes, triggers, schema inspection, row details, relationship drill-in, and full table/view CSV export
-
-### Budget File Sync
-
-Sync data between budget files as saved one-way flows. One unified engine covers **transactions, payees, and categories** — preview, apply, run history, the review queue, and the safe-only automation layer work identically for each. It is **cross-budget, create-only, and preview-first**. Every data type syncs in **both Direct and HTTP API Server mode**, in any combination.
-
-- **Master data:** pick a flow's data type (Transactions / Payees / Categories). Payee and category flows create missing entities on the target and match existing ones by name (no renames/deletes); categories place under the matching or a chosen default group, and block ambiguous placement for review.
-
-- Compact flow editor: source/target Direct connection + account, filters, and transforms (reverse-sign by default, payee/category match-by-name, clean notes marker)
-- Required dry-run preview classifies each item (new, already synced, duplicate, changed since sync, marker match, blocked, FX pending) with source and transformed target amounts side by side — no writes to Actual
-- Apply creates only the selected safe new transactions with a durable `imported_id` marker and records app-owned mappings, so reruns skip already-synced items instead of creating duplicates
-- Eligible split lines are exploded into separate target transactions; a reverse-flow helper mirrors a flow for two-way sync
-- **Multi-currency consolidation:** a transaction flow can **convert amounts** between budgets in different currencies (its *Convert currency* option). Rates come from a database-backed registry filled automatically from the free [Frankfurter](https://frankfurter.dev) provider (no API key, weekend/holiday fallback); you can override any date or import a CSV. The preview shows original → rate → converted with currency labels; a missing or future rate goes to review as *FX pending*. Each converted transaction stores a locked-by-default rate snapshot and a compact audit note, and rates lock at first sync so past conversions never silently change. A dedicated **FX Rates** page (Tools → FX Rates) shows the trend and coverage and lets you fill, override, or import rates — overriding a rate that affects already-synced transactions shows an impact preview, and an opt-in flow setting can push corrected rates to those transactions through the normal previewed update path, replacing the existing snapshot in place
-- Opt-in automation per flow: auto-apply safe items, or auto-sync on a schedule **while the app is open** (client-side, minimum 15 min). For **HTTP API mode** flows, an opt-in **unattended server schedule** runs the same safe-only sync with the app closed — credentials are stored in an encrypted, env-keyed server vault (`SYNC_VAULT_KEY`), and the schedule itself is an [Automation](#automations); see [`docs/UNATTENDED_SYNC.md`](docs/UNATTENDED_SYNC.md). Uncertain items collect in a review queue; exact duplicates can be auto-mapped (opt-in); failed items can be retried; and a flow auto-pauses after repeated failures
-- Target-budget rules may post-process created transactions; this is surfaced as a warning. Not in scope: true transfer-linked sync, non-review updates/deletes, category auto-create, fuzzy duplicate auto-map, unattended sync for Direct-mode flows, FX gain/loss accounting, multi-currency within a single budget file, and silent recalculation of past conversions
-
-### Automations
-
-One place (Tools → Automations) for everything Actual Bench runs on a schedule, on a shared engine rather than a timer per feature. Budget File Sync is the first job type; more follow.
-
-- Schedules are an interval or a five-field **cron expression with an explicit time zone**, described in plain language. Daylight saving is handled explicitly, so a 02:30 job runs once on the fall-back night and still runs on the spring-forward one
-- **Every automation says where it runs**: on the server (unattended, with Bench closed — HTTP API mode plus enrolled vault credentials) or in your browser (only while a tab is open). Bench never implies unattended behaviour a transport cannot deliver, and says plainly that the engine is a single in-process instance
-- Run history per automation: status, trigger, duration, a redacted log, and results rendered in the job type's own terms with a link back to the underlying run
-- Run now, pause, resume. Failures back off, then **auto-pause** with a visible reason and a manual resume; failure state survives a restart; an automation that cannot resolve its credential **fails closed** instead of running partially; and an automation that is well past due is flagged **overdue** even though nothing failed
-- Work left for a person appears in a shared review queue that links into the job type's own review screen. See [`docs/AUTOMATIONS.md`](docs/AUTOMATIONS.md)
-
-> Not to be confused with Actual Budget's own experimental "Budget Automations" — these are Actual Bench's scheduled jobs.
-
-### Bank sync
-
-Ask Actual to pull new transactions from your connected banks (SimpleFIN / GoCardless) from the Accounts page, without opening Actual to press Sync. Bench triggers Actual's own import and reports what happened: accounts sync one at a time so one failing bank cannot hide the others, an account with no bank link is reported as unlinked rather than counted as synced, and a count of new transactions is quoted only where Bench could actually measure it.
-
-
-### Bank Statement Reconciliation
-
-A workbench (Tools → Bank Reconciliation) for checking a bank statement against an account and settling the differences. Sessions are persistent, and nothing reaches your budget until an explicit Apply.
-
-- Paste rows or upload **CSV/TSV, OFX/QFX or QIF**; the format is recognised from the file's content, and for delimited files the delimiter, header row, and column mapping are detected — including statements that report outflows in a separate **Debit** column, and foreign-currency rows that print an original amount alongside the converted one
-- Import uses a two-pane workbench: compact configuration beside the **complete parsed statement**, whose header stays visible while its rows scroll. Delimited mapping controls sit above the columns they affect, and a parsed source collapses without becoming inaccessible
-- New-row Payee and Notes choices are made on Import before matching and transformations consume them, then remain available from **New rows** on the workbench; notes you already edited or transformed are preserved
-- The bank's **merchant text and its memo are kept as separate channels** all the way through, which is what lets Actual's three fields stay independent: a created transaction records the bank's text as its **imported payee** whatever payee you settle on, and its notes come from the bank's memo, from the merchant text as well, or from neither, as you choose
-- **Exact signed amount is required for an automatic match**; text only ranks the candidates an amount already produced. You choose what the statement's text is compared against — payee, imported payee, or notes — with priority and weights, and `#tags` in notes are ignored by default
-- Pairs whose amounts disagree but whose text plainly matches are offered **for review**, never matched automatically; close calls and likely duplicates are surfaced as a choice rather than guessed at
-- Decide per row — accept, choose another candidate, create, delete a duplicate, correct an amount in place, or leave it for later — with transfers, splits, and already-reconciled rows protected. **Categories are never touched**; categorisation belongs in Actual
-- A transformation engine for notes covers tags (add / remove / replace / reposition), appended or prepended text, and bringing a shortened merchant name up to the statement's full description without disturbing your own words
-- The review screen shows each statement row as it will look afterwards, the effect on the account balance, and what will be marked cleared. A matched transaction can also be given the bank's merchant text while **keeping its payee, notes and category**; those rows say **Bank text**, and buttons, field totals and applied results count them separately from staged changes. Applied sessions lock the write settings at the values that were executed
-- **Before writing, every affected row is re-read.** A note edited in Actual has the staged change replayed onto the current text instead of overwriting it; an amount or date corrected in Actual is kept; anything that cannot be reconciled safely is held back and reported
-- Created transactions carry a deterministic marker, so a retry after a partial failure never duplicates them; updates and deletes are written in one batched call where the transport supports it
-
-### ActualQL Queries
-
-A dedicated query console using ActualQL for advanced queries and analysis, available in HTTP API Server mode and Direct Actual Server mode.
-
-- Syntax-highlighted JSON editor with line numbers
-- Run with button or `Ctrl/Cmd+Enter`
-- Format JSON, save queries, pin favorites, and reload recent history
-- Explain query intent in plain English
-- Built-in ActualQL reference and example packs
-- Result views: table, raw JSON, scalar, and collapsible tree
-- Copy result JSON and query JSON in all modes; copy sanitized or full actual-http-api cURL from HTTP API Server executions when explicitly needed
-- Warns when staged local changes exist because query results reflect saved server state
-
-### Excel Companion Workbook
-
-An optional Excel companion workbook is available for users who prefer spreadsheet-based reporting alongside Actual Bench.
-
-The workbook connects to `actual-http-api` and fetches read-only budget data for category groups, categories, accounts, payees, rules, transactions, months, account balances, and monthly budget status. It provides Excel tables for categories, category groups, accounts, payees, rules, all transactions, account balances, monthly budget status, available months, and separate balance, spent, and budgeted views.
-
-Download: [Actual Bench Excel Companion](https://github.com/x-rous/actual-bench/releases/latest/download/actual-bench-excel-companion.xlsx)
-
-### Staged editing and safety
-
-Actual Bench is built around a review-before-save workflow.
-
-- Nothing is written to the server until you click **Save**
-- New, updated, deleted, and invalid rows are visually marked
-- Top bar shows staged changes across the current workspace
-- Undo/redo works across staged edits within the session
-- Refresh, navigation, browser close, and cross-workspace entry flows warn before discarding pending changes
-- Delete/close dialogs show impact details such as transaction counts, rule references, account balance, and child category counts where available
-- Usage Inspector drawers show references and impact without triggering a delete flow
-
-## Architecture
-
-```mermaid
-flowchart LR
-  Browser[Browser]
-  App["Actual Bench<br/>Next.js app"]
-  Direct["Direct transport<br/>@actual-app/api browser build"]
-  Worker["Browser worker<br/>local budget runtime"]
-  Proxy["Internal /api/proxy"]
-  API[actual-http-api]
-  Actual[Actual Budget server]
-  Budget[(Budget data)]
-
-  Browser --> App
-  App --> Direct
-  Direct --> Worker
-  Worker --> Actual
-  App -. HTTP API Server mode .-> Proxy
-  Proxy -.-> API
-  API -.-> Actual
-  Actual --> Budget
-```
-
-Direct mode is the target architecture for browser-based Actual Bench workflows: it bypasses `actual-http-api` and uses Actual's browser API worker from the user's browser. HTTP API Server mode remains a maintained compatibility architecture; it sends all `actual-http-api` requests through Actual Bench's internal Next.js proxy, and the browser never calls `actual-http-api` directly.
-
-### Direct mode
-
-Direct mode is shown by default alongside HTTP API Server mode and is the preferred target for new browser workflows. It uses worker/static asset headers required for cross-origin isolation (`Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy: require-corp`), and the Actual Server must be reachable from the browser through CORS or a same-origin reverse proxy. Set `DIRECT_BROWSER_API=0` only if your deployment cannot support Direct mode.
-
-Direct mode currently supports core entity pages, Budget Management reads/staged saves, Budget File Health, Data Browser, and the ActualQL Query workspace. HTTP API Server mode remains first-class and maintained for deployments that prefer or require `actual-http-api`; query cURL generation remains HTTP API Server-only because it targets actual-http-api's `/run-query` endpoint.
-
-## Privacy and data handling
-
-- Saved server presets store only non-secret details in **session storage** and are cleared when the browser tab is closed.
-- API keys, Actual Server passwords, and budget encryption passwords are kept in memory only by default. Refreshing or reopening the tab requires reconnecting. Actual's browser worker cache may require clearing this site's browser data if it becomes stale or corrupt.
-- Optionally, you can **remember a server**: its secret is then sealed (AES-256-GCM) in the server-side metadata database, encrypted with a key derived from a passphrase you set — the server can't decrypt without it, and you unlock once per session. Credentials are server-scoped, so one saved server opens any of its budgets. Off by default; only offered when `/data` is durable.
-- App workflow metadata is stored server-side in SQLite at `/data/actual-bench.sqlite` by default. It stores Actual Bench metadata only and does not store Actual credentials or copied budget data, except the explicit, encrypted opt-ins above (remembered servers) and unattended-sync credentials.
-- Staged data and query cache are scoped per connection so switching budgets does not leak local state between sessions.
-- Budget File Health and the Data Browser process exported snapshots locally in the browser and do not write changes back to the budget.
-- Exported budget ZIP files and diagnostic data may still contain personal financial information, so handle downloaded files carefully.
-- ActualQL queries are read-only from the Actual Bench perspective, but they reflect saved server state, not unsaved staged edits.
-- The Excel companion workbook may contain your Actual API URL, API key, and downloaded financial data after use, so do not share a configured copy.
-
-## Requirements
-
-- A running [Actual Budget](https://github.com/actualbudget/actual) server
-- For Direct mode: browser access from Actual Bench to Actual Server, plus cross-origin isolation/CORS support. Direct mode is enabled by default; set `DIRECT_BROWSER_API=0` to hide it when a deployment cannot support it
-- For HTTP API Server mode: a running [actual-http-api](https://github.com/jhonderson/actual-http-api) instance and an `ACTUAL_API_KEY`
-- Docker, Docker Compose, or Node.js 22.23.1 recommended for local development
-
+| ![ActualQL](docs-site/src/assets/screenshots/user-guide/actualql.png) | ![Automations](docs-site/src/assets/screenshots/user-guide/automations.png) |
 
 ## Quick start
 
-### Docker
-
-```bash
-# Latest stable release
-docker run -d \
-  --name actual-bench \
-  --restart unless-stopped \
-  -p 3000:3000 \
-  -v actual-bench-data:/data \
-  xrous/actual-bench:latest
-
-# Latest unreleased build from main. Useful for testing, but may be unstable.
-docker run -d \
-  --name actual-bench-edge \
-  --restart unless-stopped \
-  -p 3000:3000 \
-  -v actual-bench-edge-data:/data \
-  xrous/actual-bench:edge
-```
-
-All environment variables are optional. To set any, add `-e VAR=value` flags to the `docker run`
-command, for example:
-
-```bash
-docker run -d \
-  --name actual-bench \
-  --restart unless-stopped \
-  -p 3000:3000 \
-  -v actual-bench-data:/data \
-  -e DIRECT_BROWSER_API=0 \
-  -e LOG_LEVEL=info \
-  -e SYNC_VAULT_KEY=<strong-secret> \
-  xrous/actual-bench:latest
-```
-
-See the [Configuration guide](https://x-rous.github.io/actual-bench/administration/configuration/) for
-what each variable does and which are secrets.
-
-Open `http://localhost:3000` and connect with Direct Actual Server mode, or use HTTP API Server mode if you run `actual-http-api`.
-
-### Docker Compose
+You need a running [Actual Budget](https://github.com/actualbudget/actual) server. Nothing else is
+required - every environment variable is optional.
 
 ```yaml
+# docker-compose.yml
 services:
   actual-bench:
     image: xrous/actual-bench:latest
     container_name: actual-bench
     ports:
       - "3000:3000"
-    environment:
-      ACTUAL_BENCH_DB_PATH: /data/actual-bench.sqlite
-      # --- Optional settings (uncomment to use) ---
-      # DIRECT_BROWSER_API: "0"                    # offer only HTTP API Server mode
-      # LOG_LEVEL: info                            # debug | info | warn | error
-      # SYNC_VAULT_KEY: "<strong-secret>"          # enable unattended server-side sync
-      # SYNC_SCHEDULER_SECRET: "<strong-secret>"   # enable the external scheduler trigger
     volumes:
       - actual-bench-data:/data
     restart: unless-stopped
@@ -313,152 +101,71 @@ volumes:
   actual-bench-data:
 ```
 
-Start it with:
-
 ```bash
 docker compose up -d
 ```
 
-No environment variables are required for a basic setup. All variables are optional — see the
-[Configuration guide](https://x-rous.github.io/actual-bench/administration/configuration/) for what
-each one does and which are secrets.
-
-### App metadata database
-
-Actual Bench stores app-owned workflow metadata in a server-side SQLite database. The default path is `/data/actual-bench.sqlite`; set `ACTUAL_BENCH_DB_PATH` to use another file. Persist and back up the `/data` volume if you want to keep saved app metadata across container recreation.
-
-The metadata database is not an Actual Budget data replica and does not store API keys, Actual Server passwords, budget encryption passwords, or session tokens.
-
-### Docker networking note
-
-Direct mode is browser-to-Actual-Server, so the browser must be able to reach your Actual Server URL and the response must satisfy CORS/cross-origin-isolation requirements. HTTP API Server mode is server-to-`actual-http-api`: if Actual Bench and `actual-http-api` are running in separate containers, Actual Bench must be able to reach `actual-http-api` **from inside the Actual Bench container**.
-
-If the UI shows `fetch failed` or `502 Bad Gateway`, check whether both containers share a Docker network:
+Or without a compose file:
 
 ```bash
-docker inspect -f '{{.Name}} -> {{range $k, $v := .NetworkSettings.Networks}}{{printf "%s " $k}}{{end}}' actual-bench
-docker inspect -f '{{.Name}} -> {{range $k, $v := .NetworkSettings.Networks}}{{printf "%s " $k}}{{end}}' actual-http-api
+docker run -d --name actual-bench --restart unless-stopped \
+  -p 3000:3000 -v actual-bench-data:/data xrous/actual-bench:latest
 ```
 
-For a permanent Compose-based fix, attach Actual Bench to the same external network as `actual-http-api`:
+Open `http://localhost:3000` and connect. Keep the `/data` volume: it holds Bench's own settings,
+backup history and sync state - not a copy of your budget. Credentials stay in memory unless you opt
+in: remembering a server seals them behind a passphrase you choose, and unattended sync needs
+`SYNC_VAULT_KEY` set on the container, without which the vault stays off.
 
-```yaml
-services:
-  actual-bench:
-    image: xrous/actual-bench:latest
-    ports:
-      - "3000:3000"
-    networks:
-      - actual-stack
-    restart: unless-stopped
+Running behind a reverse proxy, want the edge build, or need to change a setting? See
+**[Installation](https://x-rous.github.io/actual-bench/getting-started/installation/)** and
+**[Configuration](https://x-rous.github.io/actual-bench/administration/configuration/)**.
 
-networks:
-  actual-stack:
-    external: true
-```
+### Connecting
 
-Replace `actual-stack` with your real Docker network name.
+Bench talks to Actual two ways, and you pick one on the connection screen:
 
+- **Direct Actual Server** - your browser talks to Actual directly, using Actual's own browser API. This is the target architecture.
+- **HTTP API Server** - through [actual-http-api](https://github.com/jhonderson/actual-http-api). Fully maintained, and required for unattended server-side work.
 
-## Connecting to a budget
+**[How to connect →](https://x-rous.github.io/actual-bench/getting-started/connecting/)**
 
-Actual Bench uses a two-step connection flow for both HTTP API Server and Direct Actual Server connections.
+## Nothing is written until you say so
 
-### 1. Choose a server
+This is the one thing to know before you use it.
 
-Choose **Direct Actual Server** for the target browser-to-Actual Server connection, or **HTTP API Server** for the maintained `actual-http-api` compatibility path. Enter the matching server URL and credential, then click **Load Budgets**.
+Creates, edits, deletes, merges, imports and budget-cell changes are staged in your browser. The top
+bar counts what is pending, rows are marked as new, changed or invalid, undo and redo work across the
+whole set, and leaving the page warns you first. Nothing reaches Actual until you press **Save**.
 
-| Field | Description |
+Reconciliation and Budget File Sync go further: both show you a full preview, and both re-read the
+rows they are about to touch so a change you made in Actual meanwhile is never silently overwritten.
+Diagnostics and ActualQL never write at all.
+
+The exceptions are deliberate and small: notes save immediately, and the envelope carryover toggle
+applies directly. Both say so where you use them.
+
+## Documentation
+
+Full documentation is at **[x-rous.github.io/actual-bench](https://x-rous.github.io/actual-bench/)**.
+
+| | |
 |---|---|
-| **HTTP API Server URL** | Base URL of your `actual-http-api` server, for example `https://actual-api.example.com` |
-| **API Key** | The `ACTUAL_API_KEY` configured on the HTTP API server |
-| **Actual Server URL** | Base URL of your Actual Server when using Direct mode, for example `https://actual.example.com` |
-| **Actual Server password** | The password used by Actual Server browser clients |
-
-### 2. Choose a budget
-
-Pick a budget returned by the selected server, optionally enter the encryption password for encrypted budgets, and click **Connect**.
-
-Previously used connections appear on the connection screen for one-click reconnect during the current browser session.
-
-## CSV import/export
-
-Every entity page supports CSV export and import. Imported rows are staged first and only saved after confirmation.
-
-Sample files are included in [`public/samples csv/`](public/samples%20csv/) for testing with a fresh budget:
-
-| File | Contents |
-|---|---|
-| `sample-accounts.csv` | Accounts covering on/off-budget and open/closed combinations |
-| `sample-payees.csv` | Common regular payees |
-| `sample-categories.csv` | Category groups and categories across income and expense areas |
-| `sample-rules.csv` | Multi-condition, multi-action, OR logic, stages, and payee auto-creation examples |
-| `sample-schedules.csv` | One-time, monthly, weekly, yearly, and range-amount schedules |
-| `sample-tags.csv` | Tags with colors and descriptions |
-| `sample-budget.csv` | Budget import template with groups, categories, and budgeted amounts per month |
-
-CSV exports include a UTF-8 BOM for better compatibility with Excel and Google Sheets.
-
-
-## Tech stack
-
-- [Next.js](https://nextjs.org/) + React + TypeScript
-- Tailwind CSS
-- Zustand for local staged state
-- TanStack Query for server-state caching
-- TanStack Table for entity tables
-- SQLite WASM worker for local diagnostics snapshot inspection
-- Docker images published for stable releases and edge builds — multi-arch (`linux/amd64` + `linux/arm64`)
-
-## Development
-
-### Prerequisites
-
-- Node.js 22.23.1 recommended
-- npm
-- A running `actual-http-api` instance for integration testing
-
-### Setup
-
-```bash
-git clone https://github.com/x-rous/actual-bench.git
-cd actual-bench
-npm install
-npm run dev
-```
-
-`npm install` copies the SQLite WASM asset used by Budget File Health and the Data Browser into `public/sqlite/`.
-
-Open `http://localhost:3000`.
-
-### Scripts
-
-| Command | Description |
-|---|---|
-| `npm run dev` | Start the development server |
-| `npm run build` | Build for production |
-| `npm start` | Serve the production build |
-| `npm run lint` | Run ESLint |
-| `npm test` | Run tests |
-| `npm run clean` | Remove build/cache artifacts |
-
-## Known limitations
-
-- Main entity admin pages load the full entity set; very large budgets may feel slower on Accounts, Payees, Categories, Rules, and similar pages.
-- Direct mode depends on browser cross-origin isolation, CORS, and Actual's browser API package. HTTP API Server mode depends on `actual-http-api`; unsupported or changing API endpoints may affect that compatibility path.
+| [Getting started](https://x-rous.github.io/actual-bench/getting-started/introduction/) | Install, connect, and the ideas the app is built on |
+| [User guide](https://x-rous.github.io/actual-bench/user-guide/budget-management/) | Every feature, page by page |
+| [Administration](https://x-rous.github.io/actual-bench/administration/deployment/) | Deployment, configuration, upgrades and backups |
+| [Troubleshooting](https://x-rous.github.io/actual-bench/help/troubleshooting/) | When something does not work |
+| [Known limitations](https://x-rous.github.io/actual-bench/help/known-limitations/) | What it deliberately does not do |
 
 ## Contributing
 
-Contributions are welcome. Please keep PRs focused, user-facing, and aligned with the staged-editing model.
+Contributions are welcome. Keep pull requests focused, user-facing, and aligned with the staged
+editing model. See **[CONTRIBUTING.md](CONTRIBUTING.md)** for the workflow, and
+**[FEATURES.md](FEATURES.md)** for the complete feature reference.
 
-Useful links:
-
-- [Feature reference](FEATURES.md)
-- [Contributing guide](CONTRIBUTING.md)
-- [Changelog](CHANGELOG.md)
-- [Issues](https://github.com/x-rous/actual-bench/issues)
-- [Releases](https://github.com/x-rous/actual-bench/releases)
+- **Bugs and feature requests:** [Issues](https://github.com/x-rous/actual-bench/issues)
+- **Releases:** [Changelog](CHANGELOG.md) · [Releases](https://github.com/x-rous/actual-bench/releases)
 
 ## License
 
-This project is licensed under the terms of the repository license. See [LICENSE](LICENSE) for details.
+[MIT](LICENSE) © Manaf

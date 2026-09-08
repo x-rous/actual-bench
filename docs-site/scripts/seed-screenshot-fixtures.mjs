@@ -150,10 +150,34 @@ async function seedBackups(page) {
   // A rule that runs on the server needs credentials the server can use, and
   // the dialog offers the enrolment inline. Without it "Create rule" stays
   // disabled and the reason is a sentence above the button.
+  //
+  // The budget select does not necessarily open on the budget this browser is
+  // connected to - it opens on the first enrolled choice, or else the first
+  // choice at all - and only the *active* connection carries an API key, so
+  // only that one is offered an Enrol button. The demo registers two budgets,
+  // so the default is a coin flip. Walk the options until one offers enrolment
+  // rather than assuming the default does; skipping silently is what left
+  // "Create rule" disabled and failed thirty seconds later with a timeout that
+  // said nothing about the cause.
+  const budgetSelect = ruleDialog.locator("select").first();
   const enrol = ruleDialog.getByRole("button", { name: /^Enrol / });
+  if ((await budgetSelect.count()) && !(await enrol.count())) {
+    for (const value of await budgetSelect.locator("option").evaluateAll((os) =>
+      os.map((o) => o.value).filter(Boolean)
+    )) {
+      await budgetSelect.selectOption(value);
+      await page.waitForTimeout(1000);
+      if (await enrol.count()) break;
+    }
+  }
   if (await enrol.count()) {
     await enrol.first().click();
     await page.waitForTimeout(4000);
+  } else {
+    throw new Error(
+      "no budget in the rule dialog offers enrolment - the seeded instance is " +
+        "not connected to an HTTP API budget, or SYNC_VAULT_KEY is unset"
+    );
   }
   // Destinations come pre-ticked; the time does not, and "Create rule" stays
   // disabled without one.
