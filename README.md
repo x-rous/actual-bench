@@ -82,8 +82,10 @@ No setup, no account. A year of household Envelope and Tracking budgets to poke 
 
 ## Quick start
 
-You need a running [Actual Budget](https://github.com/actualbudget/actual) server. Nothing else is
-required - every environment variable is optional.
+You need a running [Actual Budget](https://github.com/actualbudget/actual) server, and if you connect
+through HTTP API Server mode, a reachable
+[actual-http-api](https://github.com/jhonderson/actual-http-api) as well. Nothing else is required -
+every environment variable is optional.
 
 ```yaml
 # docker-compose.yml
@@ -113,8 +115,9 @@ docker run -d --name actual-bench --restart unless-stopped \
 ```
 
 Open `http://localhost:3000` and connect. Keep the `/data` volume: it holds Bench's own settings,
-backup history and sync state - not a copy of your budget. Credentials stay in memory unless you
-opt in to remembering a server or to unattended sync, and then they are stored encrypted.
+backup history and sync state - not a copy of your budget. Credentials stay in memory unless you opt
+in: remembering a server seals them behind a passphrase you choose, and unattended sync needs
+`SYNC_VAULT_KEY` set on the container, without which the vault stays off.
 
 Running behind a reverse proxy, want the edge build, or need to change a setting? See
 **[Installation](https://x-rous.github.io/actual-bench/getting-started/installation/)** and
