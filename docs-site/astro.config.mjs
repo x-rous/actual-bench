@@ -1,6 +1,8 @@
 // @ts-check
 import { defineConfig } from 'astro/config';
 import starlight from '@astrojs/starlight';
+import starlightImageZoom from 'starlight-image-zoom';
+import { unified } from '@astrojs/markdown-remark';
 
 // Actual Bench documentation site.
 // Published as a GitHub Pages project site, so it is served under a base path.
@@ -13,6 +15,12 @@ const base = process.env.DOCS_BASE ?? '/actual-bench';
 export default defineConfig({
 	site: 'https://x-rous.github.io',
 	base,
+	markdown: {
+		// starlight-image-zoom cannot hook Astro 7's default Markdown processor
+		// yet, and fails the build outright. This is the processor Astro used
+		// before, and the one the plugin supports.
+		processor: unified(),
+	},
 	image: {
 		// Astro re-encodes every image it processes, and its default for WebP is
 		// lossy quality 80. On screenshots that is the wrong trade: the pages are
@@ -41,6 +49,7 @@ export default defineConfig({
 	},
 	integrations: [
 		starlight({
+			plugins: [starlightImageZoom()],
 			title: 'Actual Bench',
 			description:
 				'End-user documentation for Actual Bench — the advanced admin, budgeting, diagnostics, and ActualQL workbench for Actual Budget.',
