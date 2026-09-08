@@ -715,6 +715,10 @@ const SHOTS = [
     preConnect: true,
     budget: "Envelope",
     instance: true,
+    // The form is a narrow card centred on a full-height page, so a whole-page
+    // shot is mostly empty background with the thing being documented small in
+    // the middle of it. `max-w-md` is the width ConnectForm gives itself.
+    element: '[class~="max-w-md"]',
   },
   {
     name: "app-health",
@@ -1242,8 +1246,7 @@ async function run(registerInstance) {
         await fresh.goto(`${appUrl}/connect`, { waitUntil: "domcontentloaded" });
         await fresh.getByPlaceholder("https://budgetapi.example.com").waitFor({ timeout: 120000 });
         await fresh.waitForTimeout(2500);
-        const scope = shot.element ? fresh.locator(shot.element).first() : fresh;
-        await scope.screenshot({ path: await shotPath(shot) });
+        await captureShot(fresh, shot, await shotPath(shot));
         await fresh.close();
         console.log(`captured ${shot.name}`);
         continue;
