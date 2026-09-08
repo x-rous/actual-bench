@@ -13,6 +13,18 @@ const base = process.env.DOCS_BASE ?? '/actual-bench';
 export default defineConfig({
 	site: 'https://x-rous.github.io',
 	base,
+	image: {
+		// Astro re-encodes every image it processes, and its default for WebP is
+		// lossy quality 80. On screenshots that is the wrong trade: the pages are
+		// full of 1px table borders, hairline bars and small numerals, and lossy
+		// encoding is worst exactly on hard edges against flat colour. The
+		// documentation is a place people go to read a UI they cannot see yet, so
+		// the bytes are worth it.
+		service: {
+			entrypoint: 'astro/assets/services/sharp',
+			config: { quality: 100 },
+		},
+	},
 	vite: {
 		server: {
 			// Dev-only: allow a reverse-proxy host (e.g. code-server) when set.

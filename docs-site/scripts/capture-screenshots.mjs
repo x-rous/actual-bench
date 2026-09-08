@@ -35,11 +35,12 @@
  */
 
 import { spawn } from "node:child_process";
-import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
+import sharp from "sharp";
 import { connectSecondBudget, writeStatement } from "./seed-screenshot-fixtures.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -50,13 +51,81 @@ let appUrl = (process.env.APP_URL ?? "http://localhost:3999").replace(/\/+$/, ""
 /** Where the demo's connection details come from - no credentials live here. */
 const DEMO_UI = (process.env.DEMO_UI_URL ?? "https://actual-bench-demo.vercel.app").replace(/\/+$/, "");
 
-const VIEWPORT = { width: 1440, height: 900 };
+/**
+ * The capture viewport in CSS pixels - which is what decides how large the UI
+ * looks, not the pixel dimensions of the file.
+ *
+ * 1440x900 was too narrow for the app's widest page: the budget grid truncated
+ * every month header to "Feb ..." and pushed January out of a shot whose own
+ * header read "Jan 26 - Dec 26". Going the other way, a 1920 viewport fits
+ * everything but renders the UI smaller than anyone actually runs it, so the
+ * screenshots read as cramped.
+ *
+ * 1728x1080 is the balance: a full year with readable chrome, close to a
+ * 1920x1200 laptop at its usual display scaling.
+ *
+ * A shot can widen this with its own `viewport` - see BUDGET_VIEWPORT.
+ */
+const VIEWPORT = { width: 1728, height: 1080 };
+
+/**
+ * The budget workspace carries a toolbar the other pages do not: view toggle,
+ * expand/collapse, hidden categories, spending bars, import, export, shortcuts.
+ * At 1728 it wraps onto a second row, which reads as a cramped page rather than
+ * as a wide one. 1800 is the narrowest width that keeps it on one line, and it
+ * also stops the last month headers abbreviating to "Sep 20...".
+ *
+ * Height scales with it so the shot keeps its 16:10 shape.
+ */
+const BUDGET_VIEWPORT = { width: 1800, height: 1125 };
 
 /**
  * Select the current month's column header, which is what opens the month
  * summary in the details panel. The header carries "(current month)" in its
  * label, so it can be found without knowing today's date.
  */
+/**
+ * Select the most recent month that actually has activity in it.
+ *
+ * The demo's transactions stop at the end of the last complete month, so once
+ * the calendar moves past them the current month is all zeros - and a panel of
+ * 0.00 is a successful capture that teaches a reader nothing. Walking back from
+ * the latest month keeps these shots meaningful as the demo ages.
+ *
+ * Returns the label of the month it settled on.
+ */
+async function selectMonthWithActivity(page) {
+  const headers = page.locator('[aria-label^="Month: "]');
+  for (let i = (await headers.count()) - 1; i >= 0; i -= 1) {
+    await headers.nth(i).click();
+    await page.waitForTimeout(5000);
+
+    // The details panel reports the month's own activity. Read the figures and
+    // require one of them to be non-zero, rather than testing for "0.00": a
+    // future month drops the Activity section altogether, so an absent figure
+    // would otherwise read as a present, non-zero one.
+    // Read the page rather than locating the panel heading: that heading is
+    // uppercased in CSS, so matching its rendered text finds nothing.
+    const panel = await page.locator("body").innerText().catch(() => "");
+    const amount = (label) => {
+      const found = new RegExp(`${label}\\s+(-?[\\d,]+\\.\\d\\d)`).exec(panel);
+      return found ? Number(found[1].replace(/,/g, "")) : 0;
+    };
+    // Envelope and Tracking label the same figures differently ("Income
+    // received" against "Received"), so ask for both rather than assuming the
+    // budget mode this shot happens to use.
+    if (
+      amount("Spent") !== 0 ||
+      amount("Income received") !== 0 ||
+      amount("Received") !== 0 ||
+      amount("Actual") !== 0
+    ) {
+      return (await headers.nth(i).getAttribute("aria-label")) ?? "";
+    }
+  }
+  throw new Error("no month in the visible range has any activity to summarise");
+}
+
 async function selectCurrentMonth(page) {
   const header = page.locator('[aria-label^="Month: "][aria-label*="current month"]').first();
   await header.waitFor({ timeout: 30000 });
@@ -68,7 +137,7 @@ async function selectCurrentMonth(page) {
  * Select a Payee Cleanup tab and wait for its content.
  *
  * Shots share a page, so whichever tab the previous shot left open is the one
- * this shot starts on — and the scan itself takes a while, because it reads the
+ * this shot starts on - and the scan itself takes a while, because it reads the
  * whole payee set and its transaction counts before it can propose anything.
  */
 async function openCleanupTab(page, label) {
@@ -82,7 +151,7 @@ async function openCleanupTab(page, label) {
  * Back to the reconciliation session list.
  *
  * The page remembers which session you had open, so arriving from the sidebar
- * lands inside it rather than on the list — which is right for a user and wrong
+ * lands inside it rather than on the list - which is right for a user and wrong
  * for a shot that wants the list.
  */
 async function exitSession(page) {
@@ -131,30 +200,57 @@ async function openSession(page) {
  */
 const SHOTS = [
   { name: "overview", area: "getting-started", nav: "Overview", url: /\/overview/, budget: "Envelope" },
-  { name: "budget-envelope", nav: "Budget", url: /\/budget-management/, budget: "Envelope" },
-  { name: "budget-tracking", nav: "Budget", url: /\/budget-management/, budget: "Tracking" },
+  // Groups arrive collapsed, which leaves the lower third of the frame empty and
+  // shows category totals rather than the categories themselves. Expanded, the
+  // grid fills the shot with the thing the page is actually for.
+  {
+    name: "budget-envelope",
+    nav: "Budget",
+    viewport: BUDGET_VIEWPORT,
+    url: /\/budget-management/,
+    budget: "Envelope",
+    prepare: async (page) => {
+      await page.getByRole("button", { name: "Expand all groups" }).click();
+      await page.waitForTimeout(2500);
+    },
+  },
+  {
+    name: "budget-tracking",
+    nav: "Budget",
+    viewport: BUDGET_VIEWPORT,
+    url: /\/budget-management/,
+    budget: "Tracking",
+    prepare: async (page) => {
+      await page.getByRole("button", { name: "Expand all groups" }).click();
+      await page.waitForTimeout(2500);
+    },
+  },
   {
     name: "budget-details-month",
     nav: "Budget",
+    viewport: BUDGET_VIEWPORT,
     url: /\/budget-management/,
     budget: "Envelope",
     // Selecting a month header - and nothing else - is what puts the month
     // summary in the panel: where To Budget comes from line by line, then the
-    // month's own activity.
-    prepare: async (page) => selectCurrentMonth(page),
+    // month's own activity. It has to be a month that had some.
+    prepare: async (page) => selectMonthWithActivity(page),
   },
   {
     name: "budget-details-month-tracking",
     nav: "Budget",
+    viewport: BUDGET_VIEWPORT,
     url: /\/budget-management/,
     budget: "Tracking",
     // The same selection on a Tracking budget reads differently: income and
-    // expenses against plan, a variance for each, and the pace meter.
-    prepare: async (page) => selectCurrentMonth(page),
+    // expenses against plan, a variance for each, and the pace meter - none of
+    // which say anything about a month with no activity.
+    prepare: async (page) => selectMonthWithActivity(page),
   },
   {
     name: "budget-details-category",
     nav: "Budget",
+    viewport: BUDGET_VIEWPORT,
     url: /\/budget-management/,
     budget: "Envelope",
     // Groups arrive collapsed, so the category rows have to be revealed before
@@ -170,6 +266,7 @@ const SHOTS = [
   {
     name: "budget-details-group",
     nav: "Budget",
+    viewport: BUDGET_VIEWPORT,
     url: /\/budget-management/,
     budget: "Envelope",
     prepare: async (page) => {
@@ -180,6 +277,7 @@ const SHOTS = [
   {
     name: "budget-actuals",
     nav: "Budget",
+    viewport: BUDGET_VIEWPORT,
     url: /\/budget-management/,
     budget: "Envelope",
     // What was actually spent, month by month, rather than what was planned -
@@ -237,8 +335,8 @@ const SHOTS = [
      * The rewrite dialog for a rule that matches whole bank strings.
      *
      * The demo has no such rule, and it must not gain one: the demo budget is
-     * public and shared. So the rule is *staged* — imported as CSV, which
-     * stages without saving — and diagnostics reads the staged set. Nothing
+     * public and shared. So the rule is *staged* - imported as CSV, which
+     * stages without saving - and diagnostics reads the staged set. Nothing
      * reaches the budget, and discarding the draft removes it.
      */
     prepare: async (page) => {
@@ -286,13 +384,13 @@ const SHOTS = [
     cleanup: async (page) => {
       await closeAnyDialog(page);
       // The top bar's Discard drops the whole draft at once, with no
-      // confirmation of its own — it is the button the user would press.
+      // confirmation of its own - it is the button the user would press.
       const discard = page.getByRole("button", { name: "Discard", exact: true }).first();
       if ((await discard.count()) === 0) return;
       await discard.click();
       await page.waitForTimeout(3000);
 
-      // Discarding changes the working set, which only marks the report stale —
+      // Discarding changes the working set, which only marks the report stale -
       // the findings on screen still count the rule that no longer exists. Rerun
       // so the page a later shot inherits agrees with the budget.
       const refresh = page.getByLabel("Refresh rule diagnostics");
@@ -363,7 +461,7 @@ const SHOTS = [
      */
     cleanup: async (page) => {
       // The control only renders while a correction exists. Absent means either
-      // the acceptance never happened or something else moved the page — and
+      // the acceptance never happened or something else moved the page - and
       // either way this cleanup has proved nothing, so it must not report
       // success and let a later shot inherit an unverified state.
       const undo = page.getByRole("button", { name: /Undo my changes/ }).first();
@@ -475,7 +573,7 @@ const SHOTS = [
     /*
      * The import screen, which is where a bank's column layout is confirmed and
      * where a reconciliation most often goes wrong. Reached by starting a second
-     * session and stopping after the upload — the seeded one has already moved
+     * session and stopping after the upload - the seeded one has already moved
      * past this phase, and sending it back would throw away its decisions.
      */
     prepare: async (page, demo) => {
@@ -636,18 +734,41 @@ const SHOTS = [
     // The month summary's Spent figure is a link into the transactions behind
     // it - the answer to "spent on what", one click from the number that
     // prompted the question.
+    // The month has to be one that was actually spent in. This used to select
+    // the current month, which broke the moment the calendar moved past the end
+    // of the demo's data: the dialog opened on a month with nothing in it and
+    // waited sixty seconds for a table that was never coming. Walk back from the
+    // latest month instead and take the first that has transactions, so the shot
+    // keeps working as the demo ages.
     prepare: async (page) => {
-      await selectCurrentMonth(page);
-      await page.getByLabel(/View expense transactions for/).click();
-      // The dialog queries the month's transactions and builds its analytics
-      // before it has anything to show; until then it renders "Loading
-      // transactions" and a photograph of that is worth nothing. Wait for the
-      // loading state to go and the table to arrive, rather than guessing a
-      // duration that a slow query would outlast.
       const dialog = page.locator('[role="dialog"]');
-      await dialog.getByText(/Loading transactions/).waitFor({ state: "hidden", timeout: 60000 });
-      await dialog.getByRole("table").first().waitFor({ timeout: 60000 });
-      await page.waitForTimeout(2500);
+      const headers = page.locator('[aria-label^="Month: "]');
+      for (let i = (await headers.count()) - 1; i >= 0; i -= 1) {
+        await headers.nth(i).click();
+        await page.waitForTimeout(4000);
+
+        const link = page.getByLabel(/View expense transactions for/);
+        if ((await link.count()) === 0) continue;
+        await link.first().click();
+
+        // The dialog queries the month's transactions and builds its analytics
+        // before it has anything to show; until then it renders "Loading
+        // transactions" and a photograph of that is worth nothing.
+        await dialog
+          .getByText(/Loading transactions/)
+          .waitFor({ state: "hidden", timeout: 60000 })
+          .catch(() => {});
+        const table = dialog.getByRole("table").first();
+        if (await table.isVisible().catch(() => false)) {
+          await page.waitForTimeout(2500);
+          return;
+        }
+
+        // Nothing to show for that month - close and try the one before it.
+        await page.keyboard.press("Escape");
+        await page.waitForTimeout(1500);
+      }
+      throw new Error("no month in the visible range has expense transactions to show");
     },
   },
   {
@@ -660,15 +781,39 @@ const SHOTS = [
     // The month summary answers "how far off plan is this month"; this dialog
     // answers "because of what", which is the question a reader actually has.
     // The expense side, because that is where a month usually goes wrong.
+    // A dialog about what drove a month off plan needs a month that went off
+    // plan. Selecting the current one produced a table of 0.00 the moment the
+    // calendar passed the end of the demo's data - technically a successful
+    // capture, and worth nothing to a reader. Walk back from the latest month
+    // and take the first with a non-zero variance.
     prepare: async (page) => {
-      await selectCurrentMonth(page);
-      await page.getByLabel("View variance drivers").last().click();
-      await page.waitForTimeout(5000);
-      // Expanded, because the groups alone say which part of the month drifted
-      // and the categories underneath say what actually did it - and because
-      // nine collapsed rows leave two thirds of the dialog empty.
-      await page.getByRole("button", { name: /Expand all/ }).click();
-      await page.waitForTimeout(3000);
+      const dialog = page.locator('[role="dialog"]');
+      const headers = page.locator('[aria-label^="Month: "]');
+      for (let i = (await headers.count()) - 1; i >= 0; i -= 1) {
+        await headers.nth(i).click();
+        await page.waitForTimeout(4000);
+
+        const open = page.getByLabel("View variance drivers");
+        if ((await open.count()) === 0) continue;
+        await open.last().click();
+        await page.waitForTimeout(5000);
+
+        // The headline states the month's variance; "0.00" means this month has
+        // nothing to explain, whatever the rows below say.
+        const headline = await dialog.innerText().catch(() => "");
+        if (!/^\s*0\.00\b/m.test(headline)) {
+          // Expanded, because the groups alone say which part of the month
+          // drifted and the categories underneath say what actually did it -
+          // and because nine collapsed rows leave two thirds of the dialog empty.
+          await page.getByRole("button", { name: /Expand all/ }).click();
+          await page.waitForTimeout(3000);
+          return;
+        }
+
+        await page.keyboard.press("Escape");
+        await page.waitForTimeout(1500);
+      }
+      throw new Error("no month in the visible range has a variance to explain");
     },
   },
   {
@@ -778,12 +923,25 @@ const SHOTS = [
  *
  * A table with three rows in a full-height pane is 80% empty space, and a
  * screenshot of it teaches nothing about the three rows. `trimTo` names the
- * element whose bottom edge is the real end of the content — usually the last
- * row — and the shot is clipped there.
+ * element whose bottom edge is the real end of the content - usually the last
+ * row - and the shot is clipped there.
  *
  * Falls back to the plain element screenshot whenever the measurement is not
  * available, because a slightly loose crop beats no image.
  */
+/**
+ * Re-encode a captured PNG at maximum compression.
+ *
+ * Playwright writes a quickly-compressed PNG; sharp's slowest setting is about
+ * 20% smaller for pixel-identical output, which is most of what the 3x capture
+ * costs. Lossless, so this trades build time for repository size and nothing
+ * else.
+ */
+async function shrinkLossless(path) {
+  const buf = await sharp(path).png({ compressionLevel: 9, effort: 10 }).toBuffer();
+  await writeFile(path, buf);
+}
+
 async function captureShot(page, shot, path) {
   const target = shot.element ? page.locator(shot.element).first() : page;
 
@@ -795,13 +953,17 @@ async function captureShot(page, shot, path) {
       const height = Math.min(outer.height, Math.max(bottom - outer.y, 80));
       await page.screenshot({
         path,
+        timeout: 120000,
+        animations: "disabled",
         clip: { x: outer.x, y: outer.y, width: outer.width, height },
       });
+      await shrinkLossless(path);
       return;
     }
   }
 
-  await target.screenshot({ path });
+  await target.screenshot({ path, timeout: 120000, animations: "disabled" });
+  await shrinkLossless(path);
 }
 
 const args = process.argv.slice(2);
@@ -1039,7 +1201,20 @@ async function run(registerInstance) {
   const browser = await chromium.launch();
   const context = await browser.newContext({
     viewport: VIEWPORT,
-    deviceScaleFactor: 2,
+    // 5x, so a 1800-wide capture lands at 9000x5625.
+    //
+    // A wider viewport fits more UI into the same displayed width, so each glyph
+    // lands on fewer pixels once a page scales the image down - which is what
+    // makes a screenshot read as soft. Device pixel ratio is the only lever that
+    // answers that without shrinking the UI. Ruled out along the way:
+    // --font-render-hinting=full and --enable-font-antialiasing produce a
+    // byte-identical image here, so the softness was never Chromium's text
+    // rasterisation, and the PNGs were already lossless.
+    //
+    // Chosen so the images hold up when a reader zooms in, rather than only at
+    // the size a page happens to show them. `shrinkLossless` keeps the cost
+    // reasonable without touching a pixel.
+    deviceScaleFactor: 5,
     colorScheme: "light",
   });
   // A development build paints its own overlay button over the sidebar, and it
@@ -1103,14 +1278,29 @@ async function run(registerInstance) {
       await page.waitForTimeout(5000);
       // Some pages only show what they are for once they have been asked to do
       // something.
-      // `demo` is passed for the shots that have to build their own fixture —
+      // `demo` is passed for the shots that have to build their own fixture -
       // a second reconciliation session needs the statement and the account it
       // belongs to.
       if (shot.prepare) await shot.prepare(page, demo);
 
+      // Per-shot width, for pages whose chrome does not fit the default. Set on
+      // the page rather than the context so `deviceScaleFactor` still comes from
+      // the context - it cannot be changed after a context is created, and a
+      // second context would have to log in again.
+      if (shot.viewport) {
+        await page.setViewportSize(shot.viewport);
+        // Re-layout, and let the grid re-measure its columns.
+        await page.waitForTimeout(2500);
+      }
+
       // A dialog photographed as a whole page is mostly dimmed background, so a
       // shot can name the element it is actually about.
       await captureShot(page, shot, await shotPath(shot));
+
+      if (shot.viewport) {
+        await page.setViewportSize(VIEWPORT);
+        await page.waitForTimeout(1500);
+      }
       console.log(`captured ${shot.name}`);
 
       // Shots share one page, so a dialog left open blocks the next one's
@@ -1130,7 +1320,7 @@ async function run(registerInstance) {
         } catch (error) {
           // A failed cleanup is a failed run, not a note in the log. The page is
           // shared, so whatever this shot staged is still there for every shot
-          // after it — reporting success would hand over contaminated images.
+          // after it - reporting success would hand over contaminated images.
           console.log(`CLEANUP  ${shot.name}: ${error?.message ?? error}`);
           if (!failures.includes(shot.name)) failures.push(shot.name);
         }
