@@ -18,7 +18,7 @@ statements you can reconcile - and backups that prove they still open.
 [![Live demo](https://img.shields.io/badge/Demo-live-40a829?style=flat-square&logo=rocket&logoColor=white)](https://actual-bench-demo.vercel.app)
 [![Changelog](https://img.shields.io/badge/Changelog-releases-orange?style=flat-square)](CHANGELOG.md)
 
-![A full year of an envelope budget on one screen](docs-site/src/assets/screenshots/user-guide/budget-envelope.png)
+![A full year of an envelope budget on one screen](docs/readme-images/budget-envelope.png)
 
 </div>
 
@@ -70,15 +70,15 @@ No setup, no account. A year of household Envelope and Tracking budgets to poke 
 
 | Rules audited as a set | Duplicate payees, with the evidence |
 |:---:|:---:|
-| ![Rule Diagnostics](docs-site/src/assets/screenshots/user-guide/rule-diagnostics.png) | ![Payee Cleanup](docs-site/src/assets/screenshots/user-guide/payee-cleanup.png) |
+| ![Rule Diagnostics](docs/readme-images/rule-diagnostics.png) | ![Payee Cleanup](docs/readme-images/payee-cleanup.png) |
 
 | A statement reconciled row by row | Backups that are opened and checked |
 |:---:|:---:|
-| ![Bank Reconciliation](docs-site/src/assets/screenshots/user-guide/bank-reconciliation.png) | ![Backups](docs-site/src/assets/screenshots/user-guide/backups.png) |
+| ![Bank Reconciliation](docs/readme-images/bank-reconciliation.png) | ![Backups](docs/readme-images/backups.png) |
 
 | Ask your data a question | Work that runs with the app closed |
 |:---:|:---:|
-| ![ActualQL](docs-site/src/assets/screenshots/user-guide/actualql.png) | ![Automations](docs-site/src/assets/screenshots/user-guide/automations.png) |
+| ![ActualQL](docs/readme-images/actualql.png) | ![Automations](docs/readme-images/automations.png) |
 
 ## Quick start
 

@@ -81,3 +81,23 @@ A screenshot earns its place when the screen carries evidence or a judgement tha
 prose cannot: the reasoning behind a merge, a backtest, a match confidence, what
 retention would delete. A form with two labelled fields is better described in a
 sentence, and a page with a dozen images is a slideshow nobody reads.
+
+## The README's copies
+
+The README does not use these files directly. They are captured at 5x so they
+hold up when a reader zooms into them on the documentation site, and a page of
+seven of those comes to well over a gigabyte of decoded bitmap - past what a
+browser will paint, so it paints nothing at all. The files were being served
+correctly; the page simply could not draw them.
+
+So the README has its own copies at a size suited to a page that shows them a few
+hundred pixels wide:
+
+```bash
+node docs-site/scripts/readme-images.mjs
+```
+
+That reads from `docs-site/src/assets/screenshots/` and writes to
+`docs/readme-images/`. Run it after retaking screenshots, or the README keeps
+showing the previous ones. The list of which images the README uses lives at the
+top of that script.
