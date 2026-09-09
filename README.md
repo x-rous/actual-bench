@@ -49,8 +49,9 @@ categories, schedules, tags and rules.
 
 You still use Actual Budget for day-to-day transactions.
 
-Changes are stored in your browser until you click **Save**. Nothing is written to your budget
-before that.
+Most changes are stored in your browser until you click **Save**, so nothing reaches your budget
+until you say so. [A couple of things save straight away](#nothing-is-written-until-you-say-so), and
+they tell you where you use them.
 
 **[Try the live demo →](https://actual-bench-demo.vercel.app)**
 No setup, no account. A year of household Envelope and Tracking budgets to poke at.
@@ -141,6 +142,10 @@ Bench talks to Actual two ways, and you pick one on the connection screen:
 
 - **Direct Actual Server** - your browser talks to Actual directly, using Actual's own browser API. This is the target architecture.
 - **HTTP API Server** - through [actual-http-api](https://github.com/jhonderson/actual-http-api). Fully maintained, and required for unattended server-side work.
+
+<p align="center">
+  <img src="docs/readme-images/connect.png" alt="The connection screen, with the choice between a Direct Actual Server and an HTTP API Server" width="420" />
+</p>
 
 **[How to connect →](https://x-rous.github.io/actual-bench/getting-started/connecting/)**
 

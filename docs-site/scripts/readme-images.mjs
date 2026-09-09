@@ -27,28 +27,31 @@ const out = join(repo, "docs", "readme-images");
 
 /**
  * Wide enough to stay crisp on a high-density screen: GitHub renders a README
- * at roughly 900px, and half that in the two-column tables.
+ * at roughly 900px, and half that in the two-column tables. A shot can ask for
+ * less - the connect form is a tall, narrow card, and 1600px of it would run
+ * off the bottom of the page.
  */
 const WIDTH = 1600;
 
 const IMAGES = [
-  "user-guide/budget-envelope.png",
-  "user-guide/rule-diagnostics.png",
-  "user-guide/payee-cleanup.png",
-  "user-guide/bank-reconciliation.png",
-  "user-guide/backups.png",
-  "user-guide/actualql.png",
-  "user-guide/automations.png",
+  { path: "user-guide/budget-envelope.png" },
+  { path: "user-guide/rule-diagnostics.png" },
+  { path: "user-guide/payee-cleanup.png" },
+  { path: "user-guide/bank-reconciliation.png" },
+  { path: "user-guide/backups.png" },
+  { path: "user-guide/actualql.png" },
+  { path: "user-guide/automations.png" },
+  { path: "getting-started/connect.png", width: 720 },
 ];
 
 await mkdir(out, { recursive: true });
 
 let total = 0;
 for (const image of IMAGES) {
-  const name = image.split("/").pop();
-  const source = await readFile(join(shots, image));
+  const name = image.path.split("/").pop();
+  const source = await readFile(join(shots, image.path));
   const resized = await sharp(source)
-    .resize({ width: WIDTH, withoutEnlargement: true })
+    .resize({ width: image.width ?? WIDTH, withoutEnlargement: true })
     // Same maximum-effort encoding the captures use: lossless, and the smaller
     // file is the whole point here.
     .png({ compressionLevel: 9, effort: 10 })
