@@ -4,10 +4,11 @@
 
 # Actual Bench
 
-**The workbench beside Actual Budget.**
+**A companion app for Actual Budget.**
 
-A full year on one screen, bulk cleanup you review before it lands, rules you can audit,
-statements you can reconcile - and backups that prove they still open.
+Full-year budget editing, bulk data management, rule diagnostics, payee cleanup, bank
+reconciliation, scheduled bank sync, multi-currency sync between budget files, ActualQL queries,
+budget file health checks, verified backups, and automations that run with Bench closed.
 
 [![Latest version](https://img.shields.io/github/v/tag/x-rous/actual-bench?label=version&style=flat-square)](https://github.com/x-rous/actual-bench/releases)
 [![CI](https://img.shields.io/github/actions/workflow/status/x-rous/actual-bench/ci.yml?branch=main&style=flat-square&label=CI)](https://github.com/x-rous/actual-bench/actions/workflows/ci.yml)
@@ -26,17 +27,30 @@ statements you can reconcile - and backups that prove they still open.
 
 ## What is Actual Bench?
 
-Keep doing your everyday budgeting in [Actual Budget](https://github.com/actualbudget/actual).
-**Actual Bench** is for the other jobs: the ones that are slow one row at a time, the ones you want
-to look at before they land, and the ones that should happen whether or not anything is open.
+Actual Bench is a web app that connects to your [Actual Budget](https://github.com/actualbudget/actual)
+server and adds tools Actual Budget does not have:
 
-It is the app you open to plan a year, merge two hundred duplicate payees, work out why a rule never
-fires, reconcile a bank statement, or check that last night's backup still opens. Every change is
-staged locally and written only when you press **Save** - so you can be wrong about something and
-find out before your budget is.
+- **Bank reconciliation** - match a downloaded statement against your transactions line by line, and
+  fix the differences.
+- **Rule diagnostics** - find rules that duplicate each other, contradict each other, or never run.
+- **Payee cleanup** - find duplicate payees, see the evidence for each match, and create the rules
+  that stop them coming back.
+- **Budget file sync** - copy transactions, payees or categories between budget files, converting
+  currency where they differ.
+- **Verified backups** - on a schedule, to a destination you choose, and every copy is opened and
+  checked.
+- **Automations** - run backups and syncs on a schedule, with Bench closed.
+- **ActualQL queries** - ask your budget data a question and export the answer.
+- **Budget file health** - open a budget file and check it for problems.
 
-It does not replace Actual Budget, and it is not trying to. Day-to-day transaction entry belongs
-there.
+It also does what Actual Budget already does, at scale: a full year of budget amounts in one table
+with copy, paste and fill, and bulk editing with CSV import and export for accounts, payees,
+categories, schedules, tags and rules.
+
+You still use Actual Budget for day-to-day transactions.
+
+Changes are stored in your browser until you click **Save**. Nothing is written to your budget
+before that.
 
 **[Try the live demo →](https://actual-bench-demo.vercel.app)**
 No setup, no account. A year of household Envelope and Tracking budgets to poke at.
