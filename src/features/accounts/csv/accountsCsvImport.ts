@@ -32,8 +32,8 @@ export function importAccountsFromCsv(
   const accounts: Omit<Account, "id">[] = [];
   let skipped = 0;
 
-  for (let i = 1; i < allLines.length; i++) {
-    const fields = parseCsvLine(allLines[i]);
+  for (let i = 1; i < nonEmpty.length; i++) {
+    const fields = parseCsvLine(nonEmpty[i]);
     const name = fields[nameIdx]?.trim() ?? "";
     if (!name) { skipped++; continue; }
 
