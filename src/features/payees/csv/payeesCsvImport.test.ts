@@ -15,13 +15,33 @@ describe("importPayeesFromCsv", () => {
   });
 
   it("skips rows with empty names", () => {
-    const csv = "name\nAmazon\n\nNetflix";
+    // A row with an empty name column, rather than a blank line: a blank line is
+    // whitespace and is not a row anybody wrote.
+    const csv = "id,name\n1,Amazon\n2,\n3,Netflix";
     const result = importPayeesFromCsv(csv);
 
     expect("error" in result).toBe(false);
     if ("error" in result) return;
     expect(result.payees).toHaveLength(2);
     expect(result.skipped).toBe(1);
+  });
+
+  it("ignores a blank line before the header instead of importing the header", () => {
+    const csv = "\nname\nAmazon";
+    const result = importPayeesFromCsv(csv);
+
+    expect("error" in result).toBe(false);
+    if ("error" in result) return;
+    expect(result.payees).toEqual([{ name: "Amazon" }]);
+    expect(result.skipped).toBe(0);
+  });
+
+  it("does not count a trailing newline as a skipped row", () => {
+    const result = importPayeesFromCsv("name\nAmazon\n");
+    expect("error" in result).toBe(false);
+    if ("error" in result) return;
+    expect(result.payees).toHaveLength(1);
+    expect(result.skipped).toBe(0);
   });
 
   it("returns an error when CSV has no data rows", () => {

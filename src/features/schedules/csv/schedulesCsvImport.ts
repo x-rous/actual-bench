@@ -60,9 +60,8 @@ export function importSchedulesFromCsv(
   const schedules: Schedule[] = [];
   let skipped = 0;
 
-  for (let i = 1; i < allLines.length; i++) {
-    const line = allLines[i];
-    if (!line.trim()) continue;
+  for (let i = 1; i < nonEmpty.length; i++) {
+    const line = nonEmpty[i];
 
     const fields = parseCsvLine(line);
     const cell = (idx: number) => (idx >= 0 ? (fields[idx]?.trim() ?? "") : "");

@@ -59,6 +59,21 @@ describe("importSchedulesFromCsv — valid rows", () => {
     }
   });
 
+  it("ignores a blank line before the header instead of importing the header", () => {
+    // The header was read from the blank-filtered lines while the rows were read
+    // from the unfiltered ones, so every row landed one line early and the header
+    // itself was parsed as a schedule. The blank-line guard inside the loop hid
+    // the symptom for blank rows but never fixed the offset.
+    const csv = "\ndate,name\n2025-03-01,Rent";
+    const result = importSchedulesFromCsv(csv, emptyMaps);
+    expect("error" in result).toBe(false);
+    if (!("error" in result)) {
+      expect(result.schedules).toHaveLength(1);
+      expect(result.schedules[0]!.date).toBe("2025-03-01");
+      expect(result.schedules[0]!.name).toBe("Rent");
+    }
+  });
+
   it("parses the name column", () => {
     const csv = "date,name\n2025-03-01,Monthly Rent\n";
     const result = importSchedulesFromCsv(csv, emptyMaps);
