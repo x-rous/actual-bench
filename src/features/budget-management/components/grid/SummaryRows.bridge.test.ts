@@ -5,7 +5,7 @@
  * both: the display magnitudes, and that operators + magnitudes reconcile to
  * the raw `toBudget` (so the bridge can never drift from the API value).
  */
-import { ENVELOPE_SUMMARY_ROWS, summaryRowHeightPx } from "./SummaryRows";
+import { ENVELOPE_SUMMARY_ROWS } from "./SummaryRows";
 import type { BudgetMonthSummary, LoadedMonthState } from "../../types";
 
 // Only `summary` is read by these rows; state/month are unused.
@@ -57,43 +57,5 @@ describe("ENVELOPE_SUMMARY_ROWS funding bridge (BM-19)", () => {
     };
     expect(valueFor("Overspent Last Month", clean)).toBe(0);
     expect(valueFor("Hold for next month", clean)).toBe(0);
-  });
-});
-
-describe("summaryRowHeightPx", () => {
-  /**
-   * The grid derives each summary row's sticky offset from these heights, so a
-   * row whose height class changes without this being updated would pin at the
-   * wrong place and overlap its neighbour.
-   */
-  it("reads the row's explicit height", () => {
-    expect(summaryRowHeightPx({ label: "x", rowHeight: "h-8" } as never)).toBe(32);
-    expect(summaryRowHeightPx({ label: "x", rowHeight: "h-6" } as never)).toBe(24);
-  });
-
-  it("defaults a sub-row shorter than a main row", () => {
-    expect(summaryRowHeightPx({ label: "x", isSubRow: true } as never)).toBe(24);
-    expect(summaryRowHeightPx({ label: "x" } as never)).toBe(32);
-  });
-
-  it("counts the top margin, which also pushes the rows below it", () => {
-    expect(summaryRowHeightPx({ label: "x", rowHeight: "h-8", marginTop: true } as never)).toBe(36);
-  });
-
-  it("accumulates into offsets that never overlap", () => {
-    const rows = [
-      { label: "a", rowHeight: "h-8", marginTop: true },
-      { label: "b", rowHeight: "h-8" },
-      { label: "c", rowHeight: "h-8" },
-    ] as never[];
-    const header = 28;
-    const tops = rows.reduce<number[]>((acc, _r, i) => {
-      acc.push(i === 0 ? header : acc[i - 1]! + summaryRowHeightPx(rows[i - 1]!));
-      return acc;
-    }, []);
-    expect(tops).toEqual([28, 64, 96]);
-    for (let i = 1; i < tops.length; i++) {
-      expect(tops[i]!).toBeGreaterThan(tops[i - 1]!);
-    }
   });
 });

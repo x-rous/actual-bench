@@ -178,34 +178,12 @@ export const ENVELOPE_SUMMARY_ROWS: SummaryRowConfig[] = [
 
 // ─── SummaryHeaderRow + SummaryHeaderCell ─────────────────────────────────────
 
-/**
- * Pixel height of a summary row, for the sticky offsets the grid computes.
- *
- * Lives beside the configs on purpose: the offsets are derived from these
- * heights, so a row that changes height has to change this in the same edit.
- */
-const ROW_HEIGHT_PX: Record<string, number> = {
-  "h-5": 20,
-  "h-6": 24,
-  "h-7": 28,
-  "h-8": 32,
-  "h-9": 36,
-};
-
-export function summaryRowHeightPx(config: SummaryRowConfig): number {
-  const cls = config.rowHeight ?? (config.isSubRow ? "h-6" : "h-8");
-  return (ROW_HEIGHT_PX[cls] ?? 32) + (config.marginTop ? 4 : 0);
-}
-
 export function SummaryHeaderRow({
   config,
   activeMonths,
-  stickyTop,
 }: {
   config: SummaryRowConfig;
   activeMonths: string[];
-  /** Offset below the month header, so the block stays put while rows scroll. */
-  stickyTop?: number;
 }) {
   const firstMonthData = useRawMonthFromContext(activeMonths[0] ?? null);
   const rowLabel =
@@ -225,10 +203,7 @@ export function SummaryHeaderRow({
   return (
     <>
       <div
-        className={`${rowH} px-3 ${marginTopClass} flex items-center bg-background text-xs font-medium text-foreground/80 sticky left-0 ${
-          stickyTop == null ? "z-10" : "z-20"
-        } ${borderClass}`}
-        style={stickyTop == null ? undefined : { top: stickyTop }}
+        className={`${rowH} px-3 ${marginTopClass} flex items-center bg-background text-xs font-medium text-foreground/80 sticky left-0 z-10 ${borderClass}`}
         role="rowheader"
         title={config.rowTooltip}
       >
@@ -240,7 +215,7 @@ export function SummaryHeaderRow({
         <span className={config.operator === "=" ? "font-semibold" : ""}>{rowLabel}</span>
       </div>
       {activeMonths.map((month) => (
-        <SummaryHeaderCell key={month} month={month} config={config} stickyTop={stickyTop} />
+        <SummaryHeaderCell key={month} month={month} config={config} />
       ))}
     </>
   );
@@ -249,11 +224,9 @@ export function SummaryHeaderRow({
 function SummaryHeaderCell({
   month,
   config,
-  stickyTop,
 }: {
   month: string;
   config: SummaryRowConfig;
-  stickyTop?: number;
 }) {
   const data = useEffectiveMonthFromContext(month);
   const isSubRow = config.isSubRow;
@@ -302,10 +275,7 @@ function SummaryHeaderCell({
     const showBalanced = config.holdAction === "set" && numericValue === 0;
     return (
       <div
-        className={`${rowH} px-1.5 ${marginTopClass} flex items-center justify-end gap-1 font-sans tabular-nums leading-tight text-xs ${
-          stickyTop == null ? "bg-transparent" : "sticky z-10 bg-background"
-        } ${borderClass} ${colorClass}`}
-        style={stickyTop == null ? undefined : { top: stickyTop }}
+        className={`${rowH} px-1.5 ${marginTopClass} flex items-center justify-end gap-1 bg-transparent font-sans tabular-nums leading-tight text-xs ${borderClass} ${colorClass}`}
         title={tooltip}
       >
         {config.holdAction === "free" && (
@@ -339,10 +309,7 @@ function SummaryHeaderCell({
 
   return (
     <div
-      className={`${rowH} px-2 ${marginTopClass} flex flex-col items-end justify-center font-sans tabular-nums leading-tight text-xs ${
-        stickyTop == null ? "bg-transparent" : "sticky z-10 bg-background"
-      } ${borderClass} ${colorClass}`}
-      style={stickyTop == null ? undefined : { top: stickyTop }}
+      className={`${rowH} px-2 ${marginTopClass} flex flex-col items-end justify-center bg-transparent font-sans tabular-nums leading-tight text-xs ${borderClass} ${colorClass}`}
       title={tooltip}
     >
       {dynamicLabel && (

@@ -1149,7 +1149,7 @@ function BudgetWorkspaceInner({
       aria-label="Budget workspace"
     >
       <div
-        className="flex-1 min-w-0 overflow-auto [scrollbar-gutter:stable]"
+        className="flex-1 min-w-0 overflow-auto"
         onClick={(e) => {
           const target = e.target as Element;
           if (target.closest("[role=grid]")) return;

@@ -6,7 +6,6 @@ import { useMonthsData } from "../context/MonthsDataContext";
 import { useDailyDate } from "../hooks/useDailyDate";
 import { MonthColumnHeader } from "./grid/MonthColumnHeader";
 import {
-  summaryRowHeightPx,
   SummaryHeaderRow,
   TRACKING_SUMMARY_ROWS,
   ENVELOPE_SUMMARY_ROWS,
@@ -266,21 +265,8 @@ export function BudgetGrid({
 
   const gridStyle: React.CSSProperties = {
     display: "grid",
-    gridTemplateColumns: `minmax(180px, 1fr) repeat(${activeMonths.length}, minmax(67px, 92px))`,
+    gridTemplateColumns: `minmax(180px, 1fr) repeat(${activeMonths.length}, minmax(69px, 94px))`,
   };
-
-  /**
-   * Where each summary row pins, measured down from the month header.
-   *
-   * The summary is the frame of reference for everything below it, so it stays
-   * put while the categories scroll under it. Rows differ in height, so the
-   * offsets accumulate rather than being a single constant.
-   */
-  const MONTH_HEADER_PX = 28;
-  const summaryStickyTops = summaryRows.reduce<number[]>((acc, config, i) => {
-    acc.push(i === 0 ? MONTH_HEADER_PX : acc[i - 1]! + summaryRowHeightPx(summaryRows[i - 1]!));
-    return acc;
-  }, []);
 
   const sharedGroupProps = {
     activeMonths,
@@ -382,7 +368,6 @@ export function BudgetGrid({
           key={`summary-${i}`}
           config={config}
           activeMonths={activeMonths}
-          stickyTop={summaryStickyTops[i]}
         />
       ))}
 
