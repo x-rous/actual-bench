@@ -43,6 +43,7 @@ import {
 } from "../lib/bulkActionReport";
 import { useWorkspaceKeymap } from "../keyboard/useBudgetKeymap";
 import { BudgetGrid } from "./BudgetGrid";
+import { OverlayScrollArea } from "./OverlayScrollArea";
 import { BudgetSelectionSummary } from "./BudgetSelectionSummary";
 import { BulkActionDialog } from "./BulkActionDialog";
 import { BudgetCellContextMenu } from "./BudgetCellContextMenu";
@@ -1148,8 +1149,8 @@ function BudgetWorkspaceInner({
       tabIndex={-1}
       aria-label="Budget workspace"
     >
-      <div
-        className="flex-1 min-w-0 overflow-auto"
+      <OverlayScrollArea
+        className="flex-1 min-w-0"
         onClick={(e) => {
           const target = e.target as Element;
           if (target.closest("[role=grid]")) return;
@@ -1185,7 +1186,7 @@ function BudgetWorkspaceInner({
           onClearSelection={clearGridSelection}
           onMonthSelect={handleMonthHeaderSelect}
         />
-      </div>
+      </OverlayScrollArea>
       <BudgetSelectionSummary
         selection={selection}
         activeMonths={activeMonths}
