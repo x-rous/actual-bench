@@ -210,32 +210,29 @@ export function BudgetToolbar({
 
       <Divider />
 
-      {/* Cell-view selector. A recessed track with one raised segment is the
-          shape people read as "pick one of these"; a row of equal buttons with
-          a tinted one reads as three separate actions, which is what this was
-          being mistaken for. The caption says what is being picked. */}
-      <div className="flex items-center shrink-0">
-        <div
-          className="flex items-center gap-0.5 rounded-md border border-border bg-muted/60 p-0.5"
-          role="group"
-          aria-label="Cell display"
-        >
-          {(["budgeted", "spent", "balance"] as const).map((view) => (
-            <button
-              key={view}
-              type="button"
-              onClick={() => onCellViewChange(view)}
-              aria-pressed={cellView === view}
-              className={`rounded px-2.5 py-1 text-xs transition-colors ${
-                cellView === view
-                  ? "bg-background text-foreground font-semibold shadow-sm ring-1 ring-border"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              {CELL_VIEW_LABELS[view]}
-            </button>
-          ))}
-        </div>
+      {/* Cell-view toggle */}
+      <div
+        className="flex items-center rounded border border-border overflow-hidden shrink-0"
+        role="group"
+        aria-label="Cell display"
+      >
+        {(["budgeted", "spent", "balance"] as const).map((view, idx, arr) => (
+          <button
+            key={view}
+            type="button"
+            onClick={() => onCellViewChange(view)}
+            aria-pressed={cellView === view}
+            className={`px-2 py-1 text-[11px] font-medium transition-colors ${
+              idx < arr.length - 1 ? "border-r border-border" : ""
+            } ${
+              cellView === view
+                ? "bg-primary/10 text-foreground"
+                : "text-muted-foreground hover:bg-muted/50"
+            }`}
+          >
+            {CELL_VIEW_LABELS[view]}
+          </button>
+        ))}
       </div>
 
       {(onExpandAll || onCollapseAll || onToggleShowHidden || onToggleSpendingBars || onToggleDecimals) && <Divider />}
