@@ -46,7 +46,13 @@ export function applyBudgetedToMonthState(
   // visible group's aggregate (mirrors effectiveMonth Layer 2's skip rule).
   const skipGroupUpdate =
     isTracking && effectivelyHidden && !(group?.hidden ?? false);
-  const skipSummaryUpdate = isTracking && effectivelyHidden;
+  // An income category contributes to none of the expense summary aggregates
+  // (`totalBudgeted`/`totalBalance` are what the grid renders as "Total Budgeted
+  // Expenses"/"Total Expense Balance", and `toBudget` is what an allocation
+  // consumes). This must match effectiveMonth's Layer 2 rule exactly, or the
+  // grid jumps when the save swaps the staged overlay for the saved value -
+  // which is the whole contract this reducer exists to keep (BM-12).
+  const skipSummaryUpdate = cat.isIncome || (isTracking && effectivelyHidden);
 
   const groupChanged = !!group && !skipGroupUpdate;
   const nextGroup = groupChanged

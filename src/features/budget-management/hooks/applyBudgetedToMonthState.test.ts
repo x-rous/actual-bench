@@ -69,7 +69,7 @@ function state(): LoadedMonthState {
       totalSpent: 0,
       totalBalance: 300_000,
     },
-    groupOrder: ["visible-group", "hidden-group"],
+    groupOrder: ["visible-group", "hidden-group", "income-group"],
     groupsById: {
       "visible-group": group({
         id: "visible-group",
@@ -83,6 +83,13 @@ function state(): LoadedMonthState {
         categoryIds: ["in-hidden-group"],
         budgeted: -100_000,
         balance: 100_000,
+      }),
+      "income-group": group({
+        id: "income-group",
+        isIncome: true,
+        categoryIds: ["income-cat"],
+        budgeted: 0,
+        balance: 0,
       }),
     },
     categoriesById: {
@@ -104,6 +111,13 @@ function state(): LoadedMonthState {
         groupId: "hidden-group",
         budgeted: -100_000,
         balance: 100_000,
+      }),
+      "income-cat": category({
+        id: "income-cat",
+        groupId: "income-group",
+        isIncome: true,
+        budgeted: 0,
+        balance: 0,
       }),
     },
   };
@@ -139,6 +153,8 @@ describe("applyBudgetedToMonthState (BM-12 convergence)", () => {
     { name: "tracking visible category", categoryId: "visible-cat", isTracking: true },
     { name: "tracking hidden category in a visible group", categoryId: "hidden-cat", isTracking: true },
     { name: "tracking category inside a hidden group", categoryId: "in-hidden-group", isTracking: true },
+    { name: "envelope income category", categoryId: "income-cat", isTracking: false },
+    { name: "tracking income category", categoryId: "income-cat", isTracking: true },
   ];
 
   it.each(cases)("matches the staged reducer for a $name edit", ({ categoryId, isTracking }) => {
@@ -174,6 +190,21 @@ describe("applyBudgetedToMonthState (BM-12 convergence)", () => {
     expect(result.summary.totalBudgeted).toBe(-270_000);
     expect(result.groupsById["visible-group"]!.budgeted).toBe(-230_000);
   });
+
+  it.each([true, false])(
+    "leaves the expense summary untouched when income is budgeted (tracking=%s)",
+    (isTracking) => {
+      // `totalBudgeted`/`totalBalance` are the expense aggregates the grid
+      // renders as "Total Budgeted Expenses"/"Total Expense Balance"; income
+      // belongs to neither. Its own totals are derived from categoriesById.
+      const base = state();
+      const result = applyBudgetedToMonthState(base, "income-cat", 500_000, isTracking);
+
+      expect(result.categoriesById["income-cat"]!.budgeted).toBe(500_000);
+      expect(result.groupsById["income-group"]!.budgeted).toBe(500_000);
+      expect(result.summary).toEqual(base.summary);
+    }
+  );
 
   it("preserves income-budget provenance so the fallback can't overwrite it (BM-09)", () => {
     const base: LoadedMonthState = { ...state(), incomeBudgetFallbackIds: [] };

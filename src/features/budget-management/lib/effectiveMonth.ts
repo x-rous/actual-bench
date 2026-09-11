@@ -77,9 +77,13 @@ export function computeEffectiveMonthState(
   for (const [key, edit] of Object.entries(allEdits)) {
     const editMonth = key.split(":")[0];
     if (!editMonth || editMonth >= month) continue;
+    const catId = key.slice(editMonth.length + 1);
+    const cat = serverState.categoriesById[catId];
+    // Budgeting income is a forecast of money arriving, not an allocation of
+    // money out, so it never consumes a later month's available-to-budget.
+    // Mirrors the per-category cascade below and Layer 2's summary rule.
+    if (cat?.isIncome) continue;
     if (isTracking) {
-      const catId = key.slice(editMonth.length + 1);
-      const cat = serverState.categoriesById[catId];
       const group = cat ? serverState.groupsById[cat.groupId] : undefined;
       if (cat?.hidden || group?.hidden) continue;
     }
@@ -197,7 +201,14 @@ export function computeEffectiveMonthState(
       };
     }
 
-    if (!(isTracking && effectivelyHidden)) {
+    // `summary.totalBudgeted`/`totalBalance` are the *expense* aggregates the
+    // grid renders as "Total Budgeted Expenses" and "Total Expense Balance",
+    // and `toBudget` is what an allocation consumes. An income category
+    // contributes to none of them: its own totals are derived separately from
+    // `categoriesById` (monthAuthority's trackingIncome* selectors), which the
+    // edit above has already updated. Layer 1 states the same rule for the
+    // income-budget fallback; this is that rule applied to staged edits.
+    if (!baseCat.isIncome && !(isTracking && effectivelyHidden)) {
       summary.totalBudgeted -= delta;
       summary.totalBalance += delta;
       summary.toBudget -= delta;
