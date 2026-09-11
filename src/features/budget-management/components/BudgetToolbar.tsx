@@ -150,7 +150,13 @@ export function BudgetToolbar({
           <ChevronLeft className="h-3.5 w-3.5" />
         </button>
 
-        {/* Range label — also the jump-to-month trigger (F-081) */}
+        {/* Range label — also the jump-to-month trigger (F-081).
+            The live region is separate from the trigger so panning with the
+            arrow buttons still announces the new range; the trigger's own label
+            is only read when it is focused. */}
+        <span className="sr-only" aria-live="polite">
+          Displaying {rangeLabel}
+        </span>
         <MonthJumpPopover
           windowStart={windowStart}
           rangeLabel={rangeLabel}

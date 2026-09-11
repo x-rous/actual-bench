@@ -266,7 +266,9 @@ export function BulkActionDialog({
         return;
       }
 
-      const { rows, skips: nextSkips } = collectSkips(result, readOnlyMonths);
+      const { rows, skips: baseSkips } = collectSkips(result, readOnlyMonths);
+      // A month that exists but would not load is a fault, not absent data.
+      const nextSkips = { ...baseSkips, failedToLoad: loaded?.failed ?? [] };
 
       if (rows.length === 0) {
         setParamError(

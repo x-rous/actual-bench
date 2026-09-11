@@ -275,10 +275,12 @@ export function useBulkAction(): UseBulkActionReturn {
             const n = avgWindow ?? 0;
             const basis = averageBasis(action);
             const vals: number[] = [];
+            let anyMonthLoaded = false;
             let m = cell.month;
             for (let i = 0; i < n; i++) {
               m = addMonths(m, -1);
               const cats = monthDataMap[m];
+              if (cats) anyMonthLoaded = true;
               const found = cats?.find((c) => c.id === cell.categoryId);
               if (found !== undefined) {
                 vals.push(basis === "actuals" ? found.actuals : found.budgeted);
@@ -288,7 +290,11 @@ export function useBulkAction(): UseBulkActionReturn {
               // Nothing to average: a skip, not a zero-month average. Counting
               // it in minResolved would report "0 of 3" for a run whose other
               // cells averaged fine.
-              skipped["missing-source-month"] += 1;
+              //
+              // Which skip it is matters to the message: months that never
+              // loaded are a different problem from months that loaded without
+              // this category, and the copy actions already tell them apart.
+              skipped[anyMonthLoaded ? "missing-category" : "missing-source-month"] += 1;
               continue;
             }
             // Report the worst-resolved cell that actually produced a value, so

@@ -822,10 +822,13 @@ function BudgetWorkspaceInner({
       // A cold cache means real requests, so say something while they run
       // rather than leaving the grid looking inert.
       const toastId = needed.length > 0 ? toast.loading("Loading months…") : undefined;
+      let failedToLoad: string[] = [];
       try {
         if (needed.length > 0) {
           const loaded = await ensureMonths(needed);
           Object.assign(monthDataMap, loaded.monthDataMap);
+          // A month that exists but would not load is a fault, not absent data.
+          failedToLoad = loaded.failed;
         }
 
         const result = previewBulk(action, cells, activeMonths, categories, monthDataMap);
@@ -834,7 +837,8 @@ function BudgetWorkspaceInner({
           return;
         }
 
-        const { rows, skips } = collectSkips(result, readOnlyMonths);
+        const { rows, skips: baseSkips } = collectSkips(result, readOnlyMonths);
+        const skips = { ...baseSkips, failedToLoad };
         const skipNote = totalSkips(skips) > 0 ? describeSkips(skips) : null;
         const avgNote = describeAverageWindow(result.averageWindow);
         const description = [skipNote, avgNote].filter(Boolean).join(" · ") || undefined;

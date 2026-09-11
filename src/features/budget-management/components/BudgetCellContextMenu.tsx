@@ -117,7 +117,13 @@ export function BudgetCellContextMenu({
     <div
       ref={ref}
       role="menu"
-      aria-label="Cell actions"
+      aria-label={
+        scope === "cell"
+          ? "Cell actions"
+          : scopeLabel
+            ? `Budget actions for ${scopeLabel}`
+            : "Budget actions"
+      }
       style={style}
       className="bg-popover border border-border rounded-lg shadow-xl py-1 min-w-[210px] text-xs"
       onClick={(e) => e.stopPropagation()}
@@ -168,9 +174,16 @@ export function BudgetCellContextMenu({
         <div className="h-px bg-border/50 my-1" />
       )}
       {BULK_SECTIONS.map((section, sectionIndex) => (
-        <div key={section.heading}>
-          {sectionIndex > 0 && <div className="h-px bg-border/50 my-1" />}
-          <p className="px-3 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground select-none">
+        <div
+          key={section.heading}
+          role="group"
+          aria-labelledby={`bulk-section-${sectionIndex}`}
+        >
+          {sectionIndex > 0 && <div role="separator" className="h-px bg-border/50 my-1" />}
+          <p
+            id={`bulk-section-${sectionIndex}`}
+            className="px-3 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground select-none"
+          >
             {section.heading}
           </p>
           {section.items.map(({ action, label, icon }) => (

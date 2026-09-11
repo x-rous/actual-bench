@@ -48,7 +48,8 @@ function makeWrapper(client: QueryClient) {
   };
 }
 
-function makeRawMonth() {
+/** `budgeted` for cat-1 is what the *server* holds, overridable per test. */
+function makeRawMonth(catOneBudgeted = 100) {
   return {
     month: "2026-01",
     incomeAvailable: 0,
@@ -76,7 +77,7 @@ function makeRawMonth() {
             group_id: "group-1",
             is_income: false,
             hidden: false,
-            budgeted: 100,
+            budgeted: catOneBudgeted,
             spent: 0,
             balance: 100,
             carryover: false,
@@ -175,8 +176,11 @@ describe("useBudgetSave", () => {
     expect(transport.sync).not.toHaveBeenCalled();
   });
 
-  it("skips the write when the cached month state already holds the value (F-146)", async () => {
+  it("skips the write when the server already holds the value (F-146)", async () => {
     const transport = makeTransport();
+    // The server really does hold 150 - the skip is only allowed against a
+    // value confirmed by a fresh read, never against the cache alone.
+    transport.getBudgetMonth.mockResolvedValue(makeRawMonth(150));
     mockGetTransport.mockReturnValue(transport);
     const client = makeAppLikeClient();
 
@@ -241,6 +245,72 @@ describe("useBudgetSave", () => {
       await result.current.save({ ["2026-01:cat-1" as BudgetCellKey]: edit }, {});
     });
 
+    expect(transport.setBudgetAmount).toHaveBeenCalledWith("2026-01", "cat-1", 150);
+  });
+
+  it("writes when the cache claims a match but the server disagrees", async () => {
+    // The regression this guards: `staleTime: Infinity` plus no refetch on
+    // focus means another client's write is invisible to the cache. Trusting it
+    // would clear the staged edit and leave the server on the old value.
+    const transport = makeTransport();
+    transport.getBudgetMonth.mockResolvedValue(makeRawMonth(70)); // server truth
+    mockGetTransport.mockReturnValue(transport);
+    const client = makeAppLikeClient();
+    client.setQueryData(["budget-month-data", "conn-1", "2026-01"], {
+      summary: { month: "2026-01" },
+      groupsById: {},
+      groupOrder: [],
+      categoriesById: { "cat-1": { id: "cat-1", budgeted: 150 } }, // stale
+    });
+
+    const { result } = renderHook(() => useBudgetSave(), {
+      wrapper: makeWrapper(client),
+    });
+    const edit: StagedBudgetEdit = {
+      month: "2026-01",
+      categoryId: "cat-1",
+      previousBudgeted: 100,
+      nextBudgeted: 150,
+      source: "bulk-action",
+    };
+
+    await act(async () => {
+      await result.current.save({ ["2026-01:cat-1" as BudgetCellKey]: edit }, {});
+    });
+
+    expect(transport.setBudgetAmount).toHaveBeenCalledWith("2026-01", "cat-1", 150);
+  });
+
+  it("makes no verification request when nothing looks skippable", async () => {
+    const transport = makeTransport();
+    mockGetTransport.mockReturnValue(transport);
+    const client = makeAppLikeClient();
+    client.setQueryData(["budget-month-data", "conn-1", "2026-01"], {
+      summary: { month: "2026-01" },
+      groupsById: {},
+      groupOrder: [],
+      categoriesById: { "cat-1": { id: "cat-1", budgeted: 100 } },
+    });
+
+    const { result } = renderHook(() => useBudgetSave(), {
+      wrapper: makeWrapper(client),
+    });
+    const edit: StagedBudgetEdit = {
+      month: "2026-01",
+      categoryId: "cat-1",
+      previousBudgeted: 100,
+      nextBudgeted: 150,
+      source: "manual",
+    };
+
+    await act(async () => {
+      await result.current.save({ ["2026-01:cat-1" as BudgetCellKey]: edit }, {});
+    });
+
+    // Cache says 100, the edit writes 150 - nothing looks skippable, so no
+    // month is read to verify anything. Hand-typed edits pay nothing for a
+    // feature that only helps bulk copies.
+    expect(transport.getBudgetMonth).not.toHaveBeenCalled();
     expect(transport.setBudgetAmount).toHaveBeenCalledWith("2026-01", "cat-1", 150);
   });
 

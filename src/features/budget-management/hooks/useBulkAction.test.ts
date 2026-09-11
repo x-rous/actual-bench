@@ -571,6 +571,43 @@ describe("avg-N-months-actuals", () => {
     expect(rows?.rows[0]?.nextBudgeted).toBe(1500);
   });
 
+  it("blames the category, not the month, when the months loaded without it", () => {
+    const { result } = renderHook(() => useBulkAction());
+    // All three lookback months are present; none carries c1.
+    const map: Record<string, LoadedCategory[]> = {
+      "2026-01": [cat({ id: "other" })],
+      "2026-02": [cat({ id: "other" })],
+      "2026-03": [cat({ id: "other" })],
+      "2026-04": [cat({ id: "c1" })],
+    };
+    const rows = result.current.preview(
+      "avg-3-months-actuals",
+      singleCell("2026-04", "c1"),
+      ["2026-04"],
+      categories,
+      map
+    );
+    expect(rows?.skipped).toEqual({
+      "missing-source-month": 0,
+      "missing-category": 1,
+    });
+  });
+
+  it("blames the month when none of the lookback months loaded", () => {
+    const { result } = renderHook(() => useBulkAction());
+    const rows = result.current.preview(
+      "avg-3-months-actuals",
+      singleCell("2026-04", "c1"),
+      ["2026-04"],
+      categories,
+      { "2026-04": [cat({ id: "c1" })] }
+    );
+    expect(rows?.skipped).toEqual({
+      "missing-source-month": 1,
+      "missing-category": 0,
+    });
+  });
+
   it("asks for the same lookback months as the budgeted average", () => {
     expect(requiredSourceMonths("avg-3-months-actuals", ["2026-03"]).sort()).toEqual([
       "2025-12",

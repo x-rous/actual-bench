@@ -360,26 +360,62 @@ export function useBudgetSave(): UseBudgetSaveReturn {
         // ── 2. Incomplete transfer legs + standalone edits ───────────────────
         const patchEntries = [...incompleteLegs, ...nonTransferEntries];
 
+        // F-146: nothing upstream drops a no-op. `sameEdit` in the edits store
+        // compares a staged edit against another *staged* edit, never against
+        // the server, so "copy previous month" on a stable budget stages cells
+        // whose value is already correct - one serialized round trip each.
+        //
+        // Skipping those is only safe against data the server actually holds
+        // now. The cached month state can be arbitrarily stale: `staleTime` is
+        // Infinity and refetch-on-focus is deliberately off, so another client's
+        // write is invisible here. Skipping on a stale cache would clear the
+        // staged edit while leaving the server on the old value - a silent loss.
+        //
+        // So: use the cache only to find *candidates*, then verify those months
+        // for real. When nothing looks skippable this costs no requests at all,
+        // which is the common case for hand-typed edits; when a bulk copy makes
+        // dozens skippable it spends a handful of reads to avoid dozens of
+        // writes. A month that will not refetch simply yields no skips.
+        const cachedBudgeted = (month: string, categoryId: string) =>
+          queryClient.getQueryData<LoadedMonthState>([
+            "budget-month-data",
+            connection.id,
+            month,
+          ])?.categoriesById[categoryId]?.budgeted;
+
+        const candidateMonths = new Set(
+          patchEntries
+            .filter(([, edit]) => cachedBudgeted(edit.month, edit.categoryId) === edit.nextBudgeted)
+            .map(([, edit]) => edit.month)
+        );
+
+        const verifiedBudgeted = new Map<string, number>();
+        if (candidateMonths.size > 0) {
+          const verified = await Promise.allSettled(
+            [...candidateMonths].map(async (month) => {
+              const fresh = await queryClient.fetchQuery({
+                ...budgetMonthDataQueryOptions(connection, month),
+                staleTime: 0,
+              });
+              return [month, fresh] as const;
+            })
+          );
+          for (const outcome of verified) {
+            if (outcome.status !== "fulfilled") continue;
+            const [month, state] = outcome.value;
+            for (const [categoryId, cat] of Object.entries(state.categoriesById)) {
+              verifiedBudgeted.set(`${month}:${categoryId}`, cat.budgeted);
+            }
+          }
+        }
+
         for (const [key, edit] of patchEntries) {
           try {
-            // F-146: nothing upstream drops a no-op. `sameEdit` in the edits
-            // store compares a staged edit against another *staged* edit, never
-            // against the server, so "copy previous month" on a stable budget
-            // stages cells whose value is already correct - one full round trip
-            // each, and every request to a server is admitted through the same
-            // per-server lane.
-            //
-            // Compare against the cached month state rather than
-            // `edit.previousBudgeted`: the cache is the freshest server truth
-            // the app holds, while `previousBudgeted` is a snapshot from staging
-            // time that a partial save can leave stale. With no cached state the
-            // write proceeds - not knowing the value is not the same as knowing
-            // it matches.
-            const cachedServerValue = queryClient.getQueryData<LoadedMonthState>(
-              ["budget-month-data", connection.id, edit.month]
-            )?.categoriesById[edit.categoryId]?.budgeted;
+            // Only a value confirmed against a fresh read is allowed to cancel
+            // a write; anything unverified falls through and is written.
+            const serverValue = verifiedBudgeted.get(`${edit.month}:${edit.categoryId}`);
 
-            if (cachedServerValue === edit.nextBudgeted) {
+            if (serverValue !== undefined && serverValue === edit.nextBudgeted) {
               // Cleared from the staged edits and reported saved, but
               // deliberately NOT added to successMonths: nothing changed on the
               // server, so this cell must not drag the forward invalidation

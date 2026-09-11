@@ -84,6 +84,9 @@ export function BudgetManagementView() {
   // F-080: the back-navigation guard's confirmation. Held as state because it
   // cannot be answered synchronously - see the popstate handler below.
   const [leaveConfirm, setLeaveConfirm] = useState<ConfirmState | null>(null);
+  // Set while the leave prompt is open, so a second Back press cannot stack
+  // another history entry and leave `go(-2)` short of the exit.
+  const leavePromptOpen = useRef(false);
 
   // Collapse state lifted here so BudgetToolbar can trigger expand/collapse all,
   // and persisted (F-039) so it survives navigating away and back.
@@ -170,10 +173,12 @@ export function BudgetManagementView() {
 
     const handlePopState = () => {
       if (!hasPendingEdits()) return;
+      if (leavePromptOpen.current) return;
 
       // `window.confirm` used to block here and answer inline. A dialog cannot,
       // so the order is inverted: re-push the guard entry immediately to stay on
       // the page, then ask. Cancelling needs no history work - we never left.
+      leavePromptOpen.current = true;
       window.history.pushState(null, "", window.location.href);
       hasPushedNavigationGuard.current = true;
 
@@ -186,10 +191,12 @@ export function BudgetManagementView() {
           useBudgetEditsStore.getState().discardAll();
           discardEntityChanges();
           hasPushedNavigationGuard.current = false;
-          // `history.back()` fires popstate again, but the discard above has
-          // already emptied the stores, so the guard returns early rather than
-          // asking a second time.
-          window.history.back();
+          leavePromptOpen.current = false;
+          // Two entries back, not one. Every guard entry carries the page's own
+          // URL, so the Back that opened this prompt only moved between two
+          // identical budget entries - a single step back would land on the
+          // budget page again, discarding the edits without leaving.
+          window.history.go(-2);
         },
       });
     };
@@ -416,7 +423,10 @@ export function BudgetManagementView() {
       <ConfirmDialog
         open={leaveConfirm !== null}
         onOpenChange={(open) => {
-          if (!open) setLeaveConfirm(null);
+          if (!open) {
+            leavePromptOpen.current = false;
+            setLeaveConfirm(null);
+          }
         }}
         state={leaveConfirm}
       />

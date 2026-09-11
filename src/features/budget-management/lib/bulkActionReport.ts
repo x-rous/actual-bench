@@ -14,6 +14,13 @@ export type BulkSkips = {
   missingSourceMonth: number;
   missingCategory: number;
   readOnly: number;
+  /**
+   * Months that exist in the budget file but whose fetch rejected. Separate
+   * from `missingSourceMonth`: "the budget has no such month" is a fact about
+   * the data, "it did not load" is a fault worth retrying, and reporting the
+   * second as the first sends the user looking for the wrong thing.
+   */
+  failedToLoad?: string[];
 };
 
 export const NO_SKIPS: BulkSkips = {
@@ -24,6 +31,11 @@ export const NO_SKIPS: BulkSkips = {
 
 export function totalSkips(s: BulkSkips): number {
   return s.missingSourceMonth + s.missingCategory + s.readOnly;
+}
+
+/** True when any month the action needed failed to load rather than being absent. */
+export function hasLoadFailures(s: BulkSkips): boolean {
+  return (s.failedToLoad?.length ?? 0) > 0;
 }
 
 /**
@@ -51,7 +63,10 @@ export function describeSkips(s: BulkSkips): string {
   if (s.missingSourceMonth > 0) parts.push(`${s.missingSourceMonth} with no source data`);
   if (s.missingCategory > 0) parts.push(`${s.missingCategory} absent from the source month`);
   if (s.readOnly > 0) parts.push(`${s.readOnly} in read-only months`);
-  return `${totalSkips(s)} skipped - ${parts.join(", ")}`;
+  const base = `${totalSkips(s)} skipped - ${parts.join(", ")}`;
+  const failed = s.failedToLoad ?? [];
+  if (failed.length === 0) return base;
+  return `${base} (${failed.length} month${failed.length !== 1 ? "s" : ""} could not be loaded: ${failed.join(", ")})`;
 }
 
 /**
