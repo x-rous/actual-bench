@@ -4,8 +4,9 @@
  * "Copy specific month" would silently change what that action has always
  * done, and a 5% shift is plausible enough to survive a glance at the preview.
  */
-import { render, screen } from "@testing-library/react";
+import { render, screen, fireEvent } from "@testing-library/react";
 import { BulkActionDialog } from "./BulkActionDialog";
+import { useBudgetEditsStore } from "@/store/budgetEdits";
 import type { LoadedCategory } from "../types";
 
 const activeMonths = ["2026-01", "2026-02"];
@@ -14,6 +15,14 @@ const categories = [
 ] as unknown as LoadedCategory[];
 
 const targetCells = [{ month: "2026-01", categoryId: "c1" }];
+const twoCategories = [
+  { id: "c1", name: "Groceries", groupId: "g1" },
+  { id: "c2", name: "Rent", groupId: "g1" },
+] as unknown as LoadedCategory[];
+const twoCells = [
+  { month: "2026-01", categoryId: "c1" },
+  { month: "2026-01", categoryId: "c2" },
+];
 
 function renderDialog(initialAction: Parameters<typeof BulkActionDialog>[0]["initialAction"]) {
   return render(
@@ -86,6 +95,164 @@ describe("BulkActionDialog step skipping", () => {
     renderDialog("set-fixed");
     expect(screen.getByLabelText(/Fixed amount in dollars/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Preview changes/i })).toBeInTheDocument();
+  });
+});
+
+// ─── Editing the previewed numbers ────────────────────────────────────────────
+
+/**
+ * An average lands on 97 when the user wanted 100. The preview is the list of
+ * numbers about to be written, so those numbers are what should be editable -
+ * and what gets applied.
+ */
+describe("BulkActionDialog row editing", () => {
+  beforeEach(() => {
+    useBudgetEditsStore.getState().discardAll();
+  });
+
+  async function openPreview() {
+    renderDialog("copy-prior-year-same-month");
+    await screen.findByText(/will be updated/);
+    return screen.getByLabelText(/New amount for Groceries/i) as HTMLInputElement;
+  }
+
+  it("shows the calculated amount, editable", async () => {
+    const input = await openPreview();
+    expect(input.value).toBe("50.00"); // the 5000 minor units from the source
+  });
+
+  it("applies the edited amount rather than the calculated one", async () => {
+    const input = await openPreview();
+    fireEvent.change(input, { target: { value: "100" } });
+    fireEvent.blur(input);
+    fireEvent.click(screen.getByRole("button", { name: /Apply 1 budget change/i }));
+
+    const edits = useBudgetEditsStore.getState().edits;
+    expect(edits["2026-01:c1"]?.nextBudgeted).toBe(10000);
+  });
+
+  it("reverts an adjusted row to the calculated amount", async () => {
+    const input = await openPreview();
+    fireEvent.change(input, { target: { value: "100" } });
+    fireEvent.blur(input);
+    expect(screen.getByText(/1 manually adjusted/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByLabelText(/Revert Groceries/i));
+    expect((screen.getByLabelText(/New amount for Groceries/i) as HTMLInputElement).value).toBe(
+      "50.00"
+    );
+    expect(screen.queryByText(/manually adjusted/)).not.toBeInTheDocument();
+  });
+
+  it("discards text that is not a number", async () => {
+    const input = await openPreview();
+    fireEvent.change(input, { target: { value: "not a number" } });
+    fireEvent.blur(input);
+    expect((screen.getByLabelText(/New amount for Groceries/i) as HTMLInputElement).value).toBe(
+      "50.00"
+    );
+  });
+
+  it("accepts an arithmetic expression, like the grid cells do", async () => {
+    const input = await openPreview();
+    fireEvent.change(input, { target: { value: "50 * 2" } });
+    fireEvent.blur(input);
+    fireEvent.click(screen.getByRole("button", { name: /Apply 1 budget change/i }));
+    expect(useBudgetEditsStore.getState().edits["2026-01:c1"]?.nextBudgeted).toBe(10000);
+  });
+
+  it("abandons an in-progress edit on Escape", async () => {
+    const input = await openPreview();
+    fireEvent.change(input, { target: { value: "999" } });
+    fireEvent.keyDown(input, { key: "Escape" });
+    expect((screen.getByLabelText(/New amount for Groceries/i) as HTMLInputElement).value).toBe(
+      "50.00"
+    );
+  });
+
+  it("keeps the net change in step with the edits", async () => {
+    const input = await openPreview();
+    // Current is 1000 minor (10.00); calculated new is 5000 (50.00).
+    expect(screen.getByText("Net change").parentElement?.textContent).toContain("40.00");
+    fireEvent.change(input, { target: { value: "20" } });
+    fireEvent.blur(input);
+    expect(screen.getByText("Net change").parentElement?.textContent).toContain("10.00");
+  });
+
+  it("keeps the table header opaque so rows do not show through it", async () => {
+    await openPreview();
+    const header = screen.getByRole("columnheader", { name: "Category" }).closest("thead");
+    expect(header?.className).toContain("bg-muted");
+    expect(header?.className).not.toContain("bg-muted/40");
+  });
+});
+
+describe("BulkActionDialog keyboard navigation", () => {
+  function renderTwoRows() {
+    render(
+      <BulkActionDialog
+        targetCells={twoCells}
+        activeMonths={activeMonths}
+        categories={twoCategories}
+        monthDataMap={{
+          "2026-01": [
+            { ...twoCategories[0]!, budgeted: 1000 },
+            { ...twoCategories[1]!, budgeted: 2000 },
+          ],
+        }}
+        availableMonths={["2025-01", ...activeMonths]}
+        ensureMonths={async () => ({
+          monthDataMap: {
+            "2025-01": [
+              { ...twoCategories[0]!, budgeted: 5000 },
+              { ...twoCategories[1]!, budgeted: 7000 },
+            ],
+          },
+          unavailable: [],
+          failed: [],
+        })}
+        initialAction="copy-prior-year-same-month"
+        onClose={() => {}}
+      />
+    );
+  }
+
+  it("moves down a row on ArrowDown", async () => {
+    renderTwoRows();
+    await screen.findByText(/will be updated/);
+    const first = screen.getByLabelText(/New amount for Groceries/i);
+    first.focus();
+    fireEvent.keyDown(first, { key: "ArrowDown" });
+    expect(document.activeElement).toBe(screen.getByLabelText(/New amount for Rent/i));
+  });
+
+  it("moves back up on ArrowUp", async () => {
+    renderTwoRows();
+    await screen.findByText(/will be updated/);
+    const second = screen.getByLabelText(/New amount for Rent/i);
+    second.focus();
+    fireEvent.keyDown(second, { key: "ArrowUp" });
+    expect(document.activeElement).toBe(screen.getByLabelText(/New amount for Groceries/i));
+  });
+
+  it("commits the edit when moving away with an arrow", async () => {
+    renderTwoRows();
+    await screen.findByText(/will be updated/);
+    const first = screen.getByLabelText(/New amount for Groceries/i) as HTMLInputElement;
+    fireEvent.change(first, { target: { value: "123" } });
+    fireEvent.keyDown(first, { key: "ArrowDown" });
+    expect((screen.getByLabelText(/New amount for Groceries/i) as HTMLInputElement).value).toBe(
+      "123.00"
+    );
+  });
+
+  it("stays put at the ends rather than losing focus", async () => {
+    renderTwoRows();
+    await screen.findByText(/will be updated/);
+    const first = screen.getByLabelText(/New amount for Groceries/i);
+    first.focus();
+    fireEvent.keyDown(first, { key: "ArrowUp" });
+    expect(document.activeElement).toBe(first);
   });
 });
 

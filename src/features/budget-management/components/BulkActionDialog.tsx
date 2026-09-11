@@ -10,8 +10,12 @@ import {
   type BulkPreviewRow,
 } from "../hooks/useBulkAction";
 import { addMonths, formatMonthLabel } from "@/lib/budget/monthMath";
+import { parseBudgetExpression } from "../lib/budgetMath";
+import { minorToDecimalString } from "../lib/format";
+import { RotateCcw } from "lucide-react";
+
 import type { ResolvedCell } from "../lib/budgetSelectionUtils";
-import { formatCurrency as formatAmount } from "../lib/format";
+import { formatCurrency as formatAmount, formatDelta } from "../lib/format";
 import type { EnsureMonthsResult } from "../lib/ensureMonthsData";
 import {
   collectSkips,
@@ -97,6 +101,7 @@ export function BulkActionDialog({
 
   const [step, setStep] = useState<Step>("action");
   const autoPreviewed = useRef(false);
+  const tableRef = useRef<HTMLDivElement>(null);
   const action = initialAction;
 
   // The months this run will write to — also what the source defaults key off.
@@ -148,6 +153,17 @@ export function BulkActionDialog({
     action === "copy-prior-year-same-month-pct" ? "105" : "100"
   );
   const [previewRows, setPreviewRows] = useState<BulkPreviewRow[]>([]);
+  /**
+   * Per-row adjustments made in the preview, keyed by cell.
+   *
+   * An average lands on 97 when the user wanted 100. Recomputing is not the
+   * answer - the point of the preview is that these are the numbers about to be
+   * written, so they are the numbers that should be editable. What is applied
+   * is always what this table shows.
+   */
+  const [rowOverrides, setRowOverrides] = useState<Record<string, number>>({});
+  /** In-progress text per row, so a half-typed value is never parsed. */
+  const [rowDrafts, setRowDrafts] = useState<Record<string, string>>({});
   const [skips, setSkips] = useState<BulkSkips>(NO_SKIPS);
   const [avgNote, setAvgNote] = useState<string | null>(null);
   const [paramError, setParamError] = useState<string | null>(null);
@@ -231,6 +247,8 @@ export function BulkActionDialog({
       }
 
       setPreviewRows(rows);
+      setRowOverrides({});
+      setRowDrafts({});
       setSkips(nextSkips);
       setAvgNote(describeAverageWindow(result.averageWindow));
       setStep("preview");
@@ -255,8 +273,79 @@ export function BulkActionDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [collectsNothing]);
 
+  const rowKey = (row: BulkPreviewRow) => `${row.month}:${row.categoryId}`;
+  const valueFor = (row: BulkPreviewRow) =>
+    rowOverrides[rowKey(row)] ?? row.nextBudgeted;
+
+  /** Rows as they will actually be written, adjustments included. */
+  const rowsToApply = previewRows.map((row) => ({
+    ...row,
+    nextBudgeted: valueFor(row),
+  }));
+
+  const netChange = rowsToApply.reduce(
+    (sum, row) => sum + (row.nextBudgeted - row.previousBudgeted),
+    0
+  );
+  const unchangedCount = rowsToApply.filter(
+    (row) => row.nextBudgeted === row.previousBudgeted
+  ).length;
+  const adjustedCount = Object.keys(rowOverrides).length;
+
+  const commitDraft = (row: BulkPreviewRow) => {
+    const key = rowKey(row);
+    const draft = rowDrafts[key];
+    if (draft === undefined) return;
+    const parsed = parseBudgetExpression(draft);
+    setRowDrafts((d) => {
+      const next = { ...d };
+      delete next[key];
+      return next;
+    });
+    if (!parsed.ok) return; // Invalid text is discarded, not written.
+    setRowOverrides((o) =>
+      parsed.value === row.nextBudgeted
+        ? (() => {
+            const next = { ...o };
+            delete next[key];
+            return next;
+          })()
+        : { ...o, [key]: parsed.value }
+    );
+  };
+
+  /**
+   * Move between the editable amounts with the keyboard.
+   *
+   * Without this, adjusting a long preview means clicking every row - which is
+   * the work the bulk action was supposed to remove. Enter commits and steps
+   * down, matching the grid's own commit-down behaviour.
+   */
+  const focusRow = (index: number) => {
+    const input = tableRef.current?.querySelector<HTMLInputElement>(
+      `input[data-preview-row="${index}"]`
+    );
+    if (!input) return;
+    input.focus();
+    input.select();
+  };
+
+  const revertRow = (row: BulkPreviewRow) => {
+    const key = rowKey(row);
+    setRowOverrides((o) => {
+      const next = { ...o };
+      delete next[key];
+      return next;
+    });
+    setRowDrafts((d) => {
+      const next = { ...d };
+      delete next[key];
+      return next;
+    });
+  };
+
   const handleApply = () => {
-    apply(previewRows);
+    apply(rowsToApply);
     onClose();
   };
 
@@ -269,7 +358,7 @@ export function BulkActionDialog({
       aria-label="Bulk budget action"
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
     >
-      <div className="bg-background border border-border rounded-lg shadow-xl w-full max-w-lg mx-4 p-5">
+      <div className="bg-background border border-border rounded-lg shadow-xl w-full max-w-3xl mx-4 p-5">
         {step === "action" && (
           <>
             <h2 className="text-base font-semibold mb-1">{ACTION_LABELS[action]}</h2>
@@ -385,72 +474,176 @@ export function BulkActionDialog({
         {step === "preview" && (
           <>
             <h2 className="text-base font-semibold mb-1">Preview Changes</h2>
-            <p className="text-xs text-muted-foreground mb-1">
-              {previewRows.length} cell{previewRows.length !== 1 ? "s" : ""} will be updated.
-            </p>
-            {totalSkips(skips) > 0 && (
-              <p className="text-xs text-amber-600 dark:text-amber-500 mb-1" role="status">
-                {describeSkips(skips)}.
-              </p>
-            )}
-            {avgNote ? (
-              <p className="text-xs text-amber-600 dark:text-amber-500 mb-1" role="status">
-                {avgNote}
-              </p>
-            ) : (
-              avgWindow !== null && (
-                <p className="text-xs text-muted-foreground mb-1">
-                  Averaged over the {avgWindow} months before each cell.
-                </p>
-              )
-            )}
-            <div className="mb-3" />
 
-            <div className="max-h-64 overflow-y-auto border border-border rounded text-xs mb-4">
+            {/* One status line: the count and the qualifiers belong together. */}
+            <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-xs mb-3">
+              <span className="text-muted-foreground">
+                {rowsToApply.length} cell{rowsToApply.length !== 1 ? "s" : ""} will be updated.
+              </span>
+              {avgNote ? (
+                <span className="text-amber-600 dark:text-amber-500" role="status">
+                  {avgNote}
+                </span>
+              ) : (
+                avgWindow !== null && (
+                  <span className="text-muted-foreground">
+                    Averaged over the {avgWindow} months before each cell.
+                  </span>
+                )
+              )}
+              {totalSkips(skips) > 0 && (
+                <span className="text-amber-600 dark:text-amber-500" role="status">
+                  {describeSkips(skips)}.
+                </span>
+              )}
+              {unchangedCount > 0 && (
+                <span className="text-muted-foreground">
+                  {unchangedCount} already at this value and will not be written.
+                </span>
+              )}
+            </div>
+
+            <div
+              ref={tableRef}
+              className="max-h-96 overflow-y-auto border border-border rounded text-xs mb-2"
+            >
               <table className="w-full" role="grid" aria-label="Preview of bulk changes">
-                <thead className="bg-muted/40 sticky top-0">
+                {/* Opaque header: the table body scrolls underneath it. */}
+                <thead className="bg-muted sticky top-0 z-10 shadow-[0_1px_0_0_var(--color-border)]">
                   <tr>
-                    <th className="px-2 py-1.5 text-left font-medium">Category</th>
-                    <th className="px-2 py-1.5 text-left font-medium">Month</th>
-                    <th className="px-2 py-1.5 text-right font-medium">Current</th>
-                    <th className="px-2 py-1.5 text-right font-medium">New</th>
+                    <th className="px-3 py-2 text-left font-medium">Category</th>
+                    <th className="px-3 py-2 text-left font-medium">Month</th>
+                    <th className="px-3 py-2 text-right font-medium">Current</th>
+                    <th className="px-3 py-2 text-right font-medium">
+                      New
+                      <span className="ml-1 font-normal text-muted-foreground">(editable)</span>
+                    </th>
+                    <th className="px-3 py-2 text-right font-medium">Change</th>
+                    <th className="px-2 py-2 w-8" aria-label="Revert" />
                   </tr>
                 </thead>
                 <tbody>
-                  {previewRows.map((row, i) => (
-                    <tr key={i} className="border-t border-border/50">
-                      <td className="px-2 py-1 truncate max-w-32">{row.categoryName}</td>
-                      <td className="px-2 py-1 font-mono">{row.month}</td>
-                      <td className="px-2 py-1 text-right font-mono text-muted-foreground">
-                        {formatAmount(row.previousBudgeted)}
-                      </td>
-                      <td className="px-2 py-1 text-right font-mono font-medium">
-                        {formatAmount(row.nextBudgeted)}
-                      </td>
-                    </tr>
-                  ))}
+                  {previewRows.map((row, index) => {
+                    const key = rowKey(row);
+                    const value = valueFor(row);
+                    const delta = value - row.previousBudgeted;
+                    const isAdjusted = rowOverrides[key] !== undefined;
+                    return (
+                      <tr
+                        key={key}
+                        className={`border-t border-border/50 ${
+                          delta === 0 ? "text-muted-foreground" : ""
+                        }`}
+                      >
+                        <td className="px-3 py-1 truncate max-w-[16rem]" title={row.categoryName}>
+                          {row.categoryName}
+                        </td>
+                        <td className="px-3 py-1 whitespace-nowrap">
+                          {formatMonthLabel(row.month, "long")}
+                        </td>
+                        <td className="px-3 py-1 text-right font-mono text-muted-foreground">
+                          {formatAmount(row.previousBudgeted)}
+                        </td>
+                        <td className="px-3 py-1 text-right">
+                          <input
+                            type="text"
+                            inputMode="decimal"
+                            aria-label={`New amount for ${row.categoryName}, ${formatMonthLabel(row.month, "long")}`}
+                            data-preview-row={index}
+                            value={rowDrafts[key] ?? minorToDecimalString(value)}
+                            onChange={(e) =>
+                              setRowDrafts((d) => ({ ...d, [key]: e.target.value }))
+                            }
+                            onBlur={() => commitDraft(row)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter" || e.key === "ArrowDown") {
+                                e.preventDefault();
+                                commitDraft(row);
+                                focusRow(index + 1);
+                              } else if (e.key === "ArrowUp") {
+                                e.preventDefault();
+                                commitDraft(row);
+                                focusRow(index - 1);
+                              } else if (e.key === "Escape") {
+                                e.preventDefault();
+                                setRowDrafts((d) => {
+                                  const next = { ...d };
+                                  delete next[key];
+                                  return next;
+                                });
+                              }
+                            }}
+                            className={`w-28 text-right font-mono rounded border bg-background px-1.5 py-0.5 transition-colors focus:outline-none focus:ring-1 focus:ring-primary ${
+                              isAdjusted
+                                ? "border-primary text-foreground font-medium"
+                                : "border-border hover:border-foreground/40"
+                            }`}
+                          />
+                        </td>
+                        <td
+                          className={`px-3 py-1 text-right font-mono ${
+                            delta === 0
+                              ? "text-muted-foreground"
+                              : delta > 0
+                                ? "text-emerald-600 dark:text-emerald-400"
+                                : "text-destructive"
+                          }`}
+                        >
+                          {delta === 0 ? "-" : formatDelta(delta)}
+                        </td>
+                        <td className="px-2 py-1 text-right">
+                          {isAdjusted && (
+                            <button
+                              type="button"
+                              onClick={() => revertRow(row)}
+                              aria-label={`Revert ${row.categoryName}, ${formatMonthLabel(row.month, "long")} to the calculated amount`}
+                              title="Revert to the calculated amount"
+                              className="text-muted-foreground hover:text-foreground"
+                            >
+                              <RotateCcw className="h-3 w-3" />
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
 
-            <div className="flex gap-2 justify-end">
-              {/* No Back for an action that collects nothing - it would lead
-                  to an empty form the user was deliberately skipped past. */}
-              <button
-                type="button"
-                onClick={() => (collectsNothing ? onClose() : setStep("action"))}
-                className="px-3 py-1.5 text-sm rounded border border-border hover:bg-muted transition-colors"
-              >
-                {collectsNothing ? "Cancel" : "Back"}
-              </button>
-              <button
-                type="button"
-                onClick={handleApply}
-                className="px-3 py-1.5 text-sm rounded bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
-                aria-label={`Apply ${previewRows.length} bulk changes`}
-              >
-                Apply {previewRows.length} change{previewRows.length !== 1 ? "s" : ""}
-              </button>
+            <p className="text-[11px] text-muted-foreground mb-3">
+              Adjust any amount before applying - ↑ ↓ move between rows, Enter commits,
+              Esc cancels an edit.
+            </p>
+
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-xs text-muted-foreground">
+                Net change <span className="font-mono text-foreground">{formatDelta(netChange)}</span>
+                {adjustedCount > 0 && (
+                  <span className="ml-2">
+                    · {adjustedCount} manually adjusted
+                  </span>
+                )}
+              </p>
+              <div className="flex gap-2 justify-end">
+                {/* No Back for an action that collects nothing - it would lead
+                    to an empty form the user was deliberately skipped past. */}
+                <button
+                  type="button"
+                  onClick={() => (collectsNothing ? onClose() : setStep("action"))}
+                  className="px-3 py-1.5 text-sm rounded border border-border hover:bg-muted transition-colors"
+                >
+                  {collectsNothing ? "Cancel" : "Back"}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleApply}
+                  className="px-3 py-1.5 text-sm rounded bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
+                  aria-label={`Apply ${rowsToApply.length} budget change${rowsToApply.length !== 1 ? "s" : ""}`}
+                >
+                  Apply {rowsToApply.length} change{rowsToApply.length !== 1 ? "s" : ""}
+                </button>
+              </div>
             </div>
           </>
         )}
