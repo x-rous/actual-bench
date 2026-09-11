@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import { Loader2 } from "lucide-react";
 import { useMonthsData } from "../context/MonthsDataContext";
 import { useDailyDate } from "../hooks/useDailyDate";
@@ -14,6 +14,7 @@ import { SectionTotalRow } from "./grid/SectionTotal";
 import { BudgetGridGroupRows } from "./grid/GroupRows";
 import type { BudgetCellDragState } from "./BudgetCell";
 import type { SelectionBounds } from "./grid/types";
+import { groupSelectionCoverage } from "../lib/budgetSelectionUtils";
 import type {
   BudgetCellSelection,
   BudgetMode,
@@ -53,7 +54,7 @@ type Props = {
     x: number,
     y: number
   ) => void;
-  onGroupFocus?: (groupId: string, month: string) => void;
+  onGroupFocus?: (groupId: string, month: string, extend?: boolean) => void;
   onGroupContextMenu?: (groupId: string, month: string, x: number, y: number) => void;
   onGroupRowContextMenu?: (groupId: string, x: number, y: number) => void;
   onMonthContextMenu?: (month: string, x: number, y: number) => void;
@@ -195,6 +196,16 @@ export function BudgetGrid({
     };
   }, [selection, categoryIndexMap, activeMonths]);
 
+  /**
+   * Selection coverage per group, derived from the same index bounds that
+   * highlight the cells - so a group row and its cells can never disagree
+   * about what is selected.
+   */
+  const groupCoverage = useCallback(
+    (groupId: string) => groupSelectionCoverage(groupId, allCategories, selectionBounds),
+    [allCategories, selectionBounds]
+  );
+
   if (!firstMonth) {
     return (
       <div className="flex-1 flex items-center justify-center text-muted-foreground text-sm p-8">
@@ -287,6 +298,7 @@ export function BudgetGrid({
     onCellNavigate,
     onCellContextMenu,
     onGroupFocus,
+    groupCoverage,
     onGroupContextMenu,
     onGroupRowContextMenu,
     onGroupNavigate,

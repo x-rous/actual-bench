@@ -13,6 +13,8 @@ import {
   resolveSelectionCells,
   resolveGroupCells,
   resolveMonthCells,
+  resolveGroupSelection,
+  extendSelectionToGroup,
   type ResolvedCell,
 } from "../lib/budgetSelectionUtils";
 import {
@@ -315,26 +317,54 @@ function BudgetWorkspaceInner({
     [setSelection]
   );
 
+  /**
+   * Clicking a group's month cell selects that group's categories for that
+   * month.
+   *
+   * A group is a summarization of its categories, so selecting one selects
+   * them - and because a group's categories are contiguous in `categories`,
+   * that is an ordinary rectangle. Everything downstream (the footer, the grid
+   * highlight, copy, the bulk actions) reads `selection` and needs no special
+   * case. `groupSelection` stays, but only as visual focus and panel routing:
+   * which row was touched, not what is selected.
+   *
+   * Shift-click extends the current selection instead of replacing it, matching
+   * how cells already behave.
+   */
   const handleGroupFocus = useCallback(
-    (groupId: string, month: string) => {
+    (groupId: string, month: string, extend = false) => {
       setContextMenu(null);
-      setSelection(null);
       setRowSelectionLocal(null);
       setMonthSelection(null);
       setGroupSelection({ groupId, month });
+
+      const groupRange = resolveGroupSelection(groupId, categories, [month]);
+      if (!groupRange) {
+        // Every category in the group is hidden - nothing to select.
+        setSelection(null);
+        return;
+      }
+      setSelection((prev) =>
+        extend ? extendSelectionToGroup(prev, groupRange, month) : groupRange
+      );
     },
-    [setSelection]
+    [categories, setSelection]
   );
 
   const handleRowLabelFocus = useCallback(
     (kind: "category" | "group", id: string) => {
       setContextMenu(null);
-      setSelection(null);
       setGroupSelection(null);
       setMonthSelection(null);
       setRowSelectionLocal({ kind, id });
+
+      // A group's label means the whole group, across the visible window; a
+      // category's label is left to the existing row-selection behaviour.
+      setSelection(
+        kind === "group" ? resolveGroupSelection(id, categories, activeMonths) : null
+      );
     },
-    [setSelection]
+    [categories, activeMonths, setSelection]
   );
 
   const handleCellRangeSelect = useCallback(

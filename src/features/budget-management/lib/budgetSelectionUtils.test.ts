@@ -1,4 +1,7 @@
 import {
+  resolveGroupSelection,
+  extendSelectionToGroup,
+  groupSelectionCoverage,
   resolveSelectionCells,
   resolveGroupCells,
   resolveMonthCells,
@@ -188,6 +191,122 @@ describe("resolveMonthCells", () => {
 
   it("is empty when nothing is visible", () => {
     expect(resolveMonthCells("2026-03", [])).toEqual([]);
+  });
+});
+
+// ─── A group as a selection ───────────────────────────────────────────────────
+
+describe("resolveGroupSelection", () => {
+  const mixed = [
+    cat("a1", "groceries"),
+    cat("a2", "groceries"),
+    cat("a3", "groceries"),
+    cat("b1", "bills"),
+  ];
+
+  it("spans the group's first to last category, across the given months", () => {
+    // A group's categories are contiguous, so "this group" is an ordinary
+    // rectangle - no selection shape of its own.
+    expect(resolveGroupSelection("groceries", mixed, ["2026-01", "2026-02"])).toEqual({
+      anchorCategoryId: "a1",
+      anchorMonth: "2026-01",
+      focusCategoryId: "a3",
+      focusMonth: "2026-02",
+    });
+  });
+
+  it("resolves to exactly the group's cells", () => {
+    const sel = resolveGroupSelection("groceries", mixed, ["2026-01"])!;
+    expect(resolveSelectionCells(sel, ["2026-01"], mixed)).toEqual([
+      { month: "2026-01", categoryId: "a1" },
+      { month: "2026-01", categoryId: "a2" },
+      { month: "2026-01", categoryId: "a3" },
+    ]);
+  });
+
+  it("is null when the group has no visible categories", () => {
+    // Every category hidden with the toggle off - nothing to select.
+    expect(resolveGroupSelection("missing", mixed, ["2026-01"])).toBeNull();
+  });
+
+  it("is null when there are no months", () => {
+    expect(resolveGroupSelection("groceries", mixed, [])).toBeNull();
+  });
+});
+
+describe("groupSelectionCoverage", () => {
+  const mixed = [
+    cat("a1", "groceries"),
+    cat("a2", "groceries"),
+    cat("b1", "bills"),
+  ];
+
+  it("reports all when every category is inside the range", () => {
+    expect(groupSelectionCoverage("groceries", mixed, { minCatIdx: 0, maxCatIdx: 2 })).toBe("all");
+  });
+
+  it("reports some when the range covers part of the group", () => {
+    // The case that makes a collapsed group legible: its cells are not
+    // rendered, so the row has to report them.
+    expect(groupSelectionCoverage("groceries", mixed, { minCatIdx: 1, maxCatIdx: 2 })).toBe("some");
+  });
+
+  it("reports none when the range misses the group entirely", () => {
+    expect(groupSelectionCoverage("groceries", mixed, { minCatIdx: 2, maxCatIdx: 2 })).toBe("none");
+  });
+
+  it("reports none without a selection", () => {
+    expect(groupSelectionCoverage("groceries", mixed, null)).toBe("none");
+  });
+
+  it("reports none for a group with no visible categories", () => {
+    expect(groupSelectionCoverage("gone", mixed, { minCatIdx: 0, maxCatIdx: 2 })).toBe("none");
+  });
+});
+
+describe("extendSelectionToGroup", () => {
+  const mixed = [
+    cat("a1", "groceries"),
+    cat("a2", "groceries"),
+    cat("b1", "bills"),
+    cat("b2", "bills"),
+  ];
+
+  it("keeps the anchor and swallows the whole group", () => {
+    const previous = sel("2026-01", "a1", "2026-01", "a1");
+    const groupRange = resolveGroupSelection("bills", mixed, ["2026-02"])!;
+    const extended = extendSelectionToGroup(previous, groupRange, "2026-02");
+
+    expect(extended.anchorCategoryId).toBe("a1");
+    expect(extended.anchorMonth).toBe("2026-01");
+    // The far edge of the group, not whichever row was clicked.
+    expect(extended.focusCategoryId).toBe("b2");
+    expect(extended.focusMonth).toBe("2026-02");
+  });
+
+  it("covers every cell between the anchor and the group", () => {
+    const previous = sel("2026-01", "a1", "2026-01", "a1");
+    const groupRange = resolveGroupSelection("bills", mixed, ["2026-01"])!;
+    const extended = extendSelectionToGroup(previous, groupRange, "2026-01");
+
+    expect(resolveSelectionCells(extended, ["2026-01"], mixed).map((c) => c.categoryId)).toEqual([
+      "a1",
+      "a2",
+      "b1",
+      "b2",
+    ]);
+  });
+
+  it("falls back to the group's own range with nothing to extend from", () => {
+    const groupRange = resolveGroupSelection("bills", mixed, ["2026-01"])!;
+    expect(extendSelectionToGroup(null, groupRange, "2026-01")).toEqual(groupRange);
+  });
+
+  it("selects the same cells whether the group is collapsed or not", () => {
+    // `categories` is filtered by showHidden but never by collapse state, so
+    // the resolver cannot see whether a group is open - which is the point.
+    const groupRange = resolveGroupSelection("groceries", mixed, ["2026-01"])!;
+    expect(resolveSelectionCells(groupRange, ["2026-01"], mixed)).toHaveLength(2);
   });
 });
 

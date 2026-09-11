@@ -14,6 +14,86 @@ import type { BudgetCellSelection, LoadedCategory } from "../types";
 export type ResolvedCell = { month: string; categoryId: string };
 
 /**
+ * The selection rectangle standing for a whole category group.
+ *
+ * A group's categories occupy a contiguous run in `categories` (it is built by
+ * flattening groups in order), so "this group" needs no selection shape of its
+ * own - it is an ordinary anchor/focus pair. That is what lets the footer, the
+ * grid highlight, copy/paste and the bulk actions treat a group exactly as they
+ * treat a dragged range, with no special case anywhere.
+ *
+ * Returns null when the group contributes no visible categories - every one of
+ * them hidden with the toggle off - because there is then nothing to select.
+ */
+export function resolveGroupSelection(
+  groupId: string,
+  categories: readonly LoadedCategory[],
+  months: readonly string[]
+): BudgetCellSelection | null {
+  const inGroup = categories.filter((c) => c.groupId === groupId);
+  const firstMonth = months[0];
+  const lastMonth = months[months.length - 1];
+  if (inGroup.length === 0 || !firstMonth || !lastMonth) return null;
+  return {
+    anchorCategoryId: inGroup[0]!.id,
+    anchorMonth: firstMonth,
+    focusCategoryId: inGroup[inGroup.length - 1]!.id,
+    focusMonth: lastMonth,
+  };
+}
+
+/**
+ * Shift-clicking a group row: keep the existing anchor, move the focus to the
+ * far edge of the group.
+ *
+ * Extending to the group's *last* category is what makes the gesture behave the
+ * way a drag would - the range grows to swallow the whole group rather than
+ * stopping at whichever row was clicked. With no existing selection there is
+ * nothing to extend from, so the group's own range stands.
+ */
+export function extendSelectionToGroup(
+  previous: BudgetCellSelection | null,
+  groupRange: BudgetCellSelection,
+  month: string
+): BudgetCellSelection {
+  if (!previous) return groupRange;
+  return {
+    ...previous,
+    focusCategoryId: groupRange.focusCategoryId,
+    focusMonth: month,
+  };
+}
+
+/** How much of a group the current selection covers, for its row's indicator. */
+export type GroupCoverage = "none" | "some" | "all";
+
+/**
+ * Whether a group's categories are wholly, partly or not at all inside a
+ * selected index range.
+ *
+ * This is what makes a range spanning a **collapsed** group legible: its cells
+ * are not rendered, so without the group row reporting them there is no way to
+ * see what was caught. `bounds` is the same category index range the grid
+ * already computes to highlight cells.
+ */
+export function groupSelectionCoverage(
+  groupId: string,
+  categories: readonly LoadedCategory[],
+  bounds: { minCatIdx: number; maxCatIdx: number } | null
+): GroupCoverage {
+  if (!bounds) return "none";
+  let total = 0;
+  let covered = 0;
+  for (let i = 0; i < categories.length; i++) {
+    if (categories[i]!.groupId !== groupId) continue;
+    total++;
+    if (i >= bounds.minCatIdx && i <= bounds.maxCatIdx) covered++;
+  }
+  if (total === 0 || covered === 0) return "none";
+  return covered === total ? "all" : "some";
+}
+
+/**
  * Every cell under a category group, for the given months.
  *
  * A group row is a summarization layer over its categories, so acting on one is

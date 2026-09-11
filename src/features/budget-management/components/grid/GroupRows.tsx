@@ -11,6 +11,7 @@ import { SpendingBarView } from "./SpendingBarView";
 import { dispatchRowLabel, useGroupCellKeymap } from "../../keyboard/useBudgetKeymap";
 import { BudgetCell, type BudgetCellDragState } from "../BudgetCell";
 import { isCellSelected, type SelectionBounds } from "./types";
+import type { GroupCoverage } from "../../lib/budgetSelectionUtils";
 import type {
   BudgetCellSelection,
   BudgetMode,
@@ -36,6 +37,7 @@ function GroupMonthAggregate({
   isReadOnlyMonth,
   showSpendingBars,
   onContextMenuRequest,
+  coverage = "none",
 }: {
   month: string;
   groupId: string;
@@ -43,12 +45,14 @@ function GroupMonthAggregate({
   budgetMode: BudgetMode;
   isDimmed?: boolean;
   isSelected?: boolean;
-  onFocus?: () => void;
+  onFocus?: (extend?: boolean) => void;
   onNavigate?: (dir: NavDirection) => void;
   onToggleCollapse?: () => void;
   isReadOnlyMonth?: boolean;
   showSpendingBars?: boolean;
   onContextMenuRequest?: (groupId: string, month: string, x: number, y: number) => void;
+  /** How much of this group the current selection covers, for the indicator. */
+  coverage?: GroupCoverage;
 }) {
   const data = useEffectiveMonthFromContext(month);
   const group = data?.groupsById[groupId];
@@ -83,8 +87,8 @@ function GroupMonthAggregate({
         title="No budget exists for this past month; budget cells are read-only."
         data-group-id={groupId}
         data-group-month={month}
-        onClick={onFocus}
-        onFocus={onFocus}
+        onClick={(e) => onFocus?.(e.shiftKey)}
+        onFocus={() => onFocus?.(false)}
         onKeyDown={handleKeyDown}
       >
         --
@@ -164,16 +168,32 @@ function GroupMonthAggregate({
 
   return (
     <div
-      className={`${baseClass}${dimClass} relative px-2 flex items-center justify-end text-xs font-sans tabular-nums ${valueColorClass} cursor-default outline-none${isSelected ? " ring-2 ring-inset ring-foreground/80" : ""}`}
+      className={`${baseClass}${dimClass} relative px-2 flex items-center justify-end text-xs font-sans tabular-nums ${valueColorClass} cursor-default outline-none${
+        isSelected ? " ring-2 ring-inset ring-foreground/80" : ""
+      }${
+        // A collapsed group renders none of its cells, so without this the row
+        // is the only place a selection covering it can be seen.
+        coverage === "all"
+          ? " bg-primary/15"
+          : coverage === "some"
+            ? " bg-primary/[0.07]"
+            : ""
+      }`}
       role="gridcell"
       tabIndex={0}
-      aria-selected={isSelected}
+      aria-selected={isSelected || coverage === "all"}
       aria-label={`${group.name} total for ${month}: ${formatMinor(displayValue)}${barStatusNote}`}
-      title={`Budgeted: ${formatMinor(groupBudgetedMinor)} | Actuals: ${formatMinor(Math.abs(groupActualsMinor))} | Balance: ${formatMinor(groupBalanceMinor)}${overNote}${stagedChildCount > 0 ? ` | ${stagedChildCount} staged change${stagedChildCount !== 1 ? "s" : ""} in this group` : ""}`}
+      title={`Budgeted: ${formatMinor(groupBudgetedMinor)} | Actuals: ${formatMinor(Math.abs(groupActualsMinor))} | Balance: ${formatMinor(groupBalanceMinor)}${overNote}${stagedChildCount > 0 ? ` | ${stagedChildCount} staged change${stagedChildCount !== 1 ? "s" : ""} in this group` : ""}${
+        coverage === "all"
+          ? " | all categories selected"
+          : coverage === "some"
+            ? " | some categories selected"
+            : ""
+      }`}
       data-group-id={groupId}
       data-group-month={month}
-      onClick={onFocus}
-      onFocus={onFocus}
+      onClick={(e) => onFocus?.(e.shiftKey)}
+      onFocus={() => onFocus?.(false)}
       onKeyDown={handleKeyDown}
       onContextMenu={(e) => {
         if (!onContextMenuRequest) return;
@@ -228,7 +248,9 @@ export type GroupRowsProps = {
     x: number,
     y: number
   ) => void;
-  onGroupFocus?: (groupId: string, month: string) => void;
+  onGroupFocus?: (groupId: string, month: string, extend?: boolean) => void;
+  /** Selection coverage per group, for the row indicator. */
+  groupCoverage?: (groupId: string) => GroupCoverage;
   /** Right-click on a group's month cell — acts on that group in that month. */
   onGroupContextMenu?: (groupId: string, month: string, x: number, y: number) => void;
   /** Right-click on the group's label — acts on that group across the window. */
@@ -266,6 +288,7 @@ export function BudgetGridGroupRows({
   onCellNavigate,
   onCellContextMenu,
   onGroupFocus,
+  groupCoverage,
   onGroupContextMenu,
   onGroupRowContextMenu,
   onGroupNavigate,
@@ -347,7 +370,8 @@ export function BudgetGridGroupRows({
           isSelected={
             groupSelection?.groupId === group.id && groupSelection?.month === month
           }
-          onFocus={() => onGroupFocus?.(group.id, month)}
+          onFocus={(extend) => onGroupFocus?.(group.id, month, extend)}
+          coverage={groupCoverage?.(group.id) ?? "none"}
           onNavigate={(dir) => onGroupNavigate?.(group.id, month, dir)}
           onToggleCollapse={onToggleCollapse}
           isReadOnlyMonth={readOnlyMonths.has(month)}
