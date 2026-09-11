@@ -122,3 +122,19 @@ describe("formatGridMinor", () => {
     expect(formatGridMinor(-1_234, { showDecimals: false })).toBe("-12");
   });
 });
+
+describe("formatGridMinor near zero", () => {
+  it("never renders a signed zero", () => {
+    // One cent with decimals hidden rounds to zero; Intl would print "-0".
+    expect(formatGridMinor(-1, { showDecimals: false })).toBe("0");
+    expect(formatGridMinor(-49, { showDecimals: false })).toBe("0");
+  });
+
+  it("still shows a real rounded amount, sign and all", () => {
+    expect(formatGridMinor(-51, { showDecimals: false })).toBe("-1");
+  });
+
+  it("keeps the dash for an actual zero", () => {
+    expect(formatGridMinor(0, { showDecimals: false })).toBe("–");
+  });
+});

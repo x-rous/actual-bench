@@ -25,7 +25,9 @@ export function computeThumb(
   if (scrollSize <= clientSize || clientSize <= 0 || trackSize <= 0) return null;
 
   const ratio = clientSize / scrollSize;
-  const size = Math.max(minThumb, Math.round(trackSize * ratio));
+  // A minimum keeps a short thumb grabbable, but never past the track it sits
+  // in - a narrow pane would otherwise draw a thumb longer than its own track.
+  const size = Math.min(trackSize, Math.max(minThumb, Math.round(trackSize * ratio)));
   // The thumb travels the track minus its own length, so a full scroll lands it
   // flush with the end rather than overhanging it.
   const travel = trackSize - size;
@@ -48,7 +50,7 @@ export function scrollPosFromThumbDelta(
 ): number {
   if (scrollSize <= clientSize || trackSize <= 0) return startScroll;
   const ratio = clientSize / scrollSize;
-  const size = Math.max(minThumb, Math.round(trackSize * ratio));
+  const size = Math.min(trackSize, Math.max(minThumb, Math.round(trackSize * ratio)));
   const travel = trackSize - size;
   if (travel <= 0) return startScroll;
   const maxScroll = scrollSize - clientSize;

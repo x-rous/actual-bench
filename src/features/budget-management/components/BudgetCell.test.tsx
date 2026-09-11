@@ -100,4 +100,14 @@ describe("BudgetCell in a month the budget file does not have", () => {
       "cursor-not-allowed"
     );
   });
+
+  it("keeps the exact figure reachable when decimals are hidden", () => {
+    // The budgeted view has its own tooltip; without folding the exact value
+    // into it, the view most likely to be read rounded is the one place the
+    // real number cannot be found.
+    monthState = { categoriesById: { c1: { ...category, budgeted: 332_908 } } };
+    const { container } = renderCell({ showDecimals: false });
+    expect(screen.getByText("3,329")).toBeInTheDocument();
+    expect((container.firstElementChild as HTMLElement).title).toContain("3,329.08");
+  });
 });

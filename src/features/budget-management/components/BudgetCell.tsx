@@ -383,7 +383,12 @@ export function BudgetCell({
       : envelopeIncome
       ? "Received income - envelope budgeting assigns no budget or balance to income."
       : cellView === "budgeted"
-      ? `Spent: ${formatMinor(effectiveCategory.actuals)} | Balance: ${formatMinor(effectiveCategory.balance)}${overNote}`
+      ? // The budgeted view has its own tooltip, so the rounded-value note has
+        // to be folded into it - otherwise the main view, the one most likely
+        // to be read with decimals off, is the one place the exact figure is
+        // unreachable.
+        `${!showDecimals && hasMonthData ? `Budgeted: ${formatMinor(displayMinor)} | ` : ""}` +
+        `Spent: ${formatMinor(effectiveCategory.actuals)} | Balance: ${formatMinor(effectiveCategory.balance)}${overNote}`
       : !showDecimals && hasMonthData
         // Rounded on screen, so the exact figure has to stay reachable.
         ? `Exact: ${formatMinor(displayMinor)}`

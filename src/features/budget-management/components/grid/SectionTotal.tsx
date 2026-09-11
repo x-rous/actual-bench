@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffectiveMonthFromContext } from "../../context/MonthsDataContext";
-import { formatGridMinor } from "../../lib/format";
+import { formatGridMinor, formatMinor } from "../../lib/format";
 import {
   calculateSectionTotal,
   getSectionEffectiveView,
@@ -59,6 +59,8 @@ function SectionTotalCell({
   return (
     <div
       className="h-8 min-h-8 px-2 flex items-center justify-end whitespace-nowrap bg-muted/15 border-b border-border/50 text-xs font-sans tabular-nums font-semibold text-foreground"
+      // Rounded on screen with decimals off, so the exact total stays reachable.
+      title={showDecimals ? undefined : formatMinor(total)}
     >
       {formatGridMinor(total, { showDecimals })}
     </div>

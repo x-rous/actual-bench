@@ -51,7 +51,12 @@ export function formatGridMinor(
 ): string {
   if (minor === 0) return ZERO_DASH;
   const digits = options.showDecimals === false ? 0 : 2;
-  return (minor / 100).toLocaleString("en-US", {
+  const value = minor / 100;
+  // Rounding can land a real amount on zero - one cent with decimals hidden -
+  // and `Intl` renders that as "-0". It is not nothing, so it does not get the
+  // dash, but it must not carry a sign either.
+  const rounded = Number(value.toFixed(digits));
+  return (rounded === 0 ? 0 : value).toLocaleString("en-US", {
     minimumFractionDigits: digits,
     maximumFractionDigits: digits,
   });

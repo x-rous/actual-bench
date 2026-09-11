@@ -50,3 +50,16 @@ describe("scrollPosFromThumbDelta", () => {
     expect(scrollPosFromThumbDelta(0, 50, 500, 500, 400)).toBe(0);
   });
 });
+
+describe("thumb never outgrows its track", () => {
+  it("clamps to the track when the minimum would overflow it", () => {
+    // A short pane: the 24px minimum is longer than the whole track.
+    const thumb = computeThumb(0, 10, 100, 20)!;
+    expect(thumb.size).toBe(20);
+    expect(thumb.offset + thumb.size).toBeLessThanOrEqual(20);
+  });
+
+  it("leaves no travel in that case, so a drag cannot move the view", () => {
+    expect(scrollPosFromThumbDelta(5, 100, 10, 100, 20)).toBe(5);
+  });
+});
