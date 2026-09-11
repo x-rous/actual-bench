@@ -131,7 +131,18 @@ export function OverlayScrollArea({ children, className = "", onClick }: Props) 
     "pointer-events-auto absolute rounded-full bg-foreground/30 hover:bg-foreground/45 transition-opacity";
 
   return (
-    <div className={`relative min-h-0 ${className}`} onMouseEnter={() => setActive(true)}>
+    <div
+      className={`relative min-h-0 ${className}`}
+      onMouseEnter={() => setActive(true)}
+      // Hovering reveals the thumbs, so leaving has to hide them again -
+      // otherwise a pointer that crosses the grid without scrolling leaves them
+      // on until some later scroll happens to start the idle timer. A drag in
+      // progress keeps them, since the pointer is captured and may well be
+      // outside the container.
+      onMouseLeave={() => {
+        if (!dragRef.current) setActive(false);
+      }}
+    >
       <div
         ref={scrollRef}
         onScroll={handleScroll}
