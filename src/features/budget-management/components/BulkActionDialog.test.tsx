@@ -390,3 +390,68 @@ describe("BulkActionDialog totals", () => {
   });
 });
 
+describe("BulkActionDialog income and expense totals", () => {
+  const mixedCats = [
+    { id: "c1", name: "Groceries", groupId: "g1", groupName: "Everyday", isIncome: false },
+    { id: "i1", name: "Salary", groupId: "g9", groupName: "Earnings", isIncome: true },
+  ] as unknown as LoadedCategory[];
+  const mixedCells = [
+    { month: "2026-01", categoryId: "c1" },
+    { month: "2026-01", categoryId: "i1" },
+  ];
+
+  function renderMixed(cells = mixedCells, cats = mixedCats) {
+    render(
+      <BulkActionDialog
+        targetCells={cells}
+        activeMonths={activeMonths}
+        categories={cats}
+        monthDataMap={{
+          "2026-01": [
+            { ...mixedCats[0]!, budgeted: 1000 },
+            { ...mixedCats[1]!, budgeted: 2000 },
+          ],
+        }}
+        availableMonths={["2025-01", ...activeMonths]}
+        ensureMonths={async () => ({
+          monthDataMap: {
+            "2025-01": [
+              { ...mixedCats[0]!, budgeted: 5000 },
+              { ...mixedCats[1]!, budgeted: 9000 },
+            ],
+          },
+          unavailable: [],
+          failed: [],
+        })}
+        initialAction="copy-prior-year-same-month"
+        onClose={() => {}}
+      />
+    );
+  }
+
+  it("splits the totals when the run touches both sides", async () => {
+    renderMixed();
+    await screen.findByText(/will be updated/);
+
+    // One figure covering a spending plan and an income plan answers neither.
+    const expenses = screen.getByText("Expenses").closest("tr")!.textContent;
+    expect(expenses).toContain("10.00"); // current
+    expect(expenses).toContain("50.00"); // new
+
+    const income = screen.getByText("Income").closest("tr")!.textContent;
+    expect(income).toContain("20.00");
+    expect(income).toContain("90.00");
+
+    // No combined figure: a mixed net is the number that means nothing.
+    expect(screen.queryByText("Totals")).not.toBeInTheDocument();
+  });
+
+  it("shows a single total when only one side is present", async () => {
+    renderMixed([{ month: "2026-01", categoryId: "c1" }]);
+    await screen.findByText(/will be updated/);
+    expect(screen.getByText("Totals")).toBeInTheDocument();
+    expect(screen.queryByText("Expenses")).not.toBeInTheDocument();
+    expect(screen.queryByText("Income")).not.toBeInTheDocument();
+  });
+});
+

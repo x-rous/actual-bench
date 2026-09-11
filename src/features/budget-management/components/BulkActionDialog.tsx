@@ -311,6 +311,10 @@ export function BulkActionDialog({
     () => new Map(categories.map((c) => [c.id, c.groupName])),
     [categories]
   );
+  const isIncomeById = useMemo(
+    () => new Map(categories.map((c) => [c.id, c.isIncome])),
+    [categories]
+  );
 
   const rowKey = (row: BulkPreviewRow) => `${row.month}:${row.categoryId}`;
   const valueFor = (row: BulkPreviewRow) =>
@@ -322,12 +326,35 @@ export function BulkActionDialog({
     nextBudgeted: valueFor(row),
   }));
 
-  const currentTotal = rowsToApply.reduce((sum, row) => sum + row.previousBudgeted, 0);
-  const newTotal = rowsToApply.reduce((sum, row) => sum + row.nextBudgeted, 0);
-  const netChange = rowsToApply.reduce(
-    (sum, row) => sum + (row.nextBudgeted - row.previousBudgeted),
-    0
-  );
+  /**
+   * Totals, split by side when the run touches both.
+   *
+   * Planning income and planning spending are different questions, and one
+   * figure covering both answers neither - the same reasoning the selection
+   * footer records as BM-35. Where only one side is present a single total says
+   * it all, so the split appears only when it is needed.
+   */
+  function sumOf(rows: BulkPreviewRow[]) {
+    return {
+      current: rows.reduce((sum, r) => sum + r.previousBudgeted, 0),
+      next: rows.reduce((sum, r) => sum + r.nextBudgeted, 0),
+      change: rows.reduce((sum, r) => sum + (r.nextBudgeted - r.previousBudgeted), 0),
+      count: rows.length,
+    };
+  }
+
+  const expenseRows = rowsToApply.filter((r) => !isIncomeById.get(r.categoryId));
+  const incomeRows = rowsToApply.filter((r) => isIncomeById.get(r.categoryId));
+  const isMixed = expenseRows.length > 0 && incomeRows.length > 0;
+
+  const totalsRows: { key: string; label: string; totals: ReturnType<typeof sumOf> }[] =
+    isMixed
+      ? [
+          { key: "expense", label: "Expenses", totals: sumOf(expenseRows) },
+          { key: "income", label: "Income", totals: sumOf(incomeRows) },
+        ]
+      : [{ key: "all", label: "Totals", totals: sumOf(rowsToApply) }];
+
   const unchangedCount = rowsToApply.filter(
     (row) => row.nextBudgeted === row.previousBudgeted
   ).length;
@@ -754,48 +781,54 @@ export function BulkActionDialog({
               <table className="w-full table-fixed">
                 <PreviewColGroup showMonth={monthsInPreview > 1} />
                 <tbody>
-                  <tr className="font-medium">
-                    <td className="px-3 py-2" colSpan={monthsInPreview > 1 ? 3 : 2}>
-                      {/* Always the totals for every previewed row - the filter
-                          narrows the list, never what Apply writes. */}
-                      Totals
-                      <span className="ml-1 font-normal text-muted-foreground">
-                        {rowsToApply.length} cell{rowsToApply.length !== 1 ? "s" : ""}
-                        {filterTerm ? ", including filtered out" : ""}
-                      </span>
-                    </td>
-                    <td className="px-3 py-2 text-right font-mono text-muted-foreground">
-                      {formatAmount(currentTotal)}
-                    </td>
-                    <td className="px-3 py-2 text-right font-mono">
-                      {formatAmount(newTotal)}
-                    </td>
-                    <td
-                      className={`px-3 py-2 text-right font-mono ${
-                        netChange === 0
-                          ? "text-muted-foreground"
-                          : netChange > 0
-                            ? "text-emerald-600 dark:text-emerald-400"
-                            : "text-destructive"
-                      }`}
+                  {totalsRows.map(({ key, label, totals }, i) => (
+                    <tr
+                      key={key}
+                      className={`font-medium ${i > 0 ? "border-t border-border/50" : ""}`}
                     >
-                      {netChange === 0 ? "-" : formatDelta(netChange)}
-                    </td>
-                    <td className="px-2 py-2" />
-                  </tr>
+                      <td className="px-3 py-2" colSpan={monthsInPreview > 1 ? 3 : 2}>
+                        {/* Always every previewed row - the filter narrows the
+                            list, never what Apply writes. */}
+                        {label}
+                        <span className="ml-1 font-normal text-muted-foreground">
+                          {totals.count} cell{totals.count !== 1 ? "s" : ""}
+                          {filterTerm ? ", including filtered out" : ""}
+                        </span>
+                      </td>
+                      <td className="px-3 py-2 text-right font-mono text-muted-foreground">
+                        {formatAmount(totals.current)}
+                      </td>
+                      <td className="px-3 py-2 text-right font-mono">
+                        {formatAmount(totals.next)}
+                      </td>
+                      <td
+                        className={`px-3 py-2 text-right font-mono ${
+                          totals.change === 0
+                            ? "text-muted-foreground"
+                            : totals.change > 0
+                              ? "text-emerald-600 dark:text-emerald-400"
+                              : "text-destructive"
+                        }`}
+                      >
+                        {totals.change === 0 ? "-" : formatDelta(totals.change)}
+                      </td>
+                      <td className="px-2 py-2" />
+                    </tr>
+                  ))}
                 </tbody>
               </table>
             </div>
 
-            <p className="text-[11px] text-muted-foreground mb-3">
-              Adjust any amount before applying - ↑ ↓ move between rows, Enter commits.
-            </p>
-
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <p className="text-xs text-muted-foreground">
-                {adjustedCount > 0 ? (
+            {/* Actions sit on the same line as the hint, directly under the
+                table - the eye is already at the bottom of the rows. */}
+            <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+              <p className="text-[11px] text-muted-foreground">
+                Adjust any amount before applying - ↑ ↓ move between rows, Enter commits.
+                {adjustedCount > 0 && (
                   <>
-                    {adjustedCount} manually adjusted
+                    <span className="ml-2 text-foreground">
+                      {adjustedCount} manually adjusted
+                    </span>
                     <button
                       type="button"
                       onClick={revertAll}
@@ -804,8 +837,9 @@ export function BulkActionDialog({
                       Revert all
                     </button>
                   </>
-                ) : null}
+                )}
               </p>
+
               <div className="flex gap-2 justify-end">
                 {/* No Back for an action that collects nothing - it would lead
                     to an empty form the user was deliberately skipped past. */}
