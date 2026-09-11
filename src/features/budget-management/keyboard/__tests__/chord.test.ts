@@ -1,6 +1,6 @@
 import { matchChord, type KeyChord } from "../chord";
 
-function ev(over: Partial<{ key: string; ctrlKey: boolean; metaKey: boolean; shiftKey: boolean; altKey: boolean }>) {
+function ev(over: Partial<{ key: string; code: string; ctrlKey: boolean; metaKey: boolean; shiftKey: boolean; altKey: boolean }>) {
   return {
     key: "",
     ctrlKey: false,
@@ -76,5 +76,51 @@ describe("matchChord", () => {
       // Both pressed simultaneously is unusual but should still match.
       expect(matchChord(ev({ key: "z", ctrlKey: true, metaKey: true }), { key: "z", mod: true })).toBe(true);
     });
+  });
+});
+
+describe("Alt chords and the macOS key rewrite", () => {
+  // Option+A on macOS reports key "å"; matching on `key` alone silently
+  // disabled every Alt shortcut there.
+  it("matches an Alt letter chord via the physical key", () => {
+    const chord: KeyChord = { key: "a", alt: true };
+    expect(matchChord(ev({ key: "å", code: "KeyA", altKey: true }), chord)).toBe(true);
+  });
+
+  it("still matches an Alt letter chord by key when the layout is unchanged", () => {
+    const chord: KeyChord = { key: "a", alt: true };
+    expect(matchChord(ev({ key: "a", code: "KeyA", altKey: true }), chord)).toBe(true);
+  });
+
+  it("keeps modifier exclusivity when matching by physical key", () => {
+    const chord: KeyChord = { key: "a", alt: true };
+    // Shift held, chord does not ask for it.
+    expect(
+      matchChord(ev({ key: "Å", code: "KeyA", altKey: true, shiftKey: true }), chord)
+    ).toBe(false);
+    // Alt not held at all.
+    expect(matchChord(ev({ key: "a", code: "KeyA" }), chord)).toBe(false);
+  });
+
+  it("distinguishes Alt+Shift from Alt on the same physical key", () => {
+    const alt: KeyChord = { key: "a", alt: true };
+    const altShift: KeyChord = { key: "A", alt: true, shift: true };
+    const shifted = ev({ key: "Å", code: "KeyA", altKey: true, shiftKey: true });
+    expect(matchChord(shifted, alt)).toBe(false);
+    expect(matchChord(shifted, altShift)).toBe(true);
+  });
+
+  it("does NOT consult the physical key for bare-letter chords", () => {
+    // A non-QWERTY layout must keep firing the action for the character the
+    // user typed, not for the key in the QWERTY "V" position.
+    const chord: KeyChord = { key: "v" };
+    expect(matchChord(ev({ key: "d", code: "KeyV" }), chord)).toBe(false);
+    expect(matchChord(ev({ key: "v", code: "KeyD" }), chord)).toBe(true);
+  });
+
+  it("ignores the physical key for multi-character chords", () => {
+    const chord: KeyChord = { key: "Enter", alt: true };
+    expect(matchChord(ev({ key: "Enter", code: "Enter", altKey: true }), chord)).toBe(true);
+    expect(matchChord(ev({ key: "x", code: "Enter", altKey: true }), chord)).toBe(false);
   });
 });

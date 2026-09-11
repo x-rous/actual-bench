@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { usePersistedFilters } from "@/hooks/usePersistedFilters";
 import { addMonths } from "@/lib/budget/monthMath";
 import type { CellView } from "../types";
 import { useBudgetMode } from "../hooks/useBudgetMode";
@@ -15,6 +16,7 @@ import { BudgetExportDialog } from "./BudgetExportDialog";
 import { BudgetImportDialog } from "./BudgetImportDialog";
 import { StagedCategoryTransferDialog } from "./StagedCategoryTransferDialog";
 import { KeyboardShortcutsHelp } from "./KeyboardShortcutsHelp";
+import { ConfirmDialog, type ConfirmState } from "@/components/ui/confirm-dialog";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -79,12 +81,40 @@ export function BudgetManagementView() {
     mode: "cover" | "transfer";
   } | null>(null);
   const [shortcutsHelpOpen, setShortcutsHelpOpen] = useState(false);
+  // F-080: the back-navigation guard's confirmation. Held as state because it
+  // cannot be answered synchronously - see the popstate handler below.
+  const [leaveConfirm, setLeaveConfirm] = useState<ConfirmState | null>(null);
 
-  // Collapse state lifted here so BudgetToolbar can trigger expand/collapse all.
-  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(
-    () => new Set()
+  // Collapse state lifted here so BudgetToolbar can trigger expand/collapse all,
+  // and persisted (F-039) so it survives navigating away and back.
+  //
+  // `collapsed: null` means "the user has not chosen yet", which is what keeps
+  // the collapse-all-on-first-open default below working. An empty array is a
+  // real choice (everything expanded) and must not be confused with it.
+  //
+  // sessionStorage via the entity tables' own hook: this is view state, not a
+  // decision about the budget, and the `filters:` prefix means AppShell already
+  // clears it when the active connection changes, so one budget's group ids
+  // never leak into another's.
+  const [storedCollapse, setStoredCollapse] = usePersistedFilters<{
+    collapsed: string[] | null;
+  }>("filters:budget-collapsed-groups", { collapsed: null });
+
+  const collapsedGroups = useMemo(
+    () => new Set(storedCollapse.collapsed ?? []),
+    [storedCollapse.collapsed]
   );
-  const [defaultCollapseApplied, setDefaultCollapseApplied] = useState(false);
+
+  const setCollapsedGroups = useCallback(
+    (next: Set<string> | ((prev: Set<string>) => Set<string>)) => {
+      setStoredCollapse((current) => {
+        const prev = new Set(current.collapsed ?? []);
+        const value = typeof next === "function" ? next(prev) : next;
+        return { collapsed: [...value] };
+      });
+    },
+    [setStoredCollapse]
+  );
   // BM-21: hidden categories are off by default so the grid mirrors Actual's
   // active plan. The toggle only affects what is rendered — it never changes
   // any total (Tracking still excludes hidden from its aggregates; Envelope
@@ -101,11 +131,11 @@ export function BudgetManagementView() {
       else next.add(groupId);
       return next;
     });
-  }, []);
+  }, [setCollapsedGroups]);
 
   const handleExpandAll = useCallback(() => {
     setCollapsedGroups(new Set());
-  }, []);
+  }, [setCollapsedGroups]);
 
   // Navigation guard: warn before unload (tab close / refresh)
   useEffect(() => {
@@ -140,19 +170,28 @@ export function BudgetManagementView() {
 
     const handlePopState = () => {
       if (!hasPendingEdits()) return;
-      const confirmed = window.confirm(
-        "You have unsaved budget changes. Leave this page and discard them?"
-      );
-      if (!confirmed) {
-        window.history.pushState(null, "", window.location.href);
-        hasPushedNavigationGuard.current = true;
-        return;
-      }
 
-      useBudgetEditsStore.getState().discardAll();
-      discardEntityChanges();
-      hasPushedNavigationGuard.current = false;
-      window.history.back();
+      // `window.confirm` used to block here and answer inline. A dialog cannot,
+      // so the order is inverted: re-push the guard entry immediately to stay on
+      // the page, then ask. Cancelling needs no history work - we never left.
+      window.history.pushState(null, "", window.location.href);
+      hasPushedNavigationGuard.current = true;
+
+      setLeaveConfirm({
+        title: "Discard unsaved budget changes?",
+        message:
+          "You have unsaved budget changes. Leaving this page will discard them.",
+        destructiveLabel: "Discard and leave",
+        onConfirm: () => {
+          useBudgetEditsStore.getState().discardAll();
+          discardEntityChanges();
+          hasPushedNavigationGuard.current = false;
+          // `history.back()` fires popstate again, but the discard above has
+          // already emptied the stores, so the guard returns early rather than
+          // asking a second time.
+          window.history.back();
+        },
+      });
     };
 
     window.addEventListener("popstate", handlePopState);
@@ -198,14 +237,14 @@ export function BudgetManagementView() {
 
   const handleCollapseAll = useCallback(() => {
     setCollapsedGroups(new Set(firstMonthData?.groupOrder ?? []));
-  }, [firstMonthData]);
+  }, [firstMonthData, setCollapsedGroups]);
 
-  // Category groups start collapsed when the page first opens. Seed the state
-  // during render (React's derived-state pattern) as soon as the group list is
-  // known — applied once, so later expand/collapse choices and month navigation
-  // are never overridden.
-  if (!defaultCollapseApplied && (firstMonthData?.groupOrder.length ?? 0) > 0) {
-    setDefaultCollapseApplied(true);
+  // Category groups start collapsed the first time the page is opened. Seed the
+  // state during render (React's derived-state pattern) as soon as the group
+  // list is known. The stored `null` is the "not chosen yet" marker, so this
+  // runs once and never overrides a later expand/collapse choice - including
+  // "expand all", which stores an empty array rather than null.
+  if (storedCollapse.collapsed === null && (firstMonthData?.groupOrder.length ?? 0) > 0) {
     setCollapsedGroups(new Set(firstMonthData!.groupOrder));
   }
 
@@ -308,6 +347,7 @@ export function BudgetManagementView() {
         budgetMode={budgetMode ?? "unidentified"}
         windowStart={windowStart}
         onWindowChange={setWindowStart}
+        availableMonths={availableMonths}
         onGoToCurrentMonth={handleGoToCurrentMonth}
         cellView={cellView}
         onCellViewChange={setCellView}
@@ -372,6 +412,14 @@ export function BudgetManagementView() {
           onClose={handleCloseTransfer}
         />
       )}
+
+      <ConfirmDialog
+        open={leaveConfirm !== null}
+        onOpenChange={(open) => {
+          if (!open) setLeaveConfirm(null);
+        }}
+        state={leaveConfirm}
+      />
 
       <KeyboardShortcutsHelp
         open={shortcutsHelpOpen}

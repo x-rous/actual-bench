@@ -56,6 +56,9 @@ export type ActionId =
   | "selection.fill-right"
   | "selection.fill-prev-month"
   | "selection.fill-avg-3"
+  | "selection.fill-avg-6"
+  | "selection.fill-avg-12"
+  | "selection.fill-prior-year"
   // ─── Tier 3 view & visibility (workspace) ───────────────────────────────
   | "view.cycle-cell-view"
   | "view.toggle-show-hidden"
@@ -151,6 +154,21 @@ export const ACTION_META: Record<ActionId, ActionMeta> = {
   "selection.fill-avg-3": {
     id: "selection.fill-avg-3",
     label: "Fill with 3-month average (per row)",
+    category: "selection",
+  },
+  "selection.fill-avg-6": {
+    id: "selection.fill-avg-6",
+    label: "Fill with 6-month average (per row)",
+    category: "selection",
+  },
+  "selection.fill-avg-12": {
+    id: "selection.fill-avg-12",
+    label: "Fill with 12-month average (per row)",
+    category: "selection",
+  },
+  "selection.fill-prior-year": {
+    id: "selection.fill-prior-year",
+    label: "Fill from the prior year's same month",
     category: "selection",
   },
 

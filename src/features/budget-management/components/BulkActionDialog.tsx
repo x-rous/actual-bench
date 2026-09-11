@@ -35,8 +35,11 @@ type Props = {
   /** Loads source months outside the visible window. Supplied by the workspace. */
   ensureMonths: (months: string[]) => Promise<EnsureMonthsResult>;
   onClose: () => void;
-  /** When set, pre-selects the action and hides the action picker. */
-  initialAction?: BulkActionType;
+  /**
+   * The action to run. Required: the workspace only opens this dialog for a
+   * chosen action, so there is no state in which the user picks one here.
+   */
+  initialAction: BulkActionType;
 };
 
 type Step = "action" | "preview";
@@ -63,9 +66,11 @@ const OPTIONAL_PERCENTAGE_ACTIONS: BulkActionType[] = [
 /**
  * Multi-step dialog for bulk budget actions on a selection.
  *
- * Step 1: Choose action type + parameters.
- * Step 2: Review preview table of proposed changes.
- * Step 3: Confirmation after apply.
+ * Step 1: Supply the action's parameters, if it takes any.
+ * Step 2: Review a preview table of the proposed changes, then apply.
+ *
+ * The action itself is chosen from the cell context menu and arrives as
+ * `initialAction`; this dialog never offers a choice of action.
  */
 export function BulkActionDialog({
   selection,
@@ -81,7 +86,7 @@ export function BulkActionDialog({
   const { preview, apply } = useBulkAction();
 
   const [step, setStep] = useState<Step>("action");
-  const [action, setAction] = useState<BulkActionType>(initialAction ?? "copy-previous-month");
+  const action = initialAction;
 
   // The months this run will write to — also what the source defaults key off.
   const targetMonths = useMemo(
@@ -248,26 +253,6 @@ export function BulkActionDialog({
             <h2 className="text-base font-semibold mb-4">{ACTION_LABELS[action]}</h2>
 
             <div className="space-y-3 mb-4">
-              {!initialAction && (
-                <div>
-                  <label htmlFor="bulk-action-type" className="block text-xs font-medium mb-1">
-                    Action
-                  </label>
-                  <select
-                    id="bulk-action-type"
-                    value={action}
-                    onChange={(e) => setAction(e.target.value as BulkActionType)}
-                    className="h-7 w-full rounded border border-border bg-background px-2 py-1 text-xs"
-                  >
-                    {(Object.keys(ACTION_LABELS) as BulkActionType[]).map((a) => (
-                      <option key={a} value={a}>
-                        {ACTION_LABELS[a]}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
-
               {needsFixed && (
                 <div>
                   <label htmlFor="bulk-fixed-amount" className="block text-xs font-medium mb-1">

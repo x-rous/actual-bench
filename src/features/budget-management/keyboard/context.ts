@@ -65,6 +65,12 @@ export type WorkspaceContext = {
   fillPrevMonth: () => boolean;
   /** Wraps the existing `avg-3-months` bulk action. */
   fillAvg3: () => boolean;
+  /** Wraps the existing `avg-6-months` bulk action. */
+  fillAvg6: () => boolean;
+  /** Wraps the existing `avg-12-months` bulk action. */
+  fillAvg12: () => boolean;
+  /** Wraps the `copy-prior-year-same-month` bulk action. */
+  fillPriorYear: () => boolean;
   // ── Tier 3 view & visibility ───────────────────────────────────────────
   cycleCellView: () => void;
   toggleShowHidden: () => void;

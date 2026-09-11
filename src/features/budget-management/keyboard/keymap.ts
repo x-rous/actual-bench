@@ -93,6 +93,9 @@ export const DEFAULT_KEYMAP: KeymapBinding[] = [
   { action: "selection.fill-right",       chord: { key: "r", mod: true },     scopes: ["workspace"] },
   { action: "selection.fill-prev-month",  chord: { key: "l", alt: true },     scopes: ["workspace"] },
   { action: "selection.fill-avg-3",       chord: { key: "a", alt: true },     scopes: ["workspace"] },
+  { action: "selection.fill-avg-6",       chord: { key: "A", alt: true, shift: true }, scopes: ["workspace"] },
+  { action: "selection.fill-avg-12",      chord: { key: "a", alt: true, mod: true },   scopes: ["workspace"] },
+  { action: "selection.fill-prior-year",  chord: { key: "y", alt: true },     scopes: ["workspace"] },
 
   // ── Tier 3 view & visibility ───────────────────────────────────────────
   // Bare-alpha bindings are workspace-only — `cell-edit` scope (input

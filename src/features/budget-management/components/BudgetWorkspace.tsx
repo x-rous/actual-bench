@@ -824,6 +824,24 @@ function BudgetWorkspaceInner({
     return true;
   }, [selection, handleContextMenuBulkAction]);
 
+  const fillAvg6 = useCallback((): boolean => {
+    if (!selection) return false;
+    void handleContextMenuBulkAction("avg-6-months");
+    return true;
+  }, [selection, handleContextMenuBulkAction]);
+
+  const fillAvg12 = useCallback((): boolean => {
+    if (!selection) return false;
+    void handleContextMenuBulkAction("avg-12-months");
+    return true;
+  }, [selection, handleContextMenuBulkAction]);
+
+  const fillPriorYear = useCallback((): boolean => {
+    if (!selection) return false;
+    void handleContextMenuBulkAction("copy-prior-year-same-month");
+    return true;
+  }, [selection, handleContextMenuBulkAction]);
+
   // Alt+C: toggle carryover for all selected categories across the selected
   // month range. newValue is derived from the anchor cell's current carryover state.
   const toggleCarryoverForSelection = useCallback((): boolean => {
@@ -870,6 +888,9 @@ function BudgetWorkspaceInner({
     fillRight,
     fillPrevMonth,
     fillAvg3,
+    fillAvg6,
+    fillAvg12,
+    fillPriorYear,
     cycleCellView: onCycleCellView,
     toggleShowHidden: onToggleShowHidden,
     expandAll: onExpandAll,
