@@ -20,16 +20,31 @@ export type BulkActionType =
   | "apply-percentage"
   | "avg-3-months"
   | "avg-6-months"
-  | "avg-12-months";
+  | "avg-12-months"
+  | "avg-3-months-actuals"
+  | "avg-6-months-actuals"
+  | "avg-12-months-actuals";
 
 /** Lookback length for the averaging actions, or null for everything else. */
 export function averageWindowLength(action: BulkActionType): number | null {
   switch (action) {
-    case "avg-3-months":  return 3;
-    case "avg-6-months":  return 6;
-    case "avg-12-months": return 12;
-    default:              return null;
+    case "avg-3-months":
+    case "avg-3-months-actuals":  return 3;
+    case "avg-6-months":
+    case "avg-6-months-actuals":  return 6;
+    case "avg-12-months":
+    case "avg-12-months-actuals": return 12;
+    default:                      return null;
   }
+}
+
+/**
+ * Which number an averaging action reads: what was planned, or what actually
+ * happened. "Budget what you normally spend" is a different question from
+ * "budget what you normally budgeted", and both are worth asking.
+ */
+export function averageBasis(action: BulkActionType): "budgeted" | "actuals" {
+  return action.endsWith("-actuals") ? "actuals" : "budgeted";
 }
 
 /**
@@ -253,15 +268,21 @@ export function useBulkAction(): UseBulkActionReturn {
 
           case "avg-3-months":
           case "avg-6-months":
-          case "avg-12-months": {
+          case "avg-12-months":
+          case "avg-3-months-actuals":
+          case "avg-6-months-actuals":
+          case "avg-12-months-actuals": {
             const n = avgWindow ?? 0;
+            const basis = averageBasis(action);
             const vals: number[] = [];
             let m = cell.month;
             for (let i = 0; i < n; i++) {
               m = addMonths(m, -1);
               const cats = monthDataMap[m];
               const found = cats?.find((c) => c.id === cell.categoryId);
-              if (found !== undefined) vals.push(found.budgeted);
+              if (found !== undefined) {
+                vals.push(basis === "actuals" ? found.actuals : found.budgeted);
+              }
             }
             if (vals.length === 0) {
               // Nothing to average: a skip, not a zero-month average. Counting
@@ -273,7 +294,21 @@ export function useBulkAction(): UseBulkActionReturn {
             // Report the worst-resolved cell that actually produced a value, so
             // the caller labels the average with what it covered.
             minResolved = Math.min(minResolved, vals.length);
-            nextBudgeted = Math.round(vals.reduce((a, b) => a + b, 0) / vals.length);
+            const mean = vals.reduce((a, b) => a + b, 0) / vals.length;
+
+            if (basis === "budgeted") {
+              nextBudgeted = Math.round(mean);
+            } else {
+              // `actuals` is signed money flow: spending is negative, income
+              // received is positive (see LoadedCategory). A budget is stated
+              // in the same form as `budgeted`, so an expense average has to be
+              // flipped to a magnitude - and clamped at zero, because a month
+              // of net refunds averages positive and must not become a negative
+              // budget. Mirrors the spending bar's `Math.max(0, -actuals)`.
+              nextBudgeted = metadataCat?.isIncome ?? cat.isIncome
+                ? Math.round(mean)
+                : Math.max(0, Math.round(-mean));
+            }
             break;
           }
         }

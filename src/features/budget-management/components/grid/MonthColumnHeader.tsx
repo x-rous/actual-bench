@@ -86,10 +86,13 @@ export function MonthColumnHeader({
       className={cn(
         "relative h-8 px-2 flex items-center justify-end gap-1.5 border-b-2 text-xs sticky top-0 z-20",
         isCurrentMonth ? "font-bold" : "font-semibold",
+        // Every state needs an OPAQUE background: the header is sticky, so a
+        // translucent one lets the cells scroll visibly behind it. The
+        // current-month tint is painted as an overlay below instead.
         isSelected
           ? "border-primary/70 bg-muted text-foreground"
           : isCurrentMonth
-          ? "border-primary bg-primary/5 text-foreground"
+          ? "border-primary bg-muted text-foreground"
           : "border-border bg-muted text-foreground",
         selectable && "cursor-pointer hover:bg-muted/70"
       )}
@@ -120,6 +123,12 @@ export function MonthColumnHeader({
           }
         : {})}
     >
+      {isCurrentMonth && !isSelected && (
+        <span
+          className="pointer-events-none absolute inset-0 bg-primary/5"
+          aria-hidden="true"
+        />
+      )}
       {inCrosshair && !isSelected && (
         <span className="pointer-events-none absolute inset-0 bg-primary/[0.08]" aria-hidden="true" />
       )}

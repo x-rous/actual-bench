@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   useBulkAction,
   requiredSourceMonths,
@@ -61,6 +61,9 @@ const ACTION_LABELS: Record<BulkActionType, string> = {
   "avg-3-months":                  "Avg. 3-month budget",
   "avg-6-months":                  "Avg. 6-month budget",
   "avg-12-months":                 "Avg. 12-month budget",
+  "avg-3-months-actuals":          "Avg. 3-month actual",
+  "avg-6-months-actuals":          "Avg. 6-month actual",
+  "avg-12-months-actuals":         "Avg. 12-month actual",
 };
 
 /** Actions that accept a percentage but do not require one (blank = 100%). */
@@ -93,6 +96,7 @@ export function BulkActionDialog({
   const { preview, apply } = useBulkAction();
 
   const [step, setStep] = useState<Step>("action");
+  const autoPreviewed = useRef(false);
   const action = initialAction;
 
   // The months this run will write to — also what the source defaults key off.
@@ -234,6 +238,22 @@ export function BulkActionDialog({
       setIsLoading(false);
     }
   };
+
+  /**
+   * An action that collects no parameters has nothing to show on the first
+   * step, so asking the user to click through an empty form to reach the
+   * preview is a wasted step. Go straight to the preview instead - it is still
+   * the confirmation, and it is the screen that carries the real information.
+   */
+  const collectsNothing = !needsFixed && !needsSourceMonth && !showsPercentage;
+  useEffect(() => {
+    if (!collectsNothing || autoPreviewed.current) return;
+    autoPreviewed.current = true;
+    void handlePreview();
+    // handlePreview closes over state that is fixed for a given action; the
+    // guard ref makes this run exactly once per mount.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [collectsNothing]);
 
   const handleApply = () => {
     apply(previewRows);
@@ -414,12 +434,14 @@ export function BulkActionDialog({
             </div>
 
             <div className="flex gap-2 justify-end">
+              {/* No Back for an action that collects nothing - it would lead
+                  to an empty form the user was deliberately skipped past. */}
               <button
                 type="button"
-                onClick={() => setStep("action")}
+                onClick={() => (collectsNothing ? onClose() : setStep("action"))}
                 className="px-3 py-1.5 text-sm rounded border border-border hover:bg-muted transition-colors"
               >
-                Back
+                {collectsNothing ? "Cancel" : "Back"}
               </button>
               <button
                 type="button"

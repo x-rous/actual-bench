@@ -76,6 +76,9 @@ const IMMEDIATE_BULK_ACTIONS: BulkActionType[] = [
   "avg-3-months",
   "avg-6-months",
   "avg-12-months",
+  "avg-3-months-actuals",
+  "avg-6-months-actuals",
+  "avg-12-months-actuals",
 ];
 
 /**
@@ -628,13 +631,31 @@ function BudgetWorkspaceInner({
   // Context menu handler
   const handleCellContextMenu = useCallback(
     (catId: string, month: string, carryover: boolean, x: number, y: number) => {
+      // Spreadsheet convention: right-clicking inside the selection acts on the
+      // whole selection; right-clicking outside it moves the selection to that
+      // cell first. Without this the menu silently acts on a selection the user
+      // can no longer see, which the group and column targets made obvious by
+      // contrast - they always say what they will change.
+      const insideSelection =
+        selection != null &&
+        resolveSelectionCells(selection, activeMonths, categories).some(
+          (cell) => cell.month === month && cell.categoryId === catId
+        );
+      if (!insideSelection) {
+        setSelection({
+          anchorCategoryId: catId,
+          anchorMonth: month,
+          focusCategoryId: catId,
+          focusMonth: month,
+        });
+      }
       setContextMenu({
         x,
         y,
         target: { kind: "cell", categoryId: catId, month, carryover },
       });
     },
-    []
+    [selection, activeMonths, categories, setSelection]
   );
 
   /**

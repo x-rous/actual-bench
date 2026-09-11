@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { RefreshCw, ArrowRightLeft, Copy, CopyPlus, Percent, ZapOff, Calendar, TrendingUp } from "lucide-react";
+import { RefreshCw, ArrowRightLeft, Copy, CopyPlus, Percent, ZapOff, Calendar, TrendingUp, Activity } from "lucide-react";
 import type { BudgetMode } from "../types";
 import type { BulkActionType } from "../hooks/useBulkAction";
 
@@ -47,6 +47,9 @@ const BULK_ITEMS: BulkItem[] = [
   { action: "avg-3-months",        label: "Avg. 3-month budget",     icon: <TrendingUp className="h-3 w-3" />, needsInput: false },
   { action: "avg-6-months",        label: "Avg. 6-month budget",     icon: <TrendingUp className="h-3 w-3" />, needsInput: false },
   { action: "avg-12-months",       label: "Avg. 12-month budget",    icon: <TrendingUp className="h-3 w-3" />, needsInput: false },
+  { action: "avg-3-months-actuals",  label: "Avg. 3-month actual",   icon: <Activity className="h-3 w-3" />, needsInput: false },
+  { action: "avg-6-months-actuals",  label: "Avg. 6-month actual",   icon: <Activity className="h-3 w-3" />, needsInput: false },
+  { action: "avg-12-months-actuals", label: "Avg. 12-month actual",  icon: <Activity className="h-3 w-3" />, needsInput: false },
 ];
 
 export function BudgetCellContextMenu({

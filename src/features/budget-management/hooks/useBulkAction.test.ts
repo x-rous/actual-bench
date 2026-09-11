@@ -484,6 +484,102 @@ describe("useBulkAction.apply", () => {
   });
 });
 
+describe("avg-N-months-actuals", () => {
+  /**
+   * `actuals` is signed money flow: spending is negative, income received is
+   * positive. A budget is stated the way `budgeted` is, so an expense average
+   * has to come back as a magnitude.
+   */
+  function actualsMap(
+    values: Record<string, Record<string, number>>,
+    opts: { isIncome?: boolean } = {}
+  ): Record<string, LoadedCategory[]> {
+    const out: Record<string, LoadedCategory[]> = {};
+    for (const [month, byCat] of Object.entries(values)) {
+      out[month] = Object.entries(byCat).map(([id, actuals]) =>
+        cat({ id, actuals, isIncome: opts.isIncome ?? false })
+      );
+    }
+    return out;
+  }
+
+  it("budgets the average spend as a positive amount", () => {
+    const { result } = renderHook(() => useBulkAction());
+    const map = actualsMap({
+      "2026-01": { c1: -1000 },
+      "2026-02": { c1: -2000 },
+      "2026-03": { c1: -3000 },
+      "2026-04": { c1: 0 },
+    });
+    const rows = result.current.preview(
+      "avg-3-months-actuals",
+      singleCell("2026-04", "c1"),
+      ["2026-04"],
+      categories,
+      map
+    );
+    // mean(-1000, -2000, -3000) = -2000 -> budget 2000
+    expect(rows?.rows[0]?.nextBudgeted).toBe(2000);
+  });
+
+  it("never turns a refund-heavy average into a negative budget", () => {
+    const { result } = renderHook(() => useBulkAction());
+    const map = actualsMap({
+      "2026-03": { c1: 4000 }, // net refund month
+      "2026-04": { c1: 0 },
+    });
+    const rows = result.current.preview(
+      "avg-3-months-actuals",
+      singleCell("2026-04", "c1"),
+      ["2026-04"],
+      categories,
+      map
+    );
+    expect(rows?.rows[0]?.nextBudgeted).toBe(0);
+  });
+
+  it("keeps income received positive", () => {
+    const { result } = renderHook(() => useBulkAction());
+    const incomeCats = [cat({ id: "i1", name: "Salary", isIncome: true })];
+    const map = actualsMap(
+      { "2026-03": { i1: 500000 }, "2026-04": { i1: 0 } },
+      { isIncome: true }
+    );
+    const rows = result.current.preview(
+      "avg-3-months-actuals",
+      singleCell("2026-04", "i1"),
+      ["2026-04"],
+      incomeCats,
+      map
+    );
+    expect(rows?.rows[0]?.nextBudgeted).toBe(500000);
+  });
+
+  it("reads actuals, not budgeted", () => {
+    const { result } = renderHook(() => useBulkAction());
+    const map: Record<string, LoadedCategory[]> = {
+      "2026-03": [cat({ id: "c1", budgeted: 99999, actuals: -1500 })],
+      "2026-04": [cat({ id: "c1", budgeted: 0, actuals: 0 })],
+    };
+    const rows = result.current.preview(
+      "avg-3-months-actuals",
+      singleCell("2026-04", "c1"),
+      ["2026-04"],
+      categories,
+      map
+    );
+    expect(rows?.rows[0]?.nextBudgeted).toBe(1500);
+  });
+
+  it("asks for the same lookback months as the budgeted average", () => {
+    expect(requiredSourceMonths("avg-3-months-actuals", ["2026-03"]).sort()).toEqual([
+      "2025-12",
+      "2026-01",
+      "2026-02",
+    ]);
+  });
+});
+
 // ─── requiredSourceMonths ─────────────────────────────────────────────────────
 
 describe("requiredSourceMonths", () => {

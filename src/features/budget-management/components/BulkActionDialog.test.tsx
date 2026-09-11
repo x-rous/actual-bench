@@ -23,7 +23,12 @@ function renderDialog(initialAction: Parameters<typeof BulkActionDialog>[0]["ini
       categories={categories}
       monthDataMap={{ "2026-01": [{ ...categories[0]!, budgeted: 1000 }] }}
       availableMonths={["2025-01", "2025-02", ...activeMonths]}
-      ensureMonths={async () => ({ monthDataMap: {}, unavailable: [], failed: [] })}
+      ensureMonths={async () => ({
+        // The prior-year source the copy actions read.
+        monthDataMap: { "2025-01": [{ ...categories[0]!, budgeted: 5000 }] },
+        unavailable: [],
+        failed: [],
+      })}
       initialAction={initialAction}
       onClose={() => {}}
     />
@@ -61,3 +66,26 @@ describe("BulkActionDialog percentage defaults", () => {
     expect(select.value).toBe("2025-01");
   });
 });
+
+describe("BulkActionDialog step skipping", () => {
+  it("goes straight to the preview for an action that collects nothing", async () => {
+    renderDialog("copy-prior-year-same-month");
+    // No parameter form to click through - the preview is the confirmation.
+    expect(await screen.findByText(/will be updated/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Preview changes/i })).not.toBeInTheDocument();
+  });
+
+  it("offers Cancel rather than Back, so there is no empty form to return to", async () => {
+    renderDialog("copy-prior-year-same-month");
+    await screen.findByText(/will be updated/);
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Back" })).not.toBeInTheDocument();
+  });
+
+  it("still shows the parameter step when the action needs a value", () => {
+    renderDialog("set-fixed");
+    expect(screen.getByLabelText(/Fixed amount in dollars/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Preview changes/i })).toBeInTheDocument();
+  });
+});
+
