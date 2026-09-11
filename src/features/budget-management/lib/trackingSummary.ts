@@ -20,6 +20,8 @@ export type TrackingSummaryTone =
   | "negative"
   | "warning"
   | "future"
+  /** A projected figure: real, just not yet settled. */
+  | "projection"
   | "muted"
   | "neutral";
 
@@ -93,7 +95,7 @@ export function getTrackingResultCell(
       value,
       valueKind: "amount",
       signed: true,
-      tone: "future",
+      tone: "projection",
       tooltip: `Current partial month. Showing planned result: budgeted income ${formatSummary(totals.incomeBudgeted)} - budgeted expenses ${formatSummary(totals.expenseBudgeted)}.`,
     };
   }
@@ -108,7 +110,7 @@ export function getTrackingResultCell(
     value,
     valueKind: "amount",
     signed: true,
-    tone: "future",
+    tone: "projection",
     tooltip: `Future month. Budgeted income ${formatSummary(totals.incomeBudgeted)} - budgeted expenses ${formatSummary(totals.expenseBudgeted)}.`,
   };
 }

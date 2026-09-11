@@ -210,17 +210,11 @@ export function BudgetToolbar({
           shape people read as "pick one of these"; a row of equal buttons with
           a tinted one reads as three separate actions, which is what this was
           being mistaken for. The caption says what is being picked. */}
-      <div className="flex items-center gap-1.5 shrink-0">
-        <span
-          id="cell-view-label"
-          className="text-[11px] text-muted-foreground select-none"
-        >
-          Show
-        </span>
+      <div className="flex items-center shrink-0">
         <div
           className="flex items-center gap-0.5 rounded-md border border-border bg-muted/60 p-0.5"
           role="group"
-          aria-labelledby="cell-view-label"
+          aria-label="Cell display"
         >
           {(["budgeted", "spent", "balance"] as const).map((view) => (
             <button
@@ -282,10 +276,10 @@ export function BudgetToolbar({
               // Inverted: pressed state means "currently hiding hidden categories"
               // (showHidden=false). Default — hidden visible — is unpressed.
               aria-pressed={!showHidden}
-              className={`inline-flex items-center gap-1 h-6 px-2 rounded text-[11px] font-medium transition-colors ${
+              className={`inline-flex items-center gap-1 h-6 px-2 rounded border text-[11px] font-medium transition-colors ${
                 !showHidden
-                  ? "text-foreground bg-muted"
-                  : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                  ? "border-border bg-muted text-foreground"
+                  : "border-border/60 text-muted-foreground hover:bg-muted hover:text-foreground"
               }`}
             >
               {showHidden ? (
@@ -309,10 +303,10 @@ export function BudgetToolbar({
               title={showSpendingBars ? "Hide spending bars" : "Show spending bars"}
               aria-pressed={showSpendingBars ?? false}
               className={cn(
-                "inline-flex items-center gap-1 h-6 px-2 rounded text-[11px] font-medium transition-colors",
+                "inline-flex items-center gap-1 h-6 px-2 rounded border text-[11px] font-medium transition-colors",
                 showSpendingBars
-                  ? "text-foreground bg-muted"
-                  : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                  ? "border-border bg-muted text-foreground"
+                  : "border-border/60 text-muted-foreground hover:bg-muted hover:text-foreground"
               )}
             >
               <BarChart2 className="h-3.5 w-3.5" aria-hidden="true" />

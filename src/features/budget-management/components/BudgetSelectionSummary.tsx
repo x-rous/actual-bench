@@ -192,6 +192,11 @@ export function BudgetSelectionSummary({
   const hasSelection = selectionCells.length > 0;
   const showFigures = hasSelection && !isMixedSelection;
 
+  // With nothing selected the bar has nothing of its own to report: the draft
+  // count and its review dialog are already on the details panel. An empty
+  // strip of chrome under the grid is worse than no strip at all.
+  if (!hasSelection) return null;
+
   return (
     <div
       className="h-8 border-t border-border bg-muted/30 flex items-stretch justify-between text-[11px] text-muted-foreground"

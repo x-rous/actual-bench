@@ -102,21 +102,21 @@ export const TRACKING_SUMMARY_ROWS: SummaryRowConfig[] = [
     getCell: (_s, state, month) => getTrackingIncomeCell(state, month),
     noBorder: true,
     marginTop: true,
-    rowHeight: "h-7",
+    rowHeight: "h-8",
   },
   {
     label: "Expenses",
     rowTooltip: "Expenses spent compared with budgeted expenses.",
     getCell: (_s, state, month) => getTrackingSpendingCell(state, month),
     noBorder: true,
-    rowHeight: "h-7",
+    rowHeight: "h-8",
   },
   {
     label: "Savings",
     rowTooltip:
       "Projected savings for current/future months; saved or overspent for past months.",
     getCell: (_s, state, month) => getTrackingResultCell(state, month),
-    rowHeight: "h-9",
+    rowHeight: "h-8",
     noBorder: true,
     emphasizeValue: true,
     valueClassName: "text-[13px] font-bold",
@@ -192,7 +192,7 @@ export function SummaryHeaderRow({
       : config.label;
 
   const isSubRow = config.isSubRow;
-  const rowH = config.rowHeight ?? (isSubRow ? "h-5" : "h-8");
+  const rowH = config.rowHeight ?? (isSubRow ? "h-6" : "h-8");
   // Total row gets a top border to visually separate it from the sub-rows above.
   const borderClass =
     !isSubRow && !config.noBorder
@@ -203,7 +203,7 @@ export function SummaryHeaderRow({
   return (
     <>
       <div
-        className={`${rowH} px-3 ${marginTopClass} flex items-center bg-background text-[11px] font-medium text-foreground/75 sticky left-0 z-10 ${borderClass}`}
+        className={`${rowH} px-3 ${marginTopClass} flex items-center bg-background text-xs font-medium text-foreground/80 sticky left-0 z-10 ${borderClass}`}
         role="rowheader"
         title={config.rowTooltip}
       >
@@ -275,7 +275,7 @@ function SummaryHeaderCell({
     const showBalanced = config.holdAction === "set" && numericValue === 0;
     return (
       <div
-        className={`${rowH} px-1.5 ${marginTopClass} flex items-center justify-end gap-1 bg-transparent font-sans tabular-nums leading-tight text-[11px] ${borderClass} ${colorClass}`}
+        className={`${rowH} px-1.5 ${marginTopClass} flex items-center justify-end gap-1 bg-transparent font-sans tabular-nums leading-tight text-xs ${borderClass} ${colorClass}`}
         title={tooltip}
       >
         {config.holdAction === "free" && (
@@ -309,7 +309,7 @@ function SummaryHeaderCell({
 
   return (
     <div
-      className={`${rowH} px-2 ${marginTopClass} flex flex-col items-end justify-center bg-transparent font-sans tabular-nums leading-tight text-[11px] ${borderClass} ${colorClass}`}
+      className={`${rowH} px-2 ${marginTopClass} flex flex-col items-end justify-center bg-transparent font-sans tabular-nums leading-tight text-xs ${borderClass} ${colorClass}`}
       title={tooltip}
     >
       {dynamicLabel && (
