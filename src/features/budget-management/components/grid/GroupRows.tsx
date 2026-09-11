@@ -23,7 +23,11 @@ import type {
 
 // ─── GroupMonthAggregate ──────────────────────────────────────────────────────
 
-function GroupMonthAggregate({
+/**
+ * Exported for tests: the empty-month branch below has no other reachable
+ * entry point, and it is the branch that regressed.
+ */
+export function GroupMonthAggregate({
   month,
   groupId,
   cellView,
@@ -70,25 +74,24 @@ function GroupMonthAggregate({
     "h-7 border-r border-b border-border bg-[#F7F8FA] dark:bg-zinc-800 dark:border-zinc-700";
   const dimClass = isDimmed ? " opacity-50" : "";
 
+  // A month the budget does not have renders empty: no placeholder, and no
+  // not-allowed cursor. It is not an error, so it should not be dressed as one.
   if (!group && isReadOnlyMonth) {
     return (
       <div
-        className={`relative ${baseClass}${dimClass} px-2 flex items-center justify-end text-xs font-sans tabular-nums text-muted-foreground cursor-not-allowed outline-none${isSelected ? " ring-2 ring-inset ring-foreground/80" : ""}`}
+        className={`relative ${baseClass}${dimClass} px-2 flex items-center justify-end text-xs font-sans tabular-nums text-muted-foreground cursor-default outline-none${isSelected ? " ring-2 ring-inset ring-foreground/80" : ""}`}
         role="gridcell"
         tabIndex={0}
         aria-selected={isSelected}
         aria-readonly="true"
-        aria-disabled="true"
-        aria-label={`No budget data for ${month}`}
-        title="No budget exists for this past month; budget cells are read-only."
+        aria-label={`Category group for ${month} - this budget has no such month`}
+        title="This budget has no such month."
         data-group-id={groupId}
         data-group-month={month}
         onClick={onFocus}
         onFocus={onFocus}
         onKeyDown={handleKeyDown}
-      >
-        --
-      </div>
+      />
     );
   }
 

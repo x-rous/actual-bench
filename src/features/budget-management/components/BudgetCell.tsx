@@ -412,7 +412,7 @@ export function BudgetCell({
         aria-label={`${blockedLabel}${barStatusNote}`}
         aria-selected={isSelected}
         aria-readonly="true"
-        aria-disabled={blocked || isReadOnlyMonth ? "true" : undefined}
+        aria-disabled={blocked ? "true" : undefined}
         onPointerDown={handlePointerDown}
         onPointerEnter={handlePointerEnter}
         onPointerUp={handlePointerUp}
