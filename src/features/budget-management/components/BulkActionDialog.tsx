@@ -1,8 +1,26 @@
 "use client";
 
-import { useState } from "react";
-import { useBulkAction, type BulkActionType, type BulkActionParams, type BulkPreviewRow } from "../hooks/useBulkAction";
+import { useMemo, useState } from "react";
+import {
+  useBulkAction,
+  requiredSourceMonths,
+  averageWindowLength,
+  type BulkActionType,
+  type BulkActionParams,
+  type BulkPreviewRow,
+} from "../hooks/useBulkAction";
+import { addMonths, formatMonthLabel } from "@/lib/budget/monthMath";
+import { resolveSelectionCells } from "../lib/budgetSelectionUtils";
 import { formatCurrency as formatAmount } from "../lib/format";
+import type { EnsureMonthsResult } from "../lib/ensureMonthsData";
+import {
+  collectSkips,
+  describeAverageWindow,
+  describeSkips,
+  totalSkips,
+  NO_SKIPS,
+  type BulkSkips,
+} from "../lib/bulkActionReport";
 import type { BudgetCellSelection, LoadedCategory } from "../types";
 
 type Props = {
@@ -12,6 +30,10 @@ type Props = {
   readOnlyMonths?: Set<string>;
   /** Map of month → category list for that month (for copy-from-month operations) */
   monthDataMap: Record<string, LoadedCategory[]>;
+  /** Every month the budget file has, so a source can be picked outside the window. */
+  availableMonths?: string[];
+  /** Loads source months outside the visible window. Supplied by the workspace. */
+  ensureMonths: (months: string[]) => Promise<EnsureMonthsResult>;
   onClose: () => void;
   /** When set, pre-selects the action and hides the action picker. */
   initialAction?: BulkActionType;
@@ -20,15 +42,23 @@ type Props = {
 type Step = "action" | "preview";
 
 const ACTION_LABELS: Record<BulkActionType, string> = {
-  "copy-previous-month": "Copy previous month",
-  "copy-from-month":     "Copy specific month",
-  "set-to-zero":         "Set all to zero",
-  "set-fixed":           "Set to fixed amount",
-  "apply-percentage":    "Apply percentage change",
-  "avg-3-months":        "Avg. 3-month budget",
-  "avg-6-months":        "Avg. 6-month budget",
-  "avg-12-months":       "Avg. 12-month budget",
+  "copy-previous-month":           "Copy previous month",
+  "copy-prior-year-same-month":     "Copy prior year same month",
+  "copy-prior-year-same-month-pct": "Copy prior year same month, with a % change",
+  "copy-from-month":               "Copy specific month",
+  "set-to-zero":                   "Set all to zero",
+  "set-fixed":                     "Set to fixed amount",
+  "apply-percentage":              "Apply percentage change",
+  "avg-3-months":                  "Avg. 3-month budget",
+  "avg-6-months":                  "Avg. 6-month budget",
+  "avg-12-months":                 "Avg. 12-month budget",
 };
+
+/** Actions that accept a percentage but do not require one (blank = 100%). */
+const OPTIONAL_PERCENTAGE_ACTIONS: BulkActionType[] = [
+  "copy-prior-year-same-month-pct",
+  "copy-from-month",
+];
 
 /**
  * Multi-step dialog for bulk budget actions on a selection.
@@ -43,6 +73,8 @@ export function BulkActionDialog({
   categories,
   readOnlyMonths,
   monthDataMap,
+  availableMonths,
+  ensureMonths,
   onClose,
   initialAction,
 }: Props) {
@@ -50,32 +82,98 @@ export function BulkActionDialog({
 
   const [step, setStep] = useState<Step>("action");
   const [action, setAction] = useState<BulkActionType>(initialAction ?? "copy-previous-month");
+
+  // The months this run will write to — also what the source defaults key off.
+  const targetMonths = useMemo(
+    () =>
+      [
+        ...new Set(
+          resolveSelectionCells(selection, activeMonths, categories).map((c) => c.month)
+        ),
+      ].sort(),
+    [selection, activeMonths, categories]
+  );
+
+  /**
+   * Source months come from the budget file, not the visible window — the whole
+   * point of this dialog is to reach a month the grid is not showing. Newest
+   * first, since a source is far more often recent than ancient.
+   */
+  const sourceOptions = useMemo(() => {
+    const all = availableMonths?.length ? [...availableMonths] : [...activeMonths];
+    const byYear = new Map<string, string[]>();
+    for (const m of [...new Set(all)].sort().reverse()) {
+      const year = m.slice(0, 4);
+      if (!byYear.has(year)) byYear.set(year, []);
+      byYear.get(year)!.push(m);
+    }
+    return [...byYear.entries()];
+  }, [availableMonths, activeMonths]);
+
+  const offeredMonths = useMemo(
+    () => new Set(sourceOptions.flatMap(([, months]) => months)),
+    [sourceOptions]
+  );
+
+  /** Default to the same month a year back: the reason most people open this. */
+  const defaultSourceMonth = useMemo(() => {
+    const anchor = targetMonths[0] ?? activeMonths[0];
+    const lastYear = anchor ? addMonths(anchor, -12) : "";
+    if (lastYear && offeredMonths.has(lastYear)) return lastYear;
+    return sourceOptions[0]?.[1]?.[0] ?? activeMonths[0] ?? "";
+  }, [targetMonths, activeMonths, sourceOptions, offeredMonths]);
+
   const [fixedAmount, setFixedAmount] = useState("");
-  const [sourceMonth, setSourceMonth] = useState(activeMonths[0] ?? "");
-  const [percentage, setPercentage] = useState("100");
+  const [sourceMonth, setSourceMonth] = useState(defaultSourceMonth);
+  // `availableMonths` can resolve after this dialog mounts, which would leave
+  // the initial state value outside the offered set and the select blank.
+  // Deriving the shown value keeps it valid without an effect.
+  const effectiveSourceMonth =
+    sourceMonth && offeredMonths.has(sourceMonth) ? sourceMonth : defaultSourceMonth;
+  // Only the explicit "…with a % change" action suggests an uplift. Every other
+  // copy defaults to an exact copy: pre-filling 105 there would silently change
+  // what "Copy specific month" has always done.
+  const [percentage, setPercentage] = useState(
+    action === "copy-prior-year-same-month-pct" ? "105" : "100"
+  );
   const [previewRows, setPreviewRows] = useState<BulkPreviewRow[]>([]);
+  const [skips, setSkips] = useState<BulkSkips>(NO_SKIPS);
+  const [avgNote, setAvgNote] = useState<string | null>(null);
   const [paramError, setParamError] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
 
   const needsFixed = action === "set-fixed";
   const needsSourceMonth = action === "copy-from-month";
-  const needsPercentage = action === "apply-percentage";
+  const optionalPercentage = OPTIONAL_PERCENTAGE_ACTIONS.includes(action);
+  const requiredPercentage = action === "apply-percentage";
+  const showsPercentage = optionalPercentage || requiredPercentage;
 
   const buildParams = (): BulkActionParams | undefined => {
+    const params: BulkActionParams = {};
+
     if (needsFixed) {
       const cents = Math.round(parseFloat(fixedAmount) * 100);
       if (isNaN(cents)) return undefined;
-      return { fixedAmount: cents };
+      params.fixedAmount = cents;
     }
-    if (needsSourceMonth) return { sourceMonth };
-    if (needsPercentage) {
-      const pct = parseFloat(percentage);
-      if (isNaN(pct)) return undefined;
-      return { percentage: pct / 100 };
+    if (needsSourceMonth) params.sourceMonth = effectiveSourceMonth;
+    if (showsPercentage) {
+      // Blank is a legitimate answer for the copy actions: it means an exact
+      // copy. It is not legitimate for apply-percentage, which is only a
+      // percentage.
+      if (percentage.trim() === "") {
+        if (requiredPercentage) return undefined;
+      } else {
+        const pct = parseFloat(percentage);
+        if (isNaN(pct)) return undefined;
+        params.percentage = pct / 100;
+      }
     }
-    return undefined;
+
+    return params;
   };
 
-  const handlePreview = () => {
+  const handlePreview = async () => {
     setParamError(null);
     const params = buildParams();
 
@@ -83,30 +181,59 @@ export function BulkActionDialog({
       setParamError("Please enter a valid dollar amount.");
       return;
     }
-    if (needsPercentage && params?.percentage === undefined) {
+    if (requiredPercentage && params?.percentage === undefined) {
+      setParamError("Please enter a valid percentage.");
+      return;
+    }
+    if (showsPercentage && params === undefined) {
       setParamError("Please enter a valid percentage.");
       return;
     }
 
-    const allRows = preview(action, selection, activeMonths, categories, monthDataMap, params);
-    const rows = allRows?.filter((row) => !readOnlyMonths?.has(row.month));
-    if (!allRows || allRows.length === 0) {
-      setParamError("No cells would be changed by this action.");
-      return;
-    }
-    if (!rows || rows.length === 0) {
-      setParamError("All matching months are read-only.");
-      return;
-    }
+    setIsLoading(true);
+    try {
+      // Load whatever months this action reads before resolving anything, so a
+      // value is never taken from "whatever happened to be cached".
+      const needed = requiredSourceMonths(action, targetMonths, params);
+      const loaded = needed.length > 0 ? await ensureMonths(needed) : null;
 
-    setPreviewRows(rows);
-    setStep("preview");
+      const fullMap: Record<string, LoadedCategory[]> = {
+        ...monthDataMap,
+        ...(loaded?.monthDataMap ?? {}),
+      };
+
+      const result = preview(action, selection, activeMonths, categories, fullMap, params);
+      if (!result) {
+        setParamError("This action is missing a required value.");
+        return;
+      }
+
+      const { rows, skips: nextSkips } = collectSkips(result, readOnlyMonths);
+
+      if (rows.length === 0) {
+        setParamError(
+          totalSkips(nextSkips) > 0
+            ? `No cells could be updated - ${describeSkips(nextSkips)}.`
+            : "No cells would be changed by this action."
+        );
+        return;
+      }
+
+      setPreviewRows(rows);
+      setSkips(nextSkips);
+      setAvgNote(describeAverageWindow(result.averageWindow));
+      setStep("preview");
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleApply = () => {
     apply(previewRows);
     onClose();
   };
+
+  const avgWindow = averageWindowLength(action);
 
   return (
     <div
@@ -118,7 +245,7 @@ export function BulkActionDialog({
       <div className="bg-background border border-border rounded-lg shadow-xl w-full max-w-lg mx-4 p-5">
         {step === "action" && (
           <>
-            <h2 className="text-base font-semibold mb-4">Bulk Action</h2>
+            <h2 className="text-base font-semibold mb-4">{ACTION_LABELS[action]}</h2>
 
             <div className="space-y-3 mb-4">
               {!initialAction && (
@@ -167,21 +294,35 @@ export function BulkActionDialog({
                   </label>
                   <select
                     id="bulk-source-month"
-                    value={sourceMonth}
+                    value={effectiveSourceMonth}
                     onChange={(e) => setSourceMonth(e.target.value)}
                     className="h-7 w-full rounded border border-border bg-background px-2 py-1 text-xs"
                   >
-                    {activeMonths.map((m) => (
-                      <option key={m} value={m}>{m}</option>
+                    {sourceOptions.map(([year, monthsInYear]) => (
+                      <optgroup key={year} label={year}>
+                        {monthsInYear.map((m) => (
+                          <option key={m} value={m}>
+                            {formatMonthLabel(m, "long")}
+                          </option>
+                        ))}
+                      </optgroup>
                     ))}
                   </select>
                 </div>
               )}
 
-              {needsPercentage && (
+              {action === "copy-prior-year-same-month-pct" && (
+                <p className="text-xs text-muted-foreground">
+                  Each selected month copies from the same month in the prior year.
+                </p>
+              )}
+
+              {showsPercentage && (
                 <div>
                   <label htmlFor="bulk-percentage" className="block text-xs font-medium mb-1">
-                    New value as % of current (e.g. 110 = 10% increase)
+                    {requiredPercentage
+                      ? "New value as % of current (e.g. 110 = 10% increase)"
+                      : "Copy at % of the source (e.g. 105 = 5% increase)"}
                   </label>
                   <input
                     id="bulk-percentage"
@@ -191,8 +332,17 @@ export function BulkActionDialog({
                     value={percentage}
                     onChange={(e) => setPercentage(e.target.value)}
                     className="h-7 w-full rounded border border-border bg-background px-2 py-1 text-xs font-mono"
-                    aria-label="Percentage of current value"
+                    aria-label={
+                      requiredPercentage
+                        ? "Percentage of current value"
+                        : "Percentage of the source value"
+                    }
                   />
+                  {optionalPercentage && (
+                    <p className="mt-1 text-[10px] text-muted-foreground">
+                      Leave blank to copy the amount unchanged.
+                    </p>
+                  )}
                 </div>
               )}
 
@@ -212,9 +362,10 @@ export function BulkActionDialog({
               <button
                 type="button"
                 onClick={handlePreview}
-                className="px-3 py-1.5 text-sm rounded bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
+                disabled={isLoading}
+                className="px-3 py-1.5 text-sm rounded bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-60"
               >
-                Preview changes
+                {isLoading ? "Loading months…" : "Preview changes"}
               </button>
             </div>
           </>
@@ -223,9 +374,26 @@ export function BulkActionDialog({
         {step === "preview" && (
           <>
             <h2 className="text-base font-semibold mb-1">Preview Changes</h2>
-            <p className="text-xs text-muted-foreground mb-3">
+            <p className="text-xs text-muted-foreground mb-1">
               {previewRows.length} cell{previewRows.length !== 1 ? "s" : ""} will be updated.
             </p>
+            {totalSkips(skips) > 0 && (
+              <p className="text-xs text-amber-600 dark:text-amber-500 mb-1" role="status">
+                {describeSkips(skips)}.
+              </p>
+            )}
+            {avgNote ? (
+              <p className="text-xs text-amber-600 dark:text-amber-500 mb-1" role="status">
+                {avgNote}
+              </p>
+            ) : (
+              avgWindow !== null && (
+                <p className="text-xs text-muted-foreground mb-1">
+                  Averaged over the {avgWindow} months before each cell.
+                </p>
+              )
+            )}
+            <div className="mb-3" />
 
             <div className="max-h-64 overflow-y-auto border border-border rounded text-xs mb-4">
               <table className="w-full" role="grid" aria-label="Preview of bulk changes">

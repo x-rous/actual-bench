@@ -12,6 +12,8 @@ import type {
 
 export type BulkActionType =
   | "copy-previous-month"
+  | "copy-prior-year-same-month"
+  | "copy-prior-year-same-month-pct"
   | "copy-from-month"
   | "set-to-zero"
   | "set-fixed"
@@ -20,12 +22,66 @@ export type BulkActionType =
   | "avg-6-months"
   | "avg-12-months";
 
+/** Lookback length for the averaging actions, or null for everything else. */
+export function averageWindowLength(action: BulkActionType): number | null {
+  switch (action) {
+    case "avg-3-months":  return 3;
+    case "avg-6-months":  return 6;
+    case "avg-12-months": return 12;
+    default:              return null;
+  }
+}
+
+/**
+ * Every month an action needs loaded in order to resolve `cells`.
+ *
+ * Callers pass this to `ensureMonthsData` before previewing. Keeping it here
+ * means the set of required months is derived from the same switch that
+ * consumes them — a new source-reading action cannot forget to declare itself.
+ */
+export function requiredSourceMonths(
+  action: BulkActionType,
+  cellMonths: readonly string[],
+  params?: BulkActionParams
+): string[] {
+  const months = new Set<string>();
+
+  const avgWindow = averageWindowLength(action);
+  if (avgWindow !== null) {
+    for (const month of cellMonths) {
+      for (let i = 1; i <= avgWindow; i++) months.add(addMonths(month, -i));
+    }
+    return [...months];
+  }
+
+  switch (action) {
+    case "copy-previous-month":
+      for (const month of cellMonths) months.add(addMonths(month, -1));
+      break;
+    case "copy-prior-year-same-month":
+    case "copy-prior-year-same-month-pct":
+      for (const month of cellMonths) months.add(addMonths(month, -12));
+      break;
+    case "copy-from-month":
+      if (params?.sourceMonth) months.add(params.sourceMonth);
+      break;
+    default:
+      break;
+  }
+
+  return [...months];
+}
+
 export type BulkActionParams = {
   /** For "set-fixed": the fixed amount in minor units */
   fixedAmount?: number;
   /** For "copy-from-month": source month string */
   sourceMonth?: string;
-  /** For "apply-percentage": multiplier, e.g. 1.1 for 10% increase */
+  /**
+   * For "apply-percentage": multiplier applied to the cell's *current* value.
+   * For the copy actions: optional multiplier applied to the *source* value,
+   * so 1.05 copies last year plus 5%. Absent means 100%.
+   */
   percentage?: number;
 };
 
@@ -37,10 +93,29 @@ export type BulkPreviewRow = {
   nextBudgeted: number;
 };
 
+export type BulkSkipReason =
+  /** The source month is not in the budget file, or failed to load. */
+  | "missing-source-month"
+  /** The source month loaded, but the category has no row in it. */
+  | "missing-category";
+
+export type BulkPreviewResult = {
+  rows: BulkPreviewRow[];
+  /** Cells dropped, by reason. Callers must report these, never absorb them. */
+  skipped: Record<BulkSkipReason, number>;
+  /**
+   * Averaging actions only: how many lookback months were asked for, and the
+   * fewest actually resolved for any single cell. A short average is a valid
+   * answer; an unlabelled one is not.
+   */
+  averageWindow?: { requested: number; resolved: number };
+};
+
 type UseBulkActionReturn = {
   /**
    * Resolve preview rows for a bulk action on a selection.
-   * Returns null if required params are missing or data is unavailable.
+   * Returns null only when required parameters are missing — that is a
+   * validation failure, distinct from an action that resolved to nothing.
    */
   preview: (
     action: BulkActionType,
@@ -49,7 +124,7 @@ type UseBulkActionReturn = {
     categories: LoadedCategory[],
     monthDataMap: Record<string, LoadedCategory[]>,
     params?: BulkActionParams
-  ) => BulkPreviewRow[] | null;
+  ) => BulkPreviewResult | null;
 
   /**
    * Stage all preview rows as a single undoable bulk edit.
@@ -60,7 +135,11 @@ type UseBulkActionReturn = {
 /**
  * Resolves and applies bulk budget actions on a rectangular cell selection.
  *
- * Preview is pure (no side effects). Apply stages all rows as one undo step.
+ * Preview is pure (no side effects) and reads only from `monthDataMap`, which
+ * the caller is responsible for populating via `ensureMonthsData`. A month
+ * absent from that map is reported as skipped rather than treated as zero.
+ *
+ * Apply stages all rows as one undo step.
  */
 export function useBulkAction(): UseBulkActionReturn {
   const stageBulkEdits = useBudgetEditsStore((s) => s.stageBulkEdits);
@@ -73,11 +152,43 @@ export function useBulkAction(): UseBulkActionReturn {
       categories: LoadedCategory[],
       monthDataMap: Record<string, LoadedCategory[]>,
       params?: BulkActionParams
-    ): BulkPreviewRow[] | null => {
+    ): BulkPreviewResult | null => {
       const cells = resolveSelectionCells(selection, months, categories);
-      if (cells.length === 0) return null;
+      const skipped: Record<BulkSkipReason, number> = {
+        "missing-source-month": 0,
+        "missing-category": 0,
+      };
+      const avgWindow = averageWindowLength(action);
+      let minResolved = avgWindow ?? 0;
+
+      if (cells.length === 0) return { rows: [], skipped };
 
       const rows: BulkPreviewRow[] = [];
+
+      /**
+       * Reads one category's budgeted value out of a source month.
+       * `undefined` means "not available", with the reason recorded — the two
+       * cases are different to a user and must not collapse into one message.
+       */
+      const readSource = (
+        sourceMonth: string,
+        categoryId: string
+      ): number | undefined => {
+        const sourceCats = monthDataMap[sourceMonth];
+        if (!sourceCats) {
+          skipped["missing-source-month"] += 1;
+          return undefined;
+        }
+        const sourceCat = sourceCats.find((c) => c.id === categoryId);
+        if (!sourceCat) {
+          skipped["missing-category"] += 1;
+          return undefined;
+        }
+        return sourceCat.budgeted;
+      };
+
+      /** Copy multiplier. Absent percentage means an exact copy. */
+      const copyFactor = params?.percentage ?? 1;
 
       for (const cell of cells) {
         const targetMonthCat = monthDataMap[cell.month]?.find(
@@ -106,32 +217,37 @@ export function useBulkAction(): UseBulkActionReturn {
             break;
 
           case "copy-previous-month": {
-            const monthIdx = months.indexOf(cell.month);
-            if (monthIdx <= 0) continue;
-            const prevMonth = months[monthIdx - 1];
-            if (!prevMonth) continue;
-            const prevCats = monthDataMap[prevMonth];
-            if (!prevCats) continue;
-            const prevCat = prevCats.find((c) => c.id === cell.categoryId);
-            if (!prevCat) continue;
-            nextBudgeted = prevCat.budgeted;
+            // Resolved by month arithmetic, not by position in the visible
+            // window: the first rendered column has a previous month too.
+            const source = readSource(addMonths(cell.month, -1), cell.categoryId);
+            if (source === undefined) continue;
+            nextBudgeted = Math.round(source * copyFactor);
+            break;
+          }
+
+          case "copy-prior-year-same-month":
+          case "copy-prior-year-same-month-pct": {
+            // The offset is computed per cell, which is what makes a
+            // multi-month selection map positionally onto the prior year
+            // instead of repeating a single source month.
+            const source = readSource(addMonths(cell.month, -12), cell.categoryId);
+            if (source === undefined) continue;
+            nextBudgeted = Math.round(source * copyFactor);
             break;
           }
 
           case "copy-from-month": {
             if (!params?.sourceMonth) return null;
-            const sourceCats = monthDataMap[params.sourceMonth];
-            if (!sourceCats) return null;
-            const sourceCat = sourceCats.find((c) => c.id === cell.categoryId);
-            if (!sourceCat) continue;
-            nextBudgeted = sourceCat.budgeted;
+            const source = readSource(params.sourceMonth, cell.categoryId);
+            if (source === undefined) continue;
+            nextBudgeted = Math.round(source * copyFactor);
             break;
           }
 
           case "avg-3-months":
           case "avg-6-months":
           case "avg-12-months": {
-            const n = action === "avg-3-months" ? 3 : action === "avg-6-months" ? 6 : 12;
+            const n = avgWindow ?? 0;
             const vals: number[] = [];
             let m = cell.month;
             for (let i = 0; i < n; i++) {
@@ -140,7 +256,16 @@ export function useBulkAction(): UseBulkActionReturn {
               const found = cats?.find((c) => c.id === cell.categoryId);
               if (found !== undefined) vals.push(found.budgeted);
             }
-            if (vals.length === 0) continue;
+            if (vals.length === 0) {
+              // Nothing to average: a skip, not a zero-month average. Counting
+              // it in minResolved would report "0 of 3" for a run whose other
+              // cells averaged fine.
+              skipped["missing-source-month"] += 1;
+              continue;
+            }
+            // Report the worst-resolved cell that actually produced a value, so
+            // the caller labels the average with what it covered.
+            minResolved = Math.min(minResolved, vals.length);
             nextBudgeted = Math.round(vals.reduce((a, b) => a + b, 0) / vals.length);
             break;
           }
@@ -157,7 +282,13 @@ export function useBulkAction(): UseBulkActionReturn {
         });
       }
 
-      return rows.length > 0 ? rows : null;
+      return {
+        rows,
+        skipped,
+        ...(avgWindow !== null
+          ? { averageWindow: { requested: avgWindow, resolved: minResolved } }
+          : {}),
+      };
     },
     []
   );

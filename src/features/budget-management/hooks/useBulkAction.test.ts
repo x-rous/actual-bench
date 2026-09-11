@@ -1,5 +1,5 @@
 import { renderHook, act } from "@testing-library/react";
-import { useBulkAction } from "./useBulkAction";
+import { useBulkAction, requiredSourceMonths } from "./useBulkAction";
 import { useBudgetEditsStore } from "@/store/budgetEdits";
 import type { BudgetCellSelection, LoadedCategory } from "../types";
 
@@ -70,7 +70,7 @@ function monthDataMap(
 // ─── preview ──────────────────────────────────────────────────────────────────
 
 describe("useBulkAction.preview", () => {
-  it("returns null for an empty selection", () => {
+  it("returns an empty result for an empty selection", () => {
     const { result } = renderHook(() => useBulkAction());
     const empty: BudgetCellSelection = {
       anchorMonth: "missing",
@@ -78,8 +78,8 @@ describe("useBulkAction.preview", () => {
       focusMonth: "missing",
       focusCategoryId: "missing",
     };
-    const rows = result.current.preview("set-to-zero", empty, months, categories, {});
-    expect(rows).toBeNull();
+    const res = result.current.preview("set-to-zero", empty, months, categories, {});
+    expect(res?.rows).toEqual([]);
   });
 
   describe("set-to-zero", () => {
@@ -97,8 +97,8 @@ describe("useBulkAction.preview", () => {
         categories,
         map
       );
-      expect(rows).toHaveLength(6);
-      for (const row of rows!) expect(row.nextBudgeted).toBe(0);
+      expect(rows?.rows).toHaveLength(6);
+      for (const row of rows!.rows) expect(row.nextBudgeted).toBe(0);
     });
   });
 
@@ -113,7 +113,7 @@ describe("useBulkAction.preview", () => {
         monthDataMap({ "2026-01": { c1: 10000 } }),
         { fixedAmount: 50000 }
       );
-      expect(rows).toEqual([
+      expect(rows?.rows).toEqual([
         {
           month: "2026-01",
           categoryId: "c1",
@@ -148,7 +148,7 @@ describe("useBulkAction.preview", () => {
         monthDataMap({ "2026-01": { c1: 10000 } }),
         { percentage: 1.1 }
       );
-      expect(rows?.[0]?.nextBudgeted).toBe(11000);
+      expect(rows?.rows[0]?.nextBudgeted).toBe(11000);
     });
 
     it("returns null when percentage is missing", () => {
@@ -178,12 +178,17 @@ describe("useBulkAction.preview", () => {
         categories,
         map
       );
-      expect(rows?.[0]?.nextBudgeted).toBe(10000);
+      expect(rows?.rows[0]?.nextBudgeted).toBe(10000);
     });
 
-    it("skips cells in the first month (no previous month in window)", () => {
+    it("resolves the month before the window for a first-column cell", () => {
       const { result } = renderHook(() => useBulkAction());
-      const map = monthDataMap({ "2026-01": { c1: 10000 } });
+      // 2025-12 is outside the visible window but present in the map, which is
+      // exactly what ensureMonthsData is for. Pre-PR-055 this returned nothing.
+      const map = monthDataMap({
+        "2025-12": { c1: 77000 },
+        "2026-01": { c1: 10000 },
+      });
       const rows = result.current.preview(
         "copy-previous-month",
         singleCell("2026-01", "c1"),
@@ -191,7 +196,20 @@ describe("useBulkAction.preview", () => {
         categories,
         map
       );
-      expect(rows).toBeNull();
+      expect(rows?.rows[0]?.nextBudgeted).toBe(77000);
+    });
+
+    it("reports a skip when the previous month could not be loaded", () => {
+      const { result } = renderHook(() => useBulkAction());
+      const rows = result.current.preview(
+        "copy-previous-month",
+        singleCell("2026-01", "c1"),
+        months,
+        categories,
+        monthDataMap({ "2026-01": { c1: 10000 } })
+      );
+      expect(rows?.rows).toEqual([]);
+      expect(rows?.skipped["missing-source-month"]).toBe(1);
     });
   });
 
@@ -210,10 +228,10 @@ describe("useBulkAction.preview", () => {
         map,
         { sourceMonth: "2026-01" }
       );
-      expect(rows?.[0]?.nextBudgeted).toBe(12345);
+      expect(rows?.rows[0]?.nextBudgeted).toBe(12345);
     });
 
-    it("returns null when sourceMonth is missing from monthDataMap", () => {
+    it("reports a skip when sourceMonth is missing from monthDataMap", () => {
       const { result } = renderHook(() => useBulkAction());
       const rows = result.current.preview(
         "copy-from-month",
@@ -223,7 +241,135 @@ describe("useBulkAction.preview", () => {
         monthDataMap({}),
         { sourceMonth: "2099-12" }
       );
-      expect(rows).toBeNull();
+      expect(rows?.rows).toEqual([]);
+      expect(rows?.skipped["missing-source-month"]).toBe(1);
+    });
+
+    it("applies an optional percentage to the copied source value", () => {
+      const { result } = renderHook(() => useBulkAction());
+      const map = monthDataMap({
+        "2026-01": { c1: 10000 },
+        "2026-02": { c1: 99999 },
+      });
+      const rows = result.current.preview(
+        "copy-from-month",
+        singleCell("2026-02", "c1"),
+        months,
+        categories,
+        map,
+        { sourceMonth: "2026-01", percentage: 1.05 }
+      );
+      // 105% of the *source* (10000), not of the target's current 99999.
+      expect(rows?.rows[0]?.nextBudgeted).toBe(10500);
+    });
+  });
+
+  describe("copy-prior-year-same-month", () => {
+    it("copies the value from twelve months earlier", () => {
+      const { result } = renderHook(() => useBulkAction());
+      const map = monthDataMap({
+        "2025-02": { c1: 42000 },
+        "2026-02": { c1: 999 },
+      });
+      const rows = result.current.preview(
+        "copy-prior-year-same-month",
+        singleCell("2026-02", "c1"),
+        months,
+        categories,
+        map
+      );
+      expect(rows?.rows[0]?.nextBudgeted).toBe(42000);
+    });
+
+    it("maps a multi-month range positionally onto the prior year", () => {
+      const { result } = renderHook(() => useBulkAction());
+      // The guarantee that separates this from copy-from-month: each target
+      // pulls its *own* counterpart, so Jan/Feb/Mar do not all get one month.
+      const map = monthDataMap({
+        "2025-01": { c1: 100 },
+        "2025-02": { c1: 200 },
+        "2025-03": { c1: 300 },
+        "2026-01": { c1: 0 },
+        "2026-02": { c1: 0 },
+        "2026-03": { c1: 0 },
+      });
+      const rows = result.current.preview(
+        "copy-prior-year-same-month",
+        {
+          anchorMonth: "2026-01",
+          anchorCategoryId: "c1",
+          focusMonth: "2026-03",
+          focusCategoryId: "c1",
+        },
+        months,
+        categories,
+        map
+      );
+      expect(rows?.rows.map((r) => [r.month, r.nextBudgeted])).toEqual([
+        ["2026-01", 100],
+        ["2026-02", 200],
+        ["2026-03", 300],
+      ]);
+    });
+
+    it("multiplies the source value when a percentage is given", () => {
+      const { result } = renderHook(() => useBulkAction());
+      const map = monthDataMap({
+        "2025-02": { c1: 42000 },
+        "2026-02": { c1: 999 },
+      });
+      const rows = result.current.preview(
+        "copy-prior-year-same-month-pct",
+        singleCell("2026-02", "c1"),
+        months,
+        categories,
+        map,
+        { percentage: 1.05 }
+      );
+      expect(rows?.rows[0]?.nextBudgeted).toBe(44100);
+    });
+
+    it("behaves as an exact copy when no percentage is given", () => {
+      const { result } = renderHook(() => useBulkAction());
+      const map = monthDataMap({
+        "2025-02": { c1: 42000 },
+        "2026-02": { c1: 999 },
+      });
+      const rows = result.current.preview(
+        "copy-prior-year-same-month-pct",
+        singleCell("2026-02", "c1"),
+        months,
+        categories,
+        map
+      );
+      expect(rows?.rows[0]?.nextBudgeted).toBe(42000);
+    });
+
+    it("distinguishes a missing source month from a missing category", () => {
+      const { result } = renderHook(() => useBulkAction());
+      // 2025-01 never loaded; 2025-02 loaded but has no c1 row.
+      const map = monthDataMap({
+        "2025-02": { c2: 1 },
+        "2026-01": { c1: 0 },
+        "2026-02": { c1: 0 },
+      });
+      const rows = result.current.preview(
+        "copy-prior-year-same-month",
+        {
+          anchorMonth: "2026-01",
+          anchorCategoryId: "c1",
+          focusMonth: "2026-02",
+          focusCategoryId: "c1",
+        },
+        months,
+        categories,
+        map
+      );
+      expect(rows?.rows).toEqual([]);
+      expect(rows?.skipped).toEqual({
+        "missing-source-month": 1,
+        "missing-category": 1,
+      });
     });
   });
 
@@ -245,7 +391,7 @@ describe("useBulkAction.preview", () => {
         categories,
         map
       );
-      expect(rows?.[0]?.nextBudgeted).toBe(2000);
+      expect(rows?.rows[0]?.nextBudgeted).toBe(2000);
     });
 
     it("averages over only the months with data when some are missing", () => {
@@ -263,7 +409,7 @@ describe("useBulkAction.preview", () => {
         map
       );
       // Only 2026-03 had data → average is 6000.
-      expect(rows?.[0]?.nextBudgeted).toBe(6000);
+      expect(rows?.rows[0]?.nextBudgeted).toBe(6000);
     });
 
     it("skips cells when no prior months have data", () => {
@@ -275,7 +421,28 @@ describe("useBulkAction.preview", () => {
         categories,
         monthDataMap({ "2026-04": { c1: 9999 } })
       );
-      expect(rows).toBeNull();
+      expect(rows?.rows).toEqual([]);
+      expect(rows?.skipped["missing-source-month"]).toBe(1);
+    });
+
+    it("reports how many lookback months it actually resolved", () => {
+      const { result } = renderHook(() => useBulkAction());
+      const map = monthDataMap({
+        // Only one of the three lookback months is present.
+        "2026-03": { c1: 6000 },
+        "2026-04": { c1: 9999 },
+      });
+      const rows = result.current.preview(
+        "avg-3-months",
+        singleCell("2026-04", "c1"),
+        ["2026-04"],
+        categories,
+        map
+      );
+      // The average itself is legitimate; presenting it as a 3-month average
+      // without saying it covered one month is what this guards against.
+      expect(rows?.rows[0]?.nextBudgeted).toBe(6000);
+      expect(rows?.averageWindow).toEqual({ requested: 3, resolved: 1 });
     });
   });
 });
@@ -303,7 +470,7 @@ describe("useBulkAction.apply", () => {
     );
 
     act(() => {
-      result.current.apply(rows!);
+      result.current.apply(rows!.rows);
     });
 
     const edits = useBudgetEditsStore.getState().edits;
@@ -314,5 +481,33 @@ describe("useBulkAction.apply", () => {
 
     // Single undo step — undoStack length 1 after one bulk apply.
     expect(useBudgetEditsStore.getState().undoStack).toHaveLength(1);
+  });
+});
+
+// ─── requiredSourceMonths ─────────────────────────────────────────────────────
+
+describe("requiredSourceMonths", () => {
+  it("asks for each cell's own prior-year counterpart", () => {
+    expect(
+      requiredSourceMonths("copy-prior-year-same-month", ["2026-01", "2026-02"]).sort()
+    ).toEqual(["2025-01", "2025-02"]);
+  });
+
+  it("asks for the month before the window, not a window index", () => {
+    expect(requiredSourceMonths("copy-previous-month", ["2026-01"])).toEqual([
+      "2025-12",
+    ]);
+  });
+
+  it("asks for the full lookback of an averaging action", () => {
+    expect(requiredSourceMonths("avg-3-months", ["2026-03"]).sort()).toEqual([
+      "2025-12",
+      "2026-01",
+      "2026-02",
+    ]);
+  });
+
+  it("asks for nothing when the action reads no other month", () => {
+    expect(requiredSourceMonths("set-to-zero", ["2026-01"])).toEqual([]);
   });
 });

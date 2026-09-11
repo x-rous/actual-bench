@@ -5,7 +5,6 @@ import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { useBudgetEditsStore } from "@/store/budgetEdits";
 import { useConnectionStore, selectActiveInstance } from "@/store/connection";
-import { addMonths } from "@/lib/budget/monthMath";
 import { parseBudgetExpression } from "../lib/budgetMath";
 import { buildReadOnlyMissingBudgetMonthSet } from "../lib/monthAvailability";
 import { parsePastePayload, resolveSelectionCells } from "../lib/budgetSelectionUtils";
@@ -23,7 +22,18 @@ import {
 
 /** Rows skipped per PageUp/PageDown. Also used for Ctrl+Shift+PageUp/Down. */
 const PAGE_SIZE = 10;
-import { useBulkAction, type BulkActionType } from "../hooks/useBulkAction";
+import {
+  useBulkAction,
+  requiredSourceMonths,
+  type BulkActionType,
+} from "../hooks/useBulkAction";
+import { ensureMonthsData } from "../lib/ensureMonthsData";
+import {
+  collectSkips,
+  describeAverageWindow,
+  describeSkips,
+  totalSkips,
+} from "../lib/bulkActionReport";
 import { useWorkspaceKeymap } from "../keyboard/useBudgetKeymap";
 import { BudgetGrid } from "./BudgetGrid";
 import { BudgetSelectionSummary } from "./BudgetSelectionSummary";
@@ -46,7 +56,6 @@ import type {
   BudgetMode,
   CellView,
   LoadedCategory,
-  LoadedMonthState,
   NavDirection,
   NavItem,
   RowSelection,
@@ -55,6 +64,7 @@ import type {
 
 const IMMEDIATE_BULK_ACTIONS: BulkActionType[] = [
   "copy-previous-month",
+  "copy-prior-year-same-month",
   "set-to-zero",
   "avg-3-months",
   "avg-6-months",
@@ -641,33 +651,78 @@ function BudgetWorkspaceInner({
     return () => document.removeEventListener("mousedown", handleDocMouseDown);
   }, [clearGridSelection]);
 
+  /**
+   * Loads the months an action needs to read, using the shared query cache.
+   *
+   * Bulk actions previously peeked at the cache with `getQueryData`, so a
+   * lookback month that had not been prefetched silently vanished from the
+   * calculation. Everything now goes through here: a month is either loaded
+   * or reported, never quietly treated as absent.
+   */
+  const ensureMonths = useCallback(
+    (months: string[]) =>
+      ensureMonthsData(queryClient, connection, months, availableMonths),
+    [queryClient, connection, availableMonths]
+  );
+
   // Execute no-input bulk actions immediately from the context menu.
   const handleContextMenuBulkAction = useCallback(
-    (action: BulkActionType) => {
+    async (action: BulkActionType) => {
       if (!selection) return;
-      if (IMMEDIATE_BULK_ACTIONS.includes(action)) {
-        const monthDataMap: Record<string, LoadedCategory[]> = {};
-        // In-window months: read from the provider's raw map.
-        for (const month of activeMonths) {
-          const state = rawMonthsMap.get(month);
-          if (state) monthDataMap[month] = Object.values(state.categoriesById);
-        }
-        // Lookback months for avg-N-months sit outside the provider window;
-        // pull them from the shared TanStack cache when present.
-        if (action === "avg-3-months" || action === "avg-6-months" || action === "avg-12-months") {
-          const lookback = action === "avg-3-months" ? 3 : action === "avg-6-months" ? 6 : 12;
-          let m = activeMonths[0] ?? "";
-          for (let i = 0; i < lookback; i++) {
-            m = addMonths(m, -1);
-            const state = queryClient.getQueryData<LoadedMonthState>(["budget-month-data", connection?.id, m]);
-            if (state) monthDataMap[m] = Object.values(state.categoriesById);
-          }
-        }
-        const rows = previewBulk(action, selection, activeMonths, categories, monthDataMap)
-          ?.filter((row) => !readOnlyMonths.has(row.month));
-        if (rows && rows.length > 0) applyBulk(rows);
-      } else {
+      if (!IMMEDIATE_BULK_ACTIONS.includes(action)) {
         setPendingBulkAction(action);
+        return;
+      }
+
+      const cells = resolveSelectionCells(selection, activeMonths, categories);
+      const targetMonths = [...new Set(cells.map((c) => c.month))];
+      const needed = requiredSourceMonths(action, targetMonths);
+
+      // In-window months come from the provider; source months are loaded.
+      const monthDataMap: Record<string, LoadedCategory[]> = {};
+      for (const month of activeMonths) {
+        const state = rawMonthsMap.get(month);
+        if (state) monthDataMap[month] = Object.values(state.categoriesById);
+      }
+
+      // A cold cache means real requests, so say something while they run
+      // rather than leaving the grid looking inert.
+      const toastId = needed.length > 0 ? toast.loading("Loading months…") : undefined;
+      try {
+        if (needed.length > 0) {
+          const loaded = await ensureMonths(needed);
+          Object.assign(monthDataMap, loaded.monthDataMap);
+        }
+
+        const result = previewBulk(action, selection, activeMonths, categories, monthDataMap);
+        if (!result) {
+          toast.error("That action needs a value.", { id: toastId });
+          return;
+        }
+
+        const { rows, skips } = collectSkips(result, readOnlyMonths);
+        const skipNote = totalSkips(skips) > 0 ? describeSkips(skips) : null;
+        const avgNote = describeAverageWindow(result.averageWindow);
+        const description = [skipNote, avgNote].filter(Boolean).join(" · ") || undefined;
+
+        if (rows.length === 0) {
+          toast.error(
+            skipNote ? `Nothing to update - ${skipNote}.` : "No cells would be changed.",
+            { id: toastId }
+          );
+          return;
+        }
+
+        applyBulk(rows);
+        toast.success(
+          `Updated ${rows.length} cell${rows.length !== 1 ? "s" : ""}`,
+          { id: toastId, description }
+        );
+      } catch (err) {
+        toast.error("Could not load the months this action needs", {
+          id: toastId,
+          description: err instanceof Error ? err.message : undefined,
+        });
       }
     },
     [
@@ -675,8 +730,7 @@ function BudgetWorkspaceInner({
       activeMonths,
       categories,
       rawMonthsMap,
-      queryClient,
-      connection,
+      ensureMonths,
       previewBulk,
       applyBulk,
       readOnlyMonths,
@@ -758,13 +812,15 @@ function BudgetWorkspaceInner({
   // we still keep the convention).
   const fillPrevMonth = useCallback((): boolean => {
     if (!selection) return false;
-    handleContextMenuBulkAction("copy-previous-month");
+    // Fire-and-forget: the keymap only needs to know the binding was claimed,
+    // and the action reports its own outcome by toast.
+    void handleContextMenuBulkAction("copy-previous-month");
     return true;
   }, [selection, handleContextMenuBulkAction]);
 
   const fillAvg3 = useCallback((): boolean => {
     if (!selection) return false;
-    handleContextMenuBulkAction("avg-3-months");
+    void handleContextMenuBulkAction("avg-3-months");
     return true;
   }, [selection, handleContextMenuBulkAction]);
 
@@ -974,6 +1030,8 @@ function BudgetWorkspaceInner({
           activeMonths={activeMonths}
           categories={categories}
           readOnlyMonths={readOnlyMonths}
+          availableMonths={availableMonths}
+          ensureMonths={ensureMonths}
           monthDataMap={(() => {
             const map: Record<string, LoadedCategory[]> = {};
             for (const month of activeMonths) {
@@ -1011,7 +1069,7 @@ function BudgetWorkspaceInner({
             categoryBalance={contextMenuBalance}
             onToggleCarryover={handleCarryoverToggle}
             onOpenTransfer={() => onOpenTransfer?.(contextMenu.categoryId, contextMenu.month, mode)}
-            onBulkAction={handleContextMenuBulkAction}
+            onBulkAction={(action) => void handleContextMenuBulkAction(action)}
             onClose={() => setContextMenu(null)}
           />
         );

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { RefreshCw, ArrowRightLeft, Copy, Percent, ZapOff, Calendar, TrendingUp } from "lucide-react";
+import { RefreshCw, ArrowRightLeft, Copy, CopyPlus, Percent, ZapOff, Calendar, TrendingUp } from "lucide-react";
 import type { BudgetMode } from "../types";
 import type { BulkActionType } from "../hooks/useBulkAction";
 
@@ -27,6 +27,8 @@ type BulkItem = {
 
 const BULK_ITEMS: BulkItem[] = [
   { action: "copy-previous-month", label: "Copy previous month",     icon: <Copy className="h-3 w-3" />,       needsInput: false },
+  { action: "copy-prior-year-same-month",     label: "Copy prior year same month",   icon: <CopyPlus className="h-3 w-3" />,  needsInput: false },
+  { action: "copy-prior-year-same-month-pct", label: "Copy prior year with %…",      icon: <CopyPlus className="h-3 w-3" />,  needsInput: true  },
   { action: "copy-from-month",     label: "Copy specific month…",    icon: <Calendar className="h-3 w-3" />,   needsInput: true  },
   { action: "set-to-zero",         label: "Set to zero",             icon: <ZapOff className="h-3 w-3" />,    needsInput: false },
   { action: "set-fixed",           label: "Set to fixed amount…",    icon: <Percent className="h-3 w-3" />,   needsInput: true  },
