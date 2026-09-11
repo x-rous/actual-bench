@@ -322,6 +322,8 @@ export function BulkActionDialog({
     nextBudgeted: valueFor(row),
   }));
 
+  const currentTotal = rowsToApply.reduce((sum, row) => sum + row.previousBudgeted, 0);
+  const newTotal = rowsToApply.reduce((sum, row) => sum + row.nextBudgeted, 0);
   const netChange = rowsToApply.reduce(
     (sum, row) => sum + (row.nextBudgeted - row.previousBudgeted),
     0
@@ -606,7 +608,7 @@ export function BulkActionDialog({
 
             <div
               ref={tableRef}
-              className="flex-1 min-h-0 overflow-y-auto border-x border-b border-border rounded-b text-xs mb-2"
+              className="flex-1 min-h-0 overflow-y-auto border-x border-border text-xs"
             >
               <table
                 className="w-full table-fixed"
@@ -748,16 +750,52 @@ export function BulkActionDialog({
               </table>
             </div>
 
+            <div className="border-x border-b border-border rounded-b bg-muted text-xs mb-2">
+              <table className="w-full table-fixed">
+                <PreviewColGroup showMonth={monthsInPreview > 1} />
+                <tbody>
+                  <tr className="font-medium">
+                    <td className="px-3 py-2" colSpan={monthsInPreview > 1 ? 3 : 2}>
+                      {/* Always the totals for every previewed row - the filter
+                          narrows the list, never what Apply writes. */}
+                      Totals
+                      <span className="ml-1 font-normal text-muted-foreground">
+                        {rowsToApply.length} cell{rowsToApply.length !== 1 ? "s" : ""}
+                        {filterTerm ? ", including filtered out" : ""}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2 text-right font-mono text-muted-foreground">
+                      {formatAmount(currentTotal)}
+                    </td>
+                    <td className="px-3 py-2 text-right font-mono">
+                      {formatAmount(newTotal)}
+                    </td>
+                    <td
+                      className={`px-3 py-2 text-right font-mono ${
+                        netChange === 0
+                          ? "text-muted-foreground"
+                          : netChange > 0
+                            ? "text-emerald-600 dark:text-emerald-400"
+                            : "text-destructive"
+                      }`}
+                    >
+                      {netChange === 0 ? "-" : formatDelta(netChange)}
+                    </td>
+                    <td className="px-2 py-2" />
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
             <p className="text-[11px] text-muted-foreground mb-3">
               Adjust any amount before applying - ↑ ↓ move between rows, Enter commits.
             </p>
 
             <div className="flex flex-wrap items-center justify-between gap-2">
               <p className="text-xs text-muted-foreground">
-                Net change <span className="font-mono text-foreground">{formatDelta(netChange)}</span>
-                {adjustedCount > 0 && (
+                {adjustedCount > 0 ? (
                   <>
-                    <span className="ml-2">· {adjustedCount} manually adjusted</span>
+                    {adjustedCount} manually adjusted
                     <button
                       type="button"
                       onClick={revertAll}
@@ -766,7 +804,7 @@ export function BulkActionDialog({
                       Revert all
                     </button>
                   </>
-                )}
+                ) : null}
               </p>
               <div className="flex gap-2 justify-end">
                 {/* No Back for an action that collects nothing - it would lead

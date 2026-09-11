@@ -191,13 +191,18 @@ describe("BulkActionDialog row editing", () => {
     );
   });
 
-  it("keeps the net change in step with the edits", async () => {
+  it("keeps the totals in step with the edits", async () => {
     const input = await openPreview();
-    // Current is 1000 minor (10.00); calculated new is 5000 (50.00).
-    expect(screen.getByText("Net change").parentElement?.textContent).toContain("40.00");
+    // Current 1000 minor (10.00), calculated new 5000 (50.00) -> change 40.00.
+    const totals = () => screen.getByText("Totals").closest("tr")!.textContent;
+    expect(totals()).toContain("10.00");
+    expect(totals()).toContain("50.00");
+    expect(totals()).toContain("40.00");
+
     fireEvent.change(input, { target: { value: "20" } });
     fireEvent.blur(input);
-    expect(screen.getByText("Net change").parentElement?.textContent).toContain("10.00");
+    expect(totals()).toContain("20.00");
+    expect(totals()).toContain("10.00");
   });
 
   it("keeps the visible header outside the scrolling area", async () => {
@@ -345,6 +350,43 @@ describe("BulkActionDialog table readability", () => {
     fireEvent.click(screen.getByRole("button", { name: "Revert all" }));
     expect(screen.queryByText(/manually adjusted/)).not.toBeInTheDocument();
     expect((screen.getByLabelText(/New amount for Groceries/i) as HTMLInputElement).value).toBe("50.00");
+  });
+});
+
+describe("BulkActionDialog totals", () => {
+  it("totals every previewed row, not just the ones on screen", async () => {
+    render(
+      <BulkActionDialog
+        targetCells={twoCells}
+        activeMonths={activeMonths}
+        categories={twoCategories}
+        monthDataMap={{
+          "2026-01": [
+            { ...twoCategories[0]!, budgeted: 1000 },
+            { ...twoCategories[1]!, budgeted: 2000 },
+          ],
+        }}
+        availableMonths={["2025-01", ...activeMonths]}
+        ensureMonths={async () => ({
+          monthDataMap: {
+            "2025-01": [
+              { ...twoCategories[0]!, budgeted: 5000 },
+              { ...twoCategories[1]!, budgeted: 7000 },
+            ],
+          },
+          unavailable: [],
+          failed: [],
+        })}
+        initialAction="copy-prior-year-same-month"
+        onClose={() => {}}
+      />
+    );
+    await screen.findByText(/will be updated/);
+    const totals = screen.getByText("Totals").closest("tr")!.textContent;
+    expect(totals).toContain("30.00");   // current 1000 + 2000
+    expect(totals).toContain("120.00");  // new 5000 + 7000
+    expect(totals).toContain("90.00");   // change
+    expect(totals).toContain("2 cells");
   });
 });
 
