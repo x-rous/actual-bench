@@ -1186,6 +1186,7 @@ function BudgetWorkspaceInner({
         selection={selection}
         activeMonths={activeMonths}
         categories={categories}
+        cellView={cellView}
       />
 
       {pendingBulk !== null && (

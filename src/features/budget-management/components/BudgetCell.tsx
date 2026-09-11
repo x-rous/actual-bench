@@ -81,8 +81,26 @@ export function BudgetCell({
   // Read precomputed effective state from MonthsDataProvider — the cascade
   // runs once per month at the provider level, not per cell.
   const effectiveData = useEffectiveMonthFromContext(month);
-  const effectiveCategory = effectiveData?.categoriesById[category.id] ?? category;
   const hasMonthData = effectiveData != null;
+  /**
+   * The `category` prop comes from the cross-month merged structure (BM-13), so
+   * it carries whichever month's figures it was merged from. That identity is
+   * what makes a category reachable in every column, but its *numbers* belong
+   * to another month: falling back to them showed a month the budget file does
+   * not have the first visible month's values. Keep the identity, drop the
+   * figures - there is nothing budgeted, spent or left in a month that does not
+   * exist yet.
+   */
+  const effectiveCategory = effectiveData?.categoriesById[category.id] ?? {
+    ...category,
+    budgeted: 0,
+    actuals: 0,
+    balance: 0,
+    // Carryover is a property of a category *in a month*, so a month that does
+    // not exist has none - the rollover arrow would otherwise be borrowed from
+    // whichever month the merged structure came from.
+    carryover: false,
+  };
 
   const currentBudgeted = effectiveCategory.budgeted;
   const blocked = isIncomeBlocked(category, budgetMode);
@@ -358,7 +376,7 @@ export function BudgetCell({
   // inventing "Spent | Balance" numbers for it.
   const hoverTitle =
     isReadOnlyMonth && !hasMonthData
-      ? "No budget exists for this past month; budget cells are read-only."
+      ? "This budget has no such month."
       : envelopeIncome
       ? "Received income - envelope budgeting assigns no budget or balance to income."
       : cellView === "budgeted"
@@ -368,17 +386,16 @@ export function BudgetCell({
   // ─── Non-editable cell ───────────────────────────────────────────────────────
   if (blocked || viewBlocked || isReadOnlyMonth) {
     const blockedLabel = isReadOnlyMonth
-      ? `${category.name} budget for ${month} - no budget exists for this past month`
+      ? `${category.name} for ${month} - this budget has no such month`
       : blocked
       ? `${category.name} received for ${month} - envelope income is tracked as received, not budgeted`
       : `${category.name} ${viewTerm} for ${month}`;
-    const displayText =
-      isReadOnlyMonth && !hasMonthData ? "--" : formatMinor(displayMinor);
+    const displayText = hasMonthData ? formatMinor(displayMinor) : "";
 
     let blockedCellClass =
       "relative h-7 px-2 flex items-center justify-end text-xs font-sans tabular-nums select-none outline-none border-r border-b border-border/50 transition-colors";
 
-    blockedCellClass += blocked || isReadOnlyMonth ? " cursor-not-allowed" : " cursor-default";
+    blockedCellClass += blocked ? " cursor-not-allowed" : " cursor-default";
 
     if (isAnchor) {
       blockedCellClass += " bg-muted/30 ring-2 ring-inset ring-foreground/80";
@@ -395,7 +412,7 @@ export function BudgetCell({
         aria-label={`${blockedLabel}${barStatusNote}`}
         aria-selected={isSelected}
         aria-readonly="true"
-        aria-disabled={blocked || isReadOnlyMonth ? "true" : undefined}
+        aria-disabled={blocked ? "true" : undefined}
         onPointerDown={handlePointerDown}
         onPointerEnter={handlePointerEnter}
         onPointerUp={handlePointerUp}
@@ -525,7 +542,7 @@ export function BudgetCell({
             : "text-foreground"
         }
       >
-        {formatMinor(displayMinor)}
+        {hasMonthData ? formatMinor(displayMinor) : ""}
       </span>
 
       {hasLargeChange && (
