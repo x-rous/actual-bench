@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import {
   useBulkAction,
   requiredSourceMonths,
@@ -69,6 +69,37 @@ const ACTION_LABELS: Record<BulkActionType, string> = {
   "avg-6-months-actuals":          "Avg. 6-month actual",
   "avg-12-months-actuals":         "Avg. 12-month actual",
 };
+
+/**
+ * Column widths shared by the preview's header and body tables.
+ *
+ * The header lives outside the scrolling element so the scrollbar starts below
+ * it rather than running the full height beside it. Two tables only line up
+ * under `table-fixed` with identical columns, so the geometry lives here once.
+ */
+const PREVIEW_COLUMNS = {
+  group: "18%",
+  category: "22%",
+  month: "13%",
+  current: "14%",
+  next: "16%",
+  change: "13%",
+  revert: "2.5rem",
+} as const;
+
+function PreviewColGroup({ showMonth }: { showMonth: boolean }) {
+  return (
+    <colgroup>
+      <col style={{ width: PREVIEW_COLUMNS.group }} />
+      <col style={{ width: PREVIEW_COLUMNS.category }} />
+      {showMonth && <col style={{ width: PREVIEW_COLUMNS.month }} />}
+      <col style={{ width: PREVIEW_COLUMNS.current }} />
+      <col style={{ width: PREVIEW_COLUMNS.next }} />
+      <col style={{ width: PREVIEW_COLUMNS.change }} />
+      <col style={{ width: PREVIEW_COLUMNS.revert }} />
+    </colgroup>
+  );
+}
 
 /** Actions that accept a percentage but do not require one (blank = 100%). */
 const OPTIONAL_PERCENTAGE_ACTIONS: BulkActionType[] = [
@@ -273,6 +304,14 @@ export function BulkActionDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [collectsNothing]);
 
+  const [rowFilter, setRowFilter] = useState("");
+
+  /** categoryId -> its group's name, for the Group column. */
+  const groupNameById = useMemo(
+    () => new Map(categories.map((c) => [c.id, c.groupName])),
+    [categories]
+  );
+
   const rowKey = (row: BulkPreviewRow) => `${row.month}:${row.categoryId}`;
   const valueFor = (row: BulkPreviewRow) =>
     rowOverrides[rowKey(row)] ?? row.nextBudgeted;
@@ -291,6 +330,21 @@ export function BulkActionDialog({
     (row) => row.nextBudgeted === row.previousBudgeted
   ).length;
   const adjustedCount = Object.keys(rowOverrides).length;
+
+  /**
+   * Filtering is a view concern only - Apply always writes every previewed row,
+   * and the button keeps the full count so a filtered list cannot mislead.
+   */
+  const filterTerm = rowFilter.trim().toLowerCase();
+  const visibleRows = filterTerm
+    ? previewRows.filter(
+        (row) =>
+          row.categoryName.toLowerCase().includes(filterTerm) ||
+          (groupNameById.get(row.categoryId) ?? "").toLowerCase().includes(filterTerm)
+      )
+    : previewRows;
+
+  const monthsInPreview = new Set(previewRows.map((r) => r.month)).size;
 
   const commitDraft = (row: BulkPreviewRow) => {
     const key = rowKey(row);
@@ -330,6 +384,11 @@ export function BulkActionDialog({
     input.select();
   };
 
+  const revertAll = () => {
+    setRowOverrides({});
+    setRowDrafts({});
+  };
+
   const revertRow = (row: BulkPreviewRow) => {
     const key = rowKey(row);
     setRowOverrides((o) => {
@@ -358,7 +417,9 @@ export function BulkActionDialog({
       aria-label="Bulk budget action"
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
     >
-      <div className="bg-background border border-border rounded-lg shadow-xl w-full max-w-3xl mx-4 p-5">
+      <div className={`bg-background border border-border rounded-lg shadow-xl w-full mx-4 p-5 flex flex-col ${
+          step === "preview" ? "max-w-5xl max-h-[90vh]" : "max-w-lg"
+        }`}>
         {step === "action" && (
           <>
             <h2 className="text-base font-semibold mb-1">{ACTION_LABELS[action]}</h2>
@@ -503,108 +564,184 @@ export function BulkActionDialog({
               )}
             </div>
 
-            <div
-              ref={tableRef}
-              className="max-h-96 overflow-y-auto border border-border rounded text-xs mb-2"
-            >
-              <table className="w-full" role="grid" aria-label="Preview of bulk changes">
-                {/* Opaque header: the table body scrolls underneath it. */}
-                <thead className="bg-muted sticky top-0 z-10 shadow-[0_1px_0_0_var(--color-border)]">
+            {previewRows.length > 12 && (
+              <div className="flex items-center gap-2 mb-2">
+                <input
+                  type="search"
+                  value={rowFilter}
+                  onChange={(e) => setRowFilter(e.target.value)}
+                  placeholder="Filter by category or group…"
+                  aria-label="Filter previewed rows"
+                  className="h-7 flex-1 rounded border border-border bg-background px-2 text-xs"
+                />
+                {filterTerm && (
+                  <span className="text-[11px] text-muted-foreground whitespace-nowrap">
+                    Showing {visibleRows.length} of {previewRows.length} · all are still applied
+                  </span>
+                )}
+              </div>
+            )}
+
+            <div className="border border-border rounded-t text-xs bg-muted">
+              <table className="w-full table-fixed" aria-hidden="true">
+                <PreviewColGroup showMonth={monthsInPreview > 1} />
+                <thead>
                   <tr>
+                    <th className="px-3 py-2 text-left font-medium">Group</th>
                     <th className="px-3 py-2 text-left font-medium">Category</th>
-                    <th className="px-3 py-2 text-left font-medium">Month</th>
+                    {monthsInPreview > 1 && (
+                      <th className="px-3 py-2 text-left font-medium">Month</th>
+                    )}
                     <th className="px-3 py-2 text-right font-medium">Current</th>
                     <th className="px-3 py-2 text-right font-medium">
                       New
                       <span className="ml-1 font-normal text-muted-foreground">(editable)</span>
                     </th>
                     <th className="px-3 py-2 text-right font-medium">Change</th>
-                    <th className="px-2 py-2 w-8" aria-label="Revert" />
+                    <th className="px-2 py-2" />
+                  </tr>
+                </thead>
+              </table>
+            </div>
+
+            <div
+              ref={tableRef}
+              className="flex-1 min-h-0 overflow-y-auto border-x border-b border-border rounded-b text-xs mb-2"
+            >
+              <table
+                className="w-full table-fixed"
+                role="grid"
+                aria-label="Preview of bulk changes"
+              >
+                <PreviewColGroup showMonth={monthsInPreview > 1} />
+                {/* The visible header sits outside the scroll area so the
+                    scrollbar starts below it; this keeps the scrolling table
+                    self-describing for screen readers. */}
+                <thead className="sr-only">
+                  <tr>
+                    <th scope="col">Group</th>
+                    <th scope="col">Category</th>
+                    {monthsInPreview > 1 && <th scope="col">Month</th>}
+                    <th scope="col">Current</th>
+                    <th scope="col">New</th>
+                    <th scope="col">Change</th>
+                    <th scope="col">Revert</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {previewRows.map((row, index) => {
+                  {visibleRows.map((row, index) => {
                     const key = rowKey(row);
                     const value = valueFor(row);
                     const delta = value - row.previousBudgeted;
                     const isAdjusted = rowOverrides[key] !== undefined;
+                    const groupName = groupNameById.get(row.categoryId) ?? "";
+                    const prev = visibleRows[index - 1];
+                    // Repeat a group name only when it changes, so consecutive
+                    // rows read as blocks without needing separate header rows.
+                    const startsGroup =
+                      !prev ||
+                      groupNameById.get(prev.categoryId) !== groupName ||
+                      prev.month !== row.month;
+                    const startsMonth = !prev || prev.month !== row.month;
+
                     return (
-                      <tr
-                        key={key}
-                        className={`border-t border-border/50 ${
-                          delta === 0 ? "text-muted-foreground" : ""
-                        }`}
-                      >
-                        <td className="px-3 py-1 truncate max-w-[16rem]" title={row.categoryName}>
-                          {row.categoryName}
-                        </td>
-                        <td className="px-3 py-1 whitespace-nowrap">
-                          {formatMonthLabel(row.month, "long")}
-                        </td>
-                        <td className="px-3 py-1 text-right font-mono text-muted-foreground">
-                          {formatAmount(row.previousBudgeted)}
-                        </td>
-                        <td className="px-3 py-1 text-right">
-                          <input
-                            type="text"
-                            inputMode="decimal"
-                            aria-label={`New amount for ${row.categoryName}, ${formatMonthLabel(row.month, "long")}`}
-                            data-preview-row={index}
-                            value={rowDrafts[key] ?? minorToDecimalString(value)}
-                            onChange={(e) =>
-                              setRowDrafts((d) => ({ ...d, [key]: e.target.value }))
-                            }
-                            onBlur={() => commitDraft(row)}
-                            onKeyDown={(e) => {
-                              if (e.key === "Enter" || e.key === "ArrowDown") {
-                                e.preventDefault();
-                                commitDraft(row);
-                                focusRow(index + 1);
-                              } else if (e.key === "ArrowUp") {
-                                e.preventDefault();
-                                commitDraft(row);
-                                focusRow(index - 1);
-                              } else if (e.key === "Escape") {
-                                e.preventDefault();
-                                setRowDrafts((d) => {
-                                  const next = { ...d };
-                                  delete next[key];
-                                  return next;
-                                });
-                              }
-                            }}
-                            className={`w-28 text-right font-mono rounded border bg-background px-1.5 py-0.5 transition-colors focus:outline-none focus:ring-1 focus:ring-primary ${
-                              isAdjusted
-                                ? "border-primary text-foreground font-medium"
-                                : "border-border hover:border-foreground/40"
-                            }`}
-                          />
-                        </td>
-                        <td
-                          className={`px-3 py-1 text-right font-mono ${
-                            delta === 0
-                              ? "text-muted-foreground"
-                              : delta > 0
-                                ? "text-emerald-600 dark:text-emerald-400"
-                                : "text-destructive"
+                      <Fragment key={key}>
+                        {monthsInPreview > 1 && startsMonth && (
+                          <tr className="bg-muted/60">
+                            <td
+                              colSpan={7}
+                              className="px-3 py-1 text-[11px] font-semibold text-foreground/80"
+                            >
+                              {formatMonthLabel(row.month, "long")}
+                            </td>
+                          </tr>
+                        )}
+                        <tr
+                          className={`border-t border-border/50 hover:bg-muted/30 ${
+                            delta === 0 ? "text-muted-foreground" : ""
                           }`}
                         >
-                          {delta === 0 ? "-" : formatDelta(delta)}
-                        </td>
-                        <td className="px-2 py-1 text-right">
-                          {isAdjusted && (
-                            <button
-                              type="button"
-                              onClick={() => revertRow(row)}
-                              aria-label={`Revert ${row.categoryName}, ${formatMonthLabel(row.month, "long")} to the calculated amount`}
-                              title="Revert to the calculated amount"
-                              className="text-muted-foreground hover:text-foreground"
-                            >
-                              <RotateCcw className="h-3 w-3" />
-                            </button>
+                          <td
+                            className={`px-3 py-1 truncate max-w-[12rem] ${
+                              startsGroup ? "font-medium text-foreground/80" : "text-transparent"
+                            }`}
+                            title={groupName}
+                          >
+                            {groupName}
+                          </td>
+                          <td className="px-3 py-1 truncate max-w-[16rem]" title={row.categoryName}>
+                            {row.categoryName}
+                          </td>
+                          {monthsInPreview > 1 && (
+                            <td className="px-3 py-1 whitespace-nowrap">
+                              {formatMonthLabel(row.month, "long")}
+                            </td>
                           )}
-                        </td>
-                      </tr>
+                          <td className="px-3 py-1 text-right font-mono text-muted-foreground">
+                            {formatAmount(row.previousBudgeted)}
+                          </td>
+                          <td className="px-3 py-1 text-right">
+                            <input
+                              type="text"
+                              inputMode="decimal"
+                              aria-label={`New amount for ${row.categoryName}, ${formatMonthLabel(row.month, "long")}`}
+                              data-preview-row={index}
+                              value={rowDrafts[key] ?? minorToDecimalString(value)}
+                              onChange={(e) =>
+                                setRowDrafts((d) => ({ ...d, [key]: e.target.value }))
+                              }
+                              onBlur={() => commitDraft(row)}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter" || e.key === "ArrowDown") {
+                                  e.preventDefault();
+                                  commitDraft(row);
+                                  focusRow(index + 1);
+                                } else if (e.key === "ArrowUp") {
+                                  e.preventDefault();
+                                  commitDraft(row);
+                                  focusRow(index - 1);
+                                } else if (e.key === "Escape") {
+                                  e.preventDefault();
+                                  setRowDrafts((d) => {
+                                    const next = { ...d };
+                                    delete next[key];
+                                    return next;
+                                  });
+                                }
+                              }}
+                              className={`w-28 text-right font-mono rounded border bg-background px-1.5 py-0.5 transition-colors focus:outline-none focus:ring-1 focus:ring-primary ${
+                                isAdjusted
+                                  ? "border-primary text-foreground font-medium"
+                                  : "border-border hover:border-foreground/40"
+                              }`}
+                            />
+                          </td>
+                          <td
+                            className={`px-3 py-1 text-right font-mono ${
+                              delta === 0
+                                ? "text-muted-foreground"
+                                : delta > 0
+                                  ? "text-emerald-600 dark:text-emerald-400"
+                                  : "text-destructive"
+                            }`}
+                          >
+                            {delta === 0 ? "-" : formatDelta(delta)}
+                          </td>
+                          <td className="px-2 py-1 text-right">
+                            {isAdjusted && (
+                              <button
+                                type="button"
+                                onClick={() => revertRow(row)}
+                                aria-label={`Revert ${row.categoryName}, ${formatMonthLabel(row.month, "long")} to the calculated amount`}
+                                title="Revert to the calculated amount"
+                                className="text-muted-foreground hover:text-foreground"
+                              >
+                                <RotateCcw className="h-3 w-3" />
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      </Fragment>
                     );
                   })}
                 </tbody>
@@ -612,17 +749,23 @@ export function BulkActionDialog({
             </div>
 
             <p className="text-[11px] text-muted-foreground mb-3">
-              Adjust any amount before applying - ↑ ↓ move between rows, Enter commits,
-              Esc cancels an edit.
+              Adjust any amount before applying - ↑ ↓ move between rows, Enter commits.
             </p>
 
             <div className="flex flex-wrap items-center justify-between gap-2">
               <p className="text-xs text-muted-foreground">
                 Net change <span className="font-mono text-foreground">{formatDelta(netChange)}</span>
                 {adjustedCount > 0 && (
-                  <span className="ml-2">
-                    · {adjustedCount} manually adjusted
-                  </span>
+                  <>
+                    <span className="ml-2">· {adjustedCount} manually adjusted</span>
+                    <button
+                      type="button"
+                      onClick={revertAll}
+                      className="ml-2 underline hover:text-foreground"
+                    >
+                      Revert all
+                    </button>
+                  </>
                 )}
               </p>
               <div className="flex gap-2 justify-end">

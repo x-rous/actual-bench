@@ -16,8 +16,8 @@ const categories = [
 
 const targetCells = [{ month: "2026-01", categoryId: "c1" }];
 const twoCategories = [
-  { id: "c1", name: "Groceries", groupId: "g1" },
-  { id: "c2", name: "Rent", groupId: "g1" },
+  { id: "c1", name: "Groceries", groupId: "g1", groupName: "Everyday" },
+  { id: "c2", name: "Rent", groupId: "g2", groupName: "Housing" },
 ] as unknown as LoadedCategory[];
 const twoCells = [
   { month: "2026-01", categoryId: "c1" },
@@ -34,6 +34,27 @@ function renderDialog(initialAction: Parameters<typeof BulkActionDialog>[0]["ini
       availableMonths={["2025-01", "2025-02", ...activeMonths]}
       ensureMonths={async () => ({
         // The prior-year source the copy actions read.
+        monthDataMap: { "2025-01": [{ ...categories[0]!, budgeted: 5000 }] },
+        unavailable: [],
+        failed: [],
+      })}
+      initialAction={initialAction}
+      onClose={() => {}}
+    />
+  );
+}
+
+function renderDialogWithContainer(
+  initialAction: Parameters<typeof BulkActionDialog>[0]["initialAction"]
+) {
+  return render(
+    <BulkActionDialog
+      targetCells={targetCells}
+      activeMonths={activeMonths}
+      categories={categories}
+      monthDataMap={{ "2026-01": [{ ...categories[0]!, budgeted: 1000 }] }}
+      availableMonths={["2025-01", "2025-02", ...activeMonths]}
+      ensureMonths={async () => ({
         monthDataMap: { "2025-01": [{ ...categories[0]!, budgeted: 5000 }] },
         unavailable: [],
         failed: [],
@@ -179,11 +200,20 @@ describe("BulkActionDialog row editing", () => {
     expect(screen.getByText("Net change").parentElement?.textContent).toContain("10.00");
   });
 
-  it("keeps the table header opaque so rows do not show through it", async () => {
-    await openPreview();
-    const header = screen.getByRole("columnheader", { name: "Category" }).closest("thead");
-    expect(header?.className).toContain("bg-muted");
-    expect(header?.className).not.toContain("bg-muted/40");
+  it("keeps the visible header outside the scrolling area", async () => {
+    const { container } = renderDialogWithContainer("copy-prior-year-same-month");
+    await screen.findByText(/will be updated/);
+
+    const scroller = container.querySelector(".overflow-y-auto");
+    expect(scroller).not.toBeNull();
+    // The header must not scroll with the rows - otherwise the scrollbar runs
+    // the full height beside it, and a translucent header shows rows through.
+    const visibleHeader = container.querySelector('table[aria-hidden="true"]');
+    expect(visibleHeader).not.toBeNull();
+    expect(visibleHeader!.textContent).toContain("Group");
+    expect(scroller!.contains(visibleHeader!)).toBe(false);
+    // The scrolling table still describes its own columns for screen readers.
+    expect(scroller!.querySelector("thead.sr-only")).not.toBeNull();
   });
 });
 
@@ -253,6 +283,68 @@ describe("BulkActionDialog keyboard navigation", () => {
     first.focus();
     fireEvent.keyDown(first, { key: "ArrowUp" });
     expect(document.activeElement).toBe(first);
+  });
+});
+
+describe("BulkActionDialog table readability", () => {
+  function renderTwoRows() {
+    render(
+      <BulkActionDialog
+        targetCells={twoCells}
+        activeMonths={activeMonths}
+        categories={twoCategories}
+        monthDataMap={{
+          "2026-01": [
+            { ...twoCategories[0]!, budgeted: 1000 },
+            { ...twoCategories[1]!, budgeted: 2000 },
+          ],
+        }}
+        availableMonths={["2025-01", ...activeMonths]}
+        ensureMonths={async () => ({
+          monthDataMap: {
+            "2025-01": [
+              { ...twoCategories[0]!, budgeted: 5000 },
+              { ...twoCategories[1]!, budgeted: 7000 },
+            ],
+          },
+          unavailable: [],
+          failed: [],
+        })}
+        initialAction="copy-prior-year-same-month"
+        onClose={() => {}}
+      />
+    );
+  }
+
+  it("names each row's category group", async () => {
+    renderTwoRows();
+    await screen.findByText(/will be updated/);
+    expect(screen.getByRole("columnheader", { name: "Group" })).toBeInTheDocument();
+    expect(screen.getByText("Everyday")).toBeInTheDocument();
+    expect(screen.getByText("Housing")).toBeInTheDocument();
+  });
+
+  it("drops the Month column when every row is in the same month", async () => {
+    renderTwoRows();
+    await screen.findByText(/will be updated/);
+    // One month in the preview: repeating it on every row is noise.
+    expect(screen.queryByRole("columnheader", { name: "Month" })).not.toBeInTheDocument();
+  });
+
+  it("reverts every adjustment at once", async () => {
+    renderTwoRows();
+    await screen.findByText(/will be updated/);
+    const first = screen.getByLabelText(/New amount for Groceries/i) as HTMLInputElement;
+    const second = screen.getByLabelText(/New amount for Rent/i) as HTMLInputElement;
+    fireEvent.change(first, { target: { value: "1" } });
+    fireEvent.blur(first);
+    fireEvent.change(second, { target: { value: "2" } });
+    fireEvent.blur(second);
+    expect(screen.getByText(/2 manually adjusted/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Revert all" }));
+    expect(screen.queryByText(/manually adjusted/)).not.toBeInTheDocument();
+    expect((screen.getByLabelText(/New amount for Groceries/i) as HTMLInputElement).value).toBe("50.00");
   });
 });
 
