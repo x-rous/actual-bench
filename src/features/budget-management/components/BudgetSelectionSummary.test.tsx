@@ -31,7 +31,7 @@ const categories = [
 ] as unknown as LoadedCategory[];
 
 describe("BudgetSelectionSummary sum/average", () => {
-  it("names the budgeted total and its per-cell average separately", () => {
+  it("names the budgeted total with its per-cell average", () => {
     const selection: BudgetCellSelection = {
       anchorCategoryId: "a",
       anchorMonth: "2026-08",
@@ -50,9 +50,8 @@ describe("BudgetSelectionSummary sum/average", () => {
 
     // Totals are named, and the averages sit in their own section rather than
     // inline, so a total is never read as a per-cell figure.
-    expect(screen.getByLabelText(/Budgeted total: 400\.00/)).toHaveTextContent("Budgeted 400.00");
-    expect(screen.getByLabelText(/Average budgeted per cell: 200\.00/)).toHaveTextContent(
-      "Budgeted 200.00"
+    expect(screen.getByLabelText(/Budgeted total: 400\.00/)).toHaveTextContent(
+      "Budgeted 400.00 (200.00)"
     );
   });
 
@@ -92,9 +91,13 @@ describe("BudgetSelectionSummary sum/average", () => {
       />,
     );
 
+    // Mixed selections get their own Budgeted zone with both sides named, and
+    // no variance - one plan-versus-actual across both answers neither.
     expect(
       screen.getByLabelText(/Budgeted income 100\.00, budgeted expenses 300\.00/)
-    ).toHaveTextContent("Budgeted inc 100.00 · exp 300.00");
+    ).toHaveTextContent("Budgeted income 100.00");
+    expect(screen.getByText("expenses")).toBeInTheDocument();
+    expect(screen.queryByLabelText(/Variance/)).not.toBeInTheDocument();
     // No single combined total or average for a mixed selection.
     expect(screen.queryByLabelText(/^Sum of selected: /)).not.toBeInTheDocument();
     expect(screen.queryByLabelText(/Average of selected/)).not.toBeInTheDocument();
@@ -149,12 +152,17 @@ describe("BudgetSelectionSummary budget vs actual", () => {
     expect(screen.getByLabelText(/Variance: under budget by 20\.00/)).toBeInTheDocument();
   });
 
-  it("gives an average for every figure, not just one", () => {
-    // An average for budgeted alone invites comparing it against totals.
+  it("pairs every total with its own per-cell average", () => {
+    // One group, not two: each measure is named once and carries its average
+    // in brackets, rather than repeating three labels in a second group.
     renderSummary("budgeted");
-    expect(screen.getByLabelText(/Average budgeted per cell: 200\.00/)).toBeInTheDocument();
-    expect(screen.getByLabelText(/Average actual per cell: 190\.00/)).toBeInTheDocument();
-    expect(screen.getByLabelText(/Average variance per cell/)).toBeInTheDocument();
+    expect(
+      screen.getByLabelText(/Budgeted total: 400\.00, averaging 200\.00 per cell/)
+    ).toHaveTextContent("Budgeted 400.00 (200.00)");
+    expect(
+      screen.getByLabelText(/Actual total: 380\.00, averaging 190\.00 per cell/)
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText(/Variance.*averaging/)).toBeInTheDocument();
   });
 });
 
@@ -184,6 +192,39 @@ describe("BudgetSelectionSummary staged count", () => {
 
     const control = screen.getByRole("button", { name: /1 staged change in the draft - review them/i });
     expect(control).toHaveTextContent("1 staged");
+  });
+});
+
+describe("BudgetSelectionSummary layout", () => {
+  /**
+   * The footer carries four unrelated kinds of fact. Captions and rules are
+   * what make each findable by where it sits, rather than by reading the row
+   * left to right looking for it.
+   */
+  it("keeps the bar to a single row", () => {
+    const { container } = renderSummary("budgeted");
+    // A status bar under a dense grid should not grow to fit its contents;
+    // the design has to make the contents fit the bar.
+    expect((container.firstElementChild as HTMLElement).className).toContain("h-8");
+  });
+
+  it("separates the areas with rules rather than running them together", () => {
+    const { container } = renderSummary("budgeted");
+    expect(container.querySelectorAll(".divide-x").length).toBeGreaterThan(0);
+  });
+
+  it("shows the draft area even with nothing selected", () => {
+    render(
+      <BudgetSelectionSummary
+        selection={null}
+        activeMonths={["2026-08"]}
+        categories={categories}
+        cellView="budgeted"
+      />
+    );
+    expect(screen.getByText("No staged edits")).toBeInTheDocument();
+    expect(screen.queryByLabelText(/Budgeted total/)).not.toBeInTheDocument();
+    expect(screen.getByText("No selection")).toBeInTheDocument();
   });
 });
 

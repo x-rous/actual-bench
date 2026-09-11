@@ -8,11 +8,57 @@ import { resolveSelectionCells } from "../lib/budgetSelectionUtils";
 import { useMonthsData } from "../context/MonthsDataContext";
 import { formatDelta, formatMinor } from "../lib/format";
 
-/** Thin vertical rule between groups. Module scope - not re-created per render. */
-function Divider() {
+/**
+ * One area of the status bar.
+ *
+ * The bar carries four unrelated kinds of fact - the selection's figures, the
+ * same figures per cell, how big the selection is, and what is still unsaved.
+ * Rules between the areas are what make each findable by position instead of by
+ * reading the whole row; captions would say it more plainly but cost a second
+ * line, and the bar has one.
+ */
+function Zone({
+  children,
+  className = "",
+  ...rest
+}: {
+  children: React.ReactNode;
+  className?: string;
+} & React.HTMLAttributes<HTMLDivElement>) {
   return (
-    <span className="text-border/70 select-none" aria-hidden="true">
-      │
+    <div className={`flex items-center gap-3 px-3 ${className}`} {...rest}>
+      {children}
+    </div>
+  );
+}
+
+/**
+ * A named figure: dim label, value, and its per-cell average in brackets.
+ *
+ * Totals and averages used to be two groups repeating the same three labels -
+ * six values and two label sets for what is really three measures. Pairing each
+ * average with its own total says it once and lets the eye read down a single
+ * short row instead of across two.
+ */
+function Figure({
+  label,
+  value,
+  average,
+  tone = "text-foreground",
+  ...rest
+}: {
+  label?: string;
+  value: string;
+  average?: string;
+  tone?: string;
+} & React.HTMLAttributes<HTMLSpanElement>) {
+  return (
+    <span className="tabular-nums whitespace-nowrap" {...rest}>
+      {label && <span className="text-muted-foreground/70">{label} </span>}
+      <span className={tone}>{value}</span>
+      {average && (
+        <span className="text-muted-foreground/60"> ({average})</span>
+      )}
     </span>
   );
 }
@@ -144,141 +190,118 @@ export function BudgetSelectionSummary({
         ? "text-emerald-700/70 dark:text-emerald-500/60"
         : "text-red-700/70 dark:text-red-500/60";
 
+  const hasSelection = selectionCells.length > 0;
+  const showFigures = hasSelection && !isMixedSelection;
+
   return (
     <div
-      className="h-8 border-t border-border bg-muted/30 px-4 flex items-center justify-between gap-4 text-xs text-muted-foreground"
+      className="h-8 border-t border-border bg-muted/30 flex items-stretch justify-between text-xs text-muted-foreground"
       role="status"
       aria-live="polite"
       aria-label="Selection summary"
     >
-      {/* Left - what the selection is, as it stands.
+      {/* Left - what the selection is. Each measure once, with its per-cell
+          average in brackets. */}
+      <div className="flex items-stretch divide-x divide-border/60 min-w-0 overflow-hidden">
+        {showFigures && (
+          <Zone
+            className="pl-4"
+            title="Totals for the selection, with per-cell averages in brackets"
+          >
+            <Figure
+              label="Budgeted"
+              value={formatMinor(budgetedTotal)}
+              average={formatMinor(budgetedAvg)}
+              aria-label={`Budgeted total: ${formatMinor(budgetedTotal)}, averaging ${formatMinor(budgetedAvg)} per cell`}
+            />
+            <Figure
+              label="Actual"
+              value={formatMinor(actualTotal)}
+              average={formatMinor(actualAvg)}
+              aria-label={`Actual total: ${formatMinor(actualTotal)}, averaging ${formatMinor(actualAvg)} per cell`}
+            />
+            <Figure
+              label="Variance"
+              value={formatDelta(variance)}
+              average={formatDelta(varianceAvg)}
+              tone={varianceTone}
+              aria-label={
+                variance === 0
+                  ? "Variance: spending matches the budget"
+                  : `Variance: ${variance > 0 ? "under" : "over"} budget by ${formatMinor(Math.abs(variance))}, averaging ${formatDelta(varianceAvg)} per cell`
+              }
+            />
+          </Zone>
+        )}
 
-          All three figures are named. An unlabelled sum forces the reader to
-          remember which measure the grid is on, and showing an average for one
-          of them but not the others invites the wrong comparison - so the row
-          carries totals only, with the per-cell averages on each figure's
-          tooltip where they cannot be mistaken for part of the sequence. */}
-      <div className="flex items-center gap-3 min-w-0">
-        {selectionCells.length > 0 ? (
-          isMixedSelection ? (
-            // Mixed income + expense: each side's subtotal, never a net, and no
-            // variance - one plan-versus-actual across both answers neither.
-            <span
-              className="tabular-nums"
+        {hasSelection && isMixedSelection && (
+          // Mixed income + expense: each side's subtotal, never a net, and no
+          // variance - one plan-versus-actual across both answers neither.
+          <Zone className="pl-4">
+            <Figure
+              label="Budgeted income"
+              value={formatMinor(incomeSum)}
               aria-label={`Budgeted income ${formatMinor(incomeSum)}, budgeted expenses ${formatMinor(expenseSum)}`}
-            >
-              Budgeted inc {formatMinor(incomeSum)} · exp {formatMinor(expenseSum)}
-            </span>
-          ) : (
-            <>
-              <span
-                className="tabular-nums"
-                aria-label={`Budgeted total: ${formatMinor(budgetedTotal)}`}
-              >
-                Budgeted{" "}
-                <span className="text-foreground/80">{formatMinor(budgetedTotal)}</span>
-              </span>
-              <span
-                className="tabular-nums"
-                aria-label={`Actual total: ${formatMinor(actualTotal)}`}
-              >
-                Actual{" "}
-                <span className="text-foreground/80">{formatMinor(actualTotal)}</span>
-              </span>
-              <span
-                className={`tabular-nums ${varianceTone}`}
-                title={
-                  variance === 0
-                    ? "Spending matches the budget"
-                    : `${variance > 0 ? "Under" : "Over"} budget across the selection`
-                }
-                aria-label={
-                  variance === 0
-                    ? "Variance: spending matches the budget"
-                    : `Variance: ${variance > 0 ? "under" : "over"} budget by ${formatMinor(Math.abs(variance))}`
-                }
-              >
-                Variance {formatDelta(variance)}
-              </span>
+            />
+            <Figure label="expenses" value={formatMinor(expenseSum)} />
+          </Zone>
+        )}
 
-              {/* Averages get their own section rather than sitting inline, so
-                  a total is never mistaken for a per-cell figure - and all
-                  three are here, because showing one average implies the
-                  others do not exist. */}
-              <Divider />
-              <span className="tabular-nums text-muted-foreground/70">
-                avg/cell
-              </span>
-              <span
-                className="tabular-nums text-muted-foreground/70"
-                aria-label={`Average budgeted per cell: ${formatMinor(budgetedAvg)}`}
-              >
-                Budgeted {formatMinor(budgetedAvg)}
-              </span>
-              <span
-                className="tabular-nums text-muted-foreground/70"
-                aria-label={`Average actual per cell: ${formatMinor(actualAvg)}`}
-              >
-                Actual {formatMinor(actualAvg)}
-              </span>
-              <span
-                className="tabular-nums text-muted-foreground/70"
-                aria-label={`Average variance per cell: ${formatDelta(varianceAvg)}`}
-              >
-                Variance {formatDelta(varianceAvg)}
-              </span>
-            </>
-          )
-        ) : (
-          <span>{selection ? "No cells selected" : "No selection"}</span>
+        {!hasSelection && (
+          <Zone className="pl-4">
+            <span>{selection ? "No cells selected" : "No selection"}</span>
+          </Zone>
         )}
       </div>
 
-      {/* Right - the selection's extent, and what is still pending. Neither
+      {/* Right - how big the selection is, and what is still pending. Neither
           describes the current state, which is why they sit apart from it. */}
-      <div className="flex items-center gap-3 shrink-0">
-        {selectionCells.length > 0 && (
-          <span
-            aria-label={`${selectionCells.length} cells selected, across ${selectedMonthSet.size} months and ${selectedCatSet.size} categories`}
-          >
-            {selectionCells.length} cell{selectionCells.length !== 1 ? "s" : ""}
-            <span className="text-muted-foreground/70">
-              {" "}
-              ({selectedMonthSet.size} mo × {selectedCatSet.size} cat)
+      <div className="flex items-stretch divide-x divide-border/60 shrink-0">
+        {hasSelection && (
+          <Zone>
+            <span
+              className="tabular-nums whitespace-nowrap"
+              aria-label={`${selectionCells.length} cells selected, across ${selectedMonthSet.size} months and ${selectedCatSet.size} categories`}
+            >
+              <span className="text-foreground">{selectionCells.length}</span> cell
+              {selectionCells.length !== 1 ? "s" : ""}
+              <span className="text-muted-foreground/60">
+                {" "}
+                ({selectedMonthSet.size} mo × {selectedCatSet.size} cat)
+              </span>
             </span>
             {selectionStagedCount > 0 && (
-              <span
-                className="tabular-nums"
+              <Figure
+                label="edited"
+                value={`${selectionStagedCount} · ${formatDelta(selectionDelta)}`}
                 aria-label={`${selectionStagedCount} of them edited, changing ${formatDelta(selectionDelta)}`}
-              >
-                {" · "}
-                {selectionStagedCount} edited {formatDelta(selectionDelta)}
-              </span>
+              />
             )}
-          </span>
+          </Zone>
         )}
 
-        {selectionCells.length > 0 && totalStaged > 0 && <Divider />}
-
-        {totalStaged > 0 ? (
-          <span className="tabular-nums">
-            <button
-              type="button"
-              onClick={() => setStagedDialogOpen(true)}
-              className="font-medium text-foreground/80 underline-offset-2 hover:underline"
-              aria-label={`${totalStaged} staged change${totalStaged !== 1 ? "s" : ""} in the draft - review them`}
-              title="Review staged changes"
-            >
-              {totalStaged} staged
-            </button>
-            <span aria-label={`Net effect of the draft: ${formatDelta(totalDelta)}`}>
-              {", net "}
-              {formatDelta(totalDelta)}
-            </span>
-          </span>
-        ) : (
-          <span>No staged edits</span>
-        )}
+        <Zone className="pr-4">
+          {totalStaged > 0 ? (
+            <>
+              <button
+                type="button"
+                onClick={() => setStagedDialogOpen(true)}
+                className="tabular-nums whitespace-nowrap font-medium text-foreground underline-offset-2 hover:underline"
+                aria-label={`${totalStaged} staged change${totalStaged !== 1 ? "s" : ""} in the draft - review them`}
+                title="Review staged changes"
+              >
+                {totalStaged} staged
+              </button>
+              <Figure
+                label="net"
+                value={formatDelta(totalDelta)}
+                aria-label={`Net effect of the draft: ${formatDelta(totalDelta)}`}
+              />
+            </>
+          ) : (
+            <span className="whitespace-nowrap">No staged edits</span>
+          )}
+        </Zone>
       </div>
 
       {stagedDialogOpen && (
