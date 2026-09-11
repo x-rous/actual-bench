@@ -35,6 +35,7 @@ function GroupMonthAggregate({
   onToggleCollapse,
   isReadOnlyMonth,
   showSpendingBars,
+  onContextMenuRequest,
 }: {
   month: string;
   groupId: string;
@@ -47,6 +48,7 @@ function GroupMonthAggregate({
   onToggleCollapse?: () => void;
   isReadOnlyMonth?: boolean;
   showSpendingBars?: boolean;
+  onContextMenuRequest?: (groupId: string, month: string, x: number, y: number) => void;
 }) {
   const data = useEffectiveMonthFromContext(month);
   const group = data?.groupsById[groupId];
@@ -173,6 +175,12 @@ function GroupMonthAggregate({
       onClick={onFocus}
       onFocus={onFocus}
       onKeyDown={handleKeyDown}
+      onContextMenu={(e) => {
+        if (!onContextMenuRequest) return;
+        e.preventDefault();
+        onFocus?.();
+        onContextMenuRequest(groupId, month, e.clientX, e.clientY);
+      }}
     >
       {stagedChildCount > 0 && (
         <span
@@ -221,6 +229,10 @@ export type GroupRowsProps = {
     y: number
   ) => void;
   onGroupFocus?: (groupId: string, month: string) => void;
+  /** Right-click on a group's month cell — acts on that group in that month. */
+  onGroupContextMenu?: (groupId: string, month: string, x: number, y: number) => void;
+  /** Right-click on the group's label — acts on that group across the window. */
+  onGroupRowContextMenu?: (groupId: string, x: number, y: number) => void;
   onGroupNavigate?: (groupId: string, month: string, dir: NavDirection) => void;
   onRowLabelFocus?: (kind: "category" | "group", id: string) => void;
   onRowLabelNavigate?: (kind: "category" | "group", id: string, dir: NavDirection) => void;
@@ -254,6 +266,8 @@ export function BudgetGridGroupRows({
   onCellNavigate,
   onCellContextMenu,
   onGroupFocus,
+  onGroupContextMenu,
+  onGroupRowContextMenu,
   onGroupNavigate,
   onRowLabelFocus,
   onRowLabelNavigate,
@@ -285,6 +299,12 @@ export function BudgetGridGroupRows({
         data-row-group-id={group.id}
         onClick={() => onRowLabelFocus?.("group", group.id)}
         onFocus={() => onRowLabelFocus?.("group", group.id)}
+        onContextMenu={(e) => {
+          if (!onGroupRowContextMenu) return;
+          e.preventDefault();
+          onRowLabelFocus?.("group", group.id);
+          onGroupRowContextMenu(group.id, e.clientX, e.clientY);
+        }}
         onKeyDown={(e) =>
           dispatchRowLabel(e, {
             navigate: (dir) => onRowLabelNavigate?.("group", group.id, dir),
@@ -332,6 +352,7 @@ export function BudgetGridGroupRows({
           onToggleCollapse={onToggleCollapse}
           isReadOnlyMonth={readOnlyMonths.has(month)}
           showSpendingBars={showSpendingBars}
+          onContextMenuRequest={onGroupContextMenu}
         />
       ))}
 

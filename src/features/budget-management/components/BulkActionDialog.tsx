@@ -10,7 +10,7 @@ import {
   type BulkPreviewRow,
 } from "../hooks/useBulkAction";
 import { addMonths, formatMonthLabel } from "@/lib/budget/monthMath";
-import { resolveSelectionCells } from "../lib/budgetSelectionUtils";
+import type { ResolvedCell } from "../lib/budgetSelectionUtils";
 import { formatCurrency as formatAmount } from "../lib/format";
 import type { EnsureMonthsResult } from "../lib/ensureMonthsData";
 import {
@@ -21,10 +21,16 @@ import {
   NO_SKIPS,
   type BulkSkips,
 } from "../lib/bulkActionReport";
-import type { BudgetCellSelection, LoadedCategory } from "../types";
+import type { LoadedCategory } from "../types";
 
 type Props = {
-  selection: BudgetCellSelection;
+  /**
+   * The cells this run will change, already resolved. A rectangle, a group row
+   * and a month column all arrive here the same way - as a set of cells.
+   */
+  targetCells: ResolvedCell[];
+  /** What the cells represent, when it is not simply the current selection. */
+  scopeLabel?: string;
   activeMonths: string[];
   categories: LoadedCategory[];
   readOnlyMonths?: Set<string>;
@@ -73,7 +79,8 @@ const OPTIONAL_PERCENTAGE_ACTIONS: BulkActionType[] = [
  * `initialAction`; this dialog never offers a choice of action.
  */
 export function BulkActionDialog({
-  selection,
+  targetCells,
+  scopeLabel,
   activeMonths,
   categories,
   readOnlyMonths,
@@ -90,13 +97,8 @@ export function BulkActionDialog({
 
   // The months this run will write to — also what the source defaults key off.
   const targetMonths = useMemo(
-    () =>
-      [
-        ...new Set(
-          resolveSelectionCells(selection, activeMonths, categories).map((c) => c.month)
-        ),
-      ].sort(),
-    [selection, activeMonths, categories]
+    () => [...new Set(targetCells.map((c) => c.month))].sort(),
+    [targetCells]
   );
 
   /**
@@ -207,7 +209,7 @@ export function BulkActionDialog({
         ...(loaded?.monthDataMap ?? {}),
       };
 
-      const result = preview(action, selection, activeMonths, categories, fullMap, params);
+      const result = preview(action, targetCells, activeMonths, categories, fullMap, params);
       if (!result) {
         setParamError("This action is missing a required value.");
         return;
@@ -250,7 +252,11 @@ export function BulkActionDialog({
       <div className="bg-background border border-border rounded-lg shadow-xl w-full max-w-lg mx-4 p-5">
         {step === "action" && (
           <>
-            <h2 className="text-base font-semibold mb-4">{ACTION_LABELS[action]}</h2>
+            <h2 className="text-base font-semibold mb-1">{ACTION_LABELS[action]}</h2>
+            <p className="text-xs text-muted-foreground mb-4">
+              {scopeLabel ? `${scopeLabel} · ` : ""}
+              {targetCells.length} cell{targetCells.length !== 1 ? "s" : ""}
+            </p>
 
             <div className="space-y-3 mb-4">
               {needsFixed && (

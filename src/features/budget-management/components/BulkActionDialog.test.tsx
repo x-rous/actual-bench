@@ -6,24 +6,19 @@
  */
 import { render, screen } from "@testing-library/react";
 import { BulkActionDialog } from "./BulkActionDialog";
-import type { BudgetCellSelection, LoadedCategory } from "../types";
+import type { LoadedCategory } from "../types";
 
 const activeMonths = ["2026-01", "2026-02"];
 const categories = [
   { id: "c1", name: "Groceries", groupId: "g1" },
 ] as unknown as LoadedCategory[];
 
-const selection: BudgetCellSelection = {
-  anchorMonth: "2026-01",
-  anchorCategoryId: "c1",
-  focusMonth: "2026-01",
-  focusCategoryId: "c1",
-};
+const targetCells = [{ month: "2026-01", categoryId: "c1" }];
 
 function renderDialog(initialAction: Parameters<typeof BulkActionDialog>[0]["initialAction"]) {
   return render(
     <BulkActionDialog
-      selection={selection}
+      targetCells={targetCells}
       activeMonths={activeMonths}
       categories={categories}
       monthDataMap={{ "2026-01": [{ ...categories[0]!, budgeted: 1000 }] }}

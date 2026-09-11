@@ -54,6 +54,9 @@ type Props = {
     y: number
   ) => void;
   onGroupFocus?: (groupId: string, month: string) => void;
+  onGroupContextMenu?: (groupId: string, month: string, x: number, y: number) => void;
+  onGroupRowContextMenu?: (groupId: string, x: number, y: number) => void;
+  onMonthContextMenu?: (month: string, x: number, y: number) => void;
   onGroupNavigate?: (groupId: string, month: string, dir: NavDirection) => void;
   onRowLabelFocus?: (kind: "category" | "group", id: string) => void;
   onRowLabelNavigate?: (kind: "category" | "group", id: string, dir: NavDirection) => void;
@@ -102,6 +105,9 @@ export function BudgetGrid({
   onCellNavigate,
   onCellContextMenu,
   onGroupFocus,
+  onGroupContextMenu,
+  onGroupRowContextMenu,
+  onMonthContextMenu,
   onGroupNavigate,
   onRowLabelFocus,
   onRowLabelNavigate,
@@ -281,6 +287,8 @@ export function BudgetGrid({
     onCellNavigate,
     onCellContextMenu,
     onGroupFocus,
+    onGroupContextMenu,
+    onGroupRowContextMenu,
     onGroupNavigate,
     onRowLabelFocus,
     onRowLabelNavigate,
@@ -345,6 +353,7 @@ export function BudgetGrid({
           availableMonths={availableMonths}
           isSelected={month === selectedMonth}
           onSelect={onMonthSelect}
+          onContextMenuRequest={onMonthContextMenu}
           today={today}
           inCrosshair={crosshairMonth != null && month === crosshairMonth}
         />

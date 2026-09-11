@@ -3,7 +3,7 @@
 import { useCallback } from "react";
 import { useBudgetEditsStore } from "@/store/budgetEdits";
 import { addMonths } from "@/lib/budget/monthMath";
-import { resolveSelectionCells } from "../lib/budgetSelectionUtils";
+import { resolveSelectionCells, type ResolvedCell } from "../lib/budgetSelectionUtils";
 import type {
   BudgetCellSelection,
   LoadedCategory,
@@ -119,7 +119,12 @@ type UseBulkActionReturn = {
    */
   preview: (
     action: BulkActionType,
-    selection: BudgetCellSelection,
+    /**
+     * Either a selection rectangle, or an explicit cell list. The list form is
+     * how a group row or a month column acts on its cells without having to
+     * pretend to be a rectangle.
+     */
+    target: BudgetCellSelection | ResolvedCell[],
     months: string[],
     categories: LoadedCategory[],
     monthDataMap: Record<string, LoadedCategory[]>,
@@ -147,13 +152,15 @@ export function useBulkAction(): UseBulkActionReturn {
   const preview = useCallback(
     (
       action: BulkActionType,
-      selection: BudgetCellSelection,
+      target: BudgetCellSelection | ResolvedCell[],
       months: string[],
       categories: LoadedCategory[],
       monthDataMap: Record<string, LoadedCategory[]>,
       params?: BulkActionParams
     ): BulkPreviewResult | null => {
-      const cells = resolveSelectionCells(selection, months, categories);
+      const cells = Array.isArray(target)
+        ? target
+        : resolveSelectionCells(target, months, categories);
       const skipped: Record<BulkSkipReason, number> = {
         "missing-source-month": 0,
         "missing-category": 0,

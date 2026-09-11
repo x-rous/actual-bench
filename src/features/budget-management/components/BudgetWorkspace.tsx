@@ -7,7 +7,14 @@ import { useBudgetEditsStore } from "@/store/budgetEdits";
 import { useConnectionStore, selectActiveInstance } from "@/store/connection";
 import { parseBudgetExpression } from "../lib/budgetMath";
 import { buildReadOnlyMissingBudgetMonthSet } from "../lib/monthAvailability";
-import { parsePastePayload, resolveSelectionCells } from "../lib/budgetSelectionUtils";
+import { formatMonthLabel } from "@/lib/budget/monthMath";
+import {
+  parsePastePayload,
+  resolveSelectionCells,
+  resolveGroupCells,
+  resolveMonthCells,
+  type ResolvedCell,
+} from "../lib/budgetSelectionUtils";
 import {
   computeCursorTarget,
   computeRangeExtensionTarget,
@@ -71,12 +78,27 @@ const IMMEDIATE_BULK_ACTIONS: BulkActionType[] = [
   "avg-12-months",
 ];
 
+/**
+ * What a right-click will act on.
+ *
+ * A group row and a month column are nothing more than sets of category cells
+ * (a group is a layer of summarization over its categories), so both resolve to
+ * cells the same way a rectangle does. Only the `cell` target carries the
+ * per-cell actions - Rollover and Transfer have no meaning for a set.
+ */
+type ContextMenuTarget =
+  | { kind: "cell"; categoryId: string; month: string; carryover: boolean }
+  /** One group in one month. */
+  | { kind: "group"; groupId: string; month: string }
+  /** One group across every month in the window. */
+  | { kind: "group-row"; groupId: string }
+  /** Every category in one month. */
+  | { kind: "month"; month: string };
+
 type ContextMenuState = {
   x: number;
   y: number;
-  categoryId: string;
-  month: string;
-  carryover: boolean;
+  target: ContextMenuTarget;
 } | null;
 
 type PendingCategoryJump = {
@@ -157,7 +179,11 @@ function BudgetWorkspaceInner({
   const [rowSelection, setRowSelectionLocal] = useState<RowSelection | null>(null);
   const [monthSelection, setMonthSelection] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<ContextMenuState>(null);
-  const [pendingBulkAction, setPendingBulkAction] = useState<BulkActionType | null>(null);
+  const [pendingBulk, setPendingBulk] = useState<{
+    action: BulkActionType;
+    cells: ResolvedCell[];
+    scopeLabel?: string;
+  } | null>(null);
   const [categorySearchOpen, setCategorySearchOpen] = useState(false);
   const [pendingCategoryJump, setPendingCategoryJump] = useState<PendingCategoryJump>(null);
   const [carryoverRequest, setCarryoverRequest] = useState<{
@@ -602,7 +628,76 @@ function BudgetWorkspaceInner({
   // Context menu handler
   const handleCellContextMenu = useCallback(
     (catId: string, month: string, carryover: boolean, x: number, y: number) => {
-      setContextMenu({ x, y, categoryId: catId, month, carryover });
+      setContextMenu({
+        x,
+        y,
+        target: { kind: "cell", categoryId: catId, month, carryover },
+      });
+    },
+    []
+  );
+
+  /**
+   * The cells a right-click target stands for.
+   *
+   * `categories` is filtered by `showHidden` but never by collapse state, so a
+   * collapsed group resolves to all of its categories without being opened -
+   * which is the whole point of acting on the group row.
+   */
+  const resolveContextTargetCells = useCallback(
+    (target: ContextMenuTarget): ResolvedCell[] => {
+      switch (target.kind) {
+        case "cell":
+          return selection
+            ? resolveSelectionCells(selection, activeMonths, categories)
+            : [{ month: target.month, categoryId: target.categoryId }];
+        case "group":
+          return resolveGroupCells(target.groupId, [target.month], categories);
+        case "group-row":
+          return resolveGroupCells(target.groupId, activeMonths, categories);
+        case "month":
+          return resolveMonthCells(target.month, categories);
+      }
+    },
+    [selection, activeMonths, categories]
+  );
+
+  /** Plain-language description of what a group or column action will change. */
+  const describeContextTarget = useCallback(
+    (target: ContextMenuTarget): string | undefined => {
+      const groupName = (groupId: string) =>
+        merged?.groupsById[groupId]?.name ?? "Category group";
+      switch (target.kind) {
+        case "cell":
+          return undefined;
+        case "group":
+          return `${groupName(target.groupId)} - ${formatMonthLabel(target.month, "long")}`;
+        case "group-row":
+          return `${groupName(target.groupId)} - all ${activeMonths.length} months`;
+        case "month":
+          return `All categories - ${formatMonthLabel(target.month, "long")}`;
+      }
+    },
+    [merged, activeMonths]
+  );
+
+  const handleGroupContextMenu = useCallback(
+    (groupId: string, month: string, x: number, y: number) => {
+      setContextMenu({ x, y, target: { kind: "group", groupId, month } });
+    },
+    []
+  );
+
+  const handleGroupRowContextMenu = useCallback(
+    (groupId: string, x: number, y: number) => {
+      setContextMenu({ x, y, target: { kind: "group-row", groupId } });
+    },
+    []
+  );
+
+  const handleMonthContextMenu = useCallback(
+    (month: string, x: number, y: number) => {
+      setContextMenu({ x, y, target: { kind: "month", month } });
     },
     []
   );
@@ -610,8 +705,8 @@ function BudgetWorkspaceInner({
   // Carryover toggle — immediate API action (not staged). Opens the progress
   // dialog which drives the actual PATCH loop and shows partial-failure UI.
   const handleCarryoverToggle = useCallback(() => {
-    if (!connection || !contextMenu) return;
-    const { categoryId, month, carryover } = contextMenu;
+    if (!connection || contextMenu?.target.kind !== "cell") return;
+    const { categoryId, month, carryover } = contextMenu.target;
     const monthsToUpdate = activeMonths.filter(
       (m) => m >= month && !readOnlyMonths.has(m)
     );
@@ -665,16 +760,34 @@ function BudgetWorkspaceInner({
     [queryClient, connection, availableMonths]
   );
 
-  // Execute no-input bulk actions immediately from the context menu.
-  const handleContextMenuBulkAction = useCallback(
-    async (action: BulkActionType) => {
-      if (!selection) return;
-      if (!IMMEDIATE_BULK_ACTIONS.includes(action)) {
-        setPendingBulkAction(action);
+  /**
+   * Run a bulk action against a right-click target, or - when invoked from the
+   * keyboard - against the current cell selection.
+   *
+   * A group row or a month column is just a set of cells, so the only real
+   * difference is how the cells are resolved. Those scopes always go through
+   * the preview dialog: a column is every category, which is a large staged
+   * change and a slow save, and it should be seen before it is made.
+   */
+  const runBulkAction = useCallback(
+    async (action: BulkActionType, target?: ContextMenuTarget) => {
+      const cells = target
+        ? resolveContextTargetCells(target)
+        : selection
+          ? resolveSelectionCells(selection, activeMonths, categories)
+          : [];
+      if (cells.length === 0) return;
+
+      const isCellScope = !target || target.kind === "cell";
+      if (!isCellScope || !IMMEDIATE_BULK_ACTIONS.includes(action)) {
+        setPendingBulk({
+          action,
+          cells,
+          scopeLabel: target ? describeContextTarget(target) : undefined,
+        });
         return;
       }
 
-      const cells = resolveSelectionCells(selection, activeMonths, categories);
       const targetMonths = [...new Set(cells.map((c) => c.month))];
       const needed = requiredSourceMonths(action, targetMonths);
 
@@ -694,7 +807,7 @@ function BudgetWorkspaceInner({
           Object.assign(monthDataMap, loaded.monthDataMap);
         }
 
-        const result = previewBulk(action, selection, activeMonths, categories, monthDataMap);
+        const result = previewBulk(action, cells, activeMonths, categories, monthDataMap);
         if (!result) {
           toast.error("That action needs a value.", { id: toastId });
           return;
@@ -734,6 +847,8 @@ function BudgetWorkspaceInner({
       previewBulk,
       applyBulk,
       readOnlyMonths,
+      resolveContextTargetCells,
+      describeContextTarget,
     ]
   );
 
@@ -814,33 +929,33 @@ function BudgetWorkspaceInner({
     if (!selection) return false;
     // Fire-and-forget: the keymap only needs to know the binding was claimed,
     // and the action reports its own outcome by toast.
-    void handleContextMenuBulkAction("copy-previous-month");
+    void runBulkAction("copy-previous-month");
     return true;
-  }, [selection, handleContextMenuBulkAction]);
+  }, [selection, runBulkAction]);
 
   const fillAvg3 = useCallback((): boolean => {
     if (!selection) return false;
-    void handleContextMenuBulkAction("avg-3-months");
+    void runBulkAction("avg-3-months");
     return true;
-  }, [selection, handleContextMenuBulkAction]);
+  }, [selection, runBulkAction]);
 
   const fillAvg6 = useCallback((): boolean => {
     if (!selection) return false;
-    void handleContextMenuBulkAction("avg-6-months");
+    void runBulkAction("avg-6-months");
     return true;
-  }, [selection, handleContextMenuBulkAction]);
+  }, [selection, runBulkAction]);
 
   const fillAvg12 = useCallback((): boolean => {
     if (!selection) return false;
-    void handleContextMenuBulkAction("avg-12-months");
+    void runBulkAction("avg-12-months");
     return true;
-  }, [selection, handleContextMenuBulkAction]);
+  }, [selection, runBulkAction]);
 
   const fillPriorYear = useCallback((): boolean => {
     if (!selection) return false;
-    void handleContextMenuBulkAction("copy-prior-year-same-month");
+    void runBulkAction("copy-prior-year-same-month");
     return true;
-  }, [selection, handleContextMenuBulkAction]);
+  }, [selection, runBulkAction]);
 
   // Alt+C: toggle carryover for all selected categories across the selected
   // month range. newValue is derived from the anchor cell's current carryover state.
@@ -1032,6 +1147,9 @@ function BudgetWorkspaceInner({
           onCellNavigate={handleCellNavigate}
           onCellContextMenu={handleCellContextMenu}
           onGroupFocus={handleGroupFocus}
+          onGroupContextMenu={handleGroupContextMenu}
+          onGroupRowContextMenu={handleGroupRowContextMenu}
+          onMonthContextMenu={handleMonthContextMenu}
           onGroupNavigate={handleGroupNavigate}
           onRowLabelFocus={handleRowLabelFocus}
           onRowLabelNavigate={handleRowLabelNavigate}
@@ -1045,9 +1163,10 @@ function BudgetWorkspaceInner({
         categories={categories}
       />
 
-      {pendingBulkAction !== null && selection && (
+      {pendingBulk !== null && (
         <BulkActionDialog
-          selection={selection}
+          targetCells={pendingBulk.cells}
+          scopeLabel={pendingBulk.scopeLabel}
           activeMonths={activeMonths}
           categories={categories}
           readOnlyMonths={readOnlyMonths}
@@ -1061,8 +1180,8 @@ function BudgetWorkspaceInner({
             }
             return map;
           })()}
-          initialAction={pendingBulkAction}
-          onClose={() => setPendingBulkAction(null)}
+          initialAction={pendingBulk.action}
+          onClose={() => setPendingBulk(null)}
         />
       )}
 
@@ -1076,21 +1195,33 @@ function BudgetWorkspaceInner({
       )}
 
       {contextMenu && (() => {
-        const contextMenuBalance =
-          effectiveMonthsMap.get(contextMenu.month)?.categoriesById[contextMenu.categoryId]?.balance
-          ?? rawMonthsMap.get(contextMenu.month)?.categoriesById[contextMenu.categoryId]?.balance
-          ?? 0;
+        const target = contextMenu.target;
+        const cell = target.kind === "cell" ? target : null;
+        const contextMenuBalance = cell
+          ? effectiveMonthsMap.get(cell.month)?.categoriesById[cell.categoryId]?.balance
+            ?? rawMonthsMap.get(cell.month)?.categoriesById[cell.categoryId]?.balance
+            ?? 0
+          : 0;
         const mode = contextMenuBalance < 0 ? "cover" : "transfer";
+        const scope =
+          target.kind === "cell" ? "cell" : target.kind === "month" ? "month" : "group";
         return (
           <BudgetCellContextMenu
             x={contextMenu.x}
             y={contextMenu.y}
-            carryover={contextMenu.carryover}
+            carryover={cell?.carryover ?? false}
             budgetMode={budgetMode}
             categoryBalance={contextMenuBalance}
+            scope={scope}
+            scopeLabel={describeContextTarget(target)}
+            scopeCellCount={
+              target.kind === "cell" ? undefined : resolveContextTargetCells(target).length
+            }
             onToggleCarryover={handleCarryoverToggle}
-            onOpenTransfer={() => onOpenTransfer?.(contextMenu.categoryId, contextMenu.month, mode)}
-            onBulkAction={(action) => void handleContextMenuBulkAction(action)}
+            onOpenTransfer={() =>
+              cell && onOpenTransfer?.(cell.categoryId, cell.month, mode)
+            }
+            onBulkAction={(action) => void runBulkAction(action, target)}
             onClose={() => setContextMenu(null)}
           />
         );

@@ -14,6 +14,37 @@ import type { BudgetCellSelection, LoadedCategory } from "../types";
 export type ResolvedCell = { month: string; categoryId: string };
 
 /**
+ * Every cell under a category group, for the given months.
+ *
+ * A group row is a summarization layer over its categories, so acting on one is
+ * defined as acting on all of them. `categories` is the caller's visible list,
+ * which is filtered by `showHidden` but never by collapse state - so a
+ * collapsed group resolves exactly like an expanded one and nothing has to be
+ * opened first.
+ */
+export function resolveGroupCells(
+  groupId: string,
+  months: readonly string[],
+  categories: readonly LoadedCategory[]
+): ResolvedCell[] {
+  const cells: ResolvedCell[] = [];
+  for (const month of months) {
+    for (const cat of categories) {
+      if (cat.groupId === groupId) cells.push({ month, categoryId: cat.id });
+    }
+  }
+  return cells;
+}
+
+/** Every visible category's cell in one month - a whole column. */
+export function resolveMonthCells(
+  month: string,
+  categories: readonly LoadedCategory[]
+): ResolvedCell[] {
+  return categories.map((cat) => ({ month, categoryId: cat.id }));
+}
+
+/**
  * Resolves a BudgetCellSelection to a flat list of (month, categoryId) pairs.
  * Uses the positions of anchor/focus months and categories in the provided
  * ordered arrays to determine the rectangular range.

@@ -1,11 +1,16 @@
-import { resolveSelectionCells, parsePastePayload } from "./budgetSelectionUtils";
+import {
+  resolveSelectionCells,
+  resolveGroupCells,
+  resolveMonthCells,
+  parsePastePayload,
+} from "./budgetSelectionUtils";
 import type { BudgetCellSelection, LoadedCategory } from "../types";
 
-function cat(id: string): LoadedCategory {
+function cat(id: string, groupId = "g"): LoadedCategory {
   return {
     id,
     name: id,
-    groupId: "g",
+    groupId,
     groupName: "G",
     isIncome: false,
     hidden: false,
@@ -136,3 +141,53 @@ describe("parsePastePayload", () => {
     expect(parsePastePayload("1\t\t3")).toEqual([["1", "", "3"]]);
   });
 });
+
+// ─── Group and column targets ─────────────────────────────────────────────────
+
+/**
+ * A group row is a summarization layer over its categories, so acting on one is
+ * defined as acting on all of them - including when the group is collapsed,
+ * which is the case that makes it worth having.
+ */
+describe("resolveGroupCells", () => {
+  const mixed = [
+    cat("a1", "groceries"),
+    cat("a2", "groceries"),
+    cat("b1", "bills"),
+  ];
+
+  it("covers every category in the group, for each month", () => {
+    expect(resolveGroupCells("groceries", ["2026-01", "2026-02"], mixed)).toEqual([
+      { month: "2026-01", categoryId: "a1" },
+      { month: "2026-01", categoryId: "a2" },
+      { month: "2026-02", categoryId: "a1" },
+      { month: "2026-02", categoryId: "a2" },
+    ]);
+  });
+
+  it("never reaches into another group", () => {
+    const cells = resolveGroupCells("bills", ["2026-01"], mixed);
+    expect(cells).toEqual([{ month: "2026-01", categoryId: "b1" }]);
+  });
+
+  it("is empty for a group with no visible categories", () => {
+    // `categories` is already filtered by showHidden, so a group whose rows are
+    // all hidden resolves to nothing rather than to hidden cells.
+    expect(resolveGroupCells("missing", ["2026-01"], mixed)).toEqual([]);
+  });
+});
+
+describe("resolveMonthCells", () => {
+  it("covers every visible category in that month, across groups", () => {
+    const mixed = [cat("a1", "groceries"), cat("b1", "bills")];
+    expect(resolveMonthCells("2026-03", mixed)).toEqual([
+      { month: "2026-03", categoryId: "a1" },
+      { month: "2026-03", categoryId: "b1" },
+    ]);
+  });
+
+  it("is empty when nothing is visible", () => {
+    expect(resolveMonthCells("2026-03", [])).toEqual([]);
+  });
+});
+

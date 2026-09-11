@@ -11,6 +11,17 @@ type Props = {
   carryover: boolean;
   budgetMode: BudgetMode;
   categoryBalance: number;
+  /**
+   * What the menu will act on. Cell scope keeps the per-cell items; a group row
+   * or a month column is a set of cells and nothing else, so Rollover and
+   * Transfer - which are per-category-month - are hidden there rather than
+   * silently applying to something unexpected.
+   */
+  scope: "cell" | "group" | "month";
+  /** Plain-language description of the target, e.g. "Groceries - Mar 2026". */
+  scopeLabel?: string;
+  /** How many cells the bulk actions would touch. Omitted for cell scope. */
+  scopeCellCount?: number;
   onToggleCarryover: () => void;
   onOpenTransfer: () => void;
   /** Called with the action type — BudgetWorkspace decides immediate vs. dialog. */
@@ -44,6 +55,9 @@ export function BudgetCellContextMenu({
   carryover,
   budgetMode,
   categoryBalance,
+  scope,
+  scopeLabel,
+  scopeCellCount,
   onToggleCarryover,
   onOpenTransfer,
   onBulkAction,
@@ -77,8 +91,24 @@ export function BudgetCellContextMenu({
       className="bg-popover border border-border rounded-lg shadow-xl py-1 min-w-[210px] text-xs"
       onClick={(e) => e.stopPropagation()}
     >
+      {/* Scope banner — only when acting on something other than one cell, so
+          it is always obvious what a group or column action will change. */}
+      {scope !== "cell" && scopeLabel && (
+        <>
+          <div className="px-3 py-1.5">
+            <p className="text-[11px] font-semibold text-foreground truncate">{scopeLabel}</p>
+            {scopeCellCount !== undefined && (
+              <p className="text-[10px] text-muted-foreground">
+                {scopeCellCount} cell{scopeCellCount !== 1 ? "s" : ""}
+              </p>
+            )}
+          </div>
+          <div className="h-px bg-border/50" />
+        </>
+      )}
+
       {/* Cell-level actions */}
-      {budgetMode === "tracking" && (
+      {scope === "cell" && budgetMode === "tracking" && (
         <button
           role="menuitem"
           type="button"
@@ -90,7 +120,7 @@ export function BudgetCellContextMenu({
           <span className="ml-auto text-[10px] text-muted-foreground">(this month+)</span>
         </button>
       )}
-      {budgetMode === "envelope" && (
+      {scope === "cell" && budgetMode === "envelope" && (
         <button
           role="menuitem"
           type="button"
@@ -103,7 +133,7 @@ export function BudgetCellContextMenu({
       )}
 
       {/* Bulk actions */}
-      {(budgetMode === "tracking" || budgetMode === "envelope") && (
+      {scope === "cell" && (budgetMode === "tracking" || budgetMode === "envelope") && (
         <div className="h-px bg-border/50 my-1" />
       )}
       <p className="px-3 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground select-none">
