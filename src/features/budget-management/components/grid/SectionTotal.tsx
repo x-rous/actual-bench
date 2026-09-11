@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffectiveMonthFromContext } from "../../context/MonthsDataContext";
-import { formatMinor } from "../../lib/format";
+import { formatGridMinor } from "../../lib/format";
 import {
   calculateSectionTotal,
   getSectionEffectiveView,
@@ -31,11 +31,13 @@ function SectionTotalCell({
   filter,
   cellView,
   budgetMode,
+  showDecimals = true,
 }: {
   month: string;
   filter: SectionFilter;
   cellView: CellView;
   budgetMode: BudgetMode;
+  showDecimals?: boolean;
 }) {
   const data = useEffectiveMonthFromContext(month);
   if (!data) {
@@ -58,7 +60,7 @@ function SectionTotalCell({
     <div
       className="h-8 min-h-8 px-2 flex items-center justify-end whitespace-nowrap bg-muted/15 border-b border-border/50 text-xs font-sans tabular-nums font-semibold text-foreground"
     >
-      {formatMinor(total)}
+      {formatGridMinor(total, { showDecimals })}
     </div>
   );
 }
@@ -68,11 +70,13 @@ export function SectionTotalRow({
   cellView,
   budgetMode,
   activeMonths,
+  showDecimals,
 }: {
   filter: SectionFilter;
   cellView: CellView;
   budgetMode: BudgetMode;
   activeMonths: string[];
+  showDecimals?: boolean;
 }) {
   // In Envelope mode the income section always uses the "received" label.
   const effectiveView = getSectionEffectiveView({
@@ -97,6 +101,7 @@ export function SectionTotalRow({
           filter={filter}
           cellView={cellView}
           budgetMode={budgetMode}
+          showDecimals={showDecimals}
         />
       ))}
     </>

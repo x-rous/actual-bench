@@ -1,9 +1,8 @@
 "use client";
 
 import { MonthJumpPopover } from "./MonthJumpPopover";
-import { ChevronsLeft, ChevronsRight, ChevronLeft, ChevronRight, CalendarDays, Upload, Download, ChevronsDownUp, ChevronsUpDown, Eye, EyeOff, Keyboard, BarChart2 } from "lucide-react";
+import { ChevronsLeft, ChevronsRight, ChevronLeft, ChevronRight, CalendarDays, Upload, Download, ChevronsDownUp, ChevronsUpDown, Keyboard } from "lucide-react";
 import { addMonths, formatMonthLabel } from "@/lib/budget/monthMath";
-import { cn } from "@/lib/utils";
 import type { BudgetMode, CellView } from "../types";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -61,6 +60,55 @@ type Props = {
   /** Open the keyboard-shortcuts cheatsheet modal. */
   onShowShortcuts?: () => void;
 };
+
+/**
+ * A labelled switch.
+ *
+ * Same control as the sync flow header's enable switch, scaled down for a
+ * toolbar row: a track that fills green when on, with the name beside it. The
+ * state lives in the switch, so the label can stay still and be read as a name
+ * rather than changing text to say what it would do next.
+ */
+function ToggleControl({
+  on,
+  label,
+  onToggle,
+  title,
+  prefix,
+}: {
+  on: boolean;
+  label: string;
+  onToggle: () => void;
+  title?: string;
+  prefix?: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={on}
+      aria-label={label}
+      title={title ?? `${label} - ${on ? "on" : "off"}`}
+      onClick={onToggle}
+      className="inline-flex items-center gap-1.5 h-6 px-1.5 rounded text-[11px] font-medium text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+    >
+      <span
+        aria-hidden="true"
+        className={`relative h-[13px] w-[22px] shrink-0 rounded-full transition-colors ${
+          on ? "bg-green-500" : "bg-muted-foreground/40"
+        }`}
+      >
+        <span
+          className={`absolute top-[2px] h-[9px] w-[9px] rounded-full bg-white transition-all ${
+            on ? "left-[11px]" : "left-[2px]"
+          }`}
+        />
+      </span>
+      {prefix}
+      {label}
+    </button>
+  );
+}
 
 function Divider() {
   return <div className="w-px h-5 bg-border/60 mx-1 shrink-0" aria-hidden="true" />;
@@ -272,72 +320,36 @@ export function BudgetToolbar({
             </button>
           )}
           {onToggleShowHidden && (
-            <button
-              type="button"
-              onClick={onToggleShowHidden}
-              aria-label={showHidden ? "Hide hidden categories" : "Show hidden categories"}
+            <ToggleControl
+              on={showHidden ?? false}
+              label="Hidden categories"
+              onToggle={onToggleShowHidden}
               title={hiddenToggleTitle}
-              // Inverted: pressed state means "currently hiding hidden categories"
-              // (showHidden=false). Default — hidden visible — is unpressed.
-              aria-pressed={!showHidden}
-              className={`inline-flex items-center gap-1 h-6 px-2 rounded border text-[11px] font-medium transition-colors ${
-                !showHidden
-                  ? "border-border bg-muted text-foreground"
-                  : "border-border/60 text-muted-foreground hover:bg-muted hover:text-foreground"
-              }`}
-            >
-              {showHidden ? (
-                <>
-                  <EyeOff className="h-3.5 w-3.5" aria-hidden="true" />
-                  Hide hidden
-                </>
-              ) : (
-                <>
-                  <Eye className="h-3.5 w-3.5" aria-hidden="true" />
-                  Show hidden
-                </>
-              )}
-            </button>
+            />
           )}
           {onToggleSpendingBars && (
-            <button
-              type="button"
-              onClick={onToggleSpendingBars}
-              aria-label={showSpendingBars ? "Hide spending bars" : "Show spending bars"}
-              title={showSpendingBars ? "Hide spending bars" : "Show spending bars"}
-              aria-pressed={showSpendingBars ?? false}
-              className={cn(
-                "inline-flex items-center gap-1 h-6 px-2 rounded border text-[11px] font-medium transition-colors",
-                showSpendingBars
-                  ? "border-border bg-muted text-foreground"
-                  : "border-border/60 text-muted-foreground hover:bg-muted hover:text-foreground"
-              )}
-            >
-              <BarChart2 className="h-3.5 w-3.5" aria-hidden="true" />
-              Spending Bars
-            </button>
+            <ToggleControl
+              on={showSpendingBars ?? false}
+              label="Spending bars"
+              onToggle={onToggleSpendingBars}
+            />
           )}
           {onToggleDecimals && (
-            <button
-              type="button"
-              onClick={onToggleDecimals}
-              aria-label={showDecimals ? "Round amounts to whole numbers" : "Show decimals"}
+            <ToggleControl
+              on={showDecimals ?? false}
+              label="Decimals"
+              onToggle={onToggleDecimals}
               title={
                 showDecimals
                   ? "Round to whole numbers. Exact figures stay in each cell's tooltip."
                   : "Show decimals"
               }
-              aria-pressed={showDecimals ?? true}
-              className={cn(
-                "inline-flex items-center gap-1 h-6 px-2 rounded border text-[11px] font-medium transition-colors",
-                showDecimals
-                  ? "border-border bg-muted text-foreground"
-                  : "border-border/60 text-muted-foreground hover:bg-muted hover:text-foreground"
-              )}
-            >
-              <span aria-hidden="true" className="font-mono text-[10px]">.00</span>
-              Decimals
-            </button>
+              prefix={
+                <span aria-hidden="true" className="font-mono text-[10px]">
+                  .00
+                </span>
+              }
+            />
           )}
         </div>
       )}

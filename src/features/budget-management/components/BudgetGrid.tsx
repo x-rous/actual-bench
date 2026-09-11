@@ -386,6 +386,7 @@ export function BudgetGrid({
       {expenseGroups.length > 0 && (
         <>
           <SectionTotalRow
+            showDecimals={showDecimals}
             filter="expense"
             cellView={cellView}
             budgetMode={budgetMode}
@@ -416,6 +417,7 @@ export function BudgetGrid({
       {incomeGroups.length > 0 && (
         <>
           <SectionTotalRow
+            showDecimals={showDecimals}
             filter="income"
             cellView={cellView}
             budgetMode={budgetMode}
