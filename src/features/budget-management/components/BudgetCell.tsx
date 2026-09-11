@@ -393,7 +393,7 @@ export function BudgetCell({
     const displayText = hasMonthData ? formatMinor(displayMinor) : "";
 
     let blockedCellClass =
-      "relative h-7 px-2 flex items-center justify-end text-xs font-sans tabular-nums select-none outline-none border-r border-b border-border/50 transition-colors";
+      "relative h-[27px] px-2 flex items-center justify-end text-xs font-sans tabular-nums select-none outline-none border-r border-b border-border/50 transition-colors";
 
     blockedCellClass += blocked ? " cursor-not-allowed" : " cursor-default";
 
@@ -457,7 +457,7 @@ export function BudgetCell({
   if (editing) {
     return (
       <div
-        className={`relative h-7 px-0.5 flex items-center border-r border-b border-border/50 bg-background ring-2 ring-inset ring-foreground/80 z-10${dimClass}`}
+        className={`relative h-[27px] px-0.5 flex items-center border-r border-b border-border/50 bg-background ring-2 ring-inset ring-foreground/80 z-10${dimClass}`}
         role="gridcell"
         onPointerEnter={handlePointerEnter}
         onPointerUp={handlePointerUp}
@@ -496,7 +496,7 @@ export function BudgetCell({
 
   // ─── Normal cell ─────────────────────────────────────────────────────────────
   let cellClass =
-    "relative h-7 px-2 flex items-center justify-end text-xs font-sans tabular-nums select-none outline-none border-r border-b border-border/50 cursor-default transition-colors";
+    "relative h-[27px] px-2 flex items-center justify-end text-xs font-sans tabular-nums select-none outline-none border-r border-b border-border/50 cursor-default transition-colors";
 
   if (isAnchor) {
     cellClass += " ring-2 ring-inset ring-foreground/80";

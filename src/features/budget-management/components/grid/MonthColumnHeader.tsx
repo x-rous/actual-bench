@@ -84,7 +84,7 @@ export function MonthColumnHeader({
   return (
     <div
       className={cn(
-        "relative h-8 px-2 flex items-center justify-end gap-1.5 border-b-2 text-xs sticky top-0 z-20",
+        "relative h-7 px-2 flex items-center justify-end gap-1.5 border-b-2 text-xs sticky top-0 z-20",
         isCurrentMonth ? "font-bold" : "font-semibold",
         // Every state needs an OPAQUE background: the header is sticky, so a
         // translucent one lets the cells scroll visibly behind it. The

@@ -340,7 +340,7 @@ export function BudgetGrid({
     >
       {/* ── Column headers ── */}
       <div
-        className="h-8 px-3 flex items-center border-b-2 border-border bg-muted text-xs font-bold text-foreground sticky left-0 top-0 z-30"
+        className="h-7 px-3 flex items-center border-b-2 border-border bg-muted text-xs font-bold text-foreground sticky left-0 top-0 z-30"
         role="columnheader"
         aria-label="Category"
       >

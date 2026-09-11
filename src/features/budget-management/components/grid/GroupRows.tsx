@@ -71,7 +71,7 @@ export function GroupMonthAggregate({
   });
 
   const baseClass =
-    "h-7 border-r border-b border-border bg-[#F7F8FA] dark:bg-zinc-800 dark:border-zinc-700";
+    "h-[27px] border-r border-b border-border bg-[#F7F8FA] dark:bg-zinc-800 dark:border-zinc-700";
   const dimClass = isDimmed ? " opacity-50" : "";
 
   // A month the budget does not have renders empty: no placeholder, and no
@@ -293,7 +293,7 @@ export function BudgetGridGroupRows({
           chevron selects the group row; the chevron continues to toggle
           collapse via stopPropagation. */}
       <div
-        className={`h-7 px-2 flex items-center border-r border-b border-border bg-[#F7F8FA] dark:bg-zinc-800 dark:border-zinc-700 text-xs font-semibold text-black dark:text-zinc-100 sticky left-0 z-10 cursor-default outline-none${groupDimClass}${groupRowSelectedClass}`}
+        className={`h-[27px] px-2 flex items-center border-r border-b border-border bg-[#F7F8FA] dark:bg-zinc-800 dark:border-zinc-700 text-xs font-semibold text-black dark:text-zinc-100 sticky left-0 z-10 cursor-default outline-none${groupDimClass}${groupRowSelectedClass}`}
         role="gridcell"
         tabIndex={0}
         aria-selected={isGroupRowSelected}
@@ -386,7 +386,7 @@ export function BudgetGridGroupRows({
             >
               {/* Category label - clickable / focusable to select the row */}
               <div
-                className={`relative h-7 pl-4 pr-2 flex items-center border-r border-b border-border/50 text-xs sticky left-0 bg-background cursor-default outline-none${catDimClass}${catRowSelectedClass}`}
+                className={`relative h-[27px] pl-4 pr-2 flex items-center border-r border-b border-border/50 text-xs sticky left-0 bg-background cursor-default outline-none${catDimClass}${catRowSelectedClass}`}
                 role="gridcell"
                 tabIndex={0}
                 aria-selected={isCatRowSelected}
