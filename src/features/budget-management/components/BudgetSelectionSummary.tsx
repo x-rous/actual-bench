@@ -45,7 +45,7 @@ function Figure({
   label,
   value,
   average,
-  tone = "text-foreground",
+  tone = "text-muted-foreground",
   ...rest
 }: {
   label?: string;
@@ -55,11 +55,9 @@ function Figure({
 } & React.HTMLAttributes<HTMLSpanElement>) {
   return (
     <span className="tabular-nums whitespace-nowrap" {...rest}>
-      {label && <span className="text-muted-foreground/70">{label} </span>}
+      {label && <span>{label} </span>}
       <span className={tone}>{value}</span>
-      {average && (
-        <span className="text-muted-foreground/60"> ({average})</span>
-      )}
+      {average && <span> ({average})</span>}
     </span>
   );
 }
@@ -189,19 +187,14 @@ export function BudgetSelectionSummary({
    * green/red before; a row of six coloured numbers reads as an alert rather
    * than a summary, and none of them were urgent.
    */
-  const varianceTone =
-    variance === 0
-      ? "text-muted-foreground"
-      : variance > 0
-        ? "text-emerald-700/70 dark:text-emerald-500/60"
-        : "text-red-700/70 dark:text-red-500/60";
+  const varianceTone = "text-muted-foreground";
 
   const hasSelection = selectionCells.length > 0;
   const showFigures = hasSelection && !isMixedSelection;
 
   return (
     <div
-      className="h-8 border-t border-border bg-muted/30 flex items-stretch justify-between text-xs text-muted-foreground"
+      className="h-8 border-t border-border bg-muted/30 flex items-stretch justify-between text-[11px] text-muted-foreground"
       role="status"
       aria-live="polite"
       aria-label="Selection summary"
@@ -269,12 +262,10 @@ export function BudgetSelectionSummary({
               className="tabular-nums whitespace-nowrap"
               aria-label={`${selectionCells.length} cells selected, across ${selectedMonthSet.size} months and ${selectedCatSet.size} categories`}
             >
-              <span className="text-foreground">{selectionCells.length}</span> cell
+              {selectionCells.length} cell
               {selectionCells.length !== 1 ? "s" : ""}
-              <span className="text-muted-foreground/60">
-                {" "}
-                ({selectedMonthSet.size} mo × {selectedCatSet.size} cat)
-              </span>
+              {" "}
+              ({selectedMonthSet.size} mo × {selectedCatSet.size} cat)
             </span>
             {selectionStagedCount > 0 && (
               <Figure
@@ -292,7 +283,7 @@ export function BudgetSelectionSummary({
               <button
                 type="button"
                 onClick={() => setStagedDialogOpen(true)}
-                className="tabular-nums whitespace-nowrap font-medium text-foreground underline-offset-2 hover:underline"
+                className="tabular-nums whitespace-nowrap underline-offset-2 hover:underline hover:text-foreground"
                 aria-label={`${totalStaged} staged change${totalStaged !== 1 ? "s" : ""} in the draft - review them`}
                 title="Review staged changes"
               >

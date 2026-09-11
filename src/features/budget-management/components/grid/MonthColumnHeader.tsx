@@ -94,7 +94,10 @@ export function MonthColumnHeader({
           : isCurrentMonth
           ? "border-primary bg-muted text-foreground"
           : "border-border bg-muted text-foreground",
-        selectable && "cursor-pointer hover:bg-muted/70"
+        // Hover has to stay opaque for the same reason the base does: this
+        // header is sticky, and a translucent hover let the rows scroll
+        // through it. Brightness shifts the solid colour instead.
+        selectable && "cursor-pointer hover:brightness-95 dark:hover:brightness-125"
       )}
       aria-label={`Month: ${label}${isCurrentMonth ? ` (current month${elapsedText})` : ""}`}
       {...(headerTitle ? { title: headerTitle } : {})}
