@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useBudgetEditsStore } from "@/store/budgetEdits";
 import { StagedChangesDialog } from "./StagedChangesDialog";
+import { countLogicalEdits } from "./draft-panel/StagedChangesSection";
 import type { BudgetCellKey, BudgetCellSelection, CellView, LoadedCategory } from "../types";
 import { resolveSelectionCells } from "../lib/budgetSelectionUtils";
 import { useMonthsData } from "../context/MonthsDataContext";
@@ -86,12 +87,13 @@ export function BudgetSelectionSummary({
 }: Props) {
   const [stagedDialogOpen, setStagedDialogOpen] = useState(false);
   const edits = useBudgetEditsStore((s) => s.edits);
+  const holds = useBudgetEditsStore((s) => s.holds);
   // Effective (staged-or-server) per-month budgeted values, for the sum/average.
   const { effective } = useMonthsData();
 
   // ── Global stats (no category lookup needed) ──────────────────────────────
   const editValues = Object.values(edits);
-  const totalStaged = editValues.length;
+  const totalStaged = countLogicalEdits(edits, holds);
   const totalDelta = editValues.reduce(
     (sum, e) => sum + (e.nextBudgeted - e.previousBudgeted),
     0
@@ -154,7 +156,6 @@ export function BudgetSelectionSummary({
   const isMixedSelection = incomeCount > 0 && expenseCount > 0;
   // Single-sided total/average are meaningful; a mixed net is not, so it is
   // never rendered as one number.
-  const selectionSum = incomeSum + expenseSum;
   const cellCount = selectionCells.length;
   const budgetedAvg = cellCount > 0 ? budgetedTotal / cellCount : 0;
   const actualAvg = cellCount > 0 ? actualTotal / cellCount : 0;
@@ -169,10 +170,15 @@ export function BudgetSelectionSummary({
    * measure Σ is *not* showing is named, so the pair never repeats itself.
    */
   const variance = budgetedTotal - actualTotal;
-  const showComparison =
-    !isMixedSelection && selectionCells.length > 0 && cellView !== "balance";
-  const comparisonLabel = cellView === "spent" ? "budgeted" : "actual";
-  const comparisonValue = cellView === "spent" ? budgetedTotal : actualTotal;
+
+  /**
+   * A mixed selection shows one measure per side rather than the full trio, so
+   * it is the one place left where the grid's view decides what is on display -
+   * and therefore the one place the label has to follow it. Labelling a column
+   * of actuals "Budgeted" is worse than not splitting at all.
+   */
+  const mixedLabel =
+    cellView === "spent" ? "Actual" : cellView === "balance" ? "Balance" : "Budgeted";
 
   const selectedMonthSet = new Set(selectionCells.map((c) => c.month));
   const selectedCatSet = new Set(selectionCells.map((c) => c.categoryId));
@@ -239,9 +245,9 @@ export function BudgetSelectionSummary({
           // variance - one plan-versus-actual across both answers neither.
           <Zone className="pl-4">
             <Figure
-              label="Budgeted income"
+              label={`${mixedLabel} income`}
               value={formatMinor(incomeSum)}
-              aria-label={`Budgeted income ${formatMinor(incomeSum)}, budgeted expenses ${formatMinor(expenseSum)}`}
+              aria-label={`${mixedLabel} income ${formatMinor(incomeSum)}, ${mixedLabel.toLowerCase()} expenses ${formatMinor(expenseSum)}`}
             />
             <Figure label="expenses" value={formatMinor(expenseSum)} />
           </Zone>

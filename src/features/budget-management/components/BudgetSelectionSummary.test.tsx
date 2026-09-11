@@ -228,3 +228,76 @@ describe("BudgetSelectionSummary layout", () => {
   });
 });
 
+describe("BudgetSelectionSummary mixed selections follow the view", () => {
+  const mixedCategories = [
+    { id: "a", name: "Salary", isIncome: true },
+    { id: "b", name: "Rent", isIncome: false },
+  ] as unknown as LoadedCategory[];
+  const selection: BudgetCellSelection = {
+    anchorCategoryId: "a",
+    anchorMonth: "2026-08",
+    focusCategoryId: "b",
+    focusMonth: "2026-08",
+  };
+
+  function renderMixed(cellView: "budgeted" | "spent" | "balance") {
+    render(
+      <BudgetSelectionSummary
+        selection={selection}
+        activeMonths={["2026-08"]}
+        categories={mixedCategories}
+        cellView={cellView}
+      />
+    );
+  }
+
+  /**
+   * A mixed selection shows one measure per side rather than the full trio, so
+   * it is the one place the view still decides what is displayed - and so the
+   * one place the label has to follow it.
+   */
+  it("labels the split Budgeted in the budgeted view", () => {
+    renderMixed("budgeted");
+    expect(screen.getByLabelText(/Budgeted income/)).toBeInTheDocument();
+  });
+
+  it("labels it Actual when the grid shows spent", () => {
+    renderMixed("spent");
+    expect(screen.getByLabelText(/Actual income/)).toBeInTheDocument();
+    expect(screen.queryByLabelText(/Budgeted income/)).not.toBeInTheDocument();
+  });
+
+  it("labels it Balance in the balance view", () => {
+    renderMixed("balance");
+    expect(screen.getByLabelText(/Balance income/)).toBeInTheDocument();
+  });
+});
+
+describe("BudgetSelectionSummary counts holds", () => {
+  afterEach(() => {
+    act(() => useBudgetEditsStore.getState().discardAll());
+  });
+
+  it("reports a holds-only draft rather than saying there is nothing staged", () => {
+    // A hold is stageable on its own, and the review dialog counts it - the
+    // footer used to count edits only and so hid the way into that dialog.
+    act(() =>
+      useBudgetEditsStore.getState().stageHold({
+        month: "2026-08",
+        previousAmount: 0,
+        nextAmount: 5_000,
+      })
+    );
+    render(
+      <BudgetSelectionSummary
+        selection={null}
+        activeMonths={["2026-08"]}
+        categories={categories}
+        cellView="budgeted"
+      />
+    );
+    expect(screen.queryByText("No staged edits")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /staged change/i })).toBeInTheDocument();
+  });
+});
+
