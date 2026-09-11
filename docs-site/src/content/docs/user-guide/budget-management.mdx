@@ -130,12 +130,17 @@ turns them off; income rows never have one.
   you can tell which cell you are in without counting columns.
 - Move the 12-month window back/forward by one month with `‹` / `›`, or by a year with `«` / `»`.
 - Use the calendar button to jump back to the current month at any time.
+- **Click the month range in the toolbar** to jump straight to any month - pick a year, then a month,
+  and the window starts there. A month the budget file has no data for is dimmed but still reachable,
+  so a gap in history can be looked at.
 - The `[` and `]` keys pan the window backward/forward by one month.
 
 ## Expand, collapse, and hide
 
 - Expand or collapse all groups with the toolbar buttons, or `E` / `Shift+E`.
 - Toggle a single group with `Space` on its label.
+- Which groups are collapsed is remembered while the tab is open, so leaving the page and coming back
+  does not undo it.
 - Show or hide hidden categories with the toolbar toggle, or the `H` key.
 
 ## Edit one budget cell
@@ -174,20 +179,50 @@ With a range selected:
 - `Ctrl/Cmd+D` - fill down.
 - `Ctrl/Cmd+R` - fill right.
 - `Alt+L` - fill each row with its previous-month value.
-- `Alt+A` - fill each row with its 3-month average.
+- `Alt+Y` - fill each row from the same month a year earlier.
+- `Alt+A` / `Alt+Shift+A` / `Ctrl/Cmd+Alt+A` - fill each row with its 3-, 6-, or 12-month average.
 
 ## Right-click bulk actions
 
-Right-click a category budget cell for a context menu:
+Right-click a **budget cell**, a **category group** (its month cell or its name), or a **month column
+header**. A group is a summarisation of the categories under it, so acting on one acts on all of
+them - and the group does not need to be expanded first. A month header acts on every category in
+that month, which is the quickest way to plan a whole month in one go.
 
-- **Cell actions** (mode-aware): in tracking mode, enable/disable rollover from that month forward; in
-  envelope mode, **Cover Overspending** or **Transfer to Another Category**.
-- **Set Budget**: Copy previous month, Copy specific month…, Set to zero, Set to fixed amount…, Apply
-  % change…, and 3-, 6-, or 12-month averages (averages use each prior month's **budgeted** amount).
+The menu names what it will change and how many cells, so a group or column action is never a guess.
 
-Each budget-setting action stages as one undo step. The ones that need input ask for the parameters,
-show you the result, and only then stage it. Carryover is the exception - its toggle writes straight
-away and tells you what happened.
+- **Cell actions** (mode-aware, cells only): in tracking mode, enable/disable rollover from that month
+  forward; in envelope mode, **Cover Overspending** or **Transfer to Another Category**. These act on
+  one category-month, so they are not offered for a group or a column.
+- **Copy from another month**: Copy previous month, Copy prior year same month, Copy prior year
+  with %… (an uplift applied to the copied amount), Copy specific month… - the picker offers every
+  month in the budget file, not only the twelve on screen.
+- **Set a value**: Set to zero, Set to fixed amount…, Apply % change…
+- **Average past budgets**: 3-, 6-, or 12-month average of what was **budgeted**.
+- **Average past actuals**: 3-, 6-, or 12-month average of what was actually **spent or received** -
+  "budget what I normally spend" rather than "what I normally budgeted".
+
+Anything a run cannot do is reported rather than skipped quietly: months the budget file does not
+cover, categories that did not exist yet, and read-only months are all counted and named.
+
+Each budget-setting action stages as one undo step. Carryover is the exception - its toggle writes
+straight away and tells you what happened.
+
+### The preview
+
+Group and column actions - and anything that needs a parameter - show a preview before staging
+anything. An action that needs no parameter opens straight onto it.
+
+The preview is a table of exactly what will be written: group, category, month, the current amount,
+the new one, and the change. **The new amounts are editable.** If a 6-month average lands on 97 and
+you wanted 100, type it - arithmetic like `50 * 2` works, `↑` and `↓` move between rows, `Enter`
+commits and steps down, `Esc` abandons an edit. Adjusted rows are marked and can be reverted one by
+one or all at once. What gets applied is what the table shows.
+
+Totals sit under the table, split into **Income** and **Expenses** when a run covers both, because one
+figure spanning a spending plan and an income plan answers neither. Above a dozen rows there is a
+filter - it finds rows, it never changes what **Apply** writes, and the totals cover every row either
+way.
 
 ## Review staged changes and Save
 
