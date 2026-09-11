@@ -54,6 +54,8 @@ type Props = {
   /** RD-065: spent-vs-budget bars under editable cells. */
   showSpendingBars?: boolean;
   onToggleSpendingBars?: () => void;
+  showDecimals?: boolean;
+  onToggleDecimals?: () => void;
   onExport?: () => void;
   onImport?: () => void;
   /** Open the keyboard-shortcuts cheatsheet modal. */
@@ -88,6 +90,8 @@ export function BudgetToolbar({
   onToggleShowHidden,
   showSpendingBars,
   onToggleSpendingBars,
+  showDecimals,
+  onToggleDecimals,
   onExport,
   onImport,
   onShowShortcuts,
@@ -222,9 +226,9 @@ export function BudgetToolbar({
               type="button"
               onClick={() => onCellViewChange(view)}
               aria-pressed={cellView === view}
-              className={`rounded px-2 py-0.5 text-[11px] transition-colors ${
+              className={`rounded px-2.5 py-1 text-xs transition-colors ${
                 cellView === view
-                  ? "bg-background text-foreground font-semibold shadow-sm"
+                  ? "bg-background text-foreground font-semibold shadow-sm ring-1 ring-border"
                   : "text-muted-foreground hover:text-foreground"
               }`}
             >
@@ -234,10 +238,10 @@ export function BudgetToolbar({
         </div>
       </div>
 
-      {(onExpandAll || onCollapseAll || onToggleShowHidden || onToggleSpendingBars) && <Divider />}
+      {(onExpandAll || onCollapseAll || onToggleShowHidden || onToggleSpendingBars || onToggleDecimals) && <Divider />}
 
       {/* Expand / Collapse All + Show/Hide hidden + Spending bars */}
-      {(onExpandAll || onCollapseAll || onToggleShowHidden || onToggleSpendingBars) && (
+      {(onExpandAll || onCollapseAll || onToggleShowHidden || onToggleSpendingBars || onToggleDecimals) && (
         <div
           className="flex items-center gap-0.5 shrink-0"
           role="group"
@@ -313,6 +317,28 @@ export function BudgetToolbar({
               Spending Bars
             </button>
           )}
+          {onToggleDecimals && (
+            <button
+              type="button"
+              onClick={onToggleDecimals}
+              aria-label={showDecimals ? "Round amounts to whole numbers" : "Show decimals"}
+              title={
+                showDecimals
+                  ? "Round to whole numbers. Exact figures stay in each cell's tooltip."
+                  : "Show decimals"
+              }
+              aria-pressed={showDecimals ?? true}
+              className={cn(
+                "inline-flex items-center gap-1 h-6 px-2 rounded border text-[11px] font-medium transition-colors",
+                showDecimals
+                  ? "border-border bg-muted text-foreground"
+                  : "border-border/60 text-muted-foreground hover:bg-muted hover:text-foreground"
+              )}
+            >
+              <span aria-hidden="true" className="font-mono text-[10px]">.00</span>
+              Decimals
+            </button>
+          )}
         </div>
       )}
 
@@ -327,7 +353,7 @@ export function BudgetToolbar({
             type="button"
             onClick={onImport}
             aria-label="Import budget data from CSV"
-            className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs rounded border border-border hover:bg-muted transition-colors"
+            className="inline-flex items-center gap-1.5 px-2 py-1 text-xs rounded text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
           >
             <Download className="h-3 w-3" aria-hidden="true" />
             Import
@@ -339,7 +365,7 @@ export function BudgetToolbar({
             type="button"
             onClick={onExport}
             aria-label="Export budget data to CSV"
-            className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs rounded border border-border hover:bg-muted transition-colors"
+            className="inline-flex items-center gap-1.5 px-2 py-1 text-xs rounded text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
           >
             <Upload className="h-3 w-3" aria-hidden="true" />
             Export

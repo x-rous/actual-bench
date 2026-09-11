@@ -125,6 +125,9 @@ export function BudgetManagementView() {
   const [showHidden, setShowHidden] = useState(false);
   // RD-065: spent-vs-budget bars under editable cells. On by default.
   const [showSpendingBars, setShowSpendingBars] = useState(true);
+  // Cents are on by default; the toggle is for reading a whole year at once.
+  const [showDecimals, setShowDecimals] = useState(true);
+  const handleToggleDecimals = useCallback(() => setShowDecimals((v) => !v), []);
   const handleToggleSpendingBars = useCallback(() => setShowSpendingBars((v) => !v), []);
 
   const handleToggleGroupCollapse = useCallback((groupId: string) => {
@@ -364,6 +367,8 @@ export function BudgetManagementView() {
         onToggleShowHidden={handleToggleShowHidden}
         showSpendingBars={showSpendingBars}
         onToggleSpendingBars={handleToggleSpendingBars}
+        showDecimals={showDecimals}
+        onToggleDecimals={handleToggleDecimals}
         onExport={handleOpenExport}
         onImport={handleOpenImport}
         onShowShortcuts={() => setShortcutsHelpOpen(true)}
@@ -385,6 +390,7 @@ export function BudgetManagementView() {
         onToggleCollapse={handleToggleGroupCollapse}
         showHidden={showHidden}
         showSpendingBars={showSpendingBars}
+        showDecimals={showDecimals}
         onOpenTransfer={budgetMode === "envelope" ? handleOpenTransfer : undefined}
       />
 

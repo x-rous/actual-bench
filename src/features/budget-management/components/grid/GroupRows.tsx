@@ -4,7 +4,7 @@ import { ChevronDown, ChevronRight, StickyNote } from "lucide-react";
 import { useEffectiveMonthFromContext } from "../../context/MonthsDataContext";
 import { useBudgetEditsStore } from "@/store/budgetEdits";
 import { useAllNotes } from "@/hooks/useAllNotes";
-import { formatMinor } from "../../lib/format";
+import { formatGridMinor, formatMinor } from "../../lib/format";
 import { computeSpendingBar, spendingTierLabel } from "../../lib/spendingBar";
 import { classifyMonthActualStatus } from "../../lib/budgetDetailsModel";
 import { SpendingBarView } from "./SpendingBarView";
@@ -39,6 +39,7 @@ export function GroupMonthAggregate({
   onToggleCollapse,
   isReadOnlyMonth,
   showSpendingBars,
+  showDecimals = true,
   onContextMenuRequest,
 }: {
   month: string;
@@ -52,6 +53,7 @@ export function GroupMonthAggregate({
   onToggleCollapse?: () => void;
   isReadOnlyMonth?: boolean;
   showSpendingBars?: boolean;
+  showDecimals?: boolean;
   onContextMenuRequest?: (groupId: string, month: string, x: number, y: number) => void;
 }) {
   const data = useEffectiveMonthFromContext(month);
@@ -192,7 +194,7 @@ export function GroupMonthAggregate({
           title={`${stagedChildCount} staged change${stagedChildCount !== 1 ? "s" : ""} in this group for ${month}`}
         />
       )}
-      {formatMinor(displayValue)}
+      {formatGridMinor(displayValue, { showDecimals })}
       {spendingBar && <SpendingBarView bar={spendingBar} />}
     </div>
   );
@@ -216,6 +218,7 @@ export type GroupRowsProps = {
   suppressNextClickRef: { current: boolean };
   showHidden: boolean;
   showSpendingBars?: boolean;
+  showDecimals?: boolean;
   /** F-083: focused cell's category, for the crosshair row-label (axis) tint. */
   crosshairCategoryId?: string | null;
   groupSelection?: { groupId: string; month: string } | null;
@@ -260,6 +263,7 @@ export function BudgetGridGroupRows({
   suppressNextClickRef,
   showHidden,
   showSpendingBars,
+  showDecimals,
   crosshairCategoryId,
   groupSelection,
   rowSelection,
@@ -355,6 +359,7 @@ export function BudgetGridGroupRows({
           onToggleCollapse={onToggleCollapse}
           isReadOnlyMonth={readOnlyMonths.has(month)}
           showSpendingBars={showSpendingBars}
+          showDecimals={showDecimals}
           onContextMenuRequest={onGroupContextMenu}
         />
       ))}
@@ -432,6 +437,7 @@ export function BudgetGridGroupRows({
                     isDimmed={catDimmed}
                     isReadOnlyMonth={readOnlyMonths.has(month)}
                     showSpendingBars={showSpendingBars}
+                    showDecimals={showDecimals}
                     onFocus={onCellFocus}
                     onRangeSelect={onCellRangeSelect}
                     onNavigate={(dir) => onCellNavigate?.(cat.id, month, dir)}

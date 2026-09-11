@@ -125,6 +125,8 @@ type Props = {
   showHidden?: boolean;
   /** RD-065: draw the spent-vs-budget bar under editable expense cells. */
   showSpendingBars?: boolean;
+  /** Round grid amounts to whole units. Exact figures stay in tooltips. */
+  showDecimals?: boolean;
   onOpenTransfer?: (categoryId: string, month: string, mode: "cover" | "transfer") => void;
   // ── Tier 3 view-state setters (keyboard shortcuts) ─────────────────────
   onCycleCellView: () => void;
@@ -168,6 +170,7 @@ function BudgetWorkspaceInner({
   onToggleCollapse,
   showHidden = false,
   showSpendingBars = false,
+  showDecimals = true,
   onOpenTransfer,
   onCycleCellView,
   onToggleShowHidden,
@@ -1167,6 +1170,7 @@ function BudgetWorkspaceInner({
           onToggleCollapse={onToggleCollapse}
           showHidden={showHidden}
           showSpendingBars={showSpendingBars}
+          showDecimals={showDecimals}
           onCellFocus={handleCellFocus}
           onCellRangeSelect={handleCellRangeSelect}
           onCellNavigate={handleCellNavigate}

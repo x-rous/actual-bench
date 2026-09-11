@@ -43,6 +43,7 @@ type Props = {
   showHidden: boolean;
   /** RD-065: draw the spent-vs-budget bar under editable expense cells. */
   showSpendingBars?: boolean;
+  showDecimals?: boolean;
   onCellFocus: (categoryId: string, month: string) => void;
   onCellRangeSelect: (categoryId: string, month: string) => void;
   onCellNavigate?: (categoryId: string, month: string, dir: NavDirection) => void;
@@ -100,6 +101,7 @@ export function BudgetGrid({
   onToggleCollapse,
   showHidden,
   showSpendingBars,
+  showDecimals,
   onCellFocus,
   onCellRangeSelect,
   onCellNavigate,
@@ -281,6 +283,7 @@ export function BudgetGrid({
     suppressNextClickRef: suppressNextClickClearRef,
     showHidden,
     showSpendingBars,
+    showDecimals,
     crosshairCategoryId,
     onCellFocus,
     onCellRangeSelect,
