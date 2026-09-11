@@ -84,7 +84,7 @@ export function MonthColumnHeader({
   return (
     <div
       className={cn(
-        "relative h-8 px-2 flex items-center justify-end gap-1.5 border-b-2 text-xs sticky top-0 z-20",
+        "relative h-7 px-2 flex items-center justify-end gap-1.5 border-b-2 text-xs sticky top-0 z-20",
         isCurrentMonth ? "font-bold" : "font-semibold",
         // Every state needs an OPAQUE background: the header is sticky, so a
         // translucent one lets the cells scroll visibly behind it. The
@@ -94,7 +94,10 @@ export function MonthColumnHeader({
           : isCurrentMonth
           ? "border-primary bg-muted text-foreground"
           : "border-border bg-muted text-foreground",
-        selectable && "cursor-pointer hover:bg-muted/70"
+        // Hover has to stay opaque for the same reason the base does: this
+        // header is sticky, and a translucent hover let the rows scroll
+        // through it. Brightness shifts the solid colour instead.
+        selectable && "cursor-pointer hover:brightness-95 dark:hover:brightness-125"
       )}
       aria-label={`Month: ${label}${isCurrentMonth ? ` (current month${elapsedText})` : ""}`}
       {...(headerTitle ? { title: headerTitle } : {})}

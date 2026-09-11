@@ -1,4 +1,5 @@
 import {
+  formatGridMinor,
   formatMinor,
   formatCurrency,
   formatSigned,
@@ -95,5 +96,45 @@ describe("minorToDecimalString / decimalStringToMinor", () => {
   it("accepts a leading sign", () => {
     expect(decimalStringToMinor("-12.34")).toBe(-1234);
     expect(decimalStringToMinor("+12.34")).toBe(1234);
+  });
+});
+
+describe("formatGridMinor", () => {
+  it("prints a dash for zero, so a column of nothing reads as nothing", () => {
+    expect(formatGridMinor(0)).toBe("–");
+  });
+
+  it("keeps cents by default", () => {
+    expect(formatGridMinor(332_908)).toBe("3,329.08");
+  });
+
+  it("drops cents when asked, rounding rather than truncating", () => {
+    expect(formatGridMinor(332_908, { showDecimals: false })).toBe("3,329");
+    expect(formatGridMinor(332_958, { showDecimals: false })).toBe("3,330");
+  });
+
+  it("dashes zero whether or not cents are shown", () => {
+    expect(formatGridMinor(0, { showDecimals: false })).toBe("–");
+  });
+
+  it("keeps negatives intact", () => {
+    expect(formatGridMinor(-1_234)).toBe("-12.34");
+    expect(formatGridMinor(-1_234, { showDecimals: false })).toBe("-12");
+  });
+});
+
+describe("formatGridMinor near zero", () => {
+  it("never renders a signed zero", () => {
+    // One cent with decimals hidden rounds to zero; Intl would print "-0".
+    expect(formatGridMinor(-1, { showDecimals: false })).toBe("0");
+    expect(formatGridMinor(-49, { showDecimals: false })).toBe("0");
+  });
+
+  it("still shows a real rounded amount, sign and all", () => {
+    expect(formatGridMinor(-51, { showDecimals: false })).toBe("-1");
+  });
+
+  it("keeps the dash for an actual zero", () => {
+    expect(formatGridMinor(0, { showDecimals: false })).toBe("–");
   });
 });

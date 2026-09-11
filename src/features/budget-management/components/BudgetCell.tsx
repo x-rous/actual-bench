@@ -4,7 +4,7 @@ import { useRef, useState } from "react";
 import { useBudgetEditsStore } from "@/store/budgetEdits";
 import { useEffectiveMonthFromContext } from "../context/MonthsDataContext";
 import { parseBudgetExpression } from "../lib/budgetMath";
-import { formatMinor } from "../lib/format";
+import { formatGridMinor, formatMinor } from "../lib/format";
 import { computeSpendingBar, spendingTierLabel } from "../lib/spendingBar";
 import { SpendingBarView } from "./grid/SpendingBarView";
 import { isIncomeBlocked, isLargeChange } from "../lib/budgetValidation";
@@ -40,6 +40,8 @@ type Props = {
   isReadOnlyMonth?: boolean;
   /** RD-065: draw the spent-vs-budget bar under editable expense cells. */
   showSpendingBars?: boolean;
+  /** Round the displayed amount to whole units; the tooltip keeps the exact figure. */
+  showDecimals?: boolean;
 };
 
 /** BM-16: minimum pointer travel (CSS px) before treating a drag as range-select. */
@@ -69,6 +71,7 @@ export function BudgetCell({
   isDimmed,
   isReadOnlyMonth = false,
   showSpendingBars = false,
+  showDecimals = true,
 }: Props) {
   const dimClass = isDimmed ? " opacity-50" : "";
   const key: BudgetCellKey = `${month}:${category.id}`;
@@ -380,8 +383,16 @@ export function BudgetCell({
       : envelopeIncome
       ? "Received income - envelope budgeting assigns no budget or balance to income."
       : cellView === "budgeted"
-      ? `Spent: ${formatMinor(effectiveCategory.actuals)} | Balance: ${formatMinor(effectiveCategory.balance)}${overNote}`
-      : undefined;
+      ? // The budgeted view has its own tooltip, so the rounded-value note has
+        // to be folded into it - otherwise the main view, the one most likely
+        // to be read with decimals off, is the one place the exact figure is
+        // unreachable.
+        `${!showDecimals && hasMonthData ? `Budgeted: ${formatMinor(displayMinor)} | ` : ""}` +
+        `Spent: ${formatMinor(effectiveCategory.actuals)} | Balance: ${formatMinor(effectiveCategory.balance)}${overNote}`
+      : !showDecimals && hasMonthData
+        // Rounded on screen, so the exact figure has to stay reachable.
+        ? `Exact: ${formatMinor(displayMinor)}`
+        : undefined;
 
   // ─── Non-editable cell ───────────────────────────────────────────────────────
   if (blocked || viewBlocked || isReadOnlyMonth) {
@@ -390,10 +401,10 @@ export function BudgetCell({
       : blocked
       ? `${category.name} received for ${month} - envelope income is tracked as received, not budgeted`
       : `${category.name} ${viewTerm} for ${month}`;
-    const displayText = hasMonthData ? formatMinor(displayMinor) : "";
+    const displayText = hasMonthData ? formatGridMinor(displayMinor, { showDecimals }) : "";
 
     let blockedCellClass =
-      "relative h-7 px-2 flex items-center justify-end text-xs font-sans tabular-nums select-none outline-none border-r border-b border-border/50 transition-colors";
+      "relative h-[27px] px-2 flex items-center justify-end text-xs font-sans tabular-nums select-none outline-none border-r border-b border-border/50 transition-colors";
 
     blockedCellClass += blocked ? " cursor-not-allowed" : " cursor-default";
 
@@ -457,7 +468,7 @@ export function BudgetCell({
   if (editing) {
     return (
       <div
-        className={`relative h-7 px-0.5 flex items-center border-r border-b border-border/50 bg-background ring-2 ring-inset ring-foreground/80 z-10${dimClass}`}
+        className={`relative h-[27px] px-0.5 flex items-center border-r border-b border-border/50 bg-background ring-2 ring-inset ring-foreground/80 z-10${dimClass}`}
         role="gridcell"
         onPointerEnter={handlePointerEnter}
         onPointerUp={handlePointerUp}
@@ -496,7 +507,7 @@ export function BudgetCell({
 
   // ─── Normal cell ─────────────────────────────────────────────────────────────
   let cellClass =
-    "relative h-7 px-2 flex items-center justify-end text-xs font-sans tabular-nums select-none outline-none border-r border-b border-border/50 cursor-default transition-colors";
+    "relative h-[27px] px-2 flex items-center justify-end text-xs font-sans tabular-nums select-none outline-none border-r border-b border-border/50 cursor-default transition-colors";
 
   if (isAnchor) {
     cellClass += " ring-2 ring-inset ring-foreground/80";
@@ -542,7 +553,7 @@ export function BudgetCell({
             : "text-foreground"
         }
       >
-        {hasMonthData ? formatMinor(displayMinor) : ""}
+        {hasMonthData ? formatGridMinor(displayMinor, { showDecimals }) : ""}
       </span>
 
       {hasLargeChange && (

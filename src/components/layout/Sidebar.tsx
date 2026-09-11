@@ -176,8 +176,10 @@ function SidebarNavLink({ item, collapsed, pathname, allHrefs }: SidebarNavLinkP
         // The Tools group keeps growing, but a nav that is shorter and harder
         // to read is not a win: the type size and horizontal padding stay, and
         // the rows keep enough vertical room to be distinguishable at a glance.
-        "flex items-center rounded-md px-2 py-1.5 text-sm font-medium transition-colors",
-        collapsed ? "justify-center py-1.5" : "gap-2.5 px-3",
+        // 5px rather than 6px trims 2px a row - enough to matter down a long
+        // list, not enough to crowd the 20px line box.
+        "flex items-center rounded-md px-2 py-[5px] text-sm font-medium transition-colors",
+        collapsed ? "justify-center py-[5px]" : "gap-2.5 px-3",
         active
           ? "bg-accent text-accent-foreground"
           : "text-muted-foreground hover:bg-accent/50 hover:text-accent-foreground"

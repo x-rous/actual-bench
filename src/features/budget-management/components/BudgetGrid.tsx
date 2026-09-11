@@ -43,6 +43,7 @@ type Props = {
   showHidden: boolean;
   /** RD-065: draw the spent-vs-budget bar under editable expense cells. */
   showSpendingBars?: boolean;
+  showDecimals?: boolean;
   onCellFocus: (categoryId: string, month: string) => void;
   onCellRangeSelect: (categoryId: string, month: string) => void;
   onCellNavigate?: (categoryId: string, month: string, dir: NavDirection) => void;
@@ -100,6 +101,7 @@ export function BudgetGrid({
   onToggleCollapse,
   showHidden,
   showSpendingBars,
+  showDecimals,
   onCellFocus,
   onCellRangeSelect,
   onCellNavigate,
@@ -281,6 +283,7 @@ export function BudgetGrid({
     suppressNextClickRef: suppressNextClickClearRef,
     showHidden,
     showSpendingBars,
+    showDecimals,
     crosshairCategoryId,
     onCellFocus,
     onCellRangeSelect,
@@ -340,7 +343,7 @@ export function BudgetGrid({
     >
       {/* ── Column headers ── */}
       <div
-        className="h-8 px-3 flex items-center border-b-2 border-border bg-muted text-xs font-bold text-foreground sticky left-0 top-0 z-30"
+        className="h-7 px-3 flex items-center border-b-2 border-border bg-muted text-xs font-bold text-foreground sticky left-0 top-0 z-30"
         role="columnheader"
         aria-label="Category"
       >
@@ -383,6 +386,7 @@ export function BudgetGrid({
       {expenseGroups.length > 0 && (
         <>
           <SectionTotalRow
+            showDecimals={showDecimals}
             filter="expense"
             cellView={cellView}
             budgetMode={budgetMode}
@@ -413,6 +417,7 @@ export function BudgetGrid({
       {incomeGroups.length > 0 && (
         <>
           <SectionTotalRow
+            showDecimals={showDecimals}
             filter="income"
             cellView={cellView}
             budgetMode={budgetMode}

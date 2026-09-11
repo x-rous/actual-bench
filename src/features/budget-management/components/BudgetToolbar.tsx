@@ -54,6 +54,8 @@ type Props = {
   /** RD-065: spent-vs-budget bars under editable cells. */
   showSpendingBars?: boolean;
   onToggleSpendingBars?: () => void;
+  showDecimals?: boolean;
+  onToggleDecimals?: () => void;
   onExport?: () => void;
   onImport?: () => void;
   /** Open the keyboard-shortcuts cheatsheet modal. */
@@ -88,6 +90,8 @@ export function BudgetToolbar({
   onToggleShowHidden,
   showSpendingBars,
   onToggleSpendingBars,
+  showDecimals,
+  onToggleDecimals,
   onExport,
   onImport,
   onShowShortcuts,
@@ -231,10 +235,10 @@ export function BudgetToolbar({
         ))}
       </div>
 
-      {(onExpandAll || onCollapseAll || onToggleShowHidden || onToggleSpendingBars) && <Divider />}
+      {(onExpandAll || onCollapseAll || onToggleShowHidden || onToggleSpendingBars || onToggleDecimals) && <Divider />}
 
       {/* Expand / Collapse All + Show/Hide hidden + Spending bars */}
-      {(onExpandAll || onCollapseAll || onToggleShowHidden || onToggleSpendingBars) && (
+      {(onExpandAll || onCollapseAll || onToggleShowHidden || onToggleSpendingBars || onToggleDecimals) && (
         <div
           className="flex items-center gap-0.5 shrink-0"
           role="group"
@@ -268,28 +272,28 @@ export function BudgetToolbar({
             <button
               type="button"
               onClick={onToggleShowHidden}
-              aria-label={showHidden ? "Hide hidden categories" : "Show hidden categories"}
+              aria-label="Hidden"
               title={hiddenToggleTitle}
-              // Inverted: pressed state means "currently hiding hidden categories"
-              // (showHidden=false). Default — hidden visible — is unpressed.
-              aria-pressed={!showHidden}
-              className={`inline-flex items-center gap-1 h-6 px-2 rounded text-[11px] font-medium transition-colors ${
-                !showHidden
-                  ? "text-foreground bg-muted"
-                  : "text-muted-foreground hover:bg-muted hover:text-foreground"
+              // Pressed means the feature is on - hidden categories are being
+              // shown - matching the two toggles beside it. It used to be
+              // inverted, so the default state announced itself as pressed
+              // while showing nothing extra, and the label named the action
+              // rather than the thing, leaving the two signals contradicting
+              // each other. The action wording lives in the title now.
+              aria-pressed={showHidden}
+              className={`inline-flex items-center gap-1 h-6 px-2 rounded border text-[11px] font-medium transition-colors ${
+                showHidden
+                  ? "border-border bg-muted text-foreground"
+                  : "border-border/60 text-muted-foreground hover:bg-muted hover:text-foreground"
               }`}
             >
+              {/* The icon carries the state, so it is not conveyed by fill alone. */}
               {showHidden ? (
-                <>
-                  <EyeOff className="h-3.5 w-3.5" aria-hidden="true" />
-                  Hide hidden
-                </>
+                <Eye className="h-3.5 w-3.5" aria-hidden="true" />
               ) : (
-                <>
-                  <Eye className="h-3.5 w-3.5" aria-hidden="true" />
-                  Show hidden
-                </>
+                <EyeOff className="h-3.5 w-3.5" aria-hidden="true" />
               )}
+              Hidden
             </button>
           )}
           {onToggleSpendingBars && (
@@ -300,14 +304,36 @@ export function BudgetToolbar({
               title={showSpendingBars ? "Hide spending bars" : "Show spending bars"}
               aria-pressed={showSpendingBars ?? false}
               className={cn(
-                "inline-flex items-center gap-1 h-6 px-2 rounded text-[11px] font-medium transition-colors",
+                "inline-flex items-center gap-1 h-6 px-2 rounded border text-[11px] font-medium transition-colors",
                 showSpendingBars
-                  ? "text-foreground bg-muted"
-                  : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                  ? "border-border bg-muted text-foreground"
+                  : "border-border/60 text-muted-foreground hover:bg-muted hover:text-foreground"
               )}
             >
               <BarChart2 className="h-3.5 w-3.5" aria-hidden="true" />
-              Spending Bars
+              Spend Bars
+            </button>
+          )}
+          {onToggleDecimals && (
+            <button
+              type="button"
+              onClick={onToggleDecimals}
+              aria-label={showDecimals ? "Round amounts to whole numbers" : "Show decimals"}
+              title={
+                showDecimals
+                  ? "Round to whole numbers. Exact figures stay in each cell's tooltip."
+                  : "Show decimals"
+              }
+              aria-pressed={showDecimals ?? false}
+              className={cn(
+                "inline-flex items-center gap-1 h-6 px-2 rounded border text-[11px] font-medium transition-colors",
+                showDecimals
+                  ? "border-border bg-muted text-foreground"
+                  : "border-border/60 text-muted-foreground hover:bg-muted hover:text-foreground"
+              )}
+            >
+              <span aria-hidden="true" className="font-mono text-[10px]">.00</span>
+              Decimals
             </button>
           )}
         </div>
@@ -324,7 +350,7 @@ export function BudgetToolbar({
             type="button"
             onClick={onImport}
             aria-label="Import budget data from CSV"
-            className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs rounded border border-border hover:bg-muted transition-colors"
+            className="inline-flex items-center gap-1.5 px-2 py-1 text-xs rounded text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
           >
             <Download className="h-3 w-3" aria-hidden="true" />
             Import
@@ -336,7 +362,7 @@ export function BudgetToolbar({
             type="button"
             onClick={onExport}
             aria-label="Export budget data to CSV"
-            className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs rounded border border-border hover:bg-muted transition-colors"
+            className="inline-flex items-center gap-1.5 px-2 py-1 text-xs rounded text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
           >
             <Upload className="h-3 w-3" aria-hidden="true" />
             Export

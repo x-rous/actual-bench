@@ -26,6 +26,10 @@ export function summaryToneClass(
       return "text-amber-600 dark:text-amber-400";
     case "future":
       return "text-muted-foreground/55";
+    case "projection":
+      // A projection is a real number the plan produces, not an absence. Greying
+      // it out read as "nothing here" on exactly the months being planned.
+      return "text-[#AF903E]";
     case "muted":
       return "text-muted-foreground";
     case "neutral":

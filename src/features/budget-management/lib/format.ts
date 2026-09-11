@@ -30,6 +30,38 @@ export function formatMinor(minor: number): string {
   });
 }
 
+/** An en dash: a value that exists and is zero, as against a blank absence. */
+export const ZERO_DASH = "–";
+
+/**
+ * A grid amount.
+ *
+ * Two things separate this from `formatMinor`, and both are about reading a
+ * screen of numbers rather than one number:
+ *
+ * - **Zero prints as a dash.** A column of "0.00" reads as data and has to be
+ *   scanned; a dash reads as nothing budgeted and can be skipped.
+ * - **Decimals are optional.** At planning zoom they cost width and legibility
+ *   for a precision nobody is using; the exact figure stays in the cell's
+ *   tooltip.
+ */
+export function formatGridMinor(
+  minor: number,
+  options: { showDecimals?: boolean } = {}
+): string {
+  if (minor === 0) return ZERO_DASH;
+  const digits = options.showDecimals === false ? 0 : 2;
+  const value = minor / 100;
+  // Rounding can land a real amount on zero - one cent with decimals hidden -
+  // and `Intl` renders that as "-0". It is not nothing, so it does not get the
+  // dash, but it must not carry a sign either.
+  const rounded = Number(value.toFixed(digits));
+  return (rounded === 0 ? 0 : value).toLocaleString("en-US", {
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
+  });
+}
+
 /**
  * Format a minor-units amount as currency with a `$` prefix, two fraction
  * digits. Matches `formatAmount` in `BulkActionDialog`, `BudgetExportDialog`,

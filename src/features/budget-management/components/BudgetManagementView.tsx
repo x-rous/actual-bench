@@ -125,6 +125,11 @@ export function BudgetManagementView() {
   const [showHidden, setShowHidden] = useState(false);
   // RD-065: spent-vs-budget bars under editable cells. On by default.
   const [showSpendingBars, setShowSpendingBars] = useState(true);
+  // Off by default: a twelve-month grid is read for shape and comparison, and
+  // the decimals cost width for a precision that scale does not use. The exact
+  // figure is a tooltip away, and editing a cell still works in full precision.
+  const [showDecimals, setShowDecimals] = useState(false);
+  const handleToggleDecimals = useCallback(() => setShowDecimals((v) => !v), []);
   const handleToggleSpendingBars = useCallback(() => setShowSpendingBars((v) => !v), []);
 
   const handleToggleGroupCollapse = useCallback((groupId: string) => {
@@ -364,6 +369,8 @@ export function BudgetManagementView() {
         onToggleShowHidden={handleToggleShowHidden}
         showSpendingBars={showSpendingBars}
         onToggleSpendingBars={handleToggleSpendingBars}
+        showDecimals={showDecimals}
+        onToggleDecimals={handleToggleDecimals}
         onExport={handleOpenExport}
         onImport={handleOpenImport}
         onShowShortcuts={() => setShortcutsHelpOpen(true)}
@@ -385,6 +392,7 @@ export function BudgetManagementView() {
         onToggleCollapse={handleToggleGroupCollapse}
         showHidden={showHidden}
         showSpendingBars={showSpendingBars}
+        showDecimals={showDecimals}
         onOpenTransfer={budgetMode === "envelope" ? handleOpenTransfer : undefined}
       />
 

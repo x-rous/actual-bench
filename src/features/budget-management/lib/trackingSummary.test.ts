@@ -163,7 +163,7 @@ describe("tracking summary helpers", () => {
       "Projected saved"
     );
     expect(getTrackingResultCell(state(), "2026-05", now)).toMatchObject({
-      tone: "future",
+      tone: "projection",
     });
     expect(getTrackingResultValue(state(), "2026-06", now)).toBe(100_000);
     expect(getTrackingResultLabel(state(), "2026-06", now)).toBe(
@@ -171,13 +171,17 @@ describe("tracking summary helpers", () => {
     );
   });
 
-  it("keeps future result and income cells visually muted", () => {
+  it("marks a projected result as a projection, not as absent", () => {
+    // A projected saving is a real number the plan produces. Greying it like an
+    // empty cell read as "nothing here" on exactly the months being planned.
     expect(getTrackingResultCell(state(), "2026-06", now)).toMatchObject({
       label: "Projected saved",
       value: 100_000,
-      tone: "future",
+      tone: "projection",
     });
 
+    // Income and expenses in a future month are still just the plan restated,
+    // so they stay muted - only the result is promoted.
     expect(getTrackingIncomeCell(state(), "2026-06", now)).toMatchObject({
       label: "Budgeted",
       value: 500_000,

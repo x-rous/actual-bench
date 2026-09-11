@@ -213,8 +213,11 @@ describe("BudgetSelectionSummary layout", () => {
     expect(container.querySelectorAll(".divide-x").length).toBeGreaterThan(0);
   });
 
-  it("shows the draft area even with nothing selected", () => {
-    render(
+  it("renders nothing at all when there is no selection", () => {
+    // The bar summarises a selection. With none, the draft count and its review
+    // dialog are already on the details panel, so an empty strip of chrome
+    // under the grid would say nothing.
+    const { container } = render(
       <BudgetSelectionSummary
         selection={null}
         activeMonths={["2026-08"]}
@@ -222,9 +225,7 @@ describe("BudgetSelectionSummary layout", () => {
         cellView="budgeted"
       />
     );
-    expect(screen.getByText("No staged edits")).toBeInTheDocument();
-    expect(screen.queryByLabelText(/Budgeted total/)).not.toBeInTheDocument();
-    expect(screen.getByText("No selection")).toBeInTheDocument();
+    expect(container).toBeEmptyDOMElement();
   });
 });
 
@@ -278,7 +279,7 @@ describe("BudgetSelectionSummary counts holds", () => {
     act(() => useBudgetEditsStore.getState().discardAll());
   });
 
-  it("reports a holds-only draft rather than saying there is nothing staged", () => {
+  it("counts a hold alongside edits when a selection is showing", () => {
     // A hold is stageable on its own, and the review dialog counts it - the
     // footer used to count edits only and so hid the way into that dialog.
     act(() =>
@@ -288,14 +289,7 @@ describe("BudgetSelectionSummary counts holds", () => {
         nextAmount: 5_000,
       })
     );
-    render(
-      <BudgetSelectionSummary
-        selection={null}
-        activeMonths={["2026-08"]}
-        categories={categories}
-        cellView="budgeted"
-      />
-    );
+    renderSummary("budgeted");
     expect(screen.queryByText("No staged edits")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /staged change/i })).toBeInTheDocument();
   });
