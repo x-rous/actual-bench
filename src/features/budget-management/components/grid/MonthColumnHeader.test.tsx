@@ -35,3 +35,24 @@ describe("MonthColumnHeader current-month highlight (F-079)", () => {
     expect(header.getAttribute("aria-label")).not.toMatch(/current month/i);
   });
 });
+
+describe("sticky header opacity", () => {
+  const now = currentMonth();
+
+  // The header is `sticky top-0`, so a translucent background lets the grid
+  // scroll visibly behind it. Every state must paint an opaque base and layer
+  // any tint on top.
+  it("gives the current month an opaque background, not a bare tint", () => {
+    render(<MonthColumnHeader month={now} availableMonths={[now]} />);
+    const header = screen.getByLabelText(/current month/i);
+    expect(header.className).toContain("bg-muted");
+    expect(header.className).not.toContain("bg-primary/5");
+  });
+
+  it("still tints the current month, as an overlay", () => {
+    const { container } = render(
+      <MonthColumnHeader month={now} availableMonths={[now]} />
+    );
+    expect(container.querySelector('[class*="bg-primary/5"]')).not.toBeNull();
+  });
+});

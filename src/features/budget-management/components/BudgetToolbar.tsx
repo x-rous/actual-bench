@@ -1,5 +1,6 @@
 "use client";
 
+import { MonthJumpPopover } from "./MonthJumpPopover";
 import { ChevronsLeft, ChevronsRight, ChevronLeft, ChevronRight, CalendarDays, Upload, Download, ChevronsDownUp, ChevronsUpDown, Eye, EyeOff, Keyboard, BarChart2 } from "lucide-react";
 import { addMonths, formatMonthLabel } from "@/lib/budget/monthMath";
 import { cn } from "@/lib/utils";
@@ -40,6 +41,8 @@ type Props = {
   /** First month of the 12-month display window (YYYY-MM). */
   windowStart: string;
   onWindowChange: (start: string) => void;
+  /** Months the budget file has, so the jump popover can dim the rest. */
+  availableMonths?: string[];
   /** Jump the window to include the current month and scroll it into view (F-079). */
   onGoToCurrentMonth?: () => void;
   cellView: CellView;
@@ -75,6 +78,7 @@ export function BudgetToolbar({
   budgetMode,
   windowStart,
   onWindowChange,
+  availableMonths,
   onGoToCurrentMonth,
   cellView,
   onCellViewChange,
@@ -146,14 +150,19 @@ export function BudgetToolbar({
           <ChevronLeft className="h-3.5 w-3.5" />
         </button>
 
-        {/* Range label */}
-        <span
-          className="min-w-[130px] text-center text-xs font-semibold text-foreground select-none px-1"
-          aria-live="polite"
-          aria-label={`Displaying ${rangeLabel}`}
-        >
-          {rangeLabel}
+        {/* Range label — also the jump-to-month trigger (F-081).
+            The live region is separate from the trigger so panning with the
+            arrow buttons still announces the new range; the trigger's own label
+            is only read when it is focused. */}
+        <span className="sr-only" aria-live="polite">
+          Displaying {rangeLabel}
         </span>
+        <MonthJumpPopover
+          windowStart={windowStart}
+          rangeLabel={rangeLabel}
+          availableMonths={availableMonths}
+          onWindowChange={onWindowChange}
+        />
 
         {/* Forward 1 month ▶ */}
         <button

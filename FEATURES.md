@@ -521,7 +521,12 @@ Bare-letter shortcuts (`V`, `F`, `H`, `E`, `[`, `]`) are scoped so they never fi
   - **Cell actions** (mode-aware):
     - **Tracking mode only**: Enable / Disable Rollover (carryover) — applies from the right-clicked month forward
     - **Envelope mode only**: Cover Overspending (when the category balance is negative) or Transfer to Another Category (when positive) — opens the staged transfer dialog
-  - **Set Budget**: inline bulk actions — Copy previous month, Copy specific month…, Set to zero, Set to fixed amount…, Apply % change…, Avg. 3-month budget, Avg. 6-month budget, Avg. 12-month budget
+  - **Bulk actions** from the right-click menu on a cell, a category group, or a month column header — a group or column acts on every cell under it, without needing to be expanded:
+    - *Copy from another month*: Copy previous month, Copy prior year same month, Copy prior year with %…, Copy specific month… (any month in the budget file, not only the visible twelve)
+    - *Set a value*: Set to zero, Set to fixed amount…, Apply % change…
+    - *Average past budgets*: Avg. 3-, 6-, or 12-month budgeted
+    - *Average past actuals*: Avg. 3-, 6-, or 12-month spent/received
+  - **Editable preview** before anything is staged: the proposed amounts can be adjusted by hand (arithmetic accepted, arrow keys to move between rows), with income and expense totals shown separately and skipped cells reported
 - No-input actions (copy previous, set to zero, the three averages) execute immediately and are staged as one undo step; input-required actions (copy specific month, set fixed, apply %) open a two-step dialog (parameters → preview)
 - Average actions use the **budgeted** amount from each prior month (not actual spending); they look back N months using TanStack Query cache — pre-window months are included if previously loaded
 - Selecting a new cell or group dismisses the context menu

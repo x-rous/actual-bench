@@ -19,7 +19,7 @@ export function isValidMonth(s: string | null | undefined): s is string {
 }
 
 /** Parse a YYYY-MM string into a [year, month] tuple (1-indexed month). */
-function parseMonth(month: string): [number, number] {
+export function parseMonth(month: string): [number, number] {
   const [y, m] = month.split("-");
   const year = parseInt(y ?? "", 10);
   const mo = parseInt(m ?? "", 10);

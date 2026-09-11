@@ -350,6 +350,81 @@ describe("computeEffectiveMonthState", () => {
     });
   });
 
+  describe("income edits and the expense summary", () => {
+    /**
+     * `summary.totalBudgeted` is what the grid renders as "Total Budgeted
+     * Expenses" (sectionTotals → trackingExpenseTotal / envelopeTotal). An
+     * income category is not an expense, so budgeting one must leave it alone.
+     * The per-category cascade already refuses income (`if (cat.isIncome)
+     * continue`); Layer 2's summary block did not.
+     */
+    function incomeAndExpense(month: string) {
+      return state({
+        month,
+        groups: [
+          group({ id: "ge", categoryIds: ["e1"], budgeted: -20000 }),
+          group({ id: "gi", isIncome: true, categoryIds: ["i1"], budgeted: 0 }),
+        ],
+        cats: [
+          cat({ id: "e1", groupId: "ge", budgeted: 20000 }),
+          cat({ id: "i1", isIncome: true, groupId: "gi", budgeted: 0 }),
+        ],
+        summary: { totalBudgeted: -20000, toBudget: 5000, totalBalance: 1000 },
+      });
+    }
+
+    it.each([true, false])(
+      "leaves the expense summary untouched when income is budgeted (tracking=%s)",
+      (isTracking) => {
+        const s = incomeAndExpense("2026-01");
+        const r = computeEffectiveMonthState({
+          serverState: s,
+          allEdits: editsMap([edit("2026-01", "i1", 500000, 0)]),
+          incomeBudgets: undefined,
+          isTracking,
+          month: "2026-01",
+        });
+
+        // The income row itself still reflects the edit.
+        expect(r?.categoriesById.i1!.budgeted).toBe(500000);
+        expect(r?.groupsById.gi!.budgeted).toBe(500000);
+
+        // The expense side must not move.
+        expect(r?.summary.totalBudgeted).toBe(-20000);
+        expect(r?.summary.totalBalance).toBe(1000);
+        expect(r?.summary.toBudget).toBe(5000);
+      }
+    );
+
+    it("still moves the expense summary when an expense is budgeted", () => {
+      const s = incomeAndExpense("2026-01");
+      const r = computeEffectiveMonthState({
+        serverState: s,
+        allEdits: editsMap([edit("2026-01", "e1", 30000, 20000)]),
+        incomeBudgets: undefined,
+        isTracking: true,
+        month: "2026-01",
+      });
+      // Canonical form is non-positive, so a +10000 allocation subtracts.
+      expect(r?.summary.totalBudgeted).toBe(-30000);
+      expect(r?.summary.totalBalance).toBe(11000);
+      expect(r?.summary.toBudget).toBe(-5000);
+    });
+
+    it("does not let a prior-month income edit reduce a later month's available", () => {
+      const s = incomeAndExpense("2026-02");
+      const r = computeEffectiveMonthState({
+        serverState: s,
+        allEdits: editsMap([edit("2026-01", "i1", 500000, 0)]),
+        incomeBudgets: undefined,
+        isTracking: true,
+        month: "2026-02",
+      });
+      expect(r?.summary.toBudget).toBe(5000);
+      expect(r?.summary.incomeAvailable).toBe(0);
+    });
+  });
+
   describe("Layer 3 — per-category balance cascade", () => {
     it("envelope carryover=true: prior edit cascades balance to future month", () => {
       const s = state({

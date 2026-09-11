@@ -284,3 +284,35 @@ describe("collision guards", () => {
     ]);
   });
 });
+
+describe("fill shortcuts", () => {
+  it("binds each average window and the prior-year copy distinctly", () => {
+    expectBindings([
+      ["Alt+l",          "workspace", "selection.fill-prev-month"],
+      ["Alt+a",          "workspace", "selection.fill-avg-3"],
+      ["Alt+Shift+A",    "workspace", "selection.fill-avg-6"],
+      ["Ctrl+Alt+a",     "workspace", "selection.fill-avg-12"],
+      ["Alt+y",          "workspace", "selection.fill-prior-year"],
+    ]);
+  });
+
+  it("keeps the fill chords out of the grid scopes", () => {
+    expectBindings(
+      inScopes(ALL_GRID_SCOPES, [
+        ["Alt+Shift+A", null],
+        ["Ctrl+Alt+a", null],
+        ["Alt+y", null],
+      ])
+    );
+  });
+
+  it("does not let Alt+A shadow Alt+Shift+A", () => {
+    // Modifier flags are exclusive, so the 3-month and 6-month fills stay
+    // distinct even though they share a letter.
+    expectBindings([
+      ["Alt+a",       "workspace", "selection.fill-avg-3"],
+      ["Alt+Shift+A", "workspace", "selection.fill-avg-6"],
+    ]);
+  });
+});
+
