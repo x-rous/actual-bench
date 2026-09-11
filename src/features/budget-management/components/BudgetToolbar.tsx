@@ -272,28 +272,28 @@ export function BudgetToolbar({
             <button
               type="button"
               onClick={onToggleShowHidden}
-              aria-label={showHidden ? "Hide hidden categories" : "Show hidden categories"}
+              aria-label="Hidden"
               title={hiddenToggleTitle}
-              // Inverted: pressed state means "currently hiding hidden categories"
-              // (showHidden=false). Default — hidden visible — is unpressed.
-              aria-pressed={!showHidden}
+              // Pressed means the feature is on - hidden categories are being
+              // shown - matching the two toggles beside it. It used to be
+              // inverted, so the default state announced itself as pressed
+              // while showing nothing extra, and the label named the action
+              // rather than the thing, leaving the two signals contradicting
+              // each other. The action wording lives in the title now.
+              aria-pressed={showHidden}
               className={`inline-flex items-center gap-1 h-6 px-2 rounded border text-[11px] font-medium transition-colors ${
-                !showHidden
+                showHidden
                   ? "border-border bg-muted text-foreground"
                   : "border-border/60 text-muted-foreground hover:bg-muted hover:text-foreground"
               }`}
             >
+              {/* The icon carries the state, so it is not conveyed by fill alone. */}
               {showHidden ? (
-                <>
-                  <EyeOff className="h-3.5 w-3.5" aria-hidden="true" />
-                  Hide hidden
-                </>
+                <Eye className="h-3.5 w-3.5" aria-hidden="true" />
               ) : (
-                <>
-                  <Eye className="h-3.5 w-3.5" aria-hidden="true" />
-                  Show hidden
-                </>
+                <EyeOff className="h-3.5 w-3.5" aria-hidden="true" />
               )}
+              Hidden
             </button>
           )}
           {onToggleSpendingBars && (
@@ -311,7 +311,7 @@ export function BudgetToolbar({
               )}
             >
               <BarChart2 className="h-3.5 w-3.5" aria-hidden="true" />
-              Spending Bars
+              Spend Bars
             </button>
           )}
           {onToggleDecimals && (
@@ -324,7 +324,7 @@ export function BudgetToolbar({
                   ? "Round to whole numbers. Exact figures stay in each cell's tooltip."
                   : "Show decimals"
               }
-              aria-pressed={showDecimals ?? true}
+              aria-pressed={showDecimals ?? false}
               className={cn(
                 "inline-flex items-center gap-1 h-6 px-2 rounded border text-[11px] font-medium transition-colors",
                 showDecimals
