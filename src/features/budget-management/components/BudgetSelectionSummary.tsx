@@ -8,6 +8,15 @@ import { resolveSelectionCells } from "../lib/budgetSelectionUtils";
 import { useMonthsData } from "../context/MonthsDataContext";
 import { formatDelta, formatMinor } from "../lib/format";
 
+/** Thin vertical rule between groups. Module scope - not re-created per render. */
+function Divider() {
+  return (
+    <span className="text-border/70 select-none" aria-hidden="true">
+      │
+    </span>
+  );
+}
+
 type Props = {
   selection: BudgetCellSelection | null;
   activeMonths: string[];
@@ -100,8 +109,10 @@ export function BudgetSelectionSummary({
   // Single-sided total/average are meaningful; a mixed net is not, so it is
   // never rendered as one number.
   const selectionSum = incomeSum + expenseSum;
-  const selectionAvg =
-    selectionCells.length > 0 ? selectionSum / selectionCells.length : 0;
+  const cellCount = selectionCells.length;
+  const budgetedAvg = cellCount > 0 ? budgetedTotal / cellCount : 0;
+  const actualAvg = cellCount > 0 ? actualTotal / cellCount : 0;
+  const varianceAvg = cellCount > 0 ? (budgetedTotal - actualTotal) / cellCount : 0;
 
   /**
    * Budget against outcome for the selection.
@@ -120,129 +131,156 @@ export function BudgetSelectionSummary({
   const selectedMonthSet = new Set(selectionCells.map((c) => c.month));
   const selectedCatSet = new Set(selectionCells.map((c) => c.categoryId));
 
+  /**
+   * Colour carries meaning for exactly one figure here - whether the selection
+   * came in over or under - so only that one gets it, and dimmed. Deltas were
+   * green/red before; a row of six coloured numbers reads as an alert rather
+   * than a summary, and none of them were urgent.
+   */
+  const varianceTone =
+    variance === 0
+      ? "text-muted-foreground"
+      : variance > 0
+        ? "text-emerald-700/70 dark:text-emerald-500/60"
+        : "text-red-700/70 dark:text-red-500/60";
+
   return (
     <div
-      className="h-8 border-t border-border bg-muted/30 px-4 flex items-center gap-4 text-xs text-muted-foreground"
+      className="h-8 border-t border-border bg-muted/30 px-4 flex items-center justify-between gap-4 text-xs text-muted-foreground"
       role="status"
       aria-live="polite"
       aria-label="Selection summary"
     >
-      {/* Global staged edits - always visible */}
-      {totalStaged > 0 ? (
-        <>
-          <button
-            type="button"
-            onClick={() => setStagedDialogOpen(true)}
-            className="text-amber-600 dark:text-amber-400 font-medium underline-offset-2 hover:underline"
-            aria-label={`${totalStaged} total staged edits - review them`}
-            title="Review staged changes"
-          >
-            {totalStaged} staged
-          </button>
-          <span
-            className={
-              totalDelta === 0
-                ? ""
-                : totalDelta > 0
-                ? "text-emerald-600 dark:text-emerald-400 font-medium"
-                : "text-red-600 dark:text-red-400 font-medium"
-            }
-            aria-label={`Total staged delta: ${formatDelta(totalDelta)}`}
-          >
-            {formatDelta(totalDelta)}
-          </span>
-        </>
-      ) : (
-        <span>No staged edits</span>
-      )}
+      {/* Left - what the selection is, as it stands.
 
-      {/* Selection rectangle stats */}
-      {selectionCells.length > 0 && (
-        <>
-          <span className="text-border/80 select-none" aria-hidden="true">
-            │
-          </span>
-          <span aria-label={`${selectionCells.length} cells selected`}>
-            {selectionCells.length} cell{selectionCells.length !== 1 ? "s" : ""}
-          </span>
-          <span aria-label={`${selectedMonthSet.size} months, ${selectedCatSet.size} categories`}>
-            ({selectedMonthSet.size} mo × {selectedCatSet.size} cat)
-          </span>
-          {isMixedSelection ? (
-            // Mixed income + expense: show each side's subtotal, never a net.
+          All three figures are named. An unlabelled sum forces the reader to
+          remember which measure the grid is on, and showing an average for one
+          of them but not the others invites the wrong comparison - so the row
+          carries totals only, with the per-cell averages on each figure's
+          tooltip where they cannot be mistaken for part of the sequence. */}
+      <div className="flex items-center gap-3 min-w-0">
+        {selectionCells.length > 0 ? (
+          isMixedSelection ? (
+            // Mixed income + expense: each side's subtotal, never a net, and no
+            // variance - one plan-versus-actual across both answers neither.
             <span
               className="tabular-nums"
-              aria-label={`Sum of selected income budgets: ${formatMinor(incomeSum)}; sum of selected expense budgets: ${formatMinor(expenseSum)}`}
+              aria-label={`Budgeted income ${formatMinor(incomeSum)}, budgeted expenses ${formatMinor(expenseSum)}`}
             >
-              Σ inc {formatMinor(incomeSum)} · exp {formatMinor(expenseSum)}
+              Budgeted inc {formatMinor(incomeSum)} · exp {formatMinor(expenseSum)}
             </span>
           ) : (
             <>
               <span
                 className="tabular-nums"
-                aria-label={`Sum of selected: ${formatMinor(selectionSum)}`}
+                aria-label={`Budgeted total: ${formatMinor(budgetedTotal)}`}
               >
-                Σ {formatMinor(selectionSum)}
+                Budgeted{" "}
+                <span className="text-foreground/80">{formatMinor(budgetedTotal)}</span>
               </span>
               <span
                 className="tabular-nums"
-                aria-label={`Average of selected: ${formatMinor(selectionAvg)}`}
+                aria-label={`Actual total: ${formatMinor(actualTotal)}`}
               >
-                avg {formatMinor(selectionAvg)}
+                Actual{" "}
+                <span className="text-foreground/80">{formatMinor(actualTotal)}</span>
               </span>
-              {showComparison && (
-                <>
-                  <span className="text-border/80 select-none" aria-hidden="true">
-                    │
-                  </span>
-                  <span
-                    className="tabular-nums"
-                    aria-label={`${comparisonLabel} for the selection: ${formatMinor(comparisonValue)}`}
-                  >
-                    {comparisonLabel} {formatMinor(comparisonValue)}
-                  </span>
-                  <span
-                    className={`tabular-nums font-medium ${
-                      variance === 0
-                        ? ""
-                        : variance > 0
-                          ? "text-emerald-600 dark:text-emerald-400"
-                          : "text-red-600 dark:text-red-400"
-                    }`}
-                    aria-label={
-                      variance === 0
-                        ? "Spending matches the budget for the selection"
-                        : `${variance > 0 ? "Under" : "Over"} budget by ${formatMinor(Math.abs(variance))}`
-                    }
-                  >
-                    {variance === 0
-                      ? "on budget"
-                      : `${variance > 0 ? "under" : "over"} ${formatMinor(Math.abs(variance))}`}
-                  </span>
-                </>
-              )}
-            </>
-          )}
-          {selectionStagedCount > 0 && (
-            <span
-              className={
-                selectionDelta === 0
-                  ? ""
-                  : selectionDelta > 0
-                  ? "text-emerald-600 dark:text-emerald-400"
-                  : "text-red-600 dark:text-red-400"
-              }
-              aria-label={`Selection delta: ${formatDelta(selectionDelta)}`}
-            >
-              sel: {formatDelta(selectionDelta)}
-            </span>
-          )}
-        </>
-      )}
+              <span
+                className={`tabular-nums ${varianceTone}`}
+                title={
+                  variance === 0
+                    ? "Spending matches the budget"
+                    : `${variance > 0 ? "Under" : "Over"} budget across the selection`
+                }
+                aria-label={
+                  variance === 0
+                    ? "Variance: spending matches the budget"
+                    : `Variance: ${variance > 0 ? "under" : "over"} budget by ${formatMinor(Math.abs(variance))}`
+                }
+              >
+                Variance {formatDelta(variance)}
+              </span>
 
-      {selectionCells.length === 0 && totalStaged === 0 && !selection && (
-        <span>No selection</span>
-      )}
+              {/* Averages get their own section rather than sitting inline, so
+                  a total is never mistaken for a per-cell figure - and all
+                  three are here, because showing one average implies the
+                  others do not exist. */}
+              <Divider />
+              <span className="tabular-nums text-muted-foreground/70">
+                avg/cell
+              </span>
+              <span
+                className="tabular-nums text-muted-foreground/70"
+                aria-label={`Average budgeted per cell: ${formatMinor(budgetedAvg)}`}
+              >
+                Budgeted {formatMinor(budgetedAvg)}
+              </span>
+              <span
+                className="tabular-nums text-muted-foreground/70"
+                aria-label={`Average actual per cell: ${formatMinor(actualAvg)}`}
+              >
+                Actual {formatMinor(actualAvg)}
+              </span>
+              <span
+                className="tabular-nums text-muted-foreground/70"
+                aria-label={`Average variance per cell: ${formatDelta(varianceAvg)}`}
+              >
+                Variance {formatDelta(varianceAvg)}
+              </span>
+            </>
+          )
+        ) : (
+          <span>{selection ? "No cells selected" : "No selection"}</span>
+        )}
+      </div>
+
+      {/* Right - the selection's extent, and what is still pending. Neither
+          describes the current state, which is why they sit apart from it. */}
+      <div className="flex items-center gap-3 shrink-0">
+        {selectionCells.length > 0 && (
+          <span
+            aria-label={`${selectionCells.length} cells selected, across ${selectedMonthSet.size} months and ${selectedCatSet.size} categories`}
+          >
+            {selectionCells.length} cell{selectionCells.length !== 1 ? "s" : ""}
+            <span className="text-muted-foreground/70">
+              {" "}
+              ({selectedMonthSet.size} mo × {selectedCatSet.size} cat)
+            </span>
+            {selectionStagedCount > 0 && (
+              <span
+                className="tabular-nums"
+                aria-label={`${selectionStagedCount} of them edited, changing ${formatDelta(selectionDelta)}`}
+              >
+                {" · "}
+                {selectionStagedCount} edited {formatDelta(selectionDelta)}
+              </span>
+            )}
+          </span>
+        )}
+
+        {selectionCells.length > 0 && totalStaged > 0 && <Divider />}
+
+        {totalStaged > 0 ? (
+          <span className="tabular-nums">
+            <button
+              type="button"
+              onClick={() => setStagedDialogOpen(true)}
+              className="font-medium text-foreground/80 underline-offset-2 hover:underline"
+              aria-label={`${totalStaged} staged change${totalStaged !== 1 ? "s" : ""} in the draft - review them`}
+              title="Review staged changes"
+            >
+              {totalStaged} staged
+            </button>
+            <span aria-label={`Net effect of the draft: ${formatDelta(totalDelta)}`}>
+              {", net "}
+              {formatDelta(totalDelta)}
+            </span>
+          </span>
+        ) : (
+          <span>No staged edits</span>
+        )}
+      </div>
+
       {stagedDialogOpen && (
         <StagedChangesDialog onClose={() => setStagedDialogOpen(false)} />
       )}

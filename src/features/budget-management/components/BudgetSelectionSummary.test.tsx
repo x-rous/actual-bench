@@ -31,7 +31,7 @@ const categories = [
 ] as unknown as LoadedCategory[];
 
 describe("BudgetSelectionSummary sum/average", () => {
-  it("shows the sum and average of the selected cells' budgeted values", () => {
+  it("names the budgeted total and its per-cell average separately", () => {
     const selection: BudgetCellSelection = {
       anchorCategoryId: "a",
       anchorMonth: "2026-08",
@@ -48,9 +48,12 @@ describe("BudgetSelectionSummary sum/average", () => {
       />,
     );
 
-    // Sum of 100.00 + 300.00, average 200.00.
-    expect(screen.getByLabelText(/Sum of selected: 400\.00/)).toHaveTextContent("Σ 400.00");
-    expect(screen.getByLabelText(/Average of selected: 200\.00/)).toHaveTextContent("avg 200.00");
+    // Totals are named, and the averages sit in their own section rather than
+    // inline, so a total is never read as a per-cell figure.
+    expect(screen.getByLabelText(/Budgeted total: 400\.00/)).toHaveTextContent("Budgeted 400.00");
+    expect(screen.getByLabelText(/Average budgeted per cell: 200\.00/)).toHaveTextContent(
+      "Budgeted 200.00"
+    );
   });
 
   it("shows no selection stats when nothing is selected", () => {
@@ -62,7 +65,7 @@ describe("BudgetSelectionSummary sum/average", () => {
         cellView="budgeted"
       />,
     );
-    expect(screen.queryByLabelText(/Sum of selected/)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/Budgeted total/)).not.toBeInTheDocument();
   });
 
   it("splits into income/expense subtotals for a mixed selection (BM-35)", () => {
@@ -90,8 +93,8 @@ describe("BudgetSelectionSummary sum/average", () => {
     );
 
     expect(
-      screen.getByLabelText(/income budgets: 100\.00; sum of selected expense budgets: 300\.00/)
-    ).toHaveTextContent("Σ inc 100.00 · exp 300.00");
+      screen.getByLabelText(/Budgeted income 100\.00, budgeted expenses 300\.00/)
+    ).toHaveTextContent("Budgeted inc 100.00 · exp 300.00");
     // No single combined total or average for a mixed selection.
     expect(screen.queryByLabelText(/^Sum of selected: /)).not.toBeInTheDocument();
     expect(screen.queryByLabelText(/Average of selected/)).not.toBeInTheDocument();
@@ -122,41 +125,36 @@ describe("BudgetSelectionSummary follows the cell view", () => {
    * A footer reporting budgeted while the grid shows Spent describes numbers
    * that are nowhere on screen, with nothing saying so.
    */
-  it("sums budgeted in the budgeted view", () => {
+  it("names the budgeted total", () => {
     renderSummary("budgeted");
-    expect(screen.getByLabelText(/Sum of selected: 400\.00/)).toBeInTheDocument();
+    expect(screen.getByLabelText(/Budgeted total: 400\.00/)).toBeInTheDocument();
   });
 
-  it("sums actuals in the spent view", () => {
+  it("names the actual total", () => {
     renderSummary("spent");
-    // -8,000 + -30,000 minor units
-    expect(screen.getByLabelText(/Sum of selected: -380\.00/)).toBeInTheDocument();
+    // Every figure is named now, so the view no longer decides which one shows.
+    expect(screen.getByLabelText(/Actual total: 380\.00/)).toBeInTheDocument();
   });
 
-  it("sums balances in the balance view", () => {
+  it("names the same figures whatever the grid is showing", () => {
     renderSummary("balance");
-    expect(screen.getByLabelText(/Sum of selected: 20\.00/)).toBeInTheDocument();
+    expect(screen.getByLabelText(/Budgeted total: 400\.00/)).toBeInTheDocument();
   });
 });
 
 describe("BudgetSelectionSummary budget vs actual", () => {
-  it("names the actual and the variance in the budgeted view", () => {
+  it("states the variance between the two", () => {
     renderSummary("budgeted");
     // budgeted 400.00 vs actual 380.00 -> under by 20.00
-    expect(screen.getByLabelText(/actual for the selection: 380\.00/)).toBeInTheDocument();
-    expect(screen.getByLabelText(/Under budget by 20\.00/)).toBeInTheDocument();
+    expect(screen.getByLabelText(/Variance: under budget by 20\.00/)).toBeInTheDocument();
   });
 
-  it("names the budget instead when the grid already shows spent", () => {
-    renderSummary("spent");
-    // Only the measure the sum is not already showing gets named.
-    expect(screen.getByLabelText(/budgeted for the selection: 400\.00/)).toBeInTheDocument();
-  });
-
-  it("offers no comparison in the balance view", () => {
-    renderSummary("balance");
-    // A balance is a residual, not a plan to compare against.
-    expect(screen.queryByLabelText(/for the selection:/)).not.toBeInTheDocument();
+  it("gives an average for every figure, not just one", () => {
+    // An average for budgeted alone invites comparing it against totals.
+    renderSummary("budgeted");
+    expect(screen.getByLabelText(/Average budgeted per cell: 200\.00/)).toBeInTheDocument();
+    expect(screen.getByLabelText(/Average actual per cell: 190\.00/)).toBeInTheDocument();
+    expect(screen.getByLabelText(/Average variance per cell/)).toBeInTheDocument();
   });
 });
 
@@ -184,7 +182,7 @@ describe("BudgetSelectionSummary staged count", () => {
     );
     renderSummary("budgeted");
 
-    const control = screen.getByRole("button", { name: /1 total staged edits - review them/i });
+    const control = screen.getByRole("button", { name: /1 staged change in the draft - review them/i });
     expect(control).toHaveTextContent("1 staged");
   });
 });
