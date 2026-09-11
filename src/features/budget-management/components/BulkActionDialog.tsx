@@ -21,7 +21,7 @@ import {
   collectSkips,
   describeAverageWindow,
   describeSkips,
-  totalSkips,
+  hasSomethingToReport,
   NO_SKIPS,
   type BulkSkips,
 } from "../lib/bulkActionReport";
@@ -272,7 +272,7 @@ export function BulkActionDialog({
 
       if (rows.length === 0) {
         setParamError(
-          totalSkips(nextSkips) > 0
+          hasSomethingToReport(nextSkips)
             ? `No cells could be updated - ${describeSkips(nextSkips)}.`
             : "No cells would be changed by this action."
         );
@@ -583,7 +583,7 @@ export function BulkActionDialog({
                   </span>
                 )
               )}
-              {totalSkips(skips) > 0 && (
+              {hasSomethingToReport(skips) && (
                 <span className="text-amber-600 dark:text-amber-500" role="status">
                   {describeSkips(skips)}.
                 </span>

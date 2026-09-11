@@ -39,7 +39,7 @@ import {
   collectSkips,
   describeAverageWindow,
   describeSkips,
-  totalSkips,
+  hasSomethingToReport,
 } from "../lib/bulkActionReport";
 import { useWorkspaceKeymap } from "../keyboard/useBudgetKeymap";
 import { BudgetGrid } from "./BudgetGrid";
@@ -839,7 +839,7 @@ function BudgetWorkspaceInner({
 
         const { rows, skips: baseSkips } = collectSkips(result, readOnlyMonths);
         const skips = { ...baseSkips, failedToLoad };
-        const skipNote = totalSkips(skips) > 0 ? describeSkips(skips) : null;
+        const skipNote = hasSomethingToReport(skips) ? describeSkips(skips) : null;
         const avgNote = describeAverageWindow(result.averageWindow);
         const description = [skipNote, avgNote].filter(Boolean).join(" · ") || undefined;
 

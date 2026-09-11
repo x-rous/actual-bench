@@ -3,7 +3,12 @@
  * different problems. Reporting the second as the first sends the user looking
  * for missing data instead of retrying.
  */
-import { describeSkips, hasLoadFailures, NO_SKIPS } from "./bulkActionReport";
+import {
+  describeSkips,
+  hasLoadFailures,
+  hasSomethingToReport,
+  NO_SKIPS,
+} from "./bulkActionReport";
 
 describe("describeSkips", () => {
   it("names the months that failed to load, separately from absent data", () => {
@@ -31,3 +36,26 @@ describe("describeSkips", () => {
     expect(text).toContain("1 month could not be loaded: 2025-03");
   });
 });
+
+describe("hasSomethingToReport", () => {
+  /**
+   * The gap this closes: a failed month load is counted in no cell tally, so a
+   * run can apply partial results with every counter at zero. Keying the
+   * message off `totalSkips` alone let that pass in silence.
+   */
+  it("is true when months failed to load even though no cell was skipped", () => {
+    const skips = { ...NO_SKIPS, failedToLoad: ["2025-03"] };
+    expect(hasSomethingToReport(skips)).toBe(true);
+    expect(describeSkips(skips)).toBe("1 month could not be loaded: 2025-03");
+  });
+
+  it("is true when cells were skipped with no load failure", () => {
+    expect(hasSomethingToReport({ ...NO_SKIPS, readOnly: 2 })).toBe(true);
+  });
+
+  it("is false when the run was clean", () => {
+    expect(hasSomethingToReport(NO_SKIPS)).toBe(false);
+    expect(hasLoadFailures(NO_SKIPS)).toBe(false);
+  });
+});
+
