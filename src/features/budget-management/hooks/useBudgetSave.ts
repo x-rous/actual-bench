@@ -362,6 +362,39 @@ export function useBudgetSave(): UseBudgetSaveReturn {
 
         for (const [key, edit] of patchEntries) {
           try {
+            // F-146: nothing upstream drops a no-op. `sameEdit` in the edits
+            // store compares a staged edit against another *staged* edit, never
+            // against the server, so "copy previous month" on a stable budget
+            // stages cells whose value is already correct - one full round trip
+            // each, and every request to a server is admitted through the same
+            // per-server lane.
+            //
+            // Compare against the cached month state rather than
+            // `edit.previousBudgeted`: the cache is the freshest server truth
+            // the app holds, while `previousBudgeted` is a snapshot from staging
+            // time that a partial save can leave stale. With no cached state the
+            // write proceeds - not knowing the value is not the same as knowing
+            // it matches.
+            const cachedServerValue = queryClient.getQueryData<LoadedMonthState>(
+              ["budget-month-data", connection.id, edit.month]
+            )?.categoriesById[edit.categoryId]?.budgeted;
+
+            if (cachedServerValue === edit.nextBudgeted) {
+              // Cleared from the staged edits and reported saved, but
+              // deliberately NOT added to successMonths: nothing changed on the
+              // server, so this cell must not drag the forward invalidation
+              // (and its refetch of every later month) along with it.
+              succeededKeys.push(key);
+              results.push({
+                month: edit.month,
+                categoryId: edit.categoryId,
+                status: "success",
+              });
+              completedCalls++;
+              setProgress({ completed: completedCalls, total: totalCalls });
+              continue;
+            }
+
             await transport.setBudgetAmount(edit.month, edit.categoryId, edit.nextBudgeted);
 
             // BM-11: Optimistically update the cached month state so the grid
