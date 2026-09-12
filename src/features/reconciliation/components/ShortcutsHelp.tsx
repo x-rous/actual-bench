@@ -24,7 +24,7 @@ const GROUPS: { title: string; rows: { keys: string[]; label: string }[] }[] = [
     rows: [
       { keys: ["j", "↓"], label: "Next row" },
       { keys: ["k", "↑"], label: "Previous row" },
-      { keys: ["n"], label: "Next row still undecided" },
+      { keys: ["u"], label: "Next row still undecided" },
       { keys: ["Esc"], label: "Close the details panel" },
     ],
   },
@@ -35,7 +35,7 @@ const GROUPS: { title: string; rows: { keys: string[]; label: string }[] }[] = [
       { keys: ["c"], label: "Create in Actual" },
       { keys: ["d"], label: "Delete from Actual" },
       { keys: ["i"], label: "Ignore this row" },
-      { keys: ["u"], label: "Undo the decision" },
+      { keys: ["z"], label: "Undo the decision" },
     ],
   },
 ];
@@ -87,6 +87,9 @@ export function ShortcutsHelp({ open, onOpenChange }: ShortcutsHelpProps) {
         <p className="text-[11px] text-muted-foreground">
           Keys are ignored while you are typing in a search box or a field, and a decision a row
           does not offer - deleting a transfer, say - is refused here exactly as its button is.
+          {" "}
+          <kbd className="rounded border border-border bg-muted/50 px-1 text-[11px] font-medium">n</kbd>{" "}
+          is not used here: it opens Quick Create from anywhere in Actual Bench.
         </p>
       </DialogContent>
     </Dialog>

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ChevronDown, FileCheck, FilePlus2, RefreshCw, Search, SlidersHorizontal, Wand2 } from "lucide-react";
+import { ChevronDown, FileCheck, RefreshCw, Search, Wand2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -28,7 +28,7 @@ import type { TransformContext } from "@/lib/reconciliation/transform/rules";
 import type { StagedPatch } from "@/lib/reconciliation/types";
 import { useTableSelection } from "@/hooks/useTableSelection";
 import { BulkDecisionBar } from "./BulkDecisionBar";
-import { CoverageSummary, DecisionProgressStrip } from "./CoverageSummary";
+import { CoverageSummary, DecisionProgressStrip, ShortcutsButton } from "./CoverageSummary";
 import { NewTransactionOptions } from "./NewTransactionOptions";
 import { Inspector } from "./Inspector";
 import { MatchOptions } from "./MatchOptions";
@@ -197,24 +197,45 @@ const ACTUAL_ONLY_FILTERS: FilterDef[] = [
  * `Enter` is deliberately the contextual one — accept whatever this row is
  * plainly for — because most rows only ever need that.
  */
-const DECISION_KEYS = new Set(["Enter", "c", "d", "i", "u"]);
+/*
+ * Letter keys this grid claims.
+ *
+ * `n` is deliberately absent: `useKeyboardShortcuts` binds bare `n` to Quick
+ * Create on the window, and `preventDefault()` there does not stop a sibling
+ * listener — so `n` opened the dialog *and* moved the selection behind it. The
+ * queue jump moved to `u` (for *undecided*), which displaced undo to `z`, where
+ * it matches the modifier form everyone already knows.
+ *
+ * The general problem stands: a bare single-letter global will collide with any
+ * surface that wants letter keys, and this one wants five. A keyboard-scope
+ * mechanism belongs in the keyboard review rather than here.
+ */
+const DECISION_KEYS = new Set(["Enter", "c", "d", "i", "z"]);
 
 /**
  * A second axis: where the row stands in the user's own workflow, rather than
  * what the matcher concluded about it. "What is left for me to do" is a
  * different question from "what kind of problem is this".
  */
-type DecisionFilter = "any" | "undecided" | "decided" | "edited";
+type DecisionFilter = "any" | "undecided" | "decided";
 
+/**
+ * One answer, and it narrows the same axis the progress bar measures — which is
+ * why the two sit together.
+ *
+ * *Edited* used to be the fourth option here and was the odd one out: it says
+ * something is true *of* a row, not where the row stands in the work. Answering
+ * "has this been decided?" with "it has been edited" is a category error, and
+ * it made a group of three progress states read as four unrelated toggles. It
+ * lives with the other attributes now.
+ */
 const DECISION_FILTERS: { id: DecisionFilter; label: string }[] = [
-  { id: "any", label: "Any" },
+  { id: "any", label: "All" },
   { id: "undecided", label: "Undecided" },
   { id: "decided", label: "Decided" },
-  { id: "edited", label: "Edited" },
 ];
 
 function matchesDecisionFilter(item: ReconciliationItem, filter: DecisionFilter): boolean {
-  const edited = Boolean(item.stagedChanges && Object.keys(item.stagedChanges).length > 0);
   switch (filter) {
     case "undecided":
       return item.disposition === "unresolved";
@@ -223,8 +244,6 @@ function matchesDecisionFilter(item: ReconciliationItem, filter: DecisionFilter)
       return item.disposition !== "unresolved" && !(
         item.disposition === "matched" && item.match?.evidenceSource !== "manual"
       );
-    case "edited":
-      return edited;
     default:
       return true;
   }
@@ -235,12 +254,17 @@ function matchesDecisionFilter(item: ReconciliationItem, filter: DecisionFilter)
  * the ones that identify work — rows needing cleanup, and rows that are
  * protected and therefore cannot be actioned here.
  */
-type AttributeFilter = "no-payee" | "no-category" | "protected";
+type AttributeFilter = "no-payee" | "no-category" | "protected" | "edited";
 
 const ATTRIBUTE_FILTERS: { id: AttributeFilter; label: string }[] = [
   { id: "no-payee", label: "No payee" },
   { id: "no-category", label: "No category" },
   { id: "protected", label: "Protected" },
+  // Moved here from the progress group: carrying a staged change is a property
+  // of a row, and it composes with the others the way an attribute should -
+  // "edited and protected" is a question worth asking, where "decided and
+  // edited" could not be asked at all.
+  { id: "edited", label: "Edited" },
 ];
 
 function matchesAttributes(
@@ -253,6 +277,12 @@ function matchesAttributes(
 
   if (active.has("no-payee") && transaction?.payeeName) return false;
   if (active.has("no-category") && transaction?.categoryId) return false;
+  if (
+    active.has("edited") &&
+    !(item.stagedChanges && Object.keys(item.stagedChanges).length > 0)
+  ) {
+    return false;
+  }
   if (
     active.has("protected") &&
     !item.guards.protectedReconciled &&
@@ -466,7 +496,6 @@ export function Workbench({
   const { selectedIds, toggleSelect, toggleSelectAll, clearSelection } = useTableSelection();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [optionsOpen, setOptionsOpen] = useState(false);
-  const [createOptionsOpen, setCreateOptionsOpen] = useState(false);
 
   /*
    * Rows the statement has and Actual does not — the only rows the create
@@ -781,7 +810,7 @@ export function Workbench({
 
       const advance = () => goToNextUndecided();
 
-      if (key === "u") {
+      if (key === "z") {
         if (item.disposition !== "unresolved") onDisposition(item.id, "unresolved");
         return;
       }
@@ -832,7 +861,7 @@ export function Workbench({
     function onKeyDown(event: KeyboardEvent) {
       // Popovers are not dialogs, but their controls still sit above the grid.
       // Do not let row navigation or decision shortcuts act behind them.
-      if (optionsOpen || createOptionsOpen) return;
+      if (optionsOpen) return;
 
       // Never act behind a dialog. The listener is on the window, so without
       // this an Enter meant for the transform dialog's button would also decide
@@ -857,7 +886,7 @@ export function Workbench({
       } else if (event.key === "k" || event.key === "ArrowUp") {
         event.preventDefault();
         step(-1);
-      } else if (event.key === "n") {
+      } else if (event.key === "u") {
         event.preventDefault();
         goToNextUndecided();
       } else if (event.key === "?") {
@@ -873,7 +902,7 @@ export function Workbench({
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [step, goToNextUndecided, decideSelected, optionsOpen, createOptionsOpen]);
+  }, [step, goToNextUndecided, decideSelected, optionsOpen]);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -1007,9 +1036,18 @@ export function Workbench({
             Transform
           </Button>
           {/*
-            Anchored to its own button rather than inserted above the grid: as a
-            full-width block these settings pushed the comparison table — the
-            thing being worked on — off the screen every time they were opened.
+            One button for re-running, holding everything that shapes the run.
+
+            There were three — Matching, New rows and Re-run — and they read as
+            three separate tools when they are one act with two sets of settings:
+            neither settings popover did anything on its own, and each had to
+            tell the user so ("choose Re-run when you are ready"). Folding them
+            into the button they feed removes that instruction along with two
+            controls, and makes the order obvious: open it, set it, run it.
+
+            Anchored to the button rather than inserted above the grid, because
+            as a full-width block these settings pushed the comparison table -
+            the thing being worked on - off the screen every time they opened.
           */}
           <Popover open={optionsOpen} onOpenChange={setOptionsOpen}>
             <PopoverTrigger
@@ -1017,70 +1055,66 @@ export function Workbench({
                 <Button
                   variant="outline"
                   size="sm"
-                  disabled={readOnly}
-                  title={readOnly ? rematchBlockedReason ?? undefined : undefined}
+                  disabled={isMatching || Boolean(rematchBlockedReason)}
+                  title={rematchBlockedReason ?? undefined}
                 >
-                  <SlidersHorizontal className="mr-1 h-3.5 w-3.5" />
-                  Matching
+                  <RefreshCw className={cn("mr-1 h-3.5 w-3.5", isMatching && "animate-spin")} />
+                  {isMatching ? "Matching…" : "Re-run"}
                 </Button>
               }
             />
-            <PopoverContent align="end" className="w-[26rem] max-w-[90vw] p-3">
-              <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                Matching
-              </h3>
-              <div className="max-h-[60vh] overflow-auto">
-                <MatchOptions
-                  config={matchConfig}
-                  preset={matchPreset}
-                  onChange={onMatchConfigChange}
-                  headingLevel="none"
-                />
+            <PopoverContent align="end" className="w-[32rem] max-w-[92vw] p-3">
+              <div className="flex max-h-[65vh] flex-col gap-4 overflow-auto pr-1">
+                <section>
+                  <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    Matching
+                  </h3>
+                  <MatchOptions
+                    config={matchConfig}
+                    preset={matchPreset}
+                    onChange={onMatchConfigChange}
+                    headingLevel="none"
+                  />
+                </section>
+
+                {/* Only where the statement has rows Actual does not: these
+                    settings shape a transaction that would be created, and with
+                    nothing to create they describe nothing. */}
+                {creatableRows > 0 && (
+                  <section className="border-t border-border/50 pt-3">
+                    <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                      When a row isn&apos;t in Actual
+                    </h3>
+                    <NewTransactionOptions
+                      config={applyConfig}
+                      onChange={onApplyConfigChange}
+                      statementFormat={statementFormat}
+                      stagedNotesCount={stagedNotesCount}
+                      disabled={writeSettingsLocked}
+                    />
+                  </section>
+                )}
               </div>
-              <p className="mt-2 border-t border-border/50 pt-2 text-[11px] text-muted-foreground">
-                Changing these does not re-match on its own - choose Re-run when you are ready.
-              </p>
+
+              <div className="mt-3 flex items-center justify-between gap-2 border-t border-border/50 pt-3">
+                <p className="text-[11px] text-muted-foreground">
+                  Re-matching rebuilds the rows from scratch.
+                </p>
+                <Button
+                  size="sm"
+                  disabled={!canRematch || isMatching || Boolean(rematchBlockedReason)}
+                  title={rematchBlockedReason ?? undefined}
+                  onClick={() => {
+                    setOptionsOpen(false);
+                    onRematch();
+                  }}
+                >
+                  <RefreshCw className={cn("mr-1 h-3.5 w-3.5", isMatching && "animate-spin")} />
+                  Re-run matching
+                </Button>
+              </div>
             </PopoverContent>
           </Popover>
-          {creatableRows > 0 && (
-            <Popover open={createOptionsOpen} onOpenChange={setCreateOptionsOpen}>
-              <PopoverTrigger
-                render={
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={readOnly}
-                    title={readOnly ? rematchBlockedReason ?? undefined : undefined}
-                  >
-                    <FilePlus2 className="mr-1 h-3.5 w-3.5" />
-                    New rows
-                  </Button>
-                }
-              />
-              <PopoverContent align="end" className="w-[30rem] max-w-[90vw] p-3">
-                <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  When a row isn&apos;t in Actual
-                </h3>
-                <NewTransactionOptions
-                  config={applyConfig}
-                  onChange={onApplyConfigChange}
-                  statementFormat={statementFormat}
-                  stagedNotesCount={stagedNotesCount}
-                  disabled={writeSettingsLocked}
-                />
-              </PopoverContent>
-            </Popover>
-          )}
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={!canRematch || isMatching || Boolean(rematchBlockedReason)}
-            title={rematchBlockedReason ?? undefined}
-            onClick={onRematch}
-          >
-            <RefreshCw className={cn("mr-1 h-3.5 w-3.5", isMatching && "animate-spin")} />
-            {isMatching ? "Matching…" : "Re-run"}
-          </Button>
           {/* An applied session's outcome is a record worth being able to
               return to — what was written, what failed, what can be retried. */}
           {onViewResult && (
@@ -1095,18 +1129,36 @@ export function Workbench({
         </div>
       </div>
 
-      {/* Segmented controls rather than loose buttons, matching the other list
-          pages: the grouping is what tells the reader these are two separate
-          questions — one answer to the first, any number to the second. */}
       <div className="flex flex-wrap items-center gap-2 border-b border-border/40 bg-muted/10 px-4 py-1.5 text-xs">
-        <span className="text-muted-foreground">Progress</span>
+        {/*
+          Progress leads the row.
+          
+          It sat at the far right among the sort and row-count controls, which
+          made the one figure that actually moves as the user works the least
+          prominent thing on the line. It is what someone glances at to know
+          where they are, so it goes where the eye starts.
+        */}
+        <DecisionProgressStrip
+          coverage={coverage}
+          blockingCount={blocking.length}
+          onShowBlocking={() => setFilter("cluster")}
+          onNextUndecided={goToNextUndecided}
+        />
+
+        {/*
+          The progress filters sit with the bar because they narrow the same
+          axis it measures: the bar says how far along the work is, and these
+          say which part of it to look at. Segmented rather than loose buttons,
+          matching the other list pages — one answer here, any number under
+          "Show only".
+        */}
         <PillGroup
           options={DECISION_FILTERS.map((entry) => ({ value: entry.id, label: entry.label }))}
           value={decisionFilter}
           onChange={setDecisionFilter}
         />
 
-        <span className="ml-2 text-muted-foreground">Show only</span>
+        <span className="ml-3 border-l border-border/60 pl-3 text-muted-foreground">Show only</span>
         <MultiPillGroup
           options={ATTRIBUTE_FILTERS.map((entry) => ({ value: entry.id, label: entry.label }))}
           values={[...attributeFilters]}
@@ -1114,16 +1166,7 @@ export function Workbench({
           emptyMeansAll={false}
         />
 
-        {/* The decision queue sits with the filters that narrow it, not up in
-            the coverage header: this row is where the user works the queue. */}
         <div className="ml-auto flex flex-wrap items-center gap-x-3 gap-y-1">
-          <DecisionProgressStrip
-            coverage={coverage}
-            blockingCount={blocking.length}
-            onShowBlocking={() => setFilter("cluster")}
-            onNextUndecided={goToNextUndecided}
-            onShowShortcuts={() => setShortcutsOpen(true)}
-          />
           <label className="flex items-center gap-1 text-muted-foreground">
             Sort
             <select
@@ -1138,6 +1181,9 @@ export function Workbench({
               ))}
             </select>
           </label>
+          {/* About the screen rather than about this session's progress, so it
+              ends the row instead of sitting among the decision figures. */}
+          <ShortcutsButton onShow={() => setShortcutsOpen(true)} />
           <span className="tabular-nums text-muted-foreground">
             {visible.length} of {items.length} rows
           </span>

@@ -212,3 +212,38 @@ describe("a leftover pair whose amounts agree", () => {
     expect(screen.getByText("Same merchant and date")).toBeInTheDocument();
   });
 });
+
+/*
+ * Two dates sit a column apart on the same line, and a day's gap between them
+ * is easy to read straight past. The amount already announces a difference this
+ * way; the date did not.
+ */
+describe("a matched row whose dates differ", () => {
+  it("marks the Actual date and says what the statement said", () => {
+    // Statement row is 16 Aug; this transaction is 17 Aug.
+    renderRow({ disposition: "matched", actualTransactionIds: ["t1"] }, [
+      txn({ id: "t1", date: "2026-08-17" }),
+    ]);
+
+    const cell = screen.getByTitle(/The statement says/);
+    expect(cell).toHaveClass("text-amber-600");
+  });
+
+  it("leaves the date alone when the two agree", () => {
+    renderRow({ disposition: "matched", actualTransactionIds: ["t1"] }, [
+      txn({ id: "t1", date: "2026-08-16" }),
+    ]);
+
+    expect(screen.queryByTitle(/The statement says/)).not.toBeInTheDocument();
+  });
+
+  it("marks nothing on a contested row, where no date is shown", () => {
+    // The Actual date there would be a candidate's, not the match's.
+    renderRow({ reasonCode: REASON.merchantCluster, actualTransactionIds: ["t1", "t2"] }, [
+      txn({ id: "t1", date: "2026-08-17" }),
+      txn({ id: "t2", date: "2026-08-18" }),
+    ]);
+
+    expect(screen.queryByTitle(/The statement says/)).not.toBeInTheDocument();
+  });
+});

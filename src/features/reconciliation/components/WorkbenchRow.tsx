@@ -230,6 +230,19 @@ export function WorkbenchRow({
   const shared = !several && item.reasonCode === REASON.merchantCluster && primary != null;
   const amountsAgree =
     primary != null && statementRow != null && primary.amount === statementRow.amount;
+  /**
+   * The pair is related but posted on different days.
+   *
+   * Worth marking because it is the one difference the row shows twice without
+   * saying anything about: two dates sit in the same line, a column apart, and
+   * a day's gap between them is easy to read straight past. The amount already
+   * announces itself this way; the date did not.
+   *
+   * Only where the pair is settled — on a contested row the Actual date is not
+   * shown at all, because it would be a candidate's rather than the match's.
+   */
+  const datesDiffer =
+    primary != null && statementRow != null && !several && primary.date !== statementRow.postedDate;
   const state = middleState(item, transactions.length, amountsAgree);
   const Icon = state.icon;
 
@@ -314,7 +327,17 @@ export function WorkbenchRow({
         conclusion stay empty until there is one. The inspector lists every
         candidate in full.
       */}
-      <td className="whitespace-nowrap px-2 py-1.5 tabular-nums text-muted-foreground">
+      <td
+        className={cn(
+          "whitespace-nowrap px-2 py-1.5 tabular-nums",
+          datesDiffer ? "text-amber-600 dark:text-amber-400" : "text-muted-foreground"
+        )}
+        title={
+          datesDiffer && statementRow
+            ? `The statement says ${formatShortDate(statementRow.postedDate)}`
+            : undefined
+        }
+      >
         {primary && !several ? formatShortDate(primary.date) : EMPTY}
       </td>
       <td className="max-w-0 px-2 py-1.5">
