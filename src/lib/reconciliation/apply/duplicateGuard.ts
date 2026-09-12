@@ -77,9 +77,26 @@ export type DuplicateGuardInput = {
   corpus?: TextCorpus;
 };
 
-/** What the bank called a row being created. */
-function createText(operation: CreateOperation): string {
+/**
+ * What identifies a row being created.
+ *
+ * Exported because the warning has to show the reader the same text the
+ * comparison used. Rendering `importedPayee` alone showed "No payee" for a pair
+ * that matched on the notes — naming a row by a field that played no part in
+ * relating it.
+ */
+export function createIdentity(operation: CreateOperation): string {
   return operation.importedPayee?.trim() || operation.notes?.trim() || "";
+}
+
+/** The same, for the transaction on the other side of a suspected pair. */
+export function transactionIdentity(transaction: ActualTransactionSnapshot): string {
+  return (
+    transaction.payeeName?.trim() ||
+    transaction.importedPayee?.trim() ||
+    transaction.notes?.trim() ||
+    ""
+  );
 }
 
 export function findSuspectedDuplicates(input: DuplicateGuardInput): SuspectedDuplicate[] {
@@ -94,7 +111,7 @@ export function findSuspectedDuplicates(input: DuplicateGuardInput): SuspectedDu
   const pairs: SuspectedDuplicate[] = [];
 
   for (const create of creates) {
-    const statementText = createText(create);
+    const statementText = createIdentity(create);
     if (!statementText) continue;
 
     for (const remove of deletes) {
@@ -134,33 +151,71 @@ export function findSuspectedDuplicates(input: DuplicateGuardInput): SuspectedDu
   }
 
   /*
-   * One pairing per operation, strongest first.
+   * One pairing per operation, and **as many pairings as the evidence allows**.
    *
-   * Three rows being created for one merchant will each look like the single row
-   * being deleted, and reporting all three reads as three problems rather than
-   * one uncertainty about which row that transaction belongs to.
+   * One-to-one is deliberate: three rows being created for one merchant all
+   * resemble the single row being deleted, and reporting every combination
+   * reads as three problems rather than one question about which row that
+   * transaction belongs to.
    *
-   * Ties break on date closeness and then on ids, so the same plan always
-   * produces the same warning.
+   * Taking the strongest pair first and moving on does not give the most
+   * pairings, though, and here that matters. Create A may fit deletes 1 and 2
+   * while create B fits only delete 1: pick A-1 because it scores highest and
+   * B-1 is blocked, A-2 is blocked, and one of two real warnings is lost.
+   *
+   * `assign.ts` faces the same choice and answers it the other way, on purpose.
+   * There greedy is chosen over an optimal assignment for *explainability* -
+   * the matcher **acts**, so "why did it choose that one?" has to be
+   * answerable. This only **asks**, and its failure mode is staying quiet about
+   * a duplicate. So it maximises the number of pairs first and uses quality
+   * only to choose between matchings of the same size, which is what ordering
+   * each row's candidates best-first achieves.
+   *
+   * Augmenting paths (Kuhn's). The pools are leftovers of leftovers, so this is
+   * a handful of rows against a handful of transactions.
    */
-  pairs.sort(
-    (a, b) =>
-      b.similarity - a.similarity ||
-      Math.abs(a.dayGap) - Math.abs(b.dayGap) ||
-      (a.createOperationId < b.createOperationId ? -1 : 1)
+  const edgesByCreate = new Map<string, SuspectedDuplicate[]>();
+  for (const pair of pairs) {
+    const existing = edgesByCreate.get(pair.createOperationId);
+    if (existing) existing.push(pair);
+    else edgesByCreate.set(pair.createOperationId, [pair]);
+  }
+  for (const edges of edgesByCreate.values()) edges.sort(byQuality);
+
+  // Creates are attempted in order of their best available pairing, so a row
+  // with one obvious counterpart is settled before one with several.
+  const order = [...edgesByCreate.keys()].sort((a, b) =>
+    byQuality(edgesByCreate.get(a)![0], edgesByCreate.get(b)![0])
   );
 
-  const usedCreates = new Set<string>();
-  const usedDeletes = new Set<string>();
-  const chosen: SuspectedDuplicate[] = [];
+  /** delete operation id -> the pair currently holding it. */
+  const held = new Map<string, SuspectedDuplicate>();
 
-  for (const pair of pairs) {
-    if (usedCreates.has(pair.createOperationId)) continue;
-    if (usedDeletes.has(pair.deleteOperationId)) continue;
-    usedCreates.add(pair.createOperationId);
-    usedDeletes.add(pair.deleteOperationId);
-    chosen.push(pair);
+  function augment(createOperationId: string, seen: Set<string>): boolean {
+    for (const edge of edgesByCreate.get(createOperationId) ?? []) {
+      if (seen.has(edge.deleteOperationId)) continue;
+      seen.add(edge.deleteOperationId);
+
+      const incumbent = held.get(edge.deleteOperationId);
+      // Free, or its current holder can be re-homed somewhere else.
+      if (!incumbent || augment(incumbent.createOperationId, seen)) {
+        held.set(edge.deleteOperationId, edge);
+        return true;
+      }
+    }
+    return false;
   }
 
-  return chosen;
+  for (const createOperationId of order) augment(createOperationId, new Set());
+
+  return [...held.values()].sort(byQuality);
+}
+
+/** Strongest text agreement first, then closest dates, then ids for determinism. */
+function byQuality(a: SuspectedDuplicate, b: SuspectedDuplicate): number {
+  return (
+    b.similarity - a.similarity ||
+    Math.abs(a.dayGap) - Math.abs(b.dayGap) ||
+    (a.createOperationId < b.createOperationId ? -1 : 1)
+  );
 }

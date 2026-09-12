@@ -170,6 +170,40 @@ describe("creating a duplicate while deleting its original", () => {
     expect(pairs[0].deleteOperationId).toBe("delete:j");
   });
 
+  it("reports both pairs when one row's best choice would strand another", () => {
+    /*
+     * The crossed case, and the reason this is a maximum matching rather than a
+     * greedy one. The measured edges here are:
+     *
+     *   Noon Minutes -> "#API Noon Minutes DUBAI ARE"   1.000
+     *   Noon Minutes -> "#API Noon Minutes Express"     0.667
+     *   Noon Food    -> "#API Noon Minutes DUBAI ARE"   0.750
+     *   Noon Food    -> "#API Noon Minutes Express"     0.333  (below the floor)
+     *
+     * Taking the strongest pair first claims the first transaction for
+     * `Noon Minutes`; `Noon Food` then has nowhere to go and the second
+     * transaction is never paired - one of two real warnings lost, which for a
+     * guard is the failure that matters. Pairing for count first finds both.
+     */
+    const pairs = guard(
+      [
+        create("minutes", -4730, "Noon Minutes DUBAI ARE"),
+        create("food", -3850, "Noon Food DUBAI ARE"),
+        remove("full", -4500),
+        remove("express", -4000),
+      ],
+      [
+        txn("full", -4500, "#API Noon Minutes DUBAI ARE"),
+        txn("express", -4000, "#API Noon Minutes Express"),
+      ]
+    );
+
+    expect(pairs).toHaveLength(2);
+    // Each operation used once, and every row warned about.
+    expect(new Set(pairs.map((pair) => pair.createOperationId)).size).toBe(2);
+    expect(new Set(pairs.map((pair) => pair.deleteOperationId)).size).toBe(2);
+  });
+
   it("says nothing when the plan has no deletes", () => {
     expect(guard([create("a", -1000, "SPARKYS TAIF")], [])).toEqual([]);
   });

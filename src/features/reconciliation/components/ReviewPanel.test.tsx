@@ -278,6 +278,10 @@ describe("creating a row that looks like one being deleted", () => {
     expect(warning).toHaveTextContent("Danube-D- JEDDAH SAU SAR53.45");
     expect(warning).toHaveTextContent("creating -54.42");
     expect(warning).toHaveTextContent("deleting -52.07");
+    // Both sides named and both dated: a pair can be related through the
+    // create's notes rather than its payee, and the two dates can be a
+    // fortnight apart - neither is visible if only one side is shown.
+    expect(warning).toHaveTextContent("Payee 1");
     expect(warning).toHaveTextContent(/duplicate them and remove the originals/);
   });
 

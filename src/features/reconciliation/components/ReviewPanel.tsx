@@ -18,7 +18,11 @@ import type {
   StatementRow,
 } from "@/lib/reconciliation/types";
 import type { DriftReport, DriftVerdict } from "@/lib/reconciliation/apply/drift";
-import type { SuspectedDuplicate } from "@/lib/reconciliation/apply/duplicateGuard";
+import {
+  createIdentity,
+  transactionIdentity,
+  type SuspectedDuplicate,
+} from "@/lib/reconciliation/apply/duplicateGuard";
 import { statementText } from "@/lib/reconciliation/statement/text";
 import { ReviewComparison } from "./ReviewComparison";
 import { formatMinorUnits, formatShortDate } from "../lib/format";
@@ -126,21 +130,38 @@ function DuplicateWarning({
         like {pairs.length === 1 ? "a row" : "rows"} you are deleting
       </h2>
 
-      <ul className="mt-1.5 space-y-0.5">
+      <ul className="mt-1.5 space-y-1.5">
         {pairs.map((pair) => {
           const made = byId.get(pair.createOperationId);
           const removed = byId.get(pair.deleteOperationId);
           if (made?.kind !== "create" || removed?.kind !== "delete") return null;
           const transaction = transactions.get(removed.transactionId);
 
+          /*
+           * Both sides, named by the text the comparison actually used and
+           * dated individually.
+           *
+           * One line showed the create's payee, the create's date and the
+           * delete's notes - so a pair related through the create's *notes*
+           * read as "No payee", and a fortnight between the two dates was
+           * invisible because only one of them was on screen. The reader has to
+           * see what they are being asked to compare.
+           */
           return (
-            <li key={pair.createOperationId} className="tabular-nums text-muted-foreground">
-              <span className="text-foreground">{made.importedPayee ?? "No payee"}</span>{" "}
-              · {formatShortDate(made.date)} · creating {formatMinorUnits(made.amount)} ·{" "}
-              deleting {formatMinorUnits(removed.amount)}
-              {transaction?.notes && (
-                <span className="text-muted-foreground/80"> · {transaction.notes}</span>
-              )}
+            <li key={pair.createOperationId} className="tabular-nums">
+              <span className="text-foreground">{createIdentity(made) || "No payee"}</span>
+              <span className="text-muted-foreground">
+                {" "}
+                · {formatShortDate(made.date)} · creating {formatMinorUnits(made.amount)}
+              </span>
+              <br />
+              <span className="text-foreground">
+                {(transaction && transactionIdentity(transaction)) || "No payee"}
+              </span>
+              <span className="text-muted-foreground">
+                {" "}
+                · {formatShortDate(removed.date)} · deleting {formatMinorUnits(removed.amount)}
+              </span>
             </li>
           );
         })}
