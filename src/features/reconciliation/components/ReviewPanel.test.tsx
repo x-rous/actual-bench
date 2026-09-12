@@ -209,3 +209,86 @@ describe("reconciliation review field summary", () => {
     expect(screen.getByRole("radio", { name: "On new rows only" })).toBeDisabled();
   });
 });
+
+/*
+ * The only warning on this screen about a write that would make the account
+ * worse. Every other figure describes something the user asked for; this
+ * describes two they asked for that undo each other.
+ */
+describe("creating a row that looks like one being deleted", () => {
+  const create = {
+    id: "create:danube",
+    kind: "create" as const,
+    itemId: "1",
+    statementRowId: "s-1",
+    accountId: "acct-1",
+    date: "2026-08-15",
+    amount: -5442,
+    payeeId: null,
+    payeeName: null,
+    importedPayee: "Danube-D- JEDDAH SAU SAR53.45",
+    categoryId: null,
+    notes: null,
+    cleared: false,
+    marker: "recon:danube",
+  };
+  const remove = {
+    id: "delete:danube",
+    kind: "delete" as const,
+    itemId: "2",
+    transactionId: "t-1",
+    accountId: "acct-1",
+    date: "2026-08-15",
+    amount: -5207,
+  };
+
+  function renderWarning(pairs: { createOperationId: string; deleteOperationId: string }[]) {
+    render(
+      <ReviewPanel
+        plan={{
+          operations: [create, remove],
+          alreadyApplied: 0,
+          noWriteMatches: 0,
+          unresolved: 0,
+          blocked: [],
+        }}
+        items={[]}
+        statementRows={new Map()}
+        transactions={new Map([["t-1", transaction("1")]])}
+        payees={[]}
+        categories={[]}
+        drift={null}
+        applyConfig={DEFAULT_APPLY_CONFIG}
+        onApplyConfigChange={() => {}}
+        suspectedDuplicates={pairs.map((pair) => ({
+          ...pair,
+          similarity: 0.667,
+          amountDifference: 235,
+          dayGap: 0,
+        }))}
+      />
+    );
+  }
+
+  it("names the pair, both amounts, and what applying both would do", () => {
+    renderWarning([{ createOperationId: "create:danube", deleteOperationId: "delete:danube" }]);
+
+    const warning = screen.getByRole("alert");
+    expect(warning).toHaveTextContent("1 row you are creating looks like a row you are deleting");
+    expect(warning).toHaveTextContent("Danube-D- JEDDAH SAU SAR53.45");
+    expect(warning).toHaveTextContent("creating -54.42");
+    expect(warning).toHaveTextContent("deleting -52.07");
+    // Both sides named and both dated: a pair can be related through the
+    // create's notes rather than its payee, and the two dates can be a
+    // fortnight apart - neither is visible if only one side is shown.
+    expect(warning).toHaveTextContent("Payee 1");
+    expect(warning).toHaveTextContent(/duplicate them and remove the originals/);
+  });
+
+  it("says nothing when there is nothing to say", () => {
+    // The common case. A warning that appears on every reconciliation is one
+    // the user learns to scroll past.
+    renderWarning([]);
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+})

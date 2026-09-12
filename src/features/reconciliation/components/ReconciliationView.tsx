@@ -64,6 +64,8 @@ import {
 } from "@/lib/reconciliation/apply/drift";
 import { loadLatestForDrift } from "../lib/loadDrift";
 import { verifyApply, type VerificationReport } from "@/lib/reconciliation/apply/verification";
+import { findSuspectedDuplicates } from "@/lib/reconciliation/apply/duplicateGuard";
+import { buildTextCorpus } from "@/lib/reconciliation/match/text";
 import {
   mergeOperationResults,
   summarizeResults,
@@ -546,6 +548,27 @@ export function ReconciliationView() {
       transactionsById,
       applyConfig,
     ]
+  );
+
+  /*
+   * Rows being created that look like rows being deleted.
+   *
+   * Computed here because the guard needs the session's text targets and a
+   * corpus built from the loaded window, and neither travels with the plan. It
+   * runs over the finished plan because that is the first moment both halves of
+   * such a pair are in hand — the workbench shows one row at a time, in date
+   * order, and the two are never adjacent.
+   */
+  const suspectedDuplicates = useMemo(
+    () =>
+      findSuspectedDuplicates({
+        plan: applyPlan,
+        transactions: transactionsById,
+        text: matchConfig.text,
+        needleFloor: matchConfig.needleFloor,
+        corpus: buildTextCorpus(snapshot.map((transaction) => transaction.notes)),
+      }),
+    [applyPlan, transactionsById, matchConfig, snapshot]
   );
 
   const coverage = useMemo(
@@ -1646,6 +1669,7 @@ export function ReconciliationView() {
               statementFormat={sessionQuery.data?.session.statementFormat ?? null}
               onApplyConfigChange={handleApplyConfigChange}
               writeSettingsLocked={writeSettingsLocked}
+              suspectedDuplicates={suspectedDuplicates}
             />
           ) : (
             applyResult && (
