@@ -164,6 +164,35 @@ export type GuardVerdict = { allowed: true } | { allowed: false; reason: string 
 const ALLOWED = { allowed: true } as const;
 
 /**
+ * Whether this item is still a question about *which* transaction it is.
+ *
+ * A row offering several candidates has not been resolved to anything, so every
+ * decision that names one transaction — matching it, deleting it, correcting its
+ * amount — has no subject yet. Taking one anyway acts on `actualTransactionIds[0]`,
+ * which is the matcher's ranking, not the user's choice: the planner would delete
+ * the top-ranked candidate, silently leave the rest, and report nothing (F-152).
+ *
+ * Four separate surfaces could reach that — the Enter key, the `d` key, the
+ * inspector's button and the bulk bar — because each tested guards or shape and
+ * none tested *how many candidates are left*. They now share this verdict, so
+ * the rule is stated once and cannot drift between them.
+ *
+ * Deliberately not a blanket block. `keep` and `ignore` name no transaction and
+ * stay available, and the reason says what to do rather than that the user may
+ * not: the candidate list is right there, and picking from it is the whole
+ * remedy.
+ */
+export function canDecideOneTransaction(
+  item: Pick<ReconciliationItem, "actualTransactionIds">
+): GuardVerdict {
+  if (item.actualTransactionIds.length <= 1) return ALLOWED;
+  return {
+    allowed: false,
+    reason: `Pick which of these ${item.actualTransactionIds.length} transactions this row is first.`,
+  };
+}
+
+/**
  * Whether a field may be staged on this item (RD-071 D11–D13).
  *
  * These are the same guards 034a displayed; here they become enforcement. A
@@ -225,7 +254,14 @@ export function canStageField(
  * from one leg of a transfer, and deleting a leg silently mutates an account
  * the user never selected.
  */
-export function canStageDelete(item: Pick<ReconciliationItem, "guards">): GuardVerdict {
+export function canStageDelete(
+  item: Pick<ReconciliationItem, "guards" | "actualTransactionIds">
+): GuardVerdict {
+  // Which transaction, before whether it may go: deleting the matcher's top
+  // guess is the one outcome no guardrail below would have caught.
+  const contested = canDecideOneTransaction(item);
+  if (!contested.allowed) return contested;
+
   if (item.guards.protectedReconciled) {
     return {
       allowed: false,

@@ -16,6 +16,7 @@
  *   explained by a person.
  */
 
+import { canStageField } from "./staging";
 import { transferStatusOf } from "../transportAdapter";
 import type {
   ActualTransactionSnapshot,
@@ -206,41 +207,53 @@ export function buildReconciliationItems(input: BuildItemsInput): Reconciliation
 }
 
 /**
- * Resolve a review item to one transaction, returning the released ones to
- * rows of their own.
+ * Resolve a review item to one transaction, and settle what that frees.
  *
- * The invariant is that **every transaction has exactly one row**. It holds
- * after matching, and it has to keep holding after a decision: candidates the
- * user did not pick were only ever visible through the item that offered them,
- * so dropping the reference would make them disappear from the workbench
- * entirely — present in the budget, absent from the screen, impossible to
- * decide about.
+ * Two invariants, and they pull in opposite directions:
  *
- * Releasing them is also what makes "none of these" work without inventing a
- * deferred-cleanup rule: the leftovers simply become ordinary rows to keep or
- * delete.
+ * 1. **Every transaction has exactly one row.** A candidate the user did not
+ *    pick was only ever visible through the item that offered it, so dropping
+ *    the reference would make it vanish from the workbench — present in the
+ *    budget, absent from the screen, impossible to decide about.
+ * 2. **A transaction is matched at most once.** Once this row claims it, no
+ *    other row may still be offering it.
+ *
+ * The old code honoured both by turning every unpicked candidate into an
+ * "Actual only" row. That is right when nothing else wants them, and wrong when
+ * something does: a cluster offers the same transactions to several rows, so
+ * deciding the first row demoted the others' candidates to keep-or-delete rows
+ * while those rows went on reading "not in Actual". The user then created
+ * duplicates of transactions sitting one line below, offered for deletion
+ * (F-151b).
+ *
+ * So the whole set is the unit of work now, not the single item:
+ *
+ * - the chosen transaction is **removed from every other undecided item**, because
+ *   it is spoken for;
+ * - a released transaction still offered by another undecided item **stays
+ *   there** — it is not homeless, and nothing needs inventing;
+ * - only a transaction nothing else wants becomes a row of its own.
+ *
+ * No re-scoring is involved. Every pair in a cluster was scored when the graph
+ * was built; deciding one shrinks the rest, which is a set operation on
+ * evidence already in hand.
  */
 export function resolveToTransaction(input: {
-  item: ReconciliationItem;
+  items: ReconciliationItem[];
+  /** The review item being decided. */
+  itemId: string;
   /** The transaction the user picked, or null for "none of these". */
   transactionId: string | null;
   transactions: Map<string, ActualTransactionSnapshot>;
   transfersReported: boolean;
   makeId: () => string;
-}): { item: ReconciliationItem; released: ReconciliationItem[] } {
-  const { item, transactionId, transactions, transfersReported, makeId } = input;
+}): ReconciliationItem[] {
+  const { items, itemId, transactionId, transactions, transfersReported, makeId } = input;
+
+  const item = items.find((entry) => entry.id === itemId);
+  if (!item) return items;
 
   const releasedIds = item.actualTransactionIds.filter((id) => id !== transactionId);
-  const released = releasedIds.map((id) => ({
-    id: makeId(),
-    statementRowIds: [],
-    actualTransactionIds: [id],
-    // Never `delete`: the user declined to match it, which is not the same as
-    // asking for it to be removed.
-    disposition: "unresolved" as const,
-    reasonCode: REASON.notOnStatement,
-    guards: guardsFor(transactions.get(id), transfersReported),
-  }));
 
   const resolved: ReconciliationItem = transactionId
     ? {
@@ -273,7 +286,218 @@ export function resolveToTransaction(input: {
         guards: { protectedReconciled: false, splitParent: false, transfer: "no" },
       };
 
-  return { item: resolved, released };
+  // Everything else, with the claimed transaction withdrawn from any row still
+  // undecided about it.
+  const rest = items
+    .filter((entry) => entry.id !== itemId)
+    .map((entry) => {
+      if (entry.disposition !== "unresolved") return entry;
+      if (transactionId == null) return entry;
+      if (!entry.actualTransactionIds.includes(transactionId)) return entry;
+      return withoutCandidate(entry, transactionId, transactions, transfersReported);
+    });
+
+  /*
+   * A released transaction any other row still holds is already on screen
+   * there; only a homeless one needs a row of its own.
+   *
+   * "Holds" covers decided rows too, not just undecided ones. A row settled as
+   * `correct-amount` or `matched` keeps its transaction, and counting only the
+   * undecided meant the last row to let go of that same id minted a second
+   * "Actual only" row for a transaction another row already owned.
+   */
+  const stillOffered = new Set(rest.flatMap((entry) => entry.actualTransactionIds));
+  const released = releasedIds
+    .filter((id) => !stillOffered.has(id))
+    .map((id) => ({
+      id: makeId(),
+      statementRowIds: [],
+      actualTransactionIds: [id],
+      // Never `delete`: the user declined to match it, which is not the same as
+      // asking for it to be removed.
+      disposition: "unresolved" as const,
+      reasonCode: REASON.notOnStatement,
+      guards: guardsFor(transactions.get(id), transfersReported),
+    }));
+
+  return items.flatMap((entry) =>
+    entry.id === itemId
+      ? [resolved, ...released]
+      : [rest.find((candidate) => candidate.id === entry.id) ?? entry]
+  );
+}
+
+/**
+ * Withdraw one transaction from an undecided item's candidate list.
+ *
+ * Guards travel with the leading candidate, so removing the leader has to
+ * recompute them for whichever candidate now leads — the same reason
+ * `resolveToTransaction` recomputes them for a chosen candidate.
+ *
+ * An item left with a single candidate is no longer a cluster, and saying
+ * "several here" about one transaction would be false. It keeps its reason
+ * otherwise: a close-runner-up or below-floor item is still exactly what it was.
+ */
+function withoutCandidate(
+  item: ReconciliationItem,
+  transactionId: string,
+  transactions: Map<string, ActualTransactionSnapshot>,
+  transfersReported: boolean
+): ReconciliationItem {
+  const remaining = item.actualTransactionIds.filter((id) => id !== transactionId);
+
+  if (remaining.length === 0) {
+    return {
+      ...item,
+      actualTransactionIds: [],
+      // Every candidate it had is spoken for. It is not "not on the statement" —
+      // it *is* the statement — so it is a row Actual has nothing for.
+      reasonCode: item.statementRowIds.length > 0 ? REASON.noActualCandidate : item.reasonCode,
+      guards: { protectedReconciled: false, splitParent: false, transfer: "no" },
+    };
+  }
+
+  return {
+    ...item,
+    actualTransactionIds: remaining,
+    reasonCode:
+      remaining.length === 1 && item.reasonCode === REASON.merchantCluster
+        ? REASON.sameMerchantDate
+        : item.reasonCode,
+    guards: guardsFor(transactions.get(remaining[0]), transfersReported),
+  };
+}
+
+/**
+ * Carry the statement's amount onto a transaction the user has just matched.
+ *
+ * Picking the transaction *is* the judgement. Once someone has said "this row is
+ * that transaction", the statement is the authority on what was charged — so
+ * making them then find a second control and press "Set amount to -54.42" asks
+ * the same question twice, and a reconciliation left half-answered is matched to
+ * a figure the bank disagrees with.
+ *
+ * Staged like any other correction rather than written directly: it is previewed
+ * on Review, counted as a change, reversible, and carries its `original` so the
+ * pre-flight drift check can do its job. It stays an update in place, so the
+ * transaction's id, notes, payee, category and any schedule or transfer link
+ * survive — nothing the user wrote is destroyed to fix a number.
+ *
+ * Declines in the three cases where it would overstep: a row that is not a
+ * match, a guardrail that forbids the field, and an amount the user has already
+ * staged by hand — which outranks anything derived (feature spec §33).
+ */
+export function correctAmountFromStatement(input: {
+  item: ReconciliationItem;
+  statementRow: StatementRow | undefined;
+  transaction: ActualTransactionSnapshot | undefined;
+}): ReconciliationItem {
+  const { item, statementRow, transaction } = input;
+
+  if (item.disposition !== "matched") return item;
+  if (!statementRow || !transaction) return item;
+  if (statementRow.amount === transaction.amount) return item;
+  if (item.stagedChanges?.amount?.source === "manual") return item;
+  if (!canStageField(item, "amount").allowed) return item;
+
+  return {
+    ...item,
+    disposition: "correct-amount",
+    stagedChanges: {
+      ...item.stagedChanges,
+      amount: { original: transaction.amount, staged: statementRow.amount, source: "manual" },
+    },
+  };
+}
+
+/**
+ * Link a statement row to a transaction the matcher never offered.
+ *
+ * The escape hatch, and the reason the automatic tiers can stay strict. Matching
+ * requires an exact signed amount and will not bridge a gap with text; every
+ * fuzzier tier is review-only and floored. That is the right trade — a wrong
+ * match is expensive and a missed one is visible — but it leaves pairs a person
+ * can see and the tool cannot:
+ *
+ * ```text
+ * Danube-D- JEDDAH SAU SAR53.45   -54.42    (statement, nothing in Actual)
+ * #API Danube-D-8505              -52.07    (Actual, not on the statement)
+ * ```
+ *
+ * Text scores 0.667 against a floor of 0.75, so no candidate is generated and
+ * both halves sit on screen unrelatable. The alternatives were to loosen the
+ * floor or to discount the store number `8505` — but a bank reference inside the
+ * notes is *evidence* (`referenceAppearsInNotes` treats it as near-identity), so
+ * teaching the comparison to ignore numbers would undercut the strongest signal
+ * below an `imported_id` hit. Letting the user say so costs nothing and admits
+ * no false positives: the person is the evidence.
+ *
+ * The statement's amount is carried onto the transaction, because that is what
+ * linking asserts — this row *is* that transaction, and the bank is authoritative
+ * about what was charged. Staged, guarded and reversible like any other
+ * correction (`correctAmountFromStatement`).
+ *
+ * Returns null when the two items are not a statement row and a transaction, so
+ * the caller can offer the action only where it means something.
+ */
+export function linkManually(input: {
+  items: ReconciliationItem[];
+  statementItemId: string;
+  actualItemId: string;
+  statementRows: Map<string, StatementRow>;
+  transactions: Map<string, ActualTransactionSnapshot>;
+  transfersReported: boolean;
+}): ReconciliationItem[] | null {
+  const { items, statementItemId, actualItemId } = input;
+
+  const statementItem = items.find((entry) => entry.id === statementItemId);
+  const actualItem = items.find((entry) => entry.id === actualItemId);
+  if (!statementItem || !actualItem) return null;
+  if (!isStatementOnly(statementItem) || !isActualOnly(actualItem)) return null;
+
+  const transactionId = actualItem.actualTransactionIds[0];
+  const transaction = input.transactions.get(transactionId);
+
+  const linked = correctAmountFromStatement({
+    item: {
+      ...statementItem,
+      actualTransactionIds: [transactionId],
+      disposition: "matched",
+      reasonCode: undefined,
+      // Recomputed for the transaction being linked: every layer that enforces
+      // protection reads this one field, and the statement-only item carried
+      // the empty guards of a row with nothing in Actual.
+      guards: guardsFor(transaction, input.transfersReported),
+      match: {
+        type: "manual",
+        evidenceSource: "manual",
+        label: "exact",
+        reasons: [],
+      },
+      // A decision made on either half before linking no longer describes
+      // anything: the row is not being created, and the transaction is not
+      // being deleted.
+      stagedChanges: statementItem.stagedChanges,
+    },
+    statementRow: input.statementRows.get(statementItem.statementRowIds[0] ?? ""),
+    transaction,
+  });
+
+  // The transaction's own row goes: it is now one side of a pair, and leaving it
+  // would break the invariant that every transaction has exactly one row.
+  return items.flatMap((entry) =>
+    entry.id === statementItemId ? [linked] : entry.id === actualItemId ? [] : [entry]
+  );
+}
+
+/** On the statement, with nothing in Actual against it. */
+export function isStatementOnly(item: ReconciliationItem): boolean {
+  return item.statementRowIds.length === 1 && item.actualTransactionIds.length === 0;
+}
+
+/** In Actual, with nothing on the statement against it. */
+export function isActualOnly(item: ReconciliationItem): boolean {
+  return item.actualTransactionIds.length === 1 && item.statementRowIds.length === 0;
 }
 
 // ---------------------------------------------------------------------------

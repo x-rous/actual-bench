@@ -1,6 +1,7 @@
 import type { ReconciliationGuards, StagedPatch } from "../types";
 import {
   STAGEABLE_FIELDS,
+  canDecideOneTransaction,
   canStageDelete,
   canStageField,
   effectiveValue,
@@ -11,8 +12,15 @@ import {
   unstageField,
 } from "./staging";
 
-function guards(overrides: Partial<ReconciliationGuards> = {}): { guards: ReconciliationGuards } {
+function guards(
+  overrides: Partial<ReconciliationGuards> = {},
+  actualTransactionIds: string[] = ["t1"]
+): { guards: ReconciliationGuards; actualTransactionIds: string[] } {
   return {
+    // One transaction by default: these tests are about the guardrails, and a
+    // row that has not been resolved to a single transaction is refused before
+    // any of them is reached.
+    actualTransactionIds,
     guards: {
       protectedReconciled: false,
       splitParent: false,
@@ -267,5 +275,37 @@ describe("category is never staged", () => {
       "notes",
     ]);
     expect(STAGEABLE_FIELDS).not.toContain("categoryId");
+  });
+});
+
+/*
+ * A row offering several candidates has no subject yet, so every decision that
+ * names one transaction has nothing to name. Acting anyway reached
+ * `actualTransactionIds[0]` — the matcher's ranking, not the user's choice — and
+ * the planner deleted it, left the rest, and reported nothing (F-152).
+ */
+describe("guardrails — a row that is still a question", () => {
+  it("refuses to resolve a row with several candidates", () => {
+    const verdict = canDecideOneTransaction({ actualTransactionIds: ["t1", "t2", "t3"] });
+    expect(verdict.allowed).toBe(false);
+    if (!verdict.allowed) {
+      // Says what to do, not merely that the user may not.
+      expect(verdict.reason).toMatch(/pick which of these 3/i);
+    }
+  });
+
+  it.each([
+    ["one candidate", ["t1"]],
+    ["none at all", []],
+  ])("allows a row with %s", (_label, ids) => {
+    expect(canDecideOneTransaction({ actualTransactionIds: ids }).allowed).toBe(true);
+  });
+
+  it("refuses the delete before any other guardrail is consulted", () => {
+    // Ordering matters for the message: "pick one first" is actionable, and
+    // "this is reconciled" would be about a transaction the user never chose.
+    const verdict = canStageDelete(guards({ protectedReconciled: true }, ["t1", "t2"]));
+    expect(verdict.allowed).toBe(false);
+    if (!verdict.allowed) expect(verdict.reason).toMatch(/pick which/i);
   });
 });

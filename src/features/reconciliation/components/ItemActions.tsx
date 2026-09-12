@@ -72,6 +72,24 @@ export function ItemActions({
   const primary = transactions[0];
   const isDuplicate = item.reasonCode === REASON.likelyDuplicate;
 
+  /*
+   * Closest amount first.
+   *
+   * These rows are the same merchant on the same day, so the amount is the only
+   * thing that separates them — it is why each one states its distance from the
+   * statement. Leaving them in match order made the reader do the comparison the
+   * list had already done.
+   *
+   * Ordering only. Nothing is pre-selected and nothing is matched: the amounts
+   * disagree, which is precisely why the choice is the user's.
+   */
+  const ordered = statementRow
+    ? [...transactions].sort(
+        (a, b) =>
+          Math.abs(a.amount - statementRow.amount) - Math.abs(b.amount - statementRow.amount)
+      )
+    : transactions;
+
   return (
     <section className="flex flex-col gap-3 border-t border-border/50 pt-3">
       <h4 className="text-[11px] font-semibold uppercase tracking-wide">Decide</h4>
@@ -82,16 +100,15 @@ export function ItemActions({
         <div className="flex flex-col gap-1.5">
           {isDuplicate ? (
             <p className="text-[11px] text-muted-foreground">
-              These look like the same transaction recorded more than once. Keep one - the others
-              become rows of their own, to delete or keep as you decide.
+              This looks like the same transaction recorded more than once. Keep one; the rest
+              become their own rows, to keep or delete.
             </p>
           ) : (
             <p className="text-[11px] text-muted-foreground">
-              Which transaction is this statement row? The ones you do not pick become rows of their
-              own, so nothing disappears.
+              Which one is this row? The rest stay available to the other rows. Nothing is lost.
             </p>
           )}
-          {transactions.map((transaction) => (
+          {ordered.map((transaction) => (
             <Button
               key={transaction.id}
               variant="outline"
@@ -106,7 +123,20 @@ export function ItemActions({
               <span className="flex min-w-0 flex-1 flex-col gap-0.5 text-xs">
                 <span className="flex justify-between gap-2">
                   <span className="tabular-nums text-muted-foreground">{transaction.date}</span>
-                  <span className="tabular-nums">{formatMinorUnits(transaction.amount)}</span>
+                  <span className="tabular-nums">
+                    {formatMinorUnits(transaction.amount)}
+                    {/* How far this candidate is from the statement, stated
+                        rather than left to be worked out across a column of
+                        near-identical figures. It is the evidence that
+                        separates them: the rest of the row is the same
+                        merchant on the same day. */}
+                    {statementRow && transaction.amount !== statementRow.amount && (
+                      <span className="ml-1 text-[11px] text-amber-600 dark:text-amber-400">
+                        {transaction.amount > statementRow.amount ? "+" : "−"}
+                        {formatMinorUnits(Math.abs(transaction.amount - statementRow.amount))}
+                      </span>
+                    )}
+                  </span>
                 </span>
                 <span className="break-words font-medium">
                   {transaction.payeeName ?? "No payee"}
@@ -171,8 +201,12 @@ export function ItemActions({
         )}
 
         {/* Correcting an amount keeps the transaction and everything on it; it
-            is offered only when the statement actually disagrees. */}
-        {primary && statementRow && primary.amount !== statementRow.amount && (
+            is offered only when the statement actually disagrees — and only once
+            there is one transaction it could mean. `primary` is the *leading*
+            candidate, so offering this on a row with several would quietly
+            rewrite the amount of a transaction the user has not chosen. Pick
+            first, then correct. */}
+        {primary && transactions.length === 1 && statementRow && primary.amount !== statementRow.amount && (
           <GuardedButton
             size="sm"
             variant={item.disposition === "correct-amount" ? "default" : "outline"}
@@ -217,8 +251,8 @@ export function ItemActions({
 
       {item.reasonCode === REASON.merchantCluster && (
         <p className="text-[11px] text-muted-foreground">
-          Several statement rows and transactions here share this merchant and date, and their
-          amounts do not line up. Pick the one this row refers to above, or decide each separately.
+          Several rows and transactions here share this merchant and date. Pick this row&apos;s one
+          above; each choice makes the next easier.
         </p>
       )}
     </section>

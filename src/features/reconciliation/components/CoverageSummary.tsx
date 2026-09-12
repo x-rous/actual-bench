@@ -102,7 +102,15 @@ function Side({
         )}
       </div>
 
-      <dl className="mt-1.5 flex flex-wrap gap-x-4 gap-y-0.5 text-xs">
+      {/*
+        The note joins the legend rather than taking a line beneath it.
+        
+        It is the same kind of thing as the entries beside it — a count and what
+        it is — and the legend already wraps, so it costs nothing here and cost a
+        whole row before. It reads as the qualifier it is, next to the totals it
+        qualifies, instead of as a footnote to the bar.
+      */}
+      <dl className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-0.5 text-xs">
         {segments.map((segment) => (
           <div key={segment.key} className="flex items-center gap-1.5">
             <span className={cn("h-2 w-2 shrink-0 rounded-full", segment.dot)} aria-hidden="true" />
@@ -110,9 +118,10 @@ function Side({
             <dd className="font-medium tabular-nums">{segment.value}</dd>
           </div>
         ))}
+        {note && (
+          <span className="text-[11px] text-muted-foreground">{note}</span>
+        )}
       </dl>
-
-      {note && <p className="mt-1 text-[11px] text-muted-foreground">{note}</p>}
     </div>
   );
 }
@@ -132,35 +141,63 @@ export function DecisionProgressMeter({ coverage }: { coverage: ReconciliationCo
   if (total === 0) return null;
 
   const percent = Math.round((decisions.decided / total) * 100);
+  const complete = decisions.pending === 0;
+  const label = `${decisions.decided} of ${total} decided`;
 
+  /*
+   * One centred label over a filled track.
+   *
+   * The label is an overlay across the whole bar, independent of how far the
+   * fill has travelled, so the count never moves as the work progresses.
+   *
+   * **The bar keeps its own surface in both themes**, which is why these are
+   * literals rather than theme tokens. `#171717` happens to equal `--primary`
+   * in light mode, but `--primary` inverts to a near-white in dark — and the
+   * track does not — so the token is only equivalent in one theme, which makes
+   * it the wrong thing to reach for. Fixing the surface is what keeps the label
+   * legible wherever the fill happens to end:
+   *
+   *   #171717 on the track   #E8EAEC   14.9:1
+   *   #171717 on the fill    #F2AE33    9.3:1
+   *   #171717 when complete  #2FC694    8.2:1
+   *
+   * The fills are a step deeper than the first pass, which read washed out
+   * against the track. There is room for that: the label clears 4.5:1 by a
+   * wide margin, so saturation can be spent on making the fill legible from a
+   * distance rather than held back for contrast that is not at risk.
+   *
+   * The fill's right-hand corners stay nearly square while it is short of the
+   * end, so a partial bar reads as cut off mid-travel rather than as a finished
+   * pill; at 100% they round to match the track and the two edges become one.
+   */
   return (
     <div
-      className="flex items-center gap-2 text-xs"
-      title={`${decisions.automatic} more matched automatically and needed no decision`}
+      className="relative h-[22px] w-[220px] overflow-hidden rounded-[5px] bg-[#E8EAEC]"
+      role="progressbar"
+      aria-valuenow={decisions.decided}
+      aria-valuemin={0}
+      aria-valuemax={total}
+      // Read out as words rather than a bare number, which on its own says
+      // nothing about what is being counted.
+      aria-valuetext={label}
+      aria-label="Rows decided"
+      title={
+        decisions.automatic > 0
+          ? `${decisions.automatic} more matched automatically and needed no decision`
+          : undefined
+      }
     >
-      <span className="whitespace-nowrap tabular-nums">
-        <span className="font-medium">{decisions.decided}</span>
-        <span className="text-muted-foreground"> of {total} decided</span>
-      </span>
       <div
-        className="h-1.5 w-16 overflow-hidden rounded-full bg-muted"
-        role="progressbar"
-        aria-valuenow={decisions.decided}
-        aria-valuemin={0}
-        aria-valuemax={total}
-        aria-label="Rows decided"
-      >
-        <div
-          className={cn(
-            "h-full transition-all",
-            decisions.pending === 0 ? "bg-emerald-500/70" : "bg-amber-500/70"
-          )}
-          style={{ width: `${percent}%` }}
-        />
-      </div>
-      {decisions.pending === 0 && (
-        <span className="whitespace-nowrap text-emerald-600 dark:text-emerald-400">All decided</span>
-      )}
+        className="absolute inset-y-0 left-0 transition-[width,border-radius] duration-[250ms] ease-out motion-reduce:transition-none"
+        style={{
+          width: `${percent}%`,
+          backgroundColor: complete ? "#2FC694" : "#F2AE33",
+          borderRadius: complete ? "5px" : "5px 2px 2px 5px",
+        }}
+      />
+      <span className="absolute inset-0 flex items-center justify-center text-[11px] font-medium tabular-nums text-[#171717]">
+        {label}
+      </span>
     </div>
   );
 }
@@ -178,12 +215,22 @@ export function DecisionProgressMeter({ coverage }: { coverage: ReconciliationCo
  */
 export function DecisionProgressStrip({
   coverage,
+  blockingCount = 0,
+  onShowBlocking,
   onNextUndecided,
-  onShowShortcuts,
 }: {
   coverage: ReconciliationCoverage;
+  /**
+   * Rows whose resolution changes what the rows around them mean.
+   *
+   * Named rather than left implicit because the order matters: deciding a
+   * dependent row before its determinant is how a duplicate gets created of a
+   * transaction the next decision would have freed.
+   */
+  blockingCount?: number;
+  /** Narrow the grid to those rows. */
+  onShowBlocking?: () => void;
   onNextUndecided: () => void;
-  onShowShortcuts: () => void;
 }) {
   const { decisions } = coverage;
   const total = decisions.decided + decisions.pending;
@@ -197,40 +244,64 @@ export function DecisionProgressStrip({
    */
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
-      <span className="font-semibold text-muted-foreground">Decisions</span>
+      <span className="text-muted-foreground">Decisions Progress</span>
       {total === 0 ? (
         <span className="text-muted-foreground">Nothing to decide</span>
       ) : (
         <DecisionProgressMeter coverage={coverage} />
       )}
-      {decisions.pending > 0 && (
-        <span className="tabular-nums text-muted-foreground">{decisions.pending} left</span>
-      )}
-      {decisions.automatic > 0 && (
-        <span className="text-muted-foreground">
-          {decisions.automatic} matched automatically
-        </span>
+      {/*
+        Neither "how many are left" nor "how many matched automatically" appears
+        here. The first is stated beside the Review button, where it bears on the
+        decision to move on; the second is the coverage bar's Matched segment,
+        directly above. Repeating either turns the row into a list of figures the
+        reader has to reconcile against each other rather than a single reading
+        of where the work stands. The automatic count survives as the bar's
+        tooltip, which is where a qualifier belongs.
+      */}
+      {blockingCount > 0 && (
+        // A button, not a badge. It names a set of rows, so the obvious thing to
+        // do with it is look at them — and a count that cannot be clicked is a
+        // fact the reader has to go and act on somewhere else.
+        <button
+          type="button"
+          onClick={onShowBlocking}
+          className="rounded border border-amber-500/40 px-1.5 py-0.5 text-[11px] tabular-nums text-amber-600 transition-colors hover:bg-amber-500/10 dark:text-amber-400"
+          title="Several rows are competing for the same transactions. Settling these frees the rest, so they are what Next undecided visits first."
+        >
+          {blockingCount} to pair up first
+        </button>
       )}
 
-      <div className="flex items-center gap-1">
-        <button
-          type="button"
-          onClick={onNextUndecided}
-          className="inline-flex h-6 items-center rounded-md px-2 text-xs font-medium transition-colors hover:bg-accent hover:text-accent-foreground"
-        >
-          Next undecided
-          <kbd className="ml-1.5 rounded border border-border px-1 text-[11px]">n</kbd>
-        </button>
-        <button
-          type="button"
-          onClick={onShowShortcuts}
-          aria-label="Keyboard shortcuts"
-          className="inline-flex h-6 items-center rounded-md px-2 transition-colors hover:bg-accent hover:text-accent-foreground"
-        >
-          <kbd className="rounded border border-border px-1 text-[11px]">?</kbd>
-        </button>
-      </div>
+      <button
+        type="button"
+        onClick={onNextUndecided}
+        className="inline-flex h-6 items-center rounded-md px-2 text-xs transition-colors hover:bg-accent hover:text-accent-foreground"
+      >
+        Next undecided
+        <kbd className="ml-1.5 rounded border border-border px-1 text-[11px]">u</kbd>
+      </button>
     </div>
+  );
+}
+
+/**
+ * The keyboard help, split out of the progress strip.
+ *
+ * It belongs at the far end of the toolbar rather than in the middle of the
+ * decision figures: it is about the screen, not about this session's progress,
+ * and sitting among the counts it read as one more of them.
+ */
+export function ShortcutsButton({ onShow }: { onShow: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onShow}
+      aria-label="Keyboard shortcuts"
+      className="inline-flex h-6 items-center rounded-md px-2 transition-colors hover:bg-accent hover:text-accent-foreground"
+    >
+      <kbd className="rounded border border-border px-1 text-[11px]">?</kbd>
+    </button>
   );
 }
 

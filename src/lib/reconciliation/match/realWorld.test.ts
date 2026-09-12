@@ -643,3 +643,205 @@ describe("profile presets on this data shape", () => {
     expect(graph.matched).toHaveLength(1);
   });
 });
+
+/**
+ * The starved-cluster defect (F-151a / F-151b), reported 2026-09-12.
+ *
+ * A SAR/AED credit-card statement reconciled against transactions an SMS/n8n
+ * automation created. The automation converts at its own rate, so the posted
+ * amount never matches exactly and every one of these rows lands in the
+ * leftover pass — which is where the bug lived: the first row claimed the whole
+ * candidate pool and the remaining three reported "not in Actual", inviting the
+ * user to create three duplicates of transactions they already had.
+ *
+ * The amounts here are the ones the user reported. The text scores a perfect
+ * 1.000 against `#API Jeeny` (tags are stripped, and a one-token haystack is
+ * contained in the statement text), so text is not what separates these rows -
+ * which is exactly why the tool must show all four and let the user pair them.
+ */
+describe("several statement rows for one merchant on one day", () => {
+  const STATEMENT = [
+    "Date\tDescription\tDebit\tCredit",
+    "16/08/2026\tJeeny Jeddah SAU SAR14.29\t14.55\t0",
+    "16/08/2026\tJeeny Jeddah SAU SAR15.67\t15.96\t0",
+    "17/08/2026\tJeeny Jeddah SAU SAR13.63\t13.88\t0",
+    "17/08/2026\tJeeny Jeddah SAU SAR13.29\t13.52\t0",
+  ].join("\n");
+
+  // Recorded by the automation, converted at a different rate, so none of them
+  // equals a posted amount.
+  const RECORDED = [
+    txn({ id: "t1", date: "2026-08-16", amount: -1400, notes: "#API Jeeny" }),
+    txn({ id: "t2", date: "2026-08-16", amount: -1535, notes: "#API Jeeny" }),
+    txn({ id: "t3", date: "2026-08-17", amount: -1360, notes: "#API Jeeny" }),
+    txn({ id: "t4", date: "2026-08-17", amount: -1324, notes: "#API Jeeny" }),
+  ];
+
+  const graph = () =>
+    match({
+      statementRows: parse(STATEMENT),
+      actualTransactions: RECORDED,
+      config: { ...DEFAULT_MATCH_CONFIG, text: TEXT_TARGET_PRESETS["all-best-match"] },
+    });
+
+  it("offers candidates to every row, not only the first", () => {
+    const result = graph();
+
+    // The defect: one ambiguous row and three with nothing.
+    expect(result.unmatchedStatementRowIds).toEqual([]);
+    expect(result.ambiguous).toHaveLength(4);
+    for (const entry of result.ambiguous) {
+      expect(entry.candidates.length).toBeGreaterThan(0);
+    }
+  });
+
+  it("never matches one of them automatically", () => {
+    // The amounts disagree. Whichever way the text and dates fall, deciding
+    // which figure is right is the user's, not the matcher's (RD-071 D9).
+    expect(graph().matched).toEqual([]);
+  });
+
+  it("calls it a cluster rather than a lone amount mismatch", () => {
+    for (const entry of graph().ambiguous) {
+      expect(entry.why).toBe("merchant-cluster");
+    }
+  });
+
+  it("builds a row per statement row, and none saying 'not in Actual'", () => {
+    let counter = 0;
+    const items = buildReconciliationItems({
+      statementRows: parse(STATEMENT),
+      actualTransactions: RECORDED,
+      graph: graph(),
+      transfersReported: true,
+      makeId: () => `i${++counter}`,
+    });
+
+    const statementItems = items.filter((item) => item.statementRowIds.length > 0);
+    expect(statementItems).toHaveLength(4);
+    expect(
+      statementItems.filter((item) => item.reasonCode === REASON.noActualCandidate)
+    ).toEqual([]);
+    for (const item of statementItems) {
+      expect(item.reasonCode).toBe(REASON.merchantCluster);
+    }
+  });
+
+  it("leaves a lone pair as a pairing rather than a cluster", () => {
+    // One row, one transaction, amounts apart: nothing else could be meant, and
+    // the wording should not imply a choice the user does not have.
+    const result = match({
+      statementRows: parse(
+        ["Date\tDescription\tDebit\tCredit", "16/08/2026\tJeeny Jeddah SAU SAR14.29\t14.55\t0"].join(
+          "\n"
+        )
+      ),
+      actualTransactions: [RECORDED[0]],
+      config: { ...DEFAULT_MATCH_CONFIG, text: TEXT_TARGET_PRESETS["all-best-match"] },
+    });
+
+    expect(result.ambiguous).toHaveLength(1);
+    expect(result.ambiguous[0].candidates).toHaveLength(1);
+    expect(["amount-mismatch", "same-merchant-date"]).toContain(result.ambiguous[0].why);
+  });
+});
+
+/**
+ * Two sizes of the same merchant on the same day (reported 2026-09-12).
+ *
+ * `Karnr SAR129.00` posts -131.34 and `Karnr SAR14.00` posts -14.25; the
+ * automation recorded them at its own rate as -126.33 and -13.71. Each statement
+ * row has one plausible partner and one that is 90% away, and the tool offered
+ * both — because the same-merchant tier ignores amounts entirely, and it was
+ * allowed to speak about a row that already had an amount-plausible candidate.
+ *
+ * Ignoring the amount is a last resort, not a parallel opinion.
+ */
+describe("two sizes of one merchant on one day", () => {
+  const STATEMENT = [
+    "Date\tDescription\tDebit\tCredit",
+    "21/08/2026\tKarnr TAIF SAU SAR129.00\t131.34\t0",
+    "21/08/2026\tKarnr TAIF SAU SAR14.00\t14.25\t0",
+  ].join("\n");
+
+  const graph = () =>
+    match({
+      statementRows: parse(STATEMENT),
+      actualTransactions: [
+        txn({ id: "big", date: "2026-08-21", amount: -12633, notes: "#API Karnr" }),
+        txn({ id: "small", date: "2026-08-21", amount: -1371, notes: "#API Karnr" }),
+      ],
+      config: { ...DEFAULT_MATCH_CONFIG, text: TEXT_TARGET_PRESETS["all-best-match"] },
+    });
+
+  it("offers each row only the amount that could plausibly be it", () => {
+    const result = graph();
+    expect(result.ambiguous).toHaveLength(2);
+    for (const entry of result.ambiguous) {
+      expect(entry.candidates).toHaveLength(1);
+    }
+  });
+
+  it("pairs each row with the transaction at the same conversion rate", () => {
+    const rows = parse(STATEMENT);
+    const bySize = new Map(
+      graph().ambiguous.map((entry) => [entry.statementRowId, entry.candidates[0].actualTransactionId])
+    );
+
+    // -131.34 posted / SAR129.00 recorded as -126.33; -14.25 / SAR14.00 as -13.71.
+    expect(bySize.get(rows.find((row) => row.amount === -13134)!.id)).toBe("big");
+    expect(bySize.get(rows.find((row) => row.amount === -1425)!.id)).toBe("small");
+  });
+
+  it("does not call a single plausible candidate a cluster", () => {
+    for (const entry of graph().ambiguous) {
+      expect(entry.why).toBe("amount-mismatch");
+    }
+  });
+});
+
+/**
+ * Ranking inside a cluster (reported 2026-09-12).
+ *
+ * Three `CAREEM RIDE` rows competed for one -9.74 transaction. Their amount gaps
+ * were 3.8%, 12.5% and 20.0% — the first being the same 0.979 conversion every
+ * other row on the statement uses — and they scored 50, 50 and 45. The amount
+ * played no part in the review tier's score at all, so the true pairing ranked
+ * no higher than one five times further away.
+ */
+describe("ranking several rows competing for one transaction", () => {
+  const STATEMENT = [
+    "Date\tDescription\tDebit\tCredit",
+    "07/08/2026\tCAREEM RIDE DUBAI SAU SAR11.96\t12.18\t0",
+    "07/08/2026\tCAREEM RIDE DUBAI SAU SAR9.94\t10.12\t0",
+    "08/08/2026\tCAREEM RIDE DUBAI SAU SAR10.93\t11.13\t0",
+  ].join("\n");
+
+  const graph = () =>
+    match({
+      statementRows: parse(STATEMENT),
+      actualTransactions: [
+        txn({ id: "careem", date: "2026-08-07", amount: -974, payeeName: "Careem", notes: "#API CAREEM RIDE" }),
+      ],
+      config: { ...DEFAULT_MATCH_CONFIG, text: TEXT_TARGET_PRESETS["all-best-match"] },
+    });
+
+  it("scores the closest amount highest", () => {
+    const rows = parse(STATEMENT);
+    const byRow = new Map(
+      graph().ambiguous.map((entry) => [entry.statementRowId, entry.candidates[0].score])
+    );
+    const scoreFor = (amount: number) =>
+      byRow.get(rows.find((row) => row.amount === amount)!.id)!;
+
+    // -10.12 is 3.8% from -9.74; -11.13 is 12.5%; -12.18 is 20.0%.
+    expect(scoreFor(-1012)).toBeGreaterThan(scoreFor(-1113));
+    expect(scoreFor(-1113)).toBeGreaterThan(scoreFor(-1218));
+  });
+
+  it("still refuses to match any of them", () => {
+    // Better ranking is not more licence: the amounts disagree, so the choice
+    // stays the user's (RD-071 D9).
+    expect(graph().matched).toEqual([]);
+  });
+});

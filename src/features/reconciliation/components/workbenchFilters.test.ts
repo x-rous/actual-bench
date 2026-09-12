@@ -29,6 +29,10 @@ const REASON_FILTERS: FilterId[] = [
   "ambiguous",
   "amount-mismatch",
   "wrong-amount",
+  // A contested group is its own reason, not a kind of wrong amount: one asks
+  // "which of these is it", the other says "this is the one and its figure is
+  // off". They were counted together, so the two could not be worked apart.
+  "cluster",
   "duplicates",
 ];
 
@@ -36,6 +40,7 @@ const REASON_FOR: Record<string, string> = {
   ambiguous: REASON.ambiguousMatch,
   "amount-mismatch": REASON.amountMismatch,
   "wrong-amount": REASON.sameMerchantDate,
+  cluster: REASON.merchantCluster,
   duplicates: REASON.likelyDuplicate,
 };
 

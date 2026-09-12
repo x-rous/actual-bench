@@ -1,14 +1,16 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { FileCheck, FilePlus2, RefreshCw, Search, SlidersHorizontal, Wand2 } from "lucide-react";
+import { ChevronDown, FileCheck, RefreshCw, Search, Wand2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { MultiPillGroup, PillGroup } from "@/components/ui/pill-group";
 import { cn } from "@/lib/utils";
 import { REASON, REVIEW_REASONS } from "@/lib/reconciliation/session/build";
-import { canStageDelete } from "@/lib/reconciliation/session/staging";
+import { statementText } from "@/lib/reconciliation/statement/text";
+import { formatShortDate } from "../lib/format";
+import { canDecideOneTransaction, canStageDelete } from "@/lib/reconciliation/session/staging";
 import type { ReconciliationCoverage } from "@/lib/reconciliation/session/build";
 import type {
   ActualTransactionSnapshot,
@@ -26,7 +28,7 @@ import type { TransformContext } from "@/lib/reconciliation/transform/rules";
 import type { StagedPatch } from "@/lib/reconciliation/types";
 import { useTableSelection } from "@/hooks/useTableSelection";
 import { BulkDecisionBar } from "./BulkDecisionBar";
-import { CoverageSummary, DecisionProgressStrip } from "./CoverageSummary";
+import { CoverageSummary, DecisionProgressStrip, ShortcutsButton } from "./CoverageSummary";
 import { NewTransactionOptions } from "./NewTransactionOptions";
 import { Inspector } from "./Inspector";
 import { MatchOptions } from "./MatchOptions";
@@ -48,11 +50,32 @@ export type FilterId =
   | "ambiguous"
   | "amount-mismatch"
   | "wrong-amount"
+  | "cluster"
   | "duplicates"
   | "create"
   | "matched"
   | "actual-only"
   | "outside-period";
+
+/**
+ * How the grid is ordered.
+ *
+ * Date stays the default and the recommended order: reading one day across both
+ * sides is what the two-sided layout is for. The alternatives exist because they
+ * match two real ways of working a statement that date order fights — a
+ * contested merchant is one problem scattered across days, and under date order
+ * a 1,253.08 discrepancy is no more prominent than a 0.01 fee.
+ *
+ * Deliberately a select rather than sortable column headers: the grid has two
+ * sides, so "sort by date" is ambiguous the moment a row has only one of them.
+ */
+type SortId = "date" | "merchant" | "amount";
+
+const SORTS: { id: SortId; label: string }[] = [
+  { id: "date", label: "Date" },
+  { id: "merchant", label: "Merchant" },
+  { id: "amount", label: "Largest first" },
+];
 
 type FilterDef = {
   id: FilterId;
@@ -85,6 +108,17 @@ const STATEMENT_FILTERS: FilterDef[] = [
     label: "Needs review",
     dot: "bg-amber-500/70",
     hint: "Rows the matcher would not decide on its own. Select this to break them down by reason.",
+  },
+  {
+    // First among the reasons, because settling one of these frees transactions
+    // the rows beneath it are waiting on. Working them in any other order is how
+    // a duplicate gets created of a transaction the next decision would have
+    // released.
+    id: "cluster",
+    label: "Needs pairing",
+    dot: "bg-amber-500/40",
+    child: true,
+    hint: "Several statement rows and several transactions share this merchant and date, and no amount settles which is which. Pair them up - each one you settle frees the rest.",
   },
   {
     id: "ambiguous",
@@ -163,24 +197,45 @@ const ACTUAL_ONLY_FILTERS: FilterDef[] = [
  * `Enter` is deliberately the contextual one — accept whatever this row is
  * plainly for — because most rows only ever need that.
  */
-const DECISION_KEYS = new Set(["Enter", "c", "d", "i", "u"]);
+/*
+ * Letter keys this grid claims.
+ *
+ * `n` is deliberately absent: `useKeyboardShortcuts` binds bare `n` to Quick
+ * Create on the window, and `preventDefault()` there does not stop a sibling
+ * listener — so `n` opened the dialog *and* moved the selection behind it. The
+ * queue jump moved to `u` (for *undecided*), which displaced undo to `z`, where
+ * it matches the modifier form everyone already knows.
+ *
+ * The general problem stands: a bare single-letter global will collide with any
+ * surface that wants letter keys, and this one wants five. A keyboard-scope
+ * mechanism belongs in the keyboard review rather than here.
+ */
+const DECISION_KEYS = new Set(["Enter", "c", "d", "i", "z"]);
 
 /**
  * A second axis: where the row stands in the user's own workflow, rather than
  * what the matcher concluded about it. "What is left for me to do" is a
  * different question from "what kind of problem is this".
  */
-type DecisionFilter = "any" | "undecided" | "decided" | "edited";
+type DecisionFilter = "any" | "undecided" | "decided";
 
+/**
+ * One answer, and it narrows the same axis the progress bar measures — which is
+ * why the two sit together.
+ *
+ * *Edited* used to be the fourth option here and was the odd one out: it says
+ * something is true *of* a row, not where the row stands in the work. Answering
+ * "has this been decided?" with "it has been edited" is a category error, and
+ * it made a group of three progress states read as four unrelated toggles. It
+ * lives with the other attributes now.
+ */
 const DECISION_FILTERS: { id: DecisionFilter; label: string }[] = [
-  { id: "any", label: "Any" },
+  { id: "any", label: "All" },
   { id: "undecided", label: "Undecided" },
   { id: "decided", label: "Decided" },
-  { id: "edited", label: "Edited" },
 ];
 
 function matchesDecisionFilter(item: ReconciliationItem, filter: DecisionFilter): boolean {
-  const edited = Boolean(item.stagedChanges && Object.keys(item.stagedChanges).length > 0);
   switch (filter) {
     case "undecided":
       return item.disposition === "unresolved";
@@ -189,8 +244,6 @@ function matchesDecisionFilter(item: ReconciliationItem, filter: DecisionFilter)
       return item.disposition !== "unresolved" && !(
         item.disposition === "matched" && item.match?.evidenceSource !== "manual"
       );
-    case "edited":
-      return edited;
     default:
       return true;
   }
@@ -201,12 +254,17 @@ function matchesDecisionFilter(item: ReconciliationItem, filter: DecisionFilter)
  * the ones that identify work — rows needing cleanup, and rows that are
  * protected and therefore cannot be actioned here.
  */
-type AttributeFilter = "no-payee" | "no-category" | "protected";
+type AttributeFilter = "no-payee" | "no-category" | "protected" | "edited";
 
 const ATTRIBUTE_FILTERS: { id: AttributeFilter; label: string }[] = [
   { id: "no-payee", label: "No payee" },
   { id: "no-category", label: "No category" },
   { id: "protected", label: "Protected" },
+  // Moved here from the progress group: carrying a staged change is a property
+  // of a row, and it composes with the others the way an attribute should -
+  // "edited and protected" is a question worth asking, where "decided and
+  // edited" could not be asked at all.
+  { id: "edited", label: "Edited" },
 ];
 
 function matchesAttributes(
@@ -219,6 +277,12 @@ function matchesAttributes(
 
   if (active.has("no-payee") && transaction?.payeeName) return false;
   if (active.has("no-category") && transaction?.categoryId) return false;
+  if (
+    active.has("edited") &&
+    !(item.stagedChanges && Object.keys(item.stagedChanges).length > 0)
+  ) {
+    return false;
+  }
   if (
     active.has("protected") &&
     !item.guards.protectedReconciled &&
@@ -261,7 +325,9 @@ export function matchesFilter(item: ReconciliationItem, filter: FilterId): boole
     case "amount-mismatch":
       return isReviewRow(item, [REASON.amountMismatch]);
     case "wrong-amount":
-      return isReviewRow(item, [REASON.sameMerchantDate, REASON.merchantCluster]);
+      return isReviewRow(item, [REASON.sameMerchantDate]);
+    case "cluster":
+      return isReviewRow(item, [REASON.merchantCluster]);
     case "duplicates":
       return isReviewRow(item, [REASON.likelyDuplicate]);
     case "create":
@@ -299,6 +365,15 @@ export type WorkbenchProps = {
   readOnly?: boolean;
   /** Lock persisted write choices as soon as Apply starts. */
   writeSettingsLocked?: boolean;
+  /**
+   * The Actual side is the copy stored with the session, not a fresh read.
+   *
+   * Said out loud rather than left to look normal: a stored session holds one
+   * snapshot per decided item, so a review item's other candidates are not
+   * there to show, and a row edited in Actual since matching still reads as it
+   * did then.
+   */
+  snapshotIsStored?: boolean;
   payees: Option[];
   categories: Option[];
   onMatchConfigChange: (preset: TextTargetPreset, config: MatchConfig) => void;
@@ -312,6 +387,17 @@ export type WorkbenchProps = {
   onBulkCorrectAmount: (
     entries: { itemId: string; transactionId: string; amount: number }[]
   ) => void;
+  /**
+   * Pair a statement row with a transaction the matcher never related.
+   *
+   * The escape hatch that lets the automatic tiers stay strict: matching refuses
+   * to bridge an amount gap with text, which is right, and leaves some pairs
+   * only a person can see.
+   */
+  onManualMatch: (statementItemId: string, actualItemId: string) => void;
+  /** What the last bulk action would be reversed back to, if there is one. */
+  lastBulkLabel?: string | null;
+  onUndoBulk?: () => void;
   /** Writes the plan would make, named on the button rather than a row count. */
   /** Set when this session has already been applied, so its outcome is reachable. */
   onViewResult?: () => void;
@@ -376,6 +462,7 @@ export function Workbench({
   rematchBlockedReason,
   readOnly = false,
   writeSettingsLocked = false,
+  snapshotIsStored = false,
   payees,
   categories,
   onMatchConfigChange,
@@ -387,6 +474,9 @@ export function Workbench({
   onUnstage,
   onBulkDisposition,
   onBulkCorrectAmount,
+  onManualMatch,
+  lastBulkLabel = null,
+  onUndoBulk,
   onViewResult,
   transformContextFor,
   applyConfig,
@@ -395,6 +485,8 @@ export function Workbench({
   onTransform,
 }: WorkbenchProps) {
   const [filter, setFilter] = useState<FilterId>("all");
+  const [reasonsOpen, setReasonsOpen] = useState(false);
+  const [sort, setSort] = useState<SortId>("date");
   const [decisionFilter, setDecisionFilter] = useState<DecisionFilter>("any");
   const [attributeFilters, setAttributeFilters] = useState<Set<AttributeFilter>>(new Set());
   const [search, setSearch] = useState("");
@@ -404,7 +496,6 @@ export function Workbench({
   const { selectedIds, toggleSelect, toggleSelectAll, clearSelection } = useTableSelection();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [optionsOpen, setOptionsOpen] = useState(false);
-  const [createOptionsOpen, setCreateOptionsOpen] = useState(false);
 
   /*
    * Rows the statement has and Actual does not — the only rows the create
@@ -455,7 +546,54 @@ export function Workbench({
       return "";
     };
 
+    /** The text this row is about, for grouping a merchant together. */
+    const textOf = (item: ReconciliationItem): string => {
+      for (const id of item.statementRowIds) {
+        const row = statementRows.get(id);
+        if (row) return statementText(row).toLowerCase();
+      }
+      for (const id of item.actualTransactionIds) {
+        const transaction = transactions.get(id);
+        if (transaction) {
+          // The same three channels search and the grid read, in the same
+          // order: a transaction with no curated payee still has a merchant.
+          return (
+            transaction.payeeName ??
+            transaction.importedPayee ??
+            transaction.notes ??
+            ""
+          ).toLowerCase();
+        }
+      }
+      return "";
+    };
+
+    /** Size, ignoring direction: the question is how much is at stake. */
+    const magnitudeOf = (item: ReconciliationItem): number => {
+      for (const id of item.statementRowIds) {
+        const row = statementRows.get(id);
+        if (row) return Math.abs(row.amount);
+      }
+      for (const id of item.actualTransactionIds) {
+        const transaction = transactions.get(id);
+        if (transaction) return Math.abs(transaction.amount);
+      }
+      return 0;
+    };
+
     return [...items].sort((a, b) => {
+      if (sort === "merchant") {
+        const left = textOf(a);
+        const right = textOf(b);
+        if (left !== right) return left < right ? -1 : 1;
+      }
+      if (sort === "amount") {
+        const difference = magnitudeOf(b) - magnitudeOf(a);
+        if (difference !== 0) return difference;
+      }
+
+      // Date is the tiebreak under every ordering, so a merchant's rows read
+      // chronologically and two equal amounts keep a stable, meaningful order.
       const left = dateOf(a);
       const right = dateOf(b);
       if (left !== right) return left < right ? -1 : 1;
@@ -467,7 +605,7 @@ export function Workbench({
       if (leftSeq !== rightSeq) return leftSeq - rightSeq;
       return a.id < b.id ? -1 : 1;
     });
-  }, [items, statementRows, transactions]);
+  }, [items, statementRows, transactions, sort]);
 
   const visible = useMemo(() => {
     const needle = search.trim().toLowerCase();
@@ -487,7 +625,10 @@ export function Workbench({
             row.importedPayee,
             row.bankNotes ?? "",
             row.bankReference ?? "",
-            String(row.amount)
+            String(row.amount),
+            // Both readings, so "15 Aug" and "2026-08-15" each find the row.
+            row.postedDate,
+            formatShortDate(row.postedDate)
           );
         }
       }
@@ -498,7 +639,9 @@ export function Workbench({
             transaction.payeeName ?? "",
             transaction.importedPayee ?? "",
             transaction.notes ?? "",
-            String(transaction.amount)
+            String(transaction.amount),
+            transaction.date,
+            formatShortDate(transaction.date)
           );
         }
       }
@@ -516,8 +659,9 @@ export function Workbench({
    * nobody had asked for. The parent's own count is the signal that there is
    * something in there; clicking it is what reveals why.
    */
-  const reviewBranchOpen =
-    filter === "needs-review" || REVIEW_REASON_FILTERS.some((entry) => filter === entry.id);
+  const reviewReasonActive = REVIEW_REASON_FILTERS.some((entry) => filter === entry.id);
+  const activeReviewReasonLabel =
+    REVIEW_REASON_FILTERS.find((entry) => filter === entry.id)?.label ?? null;
 
   /*
    * And only the reasons that have rows, plus whichever is selected — a
@@ -527,6 +671,28 @@ export function Workbench({
   const visibleReviewReasons = REVIEW_REASON_FILTERS.filter(
     (entry) => counts[entry.id] > 0 || filter === entry.id
   );
+  /*
+   * Narrowing the view drops the selection.
+   *
+   * A selection made under one filter survives into the next, where most of it
+   * is off screen — so the bar goes on offering to create or delete rows the
+   * user can no longer see, and "11 selected" describes a set they have no way
+   * to check. Bulk actions here write to a budget; the set being acted on has
+   * to be the set in front of the person pressing the button.
+   */
+  useEffect(() => {
+    clearSelection();
+    // The inspector goes too. It is an editing surface, so leaving it open on a
+    // row the filter has just hidden allows a change to be staged against
+    // something the user can no longer see - the same reason the checkbox
+    // selection is dropped.
+    setSelectedId(null);
+    // Deliberately not depending on `clearSelection` itself: it is a stable
+    // callback, and listing it invites a lint fix that re-runs this on renders
+    // that changed nothing.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filter, decisionFilter, attributeFilters, search]);
+
   const allVisibleSelected =
     visibleIds.length > 0 && visibleIds.every((id) => selectedIds.has(id));
   const selectedItems = useMemo(
@@ -565,15 +731,77 @@ export function Workbench({
   );
 
   /** Jump to the next row still waiting on a decision. */
+  /**
+   * Rows whose resolution changes what the rows around them mean.
+   *
+   * A contested group holds transactions several statement rows could be, so
+   * until one of them is settled the others cannot honestly be decided — and
+   * deciding a dependent row first is how a user creates a duplicate of a
+   * transaction the next decision would have freed (F-151g).
+   *
+   * A cluster row holding a single candidate counts too: it is not contested
+   * with itself, it is contested with whoever else wants that transaction.
+   */
+  /*
+   * Deliberately the same test the "Needs pairing" filter uses, so the count and
+   * the list agree: a badge reading 4 that filters to 6 rows teaches the reader
+   * to stop trusting both.
+   *
+   * A row with several candidates but no cluster is *not* counted. Its rivals
+   * were already filtered by the assignment to those no other row wants more, so
+   * settling it frees nothing for anyone else — it is a choice, not a blockage.
+   */
+  const blocking = useMemo(
+    () =>
+      visible.filter(
+        (item) => item.disposition === "unresolved" && item.reasonCode === REASON.merchantCluster
+      ),
+    [visible]
+  );
+
+  /**
+   * The next row to decide, blocking rows first.
+   *
+   * The grid stays in date order — scanning one day across both sides is what
+   * the layout is for — so the priority lives here, in the queue, rather than
+   * by reordering what the user is reading. While anything is blocking, this
+   * walks those; once none are left it falls back to ordinary order.
+   */
+  /** Back to every row, from a view that is hiding all of them. */
+  const clearFilters = useCallback(() => {
+    setFilter("all");
+    setDecisionFilter("any");
+    setAttributeFilters(new Set());
+    setSearch("");
+  }, []);
+
+  /**
+   * How many undecided rows are competing for each transaction.
+   *
+   * Counted once over the whole set rather than per row, so a row can say how
+   * big the knot it is part of actually is instead of only that one exists.
+   */
+  const contestedBy = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const item of items) {
+      if (item.disposition !== "unresolved") continue;
+      for (const id of item.actualTransactionIds) {
+        counts.set(id, (counts.get(id) ?? 0) + 1);
+      }
+    }
+    return counts;
+  }, [items]);
+
   const goToNextUndecided = useCallback(() => {
-    const index = visible.findIndex((item) => item.id === selectedId);
-    const after = visible.slice(index + 1).find((item) => item.disposition === "unresolved");
-    const wrapped = after ?? visible.find((item) => item.disposition === "unresolved");
+    const queue = blocking.length > 0 ? blocking : visible;
+    const index = queue.findIndex((item) => item.id === selectedId);
+    const after = queue.slice(index + 1).find((item) => item.disposition === "unresolved");
+    const wrapped = after ?? queue.find((item) => item.disposition === "unresolved");
     if (wrapped) {
       setSelectedId(wrapped.id);
       reveal(wrapped.id);
     }
-  }, [visible, selectedId, reveal]);
+  }, [blocking, visible, selectedId, reveal]);
 
   /**
    * Apply a keyed decision to the selected row.
@@ -594,7 +822,7 @@ export function Workbench({
 
       const advance = () => goToNextUndecided();
 
-      if (key === "u") {
+      if (key === "z") {
         if (item.disposition !== "unresolved") onDisposition(item.id, "unresolved");
         return;
       }
@@ -625,6 +853,12 @@ export function Workbench({
       if (key === "Enter") {
         // Whatever this row is plainly for: confirm the pair, create what is
         // missing, or keep what the statement does not mention.
+        //
+        // "Plainly" excludes a row still offering several candidates. Confirming
+        // one took `actualTransactionIds[0]` — the matcher's ranking, not a
+        // choice anyone made — and the single most reachable way to do that was
+        // one keystroke (F-152).
+        if (!canDecideOneTransaction(item).allowed) return;
         if (hasStatementRow && hasTransaction) onDisposition(item.id, "matched");
         else if (hasStatementRow) onDisposition(item.id, "create");
         else if (hasTransaction) onDisposition(item.id, "keep");
@@ -639,7 +873,7 @@ export function Workbench({
     function onKeyDown(event: KeyboardEvent) {
       // Popovers are not dialogs, but their controls still sit above the grid.
       // Do not let row navigation or decision shortcuts act behind them.
-      if (optionsOpen || createOptionsOpen) return;
+      if (optionsOpen) return;
 
       // Never act behind a dialog. The listener is on the window, so without
       // this an Enter meant for the transform dialog's button would also decide
@@ -664,7 +898,7 @@ export function Workbench({
       } else if (event.key === "k" || event.key === "ArrowUp") {
         event.preventDefault();
         step(-1);
-      } else if (event.key === "n") {
+      } else if (event.key === "u") {
         event.preventDefault();
         goToNextUndecided();
       } else if (event.key === "?") {
@@ -680,7 +914,7 @@ export function Workbench({
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [step, goToNextUndecided, decideSelected, optionsOpen, createOptionsOpen]);
+  }, [step, goToNextUndecided, decideSelected, optionsOpen]);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -688,6 +922,12 @@ export function Workbench({
           carries only what changes as you work. */}
       <header className="border-b border-border/50 px-4 py-2">
         <CoverageSummary coverage={coverage} />
+        {snapshotIsStored && (
+          <p role="status" className="mt-1.5 text-[11px] text-muted-foreground">
+            Showing the transactions this session recorded, not a fresh read of the account.
+            Reconnect to see Actual as it stands now.
+          </p>
+        )}
       </header>
 
       <div className="flex flex-wrap items-center gap-2 border-b border-border/50 px-4 py-2">
@@ -708,18 +948,55 @@ export function Workbench({
                 onSelect={() => setFilter(entry.id)}
               />
 
-              {entry.id === "needs-review" && reviewBranchOpen && (
-                <span className="flex items-center gap-1 rounded-md border border-amber-500/30 bg-amber-500/5 px-1 py-0.5">
-                  {visibleReviewReasons.map((child) => (
-                    <FilterButton
-                      key={child.id}
-                      entry={child}
-                      active={filter === child.id}
-                      count={counts[child.id]}
-                      onSelect={() => setFilter(child.id)}
-                    />
-                  ))}
-                </span>
+              {/*
+                The reasons a row needs review live in a popover rather than
+                inline. Bracketed on the toolbar they took a permanent row of
+                space for a breakdown that is only wanted while working one
+                reason at a time — and they pushed the comparison grid down on
+                exactly the screens where it matters most. Opening downwards
+                from the filter they belong to keeps the relationship visible
+                without paying for it all the time.
+              */}
+              {entry.id === "needs-review" && visibleReviewReasons.length > 0 && (
+                <Popover open={reasonsOpen} onOpenChange={setReasonsOpen}>
+                  <PopoverTrigger
+                    render={
+                      <button
+                        type="button"
+                        aria-label="Break down the rows needing review by reason"
+                        className={cn(
+                          "flex items-center gap-0.5 rounded-md border px-1 py-0.5 text-[11px] transition-colors",
+                          reviewReasonActive
+                            ? "border-amber-500/50 bg-amber-500/10 text-amber-700 dark:text-amber-300"
+                            : "border-border/60 text-muted-foreground hover:bg-accent"
+                        )}
+                      >
+                        {activeReviewReasonLabel ?? "By reason"}
+                        <ChevronDown className="h-3 w-3" aria-hidden="true" />
+                      </button>
+                    }
+                  />
+                  <PopoverContent align="start" side="bottom" className="w-auto p-1">
+                    <div
+                      role="group"
+                      aria-label="Filter by the reason a row needs review"
+                      className="flex items-center gap-1"
+                    >
+                      {visibleReviewReasons.map((child) => (
+                        <FilterButton
+                          key={child.id}
+                          entry={child}
+                          active={filter === child.id}
+                          count={counts[child.id]}
+                          onSelect={() => {
+                            setFilter(child.id);
+                            setReasonsOpen(false);
+                          }}
+                        />
+                      ))}
+                    </div>
+                  </PopoverContent>
+                </Popover>
               )}
             </span>
           ))}
@@ -771,9 +1048,18 @@ export function Workbench({
             Transform
           </Button>
           {/*
-            Anchored to its own button rather than inserted above the grid: as a
-            full-width block these settings pushed the comparison table — the
-            thing being worked on — off the screen every time they were opened.
+            One button for re-running, holding everything that shapes the run.
+
+            There were three — Matching, New rows and Re-run — and they read as
+            three separate tools when they are one act with two sets of settings:
+            neither settings popover did anything on its own, and each had to
+            tell the user so ("choose Re-run when you are ready"). Folding them
+            into the button they feed removes that instruction along with two
+            controls, and makes the order obvious: open it, set it, run it.
+
+            Anchored to the button rather than inserted above the grid, because
+            as a full-width block these settings pushed the comparison table -
+            the thing being worked on - off the screen every time they opened.
           */}
           <Popover open={optionsOpen} onOpenChange={setOptionsOpen}>
             <PopoverTrigger
@@ -781,70 +1067,66 @@ export function Workbench({
                 <Button
                   variant="outline"
                   size="sm"
-                  disabled={readOnly}
-                  title={readOnly ? rematchBlockedReason ?? undefined : undefined}
+                  disabled={isMatching || Boolean(rematchBlockedReason)}
+                  title={rematchBlockedReason ?? undefined}
                 >
-                  <SlidersHorizontal className="mr-1 h-3.5 w-3.5" />
-                  Matching
+                  <RefreshCw className={cn("mr-1 h-3.5 w-3.5", isMatching && "animate-spin")} />
+                  {isMatching ? "Matching…" : "Re-run"}
                 </Button>
               }
             />
-            <PopoverContent align="end" className="w-[26rem] max-w-[90vw] p-3">
-              <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                Matching
-              </h3>
-              <div className="max-h-[60vh] overflow-auto">
-                <MatchOptions
-                  config={matchConfig}
-                  preset={matchPreset}
-                  onChange={onMatchConfigChange}
-                  headingLevel="none"
-                />
+            <PopoverContent align="end" className="w-[32rem] max-w-[92vw] p-3">
+              <div className="flex max-h-[65vh] flex-col gap-4 overflow-auto pr-1">
+                <section>
+                  <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    Matching
+                  </h3>
+                  <MatchOptions
+                    config={matchConfig}
+                    preset={matchPreset}
+                    onChange={onMatchConfigChange}
+                    headingLevel="none"
+                  />
+                </section>
+
+                {/* Only where the statement has rows Actual does not: these
+                    settings shape a transaction that would be created, and with
+                    nothing to create they describe nothing. */}
+                {creatableRows > 0 && (
+                  <section className="border-t border-border/50 pt-3">
+                    <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                      When a row isn&apos;t in Actual
+                    </h3>
+                    <NewTransactionOptions
+                      config={applyConfig}
+                      onChange={onApplyConfigChange}
+                      statementFormat={statementFormat}
+                      stagedNotesCount={stagedNotesCount}
+                      disabled={writeSettingsLocked}
+                    />
+                  </section>
+                )}
               </div>
-              <p className="mt-2 border-t border-border/50 pt-2 text-[11px] text-muted-foreground">
-                Changing these does not re-match on its own - choose Re-run when you are ready.
-              </p>
+
+              <div className="mt-3 flex items-center justify-between gap-2 border-t border-border/50 pt-3">
+                <p className="text-[11px] text-muted-foreground">
+                  Re-matching rebuilds the rows from scratch.
+                </p>
+                <Button
+                  size="sm"
+                  disabled={!canRematch || isMatching || Boolean(rematchBlockedReason)}
+                  title={rematchBlockedReason ?? undefined}
+                  onClick={() => {
+                    setOptionsOpen(false);
+                    onRematch();
+                  }}
+                >
+                  <RefreshCw className={cn("mr-1 h-3.5 w-3.5", isMatching && "animate-spin")} />
+                  Re-run matching
+                </Button>
+              </div>
             </PopoverContent>
           </Popover>
-          {creatableRows > 0 && (
-            <Popover open={createOptionsOpen} onOpenChange={setCreateOptionsOpen}>
-              <PopoverTrigger
-                render={
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={readOnly}
-                    title={readOnly ? rematchBlockedReason ?? undefined : undefined}
-                  >
-                    <FilePlus2 className="mr-1 h-3.5 w-3.5" />
-                    New rows
-                  </Button>
-                }
-              />
-              <PopoverContent align="end" className="w-[30rem] max-w-[90vw] p-3">
-                <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  When a row isn&apos;t in Actual
-                </h3>
-                <NewTransactionOptions
-                  config={applyConfig}
-                  onChange={onApplyConfigChange}
-                  statementFormat={statementFormat}
-                  stagedNotesCount={stagedNotesCount}
-                  disabled={writeSettingsLocked}
-                />
-              </PopoverContent>
-            </Popover>
-          )}
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={!canRematch || isMatching || Boolean(rematchBlockedReason)}
-            title={rematchBlockedReason ?? undefined}
-            onClick={onRematch}
-          >
-            <RefreshCw className={cn("mr-1 h-3.5 w-3.5", isMatching && "animate-spin")} />
-            {isMatching ? "Matching…" : "Re-run"}
-          </Button>
           {/* An applied session's outcome is a record worth being able to
               return to — what was written, what failed, what can be retried. */}
           {onViewResult && (
@@ -859,18 +1141,36 @@ export function Workbench({
         </div>
       </div>
 
-      {/* Segmented controls rather than loose buttons, matching the other list
-          pages: the grouping is what tells the reader these are two separate
-          questions — one answer to the first, any number to the second. */}
       <div className="flex flex-wrap items-center gap-2 border-b border-border/40 bg-muted/10 px-4 py-1.5 text-xs">
-        <span className="text-muted-foreground">Progress</span>
+        {/*
+          Progress leads the row.
+          
+          It sat at the far right among the sort and row-count controls, which
+          made the one figure that actually moves as the user works the least
+          prominent thing on the line. It is what someone glances at to know
+          where they are, so it goes where the eye starts.
+        */}
+        <DecisionProgressStrip
+          coverage={coverage}
+          blockingCount={blocking.length}
+          onShowBlocking={() => setFilter("cluster")}
+          onNextUndecided={goToNextUndecided}
+        />
+
+        {/*
+          The progress filters sit with the bar because they narrow the same
+          axis it measures: the bar says how far along the work is, and these
+          say which part of it to look at. Segmented rather than loose buttons,
+          matching the other list pages — one answer here, any number under
+          "Show only".
+        */}
         <PillGroup
           options={DECISION_FILTERS.map((entry) => ({ value: entry.id, label: entry.label }))}
           value={decisionFilter}
           onChange={setDecisionFilter}
         />
 
-        <span className="ml-2 text-muted-foreground">Show only</span>
+        <span className="ml-3 border-l border-border/60 pl-3 text-muted-foreground">Show only</span>
         <MultiPillGroup
           options={ATTRIBUTE_FILTERS.map((entry) => ({ value: entry.id, label: entry.label }))}
           values={[...attributeFilters]}
@@ -878,14 +1178,24 @@ export function Workbench({
           emptyMeansAll={false}
         />
 
-        {/* The decision queue sits with the filters that narrow it, not up in
-            the coverage header: this row is where the user works the queue. */}
         <div className="ml-auto flex flex-wrap items-center gap-x-3 gap-y-1">
-          <DecisionProgressStrip
-            coverage={coverage}
-            onNextUndecided={goToNextUndecided}
-            onShowShortcuts={() => setShortcutsOpen(true)}
-          />
+          <label className="flex items-center gap-1 text-muted-foreground">
+            Sort
+            <select
+              value={sort}
+              onChange={(event) => setSort(event.target.value as SortId)}
+              className="rounded border border-border/60 bg-background px-1 py-0.5 text-xs"
+            >
+              {SORTS.map((entry) => (
+                <option key={entry.id} value={entry.id}>
+                  {entry.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          {/* About the screen rather than about this session's progress, so it
+              ends the row instead of sitting among the decision figures. */}
+          <ShortcutsButton onShow={() => setShortcutsOpen(true)} />
           <span className="tabular-nums text-muted-foreground">
             {visible.length} of {items.length} rows
           </span>
@@ -999,6 +1309,11 @@ export function Workbench({
                   transactions={item.actualTransactionIds
                     .map((id) => transactions.get(id))
                     .filter((t): t is ActualTransactionSnapshot => Boolean(t))}
+                  contestedBy={
+                    item.actualTransactionIds.length === 1
+                      ? contestedBy.get(item.actualTransactionIds[0])
+                      : undefined
+                  }
                   selected={item.id === selectedId}
                   checked={selectedIds.has(item.id)}
                   onToggleChecked={(checked) => toggleSelect(item.id, checked)}
@@ -1029,11 +1344,22 @@ export function Workbench({
           )}
 
           {!isMatching && visible.length === 0 && (
-            <p className="px-4 py-8 text-center text-xs text-muted-foreground">
-              {items.length === 0
-                ? "No matching has run for this session yet. Choose Re-run to match it against Actual."
-                : "No rows match this filter."}
-            </p>
+            <div className="flex flex-col items-center gap-2 px-4 py-8 text-center text-xs text-muted-foreground">
+              {items.length === 0 ? (
+                <p>No matching has run for this session yet. Choose Re-run to match it against Actual.</p>
+              ) : (
+                <>
+                  <p>
+                    None of the {items.length} rows match the filters in force.
+                  </p>
+                  {/* An empty table with no way out reads as a broken screen.
+                      The rows are still there; the view is what is narrow. */}
+                  <Button size="sm" variant="outline" onClick={clearFilters}>
+                    Clear filters
+                  </Button>
+                </>
+              )}
+            </div>
           )}
         </div>
 
@@ -1073,6 +1399,12 @@ export function Workbench({
           onClear={clearSelection}
           onBulkDisposition={(itemIds, disposition) => {
             onBulkDisposition(itemIds, disposition);
+            clearSelection();
+          }}
+          lastBulkLabel={lastBulkLabel}
+          onUndoBulk={onUndoBulk}
+          onManualMatch={(statementItemId, actualItemId) => {
+            onManualMatch(statementItemId, actualItemId);
             clearSelection();
           }}
           onBulkCorrectAmount={(entries) => {
