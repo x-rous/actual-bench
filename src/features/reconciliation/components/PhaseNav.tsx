@@ -30,6 +30,14 @@ export type PhaseNavProps = {
     busy?: boolean;
     /** Shown beside the button while it works, since a spinner cannot say how far. */
     progress?: string | null;
+    /**
+     * A standing caveat about what moving on leaves behind.
+     *
+     * Distinct from `progress`, which is a live status and is announced as one.
+     * This is a fact about the button: it does not change on its own, and it is
+     * there so the consequence of pressing it is legible before it is pressed.
+     */
+    note?: string | null;
   };
 };
 
@@ -42,6 +50,11 @@ export function PhaseNav({ back, secondary, next }: PhaseNavProps) {
         checking for drift, matching a statement — and it was silent to anyone
         not watching the pixels.
       */}
+      {next?.note && !next.progress && (
+        <span className="mr-1 text-xs tabular-nums text-amber-600 dark:text-amber-400">
+          {next.note}
+        </span>
+      )}
       {next?.progress && (
         <span
           role="status"

@@ -147,7 +147,7 @@ function middleState(
       };
     case REASON.amountMismatch:
       return {
-        label: several ? "Several here" : "Amount differs",
+        label: several ? "Needs pairing" : "Amount differs",
         detail: several,
         tone: "text-amber-600 dark:text-amber-400",
         icon: TriangleAlert,
@@ -158,14 +158,14 @@ function middleState(
         // made when they actually differ. A leftover pair can agree on the
         // amount and still have failed to match for some other reason, and
         // reporting -4.98 against -4.98 as a wrong amount is simply false.
-        label: several ? "Several here" : amountsAgree ? "Needs review" : "Amount looks wrong",
+        label: several ? "Needs pairing" : amountsAgree ? "Needs review" : "Amount looks wrong",
         detail: several ?? (amountsAgree ? "Same merchant, date and amount" : "Same merchant and date"),
         tone: "text-amber-600 dark:text-amber-400",
         icon: TriangleAlert,
       };
     case REASON.merchantCluster:
       return {
-        label: "Several here",
+        label: "Needs pairing",
         detail: several ?? "Same merchant and date, amounts unclear",
         tone: "text-amber-600 dark:text-amber-400",
         icon: TriangleAlert,
@@ -192,6 +192,14 @@ export type WorkbenchRowProps = {
   item: ReconciliationItem;
   statementRow: StatementRow | undefined;
   transactions: ActualTransactionSnapshot[];
+  /**
+   * How many rows are competing for this row's single candidate.
+   *
+   * The marker used to read `shared`, which had to be explained — that is the
+   * evidence it did not work. The count says how big the knot is, which is what
+   * decides whether to settle it now or come back to it.
+   */
+  contestedBy?: number;
   selected: boolean;
   checked: boolean;
   onToggleChecked: (checked: boolean) => void;
@@ -202,6 +210,7 @@ export function WorkbenchRow({
   item,
   statementRow,
   transactions,
+  contestedBy,
   selected,
   checked,
   onToggleChecked,
@@ -333,8 +342,11 @@ export function WorkbenchRow({
               <span className="shrink-0 text-[11px] text-muted-foreground">Transfer</span>
             )}
             {shared && (
-              <span className="shrink-0 rounded border border-amber-500/40 px-1 text-[11px] text-amber-600 dark:text-amber-400">
-                shared
+              <span
+                className="shrink-0 rounded border border-amber-500/40 px-1 text-[11px] text-amber-600 dark:text-amber-400"
+                title="Other statement rows could also be this transaction. Deciding one of them settles it."
+              >
+                {contestedBy != null ? `${contestedBy} rows want this` : "also wanted"}
               </span>
             )}
             {item.stagedChanges && Object.keys(item.stagedChanges).length > 0 && (

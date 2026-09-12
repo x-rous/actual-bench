@@ -1,6 +1,6 @@
 "use client";
 
-import { Ban, Check, Link2, Pencil, Plus, Trash2, X } from "lucide-react";
+import { Ban, Check, Link2, Pencil, Plus, Trash2, Undo2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { isActualOnly, isStatementOnly } from "@/lib/reconciliation/session/build";
 import { canStageDelete, canStageField } from "@/lib/reconciliation/session/staging";
@@ -59,6 +59,9 @@ export type BulkDecisionBarProps = {
   onBulkCorrectAmount: (items: { itemId: string; transactionId: string; amount: number }[]) => void;
   /** Pair a statement-only row with an Actual-only row the matcher never related. */
   onManualMatch: (statementItemId: string, actualItemId: string) => void;
+  /** Describes what the last bulk action changed, when one can be reversed. */
+  lastBulkLabel?: string | null;
+  onUndoBulk?: () => void;
 };
 
 export function BulkDecisionBar({
@@ -69,8 +72,26 @@ export function BulkDecisionBar({
   onBulkDisposition,
   onBulkCorrectAmount,
   onManualMatch,
+  lastBulkLabel = null,
+  onUndoBulk,
 }: BulkDecisionBarProps) {
-  if (selected.length === 0) return null;
+  /*
+   * The bar is normally about the current selection, but the undo has to
+   * outlive it: a bulk action clears the selection, so a bar that vanished with
+   * it would take the only way back with it.
+   */
+  if (selected.length === 0) {
+    if (!lastBulkLabel || !onUndoBulk) return null;
+    return (
+      <div className="sticky bottom-0 z-20 flex flex-wrap items-center gap-2 border-t border-border/60 bg-background/95 px-4 py-2 backdrop-blur">
+        <span className="text-xs text-muted-foreground">Changed {lastBulkLabel}</span>
+        <Button size="sm" variant="outline" onClick={onUndoBulk}>
+          <Undo2 className="mr-1 h-3.5 w-3.5" />
+          Undo that
+        </Button>
+      </div>
+    );
+  }
 
   // A row can be created when it has a statement row and nothing in Actual.
   const creatable = selected.filter(

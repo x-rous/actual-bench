@@ -229,6 +229,16 @@ export function ReconciliationView() {
     []
   );
   const [confirm, setConfirm] = useState<ConfirmState | null>(null);
+  /** The last bulk action's prior state, so one press can reverse it. */
+  const [lastBulk, setLastBulk] = useState<{
+    label: string;
+    before: {
+      id: string;
+      disposition: ReconciliationItem["disposition"];
+      actualTransactionIds: string[];
+      stagedChanges: ReconciliationItem["stagedChanges"];
+    }[];
+  } | null>(null);
 
   // Matching options live with the session (and, once saved, the import
   // profile) because they describe how this account's transactions are created.
@@ -541,6 +551,7 @@ export function ReconciliationView() {
       }),
     [items, parsedRows.length, snapshot.length]
   );
+
 
   /**
    * Keep the session's status in step with the work.
@@ -1078,13 +1089,57 @@ export function ReconciliationView() {
       }
     }
 
+    /**
+     * Remember what a bulk action is about to overwrite.
+     *
+     * One level, last action only — deliberately. Undo is otherwise per row, so
+     * reversing a fifty-row create meant fifty presses of `u`, which is not an
+     * undo so much as a penalty. A full history would want the inverse-patch
+     * machinery the Budget page has; this is the cheap ninety percent, and the
+     * bulk bar is the one place that makes fifty changes in a single press.
+     *
+     * Captures the fields a bulk action can touch — everything else on the item
+     * is left as found, so restoring cannot clobber an unrelated edit made in
+     * between.
+     */
+    function rememberBulk(itemIds: string[], label: string) {
+      const before = itemIds
+        .map((id) => items.find((entry) => entry.id === id))
+        .filter((entry): entry is ReconciliationItem => entry !== undefined)
+        .map((entry) => ({
+          id: entry.id,
+          disposition: entry.disposition,
+          actualTransactionIds: entry.actualTransactionIds,
+          stagedChanges: entry.stagedChanges,
+        }));
+      if (before.length > 0) setLastBulk({ label, before });
+    }
+
+    function undoLastBulk() {
+      if (!lastBulk) return;
+      for (const entry of lastBulk.before) {
+        updateItem(entry.id, (item) => ({
+          ...item,
+          disposition: entry.disposition,
+          actualTransactionIds: entry.actualTransactionIds,
+          stagedChanges: entry.stagedChanges,
+        }));
+      }
+      setLastBulk(null);
+    }
+
     function handleBulkDisposition(itemIds: string[], disposition: ReconciliationDisposition) {
+      rememberBulk(itemIds, `${itemIds.length} ${itemIds.length === 1 ? "row" : "rows"}`);
       for (const itemId of itemIds) handleDisposition(itemId, disposition);
     }
 
     function handleBulkCorrectAmount(
       entries: { itemId: string; transactionId: string; amount: number }[]
     ) {
+      rememberBulk(
+        entries.map((entry) => entry.itemId),
+        `${entries.length} ${entries.length === 1 ? "amount" : "amounts"}`
+      );
       for (const entry of entries) {
         handleCorrectAmount(entry.itemId, entry.transactionId, entry.amount);
       }
@@ -1651,6 +1706,21 @@ export function ReconciliationView() {
                       applyPlan.operations.length === 0
                         ? "Nothing to review"
                         : reviewButtonLabel,
+                    /*
+                     * Said, not enforced. Leaving rows for later is a documented
+                     * capability, and it has to stay one: a session is meant to
+                     * be resumable across sittings, and a partly-applied one has
+                     * to be able to reach Review to retry what failed. Blocking
+                     * would break both to prevent something that is already
+                     * safe — an undecided row is untouched by Apply.
+                     *
+                     * What was missing was the consequence being legible on the
+                     * way past. Review states it again beneath the table.
+                     */
+                    note:
+                      coverage.decisions.pending > 0
+                        ? `${coverage.decisions.pending} still undecided`
+                        : null,
                     onClick: () => setScreen({ name: "review", sessionId: screen.sessionId }),
                     disabled: applyPlan.operations.length === 0,
                   }}
@@ -1688,6 +1758,8 @@ export function ReconciliationView() {
             onBulkDisposition={handleBulkDisposition}
             onBulkCorrectAmount={handleBulkCorrectAmount}
             onManualMatch={handleManualMatch}
+            lastBulkLabel={lastBulk?.label ?? null}
+            onUndoBulk={lastBulk ? undoLastBulk : undefined}
             transformContextFor={transformContextFor}
             applyConfig={applyConfig}
             onApplyConfigChange={handleApplyConfigChange}

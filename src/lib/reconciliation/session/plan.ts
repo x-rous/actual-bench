@@ -21,7 +21,13 @@ import type {
 } from "../types";
 import type { StatementFormat } from "../statement/normalize";
 import { prospectiveTransaction } from "./prospective";
-import { canStageDelete, canStageField, hasStagedChanges, stagedFields } from "./staging";
+import {
+  canDecideOneTransaction,
+  canStageDelete,
+  canStageField,
+  hasStagedChanges,
+  stagedFields,
+} from "./staging";
 
 /**
  * How a staged decision becomes a write, as distinct from how rows are matched.
@@ -222,6 +228,15 @@ export function buildApplyPlan(input: PlanInput): ApplyPlan {
       // survive — nothing the user wrote is destroyed to fix a number.
       case "correct-amount":
       case "matched": {
+        // Which transaction, before anything about it. `actualTransactionIds[0]`
+        // on a contested row is the matcher's ranking, not the user's choice,
+        // and writing to it is the one thing no other guard here would catch.
+        const contested = canDecideOneTransaction(item);
+        if (!contested.allowed) {
+          blocked.push({ itemId: item.id, reason: contested.reason });
+          break;
+        }
+
         const transaction = input.transactions.get(item.actualTransactionIds[0] ?? "");
         if (!transaction) {
           blocked.push({ itemId: item.id, reason: MISSING_TRANSACTION });

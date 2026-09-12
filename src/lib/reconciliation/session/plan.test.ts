@@ -1048,3 +1048,65 @@ describe("a decision whose subject the session cannot resolve", () => {
     expect(result.operations[0]).toMatchObject({ kind: "delete", transactionId: "t1" });
   });
 });
+
+/*
+ * The planner is the last point before a write, and must not rely on the UI
+ * having behaved. A row the matcher could not resolve to one transaction is not
+ * a decision yet: taking one acted on `actualTransactionIds[0]`, deleted the
+ * matcher's top-ranked guess, silently left the rest, and reported nothing
+ * (F-152).
+ */
+describe("a decision on a row that is still a question", () => {
+  const three = ["t1", "t2", "t3"];
+  const transactions = [txn({ id: "t1" }), txn({ id: "t2", amount: -1000 }), txn({ id: "t3", amount: -1100 })];
+
+  it.each([
+    ["delete", "delete" as const],
+    ["matched", "matched" as const],
+    ["correct-amount", "correct-amount" as const],
+  ])("blocks a %s row rather than acting on the leading candidate", (_label, disposition) => {
+    const result = plan(
+      [item({ id: "i1", disposition, statementRowIds: ["s1"], actualTransactionIds: three })],
+      [row({ id: "s1" })],
+      transactions
+    );
+
+    expect(result.operations).toEqual([]);
+    expect(result.blocked).toEqual([
+      { itemId: "i1", reason: expect.stringContaining("Pick which of these 3") },
+    ]);
+  });
+
+  it("plans the row normally once one candidate is left", () => {
+    const result = plan(
+      [
+        item({
+          id: "i1",
+          disposition: "delete",
+          statementRowIds: ["s1"],
+          actualTransactionIds: ["t1"],
+        }),
+      ],
+      [row({ id: "s1" })],
+      transactions
+    );
+
+    expect(result.blocked).toEqual([]);
+    expect(result.operations).toHaveLength(1);
+    expect(result.operations[0]).toMatchObject({ kind: "delete", transactionId: "t1" });
+  });
+
+  it("leaves keep and ignore alone, because they name no transaction", () => {
+    const result = plan(
+      [
+        item({ id: "i1", disposition: "keep", actualTransactionIds: three }),
+        item({ id: "i2", disposition: "ignored", actualTransactionIds: three }),
+      ],
+      [],
+      transactions
+    );
+
+    expect(result.blocked).toEqual([]);
+    expect(result.noWriteMatches).toBe(2);
+  });
+});

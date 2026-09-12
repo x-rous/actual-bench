@@ -178,10 +178,22 @@ export function DecisionProgressMeter({ coverage }: { coverage: ReconciliationCo
  */
 export function DecisionProgressStrip({
   coverage,
+  blockingCount = 0,
+  onShowBlocking,
   onNextUndecided,
   onShowShortcuts,
 }: {
   coverage: ReconciliationCoverage;
+  /**
+   * Rows whose resolution changes what the rows around them mean.
+   *
+   * Named rather than left implicit because the order matters: deciding a
+   * dependent row before its determinant is how a duplicate gets created of a
+   * transaction the next decision would have freed.
+   */
+  blockingCount?: number;
+  /** Narrow the grid to those rows. */
+  onShowBlocking?: () => void;
   onNextUndecided: () => void;
   onShowShortcuts: () => void;
 }) {
@@ -205,6 +217,19 @@ export function DecisionProgressStrip({
       )}
       {decisions.pending > 0 && (
         <span className="tabular-nums text-muted-foreground">{decisions.pending} left</span>
+      )}
+      {blockingCount > 0 && (
+        // A button, not a badge. It names a set of rows, so the obvious thing to
+        // do with it is look at them — and a count that cannot be clicked is a
+        // fact the reader has to go and act on somewhere else.
+        <button
+          type="button"
+          onClick={onShowBlocking}
+          className="rounded border border-amber-500/40 px-1.5 py-0.5 text-[11px] tabular-nums text-amber-600 transition-colors hover:bg-amber-500/10 dark:text-amber-400"
+          title="Several rows are competing for the same transactions. Settling these frees the rest, so they are what Next undecided visits first."
+        >
+          {blockingCount} to pair up first
+        </button>
       )}
       {decisions.automatic > 0 && (
         <span className="text-muted-foreground">

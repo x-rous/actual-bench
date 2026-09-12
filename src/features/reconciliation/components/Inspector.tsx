@@ -125,7 +125,16 @@ export function Inspector({
   onUnstage,
   readOnly = false,
 }: InspectorProps) {
-  const primary = transactions[0];
+  /*
+   * The transaction this row is about — and only when there is one.
+   *
+   * `transactions[0]` on a contested row is the matcher's ranking, not a choice
+   * anyone made, so comparing the statement against it and heading the result
+   * "In Actual" presents a guess as a finding. While several candidates are in
+   * play the panel shows the statement, and the candidates themselves are the
+   * one list in `ItemActions` below — which is where they can be picked.
+   */
+  const chosen = transactions.length === 1 ? transactions[0] : undefined;
   const reasons = item.match?.reasons ?? [];
 
   return (
@@ -163,7 +172,7 @@ export function Inspector({
       )}
 
       {/* The two facts both sides state, compared rather than listed twice. */}
-      {statementRow && primary && (
+      {statementRow && chosen && (
         <section className="flex flex-col gap-1.5">
           <dl className="flex flex-col gap-1.5">
             <div className="grid grid-cols-[3.5rem_1fr_1fr] gap-2 text-[10px] uppercase tracking-wide text-muted-foreground">
@@ -174,19 +183,19 @@ export function Inspector({
             <Compared
               label="Date"
               statement={statementRow.postedDate}
-              actual={primary.date}
-              differs={statementRow.postedDate !== primary.date}
-              note={dayGap(statementRow.postedDate, primary.date)}
+              actual={chosen.date}
+              differs={statementRow.postedDate !== chosen.date}
+              note={dayGap(statementRow.postedDate, chosen.date)}
             />
             <Compared
               label="Amount"
               statement={formatMinorUnits(statementRow.amount)}
-              actual={formatMinorUnits(primary.amount)}
-              differs={statementRow.amount !== primary.amount}
+              actual={formatMinorUnits(chosen.amount)}
+              differs={statementRow.amount !== chosen.amount}
               note={
-                statementRow.amount !== primary.amount
-                  ? `${primary.amount > statementRow.amount ? "+" : "−"}${formatMinorUnits(
-                      Math.abs(primary.amount - statementRow.amount)
+                statementRow.amount !== chosen.amount
+                  ? `${chosen.amount > statementRow.amount ? "+" : "−"}${formatMinorUnits(
+                      Math.abs(chosen.amount - statementRow.amount)
                     )}`
                   : null
               }
@@ -199,12 +208,12 @@ export function Inspector({
         <section className="flex flex-col gap-1.5">
           <h4 className="text-[11px] font-semibold uppercase tracking-wide">Bank statement</h4>
           <dl className="flex flex-col gap-1.5">
-            {!primary && <Field label="Date" value={statementRow.postedDate} />}
+            {!chosen && <Field label="Date" value={statementRow.postedDate} />}
             <Field label="Imported payee" value={statementRow.importedPayee} />
             {statementRow.bankNotes && (
               <Field label="Bank notes" value={statementRow.bankNotes} />
             )}
-            {!primary && (
+            {!chosen && (
               <Field label="Amount" value={formatMinorUnits(statementRow.amount)} numeric />
             )}
             {/* A foreign purchase carries two amounts, and which one Actual
@@ -226,37 +235,21 @@ export function Inspector({
         </section>
       )}
 
-      {primary && (
+      {chosen && (
         <section className="flex flex-col gap-1.5">
           <h4 className="text-[11px] font-semibold uppercase tracking-wide">In Actual</h4>
           <dl className="flex flex-col gap-1.5">
-            {!statementRow && <Field label="Date" value={primary.date} />}
+            {!statementRow && <Field label="Date" value={chosen.date} />}
             {!statementRow && (
-              <Field label="Amount" value={formatMinorUnits(primary.amount)} numeric />
+              <Field label="Amount" value={formatMinorUnits(chosen.amount)} numeric />
             )}
-            <Field label="Payee" value={primary.payeeName} />
+            <Field label="Payee" value={chosen.payeeName} />
             {/* The bank's raw text is shown separately from the curated payee —
                 the statement never silently replaces user data. */}
-            <Field label="Imported payee" value={primary.importedPayee} />
-            <Field label="Category" value={primary.categoryName} />
-            <Field label="Notes" value={primary.notes} />
+            <Field label="Imported payee" value={chosen.importedPayee} />
+            <Field label="Category" value={chosen.categoryName} />
+            <Field label="Notes" value={chosen.notes} />
           </dl>
-        </section>
-      )}
-
-      {transactions.length > 1 && (
-        <section className="flex flex-col gap-2">
-          <h4 className="text-[11px] font-semibold uppercase tracking-wide">
-            Equally likely ({transactions.length - 1})
-          </h4>
-          <ul className="space-y-1 text-xs text-muted-foreground">
-            {transactions.slice(1).map((transaction) => (
-              <li key={transaction.id}>
-                {transaction.date} · {transaction.payeeName ?? "No payee"} ·{" "}
-                {formatMinorUnits(transaction.amount)}
-              </li>
-            ))}
-          </ul>
         </section>
       )}
 
@@ -285,9 +278,9 @@ export function Inspector({
         <StagedFields
           item={item}
           current={{
-            payeeId: primary?.payeeId ?? null,
-            categoryId: primary?.categoryId ?? null,
-            notes: primary?.notes ?? null,
+            payeeId: chosen?.payeeId ?? null,
+            categoryId: chosen?.categoryId ?? null,
+            notes: chosen?.notes ?? null,
           }}
           payees={payees}
           categories={categories}

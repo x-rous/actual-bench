@@ -8,7 +8,9 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { MultiPillGroup, PillGroup } from "@/components/ui/pill-group";
 import { cn } from "@/lib/utils";
 import { REASON, REVIEW_REASONS } from "@/lib/reconciliation/session/build";
-import { canStageDelete } from "@/lib/reconciliation/session/staging";
+import { statementText } from "@/lib/reconciliation/statement/text";
+import { formatShortDate } from "../lib/format";
+import { canDecideOneTransaction, canStageDelete } from "@/lib/reconciliation/session/staging";
 import type { ReconciliationCoverage } from "@/lib/reconciliation/session/build";
 import type {
   ActualTransactionSnapshot,
@@ -55,6 +57,26 @@ export type FilterId =
   | "actual-only"
   | "outside-period";
 
+/**
+ * How the grid is ordered.
+ *
+ * Date stays the default and the recommended order: reading one day across both
+ * sides is what the two-sided layout is for. The alternatives exist because they
+ * match two real ways of working a statement that date order fights — a
+ * contested merchant is one problem scattered across days, and under date order
+ * a 1,253.08 discrepancy is no more prominent than a 0.01 fee.
+ *
+ * Deliberately a select rather than sortable column headers: the grid has two
+ * sides, so "sort by date" is ambiguous the moment a row has only one of them.
+ */
+type SortId = "date" | "merchant" | "amount";
+
+const SORTS: { id: SortId; label: string }[] = [
+  { id: "date", label: "Date" },
+  { id: "merchant", label: "Merchant" },
+  { id: "amount", label: "Largest first" },
+];
+
 type FilterDef = {
   id: FilterId;
   label: string;
@@ -88,6 +110,17 @@ const STATEMENT_FILTERS: FilterDef[] = [
     hint: "Rows the matcher would not decide on its own. Select this to break them down by reason.",
   },
   {
+    // First among the reasons, because settling one of these frees transactions
+    // the rows beneath it are waiting on. Working them in any other order is how
+    // a duplicate gets created of a transaction the next decision would have
+    // released.
+    id: "cluster",
+    label: "Needs pairing",
+    dot: "bg-amber-500/40",
+    child: true,
+    hint: "Several statement rows and several transactions share this merchant and date, and no amount settles which is which. Pair them up - each one you settle frees the rest.",
+  },
+  {
     id: "ambiguous",
     label: "Several candidates",
     dot: "bg-amber-500/40",
@@ -107,13 +140,6 @@ const STATEMENT_FILTERS: FilterDef[] = [
     dot: "bg-amber-500/40",
     child: true,
     hint: "Same merchant and date as the only transaction left, but the amount is far off - often a conversion done wrong before it reached the budget.",
-  },
-  {
-    id: "cluster",
-    label: "Several here",
-    dot: "bg-amber-500/40",
-    child: true,
-    hint: "Several statement rows and several transactions share this merchant and date, and no amount settles which is which. Deciding one frees the rest.",
   },
   {
     id: "duplicates",
@@ -339,6 +365,9 @@ export type WorkbenchProps = {
    * only a person can see.
    */
   onManualMatch: (statementItemId: string, actualItemId: string) => void;
+  /** What the last bulk action would be reversed back to, if there is one. */
+  lastBulkLabel?: string | null;
+  onUndoBulk?: () => void;
   /** Writes the plan would make, named on the button rather than a row count. */
   /** Set when this session has already been applied, so its outcome is reachable. */
   onViewResult?: () => void;
@@ -416,6 +445,8 @@ export function Workbench({
   onBulkDisposition,
   onBulkCorrectAmount,
   onManualMatch,
+  lastBulkLabel = null,
+  onUndoBulk,
   onViewResult,
   transformContextFor,
   applyConfig,
@@ -425,6 +456,7 @@ export function Workbench({
 }: WorkbenchProps) {
   const [filter, setFilter] = useState<FilterId>("all");
   const [reasonsOpen, setReasonsOpen] = useState(false);
+  const [sort, setSort] = useState<SortId>("date");
   const [decisionFilter, setDecisionFilter] = useState<DecisionFilter>("any");
   const [attributeFilters, setAttributeFilters] = useState<Set<AttributeFilter>>(new Set());
   const [search, setSearch] = useState("");
@@ -485,7 +517,47 @@ export function Workbench({
       return "";
     };
 
+    /** The text this row is about, for grouping a merchant together. */
+    const textOf = (item: ReconciliationItem): string => {
+      for (const id of item.statementRowIds) {
+        const row = statementRows.get(id);
+        if (row) return statementText(row).toLowerCase();
+      }
+      for (const id of item.actualTransactionIds) {
+        const transaction = transactions.get(id);
+        if (transaction) {
+          return (transaction.payeeName ?? transaction.notes ?? "").toLowerCase();
+        }
+      }
+      return "";
+    };
+
+    /** Size, ignoring direction: the question is how much is at stake. */
+    const magnitudeOf = (item: ReconciliationItem): number => {
+      for (const id of item.statementRowIds) {
+        const row = statementRows.get(id);
+        if (row) return Math.abs(row.amount);
+      }
+      for (const id of item.actualTransactionIds) {
+        const transaction = transactions.get(id);
+        if (transaction) return Math.abs(transaction.amount);
+      }
+      return 0;
+    };
+
     return [...items].sort((a, b) => {
+      if (sort === "merchant") {
+        const left = textOf(a);
+        const right = textOf(b);
+        if (left !== right) return left < right ? -1 : 1;
+      }
+      if (sort === "amount") {
+        const difference = magnitudeOf(b) - magnitudeOf(a);
+        if (difference !== 0) return difference;
+      }
+
+      // Date is the tiebreak under every ordering, so a merchant's rows read
+      // chronologically and two equal amounts keep a stable, meaningful order.
       const left = dateOf(a);
       const right = dateOf(b);
       if (left !== right) return left < right ? -1 : 1;
@@ -497,7 +569,7 @@ export function Workbench({
       if (leftSeq !== rightSeq) return leftSeq - rightSeq;
       return a.id < b.id ? -1 : 1;
     });
-  }, [items, statementRows, transactions]);
+  }, [items, statementRows, transactions, sort]);
 
   const visible = useMemo(() => {
     const needle = search.trim().toLowerCase();
@@ -517,7 +589,10 @@ export function Workbench({
             row.importedPayee,
             row.bankNotes ?? "",
             row.bankReference ?? "",
-            String(row.amount)
+            String(row.amount),
+            // Both readings, so "15 Aug" and "2026-08-15" each find the row.
+            row.postedDate,
+            formatShortDate(row.postedDate)
           );
         }
       }
@@ -528,7 +603,9 @@ export function Workbench({
             transaction.payeeName ?? "",
             transaction.importedPayee ?? "",
             transaction.notes ?? "",
-            String(transaction.amount)
+            String(transaction.amount),
+            transaction.date,
+            formatShortDate(transaction.date)
           );
         }
       }
@@ -613,15 +690,77 @@ export function Workbench({
   );
 
   /** Jump to the next row still waiting on a decision. */
+  /**
+   * Rows whose resolution changes what the rows around them mean.
+   *
+   * A contested group holds transactions several statement rows could be, so
+   * until one of them is settled the others cannot honestly be decided — and
+   * deciding a dependent row first is how a user creates a duplicate of a
+   * transaction the next decision would have freed (F-151g).
+   *
+   * A cluster row holding a single candidate counts too: it is not contested
+   * with itself, it is contested with whoever else wants that transaction.
+   */
+  /*
+   * Deliberately the same test the "Needs pairing" filter uses, so the count and
+   * the list agree: a badge reading 4 that filters to 6 rows teaches the reader
+   * to stop trusting both.
+   *
+   * A row with several candidates but no cluster is *not* counted. Its rivals
+   * were already filtered by the assignment to those no other row wants more, so
+   * settling it frees nothing for anyone else — it is a choice, not a blockage.
+   */
+  const blocking = useMemo(
+    () =>
+      visible.filter(
+        (item) => item.disposition === "unresolved" && item.reasonCode === REASON.merchantCluster
+      ),
+    [visible]
+  );
+
+  /**
+   * The next row to decide, blocking rows first.
+   *
+   * The grid stays in date order — scanning one day across both sides is what
+   * the layout is for — so the priority lives here, in the queue, rather than
+   * by reordering what the user is reading. While anything is blocking, this
+   * walks those; once none are left it falls back to ordinary order.
+   */
+  /** Back to every row, from a view that is hiding all of them. */
+  const clearFilters = useCallback(() => {
+    setFilter("all");
+    setDecisionFilter("any");
+    setAttributeFilters(new Set());
+    setSearch("");
+  }, []);
+
+  /**
+   * How many undecided rows are competing for each transaction.
+   *
+   * Counted once over the whole set rather than per row, so a row can say how
+   * big the knot it is part of actually is instead of only that one exists.
+   */
+  const contestedBy = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const item of items) {
+      if (item.disposition !== "unresolved") continue;
+      for (const id of item.actualTransactionIds) {
+        counts.set(id, (counts.get(id) ?? 0) + 1);
+      }
+    }
+    return counts;
+  }, [items]);
+
   const goToNextUndecided = useCallback(() => {
-    const index = visible.findIndex((item) => item.id === selectedId);
-    const after = visible.slice(index + 1).find((item) => item.disposition === "unresolved");
-    const wrapped = after ?? visible.find((item) => item.disposition === "unresolved");
+    const queue = blocking.length > 0 ? blocking : visible;
+    const index = queue.findIndex((item) => item.id === selectedId);
+    const after = queue.slice(index + 1).find((item) => item.disposition === "unresolved");
+    const wrapped = after ?? queue.find((item) => item.disposition === "unresolved");
     if (wrapped) {
       setSelectedId(wrapped.id);
       reveal(wrapped.id);
     }
-  }, [visible, selectedId, reveal]);
+  }, [blocking, visible, selectedId, reveal]);
 
   /**
    * Apply a keyed decision to the selected row.
@@ -673,6 +812,12 @@ export function Workbench({
       if (key === "Enter") {
         // Whatever this row is plainly for: confirm the pair, create what is
         // missing, or keep what the statement does not mention.
+        //
+        // "Plainly" excludes a row still offering several candidates. Confirming
+        // one took `actualTransactionIds[0]` — the matcher's ranking, not a
+        // choice anyone made — and the single most reachable way to do that was
+        // one keystroke (F-152).
+        if (!canDecideOneTransaction(item).allowed) return;
         if (hasStatementRow && hasTransaction) onDisposition(item.id, "matched");
         else if (hasStatementRow) onDisposition(item.id, "create");
         else if (hasTransaction) onDisposition(item.id, "keep");
@@ -974,9 +1119,25 @@ export function Workbench({
         <div className="ml-auto flex flex-wrap items-center gap-x-3 gap-y-1">
           <DecisionProgressStrip
             coverage={coverage}
+            blockingCount={blocking.length}
+            onShowBlocking={() => setFilter("cluster")}
             onNextUndecided={goToNextUndecided}
             onShowShortcuts={() => setShortcutsOpen(true)}
           />
+          <label className="flex items-center gap-1 text-muted-foreground">
+            Sort
+            <select
+              value={sort}
+              onChange={(event) => setSort(event.target.value as SortId)}
+              className="rounded border border-border/60 bg-background px-1 py-0.5 text-xs"
+            >
+              {SORTS.map((entry) => (
+                <option key={entry.id} value={entry.id}>
+                  {entry.label}
+                </option>
+              ))}
+            </select>
+          </label>
           <span className="tabular-nums text-muted-foreground">
             {visible.length} of {items.length} rows
           </span>
@@ -1090,6 +1251,11 @@ export function Workbench({
                   transactions={item.actualTransactionIds
                     .map((id) => transactions.get(id))
                     .filter((t): t is ActualTransactionSnapshot => Boolean(t))}
+                  contestedBy={
+                    item.actualTransactionIds.length === 1
+                      ? contestedBy.get(item.actualTransactionIds[0])
+                      : undefined
+                  }
                   selected={item.id === selectedId}
                   checked={selectedIds.has(item.id)}
                   onToggleChecked={(checked) => toggleSelect(item.id, checked)}
@@ -1120,11 +1286,22 @@ export function Workbench({
           )}
 
           {!isMatching && visible.length === 0 && (
-            <p className="px-4 py-8 text-center text-xs text-muted-foreground">
-              {items.length === 0
-                ? "No matching has run for this session yet. Choose Re-run to match it against Actual."
-                : "No rows match this filter."}
-            </p>
+            <div className="flex flex-col items-center gap-2 px-4 py-8 text-center text-xs text-muted-foreground">
+              {items.length === 0 ? (
+                <p>No matching has run for this session yet. Choose Re-run to match it against Actual.</p>
+              ) : (
+                <>
+                  <p>
+                    None of the {items.length} rows match the filters in force.
+                  </p>
+                  {/* An empty table with no way out reads as a broken screen.
+                      The rows are still there; the view is what is narrow. */}
+                  <Button size="sm" variant="outline" onClick={clearFilters}>
+                    Clear filters
+                  </Button>
+                </>
+              )}
+            </div>
           )}
         </div>
 
@@ -1166,6 +1343,8 @@ export function Workbench({
             onBulkDisposition(itemIds, disposition);
             clearSelection();
           }}
+          lastBulkLabel={lastBulkLabel}
+          onUndoBulk={onUndoBulk}
           onManualMatch={(statementItemId, actualItemId) => {
             onManualMatch(statementItemId, actualItemId);
             clearSelection();

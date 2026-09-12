@@ -60,7 +60,8 @@ function item(overrides: Partial<ReconciliationItem> = {}): ReconciliationItem {
 
 function renderRow(
   over: Partial<ReconciliationItem>,
-  transactions: ActualTransactionSnapshot[]
+  transactions: ActualTransactionSnapshot[],
+  contestedBy?: number
 ) {
   return render(
     <table>
@@ -69,6 +70,7 @@ function renderRow(
           item={item(over)}
           statementRow={statementRow()}
           transactions={transactions}
+          contestedBy={contestedBy}
           selected={false}
           checked={false}
           onToggleChecked={() => {}}
@@ -93,7 +95,7 @@ describe("a row with several candidates", () => {
   it("puts the count in the Match column, with the decision", () => {
     renderRow({ reasonCode: REASON.merchantCluster, actualTransactionIds: ["t1", "t2", "t3"] }, many);
 
-    expect(screen.getByText("Several here")).toBeInTheDocument();
+    expect(screen.getByText("Needs pairing")).toBeInTheDocument();
     expect(screen.getByText("3 possible matches")).toBeInTheDocument();
   });
 
@@ -118,7 +120,7 @@ describe("a row with several candidates", () => {
     // "Amount differs" is true of a pair, not of a choice between three.
     renderRow({ reasonCode: REASON.amountMismatch, actualTransactionIds: ["t1", "t2", "t3"] }, many);
 
-    expect(screen.getByText("Several here")).toBeInTheDocument();
+    expect(screen.getByText("Needs pairing")).toBeInTheDocument();
     expect(screen.queryByText("Amount differs")).not.toBeInTheDocument();
   });
 });
@@ -145,7 +147,7 @@ describe("a row with one candidate", () => {
     );
 
     expect(screen.getByText("Will create")).toBeInTheDocument();
-    expect(screen.queryByText("Several here")).not.toBeInTheDocument();
+    expect(screen.queryByText("Needs pairing")).not.toBeInTheDocument();
   });
 });
 
@@ -161,23 +163,30 @@ describe("a cluster row with a single candidate", () => {
   it("says the transaction is shared rather than counting candidates", () => {
     renderRow({ reasonCode: REASON.merchantCluster, actualTransactionIds: ["t1"] }, one);
 
-    expect(screen.getByText("Several here")).toBeInTheDocument();
+    expect(screen.getByText("Needs pairing")).toBeInTheDocument();
     expect(screen.getByText("Shared with other rows")).toBeInTheDocument();
   });
 
   it("still shows which transaction it could be, marked as contested", () => {
     // Hiding it would be worse: this row may well be that transaction, and the
     // user needs to see the one they are being asked about.
-    renderRow({ reasonCode: REASON.merchantCluster, actualTransactionIds: ["t1"] }, one);
+    renderRow({ reasonCode: REASON.merchantCluster, actualTransactionIds: ["t1"] }, one, 3);
 
     expect(screen.getByText("Careem")).toBeInTheDocument();
-    expect(screen.getByText("shared")).toBeInTheDocument();
+    // The count, not a bare "shared" that had to be explained to the user.
+    expect(screen.getByText("3 rows want this")).toBeInTheDocument();
+  });
+
+  it("falls back to plain wording when the count is not known", () => {
+    renderRow({ reasonCode: REASON.merchantCluster, actualTransactionIds: ["t1"] }, one);
+    expect(screen.getByText("also wanted")).toBeInTheDocument();
   });
 
   it("does not mark an uncontested single candidate", () => {
-    renderRow({ reasonCode: REASON.amountMismatch, actualTransactionIds: ["t1"] }, one);
+    renderRow({ reasonCode: REASON.amountMismatch, actualTransactionIds: ["t1"] }, one, 1);
 
-    expect(screen.queryByText("shared")).not.toBeInTheDocument();
+    expect(screen.queryByText(/wants? this/)).not.toBeInTheDocument();
+    expect(screen.queryByText("also wanted")).not.toBeInTheDocument();
   });
 });
 
