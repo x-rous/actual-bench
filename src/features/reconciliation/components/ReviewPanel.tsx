@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, CheckCircle2, Plus, Trash2, Pencil } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Plus, Trash2, Pencil, TriangleAlert } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   balanceImpact,
@@ -18,9 +18,10 @@ import type {
   StatementRow,
 } from "@/lib/reconciliation/types";
 import type { DriftReport, DriftVerdict } from "@/lib/reconciliation/apply/drift";
+import type { SuspectedDuplicate } from "@/lib/reconciliation/apply/duplicateGuard";
 import { statementText } from "@/lib/reconciliation/statement/text";
 import { ReviewComparison } from "./ReviewComparison";
-import { formatMinorUnits } from "../lib/format";
+import { formatMinorUnits, formatShortDate } from "../lib/format";
 import type { Option } from "./StagedFields";
 import { WriteSetting } from "./WriteSetting";
 
@@ -79,7 +80,79 @@ export type ReviewPanelProps = {
   onApplyConfigChange: (config: ApplyConfig) => void;
   /** The choices are an audit record once Apply has started. */
   writeSettingsLocked?: boolean;
+  /**
+   * Rows being created that look like rows being deleted.
+   *
+   * Computed by the caller, which holds the session's match config and the
+   * loaded transactions; this screen only has to say so.
+   */
+  suspectedDuplicates?: SuspectedDuplicate[];
 };
+
+/**
+ * The one warning on this screen about something that would damage the budget.
+ *
+ * Every other figure here describes a write the user asked for. This describes
+ * two they asked for that undo each other: a transaction created and its
+ * original removed, leaving the account exactly as wrong as before and a day's
+ * reconciling to do again.
+ *
+ * A warning rather than a block, and the wording carries that. Replacing a
+ * transaction whose amount cannot be corrected in place, clearing a genuine
+ * duplicate the statement also carries, and retrying a partial apply are all
+ * legitimate reasons to mean both halves.
+ */
+function DuplicateWarning({
+  pairs,
+  plan,
+  transactions,
+}: {
+  pairs: SuspectedDuplicate[];
+  plan: ApplyPlan;
+  transactions: Map<string, ActualTransactionSnapshot>;
+}) {
+  if (pairs.length === 0) return null;
+
+  const byId = new Map(plan.operations.map((operation) => [operation.id, operation]));
+
+  return (
+    <section
+      role="alert"
+      className="rounded-md border border-amber-500/50 bg-amber-500/5 px-3 py-2 text-xs"
+    >
+      <h2 className="flex items-center gap-1.5 font-semibold text-amber-700 dark:text-amber-300">
+        <TriangleAlert className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+        {pairs.length} {pairs.length === 1 ? "row you are creating looks" : "rows you are creating look"}{" "}
+        like {pairs.length === 1 ? "a row" : "rows"} you are deleting
+      </h2>
+
+      <ul className="mt-1.5 space-y-0.5">
+        {pairs.map((pair) => {
+          const made = byId.get(pair.createOperationId);
+          const removed = byId.get(pair.deleteOperationId);
+          if (made?.kind !== "create" || removed?.kind !== "delete") return null;
+          const transaction = transactions.get(removed.transactionId);
+
+          return (
+            <li key={pair.createOperationId} className="tabular-nums text-muted-foreground">
+              <span className="text-foreground">{made.importedPayee ?? "No payee"}</span>{" "}
+              · {formatShortDate(made.date)} · creating {formatMinorUnits(made.amount)} ·{" "}
+              deleting {formatMinorUnits(removed.amount)}
+              {transaction?.notes && (
+                <span className="text-muted-foreground/80"> · {transaction.notes}</span>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+
+      <p className="mt-1.5 text-muted-foreground">
+        These may be the same transactions. Applying both would duplicate them and remove the
+        originals. Check each pair, or go back and match them instead.
+      </p>
+    </section>
+  );
+}
 
 /** The notes source in words, for the read-only summary on the review screen. */
 function describeNotesSource(
@@ -110,6 +183,7 @@ export function ReviewPanel({
   statementFormat = null,
   onApplyConfigChange,
   writeSettingsLocked = false,
+  suspectedDuplicates = [],
 }: ReviewPanelProps) {
   const counts = planCounts(plan);
   const total = totalChanges(plan);
@@ -146,6 +220,10 @@ export function ReviewPanel({
     // Scrolling the whole page meant the Apply button — and the count it is
     // about — left the screen the moment you started reading the rows.
     <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden p-4">
+      {/* Above the summary: it is the only thing here that says a planned write
+          would make the account worse rather than better. */}
+      <DuplicateWarning pairs={suspectedDuplicates} plan={plan} transactions={transactions} />
+
       {/*
         One line for the whole summary: what will happen, and what it does to
         the balance. These were four cards and a panel, which pushed the table

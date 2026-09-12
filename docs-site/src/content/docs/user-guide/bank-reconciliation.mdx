@@ -269,6 +269,10 @@ exactly that reason.
   original-currency amount is tried as a second exact key, with text corroboration required.
 - **Likely duplicates.** The same thing recorded more than once in Actual. This is a *count* mismatch
   - one statement row, two transactions - not a matter of resemblance.
+- **Rows that need pairing.** Several statement rows and several transactions sharing a merchant and
+  a day, where no amount settles which is which - four `Jeeny` rows against four `Jeeny`
+  transactions, none of the amounts equal. Every row in the group is shown the transactions it could
+  be rather than one row taking them all, and settling one frees the rest.
 
 ## 3. Decide each row
 
@@ -291,6 +295,35 @@ For every row you can:
 - **Correct an amount** in place, so the transaction's id, notes, payee, and any schedule or transfer
   link survive. Nothing you wrote is destroyed to fix a number.
 - **Leave it for later.** Rows with no decision are untouched by Apply.
+
+While a row still has several transactions in play, anything that names *one* of them - matching it,
+deleting it, correcting its amount - is refused, and says to pick which transaction the row is first.
+The tool has said it does not know which one this is; acting on its own top guess against your budget
+would be the one thing it must not do. Keeping and ignoring stay available, because they name nothing.
+
+Picking from a group withdraws that transaction from the other rows and leaves the rest on offer, so
+each choice makes the next one smaller. Candidates are listed **closest amount first**, each showing
+how far it is from the statement - on rows that share a merchant and a day, the amount is the only
+thing separating them. **Next undecided** visits these groups before the rows that depend on them.
+
+Rows can be ordered by **date** (the default), by **merchant** to work a contested group together, or
+by **largest amount** to put the money first. A bulk decision can be undone in one press.
+
+### When nothing will match them
+
+Matching will not bridge an amount gap with text, and that is deliberate - loosening it to reach a
+few rows would admit wrong guesses across the whole statement. So some pairs a person can see stay
+invisible to it:
+
+```text
+Danube-D- JEDDAH SAU SAR53.45   -54.42    on the statement, nothing in Actual
+#API Danube-D-8505              -52.07    in Actual, not on the statement
+```
+
+Select the two rows and choose **These are the same transaction**. The statement's amount is carried
+onto the transaction as a staged correction, so its id, notes, payee, category and any schedule or
+transfer link survive, and it is recorded as your decision rather than the matcher's. Limited to
+transactions in the loaded window.
 
 Selecting a row opens a details panel. Date and amount are shown **once, with both readings side by
 side**, and any difference is marked and quantified — "2 days later", "−12.50" — rather than left
@@ -333,6 +366,22 @@ what kind of write is planned:
 - **Update + bank text** means a staged change and the provenance write travel together.
 - If an imported payee already exists and will be replaced, the row turns amber and shows its
   previous value.
+
+### Creating a duplicate while deleting its original
+
+Applying a **create** and a **delete** that are really the same transaction duplicates it and removes
+the original - the one outcome here that leaves your account worse than it started. Each half looks
+entirely reasonable alone, and under date order the two are usually pages apart.
+
+So the finished plan is checked for it, and any suspected pairs are named above the summary with both
+amounts. This check is deliberately more willing to ask than matching is to act: it accepts weaker
+text agreement and a wider date gap, and ignores the amounts entirely, because a wrong amount is one
+of the reasons the pairing was missed in the first place. A false alarm costs you a glance; a missed
+pair costs a duplicate.
+
+It warns rather than blocks. Replacing a transaction whose amount cannot be corrected in place,
+clearing a genuine duplicate the statement also carries, and retrying a partial apply are all
+legitimate reasons to mean both halves.
 
 It also states:
 
@@ -464,4 +513,5 @@ anything already applied stays applied.
 - Split children are read-only: a split transaction can be matched, but its lines are not edited here.
 - Categories are never written (see the note at the top).
 - Automatic matches always require an exact signed amount. Pairs whose amounts differ are review
-  items, never matches.
+  items, never matches - though you can link any two rows yourself.
+- Linking by hand reaches only the transactions loaded for this session's date range.
