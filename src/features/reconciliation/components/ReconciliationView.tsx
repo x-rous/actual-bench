@@ -323,6 +323,11 @@ export function ReconciliationView() {
         stagedChanges: (item.stagedChanges ?? undefined) as ReconciliationItem["stagedChanges"],
       }))
     );
+    // The rows this would have reversed are gone, and `updateItem` would find
+    // none of their ids - so the control would sit there offering to undo
+    // nothing. Cleared wherever the item set is replaced, which is here and at
+    // the end of a match.
+    setLastBulk(null);
     const stored = data.items
       .map((item) => item.actualSnapshot as ActualTransactionSnapshot | null)
       .filter((snapshot): snapshot is ActualTransactionSnapshot => snapshot != null);
@@ -837,6 +842,8 @@ export function ReconciliationView() {
         });
 
         setSnapshot(window.transactions);
+        // A fresh graph: the rows a bulk action touched no longer exist.
+        setLastBulk(null);
         // Matching is the moment the baseline is taken.
         setBaselines(new Map(window.transactions.map((t) => [t.id, t])));
         setTransfersReported(window.transfersReported);

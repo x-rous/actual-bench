@@ -612,3 +612,48 @@ describe("performance shape", () => {
     expect(graph.matched.length).toBeGreaterThan(0);
   });
 });
+
+/*
+ * `assignMatches` marks a transaction consumed only when it is *matched*, so a
+ * candidate on an ambiguous row is still listed as unmatched. The leftover pass
+ * built its pool straight from that list, and could therefore offer the same
+ * transaction a second time to a different row in a different component - two
+ * items holding one transaction, which is the invariant the design turns on.
+ */
+describe("a transaction already offered to an ambiguous row", () => {
+  // Same amount, different days: close enough to be indistinguishable, and
+  // *not* interchangeable - which is what keeps the pair ambiguous instead of
+  // collapsing it into a match.
+  const transactions = [
+    txn({ id: "same-day", date: "2026-07-03", amount: -4250, payeeName: "Sparkys Taif" }),
+    txn({ id: "day-after", date: "2026-07-04", amount: -4250, payeeName: "Sparkys Taif" }),
+  ];
+  const rows = [
+    row({ id: "s1", postedDate: "2026-07-03", amount: -4250, importedPayee: "SPARKYS TAIF" }),
+    // Nothing matches this exactly, so it falls to the leftover pass - where it
+    // would have been offered the two transactions s1 is already deciding over.
+    row({ id: "s2", postedDate: "2026-07-03", amount: -4100, importedPayee: "SPARKYS TAIF" }),
+  ];
+
+  const graph = () =>
+    match({ statementRows: rows, actualTransactions: transactions, config: DEFAULT_MATCH_CONFIG });
+
+  it("produces the ambiguous row the guard is about", () => {
+    // Guards the fixture itself: if this stops being ambiguous the test below
+    // passes for the wrong reason.
+    const contested = graph().ambiguous.find((entry) => entry.statementRowId === "s1");
+    expect(contested?.candidates.length).toBeGreaterThan(1);
+  });
+
+  it("never offers one transaction to two rows", () => {
+    const result = graph();
+    const claimed = [
+      ...result.ambiguous.flatMap((entry) =>
+        entry.candidates.map((candidate) => candidate.actualTransactionId)
+      ),
+      ...result.matched.map((outcome) => outcome.actualTransactionId),
+    ];
+
+    expect(new Set(claimed).size).toBe(claimed.length);
+  });
+});

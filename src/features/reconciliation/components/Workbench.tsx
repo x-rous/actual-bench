@@ -555,7 +555,14 @@ export function Workbench({
       for (const id of item.actualTransactionIds) {
         const transaction = transactions.get(id);
         if (transaction) {
-          return (transaction.payeeName ?? transaction.notes ?? "").toLowerCase();
+          // The same three channels search and the grid read, in the same
+          // order: a transaction with no curated payee still has a merchant.
+          return (
+            transaction.payeeName ??
+            transaction.importedPayee ??
+            transaction.notes ??
+            ""
+          ).toLowerCase();
         }
       }
       return "";
@@ -675,6 +682,11 @@ export function Workbench({
    */
   useEffect(() => {
     clearSelection();
+    // The inspector goes too. It is an editing surface, so leaving it open on a
+    // row the filter has just hidden allows a change to be staged against
+    // something the user can no longer see - the same reason the checkbox
+    // selection is dropped.
+    setSelectedId(null);
     // Deliberately not depending on `clearSelection` itself: it is a stable
     // callback, and listing it invites a lint fix that re-runs this on renders
     // that changed nothing.

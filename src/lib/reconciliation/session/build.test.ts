@@ -613,6 +613,29 @@ describe("deciding one row of a cluster", () => {
     const all = items.flatMap((entry) => entry.actualTransactionIds).sort();
     expect(all).toEqual(["t1", "t2", "t3"]);
   });
+
+  it("does not re-home a transaction a decided row is still holding", () => {
+    /*
+     * A row settled as `correct-amount` keeps its transaction, and the check for
+     * whether a released id is homeless used to look only at *undecided* rows.
+     * So the last row to let go of that id minted a second "Actual only" row for
+     * a transaction another row already owned - two rows, one transaction,
+     * which is the invariant this whole function exists to hold.
+     */
+    const decided: ReconciliationItem = {
+      ...cluster[1],
+      disposition: "correct-amount",
+      actualTransactionIds: ["t1"],
+    };
+    const next = decide("i1", null, [
+      { ...cluster[0], actualTransactionIds: ["t1"] },
+      decided,
+    ]);
+
+    expect(next.filter((entry) => entry.reasonCode === REASON.notOnStatement)).toEqual([]);
+    const all = next.flatMap((entry) => entry.actualTransactionIds);
+    expect(all).toEqual(["t1"]);
+  });
 });
 
 /*

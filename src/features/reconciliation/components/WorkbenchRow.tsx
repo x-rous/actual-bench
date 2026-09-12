@@ -94,7 +94,10 @@ function middleState(
   const several =
     candidateCount > 1
       ? `${candidateCount} possible matches`
-      : item.reasonCode === REASON.merchantCluster
+      : // A cluster row with nothing resolved has no transaction to be
+        // contested over, so saying one is shared would assert a candidate that
+        // is not on screen.
+        candidateCount === 1 && item.reasonCode === REASON.merchantCluster
         ? "Shared with other rows"
         : null;
 
@@ -227,7 +230,7 @@ export function WorkbenchRow({
    * rows each offered the same -9.74. The row may show which transaction it
    * could be, but must not render it as settled.
    */
-  const shared = !several && item.reasonCode === REASON.merchantCluster && primary != null;
+  const shared = transactions.length === 1 && item.reasonCode === REASON.merchantCluster;
   const amountsAgree =
     primary != null && statementRow != null && primary.amount === statementRow.amount;
   /**

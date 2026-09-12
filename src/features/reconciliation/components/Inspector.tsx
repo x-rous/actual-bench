@@ -130,11 +130,20 @@ export function Inspector({
    *
    * `transactions[0]` on a contested row is the matcher's ranking, not a choice
    * anyone made, so comparing the statement against it and heading the result
-   * "In Actual" presents a guess as a finding. While several candidates are in
+   * "In Actual" presents a guess as a finding.
+   *
+   * The item's own candidate count decides it, not how many happened to
+   * resolve. Where the session is showing stored snapshots rather than a live
+   * read, a five-candidate item resolves to the one snapshot it persisted —
+   * and treating that as the selection would call a contested row settled on
+   * the strength of what the database happened to keep. While several candidates are in
    * play the panel shows the statement, and the candidates themselves are the
    * one list in `ItemActions` below — which is where they can be picked.
    */
-  const chosen = transactions.length === 1 ? transactions[0] : undefined;
+  const chosen =
+    item.actualTransactionIds.length === 1 && transactions.length === 1
+      ? transactions[0]
+      : undefined;
   const reasons = item.match?.reasons ?? [];
 
   return (

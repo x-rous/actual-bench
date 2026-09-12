@@ -124,7 +124,23 @@ function addLeftoverReviews(
   if (!config.reviewAmountMismatch && !config.pairLeftoversByMerchantAndDate) return result;
 
   const rowsById = new Map(statementRows.map((row) => [row.id, row]));
-  const available = new Set(result.unmatchedActualTransactionIds);
+
+  /*
+   * `assignMatches` only marks a transaction consumed when it is *matched*, so
+   * one offered as a candidate on an ambiguous row is still listed as
+   * unmatched. Taking that list at face value let this pass offer the same
+   * transaction a second time, to a different row, in a different component —
+   * two items holding one transaction, which is the invariant the whole design
+   * turns on. Anything already on offer is spoken for.
+   */
+  const alreadyOffered = new Set(
+    result.ambiguous.flatMap((entry) =>
+      entry.candidates.map((candidate) => candidate.actualTransactionId)
+    )
+  );
+  const available = new Set(
+    result.unmatchedActualTransactionIds.filter((id) => !alreadyOffered.has(id))
+  );
 
   // Widest window either tier can span, so one date slice serves both and the
   // scan stays bounded on a large statement. Each scorer still applies its own,

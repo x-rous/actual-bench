@@ -297,13 +297,16 @@ export function resolveToTransaction(input: {
       return withoutCandidate(entry, transactionId, transactions, transfersReported);
     });
 
-  // A released transaction some other undecided row still offers is already on
-  // screen there; only a homeless one needs a row of its own.
-  const stillOffered = new Set(
-    rest
-      .filter((entry) => entry.disposition === "unresolved")
-      .flatMap((entry) => entry.actualTransactionIds)
-  );
+  /*
+   * A released transaction any other row still holds is already on screen
+   * there; only a homeless one needs a row of its own.
+   *
+   * "Holds" covers decided rows too, not just undecided ones. A row settled as
+   * `correct-amount` or `matched` keeps its transaction, and counting only the
+   * undecided meant the last row to let go of that same id minted a second
+   * "Actual only" row for a transaction another row already owned.
+   */
+  const stillOffered = new Set(rest.flatMap((entry) => entry.actualTransactionIds));
   const released = releasedIds
     .filter((id) => !stillOffered.has(id))
     .map((id) => ({
