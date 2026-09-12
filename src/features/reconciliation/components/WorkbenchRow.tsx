@@ -70,9 +70,33 @@ function decidedState(item: ReconciliationItem): MiddleState | null {
   }
 }
 
-function middleState(item: ReconciliationItem): MiddleState {
+function middleState(
+  item: ReconciliationItem,
+  candidateCount: number,
+  amountsAgree: boolean
+): MiddleState {
   const decided = decidedState(item);
   if (decided) return decided;
+
+  /*
+   * An item offering several candidates is a choice, and the Match column is
+   * where the choice belongs. It used to read "Amount differs" with no detail
+   * however many candidates it held - the wording for a group existed but was
+   * unreachable, because the amount-mismatch pass claimed the rows before the
+   * cluster pass could see them (F-151f). The count itself sat in the Actual
+   * payee cell as a muted "+4", where it read as something about that payee.
+   *
+   * A cluster row holding *one* candidate is still a choice, just not this
+   * row's: several statement rows are competing for the same transaction, and
+   * saying nothing let three CAREEM rows each display the same -9.74 as though
+   * all three had matched it.
+   */
+  const several =
+    candidateCount > 1
+      ? `${candidateCount} possible matches`
+      : item.reasonCode === REASON.merchantCluster
+        ? "Shared with other rows"
+        : null;
 
   if (item.disposition === "matched") {
     const confidence = item.match?.confidence;
@@ -89,7 +113,7 @@ function middleState(item: ReconciliationItem): MiddleState {
     case REASON.ambiguousMatch:
       return {
         label: "Needs review",
-        detail: "Several equally likely matches",
+        detail: several ?? "Several equally likely matches",
         tone: "text-amber-600 dark:text-amber-400",
         icon: TriangleAlert,
       };
@@ -123,22 +147,26 @@ function middleState(item: ReconciliationItem): MiddleState {
       };
     case REASON.amountMismatch:
       return {
-        label: "Amount differs",
-        detail: null,
+        label: several ? "Several here" : "Amount differs",
+        detail: several,
         tone: "text-amber-600 dark:text-amber-400",
         icon: TriangleAlert,
       };
     case REASON.sameMerchantDate:
       return {
-        label: "Amount looks wrong",
-        detail: "Same merchant and date",
+        // "Amount looks wrong" is a claim about the figures, so it may only be
+        // made when they actually differ. A leftover pair can agree on the
+        // amount and still have failed to match for some other reason, and
+        // reporting -4.98 against -4.98 as a wrong amount is simply false.
+        label: several ? "Several here" : amountsAgree ? "Needs review" : "Amount looks wrong",
+        detail: several ?? (amountsAgree ? "Same merchant, date and amount" : "Same merchant and date"),
         tone: "text-amber-600 dark:text-amber-400",
         icon: TriangleAlert,
       };
     case REASON.merchantCluster:
       return {
         label: "Several here",
-        detail: "Same merchant and date, amounts unclear",
+        detail: several ?? "Same merchant and date, amounts unclear",
         tone: "text-amber-600 dark:text-amber-400",
         icon: TriangleAlert,
       };
@@ -179,9 +207,22 @@ export function WorkbenchRow({
   onToggleChecked,
   onSelect,
 }: WorkbenchRowProps) {
-  const state = middleState(item);
-  const Icon = state.icon;
+  // The leading candidate, and only that. On a multi-candidate row it is a
+  // ranking, not a conclusion - see the Actual columns below.
   const primary = transactions[0];
+  const several = transactions.length > 1;
+  /**
+   * Another statement row is competing for this transaction.
+   *
+   * A cluster item can hold a single candidate and still not own it - three
+   * rows each offered the same -9.74. The row may show which transaction it
+   * could be, but must not render it as settled.
+   */
+  const shared = !several && item.reasonCode === REASON.merchantCluster && primary != null;
+  const amountsAgree =
+    primary != null && statementRow != null && primary.amount === statementRow.amount;
+  const state = middleState(item, transactions.length, amountsAgree);
+  const Icon = state.icon;
 
   // The single strongest reason keeps the row to one line; the inspector shows
   // the full evidence list.
@@ -252,12 +293,27 @@ export function WorkbenchRow({
         )}
       </td>
 
-      {/* Actual */}
+      {/*
+        Actual.
+
+        A row with several candidates has no Actual side yet - that is the whole
+        point of it. It used to render the leading candidate's date, payee, notes
+        and amount as though they were the match, with the rest reduced to a
+        muted "+4" beside the payee, so a statement row of -14.55 sat opposite an
+        unrelated -15.35 and read as a comparison (F-151f). The count now lives
+        in the Match column with the decision, and the columns that would state a
+        conclusion stay empty until there is one. The inspector lists every
+        candidate in full.
+      */}
       <td className="whitespace-nowrap px-2 py-1.5 tabular-nums text-muted-foreground">
-        {primary ? formatShortDate(primary.date) : EMPTY}
+        {primary && !several ? formatShortDate(primary.date) : EMPTY}
       </td>
       <td className="max-w-0 px-2 py-1.5">
-        {primary ? (
+        {several ? (
+          <span className="text-muted-foreground">
+            {transactions.length} candidates - choose one
+          </span>
+        ) : primary ? (
           <div className="flex items-center gap-1.5">
             <span className="truncate" title={primary.payeeName ?? undefined}>
               {primary.payeeName ?? (
@@ -276,9 +332,9 @@ export function WorkbenchRow({
             {item.guards.transfer === "yes" && (
               <span className="shrink-0 text-[11px] text-muted-foreground">Transfer</span>
             )}
-            {transactions.length > 1 && (
-              <span className="shrink-0 text-[11px] text-muted-foreground">
-                +{transactions.length - 1}
+            {shared && (
+              <span className="shrink-0 rounded border border-amber-500/40 px-1 text-[11px] text-amber-600 dark:text-amber-400">
+                shared
               </span>
             )}
             {item.stagedChanges && Object.keys(item.stagedChanges).length > 0 && (
@@ -293,12 +349,12 @@ export function WorkbenchRow({
       </td>
       <td
         className="max-w-0 truncate px-2 py-1.5 text-muted-foreground"
-        title={primary?.notes ?? undefined}
+        title={several ? undefined : (primary?.notes ?? undefined)}
       >
-        {primary?.notes ?? EMPTY}
+        {(!several && primary?.notes) || EMPTY}
       </td>
       <td className="whitespace-nowrap px-2 py-1.5 text-right tabular-nums">
-        {primary ? formatMinorUnits(primary.amount) : EMPTY}
+        {primary && !several ? formatMinorUnits(primary.amount) : EMPTY}
       </td>
     </tr>
   );

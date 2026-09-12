@@ -995,3 +995,56 @@ describe("normalizeApplyConfig", () => {
     );
   });
 });
+
+/*
+ * A decision the session cannot resolve used to vanish: no operation, and no
+ * entry in `blocked` or `unresolved` either, so Review stated a change count
+ * that quietly excluded it and Apply wrote nothing (F-151e). The point of these
+ * tests is that silence is the defect - not writing is correct, not *saying* so
+ * is not.
+ */
+describe("a decision whose subject the session cannot resolve", () => {
+  it.each([
+    ["matched", { disposition: "matched" as const, actualTransactionIds: ["gone"] }],
+    ["correct-amount", { disposition: "correct-amount" as const, actualTransactionIds: ["gone"] }],
+    ["delete", { disposition: "delete" as const, actualTransactionIds: ["gone"] }],
+  ])("reports a %s item whose transaction is missing as blocked", (_label, overrides) => {
+    const result = plan([item({ id: "i1", ...overrides })], [], []);
+
+    expect(result.operations).toHaveLength(0);
+    expect(result.blocked).toEqual([
+      { itemId: "i1", reason: expect.stringContaining("no longer in the session") },
+    ]);
+    // Not silently reclassified as something the user still has to decide.
+    expect(result.unresolved).toBe(0);
+    expect(result.noWriteMatches).toBe(0);
+  });
+
+  it("reports a create whose statement row is missing as blocked", () => {
+    const result = plan(
+      [item({ id: "i1", disposition: "create", statementRowIds: ["gone"] })],
+      [],
+      []
+    );
+
+    expect(result.operations).toHaveLength(0);
+    expect(result.blocked).toEqual([
+      { itemId: "i1", reason: expect.stringContaining("nothing to create from") },
+    ]);
+  });
+
+  it("keeps planning the rest of the session around it", () => {
+    const result = plan(
+      [
+        item({ id: "i1", disposition: "delete", actualTransactionIds: ["gone"] }),
+        item({ id: "i2", disposition: "delete", actualTransactionIds: ["t1"] }),
+      ],
+      [],
+      [txn({ id: "t1" })]
+    );
+
+    expect(result.blocked).toHaveLength(1);
+    expect(result.operations).toHaveLength(1);
+    expect(result.operations[0]).toMatchObject({ kind: "delete", transactionId: "t1" });
+  });
+});

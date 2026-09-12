@@ -183,6 +183,20 @@ export function createMarker(input: {
   )}`;
 }
 
+/**
+ * A decision whose subject the session can no longer resolve.
+ *
+ * Planning used to `break` out of these branches, producing no operation *and*
+ * no report: the item was not counted as unresolved and not blocked, so Review
+ * stated a change count that silently excluded it and Apply wrote nothing. A
+ * decision that cannot be carried out is a thing the user has to be told, not a
+ * thing to leave out of the arithmetic (F-151e).
+ */
+const MISSING_TRANSACTION =
+  "This transaction is no longer in the session. It may have been deleted in Actual - re-run the match to see the account as it stands now.";
+const MISSING_STATEMENT_ROW =
+  "This statement row is no longer in the session, so there is nothing to create from.";
+
 export function buildApplyPlan(input: PlanInput): ApplyPlan {
   const applyConfig = input.applyConfig ?? DEFAULT_APPLY_CONFIG;
   const operations: ApplyOperation[] = [];
@@ -194,7 +208,10 @@ export function buildApplyPlan(input: PlanInput): ApplyPlan {
     switch (item.disposition) {
       case "create": {
         const row = input.statementRows.get(item.statementRowIds[0] ?? "");
-        if (!row) break;
+        if (!row) {
+          blocked.push({ itemId: item.id, reason: MISSING_STATEMENT_ROW });
+          break;
+        }
         operations.push(createOperationFor(item, row, input));
         break;
       }
@@ -206,7 +223,10 @@ export function buildApplyPlan(input: PlanInput): ApplyPlan {
       case "correct-amount":
       case "matched": {
         const transaction = input.transactions.get(item.actualTransactionIds[0] ?? "");
-        if (!transaction) break;
+        if (!transaction) {
+          blocked.push({ itemId: item.id, reason: MISSING_TRANSACTION });
+          break;
+        }
 
         const enrichment = enrichmentFor(item, transaction, input, applyConfig);
 
@@ -265,7 +285,10 @@ export function buildApplyPlan(input: PlanInput): ApplyPlan {
 
       case "delete": {
         const transaction = input.transactions.get(item.actualTransactionIds[0] ?? "");
-        if (!transaction) break;
+        if (!transaction) {
+          blocked.push({ itemId: item.id, reason: MISSING_TRANSACTION });
+          break;
+        }
 
         const verdict = canStageDelete(item);
         if (!verdict.allowed) {

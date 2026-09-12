@@ -1,7 +1,9 @@
 import { getTransport } from "@/lib/actual";
+import { DEFAULT_MATCH_CONFIG } from "@/lib/reconciliation/match/config";
 import { shiftDate } from "@/lib/reconciliation/match/matcher";
 import type { LoadedCandidateWindow } from "@/lib/reconciliation/ports";
 import { createReconciliationTransport } from "@/lib/reconciliation/transportAdapter";
+import type { MatchConfig } from "@/lib/reconciliation/types";
 import type { ConnectionInstance } from "@/store/connection";
 
 export type CandidateWindowInput = {
@@ -63,4 +65,53 @@ export async function loadCandidateWindow(
   });
 
   return { ...window, loaded, visible };
+}
+
+/**
+ * The window a *resumed* session should re-read, from what it persisted.
+ *
+ * Hydration puts the stored snapshots on screen, but those are drift baselines —
+ * one per item, for the transaction it was decided on — so a review item's other
+ * candidates are simply not there, and the guards for the ids it cannot resolve
+ * fall back to permissive (F-151c / F-151d). The workbench therefore reads the
+ * window again rather than remembering it.
+ *
+ * Nothing extra is stored to make that possible: the account, the statement
+ * period and the match config are already on the session, and the window is a
+ * function of exactly those. Keeping that derivation here — rather than inline in
+ * the effect that uses it — is what makes it assertable that a resumed session
+ * reads *the same* window it matched against, which is the property that would
+ * otherwise rot silently the next time a default moves.
+ *
+ * Returns null when the session has no period, which is every session that has
+ * not imported a statement yet: there is nothing to re-read.
+ */
+export function resumeWindowInput(session: {
+  accountId: string;
+  statementStart: string | null;
+  statementEnd: string | null;
+  matchConfig: unknown;
+}): CandidateWindowInput | null {
+  if (!session.statementStart || !session.statementEnd) return null;
+
+  // A session saved before a config field existed, or with none at all, reads
+  // the current defaults — the same fallback the workbench applies everywhere
+  // else it loads a stored match config.
+  const stored = (session.matchConfig ?? {}) as Partial<MatchConfig>;
+  const matchToleranceDays =
+    typeof stored.dateToleranceDays === "number"
+      ? stored.dateToleranceDays
+      : DEFAULT_MATCH_CONFIG.dateToleranceDays;
+  const paddingDays =
+    typeof stored.candidatePaddingDays === "number"
+      ? stored.candidatePaddingDays
+      : DEFAULT_MATCH_CONFIG.candidatePaddingDays;
+
+  return {
+    accountId: session.accountId,
+    statementStart: session.statementStart,
+    statementEnd: session.statementEnd,
+    matchToleranceDays,
+    paddingDays,
+  };
 }

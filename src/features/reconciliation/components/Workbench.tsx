@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { FileCheck, FilePlus2, RefreshCw, Search, SlidersHorizontal, Wand2 } from "lucide-react";
+import { ChevronDown, FileCheck, FilePlus2, RefreshCw, Search, SlidersHorizontal, Wand2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -48,6 +48,7 @@ export type FilterId =
   | "ambiguous"
   | "amount-mismatch"
   | "wrong-amount"
+  | "cluster"
   | "duplicates"
   | "create"
   | "matched"
@@ -106,6 +107,13 @@ const STATEMENT_FILTERS: FilterDef[] = [
     dot: "bg-amber-500/40",
     child: true,
     hint: "Same merchant and date as the only transaction left, but the amount is far off - often a conversion done wrong before it reached the budget.",
+  },
+  {
+    id: "cluster",
+    label: "Several here",
+    dot: "bg-amber-500/40",
+    child: true,
+    hint: "Several statement rows and several transactions share this merchant and date, and no amount settles which is which. Deciding one frees the rest.",
   },
   {
     id: "duplicates",
@@ -261,7 +269,9 @@ export function matchesFilter(item: ReconciliationItem, filter: FilterId): boole
     case "amount-mismatch":
       return isReviewRow(item, [REASON.amountMismatch]);
     case "wrong-amount":
-      return isReviewRow(item, [REASON.sameMerchantDate, REASON.merchantCluster]);
+      return isReviewRow(item, [REASON.sameMerchantDate]);
+    case "cluster":
+      return isReviewRow(item, [REASON.merchantCluster]);
     case "duplicates":
       return isReviewRow(item, [REASON.likelyDuplicate]);
     case "create":
@@ -299,6 +309,15 @@ export type WorkbenchProps = {
   readOnly?: boolean;
   /** Lock persisted write choices as soon as Apply starts. */
   writeSettingsLocked?: boolean;
+  /**
+   * The Actual side is the copy stored with the session, not a fresh read.
+   *
+   * Said out loud rather than left to look normal: a stored session holds one
+   * snapshot per decided item, so a review item's other candidates are not
+   * there to show, and a row edited in Actual since matching still reads as it
+   * did then.
+   */
+  snapshotIsStored?: boolean;
   payees: Option[];
   categories: Option[];
   onMatchConfigChange: (preset: TextTargetPreset, config: MatchConfig) => void;
@@ -312,6 +331,14 @@ export type WorkbenchProps = {
   onBulkCorrectAmount: (
     entries: { itemId: string; transactionId: string; amount: number }[]
   ) => void;
+  /**
+   * Pair a statement row with a transaction the matcher never related.
+   *
+   * The escape hatch that lets the automatic tiers stay strict: matching refuses
+   * to bridge an amount gap with text, which is right, and leaves some pairs
+   * only a person can see.
+   */
+  onManualMatch: (statementItemId: string, actualItemId: string) => void;
   /** Writes the plan would make, named on the button rather than a row count. */
   /** Set when this session has already been applied, so its outcome is reachable. */
   onViewResult?: () => void;
@@ -376,6 +403,7 @@ export function Workbench({
   rematchBlockedReason,
   readOnly = false,
   writeSettingsLocked = false,
+  snapshotIsStored = false,
   payees,
   categories,
   onMatchConfigChange,
@@ -387,6 +415,7 @@ export function Workbench({
   onUnstage,
   onBulkDisposition,
   onBulkCorrectAmount,
+  onManualMatch,
   onViewResult,
   transformContextFor,
   applyConfig,
@@ -395,6 +424,7 @@ export function Workbench({
   onTransform,
 }: WorkbenchProps) {
   const [filter, setFilter] = useState<FilterId>("all");
+  const [reasonsOpen, setReasonsOpen] = useState(false);
   const [decisionFilter, setDecisionFilter] = useState<DecisionFilter>("any");
   const [attributeFilters, setAttributeFilters] = useState<Set<AttributeFilter>>(new Set());
   const [search, setSearch] = useState("");
@@ -516,8 +546,9 @@ export function Workbench({
    * nobody had asked for. The parent's own count is the signal that there is
    * something in there; clicking it is what reveals why.
    */
-  const reviewBranchOpen =
-    filter === "needs-review" || REVIEW_REASON_FILTERS.some((entry) => filter === entry.id);
+  const reviewReasonActive = REVIEW_REASON_FILTERS.some((entry) => filter === entry.id);
+  const activeReviewReasonLabel =
+    REVIEW_REASON_FILTERS.find((entry) => filter === entry.id)?.label ?? null;
 
   /*
    * And only the reasons that have rows, plus whichever is selected — a
@@ -527,6 +558,23 @@ export function Workbench({
   const visibleReviewReasons = REVIEW_REASON_FILTERS.filter(
     (entry) => counts[entry.id] > 0 || filter === entry.id
   );
+  /*
+   * Narrowing the view drops the selection.
+   *
+   * A selection made under one filter survives into the next, where most of it
+   * is off screen — so the bar goes on offering to create or delete rows the
+   * user can no longer see, and "11 selected" describes a set they have no way
+   * to check. Bulk actions here write to a budget; the set being acted on has
+   * to be the set in front of the person pressing the button.
+   */
+  useEffect(() => {
+    clearSelection();
+    // Deliberately not depending on `clearSelection` itself: it is a stable
+    // callback, and listing it invites a lint fix that re-runs this on renders
+    // that changed nothing.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filter, decisionFilter, attributeFilters, search]);
+
   const allVisibleSelected =
     visibleIds.length > 0 && visibleIds.every((id) => selectedIds.has(id));
   const selectedItems = useMemo(
@@ -688,6 +736,12 @@ export function Workbench({
           carries only what changes as you work. */}
       <header className="border-b border-border/50 px-4 py-2">
         <CoverageSummary coverage={coverage} />
+        {snapshotIsStored && (
+          <p role="status" className="mt-1.5 text-[11px] text-muted-foreground">
+            Showing the transactions this session recorded, not a fresh read of the account.
+            Reconnect to see Actual as it stands now.
+          </p>
+        )}
       </header>
 
       <div className="flex flex-wrap items-center gap-2 border-b border-border/50 px-4 py-2">
@@ -708,18 +762,55 @@ export function Workbench({
                 onSelect={() => setFilter(entry.id)}
               />
 
-              {entry.id === "needs-review" && reviewBranchOpen && (
-                <span className="flex items-center gap-1 rounded-md border border-amber-500/30 bg-amber-500/5 px-1 py-0.5">
-                  {visibleReviewReasons.map((child) => (
-                    <FilterButton
-                      key={child.id}
-                      entry={child}
-                      active={filter === child.id}
-                      count={counts[child.id]}
-                      onSelect={() => setFilter(child.id)}
-                    />
-                  ))}
-                </span>
+              {/*
+                The reasons a row needs review live in a popover rather than
+                inline. Bracketed on the toolbar they took a permanent row of
+                space for a breakdown that is only wanted while working one
+                reason at a time — and they pushed the comparison grid down on
+                exactly the screens where it matters most. Opening downwards
+                from the filter they belong to keeps the relationship visible
+                without paying for it all the time.
+              */}
+              {entry.id === "needs-review" && visibleReviewReasons.length > 0 && (
+                <Popover open={reasonsOpen} onOpenChange={setReasonsOpen}>
+                  <PopoverTrigger
+                    render={
+                      <button
+                        type="button"
+                        aria-label="Break down the rows needing review by reason"
+                        className={cn(
+                          "flex items-center gap-0.5 rounded-md border px-1 py-0.5 text-[11px] transition-colors",
+                          reviewReasonActive
+                            ? "border-amber-500/50 bg-amber-500/10 text-amber-700 dark:text-amber-300"
+                            : "border-border/60 text-muted-foreground hover:bg-accent"
+                        )}
+                      >
+                        {activeReviewReasonLabel ?? "By reason"}
+                        <ChevronDown className="h-3 w-3" aria-hidden="true" />
+                      </button>
+                    }
+                  />
+                  <PopoverContent align="start" side="bottom" className="w-auto p-1">
+                    <div
+                      role="group"
+                      aria-label="Filter by the reason a row needs review"
+                      className="flex items-center gap-1"
+                    >
+                      {visibleReviewReasons.map((child) => (
+                        <FilterButton
+                          key={child.id}
+                          entry={child}
+                          active={filter === child.id}
+                          count={counts[child.id]}
+                          onSelect={() => {
+                            setFilter(child.id);
+                            setReasonsOpen(false);
+                          }}
+                        />
+                      ))}
+                    </div>
+                  </PopoverContent>
+                </Popover>
               )}
             </span>
           ))}
@@ -1073,6 +1164,10 @@ export function Workbench({
           onClear={clearSelection}
           onBulkDisposition={(itemIds, disposition) => {
             onBulkDisposition(itemIds, disposition);
+            clearSelection();
+          }}
+          onManualMatch={(statementItemId, actualItemId) => {
+            onManualMatch(statementItemId, actualItemId);
             clearSelection();
           }}
           onBulkCorrectAmount={(entries) => {

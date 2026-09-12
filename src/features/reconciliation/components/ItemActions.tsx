@@ -87,8 +87,9 @@ export function ItemActions({
             </p>
           ) : (
             <p className="text-[11px] text-muted-foreground">
-              Which transaction is this statement row? The ones you do not pick become rows of their
-              own, so nothing disappears.
+              Which transaction is this statement row? The ones you do not pick stay available to
+              the other rows that could be them, and anything nothing else wants becomes a row of
+              its own - so nothing disappears.
             </p>
           )}
           {transactions.map((transaction) => (
@@ -171,8 +172,12 @@ export function ItemActions({
         )}
 
         {/* Correcting an amount keeps the transaction and everything on it; it
-            is offered only when the statement actually disagrees. */}
-        {primary && statementRow && primary.amount !== statementRow.amount && (
+            is offered only when the statement actually disagrees — and only once
+            there is one transaction it could mean. `primary` is the *leading*
+            candidate, so offering this on a row with several would quietly
+            rewrite the amount of a transaction the user has not chosen. Pick
+            first, then correct. */}
+        {primary && transactions.length === 1 && statementRow && primary.amount !== statementRow.amount && (
           <GuardedButton
             size="sm"
             variant={item.disposition === "correct-amount" ? "default" : "outline"}
@@ -218,7 +223,8 @@ export function ItemActions({
       {item.reasonCode === REASON.merchantCluster && (
         <p className="text-[11px] text-muted-foreground">
           Several statement rows and transactions here share this merchant and date, and their
-          amounts do not line up. Pick the one this row refers to above, or decide each separately.
+          amounts do not line up. Pick the one this row refers to above - the rest stay on offer to
+          the other rows, so each choice makes the next one smaller.
         </p>
       )}
     </section>

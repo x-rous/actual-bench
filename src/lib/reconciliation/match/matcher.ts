@@ -12,6 +12,7 @@
 
 import type {
   ActualTransactionSnapshot,
+  AmbiguousMatch,
   MatchConfig,
   MatchGraph,
   MatchOutcome,
@@ -63,191 +64,264 @@ export function match(input: MatchInput): MatchGraph {
     config,
   });
 
-  const withMismatches = addAmountMismatchReviews(result, statementRows, index, config);
-  const withClusters = addMerchantDateLeftovers(withMismatches, statementRows, index, config);
+  const withLeftovers = addLeftoverReviews(result, statementRows, index, config);
 
   return {
-    matched: withClusters.matched,
-    ambiguous: withClusters.ambiguous,
-    unmatchedStatementRowIds: withClusters.unmatchedStatementRowIds,
-    unmatchedActualTransactionIds: withClusters.unmatchedActualTransactionIds,
-    likelyDuplicates: withClusters.likelyDuplicates,
+    matched: withLeftovers.matched,
+    ambiguous: withLeftovers.ambiguous,
+    unmatchedStatementRowIds: withLeftovers.unmatchedStatementRowIds,
+    unmatchedActualTransactionIds: withLeftovers.unmatchedActualTransactionIds,
+    likelyDuplicates: withLeftovers.likelyDuplicates,
   };
 }
 
 /**
- * Relate what is left over for the same merchant on the same date.
+ * Relate what is left over on both sides, once every amount-based avenue is
+ * exhausted.
  *
- * When transactions are created by an automation that extracts and converts
- * amounts, the amount is the least reliable field on the row while the merchant
- * text and date are the most reliable. So after every amount-based avenue is
- * exhausted, rows that plainly concern the same merchant on the same day are
- * related to each other regardless of how far apart their amounts are.
+ * This used to be two passes that competed for the same rows — one for pairs
+ * whose text agreed but whose amounts did not, one for same-merchant/same-date
+ * leftovers — and the first of them claimed the entire candidate pool for
+ * whichever statement row it reached first:
+ *
+ * ```
+ * for (const candidate of candidates) claimed.add(candidate.actualTransactionId)
+ * ```
+ *
+ * So four `Jeeny` rows against five `Jeeny` transactions produced one review
+ * item holding all five and three rows reporting "not in Actual", which the user
+ * would then create — duplicating three transactions while being invited to
+ * delete the originals (F-151a).
+ *
+ * One pass now, and nothing is claimed. Edges are scored between the leftovers,
+ * **connected components** are taken over those edges, and every statement row
+ * in a component is offered the candidates it actually scored against. The
+ * contested thing is the component, so the component is what the user is shown.
  *
  * Two outcomes, and the distinction is the whole point:
  *
- * - **exactly one left on each side** → a review pairing. Nothing else could be
+ * - **one row and one transaction** → a review pairing. Nothing else could be
  *   meant, so relating them costs nothing and finding it by hand costs the user.
- * - **more than one on either side** → a cluster, listing all of them, pairing
- *   none. Guessing which of two belongs to which is precisely the judgement the
- *   tool should not make silently.
+ * - **anything larger** → a cluster. Every row sees its own candidates; the
+ *   pairing is the user's to make, and making one frees the rest
+ *   (`resolveToTransaction`).
  *
- * Never an automatic match: the amounts disagree, and only the user can say
- * which figure is right.
+ * Never an automatic match at any size: the amounts disagree, and only the user
+ * can say which figure is right.
+ *
+ * The one-transaction-per-match invariant is not enforced here by hiding
+ * candidates. It is enforced at decision time, which is the only place that can
+ * do it without starving a row of a transaction still going spare.
  */
-function addMerchantDateLeftovers(
+function addLeftoverReviews(
   result: ReturnType<typeof assignMatches>,
   statementRows: StatementRow[],
   index: ActualIndex,
   config: MatchConfig
 ): ReturnType<typeof assignMatches> {
-  if (!config.pairLeftoversByMerchantAndDate) return result;
   if (result.unmatchedStatementRowIds.length === 0) return result;
   if (result.unmatchedActualTransactionIds.length === 0) return result;
+  if (!config.reviewAmountMismatch && !config.pairLeftoversByMerchantAndDate) return result;
 
   const rowsById = new Map(statementRows.map((row) => [row.id, row]));
-  const leftoverRows = result.unmatchedStatementRowIds
-    .map((id) => rowsById.get(id))
-    .filter((row): row is StatementRow => row !== undefined);
-  const leftoverTransactions = result.unmatchedActualTransactionIds
-    .map((id) => index.byId.get(id))
-    .filter((transaction): transaction is ActualTransactionSnapshot => transaction !== undefined);
+  const available = new Set(result.unmatchedActualTransactionIds);
 
-  // Bipartite edges between leftovers that look like the same merchant on the
-  // same day. Degree is what decides pairing versus cluster.
-  const edges = new Map<string, ScoredCandidate[]>();
-  const byTransaction = new Map<string, ScoredCandidate[]>();
+  // Widest window either tier can span, so one date slice serves both and the
+  // scan stays bounded on a large statement. Each scorer still applies its own,
+  // narrower tolerance.
+  const reach = Math.max(
+    config.reviewAmountMismatch ? config.dateToleranceDays : 0,
+    config.pairLeftoversByMerchantAndDate ? config.clusterDateToleranceDays : 0
+  );
 
-  for (const row of leftoverRows) {
-    for (const transaction of leftoverTransactions) {
-      const candidate = scoreSameMerchantCandidate(row, transaction, config, index);
-      if (!candidate) continue;
-      const forRow = edges.get(row.id);
-      if (forRow) forRow.push(candidate);
-      else edges.set(row.id, [candidate]);
-      const forTransaction = byTransaction.get(transaction.id);
-      if (forTransaction) forTransaction.push(candidate);
-      else byTransaction.set(transaction.id, [candidate]);
+  const plausible = new Graph();
+  const unrelated = new Graph();
+
+  for (const statementRowId of result.unmatchedStatementRowIds) {
+    const row = rowsById.get(statementRowId);
+    if (!row) continue;
+
+    for (const transaction of dateSlice(
+      index,
+      shiftDate(row.postedDate, -reach),
+      shiftDate(row.postedDate, reach)
+    )) {
+      if (!available.has(transaction.id)) continue;
+
+      const amountEdge = config.reviewAmountMismatch
+        ? scoreAmountMismatchCandidate(row, transaction, config, index)
+        : null;
+      if (amountEdge) {
+        plausible.add(amountEdge);
+        continue;
+      }
+
+      const merchantEdge = config.pairLeftoversByMerchantAndDate
+        ? scoreSameMerchantCandidate(row, transaction, config, index)
+        : null;
+      if (merchantEdge) unrelated.add(merchantEdge);
     }
   }
 
-  if (edges.size === 0) return result;
-
   const ambiguous = [...result.ambiguous];
-  const pairedRows = new Set<string>();
-  const pairedTransactions = new Set<string>();
+  const relatedRows = new Set<string>();
+  const relatedTransactions = new Set<string>();
 
-  for (const [statementRowId, candidates] of edges) {
-    const only = candidates.length === 1 ? candidates[0] : null;
-    if (!only) continue;
-    // The transaction must point back at this row alone, or the pairing is a
-    // guess dressed up as a conclusion.
-    if ((byTransaction.get(only.actualTransactionId) ?? []).length !== 1) continue;
+  const offer = (statementRowId: string, candidates: ScoredCandidate[], why: AmbiguousMatch["why"]) => {
+    relatedRows.add(statementRowId);
+    for (const candidate of candidates) relatedTransactions.add(candidate.actualTransactionId);
+    ambiguous.push({ statementRowId, candidates, why });
+  };
 
-    pairedRows.add(statementRowId);
-    pairedTransactions.add(only.actualTransactionId);
-    ambiguous.push({ statementRowId, candidates: [only], why: "same-merchant-date" });
+  // Tier 1 — amounts that could plausibly be the same transaction. These may
+  // form a cluster of any size: a component is contested precisely because
+  // several rows have a real claim on the same transactions.
+  for (const component of plausible.components()) {
+    const single = component.rows.length === 1 && component.transactions.length === 1;
+    for (const statementRowId of component.rows) {
+      const candidates = plausible.sortedFor(statementRowId);
+      if (candidates.length === 0) continue;
+      offer(
+        statementRowId,
+        candidates,
+        single
+          ? candidates[0].tier === "amount-mismatch-review"
+            ? "amount-mismatch"
+            : "same-merchant-date"
+          : "merchant-cluster"
+      );
+    }
   }
 
-  // Whatever remains related but not uniquely so becomes a cluster.
-  for (const [statementRowId, candidates] of edges) {
-    if (pairedRows.has(statementRowId)) continue;
-    const remaining = candidates.filter(
-      (candidate) => !pairedTransactions.has(candidate.actualTransactionId)
-    );
-    if (remaining.length === 0) continue;
-    pairedRows.add(statementRowId);
-    for (const candidate of remaining) pairedTransactions.add(candidate.actualTransactionId);
-    ambiguous.push({ statementRowId, candidates: remaining, why: "merchant-cluster" });
+  /*
+   * Tier 2 — same merchant, same day, amounts unrelated.
+   *
+   * This tier ignores the amounts entirely, which is only defensible once every
+   * amount-based avenue is spent: when transactions come from an automation that
+   * extracts and converts amounts, the amount is the least reliable field on the
+   * row while the merchant and the date are the most reliable.
+   *
+   * "Spent" is the load-bearing word, and it is why this runs over the leftovers
+   * of the leftovers. A row that tier 1 could pair with a *plausible* amount must
+   * never also be offered an implausible one: `Karnr SAR129.00`, posting -131.34,
+   * was offered a -13.71 transaction as a second candidate purely because both
+   * said "Karnr" on the 21st — while -13.71 is the match for the `Karnr SAR14.00`
+   * row two lines away, at the same 0.979 conversion. Both sides of a tier-2 edge
+   * must be untouched by tier 1, or the tool is guessing where it had evidence.
+   *
+   * Among what is left it clusters like tier 1 does, because the same reasoning
+   * applies: one row and one transaction is a pairing nothing else could mean;
+   * several on either side is a judgement that belongs to the user.
+   */
+  const remaining = new Graph();
+  for (const edges of unrelated.byRow.values()) {
+    for (const edge of edges) {
+      if (relatedRows.has(edge.statementRowId)) continue;
+      if (relatedTransactions.has(edge.actualTransactionId)) continue;
+      remaining.add(edge);
+    }
   }
+
+  for (const component of remaining.components()) {
+    const single = component.rows.length === 1 && component.transactions.length === 1;
+    for (const statementRowId of component.rows) {
+      const candidates = remaining.sortedFor(statementRowId);
+      if (candidates.length === 0) continue;
+      offer(statementRowId, candidates, single ? "same-merchant-date" : "merchant-cluster");
+    }
+  }
+
+  if (relatedRows.size === 0) return result;
 
   return {
     ...result,
     ambiguous,
     unmatchedStatementRowIds: result.unmatchedStatementRowIds.filter(
-      (id) => !pairedRows.has(id)
+      (id) => !relatedRows.has(id)
     ),
     unmatchedActualTransactionIds: result.unmatchedActualTransactionIds.filter(
-      (id) => !pairedTransactions.has(id)
+      (id) => !relatedTransactions.has(id)
     ),
   };
 }
 
 /**
- * Offer a review pairing where the text is convincing but no amount agrees.
+ * A bipartite graph of leftover statement rows and leftover transactions.
  *
- * A foreign purchase can post a converted figure while the recorded transaction
- * holds neither that figure nor the printed original — a pre-markup conversion,
- * say. `AIRALO AMSTERDAM NH USD24.50` posting −93.62 against a recorded −90.07
- * is obvious to a person and invisible to an exact-amount matcher.
- *
- * These are **never** automatic matches: feature spec §11 is explicit that a
- * differing amount is a conflict the user resolves. They are surfaced as review
- * items, with the difference stated, so the pair can be confirmed in one action
- * instead of hunted for by hand.
- *
- * Runs only for statement rows that ended with nothing, against transactions
- * nothing claimed, so it cannot displace or weaken any real match.
+ * Held as both adjacency maps because both directions are load-bearing: rows
+ * drive what a user is offered, and transaction degree is what decides whether a
+ * pairing is unique enough to be worth asserting.
  */
-function addAmountMismatchReviews(
-  result: ReturnType<typeof assignMatches>,
-  statementRows: StatementRow[],
-  index: ActualIndex,
-  config: MatchConfig
-): ReturnType<typeof assignMatches> {
-  if (!config.reviewAmountMismatch || result.unmatchedStatementRowIds.length === 0) {
-    return result;
+class Graph {
+  readonly byRow = new Map<string, ScoredCandidate[]>();
+  readonly byTransaction = new Map<string, ScoredCandidate[]>();
+
+  add(edge: ScoredCandidate): void {
+    push(this.byRow, edge.statementRowId, edge);
+    push(this.byTransaction, edge.actualTransactionId, edge);
   }
 
-  const rowsById = new Map(statementRows.map((row) => [row.id, row]));
-  const available = new Set(result.unmatchedActualTransactionIds);
-  const claimed = new Set<string>();
-  const ambiguous = [...result.ambiguous];
-  const stillUnmatched: string[] = [];
-
-  for (const statementRowId of result.unmatchedStatementRowIds) {
-    const row = rowsById.get(statementRowId);
-    if (!row) {
-      stillUnmatched.push(statementRowId);
-      continue;
-    }
-
-    const candidates = dateSlice(
-      index,
-      shiftDate(row.postedDate, -config.dateToleranceDays),
-      shiftDate(row.postedDate, config.dateToleranceDays)
-    )
-      .filter(
-        (transaction) => available.has(transaction.id) && !claimed.has(transaction.id)
-      )
-      .map((transaction) => scoreAmountMismatchCandidate(row, transaction, config, index))
-      .filter((candidate): candidate is NonNullable<typeof candidate> => candidate !== null)
-      .sort((a, b) => b.score - a.score);
-
-    if (candidates.length === 0) {
-      stillUnmatched.push(statementRowId);
-      continue;
-    }
-
-    // One review pairing per transaction: offering the same transaction to two
-    // statement rows would recreate the double-claim this design forbids.
-    for (const candidate of candidates) claimed.add(candidate.actualTransactionId);
-
-    ambiguous.push({
-      statementRowId,
-      candidates,
-      why: "amount-mismatch",
-    });
+  /** This row's candidates, best first. */
+  sortedFor(statementRowId: string): ScoredCandidate[] {
+    return (this.byRow.get(statementRowId) ?? []).slice().sort((a, b) => b.score - a.score);
   }
 
-  return {
-    ...result,
-    ambiguous,
-    unmatchedStatementRowIds: stillUnmatched,
-    unmatchedActualTransactionIds: result.unmatchedActualTransactionIds.filter(
-      (id) => !claimed.has(id)
-    ),
-  };
+  /**
+   * Connected components.
+   *
+   * A component is the set of rows and transactions related to each other,
+   * directly or through a shared neighbour — exactly the set a decision on any
+   * one of them affects. Sizing it is what separates "these two are obviously
+   * the same thing" from "several are in play and the tool will not guess".
+   *
+   * Iteration follows the insertion order of the adjacency maps, which follows
+   * the statement's own row order, so components come out the same every run.
+   */
+  components(): { rows: string[]; transactions: string[] }[] {
+    const seenRows = new Set<string>();
+    const seenTransactions = new Set<string>();
+    const out: { rows: string[]; transactions: string[] }[] = [];
+
+    for (const startRow of this.byRow.keys()) {
+      if (seenRows.has(startRow)) continue;
+
+      const rows: string[] = [];
+      const transactions: string[] = [];
+      const queue: { kind: "row" | "transaction"; id: string }[] = [
+        { kind: "row", id: startRow },
+      ];
+      seenRows.add(startRow);
+
+      while (queue.length > 0) {
+        const node = queue.shift()!;
+        if (node.kind === "row") {
+          rows.push(node.id);
+          for (const edge of this.byRow.get(node.id) ?? []) {
+            if (seenTransactions.has(edge.actualTransactionId)) continue;
+            seenTransactions.add(edge.actualTransactionId);
+            queue.push({ kind: "transaction", id: edge.actualTransactionId });
+          }
+        } else {
+          transactions.push(node.id);
+          for (const edge of this.byTransaction.get(node.id) ?? []) {
+            if (seenRows.has(edge.statementRowId)) continue;
+            seenRows.add(edge.statementRowId);
+            queue.push({ kind: "row", id: edge.statementRowId });
+          }
+        }
+      }
+
+      out.push({ rows, transactions });
+    }
+
+    return out;
+  }
+}
+
+function push(map: Map<string, ScoredCandidate[]>, key: string, value: ScoredCandidate): void {
+  const existing = map.get(key);
+  if (existing) existing.push(value);
+  else map.set(key, [value]);
 }
 
 /**

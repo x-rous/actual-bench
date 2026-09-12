@@ -34,6 +34,20 @@ const POINTS = {
   dateWithin3: 14,
   dateWithin7: 7,
   text: 25,
+  /**
+   * Awarded to a *review* pair by how close its amounts are, on the scale from
+   * identical to the widest gap the config will admit.
+   *
+   * Not part of the automatic tiers, which require the amounts to be equal and
+   * award `amountExact` for it. This tier used to score text and date only, on
+   * the reasoning that "there is no amount evidence to award points for" — but
+   * that conflates *no agreement* with *no information*. Three `CAREEM RIDE`
+   * rows competing for one -9.74 transaction scored 50, 50 and 45 while their
+   * gaps were 3.8%, 20.0% and 12.5%: the true pairing, at the same conversion
+   * rate as the rest of the statement, ranked no higher than a row five times
+   * further away. Closeness is the strongest thing left once exactness is gone.
+   */
+  amountProximity: 25,
 } as const;
 
 /** Text similarity at or above this promotes a pair to the amount+date+text tier. */
@@ -153,8 +167,16 @@ export function scoreAmountMismatchCandidate(
     ...text.reasons,
   ];
 
-  // Text and date only; there is no amount evidence to award points for.
-  const score = Math.round(text.similarity * POINTS.text + datePoints(delta));
+  // Ranked by how close the amounts are, as well as by text and date. The gap
+  // is already known to be inside `amountMismatchMaxRatio`, so it scales across
+  // that range: identical-but-for-rounding scores near full, a pair at the
+  // limit scores nothing.
+  const proximity = 1 - gap / larger / config.amountMismatchMaxRatio;
+  const score = Math.round(
+    text.similarity * POINTS.text +
+      datePoints(delta) +
+      Math.max(0, proximity) * POINTS.amountProximity
+  );
   return {
     statementRowId: row.id,
     actualTransactionId: transaction.id,
@@ -168,9 +190,13 @@ export function scoreAmountMismatchCandidate(
 /**
  * Score a leftover pairing: same merchant, same date, amounts unrelated.
  *
- * No amount evidence exists, so the score reflects text and date only and the
- * label is always `low`. Returns null when the text is not convincing enough to
- * call them the same merchant.
+ * The amounts are not a condition here — this tier exists for rows where they
+ * carry no information — so the score rests on text and date, plus a flat award
+ * where the two amounts happen to agree exactly. The label is always `low`:
+ * whatever it scores, this is never an automatic match.
+ *
+ * Returns null when the text is not convincing enough to call them the same
+ * merchant.
  */
 export function scoreSameMerchantCandidate(
   row: StatementRow,
@@ -195,19 +221,36 @@ export function scoreSameMerchantCandidate(
   );
   if (text.similarity === null || text.similarity < config.clusterTextFloor) return null;
 
+  /*
+   * This tier admits a pair whatever its amounts, including equal ones — it is
+   * reached by rows the assignment left over, and a leftover pair can agree on
+   * the amount and still have failed to match for some other reason.
+   *
+   * Where they do agree, saying so is the point: reporting `-4.98` against
+   * `-4.98` as an amount mismatch of zero is a statement the screen then repeats
+   * as "amount looks wrong", about two figures that are identical.
+   */
+  const amountsAgree = transaction.amount === row.amount;
+
   return {
     statementRowId: row.id,
     actualTransactionId: transaction.id,
-    score: Math.round(text.similarity * POINTS.text + datePoints(delta)),
+    score: Math.round(
+      text.similarity * POINTS.text +
+        datePoints(delta) +
+        (amountsAgree ? POINTS.amountProximity : 0)
+    ),
     label: "low",
     tier: "same-merchant-date-review",
     reasons: [
-      {
-        kind: "amount-mismatch",
-        statementAmount: row.amount,
-        actualAmount: transaction.amount,
-        difference: transaction.amount - row.amount,
-      },
+      amountsAgree
+        ? { kind: "amount", verdict: "exact" }
+        : {
+            kind: "amount-mismatch",
+            statementAmount: row.amount,
+            actualAmount: transaction.amount,
+            difference: transaction.amount - row.amount,
+          },
       { kind: "date", deltaDays: delta },
       ...text.reasons,
     ],

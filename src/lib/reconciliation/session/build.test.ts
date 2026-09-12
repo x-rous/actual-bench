@@ -8,6 +8,8 @@ import type {
 import {
   REASON,
   buildReconciliationItems,
+  correctAmountFromStatement,
+  linkManually,
   resolveToTransaction,
   summarizeCoverage,
 } from "./build";
@@ -364,25 +366,60 @@ describe("resolving a review item to one transaction", () => {
     ["t3", txn({ id: "t3", transferId: "x1" })],
   ]);
 
-  const reviewItem = {
+  const reviewItem: ReconciliationItem = {
     id: "i1",
     statementRowIds: ["s1"],
     actualTransactionIds: ["t1", "t2", "t3"],
-    disposition: "unresolved" as const,
+    disposition: "unresolved",
     reasonCode: REASON.ambiguousMatch,
-    guards: { protectedReconciled: false, splitParent: false, transfer: "no" as const },
+    guards: { protectedReconciled: false, splitParent: false, transfer: "no" },
   };
 
-  function resolve(transactionId: string | null) {
+  /** The decided item, and the rows that decision created, from the next set. */
+  function resolve(
+    transactionId: string | null,
+    items: ReconciliationItem[] = [reviewItem],
+    transfersReported = true,
+    map = transactions
+  ) {
     let counter = 0;
-    return resolveToTransaction({
-      item: reviewItem,
+    const next = resolveToTransaction({
+      items,
+      itemId: "i1",
       transactionId,
-      transactions,
-      transfersReported: true,
+      transactions: map,
+      transfersReported,
       makeId: () => `released-${++counter}`,
     });
+    return {
+      next,
+      item: next.find((entry) => entry.id === "i1")!,
+      released: next.filter((entry) => entry.id.startsWith("released-")),
+      others: next.filter((entry) => entry.id !== "i1" && !entry.id.startsWith("released-")),
+    };
   }
+
+  /*
+   * The workbench used to pass `transfersReported: true` as a literal, so a
+   * transport that reports nothing about transfers still produced `transfer:
+   * "no"` — the one value that lets a delete through. `canStageDelete`'s
+   * conservative branch was unreachable for every row released by a decision
+   * (F-151d).
+   */
+  it("keeps the transfer status unknown when the transport did not report one", () => {
+    const { item, released } = resolve("t1", [reviewItem], false);
+
+    expect(item.guards.transfer).toBe("unknown");
+    expect(released).toHaveLength(2);
+    for (const entry of released) {
+      expect(entry.guards.transfer).toBe("unknown");
+    }
+  });
+
+  it("still reports a real transfer as one when the transport does report them", () => {
+    // The pessimistic default must not flatten a known answer into "unknown".
+    expect(resolve("t3").item.guards.transfer).toBe("yes");
+  });
 
   it("carries the chosen transaction's guardrails, not the leading candidate's", () => {
     /*
@@ -399,17 +436,15 @@ describe("resolving a review item to one transaction", () => {
   });
 
   it("recomputes the reconciled and split guards too", () => {
-    const protectedTransactions = new Map([
-      ["t1", txn({ id: "t1" })],
-      ["t2", txn({ id: "t2", reconciled: true, isParent: true })],
-    ]);
-    const { item } = resolveToTransaction({
-      item: { ...reviewItem, actualTransactionIds: ["t1", "t2"] },
-      transactionId: "t2",
-      transactions: protectedTransactions,
-      transfersReported: true,
-      makeId: () => "released-1",
-    });
+    const { item } = resolve(
+      "t2",
+      [{ ...reviewItem, actualTransactionIds: ["t1", "t2"] }],
+      true,
+      new Map([
+        ["t1", txn({ id: "t1" })],
+        ["t2", txn({ id: "t2", reconciled: true, isParent: true })],
+      ])
+    );
 
     expect(item.guards.protectedReconciled).toBe(true);
     expect(item.guards.splitParent).toBe(true);
@@ -433,13 +468,13 @@ describe("resolving a review item to one transaction", () => {
 
   it("never marks a released transaction for deletion", () => {
     // Declining to match something is not the same as asking to remove it.
-    const { released } = resolve("t1");
-    expect(released.some((entry) => entry.disposition === "delete")).toBe(false);
+    expect(resolve("t1").released.some((entry) => entry.disposition === "delete")).toBe(false);
   });
 
   it("carries each released transaction's guardrails with it", () => {
-    const { released } = resolve("t1");
-    const transfer = released.find((entry) => entry.actualTransactionIds[0] === "t3");
+    const transfer = resolve("t1").released.find(
+      (entry) => entry.actualTransactionIds[0] === "t3"
+    );
     expect(transfer?.guards.transfer).toBe("yes");
   });
 
@@ -456,5 +491,308 @@ describe("resolving a review item to one transaction", () => {
     const { item, released } = resolve("t2");
     const all = [...item.actualTransactionIds, ...released.flatMap((e) => e.actualTransactionIds)];
     expect(all.sort()).toEqual(["t1", "t2", "t3"]);
+  });
+});
+
+/*
+ * A cluster offers the same transactions to several statement rows. Deciding one
+ * of them used to demote the rest of the pool to "Actual only" keep-or-delete
+ * rows while the other statement rows went on reading "not in Actual" — so the
+ * user created duplicates of transactions sitting one line below, offered for
+ * deletion (F-151b).
+ */
+describe("deciding one row of a cluster", () => {
+  const transactions = new Map([
+    ["t1", txn({ id: "t1" })],
+    ["t2", txn({ id: "t2" })],
+    ["t3", txn({ id: "t3" })],
+  ]);
+
+  /** Three statement rows, all offered the same three transactions. */
+  const cluster: ReconciliationItem[] = ["i1", "i2", "i3"].map((id, index) => ({
+    id,
+    statementRowIds: [`s${index + 1}`],
+    actualTransactionIds: ["t1", "t2", "t3"],
+    disposition: "unresolved",
+    reasonCode: REASON.merchantCluster,
+    guards: { protectedReconciled: false, splitParent: false, transfer: "no" },
+  }));
+
+  function decide(itemId: string, transactionId: string | null, items = cluster) {
+    let counter = 0;
+    return resolveToTransaction({
+      items,
+      itemId,
+      transactionId,
+      transactions,
+      transfersReported: true,
+      makeId: () => `released-${++counter}`,
+    });
+  }
+
+  it("withdraws the claimed transaction from every row still undecided", () => {
+    const next = decide("i1", "t2");
+
+    expect(next.find((entry) => entry.id === "i1")?.actualTransactionIds).toEqual(["t2"]);
+    for (const id of ["i2", "i3"]) {
+      expect(next.find((entry) => entry.id === id)?.actualTransactionIds).toEqual(["t1", "t3"]);
+    }
+  });
+
+  it("leaves the others as candidates rather than rows of their own", () => {
+    // The heart of F-151b: t1 and t3 are still wanted, so they are not homeless
+    // and must not turn into "Actual only" rows the user might delete.
+    const next = decide("i1", "t2");
+
+    expect(next.filter((entry) => entry.id.startsWith("released-"))).toEqual([]);
+    expect(next.filter((entry) => entry.reasonCode === REASON.notOnStatement)).toEqual([]);
+    expect(next).toHaveLength(3);
+  });
+
+  it("does not touch a row that has already been decided", () => {
+    const withDecided = [
+      cluster[0],
+      { ...cluster[1], disposition: "matched" as const, actualTransactionIds: ["t3"] },
+      cluster[2],
+    ];
+    const next = decide("i1", "t2", withDecided);
+
+    expect(next.find((entry) => entry.id === "i2")).toEqual(withDecided[1]);
+  });
+
+  it("stops calling it a cluster once one candidate is left", () => {
+    // Two rows, two transactions: deciding one leaves the other with a single
+    // candidate, and "several here" would then be a false statement.
+    const pair = cluster.slice(0, 2).map((item) => ({
+      ...item,
+      actualTransactionIds: ["t1", "t2"],
+    }));
+    const next = decide("i1", "t1", pair);
+
+    expect(next.find((entry) => entry.id === "i2")).toMatchObject({
+      actualTransactionIds: ["t2"],
+      reasonCode: REASON.sameMerchantDate,
+    });
+  });
+
+  it("reports a row whose last candidate was taken as one Actual has nothing for", () => {
+    const pair = cluster.slice(0, 2).map((item) => ({
+      ...item,
+      actualTransactionIds: ["t1"],
+    }));
+    const next = decide("i1", "t1", pair);
+
+    expect(next.find((entry) => entry.id === "i2")).toMatchObject({
+      actualTransactionIds: [],
+      reasonCode: REASON.noActualCandidate,
+      disposition: "unresolved",
+    });
+  });
+
+  it("frees a transaction nobody else wants into a row of its own", () => {
+    // The last undecided row declines everything: the pool is now homeless and
+    // has to become visible, or it is in the budget and off the screen.
+    const single = [{ ...cluster[0], actualTransactionIds: ["t1", "t2"] }];
+    const next = decide("i1", null, single);
+
+    expect(next.filter((entry) => entry.reasonCode === REASON.notOnStatement)).toHaveLength(2);
+  });
+
+  it("keeps every transaction represented exactly once, whatever the order", () => {
+    // The invariant the whole design turns on, checked across a sequence.
+    let items = decide("i1", "t2");
+    items = resolveToTransaction({
+      items,
+      itemId: "i2",
+      transactionId: "t3",
+      transactions,
+      transfersReported: true,
+      makeId: () => "released-x",
+    });
+
+    const all = items.flatMap((entry) => entry.actualTransactionIds).sort();
+    expect(all).toEqual(["t1", "t2", "t3"]);
+  });
+});
+
+/*
+ * Picking a candidate is the judgement; the amount follows from it. Leaving the
+ * user to press a second "Set amount to ..." control afterwards asks the same
+ * question twice, and a reconciliation abandoned between the two is matched to a
+ * figure the bank disagrees with.
+ */
+describe("carrying the statement's amount onto a chosen transaction", () => {
+  const statementRow = row({ id: "s1", amount: -5442 });
+
+  function correct(over: Partial<ReconciliationItem> = {}, transaction = txn({ id: "t1", amount: -5207 })) {
+    return correctAmountFromStatement({
+      item: {
+        id: "i1",
+        statementRowIds: ["s1"],
+        actualTransactionIds: ["t1"],
+        disposition: "matched",
+        guards: { protectedReconciled: false, splitParent: false, transfer: "no" },
+        ...over,
+      },
+      statementRow,
+      transaction,
+    });
+  }
+
+  it("stages the correction rather than writing it", () => {
+    const item = correct();
+
+    expect(item.disposition).toBe("correct-amount");
+    expect(item.stagedChanges?.amount).toEqual({
+      original: -5207,
+      staged: -5442,
+      source: "manual",
+    });
+  });
+
+  it("leaves a row alone when the amounts already agree", () => {
+    const item = correct({}, txn({ id: "t1", amount: -5442 }));
+    expect(item.disposition).toBe("matched");
+    expect(item.stagedChanges).toBeUndefined();
+  });
+
+  it.each([
+    ["reconciled in Actual", { protectedReconciled: true, splitParent: false, transfer: "no" as const }],
+    ["a split parent", { protectedReconciled: false, splitParent: true, transfer: "no" as const }],
+  ])("respects the guardrail on %s", (_label, guards) => {
+    const item = correct({ guards });
+    expect(item.disposition).toBe("matched");
+    expect(item.stagedChanges?.amount).toBeUndefined();
+  });
+
+  it("never overwrites an amount the user set by hand", () => {
+    // Manual outranks anything derived (feature spec §33).
+    const item = correct({
+      stagedChanges: { amount: { original: -5207, staged: -5000, source: "manual" } },
+    });
+    expect(item.stagedChanges?.amount?.staged).toBe(-5000);
+  });
+
+  it("does not touch a row that is not a match", () => {
+    expect(correct({ disposition: "unresolved" }).disposition).toBe("unresolved");
+  });
+
+  it("keeps other staged fields", () => {
+    const item = correct({
+      stagedChanges: { notes: { original: "a", staged: "b", source: "transform" } },
+    });
+    expect(item.stagedChanges?.notes?.staged).toBe("b");
+    expect(item.stagedChanges?.amount?.staged).toBe(-5442);
+  });
+});
+
+/*
+ * The escape hatch that lets the automatic tiers stay strict.
+ *
+ * The reported pair: `Danube-D- JEDDAH SAU SAR53.45` posting -54.42, against
+ * `#API Danube-D-8505` at -52.07. Text scores 0.667 against a floor of 0.75, so
+ * no candidate is generated and both halves sit on screen unrelatable. Loosening
+ * the floor admits false positives everywhere; discounting the store number
+ * `8505` would undercut `referenceAppearsInNotes`, which treats a bank reference
+ * inside the notes as near-identity evidence. Letting the user say so costs
+ * nothing and admits nothing.
+ */
+describe("linking two rows by hand", () => {
+  const danubeRow = row({ id: "s1", amount: -5442, importedPayee: "Danube-D- JEDDAH SAU SAR53.45" });
+  const danubeTxn = txn({ id: "t1", amount: -5207, payeeName: null, notes: "#API Danube-D-8505" });
+
+  const statementOnly: ReconciliationItem = {
+    id: "i1",
+    statementRowIds: ["s1"],
+    actualTransactionIds: [],
+    disposition: "unresolved",
+    reasonCode: REASON.noActualCandidate,
+    guards: { protectedReconciled: false, splitParent: false, transfer: "no" },
+  };
+  const actualOnly: ReconciliationItem = {
+    id: "i2",
+    statementRowIds: [],
+    actualTransactionIds: ["t1"],
+    disposition: "unresolved",
+    reasonCode: REASON.notOnStatement,
+    guards: { protectedReconciled: false, splitParent: false, transfer: "no" },
+  };
+
+  function link(items: ReconciliationItem[], transaction = danubeTxn, transfersReported = true) {
+    return linkManually({
+      items,
+      statementItemId: "i1",
+      actualItemId: "i2",
+      statementRows: new Map([["s1", danubeRow]]),
+      transactions: new Map([["t1", transaction]]),
+      transfersReported,
+    });
+  }
+
+  it("makes one row out of the two", () => {
+    const next = link([statementOnly, actualOnly])!;
+
+    expect(next).toHaveLength(1);
+    expect(next[0]).toMatchObject({
+      id: "i1",
+      statementRowIds: ["s1"],
+      actualTransactionIds: ["t1"],
+    });
+  });
+
+  it("records it as the user's own decision, not the matcher's", () => {
+    const next = link([statementOnly, actualOnly])!;
+    expect(next[0].match).toMatchObject({ type: "manual", evidenceSource: "manual" });
+  });
+
+  it("carries the statement's amount onto the transaction", () => {
+    // Linking asserts "this row is that transaction", and the bank is
+    // authoritative about what was charged.
+    const next = link([statementOnly, actualOnly])!;
+    expect(next[0].disposition).toBe("correct-amount");
+    expect(next[0].stagedChanges?.amount).toEqual({
+      original: -5207,
+      staged: -5442,
+      source: "manual",
+    });
+  });
+
+  it("takes the transaction's guardrails, not the empty ones of a row with nothing in Actual", () => {
+    const next = link([statementOnly, actualOnly], txn({ id: "t1", amount: -5207, reconciled: true }))!;
+    expect(next[0].guards.protectedReconciled).toBe(true);
+    // A protected row is linked but its amount is not rewritten.
+    expect(next[0].stagedChanges?.amount).toBeUndefined();
+  });
+
+  it("reports an unknown transfer status as unknown", () => {
+    const next = link([statementOnly, actualOnly], danubeTxn, false)!;
+    expect(next[0].guards.transfer).toBe("unknown");
+  });
+
+  it("overrides decisions taken on either half", () => {
+    // The row is no longer being created, and the transaction is no longer
+    // being deleted.
+    const next = link([
+      { ...statementOnly, disposition: "create" },
+      { ...actualOnly, disposition: "delete" },
+    ])!;
+
+    expect(next).toHaveLength(1);
+    expect(next[0].disposition).toBe("correct-amount");
+  });
+
+  it("leaves every other row untouched", () => {
+    const other = { ...actualOnly, id: "i3", actualTransactionIds: ["t9"] };
+    const next = link([statementOnly, actualOnly, other])!;
+    expect(next.map((entry) => entry.id)).toEqual(["i1", "i3"]);
+  });
+
+  it.each([
+    ["two statement rows", { ...actualOnly, id: "i2", statementRowIds: ["s2"], actualTransactionIds: [] }],
+    ["a row that is already matched", { ...actualOnly, id: "i2", statementRowIds: ["s2"] }],
+  ])("refuses %s", (_label, second) => {
+    // Defence in depth: the toolbar only offers the action for the one shape,
+    // but the engine must not rely on the UI having behaved.
+    expect(link([statementOnly, second as ReconciliationItem])).toBeNull();
   });
 });

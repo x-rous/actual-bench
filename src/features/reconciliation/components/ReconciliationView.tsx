@@ -14,6 +14,8 @@ import {
 import { match } from "@/lib/reconciliation/match/matcher";
 import {
   buildReconciliationItems,
+  correctAmountFromStatement,
+  linkManually,
   resolveToTransaction,
   summarizeCoverage,
 } from "@/lib/reconciliation/session/build";
@@ -40,7 +42,7 @@ import {
 import type { ReconciliationDisposition } from "@/lib/reconciliation/types";
 import { useConnectionStore, selectActiveInstance } from "@/store/connection";
 import { useAccounts } from "@/features/accounts/hooks/useAccounts";
-import { loadCandidateWindow } from "../lib/loadCandidates";
+import { loadCandidateWindow, resumeWindowInput } from "../lib/loadCandidates";
 import {
   DEFAULT_APPLY_CONFIG,
   buildApplyPlan,
@@ -133,9 +135,32 @@ export function ReconciliationView() {
   const [screen, setScreen] = useState<Screen>({ name: "home" });
   const [accountId, setAccountId] = useState<string>("");
 
-  // Held in memory for the life of the workbench view: the snapshot the session
-  // matched against. Re-reading it before Apply is how drift is detected.
+  // The Actual side of the workbench: the candidate window as it stands now,
+  // loaded at match time and re-read when a session is resumed. What the session
+  // *matched against* is `baselines` below — the two were one field until
+  // refreshing the grid started moving the drift baseline with it.
   const [snapshot, setSnapshot] = useState<ActualTransactionSnapshot[]>([]);
+  /**
+   * Whether the transport reported transfer membership for the loaded window.
+   *
+   * `false` means *unknown*, not *no transfers* — `transferStatusOf` reads it
+   * that way and `canStageDelete` blocks on it. It starts pessimistic so a
+   * session whose window has not been read cannot authorise a delete on an
+   * assumption (F-151d).
+   */
+  const [transfersReported, setTransfersReported] = useState(false);
+  /** True while the Actual side is the persisted copy rather than a fresh read. */
+  const [snapshotIsStored, setSnapshotIsStored] = useState(false);
+  /**
+   * What each transaction looked like when the session was matched — the thing
+   * drift is measured from, kept deliberately apart from the live window.
+   *
+   * Refreshing the grid must not refresh this. `replaceItems` rewrites every
+   * item's stored snapshot, so reading the baseline out of a re-read window
+   * would quietly move it forward and absorb exactly the change the pre-flight
+   * check exists to catch.
+   */
+  const [baselines, setBaselines] = useState<Map<string, ActualTransactionSnapshot>>(new Map());
   const [parsedRows, setParsedRows] = useState<StatementRow[]>([]);
   const [items, setItems] = useState<ReconciliationItem[]>([]);
   const [period, setPeriod] = useState<{ start: string; end: string } | null>(null);
@@ -223,10 +248,25 @@ export function ReconciliationView() {
    * Rehydrate a resumed session from the app database.
    *
    * A session outlives the component, so returning to one must rebuild the
-   * workbench from what was persisted rather than showing an empty grid. The
-   * Actual side is rebuilt from the snapshot stored on each item — that is
-   * deliberately the snapshot the session matched against, not a fresh read,
-   * because it is also what drift is measured from before Apply.
+   * workbench from what was persisted rather than showing an empty grid.
+   *
+   * The statement side and every decision come from the database untouched. The
+   * **Actual side is re-read**, because the stored snapshots cannot serve it: an
+   * item persists one snapshot — the drift baseline for the transaction it was
+   * decided on — while a review item may offer five candidates, and rebuilding
+   * the grid from those silently dropped the other four (F-151c). Their guards
+   * then defaulted permissive, so a reconciled row or a transfer leg released
+   * after a reload became deletable (F-151d).
+   *
+   * Re-reading needs nothing new: `loadCandidateWindow` is a function of the
+   * account and the persisted period and match config, so it returns the same
+   * window the session matched against — current, complete, and carrying the
+   * transport's real `transfersReported`.
+   *
+   * The graph is *not* recomputed. Items, dispositions and staged changes are
+   * read as they were stored; only the Actual-side data behind them refreshes.
+   * Where the window cannot be read - no connection, or the read fails - the
+   * stored snapshots stand in and the grid says so.
    */
   const hydratedSessionId = sessionQuery.data?.session.id;
   useEffect(() => {
@@ -273,11 +313,18 @@ export function ReconciliationView() {
         stagedChanges: (item.stagedChanges ?? undefined) as ReconciliationItem["stagedChanges"],
       }))
     );
-    setSnapshot(
-      data.items
-        .map((item) => item.actualSnapshot as ActualTransactionSnapshot | null)
-        .filter((snapshot): snapshot is ActualTransactionSnapshot => snapshot != null)
-    );
+    const stored = data.items
+      .map((item) => item.actualSnapshot as ActualTransactionSnapshot | null)
+      .filter((snapshot): snapshot is ActualTransactionSnapshot => snapshot != null);
+    setSnapshot(stored);
+    // The stored copies are the baselines by definition: each is what its item
+    // was decided against.
+    setBaselines(new Map(stored.map((transaction) => [transaction.id, transaction])));
+    // Pessimistic until the re-read says otherwise: `false` means "unknown" to
+    // `transferStatusOf`, and a session whose transfer data has not been
+    // confirmed must not authorise a delete on an assumption.
+    setTransfersReported(false);
+    setSnapshotIsStored(true);
 
     // Rebuild what the last apply did, from the record kept as it happened.
     // Without this the outcome is written faithfully to the database and then
@@ -302,6 +349,53 @@ export function ReconciliationView() {
     setLoadedSessionId(data.session.id);
   }, [sessionQuery.data, hydratedSessionId, screen, loadedSessionId]);
 
+  /**
+   * Refresh the Actual side of a resumed session.
+   *
+   * Hydration puts the stored snapshots on screen so the grid is never empty,
+   * but those are drift baselines: one per item, for the transaction it was
+   * decided on. A review item offering five candidates stores one, so the
+   * workbench rebuilt from them shows a five-candidate decision as a
+   * one-candidate decision, and the four it cannot resolve fall back to
+   * permissive guards (F-151c / F-151d).
+   *
+   * So the window is read again. Nothing new is needed for it: the account, the
+   * statement period and the match config are all persisted, and
+   * `loadCandidateWindow` is a function of exactly those - it returns the same
+   * window the session matched against, current and complete.
+   *
+   * Decisions are untouched. This refreshes the data behind the graph, never the
+   * graph. A failure leaves the stored copies in place and the header says so,
+   * because an applied session must stay readable as an audit record with no
+   * connection at all.
+   */
+  useEffect(() => {
+    if (!snapshotIsStored || !connection) return;
+    const session = sessionQuery.data?.session;
+    if (!session || loadedSessionId !== session.id) return;
+
+    const input = resumeWindowInput(session);
+    if (!input) return;
+    let cancelled = false;
+
+    void loadCandidateWindow(connection, input)
+      .then((window) => {
+        if (cancelled) return;
+        setSnapshot(window.transactions);
+        setTransfersReported(window.transfersReported);
+        setSnapshotIsStored(false);
+      })
+      .catch(() => {
+        // Deliberately silent: the stored snapshots are already on screen and
+        // the header reports that they are what is being shown. An error banner
+        // over a session that renders correctly would be noise.
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [snapshotIsStored, connection, sessionQuery.data?.session, loadedSessionId]);
+
   const capabilities = useMemo(
     () => (connection ? getBudgetFileSyncCapabilities(connection) : null),
     [connection]
@@ -325,6 +419,23 @@ export function ReconciliationView() {
   const transactionsById = useMemo(
     () => new Map(snapshot.map((transaction) => [transaction.id, transaction])),
     [snapshot]
+  );
+
+  /**
+   * The snapshot to persist as an item's drift baseline.
+   *
+   * Prefers what the session recorded over what Actual says now. A transaction
+   * that has no baseline was never part of a decision - a candidate the re-read
+   * surfaced, say - so the current row becomes its baseline the first time it is
+   * written, which is the same rule matching follows.
+   */
+  const baselineFor = useCallback(
+    (item: ReconciliationItem): ActualTransactionSnapshot | null => {
+      const id = item.actualTransactionIds[0];
+      if (!id) return null;
+      return baselines.get(id) ?? transactionsById.get(id) ?? null;
+    },
+    [baselines, transactionsById]
   );
 
   const payeeOptions = useMemo(
@@ -715,6 +826,10 @@ export function ReconciliationView() {
         });
 
         setSnapshot(window.transactions);
+        // Matching is the moment the baseline is taken.
+        setBaselines(new Map(window.transactions.map((t) => [t.id, t])));
+        setTransfersReported(window.transfersReported);
+        setSnapshotIsStored(false);
         setParsedRows(input.statementRows);
         setPeriod(input.statementPeriod);
         setItems(built);
@@ -811,26 +926,75 @@ export function ReconciliationView() {
     }
 
     /**
+     * Pair a statement row with a transaction the matcher never related.
+     *
+     * Rows are removed as well as changed - the transaction's own row is
+     * absorbed into the pair - so the whole set is rewritten rather than
+     * patched, the same as resolving a candidate.
+     */
+    function handleManualMatch(statementItemId: string, actualItemId: string) {
+      const next = linkManually({
+        items,
+        statementItemId,
+        actualItemId,
+        statementRows: statementRowsById,
+        transactions: transactionsById,
+        transfersReported,
+      });
+      // Null when the two rows are not a statement row and a transaction. The
+      // toolbar only offers the action for that shape, so this is defence in
+      // depth rather than a path the UI can reach.
+      if (!next) return;
+
+      setItems(next);
+      void mutations.replaceItems
+        .mutateAsync({
+          sessionId: sessionId ?? "",
+          items: next.map((entry) => ({
+            id: entry.id,
+            statementRowIds: entry.statementRowIds,
+            actualTransactionIds: entry.actualTransactionIds,
+            disposition: entry.disposition,
+            reasonCode: entry.reasonCode ?? null,
+            match: entry.match,
+            guards: entry.guards,
+            actualSnapshot: baselineFor(entry),
+            stagedChanges: entry.stagedChanges ?? null,
+          })),
+        })
+        .catch((error: unknown) => {
+          setMatchError(error instanceof Error ? error.message : "Could not link those rows");
+        });
+    }
+
+    /**
      * Pick one of several competing candidates, or none of them.
      *
-     * The transactions not picked are returned to rows of their own. They were
-     * only ever visible through the item that offered them, so simply dropping
-     * the reference would leave them in the budget and absent from the screen.
+     * Decided across the whole set rather than on one item, because a cluster
+     * offers the same transactions to several rows: the chosen one is withdrawn
+     * from every row still undecided about it, and a transaction nobody else
+     * wants becomes a row of its own so it cannot be left in the budget and
+     * absent from the screen.
      */
     function handleUseCandidate(itemId: string, transactionId: string | null) {
-      const current = items.find((entry) => entry.id === itemId);
-      if (!current) return;
-
-      const { item, released } = resolveToTransaction({
-        item: current,
+      const resolvedSet = resolveToTransaction({
+        items,
+        itemId,
         transactionId,
         transactions: transactionsById,
-        transfersReported: true,
+        transfersReported,
         makeId: () => generateId(),
       });
+      if (resolvedSet === items) return;
 
-      const next = items.flatMap((entry) =>
-        entry.id === itemId ? [item, ...released] : [entry]
+      const next = resolvedSet.map((entry) =>
+        entry.id === itemId
+          ? correctAmountFromStatement({
+              item: entry,
+              statementRow: statementRowsById.get(entry.statementRowIds[0] ?? ""),
+              transaction: transactionsById.get(entry.actualTransactionIds[0] ?? ""),
+            })
+          : entry
       );
       setItems(next);
 
@@ -846,7 +1010,7 @@ export function ReconciliationView() {
             reasonCode: entry.reasonCode ?? null,
             match: entry.match,
             guards: entry.guards,
-            actualSnapshot: transactionsSnapshotFor(entry, snapshot) ?? null,
+            actualSnapshot: baselineFor(entry),
             stagedChanges: entry.stagedChanges ?? null,
           })),
         })
@@ -1513,6 +1677,7 @@ export function ReconciliationView() {
             rematchBlockedReason={rematchBlockedReason}
             readOnly={Boolean(rematchBlockedReason)}
             writeSettingsLocked={writeSettingsLocked}
+            snapshotIsStored={snapshotIsStored}
             payees={payeeOptions}
             categories={categoryOptions}
             onDisposition={handleDisposition}
@@ -1522,6 +1687,7 @@ export function ReconciliationView() {
             onUnstage={handleUnstage}
             onBulkDisposition={handleBulkDisposition}
             onBulkCorrectAmount={handleBulkCorrectAmount}
+            onManualMatch={handleManualMatch}
             transformContextFor={transformContextFor}
             applyConfig={applyConfig}
             onApplyConfigChange={handleApplyConfigChange}

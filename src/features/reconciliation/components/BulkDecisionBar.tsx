@@ -1,8 +1,10 @@
 "use client";
 
-import { Ban, Check, Pencil, Plus, Trash2, X } from "lucide-react";
+import { Ban, Check, Link2, Pencil, Plus, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { isActualOnly, isStatementOnly } from "@/lib/reconciliation/session/build";
 import { canStageDelete, canStageField } from "@/lib/reconciliation/session/staging";
+import { formatMinorUnits } from "../lib/format";
 import type {
   ActualTransactionSnapshot,
   ReconciliationDisposition,
@@ -39,6 +41,15 @@ export type BulkAction = {
   run: () => void;
 };
 
+/**
+ * The one pairing the user makes by hand.
+ *
+ * Everything else in this bar acts on any number of rows; this acts on exactly
+ * two, and only when they are the two halves of one transaction — a statement
+ * row with nothing in Actual, and a transaction with nothing on the statement.
+ * That shape is the whole guard: there is no ambiguity to resolve, so there is
+ * no judgement being made on the user's behalf.
+ */
 export type BulkDecisionBarProps = {
   selected: ReconciliationItem[];
   statementRows: Map<string, StatementRow>;
@@ -46,6 +57,8 @@ export type BulkDecisionBarProps = {
   onClear: () => void;
   onBulkDisposition: (itemIds: string[], disposition: ReconciliationDisposition) => void;
   onBulkCorrectAmount: (items: { itemId: string; transactionId: string; amount: number }[]) => void;
+  /** Pair a statement-only row with an Actual-only row the matcher never related. */
+  onManualMatch: (statementItemId: string, actualItemId: string) => void;
 };
 
 export function BulkDecisionBar({
@@ -55,6 +68,7 @@ export function BulkDecisionBar({
   onClear,
   onBulkDisposition,
   onBulkCorrectAmount,
+  onManualMatch,
 }: BulkDecisionBarProps) {
   if (selected.length === 0) return null;
 
@@ -66,6 +80,36 @@ export function BulkDecisionBar({
   // Keep and ignore apply to anything, but keep only reads sensibly for rows
   // that exist in Actual.
   const keepable = selected.filter((item) => item.actualTransactionIds.length > 0);
+
+  /*
+   * What the selected statement rows come to.
+   *
+   * Reconciling is arithmetic as much as matching: "these eleven fee rows should
+   * come to 2.34" is the check a person actually makes before creating them in
+   * bulk, and doing it by reading eleven figures off the screen is the work this
+   * bar exists to remove. Statement rows only — an Actual-only row is not part
+   * of the statement's total, and mixing the two would produce a number that
+   * answers no question.
+   */
+  const statementAmounts = selected
+    .map((item) => statementRows.get(item.statementRowIds[0] ?? "")?.amount)
+    .filter((amount): amount is number => amount != null);
+  const selectedTotal =
+    statementAmounts.length > 0 ? statementAmounts.reduce((sum, amount) => sum + amount, 0) : null;
+
+  /*
+   * Exactly one of each, and nothing else selected. Two statement rows are not a
+   * pair, and three rows are not a decision — the moment it is ambiguous which
+   * goes with which, this is no longer the unambiguous case it exists for.
+   */
+  const pairable =
+    selected.length === 2
+      ? (() => {
+          const statementSide = selected.find(isStatementOnly);
+          const actualSide = selected.find(isActualOnly);
+          return statementSide && actualSide ? { statementSide, actualSide } : null;
+        })()
+      : null;
 
   const deletable = selected.filter(
     (item) => item.actualTransactionIds.length > 0 && canStageDelete(item).allowed
@@ -83,6 +127,20 @@ export function BulkDecisionBar({
   });
 
   const actions: BulkAction[] = [
+    // First, because it changes what the other actions would mean: a row about
+    // to be created and a row about to be deleted are, once linked, neither.
+    ...(pairable
+      ? [
+          {
+            id: "link",
+            label: "These are the same transaction",
+            icon: Link2,
+            eligible: selected,
+            excludedReason: null,
+            run: () => onManualMatch(pairable.statementSide.id, pairable.actualSide.id),
+          },
+        ]
+      : []),
     {
       id: "create",
       label: "Create in Actual",
@@ -144,6 +202,14 @@ export function BulkDecisionBar({
     <div className="sticky bottom-0 z-20 flex flex-wrap items-center gap-2 border-t border-border/60 bg-background/95 px-4 py-2 backdrop-blur">
       <span className="text-xs font-medium">
         {selected.length} selected
+        {selectedTotal !== null && (
+          <>
+            {" "}
+            <span className="font-normal tabular-nums text-muted-foreground">
+              · {formatMinorUnits(selectedTotal)}
+            </span>
+          </>
+        )}
       </span>
 
       {actions
