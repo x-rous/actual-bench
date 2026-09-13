@@ -276,3 +276,69 @@ describe("a row with a likely partner matching would not relate", () => {
     expect(screen.queryByText("Possible pair")).not.toBeInTheDocument();
   });
 });
+
+/*
+ * The status column answers one question - is this row still mine? - and it has
+ * to answer it for the pair Result cannot separate at a glance: an undecided
+ * "Not in Actual" and a decided "Will create" share a tone and an icon there.
+ */
+describe("the decision status column", () => {
+  it("marks an undecided row as needing a decision", () => {
+    renderRow({ reasonCode: REASON.noActualCandidate, actualTransactionIds: [] }, []);
+    expect(screen.getByText("Needs a decision")).toBeInTheDocument();
+    expect(screen.queryByText("Done")).not.toBeInTheDocument();
+  });
+
+  it("marks the same row done once it has been decided", () => {
+    renderRow(
+      { disposition: "create", reasonCode: REASON.noActualCandidate, actualTransactionIds: [] },
+      []
+    );
+    expect(screen.getByText("Done")).toBeInTheDocument();
+    expect(screen.queryByText("Needs a decision")).not.toBeInTheDocument();
+  });
+
+  it("treats a match nobody touched as done too", () => {
+    // How a row was settled is Result's business. The answer to "is this mine?"
+    // is no whether the user decided it or the matcher did.
+    renderRow({ disposition: "matched" }, [txn({ id: "t1" })]);
+    expect(screen.getByText("Done")).toBeInTheDocument();
+  });
+
+  it("counts every other decision as done", () => {
+    for (const disposition of ["delete", "keep", "correct-amount", "ignored"] as const) {
+      const { unmount } = renderRow({ disposition }, [txn({ id: "t1" })]);
+      expect(screen.getByText("Done")).toBeInTheDocument();
+      unmount();
+    }
+  });
+});
+
+describe("a transaction dated outside the statement period", () => {
+  const outside = {
+    disposition: "keep" as const,
+    reasonCode: REASON.outsideStatementPeriod,
+    statementRowIds: [],
+  };
+
+  it("is done from the start, since the statement makes no claim about it", () => {
+    renderRow(outside, [txn({ id: "t1" })]);
+    expect(screen.getByText("Done")).toBeInTheDocument();
+  });
+
+  /*
+   * Result reads `decidedState` first, so a defaulted keep would print "Keep"
+   * and lose the one label explaining why the transaction is on screen at all -
+   * replacing a fact about the row with a decision nobody took.
+   */
+  it("still says why it is on screen rather than reporting a decision", () => {
+    renderRow(outside, [txn({ id: "t1" })]);
+    expect(screen.getByText("Outside period")).toBeInTheDocument();
+    expect(screen.queryByText("Keep")).not.toBeInTheDocument();
+  });
+
+  it("reports a real decision taken on it normally", () => {
+    renderRow({ ...outside, disposition: "delete" }, [txn({ id: "t1" })]);
+    expect(screen.getByText("Will delete")).toBeInTheDocument();
+  });
+});

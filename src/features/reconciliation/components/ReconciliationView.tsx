@@ -14,6 +14,7 @@ import {
 import { match } from "@/lib/reconciliation/match/matcher";
 import {
   buildReconciliationItems,
+  applyDisposition,
   correctAmountFromStatement,
   linkManually,
   resolveToTransaction,
@@ -73,6 +74,10 @@ import {
   wouldWrite,
   type PossiblePair,
 } from "@/lib/reconciliation/session/possiblePairs";
+import {
+  diagnoseInvertedSigns,
+  invertStatementRows,
+} from "@/lib/reconciliation/session/invertedSigns";
 import { buildTextCorpus } from "@/lib/reconciliation/match/text";
 import {
   mergeOperationResults,
@@ -683,6 +688,25 @@ export function ReconciliationView() {
     [items, parsedRows.length, snapshot.length]
   );
 
+  /**
+   * Nothing matched because the statement's signs are the other way round.
+   *
+   * Derived here rather than in the workbench because it needs the rows and the
+   * snapshot as lists, and because the recovery it offers is a re-match - which
+   * only this component can run. Returns null on every ordinary session; the
+   * notice it feeds does not exist unless matching failed completely and the
+   * flip test explains why.
+   */
+  const invertedSigns = useMemo(
+    () =>
+      diagnoseInvertedSigns({
+        statementRows: parsedRows,
+        transactions: snapshot,
+        matched: coverage.statement.matched,
+      }),
+    [parsedRows, snapshot, coverage.statement.matched]
+  );
+
 
   /**
    * Keep the session's status in step with the work.
@@ -1085,14 +1109,16 @@ export function ReconciliationView() {
       return transactionsById.get(item.actualTransactionIds[0] ?? "");
     }
 
+    /** Record a decision. The rules that travel with one live in `applyDisposition`. */
     function handleDisposition(itemId: string, disposition: ReconciliationDisposition) {
-      updateItem(itemId, (item) => ({
-        ...item,
-        disposition,
-        // Returning a row to undecided drops what was staged for it: keeping edits
-        // attached to a decision the user withdrew would apply them by surprise.
-        stagedChanges: disposition === "unresolved" ? undefined : item.stagedChanges,
-      }));
+      updateItem(itemId, (item) =>
+        applyDisposition({
+          item,
+          disposition,
+          statementRow: statementRowsById.get(item.statementRowIds[0] ?? ""),
+          transaction: transactionsById.get(item.actualTransactionIds[0] ?? ""),
+        })
+      );
     }
 
     /**
@@ -1921,6 +1947,55 @@ export function ReconciliationView() {
                 statementRows: parsedRows,
                 statementPeriod: period,
                 config: matchConfig,
+              });
+            }}
+            invertedSigns={invertedSigns}
+            onRerunInverted={() => {
+              if (!session || !period) return;
+              /*
+               * The negated rows are persisted by `runMatch`, so this corrects
+               * the session rather than just its display - the alternative was
+               * re-importing the file and hunting for the sign setting.
+               *
+               * Matching runs from scratch, so it discards every decision on the
+               * session, and it is reachable at a point where there can be
+               * plenty: nothing matched, so the fastest way through was to work
+               * the "Not in Actual" rows - and those are exactly the decisions
+               * this throws away. Confirmed on the same terms as re-importing,
+               * which discards the same work for the same reason.
+               */
+              const go = () =>
+                void runMatch({
+                  sessionId: session.id,
+                  accountId: session.accountId,
+                  statementRows: invertStatementRows(parsedRows),
+                  statementPeriod: period,
+                  config: matchConfig,
+                });
+
+              const decided = items.filter((item) => item.disposition !== "unresolved").length;
+              const staged = items.filter(
+                (item) => item.stagedChanges && Object.keys(item.stagedChanges).length > 0
+              ).length;
+
+              if (decided === 0 && staged === 0) {
+                go();
+                return;
+              }
+
+              setConfirm({
+                title: "Re-run with the amounts inverted?",
+                message: (
+                  <>
+                    Matching will run again from scratch, so the {decided} decision
+                    {decided === 1 ? "" : "s"}
+                    {staged > 0 ? ` and ${staged} edited row${staged === 1 ? "" : "s"}` : ""} on this
+                    reconciliation will be discarded. Nothing in your budget changes, and anything
+                    already applied stays applied.
+                  </>
+                ),
+                destructiveLabel: "Discard and re-run",
+                onConfirm: go,
               });
             }}
           />

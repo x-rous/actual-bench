@@ -274,6 +274,27 @@ exactly that reason.
   transactions, none of the amounts equal. Every row in the group is shown the transactions it could
   be rather than one row taking them all, and settling one frees the rest.
 
+### When nothing matched at all
+
+Some banks print a single amount column with spending as a **positive** number, leaving the
+direction to a heading elsewhere on the page. Actual stores spending as negative, and matching
+compares signed amounts, so such a statement matches nothing whatsoever: every row lands in
+*Not in Actual* and every transaction in *Not on statement*. That looks like the wrong account or
+the wrong dates, which is the one thing it is not.
+
+When that happens, Actual Bench checks whether flipping the statement's signs would have worked, and
+says so under the coverage bars:
+
+> **Nothing matched, and the amounts look inverted.** Your statement shows spend as a positive
+> number; Actual stores it as negative. 47 of 52 rows would match if the sign were flipped.
+
+**Re-run inverted** flips the amounts and matches again, without going back to the import screen.
+The message only appears when nothing matched *and* the flip demonstrably explains it, so a
+statement of genuinely new transactions never triggers it.
+
+You can also set this yourself before importing - **Sign convention → One amount column, spend shown
+positive** on the import screen.
+
 ## 3. Decide each row
 
 ![The reconciliation workbench: coverage in both directions, rows bucketed by outcome, and each match shown with its confidence and reasoning.](../../../assets/screenshots/user-guide/bank-reconciliation.png)
@@ -287,14 +308,69 @@ explains. Decision progress and **Next undecided** stay in the table toolbar. **
 options in a popover, so checking or changing a tolerance does not push the comparison table off the
 screen; choose **Re-run** explicitly when you want those options applied.
 
+The filters are grouped the way the grid is. **All** comes first, then a **Statement** group and an
+**In Actual** group, each boxed and headed by its own filter:
+
+```text
+All 68   ┌ Statement 49  Needs review 0  Not in Actual 1  Matched 48 ┐
+         ┌ In Actual 19  Not on statement 15  Outside period 4 ┐
+```
+
+The head of each group is a filter too: **Statement** shows every row the statement has, **In Actual**
+everything Actual holds that the statement does not account for. The two group names are the same
+words as the column headings below them, so each group sits above the columns it filters.
+
+The numbers add up in both directions - the two heads reach All, and each group's filters reach its
+head.
+
+Every row carries a **status marker** beside its checkbox, answering one question - is this row
+still yours to deal with?
+
+- ○ **amber circle** - no decision yet.
+- ● **green tick** - done, whether you decided it or the matcher matched it.
+
+That is the same split the decision counter uses, so the counter and the column can never disagree.
+What will actually *happen* to a row is the **Result** column's job; this one only says whether it is
+finished.
+
+Transactions dated **outside the statement's period** start as **kept**. They were loaded only to
+help matching at the edges of the period, and your statement makes no claim about them - so there is
+nothing to answer. They are left out of the decision counter altogether rather than counted as done:
+a statement with 188 rows of its own plus 12 padded ones reads **100 of 188 decided**, not *112 of
+200*, because counting them would claim decisions you never made.
+
+Keeping writes nothing - they stay in Actual exactly as they are. They remain visible, selectable
+and deletable if you do want to act on one, and an **Undo** puts a row back to undecided. Act on one
+for real - delete it, say - and it rejoins the counter like any other row.
+
 For every row you can:
 
 - **Accept** the match, or **pick a different candidate** - the ones you did not pick stay available.
+- **Say they are not the same.** The transaction goes back to being its own row, to keep or delete,
+  and your statement row goes back to having nothing against it - where **Create** is waiting.
+  Nothing is deleted and nothing is decided for you.
 - **Create** the transaction in Actual.
 - **Delete** a duplicate, keeping the one you want.
 - **Correct an amount** in place, so the transaction's id, notes, payee, and any schedule or transfer
   link survive. Nothing you wrote is destroyed to fix a number.
 - **Leave it for later.** Rows with no decision are untouched by Apply.
+
+### When the amounts disagree
+
+**Accepting a pairing takes the statement's amount with it.** The bank is authoritative about what
+was charged, so a match that left your account disagreeing with it would record a reconciliation
+that did not reconcile. Where the figures differ, the answer reads **Use the statement's −22.25** -
+which pairs the rows *and* corrects the transaction in place, keeping its id, notes, payee, category
+and any schedule or transfer link.
+
+If it is simply a different transaction, **Not the same transaction** is the answer instead.
+
+There is one exception. Actual refuses an amount change on a transaction that is **reconciled
+there**, on a **split parent** (its amount must equal its split lines), and on **one leg of a
+transfer** (the other account would disagree). On those rows the correction is not available, so the
+pairing can still be recorded as **Match, leaving a 3.44 difference** - which says what it is leaving
+behind. Review then reports those rows separately, with the total still outstanding, rather than
+counting them as needing no change.
 
 While a row still has several transactions in play, anything that names *one* of them - matching it,
 deleting it, correcting its amount - is refused, and says to pick which transaction the row is first.
@@ -351,10 +427,17 @@ reconciled in Actual are protected from changes that would break them.
 
 ### Transforming notes
 
-A transformation can be applied to many rows at once and previewed before it is staged:
+A transformation can be applied to many rows at once and previewed before it is staged.
+
+Wherever a rule names something your budget already knows about - a payee, a category, a tag already
+in use on these rows - you pick it from a list rather than typing it. Free text is kept only where
+the value genuinely is free text.
+
 
 - **Tags** - add, remove, replace, or move a tag to the front or back of the note.
-- **Text** - append or prepend a fixed string.
+- **Text** - append or prepend a fixed string, or **replace one piece of text with another**. Every
+  occurrence is swapped, matched exactly as typed: `AMZN Mktp` → `Amazon` changes `AMZN Mktp` and
+  leaves `amzn` in your own sentence alone.
 - **Extend the merchant name to the statement's description.** Where the note says
   `ROYAL CATERING SERVICE` and the statement says `ROYAL CATERING SERVICE ABU DHABI UAE`, only the run
   of words that came from the bank is replaced - a leading `#2026-08` tag and a trailing

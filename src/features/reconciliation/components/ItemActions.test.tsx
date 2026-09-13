@@ -116,3 +116,137 @@ describe("choosing between candidates", () => {
     expect(names[0]).toContain("Careem far");
   });
 });
+
+function renderOne(
+  over: Partial<ReconciliationItem>,
+  transaction: ActualTransactionSnapshot,
+  handlers: {
+    onUseCandidate?: (id: string | null) => void;
+    onDisposition?: (d: ReconciliationItem["disposition"]) => void;
+  } = {}
+) {
+  return render(
+    <ItemActions
+      item={{ ...item, actualTransactionIds: [transaction.id], ...over }}
+      statementRow={statementRow()}
+      transactions={[transaction]}
+      onDisposition={handlers.onDisposition ?? (() => {})}
+      onUseCandidate={handlers.onUseCandidate ?? (() => {})}
+      onCorrectAmount={() => {}}
+    />
+  );
+}
+
+/*
+ * A row the matcher paired with exactly one wrong candidate - the commonest
+ * shape of this problem, and the one with no way out. Create is offered only
+ * where nothing is attached, Delete removes a transaction the user never
+ * disputed, and the picker's "None of these" is gated on there being more than
+ * one candidate, so the answer existed and was unreachable.
+ */
+describe("declining a single wrong candidate", () => {
+  const wrong = txn("t1", -1881);
+
+  it("offers to say they are not the same", () => {
+    renderOne({ reasonCode: REASON.amountMismatch }, wrong);
+    expect(
+      screen.getByRole("button", { name: /Not the same transaction/ })
+    ).toBeInTheDocument();
+  });
+
+  it("releases the candidate rather than deciding anything", () => {
+    // `onUseCandidate(null)` returns both sides to undecided and never deletes.
+    // Separating is the removal of a wrong pairing, not a different answer:
+    // the user may want to create the row, or link it to something else.
+    const onUseCandidate = jest.fn();
+    renderOne({ reasonCode: REASON.amountMismatch }, wrong, { onUseCandidate });
+
+    screen.getByRole("button", { name: /Not the same transaction/ }).click();
+    expect(onUseCandidate).toHaveBeenCalledWith(null);
+  });
+
+  it("does not offer it once the row is decided", () => {
+    renderOne({ disposition: "matched", reasonCode: REASON.amountMismatch }, wrong);
+    expect(
+      screen.queryByRole("button", { name: /Not the same transaction/ })
+    ).not.toBeInTheDocument();
+  });
+});
+
+/*
+ * A match that leaves the account disagreeing with the bank is not a match, so
+ * accepting a pairing now takes the statement's amount with it. That makes
+ * "These match" and "Use the statement's ..." one action, and only one of them
+ * should be on screen.
+ */
+describe("a row whose amounts disagree", () => {
+  const differs = txn("t1", -1881);
+  const agrees = txn("t1", -1012);
+
+  it("offers only the correction, since accepting the pair now means taking it", () => {
+    renderOne({ reasonCode: REASON.amountMismatch }, differs);
+
+    expect(screen.getByRole("button", { name: /Use the statement's/ })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /These match/ })).not.toBeInTheDocument();
+    // The answer the user argued should not exist: same transaction, both
+    // figures right, cannot be true.
+    expect(screen.queryByRole("button", { name: /Keep Actual's/ })).not.toBeInTheDocument();
+  });
+
+  it("still says 'These match' where there is no amount question", () => {
+    renderOne({ reasonCode: REASON.sameMerchantDate }, agrees);
+
+    expect(screen.getByRole("button", { name: /These match/ })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Use the statement's/ })).not.toBeInTheDocument();
+  });
+
+  /*
+   * The one honest exception. Reconciled rows, split parents and transfer legs
+   * refuse an amount change for reasons about Actual, not about this pairing -
+   * so the difference is stuck rather than tolerated, and the button says so.
+   */
+  it.each([
+    ["reconciled in Actual", { protectedReconciled: true, splitParent: false, transfer: "no" as const }],
+    ["a split parent", { protectedReconciled: false, splitParent: true, transfer: "no" as const }],
+    ["one leg of a transfer", { protectedReconciled: false, splitParent: false, transfer: "yes" as const }],
+  ])("says what it is leaving behind when the row is %s", (_name, guards) => {
+    renderOne({ reasonCode: REASON.amountMismatch, guards }, differs);
+
+    expect(
+      screen.getByRole("button", { name: /Match, leaving a .* difference/ })
+    ).toBeInTheDocument();
+  });
+});
+
+/*
+ * `keep` and `ignored` run through the same branch in the planner and emit no
+ * operation, so on a two-sided row Keep was a second Ignore - labelled in a way
+ * that reads as a claim about the pairing it does not make.
+ */
+describe("Keep as is", () => {
+  it("is not offered on a row that also has a statement row", () => {
+    renderOne({ reasonCode: REASON.amountMismatch }, txn("t1", -1881));
+    expect(screen.queryByRole("button", { name: /Keep as is/ })).not.toBeInTheDocument();
+  });
+
+  it("is offered where it means something, against delete", () => {
+    render(
+      <ItemActions
+        item={{
+          ...item,
+          statementRowIds: [],
+          actualTransactionIds: ["t1"],
+          reasonCode: REASON.notOnStatement,
+        }}
+        statementRow={undefined}
+        transactions={[txn("t1", -1881)]}
+        onDisposition={() => {}}
+        onUseCandidate={() => {}}
+        onCorrectAmount={() => {}}
+      />
+    );
+
+    expect(screen.getByRole("button", { name: /Keep as is/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Delete from Actual/ })).toBeInTheDocument();
+  });
+});

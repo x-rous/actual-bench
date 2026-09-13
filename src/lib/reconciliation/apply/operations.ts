@@ -123,6 +123,18 @@ export type ApplyPlan = {
   alreadyApplied: number;
   /** Statement rows that are reconciled but need no write. */
   noWriteMatches: number;
+  /**
+   * Pairings accepted while the amounts still disagree, and by how much.
+   *
+   * Held apart from `noWriteMatches` because they are not the same thing at
+   * all. That figure means "nothing to do here"; these are rows where the
+   * account will still disagree with the bank after Apply, because the
+   * correction was refused - the transaction is reconciled in Actual, a split
+   * parent, or one leg of a transfer. Folded into a muted "No change needed"
+   * they made a reconciliation that did not reconcile look clean at the last
+   * screen before writing, which is the one place it must not.
+   */
+  unreconciledDifferences: { itemId: string; difference: number }[];
   /** Rows the user has not decided yet; Apply does not touch them. */
   unresolved: number;
   /** Rows a guardrail refused to stage, with the reason. */

@@ -84,6 +84,7 @@ function renderResult(
     operations: [operation],
     alreadyApplied: 0,
     noWriteMatches: 0,
+    unreconciledDifferences: [],
     unresolved: 0,
     blocked: [],
   };

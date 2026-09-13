@@ -42,7 +42,7 @@ function updateOperation(over: Partial<UpdateOperation> = {}): UpdateOperation {
 }
 
 function planOf(...operations: ApplyPlan["operations"]): ApplyPlan {
-  return { operations, alreadyApplied: 0, noWriteMatches: 0, unresolved: 0, blocked: [] };
+  return { operations, alreadyApplied: 0, noWriteMatches: 0, unresolved: 0, blocked: [], unreconciledDifferences: [] };
 }
 
 describe("checking a plan against what Actual says now", () => {

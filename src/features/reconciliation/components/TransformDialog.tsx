@@ -23,6 +23,7 @@ import type {
 } from "@/lib/reconciliation/transform/rules";
 import type { ReconciliationItem } from "@/lib/reconciliation/types";
 import { statementText } from "@/lib/reconciliation/statement/text";
+import { findNoteTags } from "@/lib/reconciliation/noteTags";
 import type { Option } from "./StagedFields";
 
 /**
@@ -121,11 +122,87 @@ const ACTIONS: { id: ActionKind; label: string }[] = [
   { id: "replaceTag", label: "Replace tag" },
   { id: "addTag", label: "Add tag" },
   { id: "removeTag", label: "Remove tag" },
+  { id: "replaceNoteText", label: "Replace text in notes" },
   { id: "appendNote", label: "Append to notes" },
   { id: "prependNote", label: "Put at the start of notes" },
   { id: "useStatementImportedPayee", label: "Use the statement's full payee" },
   { id: "setPayee", label: "Set payee" },
 ];
+
+/**
+ * The list a condition's value should be chosen from, or null for free text.
+ *
+ * Two things decide it: whether the value names something that exists, and
+ * whether the comparison is exact. `payee equals` has to be a real payee spelled
+ * exactly, so it is picked; `payee contains` is a fragment the user invents, so
+ * it is typed. Tags are always exact - `hasTag` has no other mode - so they are
+ * always picked.
+ */
+function pickerFor(
+  condition: Condition,
+  lists: { payees: Option[]; categories: Option[]; tags: Option[] }
+): Option[] | null {
+  const exact = condition.operator === "equals" || condition.operator === "notEquals";
+  if (condition.field === "payee" && exact) return lists.payees;
+  if (condition.field === "category" && exact) return lists.categories;
+  if (condition.operator === "hasTag" || condition.operator === "doesNotHaveTag") {
+    // Only when the session actually has tags; an empty list would strand the
+    // user with a picker that cannot be answered.
+    return lists.tags.length > 0 ? lists.tags : null;
+  }
+  return null;
+}
+
+/**
+ * A tag that has to be one the rows already carry.
+ *
+ * Falls back to a plain field when the session has no tags at all, rather than
+ * showing a picker with nothing in it — the rule would then be unanswerable and
+ * the user would have no way to see why.
+ */
+function TagField({
+  tags,
+  value,
+  placeholder,
+  ariaLabel,
+  onChange,
+}: {
+  tags: Option[];
+  value: string;
+  placeholder: string;
+  ariaLabel: string;
+  onChange: (value: string) => void;
+}) {
+  const className = "h-7 w-32 rounded-md border border-input bg-background px-2 text-xs";
+
+  if (tags.length === 0) {
+    return (
+      <input
+        className={className}
+        value={value}
+        placeholder={placeholder}
+        aria-label={ariaLabel}
+        onChange={(event) => onChange(event.target.value)}
+      />
+    );
+  }
+
+  return (
+    <select
+      className={className}
+      value={value}
+      aria-label={ariaLabel}
+      onChange={(event) => onChange(event.target.value)}
+    >
+      <option value="">- choose -</option>
+      {tags.map((tag) => (
+        <option key={tag.id} value={tag.name}>
+          {tag.name}
+        </option>
+      ))}
+    </select>
+  );
+}
 
 function emptyAction(kind: ActionKind): TransformAction {
   switch (kind) {
@@ -137,6 +214,8 @@ function emptyAction(kind: ActionKind): TransformAction {
       return { kind, from: "", to: "" };
     case "appendNote":
       return { kind, text: "" };
+    case "replaceNoteText":
+      return { kind, from: "", to: "" };
     case "setPayee":
       return { kind, payeeId: null };
     case "prependNote":
@@ -154,6 +233,11 @@ export type TransformDialogProps = {
   selectedIds: Set<string>;
   contextFor: (item: ReconciliationItem) => TransformContext;
   payees: Option[];
+  /**
+   * Read for the category condition only. Reconciliation never writes a
+   * category; it may still ask about one.
+   */
+  categories: Option[];
   onClose: () => void;
   onApply: (changes: { itemId: string; patch: ReconciliationItem["stagedChanges"] }[]) => void;
 };
@@ -163,9 +247,20 @@ export function TransformDialog({
   selectedIds,
   contextFor,
   payees,
+  categories,
   onClose,
   onApply,
 }: TransformDialogProps) {
+  /**
+   * The tags actually present on the rows this rule can reach.
+   *
+   * Where a value must already exist to be worth choosing, it is chosen: a tag
+   * you are asking about, or removing, has to be one that is there, and typing
+   * `#API` as `#api` silently matches nothing. Where the value is something new
+   * — a tag being added, a replacement, words the bank wrote — it stays free
+   * text, because no list holds it yet.
+   */
+
   const [conditions, setConditions] = useState<Condition[]>([
     { field: "notes", operator: "hasTag", value: "" },
   ]);
@@ -181,6 +276,36 @@ export function TransformDialog({
     () => (scope === "selection" ? items.filter((item) => selectedIds.has(item.id)) : items),
     [items, selectedIds, scope]
   );
+  /*
+   * Read from the rows the rule will touch, not from the session.
+   *
+   * Every consumer of this list wants a tag that already exists *there*: a
+   * condition matching on one, and the `replaceTag` and `removeTag` fields,
+   * which have nothing to act on otherwise. (`addTag` takes free text, since
+   * the whole point is a tag the rows do not have yet.) Scoped to "the N
+   * selected", listing tags found only on unselected rows offers choices that
+   * silently match nothing.
+   */
+  const tagOptions = useMemo(() => {
+    /*
+     * Shown as the rows actually spell them - `#API`, not `api`. Comparison
+     * normalizes case and the leading hash either way, so the stored value is
+     * unaffected; what changes is whether the user recognises their own tag in
+     * the list. Deduplicated case-insensitively, first spelling winning, so a
+     * note carrying both `#API` and `#api` offers one entry rather than two
+     * that mean the same thing.
+     */
+    const byKey = new Map<string, string>();
+    for (const item of scopedItems) {
+      for (const tag of findNoteTags(contextFor(item).pending.notes)) {
+        const key = tag.name.toLowerCase();
+        if (!byKey.has(key)) byKey.set(key, tag.name);
+      }
+    }
+    return [...byKey.values()]
+      .sort((a, b) => a.localeCompare(b))
+      .map((tag) => ({ id: tag, name: `#${tag}` }));
+  }, [scopedItems, contextFor]);
 
   const rule: TransformRule = useMemo(
     () => ({ id: "draft", conditions, actions }),
@@ -223,6 +348,18 @@ export function TransformDialog({
       if (action.kind === "appendNote" || action.kind === "prependNote") {
         return action.text.trim();
       }
+      /*
+       * Not trimmed, unlike the rules above it.
+       *
+       * `changesFor` treats an empty needle as an incomplete rule and skips it,
+       * but whitespace is a legitimate thing to replace - collapsing a double
+       * space, or stripping a trailing one - so `"  "` is a complete rule while
+       * `""` is not. Trimming here would reject the first along with the second.
+       *
+       * `to` is deliberately unchecked: replacing text with nothing is how you
+       * delete it, and that is the point of the action as often as not.
+       */
+      if (action.kind === "replaceNoteText") return action.from !== "";
       return true;
     });
 
@@ -327,9 +464,16 @@ export function TransformDialog({
               ))}
             </select>
 
-            {/* A decision is one of a fixed set, so it is chosen rather than
-                typed - spelling "correct-amount" by hand is not a thing to ask
-                of anyone. */}
+            {/*
+              Chosen rather than typed wherever the value has to match something
+              that already exists.
+
+              Spelling "correct-amount" by hand is not a thing to ask of anyone,
+              and the same is true of a payee, a category or a tag: a condition
+              compares them literally, so one wrong character matches nothing and
+              says nothing about why. Free text stays where the value is genuinely
+              open - a substring of a note, words the bank wrote, a new tag.
+            */}
             {condition.field === "matchStatus" ? (
               <select
                 className="h-7 w-40 rounded-md border border-input bg-background px-2 text-xs"
@@ -349,12 +493,33 @@ export function TransformDialog({
                   </option>
                 ))}
               </select>
+            ) : pickerFor(condition, { payees, categories, tags: tagOptions }) ? (
+              <select
+                className="h-7 w-40 rounded-md border border-input bg-background px-2 text-xs"
+                value={condition.value}
+                aria-label="Value"
+                onChange={(event) =>
+                  setConditions((previous) =>
+                    previous.map((entry, i) =>
+                      i === index ? { ...entry, value: event.target.value } : entry
+                    )
+                  )
+                }
+              >
+                <option value="">- choose -</option>
+                {pickerFor(condition, { payees, categories, tags: tagOptions })!.map((option) => (
+                  <option key={option.id} value={option.name}>
+                    {option.name}
+                  </option>
+                ))}
+              </select>
             ) : (
               <input
                 className="h-7 w-40 rounded-md border border-input bg-background px-2 text-xs"
                 value={condition.value}
+                type={condition.field === "amount" ? "number" : condition.field === "date" ? "date" : "text"}
+                step={condition.field === "amount" ? "0.01" : undefined}
                 aria-label="Value"
-                placeholder={condition.operator.includes("Tag") ? "#API" : ""}
                 onChange={(event) =>
                   setConditions((previous) =>
                     previous.map((entry, i) =>
@@ -432,16 +597,18 @@ export function TransformDialog({
 
             {action.kind === "replaceTag" && (
               <>
-                <input
-                  className="h-7 w-32 rounded-md border border-input bg-background px-2 text-xs"
+                {/* The tag being replaced has to be one that is there; the tag
+                    it becomes is new, so that half stays typed. */}
+                <TagField
+                  tags={tagOptions}
                   value={action.from}
                   placeholder="#API"
-                  aria-label="Tag to replace"
-                  onChange={(event) =>
+                  ariaLabel="Tag to replace"
+                  onChange={(next) =>
                     setActions((previous) =>
                       previous.map((entry, i) =>
                         i === index && entry.kind === "replaceTag"
-                          ? { ...entry, from: event.target.value }
+                          ? { ...entry, from: next }
                           : entry
                       )
                     )
@@ -486,7 +653,25 @@ export function TransformDialog({
               </select>
             )}
 
-            {(action.kind === "addTag" || action.kind === "removeTag") && (
+            {/* Removing names a tag that is there; adding names one that is
+                not yet. Same field, opposite requirements. */}
+            {action.kind === "removeTag" && (
+              <TagField
+                tags={tagOptions}
+                value={action.tag}
+                placeholder="#API"
+                ariaLabel="Tag to remove"
+                onChange={(next) =>
+                  setActions((previous) =>
+                    previous.map((entry, i) =>
+                      i === index && entry.kind === "removeTag" ? { ...entry, tag: next } : entry
+                    )
+                  )
+                }
+              />
+            )}
+
+            {action.kind === "addTag" && (
               <input
                 className="h-7 w-32 rounded-md border border-input bg-background px-2 text-xs"
                 value={action.tag}
@@ -495,13 +680,54 @@ export function TransformDialog({
                 onChange={(event) =>
                   setActions((previous) =>
                     previous.map((entry, i) =>
-                      i === index && (entry.kind === "addTag" || entry.kind === "removeTag")
+                      i === index && entry.kind === "addTag"
                         ? { ...entry, tag: event.target.value }
                         : entry
                     )
                   )
                 }
               />
+            )}
+
+            {action.kind === "replaceNoteText" && (
+              <>
+                <input
+                  className="h-7 w-40 rounded-md border border-input bg-background px-2 text-xs"
+                  value={action.from}
+                  placeholder="AMZN Mktp"
+                  aria-label="Text to replace"
+                  onChange={(event) =>
+                    setActions((previous) =>
+                      previous.map((entry, i) =>
+                        i === index && entry.kind === "replaceNoteText"
+                          ? { ...entry, from: event.target.value }
+                          : entry
+                      )
+                    )
+                  }
+                />
+                <span className="text-xs text-muted-foreground">with</span>
+                <input
+                  className="h-7 w-40 rounded-md border border-input bg-background px-2 text-xs"
+                  value={action.to}
+                  placeholder="Amazon"
+                  aria-label="Replacement text"
+                  onChange={(event) =>
+                    setActions((previous) =>
+                      previous.map((entry, i) =>
+                        i === index && entry.kind === "replaceNoteText"
+                          ? { ...entry, to: event.target.value }
+                          : entry
+                      )
+                    )
+                  }
+                />
+                {/* Both kept free text on purpose: this is the one action about
+                    words the bank wrote, which are not a list anyone holds. */}
+                <span className="text-[11px] text-muted-foreground">
+                  Every occurrence, matched exactly.
+                </span>
+              </>
             )}
 
             {(action.kind === "appendNote" || action.kind === "prependNote") && (

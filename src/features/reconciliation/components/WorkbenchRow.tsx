@@ -4,6 +4,8 @@ import {
   ArrowRight,
   Ban,
   Check,
+  Circle,
+  CircleCheck,
   Link2,
   Lock,
   Pencil,
@@ -86,7 +88,22 @@ function middleState(
   candidateCount: number,
   amountsAgree: boolean
 ): MiddleState {
-  const decided = decidedState(item);
+  /*
+   * A row outside the statement's period is kept from the start, and saying
+   * "Keep" about it would replace the one label explaining why it is on screen
+   * at all with a decision nobody took. What it *is* outranks what is going to
+   * happen to it here, because nothing is going to happen to it.
+   *
+   * This holds whether the keep was defaulted or pressed, because nothing on
+   * the item distinguishes them - and nothing needs to. Keep is already where
+   * the row started, so pressing it changes neither the outcome nor what is
+   * worth saying about the row. Any *other* decision - delete, ignore - does
+   * reach `decidedState` and reads normally.
+   */
+  const keptAsOutsidePeriod =
+    item.disposition === "keep" && item.reasonCode === REASON.outsideStatementPeriod;
+
+  const decided = keptAsOutsidePeriod ? null : decidedState(item);
   if (decided) return decided;
 
   /*
@@ -194,6 +211,50 @@ function middleState(
     default:
       return { label: "Unresolved", detail: null, tone: "text-muted-foreground", icon: null };
   }
+}
+
+/**
+ * Whether this row is still the user's to deal with — the only question the
+ * status column answers.
+ *
+ * Deliberately binary, and deliberately not a second Result column. Result says
+ * *what will happen* and carries fourteen labels across three tones, which has
+ * to be read rather than scanned; worse, an undecided "Not in Actual" and a
+ * decided "Will create" render with the same tone and the same icon, so the one
+ * distinction that governs the workflow is the one Result cannot show at a
+ * glance.
+ *
+ * The split is exactly the meter's `pending` versus everything else
+ * (`summarizeCoverage`), read from the same field, so the toolbar's "34 of 200"
+ * and this column can never disagree about a row. An automatic match and a
+ * decision the user took both read as done: how a row got settled is Result's
+ * business, and the answer to "is this mine?" is no either way.
+ *
+ * The two glyphs differ in shape, not only colour, and each carries its own
+ * accessible name — the column is otherwise unlabelled.
+ */
+function doneState(item: ReconciliationItem) {
+  if (item.disposition === "unresolved") {
+    return (
+      <>
+        <Circle
+          className="mx-auto h-3.5 w-3.5 text-amber-600 dark:text-amber-400"
+          aria-hidden="true"
+        />
+        <span className="sr-only">Needs a decision</span>
+      </>
+    );
+  }
+
+  return (
+    <>
+      <CircleCheck
+        className="mx-auto h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400"
+        aria-hidden="true"
+      />
+      <span className="sr-only">Done</span>
+    </>
+  );
 }
 
 const EMPTY = (
@@ -306,6 +367,7 @@ export function WorkbenchRow({
           }
         />
       </td>
+      <td className="px-2 py-1.5 text-center">{doneState(item)}</td>
 
       {/* Bank statement */}
       <td className="whitespace-nowrap px-2 py-1.5 tabular-nums text-muted-foreground">

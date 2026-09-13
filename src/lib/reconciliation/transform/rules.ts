@@ -84,6 +84,19 @@ export type TransformAction =
   | { kind: "appendNote"; text: string }
   | { kind: "prependNote"; text: string }
   /**
+   * Swap one piece of text in the note for another.
+   *
+   * Every occurrence, and matched literally rather than by pattern or by
+   * loosened case. A transformation runs over rows the user cannot all see, so
+   * it has to do exactly what it says: `AMZN` replaces `AMZN`, and does not
+   * quietly catch `amzn` in someone's own sentence.
+   *
+   * Distinct from `replaceTag`, which knows what a tag is - it finds `#API`
+   * wherever it sits and can move it. This is a plain substring, for the parts
+   * of a note that are not tags.
+   */
+  | { kind: "replaceNoteText"; from: string; to: string }
+  /**
    * Bring the note's merchant text up to the statement's full merchant text,
    * leaving tags and the user's own words in place.
    */
@@ -278,6 +291,14 @@ export function changesFor(rule: TransformRule, context: TransformContext): Fiel
       case "prependNote":
         notes = prependNoteText(notes, action.text);
         notesTouched = true;
+        break;
+      case "replaceNoteText":
+        // An empty needle would match everywhere and produce nonsense, so it is
+        // treated as the incomplete rule it is rather than applied.
+        if (action.from) {
+          notes = (notes ?? "").split(action.from).join(action.to);
+          notesTouched = true;
+        }
         break;
       case "useStatementImportedPayee": {
         const merged = mergeDescriptionIntoNotes(

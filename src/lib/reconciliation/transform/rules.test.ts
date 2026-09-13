@@ -469,3 +469,56 @@ describe("preview (feature spec §31)", () => {
     expect(result.changed).toHaveLength(0);
   });
 });
+
+/*
+ * `replaceTag` knows what a tag is - it finds `#API` wherever it sits and can
+ * move it. This is the plain-substring counterpart, for the parts of a note the
+ * bank wrote, which are not tags and are not a list anyone holds.
+ */
+describe("replacing a piece of text in the notes", () => {
+  function run(notes: string | null, from: string, to: string) {
+    return changesFor(
+      { id: "r1", conditions: [], actions: [{ kind: "replaceNoteText", from, to }] },
+      context({ transaction: txn({ notes }) })
+    );
+  }
+
+  it("swaps it for the replacement", () => {
+    expect(run("#API AMZN Mktp AE", "AMZN Mktp", "Amazon")).toEqual([
+      { field: "notes", value: "#API Amazon AE" },
+    ]);
+  });
+
+  it("swaps every occurrence, not just the first", () => {
+    expect(run("PK MART and PK MART again", "PK MART", "PK Mart")).toEqual([
+      { field: "notes", value: "PK Mart and PK Mart again" },
+    ]);
+  });
+
+  it("matches exactly, so a different case is left alone", () => {
+    // A transformation runs over rows the user cannot all see, so it has to do
+    // exactly what it says rather than quietly catch someone's own sentence.
+    expect(run("paid amzn today", "AMZN", "Amazon")).toEqual([]);
+  });
+
+  it("removes the text when the replacement is empty", () => {
+    expect(run("ADNOC AL CORNICHE 933 ABUDHABI", " ABUDHABI", "")).toEqual([
+      { field: "notes", value: "ADNOC AL CORNICHE 933" },
+    ]);
+  });
+
+  it("does nothing when the text is not there", () => {
+    // No change means no staged edit, so a rule run over rows that do not carry
+    // the text does not report work it never did.
+    expect(run("#API Jeeny", "ADNOC", "X")).toEqual([]);
+  });
+
+  it("does nothing when asked to replace nothing", () => {
+    // An empty needle matches everywhere; treated as the incomplete rule it is.
+    expect(run("#API Jeeny", "", "X")).toEqual([]);
+  });
+
+  it("leaves a row with no notes alone", () => {
+    expect(run(null, "AMZN", "Amazon")).toEqual([]);
+  });
+});

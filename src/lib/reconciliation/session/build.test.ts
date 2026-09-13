@@ -8,6 +8,7 @@ import type {
 import {
   REASON,
   buildReconciliationItems,
+  applyDisposition,
   correctAmountFromStatement,
   linkManually,
   resolveToTransaction,
@@ -232,6 +233,56 @@ describe("transactions loaded outside the statement period", () => {
     const coverage = summarizeCoverage(items, { statementRows: 1, loadedTransactions: 2 });
     expect(coverage.statement.matched).toBe(1);
     expect(coverage.outsideStatementPeriod).toBe(1);
+  });
+
+  it("keeps a padded transaction rather than asking about it", () => {
+    // The statement makes no claim about these dates, so there is no question
+    // for the user to answer. `keep` writes nothing, so this changes what they
+    // are asked, not what happens to the transaction.
+    const items = build([], [txn({ id: "t1", date: "2026-08-10" })], true, period);
+    expect(items[0].disposition).toBe("keep");
+  });
+
+  it("still asks about an in-period transaction the statement did not mention", () => {
+    // The bank says these were all the transactions; here is one it does not
+    // list. That is a real question and must keep being asked.
+    const items = build([], [txn({ id: "t1", date: "2026-07-20" })], true, period);
+    expect(items[0].disposition).toBe("unresolved");
+  });
+
+  it("leaves a padded transaction out of the meter's totals, not merely marked done", () => {
+    const items = build(
+      [row({ id: "s1", postedDate: "2026-07-20" })],
+      [
+        txn({ id: "t1", date: "2026-07-20" }),
+        // In period, unmentioned - a real question.
+        txn({ id: "t2", date: "2026-07-21", amount: -111 }),
+        // Outside the period - not one.
+        txn({ id: "t3", date: "2026-08-10", amount: -999 }),
+      ],
+      true,
+      period
+    );
+
+    const coverage = summarizeCoverage(items, { statementRows: 1, loadedTransactions: 3 });
+
+    // The meter reads `decided of decided + pending`, so counting the padded
+    // row as decided would inflate both halves and claim a judgement nobody
+    // made. It belongs outside the totals entirely.
+    expect(coverage.decisions.pending).toBe(1);
+    expect(coverage.decisions.decided).toBe(0);
+    expect(coverage.decisions.automatic).toBe(2);
+  });
+
+  it("counts a padded transaction the user actually acted on", () => {
+    // Deleting one is a real decision about a real row, so it returns to the
+    // meter like any other.
+    const items = build([], [txn({ id: "t1", date: "2026-08-10" })], true, period);
+    const decided = items.map((item) => ({ ...item, disposition: "delete" as const }));
+
+    const coverage = summarizeCoverage(decided, { statementRows: 0, loadedTransactions: 1 });
+    expect(coverage.decisions.decided).toBe(1);
+    expect(coverage.decisions.automatic).toBe(0);
   });
 
   it("keeps the old behaviour when no period is supplied", () => {
@@ -817,5 +868,113 @@ describe("linking two rows by hand", () => {
     // Defence in depth: the toolbar only offers the action for the one shape,
     // but the engine must not rely on the UI having behaved.
     expect(link([statementOnly, second as ReconciliationItem])).toBeNull();
+  });
+});
+
+/*
+ * A match that leaves the account disagreeing with the bank is not a match: it
+ * records a reconciliation that did not reconcile. Picking a candidate and
+ * linking by hand both carried the statement's amount across already - the
+ * accept button and `Enter` did not, and those are the two routes people
+ * actually use.
+ */
+describe("accepting a pairing", () => {
+  const statementRow = row({ id: "s1", amount: -2225 });
+
+  function decide(
+    disposition: ReconciliationItem["disposition"],
+    over: Partial<ReconciliationItem> = {},
+    transaction = txn({ id: "t1", amount: -1881 })
+  ) {
+    return applyDisposition({
+      item: {
+        id: "i1",
+        statementRowIds: ["s1"],
+        actualTransactionIds: ["t1"],
+        disposition: "unresolved",
+        guards: { protectedReconciled: false, splitParent: false, transfer: "no" },
+        ...over,
+      },
+      disposition,
+      statementRow,
+      transaction,
+    });
+  }
+
+  it("takes the statement's amount when the figures disagree", () => {
+    const item = decide("matched");
+
+    expect(item.disposition).toBe("correct-amount");
+    expect(item.stagedChanges?.amount).toEqual({
+      original: -1881,
+      staged: -2225,
+      source: "manual",
+    });
+  });
+
+  /*
+   * The gap is not confined to rows flagged "amount differs": a candidate can be
+   * paired on the original-currency amount, where the posted figures differ by
+   * construction - the statement posts AED while Actual holds the SAR figure.
+   */
+  it("does the same on a row that matched on the original currency", () => {
+    const item = decide("matched", { reasonCode: REASON.belowConfidenceFloor });
+    expect(item.disposition).toBe("correct-amount");
+  });
+
+  /*
+   * `summarizeCoverage` excludes `automatic` from the meter's totals - it means
+   * "never needed deciding". A review row carries no `match`, so accepting one
+   * moved it out of `pending` and into `automatic`: the denominator shrank
+   * while the numerator stood still, and the user's own decision was counted as
+   * one that was never required.
+   */
+  it("counts as the user's decision, not as an automatic match", () => {
+    const item = decide("matched");
+    expect(item.match?.evidenceSource).toBe("manual");
+
+    const coverage = summarizeCoverage([item], { statementRows: 1, loadedTransactions: 1 });
+    expect(coverage.decisions.decided).toBe(1);
+    expect(coverage.decisions.automatic).toBe(0);
+  });
+
+  it("leaves the matcher's own evidence alone where it has some", () => {
+    const item = decide("matched", {
+      match: { type: "exact", evidenceSource: "bench", label: "exact", reasons: [] },
+    });
+    expect(item.match?.evidenceSource).toBe("bench");
+  });
+
+  it("stays a plain match when the amounts already agree", () => {
+    const item = decide("matched", {}, txn({ id: "t1", amount: -2225 }));
+    expect(item.disposition).toBe("matched");
+    expect(item.stagedChanges).toBeUndefined();
+  });
+
+  it("leaves the difference where the correction is refused", () => {
+    // Reconciled in Actual: the correction is refused, not declined, so the
+    // pairing can still be recorded - this is the one honest case for a match
+    // whose amounts disagree.
+    const item = decide("matched", {
+      guards: { protectedReconciled: true, splitParent: false, transfer: "no" },
+    });
+
+    expect(item.disposition).toBe("matched");
+    expect(item.stagedChanges?.amount).toBeUndefined();
+  });
+
+  it("does not touch the amount for any other decision", () => {
+    for (const disposition of ["create", "delete", "keep", "ignored"] as const) {
+      expect(decide(disposition).stagedChanges?.amount).toBeUndefined();
+    }
+  });
+
+  it("drops staged edits when a decision is withdrawn", () => {
+    const item = decide("unresolved", {
+      disposition: "correct-amount",
+      stagedChanges: { amount: { original: -1881, staged: -2225, source: "manual" } },
+    });
+
+    expect(item.stagedChanges).toBeUndefined();
   });
 });

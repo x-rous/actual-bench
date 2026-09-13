@@ -21,6 +21,7 @@ import { transferStatusOf } from "../transportAdapter";
 import type {
   ActualTransactionSnapshot,
   MatchGraph,
+  ReconciliationDisposition,
   ReconciliationItem,
   StatementRow,
 } from "../types";
@@ -192,8 +193,30 @@ export function buildReconciliationItems(input: BuildItemsInput): Reconciliation
       id: makeId(),
       statementRowIds: [],
       actualTransactionIds: [transactionId],
-      // Never `delete`, and not silently `keep` — the user explains it.
-      disposition: "unresolved",
+      /*
+       * Never `delete`. Undecided when the statement makes a claim about the
+       * row, kept when it makes none.
+       *
+       * A transaction inside the period that the statement did not mention is
+       * a real question - the bank says these are all the transactions there
+       * were, and here is one it does not list. That wants an answer.
+       *
+       * A transaction dated *outside* the period is not. It was loaded as
+       * headroom so matching works at the edges of the statement, and the
+       * statement says nothing about it either way. Leaving it `unresolved`
+       * put it in the decision meter, the Next-undecided queue and the review
+       * gate, so a session could never reach the end without pressing Keep on
+       * rows the statement never covered - which is how a progress figure
+       * stops being trusted.
+       *
+       * `keep` is safe to default to because it writes nothing: the planner
+       * counts it as a no-write outcome and emits no operation for it, so the
+       * transaction is left exactly as Actual holds it. It also stays fully
+       * available - visible, selectable, deletable, and now carrying an Undo
+       * that returns it to undecided - so this changes what the user is
+       * *asked*, never what they *can do*.
+       */
+      disposition: outsidePeriod ? "keep" : "unresolved",
       reasonCode: outsidePeriod
         ? REASON.outsideStatementPeriod
         : duplicateTransactionIds.has(transactionId)
@@ -411,6 +434,71 @@ export function correctAmountFromStatement(input: {
 }
 
 /**
+ * Record a decision on a row, with everything that follows from it.
+ *
+ * Thin, and deliberately here rather than in the view. Two rules travel with a
+ * disposition and both were living in a click handler:
+ *
+ * - withdrawing a decision drops what was staged for it, because edits attached
+ *   to a decision the user took back would apply by surprise;
+ * - **accepting a pairing takes the statement's amount with it.** A match that
+ *   leaves the account disagreeing with the bank is not a match - it records a
+ *   reconciliation that did not reconcile. The rest of the feature already knew
+ *   this: picking a candidate ran `correctAmountFromStatement`, and
+ *   `linkManually` carries the amount across for the reason written there. Only
+ *   the two most reachable routes to `matched` - the accept button and `Enter` -
+ *   went around it, and they are the ones most likely to be used.
+ *
+ * Nor was that confined to rows flagged "amount differs": `scoreCandidate` can
+ * pair on the **original-currency** amount, where the posted figures differ by
+ * construction, so a contested or low-confidence row carries the same gap.
+ *
+ * `correctAmountFromStatement` decides what actually happens - a no-op when the
+ * amounts agree, never overwriting a hand-edited amount, and leaving a guarded
+ * row `matched` with the difference intact, because there the correction is
+ * refused rather than declined.
+ */
+export function applyDisposition(input: {
+  item: ReconciliationItem;
+  disposition: ReconciliationDisposition;
+  statementRow: StatementRow | undefined;
+  transaction: ActualTransactionSnapshot | undefined;
+}): ReconciliationItem {
+  const { item, disposition, statementRow, transaction } = input;
+
+  const next: ReconciliationItem = {
+    ...item,
+    disposition,
+    stagedChanges: disposition === "unresolved" ? undefined : item.stagedChanges,
+  };
+
+  if (disposition !== "matched") return next;
+
+  /*
+   * Marked as the user's decision, because it is one.
+   *
+   * `summarizeCoverage` sorts a matched row into `automatic` unless its match
+   * says `evidenceSource: "manual"`, and `automatic` is excluded from the
+   * meter's totals - it means "never needed deciding, the matcher settled it".
+   * A review row carries no `match` at all, so accepting one moved it from
+   * `pending` into `automatic`: the denominator shrank while the numerator
+   * stood still, and a decision the user actually took was counted as one that
+   * was never required.
+   *
+   * `resolveToTransaction` has always stamped this when a candidate is picked.
+   * Only the accept button and `Enter` reached `matched` without it.
+   */
+  const decided: ReconciliationItem = next.match
+    ? next
+    : {
+        ...next,
+        match: { type: "manual", evidenceSource: "manual", label: "exact", reasons: [] },
+      };
+
+  return correctAmountFromStatement({ item: decided, statementRow, transaction });
+}
+
+/**
  * Link a statement row to a transaction the matcher never offered.
  *
  * The escape hatch, and the reason the automatic tiers can stay strict. Matching
@@ -535,7 +623,14 @@ export type DecisionProgress = {
   decided: number;
   /** Rows still waiting on a decision. */
   pending: number;
-  /** Rows that never needed a decision, because the matcher settled them. */
+  /**
+   * Rows that never needed a decision, and so are kept out of the meter's
+   * totals rather than counted as done.
+   *
+   * Two ways in: the matcher settled it, or the statement's period does not
+   * cover it. Different reasons, same consequence for the person working
+   * through the list - there was never a question here.
+   */
   automatic: number;
 };
 
@@ -619,6 +714,24 @@ export function summarizeCoverage(
     // deciding. Counting it as done would flatter the progress number and hide
     // how much work is actually left.
     if (item.disposition === "matched" && item.match?.evidenceSource !== "manual") {
+      decisions.automatic += 1;
+    } else if (
+      /*
+       * Out of the meter entirely, not merely counted as done.
+       *
+       * These are kept from the start because the statement makes no claim
+       * about them, and `decided` would have claimed a judgement nobody made -
+       * inflating the numerator *and* the denominator, so twelve padded rows on
+       * a 188-row statement read as "112 of 200" where the truth is "100 of
+       * 188". That is the same flattery the branch above exists to avoid, and
+       * it is worse here because it moves the percentage as well as the totals.
+       *
+       * Only while the default holds. Delete or ignore one and it becomes a
+       * real decision on a real row, and belongs in the meter like any other.
+       */
+      item.reasonCode === REASON.outsideStatementPeriod &&
+      item.disposition === "keep"
+    ) {
       decisions.automatic += 1;
     } else if (item.disposition === "unresolved") {
       decisions.pending += 1;

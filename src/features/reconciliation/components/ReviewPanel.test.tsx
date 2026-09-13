@@ -101,6 +101,7 @@ describe("reconciliation review field summary", () => {
       ],
       alreadyApplied: 0,
       noWriteMatches: 0,
+      unreconciledDifferences: [],
       unresolved: 0,
       blocked: [],
     };
@@ -156,6 +157,7 @@ describe("reconciliation review field summary", () => {
           ] as ApplyPlan["operations"],
           alreadyApplied: 0,
           noWriteMatches: 0,
+          unreconciledDifferences: [],
           unresolved: 0,
           blocked: [],
         }}
@@ -187,6 +189,7 @@ describe("reconciliation review field summary", () => {
           operations: [],
           alreadyApplied: 1,
           noWriteMatches: 0,
+          unreconciledDifferences: [],
           unresolved: 0,
           blocked: [],
         }}

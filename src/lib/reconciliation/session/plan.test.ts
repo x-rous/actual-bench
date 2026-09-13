@@ -1110,3 +1110,72 @@ describe("a decision on a row that is still a question", () => {
     expect(result.noWriteMatches).toBe(2);
   });
 });
+
+/*
+ * A pairing accepted while the figures still disagree leaves the account out of
+ * step with the bank by the difference - and it used to disappear into the
+ * muted "No change needed" count, so the last screen before writing showed a
+ * reconciliation that did not reconcile as finished.
+ *
+ * Only reachable where the correction is refused: accepting a match otherwise
+ * carries the statement's amount across (`applyDisposition`).
+ */
+describe("pairings accepted with the amounts still apart", () => {
+  const statementRow = row({ id: "s1", amount: -2225 });
+
+  it("reports the row and how far apart it is", () => {
+    const result = plan(
+      [
+        item({
+          id: "i1",
+          statementRowIds: ["s1"],
+          actualTransactionIds: ["t1"],
+          disposition: "matched",
+          // The case that gets here: the correction was refused, not declined.
+          guards: { protectedReconciled: true, splitParent: false, transfer: "no" },
+        }),
+      ],
+      [statementRow],
+      [txn({ id: "t1", amount: -1881, reconciled: true })]
+    );
+
+    expect(result.unreconciledDifferences).toEqual([{ itemId: "i1", difference: -344 }]);
+  });
+
+  it("says nothing about a match whose amounts agree", () => {
+    const result = plan(
+      [
+        item({
+          id: "i1",
+          statementRowIds: ["s1"],
+          actualTransactionIds: ["t1"],
+          disposition: "matched",
+        }),
+      ],
+      [statementRow],
+      [txn({ id: "t1", amount: -2225 })]
+    );
+
+    expect(result.unreconciledDifferences).toEqual([]);
+  });
+
+  it("counts a staged correction as closing the gap", () => {
+    // The amount has not been written yet, but Apply will write it, so the
+    // account will agree afterwards. Reporting it would cry wolf.
+    const result = plan(
+      [
+        item({
+          id: "i1",
+          statementRowIds: ["s1"],
+          actualTransactionIds: ["t1"],
+          disposition: "correct-amount",
+          stagedChanges: { amount: { original: -1881, staged: -2225, source: "manual" } },
+        }),
+      ],
+      [statementRow],
+      [txn({ id: "t1", amount: -1881 })]
+    );
+
+    expect(result.unreconciledDifferences).toEqual([]);
+  });
+});

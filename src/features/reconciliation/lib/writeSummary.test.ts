@@ -38,6 +38,7 @@ function plan(operations: UpdateOperation[]): ApplyPlan {
     operations,
     alreadyApplied: 0,
     noWriteMatches: 0,
+    unreconciledDifferences: [],
     unresolved: 0,
     blocked: [],
   };

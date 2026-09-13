@@ -181,9 +181,18 @@ export function DecisionProgressMeter({ coverage }: { coverage: ReconciliationCo
       // nothing about what is being counted.
       aria-valuetext={label}
       aria-label="Rows decided"
+      /*
+       * "needed no decision" rather than "matched automatically": the bucket
+       * now also holds rows dated outside the statement's period, which were
+       * never matched at all. What the two have in common is the only thing
+       * this tooltip is for - explaining why the total is smaller than the
+       * number of rows on screen. The automatic *matches* are already named by
+       * the coverage bar's Matched segment directly above, so the word is not
+       * lost by dropping it here.
+       */
       title={
         decisions.automatic > 0
-          ? `${decisions.automatic} more matched automatically and needed no decision`
+          ? `${decisions.automatic} more needed no decision`
           : undefined
       }
     >
