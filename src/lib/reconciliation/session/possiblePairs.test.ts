@@ -2,7 +2,12 @@ import { DEFAULT_MATCH_CONFIG } from "../match/config";
 import { buildTextCorpus } from "../match/text";
 import { match } from "../match/matcher";
 import { REASON } from "./build";
-import { findPossiblePairs, wouldWrite } from "./possiblePairs";
+import {
+  findPossiblePairs,
+  maximumMatching,
+  wouldWrite,
+  type PossiblePair,
+} from "./possiblePairs";
 import type {
   ActualTransactionSnapshot,
   ReconciliationItem,
@@ -313,5 +318,117 @@ describe("matching is not loosened by any of this", () => {
 
     // And the looser search, which only ever offers, sees it.
     expect(find([statementItem(r), actualItem(t)], [r], [t])).toHaveLength(1);
+  });
+});
+
+/*
+ * The optimality contract, pinned directly.
+ *
+ * Two properties, and the second is the one that was wrong twice: the set of
+ * pairs must be as large as possible, *and* the best set of that size. A
+ * depth-first augment gets the first right and the second wrong; adding
+ * two-at-a-time swaps on top got some of the second and could never rotate
+ * three.
+ */
+function pair(s: string, a: string, similarity: number): PossiblePair {
+  return { statementItemId: s, actualItemId: a, similarity, amountDifference: 0, dayGap: 0 };
+}
+
+/** Every matching of the given edges, by exhaustive search. */
+function allMatchings(edges: PossiblePair[]): PossiblePair[][] {
+  const out: PossiblePair[][] = [];
+  const walk = (index: number, taken: PossiblePair[], rows: Set<string>, txns: Set<string>) => {
+    if (index === edges.length) {
+      out.push([...taken]);
+      return;
+    }
+    walk(index + 1, taken, rows, txns);
+    const edge = edges[index];
+    if (rows.has(edge.statementItemId) || txns.has(edge.actualItemId)) return;
+    rows.add(edge.statementItemId);
+    txns.add(edge.actualItemId);
+    walk(index + 1, [...taken, edge], rows, txns);
+    rows.delete(edge.statementItemId);
+    txns.delete(edge.actualItemId);
+  };
+  walk(0, [], new Set(), new Set());
+  return out;
+}
+
+/** The best achievable (count, total) - count first, then total. */
+function optimum(edges: PossiblePair[]): { count: number; total: number } {
+  let best = { count: 0, total: 0 };
+  for (const matching of allMatchings(edges)) {
+    const count = matching.length;
+    const total = matching.reduce((sum, edge) => sum + edge.similarity, 0);
+    if (count > best.count || (count === best.count && total > best.total)) {
+      best = { count, total };
+    }
+  }
+  return best;
+}
+
+describe("the matching is the best set of the largest size", () => {
+  it("rotates three where no exchange of two would do", () => {
+    /*
+     * From the PR review. Every pair of the chosen edges is stuck - swapping any
+     * two is either inadmissible or worse - and only rotating all three reaches
+     * the better total. Swapping in twos returns 2.41 here; the optimum is 2.60.
+     */
+    const edges = [
+      pair("0", "1", 0.63),
+      pair("0", "2", 0.84),
+      pair("1", "0", 0.99),
+      pair("1", "2", 0.96),
+      pair("2", "0", 0.82),
+      pair("2", "1", 0.77),
+    ];
+
+    const chosen = maximumMatching(edges);
+    const total = chosen.reduce((sum, edge) => sum + edge.similarity, 0);
+
+    expect(chosen).toHaveLength(3);
+    expect(total).toBeCloseTo(2.6, 5);
+
+    // The identities, since the total alone could be reached another way.
+    const paired = new Map(chosen.map((edge) => [edge.statementItemId, edge.actualItemId]));
+    expect(paired.get("0")).toBe("2");
+    expect(paired.get("1")).toBe("0");
+    expect(paired.get("2")).toBe("1");
+  });
+
+  it("matches exhaustive search over many random graphs", () => {
+    /*
+     * The property rather than a case. A hand-picked counterexample only proves
+     * the shape someone thought of - this is how the three-way rotation was
+     * found in the first place, so it belongs in the suite rather than in
+     * whoever reviews it next.
+     *
+     * Deterministic seed: a test that fails once a month tells nobody anything.
+     */
+    let seed = 20260913;
+    const random = () => {
+      seed = (seed * 1103515245 + 12345) % 2147483648;
+      return seed / 2147483648;
+    };
+
+    for (let trial = 0; trial < 300; trial++) {
+      const size = 2 + Math.floor(random() * 3);
+      const edges: PossiblePair[] = [];
+      for (let s = 0; s < size; s++) {
+        for (let a = 0; a < size; a++) {
+          if (random() < 0.3) continue;
+          edges.push(pair(`s${s}`, `a${a}`, Math.round(random() * 50 + 50) / 100));
+        }
+      }
+      if (edges.length === 0) continue;
+
+      const chosen = maximumMatching(edges);
+      const total = chosen.reduce((sum, edge) => sum + edge.similarity, 0);
+      const best = optimum(edges);
+
+      expect(chosen.length).toBe(best.count);
+      expect(total).toBeCloseTo(best.total, 9);
+    }
   });
 });

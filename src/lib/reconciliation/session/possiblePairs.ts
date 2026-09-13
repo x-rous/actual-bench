@@ -152,28 +152,44 @@ export function findPossiblePairs(input: PossiblePairsInput): PossiblePair[] {
 }
 
 /**
- * One pairing per row, and **as many pairings as the evidence allows**.
+ * One pairing per row, as many pairings as the evidence allows, and the best
+ * such set.
  *
  * One-to-one is deliberate: three rows for one merchant all resemble the single
  * transaction, and offering every combination reads as three problems rather
  * than one question about which row it belongs to.
  *
- * Taking the strongest pair first does not give the most pairings, though, and
- * here that matters. Row A may fit transactions 1 and 2 while row B fits only 1:
- * take A-1 because it scores highest and B is stranded, so one of two real
- * pairings is never offered.
+ * **Count first, then quality, and both exactly.** Augmenting paths settle the
+ * count and say nothing about which pairs make it up, so taking the first path
+ * found lets a later row evict an earlier one from its own transaction onto
+ * someone else's — same number of suggestions, both of them worse.
+ *
+ * The fix is to augment along the **best** path rather than the first: repeatedly
+ * extending a matching by its maximum-gain augmenting path yields, after k
+ * extensions, the maximum-weight matching among all matchings of size k. So the
+ * count is maximal because every augmentation adds a pair, and the quality is
+ * maximal at that count because every augmentation was the best available.
+ *
+ * A previous version did this with a plain DFS and then traded pairs in twos.
+ * That was neither: swapping two can never perform a three-way rotation, so
+ * `0→1, 1→2, 2→0` stood at 2.41 where `0→2, 1→0, 2→1` scored 2.60 and no pair
+ * of them could be exchanged to get there. Doing half the job is worse than a
+ * stated limitation, because the comment then has to describe something with no
+ * name.
  *
  * `assign.ts` faces the same choice and answers it the other way on purpose.
  * There greedy is chosen over an optimal assignment for *explainability* — the
  * matcher **acts**, so "why did it choose that one?" has to be answerable. This
- * only **offers**, and its failure is staying quiet. So the count comes first,
- * and `improveQuality` then trades pairings that keep the count and raise the
- * quality — because augmenting paths settle the count and say nothing at all
- * about which pairs make it up.
+ * only **offers**, and its failure is staying quiet or suggesting the weaker of
+ * two partners, so the optimum is worth the search. The pools are leftovers of
+ * leftovers, and the search is bounded by their size.
  *
- * Augmenting paths (Kuhn's). The pools are leftovers of leftovers.
+ * Exported for its own tests: the optimality claim is the contract, and pinning
+ * it through `findPossiblePairs` would mean hunting for statement text whose
+ * similarities happen to land on a chosen shape — which tests the text, not the
+ * algorithm.
  */
-function maximumMatching(edges: PossiblePair[]): PossiblePair[] {
+export function maximumMatching(edges: PossiblePair[]): PossiblePair[] {
   const byStatement = new Map<string, PossiblePair[]>();
   for (const edge of edges) {
     const existing = byStatement.get(edge.statementItemId);
@@ -182,94 +198,109 @@ function maximumMatching(edges: PossiblePair[]): PossiblePair[] {
   }
   for (const list of byStatement.values()) list.sort(byQuality);
 
-  // Rows are attempted in order of their best available pairing, so one with an
-  // obvious counterpart is settled before one with several.
-  const order = [...byStatement.keys()].sort((a, b) =>
-    byQuality(byStatement.get(a)![0], byStatement.get(b)![0])
-  );
-
   /** actual item id -> the pair currently holding it. */
   const held = new Map<string, PossiblePair>();
 
-  function augment(statementItemId: string, seen: Set<string>): boolean {
-    for (const edge of byStatement.get(statementItemId) ?? []) {
-      if (seen.has(edge.actualItemId)) continue;
-      seen.add(edge.actualItemId);
+  /*
+   * Extend one pair at a time, always by the best extension available anywhere.
+   *
+   * "Anywhere" is load-bearing and was wrong at first: taking each row in turn
+   * and giving it *its* best path is not the same as taking the best path in
+   * the graph, and the difference shows up as a matching that is the right size
+   * and not the best of that size. The property test found it immediately.
+   */
+  for (;;) {
+    const paired = new Set([...held.values()].map((edge) => edge.statementItemId));
+    const free = [...byStatement.keys()].filter((row) => !paired.has(row));
+    if (free.length === 0) break;
 
-      const incumbent = held.get(edge.actualItemId);
-      // Free, or its current holder can be re-homed somewhere else.
-      if (!incumbent || augment(incumbent.statementItemId, seen)) {
-        held.set(edge.actualItemId, edge);
-        return true;
-      }
-    }
-    return false;
+    const path = bestAugmentation(free, byStatement, held);
+    if (path.length === 0) break;
+    for (const edge of path) held.set(edge.actualItemId, edge);
   }
 
-  for (const statementItemId of order) augment(statementItemId, new Set());
-
-  return improveQuality(held, byStatement).sort(byQuality);
+  return [...held.values()].sort(byQuality);
 }
 
 /**
- * Trade pairings that keep the count but raise the quality.
+ * The augmenting path that gains the most quality, as the edges to apply.
  *
- * Augmenting paths guarantee the *number* of pairs and nothing about which ones.
- * Taking the first path found lets a later row displace an earlier one from its
- * near-certain partner onto a weak one: with `A-X 1.00`, `A-Y 0.50`, `B-X 0.89`
- * and `B-Y 0.78`, `B` evicts `A` from `X`, and the result is `A-Y + B-X` (1.39)
- * where `A-X + B-Y` (1.78) was available. Both have two pairs, so the count is
- * no help — and the user is shown the weaker of two suggestions for both rows.
+ * An augmenting path alternates: take a transaction, displace whoever held it,
+ * let them take another, and so on until someone lands on a free one. Its gain
+ * is what the added pairs are worth less what the displaced ones were worth, so
+ * a path that moves a row off a 1.00 partner to gain a 0.89 one scores −0.11
+ * and loses to any path that does better.
  *
- * So matched pairs are swapped wherever the swap is possible and better. Each
- * pass is O(pairs²) and every accepted swap strictly raises the total, so this
- * terminates; the cap is there for the pathological shape rather than the
- * expected one, since these pools are leftovers of leftovers.
+ * Seeded from **every** unpaired row at once, not one at a time: the theorem
+ * this relies on — that extending a best-of-its-size matching by its best
+ * augmenting path gives a best-of-the-next-size matching — is about the best
+ * path in the whole graph. Per-row bests are a different thing and produce a
+ * matching of the right size that is not the best of that size.
  *
- * **It is a local optimum, not a proven global one.** Saying so matters: an
- * earlier version of this docblock claimed ordering candidates best-first gave
- * the best matching of a given size, which is simply not true, and a comment
- * that overstates what the code does stops the next reader checking it.
+ * Relaxation rather than a depth-first walk, because the best path is not
+ * generally the first found: arriving at a row by a worse route early must not
+ * fix it. Bounded by the number of rows, which is what makes this safe without
+ * a cutoff — there are no positive alternating cycles to loop on, since every
+ * matching built this way is already the best of its size.
  */
-function improveQuality(
-  held: Map<string, PossiblePair>,
-  byStatement: Map<string, PossiblePair[]>
+function bestAugmentation(
+  sources: string[],
+  byStatement: Map<string, PossiblePair[]>,
+  held: Map<string, PossiblePair>
 ): PossiblePair[] {
-  /** The edge joining these two, if the pair was admissible at all. */
-  const edgeFor = (statementItemId: string, actualItemId: string) =>
-    byStatement.get(statementItemId)?.find((edge) => edge.actualItemId === actualItemId);
+  /** Best gain with which an alternating path can arrive at this row. */
+  const gainTo = new Map<string, number>(sources.map((row) => [row, 0]));
+  /** The edge that displaced the row, so the path can be walked back. */
+  const arrivedBy = new Map<string, PossiblePair>();
+  const isSource = new Set(sources);
 
-  const PASSES = 8;
-  for (let pass = 0; pass < PASSES; pass++) {
-    let swapped = false;
+  let best: { gain: number; last: PossiblePair } | null = null;
+  const rows = [...byStatement.keys()];
 
-    const current = [...held.values()];
-    for (let i = 0; i < current.length; i++) {
-      for (let j = i + 1; j < current.length; j++) {
-        const left = current[i];
-        const right = current[j];
+  for (let round = 0; round < rows.length; round++) {
+    let improved = false;
 
-        // The crossed alternative: each row takes the other's transaction.
-        const leftSwap = edgeFor(left.statementItemId, right.actualItemId);
-        const rightSwap = edgeFor(right.statementItemId, left.actualItemId);
-        if (!leftSwap || !rightSwap) continue;
+    for (const row of rows) {
+      const gain = gainTo.get(row);
+      if (gain === undefined) continue;
 
-        const now = left.similarity + right.similarity;
-        const after = leftSwap.similarity + rightSwap.similarity;
-        if (after <= now) continue;
+      for (const edge of byStatement.get(row) ?? []) {
+        const incumbent = held.get(edge.actualItemId);
 
-        held.set(right.actualItemId, leftSwap);
-        held.set(left.actualItemId, rightSwap);
-        current[i] = leftSwap;
-        current[j] = rightSwap;
-        swapped = true;
+        if (!incumbent) {
+          // A free transaction ends the path, and the pair is pure gain.
+          const total = gain + edge.similarity;
+          if (!best || total > best.gain) best = { gain: total, last: edge };
+          continue;
+        }
+
+        // Taking it costs whoever holds it; they carry on from there.
+        const displaced = incumbent.statementItemId;
+        const onward = gain + edge.similarity - incumbent.similarity;
+        const known = gainTo.get(displaced);
+        if (known === undefined || onward > known) {
+          gainTo.set(displaced, onward);
+          arrivedBy.set(displaced, edge);
+          improved = true;
+        }
       }
     }
 
-    if (!swapped) break;
+    if (!improved) break;
   }
 
-  return [...held.values()];
+  if (!best) return [];
+
+  // Walk back to whichever unpaired row started this path.
+  const path: PossiblePair[] = [best.last];
+  let cursor = best.last.statementItemId;
+  while (!isSource.has(cursor)) {
+    const edge = arrivedBy.get(cursor);
+    if (!edge) break;
+    path.push(edge);
+    cursor = edge.statementItemId;
+  }
+  return path;
 }
 
 /**
