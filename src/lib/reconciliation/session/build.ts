@@ -474,7 +474,28 @@ export function applyDisposition(input: {
 
   if (disposition !== "matched") return next;
 
-  return correctAmountFromStatement({ item: next, statementRow, transaction });
+  /*
+   * Marked as the user's decision, because it is one.
+   *
+   * `summarizeCoverage` sorts a matched row into `automatic` unless its match
+   * says `evidenceSource: "manual"`, and `automatic` is excluded from the
+   * meter's totals - it means "never needed deciding, the matcher settled it".
+   * A review row carries no `match` at all, so accepting one moved it from
+   * `pending` into `automatic`: the denominator shrank while the numerator
+   * stood still, and a decision the user actually took was counted as one that
+   * was never required.
+   *
+   * `resolveToTransaction` has always stamped this when a candidate is picked.
+   * Only the accept button and `Enter` reached `matched` without it.
+   */
+  const decided: ReconciliationItem = next.match
+    ? next
+    : {
+        ...next,
+        match: { type: "manual", evidenceSource: "manual", label: "exact", reasons: [] },
+      };
+
+  return correctAmountFromStatement({ item: decided, statementRow, transaction });
 }
 
 /**

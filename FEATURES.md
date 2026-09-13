@@ -222,7 +222,7 @@ Exact signed amount is a hard requirement for an automatic match. Text never *fi
 - A **transformation engine** for notes: add, remove, replace or reposition tags, append or prepend text, **replace one piece of text with another** (every occurrence, matched exactly as typed, so `AMZN Mktp` → `Amazon` leaves `amzn` in your own sentence alone), and bring a shortened merchant name up to the statement's full description (`ROYAL CATERING SERVICE` → `ROYAL CATERING SERVICE ABU DHABI UAE`) — replacing only the run of words that came from the bank, so tags and your own words survive
 - Wherever a transformation rule names something the budget already knows — a payee, a category, a tag already in use on these rows — it is **picked from a list rather than typed**; free text is kept only where the value genuinely is free text
 - Transfers, split parents, and rows already reconciled in Actual are protected
-- **Categories are never touched.** Reconciliation does not read, stage, or write a category; categorisation belongs in Actual
+- **Categories are never written.** Reconciliation does not stage or write a category; categorisation belongs in Actual. A transformation *condition* can read one — "where the category is Groceries" — to decide which rows a rule applies to, but nothing it does changes the category itself
 
 ### Reviewing and applying
 

@@ -1956,13 +1956,46 @@ export function ReconciliationView() {
                * The negated rows are persisted by `runMatch`, so this corrects
                * the session rather than just its display - the alternative was
                * re-importing the file and hunting for the sign setting.
+               *
+               * Matching runs from scratch, so it discards every decision on the
+               * session, and it is reachable at a point where there can be
+               * plenty: nothing matched, so the fastest way through was to work
+               * the "Not in Actual" rows - and those are exactly the decisions
+               * this throws away. Confirmed on the same terms as re-importing,
+               * which discards the same work for the same reason.
                */
-              void runMatch({
-                sessionId: session.id,
-                accountId: session.accountId,
-                statementRows: invertStatementRows(parsedRows),
-                statementPeriod: period,
-                config: matchConfig,
+              const go = () =>
+                void runMatch({
+                  sessionId: session.id,
+                  accountId: session.accountId,
+                  statementRows: invertStatementRows(parsedRows),
+                  statementPeriod: period,
+                  config: matchConfig,
+                });
+
+              const decided = items.filter((item) => item.disposition !== "unresolved").length;
+              const staged = items.filter(
+                (item) => item.stagedChanges && Object.keys(item.stagedChanges).length > 0
+              ).length;
+
+              if (decided === 0 && staged === 0) {
+                go();
+                return;
+              }
+
+              setConfirm({
+                title: "Re-run with the amounts inverted?",
+                message: (
+                  <>
+                    Matching will run again from scratch, so the {decided} decision
+                    {decided === 1 ? "" : "s"}
+                    {staged > 0 ? ` and ${staged} edited row${staged === 1 ? "" : "s"}` : ""} on this
+                    reconciliation will be discarded. Nothing in your budget changes, and anything
+                    already applied stays applied.
+                  </>
+                ),
+                destructiveLabel: "Discard and re-run",
+                onConfirm: go,
               });
             }}
           />

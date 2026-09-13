@@ -53,16 +53,33 @@ export function InvertedSignsNotice({
         </p>
       </div>
 
-      <Button
-        size="sm"
-        variant="outline"
-        onClick={onRerun}
-        disabled={isMatching || Boolean(blockedReason)}
-        title={blockedReason ?? undefined}
-      >
-        <RefreshCw className="mr-1 h-3.5 w-3.5" aria-hidden="true" />
-        Re-run inverted
-      </Button>
+      {/*
+        The reason is rendered, not hung on a `title`.
+        
+        A disabled button is not focusable, so a tooltip on one is unreachable
+        by keyboard and unread by a screen reader - the refusal would be
+        announced as nothing at all. `aria-describedby` ties the text to the
+        button so it is announced with it, and it stays visible for everyone
+        else, which is the same treatment the row inspector gives a refused
+        action.
+      */}
+      <div className="flex flex-col items-end gap-0.5">
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={onRerun}
+          disabled={isMatching || Boolean(blockedReason)}
+          aria-describedby={blockedReason ? "inverted-signs-blocked" : undefined}
+        >
+          <RefreshCw className="mr-1 h-3.5 w-3.5" aria-hidden="true" />
+          Re-run inverted
+        </Button>
+        {blockedReason && (
+          <p id="inverted-signs-blocked" className="text-[11px] text-muted-foreground">
+            {blockedReason}
+          </p>
+        )}
+      </div>
     </div>
   );
 }

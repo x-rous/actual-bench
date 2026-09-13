@@ -206,12 +206,8 @@ export function ItemActions({
           transactions.length === 1 &&
           item.disposition !== "matched" &&
           (!amountsDisagree || differenceIsStuck) && (
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => onDisposition("matched")}
-            title={differenceIsStuck ? amountVerdict.reason : undefined}
-          >
+          <div className="flex flex-col gap-0.5">
+          <Button size="sm" variant="outline" onClick={() => onDisposition("matched")}>
             <Check className="mr-1 h-3.5 w-3.5" />
             {/*
               Accepting a pairing now takes the statement's amount with it, so
@@ -229,6 +225,13 @@ export function ItemActions({
                 )} difference`
               : "These match"}
           </Button>
+          {/* Visible rather than a `title`: this is the reason the figures
+              cannot be brought together here, and it is the same treatment
+              `GuardedButton` gives a refusal a few lines above. */}
+          {differenceIsStuck && amountVerdict.reason && (
+            <p className="text-[11px] text-muted-foreground">{amountVerdict.reason}</p>
+          )}
+          </div>
         )}
 
         {/*
@@ -249,7 +252,15 @@ export function ItemActions({
           want to create the row, or link it to some other transaction, and
           neither should be assumed here.
         */}
-        {hasStatementRow && transactions.length === 1 && item.disposition === "unresolved" && (
+        {hasStatementRow &&
+          // The same cardinality guard the accept action uses, and for the same
+          // reason: a stored session keeps one snapshot per item, so a
+          // five-candidate row whose live reload failed arrives here holding one
+          // transaction. Releasing on `transactions.length` alone would let go
+          // of four candidates the user never saw.
+          item.actualTransactionIds.length === 1 &&
+          transactions.length === 1 &&
+          item.disposition === "unresolved" && (
           <Button size="sm" variant="outline" onClick={() => onUseCandidate(null)}>
             <Unlink className="mr-1 h-3.5 w-3.5" />
             Not the same transaction

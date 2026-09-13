@@ -38,6 +38,10 @@ const REASON_FILTERS: FilterId[] = [
 
 const REASON_FOR: Record<string, string> = {
   ambiguous: REASON.ambiguousMatch,
+  // The other half of "Several candidates": one candidate, too weak to take.
+  // It shares a filter with `ambiguousMatch`, so a partition claiming to cover
+  // every row kind has to carry it too.
+  "below-floor": REASON.belowConfidenceFloor,
   "amount-mismatch": REASON.amountMismatch,
   "wrong-amount": REASON.sameMerchantDate,
   cluster: REASON.merchantCluster,

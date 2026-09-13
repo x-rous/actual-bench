@@ -29,8 +29,16 @@
  * least recognisable part of it, and the claim being made here is narrow —
  * *these amounts line up when flipped* — not *these are the same merchant*.
  *
- * Pairing is one-to-one and greedy. A statement with four identical 25.00
- * charges should count four transactions, not the same one four times.
+ * Pairing is one-to-one. A statement with four identical 25.00 charges should
+ * count four transactions, not the same one four times.
+ *
+ * Within an amount bucket every transaction carries the same figure, so the
+ * only constraint left is the date window - which makes each row's eligible set
+ * a contiguous range of dates, and the graph convex. Walking both sides in date
+ * order and taking the earliest transaction still in range is optimal on a
+ * convex bipartite graph, where a first-fit over unsorted lists is not: two rows
+ * a fortnight apart can both reach one middle-dated transaction, and letting the
+ * later row take it strands the earlier one against a partner it could have had.
  */
 
 import { dayDelta } from "../match/score";
@@ -77,18 +85,28 @@ export function diagnoseInvertedSigns(input: {
   if (statementRows.length === 0 || transactions.length === 0) return null;
 
   // Grouped by amount so a long statement does not rescan every transaction per
-  // row; the claimed set keeps the pairing one-to-one.
+  // row; each bucket is date-ordered so the walk below can take the earliest
+  // partner still in range.
   const byAmount = new Map<number, ActualTransactionSnapshot[]>();
   for (const transaction of transactions) {
     const bucket = byAmount.get(transaction.amount);
     if (bucket) bucket.push(transaction);
     else byAmount.set(transaction.amount, [transaction]);
   }
+  for (const bucket of byAmount.values()) {
+    bucket.sort((a, b) => a.date.localeCompare(b.date));
+  }
 
   const claimed = new Set<string>();
   let wouldMatch = 0;
 
-  for (const row of statementRows) {
+  // Rows in date order too: taking the earliest available partner is only
+  // optimal if the rows asking for one arrive in the same order.
+  const inDateOrder = [...statementRows].sort((a, b) =>
+    a.postedDate.localeCompare(b.postedDate)
+  );
+
+  for (const row of inDateOrder) {
     const bucket = byAmount.get(-row.amount);
     if (!bucket) continue;
 

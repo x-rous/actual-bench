@@ -922,6 +922,29 @@ describe("accepting a pairing", () => {
     expect(item.disposition).toBe("correct-amount");
   });
 
+  /*
+   * `summarizeCoverage` excludes `automatic` from the meter's totals - it means
+   * "never needed deciding". A review row carries no `match`, so accepting one
+   * moved it out of `pending` and into `automatic`: the denominator shrank
+   * while the numerator stood still, and the user's own decision was counted as
+   * one that was never required.
+   */
+  it("counts as the user's decision, not as an automatic match", () => {
+    const item = decide("matched");
+    expect(item.match?.evidenceSource).toBe("manual");
+
+    const coverage = summarizeCoverage([item], { statementRows: 1, loadedTransactions: 1 });
+    expect(coverage.decisions.decided).toBe(1);
+    expect(coverage.decisions.automatic).toBe(0);
+  });
+
+  it("leaves the matcher's own evidence alone where it has some", () => {
+    const item = decide("matched", {
+      match: { type: "exact", evidenceSource: "bench", label: "exact", reasons: [] },
+    });
+    expect(item.match?.evidenceSource).toBe("bench");
+  });
+
   it("stays a plain match when the amounts already agree", () => {
     const item = decide("matched", {}, txn({ id: "t1", amount: -2225 }));
     expect(item.disposition).toBe("matched");

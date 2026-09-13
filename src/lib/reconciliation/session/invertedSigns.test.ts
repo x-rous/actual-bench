@@ -116,6 +116,22 @@ describe("diagnoseInvertedSigns", () => {
     ).toBeNull();
   });
 
+  /*
+   * Two rows a fortnight apart can both reach one middle-dated transaction. A
+   * first-fit over unsorted lists lets the later row take it and strands the
+   * earlier one, undercounting a statement that flips cleanly - which is how a
+   * true diagnosis falls under the threshold and says nothing at all.
+   */
+  it("does not strand a row by handing its only partner to a later one", () => {
+    const rows = [row(2500, "2026-08-01"), row(2500, "2026-08-10")];
+    const transactions = [txn(-2500, "2026-08-03"), txn(-2500, "2026-08-10")];
+
+    expect(diagnoseInvertedSigns({ statementRows: rows, transactions, matched: 0 })).toEqual({
+      wouldMatch: 2,
+      statementRows: 2,
+    });
+  });
+
   it("has nothing to say about an empty side", () => {
     expect(
       diagnoseInvertedSigns({ statementRows: [], transactions: [txn(-100)], matched: 0 })

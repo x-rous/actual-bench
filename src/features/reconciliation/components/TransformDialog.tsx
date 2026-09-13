@@ -260,26 +260,6 @@ export function TransformDialog({
    * — a tag being added, a replacement, words the bank wrote — it stays free
    * text, because no list holds it yet.
    */
-  const tagOptions = useMemo(() => {
-    /*
-     * Shown as the rows actually spell them - `#API`, not `api`. Comparison
-     * normalizes case and the leading hash either way, so the stored value is
-     * unaffected; what changes is whether the user recognises their own tag in
-     * the list. Deduplicated case-insensitively, first spelling winning, so a
-     * note carrying both `#API` and `#api` offers one entry rather than two
-     * that mean the same thing.
-     */
-    const byKey = new Map<string, string>();
-    for (const item of items) {
-      for (const tag of findNoteTags(contextFor(item).pending.notes)) {
-        const key = tag.name.toLowerCase();
-        if (!byKey.has(key)) byKey.set(key, tag.name);
-      }
-    }
-    return [...byKey.values()]
-      .sort((a, b) => a.localeCompare(b))
-      .map((tag) => ({ id: tag, name: `#${tag}` }));
-  }, [items, contextFor]);
 
   const [conditions, setConditions] = useState<Condition[]>([
     { field: "notes", operator: "hasTag", value: "" },
@@ -296,6 +276,36 @@ export function TransformDialog({
     () => (scope === "selection" ? items.filter((item) => selectedIds.has(item.id)) : items),
     [items, selectedIds, scope]
   );
+  /*
+   * Read from the rows the rule will touch, not from the session.
+   *
+   * Every consumer of this list wants a tag that already exists *there*: a
+   * condition matching on one, and the `replaceTag` and `removeTag` fields,
+   * which have nothing to act on otherwise. (`addTag` takes free text, since
+   * the whole point is a tag the rows do not have yet.) Scoped to "the N
+   * selected", listing tags found only on unselected rows offers choices that
+   * silently match nothing.
+   */
+  const tagOptions = useMemo(() => {
+    /*
+     * Shown as the rows actually spell them - `#API`, not `api`. Comparison
+     * normalizes case and the leading hash either way, so the stored value is
+     * unaffected; what changes is whether the user recognises their own tag in
+     * the list. Deduplicated case-insensitively, first spelling winning, so a
+     * note carrying both `#API` and `#api` offers one entry rather than two
+     * that mean the same thing.
+     */
+    const byKey = new Map<string, string>();
+    for (const item of scopedItems) {
+      for (const tag of findNoteTags(contextFor(item).pending.notes)) {
+        const key = tag.name.toLowerCase();
+        if (!byKey.has(key)) byKey.set(key, tag.name);
+      }
+    }
+    return [...byKey.values()]
+      .sort((a, b) => a.localeCompare(b))
+      .map((tag) => ({ id: tag, name: `#${tag}` }));
+  }, [scopedItems, contextFor]);
 
   const rule: TransformRule = useMemo(
     () => ({ id: "draft", conditions, actions }),
@@ -338,6 +348,18 @@ export function TransformDialog({
       if (action.kind === "appendNote" || action.kind === "prependNote") {
         return action.text.trim();
       }
+      /*
+       * Not trimmed, unlike the rules above it.
+       *
+       * `changesFor` treats an empty needle as an incomplete rule and skips it,
+       * but whitespace is a legitimate thing to replace - collapsing a double
+       * space, or stripping a trailing one - so `"  "` is a complete rule while
+       * `""` is not. Trimming here would reject the first along with the second.
+       *
+       * `to` is deliberately unchecked: replacing text with nothing is how you
+       * delete it, and that is the point of the action as often as not.
+       */
+      if (action.kind === "replaceNoteText") return action.from !== "";
       return true;
     });
 

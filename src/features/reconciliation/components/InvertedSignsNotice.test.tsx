@@ -32,9 +32,11 @@ describe("InvertedSignsNotice", () => {
       />
     );
 
+    // Announced with the button rather than hung on a `title`: a disabled
+    // button is not focusable, so a tooltip on one reaches nobody.
     const button = screen.getByRole("button", { name: /Re-run inverted/ });
     expect(button).toBeDisabled();
-    expect(button).toHaveAttribute("title", "This session has already been applied");
+    expect(button).toHaveAccessibleDescription("This session has already been applied");
   });
 
   it("refuses while a match is already running", () => {
