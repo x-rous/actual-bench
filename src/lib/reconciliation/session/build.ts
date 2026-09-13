@@ -192,8 +192,30 @@ export function buildReconciliationItems(input: BuildItemsInput): Reconciliation
       id: makeId(),
       statementRowIds: [],
       actualTransactionIds: [transactionId],
-      // Never `delete`, and not silently `keep` — the user explains it.
-      disposition: "unresolved",
+      /*
+       * Never `delete`. Undecided when the statement makes a claim about the
+       * row, kept when it makes none.
+       *
+       * A transaction inside the period that the statement did not mention is
+       * a real question - the bank says these are all the transactions there
+       * were, and here is one it does not list. That wants an answer.
+       *
+       * A transaction dated *outside* the period is not. It was loaded as
+       * headroom so matching works at the edges of the statement, and the
+       * statement says nothing about it either way. Leaving it `unresolved`
+       * put it in the decision meter, the Next-undecided queue and the review
+       * gate, so a session could never reach the end without pressing Keep on
+       * rows the statement never covered - which is how a progress figure
+       * stops being trusted.
+       *
+       * `keep` is safe to default to because it writes nothing: the planner
+       * counts it as a no-write outcome and emits no operation for it, so the
+       * transaction is left exactly as Actual holds it. It also stays fully
+       * available - visible, selectable, deletable, and now carrying an Undo
+       * that returns it to undecided - so this changes what the user is
+       * *asked*, never what they *can do*.
+       */
+      disposition: outsidePeriod ? "keep" : "unresolved",
       reasonCode: outsidePeriod
         ? REASON.outsideStatementPeriod
         : duplicateTransactionIds.has(transactionId)
@@ -535,7 +557,14 @@ export type DecisionProgress = {
   decided: number;
   /** Rows still waiting on a decision. */
   pending: number;
-  /** Rows that never needed a decision, because the matcher settled them. */
+  /**
+   * Rows that never needed a decision, and so are kept out of the meter's
+   * totals rather than counted as done.
+   *
+   * Two ways in: the matcher settled it, or the statement's period does not
+   * cover it. Different reasons, same consequence for the person working
+   * through the list - there was never a question here.
+   */
   automatic: number;
 };
 
@@ -619,6 +648,24 @@ export function summarizeCoverage(
     // deciding. Counting it as done would flatter the progress number and hide
     // how much work is actually left.
     if (item.disposition === "matched" && item.match?.evidenceSource !== "manual") {
+      decisions.automatic += 1;
+    } else if (
+      /*
+       * Out of the meter entirely, not merely counted as done.
+       *
+       * These are kept from the start because the statement makes no claim
+       * about them, and `decided` would have claimed a judgement nobody made -
+       * inflating the numerator *and* the denominator, so twelve padded rows on
+       * a 188-row statement read as "112 of 200" where the truth is "100 of
+       * 188". That is the same flattery the branch above exists to avoid, and
+       * it is worse here because it moves the percentage as well as the totals.
+       *
+       * Only while the default holds. Delete or ignore one and it becomes a
+       * real decision on a real row, and belongs in the meter like any other.
+       */
+      item.reasonCode === REASON.outsideStatementPeriod &&
+      item.disposition === "keep"
+    ) {
       decisions.automatic += 1;
     } else if (item.disposition === "unresolved") {
       decisions.pending += 1;

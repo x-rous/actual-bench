@@ -1,9 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ChevronDown, FileCheck, RefreshCw, Search, Wand2 } from "lucide-react";
+import { ChevronDown, FileCheck, RefreshCw, Search, Wand2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { MultiPillGroup, PillGroup } from "@/components/ui/pill-group";
 import { cn } from "@/lib/utils";
@@ -12,6 +11,7 @@ import { statementText } from "@/lib/reconciliation/statement/text";
 import { formatShortDate } from "../lib/format";
 import { canDecideOneTransaction, canStageDelete } from "@/lib/reconciliation/session/staging";
 import type { ReconciliationCoverage } from "@/lib/reconciliation/session/build";
+import type { InvertedSignDiagnosis } from "@/lib/reconciliation/session/invertedSigns";
 import type { PossiblePair } from "@/lib/reconciliation/session/possiblePairs";
 import type {
   ActualTransactionSnapshot,
@@ -30,6 +30,7 @@ import type { StagedPatch } from "@/lib/reconciliation/types";
 import { useTableSelection } from "@/hooks/useTableSelection";
 import { BulkDecisionBar } from "./BulkDecisionBar";
 import { CoverageSummary, DecisionProgressStrip, ShortcutsButton } from "./CoverageSummary";
+import { InvertedSignsNotice } from "./InvertedSignsNotice";
 import { NewTransactionOptions } from "./NewTransactionOptions";
 import { Inspector } from "./Inspector";
 import { MatchOptions } from "./MatchOptions";
@@ -353,6 +354,13 @@ export type WorkbenchProps = {
   transactions: Map<string, ActualTransactionSnapshot>;
   coverage: ReconciliationCoverage;
   /**
+   * Present only when matching accounted for nothing *and* flipping the
+   * statement's signs would have accounted for much of it. Null on every
+   * ordinary session.
+   */
+  invertedSigns?: InvertedSignDiagnosis | null;
+  onRerunInverted?: () => void;
+  /**
    * Statement rows and transactions that look like the same thing.
    *
    * Deliberately *not* candidates: matching refused these, and they are acted on
@@ -513,6 +521,8 @@ export function Workbench({
   statementRows,
   transactions,
   coverage,
+  invertedSigns,
+  onRerunInverted,
   possiblePairs = [],
   matchConfig,
   matchPreset,
@@ -1029,6 +1039,14 @@ export function Workbench({
           carries only what changes as you work. */}
       <header className="border-b border-border/50 px-4 py-2">
         <CoverageSummary coverage={coverage} />
+        {invertedSigns && onRerunInverted && (
+          <InvertedSignsNotice
+            diagnosis={invertedSigns}
+            onRerun={onRerunInverted}
+            isMatching={isMatching}
+            blockedReason={rematchBlockedReason}
+          />
+        )}
         {snapshotIsStored && (
           <p role="status" className="mt-1.5 text-[11px] text-muted-foreground">
             Showing the transactions this session recorded, not a fresh read of the account.
@@ -1319,18 +1337,38 @@ export function Workbench({
             search narrows what the grid shows, like the sort and the filters it
             now sits among.
           */}
+          {/*
+            A plain input rather than the `Input` component, matching the Rules
+            page's filter bar exactly.
+
+            Not a style preference: `Input` carries `text-base … md:text-sm`,
+            and that responsive variant is emitted after the plain utilities, so
+            a `text-xs` passed in loses to it above 768px. The field rendered a
+            size larger than the Sort select beside it on every desktop screen
+            and agreed with it only on mobile.
+          */}
           <div className="relative flex items-center">
             <Search
-              className="pointer-events-none absolute left-2 h-3.5 w-3.5 text-muted-foreground"
+              className="pointer-events-none absolute left-1.5 h-3.5 w-3.5 text-muted-foreground"
               aria-hidden="true"
             />
-            <Input
+            <input
               value={search}
               onChange={(event) => setSearch(event.target.value)}
               placeholder="Search rows…"
               aria-label="Search reconciliation rows"
-              className="h-6 w-44 pl-7 text-xs"
+              className="h-6 w-44 rounded border border-border bg-background pl-6 pr-6 text-xs outline-none focus:ring-1 focus:ring-ring"
             />
+            {search && (
+              <button
+                type="button"
+                onClick={() => setSearch("")}
+                aria-label="Clear search"
+                className="absolute right-1.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+              >
+                <X className="h-3 w-3" aria-hidden="true" />
+              </button>
+            )}
           </div>
           <label className="flex items-center gap-1 text-muted-foreground">
             Sort
@@ -1363,6 +1401,7 @@ export function Workbench({
           selectedIds={selectedIds}
           contextFor={transformContextFor}
           payees={payees}
+          categories={categories}
           onClose={() => setTransformOpen(false)}
           onApply={(changes) => {
             onTransform(changes);
@@ -1389,6 +1428,7 @@ export function Workbench({
             */}
             <thead className="sticky top-0 z-10 text-[11px] uppercase tracking-wide text-muted-foreground">
               <tr>
+                <th scope="col" className="w-8 bg-muted px-2 pt-2" />
                 <th scope="col" className="w-8 bg-muted px-2 pt-2" />
                 <th
                   scope="colgroup"
@@ -1421,6 +1461,23 @@ export function Workbench({
                     checked={allVisibleSelected}
                     onChange={() => toggleSelectAll(visibleIds, allVisibleSelected)}
                   />
+                </th>
+                {/*
+                  Second, not first: selection is the column readers expect at
+                  the edge of a table, and the status reads as a stripe just as
+                  well one column in. What it needs is to be narrow and always
+                  in the same place, which it still is - and both workflow
+                  columns stay together, ahead of the data.
+
+                  Unlabelled on purpose: two glyphs in an 8-unit column have no
+                  room for a heading, and "Done" over a column that is half
+                  amber circles would be misread as a claim about the column
+                  rather than a name for it. The name lives where a reader who
+                  needs it will actually meet it - on each cell, as `sr-only`
+                  text, so the column is announced per row rather than once.
+                */}
+                <th scope="col" className="w-8 border-b border-border bg-muted px-2 pb-2">
+                  <span className="sr-only">Decision status</span>
                 </th>
                 <th scope="col" className="w-14 border-b border-border bg-muted px-2 pb-2 text-left font-medium">
                   Date

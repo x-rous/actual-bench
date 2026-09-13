@@ -73,6 +73,10 @@ import {
   wouldWrite,
   type PossiblePair,
 } from "@/lib/reconciliation/session/possiblePairs";
+import {
+  diagnoseInvertedSigns,
+  invertStatementRows,
+} from "@/lib/reconciliation/session/invertedSigns";
 import { buildTextCorpus } from "@/lib/reconciliation/match/text";
 import {
   mergeOperationResults,
@@ -681,6 +685,25 @@ export function ReconciliationView() {
         loadedTransactions: snapshot.length,
       }),
     [items, parsedRows.length, snapshot.length]
+  );
+
+  /**
+   * Nothing matched because the statement's signs are the other way round.
+   *
+   * Derived here rather than in the workbench because it needs the rows and the
+   * snapshot as lists, and because the recovery it offers is a re-match - which
+   * only this component can run. Returns null on every ordinary session; the
+   * notice it feeds does not exist unless matching failed completely and the
+   * flip test explains why.
+   */
+  const invertedSigns = useMemo(
+    () =>
+      diagnoseInvertedSigns({
+        statementRows: parsedRows,
+        transactions: snapshot,
+        matched: coverage.statement.matched,
+      }),
+    [parsedRows, snapshot, coverage.statement.matched]
   );
 
 
@@ -1919,6 +1942,22 @@ export function ReconciliationView() {
                 sessionId: session.id,
                 accountId: session.accountId,
                 statementRows: parsedRows,
+                statementPeriod: period,
+                config: matchConfig,
+              });
+            }}
+            invertedSigns={invertedSigns}
+            onRerunInverted={() => {
+              if (!session || !period) return;
+              /*
+               * The negated rows are persisted by `runMatch`, so this corrects
+               * the session rather than just its display - the alternative was
+               * re-importing the file and hunting for the sign setting.
+               */
+              void runMatch({
+                sessionId: session.id,
+                accountId: session.accountId,
+                statementRows: invertStatementRows(parsedRows),
                 statementPeriod: period,
                 config: matchConfig,
               });

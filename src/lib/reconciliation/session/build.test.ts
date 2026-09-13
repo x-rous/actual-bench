@@ -234,6 +234,56 @@ describe("transactions loaded outside the statement period", () => {
     expect(coverage.outsideStatementPeriod).toBe(1);
   });
 
+  it("keeps a padded transaction rather than asking about it", () => {
+    // The statement makes no claim about these dates, so there is no question
+    // for the user to answer. `keep` writes nothing, so this changes what they
+    // are asked, not what happens to the transaction.
+    const items = build([], [txn({ id: "t1", date: "2026-08-10" })], true, period);
+    expect(items[0].disposition).toBe("keep");
+  });
+
+  it("still asks about an in-period transaction the statement did not mention", () => {
+    // The bank says these were all the transactions; here is one it does not
+    // list. That is a real question and must keep being asked.
+    const items = build([], [txn({ id: "t1", date: "2026-07-20" })], true, period);
+    expect(items[0].disposition).toBe("unresolved");
+  });
+
+  it("leaves a padded transaction out of the meter's totals, not merely marked done", () => {
+    const items = build(
+      [row({ id: "s1", postedDate: "2026-07-20" })],
+      [
+        txn({ id: "t1", date: "2026-07-20" }),
+        // In period, unmentioned - a real question.
+        txn({ id: "t2", date: "2026-07-21", amount: -111 }),
+        // Outside the period - not one.
+        txn({ id: "t3", date: "2026-08-10", amount: -999 }),
+      ],
+      true,
+      period
+    );
+
+    const coverage = summarizeCoverage(items, { statementRows: 1, loadedTransactions: 3 });
+
+    // The meter reads `decided of decided + pending`, so counting the padded
+    // row as decided would inflate both halves and claim a judgement nobody
+    // made. It belongs outside the totals entirely.
+    expect(coverage.decisions.pending).toBe(1);
+    expect(coverage.decisions.decided).toBe(0);
+    expect(coverage.decisions.automatic).toBe(2);
+  });
+
+  it("counts a padded transaction the user actually acted on", () => {
+    // Deleting one is a real decision about a real row, so it returns to the
+    // meter like any other.
+    const items = build([], [txn({ id: "t1", date: "2026-08-10" })], true, period);
+    const decided = items.map((item) => ({ ...item, disposition: "delete" as const }));
+
+    const coverage = summarizeCoverage(decided, { statementRows: 0, loadedTransactions: 1 });
+    expect(coverage.decisions.decided).toBe(1);
+    expect(coverage.decisions.automatic).toBe(0);
+  });
+
   it("keeps the old behaviour when no period is supplied", () => {
     const items = build([], [txn({ id: "t1", date: "2026-08-10" })]);
     expect(items[0].reasonCode).toBe(REASON.notOnStatement);
