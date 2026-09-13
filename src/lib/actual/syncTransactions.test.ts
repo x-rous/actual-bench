@@ -255,12 +255,24 @@ describe("createTransactionsForSync (Direct)", () => {
       },
     ]);
 
-    // MVP create path is addTransactions, not importTransactions.
+    /*
+     * `addTransactions`, not `importTransactions`: the latter dedupes on
+     * `imported_id` and can merge into an existing row, which would destroy the
+     * deterministic marker that makes a retry safe.
+     *
+     * Both options are on, and each for its own reason. `runTransfers` was off,
+     * so a rule that set the payee to a transfer account produced a transaction
+     * pointing at one with no other side - the far account's balance wrong and
+     * Actual's UI expecting a pair that was never made. `learnCategories` was
+     * off, which overrode a preference the user had already set in Actual, where
+     * it is gated per payee; rules run before the flag is read, so a
+     * rule-assigned category is there to learn from.
+     */
     expect(importTransactions).not.toHaveBeenCalled();
     expect(addTransactions).toHaveBeenCalledTimes(1);
     const [accountId, payloads, opts] = addTransactions.mock.calls[0];
     expect(accountId).toBe("acct-tgt");
-    expect(opts).toEqual({ learnCategories: false, runTransfers: false });
+    expect(opts).toEqual({ learnCategories: true, runTransfers: true });
     expect(payloads[0]).toEqual<ApiImportTransaction>({
       date: "2026-07-01",
       amount: 1250,
