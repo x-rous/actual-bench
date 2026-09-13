@@ -98,6 +98,19 @@ function Changed({
   );
 }
 
+/**
+ * The kinds of write the table can be narrowed to.
+ *
+ * `unchanged` and `later` are deliberately absent: they are governed by the
+ * "also show the rows nothing happens to" toggle beside this, and offering the
+ * same set through two controls that can disagree is worse than one.
+ */
+const ACTION_FILTERS: { id: ReviewRow["action"]; label: string }[] = [
+  { id: "create", label: "Create" },
+  { id: "update", label: "Update" },
+  { id: "delete", label: "Delete" },
+];
+
 export type ReviewComparisonProps = {
   plan: ApplyPlan;
   items: ReconciliationItem[];
@@ -125,6 +138,14 @@ export function ReviewComparison({
 }: ReviewComparisonProps) {
   const [showUnchanged, setShowUnchanged] = useState(false);
   const [search, setSearch] = useState("");
+  /**
+   * Narrow to one kind of write.
+   *
+   * On a long statement "what exactly am I deleting" is a question worth being
+   * able to ask directly, and scrolling a few hundred rows looking for the four
+   * amber ones is not an answer. `null` is everything.
+   */
+  const [actionFilter, setActionFilter] = useState<ReviewRow["action"] | null>(null);
 
   const nameOf = (options: Option[], id: string | null) =>
     id ? options.find((option) => option.id === id)?.name ?? null : null;
@@ -201,8 +222,9 @@ export function ReviewComparison({
    * columns it will turn up in.
    */
   const needle = search.trim().toLowerCase();
+  const byAction = actionFilter ? shown.filter((row) => row.action === actionFilter) : shown;
   const visible = needle
-    ? shown.filter((row) => {
+    ? byAction.filter((row) => {
         const payeeName = nameOf(payees, row.pending.payeeId);
         return [
           row.statementRow?.importedPayee,
@@ -221,7 +243,7 @@ export function ReviewComparison({
           .toLowerCase()
           .includes(needle);
       })
-    : shown;
+    : byAction;
 
   // Bled to the full width of the page, like the workbench grid: this is the
   // table the screen exists for, and every column in it is earning its space.
@@ -250,6 +272,47 @@ export function ReviewComparison({
               className="absolute right-1.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
             >
               <X className="h-3 w-3" />
+            </button>
+          )}
+        </div>
+
+        {/*
+          One kind of write at a time.
+          
+          Counted from the rows actually in play, and a kind with none of them
+          is not offered - an always-present zero teaches the reader to stop
+          reading the numbers.
+        */}
+        <div role="group" aria-label="Filter by what will happen" className="flex items-center gap-1">
+          {ACTION_FILTERS.map((entry) => {
+            const count = shown.filter((row) => row.action === entry.id).length;
+            if (count === 0) return null;
+            const active = actionFilter === entry.id;
+            return (
+              <button
+                key={entry.id}
+                type="button"
+                aria-pressed={active}
+                onClick={() => setActionFilter(active ? null : entry.id)}
+                className={cn(
+                  "flex items-center gap-1 rounded border px-1.5 py-0.5 text-[11px] transition-colors",
+                  active
+                    ? "border-foreground/30 bg-accent text-foreground"
+                    : "border-border/60 text-muted-foreground hover:bg-accent/50"
+                )}
+              >
+                {entry.label}
+                <span className="tabular-nums">{count}</span>
+              </button>
+            );
+          })}
+          {actionFilter && (
+            <button
+              type="button"
+              onClick={() => setActionFilter(null)}
+              className="rounded px-1.5 py-0.5 text-[11px] text-muted-foreground hover:bg-accent/50"
+            >
+              All
             </button>
           )}
         </div>

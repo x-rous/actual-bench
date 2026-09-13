@@ -16,17 +16,9 @@ function coverage(decisions: Partial<ReconciliationCoverage["decisions"]>): Reco
   };
 }
 
-function renderStrip(
-  decisions: Partial<ReconciliationCoverage["decisions"]>,
-  blockingCount = 0
-) {
+function renderStrip(decisions: Partial<ReconciliationCoverage["decisions"]>) {
   render(
-    <DecisionProgressStrip
-      coverage={coverage(decisions)}
-      blockingCount={blockingCount}
-      onShowBlocking={() => {}}
-      onNextUndecided={() => {}}
-    />
+    <DecisionProgressStrip coverage={coverage(decisions)} onNextUndecided={() => {}} />
   );
 }
 
@@ -124,10 +116,6 @@ describe("the decisions progress strip", () => {
     expect(screen.getByRole("button", { name: /next undecided/i })).toBeInTheDocument();
   });
 
-  it("offers the blocking rows as something to click", () => {
-    renderStrip({ decided: 0, pending: 8 }, 4);
-    expect(screen.getByRole("button", { name: /4 to pair up first/ })).toBeInTheDocument();
-  });
 });
 
 /*

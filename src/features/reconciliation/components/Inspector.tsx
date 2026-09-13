@@ -1,6 +1,6 @@
 "use client";
 
-import { Lock, X } from "lucide-react";
+import { Link2, Lock, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type {
@@ -9,10 +9,17 @@ import type {
   StatementRow,
 } from "@/lib/reconciliation/types";
 import type { StageableField } from "@/lib/reconciliation/session/staging";
+import type { PossiblePair } from "@/lib/reconciliation/session/possiblePairs";
 import type { ReconciliationDisposition } from "@/lib/reconciliation/types";
 import { ItemActions } from "./ItemActions";
 import { StagedFields, type Option } from "./StagedFields";
-import { confidenceLabelText, describeReason, formatMinorUnits } from "../lib/format";
+import { statementText } from "@/lib/reconciliation/statement/text";
+import {
+  confidenceLabelText,
+  describeReason,
+  formatMinorUnits,
+  formatShortDate,
+} from "../lib/format";
 
 /**
  * The selected-row inspector (UX §9, feature spec §46).
@@ -95,6 +102,42 @@ function dayGap(left: string, right: string): string | null {
   return `${days} day${days === 1 ? "" : "s"} ${b > a ? "later" : "earlier"}`;
 }
 
+/**
+ * One side of a possible pair, in the shape the candidate list already uses.
+ *
+ * Date and amount on one line, the name beneath it, supporting text below that
+ * — so two of these stacked read as two things to choose between rather than as
+ * a table to parse.
+ */
+function PairSide({
+  label,
+  date,
+  amount,
+  title,
+  detail,
+  category,
+}: {
+  label: string;
+  date: string;
+  amount: number;
+  title: string;
+  detail?: string | null;
+  category?: string | null;
+}) {
+  return (
+    <div className="flex flex-col gap-0.5 rounded-md border border-border/60 bg-background/60 p-2 text-xs">
+      <span className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</span>
+      <span className="flex justify-between gap-2">
+        <span className="tabular-nums text-muted-foreground">{formatShortDate(date)}</span>
+        <span className="tabular-nums font-medium">{formatMinorUnits(amount)}</span>
+      </span>
+      <span className="break-words font-medium">{title || "No payee"}</span>
+      {detail && <span className="break-words text-muted-foreground">{detail}</span>}
+      {category && <span className="text-muted-foreground">{category}</span>}
+    </div>
+  );
+}
+
 export type InspectorProps = {
   item: ReconciliationItem;
   statementRow: StatementRow | undefined;
@@ -109,6 +152,23 @@ export type InspectorProps = {
   onUnstage: (field: StageableField) => void;
   /** The session has been applied: show the record, offer no more decisions. */
   readOnly?: boolean;
+  /**
+   * The other half of a pair the matcher could not relate.
+   *
+   * Offered here rather than in the candidate list, and confirmed by its own
+   * button, because that is the whole basis on which the search behind it runs
+   * at a lower threshold than matching: it can be generous precisely because
+   * acting on it is deliberate. Putting it among the candidates would make it
+   * one keypress away and take that back.
+   */
+  possiblePartner?: {
+    pair: PossiblePair;
+    /** The statement side of the pair, whichever row is selected. */
+    row: StatementRow | undefined;
+    /** The Actual side of the pair, whichever row is selected. */
+    transaction: ActualTransactionSnapshot | undefined;
+  } | null;
+  onLinkPossible?: (statementItemId: string, actualItemId: string) => void;
 };
 
 export function Inspector({
@@ -124,6 +184,8 @@ export function Inspector({
   onStage,
   onUnstage,
   readOnly = false,
+  possiblePartner = null,
+  onLinkPossible,
 }: InspectorProps) {
   /*
    * The transaction this row is about — and only when there is one.
@@ -217,12 +279,14 @@ export function Inspector({
         <section className="flex flex-col gap-1.5">
           <h4 className="text-[11px] font-semibold uppercase tracking-wide">Bank statement</h4>
           <dl className="flex flex-col gap-1.5">
-            {!chosen && <Field label="Date" value={statementRow.postedDate} />}
+            {!chosen && !possiblePartner && (
+              <Field label="Date" value={statementRow.postedDate} />
+            )}
             <Field label="Imported payee" value={statementRow.importedPayee} />
             {statementRow.bankNotes && (
               <Field label="Bank notes" value={statementRow.bankNotes} />
             )}
-            {!chosen && (
+            {!chosen && !possiblePartner && (
               <Field label="Amount" value={formatMinorUnits(statementRow.amount)} numeric />
             )}
             {/* A foreign purchase carries two amounts, and which one Actual
@@ -259,6 +323,85 @@ export function Inspector({
             <Field label="Category" value={chosen.categoryName} />
             <Field label="Notes" value={chosen.notes} />
           </dl>
+        </section>
+      )}
+
+      {/*
+        Shown above the decide actions, because if these two are the same thing
+        then none of the decisions below is the right one.
+
+        **Both sides, always.** The first version showed only the difference —
+        "0.67 apart" — while the panel above it showed whichever row happened to
+        be selected. So the user was asked to confirm a pairing without ever
+        being shown the other half of it, which is not a question anyone can
+        answer. The comparison is the same shape the panel uses for a matched
+        row: one line per fact, both readings, differences marked.
+      */}
+      {!readOnly && possiblePartner?.row && possiblePartner.transaction && onLinkPossible && (
+        <section className="flex flex-col gap-2 rounded-md border border-sky-500/40 bg-sky-500/5 p-2.5">
+          <h4 className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-sky-700 dark:text-sky-300">
+            <Link2 className="h-3 w-3" aria-hidden="true" />
+            Possibly the same transaction
+          </h4>
+
+          {/*
+            Stacked, not side by side.
+            
+            A three-column compare fits a *matched* row, where the panel is
+            reporting a conclusion and the two readings of each fact belong on
+            one line. Here the user is choosing, and choosing is what the
+            candidate list already does - one block per transaction, read top to
+            bottom. Two shapes for the same act is one more thing to learn, and
+            in a 24rem panel the columns were too narrow for a merchant name.
+          */}
+          <PairSide
+            label="From the statement"
+            date={possiblePartner.row.postedDate}
+            amount={possiblePartner.row.amount}
+            title={statementText(possiblePartner.row)}
+          />
+          <PairSide
+            label="In Actual"
+            date={possiblePartner.transaction.date}
+            amount={possiblePartner.transaction.amount}
+            // The same three channels the comparison itself reads. Falling
+            // straight to "No payee" threw away the bank text the pairing was
+            // very likely found on.
+            title={
+              possiblePartner.transaction.payeeName ??
+              possiblePartner.transaction.importedPayee ??
+              ""
+            }
+            detail={possiblePartner.transaction.notes}
+            category={possiblePartner.transaction.categoryName}
+          />
+
+          {/* What separates them, said once rather than marked on each line. */}
+          <p className="text-[11px] text-muted-foreground">
+            {possiblePartner.pair.dayGap === 0
+              ? "Same day"
+              : `${Math.abs(possiblePartner.pair.dayGap)} day${
+                  Math.abs(possiblePartner.pair.dayGap) === 1 ? "" : "s"
+                } apart`}
+            {possiblePartner.pair.amountDifference !== 0 &&
+              ` · ${formatMinorUnits(Math.abs(possiblePartner.pair.amountDifference))} apart`}
+            . Matching would not relate these, so neither row was offered to the other.
+          </p>
+
+          <Button
+            size="sm"
+            variant="outline"
+            className="self-start"
+            onClick={() =>
+              onLinkPossible(
+                possiblePartner.pair.statementItemId,
+                possiblePartner.pair.actualItemId
+              )
+            }
+          >
+            <Link2 className="mr-1 h-3.5 w-3.5" />
+            These are the same transaction
+          </Button>
         </section>
       )}
 

@@ -65,6 +65,12 @@ import {
 import { loadLatestForDrift } from "../lib/loadDrift";
 import { verifyApply, type VerificationReport } from "@/lib/reconciliation/apply/verification";
 import {
+  findPossiblePairs,
+  wouldWrite,
+  type PossiblePair,
+} from "@/lib/reconciliation/session/possiblePairs";
+import { buildTextCorpus } from "@/lib/reconciliation/match/text";
+import {
   mergeOperationResults,
   summarizeResults,
   type OperationResult,
@@ -89,6 +95,7 @@ import type { StatementParseConfig } from "@/lib/reconciliation/statement/normal
 import { ImportPanel } from "./ImportPanel";
 import { ConfirmDialog, type ConfirmState } from "@/components/ui/confirm-dialog";
 import { NewSessionDialog } from "./NewSessionDialog";
+import { PossiblePairsDialog } from "./PossiblePairsDialog";
 import { SessionList, rowCountOf } from "./SessionList";
 import { Workbench } from "./Workbench";
 
@@ -365,6 +372,58 @@ export function ReconciliationView() {
   }, [sessionQuery.data, hydratedSessionId, screen, loadedSessionId]);
 
   /**
+   * Pair a statement row with a transaction the matcher never related.
+   *
+   * At component scope rather than inside the screen, because the possible-pairs
+   * dialog offers the same action from outside any one screen's render.
+   *
+   * Rows are removed as well as changed - the transaction's own row is
+   * absorbed into the pair - so the whole set is rewritten rather than
+   * patched, the same as resolving a candidate.
+   */
+  function handleManualMatch(statementItemId: string, actualItemId: string) {
+    const next = linkManually({
+      items,
+      statementItemId,
+      actualItemId,
+      statementRows: statementRowsById,
+      transactions: transactionsById,
+      transfersReported,
+    });
+    // Null when the two rows are not a statement row and a transaction. The
+    // toolbar only offers the action for that shape, so this is defence in
+    // depth rather than a path the UI can reach.
+    if (!next) return;
+
+    // The link absorbs the Actual-only row into the statement row, so a bulk
+    // undo can no longer put things back: `updateItem` restores fields on ids
+    // that still exist and silently skips the one that does not. The statement
+    // row would return to "create" while still holding the transaction - and
+    // then create a second copy of it. Same rule as hydration and re-matching:
+    // when the rows change, the undo that referred to them is spent.
+    setLastBulk(null);
+    setItems(next);
+    void mutations.replaceItems
+      .mutateAsync({
+        sessionId: sessionId ?? "",
+        items: next.map((entry) => ({
+          id: entry.id,
+          statementRowIds: entry.statementRowIds,
+          actualTransactionIds: entry.actualTransactionIds,
+          disposition: entry.disposition,
+          reasonCode: entry.reasonCode ?? null,
+          match: entry.match,
+          guards: entry.guards,
+          actualSnapshot: baselineFor(entry),
+          stagedChanges: entry.stagedChanges ?? null,
+        })),
+      })
+      .catch((error: unknown) => {
+        setMatchError(error instanceof Error ? error.message : "Could not link those rows");
+      });
+  }
+
+  /**
    * Refresh the Actual side of a resumed session.
    *
    * Hydration puts the stored snapshots on screen so the grid is never empty,
@@ -547,6 +606,49 @@ export function ReconciliationView() {
       applyConfig,
     ]
   );
+
+  /*
+   * Statement rows and transactions that look like the same thing.
+   *
+   * Read from the items rather than the plan, so a pair is offered while it can
+   * still be linked instead of after two decisions have been staged against it.
+   * The config and the corpus live here, so the wiring does too; the engine
+   * stays transport-free.
+   */
+  const possiblePairs = useMemo(
+    () =>
+      findPossiblePairs({
+        items,
+        statementRows: statementRowsById,
+        transactions: transactionsById,
+        text: matchConfig.text,
+        needleFloor: matchConfig.needleFloor,
+        corpus: buildTextCorpus(snapshot.map((transaction) => transaction.notes)),
+      }),
+    [items, statementRowsById, transactionsById, matchConfig, snapshot]
+  );
+
+  const itemsById = useMemo(() => new Map(items.map((item) => [item.id, item])), [items]);
+
+  /**
+   * Pairs still worth stopping someone for on the way to Review.
+   *
+   * Narrower than what the workbench shows, on purpose. A pair neither side of
+   * which is staged writes nothing, and interrupting for it is how a dialog
+   * becomes something people dismiss without reading. Dismissals are remembered
+   * for the session only — persistence was judged not worth a schema change.
+   */
+  const [dismissedPairs, setDismissedPairs] = useState<Set<string>>(new Set());
+  const [reviewGateFor, setReviewGateFor] = useState<string | null>(null);
+
+  const gatePairs = useMemo(
+    () =>
+      possiblePairs.filter(
+        (pair) => wouldWrite(pair, itemsById) && !dismissedPairs.has(pairKey(pair))
+      ),
+    [possiblePairs, itemsById, dismissedPairs]
+  );
+
 
   const coverage = useMemo(
     () =>
@@ -756,6 +858,23 @@ export function ReconciliationView() {
      * Only ever backwards or to somewhere already reached — the header reports
      * progress, it does not skip work.
      */
+    /**
+     * The only way into Review.
+     *
+     * Both the phase trail and the primary button come through here, because a
+     * gate with a path around it is worse than no gate - the review screen no
+     * longer carries the warning this replaces. Returning to Review from a
+     * withheld Apply is deliberately *not* routed here: that is the drift
+     * report showing itself, not someone arriving fresh.
+     */
+    function enterReview(id: string) {
+      if (gatePairs.length > 0) {
+        setReviewGateFor(id);
+        return;
+      }
+      setScreen({ name: "review", sessionId: id });
+    }
+
     function goToStep(step: SessionStep, id: string) {
       setDriftReport(null);
       setDriftAcknowledged(false);
@@ -774,7 +893,7 @@ export function ReconciliationView() {
           if (nextConfig !== applyConfig) handleApplyConfigChange(nextConfig);
         }
         setScreen({ name: "workbench", sessionId: id });
-      } else if (step === "review") setScreen({ name: "review", sessionId: id });
+      } else if (step === "review") enterReview(id);
       else if (step === "applied") setScreen({ name: "result", sessionId: id });
     }
 
@@ -941,48 +1060,6 @@ export function ReconciliationView() {
         // attached to a decision the user withdrew would apply them by surprise.
         stagedChanges: disposition === "unresolved" ? undefined : item.stagedChanges,
       }));
-    }
-
-    /**
-     * Pair a statement row with a transaction the matcher never related.
-     *
-     * Rows are removed as well as changed - the transaction's own row is
-     * absorbed into the pair - so the whole set is rewritten rather than
-     * patched, the same as resolving a candidate.
-     */
-    function handleManualMatch(statementItemId: string, actualItemId: string) {
-      const next = linkManually({
-        items,
-        statementItemId,
-        actualItemId,
-        statementRows: statementRowsById,
-        transactions: transactionsById,
-        transfersReported,
-      });
-      // Null when the two rows are not a statement row and a transaction. The
-      // toolbar only offers the action for that shape, so this is defence in
-      // depth rather than a path the UI can reach.
-      if (!next) return;
-
-      setItems(next);
-      void mutations.replaceItems
-        .mutateAsync({
-          sessionId: sessionId ?? "",
-          items: next.map((entry) => ({
-            id: entry.id,
-            statementRowIds: entry.statementRowIds,
-            actualTransactionIds: entry.actualTransactionIds,
-            disposition: entry.disposition,
-            reasonCode: entry.reasonCode ?? null,
-            match: entry.match,
-            guards: entry.guards,
-            actualSnapshot: baselineFor(entry),
-            stagedChanges: entry.stagedChanges ?? null,
-          })),
-        })
-        .catch((error: unknown) => {
-          setMatchError(error instanceof Error ? error.message : "Could not link those rows");
-        });
     }
 
     /**
@@ -1728,7 +1805,7 @@ export function ReconciliationView() {
                       coverage.decisions.pending > 0
                         ? `${coverage.decisions.pending} still undecided`
                         : null,
-                    onClick: () => setScreen({ name: "review", sessionId: screen.sessionId }),
+                    onClick: () => enterReview(screen.sessionId),
                     disabled: applyPlan.operations.length === 0,
                   }}
                 />
@@ -1747,6 +1824,7 @@ export function ReconciliationView() {
             statementRows={statementRowsById}
             transactions={transactionsById}
             coverage={coverage}
+            possiblePairs={possiblePairs}
             matchConfig={matchConfig}
             matchPreset={matchPreset}
             isMatching={isMatching}
@@ -1897,11 +1975,37 @@ export function ReconciliationView() {
         }}
         state={confirm}
       />
+
+      {/* The last look at a possible pair before its decisions are reviewed. */}
+      <PossiblePairsDialog
+        open={reviewGateFor !== null}
+        pairs={gatePairs}
+        items={itemsById}
+        statementRows={statementRowsById}
+        transactions={transactionsById}
+        onLink={(statementItemId, actualItemId) => {
+          handleManualMatch(statementItemId, actualItemId);
+        }}
+        onDismiss={(pair) =>
+          setDismissedPairs((previous) => new Set(previous).add(pairKey(pair)))
+        }
+        onBackToRows={() => setReviewGateFor(null)}
+        onContinue={() => {
+          const id = reviewGateFor;
+          setReviewGateFor(null);
+          if (id) setScreen({ name: "review", sessionId: id });
+        }}
+      />
     </>
   );
 }
 
 /** The snapshot stored alongside an item, for drift detection before Apply. */
+/** Stable identity for a pair, so a dismissal survives the list being recomputed. */
+function pairKey(pair: PossiblePair): string {
+  return `${pair.statementItemId}|${pair.actualItemId}`;
+}
+
 function transactionsSnapshotFor(
   item: ReconciliationItem,
   transactions: ActualTransactionSnapshot[]
