@@ -320,7 +320,17 @@ Danube-D- JEDDAH SAU SAR53.45   -54.42    on the statement, nothing in Actual
 #API Danube-D-8505              -52.07    in Actual, not on the statement
 ```
 
-Select the two rows and choose **These are the same transaction**. The statement's amount is carried
+Actual Bench looks for these itself. The toolbar counts them — **3 possible pairs** — and clicking
+that narrows the grid to the rows involved; opening either one shows its likely partner and offers
+to link them.
+
+They are deliberately not offered as *candidates*. A candidate is one keypress from becoming a
+decision, so matching has to be strict about what it offers. A possible pair is confirmed only by an
+explicit **These are the same transaction** — and because acting on it is deliberate, the search
+behind it can be far more generous without making anything else riskier. No matching threshold
+changes.
+
+You can also select the two rows yourself and choose **These are the same transaction**. The statement's amount is carried
 onto the transaction as a staged correction, so its id, notes, payee, category and any schedule or
 transfer link survive, and it is recorded as your decision rather than the matcher's. Limited to
 transactions in the loaded window.
@@ -351,6 +361,18 @@ A transformation can be applied to many rows at once and previewed before it is 
   `| dinner with Ahmad` both survive. Where no such run can be identified, the note is left alone and
   you are told why, rather than guessed at.
 
+### On the way to Review
+
+Someone working row by row will have seen these already. Someone who filtered to *Not in Actual*,
+selected everything and pressed Create never looked at an individual row — and that is the quickest
+way through a long statement, so it is also the likeliest way to write a duplicate.
+
+So any possible pair that would actually **write** something is shown once before Review, statement
+on the left and Actual on the right, with how far apart the dates and amounts are. Link it, leave it,
+or carry on. It never blocks: replacing a transaction, clearing a genuine duplicate the statement
+also carries, and retrying a partial apply are all legitimate reasons to mean both halves. A pair you
+leave is not raised again for the rest of the session.
+
 ## 4. Review
 
 ![The review screen: counts for create, update and delete, the net balance change, the two write settings, and each row shown as it will look afterwards.](../../../assets/screenshots/user-guide/recon-review.png)
@@ -366,22 +388,6 @@ what kind of write is planned:
 - **Update + bank text** means a staged change and the provenance write travel together.
 - If an imported payee already exists and will be replaced, the row turns amber and shows its
   previous value.
-
-### Creating a duplicate while deleting its original
-
-Applying a **create** and a **delete** that are really the same transaction duplicates it and removes
-the original - the one outcome here that leaves your account worse than it started. Each half looks
-entirely reasonable alone, and under date order the two are usually pages apart.
-
-So the finished plan is checked for it, and any suspected pairs are named above the summary with both
-amounts. This check is deliberately more willing to ask than matching is to act: it accepts weaker
-text agreement and a wider date gap, and ignores the amounts entirely, because a wrong amount is one
-of the reasons the pairing was missed in the first place. A false alarm costs you a glance; a missed
-pair costs a duplicate.
-
-It warns rather than blocks. Replacing a transaction whose amount cannot be corrected in place,
-clearing a genuine duplicate the statement also carries, and retrying a partial apply are all
-legitimate reasons to mean both halves.
 
 It also states:
 

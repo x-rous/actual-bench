@@ -1,6 +1,6 @@
 "use client";
 
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import type {
   ApplyPlan,
   UpdateOperation,
@@ -160,5 +160,34 @@ describe("reconciliation review write labels", () => {
     expect(screen.getByText("#2025-08 Amazon.ae Dubai DXB · household")).toHaveClass(
       "text-amber-600"
     );
+  });
+});
+
+/*
+ * "What exactly am I deleting" is a question worth being able to ask directly.
+ * Scrolling a few hundred rows looking for the four amber ones is not an answer.
+ */
+describe("narrowing the table to one kind of write", () => {
+  it("offers only the kinds actually in play, with their counts", () => {
+    renderComparison({});
+
+    const group = screen.getByRole("group", { name: "Filter by what will happen" });
+    // A kind with no rows is not offered: an always-present zero teaches the
+    // reader to stop reading the numbers.
+    expect(within(group).queryByText("Delete")).not.toBeInTheDocument();
+  });
+
+  it("narrows to one kind and back again", () => {
+    renderComparison({});
+
+    const group = screen.getByRole("group", { name: "Filter by what will happen" });
+    const update = within(group).getByRole("button", { name: /Update/ });
+
+    fireEvent.click(update);
+    expect(update).toHaveAttribute("aria-pressed", "true");
+
+    // Pressing the same one again is the way back, and so is All.
+    fireEvent.click(update);
+    expect(update).toHaveAttribute("aria-pressed", "false");
   });
 });

@@ -12,6 +12,7 @@ import { statementText } from "@/lib/reconciliation/statement/text";
 import { formatShortDate } from "../lib/format";
 import { canDecideOneTransaction, canStageDelete } from "@/lib/reconciliation/session/staging";
 import type { ReconciliationCoverage } from "@/lib/reconciliation/session/build";
+import type { PossiblePair } from "@/lib/reconciliation/session/possiblePairs";
 import type {
   ActualTransactionSnapshot,
   MatchConfig,
@@ -55,7 +56,8 @@ export type FilterId =
   | "create"
   | "matched"
   | "actual-only"
-  | "outside-period";
+  | "outside-period"
+  | "possible";
 
 /**
  * How the grid is ordered.
@@ -336,6 +338,10 @@ export function matchesFilter(item: ReconciliationItem, filter: FilterId): boole
       return item.reasonCode === REASON.notOnStatement;
     case "outside-period":
       return item.reasonCode === REASON.outsideStatementPeriod;
+    // Membership of a possible pair is derived state, not a reason code, so it
+    // cannot be answered from the item alone - see `matchesPossibleFilter`.
+    case "possible":
+      return true;
     default:
       return true;
   }
@@ -346,6 +352,13 @@ export type WorkbenchProps = {
   statementRows: Map<string, StatementRow>;
   transactions: Map<string, ActualTransactionSnapshot>;
   coverage: ReconciliationCoverage;
+  /**
+   * Statement rows and transactions that look like the same thing.
+   *
+   * Deliberately *not* candidates: matching refused these, and they are acted on
+   * only by an explicit confirmation. Derived for display; nothing is persisted.
+   */
+  possiblePairs?: PossiblePair[];
   matchConfig: MatchConfig;
   matchPreset: TextTargetPreset;
   isMatching: boolean;
@@ -455,6 +468,7 @@ export function Workbench({
   statementRows,
   transactions,
   coverage,
+  possiblePairs = [],
   matchConfig,
   matchPreset,
   isMatching,
@@ -607,9 +621,44 @@ export function Workbench({
     });
   }, [items, statementRows, transactions, sort]);
 
+  /**
+   * The other half of this row's possible pair, with the ids a link needs.
+   *
+   * Returned as the *pair* rather than the item, because linking has to say
+   * which side is which and the caller should not have to work it out again.
+   */
+  const partnerFor = useCallback(
+    (item: ReconciliationItem) => {
+      const pair = possiblePairs.find(
+        (candidate) =>
+          candidate.statementItemId === item.id || candidate.actualItemId === item.id
+      );
+      if (!pair) return null;
+
+      // Resolved here rather than in the panel: both sides are needed whichever
+      // row is selected, and the panel only ever receives its own row's data.
+      const statementSide = items.find((entry) => entry.id === pair.statementItemId);
+      const actualSide = items.find((entry) => entry.id === pair.actualItemId);
+      return {
+        pair,
+        row: statementRows.get(statementSide?.statementRowIds[0] ?? ""),
+        transaction: transactions.get(actualSide?.actualTransactionIds[0] ?? ""),
+      };
+    },
+    [possiblePairs, items, statementRows, transactions]
+  );
+
+  /** Every item on either side of a possible pair, for the filter and the badge. */
+  const inPossiblePair = useMemo(
+    () =>
+      new Set(possiblePairs.flatMap((pair) => [pair.statementItemId, pair.actualItemId])),
+    [possiblePairs]
+  );
+
   const visible = useMemo(() => {
     const needle = search.trim().toLowerCase();
     return sorted.filter((item) => {
+      if (filter === "possible" && !inPossiblePair.has(item.id)) return false;
       if (!matchesFilter(item, filter)) return false;
       if (!matchesDecisionFilter(item, decisionFilter)) return false;
       if (!matchesAttributes(item, attributeFilters, transactions)) return false;
@@ -647,7 +696,7 @@ export function Workbench({
       }
       return haystacks.join(" ").toLowerCase().includes(needle);
     });
-  }, [sorted, filter, decisionFilter, attributeFilters, search, statementRows, transactions]);
+  }, [sorted, filter, decisionFilter, attributeFilters, search, statementRows, transactions, inPossiblePair]);
 
   const visibleIds = useMemo(() => visible.map((item) => item.id), [visible]);
 
@@ -1002,6 +1051,52 @@ export function Workbench({
           ))}
         </div>
 
+        {/*
+          Work to do, rather than what kind of row this is.
+          
+          The filters to the left classify: every row is one of them, and the
+          counts sum to the statement. These two are queues - rows that need an
+          answer before their neighbours make sense, and rows matching could not
+          relate. They were scattered, one in the progress strip and one beside
+          the sort control, so neither read as a thing to work through. Together
+          and next to the classifications, they read as "and here is what is
+          outstanding".
+        */}
+        {(blocking.length > 0 || possiblePairs.length > 0) && (
+          <div
+            role="group"
+            aria-label="Rows waiting on you"
+            className="flex flex-wrap items-center gap-1 border-l border-border/60 pl-2"
+          >
+            {blocking.length > 0 && (
+              <FilterButton
+                entry={{
+                  id: "cluster",
+                  label: "To pair up",
+                  dot: "bg-amber-500/70",
+                  hint: "Several rows and several transactions share a merchant and a day. Settling one frees the rest, so these come first.",
+                }}
+                active={filter === "cluster"}
+                count={blocking.length}
+                onSelect={() => setFilter("cluster")}
+              />
+            )}
+            {possiblePairs.length > 0 && (
+              <FilterButton
+                entry={{
+                  id: "possible",
+                  label: "Possible pairs",
+                  dot: "bg-sky-500/70",
+                  hint: "Rows matching would not relate - the text is too far apart, or the dates or amounts are - but which look like one transaction. Open one to confirm or leave it.",
+                }}
+                active={filter === "possible"}
+                count={possiblePairs.length}
+                onSelect={() => setFilter("possible")}
+              />
+            )}
+          </div>
+        )}
+
         {/* Kept apart: nothing here counts towards the statement's coverage. */}
         <div
           role="group"
@@ -1020,22 +1115,6 @@ export function Workbench({
         </div>
 
         <div className="ml-auto flex items-center gap-2">
-          {/* Beside the actions rather than on a row of its own: full width, it
-              cost a line of vertical space to hold a field nobody types more
-              than a few characters into. */}
-          <div className="relative flex items-center">
-            <Search
-              className="pointer-events-none absolute left-2 h-3.5 w-3.5 text-muted-foreground"
-              aria-hidden="true"
-            />
-            <Input
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              placeholder="Search rows…"
-              aria-label="Search reconciliation rows"
-              className="h-7 w-72 pl-7 text-xs"
-            />
-          </div>
           <Button
             variant="outline"
             size="sm"
@@ -1152,8 +1231,6 @@ export function Workbench({
         */}
         <DecisionProgressStrip
           coverage={coverage}
-          blockingCount={blocking.length}
-          onShowBlocking={() => setFilter("cluster")}
           onNextUndecided={goToNextUndecided}
         />
 
@@ -1179,6 +1256,26 @@ export function Workbench({
         />
 
         <div className="ml-auto flex flex-wrap items-center gap-x-3 gap-y-1">
+          {/*
+            With the table's own controls rather than the session's actions.
+            
+            It sat beside Transform and Re-run, which act on the reconciliation;
+            search narrows what the grid shows, like the sort and the filters it
+            now sits among.
+          */}
+          <div className="relative flex items-center">
+            <Search
+              className="pointer-events-none absolute left-2 h-3.5 w-3.5 text-muted-foreground"
+              aria-hidden="true"
+            />
+            <Input
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search rows…"
+              aria-label="Search reconciliation rows"
+              className="h-7 w-56 pl-7 text-xs"
+            />
+          </div>
           <label className="flex items-center gap-1 text-muted-foreground">
             Sort
             <select
@@ -1373,6 +1470,8 @@ export function Workbench({
                 ? statementRows.get(selected.statementRowIds[0])
                 : undefined
             }
+            possiblePartner={partnerFor(selected)}
+            onLinkPossible={onManualMatch}
             transactions={selected.actualTransactionIds
               .map((id) => transactions.get(id))
               .filter((t): t is ActualTransactionSnapshot => Boolean(t))}

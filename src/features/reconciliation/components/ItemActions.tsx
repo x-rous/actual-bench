@@ -165,6 +165,21 @@ export function ItemActions({
       )}
 
       <div className="flex flex-wrap gap-1.5">
+        {/*
+          Accepting the pairing, which had no control at all.
+          
+          A row with one transaction and a review reason - "same merchant, date
+          and amount", say - offered only Delete and Ignore, so the obvious
+          answer was the one thing the panel could not do. `Enter` did it, which
+          means the action existed and was simply invisible.
+        */}
+        {hasStatementRow && transactions.length === 1 && item.disposition !== "matched" && (
+          <Button size="sm" variant="outline" onClick={() => onDisposition("matched")}>
+            <Check className="mr-1 h-3.5 w-3.5" />
+            These match
+          </Button>
+        )}
+
         {hasStatementRow && !hasTransaction && (
           <Button
             size="sm"
@@ -176,14 +191,21 @@ export function ItemActions({
           </Button>
         )}
 
-        {hasTransaction && !hasStatementRow && (
+        {/*
+          Offered wherever there is a transaction, matching the bulk bar.
+          
+          It used to require the row to have *no* statement row, so selecting a
+          two-sided row and pressing Keep in bulk worked while the same row's own
+          panel did not offer it - the two disagreed about what was possible.
+        */}
+        {hasTransaction && (
           <Button
             size="sm"
             variant={item.disposition === "keep" ? "default" : "outline"}
             onClick={() => onDisposition("keep")}
           >
             <Check className="mr-1 h-3.5 w-3.5" />
-            Keep
+            Keep as is
           </Button>
         )}
 
