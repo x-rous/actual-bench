@@ -48,6 +48,9 @@ import { WorkbenchRow } from "./WorkbenchRow";
 
 export type FilterId =
   | "all"
+  /** A whole side of the grid, and the head of its group of filters. */
+  | "statement"
+  | "in-actual"
   | "needs-review"
   | "ambiguous"
   | "amount-mismatch"
@@ -87,6 +90,14 @@ type FilterDef = {
   dot: string;
   /** Indented under the filter it refines. */
   child?: boolean;
+  /**
+   * Heads a group rather than sitting inside it.
+   *
+   * Rendered without a dot, because a dot is what marks a chip as naming one
+   * segment of the grid - and a head names a whole side, which has no single
+   * colour. The weight carries the hierarchy instead.
+   */
+  head?: boolean;
   /**
    * What this filter actually means, on hover.
    *
@@ -172,6 +183,41 @@ const STATEMENT_FILTERS: FilterDef[] = [
  */
 /** The reasons a row lands in review — children of `needs-review`. */
 const REVIEW_REASON_FILTERS = STATEMENT_FILTERS.filter((entry) => entry.child);
+
+/** Rendered ahead of both groups, so it is pulled out by name rather than position. */
+const ALL_FILTER = STATEMENT_FILTERS.find((entry) => entry.id === "all")!;
+
+/**
+ * The head of each group, which is also a filter for the whole of it.
+ *
+ * Making these clickable rather than inert labels settles a question the
+ * previous pass left open: a heading that also filters is a control you have to
+ * discover, so either it looks like a control or it should not be one. Inside a
+ * bordered group everything is now a control, and the ambiguity is gone.
+ *
+ * It also adds a view that did not exist - "show me only the statement's rows",
+ * or only what Actual holds beyond it - which had to be assembled by eye from
+ * three filters before.
+ */
+const GROUP_HEADS: FilterDef[] = [
+  {
+    id: "statement",
+    label: "Statement",
+    dot: "",
+    head: true,
+    hint: "Every row the statement has, however it was settled.",
+  },
+  {
+    id: "in-actual",
+    label: "In Actual",
+    dot: "",
+    head: true,
+    hint: "Transactions Actual holds that the statement does not account for. None of these count towards the statement's coverage.",
+  },
+];
+
+const STATEMENT_HEAD = GROUP_HEADS[0];
+const ACTUAL_HEAD = GROUP_HEADS[1];
 
 const ACTUAL_ONLY_FILTERS: FilterDef[] = [
   {
@@ -339,6 +385,25 @@ export function matchesFilter(item: ReconciliationItem, filter: FilterId): boole
       return item.reasonCode === REASON.notOnStatement;
     case "outside-period":
       return item.reasonCode === REASON.outsideStatementPeriod;
+
+    /*
+     * A side is the union of its own filters, not a test on the item.
+     *
+     * Tempting to ask `statementRowIds.length > 0` instead, and it would be
+     * wrong: a likely duplicate is an Actual-only row that lands under "Needs
+     * review", which sits in the statement group. Reading the side off the item
+     * would make the head select 48 rows while the chips beneath it summed to
+     * 49 - a head that disagrees with its own group. Defining it as the union
+     * makes that impossible by construction.
+     */
+    case "statement":
+      return (
+        matchesFilter(item, "needs-review") ||
+        matchesFilter(item, "create") ||
+        matchesFilter(item, "matched")
+      );
+    case "in-actual":
+      return matchesFilter(item, "actual-only") || matchesFilter(item, "outside-period");
     // Membership of a possible pair is derived state, not a reason code, so it
     // cannot be answered from the item alone - see `matchesPossibleFilter`.
     case "possible":
@@ -458,13 +523,21 @@ function FilterButton({
       className={cn(
         "flex items-center gap-1.5 rounded-md px-2 py-1 text-xs transition-colors",
         entry.child && "text-[11px]",
+        entry.head && "font-medium",
         active
           ? "bg-accent text-accent-foreground"
-          : "text-muted-foreground hover:bg-accent/50",
+          : entry.head
+            ? "text-foreground hover:bg-accent/50"
+            : "text-muted-foreground hover:bg-accent/50",
         count === 0 && !active && "opacity-50"
       )}
     >
-      <span className={cn("h-2 w-2 shrink-0 rounded-full", entry.dot)} aria-hidden="true" />
+      {/* A dot names one segment of the grid. A head names a whole side, which
+          has no single colour - so it goes without, and the weight above
+          carries the hierarchy instead. */}
+      {!entry.head && (
+        <span className={cn("h-2 w-2 shrink-0 rounded-full", entry.dot)} aria-hidden="true" />
+      )}
       {entry.label}
       <span className="tabular-nums opacity-70">{count}</span>
     </button>
@@ -593,6 +666,24 @@ export function Workbench({
     }
     return result;
   }, [items]);
+
+  /**
+   * How many rows each filter group holds.
+   *
+   * Summed from the group's own chips rather than counted off the items, so the
+   * label can never disagree with what is beneath it - which is the arithmetic
+   * a reader actually checks. Derived from the filter lists rather than named
+   * one by one, so adding a filter does not silently leave its rows out of the
+   * total above it.
+   */
+  const groupTotals = useMemo(() => {
+    const sum = (defs: FilterDef[]) =>
+      defs
+        .filter((entry) => !entry.child && entry.id !== "all")
+        .reduce((total, entry) => total + (counts[entry.id] ?? 0), 0);
+
+    return { statement: sum(STATEMENT_FILTERS), actual: sum(ACTUAL_ONLY_FILTERS) };
+  }, [counts]);
 
   /**
    * Sorted by transaction date, not by match status.
@@ -1057,14 +1148,48 @@ export function Workbench({
 
       <div className="flex flex-wrap items-center gap-2 border-b border-border/50 px-4 py-2">
         {/*
-          The four reasons a row needs review are children of "Needs review",
-          and rendered as a flat row they read as eight unrelated filters — five
-          of which are usually zero. They now appear only when that branch is in
-          play, bracketed and indented so the relationship is visible rather
-          than implied by a slightly smaller font.
+          All, ahead of both groups rather than inside one.
+
+          It used to sit at the head of the statement group while counting the
+          Actual-only rows too, so the group labelled "statement rows" led with a
+          figure that included nineteen rows that were not statement rows. It is
+          not a category - it is the absence of one - and it belongs beside the
+          two subtotals it is the sum of, not among them.
         */}
-        <div role="group" aria-label="Filter statement rows" className="flex flex-wrap items-center gap-1">
-          {STATEMENT_FILTERS.filter((entry) => !entry.child).map((entry) => (
+        <FilterButton
+          entry={ALL_FILTER}
+          active={filter === "all"}
+          count={counts.all}
+          onSelect={() => setFilter("all")}
+        />
+
+        {/*
+          A real border rather than a divider.
+          
+          The previous pass grouped these with a left rule and a muted caption,
+          and it did not read: the caption looked like one more filter with the
+          dot missing. A box says "these belong together" without asking anyone
+          to infer it, and it gives the head somewhere to sit that is obviously
+          part of the group rather than next to it.
+        */}
+        <div
+          role="group"
+          aria-label="Filter statement rows"
+          className="flex flex-wrap items-center gap-1 rounded-md border border-border/60 px-1 py-0.5"
+        >
+          <FilterButton
+            entry={STATEMENT_HEAD}
+            active={filter === "statement"}
+            count={groupTotals.statement}
+            onSelect={() => setFilter("statement")}
+          />
+          {/*
+            The four reasons a row needs review are children of "Needs review",
+            and rendered as a flat row they read as eight unrelated filters -
+            five of which are usually zero. They appear only when that branch is
+            in play, in a popover opening from the filter they belong to.
+          */}
+          {STATEMENT_FILTERS.filter((entry) => !entry.child && entry.id !== "all").map((entry) => (
             <span key={entry.id} className="flex items-center gap-1">
               <FilterButton
                 entry={entry}
@@ -1131,8 +1256,14 @@ export function Workbench({
         <div
           role="group"
           aria-label="Filter transactions that are not on the statement"
-          className="flex flex-wrap items-center gap-1 border-l border-border/60 pl-2"
+          className="flex flex-wrap items-center gap-1 rounded-md border border-border/60 px-1 py-0.5"
         >
+          <FilterButton
+            entry={ACTUAL_HEAD}
+            active={filter === "in-actual"}
+            count={groupTotals.actual}
+            onSelect={() => setFilter("in-actual")}
+          />
           {ACTUAL_ONLY_FILTERS.map((entry) => (
             <FilterButton
               key={entry.id}

@@ -140,3 +140,137 @@ describe("the review filter and the reasons beneath it", () => {
     expect(matchesFilter(item({ reasonCode: REASON.notOnStatement }), "needs-review")).toBe(false);
   });
 });
+
+/*
+ * The filter row now names two groups and states a subtotal for each, so those
+ * subtotals have to mean something: they are summed from the chips beneath
+ * them, which is only honest if every row lands in exactly one chip. A row
+ * counted twice inflates a group; a row counted nowhere makes the two subtotals
+ * fail to reach All, and the arithmetic a reader checks at a glance - 49 and 19
+ * make 68 - stops holding.
+ */
+describe("the top-level filters partition the rows", () => {
+  const TOP_LEVEL: FilterId[] = [
+    "needs-review",
+    "create",
+    "matched",
+    "actual-only",
+    "outside-period",
+  ];
+
+  const everyKind: { name: string; item: ReconciliationItem }[] = [
+    { name: "an automatic match", item: item({ disposition: "matched" }) },
+    {
+      name: "a match the user accepted",
+      item: item({ disposition: "matched", reasonCode: REASON.ambiguousMatch }),
+    },
+    ...Object.entries(REASON_FOR).map(([name, reasonCode]) => ({
+      name: `a row needing review (${name})`,
+      item: item({ reasonCode }),
+    })),
+    {
+      name: "a row with nothing in Actual",
+      item: item({ reasonCode: REASON.noActualCandidate, actualTransactionIds: [] }),
+    },
+    {
+      name: "one the user chose to create",
+      item: item({
+        disposition: "create",
+        reasonCode: REASON.noActualCandidate,
+        actualTransactionIds: [],
+      }),
+    },
+    {
+      name: "a transaction the statement did not mention",
+      item: item({ reasonCode: REASON.notOnStatement, statementRowIds: [] }),
+    },
+    {
+      name: "one dated outside the period",
+      item: item({
+        disposition: "keep",
+        reasonCode: REASON.outsideStatementPeriod,
+        statementRowIds: [],
+      }),
+    },
+    {
+      name: "one outside the period the user deleted",
+      item: item({
+        disposition: "delete",
+        reasonCode: REASON.outsideStatementPeriod,
+        statementRowIds: [],
+      }),
+    },
+  ];
+
+  for (const { name, item: row } of everyKind) {
+    it(`counts ${name} exactly once`, () => {
+      const hits = TOP_LEVEL.filter((filter) => matchesFilter(row, filter));
+      expect(hits).toHaveLength(1);
+    });
+  }
+
+  it("adds up, so the two subtotals reach All", () => {
+    const rows = everyKind.map((entry) => entry.item);
+    const countOf = (filter: FilterId) =>
+      rows.filter((row) => matchesFilter(row, filter)).length;
+
+    const statement = countOf("needs-review") + countOf("create") + countOf("matched");
+    const actual = countOf("actual-only") + countOf("outside-period");
+
+    expect(statement + actual).toBe(rows.length);
+  });
+});
+
+/*
+ * Each group's head is also a filter for the whole group, so it has to select
+ * exactly the rows its own chips select - no more, no fewer. The tempting
+ * shortcut is to read the side off the item (`statementRowIds.length > 0`), and
+ * it is wrong: a likely duplicate is an Actual-only row that lands under "Needs
+ * review", which sits in the statement group. That head would select 48 where
+ * its chips summed to 49, and a head that disagrees with its own group is worse
+ * than no head at all.
+ */
+describe("a group head selects exactly its own group", () => {
+  const STATEMENT_CHIPS: FilterId[] = ["needs-review", "create", "matched"];
+  const ACTUAL_CHIPS: FilterId[] = ["actual-only", "outside-period"];
+
+  const rows: ReconciliationItem[] = [
+    item({ disposition: "matched" }),
+    item({ reasonCode: REASON.ambiguousMatch }),
+    item({ reasonCode: REASON.noActualCandidate, actualTransactionIds: [] }),
+    item({ reasonCode: REASON.notOnStatement, statementRowIds: [] }),
+    item({
+      disposition: "keep",
+      reasonCode: REASON.outsideStatementPeriod,
+      statementRowIds: [],
+    }),
+    // The row that breaks the shortcut: no statement row, yet it belongs to the
+    // statement group because it is a review row.
+    item({ reasonCode: REASON.likelyDuplicate, statementRowIds: [] }),
+  ];
+
+  const matching = (filter: FilterId) => rows.filter((row) => matchesFilter(row, filter));
+  const union = (filters: FilterId[]) =>
+    rows.filter((row) => filters.some((filter) => matchesFilter(row, filter)));
+
+  it("matches its chips on the statement side", () => {
+    expect(matching("statement")).toEqual(union(STATEMENT_CHIPS));
+  });
+
+  it("matches its chips on the Actual side", () => {
+    expect(matching("in-actual")).toEqual(union(ACTUAL_CHIPS));
+  });
+
+  it("keeps a likely duplicate on the statement side, where its chip is", () => {
+    const duplicate = rows.at(-1)!;
+    expect(matchesFilter(duplicate, "statement")).toBe(true);
+    expect(matchesFilter(duplicate, "in-actual")).toBe(false);
+  });
+
+  it("splits every row between the two heads, so they add up to All", () => {
+    expect(matching("statement").length + matching("in-actual").length).toBe(rows.length);
+    for (const row of rows) {
+      expect(matchesFilter(row, "statement") && matchesFilter(row, "in-actual")).toBe(false);
+    }
+  });
+});

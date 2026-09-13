@@ -308,6 +308,21 @@ explains. Decision progress and **Next undecided** stay in the table toolbar. **
 options in a popover, so checking or changing a tolerance does not push the comparison table off the
 screen; choose **Re-run** explicitly when you want those options applied.
 
+The filters are grouped the way the grid is. **All** comes first, then a **Statement** group and an
+**In Actual** group, each boxed and headed by its own filter:
+
+```text
+All 68   ┌ Statement 49  Needs review 0  Not in Actual 1  Matched 48 ┐
+         ┌ In Actual 19  Not on statement 15  Outside period 4 ┐
+```
+
+The head of each group is a filter too: **Statement** shows every row the statement has, **In Actual**
+everything Actual holds that the statement does not account for. The two group names are the same
+words as the column headings below them, so each group sits above the columns it filters.
+
+The numbers add up in both directions - the two heads reach All, and each group's filters reach its
+head.
+
 Every row carries a **status marker** beside its checkbox, answering one question - is this row
 still yours to deal with?
 
