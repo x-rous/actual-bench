@@ -7,7 +7,7 @@ import type {
   ReconciliationItem,
   StatementRow,
 } from "@/lib/reconciliation/types";
-import { PossiblePairsDialog } from "./PossiblePairsDialog";
+import { ReviewGateDialog } from "./ReviewGateDialog";
 
 const row: StatementRow = {
   id: "s1",
@@ -56,7 +56,7 @@ const pair: PossiblePair = {
   dayGap: -2,
 };
 
-function renderDialog(over: Partial<React.ComponentProps<typeof PossiblePairsDialog>> = {}) {
+function renderDialog(over: Partial<React.ComponentProps<typeof ReviewGateDialog>> = {}) {
   const props = {
     open: true,
     pairs: [pair],
@@ -67,9 +67,10 @@ function renderDialog(over: Partial<React.ComponentProps<typeof PossiblePairsDia
     onDismiss: jest.fn(),
     onBackToRows: jest.fn(),
     onContinue: jest.fn(),
+    undecided: { statement: 0, actual: 0 },
     ...over,
   };
-  render(<PossiblePairsDialog {...props} />);
+  render(<ReviewGateDialog {...props} />);
   return props;
 }
 
@@ -107,19 +108,50 @@ describe("the last look before review", () => {
      * them would be wrong, and a gate that is wrong gets dismissed by habit.
      */
     const props = renderDialog();
-    const carryOn = screen.getByRole("button", { name: "Continue to review" });
+    const carryOn = screen.getByRole("button", { name: "Review anyway" });
 
     expect(carryOn).not.toBeDisabled();
     fireEvent.click(carryOn);
     expect(props.onContinue).toHaveBeenCalled();
   });
 
-  it("says so rather than emptying out when everything has been settled", () => {
-    // Linking the last pair must not leave a dialog full of nothing, and must
-    // not navigate on its own either - the user presses Continue.
-    const props = renderDialog({ pairs: [] });
+  it("still opens for rows left undecided when no pair is outstanding", () => {
+    /*
+     * Undecided rows are safe - nothing is written for them - so this informs
+     * rather than blocks. The two sides are named separately because they do
+     * not weigh the same: a statement row not recorded is worth going back for,
+     * a transaction the statement never mentioned is not.
+     */
+    renderDialog({ pairs: [], undecided: { statement: 8, actual: 4 } });
 
-    expect(screen.getByText("Nothing left to check")).toBeInTheDocument();
-    expect(props.onContinue).not.toHaveBeenCalled();
+    // Read off the whole section: the sentence is assembled from several nodes,
+    // and what matters is what the user reads, not how it is spliced.
+    const said = screen.getByRole("dialog").textContent ?? "";
+
+    // The loss first, in the words someone would use: a count of undecided rows
+    // is not a reason to go back, eight missing bank transactions is.
+    expect(said).toContain("8 of your bank transactions won't be added");
+    expect(said).toContain("leaves them out of your budget");
+    // And the half that is not a loss, said so rather than counted in.
+    expect(said).toContain("Actual already has that your statement didn't mention");
+    expect(screen.getByRole("button", { name: "Review anyway" })).not.toBeDisabled();
   });
+
+  it("says nothing about undecided rows when there are none", () => {
+    renderDialog({ undecided: { statement: 0, actual: 0 } });
+    const said = screen.getByRole("dialog").textContent ?? "";
+    expect(said).not.toContain("won't be added");
+    expect(said).not.toContain("no decision");
+  });
+
+  it("does not claim a loss when only Actual-side rows are open", () => {
+    // Nothing is lost by leaving a transaction the statement never mentioned,
+    // so the heading must not say otherwise.
+    renderDialog({ pairs: [], undecided: { statement: 0, actual: 3 } });
+
+    const said = screen.getByRole("dialog").textContent ?? "";
+    expect(said).not.toContain("won't be added");
+    expect(said).toContain("3 rows still have no decision.");
+  });
+
 });

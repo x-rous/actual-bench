@@ -95,7 +95,7 @@ import type { StatementParseConfig } from "@/lib/reconciliation/statement/normal
 import { ImportPanel } from "./ImportPanel";
 import { ConfirmDialog, type ConfirmState } from "@/components/ui/confirm-dialog";
 import { NewSessionDialog } from "./NewSessionDialog";
-import { PossiblePairsDialog } from "./PossiblePairsDialog";
+import { ReviewGateDialog } from "./ReviewGateDialog";
 import { SessionList, rowCountOf } from "./SessionList";
 import { Workbench } from "./Workbench";
 
@@ -649,6 +649,26 @@ export function ReconciliationView() {
     [possiblePairs, itemsById, dismissedPairs]
   );
 
+  /**
+   * Rows with no decision, split by side.
+   *
+   * Undecided rows are safe - nothing is written for them - so this never
+   * blocks. But the two sides do not weigh the same: a statement row left
+   * undecided is a transaction that happened and will not be recorded, while an
+   * Actual row the statement never mentioned is fine left alone. Saying which
+   * is which is what makes the count worth reading.
+   */
+  const undecided = useMemo(() => {
+    let statement = 0;
+    let actual = 0;
+    for (const item of items) {
+      if (item.disposition !== "unresolved") continue;
+      if (item.statementRowIds.length > 0) statement += 1;
+      else if (item.actualTransactionIds.length > 0) actual += 1;
+    }
+    return { statement, actual };
+  }, [items]);
+
 
   const coverage = useMemo(
     () =>
@@ -868,7 +888,7 @@ export function ReconciliationView() {
      * report showing itself, not someone arriving fresh.
      */
     function enterReview(id: string) {
-      if (gatePairs.length > 0) {
+      if (gatePairs.length > 0 || undecided.statement + undecided.actual > 0) {
         setReviewGateFor(id);
         return;
       }
@@ -1977,9 +1997,10 @@ export function ReconciliationView() {
       />
 
       {/* The last look at a possible pair before its decisions are reviewed. */}
-      <PossiblePairsDialog
+      <ReviewGateDialog
         open={reviewGateFor !== null}
         pairs={gatePairs}
+        undecided={undecided}
         items={itemsById}
         statementRows={statementRowsById}
         transactions={transactionsById}

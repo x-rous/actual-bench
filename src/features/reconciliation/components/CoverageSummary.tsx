@@ -172,7 +172,7 @@ export function DecisionProgressMeter({ coverage }: { coverage: ReconciliationCo
    */
   return (
     <div
-      className="relative h-[22px] w-[220px] overflow-hidden rounded-[5px] bg-[#E8EAEC]"
+      className="relative h-[22px] w-[160px] overflow-hidden rounded-[5px] bg-[#E8EAEC]"
       role="progressbar"
       aria-valuenow={decisions.decided}
       aria-valuemin={0}
@@ -232,7 +232,12 @@ export function DecisionProgressStrip({
    */
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
-      <span className="text-muted-foreground">Decisions Progress</span>
+      {/*
+        No label. The bar reads "12 of 42 decided", which is a whole sentence -
+        a word in front of it repeated what it already said, and the word is
+        doing better work labelling the filters beside it, where it also tells
+        this row's "All" apart from the one above.
+      */}
       {total === 0 ? (
         <span className="text-muted-foreground">Nothing to decide</span>
       ) : (

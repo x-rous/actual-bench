@@ -1,6 +1,17 @@
 "use client";
 
-import { ArrowRight, Ban, Check, Lock, Pencil, Plus, Split, Trash2, TriangleAlert } from "lucide-react";
+import {
+  ArrowRight,
+  Ban,
+  Check,
+  Link2,
+  Lock,
+  Pencil,
+  Plus,
+  Split,
+  Trash2,
+  TriangleAlert,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import type {
   ActualTransactionSnapshot,
@@ -196,6 +207,14 @@ export type WorkbenchRowProps = {
   statementRow: StatementRow | undefined;
   transactions: ActualTransactionSnapshot[];
   /**
+   * This row has a likely partner that matching would not relate.
+   *
+   * Shown on the row because the count in the toolbar is the only other way to
+   * learn it: scroll past a row and there was no sign at all. Marked on both
+   * halves, since either is where someone might be looking.
+   */
+  hasPossiblePair?: boolean;
+  /**
    * How many rows are competing for this row's single candidate.
    *
    * The marker used to read `shared`, which had to be explained — that is the
@@ -213,6 +232,7 @@ export function WorkbenchRow({
   item,
   statementRow,
   transactions,
+  hasPossiblePair = false,
   contestedBy,
   selected,
   checked,
@@ -314,6 +334,18 @@ export function WorkbenchRow({
         {(state.detail || topReason) && (
           <p className="truncate text-[11px] text-muted-foreground" title={topReason ?? undefined}>
             {state.detail ?? topReason}
+          </p>
+        )}
+        {/*
+          A marker, not a control. Selecting the row already opens the panel
+          that shows the partner and offers to confirm it, and a button nested
+          inside a clickable row would duplicate that while making the row
+          harder to operate by keyboard.
+        */}
+        {hasPossiblePair && (
+          <p className="flex items-center gap-1 text-[11px] text-sky-600 dark:text-sky-400">
+            <Link2 className="h-3 w-3 shrink-0" aria-hidden="true" />
+            Possible pair
           </p>
         )}
       </td>

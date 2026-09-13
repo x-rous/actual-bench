@@ -61,7 +61,8 @@ function item(overrides: Partial<ReconciliationItem> = {}): ReconciliationItem {
 function renderRow(
   over: Partial<ReconciliationItem>,
   transactions: ActualTransactionSnapshot[],
-  contestedBy?: number
+  contestedBy?: number,
+  hasPossiblePair = false
 ) {
   return render(
     <table>
@@ -71,6 +72,7 @@ function renderRow(
           statementRow={statementRow()}
           transactions={transactions}
           contestedBy={contestedBy}
+          hasPossiblePair={hasPossiblePair}
           selected={false}
           checked={false}
           onToggleChecked={() => {}}
@@ -245,5 +247,32 @@ describe("a matched row whose dates differ", () => {
     ]);
 
     expect(screen.queryByTitle(/The statement says/)).not.toBeInTheDocument();
+  });
+});
+
+/*
+ * A possible pair used to be discoverable only through the toolbar count, so
+ * scrolling past the row told you nothing. Marked on both halves, since either
+ * is where someone might be looking.
+ */
+describe("a row with a likely partner matching would not relate", () => {
+  it("says so without displacing what the row is", () => {
+    renderRow({ reasonCode: REASON.noActualCandidate, actualTransactionIds: [] }, [], undefined, true);
+
+    // Both: the marker is additional information, not a replacement.
+    expect(screen.getByText("Not in Actual")).toBeInTheDocument();
+    expect(screen.getByText("Possible pair")).toBeInTheDocument();
+  });
+
+  it("marks the Actual side of the pair too", () => {
+    renderRow({ reasonCode: REASON.notOnStatement, actualTransactionIds: ["t1"] }, [txn({ id: "t1" })], undefined, true);
+
+    expect(screen.getByText("Actual only")).toBeInTheDocument();
+    expect(screen.getByText("Possible pair")).toBeInTheDocument();
+  });
+
+  it("is silent on a row that has no partner", () => {
+    renderRow({ reasonCode: REASON.noActualCandidate, actualTransactionIds: [] }, []);
+    expect(screen.queryByText("Possible pair")).not.toBeInTheDocument();
   });
 });
