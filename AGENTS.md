@@ -501,6 +501,22 @@ docs: explain direct-mode networking requirements
 
 PR titles must be clear and user-facing because release drafting uses them as changelog entries.
 
+### Wording Rules for PR Titles
+
+* **Use Imperative Mood:** Write the summary as a direct command (e.g., "add", "fix", "update"). 
+  * **Correct:** `feat(auth): add logout endpoint`
+  * **Incorrect:** `feat(auth): added logout endpoint` / `adds logout endpoint`
+
+* **Start Lowercase:** Do not capitalize the first letter of the summary unless it starts with an exact code symbol or proper noun.
+  * **Correct:** `fix(db): handle null response from user query`
+  * **Incorrect:** `fix(db): Handle null response from user query`
+
+* **No Trailing Punctuation:** Never end the title with a period or exclamation mark.
+
+* **Be Specific & Action-Oriented:** Describe **what** changed and **where**, avoiding generic descriptions.
+  * **Good:** `fix(ui): prevent double submission on submit button click`
+  * **Bad:** `fix(ui): fix button bug`
+
 ---
 
 ## 14. Completion Standard

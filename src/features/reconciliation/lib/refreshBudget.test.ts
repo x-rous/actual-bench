@@ -27,16 +27,26 @@ describe("bringing the budget up to date before reading it", () => {
     expect(sync).toHaveBeenCalledTimes(1);
   });
 
-  it("carries on when the server cannot be reached", async () => {
+  it("reports success so callers can decide what a failure means", async () => {
+    const sync = jest.fn().mockResolvedValue(undefined);
+    mockGetTransport.mockReturnValue({ sync } as never);
+
+    await expect(refreshBudget(connection)).resolves.toBe(true);
+  });
+
+  it("says it failed rather than throwing, or pretending it worked", async () => {
     /*
-     * A reconciliation built on a slightly stale copy is worse than one built
-     * on a fresh one, and far better than one that cannot start at all because
-     * the server blinked. The pre-flight drift check still stands behind it.
+     * The two callers need different things from a failure, which is why this
+     * returns rather than swallows. Matching carries on - it writes nothing, so
+     * a slightly stale graph beats a reconciliation that cannot start because
+     * the server blinked. The pre-flight check must not: it exists to notice
+     * what changed in Actual, and a copy it could not refresh would report
+     * "nothing changed" about a budget it never looked at, with a write next.
      */
     const sync = jest.fn().mockRejectedValue(new Error("offline"));
     mockGetTransport.mockReturnValue({ sync } as never);
 
-    await expect(refreshBudget(connection)).resolves.toBeUndefined();
+    await expect(refreshBudget(connection)).resolves.toBe(false);
     expect(sync).toHaveBeenCalledTimes(1);
   });
 });

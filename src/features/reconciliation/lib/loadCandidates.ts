@@ -137,15 +137,23 @@ export function resumeWindowInput(session: {
  *
  * A no-op in HTTP mode, where reads already go to the server.
  *
- * Never throws. A reconciliation built on a slightly stale copy is worse than
- * one built on a fresh one, but it is far better than one that cannot start
- * because the server is briefly unreachable — and the pre-flight drift check
- * still stands behind it.
+ * Never throws, and **returns whether it actually worked**, because the two
+ * callers need different things from a failure:
+ *
+ * - **Matching** carries on. It writes nothing, so a graph built on a slightly
+ *   stale copy is worse than one built on a fresh one but far better than a
+ *   reconciliation that cannot start because the server blinked.
+ * - **The pre-flight check must not.** Its whole job is to notice what changed
+ *   in Actual since the session loaded, and a copy it could not refresh cannot
+ *   answer that - it would report "nothing changed" about a budget it never
+ *   looked at, and Apply would write over the very edit the check exists to
+ *   catch. Nothing stands behind that one.
  */
-export async function refreshBudget(connection: ConnectionInstance): Promise<void> {
+export async function refreshBudget(connection: ConnectionInstance): Promise<boolean> {
   try {
     await getTransport(connection).sync();
+    return true;
   } catch {
-    // Deliberately swallowed: see above.
+    return false;
   }
 }

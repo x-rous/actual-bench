@@ -1356,7 +1356,18 @@ export function ReconciliationView() {
          * whole job is to catch it. Syncing first is what makes the question
          * answerable.
          */
-        await refreshBudget(connection);
+        const refreshed = await refreshBudget(connection);
+        if (!refreshed) {
+          // Refused rather than proceeded. A check that could not read the
+          // budget would report nothing changed about a copy it never looked
+          // at, and Apply would then write over the very edit it exists to
+          // catch. Matching can be best-effort because it writes nothing;
+          // this cannot, because the next thing it does is write.
+          setMatchError(
+            "Could not reach Actual to check for changes made since this session loaded. Nothing was written - try Apply again."
+          );
+          return;
+        }
         const targets = driftTargets(applyPlan);
         const dates = snapshot.map((transaction) => transaction.date).sort();
         const latest = await loadLatestForDrift({

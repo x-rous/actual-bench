@@ -892,7 +892,15 @@ export function Workbench({
   }, [items]);
 
   const goToNextUndecided = useCallback(() => {
-    const queue = blocking.length > 0 ? blocking : visible;
+    // From what is on screen, never from the global count. `blocking` is
+    // deliberately read off every item so the chip does not vanish when another
+    // filter is chosen - but navigating by it would select a row the table is
+    // not showing, opening the inspector on something the user cannot see and
+    // could then edit blind.
+    const blockingHere = visible.filter(
+      (item) => item.disposition === "unresolved" && item.reasonCode === REASON.merchantCluster
+    );
+    const queue = blockingHere.length > 0 ? blockingHere : visible;
     const index = queue.findIndex((item) => item.id === selectedId);
     const after = queue.slice(index + 1).find((item) => item.disposition === "unresolved");
     const wrapped = after ?? queue.find((item) => item.disposition === "unresolved");
@@ -900,7 +908,7 @@ export function Workbench({
       setSelectedId(wrapped.id);
       reveal(wrapped.id);
     }
-  }, [blocking, visible, selectedId, reveal]);
+  }, [visible, selectedId, reveal]);
 
   /**
    * Apply a keyed decision to the selected row.
