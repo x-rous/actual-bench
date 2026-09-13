@@ -166,28 +166,107 @@ describe("reconciliation review write labels", () => {
 /*
  * "What exactly am I deleting" is a question worth being able to ask directly.
  * Scrolling a few hundred rows looking for the four amber ones is not an answer.
+ *
+ * The fixture carries one row of each kind on purpose. An earlier version had
+ * only an update, so selecting "Update" narrowed nothing and the test passed
+ * whether or not the filter was wired up at all.
  */
 describe("narrowing the table to one kind of write", () => {
-  it("offers only the kinds actually in play, with their counts", () => {
-    renderComparison({});
+  const created: StatementRow = {
+    id: "s2",
+    sourceRowNumber: 2,
+    postedDate: "2025-08-08",
+    amount: -2200,
+    importedPayee: "SPARKYS TAIF",
+    raw: {},
+    fingerprint: "fingerprint-s2",
+  };
+  const removed = { ...transaction(null), id: "t2", payeeName: "Old Payee" };
+
+  function renderMixed() {
+    const actual = transaction(null);
+    render(
+      <ReviewComparison
+        plan={{
+          operations: [
+            update(undefined),
+            {
+              id: "create-2",
+              kind: "create" as const,
+              itemId: "2",
+              statementRowId: "s2",
+              accountId: "acct-1",
+              date: "2025-08-08",
+              amount: -2200,
+              payeeId: null,
+              payeeName: null,
+              importedPayee: "SPARKYS TAIF",
+              categoryId: null,
+              notes: null,
+              cleared: false,
+              marker: "recon:2",
+            },
+            {
+              id: "delete-3",
+              kind: "delete" as const,
+              itemId: "3",
+              transactionId: "t2",
+              accountId: "acct-1",
+              date: "2025-08-09",
+              amount: -900,
+            },
+          ],
+          alreadyApplied: 0,
+          noWriteMatches: 0,
+          unresolved: 0,
+          blocked: [],
+        }}
+        items={[
+          item(undefined),
+          { id: "2", statementRowIds: ["s2"], actualTransactionIds: [], disposition: "create",
+            guards: { protectedReconciled: false, splitParent: false, transfer: "no" } },
+          { id: "3", statementRowIds: [], actualTransactionIds: ["t2"], disposition: "delete",
+            guards: { protectedReconciled: false, splitParent: false, transfer: "no" } },
+        ]}
+        statementRows={new Map([["s1", statementRow()], ["s2", created]])}
+        transactions={new Map([["t1", actual], ["t2", removed]])}
+        payees={[{ id: "p1", name: "Amazon" }]}
+        categories={[{ id: "c1", name: "Shopping" }]}
+        applyConfig={DEFAULT_APPLY_CONFIG}
+      />
+    );
+  }
+
+  it("offers every kind that is in play, with its count", () => {
+    renderMixed();
 
     const group = screen.getByRole("group", { name: "Filter by what will happen" });
-    // A kind with no rows is not offered: an always-present zero teaches the
-    // reader to stop reading the numbers.
-    expect(within(group).queryByText("Delete")).not.toBeInTheDocument();
+    for (const label of ["Create", "Update", "Delete"]) {
+      expect(within(group).getByRole("button", { name: new RegExp(label) })).toBeInTheDocument();
+    }
   });
 
-  it("narrows to one kind and back again", () => {
-    renderComparison({});
+  it("shows only the chosen kind, and restores the rest", () => {
+    renderMixed();
 
     const group = screen.getByRole("group", { name: "Filter by what will happen" });
-    const update = within(group).getByRole("button", { name: /Update/ });
+    const rowsBefore = screen.getAllByRole("row").length;
 
-    fireEvent.click(update);
-    expect(update).toHaveAttribute("aria-pressed", "true");
+    fireEvent.click(within(group).getByRole("button", { name: /Create/ }));
 
-    // Pressing the same one again is the way back, and so is All.
-    fireEvent.click(update);
-    expect(update).toHaveAttribute("aria-pressed", "false");
+    // Only the created row survives: the statement text it would write is
+    // there, and the table is shorter than it was.
+    expect(screen.getAllByText("SPARKYS TAIF").length).toBeGreaterThan(0);
+    expect(screen.getAllByRole("row").length).toBeLessThan(rowsBefore);
+
+    // A different kind hides it again, so the filter is doing the narrowing
+    // rather than the row simply always being present.
+    fireEvent.click(within(group).getByRole("button", { name: /Delete/ }));
+    expect(screen.queryAllByText("SPARKYS TAIF")).toHaveLength(0);
+
+    fireEvent.click(within(group).getByRole("button", { name: "All" }));
+    expect(screen.getAllByText("SPARKYS TAIF").length).toBeGreaterThan(0);
+    expect(screen.getAllByRole("row").length).toBe(rowsBefore);
   });
 });
+

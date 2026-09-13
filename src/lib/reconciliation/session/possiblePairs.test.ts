@@ -244,6 +244,49 @@ describe("which pairs are worth stopping for", () => {
 });
 
 /*
+ * Augmenting paths settle how *many* pairs there are and say nothing about
+ * which ones. A later row can evict an earlier one from its best partner onto a
+ * weaker one, leaving the count right and both suggestions worse.
+ *
+ * Measured edges, from text on the reporting statement:
+ *
+ *   Noon Minutes DUBAI ARE -> "#API Noon Minutes DUBAI ARE"      1.000
+ *   Noon Minutes DUBAI ARE -> "#API PK MART FZ LLC DUBAI ARE"    0.500
+ *   Noon Food DUBAI ARE    -> "#API Noon Minutes DUBAI ARE"      0.750
+ *   Noon Food DUBAI ARE    -> "#API PK MART FZ LLC DUBAI ARE"    0.500
+ *
+ * The second and fourth are the floor admitting a shared `DUBAI ARE`, which is
+ * the sort of weak edge it exists to allow. Both rows want the Noon Minutes
+ * transaction, so `Noon Food` evicts `Noon Minutes` from it - and the result
+ * offers `Noon Minutes` paired with a **PK MART** transaction. Two pairs either
+ * way; one arrangement is plainly right and the other plainly is not.
+ */
+describe("choosing between pairings of the same count", () => {
+  it("does not evict a row from its own transaction onto someone else's", () => {
+    const rows = [row("Noon Minutes DUBAI ARE", -4730), row("Noon Food DUBAI ARE", -3850)];
+    const txns = [
+      txn("#API Noon Minutes DUBAI ARE", -4500),
+      txn("#API PK MART FZ LLC DUBAI ARE", -4000),
+    ];
+    const pairs = find(
+      [...rows.map((r) => statementItem(r)), ...txns.map((t) => actualItem(t))],
+      rows,
+      txns
+    );
+
+    expect(pairs).toHaveLength(2);
+
+    // The identities, not just the count - the count is right either way.
+    const paired = new Map(pairs.map((p) => [p.statementItemId, p.actualItemId]));
+    expect(paired.get(`i-${rows[0].id}`)).toBe(`i-${txns[0].id}`);
+    expect(paired.get(`i-${rows[1].id}`)).toBe(`i-${txns[1].id}`);
+
+    const total = pairs.reduce((sum, p) => sum + p.similarity, 0);
+    expect(total).toBeCloseTo(1.5, 5);
+  });
+});
+
+/*
  * The scope line, asserted rather than asserted-in-prose.
  *
  * This surfaces pairs below matching's floors, which is the thing F-151i was

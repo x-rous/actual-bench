@@ -364,7 +364,14 @@ export function Inspector({
             label="In Actual"
             date={possiblePartner.transaction.date}
             amount={possiblePartner.transaction.amount}
-            title={possiblePartner.transaction.payeeName ?? "No payee"}
+            // The same three channels the comparison itself reads. Falling
+            // straight to "No payee" threw away the bank text the pairing was
+            // very likely found on.
+            title={
+              possiblePartner.transaction.payeeName ??
+              possiblePartner.transaction.importedPayee ??
+              ""
+            }
             detail={possiblePartner.transaction.notes}
             category={possiblePartner.transaction.categoryName}
           />

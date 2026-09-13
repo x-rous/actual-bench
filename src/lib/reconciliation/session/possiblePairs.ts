@@ -166,9 +166,10 @@ export function findPossiblePairs(input: PossiblePairsInput): PossiblePair[] {
  * `assign.ts` faces the same choice and answers it the other way on purpose.
  * There greedy is chosen over an optimal assignment for *explainability* — the
  * matcher **acts**, so "why did it choose that one?" has to be answerable. This
- * only **offers**, and its failure is staying quiet. So it maximises the number
- * of pairs first and uses quality only to choose between matchings of the same
- * size, which is what ordering each row's candidates best-first achieves.
+ * only **offers**, and its failure is staying quiet. So the count comes first,
+ * and `improveQuality` then trades pairings that keep the count and raise the
+ * quality — because augmenting paths settle the count and say nothing at all
+ * about which pairs make it up.
  *
  * Augmenting paths (Kuhn's). The pools are leftovers of leftovers.
  */
@@ -207,16 +208,92 @@ function maximumMatching(edges: PossiblePair[]): PossiblePair[] {
 
   for (const statementItemId of order) augment(statementItemId, new Set());
 
-  return [...held.values()].sort(byQuality);
+  return improveQuality(held, byStatement).sort(byQuality);
 }
 
-/** Strongest text agreement first, then closest dates, then ids for determinism. */
+/**
+ * Trade pairings that keep the count but raise the quality.
+ *
+ * Augmenting paths guarantee the *number* of pairs and nothing about which ones.
+ * Taking the first path found lets a later row displace an earlier one from its
+ * near-certain partner onto a weak one: with `A-X 1.00`, `A-Y 0.50`, `B-X 0.89`
+ * and `B-Y 0.78`, `B` evicts `A` from `X`, and the result is `A-Y + B-X` (1.39)
+ * where `A-X + B-Y` (1.78) was available. Both have two pairs, so the count is
+ * no help — and the user is shown the weaker of two suggestions for both rows.
+ *
+ * So matched pairs are swapped wherever the swap is possible and better. Each
+ * pass is O(pairs²) and every accepted swap strictly raises the total, so this
+ * terminates; the cap is there for the pathological shape rather than the
+ * expected one, since these pools are leftovers of leftovers.
+ *
+ * **It is a local optimum, not a proven global one.** Saying so matters: an
+ * earlier version of this docblock claimed ordering candidates best-first gave
+ * the best matching of a given size, which is simply not true, and a comment
+ * that overstates what the code does stops the next reader checking it.
+ */
+function improveQuality(
+  held: Map<string, PossiblePair>,
+  byStatement: Map<string, PossiblePair[]>
+): PossiblePair[] {
+  /** The edge joining these two, if the pair was admissible at all. */
+  const edgeFor = (statementItemId: string, actualItemId: string) =>
+    byStatement.get(statementItemId)?.find((edge) => edge.actualItemId === actualItemId);
+
+  const PASSES = 8;
+  for (let pass = 0; pass < PASSES; pass++) {
+    let swapped = false;
+
+    const current = [...held.values()];
+    for (let i = 0; i < current.length; i++) {
+      for (let j = i + 1; j < current.length; j++) {
+        const left = current[i];
+        const right = current[j];
+
+        // The crossed alternative: each row takes the other's transaction.
+        const leftSwap = edgeFor(left.statementItemId, right.actualItemId);
+        const rightSwap = edgeFor(right.statementItemId, left.actualItemId);
+        if (!leftSwap || !rightSwap) continue;
+
+        const now = left.similarity + right.similarity;
+        const after = leftSwap.similarity + rightSwap.similarity;
+        if (after <= now) continue;
+
+        held.set(right.actualItemId, leftSwap);
+        held.set(left.actualItemId, rightSwap);
+        current[i] = leftSwap;
+        current[j] = rightSwap;
+        swapped = true;
+      }
+    }
+
+    if (!swapped) break;
+  }
+
+  return [...held.values()];
+}
+
+/**
+ * Strongest text agreement first, then closest dates, then ids.
+ *
+ * Both ids, and a real zero when they are equal. Comparing only the statement id
+ * returned `1` in both directions for two candidates of the *same* row - which
+ * is not an ordering, and leaves the result at the mercy of the input order and
+ * the engine's sort. The ids are the last resort precisely because they are the
+ * only thing guaranteed to differ.
+ */
 function byQuality(a: PossiblePair, b: PossiblePair): number {
-  return (
-    b.similarity - a.similarity ||
-    Math.abs(a.dayGap) - Math.abs(b.dayGap) ||
-    (a.statementItemId < b.statementItemId ? -1 : 1)
-  );
+  if (a.similarity !== b.similarity) return b.similarity - a.similarity;
+
+  const byDate = Math.abs(a.dayGap) - Math.abs(b.dayGap);
+  if (byDate !== 0) return byDate;
+
+  if (a.statementItemId !== b.statementItemId) {
+    return a.statementItemId < b.statementItemId ? -1 : 1;
+  }
+  if (a.actualItemId !== b.actualItemId) {
+    return a.actualItemId < b.actualItemId ? -1 : 1;
+  }
+  return 0;
 }
 
 /**

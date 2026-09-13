@@ -395,6 +395,13 @@ export function ReconciliationView() {
     // depth rather than a path the UI can reach.
     if (!next) return;
 
+    // The link absorbs the Actual-only row into the statement row, so a bulk
+    // undo can no longer put things back: `updateItem` restores fields on ids
+    // that still exist and silently skips the one that does not. The statement
+    // row would return to "create" while still holding the transaction - and
+    // then create a second copy of it. Same rule as hydration and re-matching:
+    // when the rows change, the undo that referred to them is spent.
+    setLastBulk(null);
     setItems(next);
     void mutations.replaceItems
       .mutateAsync({

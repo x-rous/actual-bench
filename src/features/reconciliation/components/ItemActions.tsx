@@ -172,8 +172,17 @@ export function ItemActions({
           and amount", say - offered only Delete and Ignore, so the obvious
           answer was the one thing the panel could not do. `Enter` did it, which
           means the action existed and was simply invisible.
+
+          Gated on the item's own candidate count, not on how many resolved. A
+          stored session keeps one snapshot per item, so a five-candidate row
+          whose live reload failed arrives here with a single transaction - and
+          offering to accept it would settle a contested row on the strength of
+          what the database happened to keep.
         */}
-        {hasStatementRow && transactions.length === 1 && item.disposition !== "matched" && (
+        {hasStatementRow &&
+          item.actualTransactionIds.length === 1 &&
+          transactions.length === 1 &&
+          item.disposition !== "matched" && (
           <Button size="sm" variant="outline" onClick={() => onDisposition("matched")}>
             <Check className="mr-1 h-3.5 w-3.5" />
             These match
