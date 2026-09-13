@@ -13,6 +13,7 @@ import type {
   StagedPatch,
   StatementRow,
 } from "@/lib/reconciliation/types";
+import type { VerificationReport } from "@/lib/reconciliation/apply/verification";
 import { ApplyResultPanel } from "./ApplyResultPanel";
 
 function statementRow(): StatementRow {
@@ -53,7 +54,8 @@ function transaction(): ActualTransactionSnapshot {
 
 function renderResult(
   patch: StagedPatch = {},
-  outcome: { operationId?: string; status?: "applied" | "skipped" } = {}
+  outcome: { operationId?: string; status?: "applied" | "skipped" } = {},
+  verification: VerificationReport | null = null
 ) {
   const reconciliationItem: ReconciliationItem = {
     id: "i1",
@@ -109,7 +111,7 @@ function renderResult(
       payees={[{ id: "p1", name: "Amazon" }]}
       applyConfig={DEFAULT_APPLY_CONFIG}
       result={result}
-      verification={null}
+      verification={verification}
       isVerifying={false}
     />
   );
@@ -148,5 +150,47 @@ describe("reconciliation apply-result write labels", () => {
 
     expect(screen.getByText(/0 changes written · 1 bank detail already done/)).toBeInTheDocument();
     expect(screen.getByText("already done")).toBeInTheDocument();
+  });
+});
+
+/*
+ * One operation reports a separate issue per field it failed to write, so
+ * operation id and kind together are not unique. React's answer to duplicate
+ * keys is to duplicate or omit rows - which made this list, the one place a
+ * user looks when something has gone wrong, the one place the count on screen
+ * could disagree with what actually happened.
+ */
+describe("reporting several failed fields on one write", () => {
+  it("lists every one of them", () => {
+    const report: VerificationReport = {
+      checked: 1,
+      ok: false,
+      issues: [
+        {
+          operationId: "update:i1",
+          kind: "unapplied-field",
+          detail: "The amount was reported as updated but the account still reads differently.",
+        },
+        {
+          operationId: "update:i1",
+          kind: "unapplied-field",
+          detail: "The notes was reported as updated but the account still reads differently.",
+        },
+        {
+          operationId: "update:i1",
+          kind: "unapplied-field",
+          detail:
+            "The bank's imported payee was reported as attached but the account still reads differently.",
+        },
+      ],
+    };
+
+    renderResult({}, {}, report);
+
+    // Three issues, three rows - not one row rendered three times, and not one
+    // row silently swallowing the other two.
+    expect(screen.getByText(/The amount was reported as updated/)).toBeInTheDocument();
+    expect(screen.getByText(/The notes was reported as updated/)).toBeInTheDocument();
+    expect(screen.getByText(/imported payee was reported as attached/)).toBeInTheDocument();
   });
 });

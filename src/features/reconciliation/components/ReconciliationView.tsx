@@ -42,7 +42,11 @@ import {
 import type { ReconciliationDisposition } from "@/lib/reconciliation/types";
 import { useConnectionStore, selectActiveInstance } from "@/store/connection";
 import { useAccounts } from "@/features/accounts/hooks/useAccounts";
-import { loadCandidateWindow, resumeWindowInput } from "../lib/loadCandidates";
+import {
+  loadCandidateWindow,
+  refreshBudget,
+  resumeWindowInput,
+} from "../lib/loadCandidates";
 import {
   DEFAULT_APPLY_CONFIG,
   buildApplyPlan,
@@ -944,9 +948,18 @@ export function ReconciliationView() {
        * hundred rows against it — seconds of silence with no sense of progress
        * or of which part was slow.
        */
-      setMatchStage("Loading transactions from Actual…");
+      /*
+       * Brought up to date before anything is read, because everything after
+       * this is built on what comes back: the candidate window, the matches,
+       * every decision, and the ids the writes will target. A session started
+       * from a stale copy of the budget is wrong from its first row.
+       */
+      setMatchStage("Bringing the budget up to date…");
 
       try {
+        await refreshBudget(connection);
+
+        setMatchStage("Loading transactions from Actual…");
         const window = await loadCandidateWindow(connection, {
           accountId: input.accountId,
           statementStart: input.statementPeriod.start,
@@ -1334,6 +1347,16 @@ export function ReconciliationView() {
       let plan = applyPlan;
       try {
         setIsCheckingDrift(true);
+        /*
+         * Before the re-read, not after it.
+         *
+         * This check exists to answer "what changed in Actual since the session
+         * loaded", and it was asking the same local copy the session was built
+         * from - so a change made in Actual was invisible to the one guard whose
+         * whole job is to catch it. Syncing first is what makes the question
+         * answerable.
+         */
+        await refreshBudget(connection);
         const targets = driftTargets(applyPlan);
         const dates = snapshot.map((transaction) => transaction.date).sort();
         const latest = await loadLatestForDrift({

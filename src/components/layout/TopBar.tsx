@@ -31,6 +31,8 @@ import {
   isBrowserApiConnection,
 } from "@/store/connection";
 import { useGlobalSearchStore } from "@/features/global-search/store/useGlobalSearchStore";
+import { getTransport } from "@/lib/actual";
+import { refreshFromServer } from "@/lib/refreshFromServer";
 import { useConnectionHealthContext } from "@/hooks/useConnectionHealth";
 import { ConnectionHealthDot } from "./ConnectionHealthDot";
 import { useSavedServersStore } from "@/store/savedServers";
@@ -321,7 +323,35 @@ export function TopBar() {
     requestAction({ kind: "switch", id });
   }
 
-  function handleRefresh() {
+  /**
+   * Pull the budget from the server, then drop the caches in front of it.
+   *
+   * Until now this only invalidated the query cache. In Direct mode the
+   * transport reads a copy of the budget held in the browser, so clearing the
+   * cache in front of that copy re-read the same stale data - the button
+   * appeared to work whenever nothing had changed elsewhere, and could not help
+   * whenever something had. A no-op in HTTP mode, where reads already reach the
+   * server.
+   *
+   * The ordering lives in `refreshFromServer`, which has its own tests: doing
+   * these two the other way round is the original bug, and a comment is not
+   * enough to stop someone reordering them.
+   */
+  function refresh(invalidate: () => Promise<unknown>) {
+    return refreshFromServer({
+      sync: async () => {
+        if (activeInstance) await getTransport(activeInstance).sync();
+      },
+      invalidate,
+      // Said out loud, unlike the same failure during a reconciliation. There it
+      // is one step inside a larger operation with its own guardrails; here it
+      // is the entire point of the press.
+      onSyncFailed: () =>
+        toast.warning("Could not reach the server. Showing the data already loaded."),
+    });
+  }
+
+  async function handleRefresh() {
     if (hasChanges) {
       toast.warning("Unsaved changes will be lost.", {
         action: {
@@ -329,7 +359,7 @@ export function TopBar() {
           onClick: async () => {
             handleDiscardAll();
             setIsRefreshing(true);
-            await queryClient.resetQueries();
+            await refresh(() => queryClient.resetQueries());
             setIsRefreshing(false);
           },
         },
@@ -337,7 +367,8 @@ export function TopBar() {
       return;
     }
     setIsRefreshing(true);
-    queryClient.invalidateQueries().then(() => setIsRefreshing(false));
+    await refresh(() => queryClient.invalidateQueries());
+    setIsRefreshing(false);
   }
 
   function handleResetBudgetSaveReview() {

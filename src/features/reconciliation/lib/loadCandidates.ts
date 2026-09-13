@@ -115,3 +115,37 @@ export function resumeWindowInput(session: {
     paddingDays,
   };
 }
+
+/**
+ * Bring the local budget up to date before reading transactions from it.
+ *
+ * In Direct mode the transport reads a **copy of the budget held in the
+ * browser**, not the server. Nothing in a reconciliation refreshed that copy, so
+ * a session could be built entirely on what Actual looked like whenever the
+ * connection happened to open — and every decision in it inherited that.
+ *
+ * The failure this exists for is not hypothetical. Transactions deleted in
+ * Actual stayed in the local copy; because they had been *created from the
+ * statement* they matched it perfectly, so a later reconciliation paired the
+ * statement with those ghosts rather than the real rows, and the writes went to
+ * transaction ids the server no longer had.
+ *
+ * Worth being clear that this is **not** what the toolbar's Refresh does. That
+ * invalidates the query cache, which sits in front of the local budget — so it
+ * re-reads the same stale copy. This is the API's own `sync()`, which pushes and
+ * pulls against the server.
+ *
+ * A no-op in HTTP mode, where reads already go to the server.
+ *
+ * Never throws. A reconciliation built on a slightly stale copy is worse than
+ * one built on a fresh one, but it is far better than one that cannot start
+ * because the server is briefly unreachable — and the pre-flight drift check
+ * still stands behind it.
+ */
+export async function refreshBudget(connection: ConnectionInstance): Promise<void> {
+  try {
+    await getTransport(connection).sync();
+  } catch {
+    // Deliberately swallowed: see above.
+  }
+}

@@ -320,9 +320,9 @@ Danube-D- JEDDAH SAU SAR53.45   -54.42    on the statement, nothing in Actual
 #API Danube-D-8505              -52.07    in Actual, not on the statement
 ```
 
-Actual Bench looks for these itself. The toolbar counts them — **3 possible pairs** — and clicking
-that narrows the grid to the rows involved; opening either one shows its likely partner and offers
-to link them.
+Actual Bench looks for these itself. Both halves are marked **Possible pair** in the grid, and the
+count beside the decision progress - **3 possible pairs** - narrows the grid to them; opening either
+one shows its likely partner and offers to link them.
 
 They are deliberately not offered as *candidates*. A candidate is one keypress from becoming a
 decision, so matching has to be strict about what it offers. A possible pair is confirmed only by an
@@ -367,9 +367,14 @@ Someone working row by row will have seen these already. Someone who filtered to
 selected everything and pressed Create never looked at an individual row — and that is the quickest
 way through a long statement, so it is also the likeliest way to write a duplicate.
 
-So any possible pair that would actually **write** something is shown once before Review, statement
-on the left and Actual on the right, with how far apart the dates and amounts are. Link it, leave it,
-or carry on. It never blocks: replacing a transaction, clearing a genuine duplicate the statement
+So one dialog before Review covers what is still open. Any possible pair that would actually
+**write** something is shown statement-left and Actual-right, with how far apart the dates and
+amounts are - link it, leave it, or carry on.
+
+It also says how many rows have no decision, and separates the two kinds, because they do not weigh
+the same: a statement row left undecided is a transaction that happened and will not be added to your
+budget, while a transaction Actual already has that your statement never mentioned is perfectly fine
+left alone. Nothing is written for either, and the session waits for you. It never blocks: replacing a transaction, clearing a genuine duplicate the statement
 also carries, and retrying a partial apply are all legitimate reasons to mean both halves. A pair you
 leave is not raised again for the rest of the session.
 

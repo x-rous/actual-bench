@@ -189,11 +189,21 @@ export function ApplyResultPanel({
               These writes were reported as successful, but reading the account back tells a
               different story. Check them in Actual before relying on this reconciliation.
             </p>
+            {/*
+              Keyed by position as well as identity.
+              
+              One operation reports a separate issue per field it failed to
+              write - amount, notes, imported payee - so operation id and kind
+              together are not unique, and React's answer to duplicate keys is
+              to duplicate or omit rows. That made this list, which exists to be
+              trusted when something has gone wrong, the one place where the
+              count on screen could disagree with what actually happened.
+            */}
             <ul className="space-y-1 text-xs">
-              {verification.issues.map((issue) => {
+              {verification.issues.map((issue, index) => {
                 const operation = operationsById.get(issue.operationId);
                 return (
-                  <li key={`${issue.operationId}-${issue.kind}`}>
+                  <li key={`${issue.operationId}-${issue.kind}-${index}`}>
                     <span className="font-medium">{operation?.kind ?? "Change"}</span>
                     <span className="text-muted-foreground"> - {issue.detail}</span>
                   </li>
