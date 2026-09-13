@@ -65,7 +65,7 @@ const deleteOperation: ApplyOperation = {
 };
 
 function planOf(...operations: ApplyOperation[]): ApplyPlan {
-  return { operations, alreadyApplied: 0, noWriteMatches: 0, unresolved: 0, blocked: [] };
+  return { operations, alreadyApplied: 0, noWriteMatches: 0, unresolved: 0, blocked: [], unreconciledDifferences: [] };
 }
 
 function allApplied(plan: ApplyPlan): OperationResult[] {

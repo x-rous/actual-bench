@@ -1,6 +1,6 @@
 "use client";
 
-import { Ban, Check, Pencil, Plus, Trash2, Undo2 } from "lucide-react";
+import { Ban, Check, Pencil, Plus, Trash2, Undo2, Unlink } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { REASON } from "@/lib/reconciliation/session/build";
 import { canStageDelete, canStageField } from "@/lib/reconciliation/session/staging";
@@ -70,6 +70,28 @@ export function ItemActions({
 
   const decided = item.disposition !== "unresolved";
   const primary = transactions[0];
+  /**
+   * The figures disagree and there is exactly one transaction it could be about.
+   *
+   * The same test that gates "Use the statement's ..." below, hoisted so the
+   * two buttons cannot drift apart: they are one either/or, and a row that
+   * offers to take the statement's amount must be the same row whose accept
+   * button says it is keeping Actual's.
+   */
+  const amountsDisagree = Boolean(
+    primary && transactions.length === 1 && statementRow && primary.amount !== statementRow.amount
+  );
+  /**
+   * The figures disagree and nothing here can fix them.
+   *
+   * Reconciled rows, split parents and transfer legs all refuse an amount
+   * change, for reasons that are about Actual rather than about this pairing.
+   * That is the *only* case where confirming a match without taking the
+   * statement's amount is honest: everywhere else accepting the pair now
+   * corrects it, because a match that leaves the account disagreeing with the
+   * bank is not a match.
+   */
+  const differenceIsStuck = amountsDisagree && !amountVerdict.allowed;
   const isDuplicate = item.reasonCode === REASON.likelyDuplicate;
 
   /*
@@ -182,10 +204,55 @@ export function ItemActions({
         {hasStatementRow &&
           item.actualTransactionIds.length === 1 &&
           transactions.length === 1 &&
-          item.disposition !== "matched" && (
-          <Button size="sm" variant="outline" onClick={() => onDisposition("matched")}>
+          item.disposition !== "matched" &&
+          (!amountsDisagree || differenceIsStuck) && (
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => onDisposition("matched")}
+            title={differenceIsStuck ? amountVerdict.reason : undefined}
+          >
             <Check className="mr-1 h-3.5 w-3.5" />
-            These match
+            {/*
+              Accepting a pairing now takes the statement's amount with it, so
+              where the figures differ this button and "Use the statement's ..."
+              below would be the same action under two names. One of them has to
+              go, and it is this one: naming the figure is the clearer wording
+              for a write.
+
+              It comes back only where the correction is refused, and then it
+              says what it is leaving behind rather than claiming a clean match.
+            */}
+            {differenceIsStuck
+              ? `Match, leaving a ${formatMinorUnits(
+                  Math.abs(primary!.amount - statementRow!.amount)
+                )} difference`
+              : "These match"}
+          </Button>
+        )}
+
+        {/*
+          Declining the pairing, which was reachable only from a row offering
+          *several* candidates.
+
+          `onUseCandidate(null)` already does the right thing - it releases the
+          candidates and returns both sides to undecided, never deleting
+          anything - and the picker's "None of these" has called it all along.
+          But that whole block is gated on `transactions.length > 1`, so a row
+          the matcher paired with exactly one wrong candidate had no way to say
+          so: not Create (offered only where nothing is attached), not Delete
+          (that removes a transaction the user never disputed). The answer
+          existed and was simply unreachable for the commonest case.
+
+          Deliberately not a decision. Separating is the removal of a wrong
+          pairing, not the substitution of a different answer - the user may
+          want to create the row, or link it to some other transaction, and
+          neither should be assumed here.
+        */}
+        {hasStatementRow && transactions.length === 1 && item.disposition === "unresolved" && (
+          <Button size="sm" variant="outline" onClick={() => onUseCandidate(null)}>
+            <Unlink className="mr-1 h-3.5 w-3.5" />
+            Not the same transaction
           </Button>
         )}
 
@@ -201,13 +268,23 @@ export function ItemActions({
         )}
 
         {/*
-          Offered wherever there is a transaction, matching the bulk bar.
-          
-          It used to require the row to have *no* statement row, so selecting a
-          two-sided row and pressing Keep in bulk worked while the same row's own
-          panel did not offer it - the two disagreed about what was possible.
+          Only where it means something: a transaction with nothing on the
+          statement against it, where keep and delete are the real pair.
+
+          It was widened to every row holding a transaction to settle a
+          disagreement between this panel and the bulk bar - the bulk bar
+          offered it on two-sided rows and the panel did not. That made the two
+          agree without anyone asking what Keep *means* on a two-sided row, and
+          the answer is nothing that Ignore does not already mean: the planner
+          runs them through the same branch, producing no operation, and the
+          coverage bar treats them identically. Three buttons, two of them the
+          same action, and the redundant one labelled in a way that reads as a
+          claim about the pairing it does not make.
+
+          The bulk bar's `keepable` narrows in step, or the disagreement the
+          original change fixed comes straight back.
         */}
-        {hasTransaction && (
+        {hasTransaction && !hasStatementRow && (
           <Button
             size="sm"
             variant={item.disposition === "keep" ? "default" : "outline"}
@@ -237,7 +314,7 @@ export function ItemActions({
             candidate, so offering this on a row with several would quietly
             rewrite the amount of a transaction the user has not chosen. Pick
             first, then correct. */}
-        {primary && transactions.length === 1 && statementRow && primary.amount !== statementRow.amount && (
+        {amountsDisagree && statementRow && primary && (
           <GuardedButton
             size="sm"
             variant={item.disposition === "correct-amount" ? "default" : "outline"}
@@ -246,7 +323,7 @@ export function ItemActions({
             onClick={() => onCorrectAmount(primary.id, statementRow.amount)}
           >
             <Pencil className="mr-1 h-3.5 w-3.5" />
-            Set amount to {formatMinorUnits(statementRow.amount)}
+            {`Use the statement's ${formatMinorUnits(statementRow.amount)}`}
           </GuardedButton>
         )}
 

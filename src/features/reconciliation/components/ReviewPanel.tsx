@@ -162,6 +162,30 @@ export function ReviewPanel({
           <Stat label="Update" value={visibleUpdateCount} icon={Pencil} />
           <Stat label="Delete" value={counts.delete} icon={Trash2} destructive />
           <Stat label="No change needed" value={plan.noWriteMatches} muted />
+          {/*
+            Kept out of "No change needed", which means "nothing to do here".
+            These are rows where the account will still disagree with the bank
+            after Apply: the pairing was accepted but the correction is refused,
+            because the transaction is reconciled in Actual, a split parent, or
+            one leg of a transfer. Folded into a muted count they made a
+            reconciliation that did not reconcile look finished on the last
+            screen before writing.
+
+            The total is stated, not just the count - "2 rows" says nothing
+            about whether the residue is a rounding cent or a booking.
+          */}
+          {plan.unreconciledDifferences.length > 0 && (
+            <span
+              className="text-amber-600 dark:text-amber-400"
+              title="These pairings were accepted but their amounts could not be corrected here - the transactions are reconciled in Actual, split parents, or legs of a transfer. Fix them in Actual if the bank's figure is right."
+            >
+              {plan.unreconciledDifferences.length} matched with a difference (
+              {formatMinorUnits(
+                plan.unreconciledDifferences.reduce((total, entry) => total + entry.difference, 0)
+              )}
+              )
+            </span>
+          )}
           {enrichments > 0 && (
             <span
               className="text-muted-foreground"

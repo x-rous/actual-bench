@@ -8,6 +8,7 @@ import type {
 import {
   REASON,
   buildReconciliationItems,
+  applyDisposition,
   correctAmountFromStatement,
   linkManually,
   resolveToTransaction,
@@ -867,5 +868,90 @@ describe("linking two rows by hand", () => {
     // Defence in depth: the toolbar only offers the action for the one shape,
     // but the engine must not rely on the UI having behaved.
     expect(link([statementOnly, second as ReconciliationItem])).toBeNull();
+  });
+});
+
+/*
+ * A match that leaves the account disagreeing with the bank is not a match: it
+ * records a reconciliation that did not reconcile. Picking a candidate and
+ * linking by hand both carried the statement's amount across already - the
+ * accept button and `Enter` did not, and those are the two routes people
+ * actually use.
+ */
+describe("accepting a pairing", () => {
+  const statementRow = row({ id: "s1", amount: -2225 });
+
+  function decide(
+    disposition: ReconciliationItem["disposition"],
+    over: Partial<ReconciliationItem> = {},
+    transaction = txn({ id: "t1", amount: -1881 })
+  ) {
+    return applyDisposition({
+      item: {
+        id: "i1",
+        statementRowIds: ["s1"],
+        actualTransactionIds: ["t1"],
+        disposition: "unresolved",
+        guards: { protectedReconciled: false, splitParent: false, transfer: "no" },
+        ...over,
+      },
+      disposition,
+      statementRow,
+      transaction,
+    });
+  }
+
+  it("takes the statement's amount when the figures disagree", () => {
+    const item = decide("matched");
+
+    expect(item.disposition).toBe("correct-amount");
+    expect(item.stagedChanges?.amount).toEqual({
+      original: -1881,
+      staged: -2225,
+      source: "manual",
+    });
+  });
+
+  /*
+   * The gap is not confined to rows flagged "amount differs": a candidate can be
+   * paired on the original-currency amount, where the posted figures differ by
+   * construction - the statement posts AED while Actual holds the SAR figure.
+   */
+  it("does the same on a row that matched on the original currency", () => {
+    const item = decide("matched", { reasonCode: REASON.belowConfidenceFloor });
+    expect(item.disposition).toBe("correct-amount");
+  });
+
+  it("stays a plain match when the amounts already agree", () => {
+    const item = decide("matched", {}, txn({ id: "t1", amount: -2225 }));
+    expect(item.disposition).toBe("matched");
+    expect(item.stagedChanges).toBeUndefined();
+  });
+
+  it("leaves the difference where the correction is refused", () => {
+    // Reconciled in Actual: the correction is refused, not declined, so the
+    // pairing can still be recorded - this is the one honest case for a match
+    // whose amounts disagree.
+    const item = decide("matched", {
+      guards: { protectedReconciled: true, splitParent: false, transfer: "no" },
+    });
+
+    expect(item.disposition).toBe("matched");
+    expect(item.stagedChanges?.amount).toBeUndefined();
+  });
+
+  it("does not touch the amount for any other decision", () => {
+    for (const disposition of ["create", "delete", "keep", "ignored"] as const) {
+      expect(decide(disposition).stagedChanges?.amount).toBeUndefined();
+    }
+  });
+
+  it("drops staged edits when a decision is withdrawn", () => {
+    const item = decide("unresolved", {
+      disposition: "correct-amount",
+      stagedChanges: { amount: { original: -1881, staged: -2225, source: "manual" } },
+    });
+
+    expect(item.stagedChanges).toBeUndefined();
   });
 });

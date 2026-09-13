@@ -14,6 +14,7 @@ import {
 import { match } from "@/lib/reconciliation/match/matcher";
 import {
   buildReconciliationItems,
+  applyDisposition,
   correctAmountFromStatement,
   linkManually,
   resolveToTransaction,
@@ -1108,14 +1109,16 @@ export function ReconciliationView() {
       return transactionsById.get(item.actualTransactionIds[0] ?? "");
     }
 
+    /** Record a decision. The rules that travel with one live in `applyDisposition`. */
     function handleDisposition(itemId: string, disposition: ReconciliationDisposition) {
-      updateItem(itemId, (item) => ({
-        ...item,
-        disposition,
-        // Returning a row to undecided drops what was staged for it: keeping edits
-        // attached to a decision the user withdrew would apply them by surprise.
-        stagedChanges: disposition === "unresolved" ? undefined : item.stagedChanges,
-      }));
+      updateItem(itemId, (item) =>
+        applyDisposition({
+          item,
+          disposition,
+          statementRow: statementRowsById.get(item.statementRowIds[0] ?? ""),
+          transaction: transactionsById.get(item.actualTransactionIds[0] ?? ""),
+        })
+      );
     }
 
     /**

@@ -98,9 +98,18 @@ export function BulkDecisionBar({
     (item) => item.statementRowIds.length > 0 && item.actualTransactionIds.length === 0
   );
 
-  // Keep and ignore apply to anything, but keep only reads sensibly for rows
-  // that exist in Actual.
-  const keepable = selected.filter((item) => item.actualTransactionIds.length > 0);
+  /*
+   * Keep belongs to transactions with nothing on the statement against them,
+   * where keep and delete are the real pair.
+   *
+   * It used to cover every selected row holding a transaction, which put it on
+   * two-sided rows where it means nothing the panel's Ignore does not already
+   * mean - the planner runs `keep` and `ignored` through the same branch and
+   * emits no operation for either. Narrowed here in step with `ItemActions`;
+   * changing one without the other is what left the two surfaces disagreeing
+   * about what was possible in the first place.
+   */
+  const keepable = selected.filter(isActualOnly);
 
   /*
    * What the selected statement rows come to.
@@ -193,7 +202,7 @@ export function BulkDecisionBar({
       eligible: keepable,
       excludedReason:
         keepable.length < selected.length
-          ? `${selected.length - keepable.length} are not in Actual`
+          ? `${selected.length - keepable.length} are on the statement too`
           : null,
       run: () => onBulkDisposition(keepable.map((item) => item.id), "keep"),
     },

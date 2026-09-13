@@ -209,6 +209,7 @@ export function buildApplyPlan(input: PlanInput): ApplyPlan {
   const blocked: { itemId: string; reason: string }[] = [];
   let noWriteMatches = 0;
   let unresolved = 0;
+  const unreconciledDifferences: { itemId: string; difference: number }[] = [];
 
   for (const item of input.items) {
     switch (item.disposition) {
@@ -244,6 +245,28 @@ export function buildApplyPlan(input: PlanInput): ApplyPlan {
         }
 
         const enrichment = enrichmentFor(item, transaction, input, applyConfig);
+
+        /*
+         * A pairing accepted while the figures still disagree.
+         *
+         * Only reachable where the correction was refused - accepting a match
+         * otherwise carries the statement's amount across - so this is the
+         * residue Apply cannot fix: reconciled rows, split parents, transfer
+         * legs. Reported rather than absorbed into "No change needed", because
+         * after Apply the account still disagrees with the bank by this much
+         * and the last screen before writing should say so.
+         */
+        if (item.disposition === "matched") {
+          const row = input.statementRows.get(item.statementRowIds[0] ?? "");
+          const staged = item.stagedChanges?.amount?.staged;
+          const effective = staged ?? transaction.amount;
+          if (row && row.amount !== effective) {
+            unreconciledDifferences.push({
+              itemId: item.id,
+              difference: row.amount - effective,
+            });
+          }
+        }
 
         if (!hasStagedChanges(item.stagedChanges)) {
           if (item.disposition === "correct-amount") break;
@@ -337,6 +360,7 @@ export function buildApplyPlan(input: PlanInput): ApplyPlan {
     operations: remaining,
     alreadyApplied: operations.length - remaining.length,
     noWriteMatches,
+    unreconciledDifferences,
     unresolved,
     blocked,
   };

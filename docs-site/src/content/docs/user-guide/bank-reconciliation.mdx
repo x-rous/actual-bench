@@ -346,11 +346,31 @@ for real - delete it, say - and it rejoins the counter like any other row.
 For every row you can:
 
 - **Accept** the match, or **pick a different candidate** - the ones you did not pick stay available.
+- **Say they are not the same.** The transaction goes back to being its own row, to keep or delete,
+  and your statement row goes back to having nothing against it - where **Create** is waiting.
+  Nothing is deleted and nothing is decided for you.
 - **Create** the transaction in Actual.
 - **Delete** a duplicate, keeping the one you want.
 - **Correct an amount** in place, so the transaction's id, notes, payee, and any schedule or transfer
   link survive. Nothing you wrote is destroyed to fix a number.
 - **Leave it for later.** Rows with no decision are untouched by Apply.
+
+### When the amounts disagree
+
+**Accepting a pairing takes the statement's amount with it.** The bank is authoritative about what
+was charged, so a match that left your account disagreeing with it would record a reconciliation
+that did not reconcile. Where the figures differ, the answer reads **Use the statement's −22.25** -
+which pairs the rows *and* corrects the transaction in place, keeping its id, notes, payee, category
+and any schedule or transfer link.
+
+If it is simply a different transaction, **Not the same transaction** is the answer instead.
+
+There is one exception. Actual refuses an amount change on a transaction that is **reconciled
+there**, on a **split parent** (its amount must equal its split lines), and on **one leg of a
+transfer** (the other account would disagree). On those rows the correction is not available, so the
+pairing can still be recorded as **Match, leaving a 3.44 difference** - which says what it is leaving
+behind. Review then reports those rows separately, with the total still outstanding, rather than
+counting them as needing no change.
 
 While a row still has several transactions in play, anything that names *one* of them - matching it,
 deleting it, correcting its amount - is refused, and says to pick which transaction the row is first.

@@ -86,6 +86,7 @@ function plan(operation: UpdateOperation): ApplyPlan {
     operations: [operation],
     alreadyApplied: 0,
     noWriteMatches: 0,
+    unreconciledDifferences: [],
     unresolved: 0,
     blocked: [],
   };
@@ -218,6 +219,7 @@ describe("narrowing the table to one kind of write", () => {
           ],
           alreadyApplied: 0,
           noWriteMatches: 0,
+          unreconciledDifferences: [],
           unresolved: 0,
           blocked: [],
         }}

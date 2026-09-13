@@ -21,6 +21,7 @@ import { transferStatusOf } from "../transportAdapter";
 import type {
   ActualTransactionSnapshot,
   MatchGraph,
+  ReconciliationDisposition,
   ReconciliationItem,
   StatementRow,
 } from "../types";
@@ -430,6 +431,50 @@ export function correctAmountFromStatement(input: {
       amount: { original: transaction.amount, staged: statementRow.amount, source: "manual" },
     },
   };
+}
+
+/**
+ * Record a decision on a row, with everything that follows from it.
+ *
+ * Thin, and deliberately here rather than in the view. Two rules travel with a
+ * disposition and both were living in a click handler:
+ *
+ * - withdrawing a decision drops what was staged for it, because edits attached
+ *   to a decision the user took back would apply by surprise;
+ * - **accepting a pairing takes the statement's amount with it.** A match that
+ *   leaves the account disagreeing with the bank is not a match - it records a
+ *   reconciliation that did not reconcile. The rest of the feature already knew
+ *   this: picking a candidate ran `correctAmountFromStatement`, and
+ *   `linkManually` carries the amount across for the reason written there. Only
+ *   the two most reachable routes to `matched` - the accept button and `Enter` -
+ *   went around it, and they are the ones most likely to be used.
+ *
+ * Nor was that confined to rows flagged "amount differs": `scoreCandidate` can
+ * pair on the **original-currency** amount, where the posted figures differ by
+ * construction, so a contested or low-confidence row carries the same gap.
+ *
+ * `correctAmountFromStatement` decides what actually happens - a no-op when the
+ * amounts agree, never overwriting a hand-edited amount, and leaving a guarded
+ * row `matched` with the difference intact, because there the correction is
+ * refused rather than declined.
+ */
+export function applyDisposition(input: {
+  item: ReconciliationItem;
+  disposition: ReconciliationDisposition;
+  statementRow: StatementRow | undefined;
+  transaction: ActualTransactionSnapshot | undefined;
+}): ReconciliationItem {
+  const { item, disposition, statementRow, transaction } = input;
+
+  const next: ReconciliationItem = {
+    ...item,
+    disposition,
+    stagedChanges: disposition === "unresolved" ? undefined : item.stagedChanges,
+  };
+
+  if (disposition !== "matched") return next;
+
+  return correctAmountFromStatement({ item: next, statementRow, transaction });
 }
 
 /**
