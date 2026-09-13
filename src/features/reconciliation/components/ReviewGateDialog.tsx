@@ -20,13 +20,17 @@ import { statementText } from "@/lib/reconciliation/statement/text";
 import { formatMinorUnits, formatShortDate } from "../lib/format";
 
 /**
- * The last chance to notice a pair before the decisions about it are reviewed.
+ * Everything worth saying on the way from deciding to reviewing, said once.
  *
  * The workbench already offers these, and someone working row by row will have
  * seen them. Someone who filtered to "Not in Actual", selected everything and
  * pressed Create never looked at an individual row at all — and that is the
  * fastest way to reconcile a long statement, so it is the path most likely to
  * write a duplicate.
+ *
+ * Two things are worth raising at this point and they arrive on the same click,
+ * so they share one dialog. Two in sequence would be worse than either, and the
+ * second would be dismissed on the momentum of dismissing the first.
  *
  * Two things it deliberately is not:
  *
@@ -42,9 +46,19 @@ import { formatMinorUnits, formatShortDate } from "../lib/format";
  * reading — the same comparison in a different shape is a new thing to learn.
  */
 
-export type PossiblePairsDialogProps = {
+export type ReviewGateDialogProps = {
   open: boolean;
   pairs: PossiblePair[];
+  /**
+   * Rows with no decision, split by side.
+   *
+   * Separated because they do not weigh the same. A statement row left undecided
+   * is a transaction that happened and will not be recorded; an Actual row left
+   * undecided is one the statement never mentioned, and leaving it alone is a
+   * perfectly good answer. "8 bank transactions will not be added" is a reason
+   * to go back; "12 rows undecided" is not.
+   */
+  undecided: { statement: number; actual: number };
   items: Map<string, ReconciliationItem>;
   statementRows: Map<string, StatementRow>;
   transactions: Map<string, ActualTransactionSnapshot>;
@@ -54,6 +68,47 @@ export type PossiblePairsDialogProps = {
   onBackToRows: () => void;
   onContinue: () => void;
 };
+
+/**
+ * The headline, which is a loss only when a statement row is involved.
+ *
+ * Built as a string rather than assembled in JSX. Mixing text and expressions
+ * across lines leaves the spacing to JSX's whitespace rules, and an earlier
+ * version of this rendered "8 of your bank transactionswon't be added" - a
+ * missing space nobody would see reviewing the diff, which is exactly the kind
+ * of thing a sentence held in one place cannot do.
+ */
+function undecidedHeadline({ statement, actual }: { statement: number; actual: number }): string {
+  if (statement > 0) {
+    return statement === 1
+      ? "1 of your bank transactions won't be added."
+      : `${statement} of your bank transactions won't be added.`;
+  }
+  return actual === 1
+    ? "1 row still has no decision."
+    : `${actual} rows still have no decision.`;
+}
+
+/** What follows from it, and what does not need following up. */
+function undecidedDetail({ statement, actual }: { statement: number; actual: number }): string {
+  const parts: string[] = [];
+
+  if (statement > 0) {
+    parts.push(`Applying now leaves ${statement === 1 ? "it" : "them"} out of your budget.`);
+  }
+  if (actual > 0) {
+    const lead = statement > 0 ? "The other" : "These";
+    const subject = actual === 1 ? "row is a transaction" : "rows are transactions";
+    parts.push(
+      `${lead} ${actual} ${subject} Actual already has that your statement didn't mention - leaving ${
+        actual === 1 ? "it" : "those"
+      } alone is fine.`
+    );
+  }
+
+  parts.push("You can come back to this session any time to finish.");
+  return parts.join(" ");
+}
 
 function Side({
   date,
@@ -78,9 +133,10 @@ function Side({
   );
 }
 
-export function PossiblePairsDialog({
+export function ReviewGateDialog({
   open,
   pairs,
+  undecided,
   items,
   statementRows,
   transactions,
@@ -88,26 +144,20 @@ export function PossiblePairsDialog({
   onDismiss,
   onBackToRows,
   onContinue,
-}: PossiblePairsDialogProps) {
+}: ReviewGateDialogProps) {
   return (
     <Dialog open={open} onOpenChange={(next) => !next && onContinue()}>
       <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
-          <DialogTitle>
-            {pairs.length === 0
-              ? "Nothing left to check"
-              : pairs.length === 1
-              ? "One row looks like a transaction you already have"
-              : `${pairs.length} rows look like transactions you already have`}
-          </DialogTitle>
+          <DialogTitle>Before you review</DialogTitle>
           <DialogDescription>
-            {pairs.length === 0
-              ? "Every pair here has been settled or left alone."
-              : "Matching would not relate these, but they look like the same transactions. Applying as things stand would add them again and, where you are deleting the original, remove it."}
+            {pairs.length > 0
+              ? "Matching would not relate these, but they look like the same transactions. Applying as things stand would add them again and, where you are deleting the original, remove it."
+              : "Some rows still have no decision."}
           </DialogDescription>
         </DialogHeader>
 
-        <ul className="flex max-h-[50vh] flex-col gap-2 overflow-auto">
+        <ul className="flex max-h-[45vh] flex-col gap-2 overflow-auto empty:hidden">
           {pairs.map((pair) => {
             const statementItem = items.get(pair.statementItemId);
             const actualItem = items.get(pair.actualItemId);
@@ -158,11 +208,28 @@ export function PossiblePairsDialog({
           })}
         </ul>
 
+        {(undecided.statement > 0 || undecided.actual > 0) && (
+          /*
+           * The consequence first, in the words someone would use themselves.
+           *
+           * A count of undecided rows is not a reason to go back; "eight of your
+           * bank transactions will not be added" is. The two sides are named
+           * apart because only one of them is a loss - a transaction Actual
+           * already holds that the statement never mentioned is fine left alone,
+           * and lumping it into one figure makes the whole number look worse
+           * than it is.
+           */
+          <section className="rounded-md border border-border/60 px-3 py-2.5 text-sm">
+            <p className="font-medium">{undecidedHeadline(undecided)}</p>
+            <p className="mt-1 text-muted-foreground">{undecidedDetail(undecided)}</p>
+          </section>
+        )}
+
         <DialogFooter>
           <Button variant="ghost" onClick={onBackToRows}>
             Back to the rows
           </Button>
-          <Button onClick={onContinue}>Continue to review</Button>
+          <Button onClick={onContinue}>Review anyway</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

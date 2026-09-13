@@ -115,3 +115,45 @@ export function resumeWindowInput(session: {
     paddingDays,
   };
 }
+
+/**
+ * Bring the local budget up to date before reading transactions from it.
+ *
+ * In Direct mode the transport reads a **copy of the budget held in the
+ * browser**, not the server. Nothing in a reconciliation refreshed that copy, so
+ * a session could be built entirely on what Actual looked like whenever the
+ * connection happened to open — and every decision in it inherited that.
+ *
+ * The failure this exists for is not hypothetical. Transactions deleted in
+ * Actual stayed in the local copy; because they had been *created from the
+ * statement* they matched it perfectly, so a later reconciliation paired the
+ * statement with those ghosts rather than the real rows, and the writes went to
+ * transaction ids the server no longer had.
+ *
+ * Worth being clear that this is **not** what the toolbar's Refresh does. That
+ * invalidates the query cache, which sits in front of the local budget — so it
+ * re-reads the same stale copy. This is the API's own `sync()`, which pushes and
+ * pulls against the server.
+ *
+ * A no-op in HTTP mode, where reads already go to the server.
+ *
+ * Never throws, and **returns whether it actually worked**, because the two
+ * callers need different things from a failure:
+ *
+ * - **Matching** carries on. It writes nothing, so a graph built on a slightly
+ *   stale copy is worse than one built on a fresh one but far better than a
+ *   reconciliation that cannot start because the server blinked.
+ * - **The pre-flight check must not.** Its whole job is to notice what changed
+ *   in Actual since the session loaded, and a copy it could not refresh cannot
+ *   answer that - it would report "nothing changed" about a budget it never
+ *   looked at, and Apply would write over the very edit the check exists to
+ *   catch. Nothing stands behind that one.
+ */
+export async function refreshBudget(connection: ConnectionInstance): Promise<boolean> {
+  try {
+    await getTransport(connection).sync();
+    return true;
+  } catch {
+    return false;
+  }
+}

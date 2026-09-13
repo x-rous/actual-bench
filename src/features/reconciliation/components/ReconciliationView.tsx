@@ -42,7 +42,11 @@ import {
 import type { ReconciliationDisposition } from "@/lib/reconciliation/types";
 import { useConnectionStore, selectActiveInstance } from "@/store/connection";
 import { useAccounts } from "@/features/accounts/hooks/useAccounts";
-import { loadCandidateWindow, resumeWindowInput } from "../lib/loadCandidates";
+import {
+  loadCandidateWindow,
+  refreshBudget,
+  resumeWindowInput,
+} from "../lib/loadCandidates";
 import {
   DEFAULT_APPLY_CONFIG,
   buildApplyPlan,
@@ -95,7 +99,7 @@ import type { StatementParseConfig } from "@/lib/reconciliation/statement/normal
 import { ImportPanel } from "./ImportPanel";
 import { ConfirmDialog, type ConfirmState } from "@/components/ui/confirm-dialog";
 import { NewSessionDialog } from "./NewSessionDialog";
-import { PossiblePairsDialog } from "./PossiblePairsDialog";
+import { ReviewGateDialog } from "./ReviewGateDialog";
 import { SessionList, rowCountOf } from "./SessionList";
 import { Workbench } from "./Workbench";
 
@@ -649,6 +653,26 @@ export function ReconciliationView() {
     [possiblePairs, itemsById, dismissedPairs]
   );
 
+  /**
+   * Rows with no decision, split by side.
+   *
+   * Undecided rows are safe - nothing is written for them - so this never
+   * blocks. But the two sides do not weigh the same: a statement row left
+   * undecided is a transaction that happened and will not be recorded, while an
+   * Actual row the statement never mentioned is fine left alone. Saying which
+   * is which is what makes the count worth reading.
+   */
+  const undecided = useMemo(() => {
+    let statement = 0;
+    let actual = 0;
+    for (const item of items) {
+      if (item.disposition !== "unresolved") continue;
+      if (item.statementRowIds.length > 0) statement += 1;
+      else if (item.actualTransactionIds.length > 0) actual += 1;
+    }
+    return { statement, actual };
+  }, [items]);
+
 
   const coverage = useMemo(
     () =>
@@ -868,7 +892,7 @@ export function ReconciliationView() {
      * report showing itself, not someone arriving fresh.
      */
     function enterReview(id: string) {
-      if (gatePairs.length > 0) {
+      if (gatePairs.length > 0 || undecided.statement + undecided.actual > 0) {
         setReviewGateFor(id);
         return;
       }
@@ -924,9 +948,18 @@ export function ReconciliationView() {
        * hundred rows against it — seconds of silence with no sense of progress
        * or of which part was slow.
        */
-      setMatchStage("Loading transactions from Actual…");
+      /*
+       * Brought up to date before anything is read, because everything after
+       * this is built on what comes back: the candidate window, the matches,
+       * every decision, and the ids the writes will target. A session started
+       * from a stale copy of the budget is wrong from its first row.
+       */
+      setMatchStage("Bringing the budget up to date…");
 
       try {
+        await refreshBudget(connection);
+
+        setMatchStage("Loading transactions from Actual…");
         const window = await loadCandidateWindow(connection, {
           accountId: input.accountId,
           statementStart: input.statementPeriod.start,
@@ -1314,6 +1347,27 @@ export function ReconciliationView() {
       let plan = applyPlan;
       try {
         setIsCheckingDrift(true);
+        /*
+         * Before the re-read, not after it.
+         *
+         * This check exists to answer "what changed in Actual since the session
+         * loaded", and it was asking the same local copy the session was built
+         * from - so a change made in Actual was invisible to the one guard whose
+         * whole job is to catch it. Syncing first is what makes the question
+         * answerable.
+         */
+        const refreshed = await refreshBudget(connection);
+        if (!refreshed) {
+          // Refused rather than proceeded. A check that could not read the
+          // budget would report nothing changed about a copy it never looked
+          // at, and Apply would then write over the very edit it exists to
+          // catch. Matching can be best-effort because it writes nothing;
+          // this cannot, because the next thing it does is write.
+          setMatchError(
+            "Could not reach Actual to check for changes made since this session loaded. Nothing was written - try Apply again."
+          );
+          return;
+        }
         const targets = driftTargets(applyPlan);
         const dates = snapshot.map((transaction) => transaction.date).sort();
         const latest = await loadLatestForDrift({
@@ -1977,9 +2031,10 @@ export function ReconciliationView() {
       />
 
       {/* The last look at a possible pair before its decisions are reviewed. */}
-      <PossiblePairsDialog
+      <ReviewGateDialog
         open={reviewGateFor !== null}
         pairs={gatePairs}
+        undecided={undecided}
         items={itemsById}
         statementRows={statementRowsById}
         transactions={transactionsById}

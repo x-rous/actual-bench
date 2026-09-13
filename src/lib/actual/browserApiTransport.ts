@@ -834,15 +834,37 @@ async function createBrowserTransactionsForSync(
     }
   }
 
-  // 3. One addTransactions per account (a plain insert — no dedupe/reconcile, so
-  //    created rows match the planned payloads; see the Slice 1 spike notes for
-  //    why this is preferred over importTransactions), then ONE range read per
-  //    account to recover ids + persisted fields by marker.
+  /*
+   * 3. One `addTransactions` per account, then ONE range read per account to
+   *    recover ids and persisted fields by marker.
+   *
+   * `addTransactions` rather than `importTransactions` because the latter
+   * dedupes on `imported_id` and can merge into an existing row — which would
+   * destroy the deterministic marker that makes retrying a half-applied write
+   * safe. That choice is about dedupe and nothing else; the two options below
+   * are separate decisions that were once wrongly lumped in with it.
+   *
+   * **`runTransfers`** creates the counterpart leg when a payee is a transfer
+   * payee. It was `false`, and since `addTransactions` runs rules *before* it
+   * branches, a rule setting the payee to a transfer account produced a
+   * transaction pointing at one with no other side — a one-legged transfer,
+   * which is not merely incomplete but leaves the other account's balance wrong
+   * and Actual's own UI assuming a pair that is not there.
+   *
+   * **`learnCategories`** lets Actual update its payee→category rules from what
+   * was just written. Also `false`, and also wrong: rules run first, so a rule
+   * that assigns a category does make one available to learn from, and this is
+   * Actual's own behaviour operating on the user's own budget. It is gated in
+   * Actual per payee (`payees.learn_categories`), so switching it off here
+   * overrode a preference the user had already expressed there — and for people
+   * who use reconciliation as an importer, it made Bench's transactions behave
+   * unlike Actual's for no reason they could see.
+   */
   const created: SyncCreatedTransaction[] = new Array(inputs.length);
   for (const [accountId, group] of byAccount) {
     await api.addTransactions(accountId, group.entries.map((e) => e.payload), {
-      learnCategories: false,
-      runTransfers: false,
+      learnCategories: true,
+      runTransfers: true,
     });
 
     const rowByMarker = new Map<string, ApiTransaction>();

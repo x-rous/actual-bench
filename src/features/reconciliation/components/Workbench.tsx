@@ -463,6 +463,51 @@ function FilterButton({
   );
 }
 
+/**
+ * A count of work outstanding, which narrows the grid to it.
+ *
+ * Not a `FilterButton`: those classify the statement and are permanent, and
+ * borrowing their shape for something that comes and goes is what made these
+ * read as broken. A chip states a quantity and offers to show it.
+ */
+function AttentionChip({
+  label,
+  count,
+  tone,
+  active,
+  hint,
+  onToggle,
+}: {
+  label: string;
+  count: number;
+  tone: "amber" | "sky";
+  active: boolean;
+  hint: string;
+  onToggle: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      aria-pressed={active}
+      onClick={onToggle}
+      title={hint}
+      className={cn(
+        "flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] transition-colors",
+        tone === "amber"
+          ? active
+            ? "border-amber-500/60 bg-amber-500/15 text-amber-700 dark:text-amber-300"
+            : "border-amber-500/40 text-amber-700 hover:bg-amber-500/10 dark:text-amber-300"
+          : active
+            ? "border-sky-500/60 bg-sky-500/15 text-sky-700 dark:text-sky-300"
+            : "border-sky-500/40 text-sky-700 hover:bg-sky-500/10 dark:text-sky-300"
+      )}
+    >
+      <span className="font-medium tabular-nums">{count}</span>
+      {label}
+    </button>
+  );
+}
+
 export function Workbench({
   items,
   statementRows,
@@ -792,6 +837,11 @@ export function Workbench({
    * with itself, it is contested with whoever else wants that transaction.
    */
   /*
+   * Counted over **every** item, not the rows currently in view. Reading it off
+   * `visible` meant selecting any other filter emptied it and the control
+   * vanished - while its neighbour, counted from the whole set, stayed. Two
+   * adjacent controls behaving differently is worse than either behaviour.
+   *
    * Deliberately the same test the "Needs pairing" filter uses, so the count and
    * the list agree: a badge reading 4 that filters to 6 rows teaches the reader
    * to stop trusting both.
@@ -802,10 +852,10 @@ export function Workbench({
    */
   const blocking = useMemo(
     () =>
-      visible.filter(
+      items.filter(
         (item) => item.disposition === "unresolved" && item.reasonCode === REASON.merchantCluster
       ),
-    [visible]
+    [items]
   );
 
   /**
@@ -842,7 +892,15 @@ export function Workbench({
   }, [items]);
 
   const goToNextUndecided = useCallback(() => {
-    const queue = blocking.length > 0 ? blocking : visible;
+    // From what is on screen, never from the global count. `blocking` is
+    // deliberately read off every item so the chip does not vanish when another
+    // filter is chosen - but navigating by it would select a row the table is
+    // not showing, opening the inspector on something the user cannot see and
+    // could then edit blind.
+    const blockingHere = visible.filter(
+      (item) => item.disposition === "unresolved" && item.reasonCode === REASON.merchantCluster
+    );
+    const queue = blockingHere.length > 0 ? blockingHere : visible;
     const index = queue.findIndex((item) => item.id === selectedId);
     const after = queue.slice(index + 1).find((item) => item.disposition === "unresolved");
     const wrapped = after ?? queue.find((item) => item.disposition === "unresolved");
@@ -850,7 +908,7 @@ export function Workbench({
       setSelectedId(wrapped.id);
       reveal(wrapped.id);
     }
-  }, [blocking, visible, selectedId, reveal]);
+  }, [visible, selectedId, reveal]);
 
   /**
    * Apply a keyed decision to the selected row.
@@ -1051,52 +1109,6 @@ export function Workbench({
           ))}
         </div>
 
-        {/*
-          Work to do, rather than what kind of row this is.
-          
-          The filters to the left classify: every row is one of them, and the
-          counts sum to the statement. These two are queues - rows that need an
-          answer before their neighbours make sense, and rows matching could not
-          relate. They were scattered, one in the progress strip and one beside
-          the sort control, so neither read as a thing to work through. Together
-          and next to the classifications, they read as "and here is what is
-          outstanding".
-        */}
-        {(blocking.length > 0 || possiblePairs.length > 0) && (
-          <div
-            role="group"
-            aria-label="Rows waiting on you"
-            className="flex flex-wrap items-center gap-1 border-l border-border/60 pl-2"
-          >
-            {blocking.length > 0 && (
-              <FilterButton
-                entry={{
-                  id: "cluster",
-                  label: "To pair up",
-                  dot: "bg-amber-500/70",
-                  hint: "Several rows and several transactions share a merchant and a day. Settling one frees the rest, so these come first.",
-                }}
-                active={filter === "cluster"}
-                count={blocking.length}
-                onSelect={() => setFilter("cluster")}
-              />
-            )}
-            {possiblePairs.length > 0 && (
-              <FilterButton
-                entry={{
-                  id: "possible",
-                  label: "Possible pairs",
-                  dot: "bg-sky-500/70",
-                  hint: "Rows matching would not relate - the text is too far apart, or the dates or amounts are - but which look like one transaction. Open one to confirm or leave it.",
-                }}
-                active={filter === "possible"}
-                count={possiblePairs.length}
-                onSelect={() => setFilter("possible")}
-              />
-            )}
-          </div>
-        )}
-
         {/* Kept apart: nothing here counts towards the statement's coverage. */}
         <div
           role="group"
@@ -1229,23 +1241,67 @@ export function Workbench({
           prominent thing on the line. It is what someone glances at to know
           where they are, so it goes where the eye starts.
         */}
+        {/*
+          The filters lead, then the figure they narrow.
+          
+          Row 1 opens with a filter group, so this one does too and the two
+          scan alike - a bare progress bar has no text anchor to start on. The
+          label is what tells this "All" from the one directly above it, and it
+          came off the bar, which says "decided" in its own text.
+        */}
+        <span className="text-muted-foreground">Decisions</span>
+        <PillGroup
+          options={DECISION_FILTERS.map((entry) => ({ value: entry.id, label: entry.label }))}
+          value={decisionFilter}
+          onChange={setDecisionFilter}
+        />
+
         <DecisionProgressStrip
           coverage={coverage}
           onNextUndecided={goToNextUndecided}
         />
 
         {/*
-          The progress filters sit with the bar because they narrow the same
-          axis it measures: the bar says how far along the work is, and these
-          say which part of it to look at. Segmented rather than loose buttons,
-          matching the other list pages — one answer here, any number under
-          "Show only".
+          What the work that is left is made of.
+          
+          These belong to the bar's sentence, not to the filters above: the bar
+          says "12 of 42 decided" and these say what the remaining thirty are.
+          Among the classification filters they read as another way to slice the
+          statement, which they are not - a row to pair up is also a row needing
+          review - and a filter that vanishes when its work is done looks broken
+          there, while beside a progress bar it is exactly what should happen.
+          
+          Toggled, because the way back to everything should not be a trip to
+          another row of controls.
         */}
-        <PillGroup
-          options={DECISION_FILTERS.map((entry) => ({ value: entry.id, label: entry.label }))}
-          value={decisionFilter}
-          onChange={setDecisionFilter}
-        />
+        {(blocking.length > 0 || possiblePairs.length > 0) && (
+          <div
+            role="group"
+            aria-label="What is left to work through"
+            className="flex flex-wrap items-center gap-1"
+          >
+            {blocking.length > 0 && (
+              <AttentionChip
+                label="to pair up"
+                count={blocking.length}
+                tone="amber"
+                active={filter === "cluster"}
+                hint="Several rows and several transactions share a merchant and a day. Settling one frees the rest, so these come first."
+                onToggle={() => setFilter(filter === "cluster" ? "all" : "cluster")}
+              />
+            )}
+            {possiblePairs.length > 0 && (
+              <AttentionChip
+                label={possiblePairs.length === 1 ? "possible pair" : "possible pairs"}
+                count={possiblePairs.length}
+                tone="sky"
+                active={filter === "possible"}
+                hint="Rows matching would not relate - the text is too far apart, or the dates or amounts are - but which look like one transaction. Open one to confirm or leave it."
+                onToggle={() => setFilter(filter === "possible" ? "all" : "possible")}
+              />
+            )}
+          </div>
+        )}
 
         <span className="ml-3 border-l border-border/60 pl-3 text-muted-foreground">Show only</span>
         <MultiPillGroup
@@ -1273,7 +1329,7 @@ export function Workbench({
               onChange={(event) => setSearch(event.target.value)}
               placeholder="Search rows…"
               aria-label="Search reconciliation rows"
-              className="h-7 w-56 pl-7 text-xs"
+              className="h-6 w-44 pl-7 text-xs"
             />
           </div>
           <label className="flex items-center gap-1 text-muted-foreground">
@@ -1281,7 +1337,7 @@ export function Workbench({
             <select
               value={sort}
               onChange={(event) => setSort(event.target.value as SortId)}
-              className="rounded border border-border/60 bg-background px-1 py-0.5 text-xs"
+              className="h-6 rounded border border-border/60 bg-background px-1 text-xs"
             >
               {SORTS.map((entry) => (
                 <option key={entry.id} value={entry.id}>
@@ -1406,6 +1462,7 @@ export function Workbench({
                   transactions={item.actualTransactionIds
                     .map((id) => transactions.get(id))
                     .filter((t): t is ActualTransactionSnapshot => Boolean(t))}
+                  hasPossiblePair={inPossiblePair.has(item.id)}
                   contestedBy={
                     item.actualTransactionIds.length === 1
                       ? contestedBy.get(item.actualTransactionIds[0])
