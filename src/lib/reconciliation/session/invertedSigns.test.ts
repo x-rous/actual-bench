@@ -123,9 +123,27 @@ describe("diagnoseInvertedSigns", () => {
    * true diagnosis falls under the threshold and says nothing at all.
    */
   it("does not strand a row by handing its only partner to a later one", () => {
-    const rows = [row(2500, "2026-08-01"), row(2500, "2026-08-10")];
+    // Rows deliberately out of date order: a fixture already sorted would pass
+    // against the unsorted first-fit this exists to rule out.
+    const rows = [row(2500, "2026-08-10"), row(2500, "2026-08-01")];
     const transactions = [txn(-2500, "2026-08-03"), txn(-2500, "2026-08-10")];
 
+    // Taken in the given order, the 10th claims the 3rd (seven days, just in
+    // range) and the 1st is left facing the 10th, nine days away.
+    expect(diagnoseInvertedSigns({ statementRows: rows, transactions, matched: 0 })).toEqual({
+      wouldMatch: 2,
+      statementRows: 2,
+    });
+  });
+
+  it("prefers the earliest partner in range, whatever order the account is read in", () => {
+    // The other half of the same rule, and it needs its own fixture: this one
+    // is decided by the order of the transactions rather than of the rows.
+    const rows = [row(2500, "2026-08-01"), row(2500, "2026-08-15")];
+    const transactions = [txn(-2500, "2026-08-08"), txn(-2500, "2026-08-01")];
+
+    // Unsorted, the 1st takes the 8th - the first it meets that is in range -
+    // and the 15th is stranded against the 1st.
     expect(diagnoseInvertedSigns({ statementRows: rows, transactions, matched: 0 })).toEqual({
       wouldMatch: 2,
       statementRows: 2,
