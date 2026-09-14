@@ -31,6 +31,20 @@ updates:
           - "jest-environment-*"
           - "@types/jest"
     ignore:
+      # Held back by a reproducible failure, not by policy: these versions take
+      # AutomationsView's suite from seven seconds to three minutes and fail one
+      # test in it, from the lockfile rather than a local install. Pinned to the
+      # exact versions that fail rather than the whole major, so the next
+      # release through is still proposed - it may well be the fix. Remove these
+      # four once the cause is found.
+      - dependency-name: "react"
+        versions: ["19.3.0"]
+      - dependency-name: "react-dom"
+        versions: ["19.3.0"]
+      - dependency-name: "jest"
+        versions: ["30.5.1"]
+      - dependency-name: "jest-environment-jsdom"
+        versions: ["30.5.1"]
       # Must describe the Node actually in use, or the type checker starts
       # accepting code the runtime cannot run. Moves when Node does.
       - dependency-name: "@types/node"
