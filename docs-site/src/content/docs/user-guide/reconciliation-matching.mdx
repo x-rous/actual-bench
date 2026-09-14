@@ -1,0 +1,269 @@
+---
+title: How Matching Works
+description: The rules the reconciliation matcher follows - what makes a pair, what it scores, what it refuses to decide, and every setting you can change.
+sidebar:
+  order: 16
+---
+
+[Bank Reconciliation](../bank-reconciliation/) pairs the rows on your statement with the
+transactions in your account. This page is the full account of how it does that: what makes two rows
+a pair, how they are scored, what the matcher refuses to decide on its own, and which settings
+change any of it.
+
+You do not need this to reconcile a statement. Read it when a pairing surprised you and you want to
+know why, or before changing a matching setting.
+
+## The one rule everything follows
+
+> **The amount decides whether a pair exists. Everything else only decides how good it is.**
+
+Two rows can only be matched automatically if their amounts are **exactly equal**. Text never
+creates a pair - a perfect merchant name against a different amount produces nothing. Text and dates
+rank pairs the amount has already admitted.
+
+This is deliberate, and it is the reason the feature can be trusted with your budget. A wrong match
+writes to the wrong transaction; a missed match shows up as a row you can see and create. The first
+is expensive and quiet, the second is cheap and obvious.
+
+Everything the matcher does is **deterministic**: the same statement against the same account always
+produces the same result. Nothing depends on the order your account happened to load in, on the
+time, or on chance. That is what makes a session resumable and a tolerance change safe to re-run.
+
+## The stages, in order
+
+### 1. Loading the window
+
+Before matching, the account is read for a window around the statement's period - the statement's
+own dates, plus the date tolerance, plus any extra padding. Transactions outside it are never
+considered.
+
+Anything loaded purely as headroom, and never matched, is not shown to you at all. Transactions
+inside the window but outside the statement's own dates appear as **Outside period** and are kept by
+default, because your statement makes no claim about them.
+
+### 2. Pairs fixed by a reference
+
+If your statement carries a bank transaction ID - OFX files do, as `FITID` - and a transaction in
+Actual was imported with that same ID, the two are pinned together before anything else runs. No
+scoring, no competition, confidence **exact**.
+
+The statement's own reference or authorisation number is tried the same way. Both are attempted, in
+that order: an OFX ID your account has never seen does not stop the row's reference from being
+looked up.
+
+This is the only tier that bypasses scoring entirely, because an identifier the bank issued is not
+evidence *about* a pairing - it *is* the pairing.
+
+### 3. Finding candidates
+
+For every remaining statement row, the matcher looks for transactions where **both**:
+
+- the amount is **exactly equal**, and
+- the date is within the **date tolerance** (7 days by default, either side).
+
+Text is not consulted here at all. A transaction that fails either test is not a candidate, whatever
+its description says.
+
+**A second amount is also tried.** When your bank prints the original amount of a foreign purchase
+in the description - `... EUR53.45` beside a converted charge - that figure is looked up too. A
+purchase abroad posts as the converted amount, while a transaction created by an SMS or automation
+often carries the original one, so the posted figure never matches and the original one matches to
+the cent.
+
+This is not a tolerance. It is an exact match against a second figure the bank itself stated. It is
+scored lower than a posted-amount match, and it is **rejected outright unless the merchant text also
+agrees** - without that, a `VAT ON SERVICE CHARGES EUR41.00` fee row would claim an unrelated
+EUR41.00 purchase purely by arithmetic.
+
+### 4. Scoring
+
+Every candidate gets a score out of 100:
+
+| Signal | Points | Notes |
+|---|---|---|
+| Amount exactly equal | **50** | Always awarded - a candidate cannot exist without it |
+| Same day | 25 | |
+| 1 day apart | 20 | |
+| 2-3 days apart | 14 | |
+| 4-7 days apart | 7 | |
+| Merchant text | **0-25** | The similarity score, scaled |
+
+A statement reference found verbatim in the transaction's notes takes the **full 25 text points**
+rather than competing for them. For accounts built by automation the bank's reference often sits in
+the notes, which makes it near-identity evidence.
+
+An original-currency match has **12 points withheld**, so a posted-amount match always outranks one.
+
+The resulting score becomes a confidence label: **high** at 85 or more, **medium** at 65 or more,
+**low** below that. A pair scoring under the **auto-match floor** (60) is never matched
+automatically, whatever else is true about it.
+
+### 5. Comparing the text
+
+Which field in Actual holds your merchant text depends on how your transactions got there, so it is
+a setting rather than a guess:
+
+| Where your merchant text lives | How the transactions were created |
+|---|---|
+| The **payee** you curate | Entered by hand, or imported through Actual |
+| The **imported payee** | A bank-sync or import path |
+| The **notes** | SMS, n8n, Shortcuts or similar automation |
+
+**Notes are compared by containment, in both directions.** A note may legitimately hold the bank's
+text *plus* your own words - `NORTHGATE FUEL 933 #fuel | paid for Dad` - and those additions must
+not cost anything. It also runs the other way: an automation that captured a truncated name
+(`NORTHGATE FUEL 933`) still fully matches a statement that spells it out in full
+(`NORTHGATE FUEL 933 WESTPORT`). Tags are stripped before comparing, since a tag is never bank
+text.
+
+Payee fields are compared symmetrically instead, blending character-level and word-level similarity,
+because both sides are short.
+
+**A description too common to mean anything is rejected before it can match.** A statement row
+reading `FEE` or `PAYMENT` would otherwise be contained in a large share of your notes and match
+almost anything. Two guards: very short single-word descriptions are refused outright, and so is any
+description whose every word is common across the loaded window. The second only applies once there
+are at least ten transactions to judge frequency against.
+
+### 6. Assigning the pairs
+
+Every candidate pair from every row competes in **one sorted pass**, best first. A transaction can
+be claimed only once.
+
+This matters: matching each row in turn against its own best option lets the first row take a
+transaction a later row needed more. One global pass gives each transaction to the row with the
+strongest claim on it.
+
+The order is best score first, then the closest date, then the strongest text - so ties never fall
+to whichever row happened to be listed first.
+
+## What it refuses to decide
+
+The matcher stops rather than guess. Three distinct situations, each shown differently:
+
+### Several candidates
+
+Two plausible candidates whose scores are within **8 points** of each other are both offered, and
+neither is chosen. A 94 and a 91 are not a decision anyone should make silently.
+
+Two refinements stop this being over-cautious:
+
+- **When the text plainly separates them**, the better one is taken. Two fee rows differing only in
+  the amount they quote can score 100 and 95 while their text scores 1.00 and 0.79 - the evidence
+  separates them clearly, and the scores are close only because text carries a quarter of the
+  budget. This applies only when nothing else contradicts: a candidate whose text agrees better
+  while its date agrees worse is genuinely ambiguous, and stays your decision.
+- **When rivals are interchangeable** - identical score, identical date distance, identical text -
+  asking which one it is has no answer, because either choice produces the same reconciliation. One
+  is taken and the rest fall to other rows.
+
+### Likely duplicates
+
+When the rivals are near-identical to the winner rather than merely close - within 3 points, both
+matched on the posted amount, dates within a day - the loser is not a competing match, it is the
+same transaction recorded twice.
+
+This is decided **after the whole assignment is known**, because it is a *count* mismatch rather
+than a resemblance. Three statement rows against three identical transactions is a clean
+correspondence, not triplication. A rival still unclaimed at the end is surplus; one that another
+row took was simply another real transaction.
+
+### Nothing confident enough
+
+When a row's best candidate falls below the auto-match floor, the plausible few are offered so you
+can choose - at most five, and none scoring below 60. Below that a candidate carries nothing but a
+coincidence of amount and a date in the window, and offering it would waste your attention.
+
+If nothing clears even that, the row is left alone and offered as **Not in Actual**, which is a
+better answer than a bad guess.
+
+## The leftover passes
+
+Once every amount-based avenue is spent, what remains on both sides is compared again - this time
+allowing the amounts to disagree. **Nothing here is ever matched automatically at any size.** The
+amounts differ, and only you can say which figure is right.
+
+**Tier 1 - amounts that could plausibly be the same transaction.** The text must agree strongly
+(0.75 or better) and the amounts must be within **25%** of each other. This is the tier that catches
+a conversion done wrong before it reached your budget.
+
+**Tier 2 - same merchant, same day, amounts unrelated.** Text must agree very strongly (0.80) and
+the dates must be within one day, but the amounts are ignored entirely.
+
+**Neither tier reaches further than your date tolerance.** They may relax the *amount* - that is
+what they are for - but the window is yours. Set it to 0 and nothing is offered across a day, in any
+tier; set it to 3 and the second tier still stops at its own one day, because that is narrower.
+
+Ignoring the amount is only defensible once everything else is spent, and "spent" is the
+load-bearing word. **Both sides of a tier-2 pairing must be untouched by tier 1.** A row tier 1
+could pair with a plausible amount must never also be offered an implausible one: `Rivera Cafe EUR129.00`
+posting −131.34 was once offered a −13.71 transaction purely because both said "Rivera Cafe" on the 21st -
+while −13.71 was the match for the `Rivera Cafe EUR14.00` row two lines away, at the same conversion rate.
+
+### One pairing, or a group
+
+Both tiers work on **connected components** - the set of rows and transactions related to each
+other, directly or through a shared neighbour. That is exactly the set a decision on any one of them
+affects, and its size decides what you are shown:
+
+- **One row and one transaction** → a pairing. Nothing else could be meant, so relating them costs
+  nothing and finding it by hand would cost you.
+- **Anything larger** → a group **needing pairing**. Every row sees its own candidates, closest
+  amount first, and settling one frees the rest.
+
+Within a leftover pair, closeness of amount is scored: identical-but-for-rounding ranks near the
+top, a pair at the 25% limit ranks at the bottom. Before this, three `CAREEM RIDE` rows competing
+for one −9.74 transaction scored 50, 50 and 45 while their gaps were 3.8%, 20.0% and 12.5% - the
+true pairing ranked no higher than a row five times further away.
+
+## What it never does
+
+- **It never bridges an amount gap with text.** No merchant name, however perfect, creates an
+  automatic match against a different amount.
+- **It never matches two transactions to one statement row**, or one transaction to two rows.
+- **It never chooses between candidates it cannot separate.** That is your decision, and the tool
+  says so rather than guessing.
+- **It never writes anything.** Matching produces a comparison. Every write comes from a decision
+  you took and approved at Review.
+- **It never overwrites your decisions.** Re-running the matcher rebuilds the comparison; the
+  choices you made are a separate layer on top.
+
+## What you can change
+
+Five controls, under **Matching** on the Reconcile screen. They are saved per account as a
+reconciliation profile, and changing one takes effect when you choose **Re-run**.
+
+| Control | Default | What it does |
+|---|---|---|
+| **Where the merchant text is** | All, best match | Which Actual field is compared - the payee you curate, the imported payee, the notes, or whichever of them agrees best. |
+| **Match transactions within (days)** | 7 | How far apart a statement row and a transaction may be posted and still pair. Actual's own importer uses the same 7 days. |
+| **Look beyond the statement period (days)** | 3 | How far outside the statement's dates transactions are loaded. They are shown separately and never counted as missing. |
+| **Ignore `#tags` in notes** | On | Workflow tags such as `#API` are not the bank's text, so comparing them weakens every score. |
+| **Match foreign transactions on their original amount** | On | Try the foreign-currency figure the bank printed, as a second exact amount. |
+
+The last two sit under **Advanced matching options**.
+
+## What is fixed
+
+Everything else in this page is built in. It is documented so a pairing can be explained, not
+because there is a control for it - if a figure below surprises you, the answer is a decision on the
+row rather than a setting to change.
+
+| Behaviour | Value |
+|---|---|
+| Auto-match floor - the score a pair must reach to be taken without asking | 60 |
+| Ambiguity margin - how close a runner-up must be for the matcher to refuse to choose | 8 points |
+| Text separation margin - how much better the winner's text must be to settle a close score | 0.15 |
+| Duplicate margin - how near-identical a rival must be to be called a duplicate | 3 points |
+| Candidates offered when nothing clears the floor | at most 5, none below 60 |
+| Amount mismatch review - text floor | 0.75 |
+| Amount mismatch review - widest gap offered | 25% |
+| Either review tier - widest date gap offered | your date tolerance |
+| Same merchant and date - text floor | 0.80 |
+| Same merchant and date - date tolerance | 1 day, or your window if it is narrower |
+| Original-amount match - points withheld | 12 |
+| Original-amount match - text corroboration required | 0.60 |
+
+Loosening any of these would widen what you are *offered*, never what is decided for you: the
+exact-amount rule and the auto-match floor govern that, and neither leftover tier can match anything
+on its own.

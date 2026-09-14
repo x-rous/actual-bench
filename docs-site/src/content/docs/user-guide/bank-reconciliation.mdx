@@ -6,7 +6,7 @@ sidebar:
 ---
 
 Your bank says one thing and your budget says another. **Bank Reconciliation** puts the two side by
-side, row by row, and proves whether they agree — then writes only the differences you approved.
+side, row by row, and proves whether they agree - then writes only the differences you approved.
 
 Come here when bank sync is unavailable, when a period needs auditing before you close it, or when
 you suspect transactions are missing, duplicated, or wrong. It complements Actual's everyday import;
@@ -54,7 +54,7 @@ period, row count and status.
 exactly where you left it.*
 
 Accounts with work outstanding are expanded; an account whose sessions are all applied is collapsed.
-Search, and the account, status, tag, year and month filters, narrow the same table — filtering
+Search, and the account, status, tag, year and month filters, narrow the same table - filtering
 reveals matching groups automatically, so an applied result never hides inside a collapsed account.
 
 ## Start a session
@@ -66,7 +66,7 @@ reveals matching groups automatically, so an applied result never hides inside a
 *The account is what the statement gets compared against, and it cannot be changed afterwards. The
 dialog says plainly that nothing is written until you review and apply.*
 
-The **tag** is worth using — `July close`, `after the refund`, `Q3 audit`. With several sessions
+The **tag** is worth using - `July close`, `after the refund`, `Q3 audit`. With several sessions
 against one account, reruns and corrections are otherwise told apart only by timestamp. Tags are
 suggested from ones you have used before, can be edited in place from the list, and can be filtered
 on. They are free text and deliberately separate from your budget's own tags: disposable notes about
@@ -75,7 +75,7 @@ the reconciliation, not data about your transactions.
 ## Where a session is up to
 
 Every screen carries the same header: the account and statement period, the tag, and a progress trail
-— **Import › Reconcile › Review › Applied**. Steps already reached are ticked, and you can click back
+- **Import › Reconcile › Review › Applied**. Steps already reached are ticked, and you can click back
 to any step the session has actually been through.
 
 The trail reflects the **session's own status**, not the screen you happen to be on, so opening the
@@ -83,12 +83,12 @@ workbench of a finished reconciliation still says Applied. A run that partly fai
 with problems* rather than pretending otherwise.
 
 Once applied, the work a session wrote is excluded from any new plan. It will not offer to apply
-itself twice, and a partial run goes on offering exactly what failed — nothing more. The Review page
+itself twice, and a partial run goes on offering exactly what failed - nothing more. The Review page
 stays readable as an audit, but its two write choices are disabled: they show what Apply used, not
 controls that could rewrite history after the fact.
 
 **Re-running the match is refused on an applied session.** Matching rebuilds the rows from scratch,
-and the record of what was written is tied to them — re-running would lose it and offer the same
+and the record of what was written is tied to them - re-running would lose it and offer the same
 transactions again. To check the account after applying, start a new reconciliation: it reads Actual
 as it stands *now*, which is what you actually want to compare against.
 
@@ -207,7 +207,7 @@ retrying a partly-applied reconciliation safe.
 
 ### Importing the same statement twice
 
-If the rows you are importing have been imported before, Actual Bench says so — naming the earlier
+If the rows you are importing have been imported before, Actual Bench says so - naming the earlier
 session and when it was created. That is the amber banner in the screenshot above. It matches on the **rows themselves**, so a statement pasted one
 month and uploaded the next is still recognised, and re-sorting it in your banking app does not
 disguise it.
@@ -227,6 +227,10 @@ Statements from the same bank rarely change shape.
 Matching is deliberately conservative, and the reason is worth stating: **an exact signed amount is
 required for an automatic match**. Text never *finds* a match - it only ranks the candidates an amount
 has already produced. That is what makes every result explainable.
+
+[**How Matching Works**](../reconciliation-matching/) is the full account of the rules below - every
+tier, every score, and every figure the engine uses. Read it when a pairing surprises you; you do not
+need it to reconcile a statement.
 
 ### Choose what the text is compared against
 
@@ -270,7 +274,7 @@ exactly that reason.
 - **Likely duplicates.** The same thing recorded more than once in Actual. This is a *count* mismatch
   - one statement row, two transactions - not a matter of resemblance.
 - **Rows that need pairing.** Several statement rows and several transactions sharing a merchant and
-  a day, where no amount settles which is which - four `Jeeny` rows against four `Jeeny`
+  a day, where no amount settles which is which - four `RapidRide` rows against four `RapidRide`
   transactions, none of the amounts equal. Every row in the group is shown the transactions it could
   be rather than one row taking them all, and settling one frees the rest.
 
@@ -392,8 +396,8 @@ few rows would admit wrong guesses across the whole statement. So some pairs a p
 invisible to it:
 
 ```text
-Danube-D- JEDDAH SAU SAR53.45   -54.42    on the statement, nothing in Actual
-#API Danube-D-8505              -52.07    in Actual, not on the statement
+FRESHMART-D- WESTPORT EUR53.45   -54.42    on the statement, nothing in Actual
+#API FRESHMART-D-8505            -52.07    in Actual, not on the statement
 ```
 
 Actual Bench looks for these itself. Both halves are marked **Possible pair** in the grid, and the
@@ -402,7 +406,7 @@ one shows its likely partner and offers to link them.
 
 They are deliberately not offered as *candidates*. A candidate is one keypress from becoming a
 decision, so matching has to be strict about what it offers. A possible pair is confirmed only by an
-explicit **These are the same transaction** — and because acting on it is deliberate, the search
+explicit **These are the same transaction** - and because acting on it is deliberate, the search
 behind it can be far more generous without making anything else riskier. No matching threshold
 changes.
 
@@ -412,7 +416,7 @@ transfer link survive, and it is recorded as your decision rather than the match
 transactions in the loaded window.
 
 Selecting a row opens a details panel. Date and amount are shown **once, with both readings side by
-side**, and any difference is marked and quantified — "2 days later", "−12.50" — rather than left
+side**, and any difference is marked and quantified - "2 days later", "−12.50" - rather than left
 for you to work out from two separate lists. Foreign-currency rows also show the original amount the
 bank printed.
 
@@ -439,7 +443,7 @@ the value genuinely is free text.
   occurrence is swapped, matched exactly as typed: `AMZN Mktp` → `Amazon` changes `AMZN Mktp` and
   leaves `amzn` in your own sentence alone.
 - **Extend the merchant name to the statement's description.** Where the note says
-  `ROYAL CATERING SERVICE` and the statement says `ROYAL CATERING SERVICE ABU DHABI UAE`, only the run
+  `ROYAL CATERING SERVICE` and the statement says `ROYAL CATERING SERVICE WESTPORT`, only the run
   of words that came from the bank is replaced - a leading `#2026-08` tag and a trailing
   `| dinner with Ahmad` both survive. Where no such run can be identified, the note is left alone and
   you are told why, rather than guessed at.
@@ -447,7 +451,7 @@ the value genuinely is free text.
 ### On the way to Review
 
 Someone working row by row will have seen these already. Someone who filtered to *Not in Actual*,
-selected everything and pressed Create never looked at an individual row — and that is the quickest
+selected everything and pressed Create never looked at an individual row - and that is the quickest
 way through a long statement, so it is also the likeliest way to write a duplicate.
 
 So one dialog before Review covers what is still open. Any possible pair that would actually
@@ -465,7 +469,7 @@ leave is not raised again for the rest of the session.
 
 ![The review screen: counts for create, update and delete, the net balance change, the two write settings, and each row shown as it will look afterwards.](../../../assets/screenshots/user-guide/recon-review.png)
 
-*The last screen before anything is written. Here nothing is created, updated or deleted — 34 rows
+*The last screen before anything is written. Here nothing is created, updated or deleted - 34 rows
 need no change, four get the statement's payee recorded, and the balance moves by 0.00.*
 
 The review screen shows, statement row by statement row, what each will look like in your budget

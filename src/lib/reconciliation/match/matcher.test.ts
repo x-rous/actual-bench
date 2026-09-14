@@ -657,3 +657,84 @@ describe("a transaction already offered to an ambiguous row", () => {
     expect(new Set(claimed).size).toBe(claimed.length);
   });
 });
+
+/*
+ * The date tolerance is the user saying how far apart the same transaction can
+ * post. The review tiers may relax the *amount* - that is what they are for -
+ * but relaxing the date overrides the user rather than helping them.
+ *
+ * Reported from a real session set to 0 days: `PK MART -4.98` against `-4.98`
+ * one day apart was still offered as a pairing. Matching had correctly declined
+ * it - an exact amount one day out scores 50 + 20 = 70 against a floor of 60,
+ * so the only reason no candidate existed is that the user asked for same-day
+ * matching - and the leftover pass then reached a day out on a constant of its
+ * own.
+ */
+describe("the review tiers respect the user's date tolerance", () => {
+  const sameMerchant = { importedPayee: "PK MART", payeeName: "PK Mart", notes: "PK MART" };
+
+  it("offers nothing across a day when the window is zero", () => {
+    const graph = run(
+      [row({ id: "s1", postedDate: "2026-08-12", amount: -498, ...sameMerchant })],
+      [txn({ id: "t1", date: "2026-08-13", amount: -498, ...sameMerchant })],
+      { dateToleranceDays: 0 }
+    );
+
+    expect(graph.matched).toEqual([]);
+    expect(graph.ambiguous).toEqual([]);
+    expect(graph.unmatchedStatementRowIds).toEqual(["s1"]);
+    expect(graph.unmatchedActualTransactionIds).toEqual(["t1"]);
+  });
+
+  it("keeps matching the same pair as soon as a day is allowed", () => {
+    // The control: nothing above is about this pair being unmatchable. At one
+    // day it is an ordinary automatic match, which is why it never reaches a
+    // review tier in the first place.
+    const graph = run(
+      [row({ id: "s1", postedDate: "2026-08-12", amount: -498, ...sameMerchant })],
+      [txn({ id: "t1", date: "2026-08-13", amount: -498, ...sameMerchant })],
+      { dateToleranceDays: 1 }
+    );
+
+    expect(graph.matched).toHaveLength(1);
+    expect(graph.matched[0].actualTransactionId).toBe("t1");
+  });
+
+  it("does not offer a mismatched amount across a day either", () => {
+    // Tier 1 had no date bound of its own and relied on the shared date slice,
+    // which is sized for whichever tier reaches furthest - so it inherited the
+    // cluster tier's window.
+    const graph = run(
+      [row({ id: "s1", postedDate: "2026-08-12", amount: -498, ...sameMerchant })],
+      [txn({ id: "t1", date: "2026-08-13", amount: -520, ...sameMerchant })],
+      { dateToleranceDays: 0 }
+    );
+
+    expect(graph.ambiguous).toEqual([]);
+    expect(graph.unmatchedStatementRowIds).toEqual(["s1"]);
+  });
+
+  it("still pairs a same-day leftover when the window is zero", () => {
+    // Zero means same day, not nothing: a pair the amounts cannot settle is
+    // still offered when it posts on the day the user allowed.
+    const graph = run(
+      [row({ id: "s1", postedDate: "2026-08-12", amount: -498, ...sameMerchant })],
+      [txn({ id: "t1", date: "2026-08-12", amount: -1371, ...sameMerchant })],
+      { dateToleranceDays: 0 }
+    );
+
+    expect(graph.ambiguous).toHaveLength(1);
+    expect(graph.ambiguous[0].candidates[0].actualTransactionId).toBe("t1");
+  });
+
+  it("leaves the default window alone", () => {
+    // Cluster tolerance 1 is already inside the default 7, so nothing changes
+    // for anyone who has not narrowed the window.
+    const graph = run(
+      [row({ id: "s1", postedDate: "2026-08-12", amount: -498, ...sameMerchant })],
+      [txn({ id: "t1", date: "2026-08-13", amount: -1371, ...sameMerchant })]
+    );
+
+    expect(graph.ambiguous).toHaveLength(1);
+  });
+});

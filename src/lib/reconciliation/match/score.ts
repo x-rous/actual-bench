@@ -67,6 +67,29 @@ const ORIGINAL_AMOUNT_PENALTY = 12;
 /** Score bands for the feature spec §14 labels. */
 const LABEL_BANDS = { high: 85, medium: 65 } as const;
 
+/**
+ * How far apart a *review* pairing may be posted.
+ *
+ * The review tiers exist for what matching refused, so they are free to relax
+ * the amount - that is their whole purpose. They are **not** free to relax the
+ * date, because `dateToleranceDays` is the user saying how far apart the same
+ * transaction can post, and a tier that reaches further is overriding them
+ * rather than helping.
+ *
+ * It bit on a real session: with the window set to **0 days**, `PK MART -4.98`
+ * against `-4.98` a day apart was still offered as a pairing. Matching had
+ * correctly declined it - an exact amount one day out scores 70 against a floor
+ * of 60, so no candidate existed only because the user had asked for same-day
+ * matching - and then the leftover pass reached a day out on a constant of its
+ * own and offered it anyway.
+ *
+ * Each tier still applies its own, narrower tolerance on top; this only stops
+ * either exceeding what the user asked for.
+ */
+export function reviewDateWindow(config: MatchConfig, tierTolerance: number): number {
+  return Math.min(tierTolerance, config.dateToleranceDays);
+}
+
 /** Whole days between two ISO `YYYY-MM-DD` dates, signed (`actual - statement`). */
 export function dayDelta(statementDate: string, actualDate: string): number {
   const MS_PER_DAY = 86_400_000;
@@ -137,6 +160,16 @@ export function scoreAmountMismatchCandidate(
   // Direction must agree: an outflow is never the same event as an inflow.
   if (Math.sign(transaction.amount) !== Math.sign(row.amount)) return null;
 
+  // Bounded explicitly rather than left to the caller's date slice: the slice is
+  // sized for whichever tier reaches furthest, so relying on it let this tier
+  // inherit the *other* tier's window.
+  if (
+    Math.abs(dayDelta(row.postedDate, transaction.date)) >
+    reviewDateWindow(config, config.dateToleranceDays)
+  ) {
+    return null;
+  }
+
   const larger = Math.max(Math.abs(transaction.amount), Math.abs(row.amount));
   if (larger === 0) return null;
   const gap = Math.abs(Math.abs(transaction.amount) - Math.abs(row.amount));
@@ -205,7 +238,7 @@ export function scoreSameMerchantCandidate(
   index: ActualIndex
 ): ScoredCandidate | null {
   const delta = dayDelta(row.postedDate, transaction.date);
-  if (Math.abs(delta) > config.clusterDateToleranceDays) return null;
+  if (Math.abs(delta) > reviewDateWindow(config, config.clusterDateToleranceDays)) return null;
   if (Math.sign(transaction.amount) !== Math.sign(row.amount)) return null;
 
   const text = scoreText(

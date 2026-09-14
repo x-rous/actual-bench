@@ -22,6 +22,7 @@ import type {
 import { amountDateSlice, buildActualIndex, dateSlice, type ActualIndex } from "./actualIndex";
 import { assignMatches } from "./assign";
 import {
+  reviewDateWindow,
   scoreAmountMismatchCandidate,
   scoreCandidate,
   scoreSameMerchantCandidate,
@@ -145,9 +146,15 @@ function addLeftoverReviews(
   // Widest window either tier can span, so one date slice serves both and the
   // scan stays bounded on a large statement. Each scorer still applies its own,
   // narrower tolerance.
+  //
+  // Both are capped by the user's own date tolerance (`reviewDateWindow`), so a
+  // window of 0 means no tier reaches across a day - the slice must not be
+  // sized from the raw constants or it hands each tier the other's reach.
   const reach = Math.max(
-    config.reviewAmountMismatch ? config.dateToleranceDays : 0,
-    config.pairLeftoversByMerchantAndDate ? config.clusterDateToleranceDays : 0
+    config.reviewAmountMismatch ? reviewDateWindow(config, config.dateToleranceDays) : 0,
+    config.pairLeftoversByMerchantAndDate
+      ? reviewDateWindow(config, config.clusterDateToleranceDays)
+      : 0
   );
 
   const plausible = new Graph();
