@@ -111,6 +111,7 @@ export default defineConfig({
 						{ label: 'Rule Diagnostics', link: '/user-guide/rule-diagnostics/' },
 						{ label: 'Payee Cleanup', link: '/user-guide/payee-cleanup/' },
 						{ label: 'Bank Reconciliation', link: '/user-guide/bank-reconciliation/' },
+						{ label: 'How Matching Works', link: '/user-guide/reconciliation-matching/' },
 						{ label: 'Budget File Sync', link: '/user-guide/budget-sync/' },
 						{ label: 'FX Rates', link: '/user-guide/fx-rates/' },
 						{ label: 'Backups', link: '/user-guide/backups/' },
