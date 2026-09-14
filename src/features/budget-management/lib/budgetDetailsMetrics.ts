@@ -311,6 +311,11 @@ type EnvelopeSelectedMonthValues = {
 };
 
 export type TrackingDetailsMetrics = {
+  /**
+   * Drill-through for the selection's period figures, spanning the months they
+   * sum. Null with no selection, or when no month in range carries state.
+   */
+  selectionTransactionDrilldown?: BudgetTransactionsDrilldown | null;
   scope: DetailsScope;
   entity: DetailsEntity;
   kind: DetailsKind;
@@ -375,6 +380,11 @@ export type TrackingDetailsMetrics = {
 };
 
 export type EnvelopeDetailsMetrics = {
+  /**
+   * Drill-through for the selection's period figures, spanning the months they
+   * sum. Null with no selection, or when nothing has happened yet.
+   */
+  selectionTransactionDrilldown?: BudgetTransactionsDrilldown | null;
   scope: DetailsScope;
   entity: DetailsEntity;
   kind: DetailsKind;
@@ -766,12 +776,39 @@ function budgetTransactionsDrilldown(
 
   return {
     id: target.id,
-    month: entry.month,
+    // One month: both ends are the same, which is the range form of what this
+    // has always meant.
+    monthStart: entry.month,
+    monthEnd: entry.month,
     title: target.title,
     entity: target.groupId ? "category" : "group",
     side: target.isIncome ? "income" : "expense",
     categoryIds,
   };
+}
+
+/**
+ * A drill-through covering every month a period figure sums.
+ *
+ * The single-month builder above answers "this row, this month". A period
+ * figure is a total across months, so its drill-through has to span the same
+ * months or the dialog would show a slice of what was clicked.
+ *
+ * Returns null when no month in the range carries state, since there is nothing
+ * to drill into.
+ */
+function periodTransactionsDrilldown(
+  months: BudgetDetailsMonth[],
+  target: TargetInfo
+): BudgetTransactionsDrilldown | null {
+  const withState = months.filter((entry) => entry.state != null);
+  const first = withState[0];
+  const last = withState[withState.length - 1];
+  if (!first || !last) return null;
+
+  const base = budgetTransactionsDrilldown(last, target);
+  if (!base) return null;
+  return { ...base, monthStart: first.month, monthEnd: last.month };
 }
 
 function relevantStagedImpact(
@@ -1490,6 +1527,9 @@ export function buildTrackingDetailsMetrics(
     let closedEndingBalance: number | null = null;
     let currentValues: SelectedMonthValues | null = null;
     let currentMonth: string | null = null;
+    // Months backing `selectionToDate`, so its actuals can drill into exactly
+    // the set they were summed from.
+    const closedEntries: BudgetDetailsMonth[] = [];
     const trend: BudgetTrendPoint[] = [];
 
     for (const entry of model.months) {
@@ -1498,6 +1538,7 @@ export function buildTrackingDetailsMetrics(
       if (values) {
         fullBudget += values.budgeted;
         if (isClosedMonthStatus(entry.status)) {
+          closedEntries.push(entry);
           budgetToDate += values.budgeted;
           actualToDate += values.actuals;
           closedEndingBalance = values.balance; // last closed month wins (snapshot)
@@ -1545,6 +1586,7 @@ export function buildTrackingDetailsMetrics(
       coverageLabel: model.coverage.label,
       futureOnly,
       isIncome: target.isIncome,
+      selectionTransactionDrilldown: periodTransactionsDrilldown(closedEntries, target),
       primary: futureOnly
         ? {
             label: "No actualized months in this view",
@@ -1925,6 +1967,9 @@ export function buildEnvelopeDetailsMetrics(
     let currentMonth: string | null = null;
     let plannedValues: SelectedMonthValues | null = null;
     let plannedMonth: string | null = null;
+    // Months backing `selectionActivity`, so its spend can drill into exactly
+    // the set it was summed from.
+    const activeEntries: BudgetDetailsMonth[] = [];
 
     for (const entry of model.months) {
       const state = entry.state;
@@ -1932,6 +1977,7 @@ export function buildEnvelopeDetailsMetrics(
       if (values) {
         assignedBudgeted += values.budgeted;
         if (isActualLikeStatus(entry.status)) {
+          activeEntries.push(entry);
           spentToDate += values.actuals;
           currentValues = values;
           currentMonth = entry.month;
@@ -1966,6 +2012,7 @@ export function buildEnvelopeDetailsMetrics(
       coverage,
       futureOnly,
       isIncome: target.isIncome,
+      selectionTransactionDrilldown: periodTransactionsDrilldown(activeEntries, target),
       primary:
         latest && latestMonth
           ? {

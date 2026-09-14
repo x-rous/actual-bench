@@ -82,6 +82,51 @@ export function nextMonth(month: string): string {
 }
 
 /**
+ * The first day of `month`, as `YYYY-MM-DD`.
+ *
+ * Trivial, but paired with `lastDayOfMonth` it keeps both ends of a date range
+ * being built the same way rather than one being a template literal at the call
+ * site and the other a function.
+ */
+export function firstDayOfMonth(month: string): string {
+  const [year, mo] = parseMonth(month);
+  return `${year}-${String(mo).padStart(2, "0")}-01`;
+}
+
+/**
+ * The last day of `month`, as `YYYY-MM-DD`.
+ *
+ * Derived rather than looked up, so February and leap years need no table:
+ * day zero of the *next* month is the last day of this one.
+ *
+ *   lastDayOfMonth("2026-01") // → "2026-01-31"
+ *   lastDayOfMonth("2026-02") // → "2026-02-28"
+ *   lastDayOfMonth("2028-02") // → "2028-02-29"
+ *   lastDayOfMonth("2026-04") // → "2026-04-30"
+ */
+export function lastDayOfMonth(month: string): string {
+  const [year, mo] = parseMonth(month);
+  const day = new Date(year, mo, 0).getDate();
+  return `${year}-${String(mo).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+}
+
+/**
+ * Every month from `start` to `end` inclusive, oldest first.
+ *
+ * Returns an empty list when the range runs backwards - a caller that has them
+ * the wrong way round is asking for nothing, and silently swapping them would
+ * hide the mistake.
+ */
+export function monthsInRange(start: string, end: string): string[] {
+  if (compareMonths(start, end) > 0) return [];
+  const months: string[] = [];
+  for (let month = start; compareMonths(month, end) <= 0; month = nextMonth(month)) {
+    months.push(month);
+  }
+  return months;
+}
+
+/**
  * Lexicographic compare for YYYY-MM strings — works because the format is
  * fixed-width zero-padded. Returns negative / zero / positive.
  */

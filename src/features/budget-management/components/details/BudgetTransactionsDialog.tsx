@@ -11,7 +11,7 @@ import {
   type SortingState,
   type FilterFn,
 } from "@tanstack/react-table";
-import { ArrowDown, ArrowUp, ArrowUpDown, Clock3, Search, X } from "lucide-react";
+import { ArrowDown, ArrowUp, ArrowUpDown, CalendarRange, Clock3, Search, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import {
   Dialog,
@@ -22,14 +22,19 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
-import { formatMonthLabel } from "@/lib/budget/monthMath";
+import { formatMonthLabel, monthsInRange, parseMonth } from "@/lib/budget/monthMath";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { MonthRangePicker } from "@/components/ui/monthrangepicker";
 import { useBudgetTransactions } from "../../hooks/useBudgetTransactions";
 import {
   buildBudgetTransactionAnalytics,
   type TransactionSpendBucket,
   type TransactionTimeBucket,
 } from "../../lib/budgetTransactionAnalytics";
-import { formatDelta, formatSigned } from "../../lib/format";
+// The table keeps its cents - a single transaction is where they are the
+// point. Everything else in the dialog is a total or an average, read as a
+// column of figures, and rounds like the details panel behind it.
+import { formatDelta, formatDeltaWhole, formatSignedWhole } from "../../lib/format";
 import {
   formatTransactionDateLabel,
   matchesTransactionSearch,
@@ -161,7 +166,17 @@ function targetKey(target: BudgetTransactionsDrilldown): string {
   return `${target.entity}:${target.id}`;
 }
 
-function rowWeekId(date: string): string {
+/**
+ * Which bucket of the "when" panel a row belongs to.
+ *
+ * It has to answer in the same vocabulary the panel is currently charting, and
+ * that vocabulary changes with the range: a single month is bucketed by week
+ * (`week-3`), a range of months by month (`2026-03`). Getting this wrong is
+ * silent - the ids simply never match, every row is filtered out, and the table
+ * reads as "no transactions" rather than as a bug.
+ */
+export function rowTimeBucketId(date: string, byMonth: boolean): string {
+  if (byMonth) return date.slice(0, 7);
   const day = Number(date.slice(-2)) || 1;
   const week = Math.min(5, Math.max(1, Math.floor((day - 1) / 7) + 1));
   return `week-${week}`;
@@ -217,9 +232,18 @@ function FilterChip({ label, onClear }: { label: string; onClear: () => void }) 
   );
 }
 
+/**
+ * One region of the dialog body.
+ *
+ * Flush to the dialog's edges and separated by single rules rather than floated
+ * as a rounded card. Three cards inside a bordered dialog stack four rounded
+ * edges within a few pixels of each other, and the nesting reads as decoration
+ * rather than as structure; a straight rule says "these are different things"
+ * with one line. The padding moves inward so the content still breathes.
+ */
 function Panel({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <section className="flex h-full min-h-0 flex-col rounded-md border border-border/70 bg-background p-3">
+    <section className="flex h-full min-h-0 flex-col p-3">
       <h3 className="mb-2 shrink-0 text-xs font-semibold text-foreground">{title}</h3>
       <div className="min-h-0 flex-1 overflow-hidden">{children}</div>
     </section>
@@ -276,7 +300,7 @@ function SpendBreakdown({
                 {bucket.label}
               </span>
               <span className="shrink-0 font-sans text-xs tabular-nums text-foreground">
-                {formatSigned(bucket.amount)}
+                {formatSignedWhole(bucket.amount)}
                 <span className="ml-1.5 text-muted-foreground">
                   {Math.round(bucket.percentage * 100)}%
                 </span>
@@ -317,6 +341,119 @@ function weekStartDate(month: string, weekId: string): string {
   }).format(start);
 }
 
+/**
+ * The header's month range control: a label that opens the range picker.
+ *
+ * A popover rather than two fields inline, because the range is a single idea
+ * and reading it as one phrase - "Jan 2026 - Aug 2026" - is what tells someone
+ * what the figures beside it cover.
+ *
+ * Quick selectors are given rather than left to the component's defaults: the
+ * useful ranges here are the ones the budget itself has, not "last 6 months".
+ */
+function MonthRangeField({
+  monthStart,
+  monthEnd,
+  availableMonths,
+  disabled,
+  onChange,
+}: {
+  monthStart: string;
+  monthEnd: string;
+  /** Months the budget window holds, oldest first. Bounds the picker. */
+  availableMonths: string[];
+  disabled?: boolean;
+  onChange: (monthStart: string, monthEnd: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+
+  const toDate = (month: string): Date => {
+    const [year, mo] = parseMonth(month);
+    return new Date(year, mo - 1, 1);
+  };
+  const toMonth = (date: Date): string =>
+    `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+
+  const first = availableMonths[0];
+  const last = availableMonths[availableMonths.length - 1];
+  const label =
+    monthStart === monthEnd
+      ? formatMonthLabel(monthStart, "long")
+      : `${formatMonthLabel(monthStart, "long")} - ${formatMonthLabel(monthEnd, "long")}`;
+
+  /*
+   * The ranges worth one click, ordered widest to narrowest.
+   *
+   * "This year" is the whole calendar year including months not yet reached;
+   * "Year to date" stops at the current one. They are different questions -
+   * what is planned for the year against what has actually happened - and a
+   * budget is one of the few places both get asked.
+   *
+   * Anchored on the real clock rather than the window, so they keep meaning
+   * what they say when the window is somewhere else entirely.
+   */
+  const quickSelectors = useMemo(() => {
+    if (!first || !last) return [];
+    const now = new Date();
+    const year = now.getFullYear();
+    const monthsBack = (count: number) =>
+      new Date(year, now.getMonth() - count + 1, 1);
+
+    return [
+      { label: "This year", startMonth: new Date(year, 0), endMonth: new Date(year, 11) },
+      { label: "Year to date", startMonth: new Date(year, 0), endMonth: new Date(year, now.getMonth()) },
+      { label: "Last 12 months", startMonth: monthsBack(12), endMonth: new Date(year, now.getMonth()) },
+      { label: "Last 6 months", startMonth: monthsBack(6), endMonth: new Date(year, now.getMonth()) },
+      { label: "Last year", startMonth: new Date(year - 1, 0), endMonth: new Date(year - 1, 11) },
+    ];
+    // `first` and `last` bound the window; the rest is clock-derived and stable
+    // for the life of the dialog.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [first, last]);
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger
+        render={
+          <button
+            type="button"
+            disabled={disabled}
+            className={cn(
+              SELECT_CLASS,
+              // `inline-flex` is the fix, not decoration: SELECT_CLASS styles a
+              // <select>, which lays its own content out. On a <button> the
+              // label and the icon are just two blocks, so they stacked.
+              "inline-flex w-[15rem] items-center justify-between gap-2 text-left"
+            )}
+            aria-label={`Months shown: ${label}. Change the range`}
+            title="Change the months shown"
+          >
+            <span className="truncate tabular-nums">{label}</span>
+            <CalendarRange className="h-3.5 w-3.5 shrink-0 opacity-60" aria-hidden="true" />
+          </button>
+        }
+      />
+      <PopoverContent align="end" className="w-auto p-0">
+        <MonthRangePicker
+          selectedMonthRange={
+            monthStart && monthEnd
+              ? { start: toDate(monthStart), end: toDate(monthEnd) }
+              : undefined
+          }
+          minDate={first ? toDate(first) : undefined}
+          maxDate={last ? toDate(last) : undefined}
+          quickSelectors={quickSelectors}
+          showQuickSelectors={quickSelectors.length > 0}
+          onMonthRangeSelect={({ start, end }) => {
+            onChange(toMonth(start), toMonth(end));
+            setOpen(false);
+          }}
+        />
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 function WeeklySpending({
   buckets,
   month,
@@ -339,7 +476,7 @@ function WeeklySpending({
             key={bucket.id}
             className="flex-1 truncate text-center font-sans text-[11px] tabular-nums text-foreground"
           >
-            {bucket.amount > 0 ? formatSigned(bucket.amount) : ""}
+            {bucket.amount > 0 ? formatSignedWhole(bucket.amount) : ""}
           </div>
         ))}
       </div>
@@ -357,7 +494,7 @@ function WeeklySpending({
               key={bucket.id}
               type="button"
               aria-pressed={isActive}
-              title={`${bucket.label}: ${formatSigned(bucket.amount)}`}
+              title={`${bucket.label}: ${formatSignedWhole(bucket.amount)}`}
               className={cn(
                 "group relative flex-1 cursor-pointer rounded-sm bg-muted/50 transition-colors",
                 isActive ? "ring-2 ring-primary/40" : "hover:bg-muted/70"
@@ -434,10 +571,22 @@ export function BudgetTransactionsDialog({ target, browserOptions, statesByMonth
   const effectiveTarget = activeTarget ?? target;
 
   const { data, isLoading, error } = useBudgetTransactions({
-    month: effectiveTarget?.month ?? "",
+    monthStart: effectiveTarget?.monthStart ?? "",
+    monthEnd: effectiveTarget?.monthEnd ?? "",
     categoryIds: effectiveTarget?.categoryIds ?? EMPTY_CATEGORY_IDS,
     enabled: open && effectiveTarget != null,
   });
+
+  // Months the current range covers, oldest first. Drives the budgeted total,
+  // the "when" panel's buckets, and the range label.
+  const rangeMonths = useMemo(
+    () =>
+      effectiveTarget
+        ? monthsInRange(effectiveTarget.monthStart, effectiveTarget.monthEnd)
+        : [],
+    [effectiveTarget]
+  );
+  const isRange = rangeMonths.length > 1;
 
   const rows = data?.rows ?? EMPTY_TRANSACTION_ROWS;
   const summary = data?.summary ?? null;
@@ -455,7 +604,7 @@ export function BudgetTransactionsDialog({ target, browserOptions, statesByMonth
     setSpendFilter(null);
     setWeekFilter(null);
     setGlobalFilter("");
-  }, [effectiveTarget?.id, effectiveTarget?.month]);
+  }, [effectiveTarget?.id, effectiveTarget?.monthStart, effectiveTarget?.monthEnd]);
 
   // Rows filtered by spend selection only — drives WeeklySpending (cross-filter)
   const spendFilteredRows = useMemo(() => {
@@ -466,18 +615,18 @@ export function BudgetTransactionsDialog({ target, browserOptions, statesByMonth
   // Rows filtered by week selection only — drives SpendBreakdown (cross-filter)
   const weekFilteredRows = useMemo(() => {
     if (!weekFilter) return rows;
-    return rows.filter((row) => rowWeekId(row.date) === weekFilter);
-  }, [rows, weekFilter]);
+    return rows.filter((row) => rowTimeBucketId(row.date, isRange) === weekFilter);
+  }, [rows, weekFilter, isRange]);
 
   // Rows with both filters — drives KPIs and table
   const visuallyFilteredRows = useMemo(() => {
     if (!spendFilter && !weekFilter) return rows;
     return rows.filter((row) => {
       if (spendFilter && !rowMatchesSpendBucket(row, spendFilter, isGroup)) return false;
-      if (weekFilter && rowWeekId(row.date) !== weekFilter) return false;
+      if (weekFilter && rowTimeBucketId(row.date, isRange) !== weekFilter) return false;
       return true;
     });
-  }, [rows, spendFilter, weekFilter, isGroup]);
+  }, [rows, spendFilter, weekFilter, isGroup, isRange]);
 
   // Analytics for SpendBreakdown — responds to week filter
   const spendBreakdownAnalytics = useMemo(
@@ -519,7 +668,14 @@ export function BudgetTransactionsDialog({ target, browserOptions, statesByMonth
   const hasSelectedCategoryOption = categoryOptions.some(
     (option) => optionKey(option) === selectedCategoryKey
   );
-  const monthLabel = effectiveTarget ? formatMonthLabel(effectiveTarget.month, "long") : "";
+  const monthLabel = !effectiveTarget
+    ? ""
+    : isRange
+      ? `${formatMonthLabel(effectiveTarget.monthStart, "long")} - ${formatMonthLabel(
+          effectiveTarget.monthEnd,
+          "long"
+        )}`
+      : formatMonthLabel(effectiveTarget.monthStart, "long");
 
   const table = useReactTable({
     data: visuallyFilteredRows,
@@ -543,10 +699,10 @@ export function BudgetTransactionsDialog({ target, browserOptions, statesByMonth
     setWeekFilter((current) => (current === id ? null : id));
   }
 
-  function handleMonthChange(month: string) {
+  function handleRangeChange(monthStart: string, monthEnd: string) {
     setActiveTarget((current) => {
       const base = current ?? target;
-      return base ? { ...base, month } : base;
+      return base ? { ...base, monthStart, monthEnd } : base;
     });
     setSpendFilter(null);
     setWeekFilter(null);
@@ -583,42 +739,68 @@ export function BudgetTransactionsDialog({ target, browserOptions, statesByMonth
     ? (analytics.spendByWeek.find((b) => b.id === weekFilter)?.label ?? weekFilter.replace("week-", "Week "))
     : "";
 
+  /**
+   * The budgeted figure the strip compares spending against.
+   *
+   * Summed across every month in the range, not read from one of them. The
+   * spending beside it is a range total, so a single month's budget would make
+   * the Variance a comparison between two different periods - the exact
+   * mismatch a range drill-through exists to remove.
+   *
+   * A month with no loaded state contributes nothing rather than voiding the
+   * total: a gap in the window is a gap in the plan, not a reason to withhold
+   * the figure.
+   */
   const budgetValues = useMemo(() => {
     if (!effectiveTarget) return null;
-    const state = statesByMonth.get(effectiveTarget.month);
-    if (!state) return null;
+    const wantIncome = side === "income";
+
     // A category's budgeted figure only shares the target's side (expense
     // categories carry the expense plan, income categories the income plan).
-    const wantIncome = side === "income";
-    if (effectiveTarget.entity === "group") {
-      // When a sub-category is selected in the breakdown, drill into its budget
-      if (spendFilter) {
-        const subCategory = Object.values(state.categoriesById).find(
-          (cat) => cat.isIncome === wantIncome && cat.groupId === effectiveTarget.id && cat.name === spendFilter
-        );
-        if (subCategory) return { budgeted: Math.abs(subCategory.budgeted) };
+    const budgetedIn = (state: LoadedMonthState): number | null => {
+      if (effectiveTarget.entity === "group") {
+        // When a sub-category is selected in the breakdown, drill into its budget
+        if (spendFilter) {
+          const subCategory = Object.values(state.categoriesById).find(
+            (cat) =>
+              cat.isIncome === wantIncome &&
+              cat.groupId === effectiveTarget.id &&
+              cat.name === spendFilter
+          );
+          if (subCategory) return subCategory.budgeted;
+        }
+        const group = state.groupsById[effectiveTarget.id];
+        if (group && group.isIncome === wantIncome) return group.budgeted;
+        if (group) return null;
+        // Synthetic whole-month group (e.g. "All expenses" / "All income"): there
+        // is no real group entry, so sum the target's own same-side categories.
+        let sum = 0;
+        let hasMatch = false;
+        for (const id of effectiveTarget.categoryIds) {
+          const cat = state.categoriesById[id];
+          if (!cat || cat.isIncome !== wantIncome) continue;
+          hasMatch = true;
+          sum += cat.budgeted;
+        }
+        return hasMatch ? sum : null;
       }
-      const group = state.groupsById[effectiveTarget.id];
-      if (group && group.isIncome === wantIncome) {
-        return { budgeted: Math.abs(group.budgeted) };
-      }
-      if (group) return null;
-      // Synthetic whole-month group (e.g. "All expenses" / "All income"): there
-      // is no real group entry, so sum the target's own same-side categories.
-      let sum = 0;
-      let hasMatch = false;
-      for (const id of effectiveTarget.categoryIds) {
-        const cat = state.categoriesById[id];
-        if (!cat || cat.isIncome !== wantIncome) continue;
-        hasMatch = true;
-        sum += cat.budgeted;
-      }
-      return hasMatch ? { budgeted: Math.abs(sum) } : null;
+      const category = state.categoriesById[effectiveTarget.id];
+      if (!category || category.isIncome !== wantIncome) return null;
+      return category.budgeted;
+    };
+
+    let total = 0;
+    let hasAny = false;
+    for (const month of rangeMonths) {
+      const state = statesByMonth.get(month);
+      if (!state) continue;
+      const budgeted = budgetedIn(state);
+      if (budgeted == null) continue;
+      hasAny = true;
+      total += budgeted;
     }
-    const category = state.categoriesById[effectiveTarget.id];
-    if (!category || category.isIncome !== wantIncome) return null;
-    return { budgeted: Math.abs(category.budgeted) };
-  }, [effectiveTarget, statesByMonth, spendFilter, side]);
+    return hasAny ? { budgeted: Math.abs(total) } : null;
+  }, [effectiveTarget, statesByMonth, spendFilter, side, rangeMonths]);
 
   // BM-05: the row list is capped at BUDGET_TRANSACTIONS_ROW_LIMIT. The
   // aggregate summary covers the whole set, so drive the headline KPIs from it
@@ -669,26 +851,29 @@ export function BudgetTransactionsDialog({ target, browserOptions, statesByMonth
                   </Badge>
                 )}
               </div>
-              <DialogDescription className="mt-1 truncate text-xs">
+              {/*
+                Kept for the screen reader, hidden from the page.
+                
+                The range and the category are both on screen already, in the
+                two controls opposite - repeating them under the title was the
+                same sentence twice. They are still worth announcing, though:
+                the controls carry their own labels, and a dialog that opens
+                without saying what it covers makes the reader go looking.
+              */}
+              <DialogDescription className="sr-only">
                 {monthLabel}
                 {effectiveTarget ? ` · ${effectiveTarget.title}` : ""}
               </DialogDescription>
             </div>
 
             <div className="flex min-w-0 flex-wrap items-center gap-2 lg:justify-end">
-              <select
-                value={effectiveTarget?.month ?? ""}
-                onChange={(event) => handleMonthChange(event.target.value)}
-                className={cn(SELECT_CLASS, "w-32")}
-                disabled={!effectiveTarget || browserOptions.months.length === 0}
-                aria-label="Select month"
-              >
-                {browserOptions.months.map((option) => (
-                  <option key={option.month} value={option.month}>
-                    {formatMonthLabel(option.month, "long")}
-                  </option>
-                ))}
-              </select>
+              <MonthRangeField
+                monthStart={effectiveTarget?.monthStart ?? ""}
+                monthEnd={effectiveTarget?.monthEnd ?? ""}
+                availableMonths={browserOptions.months.map((option) => option.month)}
+                disabled={!effectiveTarget}
+                onChange={handleRangeChange}
+              />
 
               <select
                 value={selectedCategoryKey}
@@ -714,14 +899,14 @@ export function BudgetTransactionsDialog({ target, browserOptions, statesByMonth
         {hasData && (
           <div className="shrink-0 border-b border-border/70 bg-muted/5 px-4 py-2">
             <div className="flex items-stretch divide-x divide-border/50">
-              <StripItem label={flowVerb} value={formatSigned(headlineNet)} />
+              <StripItem label={flowVerb} value={formatSignedWhole(headlineNet)} />
               {budgetValues !== null && (
                 <>
-                  <StripItem label="Budgeted" value={formatSigned(budgetValues.budgeted)} />
+                  <StripItem label="Budgeted" value={formatSignedWhole(budgetValues.budgeted)} />
                   {variance !== null && (
                     <StripItem
                       label="Variance"
-                      value={formatDelta(variance)}
+                      value={formatDeltaWhole(variance)}
                       tone={
                         variance < 0
                           ? "text-destructive"
@@ -739,7 +924,7 @@ export function BudgetTransactionsDialog({ target, browserOptions, statesByMonth
               />
               <StripItem
                 label="Average"
-                value={analytics.averageTransaction > 0 ? formatSigned(analytics.averageTransaction) : "-"}
+                value={analytics.averageTransaction > 0 ? formatSignedWhole(analytics.averageTransaction) : "-"}
               />
             </div>
           </div>
@@ -767,9 +952,9 @@ export function BudgetTransactionsDialog({ target, browserOptions, statesByMonth
           ) : rows.length === 0 ? (
             <EmptyState message="No transactions found for this selection." />
           ) : (
-            <div className="flex min-h-0 flex-1 flex-col gap-2.5 overflow-hidden p-3">
-              {/* Visual panels */}
-              <div className="grid h-[256px] shrink-0 grid-cols-2 gap-2.5">
+            <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+              {/* Visual panels, divided by a rule rather than a gap. */}
+              <div className="grid h-[256px] shrink-0 grid-cols-2 divide-x divide-border/70 border-b border-border/70">
                 <Panel
                   title={
                     isIncome
@@ -795,8 +980,8 @@ export function BudgetTransactionsDialog({ target, browserOptions, statesByMonth
 
                 <Panel title={isIncome ? "When income arrived" : "When spending happened"}>
                   <WeeklySpending
-                    buckets={weeklyAnalytics.spendByWeek}
-                    month={effectiveTarget?.month ?? ""}
+                    buckets={isRange ? weeklyAnalytics.spendByMonth : weeklyAnalytics.spendByWeek}
+                    month={isRange ? "" : effectiveTarget?.monthStart ?? ""}
                     selectedId={weekFilter}
                     onSelect={toggleWeekFilter}
                   />
@@ -805,7 +990,10 @@ export function BudgetTransactionsDialog({ target, browserOptions, statesByMonth
 
               {/* Active filter chips */}
               {hasVisualFilters && (
-                <div className="flex shrink-0 flex-wrap items-center gap-1.5 py-0.5">
+                // The body no longer pads, so this row carries its own gutter
+                // and its own rule - otherwise the chips sit against the edge
+                // and run into the table header below them.
+                <div className="flex shrink-0 flex-wrap items-center gap-1.5 border-b border-border/70 px-3 py-1">
                   <span className="text-[10px] text-muted-foreground">Filtered by:</span>
                   {spendFilter && (
                     <FilterChip label={spendFilter} onClear={() => setSpendFilter(null)} />
@@ -824,33 +1012,39 @@ export function BudgetTransactionsDialog({ target, browserOptions, statesByMonth
               )}
 
               {/* Transaction table */}
-              <section className="flex min-h-0 flex-1 flex-col rounded-md border border-border/70 bg-background">
-                <div className="flex shrink-0 flex-col gap-2 border-b border-border/70 p-3 sm:flex-row sm:items-center sm:justify-between">
-                  <div className="relative max-w-sm flex-1">
+              <section className="flex min-h-0 flex-1 flex-col">
+                {/*
+                  The Rules filter bar's search field, not the `Input`
+                  component: that one carries `text-base ... md:text-sm`, and
+                  the responsive variant is emitted after the plain utilities,
+                  so a `text-xs` passed in loses to it above 768px.
+                */}
+                <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-border/70 px-3 py-1.5">
+                  <div className="relative flex items-center">
                     <Search
-                      className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground"
+                      className="pointer-events-none absolute left-1.5 h-3.5 w-3.5 text-muted-foreground"
                       aria-hidden="true"
                     />
-                    <Input
+                    <input
                       value={globalFilter}
                       onChange={(event) => setGlobalFilter(event.target.value)}
                       placeholder="Search transactions"
                       aria-label="Search transactions"
-                      className="h-8 rounded-md pl-8 pr-8 text-xs"
+                      className="h-6 w-56 rounded border border-border bg-background pl-6 pr-6 text-xs outline-none focus:ring-1 focus:ring-ring"
                     />
                     {globalFilter.length > 0 && (
                       <button
                         type="button"
                         aria-label="Clear search"
-                        className="absolute right-2 top-1/2 inline-flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
+                        className="absolute right-1.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
                         onClick={() => setGlobalFilter("")}
                       >
-                        <X className="h-3.5 w-3.5" aria-hidden="true" />
+                        <X className="h-3 w-3" aria-hidden="true" />
                       </button>
                     )}
                   </div>
 
-                  <div className="text-[10px] text-muted-foreground">
+                  <div className="text-[10px] tabular-nums text-muted-foreground">
                     {tableRows.length.toLocaleString()} of {rows.length.toLocaleString()} rows
                     {hasVisualFilters ? " (filtered)" : ""}
                   </div>
@@ -928,9 +1122,6 @@ export function BudgetTransactionsDialog({ target, browserOptions, statesByMonth
                   )}
                 </div>
 
-                <div className="shrink-0 border-t border-border/70 px-3 py-1.5 text-[10px] text-muted-foreground">
-                  Showing {tableRows.length.toLocaleString()} of {rows.length.toLocaleString()} transactions
-                </div>
               </section>
             </div>
           )}

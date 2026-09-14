@@ -11,7 +11,10 @@ import {
 } from "../lib/budgetTransactionsQuery";
 
 type UseBudgetTransactionsInput = {
-  month: string;
+  /** First month of the range, `YYYY-MM`. */
+  monthStart: string;
+  /** Last month of the range, inclusive. Equal to `monthStart` for one month. */
+  monthEnd: string;
   categoryIds: string[];
   enabled: boolean;
 };
@@ -24,7 +27,8 @@ export type BudgetTransactionsResult = {
 };
 
 export function useBudgetTransactions({
-  month,
+  monthStart,
+  monthEnd,
   categoryIds,
   enabled,
 }: UseBudgetTransactionsInput): {
@@ -43,12 +47,13 @@ export function useBudgetTransactions({
     queryKey: [
       "budget-transactions",
       connection?.id,
-      month,
+      monthStart,
+      monthEnd,
       sortedCategoryIds.join(","),
     ],
     queryFn: async (): Promise<BudgetTransactionsResult> => {
       if (!connection) throw new Error("No active connection");
-      const params = { month, categoryIds: sortedCategoryIds };
+      const params = { monthStart, monthEnd, categoryIds: sortedCategoryIds };
       // The row page must succeed; the aggregate is best-effort so a transport
       // that can't run aggregate selects degrades to a truncation notice rather
       // than failing the whole drill-down (BM-05).
@@ -61,7 +66,8 @@ export function useBudgetTransactions({
     enabled:
       enabled &&
       !!connection &&
-      month.length > 0 &&
+      monthStart.length > 0 &&
+      monthEnd.length > 0 &&
       sortedCategoryIds.length > 0,
     staleTime: 60 * 1000,
   });

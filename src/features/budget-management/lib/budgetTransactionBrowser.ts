@@ -15,7 +15,16 @@ export type BudgetTransactionSide = "income" | "expense";
 
 export type BudgetTransactionsDrilldown = {
   id: string;
-  month: string;
+  /**
+   * First month of the range the figure covers, `YYYY-MM`.
+   *
+   * A drill-through from a single month sets both ends to it; one from a period
+   * figure spans its months, so the dialog can total the same number that was
+   * clicked rather than a slice of it.
+   */
+  monthStart: string;
+  /** Last month of the range, inclusive. */
+  monthEnd: string;
   title: string;
   entity: BudgetTransactionEntity;
   side: BudgetTransactionSide;
@@ -73,7 +82,7 @@ function collectVisibleCategoryIds(
 /**
  * Drill target for every visible expense (or income) category in a single
  * month — powers the whole-month summary's "Expenses spent" / "Income received"
- * figures. Single-month only; period aggregates are deliberately not drillable.
+ * figures. Built for one month, which is a range whose ends match.
  */
 export function buildMonthCategoriesDrilldown(
   state: LoadedMonthState,
@@ -98,7 +107,8 @@ export function buildMonthCategoriesDrilldown(
   if (categoryIds.length === 0) return null;
   return {
     id: wantIncome ? "__month_income__" : "__month_expenses__",
-    month,
+    monthStart: month,
+    monthEnd: month,
     title: wantIncome ? "All income" : "All expenses",
     entity: "group",
     side: wantIncome ? "income" : "expense",

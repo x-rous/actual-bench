@@ -1,4 +1,5 @@
 import { runQuery } from "@/lib/api/query";
+import { firstDayOfMonth, lastDayOfMonth } from "@/lib/budget/monthMath";
 import type { ConnectionInstance } from "@/store/connection";
 
 export type BudgetTransactionRow = {
@@ -28,20 +29,46 @@ type BudgetTransactionsResponse = {
  * never streams thousands of rows into the dialog; when the true count exceeds
  * this, the aggregate summary (below) still reconciles the headline figures and
  * the UI discloses that the list/charts are showing only the first page (BM-05).
+ *
+ * Raised from 500 when these drill-throughs learned to span a range of months:
+ * a figure that sums eight months of a busy group will pass the old cap on
+ * arrival, so the table would have opened truncated as a matter of course
+ * rather than in the rare case the cap was chosen for.
  */
-export const BUDGET_TRANSACTIONS_ROW_LIMIT = 500;
+export const BUDGET_TRANSACTIONS_ROW_LIMIT = 1500;
 
 export type BudgetTransactionsQueryParams = {
-  month: string;
+  /** First month of the range, `YYYY-MM`. */
+  monthStart: string;
+  /** Last month of the range, inclusive. Equal to `monthStart` for one month. */
+  monthEnd: string;
   categoryIds: string[];
   limit?: number;
 };
 
-/** Shared filter for a month + category set, on-budget accounts only. */
-function budgetTransactionsFilter(month: string, categoryIds: string[]) {
+/**
+ * Shared filter for a month range + category set, on-budget accounts only.
+ *
+ * A date range rather than a month equality, because the figures this backs are
+ * sums over a period: a category group's eight closed months is one number on
+ * screen, and a dialog that could only answer for one month could never agree
+ * with it.
+ *
+ * One month is simply a range whose ends match, so there is no second code path
+ * to keep in step - the case that used `$transform: "$month"` now runs through
+ * the same filter as every other. The ends come from `lastDayOfMonth`, which
+ * derives the length rather than assuming it, so a February in a leap year does
+ * not quietly lose its 29th.
+ */
+function budgetTransactionsFilter(
+  monthStart: string,
+  monthEnd: string,
+  categoryIds: string[]
+) {
   return {
     $and: [
-      { date: { $transform: "$month", $eq: month } },
+      { date: { $gte: firstDayOfMonth(monthStart) } },
+      { date: { $lte: lastDayOfMonth(monthEnd) } },
       { category: { $oneof: categoryIds } },
       { "account.offbudget": false },
     ],
@@ -49,7 +76,8 @@ function budgetTransactionsFilter(month: string, categoryIds: string[]) {
 }
 
 export function buildBudgetTransactionsQuery({
-  month,
+  monthStart,
+  monthEnd,
   categoryIds,
   limit = BUDGET_TRANSACTIONS_ROW_LIMIT,
 }: BudgetTransactionsQueryParams) {
@@ -57,7 +85,7 @@ export function buildBudgetTransactionsQuery({
     ActualQLquery: {
       table: "transactions",
       options: { splits: "inline" },
-      filter: budgetTransactionsFilter(month, categoryIds),
+      filter: budgetTransactionsFilter(monthStart, monthEnd, categoryIds),
       select: [
         "id",
         "date",
@@ -78,14 +106,15 @@ export function buildBudgetTransactionsQuery({
  * headline KPIs so they stay correct even when the row list is capped.
  */
 export function buildBudgetTransactionsSummaryQuery({
-  month,
+  monthStart,
+  monthEnd,
   categoryIds,
 }: BudgetTransactionsQueryParams) {
   return {
     ActualQLquery: {
       table: "transactions",
       options: { splits: "inline" },
-      filter: budgetTransactionsFilter(month, categoryIds),
+      filter: budgetTransactionsFilter(monthStart, monthEnd, categoryIds),
       select: [
         { total: { $sum: "$amount" } },
         { count: { $count: "$id" } },

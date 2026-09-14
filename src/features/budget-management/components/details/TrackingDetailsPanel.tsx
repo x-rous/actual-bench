@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { formatDelta, formatSigned } from "../../lib/format";
+import { formatDeltaWhole, formatSignedWhole } from "../../lib/format";
 import type { TrackingDetailsMetrics } from "../../lib/budgetDetailsMetrics";
 import type {
   BudgetTransactionBrowserOptions,
@@ -79,7 +79,7 @@ function describeVariance(
           ? "over"
           : "over budget";
   return {
-    text: `${formatSigned(Math.abs(value))} ${value > 0 ? up : down}`,
+    text: `${formatSignedWhole(Math.abs(value))} ${value > 0 ? up : down}`,
     tone: value > 0 ? "positive" : "negative",
   };
 }
@@ -171,6 +171,12 @@ export function TrackingDetailsPanel({
     target: metrics.monthValues?.transactionDrilldown,
     onOpen: setTransactionTarget,
   });
+  // The closed-months figure drills into every month it sums, so the dialog's
+  // total is the number that was clicked rather than a slice of it.
+  const selectionDrilldown = metrics.selectionTransactionDrilldown ?? null;
+  const openSelectionTransactions = selectionDrilldown
+    ? () => setTransactionTarget(selectionDrilldown)
+    : undefined;
 
   // RD-070 Top Variance Drivers (full-period / View 1). The clicked variance
   // number sets which tab opens first; null means the dialog is closed.
@@ -257,12 +263,12 @@ export function TrackingDetailsPanel({
         <DetailsSection title="Values">
           <MetricLine
             label={metrics.monthValues.budgetLabel}
-            value={formatSigned(metrics.monthValues.budgeted)}
+            value={formatSignedWhole(metrics.monthValues.budgeted)}
           />
           {metrics.monthValues.actuals != null && (
             <MetricLine
               label={metrics.monthValues.actualLabel}
-              value={formatSigned(metrics.monthValues.actuals)}
+              value={formatSignedWhole(metrics.monthValues.actuals)}
               onValueClick={
                 metrics.monthValues.transactionDrilldown
                   ? () => setTransactionTarget(metrics.monthValues!.transactionDrilldown)
@@ -286,25 +292,25 @@ export function TrackingDetailsPanel({
           {metrics.monthValues.rolloverBalance && (
             <MetricLine
               label={metrics.monthValues.rolloverBalance.label}
-              value={formatDelta(metrics.monthValues.rolloverBalance.value)}
+              value={formatDeltaWhole(metrics.monthValues.rolloverBalance.value)}
               tone={metrics.monthValues.rolloverBalance.tone}
             />
           )}
           {metrics.monthValues.previousBudgeted != null && (
             <MetricLine
               label="Previous month budgeted"
-              value={formatSigned(metrics.monthValues.previousBudgeted)}
+              value={formatSignedWhole(metrics.monthValues.previousBudgeted)}
             />
           )}
           {metrics.monthValues.stagedEdit && (
             <>
               <MetricLine
                 label="Previous budget"
-                value={formatSigned(metrics.monthValues.stagedEdit.was)}
+                value={formatSignedWhole(metrics.monthValues.stagedEdit.was)}
               />
               <MetricLine
                 label="Change"
-                value={formatDelta(metrics.monthValues.stagedEdit.diff)}
+                value={formatDeltaWhole(metrics.monthValues.stagedEdit.diff)}
                 tone={toneFromValue(metrics.monthValues.stagedEdit.diff)}
               />
             </>
@@ -317,18 +323,18 @@ export function TrackingDetailsPanel({
           {/* Actuals build to the Result, then compare it to plan… */}
           <MetricLine
             label="Income received"
-            value={formatSigned(closed.actualIncome)}
+            value={formatSignedWhole(closed.actualIncome)}
             tooltip={PERIOD_TOOLTIP.incomeReceived}
           />
           <MetricLine
             label="Expenses spent"
-            value={formatSigned(closed.signedExpenseActivity)}
+            value={formatSignedWhole(closed.signedExpenseActivity)}
             tooltip={PERIOD_TOOLTIP.expensesSpent}
           />
           <div className="border-t border-border/50 pt-1.5">
             <MetricLine
               label={closed.actualSavings >= 0 ? "Saved" : "Overspent"}
-              value={formatDelta(closed.actualSavings)}
+              value={formatDeltaWhole(closed.actualSavings)}
               tone={toneFromValue(closed.actualSavings)}
               tooltip={PERIOD_TOOLTIP.actualResult}
             />
@@ -347,7 +353,7 @@ export function TrackingDetailsPanel({
           </p>
           <MetricLine
             label="Income budgeted"
-            value={formatSigned(closed.budgetedIncome)}
+            value={formatSignedWhole(closed.budgetedIncome)}
             tooltip={PERIOD_TOOLTIP.incomeBudgetedToDate}
           />
           <MetricLine
@@ -355,7 +361,7 @@ export function TrackingDetailsPanel({
             // Signed to match "Expenses spent" above, the Full-plan section, and
             // the grid — expense figures are negative throughout (the semantic
             // allocation is a positive magnitude, so negate it for display only).
-            value={formatSigned(-closed.budgetedExpenseAllocation)}
+            value={formatSignedWhole(-closed.budgetedExpenseAllocation)}
             tooltip={PERIOD_TOOLTIP.expensesBudgetedToDate}
           />
           <VarianceLine
@@ -379,7 +385,7 @@ export function TrackingDetailsPanel({
           <div className="border-t border-border/50 pt-1.5">
             <MetricLine
               label="Ending balance"
-              value={formatSigned(closed.endingBalance)}
+              value={formatSignedWhole(closed.endingBalance)}
               tone={toneFromValue(closed.endingBalance)}
               tooltip="Spreadsheet leftover at the last closed month - a snapshot, not a sum of monthly balances."
             />
@@ -391,17 +397,17 @@ export function TrackingDetailsPanel({
         <DetailsSection title="Full 12-month plan">
           <MetricLine
             label="Income budgeted"
-            value={formatSigned(metrics.periodFullPlan.incomeBudgeted)}
+            value={formatSignedWhole(metrics.periodFullPlan.incomeBudgeted)}
             tooltip={PERIOD_TOOLTIP.fullIncomeBudget}
           />
           <MetricLine
             label="Expenses budgeted"
-            value={formatSigned(metrics.periodFullPlan.expensesBudgeted)}
+            value={formatSignedWhole(metrics.periodFullPlan.expensesBudgeted)}
             tooltip={PERIOD_TOOLTIP.fullExpenseBudget}
           />
           <MetricLine
             label="Planned result"
-            value={formatDelta(metrics.periodFullPlan.plannedResult)}
+            value={formatDeltaWhole(metrics.periodFullPlan.plannedResult)}
             tone={toneFromValue(metrics.periodFullPlan.plannedResult)}
             tooltip={PERIOD_TOOLTIP.plannedResult}
           />
@@ -412,16 +418,18 @@ export function TrackingDetailsPanel({
         <DetailsSection title={closedMonthsTitle}>
           <MetricLine
             label={metrics.selectionToDate.budgetLabel}
-            value={formatSigned(metrics.selectionToDate.budgeted)}
+            value={formatSignedWhole(metrics.selectionToDate.budgeted)}
           />
           <MetricLine
             label={metrics.selectionToDate.actualLabel}
-            value={formatSigned(metrics.selectionToDate.actuals)}
+            value={formatSignedWhole(metrics.selectionToDate.actuals)}
+            onValueClick={openSelectionTransactions}
+            valueAriaLabel={`View transactions for ${metrics.title}`}
           />
           {metrics.isIncome ? (
             <MetricLine
               label="Variance"
-              value={formatDelta(metrics.selectionToDate.variance)}
+              value={formatDeltaWhole(metrics.selectionToDate.variance)}
               tone={toneFromValue(metrics.selectionToDate.variance)}
             />
           ) : (
@@ -435,7 +443,7 @@ export function TrackingDetailsPanel({
             <div className="border-t border-border/50 pt-1.5">
               <MetricLine
                 label="Ending balance"
-                value={formatSigned(metrics.selectionToDate.endingBalance)}
+                value={formatSignedWhole(metrics.selectionToDate.endingBalance)}
                 tone={toneFromValue(metrics.selectionToDate.endingBalance)}
                 tooltip="This entity's balance at the last closed month - a snapshot, not a sum of monthly balances."
               />
@@ -449,19 +457,19 @@ export function TrackingDetailsPanel({
               </p>
               <MetricLine
                 label={metrics.selectionToDate.budgetLabel}
-                value={formatSigned(metrics.selectionAverages.budgetPerMonth)}
+                value={formatSignedWhole(metrics.selectionAverages.budgetPerMonth)}
               />
               {metrics.selectionAverages.actualPerMonth != null && (
                 <MetricLine
                   label={metrics.selectionToDate.actualLabel}
-                  value={formatSigned(metrics.selectionAverages.actualPerMonth)}
+                  value={formatSignedWhole(metrics.selectionAverages.actualPerMonth)}
                 />
               )}
               {metrics.selectionAverages.variancePerMonth != null &&
                 (metrics.isIncome ? (
                   <MetricLine
                     label="Variance"
-                    value={formatDelta(metrics.selectionAverages.variancePerMonth)}
+                    value={formatDeltaWhole(metrics.selectionAverages.variancePerMonth)}
                     tone={toneFromValue(metrics.selectionAverages.variancePerMonth)}
                   />
                 ) : (
@@ -480,11 +488,11 @@ export function TrackingDetailsPanel({
         <DetailsSection title="Full 12-month budget">
           <MetricLine
             label="Full-period budgeted"
-            value={formatSigned(metrics.selectionFullBudget)}
+            value={formatSignedWhole(metrics.selectionFullBudget)}
           />
           <MetricLine
             label="Monthly average"
-            value={formatSigned(Math.round(metrics.selectionFullBudget / 12))}
+            value={formatSignedWhole(Math.round(metrics.selectionFullBudget / 12))}
           />
         </DetailsSection>
       )}
@@ -493,7 +501,7 @@ export function TrackingDetailsPanel({
         <DetailsSection title="Rollover Balance">
           <MetricLine
             label={metrics.rollover.current.label}
-            value={formatDelta(metrics.rollover.current.value)}
+            value={formatDeltaWhole(metrics.rollover.current.value)}
             tone={metrics.rollover.current.tone}
           />
           <p className="text-[10.5px] text-muted-foreground text-right">
@@ -506,7 +514,7 @@ export function TrackingDetailsPanel({
         <DetailsSection title="End of visible plan">
           <MetricLine
             label={metrics.rollover.endPlan.label}
-            value={formatDelta(metrics.rollover.endPlan.value)}
+            value={formatDeltaWhole(metrics.rollover.endPlan.value)}
             tone={metrics.rollover.endPlan.tone}
           />
           <p className="text-[10.5px] text-muted-foreground text-right">
@@ -533,7 +541,7 @@ export function TrackingDetailsPanel({
 
       {transactionTarget && (
         <BudgetTransactionsDialog
-          key={`${transactionTarget.entity}:${transactionTarget.id}:${transactionTarget.month}`}
+          key={`${transactionTarget.entity}:${transactionTarget.id}:${transactionTarget.monthStart}:${transactionTarget.monthEnd}`}
           target={transactionTarget}
           browserOptions={transactionBrowserOptions}
           statesByMonth={statesByMonth}

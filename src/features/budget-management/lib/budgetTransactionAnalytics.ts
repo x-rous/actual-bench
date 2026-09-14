@@ -31,6 +31,14 @@ export type BudgetTransactionAnalytics = {
   spendByPayee: TransactionSpendBucket[];
   spendByCategory: TransactionSpendBucket[];
   spendByWeek: TransactionTimeBucket[];
+  /**
+   * One bucket per calendar month present in the rows, oldest first.
+   *
+   * The week buckets are weeks *of a month*, so across a range they would add
+   * every first week together and call it Week 1. A range is grouped by month
+   * instead, which is the unit it actually spans.
+   */
+  spendByMonth: TransactionTimeBucket[];
   spendByDay: TransactionTimeBucket[];
   weekdayPattern: TransactionSpendBucket[];
   topTransactions: BudgetTransactionRow[];
@@ -131,6 +139,17 @@ function weekdayBucket(date: string): string {
   }).format(parsed);
 }
 
+/** "2026-03" → "Mar 2026", without pulling in a formatter for one label. */
+function monthLabelFor(month: string): string {
+  const [year, mo] = month.split("-").map(Number);
+  if (!year || !mo) return month;
+  const name = new Date(Date.UTC(year, mo - 1, 1)).toLocaleString("en-US", {
+    month: "short",
+    timeZone: "UTC",
+  });
+  return `${name} ${year}`;
+}
+
 function sortTimeBuckets(
   values: Map<string, { label: string; amount: number; count: number; sortKey: string }>,
   totalSpent: number
@@ -184,6 +203,10 @@ export function buildBudgetTransactionAnalytics(
     string,
     { label: string; amount: number; count: number; sortKey: string }
   >();
+  const byMonth = new Map<
+    string,
+    { label: string; amount: number; count: number; sortKey: string }
+  >();
   const byWeekday = new Map<string, { label: string; amount: number; count: number }>();
   const repeatedPayeeMap = new Map<string, { count: number; amount: number }>();
   const distinctPayees = new Set<string>();
@@ -227,6 +250,19 @@ export function buildBudgetTransactionAnalytics(
     currentWeek.amount += amount;
     currentWeek.count += 1;
     byWeek.set(week.id, currentWeek);
+
+    const monthId = row.date.slice(0, 7);
+    if (monthId.length === 7) {
+      const currentMonth = byMonth.get(monthId) ?? {
+        label: monthLabelFor(monthId),
+        amount: 0,
+        count: 0,
+        sortKey: monthId,
+      };
+      currentMonth.amount += amount;
+      currentMonth.count += 1;
+      byMonth.set(monthId, currentMonth);
+    }
 
     const day = dayBucket(row.date);
     const currentDay = byDay.get(day.id) ?? {
@@ -307,6 +343,7 @@ export function buildBudgetTransactionAnalytics(
     spendByPayee: sortedBuckets(byPayee, totalSpent),
     spendByCategory: sortedBuckets(byCategory, totalSpent),
     spendByWeek: buildWeekBuckets(byWeek, totalSpent),
+    spendByMonth: sortTimeBuckets(byMonth, totalSpent),
     spendByDay: sortTimeBuckets(byDay, totalSpent),
     weekdayPattern: weekdayBuckets,
     topTransactions,

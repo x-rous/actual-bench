@@ -164,7 +164,8 @@ describe("buildMonthCategoriesDrilldown", () => {
     const drill = buildMonthCategoriesDrilldown(monthState(), "2026-04", "expense");
     expect(drill).toEqual({
       id: "__month_expenses__",
-      month: "2026-04",
+      monthStart: "2026-04",
+      monthEnd: "2026-04",
       title: "All expenses",
       entity: "group",
       side: "expense",
