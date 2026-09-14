@@ -37,14 +37,16 @@ updates:
       # branch: the grouped 30.5.0 update fails exactly that test, while the
       # grouped React update to 19.2.8 on the same day is green.
       #
-      # The whole 30.5 line rather than one release, because 30.5.0 and 30.5.1
-      # both do it. The bumped tree pulls in @parcel/watcher - a native file
-      # watcher, new in that line - which is the obvious suspect for a
-      # thirty-fold slowdown, though that is not yet confirmed.
+      # Everything above 30.3.0, which is the last version known to work. The
+      # hold started at 30.5 and had to be widened: 30.4.2 with
+      # jest-environment-jsdom 30.4.1 fails the same test the same way, so the
+      # regression begins earlier in the line than the first failing release
+      # suggested. Pinned to the last good version rather than a guess at the
+      # first bad one, because that guess has already been wrong once.
       - dependency-name: "jest"
-        versions: [">=30.5.0"]
+        versions: [">30.3.0"]
       - dependency-name: "jest-environment-jsdom"
-        versions: [">=30.5.0"]
+        versions: [">30.3.0"]
       # Must describe the Node actually in use, or the type checker starts
       # accepting code the runtime cannot run. Moves when Node does.
       - dependency-name: "@types/node"
