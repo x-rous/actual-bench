@@ -6,8 +6,24 @@ updates:
       interval: weekly
     open-pull-requests-limit: 5
 
+  # Raised from 5. The cap was being reached, and a saturated queue is silent:
+  # `next` sat on published criticals for weeks without a pull request, because
+  # five unrelated updates were already holding every slot.
   - package-ecosystem: npm
     directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 10
+
+  # The base images were watched by nothing at all, so an image pinned to an
+  # exact Node patch never picked up an Alpine security refresh - which is how a
+  # published OpenSSL advisory stayed in the shipped image. Pinning exactly is
+  # still right for reproducible builds; it just needs something proposing the
+  # bumps.
+  - package-ecosystem: docker
+    directories:
+      - "/docker"
+      - "/demo"
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
