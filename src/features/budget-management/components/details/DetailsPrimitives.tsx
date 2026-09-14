@@ -1,7 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { formatDelta, formatSigned, formatSummary } from "../../lib/format";
+import { formatDeltaWhole, formatSignedWhole, formatSummary } from "../../lib/format";
 import type {
   BudgetTrendPoint,
   DayProgress,
@@ -226,7 +226,7 @@ export function PrimaryMetric({
           <>
             <p className={`mt-1 font-sans tabular-nums text-base font-semibold ${toneClass(tone)}`}>
               {valuePrefix}
-              {showPlus ? formatDelta(value) : formatSigned(value)}
+              {showPlus ? formatDeltaWhole(value) : formatSignedWhole(value)}
             </p>
             <p className="text-[10.5px] text-muted-foreground">{helper}</p>
           </>
@@ -361,7 +361,7 @@ export function MiniTrend({
             <div
               key={point.month}
               className="flex-1 flex flex-col justify-end h-7"
-              title={`${point.label}: ${formatSigned(point.value)}${
+              title={`${point.label}: ${formatSignedWhole(point.value)}${
                 point.planOnly ? " (planned)" : ""
               }`}
             >
@@ -400,14 +400,14 @@ export function StagedImpactBlock({
       {mode === "tracking" ? (
         <MetricLine
           label="Budget plan impact"
-          value={formatDelta(impact.budgetDelta)}
+          value={formatDeltaWhole(impact.budgetDelta)}
           tone={impact.budgetDelta === 0 ? "neutral" : impact.budgetDelta > 0 ? "positive" : "negative"}
         />
       ) : (
         <>
           <MetricLine
             label="Estimated To Budget impact"
-            value={formatDelta(impact.estimatedToBudgetImpact)}
+            value={formatDeltaWhole(impact.estimatedToBudgetImpact)}
             tone={
               impact.estimatedToBudgetImpact === 0
                 ? "neutral"
