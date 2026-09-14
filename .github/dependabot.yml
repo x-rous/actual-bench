@@ -14,6 +14,50 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 10
+    # Packages that have to move together, or neither moves at all. React
+    # refuses to run when react and react-dom disagree, and Jest expects its
+    # core and its environment to match - so split across separate pull
+    # requests, each one fails on its own and both sit red indefinitely.
+    groups:
+      react:
+        patterns:
+          - "react"
+          - "react-dom"
+          - "@types/react"
+          - "@types/react-dom"
+      jest:
+        patterns:
+          - "jest"
+          - "jest-environment-*"
+          - "@types/jest"
+    ignore:
+      # Held back by a reproducible failure, not by policy: these versions take
+      # AutomationsView's suite from seven seconds to three minutes and fail one
+      # test in it, from the lockfile rather than a local install. Pinned to the
+      # exact versions that fail rather than the whole major, so the next
+      # release through is still proposed - it may well be the fix. Remove these
+      # four once the cause is found.
+      - dependency-name: "react"
+        versions: ["19.3.0"]
+      - dependency-name: "react-dom"
+        versions: ["19.3.0"]
+      - dependency-name: "jest"
+        versions: ["30.5.1"]
+      - dependency-name: "jest-environment-jsdom"
+        versions: ["30.5.1"]
+      # Must describe the Node actually in use, or the type checker starts
+      # accepting code the runtime cannot run. Moves when Node does.
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
+      # typescript-eslint cannot parse TypeScript 7, so the bump fails lint
+      # outright. Revisit when the parser ships support.
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
+      # v9 is a real release, but it changes the generics and both of our
+      # tables want checking by eye afterwards. Scheduled work, not a weekly
+      # pull request.
+      - dependency-name: "@tanstack/react-table"
+        update-types: ["version-update:semver-major"]
 
   # The base images were watched by nothing at all, so an image pinned to an
   # exact Node patch never picked up an Alpine security refresh - which is how a
@@ -27,3 +71,10 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    ignore:
+      # A Node major is a coordinated move across both Dockerfiles, the CI
+      # matrix and the type packages. Proposed as a major it arrives weekly and
+      # looks routine - and its checks look green, because the container is
+      # only built on pushes to main, so a pull request never builds it at all.
+      - dependency-name: "node"
+        update-types: ["version-update:semver-major"]
