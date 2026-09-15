@@ -190,6 +190,17 @@ export function TrackingDetailsPanel({
   // RD-070 Top Variance Drivers (full-period / View 1). The clicked variance
   // number sets which tab opens first; null means the dialog is closed.
   const [driversSide, setDriversSide] = useState<VarianceSide | null>(null);
+  /*
+   * A group's own Variance opens the same drivers view the period's does,
+   * scoped to that group - so the answer to "why is this group out" is one
+   * click from the number that raises the question, instead of requiring a
+   * detour through the period summary and a hunt for the group in it.
+   *
+   * Only for a group. A single category has no children to rank, and the view
+   * would be one row restating the figure that opened it.
+   */
+  const selectionGroupId = metrics.selectionGroupId ?? null;
+  const [driversGroupId, setDriversGroupId] = useState<string | null>(null);
   const drivers = useMemo(() => {
     const closedMonths = [...statesByMonth.keys()]
       .filter((month) => isClosedMonthStatus(classifyMonthActualStatus(month)))
@@ -458,6 +469,15 @@ export function TrackingDetailsPanel({
               label="Variance"
               value={metrics.selectionToDate.variance}
               kind="budget"
+              onValueClick={
+                selectionGroupId
+                  ? () => {
+                      setDriversGroupId(selectionGroupId);
+                      setDriversSide("expense");
+                    }
+                  : undefined
+              }
+              valueAriaLabel={`View what drives the variance in ${metrics.title}`}
             />
           )}
           {metrics.selectionToDate.endingBalance != null && (
@@ -574,12 +594,18 @@ export function TrackingDetailsPanel({
         <TopVarianceDriversDialog
           // Remount on side change so the dialog's internal tab/filter/expand
           // state always starts fresh for the requested side (CodeRabbit).
-          key={driversSide}
+          key={`${driversSide}:${driversGroupId ?? "period"}`}
           open
-          onClose={() => setDriversSide(null)}
-          scopeLabel={drivers.scopeLabel}
+          onClose={() => {
+            setDriversSide(null);
+            setDriversGroupId(null);
+          }}
+          scopeLabel={
+            driversGroupId ? `${metrics.title} · ${drivers.scopeLabel}` : drivers.scopeLabel
+          }
           initialSide={driversSide}
           monthStates={drivers.closedStates}
+          groupId={driversGroupId ?? undefined}
         />
       )}
     </div>

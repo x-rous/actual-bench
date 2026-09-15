@@ -268,10 +268,22 @@ function pctOfBudget(varianceMinor: number, budgetedMinor: number): number | nul
  */
 export function buildVarianceTree(
   states: readonly LoadedMonthState[],
-  side: VarianceSide
+  side: VarianceSide,
+  /**
+   * Narrow the tree to a single group.
+   *
+   * Everything downstream is a share of something - a group's contribution to
+   * the period, a category's contribution to its group - so scoping cannot be
+   * done by filtering the finished tree: the denominators would still be the
+   * whole budget's, and a group accounting for all of its own overspend would
+   * report a contribution of eight per cent. Scoping at the source makes the
+   * group the world, which is what "drivers within this group" means.
+   */
+  options: { groupId?: string } = {}
 ): VarianceTree {
   const wantIncome = side === "income";
   const monthCount = states.length;
+  const scopeGroupId = options.groupId;
 
   type CatAcc = {
     id: string;
@@ -298,6 +310,7 @@ export function buildVarianceTree(
       // their children) — from variance analysis.
       if (category.isIncome !== wantIncome || category.hidden) continue;
       if (state.groupsById[category.groupId]?.hidden) continue;
+      if (scopeGroupId && category.groupId !== scopeGroupId) continue;
       const { budgetedMinor, actualMinor } = normalizeAmount(
         wantIncome,
         category.budgeted,
@@ -344,10 +357,15 @@ export function buildVarianceTree(
   const rawGroups = order.map((id) => groupsById.get(id)!);
 
   // Side-segregated denominators, at the group granularity shown.
-  const overspendMinor = -sum(
-    rawGroups.filter((g) => g.varianceMinor < 0),
-    (g) => g.varianceMinor
-  );
+  //
+  // `|| 0` because negating an empty sum yields `-0`, which prints and compares
+  // as zero everywhere except a strict structural check - a trap laid for
+  // whoever next asserts on these totals rather than a bug in its own right.
+  const overspendMinor =
+    -sum(
+      rawGroups.filter((g) => g.varianceMinor < 0),
+      (g) => g.varianceMinor
+    ) || 0;
   const savedMinor = sum(
     rawGroups.filter((g) => g.varianceMinor > 0),
     (g) => g.varianceMinor

@@ -321,6 +321,13 @@ export type TrackingDetailsMetrics = {
    */
   selectionTransactionDrilldown?: BudgetTransactionsDrilldown | null;
   /**
+   * The selected category group, when one is selected.
+   *
+   * Null for a single category: a category has no children to rank, so a
+   * drivers view of it would be one row restating the figure above it.
+   */
+  selectionGroupId?: string | null;
+  /**
    * Drill targets for the whole-period actuals, one per side.
    *
    * Only the period summary carries these - it has no selected category, so
@@ -400,6 +407,13 @@ export type EnvelopeDetailsMetrics = {
    * sum. Null with no selection, or when nothing has happened yet.
    */
   selectionTransactionDrilldown?: BudgetTransactionsDrilldown | null;
+  /**
+   * The selected category group, when one is selected.
+   *
+   * Null for a single category: a category has no children to rank, so a
+   * drivers view of it would be one row restating the figure above it.
+   */
+  selectionGroupId?: string | null;
   /**
    * Drill targets for the whole-period actuals, one per side.
    *
@@ -1649,6 +1663,7 @@ export function buildTrackingDetailsMetrics(
       futureOnly,
       isIncome: target.isIncome,
       selectionTransactionDrilldown: periodTransactionsDrilldown(closedEntries, target),
+      selectionGroupId: target.groupId ? null : target.id,
       primary: futureOnly
         ? {
             label: "No actualized months in this view",
@@ -2094,6 +2109,7 @@ export function buildEnvelopeDetailsMetrics(
       futureOnly,
       isIncome: target.isIncome,
       selectionTransactionDrilldown: periodTransactionsDrilldown(activeEntries, target),
+      selectionGroupId: target.groupId ? null : target.id,
       primary:
         latest && latestMonth
           ? {

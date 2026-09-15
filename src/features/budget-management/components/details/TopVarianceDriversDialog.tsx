@@ -33,6 +33,14 @@ export type TopVarianceDriversDialogProps = {
   initialSide: VarianceSide;
   /** In-scope month states, ordered oldest→newest (drives ranking + sparklines). */
   monthStates: LoadedMonthState[];
+  /**
+   * Narrow to one category group, for a drill-in from that group's own
+   * variance rather than from the period's.
+   *
+   * Scoping is done when the tree is built, not by filtering it afterwards, so
+   * every share on screen is a share of this group rather than of the budget.
+   */
+  groupId?: string;
 };
 
 const TOP_N = 5;
@@ -63,14 +71,15 @@ export function TopVarianceDriversDialog({
   provisional = false,
   initialSide,
   monthStates,
+  groupId,
 }: TopVarianceDriversDialogProps) {
   const expenseTree = useMemo(
-    () => buildVarianceTree(monthStates, "expense"),
-    [monthStates]
+    () => buildVarianceTree(monthStates, "expense", { groupId }),
+    [monthStates, groupId]
   );
   const incomeTree = useMemo(
-    () => buildVarianceTree(monthStates, "income"),
-    [monthStates]
+    () => buildVarianceTree(monthStates, "income", { groupId }),
+    [monthStates, groupId]
   );
   const expenseHasData = treeHasData(expenseTree);
   const incomeHasData = treeHasData(incomeTree);
