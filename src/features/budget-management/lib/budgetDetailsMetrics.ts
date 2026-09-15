@@ -1806,17 +1806,20 @@ export function buildTrackingDetailsMetrics(
     kind: "period",
     title: "PERIOD SUMMARY",
     subtitle: "Tracking",
+    /*
+     * Visible categories only.
+     *
+     * The headline above reads `state.summary.totalIncome` / `totalSpent`,
+     * which are hidden-inclusive, so matching it exactly would argue for
+     * pulling hidden categories in. Doing that was worse: a hidden category
+     * still carries its budget, so the dialog's Budgeted figure grew by
+     * everything the user had deliberately put out of sight and the variance
+     * read better than it was. Hidden means hidden on both sides of the
+     * comparison, and this is the set every other view of the budget shows.
+     */
     periodActualsDrilldown: {
-      // `includeHidden`, because the figures these open from are
-      // `state.summary.totalIncome` / `totalSpent` - the whole file, hidden
-      // categories and all. A visible-only drilldown would open on a smaller
-      // number than the one that was clicked.
-      income: buildRangeCategoriesDrilldown(closedPeriodEntries, "income", {
-        includeHidden: true,
-      }),
-      expense: buildRangeCategoriesDrilldown(closedPeriodEntries, "expense", {
-        includeHidden: true,
-      }),
+      income: buildRangeCategoriesDrilldown(closedPeriodEntries, "income"),
+      expense: buildRangeCategoriesDrilldown(closedPeriodEntries, "expense"),
     },
     rangeLabel: model.rangeLabel,
     coverageLabel: model.coverage.label,
@@ -2184,16 +2187,10 @@ export function buildEnvelopeDetailsMetrics(
     kind: "period",
     title: "PERIOD SUMMARY",
     subtitle: "Envelope",
+    // Visible categories only, for the reason given on the Tracking side.
     periodActualsDrilldown: {
-      // Same reason as Tracking: `spentToDate` and `incomeReceivedToDate` sum
-      // `state.summary.totalSpent` / `totalIncome`, which include hidden
-      // categories.
-      income: buildRangeCategoriesDrilldown(actualEntries, "income", {
-        includeHidden: true,
-      }),
-      expense: buildRangeCategoriesDrilldown(actualEntries, "expense", {
-        includeHidden: true,
-      }),
+      income: buildRangeCategoriesDrilldown(actualEntries, "income"),
+      expense: buildRangeCategoriesDrilldown(actualEntries, "expense"),
     },
     rangeLabel: model.rangeLabel,
     coverageLabel: model.coverage.label,

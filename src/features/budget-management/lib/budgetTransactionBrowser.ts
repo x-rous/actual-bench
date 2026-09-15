@@ -151,27 +151,22 @@ function contiguousSpan(
  * Categories are unioned across the range rather than read from one month. A
  * category created midway through the year exists in later months only, and
  * taking the last month alone would silently drop anything retired before it.
+ *
+ * Hidden categories are left out, even though the headline this opens from -
+ * the month's own `summary` totals - counts them. Including them to make the
+ * two spend figures agree was tried and was worse: a hidden category keeps its
+ * budget, so the dialog's Budgeted figure grew by everything the user had put
+ * out of sight and the variance beside it read better than reality. Matching
+ * the spend cost the comparison, which is the more useful of the two, and this
+ * is the set every other view of the budget shows.
  */
 export function buildRangeCategoriesDrilldown(
   entries: { month: string; state?: LoadedMonthState | null }[],
-  kind: "expense" | "income",
-  /**
-   * Whether hidden categories count.
-   *
-   * It has to match whatever the figure being clicked counted, and the two
-   * headlines that use this disagree with each other: the period summary reads
-   * the month's own `summary` totals, which are the whole file including
-   * hidden categories, while a category or group selection sums the visible
-   * ones. Hiding a category does not un-spend its money, so a summary total
-   * that includes it must drill into a set that includes it too - otherwise the
-   * dialog opens on a smaller number than the one that was clicked.
-   */
-  options: { includeHidden?: boolean } = {}
+  kind: "expense" | "income"
 ): BudgetTransactionsDrilldown | null {
   const span = contiguousSpan(entries);
   if (!span) return null;
 
-  const includeHidden = options.includeHidden ?? false;
   const wantIncome = kind === "income";
   const categoryIds = new Set<string>();
 
@@ -181,11 +176,11 @@ export function buildRangeCategoriesDrilldown(
     for (const groupId of state.groupOrder) {
       const group = state.groupsById[groupId];
       if (!group || group.isIncome !== wantIncome) continue;
-      if (group.hidden && !includeHidden) continue;
+      if (group.hidden) continue;
       for (const categoryId of group.categoryIds) {
         const category = state.categoriesById[categoryId];
         if (!category || category.isIncome !== wantIncome) continue;
-        if (category.hidden && !includeHidden) continue;
+        if (category.hidden) continue;
         categoryIds.add(categoryId);
       }
     }
