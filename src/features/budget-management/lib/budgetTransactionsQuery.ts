@@ -1,4 +1,5 @@
 import { runQuery } from "@/lib/api/query";
+import { firstDayOfMonth, lastDayOfMonth } from "@/lib/budget/monthMath";
 import type { ConnectionInstance } from "@/store/connection";
 
 export type BudgetTransactionRow = {
@@ -6,6 +7,15 @@ export type BudgetTransactionRow = {
   date: string;
   amount: number;
   payeeName: string | null;
+  /**
+   * The category's id, for anything that has to resolve the category itself
+   * rather than show its name.
+   *
+   * Names are not unique - two groups can each hold a "Fees" - so a lookup
+   * keyed by name resolves to whichever was recorded last and can file a
+   * transaction under the wrong group.
+   */
+  categoryId: string | null;
   categoryName: string | null;
   notes: string | null;
 };
@@ -15,6 +25,7 @@ type RawBudgetTransactionRow = {
   date?: unknown;
   amount?: unknown;
   "payee.name"?: unknown;
+  "category.id"?: unknown;
   "category.name"?: unknown;
   notes?: unknown;
 };
@@ -23,25 +34,47 @@ type BudgetTransactionsResponse = {
   data: RawBudgetTransactionRow[];
 };
 
-/**
- * Row cap for the drill-down table. The list is bounded so a huge category
- * never streams thousands of rows into the dialog; when the true count exceeds
- * this, the aggregate summary (below) still reconciles the headline figures and
- * the UI discloses that the list/charts are showing only the first page (BM-05).
- */
-export const BUDGET_TRANSACTIONS_ROW_LIMIT = 500;
-
 export type BudgetTransactionsQueryParams = {
-  month: string;
+  /** First month of the range, `YYYY-MM`. */
+  monthStart: string;
+  /** Last month of the range, inclusive. Equal to `monthStart` for one month. */
+  monthEnd: string;
   categoryIds: string[];
-  limit?: number;
+  /**
+   * Optional row cap. Omitted - the normal case - returns every matching row.
+   *
+   * The drill-down used to cap at 1,500 and disclose the truncation, because
+   * every row went into the DOM and a busy group over a year would lock the
+   * tab. The table windows its rows now, so the cap was protecting against a
+   * cost that no longer exists - and it made the breakdowns and the chart
+   * describe a partial page while the headline described the whole set.
+   */
+  limit?: number | null;
 };
 
-/** Shared filter for a month + category set, on-budget accounts only. */
-function budgetTransactionsFilter(month: string, categoryIds: string[]) {
+/**
+ * Shared filter for a month range + category set, on-budget accounts only.
+ *
+ * A date range rather than a month equality, because the figures this backs are
+ * sums over a period: a category group's eight closed months is one number on
+ * screen, and a dialog that could only answer for one month could never agree
+ * with it.
+ *
+ * One month is simply a range whose ends match, so there is no second code path
+ * to keep in step - the case that used `$transform: "$month"` now runs through
+ * the same filter as every other. The ends come from `lastDayOfMonth`, which
+ * derives the length rather than assuming it, so a February in a leap year does
+ * not quietly lose its 29th.
+ */
+function budgetTransactionsFilter(
+  monthStart: string,
+  monthEnd: string,
+  categoryIds: string[]
+) {
   return {
     $and: [
-      { date: { $transform: "$month", $eq: month } },
+      { date: { $gte: firstDayOfMonth(monthStart) } },
+      { date: { $lte: lastDayOfMonth(monthEnd) } },
       { category: { $oneof: categoryIds } },
       { "account.offbudget": false },
     ],
@@ -49,25 +82,30 @@ function budgetTransactionsFilter(month: string, categoryIds: string[]) {
 }
 
 export function buildBudgetTransactionsQuery({
-  month,
+  monthStart,
+  monthEnd,
   categoryIds,
-  limit = BUDGET_TRANSACTIONS_ROW_LIMIT,
+  limit = null,
 }: BudgetTransactionsQueryParams) {
   return {
     ActualQLquery: {
       table: "transactions",
       options: { splits: "inline" },
-      filter: budgetTransactionsFilter(month, categoryIds),
+      filter: budgetTransactionsFilter(monthStart, monthEnd, categoryIds),
       select: [
         "id",
         "date",
         "amount",
         "payee.name",
+        "category.id",
         "category.name",
         "notes",
       ],
       orderBy: [{ date: "desc" }],
-      limit,
+      // The key is left off entirely rather than set to something huge: an
+      // absent limit is the query language's own way of saying "all of them",
+      // and a sentinel would only be a cap we had guessed was large enough.
+      ...(limit == null ? {} : { limit }),
     },
   };
 }
@@ -78,14 +116,15 @@ export function buildBudgetTransactionsQuery({
  * headline KPIs so they stay correct even when the row list is capped.
  */
 export function buildBudgetTransactionsSummaryQuery({
-  month,
+  monthStart,
+  monthEnd,
   categoryIds,
 }: BudgetTransactionsQueryParams) {
   return {
     ActualQLquery: {
       table: "transactions",
       options: { splits: "inline" },
-      filter: budgetTransactionsFilter(month, categoryIds),
+      filter: budgetTransactionsFilter(monthStart, monthEnd, categoryIds),
       select: [
         { total: { $sum: "$amount" } },
         { count: { $count: "$id" } },
@@ -121,6 +160,7 @@ function normalizeTransactionRow(
     date,
     amount: parseAmount(row.amount),
     payeeName: parseString(row["payee.name"]),
+    categoryId: parseString(row["category.id"]),
     categoryName: parseString(row["category.name"]),
     notes: parseString(row.notes),
   };

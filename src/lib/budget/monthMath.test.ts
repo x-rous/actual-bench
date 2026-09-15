@@ -1,12 +1,15 @@
 import {
   addMonths,
-  subtractMonths,
-  prevMonth,
-  nextMonth,
   compareMonths,
+  firstDayOfMonth,
   formatMonthLabel,
   isValidMonth,
+  lastDayOfMonth,
   monthElapsedFraction,
+  monthsInRange,
+  nextMonth,
+  prevMonth,
+  subtractMonths,
 } from "./monthMath";
 
 describe("monthElapsedFraction", () => {
@@ -124,5 +127,85 @@ describe("formatMonthLabel", () => {
 
   it("supports long year format (Apr 2026)", () => {
     expect(formatMonthLabel("2026-04", "long")).toBe("Apr 2026");
+  });
+});
+
+/*
+ * A month range becomes a date range for the transactions query, so the ends
+ * have to be exact: a February that stops on the 28th in a leap year silently
+ * drops a day of transactions, and the figure stops matching the one clicked.
+ */
+describe("month boundaries as dates", () => {
+  it("gives the first day", () => {
+    expect(firstDayOfMonth("2026-01")).toBe("2026-01-01");
+    expect(firstDayOfMonth("2026-11")).toBe("2026-11-01");
+  });
+
+  it("gives the last day for every month length", () => {
+    expect(lastDayOfMonth("2026-01")).toBe("2026-01-31");
+    expect(lastDayOfMonth("2026-04")).toBe("2026-04-30");
+    expect(lastDayOfMonth("2026-12")).toBe("2026-12-31");
+  });
+
+  it("handles February in common and leap years", () => {
+    expect(lastDayOfMonth("2026-02")).toBe("2026-02-28");
+    expect(lastDayOfMonth("2028-02")).toBe("2028-02-29");
+    // Century rule: 1900 was not a leap year, 2000 was.
+    expect(lastDayOfMonth("1900-02")).toBe("1900-02-28");
+    expect(lastDayOfMonth("2000-02")).toBe("2000-02-29");
+  });
+});
+
+describe("monthsInRange", () => {
+  it("includes both ends", () => {
+    expect(monthsInRange("2026-01", "2026-04")).toEqual([
+      "2026-01",
+      "2026-02",
+      "2026-03",
+      "2026-04",
+    ]);
+  });
+
+  it("returns the single month when the ends are the same", () => {
+    expect(monthsInRange("2026-07", "2026-07")).toEqual(["2026-07"]);
+  });
+
+  it("crosses a year boundary", () => {
+    expect(monthsInRange("2025-11", "2026-02")).toEqual([
+      "2025-11",
+      "2025-12",
+      "2026-01",
+      "2026-02",
+    ]);
+  });
+
+  it("returns nothing when the range runs backwards", () => {
+    // Asking for nothing, rather than silently swapping and hiding the mistake.
+    expect(monthsInRange("2026-04", "2026-01")).toEqual([]);
+  });
+});
+
+/*
+ * `monthsInRange` walks from one month to the next until it passes the end, and
+ * the comparison is on the strings. A malformed endpoint therefore starts a
+ * walk that can never finish: "x" sorts below "z", and every `YYYY-MM` the walk
+ * produces still sorts below "z". The cost of getting this wrong is a hung tab,
+ * not a wrong number, so it is guarded rather than trusted.
+ */
+describe("monthsInRange - malformed input", () => {
+  it("returns an empty list rather than looping forever", () => {
+    expect(monthsInRange("x", "z")).toEqual([]);
+    expect(monthsInRange("2026-01", "z")).toEqual([]);
+    expect(monthsInRange("", "2026-03")).toEqual([]);
+  });
+
+  it("rejects month numbers that are not months", () => {
+    expect(monthsInRange("2026-00", "2026-03")).toEqual([]);
+    expect(monthsInRange("2026-13", "2026-14")).toEqual([]);
+    expect(monthsInRange("2026-1", "2026-03")).toEqual([]);
+  });
+
+  it("still walks a well-formed range", () => {
+    expect(monthsInRange("2026-11", "2027-01")).toEqual(["2026-11", "2026-12", "2027-01"]);
   });
 });

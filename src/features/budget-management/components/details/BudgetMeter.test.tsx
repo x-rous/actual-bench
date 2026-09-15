@@ -23,12 +23,12 @@ describe("BudgetMeter", () => {
     expect(bar).toHaveAttribute("aria-valuemax", "60000");
     expect(bar).toHaveAttribute("aria-valuenow", "45000");
     // Caption carries the numbers and the remaining status (never colour-only).
-    expect(bar.getAttribute("aria-label")).toMatch(/150\.00 left/);
+    expect(bar.getAttribute("aria-label")).toMatch(/\b150 left/);
   });
 
   it("shows an 'over' remainder when the balance is negative", () => {
     render(<BudgetMeter model={model({ filled: 70_000, remaining: -10_000, remainingLabel: "over" })} />);
-    expect(screen.getByText(/100\.00 over/)).toBeInTheDocument();
+    expect(screen.getByText(/\b100 over/)).toBeInTheDocument();
   });
 
   it("embedded: hides the visible remaining text but keeps it in the accessible name", () => {
@@ -39,9 +39,9 @@ describe("BudgetMeter", () => {
       />,
     );
     // The redundant remaining text is not shown (the box's headline states it)…
-    expect(screen.queryByText(/100\.00 over/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/\b100 over/)).not.toBeInTheDocument();
     // …but it stays in the progressbar's accessible name for screen readers.
-    expect(screen.getByRole("progressbar").getAttribute("aria-label")).toMatch(/100\.00 over/);
+    expect(screen.getByRole("progressbar").getAttribute("aria-label")).toMatch(/\b100 over/);
     // The "spent of total" caption still renders (whole dollars on the bar).
     expect(screen.getByText(/Spent 700 of 600/)).toBeInTheDocument();
   });

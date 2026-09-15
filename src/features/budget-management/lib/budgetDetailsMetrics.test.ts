@@ -1002,7 +1002,9 @@ describe("buildTrackingDetailsMetrics", () => {
 
     expect(metrics.monthValues?.transactionDrilldown).toEqual({
       id: "expenses",
-      month: "2026-04",
+      // One month is a range whose ends match.
+      monthStart: "2026-04",
+      monthEnd: "2026-04",
       title: "Expenses",
       entity: "group",
       side: "expense",
@@ -1226,5 +1228,81 @@ describe("buildMonthSummaryMeter", () => {
       })
     ).meter;
     expect(meter).toMatchObject({ remaining: 0, remainingLabel: "on plan", variant: "income" });
+  });
+});
+
+/*
+ * A period figure is a total across months, so its drill-through has to span
+ * the same months: opening one month of an eight-month figure would show a
+ * slice of the number that was clicked, which is the mismatch the range exists
+ * to remove.
+ */
+describe("drilling into a selection's period figure", () => {
+  function twoMonthModel(selection: BudgetDetailsSelection): BudgetDetailsModel {
+    const base = modelForSelection({ selection });
+    const values = {
+      incomeBudgeted: 500_000,
+      incomeActuals: 520_000,
+      expenseBudgeted: -300_000,
+      expenseActuals: -280_000,
+    };
+    return {
+      ...base,
+      displayMonths: ["2026-03", "2026-04"],
+      months: [
+        { month: "2026-03", status: "past", state: monthState("2026-03", values) },
+        { month: "2026-04", status: "past", state: monthState("2026-04", values) },
+      ],
+    };
+  }
+
+  it("spans every closed month the figure sums", () => {
+    const metrics = buildTrackingDetailsMetrics(
+      twoMonthModel({ scope: "period", entity: "category", categoryId: "expense-cat" })
+    );
+
+    expect(metrics.selectionTransactionDrilldown).toMatchObject({
+      monthStart: "2026-03",
+      monthEnd: "2026-04",
+      entity: "category",
+      categoryIds: ["expense-cat"],
+    });
+  });
+
+  it("covers the group's categories when a group is selected", () => {
+    const metrics = buildTrackingDetailsMetrics(
+      twoMonthModel({ scope: "period", entity: "group", groupId: "expenses" })
+    );
+
+    expect(metrics.selectionTransactionDrilldown?.entity).toBe("group");
+    expect(metrics.selectionTransactionDrilldown?.monthStart).toBe("2026-03");
+    expect(metrics.selectionTransactionDrilldown?.monthEnd).toBe("2026-04");
+  });
+
+  it("offers nothing with no selection", () => {
+    const metrics = buildTrackingDetailsMetrics(
+      twoMonthModel({ scope: "period", entity: "none" })
+    );
+    expect(metrics.selectionTransactionDrilldown ?? null).toBeNull();
+  });
+
+  it("offers nothing when no month has closed", () => {
+    const base = modelForSelection({
+      selection: { scope: "period", entity: "category", categoryId: "expense-cat" },
+      month: "2027-01",
+      status: "future",
+    });
+    expect(buildTrackingDetailsMetrics(base).selectionTransactionDrilldown ?? null).toBeNull();
+  });
+
+  it("does the same on the Envelope side", () => {
+    const metrics = buildEnvelopeDetailsMetrics(
+      twoMonthModel({ scope: "period", entity: "category", categoryId: "expense-cat" })
+    );
+
+    expect(metrics.selectionTransactionDrilldown).toMatchObject({
+      monthStart: "2026-03",
+      monthEnd: "2026-04",
+    });
   });
 });

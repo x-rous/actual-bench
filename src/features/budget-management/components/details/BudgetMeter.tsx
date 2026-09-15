@@ -1,7 +1,7 @@
 "use client";
 
 import { computeSpendingBar, type SpendingTier } from "../../lib/spendingBar";
-import { formatMinor, formatSummary } from "../../lib/format";
+import { formatSummary } from "../../lib/format";
 import type { BudgetMeterModel, DetailsTone } from "../../lib/budgetDetailsMetrics";
 import { PrimaryMetric } from "./DetailsPrimitives";
 
@@ -45,9 +45,14 @@ export function BudgetMeter({
   const { total, filled, remaining, filledLabel, totalLabel, remainingLabel } = model;
   const bar = computeSpendingBar(total, filled);
 
-  // "0.00 under" is false — when there's no leftover, show just the status word.
-  const remainingText =
-    remaining === 0 ? remainingLabel : `${formatMinor(Math.abs(remaining))} ${remainingLabel}`;
+  // "0 under" is false — when there's no leftover, show just the status word.
+  // Rounded like every other figure in the panel, and rounding *to* zero counts
+  // as nothing left: "0 under" would be the same false statement by a longer
+  // route.
+  const remainingText = (() => {
+    const rounded = Math.round(Math.abs(remaining) / 100);
+    return rounded === 0 ? remainingLabel : `${rounded.toLocaleString("en-US")} ${remainingLabel}`;
+  })();
   // Whole-dollar figures on the bar itself — cents are noise here; the exact
   // remaining amount still carries its precision in the status text/aria.
   const captionLeft = `${filledLabel} ${formatSummary(filled)} of ${formatSummary(total)} ${totalLabel.toLowerCase()}`;

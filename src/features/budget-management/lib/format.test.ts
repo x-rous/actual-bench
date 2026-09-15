@@ -3,6 +3,8 @@ import {
   formatMinor,
   formatCurrency,
   formatSigned,
+  formatSignedWhole,
+  formatDeltaWhole,
   formatDelta,
   formatSummary,
   minorToDecimalString,
@@ -136,5 +138,46 @@ describe("formatGridMinor near zero", () => {
 
   it("keeps the dash for an actual zero", () => {
     expect(formatGridMinor(0, { showDecimals: false })).toBe("–");
+  });
+});
+
+/*
+ * The details panel reads as a column of figures rather than as one number, so
+ * it rounds: the cents cost width and make the column ragged for a precision
+ * nobody reconciles from a summary. The exact amount stays a click away in the
+ * transactions dialog.
+ */
+describe("whole-dollar formats", () => {
+  it("rounds to the nearest dollar and keeps the typographic minus", () => {
+    expect(formatSignedWhole(15049)).toBe("150");
+    expect(formatSignedWhole(15050)).toBe("151");
+    expect(formatSignedWhole(-15050)).toBe("−151");
+  });
+
+  it("groups thousands", () => {
+    expect(formatSignedWhole(123456789)).toBe("1,234,568");
+  });
+
+  /*
+   * An amount that rounds away is still an amount, so it prints as zero rather
+   * than a dash - but "−0" reads as a different number rather than as a small
+   * one, so it loses the sign.
+   */
+  it("drops the sign when a real amount rounds to zero", () => {
+    expect(formatSignedWhole(-40)).toBe("0");
+    expect(formatSignedWhole(40)).toBe("0");
+    expect(formatSignedWhole(0)).toBe("0");
+  });
+
+  it("keeps the explicit direction on a delta", () => {
+    expect(formatDeltaWhole(15049)).toBe("+150");
+    expect(formatDeltaWhole(-15050)).toBe("−151");
+    expect(formatDeltaWhole(0)).toBe("0");
+  });
+
+  it("drops the direction when a delta rounds away", () => {
+    // Neither a rise nor a fall once rounded, so it must not claim one.
+    expect(formatDeltaWhole(-40)).toBe("0");
+    expect(formatDeltaWhole(49)).toBe("0");
   });
 });

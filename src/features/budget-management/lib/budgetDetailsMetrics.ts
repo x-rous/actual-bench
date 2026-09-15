@@ -1,6 +1,7 @@
 import {
   formatMonthLabel,
   monthElapsedFraction,
+  monthsInRange,
   prevMonth,
 } from "@/lib/budget/monthMath";
 import type {
@@ -20,7 +21,10 @@ import {
   TRACKING_INCOME_AHEAD_RATIO,
   TRACKING_INCOME_ON_TARGET_RATIO,
 } from "./trackingSummary";
-import type { BudgetTransactionsDrilldown } from "./budgetTransactionBrowser";
+import {
+  buildRangeCategoriesDrilldown,
+  type BudgetTransactionsDrilldown,
+} from "./budgetTransactionBrowser";
 
 export type DetailsTone = "positive" | "negative" | "neutral";
 
@@ -311,6 +315,22 @@ type EnvelopeSelectedMonthValues = {
 };
 
 export type TrackingDetailsMetrics = {
+  /**
+   * Drill-through for the selection's period figures, spanning the months they
+   * sum. Null with no selection, or when no month in range carries state.
+   */
+  selectionTransactionDrilldown?: BudgetTransactionsDrilldown | null;
+  /**
+   * Drill targets for the whole-period actuals, one per side.
+   *
+   * Only the period summary carries these - it has no selected category, so
+   * there is no `selectionTransactionDrilldown` to stand in for them, and the
+   * "Expenses spent" / "Income received" figures had nothing to open.
+   */
+  periodActualsDrilldown?: {
+    income: BudgetTransactionsDrilldown | null;
+    expense: BudgetTransactionsDrilldown | null;
+  } | null;
   scope: DetailsScope;
   entity: DetailsEntity;
   kind: DetailsKind;
@@ -375,6 +395,22 @@ export type TrackingDetailsMetrics = {
 };
 
 export type EnvelopeDetailsMetrics = {
+  /**
+   * Drill-through for the selection's period figures, spanning the months they
+   * sum. Null with no selection, or when nothing has happened yet.
+   */
+  selectionTransactionDrilldown?: BudgetTransactionsDrilldown | null;
+  /**
+   * Drill targets for the whole-period actuals, one per side.
+   *
+   * Only the period summary carries these - it has no selected category, so
+   * there is no `selectionTransactionDrilldown` to stand in for them, and the
+   * "Expenses spent" / "Income received" figures had nothing to open.
+   */
+  periodActualsDrilldown?: {
+    income: BudgetTransactionsDrilldown | null;
+    expense: BudgetTransactionsDrilldown | null;
+  } | null;
   scope: DetailsScope;
   entity: DetailsEntity;
   kind: DetailsKind;
@@ -766,7 +802,70 @@ function budgetTransactionsDrilldown(
 
   return {
     id: target.id,
-    month: entry.month,
+    // One month: both ends are the same, which is the range form of what this
+    // has always meant.
+    monthStart: entry.month,
+    monthEnd: entry.month,
+    title: target.title,
+    entity: target.groupId ? "category" : "group",
+    side: target.isIncome ? "income" : "expense",
+    categoryIds,
+  };
+}
+
+/**
+ * A drill-through covering every month a period figure sums.
+ *
+ * The single-month builder above answers "this row, this month". A period
+ * figure is a total across months, so its drill-through has to span the same
+ * months or the dialog would show a slice of what was clicked.
+ *
+ * Returns null when no month in the range carries state, since there is nothing
+ * to drill into.
+ */
+function periodTransactionsDrilldown(
+  months: BudgetDetailsMonth[],
+  target: TargetInfo
+): BudgetTransactionsDrilldown | null {
+  const withState = months.filter((entry) => entry.state != null);
+  const first = withState[0];
+  const last = withState[withState.length - 1];
+  if (!first || !last) return null;
+
+  /*
+   * A hole in the months cannot be expressed.
+   *
+   * The drilldown says only where the range starts and ends, so an interior
+   * month with no loaded state would still have its transactions swept up by
+   * the date filter - and the dialog would total more than the figure it was
+   * opened from. Withholding the link beats opening it on the wrong number.
+   */
+  if (monthsInRange(first.month, last.month).length !== withState.length) return null;
+
+  /*
+   * Categories are gathered across every contributing month, not read off the
+   * last one.
+   *
+   * The metric behind this figure walks `target.categoryIds` - the union across
+   * the window - and skips whatever is hidden in the month it is summing. So a
+   * category retired before the period ends still contributed, and reading the
+   * final month's group membership dropped it from the drill-through while
+   * leaving it in the total.
+   */
+  const categoryIds = target.groupId
+    ? [target.id]
+    : target.categoryIds.filter((categoryId) =>
+        withState.some((entry) => {
+          const category = entry.state?.categoriesById[categoryId];
+          return !!category && !category.hidden;
+        })
+      );
+  if (categoryIds.length === 0) return null;
+
+  return {
+    id: target.id,
+    monthStart: first.month,
+    monthEnd: last.month,
     title: target.title,
     entity: target.groupId ? "category" : "group",
     side: target.isIncome ? "income" : "expense",
@@ -1490,6 +1589,9 @@ export function buildTrackingDetailsMetrics(
     let closedEndingBalance: number | null = null;
     let currentValues: SelectedMonthValues | null = null;
     let currentMonth: string | null = null;
+    // Months backing `selectionToDate`, so its actuals can drill into exactly
+    // the set they were summed from.
+    const closedEntries: BudgetDetailsMonth[] = [];
     const trend: BudgetTrendPoint[] = [];
 
     for (const entry of model.months) {
@@ -1498,6 +1600,7 @@ export function buildTrackingDetailsMetrics(
       if (values) {
         fullBudget += values.budgeted;
         if (isClosedMonthStatus(entry.status)) {
+          closedEntries.push(entry);
           budgetToDate += values.budgeted;
           actualToDate += values.actuals;
           closedEndingBalance = values.balance; // last closed month wins (snapshot)
@@ -1545,6 +1648,7 @@ export function buildTrackingDetailsMetrics(
       coverageLabel: model.coverage.label,
       futureOnly,
       isIncome: target.isIncome,
+      selectionTransactionDrilldown: periodTransactionsDrilldown(closedEntries, target),
       primary: futureOnly
         ? {
             label: "No actualized months in this view",
@@ -1624,6 +1728,9 @@ export function buildTrackingDetailsMetrics(
   let closedMonthCount = 0;
   let currentPeriodValues: TrackingMonthValues | null = null;
   let currentPeriodMonth: string | null = null;
+  // Months backing the to-date headlines, so their actuals drill into exactly
+  // the set they were summed from rather than the whole window.
+  const closedPeriodEntries: BudgetDetailsMonth[] = [];
   const trend: BudgetTrendPoint[] = [];
   const spendingVsBudgetedTrend: BudgetTrendPoint[] = [];
 
@@ -1634,6 +1741,7 @@ export function buildTrackingDetailsMetrics(
       fullIncomeBudget += values.incomeBudgeted;
       fullExpenseBudget += values.expenseBudgeted;
       if (isClosedMonthStatus(entry.status)) {
+        closedPeriodEntries.push(entry);
         resultIncomeActuals += values.resultIncomeActuals;
         resultExpenseActuals += values.resultExpenseActuals;
         visibleIncomeActualsToDate += values.incomeActuals;
@@ -1698,6 +1806,21 @@ export function buildTrackingDetailsMetrics(
     kind: "period",
     title: "PERIOD SUMMARY",
     subtitle: "Tracking",
+    /*
+     * Visible categories only.
+     *
+     * The headline above reads `state.summary.totalIncome` / `totalSpent`,
+     * which are hidden-inclusive, so matching it exactly would argue for
+     * pulling hidden categories in. Doing that was worse: a hidden category
+     * still carries its budget, so the dialog's Budgeted figure grew by
+     * everything the user had deliberately put out of sight and the variance
+     * read better than it was. Hidden means hidden on both sides of the
+     * comparison, and this is the set every other view of the budget shows.
+     */
+    periodActualsDrilldown: {
+      income: buildRangeCategoriesDrilldown(closedPeriodEntries, "income"),
+      expense: buildRangeCategoriesDrilldown(closedPeriodEntries, "expense"),
+    },
     rangeLabel: model.rangeLabel,
     coverageLabel: model.coverage.label,
     futureOnly: model.coverage.isFutureOnly,
@@ -1925,6 +2048,9 @@ export function buildEnvelopeDetailsMetrics(
     let currentMonth: string | null = null;
     let plannedValues: SelectedMonthValues | null = null;
     let plannedMonth: string | null = null;
+    // Months backing `selectionActivity`, so its spend can drill into exactly
+    // the set it was summed from.
+    const activeEntries: BudgetDetailsMonth[] = [];
 
     for (const entry of model.months) {
       const state = entry.state;
@@ -1932,6 +2058,7 @@ export function buildEnvelopeDetailsMetrics(
       if (values) {
         assignedBudgeted += values.budgeted;
         if (isActualLikeStatus(entry.status)) {
+          activeEntries.push(entry);
           spentToDate += values.actuals;
           currentValues = values;
           currentMonth = entry.month;
@@ -1966,6 +2093,7 @@ export function buildEnvelopeDetailsMetrics(
       coverage,
       futureOnly,
       isIncome: target.isIncome,
+      selectionTransactionDrilldown: periodTransactionsDrilldown(activeEntries, target),
       primary:
         latest && latestMonth
           ? {
@@ -2017,6 +2145,9 @@ export function buildEnvelopeDetailsMetrics(
   let assignedFullPeriod = 0;
   let spentToDate = 0;
   let incomeReceivedToDate = 0;
+  // Months backing the to-date headlines, so their actuals drill into exactly
+  // the set they were summed from rather than the whole window.
+  const actualEntries: BudgetDetailsMonth[] = [];
   const trend: BudgetTrendPoint[] = [];
 
   for (const entry of model.months) {
@@ -2024,6 +2155,7 @@ export function buildEnvelopeDetailsMetrics(
     if (state) {
       assignedFullPeriod += absAmount(state.summary.totalBudgeted);
       if (isActualLikeStatus(entry.status)) {
+        actualEntries.push(entry);
         assignedToDate += absAmount(state.summary.totalBudgeted);
         spentToDate += absAmount(state.summary.totalSpent);
         incomeReceivedToDate += state.summary.totalIncome;
@@ -2055,6 +2187,11 @@ export function buildEnvelopeDetailsMetrics(
     kind: "period",
     title: "PERIOD SUMMARY",
     subtitle: "Envelope",
+    // Visible categories only, for the reason given on the Tracking side.
+    periodActualsDrilldown: {
+      income: buildRangeCategoriesDrilldown(actualEntries, "income"),
+      expense: buildRangeCategoriesDrilldown(actualEntries, "expense"),
+    },
     rangeLabel: model.rangeLabel,
     coverageLabel: model.coverage.label,
     coverage,

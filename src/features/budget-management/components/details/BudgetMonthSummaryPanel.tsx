@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { formatMonthLabel, nextMonth } from "@/lib/budget/monthMath";
-import { formatSigned } from "../../lib/format";
+import { formatSignedWhole, roundsToZeroWhole } from "../../lib/format";
 import {
   buildDayProgress,
   buildMonthSummaryMeter,
@@ -169,7 +169,7 @@ export function BudgetMonthSummaryPanel({
 
       {transactionTarget && (
         <BudgetTransactionsDialog
-          key={`${transactionTarget.entity}:${transactionTarget.id}:${transactionTarget.month}`}
+          key={`${transactionTarget.entity}:${transactionTarget.id}:${transactionTarget.monthStart}:${transactionTarget.monthEnd}`}
           target={transactionTarget}
           browserOptions={transactionBrowserOptions}
           statesByMonth={statesByMonth}
@@ -237,13 +237,13 @@ function EnvelopeMonthBody({
           <MetricLine
             key={row.label}
             label={`${row.operator} ${row.label}`}
-            value={formatSigned(row.display)}
+            value={formatSignedWhole(row.display)}
           />
         ))}
         <div className="border-t border-border/50 pt-1.5">
           <MetricLine
             label={`= ${view.headline.label}`}
-            value={formatSigned(view.toBudget)}
+            value={formatSignedWhole(view.toBudget)}
             tone={view.headline.tone}
           />
         </div>
@@ -261,29 +261,29 @@ function EnvelopeMonthBody({
             />
           )}
           <DetailsSection title="Activity">
-            <MetricLine label="Assigned" value={formatSigned(view.budgeted)} />
+            <MetricLine label="Assigned" value={formatSignedWhole(view.budgeted)} />
             <MetricLine
               label="Spent"
-              value={formatSigned(view.signedSpent)}
+              value={formatSignedWhole(view.signedSpent)}
               onValueClick={onExpenseClick}
               valueAriaLabel={`View expense transactions for ${monthLabel}`}
             />
             <MetricLine
               label="Income received"
-              value={formatSigned(view.incomeReceived)}
+              value={formatSignedWhole(view.incomeReceived)}
               onValueClick={onIncomeClick}
               valueAriaLabel={`View income transactions for ${monthLabel}`}
             />
             <MetricLine
               label="Balance"
-              value={formatSigned(view.balance)}
+              value={formatSignedWhole(view.balance)}
               tone={toneFromValue(view.balance)}
               tooltip="Money still assigned to envelopes (carryover-inclusive) - not a plan variance."
             />
             {view.thisMonthOverspent != null && (
               <MetricLine
                 label={phase === "current" ? "Overspent this month so far" : "Overspent this month"}
-                value={formatSigned(view.thisMonthOverspent)}
+                value={formatSignedWhole(view.thisMonthOverspent)}
                 tone="negative"
                 tooltip="Overspending not carried over - it reduces next month's available funds as “Overspent last month”."
               />
@@ -302,6 +302,12 @@ function monthVarianceText(
   provisional: boolean
 ): string {
   const soFar = provisional ? " so far" : "";
+  // Under half a unit prints as "0", and "0 over budget" is a direction the
+  // number no longer shows. At that size the honest statement is that the
+  // figure landed on plan.
+  if (roundsToZeroWhole(minor)) {
+    return `${side === "expense" ? "On budget" : "On target"}${soFar}`;
+  }
   const favourable = minor >= 0;
   const word =
     side === "expense"
@@ -311,11 +317,14 @@ function monthVarianceText(
       : favourable
         ? "above budget"
         : "below budget";
-  return `${formatSigned(Math.abs(minor))} ${word}${soFar}`;
+  return `${formatSignedWhole(Math.abs(minor))} ${word}${soFar}`;
 }
 
 function varianceTone(minor: number): "positive" | "negative" | "neutral" {
-  return minor > 0 ? "positive" : minor < 0 ? "negative" : "neutral";
+  // Neutral for anything that rounds away, so the colour agrees with the "0"
+  // on screen rather than with the sign behind it.
+  if (roundsToZeroWhole(minor)) return "neutral";
+  return minor > 0 ? "positive" : "negative";
 }
 
 function TrackingMonthBody({
@@ -371,7 +380,7 @@ function TrackingMonthBody({
       {view.supporting && (
         <MetricLine
           label={view.supporting.label}
-          value={formatSigned(view.supporting.value)}
+          value={formatSignedWhole(view.supporting.value)}
           tone={view.supporting.tone}
         />
       )}
@@ -389,12 +398,12 @@ function TrackingMonthBody({
       <DetailsSection title="Income">
         <MetricLine
           label={isFuture ? "Planned income" : "Budgeted income"}
-          value={formatSigned(view.income.budgeted)}
+          value={formatSignedWhole(view.income.budgeted)}
         />
         {view.income.actual != null && (
           <MetricLine
             label={`Received${toDate}`}
-            value={formatSigned(view.income.actual)}
+            value={formatSignedWhole(view.income.actual)}
             onValueClick={onIncomeClick}
             valueAriaLabel={`View income transactions for ${monthLabel}`}
           />
@@ -416,12 +425,12 @@ function TrackingMonthBody({
           // Signed negative to match Spent below and every other view — expenses
           // read negative across the panel (the allocation is a positive
           // magnitude, negated for display only).
-          value={formatSigned(-view.expenses.budgeted)}
+          value={formatSignedWhole(-view.expenses.budgeted)}
         />
         {view.expenses.actual != null && (
           <MetricLine
             label={`Spent${toDate}`}
-            value={formatSigned(view.expenses.actual)}
+            value={formatSignedWhole(view.expenses.actual)}
             onValueClick={onExpenseClick}
             valueAriaLabel={`View expense transactions for ${monthLabel}`}
           />
@@ -439,7 +448,7 @@ function TrackingMonthBody({
           <div className="border-t border-border/50 pt-1.5">
             <MetricLine
               label="Balance"
-              value={formatSigned(view.balance.value)}
+              value={formatSignedWhole(view.balance.value)}
               tone={toneFromValue(view.balance.value)}
               tooltip="Spreadsheet leftover - includes prior carryover, so it can differ from this month's budget variance."
             />

@@ -60,7 +60,18 @@ export type ComboboxOption = { id: string; name: string; isGroupHeader?: true; h
  */
 export function filterGroupedOptions(
   options: ComboboxOption[],
-  search: string
+  search: string,
+  /**
+   * Whether a group is itself selectable.
+   *
+   * It changes what a match on a group name should return. Where a group is
+   * only a heading, matching it has to bring its children along or the search
+   * yields a label with nothing under it to pick. Where the group *is* a
+   * choice, the children are redundant: selecting the group already stands for
+   * all of them, and listing eleven categories under a group the user just
+   * searched for buries the row they were looking for.
+   */
+  groupsAreSelectable = false
 ): ComboboxOption[] {
   const term = search.trim().toLowerCase();
   if (!term) return options;
@@ -73,9 +84,15 @@ export function filterGroupedOptions(
     if (opt.isGroupHeader) {
       groupMatches = opt.name.toLowerCase().includes(term);
       pendingGroup = opt;
+      // A selectable group that matched is a result in its own right, so it is
+      // emitted now rather than waiting on a child to carry it in.
+      if (groupMatches && groupsAreSelectable) {
+        result.push(opt);
+        pendingGroup = null;
+      }
       continue;
     }
-    if (groupMatches) {
+    if (groupMatches && !groupsAreSelectable) {
       // Group name matched — include all children
       if (pendingGroup) { result.push(pendingGroup); pendingGroup = null; }
       result.push(opt);
@@ -221,7 +238,7 @@ export function SearchableCombobox({
               className="h-5 flex-1 bg-transparent text-xs text-foreground placeholder:text-muted-foreground focus:outline-none"
             />
           </div>
-          <ul ref={listRef} id={listId} role="listbox" className="max-h-48 overflow-y-auto py-1">
+          <ul ref={listRef} id={listId} role="listbox" className="max-h-72 overflow-y-auto py-1">
             <li>
               <button
                 type="button"
@@ -299,23 +316,86 @@ export function MultiSearchableCombobox({
   onChange,
   placeholder = "- select -",
   triggerClassName,
+  selectableGroups = false,
+  ariaLabel,
+  summary,
+  coveredIds,
+  exclusiveIds,
+  onClear,
 }: {
   options: ComboboxOption[];
   values: string[];
   onChange: (v: string[]) => void;
   placeholder?: string;
   triggerClassName?: string;
+  /**
+   * Makes the group headings choices in their own right, so picking one stands
+   * for everything beneath it.
+   *
+   * Off by default, which is what a rule wants: there a group is a heading that
+   * organises the categories you may pick, and clicking it should do nothing.
+   * A report asking "how much went to Food and Transport" wants the opposite -
+   * the group *is* the unit, and ticking its eleven categories one at a time to
+   * say so would be the interface getting in the way. The caller decides what a
+   * selected group expands to; this only makes the row selectable.
+   */
+  selectableGroups?: boolean;
+  /**
+   * Names the control where no visible `<label>` can point at it - the trigger
+   * is a button, so `htmlFor` has nothing to bind to.
+   */
+  ariaLabel?: string;
+  /**
+   * Replaces the chips in the trigger with a single line of text.
+   *
+   * Chips do two jobs - say what is selected, and let you remove it - and only
+   * the second needs a target per item, so bundling them makes the control grow
+   * a row per selection. Hand it a summary and the trigger stops growing; the
+   * removing moves to the panel below, which scrolls.
+   */
+  summary?: React.ReactNode;
+  /**
+   * Ids that are already included by something else selected - a category whose
+   * whole group is picked, say.
+   *
+   * They render ticked but inert. The alternative was leaving them as they
+   * were: an empty box on a row whose transactions were fully counted, which
+   * clicking neither added to nor removed from. A box that cannot be clicked is
+   * a smaller surprise than one that lies about what it means.
+   */
+  coveredIds?: ReadonlySet<string>;
+  /**
+   * Ids that stand for everything and so cannot be combined with anything.
+   *
+   * They render without a checkbox, because a checkbox invites exactly the
+   * combination they rule out - "all of them, plus these two" is not a
+   * selection anyone can mean. Clicking one replaces the selection and closes
+   * the list: it is an answer, not a toggle.
+   */
+  exclusiveIds?: ReadonlySet<string>;
+  /**
+   * Empties the selection from the trigger. Only rendered when something is
+   * selected - without the chips there is otherwise nothing left to clear from.
+   */
+  onClear?: () => void;
 }) {
   const { open, openDropdown, closeDropdown, search, setSearch, containerRef, searchRef } =
     useComboboxState();
 
-  const filtered = filterGroupedOptions(options, search);
+  const filtered = filterGroupedOptions(options, search, selectableGroups);
 
-  const selectedOptions = options.filter((o) => !o.isGroupHeader && values.includes(o.id));
+  const selectedOptions = options.filter(
+    (o) => (selectableGroups || !o.isGroupHeader) && values.includes(o.id)
+  );
 
   // Same arrow-key walk as the single-select, minus the "- none -" row: with
   // several selections, clearing is what the chips' own buttons are for.
-  const navigable = filtered.filter((o) => !o.isGroupHeader).map((o) => o.id);
+  const isCovered = (id: string) => coveredIds?.has(id) ?? false;
+  const isExclusive = (id: string) => exclusiveIds?.has(id) ?? false;
+  /** Rows the list draws - headings included only where they can be picked. */
+  const visible = filtered.filter((o) => selectableGroups || !o.isGroupHeader);
+  /** Of those, the ones the arrow keys can land on. */
+  const navigable = visible.filter((o) => !isCovered(o.id)).map((o) => o.id);
   const indexOf = new Map(navigable.map((id, index) => [id, index]));
 
   const [activeIndex, setActiveIndex] = useState(0);
@@ -354,7 +434,16 @@ export function MultiSearchableCombobox({
   }
 
   function toggle(id: string) {
-    onChange(values.includes(id) ? values.filter((v) => v !== id) : [...values, id]);
+    if (isCovered(id)) return;
+    if (isExclusive(id)) {
+      onChange([id]);
+      closeDropdown();
+      return;
+    }
+    // Anything else being picked ends an exclusive selection, since the two
+    // cannot both be true.
+    const kept = values.filter((v) => !isExclusive(v));
+    onChange(kept.includes(id) ? kept.filter((v) => v !== id) : [...kept, id]);
   }
 
   function remove(id: string, e: React.MouseEvent) {
@@ -367,6 +456,7 @@ export function MultiSearchableCombobox({
       <div
         role="button"
         tabIndex={0}
+        aria-label={ariaLabel}
         onClick={() => (open ? closeDropdown() : openDropdown())}
         onKeyDown={(e) => e.key === "Enter" && (open ? closeDropdown() : openDropdown())}
         className={cn(
@@ -375,7 +465,9 @@ export function MultiSearchableCombobox({
         )}
       >
         {selectedOptions.length === 0 ? (
-          <span className="text-muted-foreground">{placeholder}</span>
+          <span className="truncate text-muted-foreground">{placeholder}</span>
+        ) : summary !== undefined ? (
+          <span className="truncate font-medium text-foreground">{summary}</span>
         ) : (
           selectedOptions.map((o) => (
             <span
@@ -393,7 +485,26 @@ export function MultiSearchableCombobox({
             </span>
           ))
         )}
-        <ChevronsUpDown className="ml-auto h-3 w-3 shrink-0 text-muted-foreground" />
+        <span className="ml-auto flex shrink-0 items-center gap-1">
+          {onClear && selectedOptions.length > 0 && (
+            <button
+              type="button"
+              aria-label="Clear selection"
+              // The trigger is a div with its own Enter handler, so without
+              // this the keyboard path cleared the selection and toggled the
+              // dropdown in the same press.
+              onKeyDown={(e) => e.stopPropagation()}
+              onClick={(e) => {
+                e.stopPropagation();
+                onClear();
+              }}
+              className="rounded text-muted-foreground hover:text-foreground"
+            >
+              <X className="h-3 w-3" />
+            </button>
+          )}
+          <ChevronsUpDown className="h-3 w-3 text-muted-foreground" />
+        </span>
       </div>
 
       {open && (
@@ -424,13 +535,19 @@ export function MultiSearchableCombobox({
             id={listId}
             role="listbox"
             aria-multiselectable
-            className="max-h-48 overflow-y-auto py-1"
+            className="max-h-72 overflow-y-auto py-1"
           >
-            {filtered.filter((o) => !o.isGroupHeader).length === 0 ? (
+            {/*
+              Counted from what is drawn, not from what the arrow keys can
+              reach. Covered rows are excluded from the walk, so a search
+              matching only those reported "No results" while the rows - and
+              their "Included by its group" explanation - were right there.
+            */}
+            {visible.length === 0 ? (
               <li className="px-3 py-2 text-xs text-muted-foreground italic">No results</li>
             ) : (
               filtered.map((o) =>
-                o.isGroupHeader ? (
+                o.isGroupHeader && !selectableGroups ? (
                   <li
                     key={`group-${o.id}`}
                     className={cn(
@@ -441,27 +558,73 @@ export function MultiSearchableCombobox({
                     {o.name}
                   </li>
                 ) : (
-                  <li key={o.id}>
+                  <li key={`${o.isGroupHeader ? "group" : "item"}-${o.id}`}>
                     <button
                       type="button"
                       data-index={indexOf.get(o.id)}
-                      id={optionId(indexOf.get(o.id) ?? 0)}
+                      {...(indexOf.has(o.id)
+                        ? { id: optionId(indexOf.get(o.id) as number) }
+                        : // A covered row is not in the keyboard walk, so it has
+                          // no index - and falling back to zero gave it the same
+                          // DOM id as the first selectable row, which
+                          // `aria-activedescendant` could then resolve to.
+                          {})}
                       role="option"
-                      aria-selected={values.includes(o.id)}
+                      disabled={isCovered(o.id)}
+                      aria-selected={values.includes(o.id) || isCovered(o.id)}
+                      // Says *why* it cannot be clicked. A row that is ticked
+                      // and inert with no explanation reads as broken.
+                      title={isCovered(o.id) ? "Included by its group" : undefined}
                       onClick={() => toggle(o.id)}
                       onMouseEnter={() => setActiveIndex(indexOf.get(o.id) ?? 0)}
                       className={cn(
-                        "flex w-full items-center gap-2 pl-4 pr-2 py-1.5 text-xs hover:bg-accent hover:text-accent-foreground",
-                        o.hidden ? "text-foreground/60" : "text-foreground",
-                        activeIndex === indexOf.get(o.id) && "bg-accent text-accent-foreground"
+                        "flex w-full items-center gap-2 pr-2 py-1.5 text-xs",
+                        isCovered(o.id)
+                          ? "cursor-default text-muted-foreground"
+                          : "hover:bg-accent hover:text-accent-foreground",
+                        // The indent is the whole point of the grouping: a
+                        // heading sits at the margin and its children step in
+                        // from it, so the shape of the list says what belongs
+                        // to what without any lines being drawn.
+                        o.isGroupHeader && !isExclusive(o.id)
+                          ? "pl-2 font-semibold uppercase tracking-wide text-[10px]"
+                          : isExclusive(o.id)
+                            ? "pl-2 font-medium"
+                            : "pl-6",
+                        isExclusive(o.id) && values.includes(o.id) && "text-primary",
+                        o.hidden && !isCovered(o.id) && "text-foreground/60",
+                        !o.hidden && !isCovered(o.id) && "text-foreground",
+                        !isCovered(o.id) &&
+                          activeIndex === indexOf.get(o.id) &&
+                          "bg-accent text-accent-foreground"
                       )}
                     >
-                      <Check
-                        className={cn(
-                          "h-3 w-3 shrink-0",
-                          values.includes(o.id) ? "opacity-100" : "opacity-0"
-                        )}
-                      />
+                      {/*
+                        A box rather than a bare tick. The tick was invisible
+                        until selected, so a menu nobody had clicked yet looked
+                        single-select - the one thing about it worth knowing in
+                        advance.
+                      */}
+                      {isExclusive(o.id) ? (
+                        // The slot is held so the labels still line up, but it
+                        // stays empty: there is nothing here to tick.
+                        <span className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                      ) : (
+                        <span
+                          className={cn(
+                            "flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-[3px] border",
+                            isCovered(o.id)
+                              ? "border-muted-foreground/40 bg-muted-foreground/40 text-background"
+                              : values.includes(o.id)
+                                ? "border-primary bg-primary text-primary-foreground"
+                                : "border-input"
+                          )}
+                        >
+                          {(values.includes(o.id) || isCovered(o.id)) && (
+                            <Check className="h-2.5 w-2.5" />
+                          )}
+                        </span>
+                      )}
                       <span className="truncate">{o.name}</span>
                     </button>
                   </li>

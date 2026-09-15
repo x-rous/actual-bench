@@ -100,6 +100,44 @@ export function formatDelta(minor: number): string {
 }
 
 /**
+ * Whole dollars, keeping the sign convention of `formatSigned`.
+ *
+ * The details panel reads as a column of figures rather than as one number, and
+ * at that zoom the cents are noise: they cost width, they make the column ragged,
+ * and nobody is reconciling to the penny from a summary. The exact amount is
+ * still a click away in the transactions dialog.
+ *
+ * Rounding can land a real amount on zero - forty cents becomes "0" - which is
+ * accurate about the dollar and must not carry a sign, since "−0" reads as a
+ * different number rather than as a small one.
+ *
+ *   formatSignedWhole(15049)  // → "150"
+ *   formatSignedWhole(-15050) // → "−151"
+ *   formatSignedWhole(-40)    // → "0"
+ */
+export function formatSignedWhole(minor: number): string {
+  const rounded = Math.round(Math.abs(minor) / 100);
+  const sign = minor < 0 && rounded !== 0 ? "−" : "";
+  return `${sign}${rounded.toLocaleString("en-US")}`;
+}
+
+/**
+ * Whole dollars with an explicit `+` or `−`, the `formatDelta` convention.
+ *
+ * Same rounding-to-zero rule: a delta that rounds away is neither a rise nor a
+ * fall, so it loses its sign rather than claiming a direction it no longer has.
+ *
+ *   formatDeltaWhole(15049)  // → "+150"
+ *   formatDeltaWhole(-15050) // → "−151"
+ *   formatDeltaWhole(-40)    // → "0"
+ */
+export function formatDeltaWhole(minor: number): string {
+  const rounded = Math.round(Math.abs(minor) / 100);
+  const sign = rounded === 0 ? "" : minor > 0 ? "+" : minor < 0 ? "−" : "";
+  return `${sign}${rounded.toLocaleString("en-US")}`;
+}
+
+/**
  * Whole-dollar format — rounds to the nearest dollar and groups by locale.
  * Used in summary rows where two-decimal precision is visual noise. Matches
  * `fmtSummary` in `BudgetGrid`.
@@ -137,4 +175,17 @@ export function decimalStringToMinor(decimal: string): number {
   const parsed = Number(normalized);
   if (isNaN(parsed)) return NaN;
   return Math.round(parsed * 100);
+}
+
+/**
+ * Does this amount disappear once rounded to whole units?
+ *
+ * The whole-unit formatters round, so anything under half a unit prints as
+ * "0" - but its sign survives in whatever derived the wording and the colour
+ * beside it, which is how "0 over budget" ended up in red. Anything deriving a
+ * direction from a rounded figure has to ask this first, so the words, the
+ * colour and the number agree on what they are describing.
+ */
+export function roundsToZeroWhole(minor: number): boolean {
+  return Math.round(Math.abs(minor) / 100) === 0;
 }
