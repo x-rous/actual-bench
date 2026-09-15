@@ -166,7 +166,15 @@ function MonthRangeCal({
     const [endMonth, setEndMonth] = React.useState<number>(selectedMonthRange?.end?.getMonth() ?? new Date().getMonth());
     const [rangePending, setRangePending] = React.useState<boolean>(false);
     const [endLocked, setEndLocked] = React.useState<boolean>(true);
-    const [menuYear, setMenuYear] = React.useState<number>(startYear);
+    /*
+     * local: open on [previous year, selected year] rather than [selected year,
+     * next year]. The two columns are `menuYear` and `menuYear + 1`, and
+     * anchoring `menuYear` to the selection put the selected months in the left
+     * column with a year of empty future months beside them. Budgets are read
+     * backwards - "how does this compare with last year" - so the year that
+     * earns the second column is the one behind, not the one ahead.
+     */
+    const [menuYear, setMenuYear] = React.useState<number>(startYear - 1);
 
     if (minDate && maxDate && minDate > maxDate) minDate = maxDate;
 
