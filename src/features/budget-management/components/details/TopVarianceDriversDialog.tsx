@@ -10,6 +10,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
+import { downloadCsv } from "@/lib/csv";
 import { formatMinor } from "../../lib/format";
 import {
   buildVarianceTree,
@@ -583,7 +584,6 @@ function buildView(
 // ── CSV export ───────────────────────────────────────────────────────────────
 
 function exportCsv(tree: VarianceTree, side: VarianceSide) {
-  if (typeof document === "undefined") return;
   const rows = [["Group", "Category", "Budgeted", "Actual", "Variance", "% of budget"]];
   for (const g of tree.groups) {
     rows.push([g.name, "", minor(g.budgetedMinor), minor(g.actualMinor), minor(g.varianceMinor), pct(g.pctOfBudget)]);
@@ -591,23 +591,8 @@ function exportCsv(tree: VarianceTree, side: VarianceSide) {
       rows.push([g.name, c.name, minor(c.budgetedMinor), minor(c.actualMinor), minor(c.varianceMinor), pct(c.pctOfBudget)]);
     }
   }
-  const csv = rows.map((r) => r.map(csvCell).join(",")).join("\r\n");
-  const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `variance-drivers-${side}.csv`;
-  a.click();
-  URL.revokeObjectURL(url);
+  downloadCsv(`variance-drivers-${side}.csv`, rows);
 }
 
 const minor = (v: number) => (v / 100).toFixed(2);
 const pct = (v: number | null) => (v == null ? "" : (v * 100).toFixed(1));
-const csvCell = (s: string) => {
-  // Neutralize spreadsheet formula injection — category/group names are user
-  // data, and a leading =, +, -, @, tab, or CR can execute as a formula in
-  // Excel/Sheets. Prefix such a cell with an apostrophe, but leave genuine
-  // numbers (e.g. "-300.00") untouched so the numeric columns still parse.
-  const isNumber = /^-?\d+(\.\d+)?$/.test(s);
-  const guarded = !isNumber && /^[=+\-@\t\r]/.test(s) ? `'${s}` : s;
-  return /[",\r\n]/.test(guarded) ? `"${guarded.replace(/"/g, '""')}"` : guarded;
-};
