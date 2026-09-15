@@ -58,6 +58,7 @@ import {
 } from "./BudgetTransactionsPanels";
 import { useBudgetTransactions } from "../../hooks/useBudgetTransactions";
 import {
+  buildGroupBreakdown,
   buildSpendBreakdown,
   buildTimeBreakdown,
   buildTransactionTotals,
@@ -838,7 +839,7 @@ export function BudgetTransactionsDialog({ target, browserOptions, statesByMonth
    * the figure.
    */
   const categoryFacts = useMemo(() => {
-    const groupByCategoryName = new Map<string, string>();
+    const groupByCategoryId = new Map<string, string>();
     const budgetedByCategory = new Map<string, number>();
     const budgetedByGroup = new Map<string, number>();
     const groupNames = new Set<string>();
@@ -861,8 +862,8 @@ export function BudgetTransactionsDialog({ target, browserOptions, statesByMonth
 
           // The group map and the span describe the shape of the selection, so
           // they count every category in it regardless of side.
-          if (!groupByCategoryName.has(category.name)) {
-            groupByCategoryName.set(category.name, category.groupName);
+          if (!groupByCategoryId.has(category.id)) {
+            groupByCategoryId.set(category.id, category.groupName);
           }
           groupNames.add(category.groupName);
 
@@ -885,7 +886,7 @@ export function BudgetTransactionsDialog({ target, browserOptions, statesByMonth
     }
 
     return {
-      groupByCategoryName,
+      groupByCategoryId,
       budgetedByCategory,
       budgetedByGroup,
       groupSpan: groupNames.size,
@@ -893,7 +894,7 @@ export function BudgetTransactionsDialog({ target, browserOptions, statesByMonth
     };
   }, [effectiveTarget, side, rangeMonths, activeMonths, statesByMonth]);
 
-  const groupByCategoryName = categoryFacts.groupByCategoryName;
+  const groupByCategoryId = categoryFacts.groupByCategoryId;
 
   /*
    * How many groups the categories on screen actually span.
@@ -952,9 +953,9 @@ export function BudgetTransactionsDialog({ target, browserOptions, statesByMonth
     // would otherwise be a linear scan per row.
     const selected = new Set(spendFilters);
     return rows.filter((row) =>
-      selected.has(rowBucketLabel(row, breakdownDimension, groupByCategoryName))
+      selected.has(rowBucketLabel(row, breakdownDimension, groupByCategoryId))
     );
-  }, [rows, spendFilters, breakdownDimension, groupByCategoryName]);
+  }, [rows, spendFilters, breakdownDimension, groupByCategoryId]);
 
   // Rows filtered by week selection only — drives SpendBreakdown (cross-filter)
   const weekFilteredRows = useMemo(() => {
@@ -1015,7 +1016,7 @@ export function BudgetTransactionsDialog({ target, browserOptions, statesByMonth
     return rows.filter((row) => {
       if (
         buckets &&
-        !buckets.has(rowBucketLabel(row, breakdownDimension, groupByCategoryName))
+        !buckets.has(rowBucketLabel(row, breakdownDimension, groupByCategoryId))
       ) {
         return false;
       }
@@ -1026,7 +1027,7 @@ export function BudgetTransactionsDialog({ target, browserOptions, statesByMonth
     spendFilters,
     isGroup,
     breakdownDimension,
-    groupByCategoryName,
+    groupByCategoryId,
     activeMonths,
     rangeMonths,
   ]);
@@ -1037,32 +1038,10 @@ export function BudgetTransactionsDialog({ target, browserOptions, statesByMonth
     [kpiRows, side]
   );
 
-  /*
-   * The group view is rolled up from the category view rather than bucketed
-   * from the rows again: the categories are already summed and counted, and a
-   * group is exactly the sum of its own. Shares are recomputed against the
-   * group totals so the column still adds to 100%.
-   */
-  const spendByGroup = useMemo(() => {
-    const totals = new Map<string, { amount: number; count: number }>();
-    for (const bucket of spendBreakdown.spendByCategory) {
-      const label = groupByCategoryName.get(bucket.label) ?? "Ungrouped";
-      const current = totals.get(label) ?? { amount: 0, count: 0 };
-      current.amount += bucket.amount;
-      current.count += bucket.count;
-      totals.set(label, current);
-    }
-    const overall = [...totals.values()].reduce((sum, entry) => sum + entry.amount, 0);
-    return [...totals.entries()]
-      .map(([label, entry]) => ({
-        id: label,
-        label,
-        amount: entry.amount,
-        count: entry.count,
-        percentage: overall > 0 ? entry.amount / overall : 0,
-      }))
-      .sort((a, b) => b.amount - a.amount);
-  }, [spendBreakdown.spendByCategory, groupByCategoryName]);
+  const spendByGroup = useMemo(
+    () => buildGroupBreakdown(weekFilteredRows, side, groupByCategoryId),
+    [weekFilteredRows, side, groupByCategoryId]
+  );
 
   const primaryBreakdown =
     breakdownDimension === "payee"

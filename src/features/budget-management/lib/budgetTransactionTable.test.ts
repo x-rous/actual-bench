@@ -13,7 +13,7 @@ const rows: BudgetTransactionRow[] = [
     date: "2026-04-15",
     amount: -1234,
     payeeName: "Corner Market",
-    categoryName: "Groceries",
+    categoryId: "groceries", categoryName: "Groceries",
     notes: "weekly shop",
   },
   {
@@ -21,7 +21,7 @@ const rows: BudgetTransactionRow[] = [
     date: "2026-04-10",
     amount: -4500,
     payeeName: "Metro",
-    categoryName: "Transport",
+    categoryId: "transport", categoryName: "Transport",
     notes: null,
   },
   {
@@ -29,7 +29,7 @@ const rows: BudgetTransactionRow[] = [
     date: "2026-04-18",
     amount: 2000,
     payeeName: null,
-    categoryName: "Groceries",
+    categoryId: "groceries", categoryName: "Groceries",
     notes: "refund",
   },
 ];

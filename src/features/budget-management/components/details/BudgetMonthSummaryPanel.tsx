@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { formatMonthLabel, nextMonth } from "@/lib/budget/monthMath";
-import { formatSignedWhole } from "../../lib/format";
+import { formatSignedWhole, roundsToZeroWhole } from "../../lib/format";
 import {
   buildDayProgress,
   buildMonthSummaryMeter,
@@ -302,6 +302,12 @@ function monthVarianceText(
   provisional: boolean
 ): string {
   const soFar = provisional ? " so far" : "";
+  // Under half a unit prints as "0", and "0 over budget" is a direction the
+  // number no longer shows. At that size the honest statement is that the
+  // figure landed on plan.
+  if (roundsToZeroWhole(minor)) {
+    return `${side === "expense" ? "On budget" : "On target"}${soFar}`;
+  }
   const favourable = minor >= 0;
   const word =
     side === "expense"
@@ -315,7 +321,10 @@ function monthVarianceText(
 }
 
 function varianceTone(minor: number): "positive" | "negative" | "neutral" {
-  return minor > 0 ? "positive" : minor < 0 ? "negative" : "neutral";
+  // Neutral for anything that rounds away, so the colour agrees with the "0"
+  // on screen rather than with the sign behind it.
+  if (roundsToZeroWhole(minor)) return "neutral";
+  return minor > 0 ? "positive" : "negative";
 }
 
 function TrackingMonthBody({

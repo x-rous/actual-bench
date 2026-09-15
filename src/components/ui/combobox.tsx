@@ -392,9 +392,10 @@ export function MultiSearchableCombobox({
   // several selections, clearing is what the chips' own buttons are for.
   const isCovered = (id: string) => coveredIds?.has(id) ?? false;
   const isExclusive = (id: string) => exclusiveIds?.has(id) ?? false;
-  const navigable = filtered
-    .filter((o) => (selectableGroups || !o.isGroupHeader) && !isCovered(o.id))
-    .map((o) => o.id);
+  /** Rows the list draws - headings included only where they can be picked. */
+  const visible = filtered.filter((o) => selectableGroups || !o.isGroupHeader);
+  /** Of those, the ones the arrow keys can land on. */
+  const navigable = visible.filter((o) => !isCovered(o.id)).map((o) => o.id);
   const indexOf = new Map(navigable.map((id, index) => [id, index]));
 
   const [activeIndex, setActiveIndex] = useState(0);
@@ -489,6 +490,10 @@ export function MultiSearchableCombobox({
             <button
               type="button"
               aria-label="Clear selection"
+              // The trigger is a div with its own Enter handler, so without
+              // this the keyboard path cleared the selection and toggled the
+              // dropdown in the same press.
+              onKeyDown={(e) => e.stopPropagation()}
               onClick={(e) => {
                 e.stopPropagation();
                 onClear();
@@ -532,7 +537,13 @@ export function MultiSearchableCombobox({
             aria-multiselectable
             className="max-h-72 overflow-y-auto py-1"
           >
-            {navigable.length === 0 ? (
+            {/*
+              Counted from what is drawn, not from what the arrow keys can
+              reach. Covered rows are excluded from the walk, so a search
+              matching only those reported "No results" while the rows - and
+              their "Included by its group" explanation - were right there.
+            */}
+            {visible.length === 0 ? (
               <li className="px-3 py-2 text-xs text-muted-foreground italic">No results</li>
             ) : (
               filtered.map((o) =>

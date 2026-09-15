@@ -117,7 +117,26 @@ export function lastDayOfMonth(month: string): string {
  * the wrong way round is asking for nothing, and silently swapping them would
  * hide the mistake.
  */
+/** `YYYY-MM`, the only shape the month arithmetic here can reason about. */
+const MONTH_PATTERN = /^\d{4}-(0[1-9]|1[0-2])$/;
+
+export function isMonthId(month: string): boolean {
+  return MONTH_PATTERN.test(month);
+}
+
 export function monthsInRange(start: string, end: string): string[] {
+  /*
+   * Both ends have to be real months, or the walk below never terminates.
+   *
+   * `compareMonths` compares the strings, so "x" sorts below "z" and the loop
+   * starts; `nextMonth("x")` goes through `parseMonth`, which falls back to the
+   * current year and January rather than failing, and every month it then
+   * produces still sorts below "z". The condition is never false and the tab
+   * hangs. Months reach this from drilldown fields that are built, not typed,
+   * so this is a guard rather than a validation path - but a wrong month should
+   * cost an empty list, not the page.
+   */
+  if (!isMonthId(start) || !isMonthId(end)) return [];
   if (compareMonths(start, end) > 0) return [];
   const months: string[] = [];
   for (let month = start; compareMonths(month, end) <= 0; month = nextMonth(month)) {

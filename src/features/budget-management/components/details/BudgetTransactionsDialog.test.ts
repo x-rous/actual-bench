@@ -68,6 +68,7 @@ describe("rowBucketLabel", () => {
     date: "2026-04-02",
     amount: -1000,
     payeeName,
+    categoryId: categoryName,
     categoryName,
     notes: null,
   });
@@ -103,31 +104,46 @@ describe("rowBucketLabel", () => {
  * has to land somewhere visible rather than silently matching nothing.
  */
 describe("rowBucketLabel - group dimension", () => {
+  // Keyed by id, because names are not unique: both groups below hold a
+  // category called "Fees", and a name-keyed map would file both under
+  // whichever was recorded last.
   const groups = new Map([
-    ["Groceries & Household", "Food & Groceries"],
-    ["Fuel", "Transport"],
+    ["cat-groceries", "Food & Groceries"],
+    ["cat-fuel", "Transport"],
+    ["cat-food-fees", "Food & Groceries"],
+    ["cat-transport-fees", "Transport"],
   ]);
-  const row = (categoryName: string | null): BudgetTransactionRow => ({
+  const row = (categoryId: string | null, categoryName = categoryId): BudgetTransactionRow => ({
     id: "tx",
     date: "2026-04-02",
     amount: -1000,
     payeeName: "Carrefour",
+    categoryId,
     categoryName,
     notes: null,
   });
 
   it("resolves a row to its category's group", () => {
-    expect(rowBucketLabel(row("Fuel"), "group", groups)).toBe("Transport");
-    expect(rowBucketLabel(row("Fuel"), "group", groups)).not.toBe("Food & Groceries");
+    expect(rowBucketLabel(row("cat-fuel"), "group", groups)).toBe("Transport");
+    expect(rowBucketLabel(row("cat-fuel"), "group", groups)).not.toBe("Food & Groceries");
+  });
+
+  it("keeps same-named categories in different groups apart", () => {
+    expect(rowBucketLabel(row("cat-food-fees", "Fees"), "group", groups)).toBe(
+      "Food & Groceries"
+    );
+    expect(rowBucketLabel(row("cat-transport-fees", "Fees"), "group", groups)).toBe(
+      "Transport"
+    );
   });
 
   it("falls back to Ungrouped for a category the map does not cover", () => {
-    expect(rowBucketLabel(row("Parking"), "group", groups)).toBe("Ungrouped");
+    expect(rowBucketLabel(row("cat-parking"), "group", groups)).toBe("Ungrouped");
     expect(rowBucketLabel(row(null), "group", groups)).toBe("Ungrouped");
   });
 
   it("answers Ungrouped for every row when no map is supplied", () => {
-    expect(rowBucketLabel(row("Fuel"), "group", null)).toBe("Ungrouped");
+    expect(rowBucketLabel(row("cat-fuel"), "group", null)).toBe("Ungrouped");
   });
 });
 

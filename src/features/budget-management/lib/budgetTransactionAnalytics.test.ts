@@ -11,7 +11,7 @@ const rows: BudgetTransactionRow[] = [
     date: "2026-04-02",
     amount: -1200,
     payeeName: "Coffee Shop",
-    categoryName: "Dining",
+    categoryId: "dining", categoryName: "Dining",
     notes: null,
   },
   {
@@ -19,7 +19,7 @@ const rows: BudgetTransactionRow[] = [
     date: "2026-04-09",
     amount: -5000,
     payeeName: "Market",
-    categoryName: "Groceries",
+    categoryId: "groceries", categoryName: "Groceries",
     notes: "weekly",
   },
   {
@@ -27,7 +27,7 @@ const rows: BudgetTransactionRow[] = [
     date: "2026-04-10",
     amount: -3000,
     payeeName: "Market",
-    categoryName: "Groceries",
+    categoryId: "groceries", categoryName: "Groceries",
     notes: null,
   },
   {
@@ -35,7 +35,7 @@ const rows: BudgetTransactionRow[] = [
     date: "2026-04-22",
     amount: 1000,
     payeeName: null,
-    categoryName: "Groceries",
+    categoryId: "groceries", categoryName: "Groceries",
     notes: "refund",
   },
 ];
@@ -53,8 +53,8 @@ describe("buildTransactionTotals", () => {
 
   it("keeps net spent signed when refunds exceed spending (not clamped to 0)", () => {
     const refundHeavy: BudgetTransactionRow[] = [
-      { id: "s", date: "2026-04-02", amount: -2000, payeeName: "Store", categoryName: "Gear", notes: null },
-      { id: "r", date: "2026-04-20", amount: 5000, payeeName: "Store", categoryName: "Gear", notes: "big refund" },
+      { id: "s", date: "2026-04-02", amount: -2000, payeeName: "Store", categoryId: "gear", categoryName: "Gear", notes: null },
+      { id: "r", date: "2026-04-20", amount: 5000, payeeName: "Store", categoryId: "gear", categoryName: "Gear", notes: "big refund" },
     ];
     const analytics = buildTransactionTotals(refundHeavy);
     expect(analytics.netSpent).toBe(-3000); // net inflow of 3,000 — refund not lost

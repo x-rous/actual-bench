@@ -176,3 +176,16 @@ export function decimalStringToMinor(decimal: string): number {
   if (isNaN(parsed)) return NaN;
   return Math.round(parsed * 100);
 }
+
+/**
+ * Does this amount disappear once rounded to whole units?
+ *
+ * The whole-unit formatters round, so anything under half a unit prints as
+ * "0" - but its sign survives in whatever derived the wording and the colour
+ * beside it, which is how "0 over budget" ended up in red. Anything deriving a
+ * direction from a rounded figure has to ask this first, so the words, the
+ * colour and the number agree on what they are describing.
+ */
+export function roundsToZeroWhole(minor: number): boolean {
+  return Math.round(Math.abs(minor) / 100) === 0;
+}

@@ -54,3 +54,20 @@ describe("filterGroupedOptions", () => {
     expect(filterGroupedOptions(OPTIONS, "zzz", true)).toEqual([]);
   });
 });
+
+/*
+ * `filterGroupedOptions` decides what the list draws. What it can *walk* is a
+ * narrower set - covered rows are ticked and inert - and conflating the two made
+ * a search that matched only covered rows report "No results" while those rows
+ * were on screen. The two sets are derived separately now; this pins the
+ * filtering half, which is the part with a pure function to test.
+ */
+describe("filterGroupedOptions - drawn vs navigable", () => {
+  it("returns rows that a covered-only search would still have to draw", () => {
+    // "Groceries" matches a category inside a group. Whether that row is
+    // clickable is a separate question from whether it belongs in the results.
+    const result = filterGroupedOptions(OPTIONS, "groceries", true);
+    expect(result.map((o) => o.id)).toContain("category:groceries");
+    expect(result.length).toBeGreaterThan(0);
+  });
+});

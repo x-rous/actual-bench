@@ -1,4 +1,4 @@
-import { formatMonthLabel } from "@/lib/budget/monthMath";
+import { formatMonthLabel, monthsInRange } from "@/lib/budget/monthMath";
 import type { BudgetDetailsModel } from "./budgetDetailsModel";
 import type { LoadedMonthState } from "../types";
 
@@ -117,9 +117,31 @@ export function buildMonthCategoriesDrilldown(
 }
 
 /**
- * Drill target for every visible expense (or income) category across a range of
- * months - powers the full-period summary's "Expenses spent" / "Income
- * received" figures.
+ * The months a set of entries actually contributes, or null if they have a hole
+ * in them.
+ *
+ * A drilldown says only where a range starts and ends, so a gap in the middle
+ * cannot be expressed: the query asks for every transaction between the two
+ * dates and would sweep up the months that were skipped. That makes the
+ * dialog's total disagree with the figure it was opened from, silently. An
+ * interior month with no loaded state is rare - a window still loading, or one
+ * month that failed - and withholding the drill-through is better than opening
+ * it on the wrong number.
+ */
+function contiguousSpan(
+  entries: { month: string; state?: LoadedMonthState | null }[]
+): { first: string; last: string } | null {
+  const months = entries.filter((entry) => entry.state != null).map((entry) => entry.month);
+  const first = months[0];
+  const last = months[months.length - 1];
+  if (!first || !last) return null;
+  return monthsInRange(first, last).length === months.length ? { first, last } : null;
+}
+
+/**
+ * Drill target for every expense (or income) category across a range of months
+ * - powers the full-period summary's "Expenses spent" / "Income received"
+ * figures.
  *
  * The range is the months the figure itself covers, not the whole window: those
  * headlines are "to date" totals over the closed months, and a drill-through
@@ -132,25 +154,38 @@ export function buildMonthCategoriesDrilldown(
  */
 export function buildRangeCategoriesDrilldown(
   entries: { month: string; state?: LoadedMonthState | null }[],
-  kind: "expense" | "income"
+  kind: "expense" | "income",
+  /**
+   * Whether hidden categories count.
+   *
+   * It has to match whatever the figure being clicked counted, and the two
+   * headlines that use this disagree with each other: the period summary reads
+   * the month's own `summary` totals, which are the whole file including
+   * hidden categories, while a category or group selection sums the visible
+   * ones. Hiding a category does not un-spend its money, so a summary total
+   * that includes it must drill into a set that includes it too - otherwise the
+   * dialog opens on a smaller number than the one that was clicked.
+   */
+  options: { includeHidden?: boolean } = {}
 ): BudgetTransactionsDrilldown | null {
-  const withState = entries.filter((entry) => entry.state != null);
-  const first = withState[0];
-  const last = withState[withState.length - 1];
-  if (!first || !last) return null;
+  const span = contiguousSpan(entries);
+  if (!span) return null;
 
+  const includeHidden = options.includeHidden ?? false;
   const wantIncome = kind === "income";
   const categoryIds = new Set<string>();
 
-  for (const entry of withState) {
+  for (const entry of entries) {
     const state = entry.state;
     if (!state) continue;
     for (const groupId of state.groupOrder) {
       const group = state.groupsById[groupId];
-      if (!group || group.hidden || group.isIncome !== wantIncome) continue;
+      if (!group || group.isIncome !== wantIncome) continue;
+      if (group.hidden && !includeHidden) continue;
       for (const categoryId of group.categoryIds) {
         const category = state.categoriesById[categoryId];
-        if (!category || category.hidden || category.isIncome !== wantIncome) continue;
+        if (!category || category.isIncome !== wantIncome) continue;
+        if (category.hidden && !includeHidden) continue;
         categoryIds.add(categoryId);
       }
     }
@@ -159,8 +194,8 @@ export function buildRangeCategoriesDrilldown(
   if (categoryIds.size === 0) return null;
   return {
     id: wantIncome ? "__period_income__" : "__period_expenses__",
-    monthStart: first.month,
-    monthEnd: last.month,
+    monthStart: span.first,
+    monthEnd: span.last,
     title: wantIncome ? "All income" : "All expenses",
     entity: "group",
     side: wantIncome ? "income" : "expense",

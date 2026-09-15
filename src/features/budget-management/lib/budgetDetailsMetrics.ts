@@ -1,6 +1,7 @@
 import {
   formatMonthLabel,
   monthElapsedFraction,
+  monthsInRange,
   prevMonth,
 } from "@/lib/budget/monthMath";
 import type {
@@ -831,9 +832,45 @@ function periodTransactionsDrilldown(
   const last = withState[withState.length - 1];
   if (!first || !last) return null;
 
-  const base = budgetTransactionsDrilldown(last, target);
-  if (!base) return null;
-  return { ...base, monthStart: first.month, monthEnd: last.month };
+  /*
+   * A hole in the months cannot be expressed.
+   *
+   * The drilldown says only where the range starts and ends, so an interior
+   * month with no loaded state would still have its transactions swept up by
+   * the date filter - and the dialog would total more than the figure it was
+   * opened from. Withholding the link beats opening it on the wrong number.
+   */
+  if (monthsInRange(first.month, last.month).length !== withState.length) return null;
+
+  /*
+   * Categories are gathered across every contributing month, not read off the
+   * last one.
+   *
+   * The metric behind this figure walks `target.categoryIds` - the union across
+   * the window - and skips whatever is hidden in the month it is summing. So a
+   * category retired before the period ends still contributed, and reading the
+   * final month's group membership dropped it from the drill-through while
+   * leaving it in the total.
+   */
+  const categoryIds = target.groupId
+    ? [target.id]
+    : target.categoryIds.filter((categoryId) =>
+        withState.some((entry) => {
+          const category = entry.state?.categoriesById[categoryId];
+          return !!category && !category.hidden;
+        })
+      );
+  if (categoryIds.length === 0) return null;
+
+  return {
+    id: target.id,
+    monthStart: first.month,
+    monthEnd: last.month,
+    title: target.title,
+    entity: target.groupId ? "category" : "group",
+    side: target.isIncome ? "income" : "expense",
+    categoryIds,
+  };
 }
 
 function relevantStagedImpact(
@@ -1770,8 +1807,16 @@ export function buildTrackingDetailsMetrics(
     title: "PERIOD SUMMARY",
     subtitle: "Tracking",
     periodActualsDrilldown: {
-      income: buildRangeCategoriesDrilldown(closedPeriodEntries, "income"),
-      expense: buildRangeCategoriesDrilldown(closedPeriodEntries, "expense"),
+      // `includeHidden`, because the figures these open from are
+      // `state.summary.totalIncome` / `totalSpent` - the whole file, hidden
+      // categories and all. A visible-only drilldown would open on a smaller
+      // number than the one that was clicked.
+      income: buildRangeCategoriesDrilldown(closedPeriodEntries, "income", {
+        includeHidden: true,
+      }),
+      expense: buildRangeCategoriesDrilldown(closedPeriodEntries, "expense", {
+        includeHidden: true,
+      }),
     },
     rangeLabel: model.rangeLabel,
     coverageLabel: model.coverage.label,
@@ -2140,8 +2185,15 @@ export function buildEnvelopeDetailsMetrics(
     title: "PERIOD SUMMARY",
     subtitle: "Envelope",
     periodActualsDrilldown: {
-      income: buildRangeCategoriesDrilldown(actualEntries, "income"),
-      expense: buildRangeCategoriesDrilldown(actualEntries, "expense"),
+      // Same reason as Tracking: `spentToDate` and `incomeReceivedToDate` sum
+      // `state.summary.totalSpent` / `totalIncome`, which include hidden
+      // categories.
+      income: buildRangeCategoriesDrilldown(actualEntries, "income", {
+        includeHidden: true,
+      }),
+      expense: buildRangeCategoriesDrilldown(actualEntries, "expense", {
+        includeHidden: true,
+      }),
     },
     rangeLabel: model.rangeLabel,
     coverageLabel: model.coverage.label,

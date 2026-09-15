@@ -1,7 +1,12 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { formatDeltaWhole, formatSignedWhole, formatSummary } from "../../lib/format";
+import {
+  formatDeltaWhole,
+  formatSignedWhole,
+  formatSummary,
+  roundsToZeroWhole,
+} from "../../lib/format";
 import type {
   BudgetTrendPoint,
   DayProgress,
@@ -401,7 +406,14 @@ export function StagedImpactBlock({
         <MetricLine
           label="Budget plan impact"
           value={formatDeltaWhole(impact.budgetDelta)}
-          tone={impact.budgetDelta === 0 ? "neutral" : impact.budgetDelta > 0 ? "positive" : "negative"}
+          // Neutral once it rounds away, so the colour agrees with the "0".
+          tone={
+            roundsToZeroWhole(impact.budgetDelta)
+              ? "neutral"
+              : impact.budgetDelta > 0
+                ? "positive"
+                : "negative"
+          }
         />
       ) : (
         <>
@@ -409,7 +421,7 @@ export function StagedImpactBlock({
             label="Estimated To Budget impact"
             value={formatDeltaWhole(impact.estimatedToBudgetImpact)}
             tone={
-              impact.estimatedToBudgetImpact === 0
+              roundsToZeroWhole(impact.estimatedToBudgetImpact)
                 ? "neutral"
                 : impact.estimatedToBudgetImpact > 0
                 ? "positive"

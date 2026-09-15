@@ -7,6 +7,15 @@ export type BudgetTransactionRow = {
   date: string;
   amount: number;
   payeeName: string | null;
+  /**
+   * The category's id, for anything that has to resolve the category itself
+   * rather than show its name.
+   *
+   * Names are not unique - two groups can each hold a "Fees" - so a lookup
+   * keyed by name resolves to whichever was recorded last and can file a
+   * transaction under the wrong group.
+   */
+  categoryId: string | null;
   categoryName: string | null;
   notes: string | null;
 };
@@ -16,6 +25,7 @@ type RawBudgetTransactionRow = {
   date?: unknown;
   amount?: unknown;
   "payee.name"?: unknown;
+  "category.id"?: unknown;
   "category.name"?: unknown;
   notes?: unknown;
 };
@@ -87,6 +97,7 @@ export function buildBudgetTransactionsQuery({
         "date",
         "amount",
         "payee.name",
+        "category.id",
         "category.name",
         "notes",
       ],
@@ -149,6 +160,7 @@ function normalizeTransactionRow(
     date,
     amount: parseAmount(row.amount),
     payeeName: parseString(row["payee.name"]),
+    categoryId: parseString(row["category.id"]),
     categoryName: parseString(row["category.name"]),
     notes: parseString(row.notes),
   };

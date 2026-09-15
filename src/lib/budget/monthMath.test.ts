@@ -184,3 +184,28 @@ describe("monthsInRange", () => {
     expect(monthsInRange("2026-04", "2026-01")).toEqual([]);
   });
 });
+
+/*
+ * `monthsInRange` walks from one month to the next until it passes the end, and
+ * the comparison is on the strings. A malformed endpoint therefore starts a
+ * walk that can never finish: "x" sorts below "z", and every `YYYY-MM` the walk
+ * produces still sorts below "z". The cost of getting this wrong is a hung tab,
+ * not a wrong number, so it is guarded rather than trusted.
+ */
+describe("monthsInRange - malformed input", () => {
+  it("returns an empty list rather than looping forever", () => {
+    expect(monthsInRange("x", "z")).toEqual([]);
+    expect(monthsInRange("2026-01", "z")).toEqual([]);
+    expect(monthsInRange("", "2026-03")).toEqual([]);
+  });
+
+  it("rejects month numbers that are not months", () => {
+    expect(monthsInRange("2026-00", "2026-03")).toEqual([]);
+    expect(monthsInRange("2026-13", "2026-14")).toEqual([]);
+    expect(monthsInRange("2026-1", "2026-03")).toEqual([]);
+  });
+
+  it("still walks a well-formed range", () => {
+    expect(monthsInRange("2026-11", "2027-01")).toEqual(["2026-11", "2026-12", "2027-01"]);
+  });
+});

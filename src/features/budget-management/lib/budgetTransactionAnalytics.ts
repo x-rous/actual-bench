@@ -231,6 +231,34 @@ export function buildSpendBreakdown(
   };
 }
 
+/**
+ * Spending bucketed by the group each row's category belongs to.
+ *
+ * Bucketed from the rows rather than rolled up from the category breakdown,
+ * because that rollup had to map a bucket's *label* back to a group - and
+ * category names are not unique, so two groups each holding a "Fees" would have
+ * had both filed under whichever was recorded last. A row knows its category's
+ * id, which is unique, so the walk starts there.
+ */
+export function buildGroupBreakdown(
+  rows: BudgetTransactionRow[],
+  side: BudgetTransactionSide,
+  groupByCategoryId: Map<string, string>
+): TransactionSpendBucket[] {
+  const byGroup = new Map<string, { label: string; amount: number; count: number }>();
+  let totalSpent = 0;
+
+  for (const row of rows) {
+    const amount = transactionFlowAmount(row, side);
+    if (amount > 0) totalSpent += amount;
+    const label =
+      (row.categoryId ? groupByCategoryId.get(row.categoryId) : null) ?? "Ungrouped";
+    addBucketAmount(byGroup, label, label, amount);
+  }
+
+  return sortedBuckets(byGroup, totalSpent);
+}
+
 export function buildTimeBreakdown(
   rows: BudgetTransactionRow[],
   side: BudgetTransactionSide = "expense"

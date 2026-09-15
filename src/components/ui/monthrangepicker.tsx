@@ -80,8 +80,10 @@ type QuickSelector = {
 const QUICK_SELECTORS: QuickSelector[] = [
     { label: "This year", startMonth: new Date(new Date().getFullYear(), 0), endMonth: new Date(new Date().getFullYear(), 11) },
     { label: "Last year", startMonth: new Date(new Date().getFullYear() - 1, 0), endMonth: new Date(new Date().getFullYear() - 1, 11) },
-    { label: "Last 6 months", startMonth: new Date(addMonths(new Date(), -6)), endMonth: new Date() },
-    { label: "Last 12 months", startMonth: new Date(addMonths(new Date(), -12)), endMonth: new Date() },
+    // local: the range includes both ends, so the offset is one less than the
+    // count - upstream subtracted the full count and selected 7 and 13 months.
+    { label: "Last 6 months", startMonth: new Date(addMonths(new Date(), -5)), endMonth: new Date() },
+    { label: "Last 12 months", startMonth: new Date(addMonths(new Date(), -11)), endMonth: new Date() },
 ];
 
 type MonthRangeCalProps = {
@@ -176,7 +178,9 @@ function MonthRangeCal({
      */
     const [menuYear, setMenuYear] = React.useState<number>(startYear - 1);
 
-    if (minDate && maxDate && minDate > maxDate) minDate = maxDate;
+    // local: normalise into a local rather than reassigning the prop -
+    // `react-hooks/immutability` is error-severity under this repo's config.
+    const lowerBound = minDate && maxDate && minDate > maxDate ? maxDate : minDate;
 
     return (
         <div className="flex gap-2">  {/* local */}
@@ -185,6 +189,8 @@ function MonthRangeCal({
                     <div className="text-xs font-medium">{callbacks?.yearLabel ? callbacks?.yearLabel(menuYear) : menuYear}</div>  {/* local */}
                     <div className="space-x-1 flex items-center">
                         <button
+                            type="button"
+                            aria-label={`Show ${menuYear - 1} and ${menuYear}`}  /* local */
                             onClick={() => {
                                 setMenuYear(menuYear - 1);
                                 if (onYearBackward) onYearBackward();
@@ -194,6 +200,8 @@ function MonthRangeCal({
                             <ChevronLeft className="opacity-50 h-3.5 w-3.5" />  {/* local */}
                         </button>
                         <button
+                            type="button"
+                            aria-label={`Show ${menuYear + 1} and ${menuYear + 2}`}  /* local */
                             onClick={() => {
                                 setMenuYear(menuYear + 1);
                                 if (onYearForward) onYearForward();
@@ -279,8 +287,8 @@ function MonthRangeCal({
                                                         (maxDate
                                                             ? menuYear + m.yearOffset > maxDate?.getFullYear() || (menuYear + m.yearOffset == maxDate?.getFullYear() && m.number > maxDate.getMonth())
                                                             : false) ||
-                                                        (minDate
-                                                            ? menuYear + m.yearOffset < minDate?.getFullYear() || (menuYear + m.yearOffset == minDate?.getFullYear() && m.number < minDate.getMonth())
+                                                        (lowerBound
+                                                            ? menuYear + m.yearOffset < lowerBound?.getFullYear() || (menuYear + m.yearOffset == lowerBound?.getFullYear() && m.number < lowerBound.getMonth())
                                                             : false)
                                                     }
                                                     className={cn(
@@ -297,6 +305,19 @@ function MonthRangeCal({
                                                         // `text-xs` matches the year header above it.
                                                         "h-full w-full p-0 text-xs font-normal aria-selected:opacity-100"
                                                     )}
+                                                    /*
+                                                      local: the grid shows two
+                                                      years side by side, so a
+                                                      bare "Jan" names two
+                                                      different months - and
+                                                      selection was carried by
+                                                      colour alone.
+                                                    */
+                                                    aria-label={`${m.name} ${menuYear + m.yearOffset}`}
+                                                    aria-pressed={
+                                                        (startMonth == m.number && menuYear + m.yearOffset == startYear) ||
+                                                        (endMonth == m.number && menuYear + m.yearOffset == endYear && !rangePending)
+                                                    }
                                                 >
                                                     {callbacks?.monthLabel ? callbacks.monthLabel(m) : m.name}
                                                 </button>
@@ -313,16 +334,30 @@ function MonthRangeCal({
             {showQuickSelectors ? (
                 <div className="flex flex-col gap-1 justify-center">  {/* local */}
                     {quickSelectors.map((s) => {
+                        /*
+                          local: a quick selector is clamped to the same bounds
+                          the month buttons enforce. It used to send its range
+                          straight through, so "This year" could select December
+                          in a window that only holds data to September - months
+                          the grid itself refuses to offer.
+                        */
+                        const start = lowerBound && s.startMonth < lowerBound ? lowerBound : s.startMonth;
+                        const end = maxDate && s.endMonth > maxDate ? maxDate : s.endMonth;
+                        // Clamping can invert a range that sat wholly outside
+                        // the window; there is nothing to select then.
+                        const selectable = start <= end;
                         return (
                             <Button
+                                disabled={!selectable}
                                 onClick={() => {
-                                    setStartYear(s.startMonth.getFullYear());
-                                    setStartMonth(s.startMonth.getMonth());
-                                    setEndYear(s.endMonth.getFullYear());
-                                    setEndMonth(s.endMonth.getMonth());
+                                    if (!selectable) return;
+                                    setStartYear(start.getFullYear());
+                                    setStartMonth(start.getMonth());
+                                    setEndYear(end.getFullYear());
+                                    setEndMonth(end.getMonth());
                                     setRangePending(false);
                                     setEndLocked(true);
-                                    if (onMonthRangeSelect) onMonthRangeSelect({ start: s.startMonth, end: s.endMonth });
+                                    if (onMonthRangeSelect) onMonthRangeSelect({ start, end });
                                     if (s.onClick) s.onClick(s);
                                 }}
                                 key={s.label}

@@ -181,19 +181,22 @@ export type BreakdownDimension = "group" | "category" | "payee";
  * the bucket id was then matched against the row's category name. No category
  * is called "Carrefour", so every payee click on a group emptied the table.
  *
- * A transaction carries its category's name and nothing above it, so the group
+ * A transaction carries its own category and nothing above it, so the group
  * dimension needs the category-to-group map to resolve one; without it every
  * row answers "Ungrouped", which at least fails visibly rather than silently.
  */
 export function rowBucketLabel(
   row: BudgetTransactionRow,
   dimension: BreakdownDimension,
-  groupByCategoryName: Map<string, string> | null
+  groupByCategoryId: Map<string, string> | null
 ): string {
   if (dimension === "payee") return row.payeeName?.trim() || "No payee";
   const categoryName = row.categoryName?.trim() || "Uncategorized";
   if (dimension === "category") return categoryName;
-  return groupByCategoryName?.get(categoryName) ?? "Ungrouped";
+  // Keyed by id, not by name: two groups can each hold a category called
+  // "Fees", and a map keyed by name would file both under whichever group was
+  // recorded last.
+  return (row.categoryId ? groupByCategoryId?.get(row.categoryId) : null) ?? "Ungrouped";
 }
 
 /**
