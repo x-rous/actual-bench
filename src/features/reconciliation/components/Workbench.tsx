@@ -8,7 +8,7 @@ import { MultiPillGroup, PillGroup } from "@/components/ui/pill-group";
 import { cn } from "@/lib/utils";
 import { REASON, REVIEW_REASONS } from "@/lib/reconciliation/session/build";
 import { statementText } from "@/lib/reconciliation/statement/text";
-import { formatShortDate } from "../lib/format";
+import { datesSpanYears, formatShortDate } from "../lib/format";
 import { canDecideOneTransaction, canStageDelete } from "@/lib/reconciliation/session/staging";
 import type { ReconciliationCoverage } from "@/lib/reconciliation/session/build";
 import type { InvertedSignDiagnosis } from "@/lib/reconciliation/session/invertedSigns";
@@ -799,6 +799,26 @@ export function Workbench({
     () =>
       new Set(possiblePairs.flatMap((pair) => [pair.statementItemId, pair.actualItemId])),
     [possiblePairs]
+  );
+
+  /*
+   * Whether this session's dates need their years shown.
+   *
+   * Read from every item rather than from the visible ones, so filtering or
+   * searching cannot change the format of a column mid-session - a date that
+   * said "30 Dec 2025" before a search should not become "30 Dec" after it.
+   * Both sides count: a December statement matched to a January transaction
+   * spans a boundary even though the statement alone does not.
+   */
+  const showYear = useMemo(
+    () =>
+      datesSpanYears(
+        items.flatMap((item) => [
+          ...item.statementRowIds.map((id) => statementRows.get(id)?.postedDate),
+          ...item.actualTransactionIds.map((id) => transactions.get(id)?.date),
+        ])
+      ),
+    [items, statementRows, transactions]
   );
 
   const visible = useMemo(() => {
@@ -1644,6 +1664,7 @@ export function Workbench({
                 <WorkbenchRow
                   key={item.id}
                   item={item}
+                  showYear={showYear}
                   statementRow={
                     item.statementRowIds[0] ? statementRows.get(item.statementRowIds[0]) : undefined
                   }
