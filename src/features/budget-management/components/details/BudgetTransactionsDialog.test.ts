@@ -1,7 +1,8 @@
 import {
+  elapsedDaysInMonths,
   elapsedDaysInRange,
   nextBucketSelection,
-  rowMatchesSpendBucket,
+  rowBucketLabel,
   rowTimeBucketId,
 } from "./budgetTransactionsDialog.helpers";
 import type { BudgetTransactionRow } from "../../lib/budgetTransactionsQuery";
@@ -61,7 +62,7 @@ describe("rowTimeBucketId", () => {
  * row's category name and nothing ever matches, so clicking a payee empties the
  * table and looks like a period with no transactions in it.
  */
-describe("rowMatchesSpendBucket", () => {
+describe("rowBucketLabel", () => {
   const row = (payeeName: string | null, categoryName: string | null): BudgetTransactionRow => ({
     id: "tx",
     date: "2026-04-02",
@@ -71,27 +72,27 @@ describe("rowMatchesSpendBucket", () => {
     notes: null,
   });
 
-  it("matches a payee bucket against the payee name", () => {
-    expect(rowMatchesSpendBucket(row("Carrefour", "Groceries"), "Carrefour", "payee")).toBe(true);
-    expect(rowMatchesSpendBucket(row("Zomato", "Groceries"), "Carrefour", "payee")).toBe(false);
+  it("resolves a row to its payee name", () => {
+    expect(rowBucketLabel(row("Carrefour", "Groceries"), "payee", null)).toBe("Carrefour");
+    expect(rowBucketLabel(row("Zomato", "Groceries"), "payee", null)).not.toBe("Carrefour");
   });
 
-  it("matches a category bucket against the category name", () => {
-    expect(rowMatchesSpendBucket(row("Carrefour", "Groceries"), "Groceries", "category")).toBe(true);
-    expect(rowMatchesSpendBucket(row("Carrefour", "Groceries"), "Carrefour", "category")).toBe(false);
+  it("resolves a row to its category name", () => {
+    expect(rowBucketLabel(row("Carrefour", "Groceries"), "category", null)).toBe("Groceries");
+    expect(rowBucketLabel(row("Carrefour", "Groceries"), "category", null)).not.toBe("Carrefour");
   });
 
-  it("matches the placeholder buckets a missing name falls into", () => {
-    expect(rowMatchesSpendBucket(row(null, "Groceries"), "No payee", "payee")).toBe(true);
-    expect(rowMatchesSpendBucket(row("  ", "Groceries"), "No payee", "payee")).toBe(true);
-    expect(rowMatchesSpendBucket(row("Carrefour", null), "Uncategorized", "category")).toBe(true);
+  it("falls back to the placeholder buckets when a name is missing", () => {
+    expect(rowBucketLabel(row(null, "Groceries"), "payee", null)).toBe("No payee");
+    expect(rowBucketLabel(row("  ", "Groceries"), "payee", null)).toBe("No payee");
+    expect(rowBucketLabel(row("Carrefour", null), "category", null)).toBe("Uncategorized");
   });
 
-  it("reads a payee bucket as a payee even for a group drill-through", () => {
+  it("reads the payee dimension as a payee whatever was drilled into", () => {
     // The regression: a group used to force the category branch, so every payee
     // click on a group filtered the table down to nothing.
-    expect(rowMatchesSpendBucket(row(null, "Groceries"), "No payee", "payee")).toBe(true);
-    expect(rowMatchesSpendBucket(row("Carrefour", "Groceries"), "Carrefour", "payee")).toBe(true);
+    expect(rowBucketLabel(row(null, "Groceries"), "payee", null)).toBe("No payee");
+    expect(rowBucketLabel(row("Carrefour", "Groceries"), "payee", null)).toBe("Carrefour");
   });
 });
 
@@ -101,7 +102,7 @@ describe("rowMatchesSpendBucket", () => {
  * map built from the loaded months - and a category the map has never heard of
  * has to land somewhere visible rather than silently matching nothing.
  */
-describe("rowMatchesSpendBucket - group dimension", () => {
+describe("rowBucketLabel - group dimension", () => {
   const groups = new Map([
     ["Groceries & Household", "Food & Groceries"],
     ["Fuel", "Transport"],
@@ -116,17 +117,17 @@ describe("rowMatchesSpendBucket - group dimension", () => {
   });
 
   it("resolves a row to its category's group", () => {
-    expect(rowMatchesSpendBucket(row("Fuel"), "Transport", "group", groups)).toBe(true);
-    expect(rowMatchesSpendBucket(row("Fuel"), "Food & Groceries", "group", groups)).toBe(false);
+    expect(rowBucketLabel(row("Fuel"), "group", groups)).toBe("Transport");
+    expect(rowBucketLabel(row("Fuel"), "group", groups)).not.toBe("Food & Groceries");
   });
 
   it("falls back to Ungrouped for a category the map does not cover", () => {
-    expect(rowMatchesSpendBucket(row("Parking"), "Ungrouped", "group", groups)).toBe(true);
-    expect(rowMatchesSpendBucket(row(null), "Ungrouped", "group", groups)).toBe(true);
+    expect(rowBucketLabel(row("Parking"), "group", groups)).toBe("Ungrouped");
+    expect(rowBucketLabel(row(null), "group", groups)).toBe("Ungrouped");
   });
 
   it("answers Ungrouped for every row when no map is supplied", () => {
-    expect(rowMatchesSpendBucket(row("Fuel"), "Ungrouped", "group", null)).toBe(true);
+    expect(rowBucketLabel(row("Fuel"), "group", null)).toBe("Ungrouped");
   });
 });
 
@@ -199,5 +200,36 @@ describe("nextBucketSelection", () => {
 
   it("allows a modified click to empty the selection", () => {
     expect(nextBucketSelection(["a"], "a", true)).toEqual([]);
+  });
+});
+
+/*
+ * A selection of months can have holes in it - Ctrl-click January and March and
+ * February is deliberately excluded. Measuring first-to-last would count it
+ * anyway, understating the rate by a third and leaving the per-day figure
+ * disagreeing with the per-month average beside it.
+ */
+describe("elapsedDaysInMonths", () => {
+  const today = new Date("2026-09-15T00:00:00Z");
+
+  it("sums the months given, skipping the gaps between them", () => {
+    // Jan (31) + Mar (31) = 62, not the 90 days that Jan through Mar spans.
+    expect(elapsedDaysInMonths(["2026-01", "2026-03"], today)).toBe(62);
+    expect(elapsedDaysInRange("2026-01", "2026-03", today)).toBe(90);
+  });
+
+  it("agrees with the range form when the months are contiguous", () => {
+    expect(elapsedDaysInMonths(["2026-01", "2026-02", "2026-03"], today)).toBe(
+      elapsedDaysInRange("2026-01", "2026-03", today)
+    );
+  });
+
+  it("stops each month at today and drops months not yet started", () => {
+    expect(elapsedDaysInMonths(["2026-08", "2026-09"], today)).toBe(31 + 15);
+    expect(elapsedDaysInMonths(["2026-09", "2026-12"], today)).toBe(15);
+  });
+
+  it("returns zero for an empty selection", () => {
+    expect(elapsedDaysInMonths([], today)).toBe(0);
   });
 });

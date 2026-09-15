@@ -58,10 +58,6 @@ function parseTransactionDate(date: string): Date | null {
   return new Date(Date.UTC(year, month - 1, day));
 }
 
-export function transactionSpendAmount(row: BudgetTransactionRow): number {
-  return row.amount < 0 ? Math.abs(row.amount) : 0;
-}
-
 /**
  * The magnitude of a transaction in the natural direction of `side`: an
  * expense outflow counts its negative amount, an income inflow counts its

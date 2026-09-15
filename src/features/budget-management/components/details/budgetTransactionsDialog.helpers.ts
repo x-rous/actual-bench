@@ -134,6 +134,10 @@ export function elapsedDaysInRange(
   monthEnd: string,
   today: Date = new Date()
 ): number {
+  return elapsedDaysBetween(monthStart, monthEnd, today);
+}
+
+function elapsedDaysBetween(monthStart: string, monthEnd: string, today: Date): number {
   const start = Date.parse(`${firstDayOfMonth(monthStart)}T00:00:00Z`);
   const end = Date.parse(`${lastDayOfMonth(monthEnd)}T00:00:00Z`);
   if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) return 0;
@@ -168,22 +172,10 @@ export function rowTimeBucketId(date: string, byMonth: boolean): string {
 
 export type BreakdownDimension = "group" | "category" | "payee";
 
-/** The bucket a row falls into, in the vocabulary of the list on screen. */
-export function rowBucketLabel(
-  row: BudgetTransactionRow,
-  dimension: BreakdownDimension,
-  groupByCategoryName: Map<string, string> | null
-): string {
-  if (dimension === "payee") return row.payeeName?.trim() || "No payee";
-  const categoryName = row.categoryName?.trim() || "Uncategorized";
-  if (dimension === "category") return categoryName;
-  return groupByCategoryName?.get(categoryName) ?? "Ungrouped";
-}
-
 /**
- * Does this row belong to the selected breakdown bucket?
+ * The bucket a row falls into, in the vocabulary of the list on screen.
  *
- * The discriminator is which list is on screen, not what kind of thing was
+ * The vocabulary is which list is being drawn, not what kind of thing was
  * drilled into. It used to be the latter, which was the same answer back when a
  * group could only ever show categories - but a group can show payees now, and
  * the bucket id was then matched against the row's category name. No category
@@ -193,14 +185,15 @@ export function rowBucketLabel(
  * dimension needs the category-to-group map to resolve one; without it every
  * row answers "Ungrouped", which at least fails visibly rather than silently.
  */
-
-export function rowMatchesSpendBucket(
+export function rowBucketLabel(
   row: BudgetTransactionRow,
-  bucketId: string,
   dimension: BreakdownDimension,
-  groupByCategoryName: Map<string, string> | null = null
-): boolean {
-  return rowBucketLabel(row, dimension, groupByCategoryName) === bucketId;
+  groupByCategoryName: Map<string, string> | null
+): string {
+  if (dimension === "payee") return row.payeeName?.trim() || "No payee";
+  const categoryName = row.categoryName?.trim() || "Uncategorized";
+  if (dimension === "category") return categoryName;
+  return groupByCategoryName?.get(categoryName) ?? "Ungrouped";
 }
 
 /**
@@ -224,4 +217,20 @@ export function nextBucketSelection(
       : [...current, id];
   }
   return current.length === 1 && current[0] === id ? [] : [id];
+}
+
+/**
+ * Elapsed days across a set of months that need not be adjacent.
+ *
+ * Summed per month rather than measured from the first to the last, because the
+ * set can have holes in it: picking January and March out of a year spans
+ * ninety days but only sixty of them were selected, and dividing the spend of
+ * two months by the length of three understates the rate by a third. It also
+ * left the per-day figure disagreeing with the per-month average beside it,
+ * which divides by the count.
+ */
+export function elapsedDaysInMonths(months: string[], today: Date = new Date()): number {
+  let total = 0;
+  for (const month of months) total += elapsedDaysBetween(month, month, today);
+  return total;
 }

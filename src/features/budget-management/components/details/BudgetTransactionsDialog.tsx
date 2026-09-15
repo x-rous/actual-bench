@@ -38,7 +38,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { MonthRangePicker } from "@/components/ui/monthrangepicker";
 import {
   amountTone,
-  elapsedDaysInRange,
+  elapsedDaysInMonths,
   errorMessage,
   exportTransactionsCsv,
   optionKey,
@@ -433,7 +433,10 @@ function BudgetProgress({
       <div
         role="progressbar"
         aria-valuemin={0}
-        aria-valuemax={budgeted}
+        // The scale, not the plan: overspend puts the filled amount past the
+        // budget, and a `valuenow` above `valuemax` is not a valid range. The
+        // text below says which of the two the reader is hearing.
+        aria-valuemax={Math.round(scale)}
         aria-valuenow={Math.round(filled)}
         aria-valuetext={`${formatSignedWhole(filled)} of ${formatSignedWhole(budgeted)} budgeted`}
         className="relative h-5 overflow-hidden rounded-full bg-muted-foreground/15 ring-1 ring-inset ring-border"
@@ -1163,6 +1166,27 @@ export function BudgetTransactionsDialog({ target, browserOptions, statesByMonth
     }
     return parts.join(" + ");
   }, [selectedOptions]);
+  /*
+   * The period the exported rows actually cover.
+   *
+   * `monthLabel` names the range the dialog is open on, which is the right
+   * caption for the header - but the file gets whatever survived the filters,
+   * so naming it for the whole range would put a month of transactions in a
+   * file called "jan-2026-dec-2026". Non-contiguous selections are named by
+   * their ends with a "+" so the name stays short and still says it is partial.
+   */
+  const exportPeriodLabel = useMemo(() => {
+    const first = activeMonths[0];
+    const last = activeMonths[activeMonths.length - 1];
+    if (!first || !last) return "";
+    if (first === last) return formatMonthLabel(first, "long");
+    const gapped = activeMonths.length < monthsInRange(first, last).length;
+    return `${formatMonthLabel(first, "long")} ${gapped ? "+" : "-"} ${formatMonthLabel(
+      last,
+      "long"
+    )}`;
+  }, [activeMonths]);
+
   const monthLabel = !effectiveTarget
     ? ""
     : isRange
@@ -1379,14 +1403,10 @@ export function BudgetTransactionsDialog({ target, browserOptions, statesByMonth
    * is. Driven by the reconciled headline, so it covers the whole matching set
    * even when the row list is capped.
    */
-  const elapsedDays = useMemo(() => {
-    // Measured over the months on screen, not the whole range: picking one
-    // month out of twelve and still dividing by a year would report a burn rate
-    // a twelfth of the real one.
-    const first = activeMonths[0];
-    const last = activeMonths[activeMonths.length - 1];
-    return first && last ? elapsedDaysInRange(first, last) : 0;
-  }, [activeMonths]);
+  // Measured over the months on screen, not the whole range: picking one month
+  // out of twelve and still dividing by a year would report a burn rate a
+  // twelfth of the real one.
+  const elapsedDays = useMemo(() => elapsedDaysInMonths(activeMonths), [activeMonths]);
   const perDay = elapsedDays > 0 ? headlineNet / elapsedDays : 0;
 
   const hasData = !isLoading && !error && rows.length > 0;
@@ -1794,7 +1814,7 @@ export function BudgetTransactionsDialog({ target, browserOptions, statesByMonth
                           // carries what is on screen in the order it is sorted.
                           tableRows.map((row) => row.original),
                           effectiveTarget?.title ?? "transactions",
-                          monthLabel
+                          exportPeriodLabel
                         )
                       }
                       disabled={tableRows.length === 0}

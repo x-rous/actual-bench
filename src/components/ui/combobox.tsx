@@ -551,7 +551,13 @@ export function MultiSearchableCombobox({
                     <button
                       type="button"
                       data-index={indexOf.get(o.id)}
-                      id={optionId(indexOf.get(o.id) ?? 0)}
+                      {...(indexOf.has(o.id)
+                        ? { id: optionId(indexOf.get(o.id) as number) }
+                        : // A covered row is not in the keyboard walk, so it has
+                          // no index - and falling back to zero gave it the same
+                          // DOM id as the first selectable row, which
+                          // `aria-activedescendant` could then resolve to.
+                          {})}
                       role="option"
                       disabled={isCovered(o.id)}
                       aria-selected={values.includes(o.id) || isCovered(o.id)}
