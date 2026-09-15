@@ -24,26 +24,22 @@ type BudgetTransactionsResponse = {
   data: RawBudgetTransactionRow[];
 };
 
-/**
- * Row cap for the drill-down table. The list is bounded so a huge category
- * never streams thousands of rows into the dialog; when the true count exceeds
- * this, the aggregate summary (below) still reconciles the headline figures and
- * the UI discloses that the list/charts are showing only the first page (BM-05).
- *
- * Raised from 500 when these drill-throughs learned to span a range of months:
- * a figure that sums eight months of a busy group will pass the old cap on
- * arrival, so the table would have opened truncated as a matter of course
- * rather than in the rare case the cap was chosen for.
- */
-export const BUDGET_TRANSACTIONS_ROW_LIMIT = 1500;
-
 export type BudgetTransactionsQueryParams = {
   /** First month of the range, `YYYY-MM`. */
   monthStart: string;
   /** Last month of the range, inclusive. Equal to `monthStart` for one month. */
   monthEnd: string;
   categoryIds: string[];
-  limit?: number;
+  /**
+   * Optional row cap. Omitted - the normal case - returns every matching row.
+   *
+   * The drill-down used to cap at 1,500 and disclose the truncation, because
+   * every row went into the DOM and a busy group over a year would lock the
+   * tab. The table windows its rows now, so the cap was protecting against a
+   * cost that no longer exists - and it made the breakdowns and the chart
+   * describe a partial page while the headline described the whole set.
+   */
+  limit?: number | null;
 };
 
 /**
@@ -79,7 +75,7 @@ export function buildBudgetTransactionsQuery({
   monthStart,
   monthEnd,
   categoryIds,
-  limit = BUDGET_TRANSACTIONS_ROW_LIMIT,
+  limit = null,
 }: BudgetTransactionsQueryParams) {
   return {
     ActualQLquery: {
@@ -95,7 +91,10 @@ export function buildBudgetTransactionsQuery({
         "notes",
       ],
       orderBy: [{ date: "desc" }],
-      limit,
+      // The key is left off entirely rather than set to something huge: an
+      // absent limit is the query language's own way of saying "all of them",
+      // and a sentinel would only be a cap we had guessed was large enough.
+      ...(limit == null ? {} : { limit }),
     },
   };
 }

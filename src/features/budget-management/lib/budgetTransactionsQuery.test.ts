@@ -1,5 +1,4 @@
 import {
-  BUDGET_TRANSACTIONS_ROW_LIMIT,
   buildBudgetTransactionsQuery,
   buildBudgetTransactionsSummaryQuery,
 } from "./budgetTransactionsQuery";
@@ -18,9 +17,11 @@ const sharedFilter = {
 };
 
 describe("buildBudgetTransactionsQuery", () => {
-  it("caps rows at the shared row limit by default and orders newest first", () => {
+  it("returns every matching row by default, newest first", () => {
+    // No cap: the table windows its rows, so a partial page would only make the
+    // breakdowns and the chart disagree with the headline above them.
     const query = buildBudgetTransactionsQuery(params).ActualQLquery;
-    expect(query.limit).toBe(BUDGET_TRANSACTIONS_ROW_LIMIT);
+    expect(query).not.toHaveProperty("limit");
     expect(query.orderBy).toEqual([{ date: "desc" }]);
     expect(query.filter).toEqual(sharedFilter);
   });
@@ -28,6 +29,11 @@ describe("buildBudgetTransactionsQuery", () => {
   it("honours an explicit limit override", () => {
     const query = buildBudgetTransactionsQuery({ ...params, limit: 10 }).ActualQLquery;
     expect(query.limit).toBe(10);
+  });
+
+  it("drops the limit entirely when it is explicitly null", () => {
+    const query = buildBudgetTransactionsQuery({ ...params, limit: null }).ActualQLquery;
+    expect(query).not.toHaveProperty("limit");
   });
 });
 

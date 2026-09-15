@@ -174,6 +174,15 @@ export function TrackingDetailsPanel({
   // The closed-months figure drills into every month it sums, so the dialog's
   // total is the number that was clicked rather than a slice of it.
   const selectionDrilldown = metrics.selectionTransactionDrilldown ?? null;
+  /*
+   * The period summary's actuals open the same dialog the per-category figures
+   * do. They were held back while the row list was capped, because "every
+   * expense across twelve months" is exactly the selection that would have
+   * arrived truncated. The table windows its rows and the cap is gone, so the
+   * figure that most warrants a drill-through can finally have one.
+   */
+  const periodIncomeDrilldown = metrics.periodActualsDrilldown?.income ?? null;
+  const periodExpenseDrilldown = metrics.periodActualsDrilldown?.expense ?? null;
   const openSelectionTransactions = selectionDrilldown
     ? () => setTransactionTarget(selectionDrilldown)
     : undefined;
@@ -325,11 +334,23 @@ export function TrackingDetailsPanel({
             label="Income received"
             value={formatSignedWhole(closed.actualIncome)}
             tooltip={PERIOD_TOOLTIP.incomeReceived}
+            onValueClick={
+              periodIncomeDrilldown
+                ? () => setTransactionTarget(periodIncomeDrilldown)
+                : undefined
+            }
+            valueAriaLabel="View the income transactions behind this figure"
           />
           <MetricLine
             label="Expenses spent"
             value={formatSignedWhole(closed.signedExpenseActivity)}
             tooltip={PERIOD_TOOLTIP.expensesSpent}
+            onValueClick={
+              periodExpenseDrilldown
+                ? () => setTransactionTarget(periodExpenseDrilldown)
+                : undefined
+            }
+            valueAriaLabel="View the expense transactions behind this figure"
           />
           <div className="border-t border-border/50 pt-1.5">
             <MetricLine

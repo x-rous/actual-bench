@@ -20,7 +20,10 @@ import {
   TRACKING_INCOME_AHEAD_RATIO,
   TRACKING_INCOME_ON_TARGET_RATIO,
 } from "./trackingSummary";
-import type { BudgetTransactionsDrilldown } from "./budgetTransactionBrowser";
+import {
+  buildRangeCategoriesDrilldown,
+  type BudgetTransactionsDrilldown,
+} from "./budgetTransactionBrowser";
 
 export type DetailsTone = "positive" | "negative" | "neutral";
 
@@ -316,6 +319,17 @@ export type TrackingDetailsMetrics = {
    * sum. Null with no selection, or when no month in range carries state.
    */
   selectionTransactionDrilldown?: BudgetTransactionsDrilldown | null;
+  /**
+   * Drill targets for the whole-period actuals, one per side.
+   *
+   * Only the period summary carries these - it has no selected category, so
+   * there is no `selectionTransactionDrilldown` to stand in for them, and the
+   * "Expenses spent" / "Income received" figures had nothing to open.
+   */
+  periodActualsDrilldown?: {
+    income: BudgetTransactionsDrilldown | null;
+    expense: BudgetTransactionsDrilldown | null;
+  } | null;
   scope: DetailsScope;
   entity: DetailsEntity;
   kind: DetailsKind;
@@ -385,6 +399,17 @@ export type EnvelopeDetailsMetrics = {
    * sum. Null with no selection, or when nothing has happened yet.
    */
   selectionTransactionDrilldown?: BudgetTransactionsDrilldown | null;
+  /**
+   * Drill targets for the whole-period actuals, one per side.
+   *
+   * Only the period summary carries these - it has no selected category, so
+   * there is no `selectionTransactionDrilldown` to stand in for them, and the
+   * "Expenses spent" / "Income received" figures had nothing to open.
+   */
+  periodActualsDrilldown?: {
+    income: BudgetTransactionsDrilldown | null;
+    expense: BudgetTransactionsDrilldown | null;
+  } | null;
   scope: DetailsScope;
   entity: DetailsEntity;
   kind: DetailsKind;
@@ -1666,6 +1691,9 @@ export function buildTrackingDetailsMetrics(
   let closedMonthCount = 0;
   let currentPeriodValues: TrackingMonthValues | null = null;
   let currentPeriodMonth: string | null = null;
+  // Months backing the to-date headlines, so their actuals drill into exactly
+  // the set they were summed from rather than the whole window.
+  const closedPeriodEntries: BudgetDetailsMonth[] = [];
   const trend: BudgetTrendPoint[] = [];
   const spendingVsBudgetedTrend: BudgetTrendPoint[] = [];
 
@@ -1676,6 +1704,7 @@ export function buildTrackingDetailsMetrics(
       fullIncomeBudget += values.incomeBudgeted;
       fullExpenseBudget += values.expenseBudgeted;
       if (isClosedMonthStatus(entry.status)) {
+        closedPeriodEntries.push(entry);
         resultIncomeActuals += values.resultIncomeActuals;
         resultExpenseActuals += values.resultExpenseActuals;
         visibleIncomeActualsToDate += values.incomeActuals;
@@ -1740,6 +1769,10 @@ export function buildTrackingDetailsMetrics(
     kind: "period",
     title: "PERIOD SUMMARY",
     subtitle: "Tracking",
+    periodActualsDrilldown: {
+      income: buildRangeCategoriesDrilldown(closedPeriodEntries, "income"),
+      expense: buildRangeCategoriesDrilldown(closedPeriodEntries, "expense"),
+    },
     rangeLabel: model.rangeLabel,
     coverageLabel: model.coverage.label,
     futureOnly: model.coverage.isFutureOnly,
@@ -2064,6 +2097,9 @@ export function buildEnvelopeDetailsMetrics(
   let assignedFullPeriod = 0;
   let spentToDate = 0;
   let incomeReceivedToDate = 0;
+  // Months backing the to-date headlines, so their actuals drill into exactly
+  // the set they were summed from rather than the whole window.
+  const actualEntries: BudgetDetailsMonth[] = [];
   const trend: BudgetTrendPoint[] = [];
 
   for (const entry of model.months) {
@@ -2071,6 +2107,7 @@ export function buildEnvelopeDetailsMetrics(
     if (state) {
       assignedFullPeriod += absAmount(state.summary.totalBudgeted);
       if (isActualLikeStatus(entry.status)) {
+        actualEntries.push(entry);
         assignedToDate += absAmount(state.summary.totalBudgeted);
         spentToDate += absAmount(state.summary.totalSpent);
         incomeReceivedToDate += state.summary.totalIncome;
@@ -2102,6 +2139,10 @@ export function buildEnvelopeDetailsMetrics(
     kind: "period",
     title: "PERIOD SUMMARY",
     subtitle: "Envelope",
+    periodActualsDrilldown: {
+      income: buildRangeCategoriesDrilldown(actualEntries, "income"),
+      expense: buildRangeCategoriesDrilldown(actualEntries, "expense"),
+    },
     rangeLabel: model.rangeLabel,
     coverageLabel: model.coverage.label,
     coverage,

@@ -72,6 +72,29 @@ export function matchesTransactionSearch(
   return rowSearchText(row).includes(search);
 }
 
+/**
+ * The searchable text for every row, built once.
+ *
+ * `rowSearchText` is not cheap: it formats a date and two currency figures
+ * through `Intl` and runs a regex over the result. Calling it from the filter
+ * meant paying that for every row on every keystroke - at three thousand rows
+ * that is nine thousand `Intl` calls between one letter and the next, which is
+ * long enough to feel like the field has stopped responding. Built once per row
+ * set, the filter itself becomes a substring test.
+ */
+export function buildTransactionSearchIndex(
+  rows: BudgetTransactionRow[]
+): Map<string, string> {
+  const index = new Map<string, string>();
+  for (const row of rows) index.set(row.id, rowSearchText(row));
+  return index;
+}
+
+/** Normalizes a query the same way the index normalized the rows. */
+export function normalizeTransactionSearch(query: string): string {
+  return normalizeSearchValue(query);
+}
+
 export function filterBudgetTransactions(
   rows: BudgetTransactionRow[],
   query: string

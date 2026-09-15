@@ -13,23 +13,31 @@ export type TransactionTimeBucket = TransactionSpendBucket & {
   sortKey: string;
 };
 
-export type RepeatedPayee = {
-  payeeName: string;
-  count: number;
-  amount: number;
-};
-
-export type BudgetTransactionAnalytics = {
+/**
+ * Headline figures over a set of rows.
+ *
+ * Split from the breakdowns below because the dialog needs the three groups
+ * over three *different* row sets - the strip narrows on a category selection,
+ * the chart on a breakdown selection, the breakdown on a chart selection - and
+ * a single builder meant computing all three for each of them. Nine bucket sets
+ * were produced per render where three were read.
+ */
+export type TransactionTotals = {
   totalSpent: number;
   netSpent: number;
   transactionCount: number;
   spendingTransactionCount: number;
   averageTransaction: number;
-  largestTransaction: BudgetTransactionRow | null;
-  distinctPayeeCount: number;
-  noPayeeCount: number;
+};
+
+/** Who and what the money went to. */
+export type TransactionSpendBreakdown = {
   spendByPayee: TransactionSpendBucket[];
   spendByCategory: TransactionSpendBucket[];
+};
+
+/** When it happened. */
+export type TransactionTimeBreakdown = {
   spendByWeek: TransactionTimeBucket[];
   /**
    * One bucket per calendar month present in the rows, oldest first.
@@ -39,11 +47,7 @@ export type BudgetTransactionAnalytics = {
    * instead, which is the unit it actually spans.
    */
   spendByMonth: TransactionTimeBucket[];
-  spendByDay: TransactionTimeBucket[];
   weekdayPattern: TransactionSpendBucket[];
-  topTransactions: BudgetTransactionRow[];
-  outlierTransactions: BudgetTransactionRow[];
-  repeatedPayees: RepeatedPayee[];
 };
 
 const WEEKDAY_ORDER = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -71,10 +75,6 @@ function transactionFlowAmount(
 ): number {
   if (side === "income") return row.amount > 0 ? row.amount : 0;
   return row.amount < 0 ? Math.abs(row.amount) : 0;
-}
-
-function transactionMagnitude(row: BudgetTransactionRow): number {
-  return Math.abs(row.amount);
 }
 
 function percentage(amount: number, total: number): number {
@@ -117,17 +117,6 @@ function weekBucket(date: string): { id: string; label: string; sortKey: string 
     label: `Week ${week}`,
     sortKey: String(week).padStart(2, "0"),
   };
-}
-
-function dayBucket(date: string): { id: string; label: string; sortKey: string } {
-  const parsed = parseTransactionDate(date);
-  if (!parsed) return { id: date, label: date, sortKey: date };
-  const label = new Intl.DateTimeFormat("en-US", {
-    month: "short",
-    day: "numeric",
-    timeZone: "UTC",
-  }).format(parsed);
-  return { id: date, label, sortKey: date };
 }
 
 function weekdayBucket(date: string): string {
@@ -189,17 +178,68 @@ function buildWeekBuckets(
   });
 }
 
-export function buildBudgetTransactionAnalytics(
+export function buildTransactionTotals(
   rows: BudgetTransactionRow[],
   side: BudgetTransactionSide = "expense"
-): BudgetTransactionAnalytics {
+): TransactionTotals {
+  let totalSpent = 0;
+  let spendingTransactionCount = 0;
+  let signedSum = 0;
+
+  for (const row of rows) {
+    const amount = transactionFlowAmount(row, side);
+    if (amount > 0) {
+      totalSpent += amount;
+      spendingTransactionCount += 1;
+    }
+    signedSum += row.amount;
+  }
+
+  // netSpent is the signed net in the side's natural direction: -(sum of signed
+  // amounts) for expenses (a net outflow is positive), +(sum) for income (a net
+  // inflow is positive). It must stay signed — a net refund on the expense side
+  // (inflow > outflow) is legitimately negative and must not be clamped to zero,
+  // or refunds would vanish from the "Spent" figure and the variance. totalSpent
+  // above counts only rows moving the natural way and drives bar-chart geometry.
+  const netSpent = side === "income" ? signedSum : -signedSum;
+
+  return {
+    totalSpent,
+    netSpent,
+    transactionCount: rows.length,
+    spendingTransactionCount,
+    averageTransaction: rows.length > 0 ? Math.round(totalSpent / rows.length) : 0,
+  };
+}
+
+export function buildSpendBreakdown(
+  rows: BudgetTransactionRow[],
+  side: BudgetTransactionSide = "expense"
+): TransactionSpendBreakdown {
   const byPayee = new Map<string, { label: string; amount: number; count: number }>();
   const byCategory = new Map<string, { label: string; amount: number; count: number }>();
+  let totalSpent = 0;
+
+  for (const row of rows) {
+    const amount = transactionFlowAmount(row, side);
+    if (amount > 0) totalSpent += amount;
+
+    addBucketAmount(byPayee, row.payeeName?.trim() || "No payee", row.payeeName?.trim() || "No payee", amount);
+    const categoryLabel = row.categoryName?.trim() || "Uncategorized";
+    addBucketAmount(byCategory, categoryLabel, categoryLabel, amount);
+  }
+
+  return {
+    spendByPayee: sortedBuckets(byPayee, totalSpent),
+    spendByCategory: sortedBuckets(byCategory, totalSpent),
+  };
+}
+
+export function buildTimeBreakdown(
+  rows: BudgetTransactionRow[],
+  side: BudgetTransactionSide = "expense"
+): TransactionTimeBreakdown {
   const byWeek = new Map<
-    string,
-    { label: string; amount: number; count: number; sortKey: string }
-  >();
-  const byDay = new Map<
     string,
     { label: string; amount: number; count: number; sortKey: string }
   >();
@@ -208,37 +248,11 @@ export function buildBudgetTransactionAnalytics(
     { label: string; amount: number; count: number; sortKey: string }
   >();
   const byWeekday = new Map<string, { label: string; amount: number; count: number }>();
-  const repeatedPayeeMap = new Map<string, { count: number; amount: number }>();
-  const distinctPayees = new Set<string>();
-
   let totalSpent = 0;
-  let spendingTransactionCount = 0;
-  let noPayeeCount = 0;
-  let largestTransaction: BudgetTransactionRow | null = null;
 
   for (const row of rows) {
     const amount = transactionFlowAmount(row, side);
-    const payeeName = row.payeeName?.trim() || "";
-    const payeeLabel = payeeName || "No payee";
-    const categoryLabel = row.categoryName?.trim() || "Uncategorized";
-
-    if (amount > 0) {
-      totalSpent += amount;
-      spendingTransactionCount += 1;
-    }
-
-    if (payeeName) {
-      distinctPayees.add(payeeName);
-      const repeated = repeatedPayeeMap.get(payeeName) ?? { count: 0, amount: 0 };
-      repeated.count += 1;
-      repeated.amount += amount;
-      repeatedPayeeMap.set(payeeName, repeated);
-    } else {
-      noPayeeCount += 1;
-    }
-
-    addBucketAmount(byPayee, payeeLabel, payeeLabel, amount);
-    addBucketAmount(byCategory, categoryLabel, categoryLabel, amount);
+    if (amount > 0) totalSpent += amount;
 
     const week = weekBucket(row.date);
     const currentWeek = byWeek.get(week.id) ?? {
@@ -264,90 +278,24 @@ export function buildBudgetTransactionAnalytics(
       byMonth.set(monthId, currentMonth);
     }
 
-    const day = dayBucket(row.date);
-    const currentDay = byDay.get(day.id) ?? {
-      label: day.label,
-      amount: 0,
-      count: 0,
-      sortKey: day.sortKey,
-    };
-    currentDay.amount += amount;
-    currentDay.count += 1;
-    byDay.set(day.id, currentDay);
-
     const weekday = weekdayBucket(row.date);
     addBucketAmount(byWeekday, weekday, weekday, amount);
-
-    if (
-      !largestTransaction ||
-      transactionMagnitude(row) > transactionMagnitude(largestTransaction)
-    ) {
-      largestTransaction = row;
-    }
   }
 
-  // netSpent is the signed net in the side's natural direction: -(sum of signed
-  // amounts) for expenses (a net outflow is positive), +(sum) for income (a net
-  // inflow is positive). It must stay signed — a net refund on the expense side
-  // (inflow > outflow) is legitimately negative and must not be clamped to zero,
-  // or refunds would vanish from the "Spent" figure and the variance. totalSpent
-  // above counts only rows moving the natural way and drives bar-chart geometry.
-  const netSpent = rows.reduce(
-    (sum, row) => (side === "income" ? sum + row.amount : sum - row.amount),
-    0
-  );
-
-  const averageTransaction =
-    rows.length > 0 ? Math.round(totalSpent / rows.length) : 0;
-  const topTransactions = [...rows]
-    .sort(
-      (a, b) =>
-        transactionMagnitude(b) - transactionMagnitude(a) ||
-        b.date.localeCompare(a.date)
-    )
-    .slice(0, 10);
-  const outlierThreshold =
-    spendingTransactionCount > 0
-      ? Math.max(totalSpent / spendingTransactionCount * 2.5, 0)
-      : 0;
-  const outlierTransactions =
-    outlierThreshold > 0
-      ? rows.filter((row) => transactionFlowAmount(row, side) >= outlierThreshold)
-      : [];
-  const repeatedPayees = [...repeatedPayeeMap.entries()]
-    .filter(([, value]) => value.count > 1)
-    .map(([payeeName, value]) => ({ payeeName, ...value }))
-    .sort((a, b) => b.amount - a.amount || b.count - a.count)
-    .slice(0, 5);
-
-  const weekdayBuckets = WEEKDAY_ORDER.map((label) => {
-    const bucket = byWeekday.get(label) ?? { label, amount: 0, count: 0 };
-    return {
-      id: label,
-      label,
-      amount: bucket.amount,
-      count: bucket.count,
-      percentage: percentage(bucket.amount, totalSpent),
-    };
-  });
-
   return {
-    totalSpent,
-    netSpent,
-    transactionCount: rows.length,
-    spendingTransactionCount,
-    averageTransaction,
-    largestTransaction,
-    distinctPayeeCount: distinctPayees.size,
-    noPayeeCount,
-    spendByPayee: sortedBuckets(byPayee, totalSpent),
-    spendByCategory: sortedBuckets(byCategory, totalSpent),
     spendByWeek: buildWeekBuckets(byWeek, totalSpent),
     spendByMonth: sortTimeBuckets(byMonth, totalSpent),
-    spendByDay: sortTimeBuckets(byDay, totalSpent),
-    weekdayPattern: weekdayBuckets,
-    topTransactions,
-    outlierTransactions,
-    repeatedPayees,
+    // Every weekday is present whether or not it carries anything, so the chart
+    // draws Mon-Sun rather than only the days that happened to have spending.
+    weekdayPattern: WEEKDAY_ORDER.map((label) => {
+      const bucket = byWeekday.get(label) ?? { label, amount: 0, count: 0 };
+      return {
+        id: label,
+        label,
+        amount: bucket.amount,
+        count: bucket.count,
+        percentage: percentage(bucket.amount, totalSpent),
+      };
+    }),
   };
 }

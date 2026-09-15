@@ -1,6 +1,7 @@
 import {
   buildBudgetTransactionBrowserOptions,
   buildMonthCategoriesDrilldown,
+  buildRangeCategoriesDrilldown,
   type BudgetTransactionBrowserOptions,
 } from "./budgetTransactionBrowser";
 import type { BudgetDetailsModel } from "./budgetDetailsModel";
@@ -122,7 +123,25 @@ describe("budget transaction browser options", () => {
       { month: "2026-04", label: "Apr 26" },
       { month: "2026-05", label: "May 26" },
     ]);
+    // The whole-side options lead: they are the widest selection on offer, and
+    // the list reads outside-in from there.
     expect(options.categories).toEqual([
+      {
+        id: "__all_expenses__",
+        entity: "group",
+        side: "expense",
+        title: "All expenses",
+        subtitle: "Every expense category",
+        categoryIds: ["food"],
+      },
+      {
+        id: "__all_income__",
+        entity: "group",
+        side: "income",
+        title: "All income",
+        subtitle: "Every income category",
+        categoryIds: ["paycheck"],
+      },
       {
         id: "expenses",
         entity: "group",
@@ -187,5 +206,76 @@ describe("buildMonthCategoriesDrilldown", () => {
     // Hide the only income category → no income to drill into.
     state.categoriesById.paycheck.hidden = true;
     expect(buildMonthCategoriesDrilldown(state, "2026-04", "income")).toBeNull();
+  });
+});
+
+/*
+ * The period summary's actuals cover every visible category across the months
+ * the figure sums. Reading categories from a single month would silently drop
+ * anything created or retired partway through the window, so the ids are
+ * unioned across the range - and the range itself has to be the months that
+ * were summed, not the whole view, or the dialog opens on a different number
+ * than the one that was clicked.
+ */
+describe("buildRangeCategoriesDrilldown", () => {
+  const state = (categories: { id: string; income?: boolean; hidden?: boolean }[]) => ({
+    groupOrder: ["g-exp", "g-inc"],
+    groupsById: {
+      "g-exp": { id: "g-exp", name: "Expenses", isIncome: false, hidden: false,
+        categoryIds: categories.filter((c) => !c.income).map((c) => c.id) },
+      "g-inc": { id: "g-inc", name: "Income", isIncome: true, hidden: false,
+        categoryIds: categories.filter((c) => c.income).map((c) => c.id) },
+    },
+    categoriesById: Object.fromEntries(
+      categories.map((c) => [c.id, {
+        id: c.id, name: c.id, groupId: c.income ? "g-inc" : "g-exp", groupName: c.income ? "Income" : "Expenses",
+        isIncome: !!c.income, hidden: !!c.hidden,
+      }])
+    ),
+  }) as unknown as LoadedMonthState;
+
+  it("unions categories across the range and spans its loaded months", () => {
+    const result = buildRangeCategoriesDrilldown(
+      [
+        { month: "2026-01", state: state([{ id: "food" }]) },
+        { month: "2026-02", state: state([{ id: "food" }, { id: "fuel" }]) },
+      ],
+      "expense"
+    );
+    expect(result).toMatchObject({
+      monthStart: "2026-01",
+      monthEnd: "2026-02",
+      title: "All expenses",
+      side: "expense",
+      entity: "group",
+    });
+    expect(result?.categoryIds.sort()).toEqual(["food", "fuel"]);
+  });
+
+  it("keeps to the requested side and skips hidden categories", () => {
+    const months = [
+      { month: "2026-01", state: state([{ id: "food" }, { id: "salary", income: true }, { id: "old", hidden: true }]) },
+    ];
+    expect(buildRangeCategoriesDrilldown(months, "income")?.categoryIds).toEqual(["salary"]);
+    expect(buildRangeCategoriesDrilldown(months, "expense")?.categoryIds).toEqual(["food"]);
+  });
+
+  it("ignores months with no loaded state when bounding the range", () => {
+    const result = buildRangeCategoriesDrilldown(
+      [
+        { month: "2026-01", state: null },
+        { month: "2026-02", state: state([{ id: "food" }]) },
+        { month: "2026-03", state: null },
+      ],
+      "expense"
+    );
+    expect(result).toMatchObject({ monthStart: "2026-02", monthEnd: "2026-02" });
+  });
+
+  it("returns null when nothing on that side is visible", () => {
+    expect(buildRangeCategoriesDrilldown([{ month: "2026-01", state: null }], "expense")).toBeNull();
+    expect(
+      buildRangeCategoriesDrilldown([{ month: "2026-01", state: state([{ id: "food" }]) }], "income")
+    ).toBeNull();
   });
 });

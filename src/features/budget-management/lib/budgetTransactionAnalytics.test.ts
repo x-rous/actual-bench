@@ -1,4 +1,8 @@
-import { buildBudgetTransactionAnalytics } from "./budgetTransactionAnalytics";
+import {
+  buildSpendBreakdown,
+  buildTimeBreakdown,
+  buildTransactionTotals,
+} from "./budgetTransactionAnalytics";
 import type { BudgetTransactionRow } from "./budgetTransactionsQuery";
 
 const rows: BudgetTransactionRow[] = [
@@ -36,18 +40,15 @@ const rows: BudgetTransactionRow[] = [
   },
 ];
 
-describe("buildBudgetTransactionAnalytics", () => {
+describe("buildTransactionTotals", () => {
   it("computes spending KPIs from fetched transaction rows", () => {
-    const analytics = buildBudgetTransactionAnalytics(rows);
+    const analytics = buildTransactionTotals(rows);
 
     expect(analytics.totalSpent).toBe(9200); // gross outflow, ignores the refund
     expect(analytics.netSpent).toBe(8200); // net = gross − 1,000 refund (signed)
     expect(analytics.transactionCount).toBe(4);
     expect(analytics.spendingTransactionCount).toBe(3);
     expect(analytics.averageTransaction).toBe(2300);
-    expect(analytics.largestTransaction?.id).toBe("tx-2");
-    expect(analytics.distinctPayeeCount).toBe(2);
-    expect(analytics.noPayeeCount).toBe(1);
   });
 
   it("keeps net spent signed when refunds exceed spending (not clamped to 0)", () => {
@@ -55,13 +56,16 @@ describe("buildBudgetTransactionAnalytics", () => {
       { id: "s", date: "2026-04-02", amount: -2000, payeeName: "Store", categoryName: "Gear", notes: null },
       { id: "r", date: "2026-04-20", amount: 5000, payeeName: "Store", categoryName: "Gear", notes: "big refund" },
     ];
-    const analytics = buildBudgetTransactionAnalytics(refundHeavy);
+    const analytics = buildTransactionTotals(refundHeavy);
     expect(analytics.netSpent).toBe(-3000); // net inflow of 3,000 — refund not lost
     expect(analytics.totalSpent).toBe(2000); // gross outflow unchanged
   });
 
+});
+
+describe("buildSpendBreakdown", () => {
   it("builds ranked payee and category breakdowns", () => {
-    const analytics = buildBudgetTransactionAnalytics(rows);
+    const analytics = buildSpendBreakdown(rows);
 
     expect(analytics.spendByPayee.map((bucket) => bucket.label)).toEqual([
       "Market",
@@ -79,8 +83,11 @@ describe("buildBudgetTransactionAnalytics", () => {
     });
   });
 
-  it("builds time buckets, top transactions, outliers, and repeated payees", () => {
-    const analytics = buildBudgetTransactionAnalytics(rows);
+});
+
+describe("buildTimeBreakdown", () => {
+  it("builds time buckets", () => {
+    const analytics = buildTimeBreakdown(rows);
 
     expect(analytics.spendByWeek.map((bucket) => bucket.label)).toEqual([
       "Week 1",
@@ -95,22 +102,6 @@ describe("buildBudgetTransactionAnalytics", () => {
       0,
       0,
       0,
-    ]);
-    expect(analytics.spendByDay.map((bucket) => bucket.id)).toEqual([
-      "2026-04-02",
-      "2026-04-09",
-      "2026-04-10",
-      "2026-04-22",
-    ]);
-    expect(analytics.topTransactions.map((row) => row.id)).toEqual([
-      "tx-2",
-      "tx-3",
-      "tx-1",
-      "tx-4",
-    ]);
-    expect(analytics.outlierTransactions).toEqual([]);
-    expect(analytics.repeatedPayees).toEqual([
-      { payeeName: "Market", count: 2, amount: 8000 },
     ]);
   });
 });

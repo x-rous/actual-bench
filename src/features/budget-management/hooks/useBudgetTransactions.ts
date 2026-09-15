@@ -20,7 +20,7 @@ type UseBudgetTransactionsInput = {
 };
 
 export type BudgetTransactionsResult = {
-  /** The fetched page of rows (capped at the row limit). */
+  /** Every row matching the range and categories. */
   rows: BudgetTransactionRow[];
   /** True aggregate over the whole matching set, or null if unavailable. */
   summary: BudgetTransactionsSummary | null;

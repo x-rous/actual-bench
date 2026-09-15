@@ -116,6 +116,58 @@ export function buildMonthCategoriesDrilldown(
   };
 }
 
+/**
+ * Drill target for every visible expense (or income) category across a range of
+ * months - powers the full-period summary's "Expenses spent" / "Income
+ * received" figures.
+ *
+ * The range is the months the figure itself covers, not the whole window: those
+ * headlines are "to date" totals over the closed months, and a drill-through
+ * spanning months the figure excluded would open on a number that disagreed
+ * with the one clicked.
+ *
+ * Categories are unioned across the range rather than read from one month. A
+ * category created midway through the year exists in later months only, and
+ * taking the last month alone would silently drop anything retired before it.
+ */
+export function buildRangeCategoriesDrilldown(
+  entries: { month: string; state?: LoadedMonthState | null }[],
+  kind: "expense" | "income"
+): BudgetTransactionsDrilldown | null {
+  const withState = entries.filter((entry) => entry.state != null);
+  const first = withState[0];
+  const last = withState[withState.length - 1];
+  if (!first || !last) return null;
+
+  const wantIncome = kind === "income";
+  const categoryIds = new Set<string>();
+
+  for (const entry of withState) {
+    const state = entry.state;
+    if (!state) continue;
+    for (const groupId of state.groupOrder) {
+      const group = state.groupsById[groupId];
+      if (!group || group.hidden || group.isIncome !== wantIncome) continue;
+      for (const categoryId of group.categoryIds) {
+        const category = state.categoriesById[categoryId];
+        if (!category || category.hidden || category.isIncome !== wantIncome) continue;
+        categoryIds.add(categoryId);
+      }
+    }
+  }
+
+  if (categoryIds.size === 0) return null;
+  return {
+    id: wantIncome ? "__period_income__" : "__period_expenses__",
+    monthStart: first.month,
+    monthEnd: last.month,
+    title: wantIncome ? "All income" : "All expenses",
+    entity: "group",
+    side: wantIncome ? "income" : "expense",
+    categoryIds: [...categoryIds],
+  };
+}
+
 export function buildBudgetTransactionBrowserOptions(
   model: BudgetDetailsModel
 ): BudgetTransactionBrowserOptions {
@@ -125,6 +177,11 @@ export function buildBudgetTransactionBrowserOptions(
   }));
   const categories: BudgetTransactionCategoryOption[] = [];
   const seen = new Set<string>();
+  // Every visible category on each side, for the whole-side options below.
+  const allBySide: Record<BudgetTransactionSide, Set<string>> = {
+    expense: new Set<string>(),
+    income: new Set<string>(),
+  };
 
   for (const entry of model.months) {
     const state = entry.state;
@@ -154,6 +211,7 @@ export function buildBudgetTransactionBrowserOptions(
       for (const categoryId of group.categoryIds) {
         const category = state.categoriesById[categoryId];
         if (!category || category.hidden) continue;
+        allBySide[category.isIncome ? "income" : "expense"].add(category.id);
 
         const categoryKey = transactionOptionKey("category", category.id);
         if (seen.has(categoryKey)) continue;
@@ -170,5 +228,30 @@ export function buildBudgetTransactionBrowserOptions(
     }
   }
 
-  return { months, categories };
+  /*
+   * "All expenses" and "All income", at the top of the list.
+   *
+   * A drill-through from a month's own expense figure already reports on every
+   * category at once, so the view existed - there was just no way to ask for it
+   * from inside the dialog. Reaching it meant closing, finding the right figure
+   * on the page behind, and clicking that instead.
+   *
+   * Placed ahead of the real groups because it is the widest selection on
+   * offer, and the list reads outside-in from there.
+   */
+  const wholeSide: BudgetTransactionCategoryOption[] = [];
+  for (const side of ["expense", "income"] as const) {
+    const ids = [...allBySide[side]];
+    if (ids.length === 0) continue;
+    wholeSide.push({
+      id: side === "income" ? "__all_income__" : "__all_expenses__",
+      entity: "group",
+      side,
+      title: side === "income" ? "All income" : "All expenses",
+      subtitle: side === "income" ? "Every income category" : "Every expense category",
+      categoryIds: ids,
+    });
+  }
+
+  return { months, categories: [...wholeSide, ...categories] };
 }
