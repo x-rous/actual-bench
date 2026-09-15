@@ -859,6 +859,17 @@ export function BudgetTransactionsDialog({ target, browserOptions, statesByMonth
         for (const id of effectiveTarget.categoryIds) {
           const category = state.categoriesById[id];
           if (!category) continue;
+          /*
+           * Hidden in this month means it did not contribute in this month.
+           *
+           * Actual carries `hidden` on the category rather than on the month,
+           * so in practice it is the same in every month of a window loaded
+           * together - but the state is read per month and the metric this
+           * strip compares against skips hidden categories month by month.
+           * Asking the same question here keeps the two in step whatever the
+           * months turn out to say.
+           */
+          if (category.hidden) continue;
 
           // The group map and the span describe the shape of the selection, so
           // they count every category in it regardless of side.
