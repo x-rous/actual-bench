@@ -33,9 +33,21 @@ function budgetDbBytes(options: { transactions?: number } = {}): Uint8Array {
     INSERT INTO accounts VALUES ('a1', 'Current');
   `);
   const insert = db.prepare("INSERT INTO transactions VALUES (?, 'a1', ?, -500)");
-  for (let index = 0; index < (options.transactions ?? 1); index += 1) {
-    insert.run(`t${index}`, 20260101 + (index % 28));
-  }
+  /*
+   * One transaction around the inserts, not one per row.
+   *
+   * SQLite commits every statement on its own otherwise, and a commit is an
+   * fsync - so a hundred rows cost a hundred round trips to the disk. Building
+   * this fixture took 1.8 seconds for a hundred transactions where the same
+   * rows in a single transaction take 18 milliseconds, and the test that needs
+   * two such fixtures was intermittently passing 5 seconds and failing on the
+   * timeout rather than on anything it asserts.
+   */
+  db.transaction(() => {
+    for (let index = 0; index < (options.transactions ?? 1); index += 1) {
+      insert.run(`t${index}`, 20260101 + (index % 28));
+    }
+  })();
   db.close();
   const bytes = readFileSync(path);
   rmSync(root, { recursive: true, force: true });
