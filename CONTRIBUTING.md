@@ -52,7 +52,7 @@ npm run dev
 
 ```bash
 npm run lint      # must pass with 0 errors
-npx tsc --noEmit  # must pass with 0 errors
+npm run typecheck # must pass with 0 errors
 npm test          # must pass
 npm run build     # must succeed (CI builds too — catch build-only errors early)
 ```

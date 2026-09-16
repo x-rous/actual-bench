@@ -14,7 +14,8 @@
     "preview": "NODE_OPTIONS=--max-old-space-size=512 next start",
     "build": "next build",
     "start": "node scripts/start.mjs",
-    "lint": "eslint",
+    "lint": "eslint --cache --cache-strategy content",
+    "typecheck": "tsc --noEmit",
     "test": "NODE_OPTIONS=--max-old-space-size=1024 jest",
     "test:coverage": "NODE_OPTIONS=--max-old-space-size=2048 jest --coverage",
     "clean": "rm -rf .next .next-build tsconfig.tsbuildinfo"

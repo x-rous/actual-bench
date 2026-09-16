@@ -68,3 +68,8 @@ skills-lock.json
 # Build output for the documentation screenshot instance, which runs beside a
 # long-lived development server and must never be committed.
 .next-shots
+
+# ESLint's incremental cache. `react-hooks/static-components` runs the React
+# Compiler over every component, so a cold lint of this repo costs minutes and a
+# cached one costs seconds. Machine-local, never shared.
+.eslintcache

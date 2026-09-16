@@ -359,6 +359,14 @@ Run everything when the user asks for it, and at the gate below. If a narrow run
 surfaces something that could plausibly reach further than the files you touched,
 widen the run to that area — not to the whole repository.
 
+`npm run lint` is cached (`--cache --cache-strategy content`), and the cache is
+additive: a scoped `npm run lint -- <path>` refreshes only those entries and leaves
+the rest intact, so the full gate run below still lands in seconds. Never add
+`--no-cache`. A cold lint of this repository costs roughly four minutes, because
+`react-hooks/static-components` runs the React Compiler over every component and
+accounts for ~90% of lint time; the cache is the only thing standing between you and
+paying that on every run.
+
 ### Before code handoff, push, or PR
 
 For application code, run the whole thing — this is the gate the narrow runs above
@@ -366,7 +374,7 @@ are allowed to skip:
 
 ```bash
 npm run lint
-npx tsc --noEmit
+npm run typecheck
 npm test
 npm run build
 ```

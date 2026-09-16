@@ -10,6 +10,7 @@
     fix/*      → fix         → 🐛 Bug Fixes
     refactor/* → maintenance → 🔧 Maintenance
     docs/*     → docs        → 🔧 Maintenance
+    chor/*     → maintenance → 🔧 Maintenance
 -->
 
 ## Summary
@@ -19,7 +20,7 @@
 ## Test plan
 
 - [ ] `npm run lint` passes
-- [ ] `npx tsc --noEmit` passes
+- [ ] `npm run typecheck` passes
 - [ ] `npm run build` passes
 - [ ] `npm test` passes
 - [ ] Manually tested in browser
