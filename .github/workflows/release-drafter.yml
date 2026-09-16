@@ -4,20 +4,33 @@ on:
   push:
     branches:
       - main
+  # Labels are applied as pull requests are opened and retitled, so the draft
+  # that this same workflow assembles on merge already has something to sort by.
+  pull_request:
+    types: [opened, reopened, edited, synchronize]
   workflow_dispatch:
 
 permissions:
   contents: write
-  pull-requests: read
+  pull-requests: write
 
 concurrency:
-  group: release-drafter
+  group: release-drafter-${{ github.event.pull_request.number || 'main' }}
   cancel-in-progress: true
 
 jobs:
   update-release-draft:
     runs-on: ubuntu-latest
+    # Dependabot's token is read-only, so the labelling step below cannot write
+    # on its pull requests. Dependabot labels its own with `dependencies`, which
+    # the drafter's Maintenance category picks up, so there is nothing to do.
+    if: github.actor != 'dependabot[bot]'
     steps:
       - uses: release-drafter/release-drafter@v7
+        with:
+          # On a pull request, label it and go no further: assembling the draft
+          # is the job of the push to main that follows a merge.
+          disable-releaser: ${{ github.event_name == 'pull_request' }}
+          disable-autolabeler: ${{ github.event_name != 'pull_request' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

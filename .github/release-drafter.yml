@@ -15,8 +15,48 @@ categories:
     labels:
       - 'maintenance'
       - 'docs'
+      # Dependabot applies this itself. Its own PRs cannot be labelled by the
+      # autolabeler below - GitHub hands Dependabot a read-only token, so
+      # nothing running on its pull requests may write a label - and without
+      # this every dependency bump fell out of the notes entirely.
+      - 'dependencies'
+  # Anything that reached main without one of the labels above. Uncategorised
+  # entries are otherwise printed loose, under no heading, which is how a
+  # mislabelled change goes unnoticed: it is still in the notes, just nowhere.
+  - title: '📌 Uncategorised'
+    labels:
+      - '*'
 
 change-template: '- $TITLE (#$NUMBER)'
+
+# Labels come from the pull request's title, not its branch.
+#
+# The branch was the wrong source. It named the work when it started, and the
+# work moves: #295 was cut as `refactor/…`, turned into a bug fix, and was filed
+# under Maintenance; #262 was cut as `feat/…`, shipped as `fix(reconciliation)`,
+# and was filed under Features. `chore/…` had no rule at all, so every chore PR
+# was silently uncategorised - which is what these notes were reporting.
+#
+# The title is the honest source: this repository writes every PR title as
+# `type(scope): description`, and that type is a statement about what the change
+# turned out to be rather than what it was called on the day it was branched.
+autolabeler:
+  - label: 'feature'
+    title:
+      - '/^feat(\(.+\))?!?:/i'
+  - label: 'fix'
+    title:
+      - '/^fix(\(.+\))?!?:/i'
+  - label: 'docs'
+    title:
+      - '/^docs(\(.+\))?!?:/i'
+  - label: 'maintenance'
+    title:
+      # Everything that is neither a feature nor a fix nor documentation. Perf
+      # sits here rather than under Features: it changes how well the product
+      # does something it already did, which is not news to a reader scanning
+      # for what is new.
+      - '/^(chore|refactor|perf|build|ci|style|test|revert)(\(.+\))?!?:/i'
 
 template: |
   ## What's Changed
@@ -42,4 +82,5 @@ version-resolver:
       - 'maintenance'
       - 'docs'
       - 'feature'
+      - 'dependencies'
   default: patch
