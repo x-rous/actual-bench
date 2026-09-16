@@ -367,6 +367,12 @@ the rest intact, so the full gate run below still lands in seconds. Never add
 accounts for ~90% of lint time; the cache is the only thing standing between you and
 paying that on every run.
 
+Delete `.eslintcache` after upgrading an ESLint plugin or config — `rm -f
+.eslintcache`. The cache keys on file *content*, not on the rules applied to it, so
+a plugin that has changed its mind about a file still returns yesterday's verdict
+for it. This is the one case where a clean run is worth the four minutes, and it is
+why the rule above is "never `--no-cache`" rather than "never clear the cache".
+
 ### Before code handoff, push, or PR
 
 For application code, run the whole thing — this is the gate the narrow runs above

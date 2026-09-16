@@ -23,9 +23,14 @@ categories:
   # Anything that reached main without one of the labels above. Uncategorised
   # entries are otherwise printed loose, under no heading, which is how a
   # mislabelled change goes unnoticed: it is still in the notes, just nowhere.
+  #
+  # No labels at all, deliberately. `'*'` is not a wildcard here - it would be
+  # read as the name of a label called "*", which nothing carries, and the
+  # category would sit empty while the changes it was meant to catch went on
+  # being printed loose. A changelog category with no condition is the
+  # documented way to say "everything the earlier ones did not take"; at most
+  # one may do so.
   - title: '📌 Uncategorised'
-    labels:
-      - '*'
 
 change-template: '- $TITLE (#$NUMBER)'
 
