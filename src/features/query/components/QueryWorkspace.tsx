@@ -180,6 +180,19 @@ const QueryReferenceDialog = dynamic(
   { ssr: false },
 );
 
+/**
+ * Is there anything in the editor worth offering to restore?
+ *
+ * Only what the user wrote. While the editor still holds exactly what was
+ * loaded into it - an example picked a moment ago, or the query the page opened
+ * with - there is nothing at stake, and an offer to undo is an interruption
+ * about nothing. Browsing four examples in a row produced four of them, none
+ * with anything to give back.
+ */
+export function shouldOfferUndo(editorValue: string, loadedValue: string): boolean {
+  return editorValue.trim().length > 0 && editorValue !== loadedValue;
+}
+
 export function QueryWorkspace() {
   const connection = useConnectionStore(selectActiveInstance);
   const hasChanges = useStagedStore(selectHasChanges);
@@ -235,6 +248,16 @@ export function QueryWorkspace() {
   const editorHeightRef = useRef(editorHeight);
   // Snapshot of editor content before a programmatic load — enables toast + Ctrl+Z undo.
   const prevEditorValueRef = useRef<string>("");
+  /*
+   * The value the editor was last handed, rather than typed into.
+   *
+   * The undo offer exists to protect work the user wrote. While the editor still
+   * holds exactly what was loaded into it - an example picked a moment ago, or
+   * the query the page opened with - there is nothing at stake, and offering to
+   * restore it is an interruption about nothing. Browsing four examples in a row
+   * produced four toasts, none of which had anything to give back.
+   */
+  const loadedValueRef = useRef<string>(DEFAULT_QUERY);
   // Guards against overlapping concurrent query executions.
   const isRunningRef = useRef(false);
   // Mirrors the active connection so in-flight callbacks can detect stale responses.
@@ -441,26 +464,37 @@ export function QueryWorkspace() {
 
   // ─── Sidebar actions ─────────────────────────────────────────────────────────
 
-  function handleLoad(query: string) {
-    prevEditorValueRef.current = editorValue;
+  /**
+   * Replace the editor's contents with a query chosen from the sidebar.
+   *
+   * Offers to undo only when the editor holds something the user wrote. An
+   * untouched example is not work, so swapping one for another says nothing.
+   */
+  function loadQuery(query: string) {
+    if (shouldOfferUndo(editorValue, loadedValueRef.current)) {
+      prevEditorValueRef.current = editorValue;
+      toast("Query loaded", {
+        action: { label: "Undo", onClick: handleUndo },
+        duration: 6000,
+      });
+    } else {
+      // Nothing to restore, so Ctrl+Z in the editor should fall through to the
+      // browser's own undo rather than to a stale snapshot from an earlier load.
+      prevEditorValueRef.current = "";
+    }
+
+    loadedValueRef.current = query;
     setEditorValue(query);
     setParseError(null);
     setShowExplanation(false);
-    toast("Query loaded", {
-      action: { label: "Undo", onClick: handleUndo },
-      duration: 6000,
-    });
+  }
+
+  function handleLoad(query: string) {
+    loadQuery(query);
   }
 
   function handleLoadAndRun(query: string) {
-    prevEditorValueRef.current = editorValue;
-    setEditorValue(query);
-    setParseError(null);
-    setShowExplanation(false);
-    toast("Query loaded", {
-      action: { label: "Undo", onClick: handleUndo },
-      duration: 6000,
-    });
+    loadQuery(query);
     void executeQuery(query);
   }
 

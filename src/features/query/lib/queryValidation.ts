@@ -79,6 +79,12 @@ export function lintQuery(query: ActualQLQuery): LintWarning[] {
   // Unbounded transaction scan — HTTP mode has a proxy timeout, and Direct mode
   // can still be expensive for large budgets. A query with any filter is
   // considered scoped and does not trigger this warning.
+  //
+  // The wording used to lead with "may return thousands of rows", which was
+  // really about the table having to draw them. It does not any more - the
+  // results table windows its rows and will show a whole budget - so the only
+  // risk left is the one on the server's side of the wire, and the warning says
+  // that instead of frightening the user about a number the page handles.
   if (
     query.table === "transactions" &&
     !query.limit &&
@@ -89,7 +95,7 @@ export function lintQuery(query: ActualQLQuery): LintWarning[] {
     warnings.push({
       id: "unbounded-transactions",
       message:
-        'Unbounded transaction scan - may return thousands of rows and time out. Add "limit", "groupBy", or "calculate" to narrow the scope.',
+        'Unbounded transaction scan - this can be slow or time out on a large budget. Add "limit", "groupBy", or "calculate" to narrow it.',
     });
   }
 
