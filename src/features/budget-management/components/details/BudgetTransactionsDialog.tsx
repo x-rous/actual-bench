@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState, useEffect } from "react";
+import { useMemo, useState, useEffect } from "react";
 import {
   useReactTable,
   getCoreRowModel,
@@ -1218,10 +1218,21 @@ export function BudgetTransactionsDialog({ target, browserOptions, statesByMonth
    * costs a ResizeObserver callback per mounted row on every change to the
    * filter, which is exactly when the list is busiest.
    */
-  const tableScrollRef = useRef<HTMLDivElement>(null);
+  /*
+   * Held in state, not a ref.
+   *
+   * The dialog's contents are unmounted when it closes, so reopening builds a
+   * brand-new scroll container - and attaching a plain ref does not re-render,
+   * so nothing told the virtualiser its element had changed. It went on
+   * measuring the detached node from the first open, found no height, and
+   * returned an empty window: the table drew its header and no rows, with the
+   * data sitting right there behind it. A state-backed callback ref makes the
+   * element's arrival a render, which is the only signal the virtualiser gets.
+   */
+  const [tableScrollEl, setTableScrollEl] = useState<HTMLDivElement | null>(null);
   const rowVirtualizer = useVirtualizer({
     count: tableRows.length,
-    getScrollElement: () => tableScrollRef.current,
+    getScrollElement: () => tableScrollEl,
     estimateSize: () => TABLE_ROW_HEIGHT,
     // A few rows either side, so a fast scroll finds them already rendered.
     overscan: 12,
@@ -1818,7 +1829,7 @@ export function BudgetTransactionsDialog({ target, browserOptions, statesByMonth
                   </div>
                 </div>
 
-                <div ref={tableScrollRef} className="min-h-0 flex-1 overflow-auto">
+                <div ref={setTableScrollEl} className="min-h-0 flex-1 overflow-auto">
                   {tableRows.length === 0 ? (
                     <EmptyState message="No transactions match this search." />
                   ) : (
