@@ -1,4 +1,7 @@
-import { matchesDriverSearch } from "./TopVarianceDriversDialog";
+import {
+  matchesDriverSearch,
+  narrowChildrenToSearch,
+} from "./TopVarianceDriversDialog";
 import type { VarianceGroup } from "../../lib/varianceDrivers";
 
 /*
@@ -52,5 +55,34 @@ describe("matchesDriverSearch", () => {
 
   it("ignores case and surrounding space", () => {
     expect(matchesDriverSearch(food, "  GROCERIES  ")).toBe(true);
+  });
+});
+
+/*
+ * Keeping a matched child's group was only ever about reachability - a category
+ * is shown through its parent. Keeping the group's other children with it meant
+ * a search for one category listed its siblings underneath, which is a hit the
+ * search never found.
+ */
+describe("narrowChildrenToSearch", () => {
+  it("keeps only the children that matched", () => {
+    const result = narrowChildrenToSearch(food, "restaurants");
+    expect(result.children.map((c) => c.name)).toEqual(["Restaurants"]);
+  });
+
+  it("keeps every child when the group itself matched", () => {
+    // There the match is the group, and its contents are what was asked for.
+    const result = narrowChildrenToSearch(food, "food");
+    expect(result.children.map((c) => c.name)).toEqual(["Restaurants", "Groceries"]);
+  });
+
+  it("returns the group untouched when nothing is typed", () => {
+    expect(narrowChildrenToSearch(food, "  ")).toBe(food);
+  });
+
+  it("returns the same object when every child matched, rather than a copy", () => {
+    // Identity matters here: the view memoises on these, and a fresh object
+    // every keystroke would rebuild rows that did not change.
+    expect(narrowChildrenToSearch(food, "e")).toBe(food);
   });
 });

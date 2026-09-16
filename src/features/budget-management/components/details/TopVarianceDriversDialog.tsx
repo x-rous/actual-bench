@@ -703,6 +703,24 @@ export function matchesDriverSearch(group: VarianceGroup, search: string): boole
   );
 }
 
+/**
+ * Drop the children a search did not match, unless the group itself matched.
+ *
+ * Keeping the group was only ever about reachability - a category is shown
+ * through its parent - but keeping all of its siblings with it meant searching
+ * for "Restaurants" listed Groceries underneath it too. A group that matched on
+ * its own name keeps everything, because there the match is the group and its
+ * contents are what was asked for.
+ */
+export function narrowChildrenToSearch(group: VarianceGroup, search: string): VarianceGroup {
+  const needle = search.trim().toLowerCase();
+  if (!needle || group.name.toLowerCase().includes(needle)) return group;
+  const children = group.children.filter((child) =>
+    child.name.toLowerCase().includes(needle)
+  );
+  return children.length === group.children.length ? group : { ...group, children };
+}
+
 function buildView(
   tree: VarianceTree,
   opts: {
@@ -717,7 +735,9 @@ function buildView(
   let groups = tree.groups;
   if (opts.filter === "over") groups = groups.filter((g) => !g.favourable && g.varianceMinor !== 0);
   if (opts.filter === "under") groups = groups.filter((g) => g.favourable && g.varianceMinor !== 0);
-  groups = groups.filter((group) => matchesDriverSearch(group, opts.search));
+  groups = groups
+    .filter((group) => matchesDriverSearch(group, opts.search))
+    .map((group) => narrowChildrenToSearch(group, opts.search));
 
   const direction = opts.sortDesc ? 1 : -1;
   const sorted = [...groups].sort((a, b) => {

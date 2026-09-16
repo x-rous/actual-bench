@@ -341,11 +341,15 @@ function MonthVarianceLine({
   minor,
   side,
   provisional,
+  onValueClick,
+  valueAriaLabel,
 }: {
   label: string;
   minor: number;
   side: VarianceSide;
   provisional: boolean;
+  onValueClick?: () => void;
+  valueAriaLabel?: string;
 }) {
   const described = monthVarianceText(minor, side, provisional);
   return (
@@ -354,6 +358,8 @@ function MonthVarianceLine({
       value={described.value}
       valuePrefix={described.prefix}
       tone={varianceTone(minor)}
+      onValueClick={onValueClick}
+      valueAriaLabel={valueAriaLabel}
     />
   );
 }
@@ -452,6 +458,8 @@ function TrackingMonthBody({
             minor={view.income.variance}
             side="income"
             provisional={provisional}
+            onValueClick={() => setDriversSide("income")}
+            valueAriaLabel="View variance drivers"
           />
         )}
       </DetailsSection>
@@ -478,6 +486,8 @@ function TrackingMonthBody({
             minor={view.expenses.variance}
             side="expense"
             provisional={provisional}
+            onValueClick={() => setDriversSide("expense")}
+            valueAriaLabel="View variance drivers"
           />
         )}
         {!isFuture && view.balance.distinctFromVariance && (
