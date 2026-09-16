@@ -37,7 +37,9 @@ export function useBudgetMonthStates(
    * 404. Skipping them keeps an expected gap from being fetched and failing on
    * every render.
    */
-  availableMonths: string[] | undefined
+  availableMonths: string[] | undefined,
+  /** Whether that list is still on its way - see `isLoading` below. */
+  monthsLoading = false
 ): {
   statesByMonth: Map<string, LoadedMonthState>;
   isLoading: boolean;
@@ -61,6 +63,14 @@ export function useBudgetMonthStates(
     })),
   });
 
+  /*
+   * `queries` is a fresh array on every render, so it cannot be a dependency
+   * itself. What actually changes is when a month resolves, and the update
+   * stamps say that - hoisted into a name rather than computed inside the
+   * dependency array, where an expression is both unreadable and easy to get
+   * subtly wrong.
+   */
+  const resolvedAt = queries.map((query) => query.dataUpdatedAt).join(",");
   const statesByMonth = useMemo(() => {
     const map = new Map<string, LoadedMonthState>();
     queries.forEach((query, index) => {
@@ -68,13 +78,20 @@ export function useBudgetMonthStates(
       if (month && query.data) map.set(month, query.data);
     });
     return map;
-    // `queries` is a new array each render; the data inside it is what matters,
-    // and that changes only when a month resolves.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [months, queries.map((query) => query.dataUpdatedAt).join(",")]);
+  }, [months, resolvedAt]);
 
   return {
     statesByMonth,
-    isLoading: queries.some((query) => query.isLoading),
+    /*
+     * Not knowing which months exist counts as loading.
+     *
+     * Until the available list arrives every query is disabled, and a disabled
+     * query does not report `isLoading` - so this returned false while nothing
+     * had been asked for yet, and the caller took that for "asked, and there is
+     * no budget". Cached transaction rows would then render a confident "No
+     * budget set for this period" before any plan had been requested.
+     */
+    isLoading: monthsLoading || queries.some((query) => query.isLoading),
   };
 }

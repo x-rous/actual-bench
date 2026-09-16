@@ -825,10 +825,11 @@ export function BudgetTransactionsDialog({ target, browserOptions, onClose }: Pr
    * prefetched them, which covers the common case of drilling into the window
    * on screen.
    */
-  const { data: availableMonths } = useAvailableMonths();
+  const { data: availableMonths, isLoading: monthsLoading } = useAvailableMonths();
   const { statesByMonth, isLoading: plansLoading } = useBudgetMonthStates(
     rangeMonths,
-    availableMonths
+    availableMonths,
+    monthsLoading
   );
 
   const rows = data?.rows ?? EMPTY_TRANSACTION_ROWS;
