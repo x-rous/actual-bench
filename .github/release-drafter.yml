@@ -15,10 +15,10 @@ categories:
     labels:
       - 'maintenance'
       - 'docs'
-      # Dependabot applies this itself. Its own PRs cannot be labelled by the
-      # autolabeler below - GitHub hands Dependabot a read-only token, so
-      # nothing running on its pull requests may write a label - and without
-      # this every dependency bump fell out of the notes entirely.
+      # Dependabot applies this itself. The autolabeler reaches its pull
+      # requests too, so this is a second route to the same place rather than
+      # the only one - worth keeping, since a bump that arrives without a
+      # conventional title still lands where it belongs.
       - 'dependencies'
   # Anything that reached main without one of the labels above. Uncategorised
   # entries are otherwise printed loose, under no heading, which is how a

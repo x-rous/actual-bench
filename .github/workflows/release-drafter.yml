@@ -4,9 +4,22 @@ on:
   push:
     branches:
       - main
-  # Labels are applied as pull requests are opened and retitled, so the draft
-  # that this same workflow assembles on merge already has something to sort by.
-  pull_request:
+  # `pull_request_target`, not `pull_request`, so that labelling works on every
+  # pull request rather than most of them.
+  #
+  # A workflow triggered by `pull_request` is handed a read-only token when the
+  # pull request comes from Dependabot or from a fork, and a label cannot be
+  # written with it - which is how a dozen dependency bumps a month ended up
+  # with no type label at all. `pull_request_target` runs against the base
+  # repository and gets a token that can write.
+  #
+  # The usual caution about `pull_request_target` is that it must not check out
+  # or execute the pull request's code, since that code would then run with the
+  # elevated token. Nothing here does: this job has no checkout step, and the
+  # drafter only reads pull request metadata through the API. The workflow file
+  # itself is read from the base branch, so a pull request cannot alter what
+  # runs.
+  pull_request_target:
     types: [opened, reopened, edited, synchronize]
   workflow_dispatch:
 
@@ -21,16 +34,12 @@ concurrency:
 jobs:
   update-release-draft:
     runs-on: ubuntu-latest
-    # Dependabot's token is read-only, so the labelling step below cannot write
-    # on its pull requests. Dependabot labels its own with `dependencies`, which
-    # the drafter's Maintenance category picks up, so there is nothing to do.
-    if: github.actor != 'dependabot[bot]'
     steps:
       - uses: release-drafter/release-drafter@v7
         with:
           # On a pull request, label it and go no further: assembling the draft
           # is the job of the push to main that follows a merge.
-          disable-releaser: ${{ github.event_name == 'pull_request' }}
-          disable-autolabeler: ${{ github.event_name != 'pull_request' }}
+          disable-releaser: ${{ github.event_name == 'pull_request_target' }}
+          disable-autolabeler: ${{ github.event_name != 'pull_request_target' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
