@@ -10,15 +10,13 @@ on:
   # A workflow triggered by `pull_request` is handed a read-only token when the
   # pull request comes from Dependabot or from a fork, and a label cannot be
   # written with it - which is how a dozen dependency bumps a month ended up
-  # with no type label at all. `pull_request_target` runs against the base
-  # repository and gets a token that can write.
+  # with no type label at all.
   #
   # The usual caution about `pull_request_target` is that it must not check out
   # or execute the pull request's code, since that code would then run with the
-  # elevated token. Nothing here does: this job has no checkout step, and the
-  # drafter only reads pull request metadata through the API. The workflow file
-  # itself is read from the base branch, so a pull request cannot alter what
-  # runs.
+  # elevated token. Neither job below has a checkout step; the actions read pull
+  # request metadata through the API. The workflow file itself is read from the
+  # base branch, so a pull request cannot alter what runs.
   pull_request_target:
     types: [opened, reopened, edited, synchronize]
   workflow_dispatch:
@@ -32,14 +30,25 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  update-release-draft:
+  # Two actions, not one with flags. Release Drafter v7 split autolabelling into
+  # its own action and dropped the `disable-releaser` / `disable-autolabeler`
+  # inputs - they are silently ignored now, which is subtle: a workflow passing
+  # them looks configured and does nothing.
+  label:
+    if: github.event_name == 'pull_request_target'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: release-drafter/release-drafter/autolabeler@v7
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  draft:
+    # Assembling the draft is the job of the push that follows a merge. On a
+    # pull request the drafter would be looking at an ephemeral merge commit,
+    # which it refuses to publish from anyway.
+    if: github.event_name != 'pull_request_target'
     runs-on: ubuntu-latest
     steps:
       - uses: release-drafter/release-drafter@v7
-        with:
-          # On a pull request, label it and go no further: assembling the draft
-          # is the job of the push to main that follows a merge.
-          disable-releaser: ${{ github.event_name == 'pull_request_target' }}
-          disable-autolabeler: ${{ github.event_name != 'pull_request_target' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
