@@ -826,11 +826,11 @@ export function BudgetTransactionsDialog({ target, browserOptions, onClose }: Pr
    * on screen.
    */
   const { data: availableMonths, isLoading: monthsLoading } = useAvailableMonths();
-  const { statesByMonth, isLoading: plansLoading } = useBudgetMonthStates(
-    rangeMonths,
-    availableMonths,
-    monthsLoading
-  );
+  const {
+    statesByMonth,
+    isLoading: plansLoading,
+    error: plansError,
+  } = useBudgetMonthStates(rangeMonths, availableMonths, monthsLoading);
 
   const rows = data?.rows ?? EMPTY_TRANSACTION_ROWS;
   const summary = data?.summary ?? null;
@@ -1574,8 +1574,20 @@ export function BudgetTransactionsDialog({ target, browserOptions, onClose }: Pr
                     moment where none have arrived, and asserting their absence
                     during it would flash a wrong answer on every open.
                   */}
-                  <span className="text-xs text-muted-foreground">
-                    {plansLoading ? "Loading budget…" : "No budget set for this period"}
+                  <span
+                    className={cn(
+                      "text-xs",
+                      plansError ? "text-destructive" : "text-muted-foreground"
+                    )}
+                  >
+                    {plansLoading
+                      ? "Loading budget…"
+                      : plansError
+                        ? // A plan that failed to arrive is not a plan that
+                          // does not exist, and only one of those is the
+                          // user's doing.
+                          "Could not load the budget for this period"
+                        : "No budget set for this period"}
                   </span>
                 </div>
               )}

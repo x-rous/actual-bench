@@ -3,7 +3,10 @@
 import { useMemo } from "react";
 import { useQueries } from "@tanstack/react-query";
 import { selectActiveInstance, useConnectionStore } from "@/store/connection";
-import { budgetMonthDataQueryOptions } from "../lib/monthDataQuery";
+import {
+  budgetMonthDataQueryOptions,
+  isMissingBudgetMonthError,
+} from "../lib/monthDataQuery";
 import type { LoadedMonthState } from "../types";
 
 /**
@@ -43,6 +46,8 @@ export function useBudgetMonthStates(
 ): {
   statesByMonth: Map<string, LoadedMonthState>;
   isLoading: boolean;
+  /** A month that failed to load for a reason other than not existing. */
+  error: unknown;
 } {
   const connection = useConnectionStore(selectActiveInstance);
   const availableSet = useMemo(
@@ -93,5 +98,20 @@ export function useBudgetMonthStates(
      * budget set for this period" before any plan had been requested.
      */
     isLoading: monthsLoading || queries.some((query) => query.isLoading),
+    /*
+     * A month that failed to load is not a month without a budget.
+     *
+     * A failed query reports no data and stops loading, which is
+     * indistinguishable from an absent plan unless the failure is carried out -
+     * and the caller would then state, confidently, that nothing was budgeted.
+     *
+     * A month the budget genuinely does not have is excluded: the available
+     * list should already keep those from being asked for, but a window can
+     * race ahead of it, and a 404 there really is an absence.
+     */
+    error: queries.find((query, index) => {
+      const month = months[index];
+      return query.isError && !isMissingBudgetMonthError(query.error, month);
+    })?.error,
   };
 }
