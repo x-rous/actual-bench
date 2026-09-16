@@ -1,10 +1,11 @@
 "use client";
 
-import { useState, useMemo, useEffect, useCallback } from "react";
+import { useState, useMemo, useEffect, useCallback, useRef } from "react";
 import {
   defaultRangeExtractor,
   useVirtualizer,
   type Range,
+  type Virtualizer,
 } from "@tanstack/react-virtual";
 import { usePersistedFilters } from "@/hooks/usePersistedFilters";
 import { useRouter } from "next/navigation";
@@ -180,6 +181,8 @@ export function PayeesTable({
 
   const rowIds = useMemo(() => rows.map((row) => row.entity.id), [rows]);
 
+  const virtualizerRef = useRef<Virtualizer<HTMLDivElement, Element> | null>(null);
+
   const {
     containerRef,
     selectedCell,
@@ -199,6 +202,14 @@ export function PayeesTable({
       return !!row && !row.isDeleted && !row.entity.transferAccountId;
     },
     onAddRowAtEnd: search ? undefined : () => addRows(1, true),
+    /*
+     * Keyboard navigation has to scroll, now that not every row is mounted.
+     *
+     * Selection walks the full row list, so an arrow key at the edge of the
+     * window selects a row that does not exist in the DOM. The virtualiser is
+     * built below this call, so reach it through a ref.
+     */
+    onRevealRow: (index) => virtualizerRef.current?.scrollToIndex(index, { align: "auto" }),
   });
 
   /*
@@ -242,6 +253,16 @@ export function PayeesTable({
       [editingIndex]
     ),
   });
+
+  /*
+   * Published to the ref so `onRevealRow` above can reach the virtualiser that
+   * is declared after it. `useVirtualizer` returns one stable instance, and the
+   * reveal only ever runs in a later commit, so reading last commit's value is
+   * reading the same object.
+   */
+  useEffect(() => {
+    virtualizerRef.current = rowVirtualizer;
+  }, [rowVirtualizer]);
 
   const virtualRows = rowVirtualizer.getVirtualItems();
   const paddingTop = virtualRows.length > 0 ? virtualRows[0]!.start : 0;
