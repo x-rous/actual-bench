@@ -39,17 +39,22 @@ import { BudgetNoteSection, type BudgetNoteTarget } from "./BudgetNoteSection";
 import { useSpendingDetailsShortcut } from "./useSpendingDetailsShortcut";
 
 /**
- * Renders a variance as plain language — "1,200.00 under budget" — instead of a
+ * Renders a variance as plain language - "under budget by 1,200" - instead of a
  * bare signed number, so direction reads without decoding the sign. `positive`
  * is the good direction (under budget / above plan).
+ *
+ * The amount goes last so that every figure in the panel ends at the same
+ * place. These lines sit in a column of right-aligned numbers, and leading with
+ * the amount pushed each one left by however many words followed it - so the
+ * digits stepped in and out down the panel and stopped forming a column at all.
  */
 function describeVariance(
   value: number,
   kind: "budget" | "plan" | "income",
   short = false
-): { text: string; tone: "positive" | "negative" | "neutral" } {
+): { text: string; prefix?: string; tone: "positive" | "negative" | "neutral" } {
   if (value === 0) {
-    return { text: kind === "plan" ? "on plan" : "on budget", tone: "neutral" };
+    return { text: kind === "plan" ? "on plan" : "on budget", prefix: undefined, tone: "neutral" };
   }
   // Positive is the good direction (under budget / above plan / above budgeted
   // income). Short form drops the trailing noun when the row label already
@@ -79,7 +84,10 @@ function describeVariance(
           ? "over"
           : "over budget";
   return {
-    text: `${formatSignedWhole(Math.abs(value))} ${value > 0 ? up : down}`,
+    text: formatSignedWhole(Math.abs(value)),
+    // The words are handed over separately so the figure can keep a slot of its
+    // own and the whole column can line up - see `MetricLine`.
+    prefix: `${value > 0 ? up : down} by`,
     tone: value > 0 ? "positive" : "negative",
   };
 }
@@ -106,6 +114,7 @@ function VarianceLine({
     <MetricLine
       label={label}
       value={v.text}
+      valuePrefix={v.prefix}
       tone={v.tone}
       tooltip={tooltip}
       onValueClick={onValueClick}
@@ -190,6 +199,52 @@ export function TrackingDetailsPanel({
   // RD-070 Top Variance Drivers (full-period / View 1). The clicked variance
   // number sets which tab opens first; null means the dialog is closed.
   const [driversSide, setDriversSide] = useState<VarianceSide | null>(null);
+  /*
+   * A group's own Variance opens the same drivers view the period's does,
+   * scoped to that group - so the answer to "why is this group out" is one
+   * click from the number that raises the question, instead of requiring a
+   * detour through the period summary and a hunt for the group in it.
+   *
+   * Only for a group. A single category has no children to rank, and the view
+   * would be one row restating the figure that opened it.
+   */
+  const selectionGroupId = metrics.selectionGroupId ?? null;
+  const [driversGroupId, setDriversGroupId] = useState<string | null>(null);
+  /*
+   * The month a drill-in came from, when it came from a single month.
+   *
+   * The drivers view defaults to every closed month in the window, which is
+   * right for the period summary and wrong for a month: the Variance clicked
+   * was that month's, and opening a whole year's drivers answers a question
+   * nobody asked.
+   */
+  const [driversMonth, setDriversMonth] = useState<string | null>(null);
+  /*
+   * Which month a month-scope selection is on. Read off the drill-through the
+   * Actual figure already carries rather than threaded separately - it is built
+   * from the same selection and names exactly the month in view.
+   */
+  const monthScopeMonth = isMonth
+    ? (metrics.monthValues?.transactionDrilldown?.monthStart ?? null)
+    : null;
+  /**
+   * Open the drivers view.
+   *
+   * `groupId` null means the whole period; `month` null means every closed
+   * month. The side defaults to the selection's own - a group of income
+   * categories opens on Income - but the period summary passes it explicitly,
+   * because there the selection has no side of its own and its two variance
+   * lines each name one.
+   */
+  function openDrivers(
+    groupId: string | null,
+    month: string | null,
+    side: VarianceSide = metrics.isIncome ? "income" : "expense"
+  ) {
+    setDriversGroupId(groupId);
+    setDriversMonth(month);
+    setDriversSide(side);
+  }
   const drivers = useMemo(() => {
     const closedMonths = [...statesByMonth.keys()]
       .filter((month) => isClosedMonthStatus(classifyMonthActualStatus(month)))
@@ -220,6 +275,26 @@ export function TrackingDetailsPanel({
     return buildTrackingPeriodView(months);
   }, [statesByMonth]);
   const closed = periodView?.closed ?? null;
+
+  /*
+   * What the drivers dialog is opened over: one month when the click came from
+   * a month's Variance, every closed month otherwise.
+   */
+  const driversScope = useMemo(() => {
+    const monthState = driversMonth ? statesByMonth.get(driversMonth) : undefined;
+    if (driversMonth && monthState) {
+      return {
+        states: [monthState],
+        label: `${metrics.title} · ${formatBudgetDetailsRange([driversMonth])}`,
+      };
+    }
+    return {
+      states: drivers.closedStates,
+      label: driversGroupId
+        ? `${metrics.title} · ${drivers.scopeLabel}`
+        : drivers.scopeLabel,
+    };
+  }, [driversMonth, driversGroupId, statesByMonth, drivers, metrics.title]);
 
   return (
     <div className="px-3 py-2 space-y-3">
@@ -291,6 +366,12 @@ export function TrackingDetailsPanel({
               label="Variance"
               value={metrics.monthValues.variance}
               kind={metrics.isIncome ? "income" : "budget"}
+              onValueClick={
+                selectionGroupId && monthScopeMonth
+                  ? () => openDrivers(selectionGroupId, monthScopeMonth)
+                  : undefined
+              }
+              valueAriaLabel={`View what drives the variance in ${metrics.title}`}
               tooltip={
                 metrics.isIncome
                   ? "Received income minus budgeted income this month."
@@ -391,7 +472,7 @@ export function TrackingDetailsPanel({
             kind="budget"
             short
             tooltip={PERIOD_TOOLTIP.expenseVariance}
-            onValueClick={() => setDriversSide("expense")}
+            onValueClick={() => openDrivers(null, null, "expense")}
             valueAriaLabel="View variance drivers"
           />
           <VarianceLine
@@ -400,7 +481,7 @@ export function TrackingDetailsPanel({
             kind="income"
             short
             tooltip={PERIOD_TOOLTIP.incomeVariance}
-            onValueClick={() => setDriversSide("income")}
+            onValueClick={() => openDrivers(null, null, "income")}
             valueAriaLabel="View variance drivers"
           />
           <div className="border-t border-border/50 pt-1.5">
@@ -452,12 +533,20 @@ export function TrackingDetailsPanel({
               label="Variance"
               value={formatDeltaWhole(metrics.selectionToDate.variance)}
               tone={toneFromValue(metrics.selectionToDate.variance)}
+              onValueClick={
+                selectionGroupId ? () => openDrivers(selectionGroupId, null) : undefined
+              }
+              valueAriaLabel={`View what drives the variance in ${metrics.title}`}
             />
           ) : (
             <VarianceLine
               label="Variance"
               value={metrics.selectionToDate.variance}
               kind="budget"
+              onValueClick={
+                selectionGroupId ? () => openDrivers(selectionGroupId, null) : undefined
+              }
+              valueAriaLabel={`View what drives the variance in ${metrics.title}`}
             />
           )}
           {metrics.selectionToDate.endingBalance != null && (
@@ -494,6 +583,11 @@ export function TrackingDetailsPanel({
                     tone={toneFromValue(metrics.selectionAverages.variancePerMonth)}
                   />
                 ) : (
+                  /*
+                    Not clickable, unlike the other variance lines: this one is
+                    a per-month average and the drivers view reports totals, so
+                    the figure that opened it would appear nowhere inside it.
+                  */
                   <VarianceLine
                     label="Variance"
                     value={metrics.selectionAverages.variancePerMonth}
@@ -574,12 +668,17 @@ export function TrackingDetailsPanel({
         <TopVarianceDriversDialog
           // Remount on side change so the dialog's internal tab/filter/expand
           // state always starts fresh for the requested side (CodeRabbit).
-          key={driversSide}
+          key={`${driversSide}:${driversGroupId ?? "all"}:${driversMonth ?? "period"}`}
           open
-          onClose={() => setDriversSide(null)}
-          scopeLabel={drivers.scopeLabel}
+          onClose={() => {
+            setDriversSide(null);
+            setDriversGroupId(null);
+            setDriversMonth(null);
+          }}
+          scopeLabel={driversScope.label}
           initialSide={driversSide}
-          monthStates={drivers.closedStates}
+          monthStates={driversScope.states}
+          groupId={driversGroupId ?? undefined}
         />
       )}
     </div>

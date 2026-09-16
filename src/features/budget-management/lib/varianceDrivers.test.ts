@@ -354,3 +354,56 @@ describe("buildVarianceTree", () => {
     expect(treeHasData(buildVarianceTree([], "expense"))).toBe(false);
   });
 });
+
+/*
+ * Scoping to a group has to happen while the tree is built, not by filtering
+ * the finished one. Every figure below the top is a share of something, and
+ * those denominators are fixed at build time: keep the budget's and a group
+ * that accounts for all of its own overspend reports a fraction of it, which
+ * is the opposite of what a drill-in from that group is asking.
+ */
+describe("buildVarianceTree - scoped to one group", () => {
+  it("keeps only the requested group", () => {
+    const tree = buildVarianceTree(housingFoodStates(), "expense", { groupId: "housing" });
+    expect(tree.groups.map((g) => g.id)).toEqual(["housing"]);
+  });
+
+  it("recomputes the totals over that group alone", () => {
+    const tree = buildVarianceTree(housingFoodStates(), "expense", { groupId: "housing" });
+    // Unscoped these are -3400 / -3800 / -400, carrying Food's numbers.
+    expect(tree.totals).toMatchObject({
+      budgetedMinor: -2800,
+      actualMinor: -3170,
+      varianceMinor: -370,
+      overspendMinor: 370,
+      savedMinor: 0,
+    });
+  });
+
+  it("makes the group's contribution whole rather than a share of the budget", () => {
+    const scoped = buildVarianceTree(housingFoodStates(), "expense", { groupId: "housing" });
+    const whole = buildVarianceTree(housingFoodStates(), "expense");
+    expect(whole.groups[0].contribution).toBeCloseTo(370 / 400, 10);
+    expect(scoped.groups[0].contribution).toBeCloseTo(1, 10);
+  });
+
+  it("leaves the children and their shares untouched", () => {
+    // A child's contribution was always a share of its own group, so scoping
+    // must not move it - the figure means the same thing either way.
+    const scoped = buildVarianceTree(housingFoodStates(), "expense", { groupId: "housing" });
+    const whole = buildVarianceTree(housingFoodStates(), "expense");
+    expect(scoped.groups[0].children).toEqual(whole.groups[0].children);
+  });
+
+  it("returns an empty tree for a group that is not there", () => {
+    const tree = buildVarianceTree(housingFoodStates(), "expense", { groupId: "nope" });
+    expect(tree.groups).toEqual([]);
+    expect(tree.totals).toMatchObject({ varianceMinor: 0, overspendMinor: 0, savedMinor: 0 });
+  });
+
+  it("still keeps the month count, so the sparkline scale does not change", () => {
+    const tree = buildVarianceTree(housingFoodStates(), "expense", { groupId: "housing" });
+    expect(tree.monthCount).toBe(2);
+    expect(tree.groups[0].monthly).toEqual([-250, -120]);
+  });
+});

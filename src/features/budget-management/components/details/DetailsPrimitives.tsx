@@ -151,9 +151,25 @@ export function DetailsSection({
   );
 }
 
+/**
+ * Width reserved for the figure on a line that qualifies it in words.
+ *
+ * The amount sits in a slot of its own so that every figure in the panel ends
+ * at the same place and starts at the same place - a right-aligned string like
+ * "over budget by 6,426" lines its last character up with its neighbours and
+ * nothing else, so the digits stepped in and out down the column depending on
+ * how many words preceded them. With the slot fixed, the words right-align
+ * against it instead.
+ *
+ * Sized to the figures these panels actually show; anything longer widens the
+ * slot rather than being clipped, which costs alignment on that one line only.
+ */
+const VALUE_SLOT = "min-w-[3.25rem]";
+
 export function MetricLine({
   label,
   value,
+  valuePrefix,
   tone = "neutral",
   tooltip,
   onValueClick,
@@ -161,12 +177,39 @@ export function MetricLine({
 }: {
   label: string;
   value: string;
+  /**
+   * Words qualifying the figure - "over budget by". Rendered to the left of the
+   * amount, right-aligned against its reserved slot.
+   */
+  valuePrefix?: string;
   tone?: DetailsTone;
   tooltip?: string;
   onValueClick?: () => void;
   valueAriaLabel?: string;
 }) {
   const valueClass = `font-sans tabular-nums text-right text-[11px] ${toneClass(tone)}`;
+  /*
+   * The dotted underline marking a value as clickable has to be carried by the
+   * amount itself once the line is split.
+   *
+   * `text-decoration` does not propagate into an atomic inline box, and the
+   * slot that aligns the figures is one - so the rule set on the button stopped
+   * short of the number and the affordance vanished from exactly the lines that
+   * had gained a prefix. Underlining the amount alone is also the better
+   * reading: the figure is what the click opens, and the words qualifying it
+   * are not separately clickable.
+   */
+  const amountClass = onValueClick
+    ? `${VALUE_SLOT} inline-block text-right underline decoration-dotted underline-offset-2`
+    : `${VALUE_SLOT} inline-block text-right`;
+  const body = valuePrefix ? (
+    <span className="inline-flex items-baseline justify-end gap-1">
+      <span className="font-normal no-underline">{valuePrefix}</span>
+      <span className={amountClass}>{value}</span>
+    </span>
+  ) : (
+    value
+  );
 
   return (
     <div className="flex justify-between items-baseline gap-2">
@@ -185,10 +228,10 @@ export function MetricLine({
           aria-label={valueAriaLabel ?? `View ${label}`}
           title={valueAriaLabel ?? `View ${label}`}
         >
-          {value}
+          {body}
         </button>
       ) : (
-        <span className={valueClass}>{value}</span>
+        <span className={valueClass}>{body}</span>
       )}
     </div>
   );
