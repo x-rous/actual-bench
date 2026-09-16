@@ -16,15 +16,48 @@ export function formatMinorUnits(minor: number): string {
   return `${negative ? "-" : ""}${grouped}.${fraction}`;
 }
 
-/** `03 Jul` — compact, since the workbench shows one statement period. */
-export function formatShortDate(iso: string): string {
+/**
+ * `03 Jul`, or `03 Jul 2025` where the year is doing work.
+ *
+ * Compact by default, because a statement period is normally one month and the
+ * year would then be the same four characters on every row. It stops being
+ * decoration the moment two years are in play - a December statement matched
+ * against a January transaction, or a session reaching back into last year -
+ * and "03 Jan" beside "30 Dec" reads as three days apart when it is a year.
+ */
+export function formatShortDate(iso: string, withYear = false): string {
   const date = new Date(`${iso}T00:00:00Z`);
   if (Number.isNaN(date.getTime())) return iso;
   return date.toLocaleDateString("en-GB", {
     day: "2-digit",
     month: "short",
+    ...(withYear ? { year: "numeric" as const } : {}),
     timeZone: "UTC",
   });
+}
+
+/**
+ * Whether a set of dates needs its years shown.
+ *
+ * Decided once for the whole table rather than per row. A column where some
+ * dates carry a year and others do not reads as inconsistent formatting rather
+ * than as a distinction, and the reader has to work out which it is; and a row
+ * whose own two dates agree can still sit in a table that spans a boundary,
+ * where its bare "03 Jan" is exactly as ambiguous as its neighbour's.
+ *
+ * Undated entries are skipped rather than counted - an empty string is not a
+ * year, and letting one in would turn the years on for a table that does not
+ * need them.
+ */
+export function datesSpanYears(dates: Iterable<string | null | undefined>): boolean {
+  let seen: string | null = null;
+  for (const date of dates) {
+    if (!date || date.length < 4) continue;
+    const year = date.slice(0, 4);
+    if (seen === null) seen = year;
+    else if (seen !== year) return true;
+  }
+  return false;
 }
 
 /**

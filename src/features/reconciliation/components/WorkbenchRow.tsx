@@ -274,6 +274,13 @@ export type WorkbenchRowProps = {
    * learn it: scroll past a row and there was no sign at all. Marked on both
    * halves, since either is where someone might be looking.
    */
+  /**
+   * Show the year alongside each date.
+   *
+   * Decided by the table rather than the row, so the column stays one format -
+   * see `datesSpanYears`.
+   */
+  showYear?: boolean;
   hasPossiblePair?: boolean;
   /**
    * How many rows are competing for this row's single candidate.
@@ -293,6 +300,7 @@ export function WorkbenchRow({
   item,
   statementRow,
   transactions,
+  showYear = false,
   hasPossiblePair = false,
   contestedBy,
   selected,
@@ -371,7 +379,7 @@ export function WorkbenchRow({
 
       {/* Bank statement */}
       <td className="whitespace-nowrap px-2 py-1.5 tabular-nums text-muted-foreground">
-        {statementRow ? formatShortDate(statementRow.postedDate) : EMPTY}
+        {statementRow ? formatShortDate(statementRow.postedDate, showYear) : EMPTY}
       </td>
       <td
         className="max-w-0 truncate px-2 py-1.5"
@@ -431,11 +439,11 @@ export function WorkbenchRow({
         )}
         title={
           datesDiffer && statementRow
-            ? `The statement says ${formatShortDate(statementRow.postedDate)}`
+            ? `The statement says ${formatShortDate(statementRow.postedDate, showYear)}`
             : undefined
         }
       >
-        {primary && !several ? formatShortDate(primary.date) : EMPTY}
+        {primary && !several ? formatShortDate(primary.date, showYear) : EMPTY}
       </td>
       <td className="max-w-0 px-2 py-1.5">
         {several ? (
