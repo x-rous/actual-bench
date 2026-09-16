@@ -1,7 +1,16 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { ChevronRight, ArrowUpDown, ChevronsUpDown, Download } from "lucide-react";
+import {
+  ArrowDown,
+  ArrowUp,
+  ArrowUpDown,
+  ChevronRight,
+  ChevronsUpDown,
+  Download,
+  Search,
+  X,
+} from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -49,7 +58,7 @@ const GRID =
   "grid-cols-[minmax(160px,1fr)_80px_80px_54px_minmax(140px,1.1fr)_86px_58px]";
 
 type Filter = "all" | "over" | "under";
-type SortKey = "variance" | "pct" | "name";
+type SortKey = "variance" | "pct" | "name" | "budgeted" | "actual";
 
 function word(side: VarianceSide, favourable: boolean, provisional: boolean): string {
   const soFar = provisional ? " so far" : "";
@@ -96,6 +105,8 @@ export function TopVarianceDriversDialog({
   const [side, setSide] = useState<VarianceSide>(resolvedInitial);
   const [filter, setFilter] = useState<Filter>("all");
   const [sortKey, setSortKey] = useState<SortKey>("variance");
+  const [sortDesc, setSortDesc] = useState(true);
+  const [search, setSearch] = useState("");
   const [showAll, setShowAll] = useState(false);
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
 
@@ -105,14 +116,35 @@ export function TopVarianceDriversDialog({
     if (next === side) return;
     setSide(next);
     setFilter("all");
+    setSearch("");
     setShowAll(false);
     setExpanded(new Set());
   }
 
   const view = useMemo(
-    () => buildView(tree, { filter, sortKey, showAll, topN: TOP_N }),
-    [tree, filter, sortKey, showAll]
+    () => buildView(tree, { filter, sortKey, sortDesc, search, showAll, topN: TOP_N }),
+    [tree, filter, sortKey, sortDesc, search, showAll]
   );
+
+  /*
+   * A search shows what it found, opened.
+   *
+   * The thing being looked for is as likely to be a category as a group, and
+   * leaving the groups collapsed would report a hit while hiding the row that
+   * caused it.
+   */
+  const searching = search.trim().length > 0;
+
+  function sortBy(key: SortKey) {
+    if (key === sortKey) {
+      setSortDesc((d) => !d);
+      return;
+    }
+    setSortKey(key);
+    // Names read from A, figures from the largest - which is what a variance
+    // table is usually asked for first.
+    setSortDesc(key !== "name");
+  }
 
   function toggleGroup(id: string) {
     setExpanded((prev) => {
@@ -171,12 +203,35 @@ export function TopVarianceDriversDialog({
               ))}
             </div>
             <div className="flex items-center gap-1.5">
-              <ToolButton
-                onClick={() => setSortKey((s) => (s === "variance" ? "pct" : s === "pct" ? "name" : "variance"))}
-                icon={<ArrowUpDown className="size-3" />}
-              >
-                {sortKey === "variance" ? "Variance" : sortKey === "pct" ? "% of budget" : "Name"}
-              </ToolButton>
+              {/*
+                Sorting moved onto the column headings, where the thing being
+                sorted is named. The control here cycled through three keys one
+                press at a time and showed only the one currently chosen, so
+                finding a sort meant pressing until it appeared.
+              */}
+              <div className="relative flex items-center">
+                <Search
+                  className="pointer-events-none absolute left-2 size-3 text-muted-foreground"
+                  aria-hidden="true"
+                />
+                <input
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                  placeholder="Search groups"
+                  aria-label="Search groups and categories"
+                  className="h-7 w-44 rounded-md border border-border bg-background pl-7 pr-7 text-[11px] outline-none focus:ring-1 focus:ring-ring"
+                />
+                {search.length > 0 && (
+                  <button
+                    type="button"
+                    aria-label="Clear search"
+                    className="absolute right-2 text-muted-foreground hover:text-foreground"
+                    onClick={() => setSearch("")}
+                  >
+                    <X className="size-3" aria-hidden="true" />
+                  </button>
+                )}
+              </div>
               <ToolButton onClick={toggleExpandAll} icon={<ChevronsUpDown className="size-3" />}>
                 {allExpanded ? "Collapse all" : "Expand all"}
               </ToolButton>
@@ -193,17 +248,23 @@ export function TopVarianceDriversDialog({
         {/* Table */}
         <div className="min-h-0 flex-1 overflow-auto border-t border-border">
           <div className={cn(GRID, "sticky top-0 z-10 h-7 bg-muted text-[9px] font-semibold uppercase tracking-wide text-muted-foreground")}>
-            <span>{side === "expense" ? "Category group" : "Income group"}</span>
-            <span className="text-right">Budgeted</span>
-            <span className="text-right">Actual</span>
+            <SortHeader
+              label={side === "expense" ? "Category group" : "Income group"}
+              sortKey="name"
+              active={sortKey}
+              desc={sortDesc}
+              onSort={sortBy}
+            />
+            <SortHeader label="Budgeted" sortKey="budgeted" active={sortKey} desc={sortDesc} onSort={sortBy} align="right" />
+            <SortHeader label="Actual" sortKey="actual" active={sortKey} desc={sortDesc} onSort={sortBy} align="right" />
             <span className="text-center">Trend</span>
             <span className="grid grid-cols-[32px_1fr_32px] items-center">
               <span className="text-center">◄ {sideWords(side).fav}</span>
               <span />
               <span className="text-center">{sideWords(side).unfav} ►</span>
             </span>
-            <span className="text-right">Variance</span>
-            <span className="text-right">% budget</span>
+            <SortHeader label="Variance" sortKey="variance" active={sortKey} desc={sortDesc} onSort={sortBy} align="right" />
+            <SortHeader label="% budget" sortKey="pct" active={sortKey} desc={sortDesc} onSort={sortBy} align="right" />
           </div>
 
           {view.rows.map((group) => (
@@ -212,7 +273,7 @@ export function TopVarianceDriversDialog({
               group={group}
               monthCount={tree.monthCount}
               globalMax={view.globalMax}
-              expanded={expanded.has(group.id)}
+              expanded={searching || expanded.has(group.id)}
               onToggle={() => toggleGroup(group.id)}
             />
           ))}
@@ -364,7 +425,18 @@ function DivergingBar({
       <span className="pr-1.5 text-right font-mono text-[10px] font-semibold text-muted-foreground">
         {favourable ? pct : ""}
       </span>
-      <span className="relative h-2.5">
+      {/*
+        The bar's direction and length are the whole statement - which side of
+        the axis, and how far - and neither reaches a screen reader. The figure
+        and the share are announced beside it instead.
+      */}
+      <span
+        className="relative h-2.5"
+        role="img"
+        aria-label={`${formatMinor(Math.abs(variance))} ${favourable ? "favourable" : "unfavourable"}${
+          share != null ? `, ${Math.round(share * 100)}% of the total` : ""
+        }`}
+      >
         <span className="absolute left-1/2 -top-3 -bottom-3 w-px bg-border" />
         <span
           className={cn("absolute top-0 h-full", fillColor, favourable ? "right-1/2 rounded-l-sm" : "left-1/2 rounded-r-sm")}
@@ -414,7 +486,8 @@ function CompositionHero({
   side: VarianceSide;
   provisional: boolean;
 }) {
-  const { overspendMinor, savedMinor, varianceMinor } = tree.totals;
+  const { overspendMinor, savedMinor, varianceMinor, budgetedMinor, actualMinor } = tree.totals;
+  const groupCount = tree.groups.length;
   const favourable = varianceMinor >= 0;
   const heroColor = favourable ? "text-emerald-600 dark:text-emerald-400" : "text-destructive";
   const overLabel = side === "expense" ? "Overspend" : "Below budget";
@@ -428,6 +501,32 @@ function CompositionHero({
           {formatMinor(Math.abs(varianceMinor))}
         </span>
         <span className={cn("text-sm font-medium", heroColor)}>{word(side, favourable, provisional)}</span>
+      </div>
+
+      {/*
+        The two figures the variance is the difference between.
+        
+        The hero says how far out the period is and the bar below says which
+        way; neither says out of what. A variance of 400 against a 2,800 plan
+        is a different month from the same 400 against 300, and the reader had
+        to leave the dialog to find out which.
+      */}
+      <div className="flex flex-wrap items-baseline gap-x-5 gap-y-1 text-[11px] text-muted-foreground">
+        <span>
+          Budgeted{" "}
+          <b className="font-mono font-semibold tabular-nums text-foreground">
+            {formatMinor(budgetedMinor)}
+          </b>
+        </span>
+        <span>
+          Actual{" "}
+          <b className="font-mono font-semibold tabular-nums text-foreground">
+            {formatMinor(actualMinor)}
+          </b>
+        </span>
+        <span>
+          {groupCount} {groupCount === 1 ? "group" : "groups"}
+        </span>
       </div>
 
       {(overspendMinor > 0 || savedMinor > 0) && (
@@ -488,6 +587,47 @@ function Sparkline({ series, favourable }: { series: number[]; favourable: boole
 }
 
 // ── Small controls ───────────────────────────────────────────────────────────
+
+/**
+ * A column heading that sorts by its own column.
+ *
+ * Replaces a single button that cycled through the sort keys: it showed only
+ * the key currently in use, so finding one meant pressing until it appeared,
+ * and nothing connected it to the column it reordered.
+ */
+function SortHeader({
+  label,
+  sortKey,
+  active,
+  desc,
+  onSort,
+  align = "left",
+}: {
+  label: string;
+  sortKey: SortKey;
+  active: SortKey;
+  desc: boolean;
+  onSort: (key: SortKey) => void;
+  align?: "left" | "right";
+}) {
+  const isActive = active === sortKey;
+  const Icon = !isActive ? ArrowUpDown : desc ? ArrowDown : ArrowUp;
+  return (
+    <button
+      type="button"
+      onClick={() => onSort(sortKey)}
+      aria-label={`Sort by ${label.toLowerCase()}`}
+      className={cn(
+        "flex min-w-0 items-center gap-0.5 transition-colors hover:text-foreground",
+        align === "right" ? "justify-end" : "justify-start",
+        isActive && "text-foreground"
+      )}
+    >
+      <span className="truncate">{label}</span>
+      <Icon className={cn("size-2.5 shrink-0", !isActive && "opacity-40")} aria-hidden="true" />
+    </button>
+  );
+}
 
 function Tab({
   active,
@@ -551,23 +691,56 @@ function Legend({ className, children }: { className: string; children: React.Re
 
 type ViewOther = { count: number; budgetedMinor: number; actualMinor: number; varianceMinor: number };
 
+export function matchesDriverSearch(group: VarianceGroup, search: string): boolean {
+  const needle = search.trim().toLowerCase();
+  if (!needle) return true;
+  // A child match keeps its parent, because a category is only reachable
+  // through the group it sits in - dropping the group would hide the row the
+  // search just found.
+  return (
+    group.name.toLowerCase().includes(needle) ||
+    group.children.some((child) => child.name.toLowerCase().includes(needle))
+  );
+}
+
 function buildView(
   tree: VarianceTree,
-  opts: { filter: Filter; sortKey: SortKey; showAll: boolean; topN: number }
+  opts: {
+    filter: Filter;
+    sortKey: SortKey;
+    sortDesc: boolean;
+    search: string;
+    showAll: boolean;
+    topN: number;
+  }
 ): { rows: VarianceGroup[]; other: ViewOther | null; globalMax: number } {
   let groups = tree.groups;
   if (opts.filter === "over") groups = groups.filter((g) => !g.favourable && g.varianceMinor !== 0);
   if (opts.filter === "under") groups = groups.filter((g) => g.favourable && g.varianceMinor !== 0);
+  groups = groups.filter((group) => matchesDriverSearch(group, opts.search));
 
+  const direction = opts.sortDesc ? 1 : -1;
   const sorted = [...groups].sort((a, b) => {
-    if (opts.sortKey === "name") return a.name.localeCompare(b.name);
+    if (opts.sortKey === "name") return a.name.localeCompare(b.name) * (opts.sortDesc ? -1 : 1);
+    if (opts.sortKey === "budgeted")
+      return (Math.abs(b.budgetedMinor) - Math.abs(a.budgetedMinor)) * direction;
+    if (opts.sortKey === "actual")
+      return (Math.abs(b.actualMinor) - Math.abs(a.actualMinor)) * direction;
     if (opts.sortKey === "pct")
-      return Math.abs(b.pctOfBudget ?? 0) - Math.abs(a.pctOfBudget ?? 0);
-    return Math.abs(b.varianceMinor) - Math.abs(a.varianceMinor);
+      return (Math.abs(b.pctOfBudget ?? 0) - Math.abs(a.pctOfBudget ?? 0)) * direction;
+    return (Math.abs(b.varianceMinor) - Math.abs(a.varianceMinor)) * direction;
   });
 
-  // Other bucket only in the default, unfiltered view.
-  const bucketize = !opts.showAll && opts.filter === "all" && sorted.length > opts.topN;
+  /*
+   * The Other bucket only in the default view.
+   *
+   * It stands for "the groups not shown", which is only true while nothing has
+   * narrowed the list - under a search or a filter the hidden rows were
+   * excluded on purpose, and rolling them into a summary row would put them
+   * back.
+   */
+  const bucketize =
+    !opts.showAll && opts.filter === "all" && !opts.search.trim() && sorted.length > opts.topN;
   const rows = bucketize ? sorted.slice(0, opts.topN) : sorted;
   const rest = bucketize ? sorted.slice(opts.topN) : [];
   const other: ViewOther | null = bucketize
