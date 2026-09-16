@@ -52,7 +52,7 @@ npm run dev
 
 ```bash
 npm run lint      # must pass with 0 errors
-npx tsc --noEmit  # must pass with 0 errors
+npm run typecheck # must pass with 0 errors
 npm test          # must pass
 npm run build     # must succeed (CI builds too — catch build-only errors early)
 ```
@@ -83,14 +83,22 @@ The `feat/* → main` PR is the source of truth for the release draft. Two thing
 - **Title** — must be user-facing and clear. This becomes the changelog line verbatim.
   - ❌ `wip stuff` / `fix bug` / `update things`
   - ✅ `Add schedules page with basic CRUD` / `Fix rule drawer width behind Traefik`
-- **Label** — controls which changelog section the PR appears under. Labels are auto-applied from your branch name but verify before merging:
+- **Label** — controls which changelog section the PR appears under, and is applied
+  automatically from the title's type. Nothing to do by hand; retitling relabels.
 
-| Branch prefix | Label applied | Changelog section |
+| Title starts with | Label applied | Changelog section |
 |---|---|---|
-| `feat/*` | `feature` | 🚀 Features |
-| `fix/*` | `fix` | 🐛 Bug Fixes |
-| `refactor/*` | `maintenance` | 🔧 Maintenance |
-| `docs/*` | `docs` | 🔧 Maintenance |
+| `feat:` / `feat(scope):` | `feature` | 🚀 Features |
+| `fix:` | `fix` | 🐛 Bug Fixes |
+| `docs:` | `docs` | 🔧 Maintenance |
+| `chore:` `refactor:` `perf:` `build:` `ci:` `style:` `test:` `revert:` | `maintenance` | 🔧 Maintenance |
+| anything else | none | 📌 Uncategorised |
+
+The branch name has no bearing on this. It used to, and it was wrong often enough
+to be worth saying why: a branch is named when the work starts and the work moves,
+so a branch cut as `refactor/…` that ships as a bug fix filed itself under
+Maintenance. The title is chosen last and describes what the change turned out to
+be.
 
 The PR description is for reviewers — explain what changed, why, and include screenshots where relevant. It does not appear in the changelog.
 

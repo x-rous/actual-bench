@@ -1,15 +1,18 @@
 <!--
   Target branch: main
 
-  PR title: make it user-facing — this becomes the changelog entry verbatim.
+  PR title: `type(scope): description`, user-facing — this becomes the changelog
+  entry verbatim, and its type decides which section it lands in.
     ❌  wip stuff / fix bug / update things
-    ✅  Add schedules page with basic CRUD / Fix rule drawer width behind Traefik
+    ✅  feat(budget): add schedules page with basic CRUD
+    ✅  fix(rules): keep the drawer width correct behind Traefik
 
-  Label: auto-applied from your branch name — verify before merging.
-    feat/*     → feature     → 🚀 Features
-    fix/*      → fix         → 🐛 Bug Fixes
-    refactor/* → maintenance → 🔧 Maintenance
-    docs/*     → docs        → 🔧 Maintenance
+  Label: applied automatically from that type. The branch name has no bearing.
+    feat:                                          → feature     → 🚀 Features
+    fix:                                           → fix         → 🐛 Bug Fixes
+    docs:                                          → docs        → 🔧 Maintenance
+    chore: refactor: perf: build: ci: style: test: → maintenance → 🔧 Maintenance
+    anything else                                  → none        → 📌 Uncategorised
 -->
 
 ## Summary
@@ -19,7 +22,7 @@
 ## Test plan
 
 - [ ] `npm run lint` passes
-- [ ] `npx tsc --noEmit` passes
+- [ ] `npm run typecheck` passes
 - [ ] `npm run build` passes
 - [ ] `npm test` passes
 - [ ] Manually tested in browser

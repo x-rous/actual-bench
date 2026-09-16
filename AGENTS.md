@@ -359,6 +359,20 @@ Run everything when the user asks for it, and at the gate below. If a narrow run
 surfaces something that could plausibly reach further than the files you touched,
 widen the run to that area — not to the whole repository.
 
+`npm run lint` is cached (`--cache --cache-strategy content`), and the cache is
+additive: a scoped `npm run lint -- <path>` refreshes only those entries and leaves
+the rest intact, so the full gate run below still lands in seconds. Never add
+`--no-cache`. A cold lint of this repository costs roughly four minutes, because
+`react-hooks/static-components` runs the React Compiler over every component and
+accounts for ~90% of lint time; the cache is the only thing standing between you and
+paying that on every run.
+
+Delete `.eslintcache` after upgrading an ESLint plugin or config — `rm -f
+.eslintcache`. The cache keys on file *content*, not on the rules applied to it, so
+a plugin that has changed its mind about a file still returns yesterday's verdict
+for it. This is the one case where a clean run is worth the four minutes, and it is
+why the rule above is "never `--no-cache`" rather than "never clear the cache".
+
 ### Before code handoff, push, or PR
 
 For application code, run the whole thing — this is the gate the narrow runs above
@@ -366,7 +380,7 @@ are allowed to skip:
 
 ```bash
 npm run lint
-npx tsc --noEmit
+npm run typecheck
 npm test
 npm run build
 ```
