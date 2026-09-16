@@ -22,6 +22,26 @@ type UseEditableGridOptions<Col extends string> = {
  * and keyboard navigation. Entity-specific persistence and validation stay in
  * the feature layer.
  */
+/**
+ * Does this event come from something the user types or chooses into?
+ *
+ * Checkboxes count. Space on a checkbox is a printable key, and without this it
+ * was read as the start of a cell edit rather than as toggling the box.
+ */
+export function isFormField(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  const tag = target.tagName;
+  // `isContentEditable` is declared `boolean` but is not implemented on every
+  // element in every environment, so the comparison is explicit rather than
+  // returning whatever it happens to hold.
+  return (
+    tag === "INPUT" ||
+    tag === "TEXTAREA" ||
+    tag === "SELECT" ||
+    target.isContentEditable === true
+  );
+}
+
 export function useEditableGrid<Col extends string>({
   rowIds,
   columns,
@@ -129,6 +149,22 @@ export function useEditableGrid<Col extends string>({
     // Synthetic keydowns (autofill, some password managers) arrive without a
     // `key`, and the default branch below reads its length.
     if (!e.key) return;
+    /*
+     * Keys typed into a field are that field's business.
+     *
+     * This handler sits on a container that also holds the filter bar, so every
+     * keystroke in the search box bubbles through it - and while a cell is
+     * still selected, which it is after any rename, the default branch below
+     * reads a printable character as "start editing that cell". Searching after
+     * renaming a payee therefore typed into the payee instead of the search
+     * box, with the arrow keys moving the selection rather than the caret and
+     * Tab going nowhere.
+     *
+     * The grid's own editor never reaches this: `EditableCellInput` stops
+     * propagation on keydown. So anything arriving here from a form control
+     * came from outside the grid, and belongs to whatever has focus.
+     */
+    if (isFormField(e.target)) return;
     if (!selectedCell) return;
     if (editingCell?.rowId === selectedCell.rowId && editingCell?.colId === selectedCell.colId) return;
     if (!rowIndexById.has(selectedCell.rowId)) return;
