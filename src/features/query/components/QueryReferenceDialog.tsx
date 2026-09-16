@@ -339,8 +339,9 @@ function TransactionsSection() {
         <Heading>Unbounded scan warning</Heading>
         <Para>
           Querying <code className="font-mono text-[11px]">transactions</code> without a <code className="font-mono text-[11px]">limit</code>,
-          <code className="font-mono text-[11px]">groupBy</code>, or <code className="font-mono text-[11px]">calculate</code> can return
-          thousands of rows and may time out. Add a limit before broad inspection queries.
+          <code className="font-mono text-[11px]">groupBy</code>, or <code className="font-mono text-[11px]">calculate</code> can be slow or
+          time out on a large budget. The results table will show whatever comes back, however
+          many rows that is - the limit is for the server&apos;s sake, not the page&apos;s.
         </Para>
       </div>
     </div>
