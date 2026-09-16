@@ -1,6 +1,11 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
+import {
+  defaultRangeExtractor,
+  useVirtualizer,
+  type Range,
+} from "@tanstack/react-virtual";
 import { usePersistedFilters } from "@/hooks/usePersistedFilters";
 import { useRouter } from "next/navigation";
 import { useHighlight } from "@/hooks/useHighlight";
@@ -39,6 +44,30 @@ function SortIndicator({ col, sortCol, sortDir }: { col: SortCol; sortCol: SortC
 
 // ─── PayeesTable ───────────────────────────────────────────────────────────────
 
+/**
+ * Columns in the table, so a spacer row standing in for the unrendered ones
+ * spans the full width. Six in the header, six in the row.
+ */
+const COLUMN_COUNT = 6;
+
+/**
+ * The rows to render: everything in view, plus the one being edited.
+ *
+ * `EditableCellInput` is uncontrolled and commits what was typed on blur, and
+ * React does not fire blur when a focused element is unmounted. So a row
+ * scrolled out of the window mid-edit would take the new name with it, without
+ * a message and without a trace - the worst way to lose someone's typing.
+ * Keeping its index in the rendered range keeps the input mounted, and the edit
+ * survives a scroll that would otherwise have discarded it.
+ *
+ * Returned in order, because the virtualiser places rows by position and an
+ * index arriving out of sequence would be drawn in the wrong slot.
+ */
+export function withEditingRow(visible: number[], editingIndex: number | null): number[] {
+  if (editingIndex === null || visible.includes(editingIndex)) return visible;
+  return [...visible, editingIndex].sort((a, b) => a - b);
+}
+
 export function PayeesTable({
   onCreateRule,
   onDeleteIntentChange,
@@ -71,6 +100,7 @@ export function PayeesTable({
 
   const router        = useRouter();
   const highlightedId = useHighlight();
+
 
   // ── Store subscriptions ──────────────────────────────────────────────────────
   const staged = useStagedStore((s) => s.payees);
@@ -170,6 +200,73 @@ export function PayeesTable({
     },
     onAddRowAtEnd: search ? undefined : () => addRows(1, true),
   });
+
+  /*
+   * Only the rows in view are mounted.
+   *
+   * Payees are the one list in this app that grows without anyone deciding to
+   * grow it: every imported merchant string becomes one, so a long-lived budget
+   * carries thousands and never fewer.
+   */
+  const [scrollEl, setScrollEl] = useState<HTMLDivElement | null>(null);
+
+  /*
+   * The row being edited stays mounted wherever the window goes.
+   *
+   * `EditableCellInput` is uncontrolled and commits on blur, and React does not
+   * fire blur when a focused element is unmounted - so a row scrolled out
+   * mid-edit would take the typed name with it, silently. Forcing its index
+   * into the rendered range keeps the input alive, and the edit survives the
+   * scroll that would otherwise have discarded it.
+   */
+  const editingIndex = useMemo(() => {
+    if (!editingCell) return null;
+    const index = rows.findIndex((row) => row.entity.id === editingCell.rowId);
+    return index >= 0 ? index : null;
+  }, [editingCell, rows]);
+
+  const rowVirtualizer = useVirtualizer({
+    count: rows.length,
+    getScrollElement: () => scrollEl,
+    /*
+     * An estimate, not a rule: rows measure themselves. A row carrying a save
+     * error renders the message beneath the name and stands taller than one
+     * that does not, so unlike the query results table - where every cell
+     * truncates and a row cannot exceed one line - a fixed height here would
+     * misplace every row after the first error.
+     */
+    estimateSize: () => 29,
+    overscan: 12,
+    rangeExtractor: useCallback(
+      (range: Range) => withEditingRow(defaultRangeExtractor(range), editingIndex),
+      [editingIndex]
+    ),
+  });
+
+  const virtualRows = rowVirtualizer.getVirtualItems();
+  const paddingTop = virtualRows.length > 0 ? virtualRows[0]!.start : 0;
+  const paddingBottom =
+    virtualRows.length > 0
+      ? rowVirtualizer.getTotalSize() - virtualRows[virtualRows.length - 1]!.end
+      : 0;
+
+  /*
+   * A deep link to a payee has to bring its row into the window first.
+   *
+   * `useHighlight` scrolls by `document.querySelector`, which finds nothing when
+   * the row it is looking for was never mounted - so arriving at
+   * `?highlight=<id>` for a payee outside the first screenful would highlight
+   * something the user could not see, and silently fail to scroll to it.
+   */
+  useEffect(() => {
+    if (!highlightedId) return;
+    const index = rows.findIndex((row) => row.entity.id === highlightedId);
+    if (index >= 0) rowVirtualizer.scrollToIndex(index, { align: "center" });
+    // Keyed to the highlight alone: re-running as the virtualiser's identity
+    // changes would drag the user back mid-scroll.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [highlightedId, rows]);
+
 
   function toggleSort(col: SortCol) {
     if (sortCol === col) {
@@ -368,7 +465,7 @@ export function PayeesTable({
           onDeselect={() => clearSelection()}
         />
 
-        <div className="min-h-0 flex-1 overflow-auto">
+        <div ref={setScrollEl} className="min-h-0 flex-1 overflow-auto">
         {rows.length === 0 ? (
           <div className="flex flex-col items-center justify-center gap-2 py-12 text-sm text-muted-foreground">
             <span>{search || typeFilter !== "all" || rulesFilter !== "all" ? "No payees match the current filters." : "No payees yet."}</span>
@@ -382,9 +479,17 @@ export function PayeesTable({
             )}
           </div>
         ) : (
-          <table className="w-full border-collapse text-sm">
+          <table
+            className="w-full border-collapse text-sm"
+            /*
+              The rendered rows are a window onto the list, so the real size has
+              to be stated. Without it a screen reader is told the table holds
+              however many rows happen to be mounted. The header is row 1.
+            */
+            aria-rowcount={rows.length + 1}
+          >
               <thead className="sticky top-0 z-10 bg-background">
-                <tr className="border-b border-border">
+                <tr aria-rowindex={1} className="border-b border-border">
                   {/* Select all (only selectable/regular rows) */}
                   <th className="w-9 px-3 py-1.5">
                     <input
@@ -445,13 +550,22 @@ export function PayeesTable({
               </thead>
 
               <tbody>
-                {rows.map((row) => {
+                {paddingTop > 0 && (
+                  <tr aria-hidden="true">
+                    <td colSpan={COLUMN_COUNT} style={{ height: paddingTop }} />
+                  </tr>
+                )}
+                {virtualRows.map((virtualRow) => {
+                  const row = rows[virtualRow.index];
+                  if (!row) return null;
                   const { entity, isDeleted } = row;
                   const isTransfer = !!entity.transferAccountId;
                   const isNameEditing = editingCell?.rowId === entity.id && editingCell.colId === "name";
                   return (
                     <PayeesTableRow
                       key={entity.id}
+                      rowIndex={virtualRow.index}
+                      measureRef={rowVirtualizer.measureElement}
                       row={row}
                       highlightedId={highlightedId}
                       isRowSelected={!isTransfer && selectedIds.has(entity.id)}
@@ -473,6 +587,11 @@ export function PayeesTable({
                     />
                   );
                 })}
+                {paddingBottom > 0 && (
+                  <tr aria-hidden="true">
+                    <td colSpan={COLUMN_COUNT} style={{ height: paddingBottom }} />
+                  </tr>
+                )}
               </tbody>
           </table>
         )}
