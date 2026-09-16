@@ -39,17 +39,22 @@ import { BudgetNoteSection, type BudgetNoteTarget } from "./BudgetNoteSection";
 import { useSpendingDetailsShortcut } from "./useSpendingDetailsShortcut";
 
 /**
- * Renders a variance as plain language — "1,200.00 under budget" — instead of a
+ * Renders a variance as plain language - "under budget by 1,200" - instead of a
  * bare signed number, so direction reads without decoding the sign. `positive`
  * is the good direction (under budget / above plan).
+ *
+ * The amount goes last so that every figure in the panel ends at the same
+ * place. These lines sit in a column of right-aligned numbers, and leading with
+ * the amount pushed each one left by however many words followed it - so the
+ * digits stepped in and out down the panel and stopped forming a column at all.
  */
 function describeVariance(
   value: number,
   kind: "budget" | "plan" | "income",
   short = false
-): { text: string; tone: "positive" | "negative" | "neutral" } {
+): { text: string; prefix?: string; tone: "positive" | "negative" | "neutral" } {
   if (value === 0) {
-    return { text: kind === "plan" ? "on plan" : "on budget", tone: "neutral" };
+    return { text: kind === "plan" ? "on plan" : "on budget", prefix: undefined, tone: "neutral" };
   }
   // Positive is the good direction (under budget / above plan / above budgeted
   // income). Short form drops the trailing noun when the row label already
@@ -79,7 +84,10 @@ function describeVariance(
           ? "over"
           : "over budget";
   return {
-    text: `${formatSignedWhole(Math.abs(value))} ${value > 0 ? up : down}`,
+    text: formatSignedWhole(Math.abs(value)),
+    // The words are handed over separately so the figure can keep a slot of its
+    // own and the whole column can line up - see `MetricLine`.
+    prefix: `${value > 0 ? up : down} by`,
     tone: value > 0 ? "positive" : "negative",
   };
 }
@@ -106,6 +114,7 @@ function VarianceLine({
     <MetricLine
       label={label}
       value={v.text}
+      valuePrefix={v.prefix}
       tone={v.tone}
       tooltip={tooltip}
       onValueClick={onValueClick}

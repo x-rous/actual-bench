@@ -295,18 +295,25 @@ function EnvelopeMonthBody({
   );
 }
 
-/** Plain-language variance text, e.g. "1,200.00 over budget" (RD-070). */
+/**
+ * Plain-language variance, split so the figure can keep a column of its own.
+ *
+ * The words qualify the amount - "over budget by" - and are handed to
+ * `MetricLine` separately from it, so every figure in the panel starts and ends
+ * at the same place regardless of how many words precede it. A rounded-away
+ * value has no direction left to state and returns words only.
+ */
 function monthVarianceText(
   minor: number,
   side: VarianceSide,
   provisional: boolean
-): string {
+): { value: string; prefix?: string } {
   const soFar = provisional ? " so far" : "";
   // Under half a unit prints as "0", and "0 over budget" is a direction the
   // number no longer shows. At that size the honest statement is that the
   // figure landed on plan.
   if (roundsToZeroWhole(minor)) {
-    return `${side === "expense" ? "On budget" : "On target"}${soFar}`;
+    return { value: `${side === "expense" ? "On budget" : "On target"}${soFar}` };
   }
   const favourable = minor >= 0;
   const word =
@@ -317,7 +324,38 @@ function monthVarianceText(
       : favourable
         ? "above budget"
         : "below budget";
-  return `${formatSignedWhole(Math.abs(minor))} ${word}${soFar}`;
+  /*
+   * "so far" leads rather than trails: the amount has to come last for the
+   * column to line up, and "over budget so far by 1,200" reads worse than
+   * putting it in front.
+   */
+  return {
+    value: formatSignedWhole(Math.abs(minor)),
+    prefix: `${soFar ? "so far " : ""}${word} by`,
+  };
+}
+
+/** A variance line whose words and figure come from the same single call. */
+function MonthVarianceLine({
+  label,
+  minor,
+  side,
+  provisional,
+}: {
+  label: string;
+  minor: number;
+  side: VarianceSide;
+  provisional: boolean;
+}) {
+  const described = monthVarianceText(minor, side, provisional);
+  return (
+    <MetricLine
+      label={label}
+      value={described.value}
+      valuePrefix={described.prefix}
+      tone={varianceTone(minor)}
+    />
+  );
 }
 
 function varianceTone(minor: number): "positive" | "negative" | "neutral" {
@@ -409,12 +447,11 @@ function TrackingMonthBody({
           />
         )}
         {view.income.variance != null && (
-          <MetricLine
+          <MonthVarianceLine
             label={`Income variance${toDate}`}
-            value={monthVarianceText(view.income.variance, "income", provisional)}
-            tone={varianceTone(view.income.variance)}
-            onValueClick={() => setDriversSide("income")}
-            valueAriaLabel="View variance drivers"
+            minor={view.income.variance}
+            side="income"
+            provisional={provisional}
           />
         )}
       </DetailsSection>
@@ -436,12 +473,11 @@ function TrackingMonthBody({
           />
         )}
         {view.expenses.variance != null && (
-          <MetricLine
+          <MonthVarianceLine
             label={`Expense variance${toDate}`}
-            value={monthVarianceText(view.expenses.variance, "expense", provisional)}
-            tone={varianceTone(view.expenses.variance)}
-            onValueClick={() => setDriversSide("expense")}
-            valueAriaLabel="View variance drivers"
+            minor={view.expenses.variance}
+            side="expense"
+            provisional={provisional}
           />
         )}
         {!isFuture && view.balance.distinctFromVariance && (
