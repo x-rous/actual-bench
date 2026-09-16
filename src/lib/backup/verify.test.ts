@@ -25,9 +25,14 @@ function budgetDbBytes(options: { transactions?: number } = {}): Uint8Array {
   `);
   const insert = db.prepare("INSERT INTO transactions VALUES (?, 'a1', ?, -1000)");
   const count = options.transactions ?? 3;
-  for (let index = 0; index < count; index += 1) {
-    insert.run(`t${index}`, 20260101 + index);
-  }
+  // One transaction around the inserts - see the note in `runBackup.test.ts`.
+  // SQLite fsyncs on every commit, so a row at a time is a disk round trip a
+  // row at a time.
+  db.transaction(() => {
+    for (let index = 0; index < count; index += 1) {
+      insert.run(`t${index}`, 20260101 + index);
+    }
+  })();
   db.close();
   const bytes = readFileSync(path);
   rmSync(root, { recursive: true, force: true });
