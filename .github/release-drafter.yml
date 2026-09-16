@@ -4,47 +4,77 @@ tag-template: 'v$RESOLVED_VERSION'
 branches:
   - main
 
+# Changes are sorted by the type in their title, not by the label on the pull
+# request.
+#
+# The label was one step too many. It is written once, when the pull request is
+# opened, and is then a fact about that pull request forever - so a title
+# corrected after the label was applied left the two disagreeing, and the notes
+# followed the label. Two entries in the last draft sat in the wrong section for
+# exactly that reason, and putting them right meant editing labels on merged
+# pull requests rather than fixing anything.
+#
+# Reading the title at draft time closes that gap. There is nothing to keep in
+# sync, a retitle is simply picked up, and a pull request merged before any of
+# this existed is categorised on the same terms as one merged today.
+#
+# The autolabeler still runs, so labels remain for filtering and search. Nothing
+# here depends on them being right.
 categories:
   - title: '🚀 Features'
-    labels:
-      - 'feature'
+    when:
+      conventional:
+        type: 'feat'
+
   - title: '🐛 Bug Fixes'
-    labels:
-      - 'fix'
+    when:
+      conventional:
+        type: 'fix'
+
   - title: '🔧 Maintenance'
-    labels:
-      - 'maintenance'
-      - 'docs'
-      # Dependabot applies this itself. The autolabeler reaches its pull
-      # requests too, so this is a second route to the same place rather than
-      # the only one - worth keeping, since a bump that arrives without a
-      # conventional title still lands where it belongs.
-      - 'dependencies'
-  # Anything that reached main without one of the labels above. Uncategorised
-  # entries are otherwise printed loose, under no heading, which is how a
-  # mislabelled change goes unnoticed: it is still in the notes, just nowhere.
+    when:
+      conventional:
+        types:
+          - 'chore'
+          - 'refactor'
+          - 'perf'
+          - 'build'
+          - 'ci'
+          - 'style'
+          - 'test'
+          - 'revert'
+          - 'docs'
+
+  # Everything the categories above did not take. A changelog category with no
+  # condition is the documented catch-all, and at most one may omit `when`.
   #
-  # No labels at all, deliberately. `'*'` is not a wildcard here - it would be
-  # read as the name of a label called "*", which nothing carries, and the
-  # category would sit empty while the changes it was meant to catch went on
-  # being printed loose. A changelog category with no condition is the
-  # documented way to say "everything the earlier ones did not take"; at most
-  # one may do so.
+  # It exists so that a miss looks like a miss. Uncategorised changes are
+  # otherwise printed loose under no heading, which is how a whole class of
+  # mislabelled entries went unnoticed: they were in the notes, just nowhere.
   - title: '📌 Uncategorised'
+
+  # Version resolution. `type: version-resolver` categories decide the next
+  # version without rendering a section of their own, and replace the
+  # deprecated top-level `version-resolver:` block, which warns on every run.
+  #
+  # Every release is a patch unless a pull request says otherwise. A feature
+  # does not force a minor bump on its own - that previously proposed v1.3.0
+  # where a patch v1.2.6 was wanted - so the opt-in stays a deliberate label
+  # rather than a side effect of the title.
+  - type: 'version-resolver'
+    semver-increment: 'major'
+    when:
+      label: 'major'
+  - type: 'version-resolver'
+    semver-increment: 'minor'
+    when:
+      label: 'minor'
+  - type: 'version-resolver'
+    semver-increment: 'patch'
 
 change-template: '- $TITLE (#$NUMBER)'
 
-# Labels come from the pull request's title, not its branch.
-#
-# The branch was the wrong source. It named the work when it started, and the
-# work moves: #295 was cut as `refactor/…`, turned into a bug fix, and was filed
-# under Maintenance; #262 was cut as `feat/…`, shipped as `fix(reconciliation)`,
-# and was filed under Features. `chore/…` had no rule at all, so every chore PR
-# was silently uncategorised - which is what these notes were reporting.
-#
-# The title is the honest source: this repository writes every PR title as
-# `type(scope): description`, and that type is a statement about what the change
-# turned out to be rather than what it was called on the day it was branched.
+# Labels, for filtering and search. The categories above do not use them.
 autolabeler:
   - label: 'feature'
     title:
@@ -57,10 +87,6 @@ autolabeler:
       - '/^docs(\(.+\))?!?:/i'
   - label: 'maintenance'
     title:
-      # Everything that is neither a feature nor a fix nor documentation. Perf
-      # sits here rather than under Features: it changes how well the product
-      # does something it already did, which is not news to a reader scanning
-      # for what is new.
       - '/^(chore|refactor|perf|build|ci|style|test|revert)(\(.+\))?!?:/i'
 
 template: |
@@ -69,23 +95,3 @@ template: |
   $CHANGES
 
   **Full Changelog**: https://github.com/x-rous/actual-bench/compare/$PREVIOUS_TAG...v$RESOLVED_VERSION
-
-# Default every release to a patch bump. A minor/major bump is opt-in via an
-# explicit 'minor'/'major' label on a PR — feature PRs still appear under the
-# "🚀 Features" section above, but no longer force a minor version bump on their
-# own (which previously auto-proposed e.g. v1.3.0 instead of a patch v1.2.6).
-version-resolver:
-  major:
-    labels:
-      - 'major'
-  minor:
-    labels:
-      - 'minor'
-  patch:
-    labels:
-      - 'fix'
-      - 'maintenance'
-      - 'docs'
-      - 'feature'
-      - 'dependencies'
-  default: patch
