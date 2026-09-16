@@ -1198,6 +1198,9 @@ function buildTrackingMonthMetrics(
     thisMonth,
     futureOnly,
     isIncome: target.isIncome,
+    // Null for a category: it has no children to rank, so a drivers view of it
+    // would be one row restating the figure that opened it.
+    selectionGroupId: target.groupId ? null : target.id,
     primary: futureOnly
       ? {
           label: "Budgeted",

@@ -201,6 +201,41 @@ export function TrackingDetailsPanel({
    */
   const selectionGroupId = metrics.selectionGroupId ?? null;
   const [driversGroupId, setDriversGroupId] = useState<string | null>(null);
+  /*
+   * The month a drill-in came from, when it came from a single month.
+   *
+   * The drivers view defaults to every closed month in the window, which is
+   * right for the period summary and wrong for a month: the Variance clicked
+   * was that month's, and opening a whole year's drivers answers a question
+   * nobody asked.
+   */
+  const [driversMonth, setDriversMonth] = useState<string | null>(null);
+  /*
+   * Which month a month-scope selection is on. Read off the drill-through the
+   * Actual figure already carries rather than threaded separately - it is built
+   * from the same selection and names exactly the month in view.
+   */
+  const monthScopeMonth = isMonth
+    ? (metrics.monthValues?.transactionDrilldown?.monthStart ?? null)
+    : null;
+  /**
+   * Open the drivers view.
+   *
+   * `groupId` null means the whole period; `month` null means every closed
+   * month. The side defaults to the selection's own - a group of income
+   * categories opens on Income - but the period summary passes it explicitly,
+   * because there the selection has no side of its own and its two variance
+   * lines each name one.
+   */
+  function openDrivers(
+    groupId: string | null,
+    month: string | null,
+    side: VarianceSide = metrics.isIncome ? "income" : "expense"
+  ) {
+    setDriversGroupId(groupId);
+    setDriversMonth(month);
+    setDriversSide(side);
+  }
   const drivers = useMemo(() => {
     const closedMonths = [...statesByMonth.keys()]
       .filter((month) => isClosedMonthStatus(classifyMonthActualStatus(month)))
@@ -231,6 +266,26 @@ export function TrackingDetailsPanel({
     return buildTrackingPeriodView(months);
   }, [statesByMonth]);
   const closed = periodView?.closed ?? null;
+
+  /*
+   * What the drivers dialog is opened over: one month when the click came from
+   * a month's Variance, every closed month otherwise.
+   */
+  const driversScope = useMemo(() => {
+    const monthState = driversMonth ? statesByMonth.get(driversMonth) : undefined;
+    if (driversMonth && monthState) {
+      return {
+        states: [monthState],
+        label: `${metrics.title} · ${formatBudgetDetailsRange([driversMonth])}`,
+      };
+    }
+    return {
+      states: drivers.closedStates,
+      label: driversGroupId
+        ? `${metrics.title} · ${drivers.scopeLabel}`
+        : drivers.scopeLabel,
+    };
+  }, [driversMonth, driversGroupId, statesByMonth, drivers, metrics.title]);
 
   return (
     <div className="px-3 py-2 space-y-3">
@@ -302,6 +357,12 @@ export function TrackingDetailsPanel({
               label="Variance"
               value={metrics.monthValues.variance}
               kind={metrics.isIncome ? "income" : "budget"}
+              onValueClick={
+                selectionGroupId && monthScopeMonth
+                  ? () => openDrivers(selectionGroupId, monthScopeMonth)
+                  : undefined
+              }
+              valueAriaLabel={`View what drives the variance in ${metrics.title}`}
               tooltip={
                 metrics.isIncome
                   ? "Received income minus budgeted income this month."
@@ -402,7 +463,7 @@ export function TrackingDetailsPanel({
             kind="budget"
             short
             tooltip={PERIOD_TOOLTIP.expenseVariance}
-            onValueClick={() => setDriversSide("expense")}
+            onValueClick={() => openDrivers(null, null, "expense")}
             valueAriaLabel="View variance drivers"
           />
           <VarianceLine
@@ -411,7 +472,7 @@ export function TrackingDetailsPanel({
             kind="income"
             short
             tooltip={PERIOD_TOOLTIP.incomeVariance}
-            onValueClick={() => setDriversSide("income")}
+            onValueClick={() => openDrivers(null, null, "income")}
             valueAriaLabel="View variance drivers"
           />
           <div className="border-t border-border/50 pt-1.5">
@@ -463,6 +524,10 @@ export function TrackingDetailsPanel({
               label="Variance"
               value={formatDeltaWhole(metrics.selectionToDate.variance)}
               tone={toneFromValue(metrics.selectionToDate.variance)}
+              onValueClick={
+                selectionGroupId ? () => openDrivers(selectionGroupId, null) : undefined
+              }
+              valueAriaLabel={`View what drives the variance in ${metrics.title}`}
             />
           ) : (
             <VarianceLine
@@ -470,12 +535,7 @@ export function TrackingDetailsPanel({
               value={metrics.selectionToDate.variance}
               kind="budget"
               onValueClick={
-                selectionGroupId
-                  ? () => {
-                      setDriversGroupId(selectionGroupId);
-                      setDriversSide("expense");
-                    }
-                  : undefined
+                selectionGroupId ? () => openDrivers(selectionGroupId, null) : undefined
               }
               valueAriaLabel={`View what drives the variance in ${metrics.title}`}
             />
@@ -514,6 +574,11 @@ export function TrackingDetailsPanel({
                     tone={toneFromValue(metrics.selectionAverages.variancePerMonth)}
                   />
                 ) : (
+                  /*
+                    Not clickable, unlike the other variance lines: this one is
+                    a per-month average and the drivers view reports totals, so
+                    the figure that opened it would appear nowhere inside it.
+                  */
                   <VarianceLine
                     label="Variance"
                     value={metrics.selectionAverages.variancePerMonth}
@@ -594,17 +659,16 @@ export function TrackingDetailsPanel({
         <TopVarianceDriversDialog
           // Remount on side change so the dialog's internal tab/filter/expand
           // state always starts fresh for the requested side (CodeRabbit).
-          key={`${driversSide}:${driversGroupId ?? "period"}`}
+          key={`${driversSide}:${driversGroupId ?? "all"}:${driversMonth ?? "period"}`}
           open
           onClose={() => {
             setDriversSide(null);
             setDriversGroupId(null);
+            setDriversMonth(null);
           }}
-          scopeLabel={
-            driversGroupId ? `${metrics.title} · ${drivers.scopeLabel}` : drivers.scopeLabel
-          }
+          scopeLabel={driversScope.label}
           initialSide={driversSide}
-          monthStates={drivers.closedStates}
+          monthStates={driversScope.states}
           groupId={driversGroupId ?? undefined}
         />
       )}
