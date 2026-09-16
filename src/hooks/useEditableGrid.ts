@@ -78,12 +78,20 @@ export function useEditableGrid<Col extends string>({
 
   const isCellEditable = (cell: EditableGridCell<Col>) => canEditCell?.(cell) ?? true;
 
-  // Read through a ref so callers need not memoise, and so a new callback
-  // identity cannot re-run the focus effect and steal focus mid-edit. Declared
-  // above that effect so this one commits first.
+  /*
+   * Published for the focus effect below, which must not depend on either.
+   *
+   * `onRevealRow` so callers need not memoise it, and `rowIndexById` because it
+   * is rebuilt on every keystroke in a search box - and the search box sits
+   * inside the grid container. Depending on it would re-run the focus effect as
+   * the user types and yank the caret out of the search field and back onto the
+   * selected cell. Declared above that effect so this one commits first.
+   */
   const revealRowRef = useRef(onRevealRow);
+  const rowIndexByIdRef = useRef(rowIndexById);
   useEffect(() => {
     revealRowRef.current = onRevealRow;
+    rowIndexByIdRef.current = rowIndexById;
   });
 
   useEffect(() => {
@@ -109,7 +117,7 @@ export function useEditableGrid<Col extends string>({
      * and the user lost track of where they were. Ask the owner to scroll the
      * row in, then focus once React has committed the newly mounted rows.
      */
-    const rowIndex = rowIndexById.get(selectedCell.rowId);
+    const rowIndex = rowIndexByIdRef.current.get(selectedCell.rowId);
     if (rowIndex === undefined || !revealRowRef.current) return;
     revealRowRef.current(rowIndex);
 
@@ -123,7 +131,7 @@ export function useEditableGrid<Col extends string>({
       cancelAnimationFrame(first);
       cancelAnimationFrame(second);
     };
-  }, [editingCell, rowIndexById, selectedCell]);
+  }, [editingCell, selectedCell]);
 
   function selectCell(rowId: string, colId: Col) {
     selectGridCell({ rowId, colId });

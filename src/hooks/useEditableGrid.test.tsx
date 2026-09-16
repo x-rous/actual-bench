@@ -49,6 +49,37 @@ function WindowedGrid({
   );
 }
 
+/**
+ * The search box lives inside the grid container in the real tables, so the
+ * grid must not pull focus out of it as the row list changes underneath.
+ */
+function SearchableGrid() {
+  const [query, setQuery] = useState("");
+  const rowIds = ALL_ROWS.filter((id) => id.includes(query));
+
+  const { containerRef, selectCell, handleGridKeyDown } = useEditableGrid<Col>({
+    rowIds,
+    columns: COLUMNS,
+  });
+
+  return (
+    <div ref={containerRef} onKeyDown={handleGridKeyDown} tabIndex={-1}>
+      <input aria-label="search" value={query} onChange={(e) => setQuery(e.target.value)} />
+      {rowIds.map((rowId) =>
+        COLUMNS.map((colId) => (
+          <button
+            key={`${rowId}:${colId}`}
+            data-cell={`${rowId}:${colId}`}
+            onClick={() => selectCell(rowId, colId)}
+          >
+            {rowId}:{colId}
+          </button>
+        ))
+      )}
+    </div>
+  );
+}
+
 describe("useEditableGrid focus across a windowed list", () => {
   it("focuses a selected cell that is already mounted", async () => {
     render(<WindowedGrid />);
@@ -102,5 +133,27 @@ describe("useEditableGrid focus across a windowed list", () => {
     await waitFor(() => {
       expect(document.activeElement).toHaveAttribute("data-cell", "r4:type");
     });
+  });
+});
+
+describe("useEditableGrid and a search box inside the grid", () => {
+  it("leaves the caret in the search box when the row list changes", async () => {
+    render(<SearchableGrid />);
+
+    // Select a cell first, so there is something for the grid to focus.
+    fireEvent.click(screen.getByRole("button", { name: "r1:name" }));
+    await waitFor(() => {
+      expect(document.activeElement).toHaveAttribute("data-cell", "r1:name");
+    });
+
+    const search = screen.getByLabelText("search");
+    search.focus();
+    fireEvent.change(search, { target: { value: "r1" } });
+
+    // Rebuilding the row map must not drag focus back onto the selected cell.
+    await waitFor(() => {
+      expect(screen.getAllByRole("button")).toHaveLength(COLUMNS.length);
+    });
+    expect(document.activeElement).toBe(search);
   });
 });
