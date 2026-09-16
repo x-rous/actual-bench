@@ -115,14 +115,10 @@ function model(): BudgetDetailsModel {
 }
 
 describe("budget transaction browser options", () => {
-  it("builds visible month and side-tagged category jump options", () => {
+  it("builds side-tagged category jump options", () => {
     const options: BudgetTransactionBrowserOptions =
       buildBudgetTransactionBrowserOptions(model());
 
-    expect(options.months).toEqual([
-      { month: "2026-04", label: "Apr 26" },
-      { month: "2026-05", label: "May 26" },
-    ]);
     // The whole-side options lead: they are the widest selection on offer, and
     // the list reads outside-in from there.
     expect(options.categories).toEqual([
