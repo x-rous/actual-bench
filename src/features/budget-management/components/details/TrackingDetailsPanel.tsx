@@ -659,7 +659,6 @@ export function TrackingDetailsPanel({
           key={`${transactionTarget.entity}:${transactionTarget.id}:${transactionTarget.monthStart}:${transactionTarget.monthEnd}`}
           target={transactionTarget}
           browserOptions={transactionBrowserOptions}
-          statesByMonth={statesByMonth}
           onClose={() => setTransactionTarget(null)}
         />
       )}

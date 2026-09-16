@@ -56,6 +56,8 @@ import {
   SpendBreakdown,
   WeeklySpending,
 } from "./BudgetTransactionsPanels";
+import { useAvailableMonths } from "../../hooks/useAvailableMonths";
+import { useBudgetMonthStates } from "../../hooks/useBudgetMonthStates";
 import { useBudgetTransactions } from "../../hooks/useBudgetTransactions";
 import {
   buildGroupBreakdown,
@@ -80,18 +82,28 @@ import type {
   BudgetTransactionSide,
 } from "../../lib/budgetTransactionBrowser";
 import type { BudgetTransactionRow } from "../../lib/budgetTransactionsQuery";
-import type { LoadedMonthState } from "../../types";
 
 type Props = {
   target: BudgetTransactionsDrilldown | null;
   browserOptions: BudgetTransactionBrowserOptions;
-  statesByMonth: Map<string, LoadedMonthState>;
+  /*
+   * No `statesByMonth` here on purpose.
+   *
+   * The dialog used to be handed the details panel's twelve loaded months, and
+   * every budget figure it draws came from that map - so its correctness was
+   * bounded by wherever the page behind it had been navigated, and the month
+   * picker had to be clamped to the same window to stop it offering periods
+   * whose plan could not be read. It fetches its own now, for whatever range is
+   * on screen. The range it can show and the range it can account for are the
+   * same set because asking for a month is what loads it.
+   */
   onClose: () => void;
 };
 
 const EMPTY_TRANSACTION_ROWS: BudgetTransactionRow[] = [];
 const EMPTY_CATEGORY_IDS: string[] = [];
 const EMPTY_SELECTION: string[] = [];
+const EMPTY_MONTHS: string[] = [];
 const EMPTY_FILTERS: string[] = [];
 const SELECT_CLASS =
   "h-7 min-w-0 rounded-md border border-input bg-background px-2 text-[11px] outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:bg-input/50 disabled:opacity-60 dark:bg-input/30";
@@ -686,7 +698,7 @@ function EmptyState({ message }: { message: string }) {
 
 // ─── dialog ───────────────────────────────────────────────────────────────────
 
-export function BudgetTransactionsDialog({ target, browserOptions, statesByMonth, onClose }: Props) {
+export function BudgetTransactionsDialog({ target, browserOptions, onClose }: Props) {
   /*
    * The breakdown and chart selections, each a set rather than a single id.
    *
@@ -803,6 +815,22 @@ export function BudgetTransactionsDialog({ target, browserOptions, statesByMonth
     // a period of zero months, which would divide by zero downstream.
     return narrowed.length > 0 ? narrowed : rangeMonths;
   }, [timingBy, isRange, weekFilters, rangeMonths]);
+
+  /*
+   * The plans behind the figures, for this dialog's own range.
+   *
+   * Fetched here rather than inherited from the page, so the period the picker
+   * offers and the period the budget figures can describe are the same one.
+   * The months come back from cache when the page has already loaded or
+   * prefetched them, which covers the common case of drilling into the window
+   * on screen.
+   */
+  const { data: availableMonths, isLoading: monthsLoading } = useAvailableMonths();
+  const {
+    statesByMonth,
+    isLoading: plansLoading,
+    error: plansError,
+  } = useBudgetMonthStates(rangeMonths, availableMonths, monthsLoading);
 
   const rows = data?.rows ?? EMPTY_TRANSACTION_ROWS;
   const summary = data?.summary ?? null;
@@ -1478,7 +1506,13 @@ export function BudgetTransactionsDialog({ target, browserOptions, statesByMonth
               <MonthRangeField
                 monthStart={effectiveTarget?.monthStart ?? ""}
                 monthEnd={effectiveTarget?.monthEnd ?? ""}
-                availableMonths={browserOptions.months.map((option) => option.month)}
+                /*
+                  Bounded by the budget file, not by the page's window. The
+                  window is where someone last navigated; the file is what
+                  actually exists, and it is the only honest limit on what can
+                  be asked for.
+                */
+                availableMonths={availableMonths ?? EMPTY_MONTHS}
                 disabled={!effectiveTarget}
                 onChange={handleRangeChange}
               />
@@ -1534,8 +1568,26 @@ export function BudgetTransactionsDialog({ target, browserOptions, statesByMonth
                   the missing bar is explained rather than merely missing.
                 */
                 <div className="flex h-10 w-[32rem] min-w-0 shrink items-center pr-2">
-                  <span className="text-xs text-muted-foreground">
-                    No budget set for this period
+                  {/*
+                    "No budget" is a claim, and it cannot be made until the
+                    plans are in. Fetching them per range means there is now a
+                    moment where none have arrived, and asserting their absence
+                    during it would flash a wrong answer on every open.
+                  */}
+                  <span
+                    className={cn(
+                      "text-xs",
+                      plansError ? "text-destructive" : "text-muted-foreground"
+                    )}
+                  >
+                    {plansLoading
+                      ? "Loading budget…"
+                      : plansError
+                        ? // A plan that failed to arrive is not a plan that
+                          // does not exist, and only one of those is the
+                          // user's doing.
+                          "Could not load the budget for this period"
+                        : "No budget set for this period"}
                   </span>
                 </div>
               )}

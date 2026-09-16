@@ -1,4 +1,4 @@
-import { formatMonthLabel, monthsInRange } from "@/lib/budget/monthMath";
+import { monthsInRange } from "@/lib/budget/monthMath";
 import type { BudgetDetailsModel } from "./budgetDetailsModel";
 import type { LoadedMonthState } from "../types";
 
@@ -31,11 +31,6 @@ export type BudgetTransactionsDrilldown = {
   categoryIds: string[];
 };
 
-export type BudgetTransactionMonthOption = {
-  month: string;
-  label: string;
-};
-
 export type BudgetTransactionCategoryOption = {
   id: string;
   entity: BudgetTransactionEntity;
@@ -46,7 +41,6 @@ export type BudgetTransactionCategoryOption = {
 };
 
 export type BudgetTransactionBrowserOptions = {
-  months: BudgetTransactionMonthOption[];
   categories: BudgetTransactionCategoryOption[];
 };
 
@@ -201,10 +195,6 @@ export function buildRangeCategoriesDrilldown(
 export function buildBudgetTransactionBrowserOptions(
   model: BudgetDetailsModel
 ): BudgetTransactionBrowserOptions {
-  const months = model.displayMonths.map((month) => ({
-    month,
-    label: formatMonthLabel(month, "short"),
-  }));
   const categories: BudgetTransactionCategoryOption[] = [];
   const seen = new Set<string>();
   // Every visible category on each side, for the whole-side options below.
@@ -283,5 +273,5 @@ export function buildBudgetTransactionBrowserOptions(
     });
   }
 
-  return { months, categories: [...wholeSide, ...categories] };
+  return { categories: [...wholeSide, ...categories] };
 }
