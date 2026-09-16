@@ -1,4 +1,4 @@
-import { withEditingRow } from "./PayeesTable";
+import { gapBefore, withEditingRow } from "./PayeesTable";
 
 /*
  * The payees table renders only the rows in view. The row being edited is the
@@ -42,5 +42,27 @@ describe("withEditingRow", () => {
 
   it("keeps the first row of the list when the user has scrolled far past it", () => {
     expect(withEditingRow([500, 501], 0)).toEqual([0, 500, 501]);
+  });
+});
+
+describe("gapBefore", () => {
+  it("is nothing for the first rendered row", () => {
+    expect(gapBefore(undefined, { start: 14_500 })).toBe(0);
+  });
+
+  it("is nothing between rows that sit next to each other", () => {
+    expect(gapBefore({ end: 145 }, { start: 145 })).toBe(0);
+  });
+
+  it("spans the rows left out between an edited row and the window", () => {
+    // Row 3 kept mounted while the user scrolled to row 500: everything
+    // between them has to be accounted for, or the window slides up to meet it.
+    expect(gapBefore({ end: 116 }, { start: 14_152 })).toBe(14_036);
+  });
+
+  it("never returns a negative height", () => {
+    // Rows measure themselves, so a re-measure can briefly put `end` past the
+    // next `start`; a negative height would be dropped by the DOM anyway.
+    expect(gapBefore({ end: 200 }, { start: 180 })).toBe(0);
   });
 });

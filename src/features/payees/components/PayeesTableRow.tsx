@@ -77,6 +77,12 @@ function PayeesTableRowComponent({
     <tr
       ref={measureRef}
       data-index={rowIndex}
+      /*
+       * The position in the payee list, not in the DOM. Only the rows in view
+       * are mounted, so a screen reader counting rendered rows would announce
+       * "row 3 of 4000" for whatever happens to be on screen.
+       */
+      aria-rowindex={rowIndex + 2}
       data-row-id={entity.id}
       className={cn(
         "group/row border-b border-border/30 border-l-2 border-l-transparent transition-colors",

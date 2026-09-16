@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useEffect, useCallback, useRef } from "react";
+import { Fragment, useState, useMemo, useEffect, useCallback, useRef } from "react";
 import {
   defaultRangeExtractor,
   useVirtualizer,
@@ -67,6 +67,24 @@ const COLUMN_COUNT = 6;
 export function withEditingRow(visible: number[], editingIndex: number | null): number[] {
   if (editingIndex === null || visible.includes(editingIndex)) return visible;
   return [...visible, editingIndex].sort((a, b) => a - b);
+}
+
+/*
+ * The empty space between two rendered rows that are not neighbours.
+ *
+ * Keeping the edited row mounted can leave a hole in the rendered range - row 3
+ * and rows 488-512, with nothing in between. Table rows lay out in flow, one
+ * after the next, so without a spacer the whole window slides up to meet the
+ * stray row: every row lands at the wrong offset and the scrollbar reports a
+ * table far shorter than it is. The leading and trailing spacers cannot close
+ * an interior gap, only the ends.
+ */
+export function gapBefore(
+  previous: { end: number } | undefined,
+  current: { start: number }
+): number {
+  if (!previous) return 0;
+  return Math.max(0, current.start - previous.end);
 }
 
 export function PayeesTable({
@@ -279,10 +297,26 @@ export function PayeesTable({
    * `?highlight=<id>` for a payee outside the first screenful would highlight
    * something the user could not see, and silently fail to scroll to it.
    */
+  const revealedHighlightRef = useRef<string | null>(null);
   useEffect(() => {
-    if (!highlightedId) return;
+    if (!highlightedId) {
+      revealedHighlightRef.current = null;
+      return;
+    }
+    /*
+     * Scroll to each highlighted payee once, and once only.
+     *
+     * The highlight stays on for a couple of seconds, and `rows` is rebuilt by
+     * anything that touches the staged store or the filters. Without this the
+     * effect would re-run inside that window and yank the list back to centre
+     * after the user had already scrolled somewhere else.
+     */
+    if (revealedHighlightRef.current === highlightedId) return;
     const index = rows.findIndex((row) => row.entity.id === highlightedId);
-    if (index >= 0) rowVirtualizer.scrollToIndex(index, { align: "center" });
+    if (index >= 0) {
+      rowVirtualizer.scrollToIndex(index, { align: "center" });
+      revealedHighlightRef.current = highlightedId;
+    }
     // Keyed to the highlight alone: re-running as the virtualiser's identity
     // changes would drag the user back mid-scroll.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -576,15 +610,21 @@ export function PayeesTable({
                     <td colSpan={COLUMN_COUNT} style={{ height: paddingTop }} />
                   </tr>
                 )}
-                {virtualRows.map((virtualRow) => {
+                {virtualRows.map((virtualRow, position) => {
                   const row = rows[virtualRow.index];
                   if (!row) return null;
+                  const gap = gapBefore(virtualRows[position - 1], virtualRow);
                   const { entity, isDeleted } = row;
                   const isTransfer = !!entity.transferAccountId;
                   const isNameEditing = editingCell?.rowId === entity.id && editingCell.colId === "name";
                   return (
+                    <Fragment key={entity.id}>
+                    {gap > 0 && (
+                      <tr aria-hidden="true">
+                        <td colSpan={COLUMN_COUNT} style={{ height: gap }} />
+                      </tr>
+                    )}
                     <PayeesTableRow
-                      key={entity.id}
                       rowIndex={virtualRow.index}
                       measureRef={rowVirtualizer.measureElement}
                       row={row}
@@ -606,6 +646,7 @@ export function PayeesTable({
                       onInspect={onInspectIdChange}
                       isAnotherCellEditing={!!editingCell}
                     />
+                    </Fragment>
                   );
                 })}
                 {paddingBottom > 0 && (
