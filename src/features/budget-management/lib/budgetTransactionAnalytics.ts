@@ -115,7 +115,15 @@ function weekBucket(date: string): { id: string; label: string; sortKey: string 
   };
 }
 
-function weekdayBucket(date: string): string {
+/**
+ * The weekday a row falls on, as the chart labels it.
+ *
+ * Exported because the filter has to answer in exactly this vocabulary: the
+ * timing chart's bars carry these strings as their ids, and a row is matched
+ * against them by equality. A second formatter producing "Sat" a slightly
+ * different way is a filter that matches nothing.
+ */
+export function weekdayBucket(date: string): string {
   const parsed = parseTransactionDate(date);
   if (!parsed) return "Unknown";
   return new Intl.DateTimeFormat("en-US", {

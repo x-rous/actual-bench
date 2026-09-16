@@ -5,6 +5,7 @@ import {
   rowBucketLabel,
   rowTimeBucketId,
 } from "./budgetTransactionsDialog.helpers";
+import { weekdayBucket } from "../../lib/budgetTransactionAnalytics";
 import type { BudgetTransactionRow } from "../../lib/budgetTransactionsQuery";
 
 /*
@@ -20,38 +21,79 @@ import type { BudgetTransactionRow } from "../../lib/budgetTransactionsQuery";
 describe("rowTimeBucketId", () => {
   describe("a single month, bucketed by week", () => {
     it("puts the first seven days in week 1", () => {
-      expect(rowTimeBucketId("2026-03-01", false)).toBe("week-1");
-      expect(rowTimeBucketId("2026-03-07", false)).toBe("week-1");
+      expect(rowTimeBucketId("2026-03-01", "week")).toBe("week-1");
+      expect(rowTimeBucketId("2026-03-07", "week")).toBe("week-1");
     });
 
     it("moves to the next week on the eighth", () => {
-      expect(rowTimeBucketId("2026-03-08", false)).toBe("week-2");
-      expect(rowTimeBucketId("2026-03-15", false)).toBe("week-3");
-      expect(rowTimeBucketId("2026-03-22", false)).toBe("week-4");
+      expect(rowTimeBucketId("2026-03-08", "week")).toBe("week-2");
+      expect(rowTimeBucketId("2026-03-15", "week")).toBe("week-3");
+      expect(rowTimeBucketId("2026-03-22", "week")).toBe("week-4");
     });
 
     it("folds the month's tail into week 5", () => {
       // The chart only draws five, so the 29th onwards joins the last bar
       // rather than falling into a sixth that is never rendered.
-      expect(rowTimeBucketId("2026-03-29", false)).toBe("week-5");
-      expect(rowTimeBucketId("2026-03-31", false)).toBe("week-5");
+      expect(rowTimeBucketId("2026-03-29", "week")).toBe("week-5");
+      expect(rowTimeBucketId("2026-03-31", "week")).toBe("week-5");
     });
   });
 
   describe("a range, bucketed by month", () => {
     it("answers with the row's own month", () => {
-      expect(rowTimeBucketId("2026-03-15", true)).toBe("2026-03");
-      expect(rowTimeBucketId("2026-11-01", true)).toBe("2026-11");
+      expect(rowTimeBucketId("2026-03-15", "month")).toBe("2026-03");
+      expect(rowTimeBucketId("2026-11-01", "month")).toBe("2026-11");
     });
 
     it("does not answer in weeks, which is what emptied the table", () => {
-      expect(rowTimeBucketId("2026-03-15", true)).not.toMatch(/^week-/);
+      expect(rowTimeBucketId("2026-03-15", "month")).not.toMatch(/^week-/);
     });
 
     it("separates the same day in different months", () => {
-      expect(rowTimeBucketId("2026-03-15", true)).not.toBe(
-        rowTimeBucketId("2026-04-15", true)
+      expect(rowTimeBucketId("2026-03-15", "month")).not.toBe(
+        rowTimeBucketId("2026-04-15", "month")
       );
+    });
+  });
+
+  /*
+   * The weekday view re-cuts the same rows by day of the week, and the filter
+   * had no case for it: it took a boolean that could only say whether the range
+   * spanned months, so clicking "Sat" compared `Sat` against `week-2` and
+   * matched nothing. Every row was filtered out and the table read as a period
+   * with no transactions in it.
+   */
+  describe("bucketed by weekday", () => {
+    it("answers with the weekday the chart labels its bars with", () => {
+      // 2026-03-14 is a Saturday.
+      expect(rowTimeBucketId("2026-03-14", "weekday")).toBe("Sat");
+      expect(rowTimeBucketId("2026-03-16", "weekday")).toBe("Mon");
+    });
+
+    it("agrees with the bucket the chart itself built", () => {
+      // The two must be the same string: the bar carries its id and the row is
+      // matched against it by equality, so a second formatter would be a filter
+      // that silently matches nothing.
+      for (const date of ["2026-03-14", "2026-03-16", "2026-11-01", "2027-02-28"]) {
+        expect(rowTimeBucketId(date, "weekday")).toBe(weekdayBucket(date));
+      }
+    });
+
+    it("does not answer in weeks or months, which is what emptied the table", () => {
+      const id = rowTimeBucketId("2026-03-14", "weekday");
+      expect(id).not.toMatch(/^week-/);
+      expect(id).not.toMatch(/^\d{4}-\d{2}$/);
+    });
+
+    it("puts the same weekday in different months in one bucket", () => {
+      // Two Saturdays, eight months apart.
+      expect(rowTimeBucketId("2026-03-14", "weekday")).toBe(
+        rowTimeBucketId("2026-11-14", "weekday")
+      );
+    });
+
+    it("reads the date as UTC, so a row never shifts a day under a timezone", () => {
+      expect(rowTimeBucketId("2026-01-01", "weekday")).toBe("Thu");
     });
   });
 });

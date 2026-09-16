@@ -1,6 +1,7 @@
 import { downloadCsv } from "@/lib/csv";
 import { firstDayOfMonth, lastDayOfMonth } from "@/lib/budget/monthMath";
 import type { BudgetTransactionCategoryOption } from "../../lib/budgetTransactionBrowser";
+import { weekdayBucket } from "../../lib/budgetTransactionAnalytics";
 import type { BudgetTransactionRow } from "../../lib/budgetTransactionsQuery";
 
 /**
@@ -158,13 +159,23 @@ function elapsedDaysBetween(monthStart: string, monthEnd: string, today: Date): 
  * Which bucket of the "when" panel a row belongs to.
  *
  * It has to answer in the same vocabulary the panel is currently charting, and
- * that vocabulary changes with the range: a single month is bucketed by week
- * (`week-3`), a range of months by month (`2026-03`). Getting this wrong is
- * silent - the ids simply never match, every row is filtered out, and the table
- * reads as "no transactions" rather than as a bug.
+ * there are three of them: a single month is bucketed by week (`week-3`), a
+ * range of months by month (`2026-03`), and either can be re-cut by weekday
+ * (`Sat`).
+ *
+ * It used to take a boolean and know only the first two, so selecting a weekday
+ * in the chart compared `Sat` against `week-2` and matched nothing at all. That
+ * failure is silent by construction - the ids simply never agree, every row is
+ * filtered out, and the table reads as "no transactions in this period" rather
+ * than as a bug. A boolean could not have been made to carry a third case,
+ * which is why this now names the dimension.
  */
-export function rowTimeBucketId(date: string, byMonth: boolean): string {
-  if (byMonth) return date.slice(0, 7);
+/** The three vocabularies the "when" panel charts a row in. */
+export type TimeBucketDimension = "weekday" | "month" | "week";
+
+export function rowTimeBucketId(date: string, dimension: TimeBucketDimension): string {
+  if (dimension === "weekday") return weekdayBucket(date);
+  if (dimension === "month") return date.slice(0, 7);
   const day = Number(date.slice(-2)) || 1;
   const week = Math.min(5, Math.max(1, Math.floor((day - 1) / 7) + 1));
   return `week-${week}`;

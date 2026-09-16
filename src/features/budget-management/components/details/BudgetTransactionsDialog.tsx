@@ -45,6 +45,7 @@ import {
   nextBucketSelection,
   rowBucketLabel,
   rowTimeBucketId,
+  type TimeBucketDimension,
   EXPENSE_ACCENT,
   INCOME_ACCENT,
   type Accent,
@@ -797,6 +798,18 @@ export function BudgetTransactionsDialog({ target, browserOptions, onClose }: Pr
   const [timingBy, setTimingBy] = useState<"time" | "weekday">("time");
 
   /*
+   * The vocabulary the "when" chart is currently drawn in, and therefore the one
+   * its selection has to be matched against.
+   *
+   * Derived once and threaded through, rather than each filter re-deriving it
+   * from a boolean: that boolean could say whether the range spanned months, and
+   * nothing at all about the weekday view, so a weekday selection was compared
+   * against week ids and matched nothing.
+   */
+  const timeDimension: TimeBucketDimension =
+    timingBy === "weekday" ? "weekday" : isRange ? "month" : "week";
+
+  /*
    * The months the figures describe, once a selection in the timing chart is
    * taken into account.
    *
@@ -1000,8 +1013,8 @@ export function BudgetTransactionsDialog({ target, browserOptions, onClose }: Pr
   const weekFilteredRows = useMemo(() => {
     if (weekFilters.length === 0) return rows;
     const selected = new Set(weekFilters);
-    return rows.filter((row) => selected.has(rowTimeBucketId(row.date, isRange)));
-  }, [rows, weekFilters, isRange]);
+    return rows.filter((row) => selected.has(rowTimeBucketId(row.date, timeDimension)));
+  }, [rows, weekFilters, timeDimension]);
 
   /*
    * Rows with both filters — drives the KPIs and the table.
@@ -1019,9 +1032,9 @@ export function BudgetTransactionsDialog({ target, browserOptions, onClose }: Pr
     if (spendFilters.length === 0) return weekFilteredRows;
     const selected = new Set(weekFilters);
     return spendFilteredRows.filter((row) =>
-      selected.has(rowTimeBucketId(row.date, isRange))
+      selected.has(rowTimeBucketId(row.date, timeDimension))
     );
-  }, [spendFilteredRows, weekFilteredRows, spendFilters, weekFilters, isRange]);
+  }, [spendFilteredRows, weekFilteredRows, spendFilters, weekFilters, timeDimension]);
 
   // Analytics for SpendBreakdown — responds to week filter
   const spendBreakdown = useMemo(
