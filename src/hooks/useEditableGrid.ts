@@ -13,6 +13,14 @@ type UseEditableGridOptions<Col extends string> = {
   columns: readonly Col[];
   canEditCell?: (cell: EditableGridCell<Col>) => boolean;
   onAddRowAtEnd?: () => void;
+  /**
+   * Bring a row into view when its cell is not in the DOM.
+   *
+   * Only virtualised tables need this. Selection moves by index over every row,
+   * but a windowed table mounts a couple of dozen of them, so the cell the
+   * keyboard just moved to may not exist yet to be focused.
+   */
+  onRevealRow?: (rowIndex: number) => void;
 };
 
 /**
@@ -47,6 +55,7 @@ export function useEditableGrid<Col extends string>({
   columns,
   canEditCell,
   onAddRowAtEnd,
+  onRevealRow,
 }: UseEditableGridOptions<Col>) {
   const containerRef = useRef<HTMLDivElement>(null);
   const {
@@ -69,12 +78,59 @@ export function useEditableGrid<Col extends string>({
 
   const isCellEditable = (cell: EditableGridCell<Col>) => canEditCell?.(cell) ?? true;
 
+  /*
+   * Published for the focus effect below, which must not depend on either.
+   *
+   * `onRevealRow` so callers need not memoise it, and `rowIndexById` because it
+   * is rebuilt on every keystroke in a search box - and the search box sits
+   * inside the grid container. Depending on it would re-run the focus effect as
+   * the user types and yank the caret out of the search field and back onto the
+   * selected cell. Declared above that effect so this one commits first.
+   */
+  const revealRowRef = useRef(onRevealRow);
+  const rowIndexByIdRef = useRef(rowIndexById);
+  useEffect(() => {
+    revealRowRef.current = onRevealRow;
+    rowIndexByIdRef.current = rowIndexById;
+  });
+
   useEffect(() => {
     if (!selectedCell || editingCell) return;
 
-    containerRef.current
-      ?.querySelector<HTMLElement>(`[data-cell="${selectedCell.rowId}:${selectedCell.colId}"]`)
-      ?.focus({ preventScroll: false });
+    const findCell = () =>
+      containerRef.current?.querySelector<HTMLElement>(
+        `[data-cell="${selectedCell.rowId}:${selectedCell.colId}"]`
+      ) ?? null;
+
+    const mounted = findCell();
+    if (mounted) {
+      mounted.focus({ preventScroll: false });
+      return;
+    }
+
+    /*
+     * The row is not rendered, so there is nothing to focus yet.
+     *
+     * In a virtualised table the selection can legitimately land outside the
+     * window - an arrow key at the bottom edge, a Tab that wraps to the next
+     * row. Without this the selection moved invisibly: no focus, no scroll,
+     * and the user lost track of where they were. Ask the owner to scroll the
+     * row in, then focus once React has committed the newly mounted rows.
+     */
+    const rowIndex = rowIndexByIdRef.current.get(selectedCell.rowId);
+    if (rowIndex === undefined || !revealRowRef.current) return;
+    revealRowRef.current(rowIndex);
+
+    let second = 0;
+    const first = requestAnimationFrame(() => {
+      second = requestAnimationFrame(() => {
+        findCell()?.focus({ preventScroll: false });
+      });
+    });
+    return () => {
+      cancelAnimationFrame(first);
+      cancelAnimationFrame(second);
+    };
   }, [editingCell, selectedCell]);
 
   function selectCell(rowId: string, colId: Col) {

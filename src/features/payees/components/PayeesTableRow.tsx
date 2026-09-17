@@ -15,6 +15,16 @@ type PayeeRow = StagedEntity<Payee>;
 type PayeesTableRowProps = {
   row: PayeeRow;
   highlightedId: string | null;
+  /**
+   * Position in the virtualised list, and the callback that measures this row.
+   *
+   * Rows are not a uniform height - a row carrying a save error renders the
+   * message under the name and stands a line taller - so the list cannot assume
+   * one. `measureRef` reports the real height back; `data-index` is how the
+   * measurement is attributed to the right row.
+   */
+  rowIndex: number;
+  measureRef: (node: HTMLElement | null) => void;
   isRowSelected: boolean;
   isNameSelected: boolean;
   isNameEditing: boolean;
@@ -36,6 +46,8 @@ type PayeesTableRowProps = {
 function PayeesTableRowComponent({
   row,
   highlightedId,
+  rowIndex,
+  measureRef,
   isRowSelected,
   isNameSelected,
   isNameEditing,
@@ -63,6 +75,14 @@ function PayeesTableRowComponent({
 
   return (
     <tr
+      ref={measureRef}
+      data-index={rowIndex}
+      /*
+       * The position in the payee list, not in the DOM. Only the rows in view
+       * are mounted, so a screen reader counting rendered rows would announce
+       * "row 3 of 4000" for whatever happens to be on screen.
+       */
+      aria-rowindex={rowIndex + 2}
       data-row-id={entity.id}
       className={cn(
         "group/row border-b border-border/30 border-l-2 border-l-transparent transition-colors",
@@ -241,6 +261,10 @@ function PayeesTableRowComponent({
 function areEqual(prev: PayeesTableRowProps, next: PayeesTableRowProps) {
   return (
     prev.row === next.row &&
+    // A filter or a sort moves rows without changing them, and the index is how
+    // a measurement is attributed - a stale one reports this row's height
+    // against whatever now sits in its old slot.
+    prev.rowIndex === next.rowIndex &&
     prev.highlightedId === next.highlightedId &&
     prev.isRowSelected === next.isRowSelected &&
     prev.isNameSelected === next.isNameSelected &&
