@@ -1,6 +1,6 @@
 ---
 title: Payee Cleanup
-description: Find the payees that are really one merchant under different bank spellings, see what merging changes, and stop the duplicates coming back.
+description: Find duplicate payees, review proposed merges, and create rules that prevent new duplicates.
 sidebar:
   order: 5
 ---
@@ -14,23 +14,22 @@ MARKET BOYS PTY LTD Melbourne VI AUS Card xx9166 Value Date: 24/12/2024
 MARKET BOYS PTY LTD Sydney Value Date: 10/11/2025
 ```
 
-**Payee Cleanup** finds those groups, shows what merging them would change, and lets you fix the
-budget in one reviewed pass - including the rule that stops the duplicates coming back.
+Use Payee Cleanup to find likely duplicate payees, review the proposed changes, and stage accepted
+merges, renames, deletions, and rules for the normal Payees Save flow.
 
 Open it from **Tools → Payee Cleanup** (`/payees/cleanup`).
 
-**Write model:** scan → review → accept → **Stage cleanup** → **Save**. Staging hands the merges,
-renames, deletions and new rules to the normal staged-changes flow; nothing reaches your budget until
-you save on the Payees page.
+**Budget impact:** Scanning and accepting suggestions do not change budget data. **Stage cleanup**
+creates normal Payees drafts; those changes write only when you **Save** on the Payees page.
 
 ![Payee Cleanup proposing a merge, with the evidence behind it and the rule that would prevent a recurrence.](../../../assets/screenshots/user-guide/payee-cleanup.png)
 
 *A suggestion carries its own evidence: what changes, how many transactions move, why these were
 grouped, and the rule that stops the duplicates coming back.*
 
-## How it finds duplicates
+## Find duplicate payees
 
-Two layers, and the difference matters when you are deciding whether to trust a suggestion.
+Payee Cleanup uses two types of detection. Review each suggestion before accepting it.
 
 **Shape rules** remove text that identifies itself by its structure: dates in any common layout,
 times, card numbers, long reference and authorization numbers, `Label: value` metadata, exchange
@@ -64,7 +63,7 @@ the payees must agree on Favorite and Category learning, transaction counts must
 loading, and no rule - proposed or existing - may reach beyond the group. Everything else stays for
 you.
 
-## Reading a suggestion
+## Review a suggestion
 
 Everything a decision needs is on the card itself; there is no dialog to open. The header names the
 result, its confidence, and how many payees collapse into one. Below it, three columns:
@@ -103,7 +102,7 @@ since naming them alike is how you said they are the same merchant.
 **Dismissed** tab - including learned boilerplate you disagreed with, so a wrong inference stops
 being applied everywhere rather than needing rejection on every card.
 
-## Stopping the duplicates coming back
+## Prevent new duplicates
 
 Cleaning up today does not stop the next import recreating the mess - but often no rule is needed.
 Actual matches an imported name that exactly equals an existing payee, so the merge alone fixes

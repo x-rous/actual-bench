@@ -1,21 +1,20 @@
 ---
 title: Budget File Sync
-description: Move selected transactions, payees or categories between two budget files through saved one-way flows that preview before they write.
+description: Create one-way flows that preview and copy selected transactions, payees, or categories between budget files.
 sidebar:
   order: 12
 ---
 
-Two budget files, kept apart on purpose - business and personal, an archive, a household you
-consolidate, or two currencies - and some of the data needed in both. **Budget File Sync** moves
-selected transactions, payees or categories from one to the other through saved one-way **flows**.
-Every flow previews before it writes.
+Use Budget File Sync when you need to copy selected transactions, payees, or categories from one
+budget file to another. Each saved one-way flow previews its changes before it writes.
 
-A flow remembers what it matched last time, keeps a history, and parks anything it is unsure about in
-a review queue. It does not pretend two Actual files are one live database, and it never will.
+It copies between independent budget files; it does not merge them into one live database.
+
+Flows keep mappings and run history. Items that need a decision remain in the review queue.
 
 Open it from **Tools → Budget File Sync** (`/sync`).
 
-**Write model:** Preview never writes. Only an explicit **Apply**, or an opted-in safe-only automation
+**Budget impact:** Preview never writes. Only an explicit **Apply**, or an opted-in safe-only automation
 policy, writes classified safe items. Uncertain rows remain for review.
 
 ![A previewed sync flow: the two endpoints, the flow's settings, and 244 rows classified before anything is written.](../../../assets/screenshots/user-guide/budget-file-sync.png)
@@ -38,8 +37,7 @@ create-only, same sign, create missing payees, and a notes marker so synced rows
 5. Select only safe **New** rows and **Apply**.
 6. Preview again to confirm they now appear as **Already synced**.
 
-Add updates, deletion review, currency conversion, or automation only after that basic loop behaves as
-you expect.
+Add updates, deletion review, currency conversion, or automation after you verify the basic flow.
 
 ## The safety model
 

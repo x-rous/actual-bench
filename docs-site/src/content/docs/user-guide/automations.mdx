@@ -1,23 +1,21 @@
 ---
 title: Automations
-description: Bank syncs, backups and sync flows on a timetable, with nothing open - and a record of every run.
+description: Schedule bank syncs, backups, and safe budget-file syncs, then review every run in one place.
 sidebar:
   order: 13
 ---
 
-Some jobs are worth doing on a timetable rather than when you remember: pulling this week's
-transactions, taking a backup, moving data between budget files. **Automations** is the one place
-Actual Bench runs that work, and the one place you find out what happened.
+Use Automations to schedule bank syncs, backups, backup verification, and safe budget-file syncs.
+The page also shows each run, its outcome, duration, retries, and redacted log.
 
 Open it from **Tools → Automations** (`/automations`).
 
-**Write model:** an automation writes whatever the job it runs writes - and every run is kept, with
-its result, duration and log.
+**Budget impact:** An automation follows the budget-impact rules of its job. It also saves run history,
+duration, outcome, and a redacted log in Actual Bench.
 
 ![The Automations table listing two scheduled jobs with their status, schedule and last result.](../../../assets/screenshots/user-guide/automations.png)
 
-*One row per scheduled job: what it is, when it next runs, and what happened last time - "Verified 2
-copies" rather than a green tick.*
+*Each row shows the job, schedule, next run, and most recent result.*
 
 :::note[Not Actual's Budget Automations]
 Actual Budget has an experimental feature of its own called Budget Automations. This is a different
@@ -37,7 +35,7 @@ thing: Bench's own scheduled jobs, which Bench runs. It does not drive Actual's 
 configured. A backup and a sync flow are set up in their own screens because that is where the
 decisions live; what they share is the engine that runs them.
 
-## The one thing worth knowing first
+## Check where an automation runs
 
 Every automation says **where it runs**, on its own row:
 
@@ -46,8 +44,7 @@ Every automation says **where it runs**, on its own row:
 | **Runs on the server** | Runs on schedule even with Actual Bench closed. Needs HTTP API mode and a budget enrolled for unattended access. |
 | **Runs in your browser** | Runs only while Bench is open in a tab. Close it and nothing happens. This is a convenience, not automation. |
 
-Direct (browser) mode can never run unattended: Actual's engine runs in your browser there, so there
-is nothing on the server to run. Bench says so rather than implying otherwise.
+Direct mode runs in a browser and cannot run unattended after the browser closes.
 
 **One instance only.** The engine runs inside the Bench server process. Running two containers
 against one database would run your automations twice; Bench does not coordinate across instances.
@@ -78,9 +75,7 @@ and no other budget on the same server.
 
 ## Schedules
 
-Choose the shape that matches how you think about it - every few hours, every day at a time, on
-chosen days of the week, once a month - or write a cron expression if you want something the simple
-modes cannot say, like weekday mornings only.
+Choose an interval, a daily, weekly, or monthly schedule, or a cron expression.
 
 Whatever you pick, the picker says back **what it understood** and **when the next runs land**. That
 second line is the one that catches mistakes: `0 0 * * *` reads like a fair guess at midnight until

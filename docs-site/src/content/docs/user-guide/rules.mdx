@@ -1,18 +1,17 @@
 ---
 title: Rules
-description: The whole rule set on one page, with every reference shown as the payee, category or account it names. Split rules, templates, formulas, merging and CSV round-trip.
+description: Create, edit, review, merge, import, and export budget rules with named references and advanced actions.
 sidebar:
   order: 8
 ---
 
-The whole rule set on one page, with every reference showing the payee, category or account it names
-instead of an id. Come here once automation has outgrown a handful of categorisation rules. Actual
-still runs them. Bench makes them readable.
+Use Rules to create, edit, review, merge, import, and export your full rule set. References show the
+payee, category, or account name instead of its ID.
 
 Open it from **Data Management → Rules** (`/rules`).
 
-**Write model:** stage → review → **Save**. [Rule Diagnostics](../rule-diagnostics/) is read-only until
-you explicitly open or merge a rule.
+**Budget impact:** Rule changes remain staged until you review and **Save**. Rule Diagnostics is a
+separate workspace; any fix you start follows the same staged Save workflow.
 
 ![The Rules table showing conditions and actions with payees and categories named rather than shown as ids.](../../../assets/screenshots/user-guide/rules.png)
 
@@ -24,11 +23,9 @@ you explicitly open or merge a rule.
 - **Find broken, overlapping, or duplicate rules:** run [Rule Diagnostics](../rule-diagnostics/).
 - **Move or bulk-edit a rule set:** export it to CSV, edit it, then import and review the staged result.
 
-## Why use Actual Bench for rules?
+## What the Rules page supports
 
-Actual runs your rules well. It is a bad place to read them. Past two dozen rules the questions change
-shape: which rule did this? do these two overlap? what breaks if I delete that category? None of those
-are questions about a single rule.
+Use this page to review the complete rule set and manage rules in bulk.
 
 - Payees, categories and accounts appear as **names** - in the table and in the search box. Nothing to
   decode.
@@ -51,7 +48,7 @@ Every rule sits in one of three **stages**, run in order: `pre`, `default`, `pos
 control which rule goes first. Clean up the imported payee text in `pre`, categorise it in `default`,
 let `post` handle what is left over.
 
-## Create a basic rule
+## Create a rule
 
 1. On the **Rules** page, create a rule to open the editor.
 2. A new rule starts with a guided default condition (`Payee is`) and a default action row.

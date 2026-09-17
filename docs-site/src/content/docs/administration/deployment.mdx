@@ -1,16 +1,15 @@
 ---
 title: Deployment
-description: "Production self-hosting: architecture, networking for both connection modes, HTTPS, and hardening."
+description: "Deploy Actual Bench for production with persistent storage, HTTPS, and the network requirements for each connection mode."
 sidebar:
   order: 1
 ---
 
-For whoever operates the thing, not whoever uses it. Get one container running with
-[Installation](../../getting-started/installation/) first. Come back when you need real networking,
-HTTPS, or hardening.
+Use this page after completing [Installation](../../getting-started/installation/). It covers
+production networking, HTTPS, persistent storage, and hardening.
 
-On a single VPS the target is small: one container, one persistent `/data` volume, one HTTPS endpoint,
-and a network path to whichever connection mode you chose.
+A typical deployment uses one container, a persistent `/data` volume, an HTTPS endpoint, and network
+access for the selected connection mode.
 
 ## Deployment architecture
 

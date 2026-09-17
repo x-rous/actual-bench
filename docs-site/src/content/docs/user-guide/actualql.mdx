@@ -1,18 +1,16 @@
 ---
 title: ActualQL Queries
-description: Run Actual's own query language against your budget and get the answer as a table, JSON, one value, or a tree.
+description: Run read-only ActualQL queries and view results as a table, JSON, scalar value, or tree.
 sidebar:
   order: 10
 ---
 
-Actual's own query language, run against your budget, with the answer as a table, raw JSON, a single
-value or a tree. Bring a precise question no report answers - a specific slice of transactions, a
-monthly aggregate, a check on a cleanup you just did. You will be writing JSON, so start from an
-example rather than an empty editor.
+Use ActualQL Queries to answer questions that standard screens do not cover. Queries use JSON and are
+read-only; start with an example and adapt it to your data.
 
 Open it from **Tools → ActualQL Queries** (`/query`). It works in both connection modes.
 
-**Write model:** read-only. Queries see saved server state, not unsaved drafts.
+**Budget impact:** Queries do not change budget data. Results show saved server state, not unsaved drafts.
 
 ![The ActualQL workspace with a query in the editor and its twenty result rows in the table below.](../../../assets/screenshots/user-guide/actualql.png)
 

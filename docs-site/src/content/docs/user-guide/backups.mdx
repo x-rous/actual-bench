@@ -1,20 +1,18 @@
 ---
 title: Backups
-description: Scheduled copies of your budget that Bench opens and reads afterwards, so you know they still work.
+description: Create scheduled, verified backups of your budget and Actual Bench settings.
 sidebar:
   order: 12
 ---
 
-A ZIP you exported once is not a backup. You do not know whether it still opens, whether it is
-complete, or how old it is - and you find out on the day it matters.
-
-**Backups** takes copies on a schedule, **opens each one to check it is readable**, stores it in as
-many places as you like, and keeps the inventory honest about what actually exists.
+Use Backups to create scheduled copies of your budget and Actual Bench settings. Actual Bench verifies
+each copy before marking it as verified. You can use multiple destinations, including a server folder or an S3-compatible
+bucket.
 
 Open it from **Tools → Backups** (`/backups`).
 
-**Write model:** it only reads your budget. What it writes are the copies, to the destinations you
-configure, plus its own record of them.
+**Budget impact:** Backups does not modify budget data. It writes backup files to the configured
+destinations and saves backup records in Actual Bench.
 
 ![The Backups setup tab, with a destination, a nightly rule and the retention it keeps.](../../../assets/screenshots/user-guide/backups.png)
 
@@ -30,18 +28,14 @@ The page has two tabs:
 
 A fresh install opens on Setup, because there is nothing else to look at yet.
 
-## The line at the top
+## Check backup status
 
-Everything on the page is evidence for one sentence: *if this budget disappeared right now, what
-would I get back, and how old would it be?*
-
-It is deliberately pessimistic. A copy Bench has never opened, a destination that failed last night,
-or every copy sitting in one place all pull it down - and the reasons are listed underneath. A
-backup screen that reassures you is worse than no backup screen at all.
+The summary shows the newest copies, their verification status, destination health, and any problem
+that needs attention.
 
 ## Setup: Backup Destinations
 
-Two kinds, matching the two situations people are actually in:
+Choose one or both destination types:
 
 - **A folder on this server** - any absolute path the server can write to: a mounted volume, a NAS
   share, a second disk. Bench creates it if it does not exist.
@@ -113,7 +107,7 @@ Scheduled rules run on Bench's automation engine, so that page is where their fu
 Backups does not keep a second copy of it. A manual rule has no automation and so no run history -
 its result is reported when you press **Back up now**.
 
-## Verified, not just stored
+## Verification
 
 Every copy is checked before it is trusted, at one of three depths:
 
@@ -134,7 +128,7 @@ expected and the copy is still there - Bench just will not tell you it checked o
 A copy that fails verification is still stored, and clearly marked. A backup Bench distrusts is more
 useful than no backup - as long as nobody is allowed to believe it is fine.
 
-### Weekly re-checking
+### Weekly verification
 
 Storage rots quietly. A full volume truncates a file, a failing disk flips a bit, somebody tidies a
 bucket, and nothing announces any of it. Once a week Bench re-reads the newest few copies in every
@@ -162,7 +156,7 @@ There is no combination of settings that empties a destination.
 that preview is produced by the same code that does the pruning, so it is what will happen rather
 than an approximation of it.
 
-## Setup: Recovery Points
+## Recovery points
 
 Before Bench saves a batch of deletions or payee merges, it copies the budget first, so there is
 something from five minutes ago rather than only from last night. Several changes in one session

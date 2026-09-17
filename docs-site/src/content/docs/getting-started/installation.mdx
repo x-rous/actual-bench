@@ -1,13 +1,12 @@
 ---
 title: Installation
-description: Run the container, mount a persistent volume, and check the install is sound.
+description: Install Actual Bench with Docker, persist its metadata database, and verify the installation.
 sidebar:
   order: 2
 ---
 
-This page is for whoever runs the server. If someone else hosts it for you, skip ahead to
-[Connect to a budget](../connecting/). Installation means a Docker container - that is the only
-supported route. Compose is the shortest one.
+Use this page if you run Actual Bench yourself. Docker is the supported installation method. If another
+person runs it for you, go to [Connect to a budget](../connecting/).
 
 :::note[You still need Actual Budget]
 Bench connects to an [Actual Budget](https://github.com/actualbudget/actual) server. It does not ship
@@ -98,7 +97,7 @@ Open the app in your browser:
 - Local host: `http://localhost:3000`
 - Remote host: `http://<your-server>:3000`, or your reverse-proxy URL
 
-You should land on the connection screen. [Connect to a budget](../connecting/) takes it from there.
+The app opens on the connection screen. Continue with [Connect to a budget](../connecting/).
 
 :::tip[Use HTTPS when it isn't just localhost]
 The moment Bench is reachable from anywhere but your own machine, put HTTPS in front of it - a reverse
@@ -115,8 +114,8 @@ work without one. See [Deployment](../../administration/deployment/).
    - **Schema** shows a version number (not `Not initialized`).
    - **Persistence** reads *Persistent when /data is mounted*.
 
-**Writable** saying `No`, or persistence looking wrong, means the mount holding the database - or its
-permissions - is wrong. Fix that before you connect anything.
+If **Writable** is `No`, or persistence is incorrect, fix the database mount or its permissions before
+you connect a budget.
 
 ## Persistent metadata storage
 
