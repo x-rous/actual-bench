@@ -312,15 +312,25 @@ export function PayeesTable({
      * after the user had already scrolled somewhere else.
      */
     if (revealedHighlightRef.current === highlightedId) return;
+    /*
+     * There is nothing to scroll until the container is attached.
+     *
+     * `scrollEl` arrives from a callback ref, so this effect runs once with it
+     * still null - before the element exists, `scrollToIndex` has nowhere to
+     * scroll and does nothing. Marking that as revealed would spend the one
+     * attempt on a no-op and strand the deep link; returning early leaves it to
+     * run again when the element lands.
+     */
+    if (!scrollEl) return;
     const index = rows.findIndex((row) => row.entity.id === highlightedId);
     if (index >= 0) {
       rowVirtualizer.scrollToIndex(index, { align: "center" });
       revealedHighlightRef.current = highlightedId;
     }
-    // Keyed to the highlight alone: re-running as the virtualiser's identity
-    // changes would drag the user back mid-scroll.
+    // Keyed to the highlight and the container: re-running as the virtualiser's
+    // identity changes would drag the user back mid-scroll.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [highlightedId, rows]);
+  }, [highlightedId, rows, scrollEl]);
 
 
   function toggleSort(col: SortCol) {
