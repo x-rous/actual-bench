@@ -1,610 +1,276 @@
 ---
 title: Bank Reconciliation
-description: Import a bank statement, compare it with one Actual account, review each difference, and apply approved changes.
+description: Compare a bank statement with one Actual account, review the differences, and apply approved changes.
 sidebar:
   order: 15
 ---
 
-Use Bank Reconciliation to compare a downloaded statement with one Actual account. Use it when bank
-sync is unavailable, when you need to audit a period, or when you need to resolve missing, duplicate,
-or incorrect transactions. It does not replace routine transaction entry.
+Use Bank Reconciliation to compare a downloaded bank statement with one Actual account. Use it to
+audit a period or resolve missing, duplicate, or incorrect transactions. It does not replace normal
+transaction entry or bank sync.
 
 Open it from **Tools → Bank Reconciliation** (`/reconciliation`).
 
-**Budget impact:** Decisions remain available for review until you **Apply**. Categories are never
-read or written by this workflow.
+**Budget impact:** Your decisions stay in the session until you **Apply**. Bank Reconciliation does
+not directly change transaction categories. A transformation can use an existing category as a
+condition, but it does not modify that category. Actual rules can categorize new transactions when
+they are created.
 
-## What you need
+## Before you start
 
-- A **statement file** from your bank: CSV/TSV, OFX/QFX, or QIF. The format is recognised from the
-  file's own content, not its name, so a `.txt` holding an OFX export still reads as OFX.
-- One **account** in Actual to compare it against. A session covers one account.
-- Nothing else. No bank connection, no credentials, no setup.
+You need a statement file and the Actual account to compare it with. Supported files are CSV, TSV,
+OFX, QFX, and QIF. The file format is detected from its contents, so an OFX export saved as `.txt`
+still imports as OFX.
 
-## Complete a reconciliation
+Each session covers one account. It is stored in Actual Bench, so you can close the tab and return
+later. No bank connection, bank credentials, or separate setup is required.
 
-1. **Start** a session for one account and optionally give it a memorable tag.
-2. **Import** the statement and confirm how its columns were read.
-3. **Reconcile** each row: accept a match, choose another candidate, create a missing transaction,
-   correct an amount, delete a duplicate, or leave it undecided.
-4. **Review** the exact writes, the balance effect, and the two choices that govern them.
-5. **Apply**. Actual Bench re-reads affected transactions first, writes what is still safe, and keeps
-   failures available for retry.
+## The workflow
 
-Sessions survive closing the tab, so you can stop between any two steps. Once applied, a session
-becomes an audit record and will not offer the same writes again.
-
-:::note[Reconciliation does not touch categories]
-It never reads, stages, or writes a transaction's category. Categorisation belongs in Actual, where
-your rules and your own judgement live. A reconciliation that quietly blanked categories would undo
-work this tool has no business undoing.
-:::
-
-## Your reconciliations
-
-The sidebar lands here: every session you have started, grouped by account, with its statement,
-period, row count and status.
+1. Start a session and select the Actual account. Add a tag if it will help you find the session later.
+2. Import the statement. For CSV or TSV, confirm the date, amount, payee, and notes columns.
+3. Review automatic matches and decide what to do with every difference.
+4. Check the planned changes on **Review**.
+5. Select **Apply** to write the approved changes. Actual Bench checks affected transactions again
+   before it writes.
 
 ![The reconciliation session list: one session for Household Checking, tagged "August close", 42 rows, in progress.](../../../assets/screenshots/user-guide/recon-sessions.png)
 
-*An account heading counts its sessions and how many still need attention. **Open** resumes a session
-exactly where you left it.*
+*Open a session to continue where you left off. Tags, account, date, and status filters help you find
+it. An applied session remains available as an audit record.*
 
-Accounts with work outstanding are expanded; an account whose sessions are all applied is collapsed.
-Search, and the account, status, tag, year and month filters, narrow the same table - filtering
-reveals matching groups automatically, so an applied result never hides inside a collapsed account.
+## Start and import
 
-## Start a session
-
-**New reconciliation** asks for two things: the account, and an optional tag.
+Select **New reconciliation**, choose the account, and optionally add a tag such as `July close` or
+`after the refund`. This tag labels the reconciliation session only; it does not add a tag to budget
+transactions. You cannot change the account after the session starts.
 
 ![The New reconciliation dialog: an account picker and an optional tag field, with Cancel and Start.](../../../assets/screenshots/dialogs/dialog-recon-new-session.png)
 
-*The account is what the statement gets compared against, and it cannot be changed afterwards. The
-dialog says plainly that nothing is written until you review and apply.*
-
-The **tag** is worth using - `July close`, `after the refund`, `Q3 audit`. With several sessions
-against one account, reruns and corrections are otherwise told apart only by timestamp. Tags are
-suggested from ones you have used before, can be edited in place from the list, and can be filtered
-on. They are free text and deliberately separate from your budget's own tags: disposable notes about
-the reconciliation, not data about your transactions.
-
-## Where a session is up to
-
-Every screen carries the same header: the account and statement period, the tag, and a progress trail
-- **Import › Reconcile › Review › Applied**. Steps already reached are ticked, and you can click back
-to any step the session has actually been through.
-
-The trail reflects the **session's own status**, not the screen you happen to be on, so opening the
-workbench of a finished reconciliation still says Applied. A run that partly failed says *Applied
-with problems* rather than pretending otherwise.
-
-Once applied, the work a session wrote is excluded from any new plan. It will not offer to apply
-itself twice, and a partial run goes on offering exactly what failed - nothing more. The Review page
-stays readable as an audit, but its two write choices are disabled: they show what Apply used, not
-controls that could rewrite history after the fact.
-
-**Re-running the match is refused on an applied session.** Matching rebuilds the rows from scratch,
-and the record of what was written is tied to them - re-running would lose it and offer the same
-transactions again. To check the account after applying, start a new reconciliation: it reads Actual
-as it stands *now*, which is what you actually want to compare against.
-
-## 1. Import a statement
-
-Paste the statement, or upload a **CSV/TSV**, **OFX/QFX** or **QIF** file. The format is recognised
-from the file's own content rather than only its name, so a `.txt` holding an OFX export is still
-read as OFX - and, as in Actual itself, `.qfx` goes through the OFX path.
-
-### The import workbench
+Paste a statement or upload a file. The import screen shows the parsed rows before you continue.
+For CSV and TSV files, correct the mapping if needed. For example, map separate debit and credit
+columns when the bank does not supply one signed amount column. Check the date format and sign
+convention before matching.
 
 ![The import screen: statement source, date and amount conventions and matching options on the left, the whole parsed statement on the right with its column mapping.](../../../assets/screenshots/user-guide/recon-import.png)
 
-*Everything about how the file is read is on the left; the result of reading it is on the right. The
-banner is the duplicate-statement warning described below.*
+### Choose how missing rows are created
 
-On desktop, configuration stays in a compact left pane and the **complete parsed statement** fills
-the right. The statement rows have their own scroller and sticky header; totals stay visible outside
-that scroller. There is no eight-row preview cap and no pagination hiding the rest of the file.
+Choose how transactions that are missing from Actual should be created:
 
-For CSV/TSV, each mapping control sits directly above the normalized column it feeds, so changing a
-mapping changes the values immediately below it. Debit and Credit each get their own selector when
-the statement uses separate amount columns. Structured formats omit the mapping row because OFX/QFX
-and QIF define their fields themselves.
+- Use the statement payee, which resolves or creates an Actual payee; or leave the payee for Actual
+  rules to set.
+- Keep the bank memo, the statement payee, both, or neither in notes. For CSV and TSV, the mapped
+  Notes column is the source of notes.
 
-After a statement parses successfully, its source collapses to the file name and detected format to
-leave room for configuration. **Change statement** replaces it; **View raw statement** opens the
-original contents without expanding the whole page.
-
-### Choose how missing rows will be created
-
-Before matching, **When a row isn't in Actual** chooses the starting values for a transaction that
-will need to be created:
-
-- **Payee** - **The statement's payee**, resolved to a payee and created if it is new, or
-  **Actual's rules**, which writes no payee and lets your rules set it on the way in.
-- **Notes** - two independent switches: use the statement's memo, and also include the statement's
-  payee. Tick both to keep them both, separated by a dash; untick both to leave notes empty.
-
-On a **CSV** there is no notes control at all - the Notes column you mapped over the preview is the
-decision, exactly as in Actual. Leave that column unmapped for empty notes, or map the same source
-column to both Imported payee and Notes to carry the payee text into the notes as well.
-
-The **Notes** column in the preview shows what each row will actually carry, and its header says
-where the column is headed - `→ memo + payee`, `→ memo`, `→ payee`, `not written`, or `→ notes` on a CSV. Change a
-switch and the table answers, so the setting is never a guess.
-
-These choices happen before matching because the notes source is an input to transformations. After
-matching, the same choices remain available from **New rows** on the Reconcile toolbar. If you have
-already edited or transformed a row's notes, that row keeps what you set when the source changes.
-
-Where the statement has a payee, it is still recorded as the imported payee in every option.
+You can change these options later in **Re-run → When a row isn't in Actual**. Notes you edited or
+changed with a transformation keep their staged value; the new choice affects only untouched rows.
 
 ### The two text channels
 
-A bank statement carries up to two pieces of text per transaction, and they mean different things:
+The statement payee and memo are separate fields. The statement payee is recorded as Actual's
+imported payee. The memo is a source for notes on new transactions; whether it is written depends on
+your new-row choices. For CSV and TSV, the mapped Notes column is the notes source instead. This
+preserves the bank's original text while leaving your curated Actual payee and category intact.
 
-| The bank calls it | Actual Bench calls it | Where it ends up |
-| --- | --- | --- |
-| `NAME` (OFX) · `P` (QIF) · the merchant/description column | **Imported payee** | Actual's `imported_payee`, and the candidate a Payee is resolved from |
-| `MEMO` (OFX) · `M` (QIF) · a memo/details column | **Notes** | Actual's `notes` |
+This distinction matters: **Imported payee** records what the bank called the transaction, while
+**Notes** records its extra text. The imported payee can be used to resolve an Actual payee, but it
+does not replace your curated payee.
 
-Keeping them apart is the point. A statement that supplies both no longer has to throw one away, and
-the same normalized shape comes out whichever format went in - so matching, deciding and applying
-behave identically for a CSV and an OFX file.
-
-For **CSV/TSV**:
-
-- The **delimiter** is detected by which candidate produces a consistent column count, not by which
-  character appears most often - a description full of commas does not turn a semicolon-delimited
-  file into a mess.
-- A **header row** is recognised by the absence of a usable date and amount, so a statement without
-  headers still parses.
-- **Column mapping** is detected, including the common layout where outflows sit in their own
-  **Debit** column and inflows in a **Credit** column. A statement like that is not read as a list of
-  positive amounts.
-- A **Notes / memo** column is detected separately from the description column, and never claimed as
-  both. Ambiguous headers such as *Narrative* and *Details* go to the description, since that is the
-  channel a statement's single text column normally belongs to.
-- The description/payee column can also be left **unmapped**, for a statement whose one text column
-  is genuinely a memo. Nothing is then recorded as the imported payee, no payee is resolved from the
-  statement, and matching compares the notes column instead - the panel says so when you do it. The
-  **date** column, by contrast, cannot be unset: a row without a date can be neither matched nor
-  created.
-
-QIF files also get their **date format detected** from the dates in the file, the same way a CSV date
-column does - QIF states no date convention of its own, so a Quicken export writes whatever the
-machine that produced it uses, including its `8/12'26` apostrophe form. OFX needs no detection: its
-dates are unambiguous by definition.
-
-Where a file's dates could genuinely be read either way round - every day of the month being 12 or
-under, so `03/07` is either the 3rd of July or the 7th of March - the panel says so and asks you to
-check the preview. Nothing in the data can settle that, and guessing wrong mis-dates every row.
-
-For **OFX/QFX and QIF**, the file states the split itself, and two repairs are offered for banks that
-get it wrong:
-
-- **Use the memo as a fallback for empty payees** - the memo becomes the payee, and is then *not*
-  available as a note for that row. Duplicating the same text into both fields merely because the
-  bank left `NAME` blank is noise, not provenance. The import screen says how many rows this
-  affected, so an empty note is never a surprise.
-- **Swap the payee and memo** - some banks put the real merchant in the memo field.
-
-Foreign-currency rows keep the **original amount and currency** the bank printed, alongside the
-converted amount that actually posted - read from whichever text channel the bank printed it in.
-
-Amounts are handled as integer minor units end to end - never through floating point - so nothing
-drifts by a cent.
-
-:::note[Bank transaction ids]
-OFX files carry a `FITID` per transaction. It is kept as statement metadata and used as **matching
-evidence** against transactions Actual imported from your bank. It is deliberately *not* written as
-Actual's `imported_id`: that field holds Actual Bench's own deterministic marker, which is what makes
-retrying a partly-applied reconciliation safe.
-:::
-
-### Importing the same statement twice
-
-If the rows you are importing have been imported before, Actual Bench says so - naming the earlier
-session and when it was created. That is the amber banner in the screenshot above. It matches on the **rows themselves**, so a statement pasted one
-month and uploaded the next is still recognised, and re-sorting it in your banking app does not
-disguise it.
-
-This is a warning, not a block. Re-importing is a legitimate thing to do: after a partial apply, or
-to redo a month with a corrected column mapping. Matching always reads what is in Actual *now*, and
-anything already applied is recognised and skipped.
+If you import the same statement again, Actual Bench warns you and identifies the earlier session.
+You can still continue. Re-importing can be useful after a partial apply or after correcting a column
+mapping; matching always compares the statement with the current state of Actual.
 
 ### Reconciliation profiles
 
-Save how a statement is read - column mapping, date and amount conventions, payee/memo handling - and
-the matching options for an account as a **profile**, and apply it next month in one click.
-Statements from the same bank rarely change shape.
+Save an account-specific profile when you import the same statement layout regularly. A profile keeps
+the column mapping, date and amount conventions, payee and memo choices, and matching options.
 
-## 2. Matching
+### Import details
 
-Automatic matches require an **exact signed amount**. Text and dates rank transactions that already
-meet that amount requirement; they do not create a match on their own.
+For CSV and TSV, Actual Bench detects delimiters from a consistent column layout, recognises header
+rows, and suggests a column mapping. The date column is required. You can leave the description
+column unmapped when it is really a memo; in that case no imported payee is recorded and matching
+uses notes instead.
 
-See [**How Matching Works**](../reconciliation-matching/) for the full scoring and configuration
-reference.
+For OFX, QFX, and QIF, the format supplies the field structure. You can use a memo as a fallback
+when a payee is empty, or swap a bank's payee and memo fields when it put them in the wrong places.
+When a memo is used as the fallback payee, it is not also available as notes for that row. QIF and
+CSV dates may be ambiguous. Check the preview and select the intended date convention before you
+continue.
 
-### Choose what the text is compared against
+OFX transaction IDs (`FITID`) are stored as statement metadata and can support matching. They are
+not written to Actual's `imported_id`; Actual Bench uses its own deterministic marker to make retries
+safe.
 
-The statement's payee is what gets compared - its memo is used only when the bank left the
-merchant field empty. Where that text lives in Actual differs from person to person, so you choose
-what it is compared against:
-
-| Target | Compared how | Typical use |
+| Statement field | Actual field | Purpose |
 | --- | --- | --- |
-| **Payee** | Symmetric | A curated payee list, where a length mismatch is real evidence |
-| **Imported payee** | Symmetric | The raw merchant text Actual stored at import |
-| **Notes** | Containment | Notes written by an automation that captured the bank's text |
+| Merchant, description, `NAME`, or `P` | Imported payee | The bank's merchant text and a candidate for payee resolution |
+| Memo, details, or `MEMO` / `M` | Notes | The bank's extra transaction text |
 
-Enable any combination, give each a priority and a weight, and choose whether to score every enabled
-target and take the best (*best of*) or walk them in priority order and take the first that clears a
-threshold (*priority first*).
+## Match and decide
 
-Notes are compared by **containment** rather than similarity because the bank's text may sit inside a
-longer note next to your own words - and, just as often, the note is *shorter* than the statement's
-text because the automation captured only part of it. Containment is checked in both directions for
-exactly that reason.
-
-### Guards that stop bad matches
-
-- **`#tags` in notes are ignored** when comparing, on by default. Automation-written notes routinely
-  begin with a workflow tag that is not part of the bank's text, and comparing it dilutes every score.
-- **Short or generic text is refused as evidence.** `FEE` or `PAYMENT` would otherwise match a large
-  fraction of an account. Text that appears in most of the candidate window carries no information and
-  is treated as carrying none.
-- **Close calls are asked, not guessed.** When the runner-up is nearly as good as the winner, you get
-  the choice - unless the text plainly separates them, in which case asking would waste a decision the
-  data has already made.
-
-### Things it surfaces rather than decides
-
-- **Amount differs.** The text plainly matches but the amounts do not. This is a conflict for you to
-  settle, never an automatic match - but staying silent about a pair that is obvious to a human would
-  leave you to find it by hand.
-- **Foreign-currency rows.** A purchase abroad carries two amounts, and Actual may hold either. The
-  original-currency amount is tried as a second exact key, with text corroboration required.
-- **Likely duplicates.** The same thing recorded more than once in Actual. This is a *count* mismatch
-  - one statement row, two transactions - not a matter of resemblance.
-- **Rows that need pairing.** Several statement rows and several transactions sharing a merchant and
-  a day, where no amount settles which is which - four `RapidRide` rows against four `RapidRide`
-  transactions, none of the amounts equal. Every row in the group is shown the transactions it could
-  be rather than one row taking them all, and settling one frees the rest.
-
-### When nothing matched at all
-
-Some banks print a single amount column with spending as a **positive** number, leaving the
-direction to a heading elsewhere on the page. Actual stores spending as negative, and matching
-compares signed amounts, so such a statement matches nothing whatsoever: every row lands in
-*Not in Actual* and every transaction in *Not on statement*. That looks like the wrong account or
-the wrong dates, which is the one thing it is not.
-
-When that happens, Actual Bench checks whether flipping the statement's signs would have worked, and
-says so under the coverage bars:
-
-> **Nothing matched, and the amounts look inverted.** Your statement shows spend as a positive
-> number; Actual stores it as negative. 47 of 52 rows would match if the sign were flipped.
-
-**Re-run inverted** flips the amounts and matches again, without going back to the import screen.
-The message only appears when nothing matched *and* the flip demonstrably explains it, so a
-statement of genuinely new transactions never triggers it.
-
-You can also set this yourself before importing - **Sign convention → One amount column, spend shown
-positive** on the import screen.
-
-## 3. Decide each row
+Automatic matching requires an exact signed amount. Dates and text rank candidates with the same
+amount; they do not create a match by themselves. If the statement uses positive numbers for
+spending, correct the sign convention. **Re-run inverted** is offered only when no rows matched and
+reversing the signs would explain the mismatch.
 
 ![The reconciliation workbench: coverage in both directions, rows bucketed by outcome, and each match shown with its confidence and reasoning.](../../../assets/screenshots/user-guide/bank-reconciliation.png)
 
-*Coverage is reported in both directions, every automatic match shows how confident it is and why,
-and the decisions counter tracks what is left for you.*
+*Use the workbench to review matches, find rows that need attention, and make decisions.*
 
-Coverage names both questions it answers: **Statement → Actual** shows how much of the statement has
-a counterpart, while **Actual → Statement** shows how much of the loaded account window the statement
-explains. Decision progress and **Next undecided** stay in the table toolbar. **Matching** opens its
-options in a popover, so checking or changing a tolerance does not push the comparison table off the
-screen; choose **Re-run** explicitly when you want those options applied.
+### Choose what the text is compared against
 
-The filters are grouped the way the grid is. **All** comes first, then a **Statement** group and an
-**In Actual** group, each boxed and headed by its own filter:
+Under **Matching**, choose where Actual keeps merchant text: **Payee**, **Imported payee**, **Notes**,
+or **All, best match**. The statement payee is compared, with the memo used only when the bank did not
+provide a payee. Payee and imported-payee comparisons use name similarity; notes use containment so
+the bank text can sit within a longer note.
 
-```text
-All 68   ┌ Statement 49  Needs review 0  Not in Actual 1  Matched 48 ┐
-         ┌ In Actual 19  Not on statement 15  Outside period 4 ┐
-```
+**Best match** compares every enabled field and uses the strongest result. **Priority first** checks
+fields in your chosen order and uses the first one that reaches the threshold. You can set priorities
+and weights in Advanced matching. Settings are saved in the reconciliation profile and take effect
+only when you select **Re-run**.
 
-The head of each group is a filter too: **Statement** shows every row the statement has, **In Actual**
-everything Actual holds that the statement does not account for. The two group names are the same
-words as the column headings below them, so each group sits above the columns it filters.
+For each difference, you can:
 
-The numbers add up in both directions - the two heads reach All, and each group's filters reach its
-head.
+- accept the suggested match or select another candidate;
+- say two rows are not the same transaction;
+- create a transaction that is missing from Actual;
+- delete a duplicate transaction;
+- correct an existing amount;
+- keep an existing transaction that is not on the statement; or
+- leave the row undecided. Apply does not change undecided rows.
 
-Every row carries a **status marker** beside its checkbox, answering one question - is this row
-still yours to deal with?
+### When amounts disagree
 
-- ○ **amber circle** - no decision yet.
-- ● **green tick** - done, whether you decided it or the matcher matched it.
+When a matched amount differs from the statement, accepting the pairing stages the statement amount
+on the existing transaction. Actual Bench will not change the amount of a reconciled transaction, a
+split parent, or one leg of a transfer. You can still record the match, but Review reports the
+remaining difference. When allowed, the correction updates the same transaction rather than replacing
+it, so its ID, payee, notes, category, schedule, and transfer link remain.
 
-That is the same split the decision counter uses, so the counter and the column can never disagree.
-What will actually *happen* to a row is the **Result** column's job; this one only says whether it is
-finished.
+If the two rows are different transactions, choose **Not the same transaction**. The statement row
+then remains available to create, and the Actual transaction remains available to keep or delete.
 
-Transactions dated **outside the statement's period** start as **kept**. They were loaded only to
-help matching at the edges of the period, and your statement makes no claim about them - so there is
-nothing to answer. They are left out of the decision counter altogether rather than counted as done:
-a statement with 188 rows of its own plus 12 padded ones reads **100 of 188 decided**, not *112 of
-200*, because counting them would claim decisions you never made.
+You can continue to Review with unresolved rows. Apply does not create an unresolved statement row or
+change an unresolved Actual transaction.
 
-Keeping writes nothing - they stay in Actual exactly as they are. They remain visible, selectable
-and deletable if you do want to act on one, and an **Undo** puts a row back to undecided. Act on one
-for real - delete it, say - and it rejoins the counter like any other row.
+Transactions outside the statement period are loaded to help match rows near the start and end of the
+period. They start as kept and are not included in the decision count. You can still choose to delete
+one if that is appropriate.
 
-For every row you can:
+### When no automatic match works
 
-- **Accept** the match, or **pick a different candidate** - the ones you did not pick stay available.
-- **Say they are not the same.** The transaction goes back to being its own row, to keep or delete,
-  and your statement row goes back to having nothing against it - where **Create** is waiting.
-  Nothing is deleted and nothing is decided for you.
-- **Create** the transaction in Actual.
-- **Delete** a duplicate, keeping the one you want.
-- **Correct an amount** in place, so the transaction's id, notes, payee, and any schedule or transfer
-  link survive. Nothing you wrote is destroyed to fix a number.
-- **Leave it for later.** Rows with no decision are untouched by Apply.
+Rows that are too ambiguous are not matched automatically. Use **Possible pair** to review a likely
+pair, or select two rows yourself and confirm that they are the same transaction. This also stages
+the statement amount on the selected Actual transaction.
 
-### When the amounts disagree
+Possible pairs are review hints, not automatic candidates. They can have different amounts, so they
+require an explicit confirmation and never lower the automatic-match threshold.
 
-**Accepting a pairing takes the statement's amount with it.** The bank is authoritative about what
-was charged, so a match that left your account disagreeing with it would record a reconciliation
-that did not reconcile. Where the figures differ, the answer reads **Use the statement's −22.25** -
-which pairs the rows *and* corrects the transaction in place, keeping its id, notes, payee, category
-and any schedule or transfer link.
+The workbench shows statement coverage and Actual-account coverage separately. It also keeps rows
+outside the statement period visible, because they can explain a match near the date boundary. They
+are kept by default and do not count as undecided work.
 
-If it is simply a different transaction, **Not the same transaction** is the answer instead.
+### Transform transactions
 
-There is one exception. Actual refuses an amount change on a transaction that is **reconciled
-there**, on a **split parent** (its amount must equal its split lines), and on **one leg of a
-transfer** (the other account would disagree). On those rows the correction is not available, so the
-pairing can still be recorded as **Match, leaving a 3.44 difference** - which says what it is leaving
-behind. Review then reports those rows separately, with the total still outstanding, rather than
-counting them as needing no change.
+Use transformations to preview and stage a payee change or note changes across several rows. Set a
+payee, or use note actions to add, remove, move, or replace tags and text. Conditions can use a
+payee, category, or tag. Transformations do not write any change until Apply, and do not overwrite a
+hand-edited value unless you choose to do so.
 
-While a row still has several transactions in play, anything that names *one* of them - matching it,
-deleting it, correcting its amount - is refused, and says to pick which transaction the row is first.
-The tool has said it does not know which one this is; acting on its own top guess against your budget
-would be the one thing it must not do. Keeping and ignoring stay available, because they name nothing.
+For text, you can prepend, append, or replace an exact value. You can also extend a merchant name in
+an existing note to the longer statement description. If Actual Bench cannot identify the bank text
+inside the note, it leaves that row unchanged and explains why.
 
-Picking from a group withdraws that transaction from the other rows and leaves the rest on offer, so
-each choice makes the next one smaller. Candidates are listed **closest amount first**, each showing
-how far it is from the statement - on rows that share a merchant and a day, the amount is the only
-thing separating them. **Next undecided** visits these groups before the rows that depend on them.
+When a row has several candidates, select the candidate before you correct, delete, or match it.
+Actual Bench protects reconciled transactions, split parents, and transfer legs from changes that
+would make the budget inconsistent. It explains the restriction and leaves the row available for a
+safe decision.
 
-Rows can be ordered by **date** (the default), by **merchant** to work a contested group together, or
-by **largest amount** to put the money first. A bulk decision can be undone in one press.
+See [How Matching Works](../reconciliation-matching/) for match scoring, text targets, safeguards,
+foreign-currency matching, and every matching setting.
 
-### When nothing will match them
+## Review the plan
 
-Matching will not bridge an amount gap with text, and that is deliberate - loosening it to reach a
-few rows would admit wrong guesses across the whole statement. So some pairs a person can see stay
-invisible to it:
+Select **Review** when you have finished deciding rows. If possible pairs or undecided rows remain,
+Actual Bench warns you first. In particular, an undecided statement row is a bank transaction that
+will not be added to your budget if you apply; an undecided Actual-only row is left alone. You can
+return to the workbench or continue to Review.
 
-```text
-FRESHMART-D- WESTPORT EUR53.45   -54.42    on the statement, nothing in Actual
-#API FRESHMART-D-8505            -52.07    in Actual, not on the statement
-```
-
-Actual Bench looks for these itself. Both halves are marked **Possible pair** in the grid, and the
-count beside the decision progress - **3 possible pairs** - narrows the grid to them; opening either
-one shows its likely partner and offers to link them.
-
-They are deliberately not offered as *candidates*. A candidate is one keypress from becoming a
-decision, so matching has to be strict about what it offers. A possible pair is confirmed only by an
-explicit **These are the same transaction** - and because acting on it is deliberate, the search
-behind it can be far more generous without making anything else riskier. No matching threshold
-changes.
-
-You can also select the two rows yourself and choose **These are the same transaction**. The statement's amount is carried
-onto the transaction as a staged correction, so its id, notes, payee, category and any schedule or
-transfer link survive, and it is recorded as your decision rather than the matcher's. Limited to
-transactions in the loaded window.
-
-Selecting a row opens a details panel. Date and amount are shown **once, with both readings side by
-side**, and any difference is marked and quantified - "2 days later", "−12.50" - rather than left
-for you to work out from two separate lists. Foreign-currency rows also show the original amount the
-bank printed.
-
-![The Match details panel: the transaction as it stands in Actual, the decide actions, and a note explaining that the row is protected.](../../../assets/screenshots/user-guide/recon-inspector.png)
-
-*The panel says what a decision would do, and when it will not do it. Here the row is both reconciled
-in Actual and one leg of a transfer, so deleting it is refused and the reason is given.*
-
-Staged changes show what the value was and where the new one came from. A bulk transformation never
-overwrites a value you edited by hand unless you say so. Transfers, split parents, and rows already
-reconciled in Actual are protected from changes that would break them.
-
-### Transforming notes
-
-A transformation can be applied to many rows at once and previewed before it is staged.
-
-Wherever a rule names something your budget already knows about - a payee, a category, a tag already
-in use on these rows - you pick it from a list rather than typing it. Free text is kept only where
-the value genuinely is free text.
-
-
-- **Tags** - add, remove, replace, or move a tag to the front or back of the note.
-- **Text** - append or prepend a fixed string, or **replace one piece of text with another**. Every
-  occurrence is swapped, matched exactly as typed: `AMZN Mktp` → `Amazon` changes `AMZN Mktp` and
-  leaves `amzn` in your own sentence alone.
-- **Extend the merchant name to the statement's description.** Where the note says
-  `ROYAL CATERING SERVICE` and the statement says `ROYAL CATERING SERVICE WESTPORT`, only the run
-  of words that came from the bank is replaced - a leading `#2026-08` tag and a trailing
-  `| dinner with Ahmad` both survive. Where no such run can be identified, the note is left alone and
-  you are told why, rather than guessed at.
-
-### On the way to Review
-
-Someone working row by row will have seen these already. Someone who filtered to *Not in Actual*,
-selected everything and pressed Create never looked at an individual row - and that is the quickest
-way through a long statement, so it is also the likeliest way to write a duplicate.
-
-So one dialog before Review covers what is still open. Any possible pair that would actually
-**write** something is shown statement-left and Actual-right, with how far apart the dates and
-amounts are - link it, leave it, or carry on.
-
-It also says how many rows have no decision, and separates the two kinds, because they do not weigh
-the same: a statement row left undecided is a transaction that happened and will not be added to your
-budget, while a transaction Actual already has that your statement never mentioned is perfectly fine
-left alone. Nothing is written for either, and the session waits for you. It never blocks: replacing a transaction, clearing a genuine duplicate the statement
-also carries, and retrying a partial apply are all legitimate reasons to mean both halves. A pair you
-leave is not raised again for the rest of the session.
-
-## 4. Review
+The Review page lists each planned create, update, delete, and imported-payee write, plus the effect
+on the account balance.
 
 ![The review screen: counts for create, update and delete, the net balance change, the two write settings, and each row shown as it will look afterwards.](../../../assets/screenshots/user-guide/recon-review.png)
 
-*The last screen before anything is written. Here nothing is created, updated or deleted - 34 rows
-need no change, four get the statement's payee recorded, and the balance moves by 0.00.*
+Check these choices before you apply:
 
-The review screen shows, statement row by statement row, what each will look like in your budget
-afterwards. Changed values are marked and carry their previous value. The Action column distinguishes
-what kind of write is planned:
+- **Mark as cleared:** leave transactions unchanged, mark only new transactions cleared, or mark
+  every statement-confirmed transaction cleared. The last option also writes the cleared status to
+  matched transactions that otherwise need no update.
+- **Record the statement's payee:** add the bank's payee text to new rows only, or to matching rows
+  as well. This changes `imported_payee`, not the curated payee, notes, or category.
 
-- **Bank text** in a neutral tone means only the imported payee is being filled.
-- **Update + bank text** means a staged change and the provenance write travel together.
-- If an imported payee already exists and will be replaced, the row turns amber and shows its
-  previous value.
+New transactions always record the statement payee when the statement provides one. Their payee and
+notes follow the options you set during Import.
 
-It also states:
+Matched transactions keep their existing payee and notes unless you explicitly stage a transformation
+or another reviewed edit. Bank Reconciliation does not directly change categories: matched
+transactions keep their category, while Actual rules can set the payee or category of new
+transactions.
 
-- **The effect on the account balance** - created transactions, less deleted ones, plus the difference
-  on any corrected amount. A reconciliation that moves money is something to agree to knowingly.
-- **What gets marked cleared** - nothing, only new transactions, or everything the statement confirms.
-  The last option turns matched rows that needed no write into writes, so the change count reflects it
-  honestly.
-- **What the statement fills in** on a transaction being created. The Payee and Notes choices made
-  during Import are stated here rather than changed after transformations have already used them.
-- **Whether matched transactions gain the statement's payee** - **On new and matched rows** or
-  **On new rows only** - see below.
+Transactions already reconciled in Actual are skipped. A matched transaction also needs no
+imported-payee write when it already has the same bank text.
 
 ### What actually gets written
 
-Actual keeps three separate facts about a transaction, and so does this feature:
+| Field | On a new transaction | On a matched transaction |
+| --- | --- | --- |
+| Imported payee | The statement payee, when present | Written only when **Record the statement's payee** includes matched rows |
+| Payee | Resolved from the statement, or set by Actual rules | Kept unless you stage a payee change |
+| Notes | Follow the Import choice | Kept unless you stage a note change |
+| Category | Set only by Actual rules | Kept as it is |
 
-| Field | What it holds |
-| --- | --- |
-| **Imported payee** | The statement's own payee text. Provenance: what your bank called this transaction. |
-| **Payee** | The payee *you* keep - an Actual payee entity, curated, renameable, and the thing your reports group by. |
-| **Notes** | The bank's memo, your own words, workflow tags. |
+The Review page identifies imported-payee writes separately from curated-data changes. It also shows
+the previous value when an existing imported payee would be replaced.
 
-They are not alternatives to one another, so you are not asked to choose between them:
+## Apply safely
 
-- **A created transaction records the statement's payee as its imported payee** - wherever the
-  statement has one, whichever
-  payee you end up with, whether a rule changes it, and whether or not you also copy the text into
-  the notes. There is no setting for this, because there is no sensible reason to throw the bank's
-  own text away.
-- **Payee on a new transaction**: resolve the statement's payee into a payee (creating one if it is new),
-  or leave it unset for your rules to decide. A payee you set on a row yourself always wins.
-- **Notes on a new transaction**: the statement's memo, its payee, both (a deliberate
-  duplicate, for rules that read the notes), or neither.
+Select **Apply** only after reviewing the plan. Immediately before writing, Actual Bench re-reads
+every affected transaction. It writes rows that are still safe and holds back conflicts or changes it
+cannot combine safely.
 
-The Payee and Notes sources are chosen during Import, before matching and transformations, and are
-summarized read-only on Review. To change them after matching, go back to Import or use **New rows**
-on the Reconcile toolbar; notes already staged on a row remain untouched.
+For example, it preserves an amount or date corrected in Actual after the session began, and tries to
+replay a staged note change onto a newer note. If it cannot do that safely, it reports the row instead
+of overwriting it.
 
-### Matched transactions keep what you curated
+Applied creates use deterministic markers. Retrying a partial run does not create the same
+transaction twice. The result identifies successful, skipped, and failed actions, and **Retry what
+failed** attempts only unfinished work. After writing, Actual Bench reads the account again to verify
+the result.
 
-When a statement row matches a transaction you already have, its **payee, notes and category are left
-exactly as they are**. What can be added is the statement's payee as the imported payee - the same
-thing Actual's own bank import does on a match, and the reason the field exists.
+An applied session cannot be re-matched because it is an audit record of its decisions and writes.
+Its Review page remains readable, but its write choices are locked to the options that were used. To
+reconcile the account again, start a new session.
 
-That is still a write, so it is reported as one. But it is counted and named separately: Review and
-Apply can say, for example, **3 changes · 126 bank details**, and **Fields that will be written**
-names the imported payees as values set from the statement's payee. The Applied result keeps
-the same distinction.
+## Sessions and limits
 
-Rows already reconciled in Actual are skipped, and a row whose imported payee already matches is not
-written to at all. **Record the statement's payee** defaults to **On new and matched rows**. Choose
-**On new rows only** when this Review should leave matched transactions' existing imported payees
-alone. If you return to Reconcile, the choice resets to the default; **Mark as cleared** and the
-new-row Payee/Notes choices are left alone.
+Sessions are stored in the Actual Bench metadata database on the server, not in the budget file. They
+contain the imported statement rows, your decisions, matching options, and apply result. Statement
+contents therefore leave your browser and remain in Actual Bench metadata until you delete the
+session. Delete a session from the session list when you no longer need it; deletion removes that
+session data only and never changes your budget. Applied changes remain applied.
 
-Once Apply starts, **Record the statement's payee** and **Mark as cleared** are disabled. On a
-reopened applied or partially applied reconciliation, they show what was executed and cannot be
-changed.
-
-## 5. Apply
-
-Apply first re-reads every affected transaction. Safe rows are written, changed or conflicting rows
-are held back, partial successes are recorded honestly, and **Retry what failed** attempts only the
-unfinished work.
-
-### The drift check
-
-A session outlives the state it was built from, and Actual does not stand still in the meantime. So
-**immediately before writing, every row the plan touches is re-read** and compared against what the
-session saw when it loaded. Three things can happen:
-
-- **A note you edited in Actual.** The staged change is *replayed onto the current text* rather than
-  replacing it. If the session staged `#One` → `#Two` and you appended `| Manual text` in Actual, the
-  result is `Imported #Two | Manual text` - both changes survive.
-- **An amount or date corrected in Actual.** An update carries these fields whether or not it is
-  changing them, so a stale copy would quietly revert your correction. Instead the live value is kept,
-  and you are told it happened.
-- **Anything that cannot be reconciled safely** - a payee changed on both sides, a note whose words no
-  longer support the staged change, a transaction deleted or reconciled in Actual. These rows are
-  **held back and reported**. Nothing is written on that first press; press Apply again to write the
-  rest and come back to them.
-
-### Writing
-
-Created transactions carry a **deterministic marker** derived from the session and the statement row,
-so retrying after a partial failure never creates the same transaction twice - even if this session's
-own record of the run was lost with a closed tab. Updates and deletes are written in a single batched
-call where the transport supports it.
-
-A partial failure is reported as a **partial success**, not rounded down to a failure. The session
-survives it, and **Retry what failed** re-attempts only what did not succeed.
-
-The outcome is stored with the session, so it stays readable afterwards. Reopen a finished
-reconciliation and **What was applied** lists every write - including **Bank text** separately from
-curated-data updates - with what it did, which transaction, and whether it was written now or
-recognised as already done, alongside anything that failed. A reconciliation you did last month is
-still auditable this month.
-
-### Rules on created transactions
-
-Actual's rules **do** run on transactions as they are created, so a created row's payee or category may
-end up different from what the review screen previewed. That is Actual doing its job, not the
-reconciliation losing your choice - but it is worth knowing before you compare the two afterwards.
-
-### The check afterwards
-
-Once the writes are done, the account is read back and compared against what you approved: created
-transactions are present and present *once*, updated fields hold the approved values, deleted rows are
-gone, split parents still add up, and nothing reconciled in Actual moved. A transport can report
-success for a field it quietly dropped, so this is confirmed rather than assumed.
-
-## What is stored, and where
-
-Reconciliation sessions live in the **Actual Bench metadata database on the server**, not in your
-budget file. A session holds the normalized statement rows, your decisions, the matching options used,
-and the record of what was written.
-
-That is what makes a session resumable across sittings and machines, and what makes a retry after a
-partial failure safe. It also means the statement's contents leave your browser: if that matters for a
-particular statement, delete the session when you are done. **Sessions are deletable from the session
-list at any time** - you are asked to confirm, and told what goes with it - and deleting one removes
-its statement rows and decisions. Deleting a session never touches anything in your budget, and
-anything already applied stays applied.
-
-## Limitations
+Bank Reconciliation has these limits:
 
 - One account per session.
-- Split children are read-only: a split transaction can be matched, but its lines are not edited here.
-- Categories are never written (see the note at the top).
-- Automatic matches always require an exact signed amount. Pairs whose amounts differ are review
-  items, never matches - though you can link any two rows yourself.
-- Linking by hand reaches only the transactions loaded for this session's date range.
+- Split children are read-only. A split transaction can be matched, but its individual lines cannot
+  be edited here.
+- Automatic matches require an exact signed amount. Amount differences and ambiguous pairs require
+  review.
+- Manually linking rows is limited to transactions loaded for the session's date range.
+
+## Related pages
+
+- [How Matching Works](../reconciliation-matching/) — matching algorithm and configuration
+- [Bank Sync](../bank-sync/) — run Actual's existing bank sync on a schedule
